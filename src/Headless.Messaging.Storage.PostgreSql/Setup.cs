@@ -205,6 +205,15 @@ public static class SetupPostgreSqlMessaging
         var optionsBuilder = setup.Services.AddOptions<PostgreSqlOptions, PostgreSqlOptionsValidator>(optionsName);
         configureOptions(optionsBuilder);
         optionsBuilder.Configure(options => options.Version = setup.Options.Version);
+        // The host's deploy script describes every database the host writes to, so it carries the outbox's steps too;
+        // the host's runner only exports them, because the outbox's own runner applies them.
+        setup.Services.AddHeadlessSchemaContribution(serviceProvider =>
+            PostgreSqlMessagingSchemaContribution.CreateOutbox(
+                serviceProvider.GetRequiredService<IOptionsMonitor<PostgreSqlOptions>>().Get(optionsName),
+                serviceProvider.GetRequiredService<IOptions<MessagingStorageOptions>>().Value,
+                exportOnly: true
+            )
+        );
 
         return setup;
     }

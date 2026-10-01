@@ -354,9 +354,11 @@ services.AddHeadlessMessaging(setup =>
 - **Schema.** Each additional outbox contributes only the published table and its indexes, in the same `MessagingStorageOptions.Schema` as the primary, as its own `MessagingOutbox` feature in that
   database's `headless_schema_history`. It has no received table or inbox history. Its steps are applied by a schema
   runner of its own, in the host runner's `SchemaRunnerMode`, after the host's runner has applied the primary's: the
-  host's runner fails startup on an unreachable database, which an additional outbox must not do. `SchemaRunner.ExportScript`
-  covers only the host runner's contributions, one script per dialect, so it has no additional outbox: a host that
-  forbids DDL cannot use an additional outbox yet.
+  host's runner fails startup on an unreachable database, which an additional outbox must not do. The host's runner
+  still carries each outbox's steps as an export-only contribution, so `SchemaRunner.ExportScript` includes them in
+  its schema's section of the dialect's script. The script is per dialect and schema, not per database: run it against
+  the primary's database and every outbox database of that dialect. An outbox database then also holds the primary's
+  tables, which nothing reads there; in exchange a host in `Verify` mode can use additional outboxes.
 - **Availability at startup.** Only the primary storage must be reachable for the host to start. The additional
   outboxes are initialized concurrently, once each; one whose database is unreachable logs EventId 103 and the
   host starts without it. A background processor then retries it with jittered backoff from 1 second up to

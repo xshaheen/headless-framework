@@ -202,6 +202,15 @@ public static class SetupSqlServerMessaging
         var optionsBuilder = setup.Services.AddOptions<SqlServerOptions, SqlServerOptionsValidator>(optionsName);
         configureOptions(optionsBuilder);
         optionsBuilder.Configure(options => options.Version = setup.Options.Version);
+        // The host's deploy script describes every database the host writes to, so it carries the outbox's steps too;
+        // the host's runner only exports them, because the outbox's own runner applies them.
+        setup.Services.AddHeadlessSchemaContribution(serviceProvider =>
+            SqlServerMessagingSchemaContribution.CreateOutbox(
+                serviceProvider.GetRequiredService<IOptionsMonitor<SqlServerOptions>>().Get(optionsName),
+                serviceProvider.GetRequiredService<IOptions<MessagingStorageOptions>>().Value,
+                exportOnly: true
+            )
+        );
 
         return setup;
     }

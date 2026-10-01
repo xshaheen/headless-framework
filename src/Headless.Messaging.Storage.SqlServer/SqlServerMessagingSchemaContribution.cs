@@ -49,9 +49,14 @@ internal static class SqlServerMessagingSchemaContribution
     /// <summary>
     /// Creates the contribution of an additional outbox, whose database holds published rows only: the inbox, its
     /// history, and its readiness checks stay with the primary storage. It is its own feature because its steps differ
-    /// from the primary's, and an outbox database never holds both.
+    /// from the primary's, and an outbox database never holds both. <paramref name="exportOnly"/> builds the copy the
+    /// host's runner only exports; the outbox's own runner applies the other.
     /// </summary>
-    public static SchemaContribution CreateOutbox(SqlServerOptions options, MessagingStorageOptions storageOptions)
+    public static SchemaContribution CreateOutbox(
+        SqlServerOptions options,
+        MessagingStorageOptions storageOptions,
+        bool exportOnly = false
+    )
     {
         var schema = storageOptions.Schema;
         var connectionString = options.ConnectionString;
@@ -68,7 +73,8 @@ internal static class SqlServerMessagingSchemaContribution
                     "Create the published table with its indexes.",
                     _PublishedTableSql(schema, options.OwnerColumnMaxLength)
                 ),
-            ]
+            ],
+            exportOnly: exportOnly
         );
     }
 

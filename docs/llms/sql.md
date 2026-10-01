@@ -143,6 +143,7 @@ Rules that change how you operate a database:
 - **Configuration that shapes DDL is part of the checksum.** Changing AuditLog's `JsonColumnType` after its table exists fails startup instead of being silently ignored.
 - **Features with configurable object names keep one history per name.** `Sequences` with the default table records `Sequences/1`; with `TableName = "counters"` it records `Sequences:counters/1`, so two hosts naming the table differently in one schema never collide.
 - **`InitializeOnStartup = false`** on a feature keeps its steps out of `Apply` mode. `Verify` mode and `ExportScript` still include them.
+- **An export-only contribution** (`SchemaContribution.ExportOnly`) is in `ExportScript` and nowhere else: the runner neither applies nor verifies it. A feature that applies a database's steps with a runner of its own, such as a Messaging additional outbox, registers one so the host's deploy script still creates those objects.
 - History rows of features a host does not register are ignored, so hosts with different feature sets can share one schema. A row for a registered feature whose step this host does not know, such as a newer replica's step during a rolling deploy, is logged, not fatal.
 
 ### Store statement kit (for provider authors)

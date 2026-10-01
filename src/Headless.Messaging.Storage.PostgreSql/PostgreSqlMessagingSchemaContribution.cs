@@ -22,23 +22,29 @@ internal static class PostgreSqlMessagingSchemaContribution
     /// <summary>Creates the contribution of the primary storage: the inbox, its history, and the published table.</summary>
     public static SchemaContribution Create(PostgreSqlOptions options, MessagingStorageOptions storageOptions)
     {
-        return _Create(options, storageOptions, inbox: true);
+        return _Create(options, storageOptions, inbox: true, exportOnly: false);
     }
 
     /// <summary>
     /// Creates the contribution of an additional outbox, whose database holds published rows only: the inbox, its
     /// history, and its readiness checks stay with the primary storage. It is its own feature because its steps differ
-    /// from the primary's, and an outbox database never holds both.
+    /// from the primary's, and an outbox database never holds both. <paramref name="exportOnly"/> builds the copy the
+    /// host's runner only exports; the outbox's own runner applies the other.
     /// </summary>
-    public static SchemaContribution CreateOutbox(PostgreSqlOptions options, MessagingStorageOptions storageOptions)
+    public static SchemaContribution CreateOutbox(
+        PostgreSqlOptions options,
+        MessagingStorageOptions storageOptions,
+        bool exportOnly = false
+    )
     {
-        return _Create(options, storageOptions, inbox: false);
+        return _Create(options, storageOptions, inbox: false, exportOnly);
     }
 
     private static SchemaContribution _Create(
         PostgreSqlOptions options,
         MessagingStorageOptions storageOptions,
-        bool inbox
+        bool inbox,
+        bool exportOnly
     )
     {
         var schema = storageOptions.Schema;
@@ -73,7 +79,8 @@ internal static class PostgreSqlMessagingSchemaContribution
                     "Ensure pg_trgm when permitted and create the dashboard content trigram indexes when it is installed.",
                     _ContentSearchSql(schema, inbox)
                 ),
-            ]
+            ],
+            exportOnly: exportOnly
         );
     }
 

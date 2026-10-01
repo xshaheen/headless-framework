@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Text;
 using Dapper;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
@@ -99,5 +100,33 @@ public sealed class SqlServerAdditionalOutboxTests(SqlServerTestFixture fixture)
         return await connection.ExecuteScalarAsync<bool>(
             "SELECT CAST(CASE WHEN OBJECT_ID(N'headless.MessagingReceived', N'U') IS NULL THEN 0 ELSE 1 END AS bit);"
         );
+    }
+
+    protected override async Task ExecuteScriptAsync(string connectionString, string script)
+    {
+        // GO is a client-side separator that SQL Server itself rejects, so each batch between them is its own command.
+        await using var connection = new SqlConnection(connectionString);
+        var batch = new StringBuilder();
+
+        foreach (var line in script.Split('\n'))
+        {
+            if (!string.Equals(line.Trim(), "GO", StringComparison.Ordinal))
+            {
+                batch.AppendLine(line);
+                continue;
+            }
+
+            if (!string.IsNullOrWhiteSpace(batch.ToString()))
+            {
+                await connection.ExecuteAsync(batch.ToString());
+            }
+
+            batch.Clear();
+        }
+
+        if (!string.IsNullOrWhiteSpace(batch.ToString()))
+        {
+            await connection.ExecuteAsync(batch.ToString());
+        }
     }
 }
