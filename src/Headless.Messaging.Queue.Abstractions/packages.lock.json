@@ -128,12 +128,8 @@
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
-          "Headless.Reliability.Abstractions": "[1.0.0, )",
           "Headless.UnitOfWork.Abstractions": "[1.0.0, )"
         }
-      },
-      "headless.reliability.abstractions": {
-        "type": "Project"
       },
       "headless.unitofwork.abstractions": {
         "type": "Project",
