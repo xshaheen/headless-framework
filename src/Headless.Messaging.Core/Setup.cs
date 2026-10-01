@@ -73,46 +73,12 @@ public static class SetupMessaging
     {
         Argument.IsNotNull(configure);
 
-        // Found-or-created so ConfigureMessaging contributions and setup-time extensions share one registry instance.
-        var registry = GetOrAddConsumerRegistry(services);
         var options = new MessagingOptions();
-        var setup = new MessagingSetupBuilder(services, options, registry);
+        var setup = new MessagingSetupBuilder(services, options);
 
         configure(setup);
 
         return _RegisterCoreMessagingServices(services, setup);
-    }
-
-    internal static ConsumerRegistry GetOrAddConsumerRegistry(IServiceCollection services)
-    {
-        if (
-            services.FirstOrDefault(static d => d.ServiceType == typeof(ConsumerRegistry))?.ImplementationInstance
-            is ConsumerRegistry existing
-        )
-        {
-            return existing;
-        }
-
-        var registry = new ConsumerRegistry();
-        services.AddSingleton(registry);
-        services.TryAddSingleton<IConsumerRegistry>(registry);
-
-        // AddMessageContract lives in the abstractions, so a library declares its contracts without referencing this
-        // package. Declarations recorded before messaging first touched the collection apply here, and the observer
-        // applies later ones as they are made; either way they register eagerly, through the same sink as
-        // Message<T>, so they merge and conflict by its rules and a publish before startup already sees the name.
-        var sink = new MessageRegistrationSink(services, registry);
-        var earlier = services
-            .Select(static descriptor => descriptor.ImplementationInstance)
-            .OfType<MessageContractDeclaration>()
-            .ToList();
-        services.AddSingleton(new MessageContractDeclarationObserver(sink.RegisterContract));
-        foreach (var declaration in earlier)
-        {
-            sink.RegisterContract(declaration);
-        }
-
-        return registry;
     }
 
     private static MessagingBuilder _RegisterCoreMessagingServices(
@@ -143,7 +109,20 @@ public static class SetupMessaging
         // strict-tenancy guard (#238) still fails fast when TenantContextRequired = true and no caller / seam set a tenant.
         services.TryAddSingleton<ICurrentTenantAccessor>(AsyncLocalCurrentTenantAccessor.Instance);
         services.AddOrReplaceFallbackSingleton<ICurrentTenant, NullCurrentTenant, CurrentTenant>();
-        services.TryAddSingleton<IMessageMetadataRegistry, MessageMetadataRegistry>();
+        // The registry folds every declaration recorded in the collection the first time anything resolves it, so a
+        // contribution counts whether it came before or after this call, and a publish before startup already sees the
+        // declared names.
+        services.TryAddSingleton(static sp => BuildConsumerRegistry(sp));
+        services.TryAddSingleton<IConsumerRegistry>(sp => sp.GetRequiredService<ConsumerRegistry>());
+        services.TryAddSingleton<IMessageMetadataRegistry>(sp =>
+        {
+            var registry = sp.GetRequiredService<ConsumerRegistry>();
+            return new MessageMetadataRegistry(
+                registry.DeclaredRoutes,
+                registry,
+                sp.GetRequiredService<IOptions<MessagingOptions>>()
+            );
+        });
         services.TryAddSingleton<IConsumeContextAccessor, AsyncLocalConsumeContextAccessor>();
         services.TryAddSingleton<IMessagePublishRequestFactory, MessagePublishRequestFactory>();
         services.TryAddSingleton(sp =>
@@ -237,7 +216,7 @@ public static class SetupMessaging
 
         // Circuit breaker
         services.AddMetrics();
-        services.TryAddSingleton(setup.CircuitBreakerRegistry);
+        services.TryAddSingleton(sp => sp.GetRequiredService<ConsumerRegistry>().CircuitBreakers);
         services.TryAddSingleton<CircuitBreakerMetrics>();
         services.TryAddSingleton<ICircuitBreakerStateManager, CircuitBreakerStateManager>();
         services.TryAddSingleton<ICircuitBreakerMonitor>(sp => sp.GetRequiredService<ICircuitBreakerStateManager>());
@@ -275,7 +254,7 @@ public static class SetupMessaging
                 sp.GetService<MessagingTelemetry>(),
                 options.TransportPublishTimeout,
                 sp.GetRequiredService<IOptions<MessagingOptions>>().Value.DefaultDeliveryMode,
-                sp.GetServices<MessageRegistration>()
+                sp.GetRequiredService<ConsumerRegistry>().DeclaredRoutes
             );
         });
         // Singleton: these facades are autonomous, so they hold no scope-bound state and framework singletons
@@ -319,43 +298,39 @@ public static class SetupMessaging
     }
 
     /// <summary>
-    /// Drains the deferred <see cref="MessageRegistration"/> descriptors, in registration order, into the consumer
-    /// registry. Order-independent: the descriptors are resolved from the built provider, so a
-    /// <see cref="MessagingContributionExtensions.ConfigureMessaging"/> contribution counts whether it ran before or
-    /// after <see cref="AddHeadlessMessaging"/>. Idempotent — the
-    /// first caller (Bootstrapper startup or the consumer selector) wins; subsequent calls are no-ops.
+    /// Builds and freezes the host's consumer registry from everything recorded in the service collection: the message
+    /// declarations, in registration order, then every added generated module, the <c>Tune</c> calls, and the
+    /// <c>ConsumeOnly</c> entries. The container calls it once per provider, the first time anything resolves the
+    /// registry, so a <see cref="MessagingContributionExtensions.ConfigureMessaging"/> contribution counts whether it ran
+    /// before or after <see cref="AddHeadlessMessaging"/>.
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <strong>Threading invariant.</strong> The <c>HasCompletedMessageRegistrationDrain</c> guard provides
-    /// idempotency, not thread-safety: the guard read, the consumer-registration loop, and the completion mark are
-    /// not one atomic step. This is safe only because the two callers never drain concurrently. The bootstrapper
-    /// drains synchronously in <c>_CheckRequirement</c> before it starts any processor, so message dispatch — and
-    /// therefore the consumer-selector fallback — cannot run during the bootstrap drain; and concurrent
-    /// <c>BootstrapAsync</c> callers share a single in-flight task. The selector path only performs the first drain
-    /// in manual/test hosts that bypass the bootstrapper.
-    /// </para>
-    /// <para>
-    /// If a future change starts a processor (or otherwise dispatches a message) before this drain completes, two
-    /// threads can pass the guard and double-register a consumer, throwing a spurious "Duplicate consumer
-    /// registration". Keep the bootstrapper drain ahead of processor startup, or make the drain atomic.
-    /// </para>
-    /// </remarks>
-    internal static void DrainPendingMessageRegistrations(IServiceProvider provider, MessagingOptions options)
-    {
-        var registry = provider.GetRequiredService<ConsumerRegistry>();
+    internal static ConsumerRegistry BuildConsumerRegistry(IServiceProvider provider) =>
+        BuildConsumerRegistry(provider, new ConsumerRegistry());
 
-        if (registry.HasCompletedMessageRegistrationDrain)
+    /// <summary>
+    /// Folds the host's registrations into <paramref name="registry"/>, which may already hold consumers that no
+    /// declaration can express, such as a wildcard subscription, then freezes it.
+    /// </summary>
+    internal static ConsumerRegistry BuildConsumerRegistry(IServiceProvider provider, ConsumerRegistry registry)
+    {
+        var options = provider.GetRequiredService<IOptions<MessagingOptions>>().Value;
+        var declarations = MessageDeclarationFold.Create(provider.GetServices<MessageDeclaration>());
+
+        foreach (var mapping in declarations.NameMappings)
         {
-            return;
+            registry.RegisterMessageName(mapping.MessageType, mapping.Name);
         }
 
-        // Message contracts record MessageRegistration descriptors from the AddHeadlessMessaging callback and every
-        // ConfigureMessaging contribution, which the container returns in registration order. Generated modules register
-        // last, so their consumers read the contract versions those contracts declare.
-        var registrations = provider.GetServices<MessageRegistration>().ToList();
+        foreach (var route in declarations.Routes)
+        {
+            registry.RegisterMessageName(route.MessageType, route.Lane, route.MessageName!);
+        }
+
+        // Generated modules register after the contracts, so their consumers read the contract versions those contracts
+        // declare.
+        var registrations = new List<MessageRegistration>(declarations.Routes);
         registrations.AddRange(
-            CreateModuleRegistrations(provider.GetServices<MessagingModuleContribution>(), registrations)
+            CreateModuleRegistrations(provider.GetServices<MessagingModuleContribution>(), declarations.Routes)
         );
 
         var controls = new MessagingHostControls(
@@ -364,12 +339,10 @@ public static class SetupMessaging
             provider.GetService<IConfiguration>()
         );
 
-        // The circuit-breaker registry is only registered once AddHeadlessMessaging's core wiring has run, so it is
-        // resolved only when something was captured that may carry a circuit-breaker override.
-        var circuitBreakerRegistry =
-            registrations.Count == 0 ? null : provider.GetRequiredService<ConsumerCircuitBreakerRegistry>();
+        var consumeFilter = _RegisterConsumers(registrations, options, registry, controls);
+        registry.Complete(declarations, consumeFilter);
 
-        DiscoverMessageRegistrations(registrations, options, registry, circuitBreakerRegistry, controls);
+        return registry;
     }
 
     /// <summary>
@@ -431,23 +404,17 @@ public static class SetupMessaging
     }
 
     /// <summary>
-    /// Builds the host's consumers from the drained registrations, then, in order: detects identity, Queue, and route
+    /// Registers the host's consumers from the folded registrations, then, in order: detects identity, Queue, and route
     /// conflicts; applies <c>Tune</c> calls and <c>Headless:Messaging:Consumers:{identity}</c> configuration; and
-    /// resolves the <c>ConsumeOnly</c> filter.
+    /// resolves the <c>ConsumeOnly</c> filter it returns.
     /// </summary>
-    internal static void DiscoverMessageRegistrations(
+    private static MessagingConsumeFilter _RegisterConsumers(
         IReadOnlyCollection<MessageRegistration> registrations,
         MessagingOptions options,
         ConsumerRegistry registry,
-        ConsumerCircuitBreakerRegistry? circuitBreakerRegistry,
         MessagingHostControls controls
     )
     {
-        if (registry.HasCompletedMessageRegistrationDrain)
-        {
-            return;
-        }
-
         var registeredKeys = new Dictionary<ConsumerRegistrationKey, ConsumerRegistrationSettings>();
         var consumers = new List<ConsumerMetadata>();
 
@@ -516,12 +483,11 @@ public static class SetupMessaging
             // A Bus identity covering several messages has one entry per message but one circuit, so its override is
             // registered once.
             if (
-                circuitBreakerRegistry is not null
-                && consumer.CircuitBreakerOverride is { } circuitBreaker
+                consumer.CircuitBreakerOverride is { } circuitBreaker
                 && circuitBreakerKeys.Add(CircuitBreakerKeys.For(consumer))
             )
             {
-                circuitBreakerRegistry.Register(CircuitBreakerKeys.For(consumer), circuitBreaker);
+                registry.CircuitBreakers.Register(CircuitBreakerKeys.For(consumer), circuitBreaker);
             }
         }
 
@@ -533,9 +499,7 @@ public static class SetupMessaging
         }
 
         // Resolved against every registered identity, so a filter never makes a message unpublishable.
-        var consumeFilter = MessagingConsumeFilter.Create(controls.ConsumeOnly, tuned);
-
-        registry.MarkMessageRegistrationDrainCompleted(consumeFilter);
+        return MessagingConsumeFilter.Create(controls.ConsumeOnly, tuned);
     }
 
     private readonly record struct ConsumerRegistrationKey(string MessageName, MessageLane Lane, Type ConsumerType)

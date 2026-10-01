@@ -60,7 +60,7 @@ public sealed class EveryInstanceDeliveryTests : TestBase
         factory
             .SubscribedClients(
                 provider
-                    .GetDrainedConsumerRegistry()
+                    .GetRequiredService<ConsumerRegistry>()
                     .GetAll()
                     .Single(x => x.ConsumerType == typeof(StockProjection))
                     .SubscriptionName

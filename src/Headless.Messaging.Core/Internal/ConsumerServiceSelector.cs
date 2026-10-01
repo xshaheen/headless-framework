@@ -26,10 +26,6 @@ internal sealed class ConsumerServiceSelector(IServiceProvider serviceProvider) 
         List<RegexExecuteDescriptor<ConsumerExecutorDescriptor>>
     > _cacheList = new();
 
-    private readonly MessagingOptions _messagingOptions = serviceProvider
-        .GetRequiredService<IOptions<MessagingOptions>>()
-        .Value;
-
     private readonly ILogger<ConsumerServiceSelector> _logger = serviceProvider.GetRequiredService<
         ILogger<ConsumerServiceSelector>
     >();
@@ -73,7 +69,7 @@ internal sealed class ConsumerServiceSelector(IServiceProvider serviceProvider) 
         return _MatchWildcardUsingRegex(key, candidates);
     }
 
-    private List<ConsumerExecutorDescriptor> _FindConsumersFromInterfaceTypes(IServiceProvider provider)
+    private static List<ConsumerExecutorDescriptor> _FindConsumersFromInterfaceTypes(IServiceProvider provider)
     {
         // Get registered consumers from the ConsumerRegistry
         var registry = provider.GetService<ConsumerRegistry>();
@@ -83,11 +79,6 @@ internal sealed class ConsumerServiceSelector(IServiceProvider serviceProvider) 
         {
             return [];
         }
-
-        // Defensive fallback: in a hosted app the bootstrapper has already drained synchronously (before any
-        // processor started), so this is a no-op. It performs the first drain only in manual/test hosts that
-        // bypass the bootstrapper. See DrainPendingMessageRegistrations for the threading invariant it relies on.
-        _DrainPendingMessageRegistrations();
 
         var results = new List<ConsumerExecutorDescriptor>();
         var metadata = registry.GetAll();
@@ -122,11 +113,6 @@ internal sealed class ConsumerServiceSelector(IServiceProvider serviceProvider) 
         }
 
         return results;
-    }
-
-    private void _DrainPendingMessageRegistrations()
-    {
-        SetupMessaging.DrainPendingMessageRegistrations(serviceProvider, _messagingOptions);
     }
 
     private static ConsumerExecutorDescriptor? _MatchUsingName(

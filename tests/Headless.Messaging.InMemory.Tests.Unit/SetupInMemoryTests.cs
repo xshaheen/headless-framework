@@ -153,7 +153,7 @@ public sealed class SetupInMemoryTests : TestBase
     public void should_return_setup_for_method_chaining()
     {
         // given
-        var setup = new MessagingSetupBuilder(new ServiceCollection(), new MessagingOptions(), new ConsumerRegistry());
+        var setup = new MessagingSetupBuilder(new ServiceCollection(), new MessagingOptions());
 
         // when
         var result = setup.UseInMemory();

@@ -547,11 +547,14 @@ public sealed class MessagingOptionsValidationTests : TestBase
     public void should_reject_duplicate_topic_mapping_with_different_topic()
     {
         // given
-        var options = _CreateBuilder();
+        var services = new ServiceCollection().AddOptions();
+        var options = new MessagingSetupBuilder(services, new MessagingOptions());
         options.WithMessageNameMapping<TestMessage>("first.messageName");
+        options.WithMessageNameMapping<TestMessage>("second.messageName");
+        using var provider = services.BuildServiceProvider();
 
-        // when
-        var act = () => options.WithMessageNameMapping<TestMessage>("second.messageName");
+        // when - the mappings are recorded, and the registry build folds them
+        var act = () => SetupMessaging.BuildConsumerRegistry(provider);
 
         // then
         act.Should()
@@ -665,9 +668,8 @@ public sealed class MessagingOptionsValidationTests : TestBase
     private static MessagingSetupBuilder _CreateBuilder()
     {
         var services = new ServiceCollection();
-        var registry = new ConsumerRegistry();
         var options = new MessagingOptions();
-        return new MessagingSetupBuilder(services, options, registry);
+        return new MessagingSetupBuilder(services, options);
     }
 
     private sealed class TestMessage;

@@ -21,12 +21,16 @@ public interface IMessagingBuilder
     /// <typeparam name="TMessage">The message type.</typeparam>
     /// <param name="messageName">The message name to publish to.</param>
     /// <returns>The current <see cref="IMessagingBuilder"/> instance for method chaining.</returns>
-    /// <exception cref="ArgumentNullException">Thrown if <paramref name="messageName"/> is null or whitespace.</exception>
-    /// <exception cref="InvalidOperationException">Thrown if a different message name is already registered for <typeparamref name="TMessage"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown if <paramref name="messageName"/> is not a valid message name.</exception>
     /// <remarks>
     /// <para>
     /// Message-name mappings enable type-safe publishing by associating message types with their destination message names.
     /// This eliminates magic strings and enables compile-time verification of message routing.
+    /// </para>
+    /// <para>
+    /// The mapping is folded with the host's other message declarations when messaging builds its consumer registry, at
+    /// startup or at an earlier publish; a second mapping of <typeparamref name="TMessage"/> to a different name fails
+    /// there.
     /// </para>
     /// <para>
     /// <strong>Example:</strong>

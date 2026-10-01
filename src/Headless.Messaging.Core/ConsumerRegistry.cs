@@ -1,7 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Configuration;
+using Headless.Messaging.Registration;
 using Headless.Messaging.Runtime;
 
 namespace Headless.Messaging;
@@ -16,9 +18,10 @@ namespace Headless.Messaging;
 /// and configure message subscriptions. The registry is registered as a singleton in DI.
 /// </para>
 /// <para>
-/// Thread-safety: Registration is expected during configuration phase (single-threaded).
-/// Once <see cref="GetAll"/> is called, the registry is frozen and subsequent registrations throw.
-/// This freeze-on-first-read pattern ensures zero-allocation reads at runtime.
+/// One registry exists per service provider. The container builds it on first resolution, at startup or at an earlier
+/// publish, by folding every message declaration, generated module, tuning, and <c>ConsumeOnly</c> entry recorded in the
+/// service collection, then freezes it, so every reader sees the same names and consumers. Registration methods exist
+/// for that fold; once <see cref="GetAll"/> is called, the registry is frozen and subsequent registrations throw.
 /// </para>
 /// </remarks>
 internal sealed class ConsumerRegistry : IConsumerRegistry
@@ -27,7 +30,6 @@ internal sealed class ConsumerRegistry : IConsumerRegistry
     private readonly Dictionary<Type, string> _messageNameMappings = [];
     private readonly Dictionary<(Type MessageType, MessageLane Lane), string> _laneMessageNameMappings = [];
     private List<ConsumerMetadata>? _consumers = [];
-    private bool MessageRegistrationsDrained { get; set; }
 
     // volatile is required by the double-checked locking in GetAll: the unsynchronized first
     // read must observe a fully-published reference (not a partially-initialized AsReadOnly
@@ -340,37 +342,40 @@ internal sealed class ConsumerRegistry : IConsumerRegistry
         }
     }
 
-    internal bool HasCompletedMessageRegistrationDrain
-    {
-        get
-        {
-            lock (_lock)
-            {
-                return MessageRegistrationsDrained;
-            }
-        }
-    }
-
     /// <summary>
-    /// The consumers this host starts clients for, resolved from <c>ConsumeOnly</c> when the registrations drain.
+    /// The consumers this host starts clients for, resolved from <c>ConsumeOnly</c> when the registry is built.
     /// Filtered-out consumers stay registered, so the host can still publish their messages.
     /// </summary>
     internal MessagingConsumeFilter ConsumeFilter { get; private set; } = MessagingConsumeFilter.All;
 
-    internal void MarkMessageRegistrationDrainCompleted(MessagingConsumeFilter? consumeFilter = null)
+    /// <summary>One contract per declared message type, folded from every declaration of the host.</summary>
+    internal IReadOnlyList<MessageContract> Contracts { get; private set; } = [];
+
+    /// <summary>The route each declared contract contributes to each lane.</summary>
+    internal IReadOnlyList<MessageRegistration> DeclaredRoutes { get; private set; } = [];
+
+    /// <summary>The circuit-breaker overrides that tuning set on this host's consumers.</summary>
+    internal ConsumerCircuitBreakerRegistry CircuitBreakers { get; } = new();
+
+    /// <summary>Records what the host's declarations folded into, then freezes the registry.</summary>
+    internal void Complete(MessageDeclarationFold declarations, MessagingConsumeFilter consumeFilter)
     {
+        Argument.IsNotNull(declarations);
+        Argument.IsNotNull(consumeFilter);
+
         lock (_lock)
         {
             if (_frozen != null)
             {
-                throw new InvalidOperationException(
-                    "Cannot drain message registrations after the registry has been frozen."
-                );
+                throw new InvalidOperationException("Cannot complete the consumer registry after it has been frozen.");
             }
 
-            ConsumeFilter = consumeFilter ?? MessagingConsumeFilter.All;
-            MessageRegistrationsDrained = true;
+            Contracts = declarations.Contracts;
+            DeclaredRoutes = declarations.Routes;
+            ConsumeFilter = consumeFilter;
         }
+
+        _ = GetAll();
     }
 
     private static ConsumerMetadata? _FindDuplicateSubscriptionConflict(

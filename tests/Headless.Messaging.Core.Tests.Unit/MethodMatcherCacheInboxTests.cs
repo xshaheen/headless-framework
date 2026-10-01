@@ -57,10 +57,12 @@ public sealed class MethodMatcherCacheInboxTests : TestBase
         services.ConfigureMessaging(messaging => messaging.Message<SelectorTestMessage>("orders"));
         services.AddHeadlessMessaging(setup => setup.AddConsumer<BusInboxConsumer>());
 
-        // A wildcard subscription has no message contract, so it is registered straight into the registry.
-        SetupMessaging
-            .GetOrAddConsumerRegistry(services)
-            .Register(
+        // A wildcard subscription has no message contract, so it is seeded into the registry before the host's
+        // registrations fold into it.
+        services.AddSingleton(sp =>
+        {
+            var registry = new ConsumerRegistry();
+            registry.Register(
                 new ConsumerMetadata(
                     typeof(AnotherSelectorTestMessage),
                     typeof(AnotherSelectorConsumer),
@@ -71,6 +73,8 @@ public sealed class MethodMatcherCacheInboxTests : TestBase
                     "1"
                 )
             );
+            return SetupMessaging.BuildConsumerRegistry(sp, registry);
+        });
         using var provider = services.BuildServiceProvider();
         var cache = provider.GetRequiredService<MethodMatcherCache>();
 

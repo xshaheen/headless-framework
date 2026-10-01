@@ -30,7 +30,7 @@ public sealed class ConsumerTuningProviderConfigTests : TestBase
 
         // when
         using var provider = services.BuildServiceProvider();
-        var metadata = provider.GetDrainedConsumerRegistry().GetAll().Single();
+        var metadata = provider.GetRequiredService<ConsumerRegistry>().GetAll().Single();
 
         // then
         metadata.ProviderConfigs[typeof(FakeProviderConfig)].Should().Be(config);
@@ -61,7 +61,7 @@ public sealed class ConsumerTuningProviderConfigTests : TestBase
 
         // when
         using var provider = services.BuildServiceProvider();
-        var metadata = provider.GetDrainedConsumerRegistry().GetAll().Single();
+        var metadata = provider.GetRequiredService<ConsumerRegistry>().GetAll().Single();
 
         // then
         metadata.ProviderConfigs.Values.Should().BeEquivalentTo<object>([kept, other]);

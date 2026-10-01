@@ -16,12 +16,12 @@ namespace Headless.Messaging.Registration;
 [PublicAPI]
 public sealed class MessagingContributionBuilder
 {
-    private readonly MessageRegistrationSink _sink;
+    private readonly IServiceCollection _services;
     private readonly List<MessageContractBuilder> _contracts = [];
 
-    internal MessagingContributionBuilder(IServiceCollection services, ConsumerRegistry registry)
+    internal MessagingContributionBuilder(IServiceCollection services)
     {
-        _sink = new MessageRegistrationSink(services, registry);
+        _services = services;
     }
 
     /// <summary>
@@ -33,8 +33,9 @@ public sealed class MessagingContributionBuilder
     /// <remarks>
     /// The message type needs no attribute and no reference to Headless, so a contracts package stays framework-free.
     /// Several modules may declare the same contract: identical declarations merge, and declarations that differ in name,
-    /// version, correlation selector, or lane settings fail naming both. The declaration is recorded when the
-    /// <c>ConfigureMessaging</c> callback returns, so configure it inside that callback.
+    /// version, correlation selector, or lane settings fail naming both when messaging builds the host's consumer
+    /// registry. The declaration is recorded when the <c>ConfigureMessaging</c> callback returns, so configure it inside
+    /// that callback.
     /// </remarks>
     /// <typeparam name="TMessage">The message type.</typeparam>
     /// <param name="name">The stable logical message name, for example <c>orders.placed</c>.</param>
@@ -67,7 +68,7 @@ public sealed class MessagingContributionBuilder
     public MessagingContributionBuilder AddModule<TModule>()
         where TModule : IMessagingModule
     {
-        _sink.Services.AddMessagingModuleContribution<TModule>();
+        _services.AddMessagingModuleContribution<TModule>();
         return this;
     }
 
@@ -86,16 +87,19 @@ public sealed class MessagingContributionBuilder
     /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
     public MessagingContributionBuilder Tune(string identity, [InstantHandle] Action<ConsumerTuningBuilder> configure)
     {
-        _sink.Services.AddConsumerTuning(identity, configure);
+        _services.AddConsumerTuning(identity, configure);
         return this;
     }
 
-    /// <summary>Records every contract this contribution declared, in declaration order.</summary>
+    /// <summary>
+    /// Records every contract this contribution declared, in declaration order. Messaging merges and checks them
+    /// against every other declaration when the host's consumer registry freezes.
+    /// </summary>
     internal void Complete()
     {
         foreach (var contract in _contracts)
         {
-            _sink.RegisterContract(contract.Complete());
+            _services.AddSingleton<MessageDeclaration>(contract.Complete());
         }
 
         _contracts.Clear();

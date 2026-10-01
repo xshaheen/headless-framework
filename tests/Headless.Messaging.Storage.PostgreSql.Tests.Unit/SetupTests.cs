@@ -127,7 +127,7 @@ public sealed class SetupTests : TestBase
     [Fact]
     public void should_throw_when_postgresql_configure_delegate_is_null()
     {
-        var setup = new MessagingSetupBuilder(new ServiceCollection(), new MessagingOptions(), new ConsumerRegistry());
+        var setup = new MessagingSetupBuilder(new ServiceCollection(), new MessagingOptions());
 
         var act = () => setup.UsePostgreSql((Action<PostgreSqlOptions>)null!);
 

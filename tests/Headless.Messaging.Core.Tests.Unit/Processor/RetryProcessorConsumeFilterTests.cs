@@ -216,7 +216,7 @@ public sealed class RetryProcessorConsumeFilterTests : TestBase
         }
 
         var provider = services.BuildServiceProvider();
-        var registry = provider.GetDrainedConsumerRegistry();
+        var registry = provider.GetRequiredService<ConsumerRegistry>();
         var dispatcher = Substitute.For<IDispatcher>();
         var processor = new MessageNeedToRetryProcessor(
             Options.Create(new MessagingOptions()),

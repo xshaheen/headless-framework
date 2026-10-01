@@ -274,8 +274,9 @@ internal sealed record MessageContractLaneSettings(
 }
 
 /// <summary>
-/// One frozen <c>Message&lt;T&gt;(name, version)</c> declaration, recorded once per message type in the service
-/// collection. It applies to both lanes, and two declarations for one type merge only when they are identical.
+/// One frozen <c>Message&lt;T&gt;(name, version)</c> declaration, recorded in the service collection as each
+/// contribution completes. It applies to both lanes, and two declarations for one type merge only when they are
+/// identical.
 /// </summary>
 /// <param name="MessageType">The message type.</param>
 /// <param name="Name">The logical message name both lanes resolve the type to.</param>
@@ -295,7 +296,7 @@ internal sealed record MessageContract(
     Func<object, string?>? CorrelationSelector,
     MessageContractLaneSettings Bus,
     MessageContractLaneSettings Queue
-)
+) : MessageDeclaration(MessageType)
 {
     /// <summary>Whether two declarations describe the same contract and may merge.</summary>
     public bool IsSameDeclarationAs(MessageContract other)

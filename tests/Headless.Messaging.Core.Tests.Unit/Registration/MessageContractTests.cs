@@ -28,7 +28,7 @@ public sealed class MessageContractTests : TestBase
         using var provider = services.BuildServiceProvider();
 
         // when
-        var consumers = provider.GetDrainedConsumerRegistry().GetAll();
+        var consumers = provider.GetRequiredService<ConsumerRegistry>().GetAll();
         var routes = provider.GetRequiredService<IMessageMetadataRegistry>().GetAll();
 
         // then
@@ -61,7 +61,7 @@ public sealed class MessageContractTests : TestBase
             .Should()
             .BeEquivalentTo([(MessageLane.Bus, _OrderPlacedName, "2"), (MessageLane.Queue, _OrderPlacedName, "2")]);
         routes.Should().OnlyContain(route => route.CorrelationSelector!(new OrderPlaced("order-7")) == "order-7");
-        services.Count(descriptor => descriptor.ImplementationInstance is MessageContract).Should().Be(1);
+        provider.GetRequiredService<ConsumerRegistry>().Contracts.Should().ContainSingle();
     }
 
     [Fact]
@@ -70,13 +70,15 @@ public sealed class MessageContractTests : TestBase
         // given
         var services = new ServiceCollection();
         services.ConfigureMessaging(messaging => messaging.Message<OrderPlaced>(_OrderPlacedName, "1"));
+        services.ConfigureMessaging(messaging => messaging.Message<OrderPlaced>("orders.order-placed", "1"));
+        _AddMessagingHost(services);
+        using var provider = services.BuildServiceProvider();
 
         // when
-        var declareAgain = () =>
-            services.ConfigureMessaging(messaging => messaging.Message<OrderPlaced>("orders.order-placed", "1"));
+        var build = () => provider.GetRequiredService<ConsumerRegistry>();
 
         // then
-        declareAgain
+        build
             .Should()
             .Throw<InvalidOperationException>()
             .WithMessage(
@@ -90,13 +92,15 @@ public sealed class MessageContractTests : TestBase
         // given
         var services = new ServiceCollection();
         services.ConfigureMessaging(messaging => messaging.Message<OrderPlaced>(_OrderPlacedName, "1"));
+        services.ConfigureMessaging(messaging => messaging.Message<OrderPlaced>(_OrderPlacedName, "2"));
+        _AddMessagingHost(services);
+        using var provider = services.BuildServiceProvider();
 
         // when
-        var declareAgain = () =>
-            services.ConfigureMessaging(messaging => messaging.Message<OrderPlaced>(_OrderPlacedName, "2"));
+        var build = () => provider.GetRequiredService<ConsumerRegistry>();
 
         // then
-        declareAgain
+        build
             .Should()
             .Throw<InvalidOperationException>()
             .WithMessage($"*conflicting*\"{_OrderPlacedName}\", \"1\"*\"{_OrderPlacedName}\", \"2\"*");
@@ -108,17 +112,19 @@ public sealed class MessageContractTests : TestBase
         // given
         var services = new ServiceCollection();
         services.ConfigureMessaging(messaging => messaging.Message<OrderPlaced>(_OrderPlacedName, "1"));
+        services.ConfigureMessaging(messaging =>
+            messaging
+                .Message<OrderPlaced>(_OrderPlacedName, "1")
+                .OnBus(bus => bus.WithDeliveryMode(DeliveryMode.Direct))
+        );
+        _AddMessagingHost(services);
+        using var provider = services.BuildServiceProvider();
 
         // when
-        var declareAgain = () =>
-            services.ConfigureMessaging(messaging =>
-                messaging
-                    .Message<OrderPlaced>(_OrderPlacedName, "1")
-                    .OnBus(bus => bus.WithDeliveryMode(DeliveryMode.Direct))
-            );
+        var build = () => provider.GetRequiredService<ConsumerRegistry>();
 
         // then
-        declareAgain
+        build
             .Should()
             .Throw<InvalidOperationException>()
             .WithMessage("*conflicting*Bus: defaults*Bus: delivery mode Direct*");
@@ -160,12 +166,16 @@ public sealed class MessageContractTests : TestBase
                 .Message<OrderPlaced>(_OrderPlacedName, "1")
                 .OnQueue(queue => _SetProviderConfig(queue, new PartitionSetting("customer")));
 
+        services.ConfigureMessaging(declare);
+        services.ConfigureMessaging(declare);
+        _AddMessagingHost(services);
+        using var provider = services.BuildServiceProvider();
+
         // when
-        services.ConfigureMessaging(declare);
-        services.ConfigureMessaging(declare);
+        var contracts = provider.GetRequiredService<ConsumerRegistry>().Contracts;
 
         // then
-        services.Count(descriptor => descriptor.ImplementationInstance is MessageContract).Should().Be(1);
+        contracts.Should().ContainSingle();
     }
 
     [Fact]
@@ -178,17 +188,19 @@ public sealed class MessageContractTests : TestBase
                 .Message<OrderPlaced>(_OrderPlacedName, "1")
                 .OnQueue(queue => _SetProviderConfig(queue, new PartitionSetting("customer")))
         );
+        services.ConfigureMessaging(messaging =>
+            messaging
+                .Message<OrderPlaced>(_OrderPlacedName, "1")
+                .OnQueue(queue => _SetProviderConfig(queue, new PartitionSetting("region")))
+        );
+        _AddMessagingHost(services);
+        using var provider = services.BuildServiceProvider();
 
         // when
-        var declareAgain = () =>
-            services.ConfigureMessaging(messaging =>
-                messaging
-                    .Message<OrderPlaced>(_OrderPlacedName, "1")
-                    .OnQueue(queue => _SetProviderConfig(queue, new PartitionSetting("region")))
-            );
+        var build = () => provider.GetRequiredService<ConsumerRegistry>();
 
         // then
-        declareAgain
+        build
             .Should()
             .Throw<InvalidOperationException>()
             .WithMessage($"*conflicting*Queue: provider settings {nameof(PartitionSetting)}*");
@@ -215,7 +227,7 @@ public sealed class MessageContractTests : TestBase
             .Select(route => (route.Route.Lane, route.RequiresRoutingAffinity))
             .Should()
             .BeEquivalentTo([(MessageLane.Bus, false), (MessageLane.Queue, true)]);
-        _DeliveryModes(services)
+        _DeliveryModes(provider)
             .Should()
             .BeEquivalentTo([(MessageLane.Bus, (DeliveryMode?)null), (MessageLane.Queue, DeliveryMode.Direct)]);
     }
@@ -241,7 +253,7 @@ public sealed class MessageContractTests : TestBase
             .Select(route => (route.Route.Lane, route.RequiresRoutingAffinity))
             .Should()
             .BeEquivalentTo([(MessageLane.Bus, true), (MessageLane.Queue, false)]);
-        _DeliveryModes(services)
+        _DeliveryModes(provider)
             .Should()
             .BeEquivalentTo([(MessageLane.Bus, DeliveryMode.Direct), (MessageLane.Queue, (DeliveryMode?)null)]);
     }
@@ -280,10 +292,10 @@ public sealed class MessageContractTests : TestBase
     }
 
     [Fact]
-    public void should_resolve_the_contract_name_for_a_publish_before_the_consumer_drain()
+    public void should_resolve_the_contract_name_for_a_publish_before_startup()
     {
-        // given — a publish that runs before startup drains the consumers, such as one from a hosted service's
-        // StartAsync, must already see the declared name rather than cache the convention name.
+        // given — a publish that runs before startup, such as one from a hosted service's StartAsync, must already see
+        // the declared name rather than cache the convention name.
         var services = new ServiceCollection();
         services.ConfigureMessaging(messaging => messaging.Message<OrderPlaced>(_OrderPlacedName));
         _AddMessagingHost(services);
@@ -294,7 +306,6 @@ public sealed class MessageContractTests : TestBase
 
         // then
         prepared.MessageName.Should().Be(_OrderPlacedName);
-        provider.GetRequiredService<ConsumerRegistry>().HasCompletedMessageRegistrationDrain.Should().BeFalse();
     }
 
     [Theory]
@@ -330,14 +341,11 @@ public sealed class MessageContractTests : TestBase
             .OnQueue(static queue => queue.RequireRoutingAffinity());
     }
 
-    private static IEnumerable<(MessageLane Lane, DeliveryMode? DeliveryMode)> _DeliveryModes(
-        IServiceCollection services
-    )
+    private static IEnumerable<(MessageLane Lane, DeliveryMode? DeliveryMode)> _DeliveryModes(IServiceProvider provider)
     {
-        return services
-            .Select(static descriptor => descriptor.ImplementationInstance)
-            .OfType<MessageRegistration>()
-            .Where(static registration => registration.MessageType == typeof(OrderPlaced))
+        return provider
+            .GetRequiredService<ConsumerRegistry>()
+            .DeclaredRoutes.Where(static registration => registration.MessageType == typeof(OrderPlaced))
             .Select(static registration => (registration.Lane, registration.DeliveryMode));
     }
 
