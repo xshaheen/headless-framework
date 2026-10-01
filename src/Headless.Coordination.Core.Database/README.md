@@ -1,10 +1,10 @@
 # Headless.Coordination.Core.Database
 
-Provides the shared relational substrate used by native SQL coordination providers.
+Provides the one relational membership store the PostgreSQL and SQL Server coordination providers share.
 
 ## Why use this package
 
-Provides relational membership operation hooks so PostgreSQL and SQL Server providers share behavior without sharing physical table names.
+The membership store is written once against the Headless SQL dialect kit, so PostgreSQL and SQL Server behave the same while each keeps its own naming convention and DDL.
 
 ## Install
 

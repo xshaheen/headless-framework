@@ -1,14 +1,15 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using FluentValidation;
 using Headless.Checks;
-using Headless.Constants;
 using Headless.Coordination.PostgreSql;
 using Headless.Sql;
+using Headless.Sql.PostgreSql;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Options;
+using Extension = Headless.Coordination.RelationalCoordinationProviderExtension<
+    Headless.Coordination.PostgreSql.PostgreSqlCoordinationOptions,
+    Headless.Coordination.PostgreSql.PostgreSqlCoordinationOptionsValidator,
+    Headless.Coordination.PostgreSql.PostgreSqlCoordinationStorageOptionsValidator
+>;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Coordination;
@@ -62,7 +63,7 @@ public static class SetupPostgreSqlCoordination
         {
             Argument.IsNotNull(configuration);
 
-            setup.RegisterExtension(new PostgreSqlCoordinationOptionsExtension(configuration));
+            setup.RegisterExtension(new Extension(_Provider, configuration));
 
             return setup;
         }
@@ -77,7 +78,7 @@ public static class SetupPostgreSqlCoordination
         {
             Argument.IsNotNull(configure);
 
-            setup.RegisterExtension(new PostgreSqlCoordinationOptionsExtension(configure));
+            setup.RegisterExtension(new Extension(_Provider, configure));
 
             return setup;
         }
@@ -95,53 +96,15 @@ public static class SetupPostgreSqlCoordination
         {
             Argument.IsNotNull(configure);
 
-            setup.RegisterExtension(new PostgreSqlCoordinationOptionsExtension(configure));
+            setup.RegisterExtension(new Extension(_Provider, configure));
 
             return setup;
         }
     }
 
-    private sealed class PostgreSqlCoordinationOptionsExtension
-        : CoordinationProviderOptionsExtensionBase<
-            PostgreSqlCoordinationOptions,
-            PostgreSqlCoordinationOptionsValidator
-        >
-    {
-        public PostgreSqlCoordinationOptionsExtension(IConfiguration configuration)
-            : base(configuration) { }
-
-        public PostgreSqlCoordinationOptionsExtension(Action<PostgreSqlCoordinationOptions> configure)
-            : base(configure) { }
-
-        public PostgreSqlCoordinationOptionsExtension(Action<PostgreSqlCoordinationOptions, IServiceProvider> configure)
-            : base(configure) { }
-
-        protected override void AddProviderServices(IServiceCollection services)
-        {
-            services.AddCoordinationCore<PostgreSqlMembershipStore>();
-            _AddPostgreSqlCoordinationProviderCore(services);
-        }
-    }
-
-    private static void _AddPostgreSqlCoordinationProviderCore(IServiceCollection services)
-    {
-        services.AddOptions<CoordinationStorageOptions, PostgreSqlCoordinationStorageOptionsValidator>();
-        services.TryAddSingleton<IMembershipStore>(static sp => sp.GetRequiredService<PostgreSqlMembershipStore>());
-        // The membership schema is applied by the Headless schema runner from the contribution below; the
-        // IMembershipStorageInitializer marker this replaced had no consumer beyond the registration itself.
-        services.AddHeadlessSchemaContribution(sp =>
-            PostgreSqlMembershipSchemaContribution.Create(
-                sp.GetRequiredService<IOptions<PostgreSqlCoordinationOptions>>().Value,
-                sp.GetRequiredService<IOptions<CoordinationStorageOptions>>().Value
-            )
-        );
-    }
-
-    private sealed class PostgreSqlCoordinationStorageOptionsValidator : AbstractValidator<CoordinationStorageOptions>
-    {
-        public PostgreSqlCoordinationStorageOptionsValidator()
-        {
-            RuleFor(x => x.Schema).IsValidIdentifierFor(StorageProvider.PostgreSql);
-        }
-    }
+    private static readonly RelationalCoordinationProvider<PostgreSqlCoordinationOptions> _Provider = new(
+        PostgreSqlDialect.Instance,
+        static options => options.CreateConnection(),
+        PostgreSqlMembershipSchemaContribution.Create
+    );
 }
