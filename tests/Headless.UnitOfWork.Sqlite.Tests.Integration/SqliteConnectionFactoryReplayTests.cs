@@ -27,16 +27,14 @@ public sealed class SqliteConnectionFactoryReplayTests(SqliteUnitOfWorkFixture f
         var factory = provider.GetRequiredService<IUnitOfWorkFactory>();
         var impatient = new SqliteConnectionStringBuilder(fixture.ConnectionString) { DefaultTimeout = 1 }.ToString();
         var connections = 0;
-        var blocker = new SqliteConnection(fixture.ConnectionString);
+        await using var blocker = new SqliteConnection(fixture.ConnectionString);
         await blocker.OpenAsync(AbortToken);
-        var holding = (SqliteTransaction)await blocker.BeginTransactionAsync(AbortToken);
+        await using var holding = (SqliteTransaction)await blocker.BeginTransactionAsync(AbortToken);
         var release = Task.Run(
             async () =>
             {
                 await Task.Delay(TimeSpan.FromMilliseconds(1500), AbortToken);
                 await holding.RollbackAsync(AbortToken);
-                await holding.DisposeAsync();
-                await blocker.DisposeAsync();
             },
             AbortToken
         );

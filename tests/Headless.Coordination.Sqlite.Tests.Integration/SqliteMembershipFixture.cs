@@ -38,8 +38,8 @@ public sealed class SqliteMembershipFixture
 
     public async Task ShiftAsync(string clusterName, string nodeId, TimeSpan delta, CancellationToken cancellationToken)
     {
-        string table(string name) => _Dialect.Qualify(HeadlessStorageDefaults.Schema, name);
-        string shifted(string column) => _Dialect.ShiftByDuration(column, "delta");
+        static string table(string name) => _Dialect.Qualify(HeadlessStorageDefaults.Schema, name);
+        static string shifted(string column) => _Dialect.ShiftByDuration(column, "delta");
 
         await using var connection = await _OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
@@ -62,7 +62,7 @@ public sealed class SqliteMembershipFixture
 
     public async Task<StoredMembership> ReadRowsAsync(string clusterName, CancellationToken cancellationToken)
     {
-        string table(string name) => _Dialect.Qualify(HeadlessStorageDefaults.Schema, name);
+        static string table(string name) => _Dialect.Qualify(HeadlessStorageDefaults.Schema, name);
 
         await using var connection = await _OpenAsync(cancellationToken);
         await using var command = connection.CreateCommand();
