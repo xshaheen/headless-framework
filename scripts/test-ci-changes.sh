@@ -36,6 +36,9 @@ add_path README.md
 add_path 'docs/guide with spaces.md'
 assert_checks 'docs only' pull_request "$base" HEAD false false false
 before=$(git rev-parse HEAD)
+add_path docs/llms/jobs.md
+assert_checks 'guide with compiled examples' pull_request "$before" HEAD true false false
+before=$(git rev-parse HEAD)
 add_path $'src/Core/File with\nnewline.cs'
 assert_checks 'backend with unusual filename' push "$before" HEAD true false false
 before=$(git rev-parse HEAD)

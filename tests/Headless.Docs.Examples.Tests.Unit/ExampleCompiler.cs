@@ -138,8 +138,12 @@ public static partial class ExampleCompiler
             );
 
         // A module from an assembly the example does not show (its own consumers live elsewhere) is stubbed, so the
-        // example can still name it in AddModule<T>(); the module the example's own types produce is the real one.
+        // example can still name it in AddModule<T>(). When the example's own types made the generators emit source,
+        // the first module names that assembly and must be the generated one: it is never stubbed, so a module the
+        // generator stopped emitting, or renamed, fails below instead of compiling against a stand-in.
+        var generatorEmitted = generated.SyntaxTrees.Skip(compilation.SyntaxTrees.Length).Any();
         var stubs = modules
+            .Skip(generatorEmitted ? 1 : 0)
             .Where(module => generated.GetTypeByMetadataName(module.FullName) is null)
             .Select(module =>
                 CSharpSyntaxTree.ParseText(

@@ -21,6 +21,8 @@ case "${GITHUB_EVENT_NAME:-}" in
     else
       while IFS= read -r -d '' path; do
         case "$path" in
+          # Their C# examples compile in a unit test project, so an edit to them must build and test.
+          docs/llms/messaging.md | docs/llms/jobs.md) dotnet=true ;;
           docs/* | .github/ISSUE_TEMPLATE/* | .github/*.md) ;;
           src/Headless.Jobs.Dashboard/* | src/Headless.Messaging.Dashboard/*)
             dotnet=true
