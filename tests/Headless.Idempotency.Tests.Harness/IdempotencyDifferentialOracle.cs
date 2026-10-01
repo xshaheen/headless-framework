@@ -110,11 +110,12 @@ public static class IdempotencyDifferentialOracle
     )
     {
         var runId = "o" + Guid.NewGuid().ToString("N")[..12];
+        var enlistedAdmissionRefused = !actual.SupportsEnlistedAdmission;
         await using var modelSession = await IdempotencyOracleSession
-            .StartAsync(model, history, runId, cancellationToken)
+            .StartAsync(model, history, runId, enlistedAdmissionRefused, cancellationToken)
             .ConfigureAwait(false);
         await using var actualSession = await IdempotencyOracleSession
-            .StartAsync(actual, history, runId, cancellationToken)
+            .StartAsync(actual, history, runId, enlistedAdmissionRefused, cancellationToken)
             .ConfigureAwait(false);
 
         for (var step = 0; step < history.Ops.Count; step++)

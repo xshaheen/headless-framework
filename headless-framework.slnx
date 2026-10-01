@@ -163,6 +163,7 @@
         <Project Path="tests\Headless.Sql.Tests.Harness\Headless.Sql.Tests.Harness.csproj" />
         <Project Path="tests\Headless.SchemaRunner.PostgreSql.Tests.Integration\Headless.SchemaRunner.PostgreSql.Tests.Integration.csproj" />
         <Project Path="tests\Headless.SchemaRunner.SqlServer.Tests.Integration\Headless.SchemaRunner.SqlServer.Tests.Integration.csproj" />
+        <Project Path="tests\Headless.SchemaRunner.Sqlite.Tests.Integration\Headless.SchemaRunner.Sqlite.Tests.Integration.csproj" />
         <Project Path="tests\Headless.SchemaRunner.Tests.Harness\Headless.SchemaRunner.Tests.Harness.csproj" />
         <Project Path="tests\Headless.Storage.SharedSchema.Tests.Integration\Headless.Storage.SharedSchema.Tests.Integration.csproj" />
     </Folder>
@@ -250,6 +251,7 @@
         <Project Path="src\Headless.Idempotency.InMemory\Headless.Idempotency.InMemory.csproj" />
         <Project Path="src\Headless.Idempotency.PostgreSql\Headless.Idempotency.PostgreSql.csproj" />
         <Project Path="src\Headless.Idempotency.SqlServer\Headless.Idempotency.SqlServer.csproj" />
+        <Project Path="src\Headless.Idempotency.Sqlite\Headless.Idempotency.Sqlite.csproj" />
     </Folder>
     <Folder Name="/Idempotency/Tests/">
         <Project Path="tests\Headless.Idempotency.Caching.Tests.Integration\Headless.Idempotency.Caching.Tests.Integration.csproj" />
@@ -258,6 +260,7 @@
         <Project Path="tests\Headless.Idempotency.InMemory.Tests.Unit\Headless.Idempotency.InMemory.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Idempotency.PostgreSql.Tests.Integration\Headless.Idempotency.PostgreSql.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Idempotency.SqlServer.Tests.Integration\Headless.Idempotency.SqlServer.Tests.Integration.csproj" />
+        <Project Path="tests\Headless.Idempotency.Sqlite.Tests.Integration\Headless.Idempotency.Sqlite.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Idempotency.Tests.Harness\Headless.Idempotency.Tests.Harness.csproj" />
     </Folder>
     <Folder Name="/Imaging/">

@@ -98,12 +98,16 @@ public sealed class SqliteDialect : ISqlDialect
     }
 
     /// <inheritdoc />
-    /// <exception cref="NotSupportedException">Always: SQLite has no sequence objects.</exception>
+    /// <remarks>
+    /// SQLite has no sequence objects. <paramref name="qualifiedSequence" /> names a one-row table (<c>id</c> 1 and
+    /// <c>value</c>, the last value issued), and the expression reads the value after it. Reading does not advance it:
+    /// the DDL of the table that stores the drawn value must add triggers that raise the sequence row to every value
+    /// written, which keeps the draw and the advance in one statement under the database write lock. One statement
+    /// therefore draws one value, however many rows it writes.
+    /// </remarks>
     public string NextSequenceValue(string qualifiedSequence)
     {
-        throw new NotSupportedException(
-            "SQLite has no sequence objects; a store that needs one is not portable to it."
-        );
+        return $"(SELECT value + 1 FROM {qualifiedSequence} WHERE id = 1)";
     }
 
     public string ShiftByDuration(string instant, string parameter, bool subtract = false)

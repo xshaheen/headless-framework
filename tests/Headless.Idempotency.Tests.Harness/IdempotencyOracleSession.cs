@@ -19,6 +19,7 @@ public sealed class IdempotencyOracleSession : IAsyncDisposable
 
     private readonly IIdempotencyFixture _fixture;
     private readonly IdempotencyHost _host;
+    private readonly bool _enlistedAdmissionRefused;
     private readonly IdempotencyRecordKey[] _keys;
     private readonly List<IdempotentAdmission>[] _admissions;
     private readonly Dictionary<long, int> _ordinals = [];
@@ -27,11 +28,13 @@ public sealed class IdempotencyOracleSession : IAsyncDisposable
         IIdempotencyFixture fixture,
         IdempotencyHost host,
         IdempotencyOracleHistory history,
-        string runId
+        string runId,
+        bool enlistedAdmissionRefused
     )
     {
         _fixture = fixture;
         _host = host;
+        _enlistedAdmissionRefused = enlistedAdmissionRefused;
         _keys =
         [
             .. history.Keys.Select(k => new IdempotencyRecordKey(
@@ -44,16 +47,21 @@ public sealed class IdempotencyOracleSession : IAsyncDisposable
 
     /// <summary>Builds a host on <paramref name="fixture" /> for one run of <paramref name="history" />.</summary>
     /// <param name="runId">A prefix unique to this run, so its keys touch only its own rows.</param>
+    /// <param name="enlistedAdmissionRefused">
+    /// Whether the provider under comparison refuses enlisted admissions; both sessions then report every enlisted
+    /// admission as refused, and the refusing one proves it by its own call.
+    /// </param>
     public static async Task<IdempotencyOracleSession> StartAsync(
         IIdempotencyFixture fixture,
         IdempotencyOracleHistory history,
         string runId,
+        bool enlistedAdmissionRefused,
         CancellationToken cancellationToken
     )
     {
         var host = await fixture.CreateHostAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
 
-        return new IdempotencyOracleSession(fixture, host, history, runId);
+        return new IdempotencyOracleSession(fixture, host, history, runId, enlistedAdmissionRefused);
     }
 
     public async Task<IdempotencyOracleObservation> ExecuteAsync(
@@ -241,6 +249,11 @@ public sealed class IdempotencyOracleSession : IAsyncDisposable
         IdempotentAdmission admission;
         var completed = "";
 
+        if (_enlistedAdmissionRefused)
+        {
+            return (await _RefusedEnlistedAdmitAsync(op, cancellationToken).ConfigureAwait(false), null);
+        }
+
         await using (var unit = await _fixture.BeginUnitAsync(_host, cancellationToken).ConfigureAwait(false))
         {
             using (_host.CurrentTenant.Change(key.PublicTenantId))
@@ -290,6 +303,47 @@ public sealed class IdempotencyOracleSession : IAsyncDisposable
                     .ConfigureAwait(false)
                 : null
         );
+    }
+
+    /// <summary>
+    /// Compared with a provider that refuses enlisted admissions, both sides run the admission in a unit that is then
+    /// rolled back, so argument refusals still match and nothing either side wrote survives. The refusing provider must
+    /// refuse; the model's admission is discarded, and the generation it drew is never observed.
+    /// </summary>
+    private async Task<string> _RefusedEnlistedAdmitAsync(
+        IdempotencyOracleOp.EnlistedAdmit op,
+        CancellationToken cancellationToken
+    )
+    {
+        var key = _keys[op.Key];
+        await using var unit = await _fixture.BeginUnitAsync(_host, cancellationToken).ConfigureAwait(false);
+
+        try
+        {
+            using (_host.CurrentTenant.Change(key.PublicTenantId))
+            {
+                await unit
+                    .Unit.Idempotency.AdmitAsync(
+                        key.Key,
+                        IdempotencyOracleGenerator.Fingerprints[op.Fingerprint],
+                        expectedContract: null,
+                        op.Lease,
+                        op.Retention,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+            }
+
+            return _fixture.SupportsEnlistedAdmission ? "enlisted-admit:refused" : "enlisted-admit:accepted";
+        }
+        catch (NotSupportedException) when (!_fixture.SupportsEnlistedAdmission)
+        {
+            return "enlisted-admit:refused";
+        }
+        finally
+        {
+            await unit.RollbackAsync().ConfigureAwait(false);
+        }
     }
 
     private async Task<string> _CompleteAsync(IdempotencyOracleOp.Complete op, CancellationToken cancellationToken)
