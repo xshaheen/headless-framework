@@ -1202,6 +1202,58 @@ public abstract partial class DataStorageTestsBase : TestBase
         }
     }
 
+    public virtual async Task should_keep_a_later_due_time_only_when_the_retry_delay_asks_to(bool published)
+    {
+        if (!Capabilities.SupportsMonitoringApi)
+        {
+            Assert.Skip("Storage does not expose the monitoring API needed to read the persisted due time back");
+        }
+
+        var storage = GetStorage();
+        var message = published
+            ? await storage.StoreMessageAsync("retry-delay-later-due", CreateMessage(), cancellationToken: AbortToken)
+            : await storage.StoreReceivedMessageAsync(
+                "retry-delay-later-due",
+                "retry-delay-later-due-group",
+                CreateMessage(),
+                AbortToken
+            );
+
+        async Task<DateTimeOffset> scheduleAsync(RetryDelay retryDelay)
+        {
+            var changed = published
+                ? await storage.ChangePublishStateAsync(
+                    message,
+                    StatusName.Failed,
+                    retryDelay: retryDelay,
+                    cancellationToken: AbortToken
+                )
+                : await storage.ChangeReceiveStateAsync(
+                    message,
+                    StatusName.Failed,
+                    retryDelay: retryDelay,
+                    cancellationToken: AbortToken
+                );
+            changed.Should().BeTrue();
+            var persisted = published
+                ? await storage.GetMonitoringApi().GetPublishedMessageAsync(message.StorageId, AbortToken)
+                : await storage.GetMonitoringApi().GetReceivedMessageAsync(message.StorageId, AbortToken);
+
+            return persisted!.NextRetryAt!.Value;
+        }
+
+        var scheduled = await scheduleAsync(RetryDelay.Exactly(TimeSpan.FromHours(1)));
+
+        (await scheduleAsync(RetryDelay.AtLeast(TimeSpan.FromMinutes(1))))
+            .Should()
+            .Be(scheduled, "AtLeast keeps a due time already later than its own");
+        var extended = await scheduleAsync(RetryDelay.AtLeast(TimeSpan.FromHours(2)));
+        extended.Should().BeAfter(scheduled, "AtLeast moves an earlier due time out to its own");
+        (await scheduleAsync(RetryDelay.Exactly(TimeSpan.FromMinutes(1))))
+            .Should()
+            .BeBefore(scheduled, "Exactly replaces a later due time");
+    }
+
     public virtual Task should_preserve_persisted_envelope_when_published_transition_declares_preserve()
     {
         return _ShouldPreservePersistedEnvelopeAsync(received: false);
@@ -2397,6 +2449,112 @@ public abstract partial class DataStorageTestsBase : TestBase
                 m => m.StorageId == notDue.StorageId,
                 "an application clock running ahead must not make it due"
             );
+    }
+
+    public virtual async Task should_make_core_scheduled_retry_due_after_its_delay_on_database_clock(
+        bool published,
+        bool applicationClockAhead
+    )
+    {
+        var skew = applicationClockAhead ? TimeSpan.FromHours(1) : TimeSpan.FromHours(-1);
+        var clock = new Microsoft.Extensions.Time.Testing.FakeTimeProvider(DateTimeOffset.UtcNow.Add(skew));
+        var skewedStorage = CreateStorageWithTimeProvider(clock);
+        if (skewedStorage is null)
+        {
+            Assert.Skip("Storage does not expose a relational clock-skew test seam");
+        }
+
+        var storage = GetStorage();
+        var message = published
+            ? await storage.StoreMessageAsync("db-clock-core-retry", CreateMessage(), cancellationToken: AbortToken)
+            : await storage.StoreReceivedMessageAsync(
+                "db-clock-core-retry",
+                "db-clock-core-retry-group",
+                CreateMessage(),
+                AbortToken
+            );
+        var leased = published
+            ? await skewedStorage.LeasePublishAsync(message, TimeSpan.FromMinutes(1), AbortToken)
+            : await skewedStorage.LeaseReceiveAsync(message, TimeSpan.FromMinutes(1), AbortToken);
+        leased.Should().BeTrue();
+
+        // The inline budget is spent, so Core hands the row to the persisted-retry processor after the delay.
+        var policy = new MessagingOptions().RetryPolicy;
+        var retryDelay = TimeSpan.FromSeconds(3);
+        var state = Headless.Messaging.Retry.RetryHelper.ResolveNextState(
+            Headless.Messaging.Retry.MessagingRetryDecision.Continue(retryDelay),
+            inlineRetries: policy.RetryStrategy.MaxRetryAttempts,
+            policy
+        );
+        state.IsInlineRetryInFlight.Should().BeFalse();
+        var originalRetries = message.Retries;
+        message.Retries++;
+
+        var databaseTimeBefore = await _GetDatabaseUtcNowOrSkipAsync();
+        var changed = published
+            ? await skewedStorage.ChangePublishRetryStateAsync(
+                message,
+                state.NextStatus,
+                MessageContentWrite.Preserve,
+                state.NextRetry,
+                lockedUntil: null,
+                originalRetries,
+                originalInlineAttempts: message.InlineAttempts,
+                AbortToken
+            )
+            : await skewedStorage.ChangeReceiveRetryStateAsync(
+                message,
+                state.NextStatus,
+                MessageContentWrite.Preserve,
+                state.NextRetry,
+                lockedUntil: null,
+                originalRetries,
+                originalInlineAttempts: message.InlineAttempts,
+                AbortToken
+            );
+        var databaseTimeAfter = await _GetDatabaseUtcNowOrSkipAsync();
+        changed.Should().BeTrue();
+
+        var monitoring = storage.GetMonitoringApi();
+        var persisted = published
+            ? await monitoring.GetPublishedMessageAsync(message.StorageId, AbortToken)
+            : await monitoring.GetReceivedMessageAsync(message.StorageId, AbortToken);
+        persisted.Should().NotBeNull();
+        persisted!
+            .NextRetryAt.Should()
+            .NotBeNull()
+            .And.BeOnOrAfter(databaseTimeBefore.Add(retryDelay))
+            .And.BeOnOrBefore(databaseTimeAfter.Add(retryDelay), "the delay runs on the database clock");
+        (await _PickUpRetriesAsync(skewedStorage, published))
+            .Should()
+            .NotContain(m => m.StorageId == message.StorageId, "the delay has not elapsed on the database");
+
+        await Task.Delay(
+            persisted.NextRetryAt!.Value - databaseTimeBefore + TimeSpan.FromMilliseconds(250),
+            AbortToken
+        );
+
+        (await _PickUpRetriesAsync(skewedStorage, published))
+            .Should()
+            .Contain(m => m.StorageId == message.StorageId, "the delay has elapsed on the database");
+    }
+
+    private static async Task<IEnumerable<MediumMessage>> _PickUpRetriesAsync(IDataStorage storage, bool published)
+    {
+        return published
+            ? await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken)
+            : await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken);
+    }
+
+    private async Task<DateTimeOffset> _GetDatabaseUtcNowOrSkipAsync()
+    {
+        var databaseTime = await GetDatabaseUtcNowAsync(AbortToken);
+        if (databaseTime is null)
+        {
+            Assert.Skip("Storage does not expose a relational database-clock test seam");
+        }
+
+        return new DateTimeOffset(DateTime.SpecifyKind(databaseTime.Value, DateTimeKind.Utc), TimeSpan.Zero);
     }
 
     public virtual async Task should_stamp_initial_dispatch_grace_from_database_clock(bool published)

@@ -597,6 +597,14 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
         return base.should_change_publish_state();
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public override Task should_keep_a_later_due_time_only_when_the_retry_delay_asks_to(bool published)
+    {
+        return base.should_keep_a_later_due_time_only_when_the_retry_delay_asks_to(published);
+    }
+
     [Fact]
     public override Task should_change_receive_state()
     {

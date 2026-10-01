@@ -532,6 +532,14 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         return base.should_change_publish_state();
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public override Task should_keep_a_later_due_time_only_when_the_retry_delay_asks_to(bool published)
+    {
+        return base.should_keep_a_later_due_time_only_when_the_retry_delay_asks_to(published);
+    }
+
     [Fact]
     public override Task should_change_receive_state()
     {
@@ -900,6 +908,22 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
     public override Task should_decide_received_retry_due_on_database_clock()
     {
         return base.should_decide_received_retry_due_on_database_clock();
+    }
+
+    [Theory]
+    [InlineData(true, true)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(false, false)]
+    public override Task should_make_core_scheduled_retry_due_after_its_delay_on_database_clock(
+        bool published,
+        bool applicationClockAhead
+    )
+    {
+        return base.should_make_core_scheduled_retry_due_after_its_delay_on_database_clock(
+            published,
+            applicationClockAhead
+        );
     }
 
     [Theory]
