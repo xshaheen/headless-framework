@@ -33,6 +33,9 @@ public sealed class SqlServerDialectConformanceTests(SqlServerTestFixture fixtur
         return $"CREATE UNIQUE INDEX [{index}] ON {table} ([Owner]) WHERE [Flag] = 1;";
     }
 
+    // The deadlock monitor always picks the session with the lower DEADLOCK_PRIORITY as the victim.
+    protected override string DeadlockSurvivorSql => "SET DEADLOCK_PRIORITY HIGH";
+
     // A TRY/CATCH that swallows an error under XACT_ABORT ON leaves the transaction doomed rather than rolled back, and
     // the rest of the batch keeps running on it: the write is refused with 3930 instead of committing on its own.
     protected override IReadOnlyList<string> DoomThenWriteBatches(string insertAfter)
@@ -122,5 +125,17 @@ public sealed class SqlServerDialectConformanceTests(SqlServerTestFixture fixtur
     public override Task should_insert_and_lock_by_a_partial_key()
     {
         return base.should_insert_and_lock_by_a_partial_key();
+    }
+
+    [Fact]
+    public override Task should_retry_engine_chosen_deadlock_victims_and_apply_each_call_once()
+    {
+        return base.should_retry_engine_chosen_deadlock_victims_and_apply_each_call_once();
+    }
+
+    [Fact]
+    public override Task should_surface_the_deadlock_after_the_attempt_cap_and_apply_nothing()
+    {
+        return base.should_surface_the_deadlock_after_the_attempt_cap_and_apply_nothing();
     }
 }
