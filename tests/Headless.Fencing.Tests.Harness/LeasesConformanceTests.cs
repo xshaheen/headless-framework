@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using Headless.Fencing;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;
+using Xunit;
 
 namespace Tests;
 
@@ -27,6 +28,14 @@ public abstract class LeasesConformanceTests<TFixture>(TFixture fixture) : TestB
     protected static readonly TimeSpan ShortDuration = TimeSpan.FromSeconds(1);
 
     protected TFixture Fixture { get; } = fixture;
+
+    private void _SkipUnlessEnlistedGrant()
+    {
+        Assert.SkipUnless(
+            Fixture.SupportsEnlistedGrant,
+            "The provider refuses a grant inside a caller's unit; its own tests assert the refusal."
+        );
+    }
 
     #region Grant
 
@@ -346,6 +355,7 @@ public abstract class LeasesConformanceTests<TFixture>(TFixture fixture) : TestB
 
     public virtual async Task should_refuse_the_fence_once_the_ttl_elapses_inside_an_open_transaction()
     {
+        _SkipUnlessEnlistedGrant();
         var (kind, resource) = (CreateKind(), CreateResource());
         await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
         await using var unit = await Fixture.BeginUnitAsync(host, AbortToken);
@@ -389,6 +399,7 @@ public abstract class LeasesConformanceTests<TFixture>(TFixture fixture) : TestB
 
     public virtual async Task should_issue_a_higher_generation_to_a_grant_that_waited_on_an_open_enlisted_grant()
     {
+        _SkipUnlessEnlistedGrant();
         var (kind, resource) = (CreateKind(), CreateResource());
         await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
         await using var unit = await Fixture.BeginUnitAsync(host, AbortToken);
@@ -411,6 +422,7 @@ public abstract class LeasesConformanceTests<TFixture>(TFixture fixture) : TestB
 
     public virtual async Task should_leave_no_row_when_an_enlisted_grant_rolls_back()
     {
+        _SkipUnlessEnlistedGrant();
         var (kind, resource) = (CreateKind(), CreateResource());
         await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
         long rolledBack;
@@ -432,6 +444,7 @@ public abstract class LeasesConformanceTests<TFixture>(TFixture fixture) : TestB
 
     public virtual async Task should_mark_only_an_observed_unit_non_retryable_and_only_for_writes()
     {
+        _SkipUnlessEnlistedGrant();
         var (kind, resource) = (CreateKind(), CreateResource());
         await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
         FencedLease lease;

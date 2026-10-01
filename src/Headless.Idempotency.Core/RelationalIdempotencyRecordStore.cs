@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
+using System.Runtime.CompilerServices;
 using Headless.Checks;
 using Headless.Sql;
 using Headless.UnitOfWork;
@@ -34,7 +35,7 @@ namespace Headless.Idempotency;
 /// </para>
 /// </remarks>
 #pragma warning disable CA2100 // SQL text is rendered once from validated identifiers and dialect statements; values are parameters.
-internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
+internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore, IIdempotencyEnlistedAdmissionGuard
 {
     // A lost insert race means another transaction committed the row between the locking read and the insert, so the
     // next locking read finds it. Only a row purged again in that window could send the loop round once more.
@@ -59,6 +60,10 @@ internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
     private readonly string _renewSql;
     private readonly string _peekSql;
     private readonly string _purgeSql;
+
+    // The units this store began for its autonomous calls, tracked only when enlisted admissions are refused.
+    private static readonly object _OwnUnit = new();
+    private readonly ConditionalWeakTable<IUnitOfWork, object> _ownUnits = [];
 
     public RelationalIdempotencyRecordStore(
         RelationalIdempotencyStorage storage,
@@ -218,9 +223,16 @@ internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
 
         try
         {
-            return await _storage
+            var unit = await _storage
                 .BeginOwnedUnit(_unitOfWorkFactory, connection, cancellationToken)
                 .ConfigureAwait(false);
+
+            if (_storage.EnlistedAdmissionRefusal is not null)
+            {
+                _ownUnits.Add(unit, _OwnUnit);
+            }
+
+            return unit;
         }
         catch
         {
@@ -241,6 +253,16 @@ internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
             _storage.PackageName,
             UnitOfWorkIdempotencyFeature.Operation
         );
+    }
+
+    public void ValidateEnlistedAdmission(IUnitOfWork unitOfWork)
+    {
+        // An autonomous admission runs in a unit this store began and commits it before the caller sees the
+        // generation, so a rollback can never leave a caller holding a generation the store will draw again.
+        if (_storage.EnlistedAdmissionRefusal is { } reason && !_ownUnits.TryGetValue(unitOfWork, out _))
+        {
+            throw new NotSupportedException(reason);
+        }
     }
 
     #endregion
@@ -559,7 +581,7 @@ internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
         CancellationToken cancellationToken = default
     )
     {
-        return _RunAutonomousAsync(
+        return _RunReadOnlyAsync(
             async (connection, transaction, ct) =>
             {
                 await using var command = _Command(_peekSql, connection, transaction, key);
@@ -641,6 +663,41 @@ internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
     )
     {
         return SqlAutonomousTransaction.RunAsync(_storage.CreateConnection, body, _timeProvider, cancellationToken);
+    }
+
+    /// <summary>
+    /// Runs a read that must never wait on a writer. An engine whose autonomous transaction already reads without
+    /// waiting (PostgreSQL's MVCC, SQL Server at READ COMMITTED without a lock hint) runs it as any autonomous call; one
+    /// whose autonomous transaction takes a write lock at begin (SQLite) supplies a transaction that does not.
+    /// </summary>
+    private ValueTask<T> _RunReadOnlyAsync<T>(
+        Func<DbConnection, DbTransaction, CancellationToken, Task<T>> body,
+        CancellationToken cancellationToken
+    )
+    {
+        if (_storage.BeginReadOnlyTransaction is not { } begin)
+        {
+            return _RunAutonomousAsync(body, cancellationToken);
+        }
+
+        return SqlAutonomousTransaction.RetryAsync(
+            async (attempt, ct) =>
+            {
+                await using var connection = _storage.CreateConnection();
+                await connection.OpenAsync(ct).ConfigureAwait(false);
+                await using var transaction = await begin(connection, ct).ConfigureAwait(false);
+                var result = await body(connection, transaction, ct).ConfigureAwait(false);
+
+                // The read wrote nothing, so its commit only ends the transaction.
+                attempt.MarkCommitStarted();
+                await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+
+                return result;
+            },
+            _timeProvider,
+            onRetry: null,
+            cancellationToken
+        );
     }
 
     private DbCommand _Command(

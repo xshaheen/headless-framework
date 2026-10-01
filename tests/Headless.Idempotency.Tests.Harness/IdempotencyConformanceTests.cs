@@ -4,6 +4,7 @@ using System.Text;
 using Headless.Idempotency;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;
+using Xunit;
 
 namespace Tests;
 
@@ -35,6 +36,14 @@ public abstract class IdempotencyConformanceTests<TFixture>(TFixture fixture) : 
     protected const string RecoveryContract = "test-recovery.v1";
 
     protected TFixture Fixture { get; } = fixture;
+
+    private void _SkipUnlessEnlistedAdmission()
+    {
+        Assert.SkipUnless(
+            Fixture.SupportsEnlistedAdmission,
+            "The provider refuses an admission inside a caller's unit; its own tests assert the refusal."
+        );
+    }
 
     #region Admission races
 
@@ -185,6 +194,7 @@ public abstract class IdempotencyConformanceTests<TFixture>(TFixture fixture) : 
 
     public virtual async Task should_serialize_parallel_enlisted_admissions_and_replay_the_winner()
     {
+        _SkipUnlessEnlistedAdmission();
         var key = CreateKey();
         await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
         var start = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -243,6 +253,7 @@ public abstract class IdempotencyConformanceTests<TFixture>(TFixture fixture) : 
 
     public virtual async Task should_admit_a_blocked_admission_when_the_enlisted_winner_rolls_back()
     {
+        _SkipUnlessEnlistedAdmission();
         var key = CreateKey();
         await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
         await using var winner = await Fixture.BeginUnitAsync(host, AbortToken);
@@ -336,6 +347,7 @@ public abstract class IdempotencyConformanceTests<TFixture>(TFixture fixture) : 
 
     public virtual async Task should_leave_no_record_when_an_enlisted_admission_rolls_back()
     {
+        _SkipUnlessEnlistedAdmission();
         var key = CreateKey();
         await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
 

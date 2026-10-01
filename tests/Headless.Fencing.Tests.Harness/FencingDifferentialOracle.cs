@@ -110,11 +110,12 @@ public static class FencingDifferentialOracle
     )
     {
         var runId = "o" + Guid.NewGuid().ToString("N")[..12];
+        var enlistedGrantRefused = !actual.SupportsEnlistedGrant;
         await using var modelSession = await FencingOracleSession
-            .StartAsync(model, history, runId, cancellationToken)
+            .StartAsync(model, history, runId, enlistedGrantRefused, cancellationToken)
             .ConfigureAwait(false);
         await using var actualSession = await FencingOracleSession
-            .StartAsync(actual, history, runId, cancellationToken)
+            .StartAsync(actual, history, runId, enlistedGrantRefused, cancellationToken)
             .ConfigureAwait(false);
 
         for (var step = 0; step < history.Ops.Count; step++)

@@ -1,0 +1,17 @@
+<Project Sdk="Headless.NET.Sdk.Test">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Tests</RootNamespace>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+    <PackageReference Include="xunit.v3.mtp-v2" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Headless.Sequences.Sqlite\Headless.Sequences.Sqlite.csproj" />
+    <ProjectReference Include="..\..\src\Headless.UnitOfWork.Sqlite\Headless.UnitOfWork.Sqlite.csproj" />
+    <ProjectReference Include="..\Headless.Sequences.Tests.Harness\Headless.Sequences.Tests.Harness.csproj" />
+    <ProjectReference Include="..\Headless.Sql.Tests.Harness\Headless.Sql.Tests.Harness.csproj" />
+  </ItemGroup>
+</Project>

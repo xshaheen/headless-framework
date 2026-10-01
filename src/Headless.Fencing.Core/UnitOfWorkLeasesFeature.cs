@@ -31,7 +31,7 @@ internal sealed class UnitOfWorkLeasesFeature(
         var key = resolver.Resolve(kind, resource);
         duration = resolver.ValidateDuration(duration);
 
-        _Enlist(unitOfWork, isWrite: true);
+        _Enlist(unitOfWork, isWrite: true, drawsGeneration: true);
 
         var result = await store.GrantEnlistedAsync(unitOfWork, key, duration, cancellationToken).ConfigureAwait(false);
         alerts.OnGranted(result);
@@ -112,7 +112,7 @@ internal sealed class UnitOfWorkLeasesFeature(
         }
     }
 
-    private void _Enlist(IUnitOfWork unitOfWork, bool isWrite)
+    private void _Enlist(IUnitOfWork unitOfWork, bool isWrite, bool drawsGeneration = false)
     {
         if (unitOfWork.State != UnitOfWorkState.Active)
         {
@@ -124,6 +124,11 @@ internal sealed class UnitOfWorkLeasesFeature(
         // What the unit must carry is the provider's to judge: a relational store needs a live transaction on its own
         // database, while an in-process store refuses one, because its state cannot commit atomically with it.
         store.ValidateEnlistment(unitOfWork);
+
+        if (drawsGeneration && store is ILeaseEnlistedGrantGuard guard)
+        {
+            guard.ValidateEnlistedGrant(unitOfWork);
+        }
 
         // A lease write is not tracked by the unit's change tracker, so a replay cannot restore it; it has to be
         // re-run. An owned unit replays the caller's block, which re-runs the write, so it stays replayable. An

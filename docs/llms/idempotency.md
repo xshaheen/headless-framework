@@ -1,6 +1,6 @@
 ---
 domain: Idempotency
-packages: Idempotency.Abstractions, Idempotency.Core, Idempotency.InMemory, Idempotency.Caching, Idempotency.PostgreSql, Idempotency.SqlServer
+packages: Idempotency.Abstractions, Idempotency.Core, Idempotency.InMemory, Idempotency.Caching, Idempotency.PostgreSql, Idempotency.SqlServer, Idempotency.Sqlite
 ---
 
 # Idempotency
@@ -140,6 +140,7 @@ Enlisted calls (`unit.Idempotency.*`) follow the same rules as `unit.Leases` and
 | --- | --- | --- | --- |
 | `Headless.Idempotency.PostgreSql` | Records must survive restarts and be shared by every instance, and enlisted units run on PostgreSQL | Units run on SQL Server | Insert-or-lock with `ON CONFLICT DO NOTHING`; `clock_timestamp()` decides |
 | `Headless.Idempotency.SqlServer` | The same, with units on SQL Server | — | `UPDLOCK, HOLDLOCK` insert-or-lock without `TRY/CATCH`; `SYSUTCDATETIME()` decides |
+| `Headless.Idempotency.Sqlite` | Embedded or single-host applications that keep their data in a SQLite file | The operation must be admitted inside a caller's unit (`unit.Idempotency.AdmitAsync`), or many writers contend | Every call holds the database write lock; enlisted admission is refused, autonomous admission and every other enlisted call work; the host clock decides |
 | `Headless.Idempotency.InMemory` | Tests, local development, or a single-instance host with no relational database | Several instances serve the same keys, or retries must be deduplicated across a restart | Records live in one process and vanish on restart; the registered `TimeProvider` decides leases and retention; enlisted calls run only on resource-less units, so a fence cannot join a database transaction |
 | `Headless.Idempotency.Caching` | Several replicas share a Redis cache and there is no SQL database, and every call is autonomous (`IIdempotentOperations`, the HTTP middleware) | A result must survive a cache flush or eviction, or the operation needs `unit.Idempotency`, `FenceAsync`, or a recovery point recorded inside a unit | Autonomous only; durability is the cache's, so an evicted or flushed record means the operation runs again; the application clock decides leases, so replica clock skew shifts expiry; completion is still compare-and-swap guarded by generation, so a zombie never overwrites a newer result |
 
@@ -333,3 +334,39 @@ The parameterless overloads and the shared `headless` schema are described in [s
 - The autonomous path begins an owned unit through `IIdempotencyRecordStore.BeginOwnedUnitAsync` at READ COMMITTED; the enlisted path runs on the unit's own connection and transaction with no retry.
 - Autonomous renewal, peek, and purge retry a transient fault raised before the commit, including a deadlock or snapshot update conflict (1205, 3960), a lock timeout (1222), and the connection faults EF Core's SQL Server retry set covers. The purge skips locked rows with `UPDLOCK, READPAST, ROWLOCK, READCOMMITTEDLOCK`: `READPAST` is refused under read committed snapshot isolation unless the read also takes locks, and the hint is the default without it, so the same statement works either way.
 - The sequence, table, and index are one step the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts) applies at startup, under one `sp_getapplock` per database shared with every other Headless feature, recorded as `Idempotency/1`.
+
+---
+
+## Headless.Idempotency.Sqlite
+
+SQLite storage for idempotency records.
+
+### Setup
+
+```bash
+dotnet add package Headless.Idempotency.Sqlite
+```
+
+```csharp
+builder.Services.AddHeadlessIdempotency(setup => setup.UseSqlite("Data Source=/var/lib/app/app.db"));
+// or reuse the connection from services.AddSqliteSql(connectionString): setup.UseSqlite();
+```
+
+Use a database file: the store and the schema runner open their own connections, so a private `:memory:` database would vanish between them.
+
+### Configuration
+
+| Option | Default | Notes |
+| --- | --- | --- |
+| `ConnectionString` | required | The database file that holds the records; an enlisted call is accepted only on a SQLite unit whose connection reaches the same file |
+| `CommandTimeout` | 30 seconds | Also bounds how long a call waits for another writer's database lock |
+| `InitializeOnStartup` | `true` | When `false`, the application creates the `<schema>_idempotency_record_generations` sequence table, the `<schema>_idempotency_records` table, its index, and its two generation triggers |
+
+### Design and runtime behavior
+
+- **Enlisted admission is refused.** `unit.Idempotency.AdmitAsync` throws `NotSupportedException` before it touches the unit. PostgreSQL and SQL Server draw generations from a sequence that ignores transactions; SQLite has no such counter, so a generation drawn in a caller's transaction that then rolls back would be drawn again by the next admission, and a caller still holding the rolled-back admission could complete the new attempt's record. `IIdempotentOperations.AdmitAsync` (and the HTTP middleware) admit in a unit the store begins and commits before returning the generation, so they are safe. The unit can still complete, release, fence, or set a recovery point of an autonomously admitted attempt.
+- The verbs are the shared relational store's (see [Headless.Idempotency.Core](#headlessidempotencycore)). Every transaction begins `IMMEDIATE` and holds the database write lock, which stands in for the row lock: admissions, fences, and completions of every key serialize on the file. A peek runs in a deferred transaction that takes no write lock, so it reads the last committed record without waiting on a writer.
+- The generation sequence is a one-row table. The admission's `UPDATE` reads one past its value, and triggers on the record table raise it to every generation written, in the same statement. A purge deletes records, never the sequence row, so a key admitted again after its record was purged still gets a higher generation.
+- `SQLITE_BUSY` before the commit (another writer held the database past the connection's `Default Timeout`) is retried in a fresh transaction, like a lock timeout on the other providers. The wait holds a thread-pool thread; see [sql.md § SQLite in the kit](sql.md#sqlite-in-the-kit).
+- The sequence table, record table, index, and triggers are one step the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts) applies at startup, recorded as `Idempotency/1`.
+

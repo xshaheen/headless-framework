@@ -139,6 +139,9 @@ public static class SqlAutonomousTransaction
         CancellationToken cancellationToken
     )
     {
+        // Microsoft.Data.Sqlite completes every call synchronously, waiting out another writer's lock on the calling
+        // thread; yielding first hands the caller a pending task instead of blocking it through that wait.
+        await Task.Yield();
         await using var connection = createConnection();
         await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
         // Explicit so the call runs at READ COMMITTED whatever the server default or a pooled session last used: a

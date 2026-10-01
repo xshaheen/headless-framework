@@ -8,6 +8,7 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Headless.Fencing.PostgreSql" />
     <InternalsVisibleTo Include="Headless.Fencing.SqlServer" />
+    <InternalsVisibleTo Include="Headless.Fencing.Sqlite" />
     <InternalsVisibleTo Include="Headless.Fencing.Core.Tests.Unit" />
   </ItemGroup>
   <ItemGroup>

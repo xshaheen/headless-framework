@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
+using System.Runtime.CompilerServices;
 using Headless.Checks;
 using Headless.Sql;
 using Headless.UnitOfWork;
@@ -30,7 +31,7 @@ namespace Headless.Fencing;
 /// </para>
 /// </remarks>
 #pragma warning disable CA2100 // SQL text is rendered once from validated identifiers and dialect statements; values are parameters.
-internal sealed class RelationalLeaseStore : ILeaseStore
+internal sealed class RelationalLeaseStore : ILeaseStore, ILeaseEnlistedGrantGuard
 {
     // Each purge batch is its own short transaction so a large purge never holds many row locks at once.
     private const int _PurgeBatchSize = 1000;
@@ -58,6 +59,10 @@ internal sealed class RelationalLeaseStore : ILeaseStore
     private readonly string _claimFirstSql;
     private readonly string _claimAfterSql;
     private readonly string _purgeSql;
+
+    // The units this store began for its own calls, tracked only when enlisted grants are refused.
+    private static readonly object _OwnUnit = new();
+    private readonly ConditionalWeakTable<IUnitOfWork, object> _ownUnits = [];
 
     public RelationalLeaseStore(
         RelationalFencingStorage storage,
@@ -147,9 +152,16 @@ internal sealed class RelationalLeaseStore : ILeaseStore
 
         try
         {
-            return await _storage
+            var unit = await _storage
                 .BeginOwnedUnit(_unitOfWorkFactory, connection, cancellationToken)
                 .ConfigureAwait(false);
+
+            if (_storage.EnlistedGrantRefusal is not null)
+            {
+                _ownUnits.Add(unit, _OwnUnit);
+            }
+
+            return unit;
         }
         catch
         {
@@ -170,6 +182,16 @@ internal sealed class RelationalLeaseStore : ILeaseStore
             _storage.PackageName,
             UnitOfWorkLeasesFeature.Operation
         );
+    }
+
+    public void ValidateEnlistedGrant(IUnitOfWork unitOfWork)
+    {
+        // A unit this store began commits before its caller sees the generation, so a rollback can never leave a
+        // caller holding a generation the store will draw again.
+        if (_storage.EnlistedGrantRefusal is { } reason && !_ownUnits.TryGetValue(unitOfWork, out _))
+        {
+            throw new NotSupportedException(reason);
+        }
     }
 
     #endregion

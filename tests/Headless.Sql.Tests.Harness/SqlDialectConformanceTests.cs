@@ -28,6 +28,12 @@ public abstract class SqlDialectConformanceTests : TestBase
     /// </summary>
     protected abstract IReadOnlyList<string> DoomThenWriteBatches(string insertAfter);
 
+    /// <summary>
+    /// Whether the engine admits one write transaction at a time (SQLite), so a second claimer cannot begin while the
+    /// first holds its rows and the two claims race as whole transactions instead.
+    /// </summary>
+    protected virtual bool SerializesWriteTransactions => false;
+
     private string _Column(string pascal) => Dialect.Quote(Dialect.Name(pascal));
 
     public virtual async Task should_insert_then_update_and_report_which()
@@ -79,6 +85,24 @@ public abstract class SqlDialectConformanceTests : TestBase
         for (var i = 0; i < 10; i++)
         {
             _ = await _UpsertAsync(table, $"row-{i:D2}", increment: i, guardBelow: null);
+        }
+
+        if (SerializesWriteTransactions)
+        {
+            var racing = await Task.WhenAll(
+                Task.Run(() => _ClaimInOwnTransactionAsync(table, "a", batch: 4), AbortToken),
+                Task.Run(() => _ClaimInOwnTransactionAsync(table, "b", batch: 4), AbortToken)
+            );
+
+            racing[0].Should().HaveCount(4);
+            racing[1].Should().HaveCount(4);
+            racing[0].Should().NotIntersectWith(racing[1], "the second claim begins only after the first committed");
+            racing[0]
+                .Concat(racing[1])
+                .Should()
+                .BeEquivalentTo(Enumerable.Range(0, 8).Select(i => $"row-{i:D2}"), "claims visit rows in key order");
+
+            return;
         }
 
         await using var first = await _OpenAsync();
@@ -205,7 +229,7 @@ public abstract class SqlDialectConformanceTests : TestBase
         var table = await _CreateTableAsync();
         var insert = $"INSERT INTO {table} ({_Column("Key")}, {_Column("Value")}) VALUES ('after', 1)";
         var batches = DoomThenWriteBatches(insert);
-        DbException? last = null;
+        Exception? last = null;
 
         await using (var connection = await _OpenAsync())
         {
@@ -222,7 +246,9 @@ public abstract class SqlDialectConformanceTests : TestBase
                     await command.ExecuteNonQueryAsync(AbortToken);
                     last = null;
                 }
-                catch (DbException e)
+                // SQLite's driver refuses a statement on a transaction the engine rolled back before the engine sees
+                // it, with an InvalidOperationException rather than a database error.
+                catch (Exception e) when (e is DbException or InvalidOperationException)
                 {
                     last = e;
                 }
@@ -302,6 +328,16 @@ public abstract class SqlDialectConformanceTests : TestBase
         {
             claimed.Add(reader.GetString(0));
         }
+
+        return claimed;
+    }
+
+    private async Task<List<string>> _ClaimInOwnTransactionAsync(string table, string owner, int batch)
+    {
+        await using var connection = await _OpenAsync();
+        await using var transaction = await connection.BeginTransactionAsync(AbortToken);
+        var claimed = await _ClaimAsync(connection, transaction, table, owner, batch);
+        await transaction.CommitAsync(AbortToken);
 
         return claimed;
     }

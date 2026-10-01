@@ -8,6 +8,7 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Headless.Coordination.PostgreSql" />
     <InternalsVisibleTo Include="Headless.Coordination.SqlServer" />
+    <InternalsVisibleTo Include="Headless.Coordination.Sqlite" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Coordination.Core\Headless.Coordination.Core.csproj" />

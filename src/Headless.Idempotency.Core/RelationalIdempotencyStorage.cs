@@ -15,13 +15,22 @@ namespace Headless.Idempotency;
 /// <param name="BeginOwnedUnit">
 /// Begins an owned unit of work on a new connection at READ COMMITTED, through the provider's typed unit-of-work entry.
 /// </param>
+/// <param name="BeginReadOnlyTransaction">
+/// Begins the transaction of an autonomous read that must not wait on a writer, or <see langword="null" /> to read in
+/// the ordinary autonomous transaction.
+/// </param>
+/// <param name="EnlistedAdmissionRefusal">
+/// Why an admission inside a caller's unit is refused, or <see langword="null" /> when it is accepted.
+/// </param>
 internal sealed record RelationalIdempotencyStorage(
     ISqlDialect Dialect,
     string PackageName,
     string ConnectionString,
     int CommandTimeoutSeconds,
     IdempotencyTable Table,
-    Func<IUnitOfWorkFactory, DbConnection, CancellationToken, ValueTask<IUnitOfWork>> BeginOwnedUnit
+    Func<IUnitOfWorkFactory, DbConnection, CancellationToken, ValueTask<IUnitOfWork>> BeginOwnedUnit,
+    Func<DbConnection, CancellationToken, ValueTask<DbTransaction>>? BeginReadOnlyTransaction = null,
+    string? EnlistedAdmissionRefusal = null
 )
 {
     public DbConnection CreateConnection() => Dialect.CreateConnection(ConnectionString);

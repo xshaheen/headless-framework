@@ -1,6 +1,6 @@
 ---
 domain: Fencing
-packages: Fencing.Abstractions, Fencing.Core, Fencing.InMemory, Fencing.PostgreSql, Fencing.SqlServer
+packages: Fencing.Abstractions, Fencing.Core, Fencing.InMemory, Fencing.PostgreSql, Fencing.SqlServer, Fencing.Sqlite
 ---
 
 # Fencing
@@ -203,6 +203,7 @@ Enlisted calls (`unit.Leases.*`) follow the same rules as `unit.Sequences` (see 
 | --- | --- | --- | --- |
 | `Headless.Fencing.PostgreSql` | Enlisted callers run their units on PostgreSQL | Callers run on SQL Server | Sweep uses `SKIP LOCKED`; generation draws `nextval()` after the locking read |
 | `Headless.Fencing.SqlServer` | Enlisted callers run their units on SQL Server | — | Sweep uses `READPAST` (plus `READCOMMITTEDLOCK` under RCSI); generation draws `NEXT VALUE FOR` after the locking read |
+| `Headless.Fencing.Sqlite` | Every process that shares the leased work runs on one host and one SQLite file | A lease must be granted inside a caller's unit (`unit.Leases.GrantAsync`), or many writers contend | Every call holds the database write lock; enlisted grant is refused, autonomous grant and every other enlisted call work; the host clock decides expiry |
 | `Headless.Fencing.InMemory` | Tests, local development, or a single-instance host with no relational database (for example Redis-only) | Several processes share the leased work, or a fence must guard writes that commit in a database | Leases live in one process and vanish on restart; the registered `TimeProvider` decides expiry; enlisted calls run only on resource-less units, so a fence cannot join a database transaction |
 
 A relational provider must sit on the database enlisted units run on; lease rows are written inside the unit's own transaction, on its own connection.
@@ -367,3 +368,39 @@ The lease row stores progress as `Progress varbinary(max)` plus `ProgressContrac
 - Sweep claims and purge batches use `UPDLOCK, READPAST, ROWLOCK, READCOMMITTEDLOCK`: `READPAST` is refused under read committed snapshot isolation unless the read also takes locks, and the hint is the default without it, so the same statement works either way.
 - The autonomous path opens its own connection at READ COMMITTED and retries a transient fault raised before the commit (a deadlock or snapshot update conflict, 1205, 3960, a lock timeout, 1222, or a connection fault EF Core's SQL Server retry set covers) up to 3 attempts with a jittered delay between them, never a fault from the commit; the enlisted path runs on the unit's own connection and transaction with no retry.
 - The table and sequence are one schema step (`Fencing/1`) the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts) applies at startup, under one `sp_getapplock` per database shared with every other Headless feature.
+
+---
+
+## Headless.Fencing.Sqlite
+
+SQLite storage for fenced leases.
+
+### Setup
+
+```bash
+dotnet add package Headless.Fencing.Sqlite
+```
+
+```csharp
+builder.Services.AddHeadlessFencing(setup => setup.UseSqlite("Data Source=/var/lib/app/app.db"));
+// or reuse the connection from services.AddSqliteSql(connectionString): setup.UseSqlite();
+```
+
+Use a database file: the store and the schema runner open their own connections. Every process sharing the leases must run on the host that holds the file, since SQLite locking does not work over a network file system; that also makes the host clock the one clock that judges expiry.
+
+### Configuration
+
+| Option | Default | Notes |
+| --- | --- | --- |
+| `ConnectionString` | required | The database file that holds the leases; an enlisted call is accepted only on a SQLite unit whose connection reaches the same file |
+| `CommandTimeout` | 30 seconds | Also bounds how long a call waits for another writer's database lock |
+| `InitializeOnStartup` | `true` | When `false`, the application creates the `<schema>_fencing_lease_generations` sequence table, the `<schema>_fencing_leases` table, its two indexes, and its two generation triggers |
+
+### Design and runtime behavior
+
+- **Enlisted grant is refused.** `unit.Leases.GrantAsync` throws `NotSupportedException` before it touches the unit. PostgreSQL and SQL Server draw generations from a sequence that ignores transactions; SQLite has no such counter, so a generation drawn in a caller's transaction that then rolls back would be drawn again by the next grant, and two holders could carry the same fencing token. `IFencedLeases.GrantAsync` grants in a transaction it commits before returning the lease, so it is safe. The unit can still renew, settle, release, or fence a lease granted that way.
+- The verbs are the shared relational store's (see [Headless.Fencing.Core](#headlessfencingcore)). Every transaction begins `IMMEDIATE` and holds the database write lock in place of the row lock, so grants, fences, and settlements of every key serialize on the file, and a sweep never meets a lease another transaction holds.
+- The generation sequence is a one-row table. A grant reads one past its value, and triggers on the lease table raise it to every generation written, in the same statement. A purge deletes leases, never the sequence row, so a lease granted again after its row was purged still gets a higher generation.
+- `SQLITE_BUSY` before the commit is retried in a fresh transaction, like a lock timeout on the other providers. The wait holds a thread-pool thread; see [sql.md § SQLite in the kit](sql.md#sqlite-in-the-kit).
+- The sequence table, lease table, indexes, and triggers are one schema step (`Fencing/1`) the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts) applies at startup.
+

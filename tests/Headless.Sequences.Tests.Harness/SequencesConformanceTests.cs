@@ -359,10 +359,10 @@ public abstract class SequencesConformanceTests<TFixture>(TFixture fixture) : Te
         }
 
         await using var unitA = await Fixture.BeginUnitAsync(host, AbortToken);
-        await using var unitB = await Fixture.BeginUnitAsync(host, AbortToken);
         var taken = await unitA.Unit.Sequences.NextAsync(name, cancellationToken: AbortToken);
 
-        var pending = unitB.Unit.Sequences.NextAsync(name, cancellationToken: AbortToken).AsTask();
+        // On a thread of its own: SQLite's driver waits for the write lock synchronously.
+        var pending = Task.Run(() => _TakeInSecondUnitAsync(host, name), AbortToken);
         var first = await Task.WhenAny(
             pending,
             Task.Delay(SequencesFixtureExtensions.BlockedObservationWindow, AbortToken)
@@ -371,7 +371,8 @@ public abstract class SequencesConformanceTests<TFixture>(TFixture fixture) : Te
         first.Should().NotBeSameAs(pending, "the second unit waits on the row the first unit holds");
 
         await unitA.CommitAsync(AbortToken);
-        var next = await pending.WaitAsync(SequencesFixtureExtensions.ReleaseTimeout, AbortToken);
+        var (unitB, next) = await pending.WaitAsync(SequencesFixtureExtensions.ReleaseTimeout, AbortToken);
+        await using var ownedB = unitB;
         await unitB.CommitAsync(AbortToken);
 
         taken.Should().Be(2);
@@ -384,10 +385,10 @@ public abstract class SequencesConformanceTests<TFixture>(TFixture fixture) : Te
         var name = CreateName("invoice");
         await using var host = await CreateGapFreeHostAsync(name);
         await using var unitA = await Fixture.BeginUnitAsync(host, AbortToken);
-        await using var unitB = await Fixture.BeginUnitAsync(host, AbortToken);
 
         var taken = await unitA.Unit.Sequences.NextAsync(name, cancellationToken: AbortToken);
-        var pending = unitB.Unit.Sequences.NextAsync(name, cancellationToken: AbortToken).AsTask();
+        // On a thread of its own: SQLite's driver waits for the write lock synchronously.
+        var pending = Task.Run(() => _TakeInSecondUnitAsync(host, name), AbortToken);
         var first = await Task.WhenAny(
             pending,
             Task.Delay(SequencesFixtureExtensions.BlockedObservationWindow, AbortToken)
@@ -396,7 +397,8 @@ public abstract class SequencesConformanceTests<TFixture>(TFixture fixture) : Te
         first.Should().NotBeSameAs(pending, "first use of a key the first unit is creating waits for that unit");
 
         await unitA.RollbackAsync();
-        var next = await pending.WaitAsync(SequencesFixtureExtensions.ReleaseTimeout, AbortToken);
+        var (unitB, next) = await pending.WaitAsync(SequencesFixtureExtensions.ReleaseTimeout, AbortToken);
+        await using var ownedB = unitB;
         await unitB.CommitAsync(AbortToken);
 
         taken.Should().Be(1);
@@ -574,6 +576,27 @@ public abstract class SequencesConformanceTests<TFixture>(TFixture fixture) : Te
     }
 
     /// <summary>Returns a counter name no other test uses.</summary>
+    /// <summary>
+    /// Begins a second unit and takes the next number in it, as one pending call. The unit begins inside the call
+    /// because an engine with one database write lock (SQLite) blocks the second unit at its begin rather than at the
+    /// row; either way the call completes only once the first unit ends.
+    /// </summary>
+    private async Task<(SequencesUnit Unit, long Value)> _TakeInSecondUnitAsync(SequencesHost host, string name)
+    {
+        var unit = await Fixture.BeginUnitAsync(host, AbortToken);
+
+        try
+        {
+            return (unit, await unit.Unit.Sequences.NextAsync(name, cancellationToken: AbortToken));
+        }
+        catch
+        {
+            await unit.DisposeAsync();
+
+            throw;
+        }
+    }
+
     protected static string CreateName(string prefix)
     {
         return $"{prefix}-{Guid.NewGuid():N}";
