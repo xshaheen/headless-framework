@@ -5,33 +5,30 @@ using Headless.Sql.PostgreSql;
 
 namespace Headless.Sequences.PostgreSql;
 
-/// <summary>
-/// The Sequences feature's schema contribution for PostgreSQL: the counter table, as one idempotent step the Headless
-/// schema runner applies.
-/// </summary>
+/// <summary>The Sequences feature's schema contribution for PostgreSQL: the counter table, as one step.</summary>
 internal static class PostgreSqlSequencesSchemaContribution
 {
     public const string StepVersion = "1";
 
     public static SchemaContribution Create(PostgreSqlSequencesOptions options)
     {
-        var table = PostgreSqlSequencesSchema.Qualified(options);
+        var dialect = PostgreSqlDialect.Instance;
+        var table = dialect.Qualify(options.Schema, options.TableName);
+        var tenantId = SequencesColumns.TenantId(dialect);
+        var name = SequencesColumns.Name(dialect);
+        var partition = SequencesColumns.Partition(dialect);
 
         // Key columns compare with the "C" collation, so counter names, partitions, and tenant ids match ordinally
         // (byte for byte) whatever the database's default collation is.
         var sql = $"""
             CREATE TABLE IF NOT EXISTS {table} (
-                {PostgreSqlSequencesSchema.TenantId} varchar({SequenceFieldLimits.TenantIdMaxLength}) COLLATE "C" NOT NULL,
-                {PostgreSqlSequencesSchema.Name} varchar({SequenceFieldLimits.NameMaxLength}) COLLATE "C" NOT NULL,
-                {PostgreSqlSequencesSchema.Partition} varchar({SequenceFieldLimits.PartitionMaxLength}) COLLATE "C" NOT NULL,
-                {PostgreSqlSequencesSchema.Value} bigint NOT NULL,
-                {PostgreSqlSequencesSchema.CreatedAt} timestamptz NOT NULL,
-                {PostgreSqlSequencesSchema.UpdatedAt} timestamptz NOT NULL,
-                CONSTRAINT "pk_{options.TableName}" PRIMARY KEY (
-                    {PostgreSqlSequencesSchema.TenantId},
-                    {PostgreSqlSequencesSchema.Name},
-                    {PostgreSqlSequencesSchema.Partition}
-                )
+                {tenantId} varchar({SequenceFieldLimits.TenantIdMaxLength}) COLLATE "C" NOT NULL,
+                {name} varchar({SequenceFieldLimits.NameMaxLength}) COLLATE "C" NOT NULL,
+                {partition} varchar({SequenceFieldLimits.PartitionMaxLength}) COLLATE "C" NOT NULL,
+                {SequencesColumns.Value(dialect)} bigint NOT NULL,
+                {SequencesColumns.CreatedAt(dialect)} timestamptz NOT NULL,
+                {SequencesColumns.UpdatedAt(dialect)} timestamptz NOT NULL,
+                CONSTRAINT {dialect.Quote("pk_" + options.TableName)} PRIMARY KEY ({tenantId}, {name}, {partition})
             );
             """;
 
@@ -41,7 +38,7 @@ internal static class PostgreSqlSequencesSchemaContribution
                 (options.TableName, PostgreSqlSequencesOptions.DefaultTableName)
             ),
             dialect: PostgreSqlSchemaDialect.Instance,
-            createConnection: options.CreateConnection,
+            createConnection: () => dialect.CreateConnection(options.ConnectionString),
             schema: options.Schema,
             steps: [new SchemaStep(StepVersion, "Create the counter table.", sql)],
             applyOnStartup: options.InitializeOnStartup

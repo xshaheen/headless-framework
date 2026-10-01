@@ -5,37 +5,40 @@ using Headless.Sql.SqlServer;
 
 namespace Headless.Sequences.SqlServer;
 
-/// <summary>
-/// The Sequences feature's schema contribution for SQL Server: the counter table, as one idempotent step the Headless
-/// schema runner applies.
-/// </summary>
+/// <summary>The Sequences feature's schema contribution for SQL Server: the counter table, as one step.</summary>
 internal static class SqlServerSequencesSchemaContribution
 {
     public const string StepVersion = "1";
 
+    // Binary code-point order, so counter names, partitions, and tenant ids match case- and accent-sensitively whatever
+    // the database's default collation is. SQL Server still pads trailing spaces before comparing; key parts with
+    // surrounding white space are refused before any statement, which keeps matching ordinal on both engines.
+    private const string _KeyCollation = "Latin1_General_100_BIN2";
+
     public static SchemaContribution Create(SqlServerSequencesOptions options)
     {
-        var table = SqlServerSequencesSchema.Qualified(options);
+        var dialect = SqlServerDialect.Instance;
+        var table = dialect.Qualify(options.Schema, options.TableName);
         var objectName = $"{options.Schema}.{options.TableName}";
-        const string collation = SqlServerSequencesSchema.KeyCollation;
+        var tenantId = SequencesColumns.TenantId(dialect);
+        var name = SequencesColumns.Name(dialect);
+        var partition = SequencesColumns.Partition(dialect);
 
         // The clustered primary key over exactly (TenantId, Name, Partition) is load-bearing, not an index choice:
-        // the increment's HOLDLOCK takes its key-range lock on this index, which is what serializes concurrent first
+        // the upsert's HOLDLOCK takes its key-range lock on this index, which is what serializes concurrent first
         // calls on a new key. 128 + 128 + 64 nvarchar characters stay under the 900-byte clustered key limit.
         var sql = $"""
             IF OBJECT_ID(N'{objectName}', N'U') IS NULL
                 CREATE TABLE {table} (
-                    {SqlServerSequencesSchema.TenantId} nvarchar({SequenceFieldLimits.TenantIdMaxLength}) COLLATE {collation} NOT NULL,
-                    {SqlServerSequencesSchema.Name} nvarchar({SequenceFieldLimits.NameMaxLength}) COLLATE {collation} NOT NULL,
-                    {SqlServerSequencesSchema.Partition} nvarchar({SequenceFieldLimits.PartitionMaxLength}) COLLATE {collation} NOT NULL,
-                    {SqlServerSequencesSchema.Value} bigint NOT NULL,
-                    {SqlServerSequencesSchema.CreatedAt} datetime2 NOT NULL,
-                    {SqlServerSequencesSchema.UpdatedAt} datetime2 NOT NULL,
-                    CONSTRAINT [PK_{options.TableName}] PRIMARY KEY CLUSTERED (
-                        {SqlServerSequencesSchema.TenantId} ASC,
-                        {SqlServerSequencesSchema.Name} ASC,
-                        {SqlServerSequencesSchema.Partition} ASC
-                    )
+                    {tenantId} nvarchar({SequenceFieldLimits.TenantIdMaxLength}) COLLATE {_KeyCollation} NOT NULL,
+                    {name} nvarchar({SequenceFieldLimits.NameMaxLength}) COLLATE {_KeyCollation} NOT NULL,
+                    {partition} nvarchar({SequenceFieldLimits.PartitionMaxLength}) COLLATE {_KeyCollation} NOT NULL,
+                    {SequencesColumns.Value(dialect)} bigint NOT NULL,
+                    {SequencesColumns.CreatedAt(dialect)} datetimeoffset(7) NOT NULL,
+                    {SequencesColumns.UpdatedAt(dialect)} datetimeoffset(7) NOT NULL,
+                    CONSTRAINT {dialect.Quote(
+                "PK_" + options.TableName
+            )} PRIMARY KEY CLUSTERED ({tenantId} ASC, {name} ASC, {partition} ASC)
                 );
             """;
 
@@ -45,7 +48,7 @@ internal static class SqlServerSequencesSchemaContribution
                 (options.TableName, SqlServerSequencesOptions.DefaultTableName)
             ),
             dialect: SqlServerSchemaDialect.Instance,
-            createConnection: options.CreateConnection,
+            createConnection: () => dialect.CreateConnection(options.ConnectionString),
             schema: options.Schema,
             steps: [new SchemaStep(StepVersion, "Create the counter table.", sql)],
             applyOnStartup: options.InitializeOnStartup
