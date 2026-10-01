@@ -35,13 +35,13 @@ internal sealed class SqlServerReadAuditLog<TContext>(
         if (query.From is not null)
         {
             filters.Add("[CreatedAt]>=@From");
-            parameters.Add(_DateTimeParam("From", query.From.Value.UtcDateTime));
+            parameters.Add(SqlServerAuditLogSchema.CreatedAtParameter(storageOptions.Value, "@From", query.From.Value));
         }
 
         if (query.To is not null)
         {
             filters.Add("[CreatedAt]<@To");
-            parameters.Add(_DateTimeParam("To", query.To.Value.UtcDateTime));
+            parameters.Add(SqlServerAuditLogSchema.CreatedAtParameter(storageOptions.Value, "@To", query.To.Value));
         }
 
         var newestFirst = query.Direction == AuditLogSortDirection.NewestFirst;
@@ -54,7 +54,13 @@ internal sealed class SqlServerReadAuditLog<TContext>(
                     ? "([CreatedAt]<@AfterCreatedAt OR ([CreatedAt]=@AfterCreatedAt AND [Id]<@AfterId))"
                     : "([CreatedAt]>@AfterCreatedAt OR ([CreatedAt]=@AfterCreatedAt AND [Id]>@AfterId))"
             );
-            parameters.Add(_DateTimeParam("AfterCreatedAt", after.CreatedAtUtc));
+            parameters.Add(
+                SqlServerAuditLogSchema.CreatedAtParameter(
+                    storageOptions.Value,
+                    "@AfterCreatedAt",
+                    new DateTimeOffset(DateTime.SpecifyKind(after.CreatedAtUtc, DateTimeKind.Utc))
+                )
+            );
             parameters.Add(_Param("AfterId", after.Id));
         }
 
@@ -83,7 +89,7 @@ internal sealed class SqlServerReadAuditLog<TContext>(
                 );
             }
 
-            var createdAt = DateTime.SpecifyKind(reader.GetDateTime(16), DateTimeKind.Utc);
+            var createdAt = SqlServerAuditLogSchema.ReadCreatedAt(reader, 16).UtcDateTime;
             last = (createdAt, reader.GetInt64(0));
             result.Add(
                 new AuditLogEntryData
@@ -157,12 +163,5 @@ internal sealed class SqlServerReadAuditLog<TContext>(
     private static SqlParameter _Param(string name, object? value)
     {
         return new($"@{name}", value ?? DBNull.Value);
-    }
-
-    // An untyped DateTime parameter binds as legacy datetime, which rounds to ~3 ms; against a datetime2 column
-    // that would shift range bounds and make the keyset predicate skip or repeat rows at a page boundary.
-    private static SqlParameter _DateTimeParam(string name, DateTime value)
-    {
-        return new($"@{name}", SqlDbType.DateTime2) { Value = value };
     }
 }
