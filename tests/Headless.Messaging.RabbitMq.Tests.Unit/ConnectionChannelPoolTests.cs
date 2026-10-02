@@ -13,6 +13,7 @@ namespace Tests;
 public sealed class ConnectionChannelPoolTests : TestBase
 {
     private readonly IOptions<MessagingOptions> _capOptions = Options.Create(new MessagingOptions { Version = "v1" });
+
     private readonly IOptions<RabbitMqMessagingOptions> _rabbitOptions = Options.Create(
         new RabbitMqMessagingOptions
         {
@@ -23,6 +24,7 @@ public sealed class ConnectionChannelPoolTests : TestBase
             ExchangeName = "test.exchange",
         }
     );
+
     private readonly ILogger<ConnectionChannelPool> _logger = NullLogger<ConnectionChannelPool>.Instance;
 
     [Theory]

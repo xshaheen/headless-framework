@@ -37,6 +37,7 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
         {
             throw new Exceptions.JobValidatorException($"Cannot find a registered job with identity {entity.Function}");
         }
+
         JobIntentFingerprint.Normalize(entity);
         JobScheduleResult result;
         if (coordinated is { } context)
@@ -52,6 +53,7 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
                 .ScheduleKeyedTimeJobAsync(key, entity, expectedGeneration, cancellationToken)
                 .ConfigureAwait(false);
         }
+
         return _CompleteKeyedOperation(result, coordinated);
     }
 
@@ -102,6 +104,7 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
                 .CancelKeyedTimeJobAsync(scope, key, expectedGeneration, cancellationToken)
                 .ConfigureAwait(false);
         }
+
         return _CompleteKeyedOperation(result, coordinated);
     }
 
@@ -124,6 +127,10 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
                 _jobsHostScheduler.Restart();
             }
         }
-        return result with { IsProvisional = coordinated is not null };
+
+        return result with
+        {
+            IsProvisional = coordinated is not null,
+        };
     }
 }

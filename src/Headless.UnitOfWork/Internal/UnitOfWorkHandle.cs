@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
 using Headless.UnitOfWork.Internal;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
@@ -99,5 +100,5 @@ internal sealed class UnitOfWorkHandle(Internal.UnitOfWork unit, UnitOfWorkFacto
         await factory.DisposeAsync(unit).ConfigureAwait(false);
     }
 
-    private void _ThrowIfDisposed() => ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+    private void _ThrowIfDisposed() => Ensure.NotDisposed(Volatile.Read(ref _disposed) != 0, this);
 }

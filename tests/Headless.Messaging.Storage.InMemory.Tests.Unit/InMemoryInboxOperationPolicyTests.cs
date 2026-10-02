@@ -20,7 +20,7 @@ public sealed class InMemoryInboxOperationPolicyTests : InboxOperationPolicyConf
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
         await using var provider = _CreateProvider(clock);
-        await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
         var storage = provider.GetRequiredService<IDataStorage>();
         provider.GetRequiredService<IOptions<MessagingOptions>>().Value.InboxOperatorAuditRetention = TimeSpan.FromDays(
             30
@@ -51,7 +51,7 @@ public sealed class InMemoryInboxOperationPolicyTests : InboxOperationPolicyConf
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
         await using var provider = _CreateProvider(clock);
-        await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
         var storage = provider.GetRequiredService<IDataStorage>();
         var message = await _AdmitAsync(storage, lane);
         await _LeaseAsync(storage, message);
@@ -88,7 +88,7 @@ public sealed class InMemoryInboxOperationPolicyTests : InboxOperationPolicyConf
     public async Task should_not_claim_removed_row_after_waiting_for_serialization(MessageLane lane)
     {
         await using var provider = _CreateProvider();
-        await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
         var storage = (InMemoryDataStorage)provider.GetRequiredService<IDataStorage>();
         var message = await _AdmitAsync(storage, lane);
         await _LeaseAsync(storage, message);
@@ -140,6 +140,7 @@ public sealed class InMemoryInboxOperationPolicyTests : InboxOperationPolicyConf
                 purge.IsCompletedSuccessfully.Should().BeTrue();
             }
         }
+
         (await purge).Outcome.Should().Be(InboxOperationOutcome.Applied);
         await completion.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
         (await claim).Should().BeFalse();

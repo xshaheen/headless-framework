@@ -261,6 +261,7 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
     [field: DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)]
     internal Type? JobExceptionHandlerType { get; private set; }
+
     internal JobsRetryOptions RetryOptions { get; } = new();
 
     /// <summary>Configures direct Polly retry behavior and Jobs-owned exhaustion notification.</summary>

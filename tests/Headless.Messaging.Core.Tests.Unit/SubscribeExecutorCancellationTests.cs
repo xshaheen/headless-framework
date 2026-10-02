@@ -81,7 +81,7 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<MessageContentWrite>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<RetryDelay?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int>(),
                 Arg.Any<int>(),
@@ -130,7 +130,7 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<MessageContentWrite>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<RetryDelay?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()
@@ -160,7 +160,7 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
                 Arg.Any<MediumMessage>(),
                 StatusName.Failed,
                 Arg.Any<MessageContentWrite>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<RetryDelay?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int>(),
                 Arg.Any<int>(),
@@ -182,7 +182,7 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<MessageContentWrite>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<RetryDelay?>(),
                 cancellationToken: Arg.Any<CancellationToken>()
             )
             .Returns(ValueTask.FromResult(true));
@@ -235,7 +235,7 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<MessageContentWrite>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<RetryDelay?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()
@@ -254,7 +254,7 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<MessageContentWrite>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<RetryDelay?>(),
                 cancellationToken: Arg.Any<CancellationToken>()
             )
             .Returns(ValueTask.FromResult(true));
@@ -287,7 +287,7 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<MessageContentWrite>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<RetryDelay?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
                 Arg.Any<CancellationToken>()

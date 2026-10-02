@@ -14,6 +14,7 @@ public sealed class PostgreSqlKeyLockTests(JobsKeyLockPostgreSqlFixture fixture)
 {
     protected override string CountLocksSql =>
         "SELECT count(*)::int FROM pg_locks WHERE pid = pg_backend_pid() AND locktype = 'advisory'";
+
     protected override string TryLockSql => "SELECT pg_try_advisory_xact_lock(@key)";
     protected override string ReadLockTimeoutSql => "SHOW lock_timeout";
     protected override string SetLockTimeoutSql => "SET LOCAL lock_timeout = '7s'";

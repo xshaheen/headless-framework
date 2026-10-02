@@ -363,6 +363,7 @@ public sealed class IdentityTenantModelTests : TestBase
             {
                 options.UseNpgsql("Host=localhost;Database=identity-model-only");
             }
+
             options.AddHeadlessExtension();
         });
         return services.BuildServiceProvider();
@@ -389,6 +390,7 @@ public sealed class IdentityTenantModelTests : TestBase
                 ConfigureTenantOwnedIdentity(builder);
                 ConfigureTenantOwnedIdentity(builder);
             }
+
             TPolicy.Configure(builder);
         }
     }

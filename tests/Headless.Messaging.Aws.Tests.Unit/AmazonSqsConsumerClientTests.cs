@@ -274,6 +274,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
                         }
                     );
                 }
+
                 return Task.FromResult(new ReceiveMessageResponse { Messages = [] });
             });
 
@@ -344,6 +345,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
                         }
                     );
                 }
+
                 return Task.FromResult(new ReceiveMessageResponse { Messages = [] });
             });
 
@@ -409,6 +411,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
                         }
                     );
                 }
+
                 return Task.FromResult(new ReceiveMessageResponse { Messages = [] });
             });
 
@@ -494,6 +497,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
                         }
                     );
                 }
+
                 return Task.FromResult(new ReceiveMessageResponse { Messages = [] });
             });
 
@@ -737,6 +741,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
                         }
                     );
                 }
+
                 return Task.FromResult(new ReceiveMessageResponse { Messages = [] });
             });
 
@@ -990,6 +995,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
                         }
                     );
                 }
+
                 return Task.FromResult(new ReceiveMessageResponse { Messages = [] });
             });
 
@@ -1067,10 +1073,12 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         {
             headers.Remove(Headers.RoutingAffinityKey);
         }
+
         if (applicationHeader is not null)
         {
             headers[applicationHeader] = "application-value";
         }
+
         var json = encoding switch
         {
             "invalid-json" => "{",
@@ -1112,10 +1120,12 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
                     StringComparer.Ordinal
                 );
         }
+
         if (string.Equals(encoding, "mixed", StringComparison.Ordinal))
         {
             attributes[Headers.MessageId] = new() { DataType = "String", StringValue = "other" };
         }
+
         using var stop = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
         stop.CancelAfter(TimeSpan.FromSeconds(5));
         TransportMessage? observed = null;
@@ -1175,6 +1185,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
             {
                 delivered.Headers[applicationHeader].Should().Be("application-value");
             }
+
             delivered.Headers.Should().ContainKey("nullable").WhoseValue.Should().BeNull();
         }
         else
@@ -1394,6 +1405,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
                         }
                     );
                 }
+
                 return Task.FromResult(new ReceiveMessageResponse { Messages = [] });
             });
 

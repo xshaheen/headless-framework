@@ -1,19 +1,23 @@
 ---
 title: "Transport wrapper drift: keep adapters, display surfaces, and generated docs aligned"
-category: messaging
 date: 2026-03-25
+module: Headless.Messaging.Core
 tags: [messaging, nats, kafka, pulsar, documentation, credentials, wrappers]
 problem_type: integration_issue
-components:
+component: service_class
+severity: medium
+symptoms:
+  - Kafka and Pulsar transport wrappers stop compiling after the underlying client APIs change
+  - NATS and dashboard docs, including generated LLM docs, show fluent APIs that no longer exist
+  - Raw NATS server URIs that may carry credentials are reused as display and metadata values
+root_cause: missing_workflow_step
+resolution_type: code_fix
+related_components:
   - KafkaConsumerClient
   - ConnectionFactory
   - MessagingNatsOptions
   - NatsConsumerClient
   - Messaging dashboard docs
-research:
-  agents: [compact-safe-local]
-  documented_at: 2026-03-25T00:00:00Z
-  conversation_context: "PR #199 transport follow-up todos across Kafka, Pulsar, NATS, and generated messaging docs"
 ---
 
 # Transport wrapper drift: keep adapters, display surfaces, and generated docs aligned
@@ -76,4 +80,5 @@ If a review todo mixes a current runtime defect with migration work, split them.
 
 ## Related
 
-- [circuit-breaker-transport-thread-safety-patterns.md](/Users/xshaheen/Dev/framework/headless-framework/docs/solutions/concurrency/circuit-breaker-transport-thread-safety-patterns.md)
+- [circuit-breaker-transport-thread-safety-patterns.md](../concurrency/circuit-breaker-transport-thread-safety-patterns.md)
+- PR #199: transport follow-up work across Kafka, Pulsar, NATS, and the generated messaging docs

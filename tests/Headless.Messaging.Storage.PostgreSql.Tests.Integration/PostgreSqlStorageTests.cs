@@ -2,6 +2,7 @@
 
 using Dapper;
 using Headless.Abstractions;
+using Headless.Hosting.Initialization.Schema;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
@@ -83,7 +84,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         );
     }
 
-    private IStorageInitializer? _initializer;
+    private IStorageTableNames? _tableNames;
     private IDataStorage? _storage;
     private ISerializer? _serializer;
     private IOptions<PostgreSqlOptions>? _postgreSqlOptions;
@@ -107,10 +108,16 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
     }
 
     /// <inheritdoc />
-    protected override IStorageInitializer GetInitializer()
+    protected override IStorageTableNames GetTableNames()
     {
         _EnsureInitialized();
-        return _initializer!;
+        return _tableNames!;
+    }
+
+    /// <inheritdoc />
+    protected override Task ApplySchemaAsync(CancellationToken cancellationToken)
+    {
+        return TestMessagingSchema.ApplyAsync(fixture.ConnectionString, cancellationToken: cancellationToken);
     }
 
     /// <inheritdoc />
@@ -230,16 +237,16 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
 
     private IDataStorage _CreateStorage(TimeProvider timeProvider)
     {
-        return new PostgreSqlDataStorage(
-            _postgreSqlOptions!,
-            TestStorageOptions.For(),
+        return new RelationalDataStorage(
+            _postgreSqlOptions!.Value.ToStorage(),
             _messagingOptions!,
-            _initializer!,
+            TestStorageOptions.For(),
+            _tableNames!,
             _serializer!,
             new SequentialGuidGenerator(SequentialGuidType.Version7),
             timeProvider,
             NodeMembership,
-            NullLogger<PostgreSqlDataStorage>.Instance
+            NullLogger<RelationalDataStorage>.Instance
         );
     }
 
@@ -251,16 +258,16 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         messagingOptions.RetryPolicy.MaxPersistedRetries = 4;
         messagingOptions.FailedMessageExpiredAfter = 3600;
 
-        return new PostgreSqlDataStorage(
-            _postgreSqlOptions!,
-            TestStorageOptions.For(),
+        return new RelationalDataStorage(
+            _postgreSqlOptions!.Value.ToStorage(),
             Options.Create(messagingOptions),
-            _initializer!,
+            TestStorageOptions.For(),
+            _tableNames!,
             _serializer!,
             new SequentialGuidGenerator(SequentialGuidType.Version7),
             TimeProvider.System,
             NodeMembership,
-            NullLogger<PostgreSqlDataStorage>.Instance
+            NullLogger<RelationalDataStorage>.Instance
         );
     }
 
@@ -291,7 +298,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         await base.InitializeAsync();
 
         _EnsureInitialized();
-        await _initializer!.InitializeAsync(AbortToken);
+        await TestMessagingSchema.ApplyAsync(fixture.ConnectionString, cancellationToken: AbortToken);
     }
 
     /// <inheritdoc />
@@ -322,7 +329,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
 
     private void _EnsureInitialized()
     {
-        if (_initializer is not null)
+        if (_tableNames is not null)
         {
             return;
         }
@@ -347,12 +354,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         _messagingOptions = provider.GetRequiredService<IOptions<MessagingOptions>>();
         _serializer = provider.GetRequiredService<ISerializer>();
 
-        _initializer = new PostgreSqlStorageInitializer(
-            NullLogger<PostgreSqlStorageInitializer>.Instance,
-            _postgreSqlOptions,
-            TestStorageOptions.For(),
-            _messagingOptions
-        );
+        _tableNames = TestStorageOptions.TableNames();
 
         _storage = _CreateStorage(TimeProvider.System);
     }
@@ -384,6 +386,12 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
     }
 
     [Fact]
+    public override Task should_admit_exactly_one_of_many_admissions_of_one_key_released_together()
+    {
+        return base.should_admit_exactly_one_of_many_admissions_of_one_key_released_together();
+    }
+
+    [Fact]
     public override Task should_isolate_every_persisted_inbox_key_component()
     {
         return base.should_isolate_every_persisted_inbox_key_component();
@@ -406,17 +414,16 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         base.should_apply_audited_inbox_operations_once_and_reject_operation_identity_reuse();
 
     [Fact]
-    public async Task should_publish_final_inbox_schema_marker_and_key_index()
+    public async Task should_record_messaging_steps_and_create_final_inbox_key_index()
     {
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
-        var (schemaVersion, indexCount, constraintCount, receiptColumnCount) = await connection.QuerySingleAsync<(
-            int SchemaVersion,
+        var (indexCount, constraintCount, receiptColumnCount) = await connection.QuerySingleAsync<(
             long IndexCount,
             long ConstraintCount,
             long ReceiptColumnCount
         )>(
             """
-            SELECT state."schema_version", (
+            SELECT (
                 SELECT COUNT(*) FROM pg_indexes
                 WHERE schemaname='headless' AND indexname IN ('uq_messaging_received_inbox_root_key','uq_messaging_received_inbox_lifecycle_generation')
             ) AS "IndexCount", (
@@ -426,16 +433,18 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
                 SELECT COUNT(*) FROM information_schema.columns
                 WHERE table_schema='headless' AND table_name='messaging_inbox_operation_receipts'
                   AND column_name IN ('expected_status','outcome','child_incarnation_id','target_kind','expected_due_at','message_name','message_id','lane')
-            ) AS "ReceiptColumnCount"
-            FROM headless.messaging_schema_state AS state
-            WHERE state."component"='inbox';
+            ) AS "ReceiptColumnCount";
             """
         );
+        // The schema runner's history replaces the hand-rolled readiness marker: every Messaging step is recorded.
+        var steps = await connection.QueryAsync<string>(
+            "SELECT step_version FROM headless.headless_schema_history WHERE feature='Messaging' ORDER BY step_version;"
+        );
 
-        schemaVersion.Should().Be(1);
         indexCount.Should().Be(2);
         constraintCount.Should().Be(2);
         receiptColumnCount.Should().Be(8);
+        steps.Should().Equal("1", "2", "3");
     }
 
     [Fact]
@@ -466,7 +475,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
 
         (
             await storage.DeleteExpiresAsync(
-                _initializer!.GetReceivedTableName(),
+                _tableNames!.GetReceivedTableName(),
                 DateTimeOffset.UtcNow,
                 cancellationToken: AbortToken
             )
@@ -483,35 +492,6 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
             new { Id = admitted.Message.StorageId }
         );
         persisted.Should().Be((0, 1, 1));
-    }
-
-    [Fact]
-    public async Task should_fail_closed_when_inbox_schema_is_newer_than_supported()
-    {
-        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
-        await connection.ExecuteAsync(
-            "UPDATE headless.messaging_schema_state SET \"schema_version\"=2 WHERE \"component\"='inbox';"
-        );
-
-        try
-        {
-            var act = async () => await GetInitializer().InitializeAsync(AbortToken);
-
-            await act.Should().ThrowAsync<PostgresException>().WithMessage("*newer than supported version 1*");
-            (
-                await connection.ExecuteScalarAsync<int>(
-                    "SELECT \"schema_version\" FROM headless.messaging_schema_state WHERE \"component\"='inbox';"
-                )
-            )
-                .Should()
-                .Be(2, "a rejected older binary must not rewrite the newer readiness marker");
-        }
-        finally
-        {
-            await connection.ExecuteAsync(
-                "UPDATE headless.messaging_schema_state SET \"schema_version\"=1 WHERE \"component\"='inbox';"
-            );
-        }
     }
 
     [Fact]
@@ -554,6 +534,14 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
     public override Task should_change_publish_state()
     {
         return base.should_change_publish_state();
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public override Task should_keep_a_later_due_time_only_when_the_retry_delay_asks_to(bool published)
+    {
+        return base.should_keep_a_later_due_time_only_when_the_retry_delay_asks_to(published);
     }
 
     [Fact]
@@ -680,6 +668,12 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
     public override Task should_schedule_messages_of_delayed()
     {
         return base.should_schedule_messages_of_delayed();
+    }
+
+    [Fact]
+    public override Task should_store_and_find_rows_under_a_version_containing_sql_metacharacters()
+    {
+        return base.should_store_and_find_rows_under_a_version_containing_sql_metacharacters();
     }
 
     [Fact]
@@ -909,15 +903,45 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
     }
 
     [Fact]
-    public override Task should_use_application_clock_when_scheduling_published_retry()
+    public override Task should_decide_published_retry_due_on_database_clock()
     {
-        return base.should_use_application_clock_when_scheduling_published_retry();
+        return base.should_decide_published_retry_due_on_database_clock();
     }
 
     [Fact]
-    public override Task should_use_application_clock_when_scheduling_received_retry()
+    public override Task should_decide_received_retry_due_on_database_clock()
     {
-        return base.should_use_application_clock_when_scheduling_received_retry();
+        return base.should_decide_received_retry_due_on_database_clock();
+    }
+
+    [Theory]
+    [InlineData(true, true)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(false, false)]
+    public override Task should_make_core_scheduled_retry_due_after_its_delay_on_database_clock(
+        bool published,
+        bool applicationClockAhead
+    )
+    {
+        return base.should_make_core_scheduled_retry_due_after_its_delay_on_database_clock(
+            published,
+            applicationClockAhead
+        );
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public override Task should_stamp_initial_dispatch_grace_from_database_clock(bool published)
+    {
+        return base.should_stamp_initial_dispatch_grace_from_database_clock(published);
+    }
+
+    [Fact]
+    public override Task should_decide_delayed_message_due_on_database_clock()
+    {
+        return base.should_decide_delayed_message_due_on_database_clock();
     }
 
     [Fact]
@@ -1177,7 +1201,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         await storage.ChangeReceiveStateAsync(
             stored,
             StatusName.Failed,
-            nextRetryAt: DateTimeOffset.UtcNow.AddMinutes(-1),
+            retryDelay: RetryDelay.Exactly(TimeSpan.Zero),
             cancellationToken: AbortToken
         );
 
@@ -1318,7 +1342,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         var monitoringApi = storage.GetMonitoringApi();
 
         // then
-        monitoringApi.Should().BeOfType<PostgreSqlMonitoringApi>();
+        monitoringApi.Should().BeOfType<RelationalMonitoringApi>();
         await Task.CompletedTask;
     }
 
@@ -1362,8 +1386,8 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
     {
         // #507 — the container role can CREATE EXTENSION pg_trgm, so the trigram content indexes are
         // created (happy path). This also proves moving CREATE EXTENSION out of the transaction did not
-        // regress trigram-index creation. Managed-PG graceful degradation is covered by the try/catch +
-        // pg_extension probe in _TryEnsureTrgmExtensionAsync (needs a privilege-restricted role to exercise).
+        // regress trigram-index creation. Managed-PG graceful degradation (the exception block around CREATE
+        // EXTENSION and the pg_extension probe in the content-search step) is covered by the restricted-role tests.
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
 
@@ -1384,9 +1408,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
             preinstallTrgm: false,
             async connectionString =>
             {
-                var initializer = _CreateInitializer(connectionString);
-
-                await initializer.InitializeAsync(AbortToken);
+                await TestMessagingSchema.ApplyAsync(connectionString, cancellationToken: AbortToken);
 
                 await using var connection = new NpgsqlConnection(connectionString);
                 await connection.OpenAsync(AbortToken);
@@ -1425,9 +1447,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
             preinstallTrgm: true,
             async connectionString =>
             {
-                var initializer = _CreateInitializer(connectionString);
-
-                await initializer.InitializeAsync(AbortToken);
+                await TestMessagingSchema.ApplyAsync(connectionString, cancellationToken: AbortToken);
 
                 await using var connection = new NpgsqlConnection(connectionString);
                 await connection.OpenAsync(AbortToken);
@@ -1512,7 +1532,9 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         var serializer = GetSerializer();
         var poisonId = Guid.NewGuid();
         var healthyId = Guid.NewGuid();
-        var now = TimeProvider.GetUtcNow();
+        // A day back, so the rows sort ahead of every due row the rest of the suite leaves in the shared table and
+        // fall inside one claim batch.
+        var now = TimeProvider.GetUtcNow().AddDays(-1);
 
         await using (var connection = new NpgsqlConnection(fixture.ConnectionString))
         {
@@ -1761,9 +1783,6 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
 
-        await connection.ExecuteAsync($"DROP INDEX IF EXISTS headless.\"{indexName}\";");
-        await _CreateInitializer(fixture.ConnectionString).InitializeAsync(AbortToken);
-
         var columns = (
             await connection.QueryAsync<string>(
                 """
@@ -1797,52 +1816,6 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
             new { IndexName = indexName }
         );
         predicate.Should().NotBeNull().And.Contain("next_retry_at").And.Contain("IS NOT NULL");
-    }
-
-    [Fact]
-    public async Task should_recover_failed_concurrent_retry_index_build()
-    {
-        const string indexName = "idx_messaging_received_version_next_retry_at";
-        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(AbortToken);
-        await connection.ExecuteAsync(
-            """
-            INSERT INTO headless.messaging_received ("id","version","name","intent_type","retries","added","status_name","message_id")
-            SELECT gen_random_uuid(), 'v1', 'retry-index-recovery', 0, 0, NOW(), 'Failed', gen_random_uuid()::text
-            FROM generate_series(1, 2);
-            DROP INDEX IF EXISTS headless."idx_messaging_received_version_next_retry_at";
-            """
-        );
-
-        // A failed concurrent build leaves a real invalid catalog entry that IF NOT EXISTS alone cannot repair.
-        var createInvalidIndex = async () =>
-            await connection.ExecuteAsync(
-                """
-                CREATE UNIQUE INDEX CONCURRENTLY "idx_messaging_received_version_next_retry_at" ON headless.messaging_received ((true));
-                """
-            );
-        (await createInvalidIndex.Should().ThrowAsync<PostgresException>())
-            .Which.SqlState.Should()
-            .Be(PostgresErrorCodes.UniqueViolation);
-        const string validitySql = """
-            SELECT i.indisvalid
-            FROM pg_index i
-            JOIN pg_class c ON c.oid = i.indexrelid
-            JOIN pg_namespace n ON n.oid = c.relnamespace
-            WHERE n.nspname = 'headless' AND c.relname = @IndexName;
-            """;
-        (await connection.QuerySingleAsync<bool>(validitySql, new { IndexName = indexName })).Should().BeFalse();
-
-        await _CreateInitializer(fixture.ConnectionString).InitializeAsync(AbortToken);
-
-        (await connection.QuerySingleAsync<bool>(validitySql, new { IndexName = indexName })).Should().BeTrue();
-        (
-            await connection.QuerySingleAsync<int>(
-                "SELECT COUNT(*) FROM headless.messaging_received WHERE \"name\" = 'retry-index-recovery';"
-            )
-        )
-            .Should()
-            .Be(2);
     }
 
     [Theory]
@@ -1924,7 +1897,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         await connection.ExecuteAsync(seedSql);
         await connection.ExecuteAsync($"ANALYZE {qualifiedTable};");
 
-        // The query mirrors PostgreSqlDataStorage._GetMessagesOfNeedRetryAsync. We omit
+        // The query mirrors RelationalDataStorage._GetMessagesOfNeedRetryAsync. We omit
         // "FOR UPDATE SKIP LOCKED" because EXPLAIN does not require row-level locking and
         // the planner does not include it in the index-selection decision under FORMAT JSON.
         //
@@ -1978,13 +1951,13 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
     [Fact]
     public async Task should_create_inbox_constraints_for_each_application_schema()
     {
-        await _CreateInitializer(fixture.ConnectionString).InitializeAsync(AbortToken);
+        await TestMessagingSchema.ApplyAsync(fixture.ConnectionString, cancellationToken: AbortToken);
         var schema = $"inbox_{Guid.NewGuid():N}";
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
         try
         {
-            await _CreateInitializer(fixture.ConnectionString, schema).InitializeAsync(AbortToken);
+            await TestMessagingSchema.ApplyAsync(fixture.ConnectionString, schema, AbortToken);
             var constraints = await connection.QueryAsync<string>(
                 """
                 SELECT conname FROM pg_constraint
@@ -2012,11 +1985,11 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         await connection.OpenAsync(AbortToken);
         try
         {
-            await _CreateInitializer(fixture.ConnectionString, referenceSchema).InitializeAsync(AbortToken);
+            await TestMessagingSchema.ApplyAsync(fixture.ConnectionString, referenceSchema, AbortToken);
 
             await Task.WhenAll(
-                _CreateInitializer(fixture.ConnectionString, concurrentSchema).InitializeAsync(AbortToken),
-                _CreateInitializer(fixture.ConnectionString, concurrentSchema).InitializeAsync(AbortToken)
+                TestMessagingSchema.ApplyAsync(fixture.ConnectionString, concurrentSchema, AbortToken),
+                TestMessagingSchema.ApplyAsync(fixture.ConnectionString, concurrentSchema, AbortToken)
             );
 
             const string indexCountSql = "SELECT COUNT(*) FROM pg_indexes WHERE schemaname=@Schema;";
@@ -2041,7 +2014,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         await connection.OpenAsync(AbortToken);
         try
         {
-            await _CreateInitializer(fixture.ConnectionString, schema).InitializeAsync(AbortToken);
+            await TestMessagingSchema.ApplyAsync(fixture.ConnectionString, schema, AbortToken);
 
             // PostgreSQL silently truncates identifiers to 63 bytes, so a name at the limit means two
             // objects could collapse into one; every name must stay strictly below it.
@@ -2056,7 +2029,10 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
                     """,
                     new { Schema = schema }
                 )
-            ).ToList();
+            )
+                // The schema runner's history table and its key share the schema but are not Messaging objects.
+                .Where(name => !name.Contains(SchemaRunner.HistoryTableName, StringComparison.Ordinal))
+                .ToList();
 
             names.Should().NotBeEmpty();
             names.Should().OnlyContain(name => Encoding.UTF8.GetByteCount(name) < 63);
@@ -2085,101 +2061,6 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
         {
             await connection.ExecuteAsync($"DROP SCHEMA IF EXISTS \"{schema}\" CASCADE;");
         }
-    }
-
-    [Fact]
-    public async Task should_serialize_initialization_on_messaging_namespaced_lock()
-    {
-        var schema = $"lock_{Guid.NewGuid():N}";
-        await using var holder = new NpgsqlConnection(fixture.ConnectionString);
-        await holder.OpenAsync(AbortToken);
-        var lockParams = new { LockResource = $"headless_messaging_init:{schema}" };
-        await holder.ExecuteAsync("SELECT pg_advisory_lock(hashtextextended(@LockResource, 0));", lockParams);
-        try
-        {
-            var initialization = _CreateInitializer(fixture.ConnectionString, schema).InitializeAsync(AbortToken);
-
-            var first = await Task.WhenAny(initialization, Task.Delay(TimeSpan.FromSeconds(1), AbortToken));
-            first.Should().NotBeSameAs(initialization, "the initializer must wait on the Messaging init lock");
-
-            await holder.ExecuteAsync("SELECT pg_advisory_unlock(hashtextextended(@LockResource, 0));", lockParams);
-            await initialization;
-        }
-        finally
-        {
-            await holder.ExecuteAsync("SELECT pg_advisory_unlock_all();");
-            await holder.ExecuteAsync($"DROP SCHEMA IF EXISTS \"{schema}\" CASCADE;");
-        }
-    }
-
-    [Fact]
-    public async Task should_log_the_wait_when_another_session_holds_the_messaging_init_lock()
-    {
-        var schema = $"lock_wait_{Guid.NewGuid():N}";
-        var logger = new _EventRecordingLogger();
-        var initializer = new PostgreSqlStorageInitializer(
-            logger,
-            Options.Create(new PostgreSqlOptions { ConnectionString = fixture.ConnectionString }),
-            TestStorageOptions.For(schema),
-            Options.Create(new MessagingOptions())
-        );
-
-        await using var holder = new NpgsqlConnection(fixture.ConnectionString);
-        await holder.OpenAsync(AbortToken);
-        var lockParams = new { LockResource = $"headless_messaging_init:{schema}" };
-        await holder.ExecuteAsync("SELECT pg_advisory_lock(hashtextextended(@LockResource, 0));", lockParams);
-        try
-        {
-            var initialization = initializer.InitializeAsync(AbortToken);
-
-            // The first wait report is due after five seconds of waiting; hold the lock past it.
-            await Task.Delay(TimeSpan.FromSeconds(6), AbortToken);
-            initialization.IsCompleted.Should().BeFalse("the initializer must still be waiting on the lock");
-
-            await holder.ExecuteAsync("SELECT pg_advisory_unlock(hashtextextended(@LockResource, 0));", lockParams);
-            await initialization;
-
-            logger.EventNames.Should().ContainSingle(name => name == "WaitingForInitLock");
-        }
-        finally
-        {
-            await holder.ExecuteAsync("SELECT pg_advisory_unlock_all();");
-            await holder.ExecuteAsync($"DROP SCHEMA IF EXISTS \"{schema}\" CASCADE;");
-        }
-    }
-
-    // The initializer type is internal, so a proxy-based substitute cannot implement ILogger<T> for it.
-    private sealed class _EventRecordingLogger : ILogger<PostgreSqlStorageInitializer>
-    {
-        private readonly System.Collections.Concurrent.ConcurrentQueue<string?> _eventNames = new();
-
-        public IReadOnlyCollection<string?> EventNames => _eventNames;
-
-        public IDisposable? BeginScope<TState>(TState state)
-            where TState : notnull => null;
-
-        public bool IsEnabled(LogLevel logLevel) => true;
-
-        public void Log<TState>(
-            LogLevel logLevel,
-            EventId eventId,
-            TState state,
-            Exception? exception,
-            Func<TState, Exception?, string> formatter
-        )
-        {
-            _eventNames.Enqueue(eventId.Name);
-        }
-    }
-
-    private PostgreSqlStorageInitializer _CreateInitializer(string connectionString, string schema = "headless")
-    {
-        return new PostgreSqlStorageInitializer(
-            NullLogger<PostgreSqlStorageInitializer>.Instance,
-            Options.Create(new PostgreSqlOptions { ConnectionString = connectionString }),
-            TestStorageOptions.For(schema),
-            Options.Create(new MessagingOptions())
-        );
     }
 
     private static List<string> _CollectNodeTypes(string explainJson)
@@ -2441,4 +2322,22 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
     }
 
     #endregion
+
+    [Fact]
+    public override Task should_filter_monitoring_messages_by_intent_type()
+    {
+        return base.should_filter_monitoring_messages_by_intent_type();
+    }
+
+    [Fact]
+    public override Task should_store_received_bus_and_queue_rows_with_same_identity()
+    {
+        return base.should_store_received_bus_and_queue_rows_with_same_identity();
+    }
+
+    [Fact]
+    public override Task should_respect_initial_dispatch_grace()
+    {
+        return base.should_respect_initial_dispatch_grace();
+    }
 }

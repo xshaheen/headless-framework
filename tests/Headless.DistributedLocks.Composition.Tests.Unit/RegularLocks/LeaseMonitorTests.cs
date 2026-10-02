@@ -300,6 +300,7 @@ public sealed class LeaseMonitorTests : TestBase
         {
             handle.Enqueue(LeaseMonitor.LeaseState.Held);
         }
+
         handle.Enqueue(new TimeoutException("transient"));
 
         await using var sut = _CreateMonitor(handle);

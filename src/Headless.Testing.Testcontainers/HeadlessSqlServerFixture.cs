@@ -11,7 +11,7 @@ namespace Headless.Testing.Testcontainers;
 /// <summary>
 /// SQL Server test fixture that automatically selects the correct container image based on CPU architecture.
 /// Uses <see cref="TestImages.AzureSqlEdge"/> on ARM64 (Apple Silicon) and
-/// <see cref="TestImages.MsSqlServer"/> on x86_64.
+/// <see cref="TestImages.MsSqlServer"/> on x86_64, unless <see cref="ImageOverrideVariable"/> names another image.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -35,9 +35,19 @@ public class HeadlessSqlServerFixture : IAsyncLifetime
     private static readonly TimeSpan _StartupPollInterval = TimeSpan.FromMilliseconds(250);
     private readonly TimeProvider _timeProvider = TimeProvider.System;
 
+    /// <summary>
+    /// The environment variable that, when set, replaces the architecture-selected image. It lets an ARM64 host run
+    /// the suites against real SQL Server 2022 under x86_64 emulation (for example
+    /// <c>mcr.microsoft.com/mssql/server:2022-latest</c> under Rosetta), since Azure SQL Edge is a different engine
+    /// build. The image must log "SQL Server is now ready" and accept the <c>sa</c> password the fixture sets.
+    /// </summary>
+    public const string ImageOverrideVariable = "HEADLESS_SQLSERVER_IMAGE";
+
     // Use Azure SQL Edge for ARM64 (e.g., Apple Silicon), SQL Server 2022 for x86_64
     private static readonly string _Image =
-        RuntimeInformation.ProcessArchitecture == Architecture.Arm64 ? TestImages.AzureSqlEdge : TestImages.MsSqlServer;
+        Environment.GetEnvironmentVariable(ImageOverrideVariable) is { Length: > 0 } image ? image
+        : RuntimeInformation.ProcessArchitecture == Architecture.Arm64 ? TestImages.AzureSqlEdge
+        : TestImages.MsSqlServer;
 
     private readonly IContainer _container;
 

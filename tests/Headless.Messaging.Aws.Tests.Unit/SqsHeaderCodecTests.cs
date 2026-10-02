@@ -69,6 +69,7 @@ public sealed class SqsHeaderCodecTests : TestBase
         {
             headers.Add($"business-{index}", $"value-{index}");
         }
+
         if (key is not null)
         {
             headers[Headers.RoutingAffinityKey] = key;

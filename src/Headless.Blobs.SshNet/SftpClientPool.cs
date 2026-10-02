@@ -61,7 +61,7 @@ internal sealed class SftpClientPool : IDisposable
     /// <exception cref="Renci.SshNet.Common.SshConnectionException">Thrown when a new SSH connection cannot be established.</exception>
     public async ValueTask<SftpClient> AcquireAsync(CancellationToken ct)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        Ensure.NotDisposed(_disposed, this);
 
         // Try to get existing connection (non-blocking)
         // Pooled clients hold a semaphore slot, so if validation fails we must release it

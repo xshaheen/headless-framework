@@ -1,14 +1,18 @@
 ---
 title: "Thread Safety and Resilience Patterns in .NET Messaging Circuit Breakers"
-category: concurrency
 date: 2026-03-21
-tags: [threading, circuit-breaker, dotnet, messaging, timer, async, interlocked, cancellation, taskcompletionsource, semaphore, opentelemetry, rabbitmq, nats, pulsar, sqs, redis]
-problem_type: concurrency_issue
-components:
+module: Headless.Messaging.Core
+problem_type: runtime_error
+component: service_class
+severity: high
+root_cause: thread_violation
+resolution_type: code_fix
+tags: [threading, circuit-breaker, messaging, timer, interlocked, cancellation, semaphore, opentelemetry]
+related_components:
   - CircuitBreakerStateManager
   - InMemoryConsumerClient
   - PulsarConsumerClient
-  - SqsConsumerClient
+  - AmazonSqsConsumerClient
   - RedisConsumerClient
   - RabbitMqConsumerClient
   - NatsConsumerClient
@@ -21,16 +25,6 @@ symptoms:
   - Semaphore leaked in NATS when Task.Run is cancelled before the lambda executes
   - Stale timer callbacks fire after circuit reset or dispose due to missing generation counter
   - Dispose race with in-flight timer callbacks causes use-after-free on group state
-  - Off-by-one in escalation level read before vs. after increment
-  - Exception detail leaked to broker headers enabling information disclosure
-  - OTel metric cardinality unbounded without MaxTrackedGroups cap
-  - Fire-and-forget Task.Run exceptions silently swallowed
-  - High allocation in OTel gauge callbacks via List<Measurement<int>> per scrape
-severity: p1
-research:
-  agents: [context-analyzer, solution-extractor, related-docs-finder, prevention-strategist, category-classifier]
-  documented_at: 2026-03-21T20:00:00Z
-  conversation_context: "PR #194 per-group circuit breaker + adaptive retry backpressure — 21 fixes from 7-agent code review"
 ---
 
 # Thread Safety and Resilience Patterns in .NET Messaging Circuit Breakers
@@ -56,7 +50,7 @@ The dominant failure themes:
 
 `ManualResetEventSlim.Wait()` blocks the calling thread. In async consumers running on ThreadPool threads, many paused consumers can exhaust the ThreadPool, causing starvation across the process.
 
-**Affected:** `InMemoryConsumerClient`, `PulsarConsumerClient`, `SqsConsumerClient`, `RedisConsumerClient`
+**Affected:** `InMemoryConsumerClient`, `PulsarConsumerClient`, `AmazonSqsConsumerClient`, `RedisConsumerClient`
 
 ```csharp
 // BEFORE (blocks ThreadPool thread)
@@ -355,7 +349,7 @@ src/Headless.Messaging.RabbitMq/RabbitMqConsumerClient.cs
 src/Headless.Messaging.Nats/NatsConsumerClient.cs
 src/Headless.Messaging.InMemory/InMemoryConsumerClient.cs
 src/Headless.Messaging.Pulsar/PulsarConsumerClient.cs
-src/Headless.Messaging.Sqs/SqsConsumerClient.cs
+src/Headless.Messaging.Aws/AmazonSqsConsumerClient.cs
 src/Headless.Messaging.Redis/RedisConsumerClient.cs
 docs/llms/messaging.md
 tests/Headless.Messaging.Core.Tests.Unit/CircuitBreaker/CircuitBreakerStateManagerTests.cs
@@ -549,6 +543,4 @@ When a PR touches `IConsumerClient` implementations or state machine transitions
 
 ## Related Docs
 
-- `docs/brainstorms/2026-03-18-messaging-circuit-breaker-and-retry-backpressure-brainstorm.md` — design source for the circuit breaker state machine; half-open probe section underspecifies the generation-counter mechanism required for safe stale callback handling
-- `docs/reviews/2026-03-21-pr-194-review.md` — Pass 3 review that surfaced findings 051–075
 - PR #194: https://github.com/xshaheen/headless-framework/pull/194

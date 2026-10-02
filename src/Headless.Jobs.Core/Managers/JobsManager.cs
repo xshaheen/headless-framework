@@ -1229,6 +1229,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         {
             entity.Id = guidGenerator.Create();
         }
+
         entity.CreatedAt = now;
         entity.UpdatedAt = now;
         JobContract.ValidateName(entity.Function);

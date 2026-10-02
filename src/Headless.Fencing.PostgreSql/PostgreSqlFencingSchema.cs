@@ -2,7 +2,7 @@
 
 namespace Headless.Fencing.PostgreSql;
 
-/// <summary>Object and column names of the lease storage, shared by the initializer's DDL and the store's statements.</summary>
+/// <summary>Object and column names of the lease storage, shared by the schema contribution's DDL and the store's statements.</summary>
 internal static class PostgreSqlFencingSchema
 {
     public const string TableName = "fencing_leases";

@@ -22,7 +22,7 @@ namespace Tests;
 [Collection<SqlServerTestFixture>]
 public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : TestBase
 {
-    private SqlServerDataStorage _storage = null!;
+    private RelationalDataStorage _storage = null!;
     private FakeTimeProvider _timeProvider = null!;
 
     public override async ValueTask InitializeAsync()
@@ -38,22 +38,22 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
             x.Version = "v1"; // Must match MessagingOptions.Version for retry queries
         });
         services.Configure<MessagingOptions>(x => x.Version = "v1");
-        services.AddSingleton<IStorageInitializer, SqlServerStorageInitializer>();
+        services.AddTestMessagingSchema();
         services.AddSingleton<ISerializer, JsonUtf8Serializer>();
 
         var provider = services.BuildServiceProvider();
-        var initializer = provider.GetRequiredService<IStorageInitializer>();
-        await initializer.InitializeAsync();
-        _storage = new SqlServerDataStorage(
+        var tableNames = provider.GetRequiredService<IStorageTableNames>();
+        await provider.ApplyMessagingSchemaAsync();
+        _storage = new RelationalDataStorage(
+            provider.GetRequiredService<IOptions<SqlServerOptions>>().Value.ToStorage(),
             provider.GetRequiredService<IOptions<MessagingOptions>>(),
-            provider.GetRequiredService<IOptions<SqlServerOptions>>(),
             TestStorageOptions.For(),
-            initializer,
+            tableNames,
             provider.GetRequiredService<ISerializer>(),
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),
             _timeProvider,
             new NullNodeMembership(),
-            NullLogger<SqlServerDataStorage>.Instance
+            NullLogger<RelationalDataStorage>.Instance
         );
 
         await base.InitializeAsync();
@@ -188,7 +188,7 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
         await _storage.ChangePublishStateAsync(
             stored,
             StatusName.Failed,
-            nextRetryAt: _timeProvider.GetUtcNow().AddSeconds(-1),
+            retryDelay: RetryDelay.Exactly(TimeSpan.Zero),
             cancellationToken: AbortToken
         );
 
@@ -262,7 +262,7 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
         await _storage.ChangePublishStateAsync(
             stored,
             StatusName.Failed,
-            nextRetryAt: _timeProvider.GetUtcNow().AddSeconds(-1),
+            retryDelay: RetryDelay.Exactly(TimeSpan.Zero),
             cancellationToken: AbortToken
         );
 
@@ -290,7 +290,7 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
         await _storage.ChangeReceiveStateAsync(
             stored,
             StatusName.Failed,
-            nextRetryAt: _timeProvider.GetUtcNow().AddSeconds(-1),
+            retryDelay: RetryDelay.Exactly(TimeSpan.Zero),
             cancellationToken: AbortToken
         );
 

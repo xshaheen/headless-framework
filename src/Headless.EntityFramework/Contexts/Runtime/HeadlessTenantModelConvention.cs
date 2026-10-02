@@ -141,6 +141,7 @@ internal sealed class HeadlessTenantModelConvention(DbContext db) : IModelFinali
                 {
                     scoped.SetAnnotation(annotation.Name, annotation.Value);
                 }
+
                 scoped.IsDescending = scopedDirections;
                 scoped.SetDatabaseName(databaseName);
                 // SQL Server would otherwise exclude nullable host tenants when its index conventions run again.

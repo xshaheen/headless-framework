@@ -271,6 +271,13 @@ dotnet_diagnostic.MA0047.severity = warning
 
 # --- Style & maintainability ---
 
+# Roslynator formatting rules that fight CSharpier-formatted code: grouping single-line declarations
+# without blank lines is idiomatic, and CSharpier owns line width, so the long lines left are string
+# literals and inline suppression reasons that cannot wrap. Stated here as well as in the SDK so
+# Rider and inspectcode, which do not read the SDK's injected config, report the same severities.
+dotnet_diagnostic.RCS0012.severity = none
+dotnet_diagnostic.RCS0056.severity = none
+
 # RCS1021: Convert lambda expression body to expression-body
 dotnet_diagnostic.RCS1021.severity = silent
 # MA0025: Implement the functionality (or raise NotSupportedException)

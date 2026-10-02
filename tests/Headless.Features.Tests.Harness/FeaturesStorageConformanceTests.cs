@@ -10,6 +10,7 @@ using Headless.Features.Entities;
 using Headless.Features.Repositories;
 using Headless.Features.Values;
 using Headless.Hosting.Initialization;
+using Headless.Hosting.Initialization.Schema;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
@@ -32,7 +33,7 @@ public abstract class FeaturesStorageConformanceTests<TFixture>(TFixture fixture
     [Fact]
     public async Task should_create_the_same_tables_columns_and_indexes_the_ef_model_maps()
     {
-        // given — the raw initializer and the EF mapping must agree name for name, or an application that
+        // given — the raw schema contribution and the EF mapping must agree name for name, or an application that
         // provisions with one and reads with the other fails at its first query
         await fixture.DropSchemaAsync(_Schema, AbortToken);
         using var host = fixture.CreateHost(_Schema);
@@ -49,9 +50,14 @@ public abstract class FeaturesStorageConformanceTests<TFixture>(TFixture fixture
         var created = await fixture.ReadStoreObjectsAsync(_Schema, AbortToken);
         var mapped = _MappedObjects(context.Model);
 
-        // then
-        created.Columns.Should().BeEquivalentTo(mapped.Columns);
-        created.Indexes.Should().BeEquivalentTo(mapped.Indexes);
+        // then — the schema runner's history table sits beside the feature's tables but is no part of the EF model
+        _WithoutHistory(created.Columns).Should().BeEquivalentTo(mapped.Columns);
+        _WithoutHistory(created.Indexes).Should().BeEquivalentTo(mapped.Indexes);
+    }
+
+    private static IEnumerable<string> _WithoutHistory(IEnumerable<string> objects)
+    {
+        return objects.Where(x => !x.StartsWith(SchemaRunner.HistoryTableName + ".", StringComparison.Ordinal));
     }
 
     private static FeaturesStoreObjects _MappedObjects(IModel model)
@@ -340,5 +346,38 @@ public abstract class FeaturesStorageConformanceTests<TFixture>(TFixture fixture
         await delete.Should().ThrowExactlyAsync<ArgumentException>();
         var stored = await repository.GetListAsync("Tenant", "acme", AbortToken);
         stored.Should().ContainSingle().Which.Value.Should().Be("true");
+    }
+
+    [Fact]
+    public async Task should_not_match_a_stored_prefix_when_a_lookup_value_is_longer_than_its_column()
+    {
+        // given a row whose name and provider key fill their columns
+        await fixture.DropSchemaAsync(_Schema, AbortToken);
+        using var host = fixture.CreateHost(_Schema);
+        await host.StartAsync(AbortToken);
+        var repository = host.Services.GetRequiredService<IFeatureValueRecordRepository>();
+        var name = new string('n', FeatureValueRecordConstants.NameMaxLength);
+        var providerKey = new string('k', FeatureValueRecordConstants.ProviderKeyMaxLength);
+        await repository.InsertAsync(
+            new FeatureValueRecord(Guid.NewGuid(), name, "v", "Tenant", providerKey),
+            AbortToken
+        );
+
+        // when each lookup carries one character more than the column holds
+        var found = await repository.FindAsync(name + "x", "Tenant", providerKey, AbortToken);
+        var all = await repository.FindAllAsync(name + "x", providerName: null, providerKey: null, AbortToken);
+        var byNames = await repository.GetListAsync(
+            new HashSet<string>(StringComparer.Ordinal) { name + "x" },
+            "Tenant",
+            providerKey,
+            AbortToken
+        );
+        var byScope = await repository.GetListAsync("Tenant", providerKey + "x", AbortToken);
+
+        // then none of them matches the stored row, which is the lookup value's prefix
+        found.Should().BeNull();
+        all.Should().BeEmpty();
+        byNames.Should().BeEmpty();
+        byScope.Should().BeEmpty();
     }
 }

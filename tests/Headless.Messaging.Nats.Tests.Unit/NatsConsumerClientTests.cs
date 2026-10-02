@@ -23,6 +23,7 @@ public sealed class NatsConsumerClientTests : TestBase
     private readonly MsOptions.IOptions<NatsMessagingOptions> _options = MsOptions.Options.Create(
         new NatsMessagingOptions { Servers = "nats://localhost:4222" }
     );
+
     private readonly IServiceProvider _serviceProvider = new ServiceCollection().BuildServiceProvider();
 
     [Fact]

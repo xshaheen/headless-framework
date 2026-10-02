@@ -67,6 +67,7 @@ public abstract class IdentityTenantConformanceTests<TFixture>(TFixture fixture)
                 .Errors.Should()
                 .Contain(x => x.Code == "DuplicateEmail");
         }
+
         foreach (var tenant in new[] { "tenant-a", "tenant-b" })
         {
             fixture.CurrentTenant.Id = tenant;
@@ -131,6 +132,7 @@ public abstract class IdentityTenantConformanceTests<TFixture>(TFixture fixture)
                 .Should()
                 .BeNull();
         }
+
         await _WithUserAsync(
             "tenant-a",
             userId,
@@ -192,6 +194,7 @@ public abstract class IdentityTenantConformanceTests<TFixture>(TFixture fixture)
                 );
                 await db.SaveChangesAsync(AbortToken);
             }
+
             if (string.Equals(kind, "login", StringComparison.Ordinal))
             {
                 db.Add(
@@ -204,6 +207,7 @@ public abstract class IdentityTenantConformanceTests<TFixture>(TFixture fixture)
                 );
                 await db.SaveChangesAsync(AbortToken);
             }
+
             if (string.Equals(kind, "passkey", StringComparison.Ordinal))
             {
                 var users = scope.ServiceProvider.GetRequiredService<UserManager<TenantIdentityUser>>();
@@ -212,6 +216,7 @@ public abstract class IdentityTenantConformanceTests<TFixture>(TFixture fixture)
                 );
             }
         }
+
         fixture.CurrentTenant.Id = "tenant-b";
         await using var attack = fixture.Services.CreateAsyncScope();
         var target = attack.ServiceProvider.GetRequiredService<TenantIdentityContext<DefaultIdentityPolicy>>();
@@ -326,6 +331,7 @@ public abstract class IdentityTenantConformanceTests<TFixture>(TFixture fixture)
         {
             failure.Should().BeOfType<SqlException>().Which.Number.Should().Be(547);
         }
+
         var countSql =
             $"SELECT COUNT(*) AS {db.GetService<ISqlGenerationHelper>().DelimitIdentifier("Value")} FROM {db.GetService<ISqlGenerationHelper>().DelimitIdentifier(table, "tenant_identity")}";
         (await db.Database.SqlQueryRaw<int>(countSql).SingleAsync(AbortToken)).Should().Be(0);
@@ -376,6 +382,7 @@ public abstract class IdentityTenantConformanceTests<TFixture>(TFixture fixture)
             tenant.Collation.Should().BeNull();
             tables[name].CheckConstraints.Should().BeEmpty();
         }
+
         tables["AspNetUsers"].UniqueConstraints.Single().Columns.Should().Equal("TenantId", "Id");
         tables["AspNetRoles"].UniqueConstraints.Single().Columns.Should().Equal("TenantId", "Id");
         var foreignKeys = tables.Values.SelectMany(x => x.ForeignKeys).ToArray();
@@ -421,6 +428,7 @@ public abstract class IdentityTenantConformanceTests<TFixture>(TFixture fixture)
         {
             await db.Database.ExecuteSqlRawAsync(command.CommandText, AbortToken);
         }
+
         (db.Model.FindEntityType(typeof(IdentityUserPasskey<string>)) is not null).Should().Be(TPolicy.Passkeys);
         var users = scope.ServiceProvider.GetRequiredService<UserManager<TenantIdentityUser>>();
         var roles = scope.ServiceProvider.GetRequiredService<RoleManager<TenantIdentityRole>>();
@@ -442,6 +450,7 @@ public abstract class IdentityTenantConformanceTests<TFixture>(TFixture fixture)
         {
             _Success(await users.AddOrUpdatePasskeyAsync(user, _Passkey([42, 43])));
         }
+
         db.ChangeTracker.Clear();
         (await users.FindByNameAsync("boundary"))!.Id.Should().Be(user.Id);
         (await users.GetRolesAsync(user)).Should().ContainSingle().Which.Should().Be("boundary");

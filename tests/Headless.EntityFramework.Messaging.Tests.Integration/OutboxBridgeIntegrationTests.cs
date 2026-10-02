@@ -4,6 +4,7 @@ using System.Diagnostics;
 using Headless.Abstractions;
 using Headless.Domain;
 using Headless.EntityFramework;
+using Headless.Hosting.Initialization.Schema;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
@@ -68,6 +69,7 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
         {
             order.EmitIntegrationEvent(new OrderShipped($"{marker}-1"));
         }
+
         var occurrence = order.GetIntegrationEvents().Single();
         db.Orders.Add(order);
 
@@ -299,6 +301,7 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
                 {
                     db.Orders.Add(new OrderEntity { Name = "second-business-batch" });
                 }
+
                 order.EmitIntegrationEvent(new OrderShipped($"evt-two-saves-{i}"));
                 saved.Add(order.GetIntegrationEvents().Single());
                 await _SaveAsync(db, synchronous);
@@ -383,6 +386,7 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
                 occurrence
             );
         }
+
         (await _CountOrdersAsync()).Should().Be(1);
         order.GetIntegrationEvents().Should().BeEmpty();
     }
@@ -478,6 +482,7 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
                 child
             );
         }
+
         var forwarded = (await _ReadPublishedAsync(provider, "evt-forwarded-root")).Single();
         _AssertOccurrence(forwarded, evidence.Forwarded);
         (await _CountOrdersAsync()).Should().Be(1);
@@ -537,13 +542,14 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
         {
             _RegisterJobs(services);
         }
+
         configureServices?.Invoke(services);
 
         var provider = services.BuildServiceProvider();
 
         // Initialize messaging outbox tables and EF business tables in the shared database. The messaging host
         // is intentionally not started, so the relay never drains rows — outbox-row assertions stay deterministic.
-        await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
+        await provider.GetRequiredService<SchemaRunner>().ApplyAsync(AbortToken);
 
         await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<BridgeTestDbContext>();
@@ -595,6 +601,7 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
         {
             rows.Add((reader.GetString(0), serializer.Deserialize(reader.GetString(1))!));
         }
+
         return rows;
     }
 
@@ -731,6 +738,7 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
             {
                 ((IIntegrationEventEmitter)order).AddIntegrationEvent(forwarded);
             }
+
             db.Orders.Add(order);
             using var saveTrace = new Activity("independent-save-trace");
             saveTrace.SetParentId(ActivityTraceId.CreateRandom(), ActivitySpanId.CreateRandom()).Start();

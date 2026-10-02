@@ -1,7 +1,6 @@
 ---
 title: "Redis ZSET distributed semaphore: separate pruning from counting and validation"
 date: 2026-06-02
-category: design-patterns
 module: Headless.DistributedLocks.Redis
 problem_type: design_pattern
 component: database
@@ -11,15 +10,7 @@ applies_when:
   - read paths (count, validate) run at lease-monitor cadence or must be replica-routable
   - lease expiry is tracked as a sorted-set score and pruning cannot be coupled to every read
   - fencing tokens are required for stale-write rejection
-tags:
-  - redis
-  - distributed-semaphore
-  - zset
-  - lua-scripts
-  - lease-expiry
-  - fencing-token
-  - distributed-locks
-  - concurrency
+tags: [redis, distributed-semaphore, zset, lua-scripts, lease-expiry, fencing-token, distributed-locks, concurrency]
 related_components:
   - Headless.DistributedLocks.Abstractions
   - Headless.Redis
@@ -199,7 +190,7 @@ The fencing token exists only when `Acquired == true`; the script never `INCR`s 
 
 ## Related
 
-- [redlock-multi-instance-not-adopted](../tooling-decisions/redlock-multi-instance-not-adopted-2026-05-19.md) — why single-instance Redis locking is the chosen primitive and what fencing tokens guarantee; the per-resource `INCR` here is that fencing pattern. Do not present this semaphore as RedLock-equivalent consensus.
-- [messaging-keyed-di-lock-isolation](../architecture-patterns/messaging-keyed-di-lock-isolation-2026-05-19.md) — keyed-DI isolation, the same pattern the shared Redis script loader uses so cache and lock packages don't shadow each other's registration.
+- [redlock-multi-instance-not-adopted](../tooling-decisions/redlock-multi-instance-not-adopted.md) — why single-instance Redis locking is the chosen primitive and what fencing tokens guarantee; the per-resource `INCR` here is that fencing pattern. Do not present this semaphore as RedLock-equivalent consensus.
+- [messaging-keyed-di-lock-isolation](../architecture-patterns/messaging-keyed-di-lock-isolation.md) — keyed-DI isolation, the same pattern the shared Redis script loader uses so cache and lock packages don't shadow each other's registration.
 - [circuit-breaker-transport-thread-safety-patterns](../concurrency/circuit-breaker-transport-thread-safety-patterns.md) — acquire-before-scope slot-leak and stale-timer pitfalls relevant to the semaphore's lease lifecycle.
 - GitHub issue #291 (Phase 3b: N-holder Redis semaphore) — direct tracking issue; #287 is the parent roadmap.

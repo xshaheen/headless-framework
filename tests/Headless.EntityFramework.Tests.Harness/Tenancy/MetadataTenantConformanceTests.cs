@@ -42,6 +42,7 @@ public abstract class MetadataTenantConformanceTests<TFixture>(TFixture fixture)
             {
                 db.Model.Should().BeSameAs(firstModel);
             }
+
             firstModel = db.Model;
         }
     }
@@ -128,10 +129,12 @@ public abstract class MetadataTenantConformanceTests<TFixture>(TFixture fixture)
             row.Name = "compromised";
             crafted = row;
         }
+
         if (delete)
         {
             db.Remove(crafted);
         }
+
         await db.Invoking(x => x.SaveChangesAsync(AbortToken)).Should().ThrowAsync<DbUpdateConcurrencyException>();
         var command = sql.Single(x => x.Contains(delete ? "DELETE FROM" : "UPDATE ", StringComparison.Ordinal));
         var predicate = command[command.IndexOf("WHERE", StringComparison.Ordinal)..];
@@ -180,6 +183,7 @@ public abstract class MetadataTenantConformanceTests<TFixture>(TFixture fixture)
         {
             db.Attach(row);
         }
+
         row.Detail.Value = "changed";
         db.ChangeTracker.DetectChanges();
         db.Entry(row).State.Should().Be(EntityState.Unchanged);
@@ -191,6 +195,7 @@ public abstract class MetadataTenantConformanceTests<TFixture>(TFixture fixture)
         {
             await db.SaveChangesAsync(AbortToken);
         }
+
         var update = sql.Single(x => x.Contains("UPDATE ", StringComparison.Ordinal));
         update[update.IndexOf("WHERE", StringComparison.Ordinal)..].Should().Contain("tenant_key").And.Contain("Stamp");
         db.ChangeTracker.Clear();
@@ -261,6 +266,7 @@ public abstract class MetadataTenantConformanceTests<TFixture>(TFixture fixture)
                 .BeNull();
             table.CheckConstraints.Should().BeEmpty();
         }
+
         operations
             .OfType<CreateIndexOperation>()
             .Single(x => string.Equals(x.Name, "TenantCodeIndex", StringComparison.Ordinal))

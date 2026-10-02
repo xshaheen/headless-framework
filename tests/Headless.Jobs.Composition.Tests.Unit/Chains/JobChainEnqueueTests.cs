@@ -31,6 +31,7 @@ public sealed class JobChainEnqueueTests : TestBase
         JobPriority.Normal,
         0
     );
+
     private static readonly JobFunctionDescriptor _Charge = new(
         "charge",
         typeof(ChargeRequest),
@@ -38,6 +39,7 @@ public sealed class JobChainEnqueueTests : TestBase
         JobPriority.High,
         0
     );
+
     private static readonly JobFunctionDescriptor _Refund = new(
         "refund",
         typeof(RefundRequest),
@@ -45,6 +47,7 @@ public sealed class JobChainEnqueueTests : TestBase
         JobPriority.Normal,
         0
     );
+
     private static readonly JobFunctionDescriptor _Receipt = new(
         "receipt",
         typeof(ReceiptRequest),
@@ -52,6 +55,7 @@ public sealed class JobChainEnqueueTests : TestBase
         JobPriority.Normal,
         0
     );
+
     private static readonly JobFunctionDescriptor _Cleanup = new("cleanup", null, "", JobPriority.Normal, 0);
 
     private static readonly Dictionary<Type, JobFunctionDescriptor> _DescriptorsByType = new()
@@ -88,6 +92,7 @@ public sealed class JobChainEnqueueTests : TestBase
         {
             node = node.Then(new OrderRequest(i));
         }
+
         var chain = builder.Build();
 
         var act = async () => await scheduler.EnqueueAsync(chain, AbortToken);
@@ -107,6 +112,7 @@ public sealed class JobChainEnqueueTests : TestBase
         {
             node = node.Then(new OrderRequest(i));
         }
+
         var chain = builder.Build();
 
         var act = async () => await scheduler.EnqueueAsync(chain, AbortToken);
@@ -126,6 +132,7 @@ public sealed class JobChainEnqueueTests : TestBase
         {
             node = node.Then(new OrderRequest(i));
         }
+
         var chain = builder.Build();
 
         await scheduler.EnqueueAsync(chain, AbortToken);

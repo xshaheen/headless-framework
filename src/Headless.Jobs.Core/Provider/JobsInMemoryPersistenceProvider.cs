@@ -2015,6 +2015,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 updated.FingerprintFailureCount = 0;
                 updated.FingerprintRetryAfterUtc = null;
             }
+
             _SetCronJob(updated);
 
             // Read back off the stored instance rather than echoing the request, so this provider's result is
@@ -3227,6 +3228,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 {
                     throw new InvalidOperationException("A cron occurrence requires an existing definition.");
                 }
+
                 occurrence.SnapshotContract(definition);
                 occurrence.CronJob = definition;
                 if (_cronOccurrences.TryAdd(occurrence.Id, _CloneCronOccurrence(occurrence)))
@@ -3235,6 +3237,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 }
             }
         }
+
         return Task.FromResult(count);
     }
 

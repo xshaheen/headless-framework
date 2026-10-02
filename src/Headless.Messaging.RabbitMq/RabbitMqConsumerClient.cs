@@ -33,6 +33,7 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
     private readonly TaskCompletionSource<string> _channelLost = new(
         TaskCreationOptions.RunContinuationsAsynchronously
     );
+
     private RabbitMqBasicConsumer? _consumer;
     private IChannel? _channel;
 

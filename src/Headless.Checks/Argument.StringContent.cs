@@ -142,6 +142,92 @@ public static partial class Argument
         return argument;
     }
 
+    /// <summary>
+    /// Throws an <see cref="ArgumentException" /> if <paramref name="argument" /> is text that some storage provider
+    /// would not store, compare, and return unchanged as a key. A <see langword="null"/> or empty argument passes;
+    /// combine with <see cref="IsNotNullOrWhiteSpace"/> to require a value.
+    /// </summary>
+    /// <remarks>
+    /// Use it at a feature's shared validation, before any provider sees the value, so no provider keeps what another
+    /// merges, rejects, or rewrites. It refuses:
+    /// <list type="bullet">
+    /// <item>
+    /// Surrounding whitespace: SQL Server pads the shorter string with spaces before comparing, under every collation
+    /// and in unique-index uniqueness, so <c>"a"</c> and <c>"a "</c> are one key there and two on PostgreSQL.
+    /// </item>
+    /// <item>A NUL character: PostgreSQL text cannot hold U+0000 and fails the statement (22021).</item>
+    /// <item>
+    /// An unpaired UTF-16 surrogate: it is not valid Unicode, so Npgsql's UTF-8 encoder refuses it before sending, and
+    /// SqlClient replaces it with U+FFFD before sending, so SQL Server stores and matches a different key than the
+    /// caller's and every lone surrogate collapses into one: <c>"a\uD800"</c> and <c>"a\uDBFF"</c> are one key there.
+    /// </item>
+    /// </list>
+    /// Case, accents, precomposed versus decomposed forms, surrogate pairs, and other control characters round-trip and
+    /// compare ordinally on every provider with a binary or <c>"C"</c> key collation, so they stay distinct keys.
+    /// </remarks>
+    /// <param name="argument">The argument to check.</param>
+    /// <param name="message">(Optional) Custom error message.</param>
+    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
+    /// <returns><paramref name="argument" /> if every provider keeps it unchanged.</returns>
+    /// <exception cref="ArgumentException">if <paramref name="argument" /> is not portable key text.</exception>
+    [DebuggerStepThrough]
+    [return: NotNullIfNotNull(nameof(argument))]
+    public static string? IsPortableKey(
+        string? argument,
+        string? message = null,
+        [CallerArgumentExpression(nameof(argument))] string? paramName = null
+    )
+    {
+        if (argument is not null && _FindUnportableKeyReason(argument) is { } reason)
+        {
+            _ThrowForIsPortableKey(message, paramName, reason);
+        }
+
+        return argument;
+    }
+
+    private static string? _FindUnportableKeyReason(string value)
+    {
+        if (value.Length > 0 && (char.IsWhiteSpace(value[0]) || char.IsWhiteSpace(value[^1])))
+        {
+            return "starts or ends with white space, which SQL Server ignores when comparing keys";
+        }
+
+        for (var i = 0; i < value.Length; i++)
+        {
+            var c = value[i];
+
+            if (c == '\0')
+            {
+                return "contains a NUL character, which PostgreSQL cannot store";
+            }
+
+            if (char.IsHighSurrogate(c) && i + 1 < value.Length && char.IsLowSurrogate(value[i + 1]))
+            {
+                i++;
+
+                continue;
+            }
+
+            if (char.IsSurrogate(c))
+            {
+                return "contains an unpaired UTF-16 surrogate, which is not valid Unicode and does not round-trip";
+            }
+        }
+
+        return null;
+    }
+
+    [DoesNotReturn]
+    private static void _ThrowForIsPortableKey(string? message, string? paramName, string reason)
+    {
+        throw new ArgumentException(
+            message
+                ?? $"The argument {paramName.ToAssertString()} {reason}, so storage providers would disagree about the key it names.",
+            paramName
+        );
+    }
+
     [DoesNotReturn]
     private static void _ThrowForHasNoSurroundingWhiteSpace(string? message, string? paramName)
     {

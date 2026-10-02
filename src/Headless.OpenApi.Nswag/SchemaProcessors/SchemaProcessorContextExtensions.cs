@@ -11,8 +11,8 @@ namespace Headless.OpenApi.Nswag.SchemaProcessors;
 public static class SchemaProcessorContextExtensions
 {
     /// <summary>
-    /// Adds every non-nullable property of <paramref name="schema"/> to its <c>required</c> set, aligning
-    /// the OpenAPI 3.x <c>required</c> array with C# non-nullable reference type semantics.
+    /// Adds every non-nullable property of <paramref name="schema"/> to its <c>"required"</c> set, aligning
+    /// the OpenAPI 3.x <c>"required"</c> array with C# non-nullable reference type semantics.
     /// </summary>
     /// <param name="schema">The object schema to normalise. Non-object schemas are returned unchanged.</param>
     /// <returns>The same <paramref name="schema"/> instance for chaining.</returns>

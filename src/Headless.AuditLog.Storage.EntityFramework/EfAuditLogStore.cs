@@ -131,6 +131,7 @@ internal sealed class EfAuditLogStore : IAuditLogStore
                 _TrackEntry(context, auditEntity);
                 auditEntries.Add(new EfAuditLogStoreEntry(this, context, auditEntity));
             }
+
             // Do NOT call SaveChanges — entries commit atomically with the entity changes
             return auditEntries;
         }

@@ -98,6 +98,7 @@ internal sealed partial class MessageNeedToRetryProcessor
     /// </summary>
     private async ValueTask<bool> _DisposeCircuitClaimAsync(
         IDataStorage storage,
+        ProcessingContext context,
         CircuitRetryWork work,
         bool deferralRejectionLogged
     )
@@ -107,7 +108,14 @@ internal sealed partial class MessageNeedToRetryProcessor
             switch (work.Decision.Kind)
             {
                 case CircuitRetryDecisionKind.Defer:
-                    var outcome = await _DeferCircuitClaimAsync(storage, work.Message, work.Decision.NextProbeAt!.Value)
+                    // The circuit's boundary is an application-clock instant, so only the time left until it is
+                    // sent; the store adds that to its own clock, and a skewed application clock cannot move it.
+                    var probeDelay = work.Decision.NextProbeAt!.Value - context.GetUtcNow();
+                    var outcome = await _DeferCircuitClaimAsync(
+                            storage,
+                            work.Message,
+                            probeDelay > TimeSpan.Zero ? probeDelay : TimeSpan.Zero
+                        )
                         .ConfigureAwait(false);
                     // Only a genuine fence rejection: an unsupported provider reports itself via 3120,
                     // and a claim with no live lease never reached the store. All three outcomes leave
@@ -122,6 +130,7 @@ internal sealed partial class MessageNeedToRetryProcessor
                         );
                         deferralRejectionLogged = true;
                     }
+
                     break;
                 case CircuitRetryDecisionKind.Retain:
                     if (Interlocked.Exchange(ref _monitorOnlyRetainWarned, 1) == 0)
@@ -131,6 +140,7 @@ internal sealed partial class MessageNeedToRetryProcessor
                             LogSanitizer.Sanitize(work.ConsumerIdentity)
                         );
                     }
+
                     break;
                 case CircuitRetryDecisionKind.ProbePending:
                     // This row does not own the shared probe generation. Retain its exact claim for
@@ -155,7 +165,7 @@ internal sealed partial class MessageNeedToRetryProcessor
     private async ValueTask<CircuitDeferralOutcome> _DeferCircuitClaimAsync(
         IDataStorage storage,
         MediumMessage message,
-        DateTimeOffset nextRetryAt
+        TimeSpan delay
     )
     {
         if (storage is not ICircuitRetryDeferralStorage deferralStorage)
@@ -181,7 +191,7 @@ internal sealed partial class MessageNeedToRetryProcessor
             message.InboxAttemptFence
         );
         var deferred = await deferralStorage
-            .DeferReceivedRetryAsync(new CircuitRetryDeferral(identity, nextRetryAt), CancellationToken.None)
+            .DeferReceivedRetryAsync(new CircuitRetryDeferral(identity, delay), CancellationToken.None)
             .ConfigureAwait(false);
 
         return deferred ? CircuitDeferralOutcome.Deferred : CircuitDeferralOutcome.FenceRejected;

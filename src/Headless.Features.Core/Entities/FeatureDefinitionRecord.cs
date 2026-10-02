@@ -169,6 +169,7 @@ public sealed class FeatureDefinitionRecord : AggregateRoot<Guid>, IHasExtraProp
         {
             return false;
         }
+
         if (!string.Equals(Providers, otherRecord.Providers, StringComparison.Ordinal))
         {
             return false;

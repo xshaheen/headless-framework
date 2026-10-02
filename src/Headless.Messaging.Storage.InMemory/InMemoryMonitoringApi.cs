@@ -235,7 +235,7 @@ internal sealed class InMemoryMonitoringApi(InMemoryDataStorage storage, TimePro
                 new IndexPage<MessageView>(pageItems, currentPage, query.PageSize, filtered.Count)
             );
         }
-        else
+
         {
             var expression = storage.ReceivedMessages.Values.Where(x => _IsRecognizedLane(x.Lane));
 

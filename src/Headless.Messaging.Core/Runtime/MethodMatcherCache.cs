@@ -14,6 +14,7 @@ namespace Headless.Messaging.Runtime;
 public class MethodMatcherCache(IConsumerServiceSelector selector)
 {
     private readonly Lock _lock = new();
+
     private ConcurrentDictionary<string, IReadOnlyList<ConsumerExecutorDescriptor>> _entries = new(
         StringComparer.Ordinal
     );

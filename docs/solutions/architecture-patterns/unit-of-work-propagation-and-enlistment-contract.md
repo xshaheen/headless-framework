@@ -1,10 +1,11 @@
 ---
 title: "Unit-of-Work Propagation and Enlistment Contract"
-category: architecture-patterns
 date: 2026-09-24
-tags: [unit-of-work, transaction, entity-framework, dapper, ado, outbox, jobs, messaging, replay, dbcontext, dbconnection]
-problem_type: architecture_decision
-components:
+module: Headless.UnitOfWork.Abstractions
+tags: [unit-of-work, transaction, entity-framework, dapper, outbox, jobs, messaging, replay]
+problem_type: architecture_pattern
+component: database
+related_components:
   - IUnitOfWorkFactory
   - IUnitOfWork
   - IUnitOfWorkFeature
@@ -14,7 +15,7 @@ symptoms:
   - EF work is refused inside a raw-ADO unit that owns the same connection
   - An injected IBus or IJobScheduler write escapes the surrounding transaction
   - Enlisted writes are replayed or skipped unexpectedly after a retry
-severity: p2
+severity: medium
 ---
 
 # Unit-of-Work Propagation and Enlistment Contract

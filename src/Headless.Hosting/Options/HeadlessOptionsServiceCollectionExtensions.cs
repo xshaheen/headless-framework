@@ -406,6 +406,7 @@ public static class HeadlessOptionsServiceCollectionExtensions
         where TOptions : class
     {
         #region Helpers
+
         private OptionsBuilder<TOptions> _ValidateFunc(Func<TOptions, bool>? validation)
         {
             if (validation is not null)
@@ -447,6 +448,7 @@ public static class HeadlessOptionsServiceCollectionExtensions
 
             return builder;
         }
+
         #endregion
     }
 }

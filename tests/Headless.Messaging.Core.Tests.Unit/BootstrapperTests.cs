@@ -245,53 +245,6 @@ public sealed class BootstrapperTests : TestBase
     }
 
     [Fact]
-    public async Task shutdown_quiesces_published_processors_while_storage_initialization_is_stuck()
-    {
-        var timeProvider = new FakeTimeProvider();
-        await using var processor = new PhasedProcessingServer();
-        var initializer = new BlockingStorageInitializer();
-        await using var provider = _CreateProvider(
-            beforeMessaging: processor,
-            configureOptions: options => options.ShutdownTimeout = TimeSpan.FromSeconds(2),
-            extraSetup: services =>
-            {
-                services.AddSingleton<TimeProvider>(timeProvider);
-                services.RemoveAll<IStorageInitializer>();
-                services.AddSingleton<IStorageInitializer>(initializer);
-            }
-        );
-        var bootstrapper = provider.GetRequiredService<IBootstrapper>();
-        var bootstrapTask = bootstrapper.BootstrapAsync(CancellationToken.None);
-        await initializer.WaitUntilStartedAsync(AbortToken);
-
-        try
-        {
-            var stopTask = ((IHostedService)bootstrapper).StopAsync(CancellationToken.None);
-            await processor.WaitUntilStopStartedAsync(AbortToken);
-
-            processor.IsQuiesced.Should().BeTrue();
-            processor.StartCount.Should().Be(0);
-
-            timeProvider.Advance(TimeSpan.FromSeconds(2));
-            await stopTask.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
-        }
-        finally
-        {
-            initializer.Release();
-        }
-
-        try
-        {
-            await bootstrapTask;
-        }
-        catch (OperationCanceledException)
-        {
-            // Shutdown may cancel the initializer before or immediately after its release.
-        }
-        processor.StartCount.Should().Be(0);
-    }
-
-    [Fact]
     public async Task stop_should_aggregate_every_processor_stop_failure()
     {
         var firstFailure = new InvalidOperationException("first stop boom");
@@ -936,39 +889,6 @@ public sealed class BootstrapperTests : TestBase
         public void ReleaseDrain()
         {
             _stopRelease.TrySetResult();
-        }
-    }
-
-    private sealed class BlockingStorageInitializer : IStorageInitializer
-    {
-        private readonly TaskCompletionSource _started = new(TaskCreationOptions.RunContinuationsAsynchronously);
-        private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        public async Task InitializeAsync(CancellationToken cancellationToken = default)
-        {
-            _started.TrySetResult();
-            await _release.Task.ConfigureAwait(false);
-            cancellationToken.ThrowIfCancellationRequested();
-        }
-
-        public string GetPublishedTableName()
-        {
-            return "published";
-        }
-
-        public string GetReceivedTableName()
-        {
-            return "received";
-        }
-
-        public Task WaitUntilStartedAsync(CancellationToken cancellationToken)
-        {
-            return _started.Task.WaitAsync(TimeSpan.FromSeconds(2), cancellationToken);
-        }
-
-        public void Release()
-        {
-            _release.TrySetResult();
         }
     }
 

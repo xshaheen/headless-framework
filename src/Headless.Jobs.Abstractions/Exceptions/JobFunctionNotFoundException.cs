@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
+
 namespace Headless.Jobs.Exceptions;
 
 /// <summary>Thrown when a scheduling request cannot be mapped to generated <c>[Job]</c> metadata.</summary>
@@ -36,7 +38,7 @@ public sealed class JobFunctionNotFoundException : Exception
 
     private static string _Message(Type requestType)
     {
-        ArgumentNullException.ThrowIfNull(requestType);
+        Argument.IsNotNull(requestType);
         return $"No job is registered for type '{requestType.FullName ?? requestType.Name}'.";
     }
 }

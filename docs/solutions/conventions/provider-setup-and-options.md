@@ -2,18 +2,11 @@
 title: "Provider setup classes and the options pattern"
 date: 2026-09-18
 last_updated: 2026-09-29
-category: conventions
 module: headless-framework
-problem_type: design_pattern
+problem_type: convention
 component: dependency_injection
 severity: high
-tags:
-  - dependency-injection
-  - setup-builder
-  - options
-  - fluentvalidation
-  - relational-storage
-  - schema
+tags: [dependency-injection, setup-builder, options, fluentvalidation, relational-storage, schema]
 related_components:
   - provider_packages
   - Headless.Hosting
@@ -139,7 +132,7 @@ database provisioned by one reads correctly through the other. `Headless.Hosting
   passes them to `FitsDerivedPostgreSqlNames` (namespace `FluentValidation`, package `Headless.Hosting`). The
   conventional default names must fit too: the permission grants index for host grants ends in `_no_tenant`, because
   `_null_tenant_id` made its default name 67 bytes.
-- A parity test per provider creates the schema with the raw initializer and compares the catalog's columns and
+- A parity test per provider creates the schema with the raw provider's schema contribution and compares the catalog's columns and
   index names with the EF model built for that provider. Features and Settings have one in their conformance
   harness; Permissions and AuditLog have one in each provider's integration project.
 
@@ -150,23 +143,32 @@ database provisioned by one reads correctly through the other. `Headless.Hosting
   name fits PostgreSQL's 63-byte identifier limit; AuditLog's longest, `ix_{TableName}_tenant_account_time`, caps
   `TableName` at 40 characters.
 
-### Initializer locks
+### Schema contributions, not initializers
 
-- Namespace the feature's init lock by feature and key it on the objects it owns:
-  `headless_{feature}_init:{schema}` or `headless_{feature}_init:{schema}.{table}`. Two features in one schema must
-  never share a lock resource by accident.
-- Every PostgreSQL initializer also takes the schema-wide lock immediately before `CREATE SCHEMA IF NOT EXISTS`,
-  built only through `PostgreSqlSchemaInitLock.AcquireStatement(schema)` in `Headless.Sql.PostgreSql`, which owns
-  the lock key. Without it, two features creating the shared schema at the same moment collide, and the loser's
-  rollback silently discards its DDL.
-- A creator outside these locks (a consumer's EF migration) can still commit the schema first. An initializer
-  that absorbs `42P06 / 42P07 / 42710 / 23505` reruns its DDL once in a fresh transaction and lets a second
-  failure propagate; it never reports success after a rollback alone.
-- An initializer that runs `CREATE INDEX CONCURRENTLY` polls `pg_try_advisory_lock` for its session lock instead
-  of blocking in `pg_advisory_lock`.
+A raw provider does not write a storage initializer. It contributes its DDL to the one schema runner in
+`Headless.Hosting.Initialization.Schema`, which owns the lock, the race handling, the history, and the startup
+lifecycle. The provider's part is a `{Provider}{Feature}SchemaContribution.Create(options…)` factory registered with
+`services.AddHeadlessSchemaContribution(sp => …)`:
 
-[Storage initializer lifecycle](../best-practices/storage-initializer-lifecycle-correctness.md) explains the
-PostgreSQL rules.
+- **Steps hold only idempotent DDL.** Every `CREATE` carries `IF NOT EXISTS`, and every `ALTER` or rename sits behind
+  a catalog check, because the runner re-runs a step once after absorbing a race and an exported script may run
+  twice. A step takes no lock, opens no transaction, has no `TRY/CATCH` for already-exists errors, and never creates
+  the schema: the runner and dialect do all of that.
+- **Never edit a released step; add one.** The history records a checksum of each step's SQL, and a changed step fails
+  startup. A repair or upgrade of an existing object is its own step, so the creation step's checksum stays stable.
+  Before a release ships a step, change it in place instead: no database runs it, and the repository adds no upgrade
+  path for a schema nobody has.
+- **Carry every configurable object name in the feature id** with `SchemaContribution.FeatureId(feature,
+  (configured, default), …)`. Two hosts naming a feature's table differently in one schema otherwise read each
+  other's history row as a checksum change, and the second host never creates its table.
+- **`createConnection` returns an unopened connection** from the provider options, so the runner can derive the
+  database identity and group every feature on one database under one lock and one pass.
+- **`applyOnStartup` is the feature's `InitializeOnStartup`**, so opting out keeps the steps in verify mode and in
+  the exported script.
+
+The PostgreSQL dialect still takes the schema-wide lock from `PostgreSqlSchemaInitLock.AcquireStatement(schema)`
+before `CREATE SCHEMA`, so the runner serializes against any code that creates the shared schema under that lock.
+[Schema runner](../architecture-patterns/schema-runner-history-lock-and-verify.md) explains the design and its traps.
 
 ### Parameterless connection overload
 

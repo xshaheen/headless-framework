@@ -57,6 +57,7 @@ public sealed class MessagingCapabilityModel : IMessageCapabilityGate
     // The model is immutable once composed, so the role/lane union is resolved here instead of scanning
     // the provider arrays with a capturing predicate on every publish gate check.
     private readonly FrozenSet<(MessagingProviderRole Role, MessageLane Lane)> _supportedRoleLanes;
+
     private readonly FrozenDictionary<
         (MessageLane Lane, string MessageName),
         MessagingRoutingAffinityMapping

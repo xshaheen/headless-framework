@@ -1,8 +1,7 @@
 ---
 title: "Retry pipeline overwrites terminal message state on redelivery"
 date: 2026-05-16
-category: logic-errors
-module: Headless.Messaging
+module: Headless.Messaging.Core
 problem_type: logic_error
 component: background_job
 severity: high
@@ -17,15 +16,7 @@ resolution_type: code_fix
 related_components:
   - database
   - service_class
-tags:
-  - messaging
-  - retry-policy
-  - idempotency
-  - terminal-state
-  - upsert-guard
-  - redelivery
-  - dispatcher
-  - cancellation-token
+tags: [messaging, retry-policy, idempotency, terminal-state, upsert-guard, redelivery, dispatcher, cancellation-token]
 ---
 
 # Retry pipeline overwrites terminal message state on redelivery
@@ -61,7 +52,7 @@ Follow-up hardening extended the same affected-row contract to poisoned-on-arriv
 
 ### 1. Storage-layer terminal-row guard
 
-SQL Server ([SqlServerDataStorage.cs:528-538](../../../src/Headless.Messaging.SqlServer/SqlServerDataStorage.cs)) — the `_StoreReceivedMessage` MERGE adds a `WHEN MATCHED AND NOT (...)` predicate so the `UPDATE` branch is skipped for terminal rows; the `INSERT` branch is unaffected:
+SQL Server ([SqlServerDataStorage.cs](../../../src/Headless.Messaging.Storage.SqlServer/SqlServerDataStorage.cs)) — the `_StoreReceivedMessage` MERGE adds a `WHEN MATCHED AND NOT (...)` predicate so the `UPDATE` branch is skipped for terminal rows; the `INSERT` branch is unaffected:
 
 ```csharp
 MERGE {_receivedTable} WITH (HOLDLOCK) AS target
@@ -73,7 +64,7 @@ WHEN NOT MATCHED THEN
     INSERT (...);
 ```
 
-PostgreSQL ([PostgreSqlDataStorage.cs:517-531](../../../src/Headless.Messaging.PostgreSql/PostgreSqlDataStorage.cs)) — the `ON CONFLICT DO UPDATE` is gated by a matching `WHERE NOT (...)` clause. The same narrow shape is applied to every `ChangePublishStateAsync` / `ChangeReceiveStateAsync` `UPDATE` statement ([SqlServerDataStorage.cs:168, 479](../../../src/Headless.Messaging.SqlServer/SqlServerDataStorage.cs), [PostgreSqlDataStorage.cs:177, 471](../../../src/Headless.Messaging.PostgreSql/PostgreSqlDataStorage.cs)).
+PostgreSQL ([PostgreSqlDataStorage.cs](../../../src/Headless.Messaging.Storage.PostgreSql/PostgreSqlDataStorage.cs)) — the `ON CONFLICT DO UPDATE` is gated by a matching `WHERE NOT (...)` clause. The same narrow shape is applied to every `ChangePublishStateAsync` / `ChangeReceiveStateAsync` `UPDATE` statement ([SqlServerDataStorage.cs](../../../src/Headless.Messaging.Storage.SqlServer/SqlServerDataStorage.cs), [PostgreSqlDataStorage.cs](../../../src/Headless.Messaging.Storage.PostgreSql/PostgreSqlDataStorage.cs)).
 
 InMemory ([InMemoryDataStorage.cs:135-213, 253-327](../../../src/Headless.Messaging.Storage.InMemory/InMemoryDataStorage.cs)) — `ChangePublishStateAsync` and `ChangeReceiveStateAsync` short-circuit and return `false` when the existing row is `Succeeded`/`Failed` with `NextRetryAt is null`. `StoreReceivedExceptionMessageAsync` was rewritten as a single locked upsert keyed on (Version, MessageId, Group); the lookup-then-insert/update path is wrapped in `_receivedExceptionUpsertLock` so concurrent redeliveries cannot both decide "not found" and race.
 
@@ -150,6 +141,6 @@ Storage is the sole arbiter of terminal state, and a row in `(Succeeded | Failed
 ## Related Docs
 
 - [`docs/solutions/concurrency/startup-pause-gating-and-half-open-recovery.md`](../concurrency/startup-pause-gating-and-half-open-recovery.md) — Same shape of root cause: a caller swallowed a no-op signal from a lower layer. Different layer (transport pause/resume vs storage UPDATE affected-rows). Worth a consolidation pass once both stabilize.
-- [`docs/solutions/api/aspnet-core-cancellation-vs-timeout-differentiation-2026-05-07.md`](../api/aspnet-core-cancellation-vs-timeout-differentiation-2026-05-07.md) — Same "use `CancellationToken.None` for the final must-complete write so client cancellation doesn't tear down side-effects" pattern at the ASP.NET Core layer.
+- [`docs/solutions/api/aspnet-core-cancellation-vs-timeout-differentiation.md`](../api/aspnet-core-cancellation-vs-timeout-differentiation.md) — Same "use `CancellationToken.None` for the final must-complete write so client cancellation doesn't tear down side-effects" pattern at the ASP.NET Core layer.
 - [`docs/solutions/concurrency/circuit-breaker-transport-thread-safety-patterns.md`](../concurrency/circuit-breaker-transport-thread-safety-patterns.md) — Tangential overlap on cancellation handling and exception-envelope parity in dispatch paths.
-- [`docs/solutions/guides/messaging-transport-provider-guide.md`](../guides/messaging-transport-provider-guide.md) — Explicitly states core owns retries/outbox/state and transports must not invent their own. This doc reinforces that contract from inside core.
+- [Writing a Transport Provider](../../llms/messaging.md#writing-a-transport-provider) — Explicitly states core owns retries/outbox/state and transports must not invent their own. This doc reinforces that contract from inside core.

@@ -23,7 +23,7 @@ namespace Tests;
 [Collection<SqlServerTestFixture>]
 public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : TestBase
 {
-    private SqlServerDataStorage _storage = null!;
+    private RelationalDataStorage _storage = null!;
     private FakeTimeProvider _timeProvider = null!;
     private IMonitoringApi _monitoringApi = null!;
 
@@ -43,12 +43,12 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
             x.Version = "v1";
             x.UseStorageLock = true;
         });
-        services.AddSingleton<IStorageInitializer, SqlServerStorageInitializer>();
+        services.AddTestMessagingSchema();
         services.AddSingleton<ISerializer, JsonUtf8Serializer>();
 
         var provider = services.BuildServiceProvider();
-        var initializer = provider.GetRequiredService<IStorageInitializer>();
-        await initializer.InitializeAsync();
+        var tableNames = provider.GetRequiredService<IStorageTableNames>();
+        await provider.ApplyMessagingSchemaAsync();
 
         // Other classes in this collection share the `headless` schema and not all reset on teardown,
         // so start each monitoring test from an empty table to keep the counts exact.
@@ -60,16 +60,16 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
             );
         }
 
-        _storage = new SqlServerDataStorage(
+        _storage = new RelationalDataStorage(
+            provider.GetRequiredService<IOptions<SqlServerOptions>>().Value.ToStorage(),
             provider.GetRequiredService<IOptions<MessagingOptions>>(),
-            provider.GetRequiredService<IOptions<SqlServerOptions>>(),
             TestStorageOptions.For(),
-            initializer,
+            tableNames,
             provider.GetRequiredService<ISerializer>(),
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),
             _timeProvider,
             new NullNodeMembership(),
-            NullLogger<SqlServerDataStorage>.Instance
+            NullLogger<RelationalDataStorage>.Instance
         );
         _monitoringApi = _storage.GetMonitoringApi();
 

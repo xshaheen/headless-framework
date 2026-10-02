@@ -642,6 +642,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
         {
             identity.AddClaim(new Claim(nameClaimType, name));
         }
+
         // NameIdentifier wins when a token exposes both identifier forms.
         identity.AddClaim(new Claim("sub", "secondary-subject"));
         var principal = new ClaimsPrincipal(identity);
@@ -718,6 +719,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
             authority.Principal.HasClaim("extra", "preserved").Should().BeTrue();
             authority.Principal.Should().NotBeSameAs(principal);
         }
+
         identity.Name.Should().Be(name);
         principal.Identities.Should().HaveCount(2);
     }
@@ -790,6 +792,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
         {
             identity.RemoveClaim(existingClaim);
         }
+
         identity.AddClaim(new Claim(claimType, value));
         await using var app = _CreateTestApp(
             _dataStorage,
@@ -911,6 +914,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
                             .RequireClaim("permission", "inbox.manage")
                 );
         }
+
         appBuilder.Services.AddCors(o => o.AddPolicy("HeadlessMessagingDashboardCORS", p => p.AllowAnyOrigin()));
 
         var app = appBuilder.Build();
@@ -925,6 +929,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
                 }
             );
         }
+
         if (useAuthenticationMiddleware)
         {
             app.UseMiddleware<AuthMiddleware>();
@@ -944,6 +949,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
                 }
             );
         }
+
         app.UseCors("HeadlessMessagingDashboardCORS");
         app.UseAuthorization();
         app.MapMessagingDashboardEndpoints(config);

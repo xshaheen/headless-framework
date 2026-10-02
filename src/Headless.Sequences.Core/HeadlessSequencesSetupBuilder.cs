@@ -63,14 +63,14 @@ public sealed class HeadlessSequencesSetupBuilder
     /// <param name="policy">The policy.</param>
     /// <returns>This builder, to allow chaining.</returns>
     /// <exception cref="ArgumentException">
-    /// <paramref name="name" /> is blank, too long, or starts or ends with whitespace.
+    /// <paramref name="name" /> is blank, too long, or text some provider would not keep unchanged as a key.
     /// </exception>
     /// <exception cref="ArgumentNullException"><paramref name="policy" /> is <see langword="null" />.</exception>
     public HeadlessSequencesSetupBuilder Policy(string name, SequencePolicy policy)
     {
         Argument.IsNotNullOrWhiteSpace(name);
         Argument.HasMaxLength(name, SequenceFieldLimits.NameMaxLength);
-        SequenceKeyText.EnsureNoSurroundingWhitespace(name, "name", nameof(name));
+        Argument.IsPortableKey(name);
         Argument.IsNotNull(policy);
 
         return ConfigureOptions(options => options.Policies[name] = policy);

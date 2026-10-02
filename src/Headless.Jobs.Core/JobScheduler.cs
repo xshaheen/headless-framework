@@ -317,6 +317,7 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
             var persisted = await _timeJobManager.AddAsync(entity, cancellationToken).ConfigureAwait(false);
             return persisted.Id;
         }
+
         // The identity contract needs the resolved entity (function, contract version, final tenant scope), and
         // policy resolution above already validated the key/TTL pair, so the entity is fully built when the
         // manager dedups the reservation against it.

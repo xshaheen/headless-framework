@@ -17,9 +17,11 @@ public sealed class AzureServiceBusFixture : IAsyncLifetime
 
     private readonly ConcurrentDictionary<string, byte> _queues = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, byte> _topics = new(StringComparer.Ordinal);
+
     private readonly string? _connectionString = Environment.GetEnvironmentVariable(
         ConnectionStringEnvironmentVariable
     );
+
     private ServiceBusAdministrationClient? _administrationClient;
 
     public string ConnectionString => _RequireConnectionString();
@@ -259,6 +261,7 @@ public sealed class AzureServiceBusFixture : IAsyncLifetime
                     options.CustomHeadersBuilder = static (message, _) =>
                         [new("conformance-native-session", message.SessionId)];
                 }
+
                 options.MaxConcurrentCalls = 2;
                 options.MaxAutoLockRenewalDuration = TimeSpan.Zero;
             })

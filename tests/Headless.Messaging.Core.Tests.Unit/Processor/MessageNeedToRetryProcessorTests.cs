@@ -417,6 +417,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             message.Owner = "node-a";
             message.LockedUntil = DateTimeOffset.UtcNow.AddMinutes(5);
         }
+
         first.InboxKey = new InboxKey(null, first.Origin.Id, MessageLane.Bus, first.Origin.Name, "v1", "missing", 0);
         var storage = Substitute.For<IDataStorage, IGracefulLeaseReleaseStorage>();
         _SetupReceivedMessages(storage, circuit, first, second);
@@ -442,6 +443,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         {
             await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("classification failed");
         }
+
         await ((IGracefulLeaseReleaseStorage)storage)
             .Received(1)
             .ReleaseReceivedLeasesAsync(
@@ -541,6 +543,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         {
             _SetupReceivedMessages(storage, message);
         }
+
         storage
             .ConfirmReceivedInboxRoutableAsync(message, Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult(accepted));
@@ -693,8 +696,13 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         return listener;
     }
 
-    [Fact]
-    public async Task open_circuit_atomically_defers_exact_claim_to_authoritative_boundary()
+    [Theory]
+    [InlineData(10, 27)]
+    [InlineData(60, 0)]
+    public async Task open_circuit_atomically_defers_exact_claim_to_authoritative_boundary(
+        int healthyDispatchSeconds,
+        int expectedDelaySeconds
+    )
     {
         var now = new DateTimeOffset(2026, 8, 25, 9, 30, 0, TimeSpan.Zero);
         var timeProvider = new FakeTimeProvider(now);
@@ -732,7 +740,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             .EnqueueToExecute(healthy, null, Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
-                timeProvider.Advance(TimeSpan.FromSeconds(10));
+                timeProvider.Advance(TimeSpan.FromSeconds(healthyDispatchSeconds));
                 return ValueTask.CompletedTask;
             });
         var sut = new MessageNeedToRetryProcessor(
@@ -764,7 +772,9 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
                             MessageLane.Bus,
                             message.InboxAttemptFence
                         )
-                    && request.NextRetryAt == nextProbeAt
+                    // Healthy dispatch spent part of the 37s boundary, so only what is left of it, never a negative
+                    // delay, reaches the store.
+                    && request.Delay == TimeSpan.FromSeconds(expectedDelaySeconds)
                 ),
                 CancellationToken.None
             );
@@ -1624,6 +1634,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             }
             catch (TaskCanceledException) { }
             catch (OperationCanceledException) { }
+
             secondStopwatch.Stop();
         }
         finally
@@ -1760,6 +1771,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             sut.GetPickupFailureCountForTest(MessageType.Subscribe, MessageLane.Bus).Should().Be(cycle);
             sut.CurrentPollingInterval.Should().BeGreaterThan(TimeSpan.FromSeconds(1));
         }
+
         captured.Count(e => e.Id == 3110).Should().Be(2);
         captured.Count(e => e.Id == 74 && e.Level == LogLevel.Error).Should().Be(1);
 
@@ -2053,6 +2065,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
                 {
                     throw new InvalidOperationException("lock store down");
                 }
+
                 return Task.FromResult<IDistributedLease?>(Substitute.For<IDistributedLease>());
             });
         lockProvider

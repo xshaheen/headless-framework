@@ -69,6 +69,7 @@ public sealed class ApiSurfaceOpenApiTests : TestBase
         {
             builder.Services.AddHeadlessApiSurfaceDocuments(configure: Configure);
         }
+
         builder.Services.AddOpenApi(
             "extra",
             options =>
@@ -91,6 +92,7 @@ public sealed class ApiSurfaceOpenApiTests : TestBase
         {
             app.MapOpenApi();
         }
+
         await app.StartAsync(AbortToken);
         try
         {
@@ -161,6 +163,7 @@ public sealed class ApiSurfaceOpenApiTests : TestBase
         {
             builder.Services.AddHeadlessApiSurfaceDocuments();
         }
+
         var register = () => builder.Services.AddHeadlessApiSurface("portal");
         register.Should().Throw<InvalidOperationException>().WithMessage("*before OpenAPI document inference*");
     }
@@ -179,6 +182,7 @@ public sealed class ApiSurfaceOpenApiTests : TestBase
         {
             builder.Services.AddHeadlessApiSurface("portal").AddHeadlessApiSurface("console");
         }
+
         builder.AddHeadless(configureServices: options =>
         {
             options.Validation.RequireUseHeadless = false;

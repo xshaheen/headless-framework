@@ -108,12 +108,8 @@ public sealed class PostgresReaderWriterLockConformanceTests : DistributedReadWr
         return base.should_throw_when_acquire_write_blocked_by_reader();
     }
 
-    // Intentionally not overridden (not portable to the connection-scoped provider):
-    //  - should_prefer_queued_writer_over_new_reader / should_clear_writer_waiting_marker_when_try_acquire_write_times_out / should_clear_writer_waiting_marker_when_try_acquire_write_is_cancelled:
-    //    Postgres advisory locks have no queue/waiting marker representation, so writer preference is not observable.
-    //  - should_fire_handle_lost_token_when_read_lock_ttl_expires / should_fire_handle_lost_token_when_write_lock_ttl_expires:
-    //    session-scoped locks have no lease, so expiration and TimeToLive are always null.
-    //  - should_auto_extend_write_lock: there is no lease to auto-extend.
+    // Cases a connection-scoped lock cannot satisfy are allow-listed, with reasons, in
+    // tests/Headless.Testing.Tests.Unit/Conformance/ConformanceCaseAllowList.cs.
 
     [Fact]
     public override Task should_acquire_composite_read_write_set_in_canonical_order_and_collapse_modes()
@@ -149,5 +145,17 @@ public sealed class PostgresReaderWriterLockConformanceTests : DistributedReadWr
     public override Task should_return_child_lease_for_single_canonical_read_write_resource()
     {
         return base.should_return_child_lease_for_single_canonical_read_write_resource();
+    }
+
+    [Fact]
+    public override Task should_clear_writer_waiting_marker_when_try_acquire_write_times_out()
+    {
+        return base.should_clear_writer_waiting_marker_when_try_acquire_write_times_out();
+    }
+
+    [Fact]
+    public override Task should_clear_writer_waiting_marker_when_try_acquire_write_is_cancelled()
+    {
+        return base.should_clear_writer_waiting_marker_when_try_acquire_write_is_cancelled();
     }
 }

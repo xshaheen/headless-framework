@@ -2,16 +2,11 @@
 title: "Namespace policy: root-namespace anchor, shared family roots, three-tier placement"
 date: 2026-09-18
 last_updated: 2026-09-18
-category: conventions
 module: headless-framework
-problem_type: naming_convention
+problem_type: convention
 component: package_structure
 severity: high
-tags:
-  - namespaces
-  - package-structure
-  - extension-methods
-  - cs0433
+tags: [namespaces, package-structure, extension-methods, cs0433]
 related_components:
   - provider_packages
   - registration_surface

@@ -769,6 +769,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
             stored.Origin.Headers[Headers.TenantId].Should().Be("tenant");
             stored.Origin.Headers[Headers.MessageId].Should().Be("id");
         }
+
         harness.TransportMessages.Should().BeEmpty();
     }
 
@@ -1347,6 +1348,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
         {
             collection.AddSingleton(middleware);
         }
+
         var services = collection.BuildServiceProvider();
         var pipeline = new PublishMiddlewarePipeline(services);
         var writer = new OutboxMessageWriter(storage, dispatcher, timeProvider);

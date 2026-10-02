@@ -21,7 +21,7 @@ namespace Tests;
 [Collection<PostgreSqlTestFixture>]
 public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
 {
-    private PostgreSqlDataStorage _storage = null!;
+    private RelationalDataStorage _storage = null!;
 
     public override async ValueTask InitializeAsync()
     {
@@ -35,23 +35,23 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
             x.RetryPolicy.MaxPersistedRetries = 4;
             x.FailedMessageExpiredAfter = 3600;
         });
-        services.AddSingleton<IStorageInitializer, PostgreSqlStorageInitializer>();
+        services.AddTestMessagingSchema();
         services.AddSingleton<ISerializer, JsonUtf8Serializer>();
         services.AddSingleton(TimeProvider.System);
 
         var provider = services.BuildServiceProvider();
-        var initializer = provider.GetRequiredService<IStorageInitializer>();
-        await initializer.InitializeAsync();
-        _storage = new PostgreSqlDataStorage(
-            provider.GetRequiredService<IOptions<PostgreSqlOptions>>(),
-            TestStorageOptions.For(),
+        var tableNames = provider.GetRequiredService<IStorageTableNames>();
+        await provider.ApplyMessagingSchemaAsync();
+        _storage = new RelationalDataStorage(
+            provider.GetRequiredService<IOptions<PostgreSqlOptions>>().Value.ToStorage(),
             provider.GetRequiredService<IOptions<MessagingOptions>>(),
-            initializer,
+            TestStorageOptions.For(),
+            tableNames,
             provider.GetRequiredService<ISerializer>(),
             new SequentialGuidGenerator(SequentialGuidType.Version7),
             TimeProvider.System,
             new NullNodeMembership(),
-            NullLogger<PostgreSqlDataStorage>.Instance
+            NullLogger<RelationalDataStorage>.Instance
         );
 
         await base.InitializeAsync();
@@ -200,13 +200,8 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
         );
 
         // when
-        var initializer = new PostgreSqlStorageInitializer(
-            NullLogger<PostgreSqlStorageInitializer>.Instance,
-            Options.Create(new PostgreSqlOptions { ConnectionString = fixture.ConnectionString }),
-            TestStorageOptions.For(),
-            Options.Create(new MessagingOptions { Version = "v1" })
-        );
-        var tableName = initializer.GetPublishedTableName();
+        var tableNames = TestStorageOptions.TableNames();
+        var tableName = tableNames.GetPublishedTableName();
         var deleted = await _storage.DeleteExpiresAsync(
             tableName,
             DateTimeOffset.UtcNow,
@@ -231,13 +226,8 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
         await _storage.ChangePublishStateAsync(stored, StatusName.Succeeded, cancellationToken: AbortToken);
 
         // when
-        var initializer = new PostgreSqlStorageInitializer(
-            NullLogger<PostgreSqlStorageInitializer>.Instance,
-            Options.Create(new PostgreSqlOptions { ConnectionString = fixture.ConnectionString }),
-            TestStorageOptions.For(),
-            Options.Create(new MessagingOptions { Version = "v1" })
-        );
-        var tableName = initializer.GetPublishedTableName();
+        var tableNames = TestStorageOptions.TableNames();
+        var tableName = tableNames.GetPublishedTableName();
         var deleted = await _storage.DeleteExpiresAsync(
             tableName,
             DateTimeOffset.UtcNow,
@@ -394,6 +384,6 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
 
         // then
         monitoringApi.Should().NotBeNull();
-        monitoringApi.Should().BeOfType<PostgreSqlMonitoringApi>();
+        monitoringApi.Should().BeOfType<RelationalMonitoringApi>();
     }
 }

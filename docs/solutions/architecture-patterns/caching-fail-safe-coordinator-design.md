@@ -1,8 +1,7 @@
 ---
 title: "Fail-safe caching: centralized coordinator, two-timestamp envelope, and the cancellation-identity pitfall"
 date: 2026-06-05
-category: architecture-patterns
-module: Headless.Caching
+module: Headless.Caching.Core
 problem_type: architecture_pattern
 component: service_class
 severity: medium
@@ -135,7 +134,7 @@ timeProvider.Advance(duration);
 
 ## Related
 
-- `docs/solutions/api/aspnet-core-cancellation-vs-timeout-differentiation-2026-05-07.md` — the cancellation-vs-timeout learning this engine applies (token identity over exception type).
-- `docs/solutions/architecture-patterns/messaging-keyed-di-lock-isolation-2026-05-19.md` — why any future cache-owned Redis CAS script must register under the cache package's keyed `ScriptsLoader` (the shared `ReplaceIfEqual`/`RemoveIfEqual` scripts must not be mutated); fail-safe v1 deliberately stays Lua-free.
-- `docs/solutions/tooling-decisions/redlock-multi-instance-not-adopted-2026-05-19.md` — the best-effort single-node lock posture the cross-node restamp race is accepted under.
+- `docs/solutions/api/aspnet-core-cancellation-vs-timeout-differentiation.md` — the cancellation-vs-timeout learning this engine applies (token identity over exception type).
+- `docs/solutions/architecture-patterns/messaging-keyed-di-lock-isolation.md` — why any future cache-owned Redis CAS script must register under the cache package's keyed `ScriptsLoader` (the shared `ReplaceIfEqual`/`RemoveIfEqual` scripts must not be mutated); fail-safe v1 deliberately stays Lua-free.
+- `docs/solutions/tooling-decisions/redlock-multi-instance-not-adopted.md` — the best-effort single-node lock posture the cross-node restamp race is accepted under.
 - PR #408 (`feat(caching): serve stale values on factory failure`) and `docs/llms/caching.md`.

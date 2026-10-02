@@ -44,8 +44,9 @@ public interface ISettingsStorageFixture
     void UseEntityFrameworkProvider(DbContextOptionsBuilder builder, string connectionString);
 
     /// <summary>
-    /// Reads the objects the initializer created in <paramref name="schema" />: every column as <c>table.column</c>
-    /// and every index, primary key included, as <c>table.index</c>.
+    /// Reads the objects the schema runner created for Settings in <paramref name="schema" />: every column as
+    /// <c>table.column</c> and every index, primary key included, as <c>table.index</c>. The runner's own
+    /// <c>headless_schema_history</c> table is left out, since no Settings EF model maps it.
     /// </summary>
     Task<SettingsStoreObjects> ReadStoreObjectsAsync(string schema, CancellationToken cancellationToken);
 }

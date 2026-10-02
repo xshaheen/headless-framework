@@ -12,6 +12,7 @@ namespace Tests;
 public sealed class KafkaConnectionPoolTests : TestBase
 {
     private readonly ILogger<KafkaConnectionPool> _logger = NullLogger<KafkaConnectionPool>.Instance;
+
     private readonly IOptions<KafkaMessagingOptions> _options = Options.Create(
         new KafkaMessagingOptions { Servers = "localhost:9092" }
     );

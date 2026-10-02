@@ -9,6 +9,7 @@ namespace Headless.Messaging.Internal;
 internal sealed class ScheduledMediumMessageQueue(TimeProvider timeProvider, int capacity = 1000) : IDisposable
 {
     private readonly int _capacity = Argument.IsPositive(capacity);
+
     private readonly SortedSet<(long, MediumMessage)> _queue = new(
         Comparer<(long, MediumMessage)>.Create(
             (a, b) =>

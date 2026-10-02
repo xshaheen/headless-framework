@@ -26,6 +26,13 @@ public interface IIdempotencyFixture
     /// </summary>
     bool RunsUnitsOnConnections => true;
 
+    /// <summary>
+    /// Whether the provider admits a key inside a caller's unit. SQLite refuses: it has no counter that survives the
+    /// caller's rollback, so a rolled-back admission's generation could be issued again. The suite then skips the
+    /// enlisted-admission scenarios, and the oracle expects the refusal instead of the model's admission.
+    /// </summary>
+    bool SupportsEnlistedAdmission => true;
+
     /// <summary>Creates an unopened connection to the shared database.</summary>
     DbConnection CreateConnection();
 

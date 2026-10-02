@@ -1,8 +1,7 @@
 ---
 title: HTTP-Stub Cross-Provider Conformance Harness
 date: 2026-06-21
-category: best-practices
-module: headless-captcha
+module: Headless.Captcha.Core
 problem_type: best_practice
 component: testing_framework
 severity: medium
@@ -13,13 +12,7 @@ applies_when:
   - "Building cross-provider conformance for a feature backed by an external HTTP API"
   - "The provider happy path needs a human-solved or credential-gated input CI cannot supply"
   - "Adding a second provider to an abstraction whose verification path is an outbound HTTP call"
-tags:
-  - testing
-  - conformance-harness
-  - http-stub
-  - httpmessagehandler
-  - captcha
-  - cross-provider
+tags: [testing, conformance-harness, http-stub, httpmessagehandler, captcha, cross-provider]
 ---
 
 # HTTP-Stub Cross-Provider Conformance Harness
@@ -134,7 +127,4 @@ Both produce a `CaptchaVerifyResult` the base asserts on identically; the v3 sco
 ## Related
 
 - [Unified Provider Setup Builder Pattern](../architecture-patterns/unified-provider-setup-builder-pattern.md) — the provider topology this harness conforms across (captcha is its per-slot named-instance instance)
-- CLAUDE.md "When to create a `*.Tests.Harness` package" — the Testcontainers-shaped trigger this complements; existing contrast harnesses live in `tests/Headless.Blobs.Tests.Harness` and `tests/Headless.DistributedLocks.Tests.Harness`
-- Source-of-truth brainstorm and plan:
-  - `docs/brainstorms/2026-06-21-captcha-provider-split-turnstile-requirements.md`
-  - `docs/plans/2026-06-21-001-feat-captcha-provider-turnstile-plan.md`
+- [When to extract a Tests.Harness package](tests-harness-extraction.md) — the Testcontainers-shaped trigger this complements; existing contrast harnesses live in `tests/Headless.Blobs.Tests.Harness` and `tests/Headless.DistributedLocks.Tests.Harness`

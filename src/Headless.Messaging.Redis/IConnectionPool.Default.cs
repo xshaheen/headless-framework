@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
@@ -61,7 +62,7 @@ internal sealed class RedisConnectionPool : IRedisConnectionPool, IDisposable, I
 
     public async Task<IConnectionMultiplexer> ConnectAsync(CancellationToken cancellationToken = default)
     {
-        ObjectDisposedException.ThrowIf(Volatile.Read(ref _isDisposed) != 0, this);
+        Ensure.NotDisposed(Volatile.Read(ref _isDisposed) != 0, this);
         cancellationToken.ThrowIfCancellationRequested();
 
         if (QuietConnection is not { } quietConnection)

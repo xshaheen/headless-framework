@@ -17,6 +17,13 @@ namespace Headless.DistributedLocks.SqlServer;
 /// the DI-managed <see cref="IDistributedLock"/> and these static methods mutually exclude on the same
 /// logical resource name when using the same <see cref="SqlServerDistributedLockOptions.KeyPrefix"/>.
 /// <para>
+/// The transaction is the lock's owner, so acquiring a resource the transaction already holds succeeds at once; the
+/// commit or rollback still releases it. An acquire that fails or is cancelled releases whatever the server granted
+/// before the client gave up, and a cancelled acquire surfaces as <see cref="OperationCanceledException"/>. A failed
+/// acquire leaves the transaction usable, except that SQL Server itself rolls the whole transaction back when a cancel
+/// interrupts it under <c>SET XACT_ABORT ON</c>.
+/// </para>
+/// <para>
 /// Every method has a <see cref="DbTransaction"/> overload for callers that hold the transaction through an
 /// abstraction, such as EF Core's <c>db.Database.CurrentTransaction.GetDbTransaction()</c>, and a synchronous
 /// variant for the places EF Core only exposes synchronously, such as a <c>SavingChanges</c> interceptor.
@@ -151,7 +158,6 @@ public static class SqlServerDistributedLock
                 // Mirror the session provider's encoding (KeyPrefix + resource) so both APIs derive an identical
                 // @Resource and therefore mutually exclude on the same logical resource name.
                 SqlServerResourceName.Encode(keyPrefix + resource),
-                isShared: false,
                 acquireTimeout ?? _DefaultAcquireTimeout,
                 commandTimeout: commandTimeout ?? _DefaultCommandTimeout,
                 cancellationToken
@@ -274,7 +280,6 @@ public static class SqlServerDistributedLock
         return SqlServerApplicationLock.TryAcquireTransaction(
             transaction,
             SqlServerResourceName.Encode(keyPrefix + resource),
-            isShared: false,
             acquireTimeout ?? _DefaultAcquireTimeout,
             commandTimeout ?? _DefaultCommandTimeout
         );

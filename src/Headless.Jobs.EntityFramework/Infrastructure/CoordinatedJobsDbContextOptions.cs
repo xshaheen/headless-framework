@@ -25,6 +25,7 @@ internal sealed class CoordinatedJobsDbContextOptions<TContext> : DbContextOptio
                 "Coordinated Jobs contexts must not own an externally supplied connection. Configure contextOwnsConnection:false; the existing caller handles were not rebound or disposed."
             );
         }
+
         return options.Extensions.ToDictionary(extension => extension.GetType());
     }
 }

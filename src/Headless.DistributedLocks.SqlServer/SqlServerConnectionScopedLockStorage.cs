@@ -2,6 +2,7 @@
 
 using System.Collections.Concurrent;
 using System.Data;
+using Headless.Checks;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Options;
 
@@ -124,7 +125,7 @@ internal sealed class SqlServerConnectionScopedLockStorage(
             if (_disposed)
             {
                 _heldByLeaseId.TryRemove(leaseId, out _);
-                ObjectDisposedException.ThrowIf(_disposed, this);
+                Ensure.NotDisposed(_disposed, this);
             }
 
             // Begin active liveness probing only once the lock is held and registered, so a silent half-open
@@ -133,6 +134,7 @@ internal sealed class SqlServerConnectionScopedLockStorage(
             {
                 held.StartMonitoring();
             }
+
             ownershipTransferred = true;
 
             return new ConnectionScopedLockHandle(

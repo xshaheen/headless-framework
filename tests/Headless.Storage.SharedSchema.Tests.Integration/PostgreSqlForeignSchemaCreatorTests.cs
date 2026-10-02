@@ -70,27 +70,23 @@ public sealed class PostgreSqlForeignSchemaCreatorTests(PostgreSqlSharedSchemaFi
             services.AddHeadlessDistributedLocks(setup => setup.UsePostgreSql());
 
             await using var provider = services.BuildServiceProvider();
-            var locks = provider.GetRequiredService<IDistributedLock>();
-            var resource = Faker.Random.AlphaNumeric(12);
+            var initializer = provider.GetServices<IHostedService>().OfType<HostedInitializer>().Single();
 
-            // when: the first acquire creates the fencing sequence lazily, racing the foreign schema creator
-            await _RaceForeignSchemaCreatorAsync(
-                connectionString,
-                async () =>
-                {
-                    var handle = await locks.AcquireAsync(
-                        resource,
-                        new DistributedLockAcquireOptions { AcquireTimeout = _BlockTimeout },
-                        AbortToken
-                    );
+            // when: startup creates the fencing sequence, racing the foreign schema creator
+            await _RaceForeignSchemaCreatorAsync(connectionString, () => initializer.InitializeAsync(AbortToken));
 
-                    // A token is issued only by a nextval on the sequence, so this proves the sequence exists.
-                    handle.FencingToken.Should().NotBeNull();
-                    await handle.ReleaseAsync();
-                }
-            );
+            // then: a token is issued only by a nextval on the sequence, so this proves the sequence exists
+            var handle = await provider
+                .GetRequiredService<IDistributedLock>()
+                .AcquireAsync(
+                    Faker.Random.AlphaNumeric(12),
+                    new DistributedLockAcquireOptions { AcquireTimeout = _BlockTimeout },
+                    AbortToken
+                );
 
-            // then
+            handle.FencingToken.Should().NotBeNull();
+            await handle.ReleaseAsync();
+
             (
                 await _RelationExistsAsync(
                     connectionString,

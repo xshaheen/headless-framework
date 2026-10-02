@@ -99,6 +99,12 @@ public sealed class InMemoryLeasesConformanceTests(InMemoryFencingFixture fixtur
     }
 
     [Fact]
+    public override Task should_never_reissue_a_generation_granted_by_a_sweep_handler_that_threw()
+    {
+        return base.should_never_reissue_a_generation_granted_by_a_sweep_handler_that_threw();
+    }
+
+    [Fact]
     public override Task should_not_reclaim_an_always_throwing_lease_within_one_sweep_call()
     {
         return base.should_not_reclaim_an_always_throwing_lease_within_one_sweep_call();
@@ -135,6 +141,12 @@ public sealed class InMemoryLeasesConformanceTests(InMemoryFencingFixture fixtur
     }
 
     [Fact]
+    public override Task should_refuse_a_key_no_provider_stores_unchanged_before_any_write()
+    {
+        return base.should_refuse_a_key_no_provider_stores_unchanged_before_any_write();
+    }
+
+    [Fact]
     public override Task should_reject_oversized_progress_before_any_write()
     {
         return base.should_reject_oversized_progress_before_any_write();
@@ -156,5 +168,11 @@ public sealed class InMemoryLeasesConformanceTests(InMemoryFencingFixture fixtur
     public override Task should_hand_the_sweep_the_progress_and_count_an_abandoned_lease_once()
     {
         return base.should_hand_the_sweep_the_progress_and_count_an_abandoned_lease_once();
+    }
+
+    [Fact]
+    public override Task should_decide_expiry_by_the_database_clock_whatever_the_application_clock()
+    {
+        return base.should_decide_expiry_by_the_database_clock_whatever_the_application_clock();
     }
 }

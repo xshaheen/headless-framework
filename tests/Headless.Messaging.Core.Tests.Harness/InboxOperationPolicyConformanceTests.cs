@@ -26,12 +26,13 @@ public abstract class InboxOperationPolicyConformanceTests : TestBase
     public async Task should_bound_concurrent_history_deletions_and_preserve_references()
     {
         await using var provider = _CreateProvider(CreateHistoryClock());
-        await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
         var storage = provider.GetRequiredService<IDataStorage>();
         for (var i = 0; i < 4; i++)
         {
             await storage.GetInboxOperationsApi().HoldAsync(_Request(Guid.NewGuid(), StatusName.Succeeded), AbortToken);
         }
+
         await AgeHistoryAsync(provider, TimeSpan.FromDays(100));
         var cutoffs = await storage.GetInboxHistoryRetentionCutoffsAsync(AbortToken);
         var audits = await Task.WhenAll(
@@ -55,7 +56,7 @@ public abstract class InboxOperationPolicyConformanceTests : TestBase
     public async Task should_reclaim_operator_history_without_releasing_hold()
     {
         await using var provider = _CreateProvider(CreateHistoryClock());
-        await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
         var storage = provider.GetRequiredService<IDataStorage>();
         var options = provider.GetRequiredService<IOptions<MessagingOptions>>().Value;
         var message = await _AdmitAsync(storage, MessageLane.Bus);
@@ -98,7 +99,7 @@ public abstract class InboxOperationPolicyConformanceTests : TestBase
     public async Task should_skip_pinned_receipt_before_applying_history_batch_limit()
     {
         await using var provider = _CreateProvider(CreateHistoryClock());
-        await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
         var storage = provider.GetRequiredService<IDataStorage>();
         var operations = storage.GetInboxOperationsApi();
         var pinned = _Request(Guid.NewGuid(), StatusName.Succeeded);
@@ -128,8 +129,8 @@ public abstract class InboxOperationPolicyConformanceTests : TestBase
     public async Task should_reclaim_cleanup_history_using_independent_retention_options()
     {
         await using var provider = _CreateProvider(CreateHistoryClock());
-        var initializer = provider.GetRequiredService<IStorageInitializer>();
-        await initializer.InitializeAsync(AbortToken);
+        var tableNames = provider.GetRequiredService<IStorageTableNames>();
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
         var storage = provider.GetRequiredService<IDataStorage>();
         var options = provider.GetRequiredService<IOptions<MessagingOptions>>().Value;
         var message = await _AdmitAsync(storage, MessageLane.Bus);
@@ -138,7 +139,7 @@ public abstract class InboxOperationPolicyConformanceTests : TestBase
             .Should()
             .BeTrue();
         await ExpireGenerationAsync(provider, message.StorageId);
-        (await storage.DeleteExpiresAsync(initializer.GetReceivedTableName(), DateTimeOffset.MaxValue, 10, AbortToken))
+        (await storage.DeleteExpiresAsync(tableNames.GetReceivedTableName(), DateTimeOffset.MaxValue, 10, AbortToken))
             .Should()
             .Be(1);
         await AgeHistoryAsync(provider, TimeSpan.FromDays(8));
@@ -162,7 +163,7 @@ public abstract class InboxOperationPolicyConformanceTests : TestBase
     public async Task should_cancel_history_storage_operations()
     {
         await using var provider = _CreateProvider(CreateHistoryClock());
-        await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
         var storage = provider.GetRequiredService<IDataStorage>();
         using var cancelled = new CancellationTokenSource();
         await cancelled.CancelAsync();
@@ -182,7 +183,7 @@ public abstract class InboxOperationPolicyConformanceTests : TestBase
     public async Task should_preserve_operation_outcomes_through_inbox_lifecycle(MessageLane lane, bool orphaned)
     {
         await using var provider = _CreateProvider();
-        await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
         var storage = provider.GetRequiredService<IDataStorage>();
         var operations = storage.GetInboxOperationsApi();
         var message = await _AdmitAsync(storage, lane);
@@ -203,6 +204,7 @@ public abstract class InboxOperationPolicyConformanceTests : TestBase
                 .BeTrue();
             await _LeaseAsync(storage, message);
         }
+
         (await operations.HoldAsync(_Request(incarnation, StatusName.Scheduled), AbortToken))
             .Outcome.Should()
             .Be(InboxOperationOutcome.Active);
@@ -211,7 +213,7 @@ public abstract class InboxOperationPolicyConformanceTests : TestBase
             await storage.ChangeReceiveStateAsync(
                 message,
                 StatusName.Failed,
-                nextRetryAt: message.LockedUntil!.Value.AddHours(1),
+                retryDelay: RetryDelay.Exactly(TimeSpan.FromHours(1)),
                 cancellationToken: AbortToken
             )
         )
@@ -270,7 +272,7 @@ public abstract class InboxOperationPolicyConformanceTests : TestBase
     public async Task should_reject_generation_overflow_without_blocking_hold(MessageLane lane)
     {
         await using var provider = _CreateProvider();
-        await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
         var storage = provider.GetRequiredService<IDataStorage>();
         var message = await _AdmitAsync(storage, lane, long.MaxValue);
         await _LeaseAsync(storage, message);
@@ -293,7 +295,7 @@ public abstract class InboxOperationPolicyConformanceTests : TestBase
     public async Task should_hold_unclaimed_scheduled_orphan(MessageLane lane)
     {
         await using var provider = _CreateProvider();
-        await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
         var storage = provider.GetRequiredService<IDataStorage>();
         var message = await _AdmitAsync(storage, lane);
         await _LeaseAsync(storage, message);
@@ -312,7 +314,7 @@ public abstract class InboxOperationPolicyConformanceTests : TestBase
     public async Task should_release_and_purge_unclaimed_orphan_with_scheduled_retry(MessageLane lane)
     {
         await using var provider = _CreateProvider();
-        await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
         var storage = provider.GetRequiredService<IDataStorage>();
         var message = await _AdmitAsync(storage, lane);
         await _LeaseAsync(storage, message);
@@ -362,7 +364,7 @@ public abstract class InboxOperationPolicyConformanceTests : TestBase
     public async Task should_block_orphan_operations_during_live_claim(MessageLane lane, bool held)
     {
         await using var provider = _CreateProvider();
-        await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
         var storage = provider.GetRequiredService<IDataStorage>();
         var message = await _AdmitAsync(storage, lane);
         await _LeaseAsync(storage, message);
@@ -375,6 +377,7 @@ public abstract class InboxOperationPolicyConformanceTests : TestBase
                 .Outcome.Should()
                 .Be(InboxOperationOutcome.Applied);
         }
+
         await _LeaseAsync(storage, message);
 
         (await operations.HoldAsync(_Request(incarnation, StatusName.Scheduled), AbortToken))
@@ -405,7 +408,7 @@ public abstract class InboxOperationPolicyConformanceTests : TestBase
     public async Task should_allow_exactly_one_recovery_claim_or_purge(MessageLane lane)
     {
         await using var provider = _CreateProvider();
-        await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
         var storage = provider.GetRequiredService<IDataStorage>();
         for (var iteration = 0; iteration < 12; iteration++)
         {
@@ -466,7 +469,7 @@ public abstract class InboxOperationPolicyConformanceTests : TestBase
     public async Task should_preserve_receipt_creation_time_and_replay_after_generation_purge()
     {
         await using var provider = _CreateProvider();
-        await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
         var storage = provider.GetRequiredService<IDataStorage>();
         var message = await _AdmitAsync(storage, MessageLane.Bus);
         await _LeaseAsync(storage, message);
@@ -497,6 +500,7 @@ public abstract class InboxOperationPolicyConformanceTests : TestBase
         {
             services.AddSingleton(timeProvider);
         }
+
         services.AddHeadlessMessaging(ConfigureStorage);
         return services.BuildServiceProvider();
     }

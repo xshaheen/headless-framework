@@ -1,21 +1,20 @@
 ---
 title: "Atomic Time-Job Tree Deletion with Conflict Retry"
-category: concurrency
 date: 2026-09-03
+module: Headless.Jobs.EntityFramework
 tags: [jobs, entity-framework, postgresql, sql-server, foreign-key, retry, deadlock, transaction]
-problem_type: concurrency_issue
-components:
+problem_type: database_issue
+component: database
+root_cause: async_timing
+resolution_type: code_fix
+related_components:
   - JobsEfCorePersistenceProvider
   - JobsManager
 symptoms:
   - A child appended after descendant discovery can strand a row when deletion is not atomic
   - A partially deleted tree can be exposed when discovery and deepest-first deletes use separate transactions
   - Retrying an in-doubt commit can report zero rows after the first commit actually succeeded
-severity: p2
-research:
-  agents: [main-orchestrator]
-  documented_at: 2026-09-03T00:00:00Z
-  conversation_context: "Issue #793 time-job tree deletion race across the generic EF, PostgreSQL, and SQL Server paths"
+severity: medium
 ---
 
 # Atomic Time-Job Tree Deletion with Conflict Retry
@@ -78,3 +77,7 @@ The shared EF conformance harness covers both race arms against PostgreSQL and S
 - Classify conflicts by provider identity and error code; transient metadata alone is not a complete SQL Server signal.
 - Recreate transaction-scoped state for each retry and release it before backoff.
 - Mark the commit boundary explicitly so an uncertain outcome is never replayed as though it were a rolled-back attempt.
+
+## Related
+
+- Issue #793: time-job tree deletion race across the generic EF, PostgreSQL, and SQL Server paths

@@ -129,6 +129,7 @@ internal sealed class JobsExecutionCancellationRegistration(Guid jobId, Cancella
             {
                 return false;
             }
+
             Volatile.Write(ref _cause, (int)cause);
 
             if (previousCause == JobsExecutionCancellationCause.None)

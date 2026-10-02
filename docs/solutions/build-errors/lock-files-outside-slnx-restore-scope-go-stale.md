@@ -1,7 +1,6 @@
 ---
 title: "Lock files of projects outside the slnx go stale when a shared project's references change"
 date: 2026-09-25
-category: build-errors
 module: headless-framework
 problem_type: build_error
 component: build_tooling
@@ -18,15 +17,7 @@ related_components:
   - "Headless.Checks"
   - "Headless.Messaging.PackageReference.Tests.Unit"
   - "headless-framework.slnx"
-tags:
-  - nuget
-  - packages-lock-json
-  - restore
-  - nu1004
-  - ci
-  - slnx
-  - msbuild-sdk
-  - probe-projects
+tags: [nuget, packages-lock-json, restore, nu1004, ci, slnx, msbuild-sdk, probe-projects]
 ---
 # Lock files of projects outside the slnx go stale when a shared project's references change
 

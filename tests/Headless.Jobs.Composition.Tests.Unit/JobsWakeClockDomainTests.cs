@@ -204,9 +204,11 @@ public sealed class JobsWakeClockDomainTests : TestBase
         private readonly ObservedNodeClock _serviceClock;
         private readonly JobsTaskScheduler _taskScheduler;
         private readonly CancellationTokenSource _stop = new();
+
         private readonly TaskCompletionSource<DateTime?> _firstPlannedWake = new(
             TaskCreationOptions.RunContinuationsAsynchronously
         );
+
         private readonly TaskCompletionSource _secondPoll = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private int _pollCount;
         private Task? _loop;

@@ -456,6 +456,7 @@ internal sealed class JobsExecutionTaskHandler
                 {
                     context.LeaseLost = true;
                 }
+
                 context.ResetUpdateProps();
                 return;
             }
@@ -578,6 +579,7 @@ internal sealed class JobsExecutionTaskHandler
                                         .ConfigureAwait(false);
                                 }
                             }
+
                             success = true;
                         },
                         async (retryCount, exception, retryToken) =>

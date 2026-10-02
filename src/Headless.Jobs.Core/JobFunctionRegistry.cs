@@ -29,6 +29,7 @@ internal static class JobFunctionRegistryBuilder
                 $"Ambiguous Jobs contract registrations: {string.Join(", ", mismatchedNames)}."
             );
         }
+
         var generatedDescriptorNames = descriptors.Select(entry => entry.Key).ToHashSet(StringComparer.Ordinal);
         // Keeps the first entry for a name and never throws: a duplicate name is rejected by the checks and the
         // frozen-map build below, not by this lookup.

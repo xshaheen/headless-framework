@@ -394,6 +394,7 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// </remarks>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
     Task<int> ReclaimStalledTimeJobsAsync(CancellationToken cancellationToken = default);
+
     #endregion
 
     #region Cron_Ticker_Core_Methods
@@ -660,6 +661,7 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     {
         return Task.FromResult(Array.Empty<string>());
     }
+
     #endregion
 
     #region Cron_TickerOccurrence_Core_Methods
@@ -858,6 +860,7 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// </remarks>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
     Task<int> ReclaimStalledCronJobOccurrencesAsync(CancellationToken cancellationToken = default);
+
     #endregion
 
     #region Time_Ticker_Shared_Methods
@@ -956,6 +959,7 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// </remarks>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
     Task<int> RemoveTimeJobsAsync(Guid[] jobIds, CancellationToken cancellationToken = default);
+
     #endregion
 
     #region Cron_Ticker_Shared_Methods
@@ -1128,6 +1132,7 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// </remarks>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
     Task<int> RemoveCronJobsAsync(Guid[] cronJobIds, CancellationToken cancellationToken = default);
+
     #endregion
 
     #region Cron_TickerOccurrence_Shared_Methods
@@ -1269,5 +1274,6 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
         Guid[] occurrenceIds,
         CancellationToken cancellationToken = default
     );
+
     #endregion
 }

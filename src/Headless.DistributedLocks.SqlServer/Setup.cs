@@ -177,7 +177,14 @@ public static class SetupSqlServerDistributedLocks
         // The unit-of-work feature behind unit.TransactionLocks; resolved by GetFeature on a host that also registered
         // a unit-of-work provider, inert otherwise.
         services.TryAddSingleton<IUnitOfWorkTransactionLocks, SqlServerUnitOfWorkTransactionLocks>();
-        services.AddInitializerHostedService<SqlServerDistributedLocksStorageInitializer>();
+        // The contribution factory reads options at first resolution, so EnableFencing keeps its contract: false
+        // means the runner never creates the fence sequence, which nothing then reads.
+        services.AddHeadlessSchemaContribution(sp =>
+            SqlServerDistributedLocksSchemaContribution.Create(
+                sp.GetRequiredService<IOptions<SqlServerDistributedLockOptions>>().Value,
+                sp.GetRequiredService<IOptions<DistributedLocksStorageOptions>>().Value
+            )
+        );
         services.AddSingletonOptionValue<DistributedLockOptions>();
 
         // The storage issues sp_getapplock with a zero @LockTimeout (one non-blocking attempt per call), so a

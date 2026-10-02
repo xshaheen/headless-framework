@@ -171,14 +171,6 @@ internal static partial class LoggerExtensions
     public static partial void MessagingStarting(this ILogger logger);
 
     [LoggerMessage(
-        EventId = 18,
-        EventName = "StorageInitFailed",
-        Level = LogLevel.Error,
-        Message = "Initializing the storage structure failed!"
-    )]
-    public static partial void StorageInitFailed(this ILogger logger, Exception exception);
-
-    [LoggerMessage(
         EventId = 19,
         EventName = "MessagingStopping",
         Level = LogLevel.Debug,

@@ -2,8 +2,7 @@
 title: Unified Provider Setup Builder Pattern
 date: 2026-05-25
 last_updated: 2026-06-21
-category: architecture-patterns
-module: headless-provider-setup
+module: headless-framework
 problem_type: architecture_pattern
 component: service_class
 severity: high
@@ -11,15 +10,7 @@ related_components:
   - dotnet_entity
   - database
   - tooling
-tags:
-  - provider-setup
-  - dependency-injection
-  - setup-builder
-  - exactly-one-provider
-  - storage
-  - coordination
-  - entity-framework
-  - raw-provider
+tags: [provider-setup, dependency-injection, setup-builder, exactly-one-provider, storage, coordination, entity-framework, raw-provider]
 applies_when:
   - Adding a provider-backed Headless.* package
   - Reviewing a Setup{Feature} root registration or provider Setup{Provider}{Feature} class
@@ -136,10 +127,14 @@ public static class SetupAuditLogPostgreSql
         public void AddServices(IServiceCollection services)
         {
             services.Configure<PostgreSqlAuditLogOptions, PostgreSqlAuditLogOptionsValidator>(configure);
-            services.AddInitializerHostedService<PostgreSqlAuditLogStorageInitializer>();
-            services.TryAddSingleton<PostgreSqlAuditLogWriter>();
-            services.TryAddScoped<IAuditLogStore, PostgreSqlAuditLogStore>();
-            services.TryAddSingleton(typeof(IAuditLog<>), typeof(PostgreSqlAuditLog<>));
+            // The store, writer, reader, and audit log are written once in Headless.AuditLog.Core over ISqlDialect;
+            // the provider supplies its dialect, column-type rules, and schema contribution.
+            RelationalAuditLogStorage.AddServices<PostgreSqlAuditLogOptions>(
+                services,
+                PostgreSqlDialect.Instance,
+                postgreSqlRules,
+                PostgreSqlAuditLogSchemaContribution.Create
+            );
         }
     }
 }
@@ -195,7 +190,7 @@ Caching (`AddHeadlessCaching`, `src/Headless.Caching.Core/Setup.cs`) follows the
 
 Application order is tiers → default → named → cross-cutting, all deferred until the gates pass so a throwing setup leaves the service collection unchanged, and the repeated-`AddHeadlessCaching` sentinel matches coordination. The deviation pays for a real failure mode the global gate cannot express: the predecessor per-provider `Add*Cache(isDefault:)` extensions let two `isDefault: true` registrations silently race for the default `ICache` (first-wins `TryAddSingleton` plus role-key aliasing); the per-slot gate turns that into a hard registration-time error. The focused regression suite is `tests/Headless.Caching.Core.Tests.Unit/CachingSetupBuilderTests.cs`.
 
-**Captcha is the second per-slot instance** (`AddHeadlessCaptcha`, `src/Headless.Captcha.Abstractions/Setup.cs`) and adds two wrinkles Caching does not have. It keeps a **default slot** — at most one `UseTurnstile` / `UseReCaptchaV2` / `UseReCaptchaV3`, resolving unkeyed *and* aliased under its canonical `CaptchaConstants` key — plus an unlimited **named slot** (`Use{Provider}("name", …)`, keyed-only); both are deferred behind an "at least one provider" gate and the repeated-`AddHeadlessCaptcha` sentinel. The wrinkles: (1) **provider sub-interfaces** — the base `ICaptchaVerifier` stays strictly pass/fail, while `IReCaptchaV3Verifier` (Score) and `ITurnstileVerifier` (CData) carry provider-only data on derived result types, so a consumer that needs vendor data injects the concrete interface rather than leaking it onto the shared contract; and (2) a **public by-name resolver**, `ICaptchaProvider.GetVerifier(name)` over `GetKeyedService<ICaptchaVerifier>(name)`, shipped as package surface (Caching's `KeyedServiceCacheProvider` is the same mechanism, kept internal). Per-provider internal singletons — the named `HttpClient` and the language-code provider — are keyed by the slot name so reCAPTCHA and Turnstile cannot collide on a first-wins `TryAdd` (the shadowing trap in the linked keyed-DI doc). Conformance is verified by an HTTP-stub harness rather than Testcontainers (the providers' happy path needs a human-solved token); see the linked harness doc. The focused suites are `tests/Headless.Captcha.{Turnstile,ReCaptcha}.Tests.Unit` over the shared `tests/Headless.Captcha.Tests.Harness`.
+**Captcha is the second per-slot instance** (`AddHeadlessCaptcha`, `src/Headless.Captcha.Core/Setup.cs`) and adds two wrinkles Caching does not have. It keeps a **default slot** — at most one `UseTurnstile` / `UseReCaptchaV2` / `UseReCaptchaV3`, resolving unkeyed *and* aliased under its canonical `CaptchaConstants` key — plus an unlimited **named slot** (`Use{Provider}("name", …)`, keyed-only); both are deferred behind an "at least one provider" gate and the repeated-`AddHeadlessCaptcha` sentinel. The wrinkles: (1) **provider sub-interfaces** — the base `ICaptchaVerifier` stays strictly pass/fail, while `IReCaptchaV3Verifier` (Score) and `ITurnstileVerifier` (CData) carry provider-only data on derived result types, so a consumer that needs vendor data injects the concrete interface rather than leaking it onto the shared contract; and (2) a **public by-name resolver**, `ICaptchaProvider.GetVerifier(name)` over `GetKeyedService<ICaptchaVerifier>(name)`, shipped as package surface (Caching's `KeyedServiceCacheProvider` is the same mechanism, kept internal). Per-provider internal singletons — the named `HttpClient` and the language-code provider — are keyed by the slot name so reCAPTCHA and Turnstile cannot collide on a first-wins `TryAdd` (the shadowing trap in the linked keyed-DI doc). Conformance is verified by an HTTP-stub harness rather than Testcontainers (the providers' happy path needs a human-solved token); see the linked harness doc. The focused suites are `tests/Headless.Captcha.{Turnstile,ReCaptcha}.Tests.Unit` over the shared `tests/Headless.Captcha.Tests.Harness`.
 
 ### 6. Shared `HeadlessDbContext` + `*EntityStartupValidator<TContext>`
 
@@ -260,14 +255,14 @@ Skip this shape when the feature has exactly one possible backend and zero confi
 
 | Feature | Root setup | Builder | Provider extension interface | Provider packages |
 | --- | --- | --- | --- | --- |
-| AuditLog | `src/Headless.AuditLog.Abstractions/Setup.cs` | `HeadlessAuditLogSetupBuilder.cs` | `IAuditLogStorageOptionsExtension` | EF, PostgreSql, SqlServer |
+| AuditLog | `src/Headless.AuditLog.Core/Setup.cs` | `HeadlessAuditLogSetupBuilder.cs` | `IAuditLogStorageOptionsExtension` | EF, PostgreSql, SqlServer |
 | Settings | `src/Headless.Settings.Core/Setup.cs` (`SetupCoreSettings`) | `HeadlessSettingsSetupBuilder.cs` | `ISettingsStorageOptionsExtension` | EF, PostgreSql, SqlServer |
 | Permissions | `src/Headless.Permissions.Core/Setup.cs` | `HeadlessPermissionsSetupBuilder.cs` | `IPermissionsStorageOptionsExtension` | EF, PostgreSql, SqlServer |
 | Features | `src/Headless.Features.Core/Setup.cs` | `HeadlessFeaturesSetupBuilder.cs` | `IFeaturesStorageOptionsExtension` | EF, PostgreSql, SqlServer |
 | Identity | `src/Headless.Identity.Storage.EntityFramework/Setup.cs` | `HeadlessIdentitySetupBuilder.cs` | package-local identity storage extension | EF |
 | Coordination | `src/Headless.Coordination.Core/Setup.cs` | `HeadlessCoordinationSetupBuilder.cs` | `ICoordinationProviderOptionsExtension` | PostgreSql, SqlServer, Redis |
 | Caching | `src/Headless.Caching.Core/Setup.cs` (`SetupCachingCore`) | `HeadlessCachingSetupBuilder.cs` | `ICacheProviderOptionsExtension` | InMemory, Redis, Hybrid (+ DistributedLocks as cross-cutting) |
-| Captcha | `src/Headless.Captcha.Abstractions/Setup.cs` (`SetupCaptcha`) | `HeadlessCaptchaSetupBuilder.cs` | per-slot deferred actions + `ICaptchaProvider` by-name resolver | ReCaptcha (v2/v3), Turnstile |
+| Captcha | `src/Headless.Captcha.Core/Setup.cs` (`SetupCaptcha`) | `HeadlessCaptchaSetupBuilder.cs` | per-slot deferred actions + `ICaptchaProvider` by-name resolver | ReCaptcha (v2/v3), Turnstile |
 | Blobs | `src/Headless.Blobs.Core/Setup.cs` (`SetupBlobsCore`) | `HeadlessBlobsSetupBuilder.cs` | per-slot deferred actions + `IBlobStorageProvider` by-name resolver | Aws, Azure, CloudflareR2, FileSystem, Redis, SshNet |
 
 Consumer call site, audit-log:
@@ -286,14 +281,8 @@ To swap providers, change one line (`setup.UseSqlServer(...)`); nothing else mov
 ## Related
 
 - [Storage Initializer Lifecycle & Concurrent-Startup Safety](../best-practices/storage-initializer-lifecycle-correctness.md) — sibling doc covering runtime correctness of the `*StorageInitializer` and `HeadlessDbContext` dispose paths
-- [Writing a Headless Messaging Transport Provider](../guides/messaging-transport-provider-guide.md) — the original `IXOptionsExtension` + `Setup{Provider}` template this pattern generalizes
+- [Writing a Transport Provider](../../llms/messaging.md#writing-a-transport-provider) — the original `IXOptionsExtension` + `Setup{Provider}` template this pattern generalizes
 - [Messaging keyed-DI lock isolation](messaging-keyed-di-lock-isolation.md) — `TryAdd*` shadowing trap applies to multi-feature storage hosts and to captcha's per-provider HttpClient/language-provider keying
 - [Named-instance keyed-provider registration](named-instance-keyed-provider-registration.md) — the per-instance implementation recipe (named-options + keyed-factory + per-instance dependencies) layered on this builder contract; used by Blobs
 - [HTTP-stub cross-provider conformance harness](../best-practices/http-stub-conformance-harness.md) — how the per-slot captcha providers are conformance-tested without a reachable backend
 - [Transport wrapper drift and doc sync](../messaging/transport-wrapper-drift-and-doc-sync.md) — greenfield rename rationale and the canonical domain-guide update that follows refactors of this shape
-- Source-of-truth brainstorm and plan (on branch `xshaheen/refactor-storage-initialization-unification`):
-  - `docs/brainstorms/2026-05-24-storage-initialization-unification-requirements.md`
-  - `docs/plans/2026-05-24-001-refactor-storage-initialization-unification-plan.md`
-- Coordination membership substrate plan that reused the builder pattern:
-  - `docs/plans/2026-06-06-001-feat-coordination-membership-substrate-plan.md`
-  - `docs/test-plans/2026-06-07-feat-coordination-membership-substrate-test-plan.md`

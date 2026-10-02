@@ -19,7 +19,7 @@ public sealed class ReCaptchaV2ScriptTagHelper(
     ICaptchaLanguageCodeProvider languageCodeProvider
 ) : TagHelper
 {
-    /// <summary>When <see langword="true"/> (the default), adds the <c>async</c> attribute to the rendered script tag.</summary>
+    /// <summary>When <see langword="true"/> (the default), renders the script tag as <c>&lt;script async&gt;</c>.</summary>
     public bool ScriptAsync { get; set; } = true;
 
     /// <summary>When <see langword="true"/> (the default), adds the <c>defer</c> attribute to the rendered script tag.</summary>

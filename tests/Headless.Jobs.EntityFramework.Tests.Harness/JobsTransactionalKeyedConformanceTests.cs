@@ -103,6 +103,7 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>(T
             {
                 await operation.Should().ThrowAsync<InjectedFailureException>();
             }
+
             (await fixture.CountProbeRowsAsync(AbortToken)).Should().Be(commit ? 2 : 0);
             (await fixture.CountTimeJobsAsync(AbortToken)).Should().Be(commit ? 3 : 0);
             if (commit)
@@ -146,6 +147,7 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>(T
                     .IsProvisional.Should()
                     .BeTrue();
             }
+
             (await fixture.CountProbeRowsAsync(AbortToken)).Should().Be(0);
             (await fixture.CountTimeJobsAsync(AbortToken)).Should().Be(0);
         });
@@ -283,6 +285,7 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>(T
                 {
                     throw new InjectedFailureException();
                 }
+
                 await unit.CompleteAsync(AbortToken);
             });
             attempts.Should().Be(2);
@@ -460,6 +463,7 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>(T
                 Failures++;
                 throw new InjectedFailureException();
             }
+
             return ValueTask.FromResult(result);
         }
     }
@@ -479,6 +483,7 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>(T
             {
                 throw new InjectedFailureException();
             }
+
             return ValueTask.FromResult(result);
         }
 
@@ -508,6 +513,7 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>(T
                 Failures++;
                 throw new InjectedFailureException();
             }
+
             return ValueTask.FromResult(result);
         }
 
@@ -524,6 +530,7 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>(T
                 Failures++;
                 throw new InjectedFailureException();
             }
+
             return ValueTask.FromResult(result);
         }
     }

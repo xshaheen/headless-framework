@@ -13,6 +13,7 @@ internal sealed partial class CoordinationOptionsValidator : AbstractValidator<C
 
         RuleFor(x => x.ClusterName)
             .NotEmpty()
+            .MaximumLength(CoordinationOptions.ClusterNameMaxLength)
             .Matches(ClusterNameRegex)
             .WithMessage("ClusterName may only contain letters, digits, '.', '_', ':', or '-'.");
 

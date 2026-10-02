@@ -177,4 +177,16 @@ public sealed class NatsTransportTests(NatsFixture fixture) : TransportTestsBase
     }
 
     #endregion
+
+    [Fact]
+    public override Task should_send_bus_message_successfully()
+    {
+        return base.should_send_bus_message_successfully();
+    }
+
+    [Fact]
+    public override Task should_send_queue_message_successfully()
+    {
+        return base.should_send_queue_message_successfully();
+    }
 }

@@ -259,18 +259,22 @@ internal sealed class ProblemDetailsCreator(
             problemDetails.Extensions["traceId"] =
                 Activity.Current?.Id ?? httpContextAccessor.HttpContext?.TraceIdentifier;
         }
+
         if (!problemDetails.Extensions.ContainsKey("buildNumber"))
         {
             problemDetails.Extensions["buildNumber"] = buildInformationAccessor.GetVersion();
         }
+
         if (!problemDetails.Extensions.ContainsKey("commitNumber"))
         {
             problemDetails.Extensions["commitNumber"] = buildInformationAccessor.GetCommitNumber();
         }
+
         if (!problemDetails.Extensions.ContainsKey("timestamp"))
         {
             problemDetails.Extensions["timestamp"] = timeProvider.GetUtcNow().ToString("O");
         }
+
         if (httpContextAccessor.HttpContext is not null)
         {
             problemDetails.Instance = httpContextAccessor.HttpContext.Request.Path.Value ?? "";

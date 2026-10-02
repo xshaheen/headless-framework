@@ -10,6 +10,7 @@ public sealed class StringToByteArrayConverterTests : TestBase
 {
     private static readonly JobsRequestSerializationOptions _SerializationOptions =
         JobsRequestSerializationOptions.Default;
+
     private static readonly JsonSerializerOptions _JsonOptions = new()
     {
         Converters = { new StringToByteArrayConverter(_SerializationOptions) },

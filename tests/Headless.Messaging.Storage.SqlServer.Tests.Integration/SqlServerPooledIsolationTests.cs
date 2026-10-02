@@ -24,7 +24,7 @@ public sealed class SqlServerPooledIsolationTests(SqlServerTestFixture fixture) 
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task should_preserve_readpast_operations_after_serializable_inbox_admission(bool useSnapshot)
+    public async Task should_preserve_readpast_operations_on_a_pooled_session_left_serializable(bool useSnapshot)
     {
         var databaseName = $"messaging_isolation_{Guid.NewGuid():N}";
         var masterOptions = new SqlConnectionStringBuilder(fixture.ConnectionString)
@@ -61,24 +61,19 @@ public sealed class SqlServerPooledIsolationTests(SqlServerTestFixture fixture) 
             var sqlOptions = Options.Create(
                 new SqlServerOptions { ConnectionString = connectionOptions.ConnectionString }
             );
-            var initializer = new SqlServerStorageInitializer(
-                NullLogger<SqlServerStorageInitializer>.Instance,
-                sqlOptions,
-                TestStorageOptions.For(),
-                messagingOptions
-            );
-            await initializer.InitializeAsync(AbortToken);
+            var tableNames = TestStorageOptions.TableNames();
+            await TestMessagingSchema.ApplyAsync(sqlOptions.Value, cancellationToken: AbortToken);
             var serializer = new JsonUtf8Serializer(messagingOptions);
-            var storage = new SqlServerDataStorage(
+            var storage = new RelationalDataStorage(
+                sqlOptions.Value.ToStorage(),
                 messagingOptions,
-                sqlOptions,
                 TestStorageOptions.For(),
-                initializer,
+                tableNames,
                 serializer,
                 new SequentialGuidGenerator(SequentialGuidType.SqlServer),
                 TimeProvider.System,
                 new NullNodeMembership(),
-                NullLogger<SqlServerDataStorage>.Instance
+                NullLogger<RelationalDataStorage>.Instance
             );
             var monitoring = storage.GetMonitoringApi();
             var expiredId = Guid.NewGuid();
@@ -145,7 +140,7 @@ public sealed class SqlServerPooledIsolationTests(SqlServerTestFixture fixture) 
                 await lockedTransaction.RollbackAsync(AbortToken);
             }
 
-            (await storage.DeleteExpiresAsync(initializer.GetPublishedTableName(), now, 10, AbortToken)).Should().Be(1);
+            (await storage.DeleteExpiresAsync(tableNames.GetPublishedTableName(), now, 10, AbortToken)).Should().Be(1);
             (await monitoring.GetPublishedMessageAsync(expiredId, AbortToken)).Should().BeNull();
             (await monitoring.GetPublishedMessageAsync(lockedId, AbortToken)).Should().NotBeNull();
 
@@ -160,7 +155,7 @@ public sealed class SqlServerPooledIsolationTests(SqlServerTestFixture fixture) 
                     )
                 );
             }
-            (await storage.DeleteExpiresAsync(initializer.GetReceivedTableName(), now, 10, AbortToken)).Should().Be(1);
+            (await storage.DeleteExpiresAsync(tableNames.GetReceivedTableName(), now, 10, AbortToken)).Should().Be(1);
             (await monitoring.GetReceivedMessageAsync(received.Message.StorageId, AbortToken)).Should().BeNull();
 
             await _AdmitOnPooledSessionAsync(storage, connectionOptions.ConnectionString, sessionId);
@@ -194,7 +189,7 @@ public sealed class SqlServerPooledIsolationTests(SqlServerTestFixture fixture) 
     }
 
     private static async Task<InboxAdmissionResult> _AdmitOnPooledSessionAsync(
-        SqlServerDataStorage storage,
+        RelationalDataStorage storage,
         string connectionString,
         int sessionId
     )
@@ -216,6 +211,11 @@ public sealed class SqlServerPooledIsolationTests(SqlServerTestFixture fixture) 
         await using var connection = new SqlConnection(connectionString);
         await connection.OpenAsync(AbortToken);
         connection.ServerProcessId.Should().Be(sessionId, "the pool has exactly one physical connection");
+        // Any code sharing the pool can leave a stricter level on the session, and SQL Server keeps it when the
+        // connection is reused; the storage must still skip locked rows on that session.
+        await connection.ExecuteAsync(
+            new CommandDefinition("SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;", cancellationToken: AbortToken)
+        );
         (
             await connection.ExecuteScalarAsync<int>(
                 new CommandDefinition(
@@ -225,7 +225,7 @@ public sealed class SqlServerPooledIsolationTests(SqlServerTestFixture fixture) 
             )
         )
             .Should()
-            .Be(4, "inbox admission leaves Serializable isolation on the reused session");
+            .Be(4, "the reused session is left at Serializable");
         return admitted;
     }
 

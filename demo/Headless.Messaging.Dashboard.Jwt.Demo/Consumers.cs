@@ -20,6 +20,7 @@ public sealed class OrderCreatedConsumer(ILogger<OrderCreatedConsumer> logger) :
                 context.Message.Amount
             );
         }
+
         await Task.Delay(Random.Shared.Next(30, 150), cancellationToken);
     }
 }
@@ -49,6 +50,7 @@ public sealed class OrderNotificationConsumer(ILogger<OrderNotificationConsumer>
                 context.Message.CustomerName
             );
         }
+
         await Task.Delay(Random.Shared.Next(50, 200), cancellationToken);
     }
 }
@@ -89,6 +91,7 @@ public sealed class PaymentProcessedConsumer(ILogger<PaymentProcessedConsumer> l
                 context.Message.OrderId
             );
         }
+
         await Task.Delay(Random.Shared.Next(100, 400), cancellationToken);
     }
 }
@@ -106,6 +109,7 @@ public sealed class UserRegisteredConsumer(ILogger<UserRegisteredConsumer> logge
                 context.Message.Plan
             );
         }
+
         // Simulate slow email rendering
         await Task.Delay(Random.Shared.Next(200, 600), cancellationToken);
     }
@@ -125,6 +129,7 @@ public sealed class InventoryUpdatedConsumer(ILogger<InventoryUpdatedConsumer> l
                 context.Message.Warehouse
             );
         }
+
         await Task.Delay(Random.Shared.Next(20, 80), cancellationToken);
     }
 }

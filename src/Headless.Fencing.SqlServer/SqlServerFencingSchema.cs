@@ -2,7 +2,7 @@
 
 namespace Headless.Fencing.SqlServer;
 
-/// <summary>Object and column names of the lease storage, shared by the initializer's DDL and the store's statements.</summary>
+/// <summary>Object and column names of the lease storage, shared by the schema contribution's DDL and the store's statements.</summary>
 internal static class SqlServerFencingSchema
 {
     public const string TableName = "FencingLeases";

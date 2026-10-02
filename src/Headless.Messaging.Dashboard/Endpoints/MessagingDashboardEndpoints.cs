@@ -644,6 +644,7 @@ public static partial class MessagingDashboardEndpoints
         {
             return authorityFailure!;
         }
+
         var result = await sp.GetRequiredService<IDataStorage>()
             .GetInboxOperationsApi()
             .QueryAsync(
@@ -675,6 +676,7 @@ public static partial class MessagingDashboardEndpoints
         {
             return authorityFailure!;
         }
+
         if (!httpContext.Request.HasJsonContentType())
         {
             return Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);
@@ -699,6 +701,7 @@ public static partial class MessagingDashboardEndpoints
         {
             return Results.UnprocessableEntity();
         }
+
         var request = new InboxOperationRequest(
             payload.OperationId,
             payload.ExpectedIncarnationId,

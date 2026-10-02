@@ -1,10 +1,13 @@
 ---
 title: "Startup Pause Gating and Half-Open Recovery in Messaging Circuit Breakers"
-category: concurrency
 date: 2026-03-22
+module: Headless.Messaging.Core
 tags: [messaging, circuit-breaker, dotnet, rabbitmq, azure-service-bus, nats, retry-backpressure, options-validation]
-problem_type: concurrency_issue
-components:
+problem_type: logic_error
+component: service_class
+root_cause: async_timing
+resolution_type: code_fix
+related_components:
   - ConsumerRegister
   - RabbitMqConsumerClient
   - AzureServiceBusConsumerClient
@@ -15,11 +18,7 @@ symptoms:
   - Open circuits can still admit work from consumers that start after the pause transition
   - HalfOpen can wedge when transport resume fails but the callback swallows the exception
   - Retry backpressure can invert under misconfiguration when MaxPollingInterval is below the retry processor base interval
-severity: p1
-research:
-  agents: [main-orchestrator]
-  documented_at: 2026-03-22T00:00:00Z
-  conversation_context: "Resolved four todo files from PR #194 around startup pause gating, half-open recovery, retry backpressure validation, and operator docs"
+severity: high
 ---
 
 # Startup Pause Gating and Half-Open Recovery in Messaging Circuit Breakers
@@ -140,4 +139,5 @@ finally:
 
 ## Related Docs
 
-- [Thread Safety and Resilience Patterns in .NET Messaging Circuit Breakers](/Users/xshaheen/Dev/framework/headless-framework/docs/solutions/concurrency/circuit-breaker-transport-thread-safety-patterns.md)
+- [Thread Safety and Resilience Patterns in .NET Messaging Circuit Breakers](circuit-breaker-transport-thread-safety-patterns.md)
+- PR #194: https://github.com/xshaheen/headless-framework/pull/194

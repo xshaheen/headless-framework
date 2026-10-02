@@ -144,4 +144,10 @@ public sealed class AmazonSqsConsumerClientConformanceTests(LocalStackTestFixtur
     {
         return base.should_bound_shutdown_while_handler_is_active();
     }
+
+    [Fact]
+    public override Task should_dispatch_empty_message_body()
+    {
+        return base.should_dispatch_empty_message_body();
+    }
 }

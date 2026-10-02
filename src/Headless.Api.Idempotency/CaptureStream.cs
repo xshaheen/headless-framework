@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
+
 namespace Headless.Api.Idempotency;
 
 /// <summary>
@@ -56,7 +58,7 @@ internal sealed class CaptureStream : Stream
     /// <exception cref="ObjectDisposedException">The stream has been disposed.</exception>
     public override void Write(byte[] buffer, int offset, int count)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        Ensure.NotDisposed(_disposed, this);
         // Append to the in-memory capture before forwarding. The append is in-memory and
         // cannot throw; if the inner write later throws, the captured buffer still represents
         // exactly what the handler intended to send up to that point.
@@ -68,7 +70,7 @@ internal sealed class CaptureStream : Stream
     /// <exception cref="ObjectDisposedException">The stream has been disposed.</exception>
     public override void Write(ReadOnlySpan<byte> buffer)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        Ensure.NotDisposed(_disposed, this);
         _AppendToBuffer(buffer);
         _inner.Write(buffer);
     }
@@ -77,7 +79,7 @@ internal sealed class CaptureStream : Stream
     /// <exception cref="ObjectDisposedException">The stream has been disposed.</exception>
     public override async Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        Ensure.NotDisposed(_disposed, this);
         _AppendToBuffer(buffer.AsSpan(offset, count));
         await _inner.WriteAsync(buffer.AsMemory(offset, count), cancellationToken).ConfigureAwait(false);
     }
@@ -89,7 +91,7 @@ internal sealed class CaptureStream : Stream
         CancellationToken cancellationToken = default
     )
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        Ensure.NotDisposed(_disposed, this);
         _AppendToBuffer(buffer.Span);
         await _inner.WriteAsync(buffer, cancellationToken).ConfigureAwait(false);
     }
@@ -98,7 +100,7 @@ internal sealed class CaptureStream : Stream
     /// <exception cref="ObjectDisposedException">The stream has been disposed.</exception>
     public override void WriteByte(byte value)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        Ensure.NotDisposed(_disposed, this);
         _AppendToBuffer(new ReadOnlySpan<byte>(in value));
         _inner.WriteByte(value);
     }

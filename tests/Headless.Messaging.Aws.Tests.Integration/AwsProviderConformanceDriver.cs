@@ -153,6 +153,7 @@ internal sealed class AwsProviderConformanceDriver(LocalStackTestFixture fixture
             {
                 await client.DeleteQueueAsync(queueUrl, CancellationToken.None);
             }
+
             foreach (var topic in topics)
             {
                 await sns.DeleteTopicAsync(topic, CancellationToken.None);

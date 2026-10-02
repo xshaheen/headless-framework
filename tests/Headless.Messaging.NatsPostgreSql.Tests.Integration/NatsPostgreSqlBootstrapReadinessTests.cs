@@ -10,7 +10,8 @@ using Tests.Helpers;
 namespace Tests;
 
 [Collection("NatsPostgreSql")]
-public sealed class NatsPostgreSqlBootstrapReadinessTests(NatsPostgreSqlFixture fixture) : MessagingIntegrationTestsBase
+public sealed class NatsPostgreSqlBootstrapReadinessTests(NatsPostgreSqlFixture fixture)
+    : MessagingIntegrationHostTestsBase
 {
     private readonly string _topicPrefix = $"bootstrap-{Guid.NewGuid():N}"[..18];
 

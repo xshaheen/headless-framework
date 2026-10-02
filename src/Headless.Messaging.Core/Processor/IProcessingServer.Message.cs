@@ -19,8 +19,10 @@ internal sealed class MessageProcessingServer(
     private readonly Lock _lifecycleLock = new();
     private CancellationTokenSource _cts = new();
     private readonly ILogger _logger = logger;
+
     private readonly MessageNeedToRetryProcessor _retryProcessor =
         provider.GetRequiredService<MessageNeedToRetryProcessor>();
+
     private readonly TimeSpan _shutdownTimeout = provider
         .GetRequiredService<IOptions<MessagingOptions>>()
         .Value.ShutdownTimeout;
@@ -183,6 +185,7 @@ internal sealed class MessageProcessingServer(
             {
                 await _context.DisposeAsync().ConfigureAwait(false);
             }
+
             _context = null;
             _cts.Dispose();
             _logger.MessagingShutdown();

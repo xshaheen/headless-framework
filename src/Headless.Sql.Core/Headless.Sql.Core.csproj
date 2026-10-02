@@ -7,8 +7,12 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Nito.AsyncEx" />
+    <PackageReference Include="OpenTelemetry.Api" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
+    <ProjectReference Include="..\Headless.Extensions\Headless.Extensions.csproj" />
     <ProjectReference Include="..\Headless.Sql.Abstractions\Headless.Sql.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.UnitOfWork\Headless.UnitOfWork.csproj" />
   </ItemGroup>
 </Project>

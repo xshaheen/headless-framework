@@ -66,6 +66,7 @@ public sealed class ApiSurfaceTelemetryTests : TestBase
         {
             builder.Services.AddHeadlessApiSurface("Portal", _ => { });
         }
+
         await using var app = builder.Build();
         app.UseDeveloperExceptionPage();
         app.UseRouting();
@@ -78,6 +79,7 @@ public sealed class ApiSurfaceTelemetryTests : TestBase
                     context.Response.StatusCode = StatusCodes.Status403Forbidden;
                     return;
                 }
+
                 await next(context);
             }
         );

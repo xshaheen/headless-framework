@@ -163,6 +163,7 @@ internal sealed class ApnsCertificateHolder : IDisposable
                 {
                     _logger.LogCertificateReloadFailed(_instance, string.Join(' ', errors));
                 }
+
                 ApnsMetrics.RecordCertificateReload(accepted: false);
 
                 return;

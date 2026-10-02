@@ -36,6 +36,9 @@ public static class SqlErrorCodes
 
         /// <summary>lock_timeout.</summary>
         public const string LockTimeout = "55P03";
+
+        /// <summary>in_failed_sql_transaction: a statement ran after an error aborted the transaction.</summary>
+        public const string InFailedSqlTransaction = "25P02";
     }
 
     /// <summary>SQL Server error numbers (<c>sys.messages</c>).</summary>
@@ -58,5 +61,8 @@ public static class SqlErrorCodes
 
         /// <summary>Snapshot isolation transaction aborted due to an update conflict.</summary>
         public const int SnapshotUpdateConflict = 3960;
+
+        /// <summary>The current transaction cannot be committed and cannot support operations that write to the log.</summary>
+        public const int UncommittableTransaction = 3930;
     }
 }

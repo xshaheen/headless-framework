@@ -137,6 +137,7 @@ public sealed class RedisCache(
     private readonly Lazy<bool> _supportsMsetExLazy = new(() =>
         _DetectMsetexSupport(cacheOptions.ConnectionMultiplexer)
     );
+
     private readonly Lazy<bool> _isClusterLazy = new(() => _CheckIsCluster(cacheOptions.ConnectionMultiplexer));
     private readonly IDatabase _database = cacheOptions.ConnectionMultiplexer.GetDatabase();
 
@@ -1423,7 +1424,7 @@ public sealed class RedisCache(
 
             return _RedisValuesToCacheValue<T>(set);
         }
-        else
+
         {
             var skip = (pageIndex.Value - 1) * pageSize;
             var set = await _database

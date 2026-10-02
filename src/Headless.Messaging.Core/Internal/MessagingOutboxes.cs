@@ -42,7 +42,7 @@ internal sealed class MessagingOutbox
     private readonly Lock _initializationLock = new();
     private Task? _initialization;
 
-    public MessagingOutbox(string name, IDataStorage storage, IStorageInitializer initializer)
+    public MessagingOutbox(string name, IDataStorage storage, IOutboxStorageInitializer initializer)
     {
         Argument.IsNotNullOrWhiteSpace(name);
         Argument.IsNotNull(storage);
@@ -69,7 +69,7 @@ internal sealed class MessagingOutbox
 
     public IDataStorage Storage { get; }
 
-    public IStorageInitializer Initializer { get; }
+    public IOutboxStorageInitializer Initializer { get; }
 
     public IDeliveryCoordinationResolver Coordination { get; }
 

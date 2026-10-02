@@ -158,6 +158,7 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob>
                 nameof(options)
             );
         }
+
         var entity = new TTimeJob
         {
             Function = descriptor.FunctionName,

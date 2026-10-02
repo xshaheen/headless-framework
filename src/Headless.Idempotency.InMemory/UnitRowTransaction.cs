@@ -20,6 +20,7 @@ internal sealed class UnitRowTransaction<TKey, TRow> : IDisposable
     private readonly Lock _gate = new();
     private readonly Dictionary<TKey, IDisposable> _held = [];
     private readonly Dictionary<TKey, TRow?> _staged = [];
+    private DateTimeOffset _lastReading = DateTimeOffset.MinValue;
     private bool _ended;
 
     public UnitRowTransaction(IUnitOfWork unitOfWork, InMemoryRowTable<TKey, TRow> table)
@@ -98,6 +99,29 @@ internal sealed class UnitRowTransaction<TKey, TRow> : IDisposable
             {
                 releaser.Dispose();
             }
+        }
+    }
+
+    /// <summary>
+    /// Reads <paramref name="clock" /> for this unit, never earlier than a reading the unit already took. One decision
+    /// can span several store calls in one unit (an admission inserts the record, then admits it), and a wall clock can
+    /// step back between them; without this, the insert's retention would come from a later instant than the
+    /// admission's lease.
+    /// </summary>
+    public DateTimeOffset Now(TimeProvider clock)
+    {
+        var now = clock.GetUtcNow();
+
+        lock (_gate)
+        {
+            if (now < _lastReading)
+            {
+                now = _lastReading;
+            }
+
+            _lastReading = now;
+
+            return now;
         }
     }
 

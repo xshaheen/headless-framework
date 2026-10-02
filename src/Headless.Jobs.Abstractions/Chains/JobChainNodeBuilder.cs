@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
 using Headless.Jobs.Base;
 using Headless.Jobs.Models;
 
@@ -49,7 +50,7 @@ public sealed class JobChainNodeBuilder
     public JobChainNodeBuilder Then<TRequest>(TRequest payload, JobOptions? options = null)
         where TRequest : notnull
     {
-        ArgumentNullException.ThrowIfNull(payload);
+        Argument.IsNotNull(payload);
 
         return _AddSuccess(jobType: null, payload, typeof(TRequest), options, executionTime: null);
     }
@@ -62,7 +63,7 @@ public sealed class JobChainNodeBuilder
     )
         where TRequest : notnull
     {
-        ArgumentNullException.ThrowIfNull(payload);
+        Argument.IsNotNull(payload);
 
         return _AddSuccess(jobType: null, payload, typeof(TRequest), options, executionTime);
     }
@@ -126,7 +127,7 @@ public sealed class JobChainNodeBuilder
     public JobChainNodeBuilder Catch<TRequest>(TRequest payload, JobOptions? options = null)
         where TRequest : notnull
     {
-        ArgumentNullException.ThrowIfNull(payload);
+        Argument.IsNotNull(payload);
 
         return _AddFailure(jobType: null, payload, typeof(TRequest), options, executionTime: null);
     }
@@ -139,7 +140,7 @@ public sealed class JobChainNodeBuilder
     )
         where TRequest : notnull
     {
-        ArgumentNullException.ThrowIfNull(payload);
+        Argument.IsNotNull(payload);
 
         return _AddFailure(jobType: null, payload, typeof(TRequest), options, executionTime);
     }

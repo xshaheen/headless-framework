@@ -49,6 +49,7 @@ public static class SetupApnsPushNotifications
     internal static readonly Uri ProductionChannelManagementAddress = new(
         "https://api-manage-broadcast.push.apple.com:2196"
     );
+
     internal static readonly Uri SandboxChannelManagementAddress = new(
         "https://api-manage-broadcast.sandbox.push.apple.com:2195"
     );

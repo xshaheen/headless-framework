@@ -135,6 +135,7 @@ public static partial class MessagingDashboardEndpoints
         {
             return authorityFailure!;
         }
+
         if (!httpContext.Request.HasJsonContentType())
         {
             return Results.StatusCode(StatusCodes.Status415UnsupportedMediaType);

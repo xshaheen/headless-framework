@@ -304,6 +304,7 @@ public static class SetupJobs
     // registry orders the hand-registered tenancy middleware deterministically alongside generated declarations.
     private const string _TenancyScheduleMiddlewareIdentity =
         JobsCatalogBuilder.FrameworkSource + ":Headless.Jobs.MultiTenancy.TenantPropagationScheduleMiddleware";
+
     private const string _TenancyExecuteMiddlewareIdentity =
         JobsCatalogBuilder.FrameworkSource + ":Headless.Jobs.MultiTenancy.TenantRestoreExecuteMiddleware";
 

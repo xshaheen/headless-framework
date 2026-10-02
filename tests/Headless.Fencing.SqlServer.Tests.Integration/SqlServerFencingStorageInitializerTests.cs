@@ -3,6 +3,7 @@
 using Headless.Fencing;
 using Headless.Fencing.SqlServer;
 using Headless.Hosting.Initialization;
+using Headless.Hosting.Initialization.Schema;
 using Headless.Testing.Tests;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
@@ -35,10 +36,12 @@ public sealed class SqlServerFencingStorageInitializerTests(SqlServerFencingFixt
         var initializer = host.Services.GetRequiredService<IEnumerable<IInitializer>>().Single();
         initializer.IsInitialized.Should().BeFalse();
 
+        // The schema runner names the features whose connection failed and keeps the driver error as the cause.
         await FluentActions
             .Awaiting(() => initializer.WaitForInitializationAsync(AbortToken))
             .Should()
-            .ThrowAsync<SqlException>();
+            .ThrowAsync<SchemaRunnerException>()
+            .WithInnerException(typeof(SqlException));
     }
 
     [Fact]

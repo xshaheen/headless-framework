@@ -19,6 +19,8 @@ public sealed class EfAuditLogStoreTests : TestBase
     // PrepareForRetry
     // ---------------------------------------------------------------------------
 
+#pragma warning disable VSTHRD103 // EfAuditLogStore.Save only stages entries on the DbContext (no I/O); these tests cover the synchronous SaveChanges path.
+
     [Fact]
     public async Task should_detach_added_entries_and_support_clean_retry_when_prepare_for_retry_runs()
     {
@@ -180,6 +182,8 @@ public sealed class EfAuditLogStoreTests : TestBase
             (await db.Set<AuditLogEntry>().AsNoTracking().CountAsync(AbortToken)).Should().Be(1);
         }
     }
+
+#pragma warning restore VSTHRD103
 
     // ---------------------------------------------------------------------------
     // savingContext type guard

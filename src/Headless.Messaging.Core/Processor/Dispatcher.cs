@@ -130,6 +130,7 @@ internal sealed class Dispatcher
             {
                 _acceptingRetryDispatch = true;
             }
+
             _ = _schedulerTask.ContinueWith(
                 _OnSchedulerLoopFaulted,
                 CancellationToken.None,

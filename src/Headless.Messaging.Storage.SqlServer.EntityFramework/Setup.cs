@@ -6,6 +6,7 @@ using Headless.Checks;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
+using Headless.Messaging.Persistence;
 using Headless.Messaging.Runtime;
 using Headless.Messaging.Storage.SqlServer;
 using Headless.Messaging.Storage.SqlServer.EntityFramework;
@@ -113,7 +114,7 @@ public static class SetupSqlServerEntityFrameworkMessaging
                         serviceProvider.GetRequiredService<TContext>(),
                         serviceProvider.GetRequiredService<IUnitOfWorkFactory>(),
                         serviceProvider.GetRequiredService<IDeliveryCoordinationResolver>(),
-                        serviceProvider.GetRequiredService<SqlServerDataStorage>(),
+                        serviceProvider.GetRequiredService<RelationalDataStorage>(),
                         serviceProvider
                             .GetRequiredService<ILoggerFactory>()
                             .CreateLogger<SqlServerInboxTransactionRunner<TContext>>()
@@ -156,7 +157,7 @@ public static class SetupSqlServerEntityFrameworkMessaging
         TContext context,
         IUnitOfWorkFactory unitOfWorkFactory,
         IDeliveryCoordinationResolver coordinationResolver,
-        SqlServerDataStorage storage,
+        RelationalDataStorage storage,
         ILogger logger
     ) : IInboxTransactionRunner
         where TContext : DbContext

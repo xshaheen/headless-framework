@@ -220,6 +220,7 @@ public abstract partial class JobsKeyedSchedulingConformanceTests<TFixture>
                     throw new KeyedTransientFailureException();
                 }
             }
+
             return ValueTask.FromResult(result);
         }
     }
@@ -244,6 +245,7 @@ public abstract partial class JobsKeyedSchedulingConformanceTests<TFixture>
                     throw new KeyedTransientFailureException();
                 }
             }
+
             return ValueTask.FromResult(result);
         }
 

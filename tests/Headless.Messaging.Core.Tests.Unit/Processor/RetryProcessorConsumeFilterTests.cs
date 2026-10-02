@@ -255,7 +255,7 @@ public sealed class RetryProcessorConsumeFilterTests : TestBase
         );
         (
             await ((ICircuitRetryDeferralStorage)storage).DeferReceivedRetryAsync(
-                new CircuitRetryDeferral(identity, DateTimeOffset.UtcNow.AddMinutes(-5)),
+                new CircuitRetryDeferral(identity, TimeSpan.Zero),
                 AbortToken
             )
         )
@@ -280,7 +280,7 @@ public sealed class RetryProcessorConsumeFilterTests : TestBase
             await storage.ChangeReceiveStateAsync(
                 stored,
                 StatusName.Failed,
-                nextRetryAt: DateTimeOffset.UtcNow.AddMinutes(-5),
+                retryDelay: RetryDelay.Exactly(TimeSpan.Zero),
                 cancellationToken: AbortToken
             )
         )

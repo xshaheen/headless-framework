@@ -26,28 +26,23 @@ public sealed class SqlServerInboxAdmissionTests(SqlServerTestFixture fixture, I
         var schema = $"admission_{Guid.NewGuid():N}";
         var messagingOptions = Options.Create(new MessagingOptions { Version = "v1" });
         var sqlOptions = Options.Create(new SqlServerOptions { ConnectionString = fixture.ConnectionString });
-        var initializer = new SqlServerStorageInitializer(
-            NullLogger<SqlServerStorageInitializer>.Instance,
-            sqlOptions,
-            TestStorageOptions.For(schema),
-            messagingOptions
-        );
-        await initializer.InitializeAsync(AbortToken);
+        var tableNames = TestStorageOptions.TableNames(schema);
+        await TestMessagingSchema.ApplyAsync(sqlOptions.Value, schema, AbortToken);
         await using var connection = new SqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
 
         try
         {
-            var storage = new SqlServerDataStorage(
+            var storage = new RelationalDataStorage(
+                sqlOptions.Value.ToStorage(),
                 messagingOptions,
-                sqlOptions,
                 TestStorageOptions.For(schema),
-                initializer,
+                tableNames,
                 new JsonUtf8Serializer(messagingOptions),
                 new SequentialGuidGenerator(SequentialGuidType.SqlServer),
                 TimeProvider.System,
                 new NullNodeMembership(),
-                NullLogger<SqlServerDataStorage>.Instance
+                NullLogger<RelationalDataStorage>.Instance
             );
             const int retainedCount = 512;
             for (var index = 0; index < retainedCount; index++)
@@ -113,7 +108,7 @@ public sealed class SqlServerInboxAdmissionTests(SqlServerTestFixture fixture, I
                         new
                         {
                             ReadPrefix = "SELECT [Id],[Content],[IntentType],[Retries],[InlineAttempts]",
-                            TableName = initializer.GetReceivedTableName(),
+                            TableName = tableNames.GetReceivedTableName(),
                         },
                         cancellationToken: AbortToken
                     )
@@ -159,22 +154,7 @@ public sealed class SqlServerInboxAdmissionTests(SqlServerTestFixture fixture, I
         finally
         {
             await connection.ExecuteAsync(
-                new CommandDefinition(
-                    $"""
-                    DROP TABLE IF EXISTS [{schema}].MessagingInboxAudit;
-                    DROP TABLE IF EXISTS [{schema}].MessagingInboxOperationReceipts;
-                    DROP TABLE IF EXISTS [{schema}].MessagingSchemaState;
-                    DROP TABLE IF EXISTS [{schema}].MessagingPublished;
-                    DROP TABLE IF EXISTS [{schema}].MessagingReceived;
-                    DROP TABLE IF EXISTS [{schema}].Lock;
-                    DROP TYPE [{schema}].[HeadlessMessagingIdList];
-                    DROP TYPE [{schema}].[HeadlessMessagingOwnerList];
-                    DROP TYPE [{schema}].[HeadlessMessagingPoisonMessageList];
-                    DROP TYPE [{schema}].[HeadlessMessagingConsumerIdentityList];
-                    DROP SCHEMA [{schema}];
-                    """,
-                    cancellationToken: AbortToken
-                )
+                new CommandDefinition(TestMessagingSchema.DropSql(schema), cancellationToken: AbortToken)
             );
         }
     }

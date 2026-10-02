@@ -33,7 +33,7 @@ internal sealed class UnitOfWorkIdempotencyFeature(IdempotencyRequestResolver re
         var keep = resolver.Retention(retention);
 
         // Admission may insert the record even when it ends up replaying, so it is always a write.
-        _Enlist(unitOfWork, isWrite: true);
+        _Enlist(unitOfWork, isWrite: true, drawsGeneration: true);
 
         var record = await store
             .LockOrInsertAsync(unitOfWork, recordKey, fingerprint, keep, cancellationToken)
@@ -231,7 +231,7 @@ internal sealed class UnitOfWorkIdempotencyFeature(IdempotencyRequestResolver re
         }
     }
 
-    private void _Enlist(IUnitOfWork unitOfWork, bool isWrite)
+    private void _Enlist(IUnitOfWork unitOfWork, bool isWrite, bool drawsGeneration = false)
     {
         if (unitOfWork.State != UnitOfWorkState.Active)
         {
@@ -243,6 +243,11 @@ internal sealed class UnitOfWorkIdempotencyFeature(IdempotencyRequestResolver re
         // What the unit must carry is the provider's to judge: a relational store needs a live transaction on its own
         // database, while an in-process store refuses one, because its records cannot commit atomically with it.
         store.ValidateEnlistment(unitOfWork);
+
+        if (drawsGeneration && store is IIdempotencyEnlistedAdmissionGuard guard)
+        {
+            guard.ValidateEnlistedAdmission(unitOfWork);
+        }
 
         // A record write is not tracked by the unit's change tracker, so a replay cannot restore it; it has to be
         // re-run. An owned unit replays the caller's block, which re-runs the write, so it stays replayable. An

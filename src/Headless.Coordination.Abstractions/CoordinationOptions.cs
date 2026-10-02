@@ -14,6 +14,12 @@ public sealed class CoordinationOptions
     /// <summary>Default Redis / store key prefix applied to all coordination entries.</summary>
     public const string DefaultKeyPrefix = "coordination:";
 
+    /// <summary>
+    /// The longest cluster name, in characters. It is part of every membership row's key, together with the node id,
+    /// so it is sized with <see cref="NodeId.MaxLength"/> to fit SQL Server's 900-byte clustered key.
+    /// </summary>
+    public const int ClusterNameMaxLength = 128;
+
     /// <summary>Cluster name used when no explicit name is configured.</summary>
     public const string DefaultClusterName = "default";
 
@@ -32,7 +38,7 @@ public sealed class CoordinationOptions
 
     /// <summary>
     /// Logical cluster name. Only nodes that share the same cluster name participate in mutual membership
-    /// tracking. Must match <c>[A-Za-z0-9._:-]+</c>.
+    /// tracking. Must match <c>[A-Za-z0-9._:-]+</c> and be at most <see cref="ClusterNameMaxLength"/> characters.
     /// </summary>
     public string ClusterName { get; set; } = DefaultClusterName;
 

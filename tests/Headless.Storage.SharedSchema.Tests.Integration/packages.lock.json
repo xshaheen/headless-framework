@@ -851,7 +851,9 @@
           "FluentValidation": "[12.1.1, )",
           "Headless.AuditLog.Abstractions": "[1.0.0, )",
           "Headless.Checks": "[1.0.0, )",
+          "Headless.Core": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
+          "Headless.Sql.Abstractions": "[1.0.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.Options": "[10.0.12, )"
         }
@@ -859,11 +861,7 @@
       "headless.auditlog.storage.postgresql": {
         "type": "Project",
         "dependencies": {
-          "Headless.AuditLog.Abstractions": "[1.0.0, )",
           "Headless.AuditLog.Core": "[1.0.0, )",
-          "Headless.Core": "[1.0.0, )",
-          "Headless.Extensions": "[1.0.0, )",
-          "Headless.Serializer.Json": "[1.0.0, )",
           "Headless.Sql.PostgreSql": "[1.0.0, )",
           "Npgsql": "[10.0.3, )"
         }
@@ -871,10 +869,7 @@
       "headless.auditlog.storage.sqlserver": {
         "type": "Project",
         "dependencies": {
-          "Headless.AuditLog.Abstractions": "[1.0.0, )",
           "Headless.AuditLog.Core": "[1.0.0, )",
-          "Headless.Core": "[1.0.0, )",
-          "Headless.Serializer.Json": "[1.0.0, )",
           "Headless.Sql.SqlServer": "[1.0.0, )",
           "Microsoft.Data.SqlClient": "[7.0.2, )"
         }
@@ -932,7 +927,9 @@
         "type": "Project",
         "dependencies": {
           "Headless.Coordination.Core": "[1.0.0, )",
-          "Headless.Hosting": "[1.0.0, )"
+          "Headless.Hosting": "[1.0.0, )",
+          "Headless.Sql.Abstractions": "[1.0.0, )",
+          "Headless.Sql.Core": "[1.0.0, )"
         }
       },
       "headless.coordination.postgresql": {
@@ -952,8 +949,7 @@
           "Headless.Extensions": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Headless.Sql.SqlServer": "[1.0.0, )",
-          "Microsoft.Data.SqlClient": "[7.0.2, )",
-          "Polly.Core": "[8.7.0, )"
+          "Microsoft.Data.SqlClient": "[7.0.2, )"
         }
       },
       "headless.core": {
@@ -1080,15 +1076,14 @@
           "Headless.Features.Abstractions": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Headless.Messaging.Abstractions": "[1.0.0, )",
-          "Headless.Messaging.Bus.Abstractions": "[1.0.0, )"
+          "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
+          "Headless.Sql.Abstractions": "[1.0.0, )"
         }
       },
       "headless.features.storage.postgresql": {
         "type": "Project",
         "dependencies": {
-          "Headless.Extensions": "[1.0.0, )",
           "Headless.Features.Core": "[1.0.0, )",
-          "Headless.Serializer.Json": "[1.0.0, )",
           "Headless.Sql.PostgreSql": "[1.0.0, )",
           "Npgsql": "[10.0.3, )"
         }
@@ -1097,7 +1092,6 @@
         "type": "Project",
         "dependencies": {
           "Headless.Features.Core": "[1.0.0, )",
-          "Headless.Serializer.Json": "[1.0.0, )",
           "Headless.Sql.SqlServer": "[1.0.0, )",
           "Microsoft.Data.SqlClient": "[7.0.2, )"
         }
@@ -1115,9 +1109,13 @@
           "FluentValidation": "[12.1.1, )",
           "Headless.Checks": "[1.0.0, )",
           "Headless.Core": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
           "Headless.Fencing.Abstractions": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
+          "Headless.Sql.Abstractions": "[1.0.0, )",
+          "Headless.Sql.Core": "[1.0.0, )",
+          "Headless.UnitOfWork": "[1.0.0, )",
           "Headless.UnitOfWork.Abstractions": "[1.0.0, )",
           "Microsoft.Extensions.Configuration.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
@@ -1170,7 +1168,8 @@
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.Hosting": "[10.0.12, )",
           "Microsoft.Extensions.Options.ConfigurationExtensions": "[10.0.12, )",
-          "Microsoft.Extensions.Options.DataAnnotations": "[10.0.12, )"
+          "Microsoft.Extensions.Options.DataAnnotations": "[10.0.12, )",
+          "OpenTelemetry.Api": "[1.18.0, )"
         }
       },
       "headless.idempotency.abstractions": {
@@ -1189,6 +1188,9 @@
           "Headless.Hosting": "[1.0.0, )",
           "Headless.Idempotency.Abstractions": "[1.0.0, )",
           "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
+          "Headless.Sql.Abstractions": "[1.0.0, )",
+          "Headless.Sql.Core": "[1.0.0, )",
+          "Headless.UnitOfWork": "[1.0.0, )",
           "Headless.UnitOfWork.Abstractions": "[1.0.0, )",
           "Microsoft.Extensions.Configuration.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
@@ -1252,6 +1254,7 @@
           "Headless.Extensions": "[1.0.0, )",
           "Headless.Jobs.Abstractions": "[1.0.0, )",
           "Headless.Jobs.Core": "[1.0.0, )",
+          "Headless.Sql.Core": "[1.0.0, )",
           "Microsoft.EntityFrameworkCore.Relational": "[10.0.12, )",
           "Polly.Core": "[8.7.0, )"
         }
@@ -1284,6 +1287,8 @@
           "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
           "Headless.Messaging.Queue.Abstractions": "[1.0.0, )",
           "Headless.MultiTenancy": "[1.0.0, )",
+          "Headless.Sql.Abstractions": "[1.0.0, )",
+          "Headless.Sql.Core": "[1.0.0, )",
           "Headless.UnitOfWork": "[1.0.0, )",
           "Microsoft.Extensions.Options": "[10.0.12, )",
           "OpenTelemetry.Api": "[1.18.0, )",
@@ -1347,15 +1352,14 @@
           "Headless.Messaging.Abstractions": "[1.0.0, )",
           "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
           "Headless.Permissions.Abstractions": "[1.0.0, )",
+          "Headless.Sql.Abstractions": "[1.0.0, )",
           "Microsoft.AspNetCore.Authorization": "[10.0.12, )"
         }
       },
       "headless.permissions.storage.postgresql": {
         "type": "Project",
         "dependencies": {
-          "Headless.Extensions": "[1.0.0, )",
           "Headless.Permissions.Core": "[1.0.0, )",
-          "Headless.Serializer.Json": "[1.0.0, )",
           "Headless.Sql.PostgreSql": "[1.0.0, )",
           "Npgsql": "[10.0.3, )"
         }
@@ -1364,7 +1368,6 @@
         "type": "Project",
         "dependencies": {
           "Headless.Permissions.Core": "[1.0.0, )",
-          "Headless.Serializer.Json": "[1.0.0, )",
           "Headless.Sql.SqlServer": "[1.0.0, )",
           "Microsoft.Data.SqlClient": "[7.0.2, )"
         }
@@ -1408,6 +1411,9 @@
           "Headless.Hosting": "[1.0.0, )",
           "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
           "Headless.Sequences.Abstractions": "[1.0.0, )",
+          "Headless.Sql.Abstractions": "[1.0.0, )",
+          "Headless.Sql.Core": "[1.0.0, )",
+          "Headless.UnitOfWork": "[1.0.0, )",
           "Headless.UnitOfWork.Abstractions": "[1.0.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.Options": "[10.0.12, )"
@@ -1465,14 +1471,13 @@
           "Headless.Messaging.Abstractions": "[1.0.0, )",
           "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
           "Headless.Security.Abstractions": "[1.0.0, )",
-          "Headless.Settings.Abstractions": "[1.0.0, )"
+          "Headless.Settings.Abstractions": "[1.0.0, )",
+          "Headless.Sql.Abstractions": "[1.0.0, )"
         }
       },
       "headless.settings.storage.postgresql": {
         "type": "Project",
         "dependencies": {
-          "Headless.Extensions": "[1.0.0, )",
-          "Headless.Serializer.Json": "[1.0.0, )",
           "Headless.Settings.Core": "[1.0.0, )",
           "Headless.Sql.PostgreSql": "[1.0.0, )",
           "Npgsql": "[10.0.3, )"
@@ -1481,7 +1486,6 @@
       "headless.settings.storage.sqlserver": {
         "type": "Project",
         "dependencies": {
-          "Headless.Serializer.Json": "[1.0.0, )",
           "Headless.Settings.Core": "[1.0.0, )",
           "Headless.Sql.SqlServer": "[1.0.0, )",
           "Microsoft.Data.SqlClient": "[7.0.2, )"
@@ -1493,14 +1497,20 @@
       "headless.sql.core": {
         "type": "Project",
         "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
           "Headless.Sql.Abstractions": "[1.0.0, )",
-          "Nito.AsyncEx": "[5.1.2, )"
+          "Headless.UnitOfWork": "[1.0.0, )",
+          "Nito.AsyncEx": "[5.1.2, )",
+          "OpenTelemetry.Api": "[1.18.0, )"
         }
       },
       "headless.sql.postgresql": {
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )",
           "Headless.Sql.Abstractions": "[1.0.0, )",
           "Headless.Sql.Core": "[1.0.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
@@ -1512,6 +1522,8 @@
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )",
           "Headless.Sql.Abstractions": "[1.0.0, )",
           "Headless.Sql.Core": "[1.0.0, )",
           "Microsoft.Data.SqlClient": "[7.0.2, )",

@@ -189,6 +189,7 @@ public sealed class PostgreSqlAuditLogAtomicityTests(PostgreSqlAuditLogFixture f
     {
         [AllowNull]
         public override string ConnectionString { get; set; } = string.Empty;
+
         public override string Database => string.Empty;
         public override string DataSource => string.Empty;
         public override string ServerVersion => string.Empty;

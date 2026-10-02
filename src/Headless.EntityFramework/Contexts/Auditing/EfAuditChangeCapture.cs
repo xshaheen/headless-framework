@@ -566,6 +566,7 @@ internal sealed class EfAuditChangeCapture(
                         property.IsModified
                     );
                 }
+
                 break;
 
             default:

@@ -21,8 +21,10 @@ internal sealed class HeadlessAuditPersistence(
     private readonly IAuditLogStore? _auditStore = serviceProvider.GetService<IAuditLogStore>();
     private readonly ICurrentUser? _currentUser = serviceProvider.GetService<ICurrentUser>();
     private readonly ICurrentTenant? _currentTenant = serviceProvider.GetService<ICurrentTenant>();
+
     private readonly ICorrelationIdProvider? _correlationIdProvider =
         serviceProvider.GetService<ICorrelationIdProvider>();
+
     private readonly TimeProvider _timeProvider = serviceProvider.GetService<TimeProvider>() ?? TimeProvider.System;
     private readonly IOptions<AuditLogOptions>? _auditOptions = serviceProvider.GetService<IOptions<AuditLogOptions>>();
 

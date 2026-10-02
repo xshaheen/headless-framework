@@ -2161,6 +2161,7 @@ public sealed class ConsumerRegisterTests : TestBase
         private readonly TaskCompletionSource _listeningEntered = new(
             TaskCreationOptions.RunContinuationsAsynchronously
         );
+
         private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public BrokerAddress BrokerAddress => new("test", "startup");

@@ -2,28 +2,8 @@
 
 namespace Tests;
 
-// Every autonomous scenario applies. The omitted ones, each with why:
-// - should_serialize_parallel_enlisted_admissions_and_replay_the_winner: admits through unit.Idempotency, which the
-//   cache provider refuses.
-// - should_admit_a_blocked_admission_when_the_enlisted_winner_rolls_back: needs an enlisted admission a rollback undoes.
-// - should_leave_no_record_when_an_enlisted_admission_rolls_back: needs an enlisted admission a rollback undoes.
-// - should_refuse_a_fence_in_a_long_enlisted_unit_once_the_lease_expired: FenceAsync is enlisted-only.
-// - should_make_an_admission_wait_for_an_enlisted_fence_and_then_replay: FenceAsync is enlisted-only, and a cache holds
-//   no lock for an admission to wait on.
-// - should_not_deadlock_admissions_racing_an_enlisted_fence_then_complete: FenceAsync is enlisted-only.
-// - should_peek_without_waiting_on_an_uncommitted_write_to_the_record: needs an uncommitted enlisted write.
-// - should_purge_only_records_past_retention_whose_lease_is_not_live: the cache's own expiry is the purge, so
-//   PurgeAsync deletes nothing.
-// - should_keep_a_live_attempt_record_past_retention_until_its_lease_expires: asserts on PurgeAsync deleting the record.
-// - should_draw_a_higher_generation_after_the_record_was_purged: asserts on PurgeAsync deleting the record; the
-//   provider's own tests cover a re-admission after the entry is gone.
-// - should_purge_records_from_the_retention_service: asserts on the purge deleting the record.
-// - should_hand_a_takeover_the_last_recovery_point_the_crashed_attempt_committed: records a point inside a unit.
-// - should_refuse_a_recovery_point_from_an_attempt_that_lost_the_key_and_write_nothing: ends with an enlisted point;
-//   the provider's own tests cover the autonomous refusals.
-// - should_not_expose_a_recovery_point_whose_unit_rolled_back: needs an enlisted point a rollback undoes.
-// - should_clear_the_recovery_point_when_the_operation_completes: records and completes inside a unit; the provider's
-//   own tests cover the autonomous form.
+// Every autonomous scenario applies. The enlisted and purge scenarios a cache cannot honor are allow-listed, each
+// with its reason, in tests/Headless.Testing.Tests.Unit/Conformance/ConformanceCaseAllowList.cs.
 [Collection<CacheIdempotencyFixture>]
 public sealed class CacheIdempotencyConformanceTests(CacheIdempotencyFixture fixture)
     : IdempotencyConformanceTests<CacheIdempotencyFixture>(fixture)
@@ -32,6 +12,12 @@ public sealed class CacheIdempotencyConformanceTests(CacheIdempotencyFixture fix
     public override Task should_admit_exactly_one_of_many_parallel_autonomous_admissions()
     {
         return base.should_admit_exactly_one_of_many_parallel_autonomous_admissions();
+    }
+
+    [Fact]
+    public override Task should_admit_exactly_once_and_complete_exactly_once_under_parallel_racers()
+    {
+        return base.should_admit_exactly_once_and_complete_exactly_once_under_parallel_racers();
     }
 
     [Fact]
@@ -65,9 +51,9 @@ public sealed class CacheIdempotencyConformanceTests(CacheIdempotencyFixture fix
     }
 
     [Fact]
-    public override Task should_refuse_keys_with_surrounding_whitespace_before_any_write()
+    public override Task should_refuse_keys_no_provider_stores_unchanged_before_any_write()
     {
-        return base.should_refuse_keys_with_surrounding_whitespace_before_any_write();
+        return base.should_refuse_keys_no_provider_stores_unchanged_before_any_write();
     }
 
     [Fact]

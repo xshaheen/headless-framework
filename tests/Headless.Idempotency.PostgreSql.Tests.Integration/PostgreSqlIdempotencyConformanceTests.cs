@@ -13,6 +13,12 @@ public sealed class PostgreSqlIdempotencyConformanceTests(PostgreSqlIdempotencyF
     }
 
     [Fact]
+    public override Task should_admit_exactly_once_and_complete_exactly_once_under_parallel_racers()
+    {
+        return base.should_admit_exactly_once_and_complete_exactly_once_under_parallel_racers();
+    }
+
+    [Fact]
     public override Task should_serialize_parallel_enlisted_admissions_and_replay_the_winner()
     {
         return base.should_serialize_parallel_enlisted_admissions_and_replay_the_winner();
@@ -61,9 +67,9 @@ public sealed class PostgreSqlIdempotencyConformanceTests(PostgreSqlIdempotencyF
     }
 
     [Fact]
-    public override Task should_refuse_keys_with_surrounding_whitespace_before_any_write()
+    public override Task should_refuse_keys_no_provider_stores_unchanged_before_any_write()
     {
-        return base.should_refuse_keys_with_surrounding_whitespace_before_any_write();
+        return base.should_refuse_keys_no_provider_stores_unchanged_before_any_write();
     }
 
     [Fact]

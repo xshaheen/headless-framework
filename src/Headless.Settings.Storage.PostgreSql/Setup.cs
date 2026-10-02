@@ -1,15 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using FluentValidation;
 using Headless.Checks;
 using Headless.Constants;
-using Headless.Serializer;
 using Headless.Settings.PostgreSql;
 using Headless.Settings.Repositories;
 using Headless.Sql;
+using Headless.Sql.PostgreSql;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Settings;
@@ -127,28 +125,12 @@ public static class SetupSettingsPostgreSql
                 );
             }
 
-            services.AddOptions<SettingsStorageOptions, PostgreSqlSettingsStorageOptionsValidator>();
-            services.AddInitializerHostedService<PostgreSqlSettingsStorageInitializer>();
-            services.TryAddSingleton<IJsonSerializer>(_ => new SystemJsonSerializer());
-            services.TryAddSingleton<ISettingValueRecordRepository, PostgreSqlSettingValueRecordRepository>();
-            services.TryAddSingleton<ISettingDefinitionRecordRepository, PostgreSqlSettingDefinitionRecordRepository>();
-        }
-    }
-
-    /// <summary>Validates <see cref="SettingsStorageOptions"/> for use with the PostgreSQL backend, ensuring schema and table name identifiers are valid.</summary>
-    private sealed class PostgreSqlSettingsStorageOptionsValidator : AbstractValidator<SettingsStorageOptions>
-    {
-        public PostgreSqlSettingsStorageOptionsValidator()
-        {
-            RuleFor(x => x.Schema).IsValidIdentifierFor(StorageProvider.PostgreSql);
-            RuleFor(x => x.SettingValuesTableName)
-                .IsValidIdentifierFor(StorageProvider.PostgreSql)
-                .FitsDerivedPostgreSqlNames(SettingsStorageNames.ValuesIndexes)
-                .When(x => x.SettingValuesTableName is not null);
-            RuleFor(x => x.SettingDefinitionsTableName)
-                .IsValidIdentifierFor(StorageProvider.PostgreSql)
-                .FitsDerivedPostgreSqlNames(SettingsStorageNames.DefinitionsIndexes)
-                .When(x => x.SettingDefinitionsTableName is not null);
+            RelationalSettingsStorage.AddServices<PostgreSqlSettingsOptions>(
+                services,
+                PostgreSqlDialect.Instance,
+                StorageProvider.PostgreSql,
+                PostgreSqlSettingsSchemaContribution.Create
+            );
         }
     }
 }

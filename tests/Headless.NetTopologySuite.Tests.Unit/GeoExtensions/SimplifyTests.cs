@@ -139,6 +139,7 @@ public sealed class SimplifyTests
             var angle = i * 10 * Math.PI / 180;
             coords.Add(new Coordinate(Math.Cos(angle), Math.Sin(angle)));
         }
+
         // Close the ring
         coords.Add(coords[0].Copy());
         return Factory.CreatePolygon([.. coords]);
@@ -153,6 +154,7 @@ public sealed class SimplifyTests
             var angle = i * 10 * Math.PI / 180;
             coords.Add(new Coordinate(offset + Math.Cos(angle), offset + Math.Sin(angle)));
         }
+
         // Close the ring
         coords.Add(coords[0].Copy());
         return Factory.CreatePolygon([.. coords]);
