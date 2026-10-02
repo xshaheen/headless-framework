@@ -22,6 +22,9 @@ namespace Headless.Messaging;
 /// On startup, shard symmetry is validated: every consumer that receives a message type configured
 /// with <c>SubjectShard(...)</c> must also declare <c>.UseNats(c => c.Sharded())</c>. An omission
 /// throws <see cref="InvalidOperationException"/> at DI build time to prevent silent message loss.
+/// <para/>
+/// Request/reply is supported on core NATS, outside JetStream: a requesting process receives replies on a subject of
+/// its own under the reserved <c>headless.reply.</c> prefix, which no provisioned stream captures.
 /// </remarks>
 public static class SetupNatsMessaging
 {
@@ -121,7 +124,8 @@ public static class SetupNatsMessaging
                     "NATS JetStream",
                     [MessageLane.Bus, MessageLane.Queue],
                     supportsIndependentLaneTopology: true,
-                    supportsEveryInstance: true
+                    supportsEveryInstance: true,
+                    supportsRequestReply: true
                 )
             );
 
@@ -136,6 +140,11 @@ public static class SetupNatsMessaging
                 sp.GetRequiredService<ILogger<NatsTransport>>(),
                 sp.GetRequiredService<INatsConnectionPool>(),
                 MessageLane.Queue
+            ));
+            services.AddSingleton<IReplyTransport>(sp => new NatsReplyTransport(
+                sp.GetRequiredService<INatsConnectionPool>(),
+                sp.GetService<TimeProvider>() ?? TimeProvider.System,
+                sp.GetRequiredService<ILogger<NatsReplyTransport>>()
             ));
             services.AddSingleton<IConsumerClientFactory, NatsConsumerClientFactory>();
             services.AddSingleton<INatsConnectionPool, NatsConnectionPool>();

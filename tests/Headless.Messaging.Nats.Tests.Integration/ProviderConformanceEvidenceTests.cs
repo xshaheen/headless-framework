@@ -76,6 +76,26 @@ public sealed class ProviderConformanceEvidenceTests(NatsFixture fixture) : Test
                 TransportConformanceScenario.MalformedEnvelopeTerminalSettlement,
                 nameof(NatsConsumerClientTests.should_terminally_acknowledge_malformed_envelope_across_consumer_restart)
             ),
+            _BindRequestReply(
+                TransportConformanceScenario.RequestReplyRoundTrip,
+                nameof(NatsRequestReplyConformanceTests.should_return_the_typed_response_of_a_request)
+            ),
+            _BindRequestReply(
+                TransportConformanceScenario.RequestReplyCallerIsolation,
+                nameof(NatsRequestReplyConformanceTests.should_give_each_caller_only_its_own_replies)
+            ),
+            _BindRequestReply(
+                TransportConformanceScenario.RequestReplyCallerIsolation,
+                nameof(NatsRequestReplyConformanceTests.should_never_deliver_a_reply_to_a_restarted_caller)
+            ),
+            _BindRequestReply(
+                TransportConformanceScenario.RequestReplyForeignAddressRefusal,
+                nameof(NatsRequestReplyConformanceTests.should_never_write_a_reply_to_a_foreign_reply_address)
+            ),
+            _BindRequestReply(
+                TransportConformanceScenario.RequestReplyCallerCleanup,
+                nameof(NatsRequestReplyConformanceTests.should_leave_no_reply_subscription_after_the_caller_stops)
+            ),
         ];
 
         await TransportConformanceTestBindings.ExecuteSupportedScenariosAsync(profile, bindings, _CreateTestClass);
@@ -83,6 +103,11 @@ public sealed class ProviderConformanceEvidenceTests(NatsFixture fixture) : Test
 
     private static TransportConformanceTestBinding _Bind(TransportConformanceScenario scenario, string method) =>
         new(scenario, typeof(NatsConsumerClientTests), method);
+
+    private static TransportConformanceTestBinding _BindRequestReply(
+        TransportConformanceScenario scenario,
+        string method
+    ) => new(scenario, typeof(NatsRequestReplyConformanceTests), method);
 
     private object _CreateTestClass(Type testClass)
     {
@@ -94,6 +119,11 @@ public sealed class ProviderConformanceEvidenceTests(NatsFixture fixture) : Test
         if (testClass == typeof(NatsConsumerClientTests))
         {
             return new NatsConsumerClientTests(fixture);
+        }
+
+        if (testClass == typeof(NatsRequestReplyConformanceTests))
+        {
+            return new NatsRequestReplyConformanceTests(fixture);
         }
 
         if (testClass == typeof(NatsBrokerFaultTests))

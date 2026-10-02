@@ -266,6 +266,11 @@ public static class TransportConformanceManifest
                     TransportConformanceScenario.MalformedEnvelopeTerminalSettlement,
                     ConformanceSupport.Supported
                 )
+                .WithRequestReplyScenarios(ConformanceSupport.Supported)
+                .WithScenario(
+                    TransportConformanceScenario.RequestReplyStartupRejection,
+                    ConformanceSupport.NotApplicable("NATS supports request/reply, so startup accepts it.")
+                )
                 .EnableRealBrokerLeaf(),
             ["RabbitMQ"] = TransportConformanceProfile
                 .CreateDisabled("RabbitMQ")
