@@ -23,10 +23,7 @@ internal static class DistributedLockConsumerRegistration
     /// </remarks>
     public static void AddLockReleasedConsumer(IServiceCollection services)
     {
-        services.ConfigureMessaging(static messaging =>
-        {
-            messaging.Message<DistributedLockReleased>(DistributedLockReleased.MessageName, "1");
-            messaging.AddModule<Core.MessagingModule>();
-        });
+        services.AddMessageContract<DistributedLockReleased>(DistributedLockReleased.MessageName, "1");
+        services.AddMessagingModule<Core.MessagingModule>();
     }
 }

@@ -27,12 +27,9 @@ internal static class HybridCacheInvalidationConsumerRegistration
     /// <param name="services">The service collection the hybrid cache is being registered into.</param>
     public static void AddInvalidationConsumer(IServiceCollection services)
     {
-        services.ConfigureMessaging(static messaging =>
-        {
-            // Declared rather than convention-derived so every node agrees on the topic even when the services
-            // sharing the broker configure different naming conventions for their own messages.
-            messaging.Message<CacheInvalidationMessage>(CacheInvalidationMessage.MessageName, "1");
-            messaging.AddModule<Hybrid.MessagingModule>();
-        });
+        // Declared rather than convention-derived so every node agrees on the topic even when the services sharing the
+        // broker configure different naming conventions for their own messages.
+        services.AddMessageContract<CacheInvalidationMessage>(CacheInvalidationMessage.MessageName, "1");
+        services.AddMessagingModule<Hybrid.MessagingModule>();
     }
 }
