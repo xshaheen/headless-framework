@@ -43,6 +43,9 @@
   <data name="g:not_authorized" xml:space="preserve">
     <value>أنت لا تملك الصلاحيات لتنفيذ هذا الطلب.</value>
   </data>
+  <data name="g:rate_limit_exceeded" xml:space="preserve">
+    <value>عدد الطلبات كبير جدًا. حاول مرة أخرى لاحقًا.</value>
+  </data>
   <data name="auth:invalid_token" xml:space="preserve">
     <value>الرمز غير صالح.</value>
   </data>

@@ -545,6 +545,7 @@ public static class SetupApi
 
     /// <summary>
     /// Maps the default Headless API operational and convention endpoints (health, alive, OpenAPI, static assets).
+    /// The health and alive endpoints are never rate limited, by a global limiter or an endpoint policy.
     /// Idempotent — subsequent calls on the same <paramref name="app"/> instance are no-ops.
     /// </summary>
     /// <param name="app">The <see cref="WebApplication"/> to configure.</param>
@@ -646,6 +647,10 @@ public static class SetupApi
         {
             endpoint.WithName(name);
         }
+
+        // Probes arrive from a few orchestrator addresses at a steady rate, so an IP-partitioned global limiter would
+        // eventually reject one and take a healthy instance out of rotation. The metadata also skips the global limiter.
+        endpoint.DisableRateLimiting();
 
         if (options.ExcludeFromDescription)
         {
