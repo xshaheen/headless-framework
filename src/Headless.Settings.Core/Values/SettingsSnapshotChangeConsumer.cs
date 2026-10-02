@@ -16,9 +16,10 @@ namespace Headless.Settings.Values;
 /// writing process holds snapshots too, and the manager that stored the value knows nothing about them.
 /// </para>
 /// <para>
-/// Delivery is at most once, so each time the subscription is established, first or after a gap, every snapshot is
-/// reloaded. The first establishment counts too: the startup load runs before the subscription is live, and an
-/// announcement published in between never arrives.
+/// Delivery is at most once, so each time the subscription is established, first or after a gap, every loaded snapshot
+/// is reloaded. The first establishment counts too: a snapshot loaded before the subscription went live missed any
+/// announcement published in between. A snapshot still loading is skipped, so host startup, which waits for this hook,
+/// never waits on the settings store.
 /// </para>
 /// </remarks>
 [BusConsumer(Identity, EveryInstance = true)]

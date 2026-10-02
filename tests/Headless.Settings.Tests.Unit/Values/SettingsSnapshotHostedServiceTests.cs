@@ -70,16 +70,19 @@ public sealed class SettingsSnapshotHostedServiceTests : TestBase
         await entry.WaitForLoadsAsync(1);
         await _timeProvider.WaitForTimersAsync(1, AbortToken);
 
-        // when - the first retry waits the initial delay, the second twice that
-        _timeProvider.Advance(SettingsSnapshotHostedService.InitialRetryDelay);
+        // when - the first retry waits the initial delay, the second twice that, each jittered by ±10%
+        _timeProvider.Advance(SettingsSnapshotHostedService.InitialRetryDelay * 0.85);
+        var beforeFirstRetry = entry.Loads;
+        _timeProvider.Advance(SettingsSnapshotHostedService.InitialRetryDelay * 0.3);
         await entry.WaitForLoadsAsync(2);
         await _timeProvider.WaitForTimersAsync(2, AbortToken);
-        _timeProvider.Advance(SettingsSnapshotHostedService.InitialRetryDelay);
+        _timeProvider.Advance(SettingsSnapshotHostedService.InitialRetryDelay * 1.75);
         var beforeDoubledDelay = entry.Loads;
-        _timeProvider.Advance(SettingsSnapshotHostedService.InitialRetryDelay);
+        _timeProvider.Advance(SettingsSnapshotHostedService.InitialRetryDelay * 0.5);
         await entry.WaitForLoadsAsync(3);
 
         // then
+        beforeFirstRetry.Should().Be(1);
         beforeDoubledDelay.Should().Be(2);
         await TimerCountingTimeProvider.WaitUntilAsync(() => entry.IsLoaded, AbortToken);
         entry.Backstops.Should().Be(0);

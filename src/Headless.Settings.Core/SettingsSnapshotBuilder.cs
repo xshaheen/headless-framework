@@ -62,7 +62,7 @@ public sealed class SettingsSnapshotBuilder<T>
 
     /// <summary>
     /// Sets how often the snapshot is re-read when no change announcement arrives, for example when the host runs
-    /// without messaging or an announcement was lost. Each process adds up to 10% of jitter. Defaults to
+    /// without messaging or an announcement was lost. Each process jitters it by ±10%. Defaults to
     /// <see cref="DefaultBackstop"/>.
     /// </summary>
     /// <param name="interval">The re-read interval.</param>

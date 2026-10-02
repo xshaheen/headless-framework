@@ -123,8 +123,7 @@ public sealed class SettingsSnapshotChangeConsumerTests : TestBase
         var stored = new Dictionary<string, string?>(StringComparer.Ordinal) { [_Theme] = "light" };
         await using var harness = await _CreateHarnessAsync(stored, registerSnapshot: true);
         var snapshot = harness.ServiceProvider.GetRequiredService<ISettingsSnapshot<string>>();
-        snapshot.TryGetCurrent(out var initial).Should().BeTrue(); // loaded by the first-establishment hook
-        initial.Should().Be("light");
+        (await snapshot.GetAsync(AbortToken)).Should().Be("light");
         stored[_Theme] = "dark";
 
         // when

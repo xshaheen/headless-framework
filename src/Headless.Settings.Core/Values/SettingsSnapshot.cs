@@ -45,7 +45,10 @@ internal interface ISettingsSnapshotEntry
     /// </summary>
     Task EnsureLoadedAsync(CancellationToken cancellationToken);
 
-    /// <summary>Re-reads the snapshot. Failures are logged, never thrown, except cancellation.</summary>
+    /// <summary>
+    /// Re-reads a loaded snapshot. Does nothing until the first load completes: that load owns name validation, and a value
+    /// nobody read yet has no missed change to recover. Failures are logged, never thrown, except cancellation.
+    /// </summary>
     /// <param name="reason">Why the reload runs.</param>
     /// <param name="announcedNames">The tracked names a message announced, for <see cref="SettingsSnapshotReloadReason.Message"/>.</param>
     /// <param name="cancellationToken">The abort token.</param>
@@ -67,8 +70,15 @@ internal interface ISettingsSnapshotEntry
 /// With a hybrid setting cache, a peer can receive <see cref="SettingChangedMessage"/> before its own
 /// <c>CacheInvalidationMessage</c>; the two travel on separate subscriptions with no ordering between them. A reload in
 /// that window reads the old L1 value. So a message reload whose announced names did not change, and an establishment
-/// reload that changed nothing, re-read a few more times over the next seconds. The setting cache offers no local-only
-/// read or eviction to avoid the window instead, and removing the entry would evict the shared tier and broadcast.
+/// reload that changed nothing, re-read a few more times over the next seconds. An establishment reload settles too,
+/// because the hybrid cache flushes its L1 in its own establishment hook, with no ordering against this one. The setting
+/// cache offers no local-only read or eviction to avoid the window instead, and removing the entry would evict the shared
+/// tier and broadcast.
+/// </para>
+/// <para>
+/// Only <see cref="SettingsSnapshotReloadReason.Initial"/> loads an unloaded snapshot. A message, establishment, or settle
+/// reload before then does nothing, so the subscription hook never waits on the store during host startup and every first
+/// load validates the names.
 /// </para>
 /// </remarks>
 internal sealed partial class SettingsSnapshot<T> : ISettingsSnapshot<T>, ISettingsSnapshotEntry, IDisposable
@@ -87,12 +97,14 @@ internal sealed partial class SettingsSnapshot<T> : ISettingsSnapshot<T>, ISetti
     private readonly ISettingDefinitionManager _definitionManager;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger _logger;
+#pragma warning disable CA2213 // False positive: never touching AvailableWaitHandle leaves nothing to release, and disposing it would strand the reloads waiting on it at shutdown.
     private readonly SemaphoreSlim _reloadLock = new(1, 1);
+#pragma warning restore CA2213
     private readonly CancellationTokenSource _disposeCts = new();
     private readonly Lock _listenersLock = new();
     private Action<T, long>[] _listeners = [];
     private volatile State? _state;
-    private volatile bool _namesValidated;
+    private bool _namesValidated;
     private int _disposed;
 
     public SettingsSnapshot(
@@ -159,11 +171,6 @@ internal sealed partial class SettingsSnapshot<T> : ISettingsSnapshot<T>, ISetti
             return;
         }
 
-        if (!_namesValidated)
-        {
-            await _ValidateNamesAsync(cancellationToken).ConfigureAwait(false);
-        }
-
         await _ReloadAsync(SettingsSnapshotReloadReason.Initial, announcedNames: null, cancellationToken)
             .ConfigureAwait(false);
     }
@@ -172,7 +179,7 @@ internal sealed partial class SettingsSnapshot<T> : ISettingsSnapshot<T>, ISetti
     {
         await EnsureLoadedAsync(cancellationToken).ConfigureAwait(false);
 
-        // EnsureLoadedAsync returns only once a state exists, and a state is never cleared.
+        // An Initial reload returns only once a state exists, and a state is never cleared.
         return _state!.Value;
     }
 
@@ -207,7 +214,10 @@ internal sealed partial class SettingsSnapshot<T> : ISettingsSnapshot<T>, ISetti
         return _TryReloadAsync(reason, announcedNames, cancellationToken);
     }
 
-    /// <summary>Reloads and returns the values read, or <see langword="null"/> when the reload failed and was logged.</summary>
+    /// <summary>
+    /// Reloads and returns the values read, or <see langword="null"/> when nothing was read: the snapshot is not loaded yet,
+    /// or the reload failed and was logged.
+    /// </summary>
     private async Task<FrozenDictionary<string, string?>?> _TryReloadAsync(
         SettingsSnapshotReloadReason reason,
         IReadOnlyCollection<string>? announcedNames,
@@ -242,13 +252,13 @@ internal sealed partial class SettingsSnapshot<T> : ISettingsSnapshot<T>, ISetti
             return;
         }
 
-        // Pending settle re-reads observe the cancellation and stop; one already waiting on the lock sees it disposed.
+        // Pending settle re-reads observe the cancellation and stop. The reload lock stays undisposed: a reload holding it
+        // still releases it, and one waiting on it acquires it and then finds the snapshot disposed instead of hanging.
         _disposeCts.Cancel();
         _disposeCts.Dispose();
-        _reloadLock.Dispose();
     }
 
-    private async Task<FrozenDictionary<string, string?>> _ReloadAsync(
+    private async Task<FrozenDictionary<string, string?>?> _ReloadAsync(
         SettingsSnapshotReloadReason reason,
         IReadOnlyCollection<string>? announcedNames,
         CancellationToken cancellationToken
@@ -261,10 +271,25 @@ internal sealed partial class SettingsSnapshot<T> : ISettingsSnapshot<T>, ISetti
 
         try
         {
-            // Concurrent first loads queue on the lock; the ones after the winner find the state and read nothing.
-            if (reason is SettingsSnapshotReloadReason.Initial && _state is { } loaded)
+            Ensure.NotDisposed(Volatile.Read(ref _disposed) != 0, this);
+
+            if (_state is { } loaded)
             {
-                return loaded.Raw;
+                // Concurrent first loads queue on the lock; the ones after the winner find the state and read nothing.
+                if (reason is SettingsSnapshotReloadReason.Initial)
+                {
+                    return loaded.Raw;
+                }
+            }
+            else if (reason is not SettingsSnapshotReloadReason.Initial)
+            {
+                // See the class remarks: only the first load loads.
+                return null;
+            }
+            else if (!_namesValidated)
+            {
+                // Under the lock, so concurrent first loads look the definitions up once.
+                await _ValidateNamesAsync(cancellationToken).ConfigureAwait(false);
             }
 
             before = _state?.Raw;

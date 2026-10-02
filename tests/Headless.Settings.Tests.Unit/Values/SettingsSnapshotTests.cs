@@ -21,8 +21,13 @@ public sealed class SettingsSnapshotTests : TestBase
     private readonly TimerCountingTimeProvider _timeProvider = new();
     private readonly CapturingLogger<SettingsSnapshot<Policy>> _logger = new();
     private int _reads;
+    private int _readsInFlight;
+    private int _maxReadsInFlight;
     private int _binds;
     private Exception? _readFailure;
+
+    // When set, every store read waits for one release, so a test controls when each read completes.
+    private SemaphoreSlim? _readGate;
 
     public SettingsSnapshotTests()
     {
@@ -38,24 +43,10 @@ public sealed class SettingsSnapshotTests : TestBase
                 Arg.Any<CancellationToken>()
             )
             .Returns(call =>
-            {
-                if (_readFailure is not null)
-                {
-                    return Task.FromException<IReadOnlyList<SettingValue>>(_readFailure);
-                }
-
-                Interlocked.Increment(ref _reads);
-                var names = call.Arg<HashSet<string>>();
-
-                IReadOnlyList<SettingValue> values =
-                [
-                    .. _stored
-                        .Where(pair => names.Contains(pair.Key) && pair.Value is not null)
-                        .Select(pair => new SettingValue(pair.Key, pair.Value)),
-                ];
-
-                return Task.FromResult(values);
-            });
+                _readFailure is not null
+                    ? Task.FromException<IReadOnlyList<SettingValue>>(_readFailure)
+                    : _ReadStoredAsync(call.Arg<HashSet<string>>())
+            );
 
         _definitionManager
             .FindAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
@@ -143,17 +134,24 @@ public sealed class SettingsSnapshotTests : TestBase
     }
 
     [Fact]
-    public async Task should_read_once_when_first_loads_run_concurrently()
+    public async Task should_read_and_validate_once_when_first_loads_run_concurrently()
     {
-        // given
+        // given - the first read is held, so the other callers queue behind it
         using var sut = _CreateSut();
+        using var gate = new SemaphoreSlim(0);
+        _readGate = gate;
+        var loads = Enumerable.Range(0, 8).Select(_ => sut.GetAsync(AbortToken).AsTask()).ToArray();
+        await TimerCountingTimeProvider.WaitUntilAsync(() => Volatile.Read(ref _reads) == 1, AbortToken);
 
         // when
-        await Task.WhenAll(Enumerable.Range(0, 8).Select(_ => sut.GetAsync(AbortToken).AsTask()));
+        gate.Release();
+        await Task.WhenAll(loads);
 
         // then
         _reads.Should().Be(1);
         sut.Revision.Should().Be(1);
+        await _definitionManager.Received(1).FindAsync(_PublicLimit, Arg.Any<CancellationToken>());
+        await _definitionManager.Received(1).FindAsync(_UserLimit, Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -283,33 +281,41 @@ public sealed class SettingsSnapshotTests : TestBase
         message.Should().Contain(_PublicLimit).And.NotContain("not-a-number");
     }
 
-    [Fact]
-    public async Task should_bind_on_a_later_reload_when_the_snapshot_has_no_state_yet()
+    [Theory]
+    [InlineData((int)SettingsSnapshotReloadReason.Message)]
+    [InlineData((int)SettingsSnapshotReloadReason.Establishment)]
+    [InlineData((int)SettingsSnapshotReloadReason.Backstop)]
+    [InlineData((int)SettingsSnapshotReloadReason.Settle)]
+    public async Task should_not_load_on_a_reload_before_the_first_load(int reason)
     {
-        // given - the subscription hook can run before the startup load
+        // given - the subscription hook runs during host startup, possibly before the first load
         using var sut = _CreateSut();
 
         // when
-        await sut.ReloadAsync(SettingsSnapshotReloadReason.Establishment, null, AbortToken);
+        await sut.ReloadAsync((SettingsSnapshotReloadReason)reason, [_PublicLimit], AbortToken);
 
-        // then
-        _CurrentOf(sut).Should().Be(new Policy(10, 100));
-        sut.Revision.Should().Be(1);
+        // then - nothing touched the store, so a down store cannot hold startup back
+        sut.IsLoaded.Should().BeFalse();
+        sut.Revision.Should().Be(0);
+        _reads.Should().Be(0);
+        await _definitionManager.DidNotReceive().FindAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        _logger.Entries.Should().BeEmpty();
     }
 
     [Fact]
-    public async Task should_stay_unloaded_when_bind_fails_before_the_startup_load()
+    public async Task should_still_reject_an_undefined_name_after_an_establishment_reload()
     {
         // given
-        _stored[_PublicLimit] = "not-a-number";
+        _definitionManager.FindAsync(_UserLimit, Arg.Any<CancellationToken>()).Returns((SettingDefinition?)null);
         using var sut = _CreateSut();
-
-        // when
         await sut.ReloadAsync(SettingsSnapshotReloadReason.Establishment, null, AbortToken);
 
+        // when
+        var act = () => sut.GetAsync(AbortToken).AsTask();
+
         // then
-        sut.Revision.Should().Be(0);
-        _logger.Entries.Should().ContainSingle(x => x.Level == LogLevel.Error);
+        (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage($"*{_UserLimit}*");
+        sut.IsLoaded.Should().BeFalse();
     }
 
     #endregion
@@ -527,14 +533,47 @@ public sealed class SettingsSnapshotTests : TestBase
         _logger.Entries.Should().BeEmpty();
     }
 
+    [Fact]
+    public async Task should_finish_the_running_load_and_fail_the_queued_one_when_disposed_mid_load()
+    {
+        // given - one first load holds the reload lock on a read, a second waits for the lock
+        var sut = _CreateSut();
+
+        try
+        {
+            using var gate = new SemaphoreSlim(0);
+            _readGate = gate;
+            var running = sut.EnsureLoadedAsync(AbortToken);
+            await TimerCountingTimeProvider.WaitUntilAsync(() => Volatile.Read(ref _reads) == 1, AbortToken);
+            var queued = sut.GetAsync(AbortToken).AsTask();
+
+            // when
+            sut.Dispose();
+            gate.Release();
+
+            // then - neither throws from the lock nor hangs on it
+            await running;
+            sut.Revision.Should().Be(1);
+            var act = () => queued;
+            await act.Should().ThrowAsync<ObjectDisposedException>();
+            _reads.Should().Be(1);
+        }
+        finally
+        {
+            // The test disposes mid-load on purpose; this covers a failure before that point.
+            sut.Dispose();
+        }
+    }
+
     #endregion
 
     #region Concurrency
 
     [Fact]
-    public async Task should_never_move_revision_backward_under_concurrent_reloads()
+    public async Task should_serialize_overlapping_reloads_and_never_move_revision_backward()
     {
         // given
+        const int reloadCount = 20;
         using var sut = _CreateSut();
         await sut.EnsureLoadedAsync(AbortToken);
         var observed = new List<long>();
@@ -547,28 +586,74 @@ public sealed class SettingsSnapshotTests : TestBase
                 }
             }
         );
+        using var gate = new SemaphoreSlim(0);
+        _readGate = gate;
 
-        // when
+        // when - every reload starts at once; each read waits until the test publishes its value
         var reloads = Enumerable
-            .Range(0, 20)
+            .Range(0, reloadCount)
             .Select(i =>
-            {
-                _stored[_PublicLimit] = i.ToString(CultureInfo.InvariantCulture);
-                return sut.ReloadAsync(
+                sut.ReloadAsync(
                     i % 2 == 0 ? SettingsSnapshotReloadReason.Backstop : SettingsSnapshotReloadReason.Message,
                     [_PublicLimit],
                     AbortToken
-                );
-            })
+                )
+            )
             .ToArray();
+
+        for (var i = 1; i <= reloadCount; i++)
+        {
+            // Read i starts only after reload i - 1 released the lock, so it is the one read in flight.
+            var expectedReads = 1 + i;
+            await TimerCountingTimeProvider.WaitUntilAsync(
+                () => Volatile.Read(ref _reads) == expectedReads,
+                AbortToken
+            );
+            _stored[_PublicLimit] = (100 + i).ToString(CultureInfo.InvariantCulture);
+            gate.Release();
+        }
+
         await Task.WhenAll(reloads);
 
         // then
-        observed.Should().BeInAscendingOrder().And.OnlyHaveUniqueItems();
-        sut.Revision.Should().Be(observed.Count == 0 ? 1 : observed[^1]);
+        _maxReadsInFlight.Should().Be(1);
+        observed.Should().Equal(Enumerable.Range(2, reloadCount).Select(revision => (long)revision));
+        sut.Revision.Should().Be(1 + reloadCount);
+        _CurrentOf(sut).PublicPerMinute.Should().Be(100 + reloadCount);
     }
 
     #endregion
+
+    private async Task<IReadOnlyList<SettingValue>> _ReadStoredAsync(HashSet<string> names)
+    {
+        Interlocked.Increment(ref _reads);
+        var inFlight = Interlocked.Increment(ref _readsInFlight);
+        int max;
+
+        while (inFlight > (max = Volatile.Read(ref _maxReadsInFlight)))
+        {
+            _ = Interlocked.CompareExchange(ref _maxReadsInFlight, inFlight, max);
+        }
+
+        try
+        {
+            if (_readGate is { } gate)
+            {
+                await gate.WaitAsync(AbortToken);
+            }
+
+            return
+            [
+                .. _stored
+                    .Where(pair => names.Contains(pair.Key) && pair.Value is not null)
+                    .Select(pair => new SettingValue(pair.Key, pair.Value)),
+            ];
+        }
+        finally
+        {
+            Interlocked.Decrement(ref _readsInFlight);
+        }
+    }
 
     private static TValue _CurrentOf<TValue>(ISettingsSnapshot<TValue> snapshot)
     {

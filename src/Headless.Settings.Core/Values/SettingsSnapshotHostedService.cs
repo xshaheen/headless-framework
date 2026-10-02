@@ -12,8 +12,9 @@ namespace Headless.Settings.Values;
 /// <remarks>
 /// <para>
 /// Host startup never waits on a snapshot: a slow or unreachable settings store must not hold back the rest of the host.
-/// The first load is attempted as soon as the loop runs and retried with exponential backoff, capped at the snapshot's
-/// backstop interval, until it succeeds. A caller that needs the value before then awaits
+/// The first load is attempted as soon as the loop runs and retried with jittered exponential backoff, capped at the
+/// snapshot's backstop interval, until it succeeds. A failed attempt logs a warning, not an error: names defined in the
+/// dynamic store fail validation until that store's definitions are cached, which is a normal boot. A caller that needs the value before then awaits
 /// <see cref="ISettingsSnapshot{T}.GetAsync"/>, which loads on demand and shares the same serialized load.
 /// </para>
 /// <para>
@@ -79,13 +80,15 @@ internal sealed partial class SettingsSnapshotHostedService(
                         continue;
                     }
 
-                    if (await _TryLoadAsync(snapshot, retryDelay[i], stoppingToken).ConfigureAwait(false))
+                    var retryIn = _Jittered(retryDelay[i]);
+
+                    if (await _TryLoadAsync(snapshot, retryIn, stoppingToken).ConfigureAwait(false))
                     {
                         due[i] = timeProvider.GetUtcNow() + _Jittered(snapshot.Backstop);
                     }
                     else
                     {
-                        due[i] = timeProvider.GetUtcNow() + retryDelay[i];
+                        due[i] = timeProvider.GetUtcNow() + retryIn;
                         retryDelay[i] = _NextRetryDelay(retryDelay[i], snapshot.Backstop);
                     }
                 }
@@ -99,7 +102,7 @@ internal sealed partial class SettingsSnapshotHostedService(
 
     private async Task<bool> _TryLoadAsync(
         ISettingsSnapshotEntry snapshot,
-        TimeSpan retryDelay,
+        TimeSpan retryIn,
         CancellationToken stoppingToken
     )
     {
@@ -111,7 +114,7 @@ internal sealed partial class SettingsSnapshotHostedService(
         }
         catch (Exception e) when (e is not OperationCanceledException || !stoppingToken.IsCancellationRequested)
         {
-            LogInitialLoadFailed(logger, e, string.Join(", ", snapshot.Names), retryDelay);
+            LogInitialLoadFailed(logger, e, string.Join(", ", snapshot.Names), retryIn);
 
             return false;
         }
@@ -141,7 +144,7 @@ internal sealed partial class SettingsSnapshotHostedService(
 
     private static TimeSpan _Jittered(TimeSpan interval)
     {
-#pragma warning disable CA5394 // False positive: jitter only spreads replicas' re-reads; nothing depends on it being unpredictable.
+#pragma warning disable CA5394 // False positive: jitter only spreads replicas' reads and retries; nothing depends on it being unpredictable.
         return interval * (0.9 + (Random.Shared.NextDouble() * 0.2));
 #pragma warning restore CA5394
     }
@@ -157,7 +160,7 @@ internal sealed partial class SettingsSnapshotHostedService(
     [LoggerMessage(
         EventId = 5,
         EventName = "SettingsSnapshotInitialLoadFailed",
-        Level = LogLevel.Error,
+        Level = LogLevel.Warning,
         Message = "Loading the settings snapshot of {SettingNames} failed; retrying in {RetryDelay}"
     )]
     private static partial void LogInitialLoadFailed(
