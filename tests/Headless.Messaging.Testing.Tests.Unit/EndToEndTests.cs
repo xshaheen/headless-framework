@@ -8,7 +8,6 @@ using Headless.Messaging.Testing;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
-using Polly.Retry;
 
 namespace Tests;
 
@@ -602,13 +601,8 @@ public sealed class EndToEndTests : TestBase
                     messaging.Message<OrderCreatedEvent>("order-created");
                     messaging.AddModule<FailingModule>();
                 });
-                options.Options.RetryPolicy.MaxPersistedRetries = 0;
-                options.Options.RetryPolicy.RetryStrategy = new RetryStrategyOptions
-                {
-                    MaxRetryAttempts = 0,
-                    Delay = TimeSpan.Zero,
-                    ShouldHandle = static _ => ValueTask.FromResult(true),
-                };
+                // A policy with no retries: the first failure is terminal.
+                options.DefaultFailurePolicy(static _ => { });
                 options.Options.RetryPolicy.OnExhausted = (_, _) =>
                 {
                     Interlocked.Increment(ref userCallbackFired);
@@ -636,6 +630,40 @@ public sealed class EndToEndTests : TestBase
         harness.Faulted.Should().NotBeEmpty();
     }
 
+    // ─── Test 8b: a fail rule's terminal failure is recorded like a spent budget ─────
+
+    [Fact]
+    public async Task wait_for_exhausted_observes_a_fail_rule_terminal_failure()
+    {
+        // given — retries are configured, but the fail rule ends the message on its first failure.
+        await using var harness = await _CreateHarnessAsync(
+            (services, options) =>
+            {
+                services.ConfigureMessaging(messaging =>
+                {
+                    messaging.Message<OrderCreatedEvent>("order-created");
+                    messaging.AddModule<FailingModule>();
+                });
+                options.DefaultFailurePolicy(static policy =>
+                    policy
+                        .Immediate(2)
+                        .Delayed(3, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(10))
+                        .FailOn<TimeoutException>()
+                );
+            }
+        );
+
+        // when
+        await harness.Publisher.PublishAsync(new OrderCreatedEvent("ORD-RULE", 1m), cancellationToken: AbortToken);
+        var recorded = await harness.WaitForExhausted<OrderCreatedEvent>(TimeSpan.FromSeconds(5), AbortToken);
+
+        // then — one attempt, recorded as the terminal-failure outcome.
+        recorded.Message.Should().BeOfType<OrderCreatedEvent>().Which.OrderId.Should().Be("ORD-RULE");
+        recorded.Exception!.GetBaseException().Should().BeOfType<TimeoutException>();
+        harness.Exhausted.Should().ContainSingle();
+        harness.Faulted.Should().ContainSingle("the matched fail rule skips the immediate retries");
+    }
+
     // ─── Test 9: WaitForExhausted survives a hanging user callback ───────────
 
     [Fact]
@@ -652,13 +680,8 @@ public sealed class EndToEndTests : TestBase
                     messaging.Message<OrderCreatedEvent>("order-created");
                     messaging.AddModule<FailingModule>();
                 });
-                options.Options.RetryPolicy.MaxPersistedRetries = 0;
-                options.Options.RetryPolicy.RetryStrategy = new RetryStrategyOptions
-                {
-                    MaxRetryAttempts = 0,
-                    Delay = TimeSpan.Zero,
-                    ShouldHandle = static _ => ValueTask.FromResult(true),
-                };
+                // A policy with no retries: the first failure is terminal.
+                options.DefaultFailurePolicy(static _ => { });
                 options.Options.RetryPolicy.OnExhaustedTimeout = TimeSpan.FromMilliseconds(200);
                 options.Options.RetryPolicy.OnExhausted = async (_, ct) =>
                 {
