@@ -46,6 +46,8 @@ internal static class MessagingMetrics
     internal const string ReceiveOutcomesName = "messaging.receive.outcomes";
     internal const string EveryInstanceDeliveriesName = "messaging.every_instance.deliveries";
     internal const string RequestReplyDroppedRepliesName = "messaging.request_reply.dropped_replies";
+    internal const string RequestReplyRequestsName = "messaging.request_reply.requests";
+    internal const string RequestReplyDurationName = "messaging.request_reply.duration";
 
     // --- Dimension (tag) names --------------------------------------------------------------------------------
 
@@ -61,11 +63,37 @@ internal static class MessagingMetrics
     internal const string TagReceiveOutcome = "messaging.receive.outcome";
     internal const string TagEveryInstanceOutcome = "messaging.every_instance.outcome";
     internal const string TagRequestReplyDropReason = "messaging.request_reply.drop_reason";
+    internal const string TagRequestReplyOutcome = "messaging.request_reply.outcome";
 
     // --- Request/reply drop reasons ---------------------------------------------------------------------------
 
     // A request named a reply destination outside the reserved reply namespace, so the responder wrote nothing.
     internal const string DropReasonInvalidReplyAddress = "invalid_reply_address";
+
+    // The call had already ended without a reply (timed out, canceled, or aborted) when the reply arrived.
+    internal const string DropReasonLate = "late";
+
+    // No call in this process ever waited on the reply's request id, or the reply named none.
+    internal const string DropReasonUnknown = "unknown";
+
+    // The call had already been completed by an earlier reply.
+    internal const string DropReasonDuplicate = "duplicate";
+
+    // The reply's tenant differs from the tenant the request was sent under, so it cannot answer that call.
+    internal const string DropReasonTenantMismatch = "tenant_mismatch";
+
+    // --- Request/reply call outcomes --------------------------------------------------------------------------
+
+    internal const string RequestOutcomeReplied = "replied";
+    internal const string RequestOutcomeFaulted = "faulted";
+    internal const string RequestOutcomeContractMismatch = "contract_mismatch";
+    internal const string RequestOutcomeTimedOut = "timed_out";
+    internal const string RequestOutcomeCanceled = "canceled";
+    internal const string RequestOutcomeAborted = "aborted";
+    internal const string RequestOutcomeNotSent = "not_sent";
+
+    // The send failed or the reply could not be read: the call ended with an exception outside the request/reply set.
+    internal const string RequestOutcomeFailed = "failed";
 
     // --- Instruments ------------------------------------------------------------------------------------------
 
@@ -162,6 +190,13 @@ internal static class MessagingMetrics
         RequestReplyDroppedRepliesName
     );
 
+    private static readonly Counter<long> _RequestReplyRequests = MessagingDiagnostics.Meter.CreateCounter<long>(
+        RequestReplyRequestsName
+    );
+
+    private static readonly Histogram<double> _RequestReplyDuration =
+        MessagingDiagnostics.Meter.CreateHistogram<double>(RequestReplyDurationName, unit: "ms");
+
     /// <summary>Whether any messaging instrument currently has a subscribed listener.</summary>
     internal static bool AnyEnabled =>
         _MessagesPublished.Enabled
@@ -184,7 +219,9 @@ internal static class MessagingMetrics
         || _InboxCapabilities.Enabled
         || _ReceiveOutcomes.Enabled
         || _EveryInstanceDeliveries.Enabled
-        || _RequestReplyDroppedReplies.Enabled;
+        || _RequestReplyDroppedReplies.Enabled
+        || _RequestReplyRequests.Enabled
+        || _RequestReplyDuration.Enabled;
 
     internal static void RecordInbox(
         InboxMetricKind kind,
@@ -479,6 +516,25 @@ internal static class MessagingMetrics
         }
 
         _RequestReplyDroppedReplies.Add(1, new KeyValuePair<string, object?>(TagRequestReplyDropReason, reason));
+    }
+
+    /// <summary>
+    /// Records how one request call ended and how long it took, tagged only with the outcome: request, correlation, and
+    /// instance identifiers are unbounded, so they never become metric tags.
+    /// </summary>
+    internal static void RecordRequest(string outcome, double elapsedMs)
+    {
+        var tag = new KeyValuePair<string, object?>(TagRequestReplyOutcome, outcome);
+
+        if (_RequestReplyRequests.Enabled)
+        {
+            _RequestReplyRequests.Add(1, tag);
+        }
+
+        if (_RequestReplyDuration.Enabled)
+        {
+            _RequestReplyDuration.Record(elapsedMs, tag);
+        }
     }
 
     private static TagList _CreateDeliveryTags(

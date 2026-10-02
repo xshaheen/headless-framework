@@ -29,22 +29,9 @@ public sealed class TenantPropagationPublishMiddleware(
         if (
             context.Options?.SuppressAmbientBusinessContext != true
             && context.Options?.TenantId is null
-            && _currentTenant.Id is { } ambientTenantId
+            && ResolveAmbientTenant(_currentTenant, logger) is { } ambientTenantId
         )
         {
-            if (string.IsNullOrWhiteSpace(ambientTenantId))
-            {
-                await next().ConfigureAwait(false);
-                return;
-            }
-
-            if (ambientTenantId.Length > MessageOptions.TenantIdMaxLength)
-            {
-                logger?.AmbientTenantPropagationDropped(ambientTenantId.Length);
-                await next().ConfigureAwait(false);
-                return;
-            }
-
             // Stamp TenantId on a concrete options record that matches the publish intent so
             // downstream middleware and the factory receive the correct derived type.
             MessageOptions stamped = context.Lane switch
@@ -59,5 +46,27 @@ public sealed class TenantPropagationPublishMiddleware(
         }
 
         await next().ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Returns the ambient tenant a message may carry, or <see langword="null"/> when there is none. A blank tenant is
+    /// treated as absent, and one longer than <see cref="MessageOptions.TenantIdMaxLength"/> is dropped and logged rather
+    /// than failing the send, so a bad ambient source never blocks publishing. Every path that stamps the ambient tenant
+    /// applies these same rules.
+    /// </summary>
+    internal static string? ResolveAmbientTenant(ICurrentTenant currentTenant, ILogger? logger)
+    {
+        if (currentTenant.Id is not { } ambientTenantId || string.IsNullOrWhiteSpace(ambientTenantId))
+        {
+            return null;
+        }
+
+        if (ambientTenantId.Length > MessageOptions.TenantIdMaxLength)
+        {
+            logger?.AmbientTenantPropagationDropped(ambientTenantId.Length);
+            return null;
+        }
+
+        return ambientTenantId;
     }
 }

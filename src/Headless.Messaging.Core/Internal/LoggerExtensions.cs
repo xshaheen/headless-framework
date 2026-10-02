@@ -946,4 +946,28 @@ internal static partial class LoggerExtensions
         Message = "The reply to request {RequestId} could not be sent and is not retried; the caller will time out."
     )]
     public static partial void ReplySendFailed(this ILogger logger, Exception exception, string? requestId);
+
+    [LoggerMessage(
+        EventId = 113,
+        EventName = "ReplyDropped",
+        Level = LogLevel.Debug,
+        Message = "Dropped the reply to request {RequestId}: {DropReason}."
+    )]
+    public static partial void ReplyDropped(this ILogger logger, string? requestId, string dropReason);
+
+    [LoggerMessage(
+        EventId = 114,
+        EventName = "ReplyTenantMismatch",
+        Level = LogLevel.Warning,
+        Message = "Dropped the reply to request {RequestId}: it carries a different tenant than the request was sent under. The call keeps waiting and times out unless a matching reply arrives."
+    )]
+    public static partial void ReplyTenantMismatch(this ILogger logger, string? requestId);
+
+    [LoggerMessage(
+        EventId = 115,
+        EventName = "ReplyListenerCloseFailed",
+        Level = LogLevel.Warning,
+        Message = "The reply listener failed to close cleanly during shutdown."
+    )]
+    public static partial void ReplyListenerCloseFailed(this ILogger logger, Exception exception);
 }

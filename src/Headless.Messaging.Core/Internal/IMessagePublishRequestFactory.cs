@@ -7,6 +7,7 @@ using Headless.Checks;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Registration;
+using Headless.Messaging.RequestReply;
 using Headless.MultiTenancy;
 using Microsoft.Extensions.Options;
 
@@ -41,6 +42,29 @@ internal interface IMessagePublishRequestFactory
         TimeSpan? delayTime = null,
         MessageLane lane = MessageLane.Bus
     );
+
+    /// <summary>
+    /// Creates a Queue request that carries <paramref name="request"/>'s protocol headers. They are stamped after the
+    /// custom headers are validated, and the message id is always framework-generated, so neither the caller nor
+    /// publish middleware can change the request id, the reply address, the deadline, or the message id.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">
+    /// <paramref name="options"/> names a callback, or carries a reserved or invalid header.
+    /// </exception>
+    PreparedPublishMessage CreateRequest(
+        object? contentObj,
+        Type declaredMessageType,
+        MessageOptions? options,
+        RequestStamp request
+    );
+
+    /// <summary>
+    /// Resolves the contract name and version a message of <paramref name="messageType"/> carries on
+    /// <paramref name="lane"/>, by the same rules a publish uses: the registered name mapping or the naming convention,
+    /// with the host's message-name prefix, and the declared contract version or the initial one.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">No name mapping or convention names the type.</exception>
+    (string MessageName, string ContractVersion) ResolveContract(Type messageType, MessageLane lane);
 }
 
 internal sealed class MessagePublishRequestFactory(
@@ -121,13 +145,45 @@ internal sealed class MessagePublishRequestFactory(
         return _Create(contentObj, declaredMessageType, options, delayTime, publishAt, lane);
     }
 
+    public PreparedPublishMessage CreateRequest(
+        object? contentObj,
+        Type declaredMessageType,
+        MessageOptions? options,
+        RequestStamp request
+    )
+    {
+        Argument.IsNotNull(request);
+
+        return _Create(
+            contentObj,
+            declaredMessageType,
+            options,
+            delayTime: null,
+            timeProvider.GetUtcNow(),
+            MessageLane.Queue,
+            request
+        );
+    }
+
+    public (string MessageName, string ContractVersion) ResolveContract(Type messageType, MessageLane lane)
+    {
+        Argument.IsNotNull(messageType);
+
+        var messageName = _ResolveMessageName(messageType, lane, explicitMessageName: null);
+        MessageMetadata? metadata = null;
+        metadataRegistry?.TryGet(new MessageRouteKey(messageType, messageName, lane), out metadata);
+
+        return (messageName, metadata?.ContractVersion ?? MessageOptions.InitialContractVersion);
+    }
+
     private PreparedPublishMessage _Create(
         object? contentObj,
         Type declaredMessageType,
         MessageOptions? options,
         TimeSpan? delayTime,
         DateTimeOffset publishAt,
-        MessageLane lane
+        MessageLane lane,
+        RequestStamp? request = null
     )
     {
         Argument.IsNotNull(declaredMessageType);
@@ -150,7 +206,8 @@ internal sealed class MessagePublishRequestFactory(
             options?.ContractVersion ?? metadata?.ContractVersion ?? MessageOptions.InitialContractVersion,
             _ResolveCorrelationFromSelector(metadata, contentObj, declaredMessageType),
             options?.SuppressAmbientBusinessContext == true ? null : consumeContextAccessor?.Current?.CorrelationId,
-            options?.SuppressAmbientBusinessContext == true ? null : consumeContextAccessor?.Current?.MessageId
+            options?.SuppressAmbientBusinessContext == true ? null : consumeContextAccessor?.Current?.MessageId,
+            request
         );
         if (options?.RoutingAffinityKey is { } affinityKey)
         {
@@ -200,7 +257,8 @@ internal sealed class MessagePublishRequestFactory(
         string contractVersion,
         string? selectorCorrelationId,
         string? ambientCorrelationId,
-        string? ambientMessageId
+        string? ambientMessageId,
+        RequestStamp? request
     )
     {
         var headers =
@@ -211,9 +269,12 @@ internal sealed class MessagePublishRequestFactory(
         _ValidateCustomHeaderNames(headers);
         _ApplyTenantId(headers, options);
 
-        var messageId = string.IsNullOrWhiteSpace(options?.MessageId)
-            ? idGenerator.Create().ToString("D")
-            : _ValidateMessageId(options.MessageId);
+        // A request's message id is never caller- or middleware-chosen: each request gets a fresh one, so inbox
+        // duplicate detection cannot swallow a retried call, and correlation never depends on it.
+        var messageId =
+            request is not null || string.IsNullOrWhiteSpace(options?.MessageId)
+                ? idGenerator.Create().ToString("D")
+                : _ValidateMessageId(options.MessageId);
 
         headers[Headers.MessageId] = messageId;
         headers[Headers.ContractVersion] = _ValidateContractVersion(contractVersion);
@@ -239,7 +300,24 @@ internal sealed class MessagePublishRequestFactory(
 
         if (!string.IsNullOrWhiteSpace(options?.CallbackName))
         {
+            if (request is not null)
+            {
+                // A responder would publish the response as a callback and also reply, answering the call twice.
+                throw new InvalidOperationException(
+                    "A request cannot name a callback. Its response returns to the caller as the reply."
+                );
+            }
+
             headers[Headers.CallbackName] = options.CallbackName;
+        }
+
+        if (request is not null)
+        {
+            headers[Headers.RequestId] = request.RequestId;
+            headers[Headers.ReplyTo] = request.ReplyTo;
+            headers[Headers.RequestDeadline] = request
+                .Deadline.ToUniversalTime()
+                .ToString("O", CultureInfo.InvariantCulture);
         }
 
         if (delayTime == null)

@@ -5,6 +5,7 @@ using Headless.Coordination;
 using Headless.DistributedLocks;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Registration;
+using Headless.Messaging.RequestReply;
 using Headless.Messaging.Runtime;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -102,7 +103,14 @@ internal sealed class Bootstrapper(
             // Publish before any processor start can block, so shutdown always reaches every
             // processor. Resolution stays outside the lock: processor factories are third-party code
             // that can block or throw, and every other _bootstrapLock holder would wait behind them.
-            var resolvedProcessors = serviceProvider.GetServices<IProcessingServer>().ToArray();
+            IProcessingServer[] resolvedProcessors = [.. serviceProvider.GetServices<IProcessingServer>()];
+
+            // The reply listener starts first, so a consumer that sends a request while handling its first message
+            // finds a reply channel already open.
+            if (serviceProvider.GetService<ReplyListenerHost>() is { } replyListener)
+            {
+                resolvedProcessors = [replyListener, .. resolvedProcessors];
+            }
 
             lock (_bootstrapLock)
             {
