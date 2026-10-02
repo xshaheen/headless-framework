@@ -76,7 +76,7 @@ internal sealed class SubscribeExecutor(
 
     // Consume retries follow each consumer's failure policy, not RetryPolicyOptions.RetryStrategy: one pipeline with no
     // inline delay serves every consumer, and each execution supplies its consumer's classifier.
-    private readonly MessagingRetryPipeline _retryPipeline = new(timeProvider, logger);
+    private readonly MessagingConsumeRetryPipeline _retryPipeline = new(timeProvider);
 
     public Task<OperateResult> ExecuteAsync(
         MediumMessage message,
@@ -172,13 +172,12 @@ internal sealed class SubscribeExecutor(
         return await _retryPipeline
             .ExecuteAsync(
                 (_, ct) => _ExecuteWithoutRetryAsync(message, descriptor, budget, dispatchServices, executionState, ct),
-                (_, exception, _, _, ct) =>
+                (_, exception, _, ct) =>
                     _HandleRetryAsync(message, exception, dispatchServices, budget, executionState, ct),
                 (_, exception, ct) =>
                     _HandleNonRetryableAsync(message, exception, dispatchServices, budget, executionState, ct),
-                message.StorageId,
-                cancellationToken,
-                exception => _IsRetryable(exception, budget.Policy, message.StorageId)
+                exception => _IsRetryable(exception, budget.Policy, message.StorageId),
+                cancellationToken
             )
             .ConfigureAwait(false);
     }
