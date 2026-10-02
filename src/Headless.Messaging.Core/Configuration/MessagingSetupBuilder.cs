@@ -171,7 +171,7 @@ public sealed class MessagingSetupBuilder : IMessagingBuilder
     public MessagingSetupBuilder DefaultFailurePolicy<TPolicy>()
         where TPolicy : FailurePolicy, new()
     {
-        Options.DefaultFailurePolicy = new TPolicy().Build();
+        Options.DefaultFailurePolicy = FailurePolicyDefinition.Create<TPolicy>();
         return this;
     }
 
@@ -186,11 +186,7 @@ public sealed class MessagingSetupBuilder : IMessagingBuilder
     /// <exception cref="ArgumentException">The policy's retry counts or delays are out of range.</exception>
     public MessagingSetupBuilder DefaultFailurePolicy([InstantHandle] Action<FailurePolicyBuilder> configure)
     {
-        Argument.IsNotNull(configure);
-
-        var builder = new FailurePolicyBuilder();
-        configure(builder);
-        Options.DefaultFailurePolicy = builder.Build();
+        Options.DefaultFailurePolicy = FailurePolicyDefinition.Create(configure);
         return this;
     }
 

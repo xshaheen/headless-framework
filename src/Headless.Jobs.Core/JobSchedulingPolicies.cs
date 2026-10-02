@@ -92,7 +92,7 @@ internal sealed class JobSchedulingPolicies
         }
         else
         {
-            (retries, var flattenedIntervals) = Flatten(_FailurePolicy(descriptor.FunctionName));
+            (retries, var flattenedIntervals) = _FlattenedFailurePolicy(descriptor.FunctionName);
             retryIntervals = call?.RetryIntervals?.ToArray() ?? flattenedIntervals;
         }
 
@@ -178,8 +178,8 @@ internal sealed class JobSchedulingPolicies
 
     // A hand-built scheduler without a registry takes the policy of an undeclared job on a host without a default:
     // no retries.
-    private FailurePolicyDefinition _FailurePolicy(string functionName) =>
-        _registry?.GetFailurePolicy(functionName) ?? FailurePolicyDefinition.None;
+    private (int Retries, int[]? RetryIntervals) _FlattenedFailurePolicy(string functionName) =>
+        _registry?.GetFlattenedFailurePolicy(functionName) ?? Flatten(FailurePolicyDefinition.None);
 
     private static void _ValidateOptions(JobOptions options)
     {

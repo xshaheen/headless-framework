@@ -182,11 +182,12 @@ public sealed class JobsCatalogBuilder
             _ApplyConfiguration(configuration, functions, descriptors, policyOverrides, errors);
         }
 
+        var hostDefaultFailurePolicy = defaultFailurePolicy ?? FailurePolicyDefinition.None;
         var failurePolicies = _ResolveFailurePolicies(
             functions,
             tunedPolicies,
             policyOverrides,
-            defaultFailurePolicy ?? FailurePolicyDefinition.None,
+            hostDefaultFailurePolicy,
             errors
         );
 
@@ -214,7 +215,7 @@ public sealed class JobsCatalogBuilder
             RunFilter = JobsRunFilter.Create(runOnly, frozenFunctions.Keys),
             OptionsByFunction = options.ToFrozenDictionary(StringComparer.Ordinal),
             FailurePolicies = failurePolicies.ToFrozenDictionary(StringComparer.Ordinal),
-            DefaultFailurePolicy = defaultFailurePolicy ?? FailurePolicyDefinition.None,
+            DefaultFailurePolicy = hostDefaultFailurePolicy,
         };
     }
 
@@ -264,11 +265,10 @@ public sealed class JobsCatalogBuilder
             return null;
         }
 
-        var source = _functions.First(x => string.Equals(x.Name, identity, StringComparison.Ordinal)).Source;
         var policy = factory();
         if (policy is null)
         {
-            errors.Add($"The failure policy factory of job '{identity}' in '{source}' returned null.");
+            errors.Add($"The failure policy factory of job '{identity}' in '{_SourceOf(identity)}' returned null.");
             return null;
         }
 
@@ -280,11 +280,15 @@ public sealed class JobsCatalogBuilder
         {
             var type = policy.GetType();
             errors.Add(
-                $"Failure policy {type.FullName ?? type.Name} of job '{identity}' in '{source}' is invalid: {exception.Message}"
+                $"Failure policy {type.FullName ?? type.Name} of job '{identity}' in '{_SourceOf(identity)}' is invalid: {exception.Message}"
             );
             return null;
         }
     }
+
+    // Looked up only to word an error, so the scan stays off the per-job path that succeeds.
+    private string _SourceOf(string identity) =>
+        _functions.First(x => string.Equals(x.Name, identity, StringComparison.Ordinal)).Source;
 
     private static void _ApplyConfiguration(
         IConfiguration configuration,

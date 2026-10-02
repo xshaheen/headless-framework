@@ -33,6 +33,25 @@ internal static class FailurePolicyType
             );
     }
 
+    /// <summary>
+    /// Reports <paramref name="descriptor"/> at <paramref name="attributeLocation"/>, with the policy's display name and
+    /// <paramref name="className"/> as message arguments, when <paramref name="policy"/> fails <see cref="IsValid"/>.
+    /// </summary>
+    public static void Validate(
+        Compilation compilation,
+        ITypeSymbol policy,
+        string className,
+        Location attributeLocation,
+        DiagnosticDescriptor descriptor,
+        ICollection<DiagnosticInfo> diagnostics
+    )
+    {
+        if (!IsValid(compilation, policy))
+        {
+            diagnostics.Add(DiagnosticInfo.Create(descriptor, attributeLocation, policy.ToDisplayString(), className));
+        }
+    }
+
     private static bool _DerivesFrom(INamedTypeSymbol type, INamedTypeSymbol baseType)
     {
         for (var current = type.BaseType; current is not null; current = current.BaseType)

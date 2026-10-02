@@ -394,6 +394,47 @@ public sealed class FailurePolicyDefinitionTests : TestBase
     }
 
     [Fact]
+    public void should_create_the_definition_a_policy_type_describes()
+    {
+        // when
+        var definition = FailurePolicyDefinition.Create<OrdersPolicy>();
+
+        // then
+        definition.ImmediateRetries.Should().Be(1);
+        definition.DelayedRetries.Should().Be(3);
+        definition.DelayedInitialDelay.Should().Be(_Initial);
+        definition.DelayedMaxDelay.Should().Be(_Max);
+        definition.FailOnExceptionTypes.Should().Equal(typeof(InvalidOperationException));
+    }
+
+    [Fact]
+    public void should_create_the_definition_an_inline_configuration_describes()
+    {
+        // when
+        var definition = FailurePolicyDefinition.Create(p =>
+            p.Immediate(2).Delayed(4, _Initial, _Max).FailWhen(static e => e is TimeoutException)
+        );
+
+        // then
+        definition.ImmediateRetries.Should().Be(2);
+        definition.DelayedRetries.Should().Be(4);
+        definition.DelayedInitialDelay.Should().Be(_Initial);
+        definition.DelayedMaxDelay.Should().Be(_Max);
+        definition.FailWhenRuleCount.Should().Be(1);
+        definition.ShouldFail(new TimeoutException()).Should().BeTrue();
+    }
+
+    [Fact]
+    public void should_reject_a_null_configuration_when_creating_inline()
+    {
+        // when
+        var act = () => FailurePolicyDefinition.Create(null!);
+
+        // then
+        act.Should().Throw<ArgumentNullException>().WithParameterName("configure");
+    }
+
+    [Fact]
     public void should_hold_no_mutable_state()
     {
         // given
@@ -422,5 +463,11 @@ public sealed class FailurePolicyDefinitionTests : TestBase
     private sealed class FixedRandom(double sample) : Random
     {
         public override double NextDouble() => sample;
+    }
+
+    private sealed class OrdersPolicy : FailurePolicy
+    {
+        protected override void Configure(FailurePolicyBuilder policy) =>
+            policy.Immediate(1).Delayed(3, _Initial, _Max).FailOn<InvalidOperationException>();
     }
 }

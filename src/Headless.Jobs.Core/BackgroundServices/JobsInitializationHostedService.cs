@@ -8,7 +8,6 @@ using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Internal;
 using Headless.Jobs.Models;
-using Headless.Reliability;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -243,7 +242,7 @@ internal sealed class JobsInitializationHostedService(
                         .GetRequiredService<CronScheduleCache>()
                         .ComputeEvaluationFingerprint(x.Value.TimeZoneId),
                     functionRegistry.Descriptors[x.Key].ContractVersion,
-                    functionRegistry.GetFailurePolicy(x.Key)
+                    functionRegistry.GetFlattenedFailurePolicy(x.Key)
                 )
             )
             .ToArray();
@@ -309,7 +308,7 @@ internal sealed class JobsInitializationHostedService(
         SchedulerOptionsBuilder schedulerOptions,
         string evaluationFingerprint,
         string contractVersion,
-        FailurePolicyDefinition failurePolicy
+        (int Retries, int[]? RetryIntervals) flattenedFailurePolicy
     )
     {
         var onMissedRun = registration.OnMissedRun ?? schedulerOptions.DefaultMissedRunPolicy;
@@ -346,8 +345,6 @@ internal sealed class JobsInitializationHostedService(
             );
         }
 
-        var (retries, retryIntervals) = JobSchedulingPolicies.Flatten(failurePolicy);
-
         return new CronSeedDefinition(
             function,
             registration.CronExpression,
@@ -357,8 +354,8 @@ internal sealed class JobsInitializationHostedService(
             evaluationFingerprint,
             contractVersion,
             registration.TimeZoneId,
-            retries,
-            retryIntervals
+            flattenedFailurePolicy.Retries,
+            flattenedFailurePolicy.RetryIntervals
         );
     }
 }

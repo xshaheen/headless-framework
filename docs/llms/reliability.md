@@ -143,7 +143,7 @@ var wait = definition.GetDelayedRetryDelay(delayedAttempt: 3); // about 120 s, Â
 | --- | --- |
 | `FailurePolicy` | Abstract base. Override `protected void Configure(FailurePolicyBuilder)`; call `Build()` to get the definition. |
 | `FailurePolicyBuilder` | `Immediate(retries)`, `Delayed(retries, initialDelay, maxDelay)`, `FailOn<TException>()`, `FailWhen(predicate)`, `Build()`. A second `Immediate` or `Delayed` call replaces the tier. |
-| `FailurePolicyDefinition` | Sealed and immutable. `ImmediateRetries`, `DelayedRetries`, `DelayedInitialDelay`, `DelayedMaxDelay`, `TotalAttempts`, `FailOnExceptionTypes`, `FailWhenRuleCount`, `GetDelayedRetryBaseDelay`, `GetDelayedRetryDelay`, `ShouldFail`, `With`, and `None`. |
+| `FailurePolicyDefinition` | Sealed and immutable. `ImmediateRetries`, `DelayedRetries`, `DelayedInitialDelay`, `DelayedMaxDelay`, `TotalAttempts`, `FailOnExceptionTypes`, `FailWhenRuleCount`, `GetDelayedRetryBaseDelay`, `GetDelayedRetryDelay`, `ShouldFail`, `With`, and `None`. `Create<TPolicy>()` builds a policy type's definition, and `Create(configure)` builds one described inline on a fresh builder. |
 | `FailurePolicyOverrides` | Nullable numeric values that `With` applies over a resolved definition. `TryParse` reads them from configuration key/value settings. |
 
 ### Design constraints

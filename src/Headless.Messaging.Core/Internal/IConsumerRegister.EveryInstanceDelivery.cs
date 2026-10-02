@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Exceptions;
 using Headless.Messaging.Messages;
+using Headless.Messaging.Retry;
 using Headless.Messaging.Runtime;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
@@ -327,7 +328,7 @@ internal sealed partial class ConsumerRegister
 #pragma warning disable ERP022 // False positive: the failure is logged and counted; every-instance delivery commits a failed message by design.
         catch (Exception ex)
         {
-            var failure = ex is SubscriberExecutionFailedException { InnerException: { } inner } ? inner : ex;
+            var failure = RetryExceptionClassifier.Unwrap(ex);
             _logger.EveryInstanceConsumerFailed(
                 failure,
                 LogSanitizer.Sanitize(consumerIdentity),

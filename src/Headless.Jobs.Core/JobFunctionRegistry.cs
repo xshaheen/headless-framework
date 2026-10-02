@@ -233,11 +233,40 @@ internal sealed record JobFunctionRegistry(
     /// <see cref="DefaultFailurePolicy"/>, with <c>Headless:Jobs:Jobs:{identity}:FailurePolicy</c> configuration
     /// applied last.
     /// </summary>
-    public FrozenDictionary<string, FailurePolicyDefinition> FailurePolicies { get; init; } =
-        FrozenDictionary<string, FailurePolicyDefinition>.Empty;
+    public FrozenDictionary<string, FailurePolicyDefinition> FailurePolicies
+    {
+        get;
+        init
+        {
+            field = value;
+            // Policies are frozen per host, so each is flattened once here instead of on every scheduling call.
+            _flattenedFailurePolicies = value.ToFrozenDictionary(
+                pair => pair.Key,
+                pair => JobSchedulingPolicies.Flatten(pair.Value),
+                value.Comparer
+            );
+        }
+    } = FrozenDictionary<string, FailurePolicyDefinition>.Empty;
 
     /// <summary>The host's default failure policy; without one a failed run does not retry.</summary>
-    public FailurePolicyDefinition DefaultFailurePolicy { get; init; } = FailurePolicyDefinition.None;
+    public FailurePolicyDefinition DefaultFailurePolicy
+    {
+        get;
+        init
+        {
+            field = value;
+            _flattenedDefaultFailurePolicy = JobSchedulingPolicies.Flatten(value);
+        }
+    } = FailurePolicyDefinition.None;
+
+    private FrozenDictionary<string, (int Retries, int[]? RetryIntervals)> _flattenedFailurePolicies = FrozenDictionary<
+        string,
+        (int Retries, int[]? RetryIntervals)
+    >.Empty;
+
+    private (int Retries, int[]? RetryIntervals) _flattenedDefaultFailurePolicy = JobSchedulingPolicies.Flatten(
+        FailurePolicyDefinition.None
+    );
 
     /// <summary>
     /// Returns the failure policy that classifies and paces the retries of <paramref name="functionName"/>. A function
@@ -245,6 +274,20 @@ internal sealed record JobFunctionRegistry(
     /// </summary>
     public FailurePolicyDefinition GetFailurePolicy(string functionName) =>
         FailurePolicies.GetValueOrDefault(functionName) ?? DefaultFailurePolicy;
+
+    /// <summary>
+    /// Returns <see cref="GetFailurePolicy"/> of <paramref name="functionName"/> flattened by
+    /// <see cref="JobSchedulingPolicies.Flatten"/>. The intervals are a fresh array on every call, because callers
+    /// store them on a job row they may still change.
+    /// </summary>
+    public (int Retries, int[]? RetryIntervals) GetFlattenedFailurePolicy(string functionName)
+    {
+        var (retries, retryIntervals) = _flattenedFailurePolicies.TryGetValue(functionName, out var flattened)
+            ? flattened
+            : _flattenedDefaultFailurePolicy;
+
+        return (retries, retryIntervals?.ToArray());
+    }
 }
 
 /// <summary>

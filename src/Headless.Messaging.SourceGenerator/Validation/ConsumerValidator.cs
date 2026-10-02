@@ -81,16 +81,13 @@ internal static class ConsumerValidator
         ICollection<DiagnosticInfo> diagnostics
     )
     {
-        if (!FailurePolicyType.IsValid(compilation, policy))
-        {
-            diagnostics.Add(
-                DiagnosticInfo.Create(
-                    DiagnosticDescriptors.InvalidFailurePolicy,
-                    attributeLocation,
-                    policy.ToDisplayString(),
-                    className
-                )
-            );
-        }
+        FailurePolicyType.Validate(
+            compilation,
+            policy,
+            className,
+            attributeLocation,
+            DiagnosticDescriptors.InvalidFailurePolicy,
+            diagnostics
+        );
     }
 }

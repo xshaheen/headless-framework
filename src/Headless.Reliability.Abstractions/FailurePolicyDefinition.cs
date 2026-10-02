@@ -33,6 +33,31 @@ public sealed class FailurePolicyDefinition
     /// <summary>A policy with no retries and no fail rules: the first failure is terminal.</summary>
     public static FailurePolicyDefinition None { get; } = new FailurePolicyBuilder().Build();
 
+    /// <summary>Creates a <typeparamref name="TPolicy"/> and builds the definition it describes.</summary>
+    /// <typeparam name="TPolicy">The policy type; it is built once, during this call.</typeparam>
+    /// <returns>The definition <typeparamref name="TPolicy"/> describes.</returns>
+    /// <exception cref="ArgumentException">The policy's retry counts or delays are out of range.</exception>
+    public static FailurePolicyDefinition Create<TPolicy>()
+        where TPolicy : FailurePolicy, new()
+    {
+        return new TPolicy().Build();
+    }
+
+    /// <summary>Builds the definition that <paramref name="configure"/> describes on a fresh builder.</summary>
+    /// <param name="configure">Describes the policy; it runs once, synchronously, during this call.</param>
+    /// <returns>The definition <paramref name="configure"/> describes.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">The policy's retry counts or delays are out of range.</exception>
+    public static FailurePolicyDefinition Create([InstantHandle] Action<FailurePolicyBuilder> configure)
+    {
+        Argument.IsNotNull(configure);
+
+        var builder = new FailurePolicyBuilder();
+        configure(builder);
+
+        return builder.Build();
+    }
+
     private readonly ImmutableArray<Type> _failOnTypes;
     private readonly ImmutableArray<Func<Exception, bool>> _failWhenPredicates;
 

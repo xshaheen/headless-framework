@@ -112,7 +112,7 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     public JobsOptionsBuilder<TTimeJob, TCronJob> DefaultFailurePolicy<TPolicy>()
         where TPolicy : FailurePolicy, new()
     {
-        _defaultFailurePolicy = new TPolicy().Build();
+        _defaultFailurePolicy = FailurePolicyDefinition.Create<TPolicy>();
         return this;
     }
 
@@ -129,11 +129,7 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
         [InstantHandle] Action<FailurePolicyBuilder> configure
     )
     {
-        Argument.IsNotNull(configure);
-
-        var builder = new FailurePolicyBuilder();
-        configure(builder);
-        _defaultFailurePolicy = builder.Build();
+        _defaultFailurePolicy = FailurePolicyDefinition.Create(configure);
         return this;
     }
 

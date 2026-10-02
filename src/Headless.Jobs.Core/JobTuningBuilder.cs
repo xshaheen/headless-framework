@@ -74,7 +74,7 @@ public sealed class JobTuningBuilder
     public JobTuningBuilder FailurePolicy<TPolicy>()
         where TPolicy : Reliability.FailurePolicy, new()
     {
-        _failurePolicy = new TPolicy().Build();
+        _failurePolicy = FailurePolicyDefinition.Create<TPolicy>();
         return this;
     }
 
@@ -87,11 +87,7 @@ public sealed class JobTuningBuilder
     /// <exception cref="ArgumentException">The policy's retry counts or delays are out of range.</exception>
     public JobTuningBuilder FailurePolicy([InstantHandle] Action<FailurePolicyBuilder> configure)
     {
-        Argument.IsNotNull(configure);
-
-        var builder = new FailurePolicyBuilder();
-        configure(builder);
-        _failurePolicy = builder.Build();
+        _failurePolicy = FailurePolicyDefinition.Create(configure);
         return this;
     }
 

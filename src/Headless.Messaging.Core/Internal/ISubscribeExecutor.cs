@@ -201,9 +201,7 @@ internal sealed class SubscribeExecutor(
             return false;
         }
 
-        var effective = exception is SubscriberExecutionFailedException { InnerException: { } inner }
-            ? inner
-            : exception;
+        var effective = RetryExceptionClassifier.Unwrap(exception);
         if (!policy.ShouldFail(effective, out var ruleException))
         {
             return true;
@@ -671,7 +669,7 @@ internal sealed class SubscribeExecutor(
         // wrongly accumulate toward the breaker threshold.
         if (circuitBreakerStateManager is not null && affected)
         {
-            var reportedException = ex is SubscriberExecutionFailedException { InnerException: { } inner } ? inner : ex;
+            var reportedException = RetryExceptionClassifier.Unwrap(ex);
 
             var circuitKey = CircuitBreakerKeys.For(message);
             await circuitBreakerStateManager
