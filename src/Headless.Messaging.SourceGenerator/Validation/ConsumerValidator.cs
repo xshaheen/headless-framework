@@ -69,6 +69,45 @@ internal static class ConsumerValidator
     }
 
     /// <summary>
+    /// Checks that the generated factory <c>static () =&gt; new T()</c> compiles and yields a failure policy: the type
+    /// derives from <c>FailurePolicy</c>, is concrete and closed, is visible to generated code, and has a public
+    /// parameterless constructor.
+    /// </summary>
+    public static void ValidateFailurePolicy(
+        Compilation compilation,
+        ITypeSymbol policy,
+        string className,
+        Location attributeLocation,
+        ICollection<DiagnosticInfo> diagnostics
+    )
+    {
+        var policyBase = compilation.GetTypeByMetadataName(SourceGeneratorConstants.FailurePolicyMetadataName);
+        var isValid =
+            policyBase is not null
+            && policy
+                is INamedTypeSymbol { TypeKind: TypeKind.Class, IsAbstract: false, IsUnboundGenericType: false } named
+            && !_ContainsTypeParameter(named)
+            && _DerivesFrom(named, policyBase)
+            && IsAccessible(named)
+            && compilation.IsSymbolAccessibleWithin(named, compilation.Assembly)
+            && named.InstanceConstructors.Any(constructor =>
+                constructor.Parameters.IsEmpty && constructor.DeclaredAccessibility == Accessibility.Public
+            );
+
+        if (!isValid)
+        {
+            diagnostics.Add(
+                DiagnosticInfo.Create(
+                    DiagnosticDescriptors.InvalidFailurePolicy,
+                    attributeLocation,
+                    policy.ToDisplayString(),
+                    className
+                )
+            );
+        }
+    }
+
+    /// <summary>
     /// Whether code emitted into the same assembly can name <paramref name="type"/>: every named type in it, its
     /// containing types, and its type arguments are public or internal, and none is file-local.
     /// </summary>
@@ -100,5 +139,32 @@ internal static class ConsumerValidator
             default:
                 return false;
         }
+    }
+
+    private static bool _DerivesFrom(INamedTypeSymbol type, INamedTypeSymbol baseType)
+    {
+        for (var current = type.BaseType; current is not null; current = current.BaseType)
+        {
+            if (SymbolEqualityComparer.Default.Equals(current, baseType))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>Whether the type, or a type containing it, still has an open type parameter the factory cannot bind.</summary>
+    private static bool _ContainsTypeParameter(INamedTypeSymbol type)
+    {
+        for (INamedTypeSymbol? current = type; current is not null; current = current.ContainingType)
+        {
+            if (current.TypeArguments.Any(argument => argument.TypeKind == TypeKind.TypeParameter))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

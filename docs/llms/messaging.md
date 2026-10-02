@@ -2043,7 +2043,7 @@ Roslyn incremental source generator that registers `[BusConsumer]` and `[QueueCo
 - **One entry per message**: a consumer class registers one entry for every `IConsume<T>` it implements, all with the attribute's identity, lane, `EveryInstance` flag, and `Policy` type.
 - **Typed dispatch**: each consumer class gets one generated factory and one generated dispatcher. The factory resolves the class from the delivery's scope with `GetService<T>()` and falls back to `ActivatorUtilities.CreateInstance<T>` when the container has no registration for it. The dispatcher builds the class through that factory, runs `IConsumerLifecycle` hooks when the class implements them, calls the `ConsumeAsync` that matches the context's message type (explicit interface implementations included), and disposes the instance only when the factory constructed it. An every-instance class that implements `IOnSubscriptionEstablished` also gets a generated hook call that builds the class through the same factory in its own scope. Dispatch and the hook use no reflection and no compiled expressions.
 - **Incremental**: declarations are reduced to value models when discovered, so an edit that does not change a consumer declaration reuses every generator step and re-emits nothing.
-- **Build-time checks**: HM001 to HM009 (HM005 is unassigned), listed under [Diagnostics](#messaging-source-generator-diagnostics). `EveryInstance` exists only on `[BusConsumer]`, so writing it on `[QueueConsumer]` is a compiler error rather than a generator rule.
+- **Build-time checks**: HM001 to HM010, listed under [Diagnostics](#messaging-source-generator-diagnostics). `EveryInstance` exists only on `[BusConsumer]`, so writing it on `[QueueConsumer]` is a compiler error rather than a generator rule.
 
 ### Startup checks and host controls
 
@@ -2063,10 +2063,12 @@ Roslyn incremental source generator that registers `[BusConsumer]` and `[QueueCo
 | <a id="hm002"></a>HM002 | Two consumer classes in one compilation use the same identity on the same lane. Nothing is generated. | Give each consumer class its own identity; one class covers several messages by implementing several `IConsume<T>`. |
 | <a id="hm003"></a>HM003 | The class carries a consumer attribute but implements no `IConsume<T>`. | Implement `IConsume<T>` for every message the consumer handles. |
 | <a id="hm004"></a>HM004 | A second `[QueueConsumer]` class in one compilation consumes a message that already has one. Nothing is generated. | Keep one Queue consumer per message; use `[BusConsumer]` for fan-out. |
+| <a id="hm005"></a>HM005 | The `FailurePolicy` type does not derive from `Headless.Reliability.FailurePolicy`, is abstract or an open generic, is private, protected, or `file`-local, or has no public parameterless constructor, so the generated factory cannot construct it. Nothing is generated. | Point `FailurePolicy` at a concrete, non-generic `public` or `internal` class derived from `FailurePolicy` with a public parameterless constructor. |
 | <a id="hm006"></a>HM006 | A consumer that is not an every-instance `[BusConsumer]` implements `IOnSubscriptionEstablished`, whose hook never runs for it. | Set `EveryInstance = true` on a `[BusConsumer]`, or remove the interface. |
 | <a id="hm007"></a>HM007 | The consumer class, a type containing it, or a consumed message type is private, protected, or `file`-local, so generated code cannot name it. | Make the type and every type containing it `public` or `internal`. |
 | <a id="hm008"></a>HM008 | The consumer class is abstract or generic, or nested in a generic type, so a delivery cannot construct it. | Put the attribute on a concrete, non-generic class. |
 | <a id="hm009"></a>HM009 | One class carries both `[BusConsumer]` and `[QueueConsumer]`. Nothing is generated. | Keep one lane attribute; split the class when it must consume on both lanes. |
+| <a id="hm010"></a>HM010 | A `[BusConsumer]` with `EveryInstance = true` declares a `FailurePolicy`. Every-instance deliveries are at most once and never stored, so no policy can run. Nothing is generated. | Remove `FailurePolicy`, or make the consumer competing by removing `EveryInstance = true`. |
 
 ### Install
 

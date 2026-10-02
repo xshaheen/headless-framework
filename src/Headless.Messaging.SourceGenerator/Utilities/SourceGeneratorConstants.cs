@@ -10,6 +10,7 @@ internal static class SourceGeneratorConstants
     public const string ConsumeInterfaceMetadataName = "Headless.Messaging.IConsume`1";
     public const string SubscriptionHookMetadataName = "Headless.Messaging.IOnSubscriptionEstablished";
     public const string ConsumerLifecycleMetadataName = "Headless.Messaging.IConsumerLifecycle";
+    public const string FailurePolicyMetadataName = "Headless.Reliability.FailurePolicy";
 
     public const string GeneratedFileName = "MessagingModule.g.cs";
 }
