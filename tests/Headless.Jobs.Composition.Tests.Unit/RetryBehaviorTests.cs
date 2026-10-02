@@ -246,7 +246,7 @@ public sealed class RetryBehaviorTests : TestBase
     }
 
     [Fact]
-    public async Task execute_task_async_notifies_exhaustion_when_foreign_cancellation_fails_the_run()
+    public async Task execute_task_async_retries_foreign_cancellation_then_notifies_exhaustion()
     {
         var exhausted = new List<JobExhaustedContext>();
         var options = _ExhaustionRecordingOptions(exhausted);
@@ -261,9 +261,35 @@ public sealed class RetryBehaviorTests : TestBase
 
         await handler.ExecuteTaskAsync(context, isDue: true, cancellationToken: AbortToken);
 
-        attempts.Should().ContainSingle("cancellation is never retried");
+        attempts.Select(x => x.RetryCount).Should().Equal(0, 1, 2);
+        context.RetryCount.Should().Be(2);
         context.Status.Should().Be(JobStatus.Failed);
-        exhausted.Should().ContainSingle();
+        exhausted.Should().ContainSingle().Which.Exception.Should().BeOfType<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task execute_task_async_fails_foreign_cancellation_at_once_when_a_fail_rule_matches_it()
+    {
+        var exhausted = new List<JobExhaustedContext>();
+        var options = _ExhaustionRecordingOptions(exhausted);
+        var registry = _RegistryWith(
+            "TestFunction",
+            new FailurePolicyBuilder().FailOn<OperationCanceledException>().Build()
+        );
+        var (handler, context, _, attempts) = _SetupRetryTestFixture(
+            [0],
+            retries: 5,
+            retryOptions: options,
+            exceptionFactory: static () => new TaskCanceledException("handler timeout"),
+            functionRegistry: registry
+        );
+
+        await handler.ExecuteTaskAsync(context, isDue: true, cancellationToken: AbortToken);
+
+        attempts.Should().ContainSingle("a fail rule matching a base type matches its subtypes");
+        context.RetryCount.Should().Be(0);
+        context.Status.Should().Be(JobStatus.Failed);
+        exhausted.Should().ContainSingle().Which.Exception.Should().BeOfType<TaskCanceledException>();
     }
 
     [Fact]
@@ -706,6 +732,37 @@ public sealed class RetryBehaviorTests : TestBase
         await manager
             .DidNotReceive()
             .UpdateTickerAsync(Arg.Is<JobExecutionState>(x => x.Status == JobStatus.Cancelled), CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task execute_task_async_does_not_retry_host_shutdown_when_the_row_has_budget_left()
+    {
+        var (handler, context, manager, _) = _SetupRetryTestFixture([0], retries: 3);
+        context.Type = JobType.TimeJob;
+        var invocations = 0;
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        context.CachedDelegate = async (_, _, token) =>
+        {
+            Interlocked.Increment(ref invocations);
+            started.TrySetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, token);
+        };
+        using var hostStopping = new CancellationTokenSource();
+
+        var execution = handler.ExecuteTaskAsync(context, isDue: false, hostStopping.Token);
+        await started.Task.WaitAsync(AbortToken);
+        await hostStopping.CancelAsync();
+        await execution.WaitAsync(AbortToken);
+
+        invocations.Should().Be(1);
+        context.RetryCount.Should().Be(0);
+        context.Status.Should().Be(JobStatus.InProgress);
+        await manager
+            .DidNotReceive()
+            .UpdateTickerAsync(
+                Arg.Is<JobExecutionState>(x => x.Status == JobStatus.Failed),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]

@@ -21,6 +21,7 @@ packages: Reliability.Abstractions
 - Use `ShouldFail(exception, out ruleException)` in a runtime and log a non-null `ruleException`; the short overload hides a broken rule.
 - Persist `GetDelayedRetryBaseDelay` where a schedule is stored, and use `GetDelayedRetryDelay` to wait. Jitter cannot be stored, and the base delay is deterministic.
 - Do not build a parallel retry loop around a definition. Messaging and Jobs execute it.
+- Treat a handler's own cancellation as a failure. Messaging and Jobs retry an `OperationCanceledException` the handler throws while the runtime's token is live, such as an `HttpClient` timeout or a `CancelAfter`, within the policy's budget. Declare `FailOn<OperationCanceledException>()` to end it at once; the rule also matches `TaskCanceledException`. A cancellation of the runtime's own token (host shutdown, a durable job cancel, lease loss) never reaches the policy and is never retried.
 
 ## Core Concepts
 
@@ -83,6 +84,7 @@ For a job, a scheduling call's `WithRetries` and `WithRetryIntervals` then overr
 | Immediate retries | Back-to-back inside the first dispatch | Back-to-back inside the run |
 | Delayed retries | Persisted with `NextRetryAt` set from the database clock plus the jittered delay; the retry processor picks the row up | In process, under the job's lease, waiting the stored interval |
 | Exceptions that end a failure at once | Fail rules, plus `ArgumentException` (and subtypes), `NotSupportedException`, and `SubscriberNotFoundException` | Fail rules; `TerminateExecutionException` keeps its own meaning and never reaches the policy |
+| Cancellation | Consume-token cancellation (host shutdown) writes nothing; a cancellation the handler raises is classified and retried like any other failure | Cancellation of the run's token (durable cancel, host shutdown, lease loss) keeps its own handling; a cancellation the handler raises is classified and retried like any other failure |
 | Terminal state | `Failed`, with no `NextRetryAt` | `Failed` |
 | Terminal callback | `MessagingOptions.RetryPolicy.OnExhausted` | `JobsRetryOptions.OnExhausted` |
 | Operator recovery | Re-execute from the Messaging dashboard | `IJobScheduler.RequeueAsync` / `RequeueOccurrenceAsync`, or the requeue button on the Jobs dashboard |

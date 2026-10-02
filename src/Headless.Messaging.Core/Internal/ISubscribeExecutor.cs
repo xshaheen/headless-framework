@@ -183,10 +183,13 @@ internal sealed class SubscribeExecutor(
     }
 
     /// <summary>
-    /// Classifies a failed consume attempt. Cancellation is never classified: a host shutdown writes nothing, so the
-    /// fail rules must not turn it into a terminal failure. The built-in permanent set always fails. Otherwise the
-    /// consumer's fail rules see the handler's own exception, unwrapped from the executor's wrapper exactly once, and
-    /// anything they do not match is retried.
+    /// Classifies a failed consume attempt. The handler's exceptions arrive wrapped, except a cancellation raised
+    /// while the consume token is cancelled (host shutdown, dispatcher stop), which arrives raw. An unwrapped
+    /// <see cref="OperationCanceledException"/> is never classified, because a cancelled dispatch writes nothing and
+    /// the fail rules must not turn it into a terminal failure. A cancellation the handler raised on its own token
+    /// (an HttpClient timeout, a CancelAfter) is wrapped and classified like any other failure. The built-in permanent
+    /// set always fails. Otherwise the consumer's fail rules see the handler's own exception, unwrapped from the
+    /// executor's wrapper exactly once, and anything they do not match is retried.
     /// </summary>
     private bool _IsRetryable(Exception exception, FailurePolicyDefinition policy, Guid storageId)
     {
@@ -880,19 +883,12 @@ internal sealed class SubscribeExecutor(
             // event also reflects a successful callback publish; still fires on the no-callback path above.
             _TracingAfter(traceHandle, message.Origin.Name, descriptor.MethodName);
         }
-        catch (OperationCanceledException oce)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            // Re-throw TaskCanceledException from handler timeouts (HttpClient, etc.)
-            // so they propagate to _SetFailedState and are reported to the circuit breaker.
-            if (oce is TaskCanceledException && !oce.CancellationToken.IsCancellationRequested)
-            {
-                var e = new SubscriberExecutionFailedException(LogSanitizer.Sanitize(oce.Message), oce);
-                _TracingError(traceHandle, message.Origin.Name, descriptor.MethodName, e);
-                e.ReThrow();
-            }
-
-            // A genuine cancellation (caller/shutdown token) propagates; stop the span un-errored so it is
-            // exported rather than leaked into Activity.Current.
+            // Only the consume token decides that the dispatch was cancelled: an HttpClient timeout or a
+            // handler-owned CancelAfter carries its own already-cancelled token, yet it is a handler failure and
+            // falls to the wrapping catch below. A cancellation of ours propagates raw so nothing terminal is
+            // written; stop the span un-errored so it is exported rather than leaked into Activity.Current.
             traceHandle.Activity?.Dispose();
             throw;
         }
