@@ -3,13 +3,13 @@
 using Headless.Settings.Values;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Time.Testing;
+using Tests.Fakes;
 
 namespace Tests.Values;
 
 public sealed class SettingsSnapshotHostedServiceTests : TestBase
 {
-    private readonly FakeTimeProvider _timeProvider = new();
+    private readonly TimerCountingTimeProvider _timeProvider = new();
 
     [Fact]
     public async Task should_load_every_snapshot_on_start()
@@ -61,11 +61,10 @@ public sealed class SettingsSnapshotHostedServiceTests : TestBase
             NullLogger<SettingsSnapshotHostedService>.Instance
         );
         await sut.StartAsync(AbortToken);
-        await _QuietAsync(); // ExecuteAsync runs on a background thread; let it reach its first wait
+        await _timeProvider.WaitForTimersAsync(1, AbortToken); // ExecuteAsync runs on a background thread
 
-        // when - past the interval plus its maximum jitter
+        // when - short of the interval minus its maximum jitter, then past the interval plus it
         _timeProvider.Advance(TimeSpan.FromSeconds(50));
-        await _QuietAsync();
         var beforeInterval = entry.Backstops;
         _timeProvider.Advance(TimeSpan.FromSeconds(20));
         await entry.WaitForBackstopsAsync(1);
@@ -73,6 +72,7 @@ public sealed class SettingsSnapshotHostedServiceTests : TestBase
         // then
         beforeInterval.Should().Be(0);
         entry.Backstops.Should().Be(1);
+        entry.Reasons.Should().OnlyContain(reason => reason == SettingsSnapshotReloadReason.Backstop);
         await sut.StopAsync(AbortToken);
     }
 
@@ -88,17 +88,18 @@ public sealed class SettingsSnapshotHostedServiceTests : TestBase
             NullLogger<SettingsSnapshotHostedService>.Instance
         );
         await sut.StartAsync(AbortToken);
-        await _QuietAsync(); // ExecuteAsync runs on a background thread; let it reach its first wait
+        await _timeProvider.WaitForTimersAsync(1, AbortToken); // ExecuteAsync runs on a background thread
 
-        // when - five minutes in one-minute steps
-        for (var i = 0; i < 5; i++)
+        // when - five steps, each past the fast interval plus its jitter
+        for (var i = 1; i <= 5; i++)
         {
             _timeProvider.Advance(TimeSpan.FromSeconds(70));
-            await _QuietAsync();
+            await fast.WaitForBackstopsAsync(i);
+            await _timeProvider.WaitForTimersAsync(i + 1, AbortToken); // the loop waits again before the next step
         }
 
         // then
-        fast.Backstops.Should().BeGreaterThanOrEqualTo(4);
+        fast.Backstops.Should().Be(5);
         slow.Backstops.Should().Be(0);
         await sut.StopAsync(AbortToken);
     }
@@ -114,11 +115,12 @@ public sealed class SettingsSnapshotHostedServiceTests : TestBase
             NullLogger<SettingsSnapshotHostedService>.Instance
         );
         await sut.StartAsync(AbortToken);
-        await _QuietAsync(); // ExecuteAsync runs on a background thread; let it reach its first wait
+        await _timeProvider.WaitForTimersAsync(1, AbortToken); // ExecuteAsync runs on a background thread
 
         // when
         _timeProvider.Advance(TimeSpan.FromSeconds(70));
         await entry.WaitForBackstopsAsync(1);
+        await _timeProvider.WaitForTimersAsync(2, AbortToken);
         _timeProvider.Advance(TimeSpan.FromSeconds(70));
         await entry.WaitForBackstopsAsync(2);
 
@@ -138,7 +140,7 @@ public sealed class SettingsSnapshotHostedServiceTests : TestBase
             NullLogger<SettingsSnapshotHostedService>.Instance
         );
         await sut.StartAsync(AbortToken);
-        await _QuietAsync(); // ExecuteAsync runs on a background thread; let it reach its first wait
+        await _timeProvider.WaitForTimersAsync(1, AbortToken); // ExecuteAsync runs on a background thread
 
         // when
         var act = () => sut.StopAsync(AbortToken);
@@ -147,10 +149,9 @@ public sealed class SettingsSnapshotHostedServiceTests : TestBase
         await act.Should().NotThrowAsync();
     }
 
-    private static Task _QuietAsync() => Task.Delay(100, AbortToken);
-
     private sealed class FakeEntry(TimeSpan backstop) : ISettingsSnapshotEntry
     {
+        private readonly List<SettingsSnapshotReloadReason> _reasons = [];
         private int _backstops;
 
         public int Loads { get; private set; }
@@ -178,7 +179,12 @@ public sealed class SettingsSnapshotHostedServiceTests : TestBase
             CancellationToken cancellationToken
         )
         {
-            reason.Should().Be(SettingsSnapshotReloadReason.Backstop);
+            // Recorded rather than asserted here: the loop catches and logs whatever this throws.
+            lock (_reasons)
+            {
+                _reasons.Add(reason);
+            }
+
             var count = Interlocked.Increment(ref _backstops);
 
             // The real snapshot logs and swallows its failures; a fault here proves the loop does not depend on that.
@@ -187,14 +193,18 @@ public sealed class SettingsSnapshotHostedServiceTests : TestBase
                 : Task.CompletedTask;
         }
 
-        public async Task WaitForBackstopsAsync(int count)
+        public IReadOnlyList<SettingsSnapshotReloadReason> Reasons
         {
-            var deadline = DateTime.UtcNow.AddSeconds(5);
-
-            while (Backstops < count && DateTime.UtcNow < deadline)
+            get
             {
-                await Task.Delay(10, AbortToken);
+                lock (_reasons)
+                {
+                    return [.. _reasons];
+                }
             }
         }
+
+        public Task WaitForBackstopsAsync(int count) =>
+            TimerCountingTimeProvider.WaitUntilAsync(() => Backstops >= count, AbortToken);
     }
 }

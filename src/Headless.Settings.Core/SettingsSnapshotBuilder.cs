@@ -16,6 +16,12 @@ public sealed class SettingsSnapshotBuilder<T>
     /// <summary>The backstop re-read interval used when <see cref="Backstop"/> is not called: one minute.</summary>
     public static readonly TimeSpan DefaultBackstop = TimeSpan.FromMinutes(1);
 
+    /// <summary>
+    /// The longest backstop interval accepted: 30 days. A timer cannot wait much past 49 days, and a longer interval
+    /// plus its jitter would fault the backstop loop and stop the host.
+    /// </summary>
+    public static readonly TimeSpan MaxBackstop = TimeSpan.FromDays(30);
+
     private readonly List<string> _names = [];
     private Func<IReadOnlyDictionary<string, string?>, T>? _bind;
     private TimeSpan _backstop = DefaultBackstop;
@@ -61,10 +67,12 @@ public sealed class SettingsSnapshotBuilder<T>
     /// </summary>
     /// <param name="interval">The re-read interval.</param>
     /// <returns>This builder.</returns>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="interval"/> is not positive.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="interval"/> is not positive or exceeds <see cref="MaxBackstop"/>.
+    /// </exception>
     public SettingsSnapshotBuilder<T> Backstop(TimeSpan interval)
     {
-        _backstop = Argument.IsPositive(interval);
+        _backstop = Argument.IsLessThanOrEqualTo(Argument.IsPositive(interval), MaxBackstop);
 
         return this;
     }

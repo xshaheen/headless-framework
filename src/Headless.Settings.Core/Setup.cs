@@ -95,7 +95,7 @@ public static class SetupSettings
         {
             Argument.IsNotNull(configure);
 
-            if (services.Any(static descriptor => descriptor.ServiceType == typeof(ISettingsSnapshot<T>)))
+            if (services.IsAdded<ISettingsSnapshot<T>>())
             {
                 throw new InvalidOperationException(
                     $"A settings snapshot of {typeof(T).Name} is already registered. Register each type once."

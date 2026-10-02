@@ -6,7 +6,7 @@ using Headless.Settings.Models;
 using Headless.Settings.Values;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Time.Testing;
+using Tests.Fakes;
 
 namespace Tests.Values;
 
@@ -18,10 +18,11 @@ public sealed class SettingsSnapshotTests : TestBase
     private readonly Dictionary<string, string?> _stored = new(StringComparer.Ordinal);
     private readonly ISettingManager _settingManager = Substitute.For<ISettingManager>();
     private readonly ISettingDefinitionManager _definitionManager = Substitute.For<ISettingDefinitionManager>();
-    private readonly FakeTimeProvider _timeProvider = new();
+    private readonly TimerCountingTimeProvider _timeProvider = new();
     private readonly CapturingLogger<SettingsSnapshot<Policy>> _logger = new();
     private int _reads;
     private int _binds;
+    private Exception? _readFailure;
 
     public SettingsSnapshotTests()
     {
@@ -38,6 +39,11 @@ public sealed class SettingsSnapshotTests : TestBase
             )
             .Returns(call =>
             {
+                if (_readFailure is not null)
+                {
+                    return Task.FromException<IReadOnlyList<SettingValue>>(_readFailure);
+                }
+
                 Interlocked.Increment(ref _reads);
                 var names = call.Arg<HashSet<string>>();
 
@@ -299,15 +305,11 @@ public sealed class SettingsSnapshotTests : TestBase
         _stored[_PublicLimit] = "20";
 
         // when
-        await _AdvanceAndWaitForReadsAsync(SettingsSnapshot<Policy>.SettleDelays[0], expectedReads: 3);
+        await _AdvanceSettleAsync(0);
+        await TimerCountingTimeProvider.WaitUntilAsync(() => sut.Revision == 2, AbortToken);
 
         // then
         sut.Current.Should().Be(new Policy(20, 100));
-        sut.Revision.Should().Be(2);
-
-        // the chain stopped at the change
-        _timeProvider.Advance(TimeSpan.FromMinutes(1));
-        await _SettleQuietlyAsync();
         _reads.Should().Be(3);
     }
 
@@ -321,17 +323,15 @@ public sealed class SettingsSnapshotTests : TestBase
         // when
         await sut.ReloadAsync(SettingsSnapshotReloadReason.Message, [_PublicLimit], AbortToken);
 
-        foreach (var delay in SettingsSnapshot<Policy>.SettleDelays)
+        for (var i = 0; i < SettingsSnapshot<Policy>.SettleDelays.Length; i++)
         {
-            _timeProvider.Advance(delay);
-            await _SettleQuietlyAsync();
+            await _AdvanceSettleAsync(i);
         }
 
-        _timeProvider.Advance(TimeSpan.FromMinutes(1));
-        await _SettleQuietlyAsync();
-
-        // then - one startup read, one message read, one per settle delay
-        _reads.Should().Be(2 + SettingsSnapshot<Policy>.SettleDelays.Length);
+        // then - one startup read, one message read, one per settle delay, and no further delay scheduled
+        var expected = 2 + SettingsSnapshot<Policy>.SettleDelays.Length;
+        await TimerCountingTimeProvider.WaitUntilAsync(() => Volatile.Read(ref _reads) == expected, AbortToken);
+        _timeProvider.TimersCreated.Should().Be(SettingsSnapshot<Policy>.SettleDelays.Length);
         sut.Revision.Should().Be(1);
     }
 
@@ -344,11 +344,27 @@ public sealed class SettingsSnapshotTests : TestBase
 
         // when
         await sut.ReloadAsync(SettingsSnapshotReloadReason.Backstop, null, AbortToken);
-        _timeProvider.Advance(TimeSpan.FromMinutes(1));
-        await _SettleQuietlyAsync();
 
-        // then
+        // then - a settle chain registers its first delay before the reload returns
+        _timeProvider.TimersCreated.Should().Be(0);
         _reads.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task should_not_settle_when_the_announced_value_was_read_but_bind_rejected_it()
+    {
+        // given
+        using var sut = _CreateSut();
+        await sut.LoadAsync(AbortToken);
+        _stored[_PublicLimit] = "not-a-number";
+
+        // when
+        await sut.ReloadAsync(SettingsSnapshotReloadReason.Message, [_PublicLimit], AbortToken);
+
+        // then - the value was seen, so re-reading would only fail and log again
+        _timeProvider.TimersCreated.Should().Be(0);
+        _logger.Entries.Should().ContainSingle(x => x.Level == LogLevel.Error);
+        sut.Revision.Should().Be(1);
     }
 
     [Fact]
@@ -361,11 +377,11 @@ public sealed class SettingsSnapshotTests : TestBase
         _stored[_UserLimit] = "200";
 
         // when
-        await _AdvanceAndWaitForReadsAsync(SettingsSnapshot<Policy>.SettleDelays[0], expectedReads: 3);
+        await _AdvanceSettleAsync(0);
+        await TimerCountingTimeProvider.WaitUntilAsync(() => sut.Revision == 2, AbortToken);
 
         // then
         sut.Current.Should().Be(new Policy(10, 200));
-        sut.Revision.Should().Be(2);
     }
 
     [Fact]
@@ -380,12 +396,76 @@ public sealed class SettingsSnapshotTests : TestBase
         _stored[_UserLimit] = "200";
 
         // when
-        await _AdvanceAndWaitForReadsAsync(SettingsSnapshot<Policy>.SettleDelays[0], expectedReads: 3);
+        await _AdvanceSettleAsync(0);
+        await TimerCountingTimeProvider.WaitUntilAsync(() => sut.Revision == 3, AbortToken);
 
         // then
         sut.Current.Should().Be(new Policy(20, 200));
-        sut.Revision.Should().Be(3);
     }
+
+    #endregion
+
+    #region Failures and disposal
+
+    [Fact]
+    public async Task should_keep_the_last_good_value_when_the_store_read_fails()
+    {
+        // given
+        using var sut = _CreateSut();
+        await sut.LoadAsync(AbortToken);
+        _readFailure = new InvalidOperationException("store down");
+
+        // when
+        var act = () => sut.ReloadAsync(SettingsSnapshotReloadReason.Backstop, null, AbortToken);
+
+        // then
+        await act.Should().NotThrowAsync();
+        sut.Current.Should().Be(new Policy(10, 100));
+        sut.Revision.Should().Be(1);
+        _logger.Entries.Should().ContainSingle(x => x.Level == LogLevel.Error);
+    }
+
+    [Fact]
+    public async Task should_rethrow_cancellation_of_the_caller_token()
+    {
+        // given
+        using var sut = _CreateSut();
+        await sut.LoadAsync(AbortToken);
+        using var cancelled = new CancellationTokenSource();
+        await cancelled.CancelAsync();
+
+        // when
+        var act = () => sut.ReloadAsync(SettingsSnapshotReloadReason.Backstop, null, cancelled.Token);
+
+        // then
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        _logger.Entries.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_stop_pending_settle_re_reads_when_disposed()
+    {
+        // given
+        var sut = _CreateSut();
+        await sut.LoadAsync(AbortToken);
+        await sut.ReloadAsync(SettingsSnapshotReloadReason.Message, [_PublicLimit], AbortToken);
+        _timeProvider.TimersCreated.Should().Be(1);
+
+        // when
+        sut.Dispose();
+        sut.Dispose();
+        _timeProvider.Advance(TimeSpan.FromMinutes(1));
+
+        // then
+        _reads.Should().Be(2);
+        var act = () => sut.ReloadAsync(SettingsSnapshotReloadReason.Backstop, null, AbortToken);
+        await act.Should().NotThrowAsync();
+        _logger.Entries.Should().BeEmpty();
+    }
+
+    #endregion
+
+    #region Concurrency
 
     [Fact]
     public async Task should_never_move_revision_backward_under_concurrent_reloads()
@@ -443,21 +523,12 @@ public sealed class SettingsSnapshotTests : TestBase
         );
     }
 
-    private async Task _AdvanceAndWaitForReadsAsync(TimeSpan delay, int expectedReads)
+    // A settle chain registers delay i before it waits on it; advancing time first would fire nothing.
+    private async Task _AdvanceSettleAsync(int index)
     {
-        _timeProvider.Advance(delay);
-        var deadline = DateTime.UtcNow.AddSeconds(5);
-
-        while (Volatile.Read(ref _reads) < expectedReads && DateTime.UtcNow < deadline)
-        {
-            await Task.Delay(10, AbortToken);
-        }
-
-        await _SettleQuietlyAsync();
+        await _timeProvider.WaitForTimersAsync(index + 1, AbortToken);
+        _timeProvider.Advance(SettingsSnapshot<Policy>.SettleDelays[index]);
     }
-
-    // Settle re-reads run on timer callbacks; give their continuations a moment to finish.
-    private static Task _SettleQuietlyAsync() => Task.Delay(100, AbortToken);
 
     private sealed record Policy(int PublicPerMinute, int UserPerMinute)
     {

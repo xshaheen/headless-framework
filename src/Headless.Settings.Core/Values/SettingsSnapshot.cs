@@ -155,7 +155,17 @@ internal sealed partial class SettingsSnapshot<T> : ISettingsSnapshot<T>, ISetti
             .ConfigureAwait(false);
     }
 
-    public async Task ReloadAsync(
+    public Task ReloadAsync(
+        SettingsSnapshotReloadReason reason,
+        IReadOnlyCollection<string>? announcedNames,
+        CancellationToken cancellationToken
+    )
+    {
+        return _TryReloadAsync(reason, announcedNames, cancellationToken);
+    }
+
+    /// <summary>Reloads and returns the values read, or <see langword="null"/> when the reload failed and was logged.</summary>
+    private async Task<FrozenDictionary<string, string?>?> _TryReloadAsync(
         SettingsSnapshotReloadReason reason,
         IReadOnlyCollection<string>? announcedNames,
         CancellationToken cancellationToken
@@ -163,7 +173,7 @@ internal sealed partial class SettingsSnapshot<T> : ISettingsSnapshot<T>, ISetti
     {
         try
         {
-            await _ReloadAsync(reason, announcedNames, cancellationToken).ConfigureAwait(false);
+            return await _ReloadAsync(reason, announcedNames, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -172,10 +182,13 @@ internal sealed partial class SettingsSnapshot<T> : ISettingsSnapshot<T>, ISetti
         catch (ObjectDisposedException) when (Volatile.Read(ref _disposed) != 0)
         {
             // The host is shutting down; nothing reads this snapshot any more.
+            return null;
         }
         catch (Exception e)
         {
             LogReloadFailed(_logger, e, typeof(T).Name, reason);
+
+            return null;
         }
     }
 
@@ -192,7 +205,7 @@ internal sealed partial class SettingsSnapshot<T> : ISettingsSnapshot<T>, ISetti
         _reloadLock.Dispose();
     }
 
-    private async Task _ReloadAsync(
+    private async Task<FrozenDictionary<string, string?>> _ReloadAsync(
         SettingsSnapshotReloadReason reason,
         IReadOnlyCollection<string>? announcedNames,
         CancellationToken cancellationToken
@@ -226,16 +239,14 @@ internal sealed partial class SettingsSnapshot<T> : ISettingsSnapshot<T>, ISetti
             _ => null,
         };
 
-        // With no earlier state there is nothing the trigger could still be waiting to replace.
-        if (
-            watched is { Count: > 0 }
-            && before is not null
-            && _state is { } current
-            && _SameValues(before, current.Raw, watched)
-        )
+        // Compare what was read, not the state after binding: a value bind rejected was still seen, and re-reading it
+        // would only fail and log again. With no earlier state there is nothing the trigger could be waiting to replace.
+        if (watched is { Count: > 0 } && before is not null && _SameValues(before, after, watched))
         {
             _ = _SettleAsync(before, watched);
         }
+
+        return after;
     }
 
     private void _Apply(
@@ -299,10 +310,10 @@ internal sealed partial class SettingsSnapshot<T> : ISettingsSnapshot<T>, ISetti
             foreach (var delay in SettleDelays)
             {
                 await Task.Delay(delay, _timeProvider, token).ConfigureAwait(false);
-                await ReloadAsync(SettingsSnapshotReloadReason.Settle, announcedNames: null, token)
+                var read = await _TryReloadAsync(SettingsSnapshotReloadReason.Settle, announcedNames: null, token)
                     .ConfigureAwait(false);
 
-                if (_state is { } state && !_SameValues(baseline, state.Raw, watched))
+                if (read is not null && !_SameValues(baseline, read, watched))
                 {
                     return;
                 }
@@ -351,10 +362,7 @@ internal sealed partial class SettingsSnapshot<T> : ISettingsSnapshot<T>, ISetti
     {
         foreach (var name in names)
         {
-            left.TryGetValue(name, out var leftValue);
-            right.TryGetValue(name, out var rightValue);
-
-            if (!string.Equals(leftValue, rightValue, StringComparison.Ordinal))
+            if (!string.Equals(left.GetValueOrDefault(name), right.GetValueOrDefault(name), StringComparison.Ordinal))
             {
                 return false;
             }
@@ -368,7 +376,9 @@ internal sealed partial class SettingsSnapshot<T> : ISettingsSnapshot<T>, ISetti
         FrozenDictionary<string, string?> after
     )
     {
-        return before is null ? _names : _names.Where(name => !_SameValues(before, after, [name]));
+        return before is null
+            ? _names
+            : _names.Where(name => !string.Equals(before[name], after[name], StringComparison.Ordinal));
     }
 
     private void _Unsubscribe(Action<T, long> listener)

@@ -55,6 +55,22 @@ public sealed class SettingsSnapshotRegistrationTests : TestBase
         act.Should().Throw<ArgumentOutOfRangeException>();
     }
 
+    [Fact]
+    public void should_throw_when_the_backstop_exceeds_the_timer_limit()
+    {
+        // given - a timer cannot wait much past 49 days; a longer backstop would stop the host after startup
+        var services = new ServiceCollection();
+
+        // when
+        var act = () =>
+            services.AddSettingsSnapshot<string>(snapshot =>
+                snapshot.Names("App.Theme").Bind(_ => "x").Backstop(TimeSpan.FromDays(60))
+            );
+
+        // then
+        act.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData(" ")]
