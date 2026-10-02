@@ -40,7 +40,7 @@
     <value>Failure policy type cannot be constructed by generated code</value>
   </data>
   <data name="InvalidFailurePolicyMessage" xml:space="preserve">
-    <value>The failure policy '{0}' of consumer class '{1}' must be a non-abstract, non-generic class derived from Headless.Reliability.FailurePolicy, public or internal like every type that contains it, with a public parameterless constructor</value>
+    <value>The failure policy '{0}' of consumer class '{1}' must be a non-abstract class with no open type parameters, derived from Headless.Reliability.FailurePolicy, public or internal like every type that contains it, with a public parameterless constructor</value>
   </data>
   <data name="SubscriptionHookWithoutEveryInstanceTitle" xml:space="preserve">
     <value>IOnSubscriptionEstablished on a consumer that is not every-instance</value>
