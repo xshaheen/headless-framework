@@ -27,6 +27,35 @@ public sealed class AmazonSqsQueueTransportTests : TestBase
         );
     }
 
+    [Fact]
+    public async Task should_return_failed_result_without_sending_when_sending_after_dispose()
+    {
+        var transport = new AmazonSqsQueueTransport(
+            Substitute.For<ILogger<AmazonSqsQueueTransport>>(),
+            _CreateOptions()
+        );
+        var client = Substitute.For<IAmazonSQS>();
+        _SetSqsClient(transport, client);
+        _SetQueueUrl(transport, "queue-orders", "https://sqs.local/orders");
+        await transport.DisposeAsync();
+
+        var result = await transport.SendAsync(
+            new TransportMessage(
+                new Dictionary<string, string?>(StringComparer.Ordinal)
+                {
+                    [Headers.MessageId] = "message-1",
+                    [Headers.MessageName] = "orders",
+                },
+                "payload"u8.ToArray()
+            ),
+            AbortToken
+        );
+
+        result.Succeeded.Should().BeFalse();
+        result.Exception.Should().BeOfType<ObjectDisposedException>();
+        await client.DidNotReceive().SendMessageAsync(Arg.Any<SendMessageRequest>(), Arg.Any<CancellationToken>());
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("order-42")]

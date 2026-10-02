@@ -23,6 +23,19 @@ public sealed class PulsarTransportTests : TestBase
     }
 
     [Fact]
+    public async Task should_return_failed_result_without_sending_when_sending_after_dispose()
+    {
+        var transport = new PulsarTransport(_logger, _connectionFactory);
+        await transport.DisposeAsync();
+
+        var result = await transport.SendAsync(_CreateTransportMessage("msg-123", "TestTopic"), AbortToken);
+
+        result.Succeeded.Should().BeFalse();
+        result.Exception.Should().BeOfType<ObjectDisposedException>();
+        await _connectionFactory.DidNotReceive().CreateProducerAsync(Arg.Any<string>());
+    }
+
+    [Fact]
     public async Task should_pass_affinity_to_native_producer_message_builder()
     {
         var producer = Substitute.For<Pulsar.Client.Api.IProducer<byte[]>>();

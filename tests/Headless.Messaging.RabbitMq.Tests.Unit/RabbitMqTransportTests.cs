@@ -36,6 +36,29 @@ public sealed class RabbitMqTransportTests : TestBase
     }
 
     [Fact]
+    public async Task should_return_failed_result_without_sending_when_sending_after_dispose()
+    {
+        var transport = new RabbitMqTransport(_logger, _pool);
+        await transport.DisposeAsync();
+
+        var result = await transport.SendAsync(
+            new TransportMessage(
+                new Dictionary<string, string?>(StringComparer.Ordinal)
+                {
+                    [MessagingHeaders.MessageId] = "msg-123",
+                    [MessagingHeaders.MessageName] = "orders",
+                },
+                "payload"u8.ToArray()
+            ),
+            AbortToken
+        );
+
+        result.Succeeded.Should().BeFalse();
+        result.Exception.Should().BeOfType<ObjectDisposedException>();
+        await _pool.DidNotReceive().Rent(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task should_have_correct_broker_address()
     {
         // given, When

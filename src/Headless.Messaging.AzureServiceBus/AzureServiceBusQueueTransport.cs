@@ -12,6 +12,9 @@ internal sealed class AzureServiceBusQueueTransport(
     IAzureServiceBusClientPool clientPool
 ) : IQueueTransport
 {
+    // Set once DisposeAsync runs: a later send fails instead of reaching the broker.
+    private int _disposed;
+
     public BrokerAddress BrokerAddress =>
         ServiceBusHelpers.GetBrokerAddress(busOptions.Value.ConnectionString, busOptions.Value.Namespace);
 
@@ -20,6 +23,11 @@ internal sealed class AzureServiceBusQueueTransport(
         CancellationToken cancellationToken = default
     )
     {
+        if (Volatile.Read(ref _disposed) != 0)
+        {
+            return OperateResult.Failed(new ObjectDisposedException(nameof(AzureServiceBusQueueTransport)));
+        }
+
         try
         {
             var queueName = transportMessage.Name;
@@ -45,6 +53,7 @@ internal sealed class AzureServiceBusQueueTransport(
     // The shared client/sender pool owns connection lifetime and is disposed by the container.
     public ValueTask DisposeAsync()
     {
+        Volatile.Write(ref _disposed, 1);
         return ValueTask.CompletedTask;
     }
 }

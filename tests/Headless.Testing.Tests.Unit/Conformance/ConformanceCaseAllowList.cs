@@ -17,11 +17,6 @@ internal static class ConformanceCaseAllowList
     public static readonly IReadOnlyList<ConformanceSkip> Entries =
     [
         new(
-            "AmazonSnsBusTransportTests",
-            "should_throw_when_transport_disposed",
-            "Unresolved: ITransport documents no post-dispose contract and reports send failures as OperateResult rather than exceptions; AmazonSnsBusTransport.SendAsync after DisposeAsync catches the disposed-client error and returns a failed OperateResult. Needs a decision on whether transports must throw ObjectDisposedException."
-        ),
-        new(
             "AmazonSqsConsumerClientHarnessTests",
             "should_delegate_commit_callback_value",
             "SQS settles by the in-flight receipt-handle state the consumer handed out, so the case's arbitrary object sender cannot be a settlement value; AmazonSqsConsumerClientConformanceTests covers broker-observed commit with a real receipt handle."
@@ -147,11 +142,6 @@ internal static class ConformanceCaseAllowList
             "The in-memory store has no database, so a unit on another database cannot exist."
         ),
         new(
-            "NatsTransportTests",
-            "should_throw_when_transport_disposed",
-            "Unresolved: ITransport documents no post-dispose contract and reports send failures as OperateResult rather than exceptions; NatsTransport.DisposeAsync is a no-op over a pooled connection it does not own, so SendAsync after dispose still publishes. Needs a decision on whether transports must throw ObjectDisposedException."
-        ),
-        new(
             "PostgreSqlDistributedLockConformanceTests",
             "should_get_expiration_for_locked_resource",
             "A PostgreSQL advisory lock is session-scoped with no lease, so expiration is always null."
@@ -195,11 +185,6 @@ internal static class ConformanceCaseAllowList
             "RabbitMqConsumerClientHarnessTests",
             "should_delegate_reject_callback_value",
             "RabbitMQ settles by the ulong delivery tag the consumer handed out, so the case's arbitrary object sender cannot be a settlement value; RabbitMqConsumerClientConformanceTests covers broker-observed reject with a real tag."
-        ),
-        new(
-            "RabbitMqTransportTests",
-            "should_throw_when_transport_disposed",
-            "Unresolved: ITransport documents no post-dispose contract and reports send failures as OperateResult rather than exceptions; RabbitMqTransport.DisposeAsync is a no-op over a pooled channel it does not own, so SendAsync after dispose still publishes. Needs a decision on whether transports must throw ObjectDisposedException."
         ),
         new(
             "RedisDistributedLockConformanceTests",
