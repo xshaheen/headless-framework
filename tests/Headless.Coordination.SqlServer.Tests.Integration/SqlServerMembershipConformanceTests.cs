@@ -7,6 +7,12 @@ public sealed class SqlServerMembershipConformanceTests(SqlServerMembershipFixtu
     : MembershipConformanceTests<SqlServerMembershipFixture>(fixture)
 {
     [Fact]
+    public override Task should_register_a_node_at_the_maximum_cluster_name_and_node_id_lengths()
+    {
+        return base.should_register_a_node_at_the_maximum_cluster_name_and_node_id_lengths();
+    }
+
+    [Fact]
     public override Task should_register_and_appear_in_live_set()
     {
         return base.should_register_and_appear_in_live_set();
@@ -34,6 +40,12 @@ public sealed class SqlServerMembershipConformanceTests(SqlServerMembershipFixtu
     public override Task should_allocate_unique_increasing_incarnations_for_same_node_id()
     {
         return base.should_allocate_unique_increasing_incarnations_for_same_node_id();
+    }
+
+    [Fact]
+    public override Task should_allocate_exactly_one_through_n_for_concurrent_allocations()
+    {
+        return base.should_allocate_exactly_one_through_n_for_concurrent_allocations();
     }
 
     [Fact]

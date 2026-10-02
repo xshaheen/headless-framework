@@ -154,11 +154,15 @@ public sealed class SqlServerSequencesFixture
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    /// <summary>Drops <paramref name="table" /> and then its schema, when they exist.</summary>
+    /// <summary>
+    /// Drops <paramref name="table" />, the schema runner's history, and then the schema, when they exist. The history
+    /// goes too: the runner trusts it, so a history that outlived its table would stop the table being recreated.
+    /// </summary>
     public static string DropSchemaSql(string schema, string table)
     {
         return $"""
             IF OBJECT_ID(N'{schema}.{table}', N'U') IS NOT NULL DROP TABLE [{schema}].[{table}];
+            IF OBJECT_ID(N'{schema}.headless_schema_history', N'U') IS NOT NULL DROP TABLE [{schema}].[headless_schema_history];
             IF SCHEMA_ID(N'{schema}') IS NOT NULL EXEC(N'DROP SCHEMA [{schema}]');
             """;
     }

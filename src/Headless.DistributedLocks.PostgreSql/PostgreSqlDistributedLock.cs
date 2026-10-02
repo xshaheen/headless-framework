@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data;
 using System.Data.Common;
 using Headless.Checks;
 using Npgsql;
@@ -18,6 +19,12 @@ namespace Headless.DistributedLocks.PostgreSql;
 /// rolls back — there is no explicit release step. Underlying Npgsql errors (for example
 /// <see cref="Npgsql.NpgsqlException"/>) propagate to the caller.
 /// <para>
+/// The transaction is the lock's owner, so acquiring a key the transaction already holds succeeds at once; the
+/// commit or rollback still releases it. Each acquire runs inside its own savepoint: an acquire that fails or is
+/// cancelled is rolled back to that savepoint, which keeps the caller's transaction usable and releases a lock the
+/// server granted before the client gave up.
+/// </para>
+/// <para>
 /// Every method has a <see cref="DbTransaction"/> overload for callers that hold the transaction through an
 /// abstraction, such as EF Core's <c>db.Database.CurrentTransaction.GetDbTransaction()</c>, and a synchronous
 /// variant for the places EF Core only exposes synchronously, such as a <c>SavingChanges</c> interceptor.
@@ -26,6 +33,9 @@ namespace Headless.DistributedLocks.PostgreSql;
 [PublicAPI]
 public static class PostgreSqlDistributedLock
 {
+    private const string _Savepoint = "headless_advisory_xact_lock";
+    private const string _PriorLockTimeoutSetting = "headless.lock_timeout_before_acquire";
+
     /// <summary>
     /// Acquires a transaction-scoped exclusive advisory lock for <paramref name="key"/> on the connection
     /// associated with <paramref name="transaction"/>, blocking until the lock is granted by the server.
@@ -49,16 +59,8 @@ public static class PostgreSqlDistributedLock
         CancellationToken cancellationToken = default
     )
     {
-        var connection =
-            transaction.Connection
-            ?? throw new InvalidOperationException(
-                "The transaction has no associated open connection (already committed, rolled back, or disposed)."
-            );
-
-        await using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = $"SELECT pg_catalog.pg_advisory_xact_lock({key.AddKeyParameters(command)})";
-        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        await AcquireInSavepointAsync(key, transaction, Timeout.InfiniteTimeSpan, cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <summary>
@@ -83,23 +85,13 @@ public static class PostgreSqlDistributedLock
     /// <exception cref="OperationCanceledException">
     /// Thrown when <paramref name="cancellationToken"/> is cancelled before the command completes.
     /// </exception>
-    public static async ValueTask<bool> TryAcquireWithTransactionAsync(
+    public static ValueTask<bool> TryAcquireWithTransactionAsync(
         PostgreSqlAdvisoryLockKey key,
         NpgsqlTransaction transaction,
         CancellationToken cancellationToken = default
     )
     {
-        var connection =
-            transaction.Connection
-            ?? throw new InvalidOperationException(
-                "The transaction has no associated open connection (already committed, rolled back, or disposed)."
-            );
-
-        await using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = $"SELECT pg_catalog.pg_try_advisory_xact_lock({key.AddKeyParameters(command)})";
-
-        return (bool)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? false);
+        return AcquireInSavepointAsync(key, transaction, TimeSpan.Zero, cancellationToken);
     }
 
     /// <inheritdoc cref="AcquireWithTransactionAsync(PostgreSqlAdvisoryLockKey, NpgsqlTransaction, CancellationToken)"/>
@@ -131,12 +123,7 @@ public static class PostgreSqlDistributedLock
     /// </exception>
     public static void AcquireWithTransaction(PostgreSqlAdvisoryLockKey key, NpgsqlTransaction transaction)
     {
-        var connection = _RequireConnection(transaction);
-
-        using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = $"SELECT pg_catalog.pg_advisory_xact_lock({key.AddKeyParameters(command)})";
-        command.ExecuteNonQuery();
+        _AcquireInSavepoint(key, transaction, Timeout.InfiniteTimeSpan);
     }
 
     /// <inheritdoc cref="AcquireWithTransaction(PostgreSqlAdvisoryLockKey, NpgsqlTransaction)"/>
@@ -160,19 +147,196 @@ public static class PostgreSqlDistributedLock
     /// </exception>
     public static bool TryAcquireWithTransaction(PostgreSqlAdvisoryLockKey key, NpgsqlTransaction transaction)
     {
-        var connection = _RequireConnection(transaction);
-
-        using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = $"SELECT pg_catalog.pg_try_advisory_xact_lock({key.AddKeyParameters(command)})";
-
-        return (bool)(command.ExecuteScalar() ?? false);
+        return _AcquireInSavepoint(key, transaction, TimeSpan.Zero);
     }
 
     /// <inheritdoc cref="TryAcquireWithTransaction(PostgreSqlAdvisoryLockKey, NpgsqlTransaction)"/>
     /// <exception cref="ArgumentException">Thrown when <paramref name="transaction"/> is not an <see cref="NpgsqlTransaction"/>.</exception>
     public static bool TryAcquireWithTransaction(PostgreSqlAdvisoryLockKey key, DbTransaction transaction) =>
         TryAcquireWithTransaction(key, _RequireNpgsql(transaction));
+
+    /// <summary>
+    /// Takes the transaction-scoped advisory lock for <paramref name="key"/> inside a savepoint of
+    /// <paramref name="transaction"/>. A failed or cancelled acquire rolls back to the savepoint, which lifts the
+    /// statement's abort from the caller's transaction and releases a lock the server granted before the client gave
+    /// up (a transaction-level advisory lock taken in a rolled-back subtransaction goes with it).
+    /// </summary>
+    /// <param name="key">The advisory-lock key to acquire.</param>
+    /// <param name="transaction">The caller's transaction, which owns the lock once acquired.</param>
+    /// <param name="timeout">
+    /// <see cref="TimeSpan.Zero"/> makes one non-blocking attempt; <see cref="Timeout.InfiniteTimeSpan"/> waits under
+    /// the transaction's own <c>lock_timeout</c>; any other value bounds the wait with a <c>lock_timeout</c> that the
+    /// transaction's previous value replaces once the lock is held.
+    /// </param>
+    /// <param name="cancellationToken">Token used to cancel the acquire command.</param>
+    /// <returns>
+    /// <see langword="false"/> when the attempt or the bounded wait found the key held by another session.
+    /// </returns>
+    /// <exception cref="LockCleanupFailedException">
+    /// The acquire failed and rolling back to its savepoint failed too, so the transaction may still hold the lock.
+    /// </exception>
+    internal static async ValueTask<bool> AcquireInSavepointAsync(
+        PostgreSqlAdvisoryLockKey key,
+        NpgsqlTransaction transaction,
+        TimeSpan timeout,
+        CancellationToken cancellationToken
+    )
+    {
+        var connection = _RequireConnection(transaction);
+        await using var command = _CreateAcquireCommand(connection, transaction, key, timeout);
+
+        try
+        {
+            if (timeout == TimeSpan.Zero)
+            {
+                return (bool)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? false);
+            }
+
+            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+
+            return true;
+        }
+        catch (Exception exception) when (connection.State == ConnectionState.Open)
+        {
+            try
+            {
+                await using var rollBack = _CreateRollBackCommand(connection, transaction);
+                await rollBack.ExecuteNonQueryAsync(CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception cleanupFailure)
+            {
+                _ThrowUnlessSavepointWasNeverSet(exception, cleanupFailure);
+            }
+
+            if (_IsBoundedWaitExpiry(exception, timeout))
+            {
+                return false;
+            }
+
+            throw;
+        }
+    }
+
+#pragma warning disable MA0045 // Backs the synchronous helpers, which exist for EF Core's synchronous SavingChanges path.
+    private static bool _AcquireInSavepoint(
+        PostgreSqlAdvisoryLockKey key,
+        NpgsqlTransaction transaction,
+        TimeSpan timeout
+    )
+    {
+        var connection = _RequireConnection(transaction);
+        using var command = _CreateAcquireCommand(connection, transaction, key, timeout);
+
+        try
+        {
+            if (timeout == TimeSpan.Zero)
+            {
+                return (bool)(command.ExecuteScalar() ?? false);
+            }
+
+            command.ExecuteNonQuery();
+
+            return true;
+        }
+        catch (Exception exception) when (connection.State == ConnectionState.Open)
+        {
+            try
+            {
+                using var rollBack = _CreateRollBackCommand(connection, transaction);
+                rollBack.ExecuteNonQuery();
+            }
+            catch (Exception cleanupFailure)
+            {
+                _ThrowUnlessSavepointWasNeverSet(exception, cleanupFailure);
+            }
+
+            throw;
+        }
+    }
+#pragma warning restore MA0045
+
+    private static NpgsqlCommand _CreateAcquireCommand(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        PostgreSqlAdvisoryLockKey key,
+        TimeSpan timeout
+    )
+    {
+        var command = connection.CreateCommand();
+        command.Transaction = transaction;
+
+        var isTry = timeout == TimeSpan.Zero;
+        var isBounded = !isTry && timeout != Timeout.InfiniteTimeSpan;
+
+        // One round trip: a failing statement stops the rest of the batch, so RELEASE runs only after the lock is held.
+        var text = new StringBuilder();
+        text.Append("SAVEPOINT ").Append(_Savepoint).AppendLine(";");
+
+        if (isBounded)
+        {
+            // SET LOCAL survives RELEASE SAVEPOINT, so the transaction's own lock_timeout is parked in a
+            // transaction-local custom setting and put back once the lock is held. A failed acquire needs neither:
+            // rolling back to the savepoint undoes both settings.
+            text.Append("SELECT pg_catalog.set_config('")
+                .Append(_PriorLockTimeoutSetting)
+                .AppendLine("', pg_catalog.current_setting('lock_timeout'), true);");
+            text.AppendLine(
+                CultureInfo.InvariantCulture,
+                $"SET LOCAL lock_timeout = {(long)Math.Ceiling(timeout.TotalMilliseconds)};"
+            );
+        }
+
+        text.Append("SELECT pg_catalog.pg")
+            .Append(isTry ? "_try" : string.Empty)
+            .Append("_advisory_xact_lock(")
+            .Append(key.AddKeyParameters(command))
+            .AppendLine(");");
+
+        if (isBounded)
+        {
+            text.Append("SELECT pg_catalog.set_config('lock_timeout', pg_catalog.current_setting('")
+                .Append(_PriorLockTimeoutSetting)
+                .AppendLine("'), true);");
+        }
+
+        text.Append("RELEASE SAVEPOINT ").Append(_Savepoint);
+        command.CommandText = text.ToString();
+
+        return command;
+    }
+
+    private static NpgsqlCommand _CreateRollBackCommand(NpgsqlConnection connection, NpgsqlTransaction transaction)
+    {
+        var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = $"ROLLBACK TO SAVEPOINT {_Savepoint}; RELEASE SAVEPOINT {_Savepoint}";
+
+        return command;
+    }
+
+    private static bool _IsBoundedWaitExpiry(Exception exception, TimeSpan timeout)
+    {
+        // Only a lock_timeout this acquire set is a "not acquired" answer; one the caller set stays the caller's error.
+        return timeout != TimeSpan.Zero
+            && timeout != Timeout.InfiniteTimeSpan
+            && exception is PostgresException { SqlState: PostgresErrorCodes.LockNotAvailable };
+    }
+
+    private static void _ThrowUnlessSavepointWasNeverSet(Exception acquireFailure, Exception cleanupFailure)
+    {
+        // The SAVEPOINT itself failed (the caller's transaction was already aborted), so the acquire changed nothing
+        // and its own failure is the one to report.
+        if (cleanupFailure is PostgresException { SqlState: PostgresErrorCodes.InvalidSavepointSpecification })
+        {
+            return;
+        }
+
+        throw new LockCleanupFailedException(
+            [acquireFailure, cleanupFailure],
+            "The advisory-lock acquire failed and rolling back to its savepoint failed too; the transaction may hold "
+                + "the lock until it ends."
+        );
+    }
 
     private static NpgsqlConnection _RequireConnection(NpgsqlTransaction transaction)
     {

@@ -2,6 +2,7 @@
 
 using Headless.Checks;
 using Headless.MultiTenancy;
+using Headless.Sql;
 using Microsoft.Extensions.Options;
 
 namespace Headless.Idempotency;
@@ -15,16 +16,9 @@ internal sealed class IdempotencyRequestResolver(
     IOptionsMonitor<IdempotentOperationsOptions> options
 )
 {
-    // SQL Server pads nvarchar values with trailing spaces before comparing them, under every collation and in
-    // primary-key uniqueness, so "a" and "a " would share one record there while PostgreSQL keeps them apart. Refusing
-    // surrounding whitespace keeps key parts ordinal on every provider.
-    private const string _MergeReason =
-        " must not start or end with whitespace: some providers ignore trailing spaces when comparing keys, which "
-        + "would merge two records.";
-
-    private const string _ContractWhitespaceMessage = "An idempotency contract" + _MergeReason;
-    private const string _KeyWhitespaceMessage = "An idempotency key" + _MergeReason;
-    private const string _TenantIdWhitespaceMessage = "An idempotency tenant id" + _MergeReason;
+    // Every key part must be text every provider stores, compares, and returns unchanged, whichever provider this
+    // host uses: a key one provider merges (trailing spaces on SQL Server), rejects (NUL on PostgreSQL), or rewrites
+    // (an unpaired surrogate on SQL Server) would make the providers disagree about which record a call names.
 
     /// <summary>Validates an admission's arguments and the current tenant, and returns the record key.</summary>
     /// <exception cref="ArgumentException">The key, fingerprint, contract, or current tenant id is invalid.</exception>
@@ -118,7 +112,7 @@ internal sealed class IdempotencyRequestResolver(
     {
         Argument.IsNotNullOrWhiteSpace(contract, paramName: paramName);
         Argument.HasMaxLength(contract, IdempotencyFieldLimits.ContractMaxLength, paramName: paramName);
-        Argument.HasNoSurroundingWhiteSpace(contract, _ContractWhitespaceMessage, paramName);
+        Argument.IsPortableKey(contract, paramName: paramName);
     }
 
     /// <summary>Validates a recovery point's name, state, and contract tag.</summary>
@@ -127,6 +121,7 @@ internal sealed class IdempotencyRequestResolver(
     {
         Argument.IsNotNullOrWhiteSpace(point);
         Argument.HasMaxLength(point, IdempotencyFieldLimits.RecoveryPointMaxLength);
+        Argument.IsPortableKey(point);
         ValidateContract(contract, nameof(contract));
 
         if (state.Length > IdempotencyFieldLimits.RecoveryStateMaxLength)
@@ -141,7 +136,8 @@ internal sealed class IdempotencyRequestResolver(
 
     /// <summary>
     /// Returns an admission or renewal lease duration, the caller's or the configured default, checked against the
-    /// configured bounds.
+    /// configured bounds and truncated to whole microseconds, the finest resolution every provider stores, so a lease
+    /// expires at the same offset from its admission whichever provider holds it.
     /// </summary>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="leaseDuration" /> is outside the bounds.</exception>
     public TimeSpan LeaseDuration(TimeSpan? leaseDuration)
@@ -160,15 +156,20 @@ internal sealed class IdempotencyRequestResolver(
             );
         }
 
-        return value;
+        // Checked before truncating, so a duration a tick past the maximum is refused rather than rounded into range.
+        return SqlPortable.Truncate(value);
     }
 
-    /// <summary>Returns the retention to apply: the caller's, or the configured default.</summary>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="retention" /> is not positive.</exception>
+    /// <summary>
+    /// Returns the retention to apply, the caller's or the configured default, truncated to whole microseconds like a
+    /// lease duration.
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="retention" /> is under one microsecond.</exception>
     public TimeSpan Retention(TimeSpan? retention)
     {
-        // Read on every call so a default changed through options reload applies to the next admission.
-        var value = retention ?? options.CurrentValue.DefaultRetention;
+        // Read on every call so a default changed through options reload applies to the next admission. Checked after
+        // truncating, so a retention that would truncate to nothing is refused rather than stored already past.
+        var value = SqlPortable.Truncate(retention ?? options.CurrentValue.DefaultRetention);
         Argument.IsPositive(value, paramName: nameof(retention));
 
         return value;
@@ -178,7 +179,7 @@ internal sealed class IdempotencyRequestResolver(
     {
         Argument.IsNotNullOrWhiteSpace(key, paramName: paramName);
         Argument.HasMaxLength(key, IdempotencyFieldLimits.KeyMaxLength, paramName: paramName);
-        Argument.HasNoSurroundingWhiteSpace(key, _KeyWhitespaceMessage, paramName);
+        Argument.IsPortableKey(key, paramName: paramName);
     }
 
     private static string _NormalizeTenantId(string? tenantId, string what, string paramName)
@@ -207,7 +208,7 @@ internal sealed class IdempotencyRequestResolver(
             );
         }
 
-        Argument.HasNoSurroundingWhiteSpace(tenantId, _TenantIdWhitespaceMessage, paramName);
+        Argument.IsPortableKey(tenantId, paramName: paramName);
 
         return tenantId;
     }

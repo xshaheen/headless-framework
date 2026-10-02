@@ -39,7 +39,7 @@ public sealed class PostgreSqlCustomSchemaTests(PostgreSqlTestFixture fixture) :
         try
         {
             // when
-            await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
+            await provider.ApplyMessagingSchemaAsync(AbortToken);
 
             var storage = provider.GetRequiredService<IDataStorage>();
             var messageId = Guid.NewGuid().ToString("D");

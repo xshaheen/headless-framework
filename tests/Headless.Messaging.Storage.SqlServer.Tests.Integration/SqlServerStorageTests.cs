@@ -82,7 +82,7 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
         );
     }
 
-    private IStorageInitializer? _initializer;
+    private IStorageTableNames? _tableNames;
     private IDataStorage? _storage;
     private ISerializer? _serializer;
     private IOptions<SqlServerOptions>? _sqlServerOptions;
@@ -106,10 +106,16 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
     }
 
     /// <inheritdoc />
-    protected override IStorageInitializer GetInitializer()
+    protected override IStorageTableNames GetTableNames()
     {
         _EnsureInitialized();
-        return _initializer!;
+        return _tableNames!;
+    }
+
+    /// <inheritdoc />
+    protected override Task ApplySchemaAsync(CancellationToken cancellationToken)
+    {
+        return TestMessagingSchema.ApplyAsync(fixture.ConnectionString, cancellationToken: cancellationToken);
     }
 
     /// <inheritdoc />
@@ -228,16 +234,16 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
 
     private IDataStorage _CreateStorage(TimeProvider timeProvider)
     {
-        return new SqlServerDataStorage(
+        return new RelationalDataStorage(
+            _sqlServerOptions!.Value.ToStorage(),
             _messagingOptions!,
-            _sqlServerOptions!,
             TestStorageOptions.For(),
-            _initializer!,
+            _tableNames!,
             _serializer!,
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),
             timeProvider,
             NodeMembership,
-            NullLogger<SqlServerDataStorage>.Instance
+            NullLogger<RelationalDataStorage>.Instance
         );
     }
 
@@ -272,7 +278,7 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
         await base.InitializeAsync();
 
         _EnsureInitialized();
-        await _initializer!.InitializeAsync(AbortToken);
+        await TestMessagingSchema.ApplyAsync(fixture.ConnectionString, cancellationToken: AbortToken);
     }
 
     /// <inheritdoc />
@@ -290,7 +296,7 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
 
     private void _EnsureInitialized()
     {
-        if (_initializer is not null)
+        if (_tableNames is not null)
         {
             return;
         }
@@ -318,12 +324,7 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
         _messagingOptions = provider.GetRequiredService<IOptions<MessagingOptions>>();
         _serializer = provider.GetRequiredService<ISerializer>();
 
-        _initializer = new SqlServerStorageInitializer(
-            NullLogger<SqlServerStorageInitializer>.Instance,
-            _sqlServerOptions,
-            TestStorageOptions.For(),
-            _messagingOptions
-        );
+        _tableNames = TestStorageOptions.TableNames();
 
         _storage = _CreateStorage(TimeProvider.System);
     }
@@ -355,6 +356,12 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
     }
 
     [Fact]
+    public override Task should_admit_exactly_one_of_many_admissions_of_one_key_released_together()
+    {
+        return base.should_admit_exactly_one_of_many_admissions_of_one_key_released_together();
+    }
+
+    [Fact]
     public override Task should_isolate_every_persisted_inbox_key_component()
     {
         return base.should_isolate_every_persisted_inbox_key_component();
@@ -377,17 +384,16 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
         base.should_apply_audited_inbox_operations_once_and_reject_operation_identity_reuse();
 
     [Fact]
-    public async Task should_publish_final_inbox_schema_marker_and_key_index()
+    public async Task should_record_messaging_steps_and_create_final_inbox_key_index()
     {
         await using var connection = new SqlConnection(fixture.ConnectionString);
-        var (schemaVersion, indexCount, constraintCount, receiptColumnCount) = await connection.QuerySingleAsync<(
-            int SchemaVersion,
+        var (indexCount, constraintCount, receiptColumnCount) = await connection.QuerySingleAsync<(
             long IndexCount,
             long ConstraintCount,
             long ReceiptColumnCount
         )>(
             """
-            SELECT state.SchemaVersion, (
+            SELECT (
                 SELECT COUNT_BIG(*) FROM sys.indexes
                 WHERE object_id=OBJECT_ID(N'headless.MessagingReceived') AND name IN (N'UX_MessagingReceived_InboxRootKey',N'UX_MessagingReceived_InboxLifecycleGeneration')
             ) AS IndexCount, (
@@ -397,16 +403,18 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
                 SELECT COUNT_BIG(*) FROM sys.columns
                 WHERE object_id=OBJECT_ID(N'headless.MessagingInboxOperationReceipts')
                   AND name IN(N'ExpectedStatus',N'Outcome',N'ChildIncarnationId',N'TargetKind',N'ExpectedDueAt',N'MessageName',N'MessageId',N'Lane')
-            ) AS ReceiptColumnCount
-            FROM headless.MessagingSchemaState AS state
-            WHERE state.Component=N'inbox';
+            ) AS ReceiptColumnCount;
             """
         );
+        // The schema runner's history replaces the hand-rolled readiness marker: every Messaging step is recorded.
+        var steps = await connection.QueryAsync<string>(
+            "SELECT StepVersion FROM headless.headless_schema_history WHERE Feature=N'Messaging' ORDER BY StepVersion;"
+        );
 
-        schemaVersion.Should().Be(1);
         indexCount.Should().Be(2);
         constraintCount.Should().Be(2);
         receiptColumnCount.Should().Be(8);
+        steps.Should().Equal("1", "2");
     }
 
     [Fact]
@@ -437,7 +445,7 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
 
         (
             await storage.DeleteExpiresAsync(
-                _initializer!.GetReceivedTableName(),
+                _tableNames!.GetReceivedTableName(),
                 DateTimeOffset.UtcNow,
                 cancellationToken: AbortToken
             )
@@ -454,35 +462,6 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
             new { Id = admitted.Message.StorageId }
         );
         persisted.Should().Be((0, 1, 1));
-    }
-
-    [Fact]
-    public async Task should_fail_closed_when_inbox_schema_is_newer_than_supported()
-    {
-        await using var connection = new SqlConnection(fixture.ConnectionString);
-        await connection.ExecuteAsync(
-            "UPDATE headless.MessagingSchemaState SET SchemaVersion=2 WHERE Component=N'inbox';"
-        );
-
-        try
-        {
-            var act = async () => await GetInitializer().InitializeAsync(AbortToken);
-
-            await act.Should().ThrowAsync<SqlException>().WithMessage("*newer than supported version 1*");
-            (
-                await connection.ExecuteScalarAsync<int>(
-                    "SELECT SchemaVersion FROM headless.MessagingSchemaState WHERE Component=N'inbox';"
-                )
-            )
-                .Should()
-                .Be(2, "a rejected older binary must not rewrite the newer readiness marker");
-        }
-        finally
-        {
-            await connection.ExecuteAsync(
-                "UPDATE headless.MessagingSchemaState SET SchemaVersion=1 WHERE Component=N'inbox';"
-            );
-        }
     }
 
     [Fact]
@@ -525,6 +504,14 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
     public override Task should_change_publish_state()
     {
         return base.should_change_publish_state();
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public override Task should_keep_a_later_due_time_only_when_the_retry_delay_asks_to(bool published)
+    {
+        return base.should_keep_a_later_due_time_only_when_the_retry_delay_asks_to(published);
     }
 
     [Fact]
@@ -651,6 +638,12 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
     public override Task should_schedule_messages_of_delayed()
     {
         return base.should_schedule_messages_of_delayed();
+    }
+
+    [Fact]
+    public override Task should_store_and_find_rows_under_a_version_containing_sql_metacharacters()
+    {
+        return base.should_store_and_find_rows_under_a_version_containing_sql_metacharacters();
     }
 
     [Fact]
@@ -813,15 +806,45 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
     }
 
     [Fact]
-    public override Task should_use_application_clock_when_scheduling_published_retry()
+    public override Task should_decide_published_retry_due_on_database_clock()
     {
-        return base.should_use_application_clock_when_scheduling_published_retry();
+        return base.should_decide_published_retry_due_on_database_clock();
     }
 
     [Fact]
-    public override Task should_use_application_clock_when_scheduling_received_retry()
+    public override Task should_decide_received_retry_due_on_database_clock()
     {
-        return base.should_use_application_clock_when_scheduling_received_retry();
+        return base.should_decide_received_retry_due_on_database_clock();
+    }
+
+    [Theory]
+    [InlineData(true, true)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(false, false)]
+    public override Task should_make_core_scheduled_retry_due_after_its_delay_on_database_clock(
+        bool published,
+        bool applicationClockAhead
+    )
+    {
+        return base.should_make_core_scheduled_retry_due_after_its_delay_on_database_clock(
+            published,
+            applicationClockAhead
+        );
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public override Task should_stamp_initial_dispatch_grace_from_database_clock(bool published)
+    {
+        return base.should_stamp_initial_dispatch_grace_from_database_clock(published);
+    }
+
+    [Fact]
+    public override Task should_decide_delayed_message_due_on_database_clock()
+    {
+        return base.should_decide_delayed_message_due_on_database_clock();
     }
 
     [Fact]
@@ -838,7 +861,7 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
         await storage.ChangePublishStateAsync(
             storedMessage,
             StatusName.Failed,
-            nextRetryAt: DateTimeOffset.UtcNow.AddMinutes(-1),
+            retryDelay: RetryDelay.Exactly(TimeSpan.Zero),
             cancellationToken: AbortToken
         );
 
@@ -1200,7 +1223,7 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
         var monitoringApi = storage.GetMonitoringApi();
 
         // then
-        monitoringApi.Should().BeOfType<SqlServerMonitoringApi>();
+        monitoringApi.Should().BeOfType<RelationalMonitoringApi>();
         await Task.CompletedTask;
     }
 
@@ -1499,7 +1522,9 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
         var serializer = GetSerializer();
         var poisonId = Guid.NewGuid();
         var healthyId = Guid.NewGuid();
-        var now = TimeProvider.GetUtcNow();
+        // A day back, so the rows sort ahead of every due row the rest of the suite leaves in the shared table and
+        // fall inside one claim batch.
+        var now = TimeProvider.GetUtcNow().AddDays(-1);
 
         await using (var connection = new SqlConnection(fixture.ConnectionString))
         {
@@ -1734,13 +1759,7 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
             var sqlServerOptions = Options.Create(
                 new SqlServerOptions { ConnectionString = databaseBuilder.ConnectionString }
             );
-            var initializer = new SqlServerStorageInitializer(
-                NullLogger<SqlServerStorageInitializer>.Instance,
-                sqlServerOptions,
-                TestStorageOptions.For(),
-                Options.Create(messagingOptions)
-            );
-            await initializer.InitializeAsync(AbortToken);
+            await TestMessagingSchema.ApplyAsync(sqlServerOptions.Value, cancellationToken: AbortToken);
             var storage = _CreateStorage(messagingOptions, databaseBuilder.ConnectionString);
 
             var retryId = Guid.NewGuid();
@@ -1898,34 +1917,28 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
             .And.Contain("IS NOT NULL", "the filter must exclude rows without a Coordination owner");
     }
 
-    private SqlServerDataStorage _CreateStorage(MessagingOptions messagingOptions)
+    private RelationalDataStorage _CreateStorage(MessagingOptions messagingOptions)
     {
         return _CreateStorage(messagingOptions, fixture.ConnectionString);
     }
 
-    private SqlServerDataStorage _CreateStorage(MessagingOptions messagingOptions, string connectionString)
+    private RelationalDataStorage _CreateStorage(MessagingOptions messagingOptions, string connectionString)
     {
         messagingOptions.RetryPolicy.MaxPersistedRetries = 4;
         messagingOptions.FailedMessageExpiredAfter = 3600;
 
         var sqlServerOptions = Options.Create(new SqlServerOptions { ConnectionString = connectionString });
-        var initializer = new SqlServerStorageInitializer(
-            NullLogger<SqlServerStorageInitializer>.Instance,
-            sqlServerOptions,
-            TestStorageOptions.For(),
-            Options.Create(messagingOptions)
-        );
 
-        return new SqlServerDataStorage(
+        return new RelationalDataStorage(
+            sqlServerOptions.Value.ToStorage(),
             Options.Create(messagingOptions),
-            sqlServerOptions,
             TestStorageOptions.For(),
-            initializer,
+            TestStorageOptions.TableNames(),
             GetSerializer(),
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),
             TimeProvider.System,
             NodeMembership,
-            NullLogger<SqlServerDataStorage>.Instance
+            NullLogger<RelationalDataStorage>.Instance
         );
     }
 
@@ -2063,16 +2076,6 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
             ? await storage.GetPublishedMessagesOfNeedRetryAsync(lane, AbortToken)
             : await storage.GetReceivedMessagesOfNeedRetryAsync(lane, null, AbortToken);
         return messages.ToList();
-    }
-
-    private static SqlServerStorageInitializer _CreateInitializer(string connectionString, string schema = "headless")
-    {
-        return new SqlServerStorageInitializer(
-            NullLogger<SqlServerStorageInitializer>.Instance,
-            Options.Create(new SqlServerOptions { ConnectionString = connectionString }),
-            TestStorageOptions.For(schema),
-            Options.Create(new MessagingOptions())
-        );
     }
 
     #endregion

@@ -1,23 +1,24 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
+using Headless.Constants;
 using Npgsql;
 
 namespace Headless.Coordination.PostgreSql;
 
-/// <summary>Options for the PostgreSQL coordination backing store.</summary>
+/// <summary>Connection and command options for the PostgreSQL coordination backing store.</summary>
+/// <remarks>
+/// Either <see cref="RelationalCoordinationOptions.ConnectionString" /> or <see cref="DataSource" /> must be provided;
+/// <see cref="DataSource" /> takes precedence when both are set. The schema that holds the membership tables is
+/// configured through <see cref="CoordinationStorageOptions" />.
+/// </remarks>
 [PublicAPI]
-public sealed class PostgreSqlCoordinationOptions
+public sealed class PostgreSqlCoordinationOptions : RelationalCoordinationOptions
 {
     /// <summary>
-    /// Npgsql connection string. Either this or <see cref="DataSource"/> must be provided; <see cref="DataSource"/>
-    /// takes precedence when both are set.
-    /// </summary>
-    public string? ConnectionString { get; set; }
-
-    /// <summary>
-    /// Pre-configured <see cref="NpgsqlDataSource"/>. Takes precedence over <see cref="ConnectionString"/>
-    /// when set. Use this to share a data source with connection pooling already configured.
+    /// Gets or sets a pre-configured <see cref="NpgsqlDataSource"/>. Takes precedence over
+    /// <see cref="RelationalCoordinationOptions.ConnectionString"/> when set. Use this to share a data source with
+    /// connection pooling already configured.
     /// </summary>
     /// <remarks>
     /// This member is deliberately typed as the provider-native <see cref="NpgsqlDataSource"/> rather than an
@@ -27,33 +28,30 @@ public sealed class PostgreSqlCoordinationOptions
     /// </remarks>
     public NpgsqlDataSource? DataSource { get; set; }
 
-    /// <summary>
-    /// ADO.NET command timeout for all coordination store queries. Must be positive and at most 10 minutes.
-    /// </summary>
-    public TimeSpan CommandTimeout { get; set; } = TimeSpan.FromSeconds(30);
-
-    /// <summary>
-    /// When <see langword="true"/> (default), an <c>IHostedService</c> initializer creates the
-    /// coordination schema and tables at startup if they do not already exist. Set to
-    /// <see langword="false"/> if the schema is managed externally (for example by a migration tool).
-    /// </summary>
-    public bool InitializeOnStartup { get; set; } = true;
-
     internal NpgsqlConnection CreateConnection()
     {
         return DataSource is not null ? DataSource.CreateConnection() : new NpgsqlConnection(ConnectionString);
     }
 }
 
-internal sealed class PostgreSqlCoordinationOptionsValidator : AbstractValidator<PostgreSqlCoordinationOptions>
+internal sealed class PostgreSqlCoordinationOptionsValidator
+    : RelationalCoordinationOptionsValidator<PostgreSqlCoordinationOptions>
 {
     public PostgreSqlCoordinationOptionsValidator()
     {
-        RuleFor(x => x.CommandTimeout).GreaterThan(TimeSpan.Zero).LessThanOrEqualTo(TimeSpan.FromMinutes(10));
         RuleFor(x => x)
             .Must(x => x.DataSource is not null || !string.IsNullOrWhiteSpace(x.ConnectionString))
             .WithMessage(
                 $"{nameof(PostgreSqlCoordinationOptions.ConnectionString)} or {nameof(PostgreSqlCoordinationOptions.DataSource)} is required."
             );
+    }
+}
+
+/// <summary>Checks the shared coordination schema name against PostgreSQL's identifier rules.</summary>
+internal sealed class PostgreSqlCoordinationStorageOptionsValidator : AbstractValidator<CoordinationStorageOptions>
+{
+    public PostgreSqlCoordinationStorageOptionsValidator()
+    {
+        RuleFor(x => x.Schema).IsValidIdentifierFor(StorageProvider.PostgreSql);
     }
 }

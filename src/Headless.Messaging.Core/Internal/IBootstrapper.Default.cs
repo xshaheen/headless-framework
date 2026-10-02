@@ -4,7 +4,6 @@ using Headless.Checks;
 using Headless.Coordination;
 using Headless.DistributedLocks;
 using Headless.Messaging.Configuration;
-using Headless.Messaging.Persistence;
 using Headless.Messaging.Registration;
 using Headless.Messaging.Runtime;
 using Microsoft.Extensions.DependencyInjection;
@@ -100,7 +99,7 @@ internal sealed class Bootstrapper(
             _WarnIfNullNodeMembership();
             _WarnIfDispatchTimeoutMateriallyExceedsInitialGrace();
 
-            // Publish before storage initialization can block, so shutdown always reaches every
+            // Publish before any processor start can block, so shutdown always reaches every
             // processor. Resolution stays outside the lock: processor factories are third-party code
             // that can block or throw, and every other _bootstrapLock holder would wait behind them.
             var resolvedProcessors = serviceProvider.GetServices<IProcessingServer>().ToArray();
@@ -110,23 +109,14 @@ internal sealed class Bootstrapper(
                 _processors = resolvedProcessors;
             }
 
-            IReadOnlyList<MessagingOutbox> secondaries;
-            try
-            {
-                // Resolved first so an invalid AddOutbox() registration fails before any schema work.
-                secondaries = serviceProvider.GetService<MessagingOutboxes>()?.Secondaries ?? [];
-                var storageInitializer = serviceProvider.GetRequiredService<IStorageInitializer>();
-                await storageInitializer.InitializeAsync(startupToken).ConfigureAwait(false);
-            }
-            catch (Exception e) when (e is not InvalidOperationException)
-            {
-                logger.StorageInitFailed(e);
-                throw;
-            }
+            // The primary storage's schema is not created here: a relational provider contributes its DDL to the Headless
+            // schema runner, which applies it in IHostedLifecycleService.StartingAsync, before any hosted service (this
+            // BackgroundService included) starts. An invalid AddOutbox() registration fails here, before outbox work.
+            var secondaries = serviceProvider.GetService<MessagingOutboxes>()?.Secondaries ?? [];
 
-            // The primary storage holds the inbox and every IBus/IQueue publish, so it must be ready to start. An
-            // additional outbox serves only units of work on its own database: one module's database being down must
-            // not stop the host, so its failure is logged and the outbox initialization processor retries it.
+            // An additional outbox serves only units of work on its own database, and its schema is applied by its own
+            // runner: one module's database being down must not stop the host, so its failure is logged and the outbox
+            // initialization processor retries it.
             await Task.WhenAll(secondaries.Select(outbox => _TryInitializeOutboxAsync(outbox, startupToken)))
                 .ConfigureAwait(false);
 

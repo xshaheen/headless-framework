@@ -634,7 +634,8 @@
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.Hosting": "[10.0.12, )",
           "Microsoft.Extensions.Options.ConfigurationExtensions": "[10.0.12, )",
-          "Microsoft.Extensions.Options.DataAnnotations": "[10.0.12, )"
+          "Microsoft.Extensions.Options.DataAnnotations": "[10.0.12, )",
+          "OpenTelemetry.Api": "[1.18.0, )"
         }
       },
       "headless.multitenancy.abstractions": {
@@ -673,6 +674,9 @@
           "Headless.Hosting": "[1.0.0, )",
           "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
           "Headless.Sequences.Abstractions": "[1.0.0, )",
+          "Headless.Sql.Abstractions": "[1.0.0, )",
+          "Headless.Sql.Core": "[1.0.0, )",
+          "Headless.UnitOfWork": "[1.0.0, )",
           "Headless.UnitOfWork.Abstractions": "[1.0.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.Options": "[10.0.12, )"
@@ -686,6 +690,20 @@
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
           "Headless.Serializer.Abstractions": "[1.0.0, )"
+        }
+      },
+      "headless.sql.abstractions": {
+        "type": "Project"
+      },
+      "headless.sql.core": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
+          "Headless.Sql.Abstractions": "[1.0.0, )",
+          "Headless.UnitOfWork": "[1.0.0, )",
+          "Nito.AsyncEx": "[5.1.2, )",
+          "OpenTelemetry.Api": "[1.18.0, )"
         }
       },
       "headless.testing": {
@@ -721,6 +739,17 @@
           "Testcontainers.Redis": "[4.15.0, )",
           "Testcontainers.XunitV3": "[4.15.0, )",
           "xunit.v3.extensibility.core": "[4.0.0, )"
+        }
+      },
+      "headless.unitofwork": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.UnitOfWork.Abstractions": "[1.0.0, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
+          "Microsoft.Extensions.Logging.Abstractions": "[10.0.12, )",
+          "Microsoft.Extensions.Options": "[10.0.12, )",
+          "Polly.Core": "[8.7.0, )"
         }
       },
       "headless.unitofwork.abstractions": {
@@ -985,6 +1014,12 @@
         "requested": "[2.5.0, )",
         "resolved": "2.5.0",
         "contentHash": "l0OuzZ2T/botMbOvPGY6yp3v+69aMrt+wzST/tFdGnHEFVXbbdOFxu3bfo9XH1N1H0LCQlA3RmFvlPO8zA+faw=="
+      },
+      "OpenTelemetry.Api": {
+        "type": "CentralTransitive",
+        "requested": "[1.18.0, )",
+        "resolved": "1.18.0",
+        "contentHash": "Dhzm5oughIY9EWckt2J1yXcEbXpki5WCL2q7prJoYxzH6C7jdkfGtPMTkUVZZ4AhjJKzQnlC+kLSIlmIVwC4Vw=="
       },
       "Polly.Core": {
         "type": "CentralTransitive",

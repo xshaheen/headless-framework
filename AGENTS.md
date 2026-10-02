@@ -25,6 +25,8 @@ Registration follows the same split. The feature's Core package owns `AddHeadles
 
 Transactions are explicit. `IUnitOfWorkFactory` is a singleton with no `Current` property. The `IUnitOfWork` handle is the unit's only identity, and the receiver always decides whether to enlist. Before you change how Messaging, Jobs, or a storage provider joins a unit, read [unit-of-work propagation and enlistment](docs/solutions/architecture-patterns/unit-of-work-propagation-and-enlistment-contract.md).
 
+Relational storage features create their tables through one `SchemaRunner`, which trusts `headless_schema_history`. A table dropped by hand, or by a test reset on a reused container, is not recreated until its feature's history rows go too. Never edit a released step: add a new one. Before a release no database runs the step, so change it in place. Put every configurable object name in `SchemaContribution.FeatureId`. Before you add or change a storage feature's DDL, read [one schema runner](docs/solutions/architecture-patterns/schema-runner-history-lock-and-verify.md).
+
 ## Build and test
 
 Use the `make` targets instead of raw `dotnet`. They pin configuration, results directories, and parallelism. `make help` lists every target. The rules below cover what `make help` does not say.

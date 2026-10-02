@@ -199,7 +199,7 @@ public sealed class MessagingOutboxesTests : TestBase
             new MessagingOutbox(
                 "AddOutbox().UseX()",
                 Substitute.For<IDataStorage>(),
-                Substitute.For<IStorageInitializer>()
+                Substitute.For<IOutboxStorageInitializer>()
             );
 
         act.Should().Throw<MessagingConfigurationException>().WithMessage("*'AddOutbox().UseX()'*relational*");

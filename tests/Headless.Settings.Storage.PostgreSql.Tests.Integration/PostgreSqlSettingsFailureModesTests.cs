@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Hosting.Initialization;
+using Headless.Hosting.Initialization.Schema;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -32,10 +33,12 @@ public sealed class PostgreSqlSettingsFailureModesTests(PostgreSqlSettingsFixtur
             .Single(x => x is IHostedLifecycleService);
         initializer.IsInitialized.Should().BeFalse();
 
+        // The schema runner names the features whose connection failed and keeps the driver error as the cause.
         await FluentActions
             .Awaiting(() => initializer.WaitForInitializationAsync(AbortToken))
             .Should()
-            .ThrowAsync<NpgsqlException>();
+            .ThrowAsync<SchemaRunnerException>()
+            .WithInnerException(typeof(NpgsqlException));
     }
 
     [Fact]

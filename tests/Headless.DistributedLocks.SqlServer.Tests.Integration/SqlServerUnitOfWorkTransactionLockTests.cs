@@ -90,6 +90,62 @@ public sealed class SqlServerUnitOfWorkTransactionLockTests(SqlServerDistributed
     }
 
     [Fact]
+    public async Task should_succeed_when_the_unit_already_holds_the_lock()
+    {
+        // given
+        await using var provider = _BuildProvider();
+        var factory = provider.GetRequiredService<IUnitOfWorkFactory>();
+        var resource = _CreateResourceName();
+
+        await using var connection = new SqlConnection(fixture.ConnectionString);
+        await using var unit = await factory.BeginAsync(connection, cancellationToken: AbortToken);
+        await unit.TransactionLocks.AcquireAsync(resource, cancellationToken: AbortToken);
+
+        // when — the unit's transaction is the owner, so acquiring again is granted instead of reported as contention
+        var bounded = await unit.TransactionLocks.AcquireAsync(resource, TimeSpan.FromSeconds(1), AbortToken);
+        var unbounded = await unit.TransactionLocks.AcquireAsync(resource, Timeout.InfiniteTimeSpan, AbortToken);
+        var tryOnce = await unit.TransactionLocks.TryAcquireAsync(resource, cancellationToken: AbortToken);
+
+        // then
+        bounded.Should().Be(new TransactionLockHandle(resource));
+        unbounded.Should().Be(bounded);
+        tryOnce.Should().Be(bounded);
+
+        await unit.CompleteAsync(AbortToken);
+        (await _TryContendAsync(resource)).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_leave_the_unit_usable_when_an_acquire_is_cancelled()
+    {
+        // given
+        await using var provider = _BuildProvider();
+        var factory = provider.GetRequiredService<IUnitOfWorkFactory>();
+        var resource = _CreateResourceName();
+
+        await using var holderConnection = new SqlConnection(fixture.ConnectionString);
+        await using var contenderConnection = new SqlConnection(fixture.ConnectionString);
+
+        await using var holder = await factory.BeginAsync(holderConnection, cancellationToken: AbortToken);
+        await holder.TransactionLocks.AcquireAsync(resource, cancellationToken: AbortToken);
+        await using var contender = await factory.BeginAsync(contenderConnection, cancellationToken: AbortToken);
+
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        cancellation.CancelAfter(TimeSpan.FromMilliseconds(300));
+
+        // when
+        var act = async () =>
+            await contender.TransactionLocks.AcquireAsync(resource, TimeSpan.FromSeconds(30), cancellation.Token);
+
+        // then
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        (await contender.TransactionLocks.TryAcquireAsync(_CreateResourceName(), cancellationToken: AbortToken))
+            .Should()
+            .NotBeNull();
+        await contender.CompleteAsync(AbortToken);
+    }
+
+    [Fact]
     public async Task should_release_the_lock_when_the_unit_rolls_back()
     {
         // given

@@ -696,8 +696,13 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         return listener;
     }
 
-    [Fact]
-    public async Task open_circuit_atomically_defers_exact_claim_to_authoritative_boundary()
+    [Theory]
+    [InlineData(10, 27)]
+    [InlineData(60, 0)]
+    public async Task open_circuit_atomically_defers_exact_claim_to_authoritative_boundary(
+        int healthyDispatchSeconds,
+        int expectedDelaySeconds
+    )
     {
         var now = new DateTimeOffset(2026, 8, 25, 9, 30, 0, TimeSpan.Zero);
         var timeProvider = new FakeTimeProvider(now);
@@ -735,7 +740,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             .EnqueueToExecute(healthy, null, Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
-                timeProvider.Advance(TimeSpan.FromSeconds(10));
+                timeProvider.Advance(TimeSpan.FromSeconds(healthyDispatchSeconds));
                 return ValueTask.CompletedTask;
             });
         var sut = new MessageNeedToRetryProcessor(
@@ -767,7 +772,9 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
                             MessageLane.Bus,
                             message.InboxAttemptFence
                         )
-                    && request.NextRetryAt == nextProbeAt
+                    // Healthy dispatch spent part of the 37s boundary, so only what is left of it, never a negative
+                    // delay, reaches the store.
+                    && request.Delay == TimeSpan.FromSeconds(expectedDelaySeconds)
                 ),
                 CancellationToken.None
             );

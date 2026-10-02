@@ -55,6 +55,18 @@ public sealed class SqlServerRcsiLeasesConformanceTests(SqlServerRcsiFencingFixt
     }
 
     [Fact]
+    public override Task should_refuse_a_key_no_provider_stores_unchanged_before_any_write()
+    {
+        return base.should_refuse_a_key_no_provider_stores_unchanged_before_any_write();
+    }
+
+    [Fact]
+    public override Task should_never_reissue_a_generation_granted_by_a_sweep_handler_that_threw()
+    {
+        return base.should_never_reissue_a_generation_granted_by_a_sweep_handler_that_threw();
+    }
+
+    [Fact]
     public override Task should_not_reclaim_an_always_throwing_lease_within_one_sweep_call()
     {
         return base.should_not_reclaim_an_always_throwing_lease_within_one_sweep_call();

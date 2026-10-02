@@ -21,7 +21,7 @@ public sealed class UnitOfWorkSequencesFeatureTests : TestBase
             Step = 10,
         };
         context.Tenant.Id = "t1";
-        var (unit, resource) = SequenceTestContext.ActiveUnit();
+        var (unit, _) = SequenceTestContext.ActiveUnit();
 
         // when
         var value = await context.Feature.NextAsync(unit, "invoice", "2026", AbortToken);
@@ -30,7 +30,7 @@ public sealed class UnitOfWorkSequencesFeatureTests : TestBase
         value.Should().Be(1000);
         await context
             .Store.Received(1)
-            .IncrementEnlistedAsync(resource, new SequenceKey("t1", "invoice", "2026"), 1000, 10, AbortToken);
+            .IncrementEnlistedAsync(unit, new SequenceKey("t1", "invoice", "2026"), 1000, 10, AbortToken);
         await context.Store.DidNotReceiveWithAnyArgs().IncrementAsync(default, default, default, AbortToken);
     }
 
@@ -141,7 +141,7 @@ public sealed class UnitOfWorkSequencesFeatureTests : TestBase
         var context = new SequenceTestContext().GapFree("invoice");
         var (unit, resource) = SequenceTestContext.ActiveUnit(isOwned: false);
         context
-            .Store.When(store => store.ValidateEnlistment(resource))
+            .Store.When(store => store.ValidateEnlistment(unit))
             .Do(_ => throw new InvalidOperationException("different database"));
 
         // when
@@ -168,10 +168,10 @@ public sealed class UnitOfWorkSequencesFeatureTests : TestBase
         // then
         Received.InOrder(() =>
         {
-            context.Store.ValidateEnlistment(resource);
+            context.Store.ValidateEnlistment(unit);
             unit.PreventRetry();
             _ = context.Store.IncrementEnlistedAsync(
-                resource,
+                unit,
                 Arg.Any<SequenceKey>(),
                 Arg.Any<long>(),
                 Arg.Any<long>(),
@@ -185,18 +185,18 @@ public sealed class UnitOfWorkSequencesFeatureTests : TestBase
     {
         // given
         var context = new SequenceTestContext().GapFree("invoice");
-        var (unit, resource) = SequenceTestContext.ActiveUnit(isOwned: true);
+        var (unit, _) = SequenceTestContext.ActiveUnit(isOwned: true);
 
         // when
         await context.Feature.NextAsync(unit, "invoice", cancellationToken: AbortToken);
 
         // then
         unit.DidNotReceive().PreventRetry();
-        context.Store.Received(1).ValidateEnlistment(resource);
+        context.Store.Received(1).ValidateEnlistment(unit);
     }
 
     [Fact]
-    public async Task should_hand_the_store_the_unit_resource_whatever_its_transaction_type()
+    public async Task should_hand_the_store_the_unit_whatever_its_transaction_type()
     {
         // given — the provider, not Core, decides which transaction types it can write through
         var context = new SequenceTestContext().GapFree("invoice");
@@ -207,7 +207,7 @@ public sealed class UnitOfWorkSequencesFeatureTests : TestBase
         await context.Feature.NextAsync(unit, "invoice", cancellationToken: AbortToken);
 
         // then
-        context.Store.Received(1).ValidateEnlistment(resource);
+        context.Store.Received(1).ValidateEnlistment(unit);
     }
 
     [Fact]

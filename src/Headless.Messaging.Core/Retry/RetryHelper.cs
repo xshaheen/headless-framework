@@ -5,6 +5,7 @@ using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
+using Headless.Messaging.Persistence;
 using Microsoft.Extensions.Logging;
 
 namespace Headless.Messaging.Retry;
@@ -257,18 +258,14 @@ internal static class RetryHelper
     /// Both the consume path (SubscribeExecutor) and the publish path (MessageSender) share
     /// identical logic; a single definition prevents the two from drifting.
     /// </summary>
-    /// <param name="currentNextRetryAt">
-    /// The message's current <c>NextRetryAt</c> from storage. Used to pick the LATER of
-    /// (the inline-retry resume time + safety margin) and the existing schedule, so that
-    /// <c>InitialDispatchGrace</c> on a freshly-stored message is not lowered by a smaller
-    /// inline delay (and so the polling query cannot race the inline-retry mid-sleep).
-    /// </param>
+    /// <remarks>
+    /// The due time leaves Core as a <see cref="RetryDelay"/>, never an instant: the store adds it to the clock its
+    /// retry pickup compares against, so an application clock skewed from the store's cannot fire a retry early or late.
+    /// </remarks>
     public static RetryNextState ResolveNextState(
         MessagingRetryDecision decision,
         int inlineRetries,
-        RetryPolicyOptions policy,
-        TimeProvider timeProvider,
-        DateTimeOffset? currentNextRetryAt = null
+        RetryPolicyOptions policy
     )
     {
         // #1 — when Polly returns Delay >= DispatchTimeout, the inline retry burst ends early
@@ -289,28 +286,26 @@ internal static class RetryHelper
         if (decision.Outcome != MessagingRetryDecision.Kind.Continue)
         {
             // Stop / Exhausted: clear NextRetryAt so the row is terminal and excluded from pickup.
-            return new RetryNextState(isInlineRetryInFlight, NextRetryAt: null, nextStatus);
+            return new RetryNextState(isInlineRetryInFlight, NextRetry: null, nextStatus);
         }
-
-        var now = timeProvider.GetUtcNow();
-        var inlineResumeAt = now.Add(decision.Delay);
 
         if (!isInlineRetryInFlight)
         {
             // Persisted-retry transition: NextRetryAt drives when the retry processor picks up
             // the row, so it MUST equal the strategy's delay (no padding, no preservation).
-            return new RetryNextState(isInlineRetryInFlight, inlineResumeAt, nextStatus);
+            return new RetryNextState(isInlineRetryInFlight, RetryDelay.Exactly(decision.Delay), nextStatus);
         }
 
         // Inline-retry in-flight transition: the persisted NextRetryAt only matters for
         // crash recovery (the Polly pipeline itself drives the actual delay). Push NextRetryAt
         // past the inline-retry resume point by InitialDispatchGrace so the polling cycle does
-        // not race the inline path mid-sleep, AND preserve any existing schedule that is later
-        // (e.g., InitialDispatchGrace from initial store).
-        var paddedResume = inlineResumeAt.Add(policy.InitialDispatchGrace);
-        var nextRetryAt = currentNextRetryAt is { } existing && existing > paddedResume ? existing : paddedResume;
-
-        return new RetryNextState(isInlineRetryInFlight, nextRetryAt, nextStatus);
+        // not race the inline path mid-sleep, AND let the store keep any existing schedule that is
+        // later (e.g., InitialDispatchGrace from initial store), since only the store reads the row's current value.
+        return new RetryNextState(
+            isInlineRetryInFlight,
+            RetryDelay.AtLeast(decision.Delay + policy.InitialDispatchGrace),
+            nextStatus
+        );
     }
 }
 
@@ -320,6 +315,6 @@ internal static class RetryHelper
 /// </summary>
 internal readonly record struct RetryNextState(
     bool IsInlineRetryInFlight,
-    DateTimeOffset? NextRetryAt,
+    RetryDelay? NextRetry,
     StatusName NextStatus
 );

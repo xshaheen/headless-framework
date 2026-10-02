@@ -8,6 +8,7 @@ using Headless.Messaging.Serialization;
 using Headless.Messaging.Storage.PostgreSql;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Tests;
 
@@ -23,20 +24,27 @@ public sealed class PostgreSqlDeduplicationTest(PostgreSqlTestFixture fixture) :
         services.AddLogging();
         services.Configure<PostgreSqlOptions>(x => x.ConnectionString = fixture.ConnectionString);
         services.Configure<MessagingOptions>(x => x.Version = "v1");
-        services.AddSingleton<IStorageInitializer, PostgreSqlStorageInitializer>();
+        services.AddTestMessagingSchema();
         services.AddSingleton<ISerializer, JsonUtf8Serializer>();
         services.AddSingleton(TimeProvider.System);
-        // PostgreSqlDataStorage resolves a keyed IGuidGenerator (SequentialGuidType.Version7) for native uuid PKs.
+        // The storage resolves a keyed IGuidGenerator (SequentialGuidType.Version7) for native uuid PKs.
         services.AddHeadlessGuidGenerator();
-        // PostgreSqlDataStorage takes INodeMembership (owner tracking); tests don't exercise membership.
+        // The storage takes INodeMembership (owner tracking); tests don't exercise membership.
         services.AddSingleton<INodeMembership, NullNodeMembership>();
-        services.AddSingleton<IDataStorage, PostgreSqlDataStorage>();
+        services.AddSingleton<IDataStorage>(sp =>
+            RelationalDataStorage.Create(
+                sp,
+                sp.GetRequiredService<IOptions<PostgreSqlOptions>>().Value.ToStorage(),
+                sp.GetRequiredService<IStorageTableNames>(),
+                SequentialGuidType.Version7
+            )
+        );
 
         var provider = services.BuildServiceProvider();
         _storage = provider.GetRequiredService<IDataStorage>();
 
-        var initializer = provider.GetRequiredService<IStorageInitializer>();
-        await initializer.InitializeAsync();
+        var tableNames = provider.GetRequiredService<IStorageTableNames>();
+        await provider.ApplyMessagingSchemaAsync();
         await base.InitializeAsync();
     }
 

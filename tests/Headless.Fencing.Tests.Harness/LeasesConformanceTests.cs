@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using Headless.Fencing;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;
+using Xunit;
 
 namespace Tests;
 
@@ -26,6 +27,14 @@ public abstract class LeasesConformanceTests<TFixture>(TFixture fixture) : TestB
     protected static readonly TimeSpan ShortDuration = TimeSpan.FromSeconds(1);
 
     protected TFixture Fixture { get; } = fixture;
+
+    private void _SkipUnlessEnlistedGrant()
+    {
+        Assert.SkipUnless(
+            Fixture.SupportsEnlistedGrant,
+            "The provider refuses a grant inside a caller's unit; its own tests assert the refusal."
+        );
+    }
 
     #region Grant
 
@@ -345,6 +354,7 @@ public abstract class LeasesConformanceTests<TFixture>(TFixture fixture) : TestB
 
     public virtual async Task should_refuse_the_fence_once_the_ttl_elapses_inside_an_open_transaction()
     {
+        _SkipUnlessEnlistedGrant();
         var (kind, resource) = (CreateKind(), CreateResource());
         await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
         await using var unit = await Fixture.BeginUnitAsync(host, AbortToken);
@@ -388,6 +398,7 @@ public abstract class LeasesConformanceTests<TFixture>(TFixture fixture) : TestB
 
     public virtual async Task should_issue_a_higher_generation_to_a_grant_that_waited_on_an_open_enlisted_grant()
     {
+        _SkipUnlessEnlistedGrant();
         var (kind, resource) = (CreateKind(), CreateResource());
         await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
         await using var unit = await Fixture.BeginUnitAsync(host, AbortToken);
@@ -410,6 +421,7 @@ public abstract class LeasesConformanceTests<TFixture>(TFixture fixture) : TestB
 
     public virtual async Task should_leave_no_row_when_an_enlisted_grant_rolls_back()
     {
+        _SkipUnlessEnlistedGrant();
         var (kind, resource) = (CreateKind(), CreateResource());
         await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
         long rolledBack;
@@ -431,6 +443,7 @@ public abstract class LeasesConformanceTests<TFixture>(TFixture fixture) : TestB
 
     public virtual async Task should_mark_only_an_observed_unit_non_retryable_and_only_for_writes()
     {
+        _SkipUnlessEnlistedGrant();
         var (kind, resource) = (CreateKind(), CreateResource());
         await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
         FencedLease lease;
@@ -533,6 +546,8 @@ public abstract class LeasesConformanceTests<TFixture>(TFixture fixture) : TestB
         results.Should().AllSatisfy(r => r.Handled.Should().NotBeEmpty("both sweepers claimed before either finished"));
         var handled = results.SelectMany(static r => r.Handled).ToList();
 
+        // Uniqueness by resource on the leases, then set equality on the resources themselves: comparing the
+        // leases with the string keys directly would never match.
         handled.Should().OnlyHaveUniqueItems(static l => l.Resource);
         handled.Select(static l => l.Resource).Should().BeEquivalentTo(generations.Keys);
         handled.Should().AllSatisfy(l => l.Generation.Should().Be(generations[l.Resource]));
@@ -594,6 +609,46 @@ public abstract class LeasesConformanceTests<TFixture>(TFixture fixture) : TestB
         retried.Resource.Should().Be(failing);
         retried.Generation.Should().Be(generations[failing], "an abandon never bumps the generation");
         (await Fixture.ReadHandoffsAsync(kind, AbortToken)).Should().HaveCount(3);
+    }
+
+    public virtual async Task should_never_reissue_a_generation_granted_by_a_sweep_handler_that_threw()
+    {
+        var (kind, resource) = (CreateKind(), CreateResource());
+        await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
+        await SeedExpiredAsync(host, kind, 1);
+        long? rolledBack = null;
+
+        // The sweep hands its own unit to the handler; a grant there must be refused where the provider refuses
+        // enlisted grants, or else rolled back with the unit and never issued again.
+        var swept = await host.Leases.SweepExpiredAsync(
+            kind,
+            async (_, unit, ct) =>
+            {
+                var granted = await unit.Leases.GrantAsync(kind, resource, LongDuration, ct);
+                rolledBack = granted.Lease!.Generation;
+
+                throw new InvalidOperationException("handler failed after granting");
+            },
+            limit: 10,
+            AbortToken
+        );
+
+        var failure = swept.Failures.Should().ContainSingle().Subject;
+        var next = await host.Leases.GrantAsync(kind, resource, LongDuration, AbortToken);
+
+        next.Status.Should().Be(LeaseGrantStatus.Granted);
+
+        if (Fixture.SupportsEnlistedGrant)
+        {
+            failure.Exception.Should().BeOfType<InvalidOperationException>();
+            next.Lease!.Generation.Should()
+                .BeGreaterThan(rolledBack!.Value, "a rolled-back generation is never issued again");
+        }
+        else
+        {
+            failure.Exception.Should().BeOfType<NotSupportedException>();
+            rolledBack.Should().BeNull("the refused grant drew no generation");
+        }
     }
 
     public virtual async Task should_not_reclaim_an_always_throwing_lease_within_one_sweep_call()
@@ -769,6 +824,41 @@ public abstract class LeasesConformanceTests<TFixture>(TFixture fixture) : TestB
 
         third.Status.Should().Be(LeaseGrantStatus.Takeover);
         ShouldCarry(third.Progress, recorded, "no later attempt recorded any");
+    }
+
+    // Found by the differential oracle: call validation accepted these, then PostgreSQL failed the statement on NUL
+    // (22021) and Npgsql's UTF-8 encoder refused an unpaired surrogate, while SqlClient sent the surrogate as U+FFFD, so
+    // SQL Server stored a different key (handed back to a sweep as a resource naming no lease the caller holds) and
+    // would merge any two keys that differ only in which lone surrogate they carry.
+    public virtual async Task should_refuse_a_key_no_provider_stores_unchanged_before_any_write()
+    {
+        var (kind, resource) = (CreateKind(), CreateResource());
+        await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
+
+        foreach (var unportable in (string[])["x\u0000y", "lone\ud800", "\udc00lone"])
+        {
+            var badResource = async () =>
+                await host.Leases.GrantAsync(kind, resource + unportable, LongDuration, AbortToken);
+            var badKind = async () =>
+                await host.Leases.GrantAsync(kind + unportable, resource, LongDuration, AbortToken);
+            var badLease = async () =>
+                await host.Leases.SettleAsync(new FencedLease(null, kind, resource + unportable, 1), AbortToken);
+
+            await badResource.Should().ThrowAsync<ArgumentException>();
+            await badKind.Should().ThrowAsync<ArgumentException>();
+            await badLease.Should().ThrowAsync<ArgumentException>();
+
+            using (host.CurrentTenant.Change("tenant" + unportable))
+            {
+                var badTenant = async () => await host.Leases.GrantAsync(kind, resource, LongDuration, AbortToken);
+                await badTenant.Should().ThrowAsync<ArgumentException>();
+            }
+        }
+
+        // Nothing reached the store: the portable key is still free.
+        (await host.Leases.GrantAsync(kind, resource, LongDuration, AbortToken))
+            .Status.Should()
+            .Be(LeaseGrantStatus.Granted);
     }
 
     public virtual async Task should_reject_oversized_progress_before_any_write()

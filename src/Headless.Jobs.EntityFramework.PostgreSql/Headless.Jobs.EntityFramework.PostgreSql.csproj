@@ -14,5 +14,6 @@
     <ProjectReference Include="..\Headless.Jobs.EntityFramework\Headless.Jobs.EntityFramework.csproj" />
     <ProjectReference Include="..\Headless.UnitOfWork.EntityFramework\Headless.UnitOfWork.EntityFramework.csproj" />
     <ProjectReference Include="..\Headless.Coordination.PostgreSql\Headless.Coordination.PostgreSql.csproj" />
+    <ProjectReference Include="..\Headless.Sql.PostgreSql\Headless.Sql.PostgreSql.csproj" />
   </ItemGroup>
 </Project>

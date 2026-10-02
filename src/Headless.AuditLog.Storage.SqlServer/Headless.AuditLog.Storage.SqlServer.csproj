@@ -4,16 +4,12 @@
     <Description>SQL Server storage provider for Headless audit logging.</Description>
     <PackageTags>headless;audit;log;storage;sql-server;dotnet</PackageTags>
     <RootNamespace>Headless.AuditLog.SqlServer</RootNamespace>
-    <NoWarn>$(NoWarn);CA2100</NoWarn>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.SqlClient" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Headless.AuditLog.Abstractions\Headless.AuditLog.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.AuditLog.Core\Headless.AuditLog.Core.csproj" />
-    <ProjectReference Include="..\Headless.Core\Headless.Core.csproj" />
-    <ProjectReference Include="..\Headless.Serializer.Json\Headless.Serializer.Json.csproj" />
     <ProjectReference Include="..\Headless.Sql.SqlServer\Headless.Sql.SqlServer.csproj" />
   </ItemGroup>
 </Project>

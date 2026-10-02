@@ -66,23 +66,23 @@ public sealed class SqlServerDeliveryCoordinationTests(SqlServerTestFixture fixt
         services.AddDbContext<CoordinationDbContext>(options => options.UseSqlServer(fixture.ConnectionString));
         services.Configure<SqlServerOptions>(x => x.ConnectionString = configuredConnectionString);
         services.Configure<MessagingOptions>(x => x.Version = "v1");
-        services.AddSingleton<IStorageInitializer, SqlServerStorageInitializer>();
+        services.AddTestMessagingSchema();
         services.AddSingleton<ISerializer, JsonUtf8Serializer>();
 
         await using var provider = services.BuildServiceProvider();
         await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<CoordinationDbContext>();
         var factory = scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>();
-        IDeliveryCoordinationResolver storage = new SqlServerDataStorage(
+        IDeliveryCoordinationResolver storage = new RelationalDataStorage(
+            provider.GetRequiredService<IOptions<SqlServerOptions>>().Value.ToStorage(),
             provider.GetRequiredService<IOptions<MessagingOptions>>(),
-            provider.GetRequiredService<IOptions<SqlServerOptions>>(),
             TestStorageOptions.For(),
-            provider.GetRequiredService<IStorageInitializer>(),
+            provider.GetRequiredService<IStorageTableNames>(),
             provider.GetRequiredService<ISerializer>(),
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),
             TimeProvider.System,
             new NullNodeMembership(),
-            NullLogger<SqlServerDataStorage>.Instance
+            NullLogger<RelationalDataStorage>.Instance
         );
 
         await using var unit = await factory.BeginAsync(db, cancellationToken: AbortToken);

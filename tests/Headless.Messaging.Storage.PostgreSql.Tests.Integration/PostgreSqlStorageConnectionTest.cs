@@ -21,7 +21,7 @@ namespace Tests;
 [Collection<PostgreSqlTestFixture>]
 public sealed class PostgreSqlStorageConnectionTest(PostgreSqlTestFixture fixture) : TestBase
 {
-    private PostgreSqlDataStorage _storage = null!;
+    private RelationalDataStorage _storage = null!;
 
     public override async ValueTask InitializeAsync()
     {
@@ -30,22 +30,22 @@ public sealed class PostgreSqlStorageConnectionTest(PostgreSqlTestFixture fixtur
         services.AddLogging();
         services.Configure<PostgreSqlOptions>(x => x.ConnectionString = fixture.ConnectionString);
         services.Configure<MessagingOptions>(x => x.Version = "v1");
-        services.AddSingleton<IStorageInitializer, PostgreSqlStorageInitializer>();
+        services.AddTestMessagingSchema();
         services.AddSingleton<ISerializer, JsonUtf8Serializer>();
 
         var provider = services.BuildServiceProvider();
-        var initializer = provider.GetRequiredService<IStorageInitializer>();
-        await initializer.InitializeAsync();
-        _storage = new PostgreSqlDataStorage(
-            provider.GetRequiredService<IOptions<PostgreSqlOptions>>(),
-            TestStorageOptions.For(),
+        var tableNames = provider.GetRequiredService<IStorageTableNames>();
+        await provider.ApplyMessagingSchemaAsync();
+        _storage = new RelationalDataStorage(
+            provider.GetRequiredService<IOptions<PostgreSqlOptions>>().Value.ToStorage(),
             provider.GetRequiredService<IOptions<MessagingOptions>>(),
-            initializer,
+            TestStorageOptions.For(),
+            tableNames,
             provider.GetRequiredService<ISerializer>(),
             new SequentialGuidGenerator(SequentialGuidType.Version7),
             TimeProvider.System,
             new NullNodeMembership(),
-            NullLogger<PostgreSqlDataStorage>.Instance
+            NullLogger<RelationalDataStorage>.Instance
         );
 
         await base.InitializeAsync();

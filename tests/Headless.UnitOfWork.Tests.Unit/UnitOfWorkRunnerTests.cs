@@ -178,7 +178,9 @@ public sealed class UnitOfWorkRunnerTests : TestBase
             }
             catch (Exception)
             {
+#pragma warning disable ERP022 // The fake retry strategy discards the first failure on purpose: replaying after it is what the test observes.
                 return await attempt(cancellationToken);
+#pragma warning restore ERP022
             }
 #pragma warning restore ERP022
         }

@@ -129,7 +129,7 @@ public sealed class AdditionalOutboxRelayTests : TestBase
     {
         // given
         var shipping = AdditionalOutboxDoubles.CreateOutbox("shipping", initialized: false);
-        var initializer = Substitute.For<IStorageInitializer>();
+        var initializer = Substitute.For<IStorageTableNames>();
         initializer.GetPublishedTableName().Returns("orders.published");
         initializer.GetReceivedTableName().Returns("orders.received");
         await using var provider = new ServiceCollection()
@@ -241,7 +241,7 @@ public sealed class AdditionalOutboxRelayTests : TestBase
     public async Task collector_should_sweep_the_primary_when_an_outbox_database_fails()
     {
         // given
-        var initializer = Substitute.For<IStorageInitializer>();
+        var initializer = Substitute.For<IStorageTableNames>();
         initializer.GetPublishedTableName().Returns("orders.published");
         initializer.GetReceivedTableName().Returns("orders.received");
         _billing

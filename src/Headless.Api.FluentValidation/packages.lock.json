@@ -350,7 +350,8 @@
       "headless.hosting": {
         "type": "Project",
         "dependencies": {
-          "Headless.FluentValidation": "[1.0.0, )"
+          "Headless.FluentValidation": "[1.0.0, )",
+          "OpenTelemetry.Api": "[1.18.0, )"
         }
       },
       "headless.multitenancy": {
@@ -549,6 +550,12 @@
         "requested": "[3.3.0, )",
         "resolved": "3.3.0",
         "contentHash": "a7lcs+yTDzPRRS82KMmU/eVCMKbJrDStD1Yt+6RRZIsDxU006IdxEVkmMLvxt2hB5YS3Imfcxrdwywtv29ogjw=="
+      },
+      "OpenTelemetry.Api": {
+        "type": "CentralTransitive",
+        "requested": "[1.18.0, )",
+        "resolved": "1.18.0",
+        "contentHash": "Dhzm5oughIY9EWckt2J1yXcEbXpki5WCL2q7prJoYxzH6C7jdkfGtPMTkUVZZ4AhjJKzQnlC+kLSIlmIVwC4Vw=="
       },
       "Polly.Core": {
         "type": "CentralTransitive",

@@ -902,7 +902,8 @@
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.Hosting": "[10.0.12, )",
           "Microsoft.Extensions.Options.ConfigurationExtensions": "[10.0.12, )",
-          "Microsoft.Extensions.Options.DataAnnotations": "[10.0.12, )"
+          "Microsoft.Extensions.Options.DataAnnotations": "[10.0.12, )",
+          "OpenTelemetry.Api": "[1.18.0, )"
         }
       },
       "headless.messaging.abstractions": {
@@ -954,6 +955,7 @@
           "Headless.Messaging.Abstractions": "[1.0.0, )",
           "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
           "Headless.Permissions.Abstractions": "[1.0.0, )",
+          "Headless.Sql.Abstractions": "[1.0.0, )",
           "Microsoft.AspNetCore.Authorization": "[10.0.12, )"
         }
       },
@@ -968,7 +970,6 @@
         "type": "Project",
         "dependencies": {
           "Headless.Permissions.Core": "[1.0.0, )",
-          "Headless.Serializer.Json": "[1.0.0, )",
           "Headless.Sql.SqlServer": "[1.0.0, )",
           "Microsoft.Data.SqlClient": "[7.0.2, )"
         }
@@ -1003,14 +1004,20 @@
       "headless.sql.core": {
         "type": "Project",
         "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
           "Headless.Sql.Abstractions": "[1.0.0, )",
-          "Nito.AsyncEx": "[5.1.2, )"
+          "Headless.UnitOfWork": "[1.0.0, )",
+          "Nito.AsyncEx": "[5.1.2, )",
+          "OpenTelemetry.Api": "[1.18.0, )"
         }
       },
       "headless.sql.sqlserver": {
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )",
           "Headless.Sql.Abstractions": "[1.0.0, )",
           "Headless.Sql.Core": "[1.0.0, )",
           "Microsoft.Data.SqlClient": "[7.0.2, )",

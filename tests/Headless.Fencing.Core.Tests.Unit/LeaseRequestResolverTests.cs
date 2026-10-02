@@ -36,6 +36,68 @@ public sealed class LeaseRequestResolverTests : TestBase
         act.Should().Throw<ArgumentException>();
     }
 
+    // PostgreSQL cannot store NUL; an unpaired surrogate is not Unicode, so Npgsql's UTF-8 encoder refuses it and
+    // SqlClient sends it as U+FFFD, merging distinct keys. Found by the differential oracle (seeds 1, 12, and 20).
+    // The values are built in code: attribute arguments are stored as UTF-8, which would turn a lone surrogate into
+    // U+FFFD before the test ever ran.
+    private static readonly string[] _Unportable =
+    [
+        "x\u0000y",
+        "lone\ud800",
+        "\udc00lone",
+        "\udc00\ud800",
+        "t\u0000",
+        "t\ud800",
+    ];
+
+    [Theory]
+    [InlineData(0, 0)]
+    [InlineData(0, 1)]
+    [InlineData(0, 2)]
+    [InlineData(1, 0)]
+    [InlineData(1, 1)]
+    [InlineData(1, 3)]
+    [InlineData(2, 4)]
+    [InlineData(2, 5)]
+    public void should_reject_a_key_part_no_provider_stores_unchanged(int part, int valueIndex)
+    {
+        var value = _Unportable[valueIndex];
+        var context = new FencingTestContext();
+
+        if (part == 2)
+        {
+            context.Tenant.Id = value;
+        }
+
+        var act = () => context.Resolver.Resolve(part == 0 ? value : "job", part == 1 ? value : "order-1");
+        var actLease = () =>
+            LeaseRequestResolver.ResolveLease(
+                new FencedLease(part == 2 ? value : null, part == 0 ? value : "job", part == 1 ? value : "order-1", 1)
+            );
+
+        act.Should().Throw<ArgumentException>();
+        actLease.Should().Throw<ArgumentException>();
+    }
+
+    [Theory]
+    [InlineData("Job")]
+    [InlineData("caf\u00e9")]
+    [InlineData("cafe\u0301")]
+    [InlineData("stra\u00dfe")]
+    [InlineData("a b")]
+    [InlineData("r\u200b")]
+    [InlineData("x\u0001y")]
+    [InlineData("\ud83d\ude00")]
+    public void should_keep_a_key_part_every_provider_stores_unchanged(string value)
+    {
+        var context = new FencingTestContext();
+        context.Tenant.Id = value;
+
+        var key = context.Resolver.Resolve(value, value);
+
+        key.Should().Be(new LeaseKey(value, value, value));
+    }
+
     [Fact]
     public void should_reject_a_null_kind_or_resource()
     {
@@ -202,6 +264,23 @@ public sealed class LeaseRequestResolverTests : TestBase
 
         context.Resolver.ValidateDuration(context.Options.MinimumLeaseDuration).Should().Be(TimeSpan.FromSeconds(1));
         context.Resolver.ValidateDuration(context.Options.MaximumLeaseDuration).Should().Be(TimeSpan.FromDays(1));
+    }
+
+    [Fact]
+    public void should_truncate_a_duration_to_whole_microseconds()
+    {
+        // PostgreSQL stores microseconds and truncates a finer interval silently, while SQL Server and the in-memory
+        // store keep 100-nanosecond ticks; the differential oracle measured the drift as 1 to 9 ticks per grant.
+        var context = new FencingTestContext();
+
+        context
+            .Resolver.ValidateDuration(TimeSpan.FromMinutes(2) + TimeSpan.FromTicks(15))
+            .Should()
+            .Be(TimeSpan.FromMinutes(2) + TimeSpan.FromTicks(10));
+        context
+            .Resolver.ValidateDuration(TimeSpan.FromMinutes(2) + TimeSpan.FromTicks(9))
+            .Should()
+            .Be(TimeSpan.FromMinutes(2));
     }
 
     [Fact]

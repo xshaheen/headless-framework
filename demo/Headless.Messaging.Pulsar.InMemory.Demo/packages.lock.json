@@ -324,7 +324,8 @@
       "headless.hosting": {
         "type": "Project",
         "dependencies": {
-          "Headless.FluentValidation": "[1.0.0, )"
+          "Headless.FluentValidation": "[1.0.0, )",
+          "OpenTelemetry.Api": "[1.18.0, )"
         }
       },
       "headless.messaging.abstractions": {
@@ -354,6 +355,8 @@
           "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
           "Headless.Messaging.Queue.Abstractions": "[1.0.0, )",
           "Headless.MultiTenancy": "[1.0.0, )",
+          "Headless.Sql.Abstractions": "[1.0.0, )",
+          "Headless.Sql.Core": "[1.0.0, )",
           "Headless.UnitOfWork": "[1.0.0, )",
           "OpenTelemetry.Api": "[1.18.0, )",
           "Polly.Core": "[8.7.0, )"
@@ -420,6 +423,20 @@
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
           "Headless.Serializer.Abstractions": "[1.0.0, )"
+        }
+      },
+      "headless.sql.abstractions": {
+        "type": "Project"
+      },
+      "headless.sql.core": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
+          "Headless.Sql.Abstractions": "[1.0.0, )",
+          "Headless.UnitOfWork": "[1.0.0, )",
+          "Nito.AsyncEx": "[5.1.2, )",
+          "OpenTelemetry.Api": "[1.18.0, )"
         }
       },
       "headless.unitofwork": {

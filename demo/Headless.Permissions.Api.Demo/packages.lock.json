@@ -451,7 +451,8 @@
       "headless.hosting": {
         "type": "Project",
         "dependencies": {
-          "Headless.FluentValidation": "[1.0.0, )"
+          "Headless.FluentValidation": "[1.0.0, )",
+          "OpenTelemetry.Api": "[1.18.0, )"
         }
       },
       "headless.messaging.abstractions": {
@@ -509,7 +510,8 @@
           "Headless.Hosting": "[1.0.0, )",
           "Headless.Messaging.Abstractions": "[1.0.0, )",
           "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
-          "Headless.Permissions.Abstractions": "[1.0.0, )"
+          "Headless.Permissions.Abstractions": "[1.0.0, )",
+          "Headless.Sql.Abstractions": "[1.0.0, )"
         }
       },
       "headless.permissions.storage.entityframework": {
@@ -551,6 +553,9 @@
           "Headless.Checks": "[1.0.0, )",
           "Headless.Serializer.Abstractions": "[1.0.0, )"
         }
+      },
+      "headless.sql.abstractions": {
+        "type": "Project"
       },
       "headless.unitofwork": {
         "type": "Project",
@@ -807,6 +812,12 @@
           "Namotion.Reflection": "3.5.0",
           "Newtonsoft.Json": "13.0.3"
         }
+      },
+      "OpenTelemetry.Api": {
+        "type": "CentralTransitive",
+        "requested": "[1.18.0, )",
+        "resolved": "1.18.0",
+        "contentHash": "Dhzm5oughIY9EWckt2J1yXcEbXpki5WCL2q7prJoYxzH6C7jdkfGtPMTkUVZZ4AhjJKzQnlC+kLSIlmIVwC4Vw=="
       },
       "Polly.Core": {
         "type": "CentralTransitive",

@@ -66,7 +66,9 @@ public static class SetupSqlServerJobsEntityFramework
                                     );
                                 }
 
-                                options.ConnectionString = context.Database.GetConnectionString();
+                                // A context without a connection string leaves it empty, which the coordination
+                                // options validator then reports at startup.
+                                options.ConnectionString = context.Database.GetConnectionString() ?? string.Empty;
                             }
                         );
                     });

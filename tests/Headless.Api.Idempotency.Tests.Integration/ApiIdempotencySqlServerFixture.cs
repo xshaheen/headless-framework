@@ -48,13 +48,16 @@ public sealed class ApiIdempotencySqlServerFixture
             await create.ExecuteNonQueryAsync(CancellationToken.None);
         }
 
-        // The container is reused across runs, so start from no storage and let the initializers create it.
+        // The container is reused across runs, so start from no storage and let the initializers create it. The schema
+        // runner's history goes with the objects its steps created: it trusts the history, so one that outlived them
+        // would stop the next start recreating them, and SQL Server would refuse to drop the schema it sits in.
         await using var connection = new SqlConnection(DatabaseConnectionString);
         await connection.OpenAsync(CancellationToken.None);
         await using var reset = new SqlCommand(
             $"""
             IF OBJECT_ID(N'{HeadlessStorageDefaults.Schema}.IdempotencyRecords', N'U') IS NOT NULL DROP TABLE [{HeadlessStorageDefaults.Schema}].[IdempotencyRecords];
             IF OBJECT_ID(N'{HeadlessStorageDefaults.Schema}.IdempotencyRecordGenerations', N'SO') IS NOT NULL DROP SEQUENCE [{HeadlessStorageDefaults.Schema}].[IdempotencyRecordGenerations];
+            IF OBJECT_ID(N'{HeadlessStorageDefaults.Schema}.headless_schema_history', N'U') IS NOT NULL DROP TABLE [{HeadlessStorageDefaults.Schema}].[headless_schema_history];
             IF SCHEMA_ID(N'{HeadlessStorageDefaults.Schema}') IS NOT NULL EXEC(N'DROP SCHEMA [{HeadlessStorageDefaults.Schema}]');
             """,
             connection

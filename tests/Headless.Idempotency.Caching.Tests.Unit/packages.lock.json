@@ -815,7 +815,8 @@
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.Hosting": "[10.0.12, )",
           "Microsoft.Extensions.Options.ConfigurationExtensions": "[10.0.12, )",
-          "Microsoft.Extensions.Options.DataAnnotations": "[10.0.12, )"
+          "Microsoft.Extensions.Options.DataAnnotations": "[10.0.12, )",
+          "OpenTelemetry.Api": "[1.18.0, )"
         }
       },
       "headless.idempotency.abstractions": {
@@ -845,10 +846,22 @@
           "Headless.Hosting": "[1.0.0, )",
           "Headless.Idempotency.Abstractions": "[1.0.0, )",
           "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
+          "Headless.Sql.Abstractions": "[1.0.0, )",
+          "Headless.Sql.Core": "[1.0.0, )",
+          "Headless.UnitOfWork": "[1.0.0, )",
           "Headless.UnitOfWork.Abstractions": "[1.0.0, )",
           "Microsoft.Extensions.Configuration.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.Options": "[10.0.12, )"
+        }
+      },
+      "headless.idempotency.inmemory": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
+          "Headless.Idempotency.Core": "[1.0.0, )",
+          "Headless.UnitOfWork": "[1.0.0, )"
         }
       },
       "headless.idempotency.tests.harness": {
@@ -860,10 +873,12 @@
           "DeepCloner": "[0.10.4, )",
           "Headless.Hosting": "[1.0.0, )",
           "Headless.Idempotency.Core": "[1.0.0, )",
+          "Headless.Idempotency.InMemory": "[1.0.0, )",
           "Headless.Testing": "[1.0.0, )",
           "Headless.Testing.Testcontainers": "[1.0.0, )",
           "Microsoft.Extensions.DependencyInjection": "[10.0.12, )",
-          "NSubstitute": "[5.3.0, )"
+          "NSubstitute": "[5.3.0, )",
+          "xunit.v3.assert": "[4.0.0, )"
         }
       },
       "headless.multitenancy.abstractions": {
@@ -894,6 +909,20 @@
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
           "Headless.Serializer.Abstractions": "[1.0.0, )"
+        }
+      },
+      "headless.sql.abstractions": {
+        "type": "Project"
+      },
+      "headless.sql.core": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
+          "Headless.Sql.Abstractions": "[1.0.0, )",
+          "Headless.UnitOfWork": "[1.0.0, )",
+          "Nito.AsyncEx": "[5.1.2, )",
+          "OpenTelemetry.Api": "[1.18.0, )"
         }
       },
       "headless.testing": {

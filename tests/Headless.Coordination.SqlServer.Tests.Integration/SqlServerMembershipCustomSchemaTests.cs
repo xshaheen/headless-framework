@@ -37,7 +37,13 @@ public sealed class SqlServerMembershipCustomSchemaTests(SqlServerMembershipFixt
 
         tables
             .Should()
-            .BeEquivalentTo(["CoordinationNodeGeneration", "CoordinationDescriptor", "CoordinationLiveness"]);
+            .BeEquivalentTo([
+                "CoordinationNodeGeneration",
+                "CoordinationDescriptor",
+                "CoordinationLiveness",
+                // The schema runner records applied steps next to the feature's tables.
+                "headless_schema_history",
+            ]);
 
         // dbo must hold none of them: a passing round trip alone would also be satisfied by DDL that ignored
         // the option and fell back to the provider's former dbo default. (dbo is not empty — SQL Server keeps
@@ -70,6 +76,7 @@ public sealed class SqlServerMembershipCustomSchemaTests(SqlServerMembershipFixt
             DROP TABLE IF EXISTS dbo.CoordinationLiveness;
             DROP TABLE IF EXISTS dbo.CoordinationDescriptor;
             DROP TABLE IF EXISTS dbo.CoordinationNodeGeneration;
+            DROP TABLE IF EXISTS dbo.headless_schema_history;
             """;
 
         await command.ExecuteNonQueryAsync(AbortToken);

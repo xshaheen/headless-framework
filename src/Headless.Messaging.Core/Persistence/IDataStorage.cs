@@ -112,10 +112,10 @@ public interface IDataStorage
     /// pass <see cref="MessageContentWrite.Refresh"/> only after mutating <see cref="MediumMessage.Origin"/>.
     /// </param>
     /// <param name="transaction">Optional ambient relational transaction.</param>
-    /// <param name="nextRetryAt">
-    /// UTC timestamp at which the retry processor should re-dispatch this message.
-    /// Must be UTC — non-UTC values are provider-normalized. Pass <see langword="null"/> to clear
-    /// the persisted column. Only retry-transition paths pass a value.
+    /// <param name="retryDelay">
+    /// When the retry processor should re-dispatch this message, as a delay the STORE adds to its own clock, the same
+    /// clock retry pickup compares against. Pass <see langword="null"/> to clear the persisted due time. Only
+    /// retry-transition paths pass a value.
     /// </param>
     /// <param name="lockedUntil">
     /// UTC timestamp until which the row is leased by an active dispatch attempt. Pass
@@ -139,7 +139,7 @@ public interface IDataStorage
         StatusName state,
         MessageContentWrite contentWrite = MessageContentWrite.Preserve,
         DbTransaction? transaction = null,
-        DateTimeOffset? nextRetryAt = null,
+        RetryDelay? retryDelay = null,
         DateTimeOffset? lockedUntil = null,
         int? originalRetries = null,
         CancellationToken cancellationToken = default
@@ -153,7 +153,7 @@ public interface IDataStorage
         MediumMessage message,
         StatusName state,
         MessageContentWrite contentWrite,
-        DateTimeOffset? nextRetryAt,
+        RetryDelay? retryDelay,
         DateTimeOffset? lockedUntil,
         int originalRetries,
         int originalInlineAttempts,
@@ -231,10 +231,10 @@ public interface IDataStorage
     /// <see cref="MessageContentWrite.Preserve"/> because a status transition does not change the envelope;
     /// pass <see cref="MessageContentWrite.Refresh"/> only after mutating <see cref="MediumMessage.Origin"/>.
     /// </param>
-    /// <param name="nextRetryAt">
-    /// UTC timestamp at which the retry processor should re-dispatch this message.
-    /// Must be UTC — non-UTC values are provider-normalized. Pass <see langword="null"/> to clear
-    /// the persisted column. Only retry-transition paths pass a value.
+    /// <param name="retryDelay">
+    /// When the retry processor should re-dispatch this message, as a delay the STORE adds to its own clock, the same
+    /// clock retry pickup compares against. Pass <see langword="null"/> to clear the persisted due time. Only
+    /// retry-transition paths pass a value.
     /// </param>
     /// <param name="lockedUntil">
     /// UTC timestamp until which the row is leased by an active dispatch attempt. Pass
@@ -257,7 +257,7 @@ public interface IDataStorage
         MediumMessage message,
         StatusName state,
         MessageContentWrite contentWrite = MessageContentWrite.Preserve,
-        DateTimeOffset? nextRetryAt = null,
+        RetryDelay? retryDelay = null,
         DateTimeOffset? lockedUntil = null,
         int? originalRetries = null,
         CancellationToken cancellationToken = default
@@ -271,7 +271,7 @@ public interface IDataStorage
         MediumMessage message,
         StatusName state,
         MessageContentWrite contentWrite,
-        DateTimeOffset? nextRetryAt,
+        RetryDelay? retryDelay,
         DateTimeOffset? lockedUntil,
         int originalRetries,
         int originalInlineAttempts,
@@ -467,7 +467,7 @@ public interface IDataStorage
     /// <summary>
     /// Deletes expired message rows from the specified table in bounded batches.
     /// </summary>
-    /// <param name="table">The physical table name to clean (use <c>IStorageInitializer.GetPublishedTableName()</c> or <c>GetReceivedTableName()</c>).</param>
+    /// <param name="table">The physical table name to clean (use <c>IStorageTableNames.GetPublishedTableName()</c> or <c>GetReceivedTableName()</c>).</param>
     /// <param name="timeout">Rows whose <c>ExpiresAt</c> is earlier than this UTC timestamp are eligible for deletion.</param>
     /// <param name="batchCount">Maximum number of rows to delete in a single statement (default 1000).</param>
     /// <param name="cancellationToken">The cancellation token.</param>
@@ -480,17 +480,16 @@ public interface IDataStorage
     );
 
     /// <summary>
-    /// Returns published messages due for retry, filtered by <c>NextRetryAt &lt;= now()</c> using the
-    /// injected <see cref="TimeProvider"/> that created the schedule.
+    /// Returns published messages due for retry, filtered by <c>NextRetryAt &lt;= now()</c> on the store's clock,
+    /// the clock that turned each retry's <see cref="RetryDelay"/> into its due time.
     /// No lookback window is applied.
     /// </summary>
     /// <remarks>
     /// <para>
     /// <b>Atomic claim-and-return:</b> returned rows are already leased — the same statement that
     /// selects them advances <c>LockedUntil</c> to <c>now + RetryPolicyOptions.DispatchTimeout</c>. Relational
-    /// providers use their database clock for lease-expiry comparison and stamping while retaining the injected
-    /// <see cref="TimeProvider"/> as the <c>NextRetryAt</c> scheduling authority. In-memory providers use their
-    /// injected <see cref="TimeProvider"/> for both responsibilities.
+    /// providers use their database clock for the due-time comparison, the lease-expiry comparison, and stamping.
+    /// In-memory providers use their injected <see cref="TimeProvider"/> for all three.
     /// Callers do NOT need to invoke <see cref="LeasePublishAsync"/> immediately after pickup; the
     /// pickup itself is the claim. This prevents two replicas from picking up the same row between
     /// a SELECT commit and a follow-up lease write (the prior two-step design double-dispatched).
@@ -538,17 +537,16 @@ public interface IDataStorage
     );
 
     /// <summary>
-    /// Returns received messages due for retry, filtered by <c>NextRetryAt &lt;= now()</c> using the
-    /// injected <see cref="TimeProvider"/> that created the schedule.
+    /// Returns received messages due for retry, filtered by <c>NextRetryAt &lt;= now()</c> on the store's clock,
+    /// the clock that turned each retry's <see cref="RetryDelay"/> into its due time.
     /// No lookback window is applied.
     /// </summary>
     /// <remarks>
     /// <para>
     /// <b>Atomic claim-and-return:</b> returned rows are already leased — the same statement that
     /// selects them advances <c>LockedUntil</c> to <c>now + RetryPolicyOptions.DispatchTimeout</c>. Relational
-    /// providers use their database clock for lease-expiry comparison and stamping while retaining the injected
-    /// <see cref="TimeProvider"/> as the <c>NextRetryAt</c> scheduling authority. In-memory providers use their
-    /// injected <see cref="TimeProvider"/> for both responsibilities.
+    /// providers use their database clock for the due-time comparison, the lease-expiry comparison, and stamping.
+    /// In-memory providers use their injected <see cref="TimeProvider"/> for all three.
     /// Callers do NOT need to invoke <see cref="LeaseReceiveAsync"/> immediately after pickup; the
     /// pickup itself is the claim. This prevents two replicas from picking up the same row between
     /// a SELECT commit and a follow-up lease write (the prior two-step design double-dispatched).

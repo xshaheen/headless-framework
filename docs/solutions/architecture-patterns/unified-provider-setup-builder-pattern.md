@@ -127,10 +127,14 @@ public static class SetupAuditLogPostgreSql
         public void AddServices(IServiceCollection services)
         {
             services.Configure<PostgreSqlAuditLogOptions, PostgreSqlAuditLogOptionsValidator>(configure);
-            services.AddInitializerHostedService<PostgreSqlAuditLogStorageInitializer>();
-            services.TryAddSingleton<PostgreSqlAuditLogWriter>();
-            services.TryAddScoped<IAuditLogStore, PostgreSqlAuditLogStore>();
-            services.TryAddSingleton(typeof(IAuditLog<>), typeof(PostgreSqlAuditLog<>));
+            // The store, writer, reader, and audit log are written once in Headless.AuditLog.Core over ISqlDialect;
+            // the provider supplies its dialect, column-type rules, and schema contribution.
+            RelationalAuditLogStorage.AddServices<PostgreSqlAuditLogOptions>(
+                services,
+                PostgreSqlDialect.Instance,
+                postgreSqlRules,
+                PostgreSqlAuditLogSchemaContribution.Create
+            );
         }
     }
 }

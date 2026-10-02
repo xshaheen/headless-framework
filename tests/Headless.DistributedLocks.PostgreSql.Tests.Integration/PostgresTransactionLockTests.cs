@@ -88,6 +88,122 @@ public sealed class PostgresTransactionLockTests(PostgreSqlDistributedLockFixtur
     }
 
     [Fact]
+    public async Task should_leave_the_transaction_usable_when_a_blocking_acquire_is_cancelled()
+    {
+        // given — another session holds the key, so the transaction-scoped acquire blocks until cancelled
+        var key = new PostgreSqlAdvisoryLockKey(Faker.Random.Long());
+        await using var holderConnection = await _HoldSessionLockAsync(key);
+
+        await using var connection = await _OpenAsync();
+        await using var transaction = await connection.BeginTransactionAsync(AbortToken);
+        using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        cancellation.CancelAfter(TimeSpan.FromMilliseconds(300));
+
+        // when
+        var act = async () =>
+            await PostgreSqlDistributedLock.AcquireWithTransactionAsync(key, transaction, cancellation.Token);
+
+        // then — the cancelled statement did not abort the caller's transaction, which still runs and commits
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        (await _CurrentSettingAsync(connection, "lock_timeout", AbortToken)).Should().Be("0");
+        (await _CountAdvisoryLocksAsync(key)).Should().Be(1);
+        await transaction.CommitAsync(AbortToken);
+    }
+
+    [Fact]
+    public async Task should_leave_the_transaction_usable_when_the_callers_lock_timeout_expires()
+    {
+        // given — the caller bounds its own waits; the acquire runs under that lock_timeout
+        var key = new PostgreSqlAdvisoryLockKey(Faker.Random.Long());
+        await using var holderConnection = await _HoldSessionLockAsync(key);
+
+        await using var connection = await _OpenAsync();
+        await using var transaction = await connection.BeginTransactionAsync(AbortToken);
+        await _ExecuteAsync(connection, "SET LOCAL lock_timeout = 300", AbortToken);
+
+        // when
+        var act = async () => await PostgreSqlDistributedLock.AcquireWithTransactionAsync(key, transaction, AbortToken);
+
+        // then — the expiry surfaces, any grant that raced it is rolled back, and the caller's setting is intact
+        await act.Should()
+            .ThrowAsync<PostgresException>()
+            .Where(x => x.SqlState == PostgresErrorCodes.LockNotAvailable);
+        (await _CurrentSettingAsync(connection, "lock_timeout", AbortToken)).Should().Be("300ms");
+        (await _CountAdvisoryLocksAsync(key)).Should().Be(1);
+        await transaction.CommitAsync(AbortToken);
+    }
+
+    [Fact]
+    public async Task should_report_the_aborted_transaction_when_the_acquire_could_not_set_its_savepoint()
+    {
+        // given — a caller transaction already aborted by an earlier failed statement
+        var key = new PostgreSqlAdvisoryLockKey(Faker.Random.Long());
+
+        await using var connection = await _OpenAsync();
+        await using var transaction = await connection.BeginTransactionAsync(AbortToken);
+        await _CauseTransactionFailureAsync(connection);
+
+        // when
+        var act = async () =>
+            await PostgreSqlDistributedLock.TryAcquireWithTransactionAsync(key, transaction, AbortToken);
+
+        // then — the caller's own state is the error, not a failed savepoint rollback
+        await act.Should()
+            .ThrowAsync<PostgresException>()
+            .Where(x => x.SqlState == PostgresErrorCodes.InFailedSqlTransaction);
+    }
+
+    [Fact]
+    public async Task should_propagate_a_terminated_backend_without_attempting_a_rollback()
+    {
+        // given — the transaction-scoped acquire waits behind another session's hold
+        var key = new PostgreSqlAdvisoryLockKey(Faker.Random.Long());
+        await using var holderConnection = await _HoldSessionLockAsync(key);
+
+        await using var connection = await _OpenAsync();
+        await using var transaction = await connection.BeginTransactionAsync(AbortToken);
+        var backendId = connection.ProcessID;
+
+        // when — the server ends the waiting backend, which takes its locks with it
+        var acquire = PostgreSqlDistributedLock.AcquireWithTransactionAsync(key, transaction, AbortToken).AsTask();
+        await _WaitUntilWaitingOnAdvisoryLockAsync(backendId);
+        await using (var terminate = holderConnection.CreateCommand())
+        {
+            terminate.CommandText = "SELECT pg_catalog.pg_terminate_backend(@pid)";
+            terminate.Parameters.AddWithValue("pid", backendId);
+            await terminate.ExecuteNonQueryAsync(AbortToken);
+        }
+
+        // then — the connection failure itself is reported
+        await acquire.Awaiting(x => x).Should().ThrowAsync<NpgsqlException>();
+        connection.State.Should().NotBe(ConnectionState.Open);
+    }
+
+    [Fact]
+    public async Task should_succeed_when_the_transaction_already_holds_the_lock()
+    {
+        // given
+        var key = new PostgreSqlAdvisoryLockKey(Faker.Random.Long());
+
+        await using var connection = await _OpenAsync();
+        await using var transaction = await connection.BeginTransactionAsync(AbortToken);
+        await PostgreSqlDistributedLock.AcquireWithTransactionAsync(key, transaction, AbortToken);
+
+        // when — the transaction is the owner, so a second acquire on it is granted instead of waiting
+        await PostgreSqlDistributedLock.AcquireWithTransactionAsync(key, transaction, AbortToken);
+        var acquiredAgain = await PostgreSqlDistributedLock.TryAcquireWithTransactionAsync(
+            key,
+            transaction,
+            AbortToken
+        );
+
+        // then — one commit releases every acquire
+        acquiredAgain.Should().BeTrue();
+        await transaction.CommitAsync(AbortToken);
+        (await _CountAdvisoryLocksAsync(key)).Should().Be(0);
+    }
+
+    [Fact]
     public async Task should_throw_when_transaction_has_no_connection()
     {
         await using var connection = await _OpenAsync();
@@ -127,6 +243,27 @@ public sealed class PostgresTransactionLockTests(PostgreSqlDistributedLockFixtur
 
         (await _CountAdvisoryLocksAsync(key)).Should().Be(0);
         PostgreSqlDistributedLock.TryAcquireWithTransaction(key, contenderTransaction).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_leave_the_transaction_usable_when_a_synchronous_acquire_fails()
+    {
+        // given — the caller's statement_timeout cancels the blocked synchronous acquire
+        var key = new PostgreSqlAdvisoryLockKey(Faker.Random.Long());
+        await using var holderConnection = await _HoldSessionLockAsync(key);
+
+        await using var connection = await _OpenAsync();
+        await using var transaction = await connection.BeginTransactionAsync(AbortToken);
+        await _ExecuteAsync(connection, "SET LOCAL statement_timeout = 300", AbortToken);
+
+        // when
+        var act = () => PostgreSqlDistributedLock.AcquireWithTransaction(key, (DbTransaction)transaction);
+
+        // then
+        act.Should().Throw<PostgresException>().Where(x => x.SqlState == PostgresErrorCodes.QueryCanceled);
+        (await _CurrentSettingAsync(connection, "statement_timeout", AbortToken)).Should().Be("300ms");
+        PostgreSqlDistributedLock.TryAcquireWithTransaction(key, transaction).Should().BeFalse();
+        await transaction.CommitAsync(AbortToken);
     }
 
     [Fact]
@@ -325,6 +462,36 @@ public sealed class PostgresTransactionLockTests(PostgreSqlDistributedLockFixtur
         await connection.OpenAsync(AbortToken);
 
         return connection;
+    }
+
+    private async Task<NpgsqlConnection> _HoldSessionLockAsync(PostgreSqlAdvisoryLockKey key)
+    {
+        var connection = await _OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"SELECT pg_catalog.pg_advisory_lock({key.AddKeyParameters(command)})";
+        await command.ExecuteNonQueryAsync(AbortToken);
+
+        return connection;
+    }
+
+    private async Task _WaitUntilWaitingOnAdvisoryLockAsync(int backendId)
+    {
+        await using var connection = await _OpenAsync();
+
+        while (true)
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText =
+                "SELECT COUNT(*) FROM pg_catalog.pg_locks WHERE pid = @pid AND locktype = 'advisory' AND NOT granted";
+            command.Parameters.AddWithValue("pid", backendId);
+
+            if ((long)(await command.ExecuteScalarAsync(AbortToken))! > 0)
+            {
+                return;
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(50), AbortToken);
+        }
     }
 
     private string _CreateResourceName()

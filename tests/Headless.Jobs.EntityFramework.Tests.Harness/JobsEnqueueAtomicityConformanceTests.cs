@@ -253,6 +253,7 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
 
             (await fixture.CountTimeJobsAsync(ct)).Should().Be(2);
             (await fixture.CountProbeRowsAsync(ct)).Should().Be(1);
+            await sideEffectsProbe.WaitForPostCommitSignalsAsync(restarts: 2, notifications: 2, ct);
             sideEffectsProbe.RestartCount.Should().Be(2);
             sideEffectsProbe.NotificationIds.Should().HaveCount(2).And.Contain(scheduledId);
 
@@ -542,11 +543,6 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
         var host = fixture.BuildCoordinatedEnqueueHost("node-a", includeMessaging, sideEffectsProbe);
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, cancellationToken);
         await fixture.CreateProbeTableAsync(cancellationToken);
-
-        if (includeMessaging)
-        {
-            await host.Services.GetRequiredService<IStorageInitializer>().InitializeAsync(cancellationToken);
-        }
 
         await host.StartAsync(cancellationToken);
 

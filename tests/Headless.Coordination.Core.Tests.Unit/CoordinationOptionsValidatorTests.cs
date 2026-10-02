@@ -78,4 +78,22 @@ public sealed class CoordinationOptionsValidatorTests : TestBase
         result.IsValid.Should().BeFalse();
         result.Errors.Should().Contain(x => x.PropertyName == nameof(CoordinationOptions.ClusterName));
     }
+
+    [Fact]
+    public void should_reject_a_cluster_name_longer_than_the_maximum()
+    {
+        var atLimit = new CoordinationOptions
+        {
+            ClusterName = new string('c', CoordinationOptions.ClusterNameMaxLength),
+        };
+        var overLimit = new CoordinationOptions
+        {
+            ClusterName = new string('c', CoordinationOptions.ClusterNameMaxLength + 1),
+        };
+
+        _sut.Validate(atLimit).IsValid.Should().BeTrue();
+        _sut.Validate(overLimit)
+            .Errors.Should()
+            .ContainSingle(e => e.PropertyName == nameof(CoordinationOptions.ClusterName));
+    }
 }

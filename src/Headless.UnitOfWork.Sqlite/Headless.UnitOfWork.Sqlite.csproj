@@ -1,0 +1,17 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Description>SQLite (Microsoft.Data.Sqlite) provider for the Headless scoped unit of work.</Description>
+    <PackageTags>headless;unit-of-work;transactions;sqlite;dotnet</PackageTags>
+    <RootNamespace>Headless.UnitOfWork</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
+    <ProjectReference Include="..\Headless.UnitOfWork\Headless.UnitOfWork.csproj" />
+  </ItemGroup>
+</Project>
