@@ -14,7 +14,7 @@ public sealed class ConsumerHostOwnershipTests : TestBase
     private const string _RuntimeIdentity = "orders.runtime-audit";
 
     [Fact]
-    public void should_start_retry_and_own_every_consumer_on_an_unfiltered_host()
+    public void should_start_and_retry_every_consumer_on_an_unfiltered_host()
     {
         // given
         using var provider = _BuildHost(consumeOnly: null);
@@ -29,7 +29,6 @@ public sealed class ConsumerHostOwnershipTests : TestBase
             .Should()
             .BeEquivalentTo([TestConsumers.InvoiceProjection, TestConsumers.Shipment, TestConsumers.PriceCache]);
         ownership.GetRetriedIdentities().Should().BeNull();
-        ownership.Owns("any.identity").Should().BeTrue();
     }
 
     [Fact]
@@ -63,22 +62,7 @@ public sealed class ConsumerHostOwnershipTests : TestBase
     }
 
     [Fact]
-    public void should_own_the_identities_it_starts_and_no_other()
-    {
-        // given
-        using var provider = _BuildHost(consumeOnly: "orders.*");
-
-        // when
-        var ownership = provider.GetRequiredService<IConsumerHostOwnership>();
-
-        // then
-        ownership.Owns(TestConsumers.Shipment).Should().BeTrue();
-        ownership.Owns(TestConsumers.PriceCache).Should().BeTrue();
-        ownership.Owns(TestConsumers.InvoiceProjection).Should().BeFalse();
-    }
-
-    [Fact]
-    public void should_retry_and_own_an_attached_competing_runtime_subscription_on_a_consume_only_host()
+    public void should_retry_an_attached_competing_runtime_subscription_on_a_consume_only_host()
     {
         // given
         using var provider = _BuildHost(consumeOnly: "orders.*");
@@ -94,7 +78,6 @@ public sealed class ConsumerHostOwnershipTests : TestBase
 
         // then
         ownership.GetRetriedIdentities().Should().Equal(_RuntimeIdentity, TestConsumers.Shipment);
-        ownership.Owns(_RuntimeIdentity).Should().BeTrue();
     }
 
     [Fact]

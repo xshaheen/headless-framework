@@ -278,7 +278,7 @@ internal sealed partial class ConsumerRegister
                     }
                 }
 
-#pragma warning disable CA1849, VSTHRD103
+#pragma warning disable CA1849, VSTHRD103 // False positive: no async serializer exists for the stored envelope.
                 var content = _serializer.Serialize(message);
 #pragma warning restore VSTHRD103, CA1849
 

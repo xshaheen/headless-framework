@@ -317,6 +317,43 @@ public sealed class EveryInstanceDeliveryTests : TestBase
     }
 
     [Fact]
+    public async Task should_report_unhealthy_and_keep_unrelated_groups_when_a_changed_group_fails_to_start()
+    {
+        // given
+        var factory = new RecordingFactory();
+        await using var provider = _BuildHost(
+            factory,
+            configure: services => services.ConfigureMessaging(m => m.AddModule<PriceCacheModule>())
+        );
+        await provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
+        var probe = provider.GetRequiredService<EveryInstanceProbe>();
+        const string failing = "tests.failing-runtime";
+        factory.FailCreation(failing);
+
+        // when
+        var subscribe = async () =>
+            await provider
+                .GetRequiredService<IRuntimeSubscriber>()
+                .SubscribeAsync<PriceChanged>(
+                    (_, _, _) => ValueTask.CompletedTask,
+                    new RuntimeSubscriptionOptions
+                    {
+                        HandlerId = failing,
+                        Identity = failing,
+                        EveryInstance = true,
+                    },
+                    AbortToken
+                );
+
+        // then: the caller sees the failure, the health check's full rebuild owns the recovery, and the group that
+        // was not part of the change keeps its clients
+        await subscribe.Should().ThrowAsync<InvalidOperationException>().WithMessage($"*'{failing}'*");
+        provider.GetRequiredService<IConsumerRegister>().IsHealthy().Should().BeFalse();
+        factory.ShutDownClients(PriceCache.Identity).Should().Be(0);
+        probe.Established.Should().ContainSingle();
+    }
+
+    [Fact]
     public async Task should_stop_only_the_clients_of_a_detached_runtime_subscription()
     {
         // given
@@ -662,6 +699,10 @@ public sealed class EveryInstanceDeliveryTests : TestBase
     {
         private readonly ConcurrentQueue<ConsumerClientRequest> _requests = new();
         private readonly ConcurrentQueue<RecordingClient> _clients = new();
+        private volatile string? _failingSubscription;
+
+        /// <summary>Makes every later client of <paramref name="subscriptionName"/> fail to be created.</summary>
+        public void FailCreation(string subscriptionName) => _failingSubscription = subscriptionName;
 
         public IReadOnlyList<ConsumerClientRequest> Requests => [.. _requests];
 
@@ -692,6 +733,11 @@ public sealed class EveryInstanceDeliveryTests : TestBase
             )
             {
                 owner._requests.Enqueue(request);
+                if (string.Equals(request.SubscriptionName, owner._failingSubscription, StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException($"Client creation for '{request.SubscriptionName}' failed.");
+                }
+
                 var client = new RecordingClient(request, await inner.CreateAsync(request, cancellationToken));
                 owner._clients.Enqueue(client);
                 return client;

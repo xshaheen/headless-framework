@@ -409,6 +409,9 @@ test-affected: ## Run only the *.Tests.Unit projects affected by changes vs AFFE
 	projects=""; no_unit=""; other=""; \
 	while IFS= read -r file; do \
 		[ -n "$$file" ] || continue; \
+		case "$$file" in \
+			docs/llms/messaging.md|docs/llms/jobs.md) projects="$$projects tests/Headless.Docs.Examples.Tests.Unit/Headless.Docs.Examples.Tests.Unit.csproj"; continue ;; \
+		esac; \
 		dir=$$(printf '%s\n' "$$file" | cut -d/ -f1-2); \
 		case "$$dir" in \
 			tests/*.Tests.Unit) projects="$$projects $$dir/$${dir#tests/}.csproj" ;; \

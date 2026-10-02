@@ -27,14 +27,6 @@ internal interface IConsumerHostOwnership
     /// Read per retry cycle: runtime subscriptions attach and detach while the host runs.
     /// </remarks>
     IReadOnlyCollection<string>? GetRetriedIdentities();
-
-    /// <summary>
-    /// Whether this host runs the consumer identity. An unfiltered host runs every identity. A <c>ConsumeOnly</c> host
-    /// runs the registered consumers it starts, every-instance ones included, and every runtime subscription attached to
-    /// it, competing or every-instance; only the competing ones also appear in <see cref="GetRetriedIdentities"/>,
-    /// because every-instance deliveries store no rows.
-    /// </summary>
-    bool Owns(string consumerIdentity);
 }
 
 internal sealed class ConsumerHostOwnership(ConsumerRegistry registry, IRuntimeConsumerRegistry runtimeConsumers)
@@ -66,33 +58,5 @@ internal sealed class ConsumerHostOwnership(ConsumerRegistry registry, IRuntimeC
         return identities is null || identities.Count == consumed.Count
             ? consumed
             : [.. identities.Order(StringComparer.Ordinal)];
-    }
-
-    public bool Owns(string consumerIdentity)
-    {
-        if (registry.ConsumeFilter.ConsumedIdentities is null)
-        {
-            return true;
-        }
-
-        foreach (var consumer in registry.GetAll())
-        {
-            if (
-                string.Equals(consumer.ConsumerIdentity, consumerIdentity, StringComparison.Ordinal) && Starts(consumer)
-            )
-            {
-                return true;
-            }
-        }
-
-        foreach (var descriptor in runtimeConsumers.GetDescriptors())
-        {
-            if (string.Equals(descriptor.ResolvedConsumerIdentity, consumerIdentity, StringComparison.Ordinal))
-            {
-                return true;
-            }
-        }
-
-        return false;
     }
 }
