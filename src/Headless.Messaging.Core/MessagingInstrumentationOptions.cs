@@ -3,7 +3,6 @@
 using Headless.Checks;
 using Headless.Messaging.Internal;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Messaging;
 
 /// <summary>

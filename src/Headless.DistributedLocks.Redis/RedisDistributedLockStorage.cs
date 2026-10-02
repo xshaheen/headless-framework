@@ -396,8 +396,7 @@ internal sealed class RedisDistributedLockStorage(
 
         if (values is null || values.Length == 0)
         {
-            // The replacement constructor depends on experimental RedisErrorKind; keep the stable API until it exits preview.
-#pragma warning disable CS0618
+#pragma warning disable CS0618 // The replacement constructor needs the experimental RedisErrorKind; keep this one until it exits preview.
             throw new RedisServerException("Unexpected acquire lock script result.");
 #pragma warning restore CS0618
         }
@@ -409,8 +408,7 @@ internal sealed class RedisDistributedLockStorage(
 
         if (values.Length < 2)
         {
-            // The replacement constructor depends on experimental RedisErrorKind; keep the stable API until it exits preview.
-#pragma warning disable CS0618
+#pragma warning disable CS0618 // The replacement constructor needs the experimental RedisErrorKind; keep this one until it exits preview.
             throw new RedisServerException("Acquire lock script reported success without a fencing token.");
 #pragma warning restore CS0618
         }

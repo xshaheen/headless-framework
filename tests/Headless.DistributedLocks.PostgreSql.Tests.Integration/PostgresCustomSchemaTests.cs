@@ -7,7 +7,6 @@ using Npgsql;
 
 namespace Tests;
 
-#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
 /// <summary>
 /// Proves the feature-owned <c>ConfigureStorage(o =&gt; o.Schema = …)</c> setting reaches the PostgreSQL fencing
 /// sequence. This provider previously had no schema setting at all: it created the sequence unqualified, so it

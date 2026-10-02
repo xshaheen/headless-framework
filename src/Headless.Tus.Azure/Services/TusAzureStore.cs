@@ -14,7 +14,6 @@ using tusdotnet.Interfaces;
 using tusdotnet.Models;
 using tusdotnet.Stores.FileIdProviders;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Tus;
 
 /// <summary>

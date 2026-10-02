@@ -18,7 +18,6 @@ using Microsoft.Extensions.Logging;
 using Polly;
 using Polly.Retry;
 
-#pragma warning disable IDE0130 // Provider implementation intentionally lives in the shared Jobs infrastructure namespace.
 #pragma warning disable RCS1015 // SQL parameter names intentionally match lowercase placeholders in the command text.
 namespace Headless.Jobs;
 
@@ -500,7 +499,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
     )
     {
         await using var command = _CreateCommand(dbContext, transaction);
-#pragma warning disable CA2100
+#pragma warning disable CA2100 // SQL identifiers are provider-delimited EF metadata; runtime values are parameters.
         command.CommandText = $"""
             DECLARE @claimNow datetimeoffset(7) = TODATETIMEOFFSET(SYSUTCDATETIME(), '+00:00');
 
@@ -543,7 +542,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         var snapshot = new CronJobOccurrenceEntity<TCronJob> { Id = id };
         snapshot.SnapshotContract(definition);
         await using var command = _CreateCommand(dbContext, transaction);
-#pragma warning disable CA2100
+#pragma warning disable CA2100 // SQL identifiers are provider-delimited EF metadata; runtime values are parameters.
         command.CommandText = $"""
             DECLARE @claimNow datetimeoffset(7) = TODATETIMEOFFSET(SYSUTCDATETIME(), '+00:00');
 
@@ -645,7 +644,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
     {
         var occurrence = item.NextCronOccurrence!;
         await using var command = _CreateCommand(dbContext, transaction);
-#pragma warning disable CA2100
+#pragma warning disable CA2100 // Interpolates EF-delimited identifiers and fixed hints and clauses; runtime values are parameters.
         command.CommandText = $"""
             DECLARE @claimNow datetimeoffset(7) = TODATETIMEOFFSET(SYSUTCDATETIME(), '+00:00');
 
@@ -697,7 +696,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
     )
     {
         await using var command = _CreateCommand(dbContext, transaction);
-#pragma warning disable CA2100
+#pragma warning disable CA2100 // Interpolates EF-delimited identifiers and fixed hints and clauses; runtime values are parameters.
         command.CommandText = $"""
             DECLARE @claimNow datetimeoffset(7) = TODATETIMEOFFSET(SYSUTCDATETIME(), '+00:00');
 
@@ -774,9 +773,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
     )
     {
         await using var command = _CreateCommand(dbContext, transaction);
-        // SQL structure contains only provider-delimited EF metadata identifiers and fixed clauses;
-        // every runtime value remains a command parameter.
-#pragma warning disable CA2100
+#pragma warning disable CA2100 // SQL identifiers are provider-delimited EF metadata; runtime values are parameters.
         command.CommandText = $"""
             DECLARE @claimNow datetimeoffset(7) = TODATETIMEOFFSET(SYSUTCDATETIME(), '+00:00');
 
@@ -835,9 +832,8 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         // is never leased. Descendants stay Idle — only owner/lease/updated-at are stamped, in the same transacted
         // statement as today. OUTPUT returns the leased ids so the caller prunes the hydrated tree to the claimed set
         // (frontier discipline). MAXRECURSION is sized from maxChainDepth (bounded by JobChain.MaxStructuralDepth =
-        // 64, well under the 32767 ceiling). SQL structure contains only provider-delimited EF metadata identifiers and
-        // fixed clauses; every runtime value remains a command parameter.
-#pragma warning disable CA2100
+        // 64, well under the 32767 ceiling).
+#pragma warning disable CA2100 // Interpolates EF-delimited identifiers, parameter placeholders, and an int; runtime values are parameters.
         command.CommandText = $"""
             WITH descendants (node_id, depth) AS (
                 SELECT child.{mapping.Id}, 2

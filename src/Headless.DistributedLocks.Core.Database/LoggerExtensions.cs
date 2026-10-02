@@ -2,7 +2,6 @@
 
 using Microsoft.Extensions.Logging;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
 
 /// <summary>Source-generated logger extensions for the connection-scoped distributed lock infrastructure.</summary>

@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-#pragma warning disable CA1720 // Identifier contains type name
 namespace Headless.Generator.Primitives.Shared;
 
 internal static class TypeNames

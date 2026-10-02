@@ -413,9 +413,9 @@ internal sealed class PulsarConsumerClient(
                     return;
                 }
 
-#pragma warning disable CA1849, VSTHRD103 // Cancellation must stay under the lock so disposal cannot win the race.
+#pragma warning disable CA1849 // Cancellation must stay under the lock so disposal cannot win the race.
                 _receiveCts.Cancel();
-#pragma warning restore CA1849, VSTHRD103
+#pragma warning restore CA1849
             }
         }
         finally
@@ -469,9 +469,9 @@ internal sealed class PulsarConsumerClient(
         {
             receiveCts = _receiveCts;
             _receiveCts = null;
-#pragma warning disable CA1849, VSTHRD103 // Cancellation must stay under the lock so no pause operation observes a disposed source.
+#pragma warning disable CA1849 // Cancellation must stay under the lock so no pause operation observes a disposed source.
             receiveCts?.Cancel();
-#pragma warning restore CA1849, VSTHRD103
+#pragma warning restore CA1849
         }
 
         receiveCts?.Dispose();

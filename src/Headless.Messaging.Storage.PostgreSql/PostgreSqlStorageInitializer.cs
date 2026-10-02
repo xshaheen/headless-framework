@@ -341,9 +341,7 @@ internal sealed class PostgreSqlStorageInitializer(
                 )
                 .ConfigureAwait(false);
         }
-#pragma warning disable CA1031 // Best-effort cleanup from a finally block; rethrowing would mask the initialization failure, and the failure is logged.
         catch (Exception ex)
-#pragma warning restore CA1031
         {
             logger.LogInitLockReleaseFailed(lockResource, ex);
         }

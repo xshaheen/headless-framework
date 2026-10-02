@@ -4,7 +4,6 @@ using Headless.Checks;
 using Microsoft.Extensions.Logging;
 using Nito.AsyncEx;
 
-#pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
 
@@ -134,24 +133,24 @@ internal sealed class LeaseMonitor : IAsyncDisposable
                     {
                         faultState.Logger.LogLeaseMonitorFaulted(aggregate, faultState.Resource, faultState.LeaseId);
                     }
-#pragma warning disable ERP022, CA1031 // Defensive: a faulting logger must not propagate from this continuation.
+#pragma warning disable ERP022 // Defensive: a faulting logger must not propagate from this continuation.
                     catch
                     {
                         // Intentionally empty.
                     }
-#pragma warning restore ERP022, CA1031
+#pragma warning restore ERP022
                 }
 
                 try
                 {
                     faultState.Logger.LogLeaseMonitorFaulted(task.Exception!, faultState.Resource, faultState.LeaseId);
                 }
-#pragma warning disable ERP022, CA1031 // Defensive: a faulting logger must not propagate from this continuation.
+#pragma warning disable ERP022 // Defensive: a faulting logger must not propagate from this continuation.
                 catch
                 {
                     // Intentionally empty.
                 }
-#pragma warning restore ERP022, CA1031
+#pragma warning restore ERP022
             },
             continuationState,
             CancellationToken.None,
@@ -231,12 +230,12 @@ internal sealed class LeaseMonitor : IAsyncDisposable
                 {
                     _logger.LogLeaseMonitorFaulted(exception, _leaseHandle.Resource, _leaseHandle.LeaseId);
                 }
-#pragma warning disable ERP022, CA1031 // Defensive: best-effort log; ignore further logger faults during teardown.
+#pragma warning disable ERP022 // Defensive: best-effort log; ignore further logger faults during teardown.
                 catch
                 {
                     // Intentionally empty.
                 }
-#pragma warning restore ERP022, CA1031
+#pragma warning restore ERP022
             }
 
 #pragma warning restore VSTHRD003
@@ -355,12 +354,12 @@ internal sealed class LeaseMonitor : IAsyncDisposable
             {
                 _logger.LogLeaseMonitorFaulted(aggregate, _leaseHandle.Resource, _leaseHandle.LeaseId);
             }
-#pragma warning disable ERP022, CA1031 // Defensive: best-effort log from detached cancellation task.
+#pragma warning disable ERP022 // Defensive: best-effort log from detached cancellation task.
             catch
             {
                 // Intentionally empty.
             }
-#pragma warning restore ERP022, CA1031
+#pragma warning restore ERP022
         }
         finally
         {

@@ -6,7 +6,6 @@ using Headless.Features.Repositories;
 using Microsoft.Extensions.Options;
 using Npgsql;
 
-#pragma warning disable CA2100 // SQL text only interpolates validated schema/table identifiers; values remain parameterized.
 namespace Headless.Features.PostgreSql;
 
 /// <summary>

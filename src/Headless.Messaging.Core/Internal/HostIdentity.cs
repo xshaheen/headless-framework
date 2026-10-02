@@ -19,7 +19,7 @@ internal static class HostIdentity
 
             return hostName[..50];
         }
-#pragma warning disable ERP022
+#pragma warning disable ERP022 // The host name is optional; any lookup failure yields null instead of failing the executor.
         catch
         {
             return null;

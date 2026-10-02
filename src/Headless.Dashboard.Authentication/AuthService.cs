@@ -156,8 +156,7 @@ public sealed class AuthService(AuthConfig config, ILogger<AuthService> logger) 
 
             return Task.FromResult(AuthResult.Failure("Invalid token"));
         }
-        // ERP022: Authentication should return failure results, not throw exceptions.
-#pragma warning disable ERP022
+#pragma warning disable ERP022 // Any failure rejects the request; authentication reports failure instead of throwing.
         catch
         {
             return Task.FromResult(AuthResult.Failure("Invalid bearer token format"));
@@ -176,8 +175,7 @@ public sealed class AuthService(AuthConfig config, ILogger<AuthService> logger) 
 
             return Task.FromResult(AuthResult.Failure("Custom authentication failed"));
         }
-        // ERP022: Authentication should return failure results, not throw exceptions.
-#pragma warning disable ERP022
+#pragma warning disable ERP022 // Any failure, including in the custom validator, rejects the request instead of throwing.
         catch
         {
             return Task.FromResult(AuthResult.Failure("Custom authentication error"));

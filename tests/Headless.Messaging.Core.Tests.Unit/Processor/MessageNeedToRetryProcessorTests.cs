@@ -1681,9 +1681,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         );
 
         // when — kick off ProcessAsync and advance exactly one base interval.
-#pragma warning disable CA2025 // Do not pass 'IDisposable' instances into unawaited tasks
         var processTask = sut.ProcessAsync(context);
-#pragma warning restore CA2025
 
         timeProvider.Advance(TimeSpan.FromSeconds(1));
 

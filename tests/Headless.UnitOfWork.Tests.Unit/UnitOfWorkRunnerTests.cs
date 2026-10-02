@@ -8,8 +8,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Tests;
 
-#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
-
 /// <summary>
 /// The replay and refusal policy of <see cref="UnitOfWorkRunner.RunAsync{TResult}" /> over fake resources and a
 /// fake replay loop, so the rules every provider shares are pinned without a database: the Docker suites prove

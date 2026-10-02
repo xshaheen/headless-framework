@@ -9,8 +9,6 @@ using Npgsql;
 
 namespace Tests;
 
-#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
-
 /// <summary>
 /// Two <see cref="DbContext" /> types over one PostgreSQL database, the second built over the first one's
 /// connection: the second joins the first one's unit by adopting its Npgsql transaction, so both contexts'

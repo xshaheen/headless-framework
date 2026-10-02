@@ -14,7 +14,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using NpgsqlTypes;
 
-#pragma warning disable IDE0130 // Provider implementation intentionally lives in the shared Jobs infrastructure namespace.
 #pragma warning disable RCS1015 // SQL parameter names intentionally match lowercase placeholders in the command text.
 namespace Headless.Jobs;
 
@@ -513,7 +512,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
         var snapshot = new CronJobOccurrenceEntity<TCronJob> { Id = id };
         snapshot.SnapshotContract(definition);
         await using var command = _CreateCommand(dbContext, transaction);
-#pragma warning disable CA2100
+#pragma warning disable CA2100 // SQL identifiers are provider-delimited EF metadata; runtime values are parameters.
         command.CommandText = $"""
             WITH claim_clock AS MATERIALIZED (
                 SELECT clock_timestamp() AS now
@@ -606,7 +605,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
     {
         var occurrence = item.NextCronOccurrence!;
         await using var command = _CreateCommand(dbContext, transaction);
-#pragma warning disable CA2100
+#pragma warning disable CA2100 // SQL identifiers are provider-delimited EF metadata; runtime values are parameters.
         command.CommandText = $"""
             WITH claim_clock AS MATERIALIZED (
                 SELECT clock_timestamp() AS now
@@ -739,9 +738,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
     )
     {
         await using var command = _CreateCommand(dbContext, transaction);
-        // SQL structure contains only provider-delimited EF metadata identifiers and fixed clauses;
-        // every runtime value remains a command parameter.
-#pragma warning disable CA2100
+#pragma warning disable CA2100 // SQL identifiers are provider-delimited EF metadata; runtime values are parameters.
         command.CommandText = $"""
             WITH claim_clock AS MATERIALIZED (
                 SELECT clock_timestamp() AS now
@@ -798,9 +795,8 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
         // non-timed nodes, so a subtree below a non-idle node (terminalized/running) or a timed boundary (claimed
         // independently) is never leased. Descendants stay Idle — only owner/lease/updated-at are stamped, in the
         // same transacted statement as today. RETURNING the leased ids lets the caller prune the hydrated tree to the
-        // claimed set (frontier discipline). SQL structure contains only provider-delimited EF metadata identifiers
-        // and fixed clauses; every runtime value remains a command parameter.
-#pragma warning disable CA2100
+        // claimed set (frontier discipline).
+#pragma warning disable CA2100 // SQL identifiers are provider-delimited EF metadata; runtime values are parameters.
         command.CommandText = $"""
             WITH RECURSIVE descendants (node_id, depth) AS (
                 SELECT child.{mapping.Id}, 2

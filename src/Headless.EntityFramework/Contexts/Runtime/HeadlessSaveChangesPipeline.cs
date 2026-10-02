@@ -176,7 +176,6 @@ internal sealed class HeadlessSaveChangesPipeline(
 
     public int SaveChanges(DbContext context, Func<bool, int> baseSaveChanges, bool acceptAllChangesOnSuccess)
     {
-#pragma warning disable MA0045 // Sync SaveChanges intentionally wraps EF sync APIs.
         var trackedEntries = _SnapshotEntries(context);
         var saveContext = _ProcessEntries(context, trackedEntries);
         var auditEntries = auditPersistence.CaptureEntries(trackedEntries);
@@ -211,7 +210,6 @@ internal sealed class HeadlessSaveChangesPipeline(
         var saved = context.Database.CreateExecutionStrategy().Execute(state, _ExecuteWithNewTransaction);
         saveContext.NonRetryableFailure?.Throw();
         return saved;
-#pragma warning restore MA0045
     }
 
     // Resolved per recollection pass rather than cached: the pipeline instance is shared by every context in the
@@ -493,9 +491,7 @@ internal sealed class HeadlessSaveChangesPipeline(
             {
                 auditPersistence.DiscardEntries(auditSave);
             }
-#pragma warning disable CA1031 // Last-resort: a discard failure must not mask the original SaveChanges exception.
             catch (Exception discardFailure)
-#pragma warning restore CA1031
             {
                 _logger.LogAuditDiscardFailed(discardFailure);
             }
@@ -599,9 +595,7 @@ internal sealed class HeadlessSaveChangesPipeline(
             {
                 auditPersistence.DiscardEntries(auditSave);
             }
-#pragma warning disable CA1031 // Last-resort: a discard failure must not mask the original SaveChanges exception.
             catch (Exception discardFailure)
-#pragma warning restore CA1031
             {
                 _logger.LogAuditDiscardFailed(discardFailure);
             }

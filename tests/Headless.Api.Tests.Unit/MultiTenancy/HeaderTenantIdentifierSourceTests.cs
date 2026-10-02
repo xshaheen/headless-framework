@@ -141,9 +141,7 @@ public sealed class HeaderTenantIdentifierSourceTests : TestBase
         // other name ambiguous.
         var source = _CreateSource(HeaderTenantIdentifierSourceOptions.DefaultHeaderName, LegacyHeader);
         var context = new DefaultHttpContext();
-        // Add rather than the indexer: the indexer drops an empty value instead of storing it, and the
-        // test needs the empty line present the way Kestrel keeps an `X-Tenant:` request line.
-#pragma warning disable ASP0019
+#pragma warning disable ASP0019 // Only Add stores an empty value; the indexer and Append drop it, and the test needs the blank header line.
         context.Request.Headers.Add(HeaderTenantIdentifierSourceOptions.DefaultHeaderName, blank);
 #pragma warning restore ASP0019
         context.Request.Headers[LegacyHeader] = "acme";

@@ -48,9 +48,9 @@ public abstract class HeadlessDbContextSaveChangesTestBase<TFixture, TContext> :
             db.TestEntities.Add(first);
             if (synchronous)
             {
-#pragma warning disable MA0045, VSTHRD103 // Synchronous provider conformance case.
+#pragma warning disable VSTHRD103 // Synchronous provider conformance case.
                 db.SaveChanges();
-#pragma warning restore MA0045, VSTHRD103
+#pragma warning restore VSTHRD103
             }
             else
             {
@@ -63,9 +63,9 @@ public abstract class HeadlessDbContextSaveChangesTestBase<TFixture, TContext> :
             db.TestEntities.Add(second);
             if (synchronous)
             {
-#pragma warning disable MA0045, VSTHRD103 // Synchronous provider conformance case.
+#pragma warning disable VSTHRD103 // Synchronous provider conformance case.
                 db.SaveChanges();
-#pragma warning restore MA0045, VSTHRD103
+#pragma warning restore VSTHRD103
             }
             else
             {

@@ -16,7 +16,6 @@ using Microsoft.Extensions.Options;
 using Npgsql;
 using NpgsqlTypes;
 
-#pragma warning disable RCS1084 // Use coalesce expression instead of conditional expression
 namespace Headless.Messaging.Storage.PostgreSql;
 
 /// <summary>
@@ -1939,9 +1938,7 @@ internal sealed partial class PostgreSqlDataStorage(
                                 mediumMessage.IsInboxOrphaned = reader.GetBoolean(19);
                             }
                         }
-#pragma warning disable CA1031 // deliberately broad: one un-deserializable row must not abort/starve the batch (#3)
                         catch (Exception ex)
-#pragma warning restore CA1031
                         {
                             logger.LogPoisonMessageSkipped(storageId, tableName, ex);
                             poisonMessages.Add(_CreatePoisonMessage(storageId, ex));

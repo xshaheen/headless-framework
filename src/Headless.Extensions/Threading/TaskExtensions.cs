@@ -161,7 +161,7 @@ public static class HeadlessTaskExtensions
         // Furthermore, doing this also makes the method flexible enough to
         // case whether the input Task<T> is actually an instance of some
         // runtime-specific type that inherits from Task<T>.
-#pragma warning disable REFL009
+#pragma warning disable REFL009 // The runtime type may be Task<T>; a missing Result property is handled by the null check below.
         var propertyInfo = task.GetType().GetProperty("Result");
 #pragma warning restore REFL009
 
@@ -173,7 +173,7 @@ public static class HeadlessTaskExtensions
 
     #region WithCancellation
 
-#pragma warning disable VSTHRD003
+#pragma warning disable VSTHRD003 // These helpers exist to await a caller-supplied task; the caller owns where it was started.
     /// <summary>
     /// Wraps a task with one that will complete as cancelled based on a cancellation token,
     /// allowing someone to await a task but be able to break out early by cancelling the token.

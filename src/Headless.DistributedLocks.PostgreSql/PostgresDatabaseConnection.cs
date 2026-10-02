@@ -65,8 +65,7 @@ internal sealed class PostgresDatabaseConnection : DatabaseConnection
     /// </param>
     /// <param name="timeProvider">Time source used by the base class for monitoring sleeps.</param>
     /// <param name="monitoringCommandTimeoutSeconds">Timeout in seconds for monitoring probe commands.</param>
-    // The base DatabaseConnection takes ownership of the connection and disposes it.
-#pragma warning disable CA2000
+#pragma warning disable CA2000 // False positive: the base DatabaseConnection owns the connection and disposes it.
     public PostgresDatabaseConnection(
         string connectionString,
         TimeProvider timeProvider,

@@ -5,8 +5,6 @@ using Headless.UnitOfWork;
 
 namespace Tests;
 
-#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
-
 /// <summary>
 /// Provider-agnostic acceptance scenarios for the single-call <c>RunAsync</c> helpers: a completed unit drains
 /// its <c>OnCompleted</c> work after the rows are durable; a throwing operation rolls the rows back, discards the

@@ -182,7 +182,7 @@ public sealed class RedisConnectionPoolTests : TestBase
     }
 
     [Fact]
-#pragma warning disable MA0045, VSTHRD103 // This test intentionally verifies synchronous Dispose remains supported.
+#pragma warning disable VSTHRD103 // This test intentionally verifies synchronous Dispose remains supported.
     public async Task should_throw_when_connect_called_after_sync_dispose()
     {
         // given
@@ -203,7 +203,7 @@ public sealed class RedisConnectionPoolTests : TestBase
         // then
         await action.Should().ThrowAsync<ObjectDisposedException>();
     }
-#pragma warning restore MA0045, VSTHRD103
+#pragma warning restore VSTHRD103
 
     [Fact]
     public async Task should_throw_when_connect_called_after_async_dispose()

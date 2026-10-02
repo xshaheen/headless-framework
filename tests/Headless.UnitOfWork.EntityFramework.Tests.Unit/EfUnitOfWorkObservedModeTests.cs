@@ -8,8 +8,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Tests;
 
-#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
-
 /// <summary>
 /// Observed-mode <c>Enlist(db, tx)</c> against SQLite in-memory: the caller commits/rolls back its own
 /// transaction; <c>CompleteAsync</c> only drains. The forgotten-completion warning fires exactly when the

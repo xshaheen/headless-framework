@@ -1404,7 +1404,7 @@ internal sealed class CircuitBreakerStateManager(
             get => (CircuitBreakerState)Volatile.Read(ref _state);
             set => Volatile.Write(ref _state, (int)value);
         }
-#pragma warning disable IDE0032
+#pragma warning disable IDE0032 // False positive: the field is passed by ref to Volatile, which an auto-property cannot back.
         private int _consecutiveFailures;
 #pragma warning restore IDE0032
 

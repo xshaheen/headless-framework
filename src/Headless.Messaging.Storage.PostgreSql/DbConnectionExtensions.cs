@@ -5,7 +5,7 @@ using System.Data.Common;
 
 namespace Headless.Messaging.Storage.PostgreSql;
 
-#pragma warning disable CA2100, CA1068 // Wrapper keeps SQL params last, so timeout sits after cancellation.
+#pragma warning disable CA2100 // Wrapper keeps SQL params last, so timeout sits after cancellation.
 
 /// <summary>
 /// Internal extension methods for <see cref="DbConnection"/> to simplify ADO.NET operations.

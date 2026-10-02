@@ -36,17 +36,13 @@ internal sealed class ConnectionMonitor : IAsyncDisposable
     // Limits concurrent queries against the connection. SemaphoreSlim (not Nito.AsyncEx.AsyncLock) is used here
     // because the monitor needs a zero-wait try-acquire for keepalive and a timed try-acquire for the FIFO retry in
     // AcquireConnectionLockAsync — neither of which AsyncLock exposes.
-#pragma warning disable CA2213 // Disposed explicitly at the end of _StopOrDisposeAsync (after the worker drains).
     private readonly SemaphoreSlim _connectionLock = new(initialCount: 1, maxCount: 1);
-#pragma warning restore CA2213
 
     private TimeSpan _keepaliveCadence = Timeout.InfiniteTimeSpan;
     private State _state;
     private Dictionary<MonitoringHandle, CancellationTokenSource>? _monitoringHandleRegistrations;
 
-#pragma warning disable CA2213 // Lifecycle is rotated by _FireStateChangedNoLock and drained/disposed in _StopOrDisposeAsync.
     private CancellationTokenSource? _monitorStateChangedTokenSource;
-#pragma warning restore CA2213
 
     private Task _monitoringWorkerTask = Task.CompletedTask;
 
@@ -333,9 +329,7 @@ internal sealed class ConnectionMonitor : IAsyncDisposable
 
         if (task is not null)
         {
-#pragma warning disable VSTHRD003 // We own this task and are draining the background monitor worker.
             await task.ConfigureAwait(false);
-#pragma warning restore VSTHRD003
         }
 
         if (isDispose)
@@ -544,12 +538,10 @@ internal sealed class ConnectionMonitor : IAsyncDisposable
                 command.SetExactTimeoutSeconds(_monitoringCommandTimeoutSeconds);
 
                 // Fast and non-blocking; we don't bother cancelling it.
-#pragma warning disable VSTHRD003 // The task is started here by ExecuteNonQueryAsync, not awaited from elsewhere.
                 await _SuppressAsync(
                         command.ExecuteNonQueryAsync(isConnectionMonitoringQuery: true, CancellationToken.None).AsTask()
                     )
                     .ConfigureAwait(false);
-#pragma warning restore VSTHRD003
             }
             finally
             {
@@ -569,12 +561,12 @@ internal sealed class ConnectionMonitor : IAsyncDisposable
             await task.ConfigureAwait(false);
 #pragma warning restore VSTHRD003
         }
-#pragma warning disable CA1031, ERP022 // The worker loop intentionally ignores probe failures; loss is surfaced via state change/handle cancellation.
+#pragma warning disable ERP022 // The worker loop intentionally ignores probe failures; loss is surfaced via state change/handle cancellation.
         catch
         {
             // Intentionally empty.
         }
-#pragma warning restore CA1031, ERP022
+#pragma warning restore ERP022
     }
 
     private sealed class SemaphoreReleaser(SemaphoreSlim semaphore) : IDisposable

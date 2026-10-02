@@ -980,9 +980,7 @@ public sealed class KafkaConsumerClientTests : TestBase
         client.OnLogCallback = _ => { };
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-#pragma warning disable AsyncFixer04
         var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask();
-#pragma warning restore AsyncFixer04
         try
         {
             // when
@@ -1073,9 +1071,7 @@ public sealed class KafkaConsumerClientTests : TestBase
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
 
         // when — ListeningAsync will fault after the terminal commit; we only need to observe the commit signal
-#pragma warning disable AsyncFixer04
         var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask();
-#pragma warning restore AsyncFixer04
         try
         {
             await commitCalled.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);

@@ -6,7 +6,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
 
-#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
 public abstract class MembershipConformanceTests<TFixture>(TFixture fixture) : TestBase
     where TFixture : ICoordinationFixture
 {
@@ -482,4 +481,3 @@ public abstract class MembershipConformanceTests<TFixture>(TFixture fixture) : T
         return "conformance-" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
     }
 }
-#pragma warning restore CA1707

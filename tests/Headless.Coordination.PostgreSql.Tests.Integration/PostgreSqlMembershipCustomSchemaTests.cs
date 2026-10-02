@@ -5,7 +5,6 @@ using Npgsql;
 
 namespace Tests;
 
-#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
 /// <summary>
 /// Proves the feature-owned <c>ConfigureStorage(o =&gt; o.Schema = …)</c> setting actually reaches the PostgreSQL
 /// DDL and DML: before this setting existed the provider emitted unqualified table names and the schema was

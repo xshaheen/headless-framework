@@ -13,7 +13,6 @@ namespace Tests;
 /// <remarks>
 /// Each test numbers its own freshly named counters, so tests never share a row and need no cleanup between them.
 /// </remarks>
-#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
 public abstract class SequencesConformanceTests<TFixture>(TFixture fixture) : TestBase
     where TFixture : ISequencesFixture
 {

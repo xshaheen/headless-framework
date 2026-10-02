@@ -44,9 +44,7 @@ public sealed class CouchbaseBucketContextTests : TestBase
         var scope = Substitute.For<IScope>();
         var collection = Substitute.For<ICouchbaseCollection>();
         bucket.Name.Returns("app");
-#pragma warning disable VSTHRD103 // Linq2Couchbase's Query API intentionally uses the synchronous SDK lookup.
         bucket.Scope("sales").Returns(scope);
-#pragma warning restore VSTHRD103
         scope.Name.Returns("sales");
         scope.Bucket.Returns(bucket);
         scope.Collection("orders").Returns(collection);

@@ -303,7 +303,7 @@ public static partial class HeadlessEnumerableExtensions
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="task"/> is <see langword="null"/>.</exception>
     public static async Task<List<T>> ToListAsync<T>(this Task<IEnumerable<T>> task)
     {
-#pragma warning disable VSTHRD003
+#pragma warning disable VSTHRD003 // The extension exists to await the caller's task; the caller owns where it was started.
         var result = await Argument.IsNotNull(task).ConfigureAwait(false);
 #pragma warning restore VSTHRD003
 
@@ -317,7 +317,7 @@ public static partial class HeadlessEnumerableExtensions
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="task"/> is <see langword="null"/>.</exception>
     public static async Task<T[]> ToArrayAsync<T>(this Task<IEnumerable<T>> task)
     {
-#pragma warning disable VSTHRD003
+#pragma warning disable VSTHRD003 // The extension exists to await the caller's task; the caller owns where it was started.
         var result = await Argument.IsNotNull(task).ConfigureAwait(false);
 #pragma warning restore VSTHRD003
 

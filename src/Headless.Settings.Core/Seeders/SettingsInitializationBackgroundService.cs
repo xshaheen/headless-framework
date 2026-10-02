@@ -72,9 +72,7 @@ internal sealed class SettingsInitializationBackgroundService(
         {
             try
             {
-#pragma warning disable VSTHRD003 // IHostedService pattern: task started in StartAsync, awaited in StopAsync
                 await _initializeDynamicSettingsTask.WaitAsync(cancellationToken).ConfigureAwait(false);
-#pragma warning restore VSTHRD003
             }
             catch (OperationCanceledException) { }
         }

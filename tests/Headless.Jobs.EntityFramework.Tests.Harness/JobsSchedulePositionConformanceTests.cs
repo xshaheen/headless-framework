@@ -16,8 +16,6 @@ using Microsoft.Extensions.Hosting;
 
 namespace Tests;
 
-#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
-
 /// <summary>
 /// Provider-neutral conformance for the cron schedule-position advance — the compare-and-advance through which a
 /// definition's watermark and dispatch projection move. Every scenario here must hold identically on each relational

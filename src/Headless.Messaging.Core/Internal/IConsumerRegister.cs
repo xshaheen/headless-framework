@@ -1468,9 +1468,7 @@ internal sealed class ConsumerRegister(
                         }
                     }
 
-#pragma warning disable CA1849, VSTHRD103
                     var content = _serializer.Serialize(message);
-#pragma warning restore VSTHRD103, CA1849
 
                     var stored = await _storage
                         .StoreReceivedExceptionMessageAsync(
@@ -1780,7 +1778,6 @@ internal sealed class ConsumerRegister(
             await client.RejectAsync(sender, CancellationToken.None).ConfigureAwait(false);
             traceHandle.Activity?.Dispose();
         }
-#pragma warning disable ERP022 // False positive: the fault is logged and counted; every-instance delivery commits rather than requeues by design.
         catch (Exception e)
         {
             // A fault outside the consumer is the core's or the transport's, so a redelivery would fault the same way:
@@ -1805,7 +1802,6 @@ internal sealed class ConsumerRegister(
                 await _CommitFaultedEveryInstanceMessageAsync(client, transportMessage, sender).ConfigureAwait(false);
             }
         }
-#pragma warning restore ERP022
     }
 
     private async Task _CommitFaultedEveryInstanceMessageAsync(
@@ -1818,12 +1814,10 @@ internal sealed class ConsumerRegister(
         {
             await client.CommitAsync(sender, CancellationToken.None).ConfigureAwait(false);
         }
-#pragma warning disable ERP022 // False positive: logged; a settlement that cannot be sent leaves the message to the broker's own redelivery.
         catch (Exception ex)
         {
             _logger.LogProcessReceivedMessageFailed(ex, transportMessage);
         }
-#pragma warning restore ERP022
     }
 
     /// <summary>
@@ -2424,9 +2418,7 @@ internal sealed class ConsumerRegister(
         // SemaphoreSlim.Dispose never completes queued waiters and breaks the holder's release.
         // This handle-generation gate is intentionally left undisposed; disposal is signalled by
         // _disposing and checked before waiting and after acquiring the gate.
-#pragma warning disable CA2213 // Never dispose: queued waiters must observe disposal and release.
         public SemaphoreSlim ApplyGate { get; } = new(1, 1);
-#pragma warning restore CA2213
 
 #pragma warning disable IDE0032 // Uses Volatile read/write for cross-thread visibility between ApplyGate and admission logging.
         private long _lastAppliedEpoch;

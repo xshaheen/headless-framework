@@ -16,7 +16,6 @@ namespace Tests;
 /// Each test uses its own freshly named keys, so tests never share a row. Lease expiry and the passing of retention
 /// are produced by moving a row's instants into the database's past rather than by waiting.
 /// </remarks>
-#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
 public abstract class IdempotencyConformanceTests<TFixture>(TFixture fixture) : TestBase
     where TFixture : IIdempotencyFixture
 {

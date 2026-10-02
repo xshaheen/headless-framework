@@ -7,7 +7,6 @@ using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Microsoft.Data.SqlClient;
 
-#pragma warning disable RCS1084 // Use coalesce expression instead of conditional expression
 namespace Headless.Messaging.Storage.SqlServer;
 
 internal sealed partial class SqlServerDataStorage
@@ -98,9 +97,7 @@ internal sealed partial class SqlServerDataStorage
                                     .ConfigureAwait(false),
                             };
                         }
-#pragma warning disable CA1031 // deliberately broad: one un-deserializable row must not abort the schedule batch (#3)
                         catch (Exception ex)
-#pragma warning restore CA1031
                         {
                             logger.LogPoisonMessageSkipped(storageId, _publishedTable, ex);
                             poisonMessages.Add(_CreatePoisonMessage(storageId, ex));
@@ -241,9 +238,7 @@ internal sealed partial class SqlServerDataStorage
                                 }
                             );
                         }
-#pragma warning disable CA1031 // one un-deserializable row must not abort or starve the batch
                         catch (Exception ex)
-#pragma warning restore CA1031
                         {
                             logger.LogPoisonMessageSkipped(storageId, _publishedTable, ex);
                             poisonMessages.Add(_CreatePoisonMessage(storageId, ex));

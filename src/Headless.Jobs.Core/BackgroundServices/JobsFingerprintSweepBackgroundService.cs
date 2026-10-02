@@ -5,7 +5,6 @@ using Headless.Jobs.Models;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Jobs.BackgroundServices;
 
 /// <summary>
@@ -104,12 +103,10 @@ internal sealed class JobsFingerprintSweepBackgroundService(
             {
                 break;
             }
-#pragma warning disable ERP022 // Periodic maintenance retries next interval; startup activation remains fail-closed.
             catch (Exception exception)
             {
                 JobsFingerprintSweepLog.SweepFailed(logger, exception);
             }
-#pragma warning restore ERP022
         }
     }
 }

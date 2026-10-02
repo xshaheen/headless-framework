@@ -16,7 +16,6 @@ namespace Tests;
 /// another test's leases. Expiry is produced by moving a row's instants into the database's past rather than by
 /// waiting, except where the test is about the clock a statement reads.
 /// </remarks>
-#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
 public abstract class LeasesConformanceTests<TFixture>(TFixture fixture) : TestBase
     where TFixture : ILeasesFixture
 {

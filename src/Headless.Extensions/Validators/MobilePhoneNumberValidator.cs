@@ -28,11 +28,9 @@ public static class MobilePhoneNumberValidator
             var region = util.GetRegionCodeForCountryCode(countryCode);
             maybePhoneNumber = util.Parse(phoneNumber, region);
         }
-        catch
+        catch (NumberParseException)
         {
-#pragma warning disable ERP022
             return false;
-#pragma warning restore ERP022
         }
 
         return util.IsPossibleNumberForType(maybePhoneNumber, PhoneNumberType.MOBILE);
@@ -57,11 +55,9 @@ public static class MobilePhoneNumberValidator
         {
             maybePhoneNumber = util.Parse(phoneNumber, regionCode);
         }
-        catch
+        catch (NumberParseException)
         {
-#pragma warning disable ERP022
             return false;
-#pragma warning restore ERP022
         }
 
         return util.IsPossibleNumberForType(maybePhoneNumber, PhoneNumberType.MOBILE);
@@ -97,11 +93,9 @@ public static class MobilePhoneNumberValidator
         {
             maybePhoneNumber = util.Parse(internationalNumber, defaultRegion: null);
         }
-        catch
+        catch (NumberParseException)
         {
-#pragma warning disable ERP022
             return false;
-#pragma warning restore ERP022
         }
 
         if (!util.IsPossibleNumberForType(maybePhoneNumber, PhoneNumberType.MOBILE))

@@ -9,7 +9,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.EntityFramework;
 
 internal sealed class HeadlessAuditPersistence(
@@ -132,9 +131,7 @@ internal sealed class HeadlessAuditPersistence(
         _ResolveEntityIds(entries);
         var snapshots = TrackedEntrySnapshot.Capture(context);
 
-#pragma warning disable MA0045 // Do not use blocking calls in a sync method (need to make calling method async)
         var auditEntries = _SaveEntries(context, entries);
-#pragma warning restore MA0045
 
         if (auditEntries.Count > 0)
         {

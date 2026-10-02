@@ -6,7 +6,6 @@ using Headless.Checks;
 using Headless.EntityFramework;
 using Headless.Linq;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.EntityFrameworkCore;
 
 public static partial class HeadlessQueryableExtensions

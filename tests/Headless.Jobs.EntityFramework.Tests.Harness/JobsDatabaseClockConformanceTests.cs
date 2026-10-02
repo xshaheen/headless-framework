@@ -13,8 +13,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
 
-#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
-
 /// <summary>
 /// Provider-neutral guard that the Jobs lease paths let the DATABASE own ownership time. It drives the real
 /// production methods (<c>BasePersistenceProvider</c> + the EF claim strategy) against a real container, captures

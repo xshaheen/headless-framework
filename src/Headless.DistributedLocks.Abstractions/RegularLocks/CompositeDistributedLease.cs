@@ -3,7 +3,6 @@
 using Headless.Checks;
 using Microsoft.Extensions.Logging;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
 
 internal interface ICompositeDistributedLease
@@ -17,9 +16,7 @@ internal sealed class CompositeDistributedLease : IDistributedLease, ICompositeD
     private readonly bool _releaseOnDispose;
     private readonly ILogger _logger;
     private readonly CancellationTokenSource? _lostSource;
-    // The contract deliberately permits renew/release after DisposeAsync when release-on-dispose is false,
-    // so disposing this gate as part of DisposeAsync would introduce a lifecycle race.
-#pragma warning disable CA2213
+#pragma warning disable CA2213 // Renew and release may run after DisposeAsync when release-on-dispose is false; disposing would race.
     private readonly SemaphoreSlim _lifecycleGate = new(1, 1);
 #pragma warning restore CA2213
     private readonly Lock _disposeLock = new();

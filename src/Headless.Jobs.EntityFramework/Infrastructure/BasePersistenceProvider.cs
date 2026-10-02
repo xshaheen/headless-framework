@@ -1046,7 +1046,6 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .ConfigureAwait(false);
     }
 
-#pragma warning disable MA0002 // EF translates Distinct to SQL; comparer overloads cannot be translated. The merged result uses ordinal comparison.
     public async Task<string[]> GetActiveOwnerIdsAsync(CancellationToken cancellationToken = default)
     {
         await using var dbContext = await DbContextFactory
@@ -1077,7 +1076,6 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
         return [.. timeJobOwners.Concat(occurrenceOwners).Distinct(StringComparer.Ordinal)];
     }
-#pragma warning restore MA0002
 
     public async Task<int> ReclaimStalledTimeJobsAsync(CancellationToken cancellationToken = default)
     {
@@ -1473,7 +1471,6 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             // must cache only the real DB result; Jobs intentionally trusts HasValue/Value rather than re-querying.
             return result.HasValue ? result.Value ?? [] : [];
         }
-#pragma warning disable ERP022, RCS1075
         catch (Exception exception) when (!factoryFailed && !_IsCallerCancellation(exception, cancellationToken))
         {
             // Cache read/write failures are non-authoritative for Jobs; the database remains the source of truth.
@@ -1482,7 +1479,6 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             // propagates (see _IsCallerCancellation), matching FactoryCacheCoordinator's token-identity semantics.
             return loaded ?? await _LoadCronJobExpressionsAsync(cancellationToken).ConfigureAwait(false);
         }
-#pragma warning restore ERP022, RCS1075
     }
 
     private static bool _IsCallerCancellation(Exception exception, CancellationToken cancellationToken)
@@ -1514,7 +1510,6 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             // Mirrors FactoryCacheCoordinator's restamp, which uses CancellationToken.None for the same reason.
             await Cache.RemoveAsync(_CronExpressionsCacheKey, CancellationToken.None).ConfigureAwait(false);
         }
-#pragma warning disable ERP022, RCS1075
         catch (Exception exception)
         {
             // Cache invalidation is best-effort; cron writes have already committed to the durable store. Log at
@@ -1522,7 +1517,6 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             // cron expressions cluster-wide until the TTL elapses) is observable rather than silent.
             Logger.LogCronExpressionsCacheInvalidationFailed(exception, _CronExpressionsCacheKey);
         }
-#pragma warning restore ERP022, RCS1075
     }
 
     private async Task<CronJobEntity[]> _LoadCronJobExpressionsAsync(CancellationToken cancellationToken)

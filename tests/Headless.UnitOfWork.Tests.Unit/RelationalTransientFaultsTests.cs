@@ -7,8 +7,6 @@ using Headless.UnitOfWork.Internal;
 
 namespace Tests;
 
-#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
-
 public sealed class RelationalTransientFaultsTests : TestBase
 {
     [Fact]

@@ -59,9 +59,7 @@ public sealed class SqlServerConnectionFactoryTests
         var sut = new SqlServerConnectionFactory(connectionString);
 
         // when - cast to interface to verify explicit implementation exists
-#pragma warning disable CA1859 // Change type
         ISqlConnectionFactory factory = sut;
-#pragma warning restore CA1859
 
         // then - verify the interface method is accessible
         factory.GetConnectionString().Should().Be(connectionString);

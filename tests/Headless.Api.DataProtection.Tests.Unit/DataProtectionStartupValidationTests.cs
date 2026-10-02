@@ -442,11 +442,9 @@ public sealed class DataProtectionStartupValidationTests : TestBase
             {
                 var path = call.Arg<BlobLocation>().Path;
 
-#pragma warning disable CA2000 // Dispose objects before losing scope
                 var result = stored.TryGetValue(path, out var bytes)
                     ? new BlobDownloadResult(new MemoryStream(bytes), path)
                     : null;
-#pragma warning restore CA2000
 
                 return ValueTask.FromResult(result);
             });

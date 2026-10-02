@@ -8,8 +8,6 @@ using Polly.Retry;
 
 namespace Tests;
 
-#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
-
 /// <summary>Runs the replay conformance suite against <c>RunAsync(SqlConnection, …)</c>, which never replays.</summary>
 [Collection<SqlServerUnitOfWorkFixture>]
 public sealed class SqlServerConnectionReplayConformanceTests(SqlServerUnitOfWorkFixture fixture)

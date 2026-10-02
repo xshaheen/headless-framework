@@ -787,9 +787,7 @@ internal sealed class Dispatcher
                 var cancellationTask = _quiesceTask ?? tasksCts.CancelAsync();
                 await _AbandonUnreadRetryWorkAsync().ConfigureAwait(false);
 
-#pragma warning disable VSTHRD003 // The cancellation task is deliberately completed during eventual cleanup.
                 await cancellationTask.ConfigureAwait(false);
-#pragma warning restore VSTHRD003
 
                 await _CompleteBackgroundTasksAsync(backgroundTasks).ConfigureAwait(false);
             }

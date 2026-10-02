@@ -110,8 +110,8 @@ internal sealed class MultiplexedConnectionLockPool(Func<string, DatabaseConnect
             }
         }
 
-        // Normal phase: a fresh connection with the full timeout. The lock is always stored or disposed in the finally.
-#pragma warning disable CA2000
+        // Normal phase: a fresh connection with the full timeout.
+#pragma warning disable CA2000 // False positive: the finally always stores or disposes the lock.
         var @lock = new MultiplexedConnectionLock(ConnectionFactory(connectionString));
 #pragma warning restore CA2000
         MultiplexedConnectionLock.Result? result = null;
@@ -259,11 +259,11 @@ internal sealed class MultiplexedConnectionLockPool(Func<string, DatabaseConnect
         {
             await @lock.DisposeAsync().ConfigureAwait(false);
         }
-#pragma warning disable CA1031, ERP022 // Pool teardown must not throw; a failed dispose only loses a connection, never a held lock.
+#pragma warning disable ERP022 // Pool teardown must not throw; a failed dispose only loses a connection, never a held lock.
         catch
         {
             // Intentionally empty.
         }
-#pragma warning restore CA1031, ERP022
+#pragma warning restore ERP022
     }
 }

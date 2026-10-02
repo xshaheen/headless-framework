@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-#pragma warning disable CA1000 // Do not declare static members on generic types
 namespace Headless.Generator.Primitives;
 
 /// <summary>Represents an interface for primitive values.</summary>

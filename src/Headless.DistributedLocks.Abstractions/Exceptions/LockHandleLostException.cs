@@ -2,7 +2,7 @@
 
 using Headless.Checks;
 
-#pragma warning disable IDE0130
+#pragma warning disable IDE0130 // Folders only group files; the type ships in the family root namespace Headless.DistributedLocks.
 // ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
 

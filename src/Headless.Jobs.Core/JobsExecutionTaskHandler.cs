@@ -194,12 +194,10 @@ internal sealed class JobsExecutionTaskHandler
                     .ApplyParentTerminalRunConditionsAsync(context.JobId, CancellationToken.None)
                     .ConfigureAwait(false);
             }
-#pragma warning disable ERP022 // Non-fatal post-commit side effect: logged, not rethrown (backstops reconcile any miss).
             catch (Exception exception)
             {
                 _logger.LogTimedChildReconcileFailed(exception, context.JobId, context.FunctionName);
             }
-#pragma warning restore ERP022
         }
     }
 
@@ -247,9 +245,7 @@ internal sealed class JobsExecutionTaskHandler
         }
 
         var stopWatch = new Stopwatch();
-        // CA2000: ownership is registered into the per-host execution registry and the CTS is disposed on every exit
-        // path below (after StopRenewalAsync stops the renewal loop that references it).
-#pragma warning disable CA2000
+#pragma warning disable CA2000 // Disposed on every exit path below, after StopRenewalAsync stops the renewal loop that uses it.
         var cancellationTokenSource = new CancellationTokenSource();
 #pragma warning restore CA2000
 
@@ -298,9 +294,7 @@ internal sealed class JobsExecutionTaskHandler
             // at method end, so renewalCts is never disposed when this runs.
             // ReSharper disable once AccessToDisposedClosure
             await renewalCts.CancelAsync().ConfigureAwait(false);
-            // ERP022: renewal-loop teardown errors are non-fatal to job completion.
-            // VSTHRD003: renewalTask is started locally (above) and intentionally awaited to bound the loop's lifetime.
-#pragma warning disable ERP022, VSTHRD003
+#pragma warning disable ERP022, VSTHRD003 // Teardown faults must not fail the job; renewalTask was started here and is awaited to bound its lifetime.
             try
             {
                 await renewalTask.ConfigureAwait(false);
@@ -1296,7 +1290,6 @@ internal sealed class JobsExecutionTaskHandler
             // fence and preserve that child identity recursively for grandchildren.
             await _ExecuteTaskAsync(context, isDue, isChild: true, cancellationToken).ConfigureAwait(false);
         }
-#pragma warning disable ERP022 // Scheduler must continue running if task execution throws outside status handling.
         catch (Exception exception)
         {
             // A throw outside ExecuteTaskAsync's normal status handling leaves the child InProgress until the
@@ -1304,7 +1297,6 @@ internal sealed class JobsExecutionTaskHandler
             // log at Warning so the otherwise-silent failure is observable (#465).
             _logger.LogJobChildExecutionThrewSynchronously(exception, context.JobId, context.FunctionName);
         }
-#pragma warning restore ERP022
     }
 }
 

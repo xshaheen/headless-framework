@@ -6,7 +6,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.EntityFramework;
 
 /// <summary>
@@ -127,10 +126,8 @@ public abstract class HeadlessDbContext : DbContext, IHeadlessDbContext, IHeadle
     public string? TenantId => _runtime.TenantId;
 
     // The IHeadlessDbContext seam is implemented explicitly (non-overridable) so it stays off this context's
-    // public surface and avoids an externally-overridable member bound to the seam (CA2119). CA1033 (explicit
-    // member not visible to derived types) is intentional: derived contexts never call these — the framework
-    // runtime/save pipeline and unit-of-work helpers reach them through the interface.
-#pragma warning disable CA1033
+    // public surface and avoids an externally-overridable member bound to the seam (CA2119).
+#pragma warning disable CA1033 // Derived contexts never call these; the framework reaches them through the interface.
     string? IHeadlessDbContext.DefaultSchema => DefaultSchema;
 
     string? IHeadlessDbContext.TenantId => TenantId;
