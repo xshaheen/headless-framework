@@ -7,8 +7,6 @@ using Headless.UnitOfWork.Internal;
 
 namespace Tests;
 
-#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
-
 /// <summary>
 /// The resource → unit binding's eviction rules, and in particular that the asynchronous lookup a begin uses has
 /// finished abandoning a stale unit (its rollback, and the connection close that rides on it) before it returns.

@@ -712,19 +712,17 @@ public abstract class DistributedReadWriteLockTestsBase : TestBase
     /// cancellation and any acquire fault they report on the way down. Only reached when the race has already failed,
     /// so there is no outcome left to assert — the point is to leave no caller running.
     /// </summary>
-#pragma warning disable CA1031, RCS1075 // The race has already failed; draining it must not mask that failure with a new one.
+#pragma warning disable ERP022 // The race has already failed; draining it must not mask that failure with a new one.
     private static async Task _DrainCancelledRaceAsync(Task race)
     {
         try
         {
             await race;
         }
-#pragma warning disable ERP022
         catch (Exception)
         {
             // ignored
         }
-#pragma warning restore ERP022
     }
-#pragma warning restore CA1031, RCS1075
+#pragma warning restore ERP022
 }

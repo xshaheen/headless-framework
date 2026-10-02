@@ -80,9 +80,7 @@ public sealed class StaticSettingDefinitionStore : IStaticSettingDefinitionStore
         var settings = new Dictionary<string, SettingDefinition>(StringComparer.Ordinal);
         var context = new SettingDefinitionContext(settings);
 
-#pragma warning disable MA0045 // Use async scope - Justification: No async disposable needed here
         using var scope = _serviceProvider.CreateScope();
-#pragma warning restore MA0045
 
         foreach (var type in _options.DefinitionProviders)
         {

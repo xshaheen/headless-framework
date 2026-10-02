@@ -143,7 +143,6 @@ public sealed class ApiExtraInformationOperationProcessorTests
         Type.EmptyTypes
     )!;
 
-#pragma warning disable MA0045 // Called from object initializers; the provider holds no async-only service.
     private static ModelMetadata _GetLimitMetadata()
     {
         IServiceCollection services = new ServiceCollection();
@@ -153,7 +152,6 @@ public sealed class ApiExtraInformationOperationProcessorTests
             .GetRequiredService<IModelMetadataProvider>()
             .GetMetadataForProperty(typeof(QueryRequest), nameof(QueryRequest.Limit));
     }
-#pragma warning restore MA0045
 
     private static AspNetCoreOperationProcessorContext _CreateContext(
         OpenApiOperation operation,

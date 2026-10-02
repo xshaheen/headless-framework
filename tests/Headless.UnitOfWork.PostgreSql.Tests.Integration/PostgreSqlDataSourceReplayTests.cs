@@ -9,8 +9,6 @@ using Polly.Retry;
 
 namespace Tests;
 
-#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
-
 /// <summary>
 /// <c>RunAsync(NpgsqlDataSource, …)</c> against real server errors under the framework's default classification: a
 /// serialization failure is what a <c>Serializable</c> workload is expected to replay, and a constraint violation

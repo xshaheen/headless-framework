@@ -6,7 +6,7 @@ using Headless.Constants;
 using AccountId = Headless.Primitives.AccountId;
 using UserId = Headless.Primitives.UserId;
 
-#pragma warning disable IDE0130
+#pragma warning disable IDE0130 // Extensions on ClaimsPrincipal live in its namespace so they surface without an extra using.
 // ReSharper disable once CheckNamespace
 namespace System.Security.Claims;
 

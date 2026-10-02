@@ -29,8 +29,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Tests;
 
-#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
-
 [Collection<SqlServerJobsCoordinationFixture>]
 public sealed class SqlServerClaimStrategyTests(SqlServerJobsCoordinationFixture fixture) : TestBase
 {

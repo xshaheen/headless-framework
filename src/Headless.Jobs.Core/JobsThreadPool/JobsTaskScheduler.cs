@@ -281,8 +281,7 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
             // Shutdown cancelled an in-flight await inside the loop (e.g. the idle backoff delay).
             Interlocked.Exchange(ref _workerFaultCounts[workerId], 0);
         }
-        // ERP022/RCS1075: A scheduler fault must retire this slot without becoming unobserved.
-#pragma warning disable ERP022, RCS1075
+        // A scheduler fault must retire this slot without becoming unobserved.
         catch (Exception ex)
         {
             var consecutiveFaults = Interlocked.Increment(ref _workerFaultCounts[workerId]);
@@ -310,7 +309,6 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
                 }
             }
         }
-#pragma warning restore ERP022, RCS1075
         finally
         {
             int activeWorkers;
@@ -479,8 +477,7 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
         {
             // Expected - task was cancelled
         }
-        // ERP022: Worker thread must continue running even if tasks fail.
-#pragma warning disable ERP022
+        // The worker thread keeps running even if a task fails.
         catch (Exception exception)
         {
             // Swallowed to keep the worker alive, but NEVER silently: everything after the admission's claim
@@ -489,7 +486,6 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
             // two runs.
             _logger.WorkItemFaulted(exception);
         }
-#pragma warning restore ERP022
         finally
         {
             Interlocked.Decrement(ref _activeTasks);
@@ -504,9 +500,7 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
     {
         var admitted = false;
 
-        // ERP022: a detached admission has no caller to observe a failure; cancellation, shutdown, and dispose
-        // races all resolve to dropping the admission so the reclaim sweep can recover the job.
-#pragma warning disable ERP022
+#pragma warning disable ERP022 // A detached admission has no caller to observe faults; dropping it lets the reclaim sweep recover the job.
         try
         {
             using var admissionCts = CancellationTokenSource.CreateLinkedTokenSource(
@@ -549,8 +543,7 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
                 )
                 .Unwrap();
         }
-        // ERP022: same as the admission wait above — no caller can observe a detached start failure.
-#pragma warning disable ERP022
+#pragma warning disable ERP022 // A detached start has no caller to observe faults; the catch releases the slot and counters instead.
         catch
         {
             Interlocked.Decrement(ref _activeTasks);
@@ -577,14 +570,12 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
         {
             // Expected - task was cancelled
         }
-        // ERP022: Scheduler must continue running even if task execution throws.
-#pragma warning disable ERP022
+        // The scheduler keeps running even if task execution throws.
         catch (Exception exception)
         {
             // Swallowed to keep the dedicated thread alive, but never silently (see _ExecuteWorkAsync).
             _logger.WorkItemFaulted(exception);
         }
-#pragma warning restore ERP022
         finally
         {
             _longRunningSlots.Release();

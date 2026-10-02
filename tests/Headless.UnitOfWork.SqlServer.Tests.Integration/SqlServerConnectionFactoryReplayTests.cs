@@ -9,8 +9,6 @@ using Polly.Retry;
 
 namespace Tests;
 
-#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
-
 /// <summary>
 /// <c>RunAsync(Func&lt;CancellationToken, ValueTask&lt;SqlConnection&gt;&gt;, …)</c> against real SqlClient faults under
 /// the framework's default classification. A lock-request timeout (1222) is a real <c>SqlException</c> that the

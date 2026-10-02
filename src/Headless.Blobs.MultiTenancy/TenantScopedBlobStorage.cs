@@ -232,14 +232,12 @@ internal class TenantScopedBlobStorage(IBlobStorage inner, TenantBlobScope scope
 
             return true;
         }
-#pragma warning disable ERP022 // The failure is recorded as that entry's result, matching the providers' bulk contract.
         catch (ArgumentException e)
         {
             results.Add(new BlobBulkResult(container, path, Result<bool, Exception>.Fail(e)));
 
             return false;
         }
-#pragma warning restore ERP022
     }
 }
 

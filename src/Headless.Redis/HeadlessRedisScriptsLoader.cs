@@ -25,7 +25,6 @@ namespace Headless.Redis;
 /// </para>
 /// </remarks>
 // ReSharper disable InconsistentNaming
-#pragma warning disable IDE1006
 [PublicAPI]
 public sealed class HeadlessRedisScriptsLoader(
     IConnectionMultiplexer multiplexer,
@@ -456,8 +455,7 @@ public sealed class HeadlessRedisScriptsLoader(
 
     private static RedisConnectionException _NoWritableEndpointsException()
     {
-        // The replacement overload changes CommandRetryNever to caller-selected flags; preserve the established retry contract.
-#pragma warning disable CS0618
+#pragma warning disable CS0618 // The replacement overload swaps CommandRetryNever for caller-chosen flags; keep that retry contract.
         return new RedisConnectionException(
             ConnectionFailureType.UnableToConnect,
             "No writable Redis endpoints were available for Lua script loading."

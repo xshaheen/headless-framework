@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Caching;
 
 // Soft-timeout background completion: when the foreground factory soft-times out the per-key lock (and any
@@ -46,7 +45,6 @@ public sealed partial class FactoryCacheCoordinator
         IAsyncDisposable? distributedLease
     )
     {
-#pragma warning disable VSTHRD003 // This continuation intentionally races/observes the transferred factory task.
         var ctsTransferred = false;
         try
         {
@@ -82,7 +80,6 @@ public sealed partial class FactoryCacheCoordinator
                 await _TryRestampStaleWithCeilingAsync(store, key, staleCandidate, options).ConfigureAwait(false);
             }
         }
-#pragma warning restore VSTHRD003
         finally
         {
             if (!ctsTransferred)
@@ -115,7 +112,6 @@ public sealed partial class FactoryCacheCoordinator
         Func<Task> observeFactory
     )
     {
-#pragma warning disable VSTHRD003 // This continuation intentionally races/observes the transferred factory task.
         // No ceiling configured: let the detached factory run to completion, matching comparable caches.
         if (options.BackgroundFactoryCeiling == Timeout.InfiniteTimeSpan)
         {
@@ -145,7 +141,6 @@ public sealed partial class FactoryCacheCoordinator
         CacheDetachedTask.DisposeAfter(internalCts, factoryTask);
         _logger.LogCacheFactoryTimedOut(key, ceilingLabel, options.BackgroundFactoryCeiling);
         return true;
-#pragma warning restore VSTHRD003
     }
 
     private async Task _ObserveBackgroundFactoryAsync<T>(
@@ -158,7 +153,6 @@ public sealed partial class FactoryCacheCoordinator
         CacheEntryOptions options
     )
     {
-#pragma warning disable VSTHRD003 // This continuation deliberately observes the transferred background factory task.
         try
         {
             var result = await factoryTask.ConfigureAwait(false);
@@ -194,7 +188,6 @@ public sealed partial class FactoryCacheCoordinator
             EventsHub.OnBackgroundRefresh(key, CacheFactoryOutcome.Error);
             await _TryRestampStaleWithCeilingAsync(store, key, staleCandidate, options).ConfigureAwait(false);
         }
-#pragma warning restore VSTHRD003
     }
 
     private async ValueTask _TryRestampStaleWithCeilingAsync<T>(

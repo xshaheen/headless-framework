@@ -270,9 +270,7 @@ internal sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
         {
             await _RetryPipeline.ExecuteAsync(storeElementAsync, (this, element, location)).ConfigureAwait(false);
         }
-#pragma warning disable CA1031 // Context boundary, not classification: ANY terminal backend failure (provider exception types this package deliberately does not reference) is re-thrown wrapped with the container/manager context; nothing is swallowed and the original exception is preserved as the inner exception. Cancellation is excluded by the filter so it propagates untouched.
         catch (Exception exception) when (exception is not OperationCanceledException)
-#pragma warning restore CA1031
         {
             throw new InvalidOperationException(_BuildTerminalStoreFailureMessage(location.Path), exception);
         }
@@ -322,9 +320,7 @@ internal sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
         {
             await _RetryPipeline.ExecuteAsync(probeAsync, (this, location), cancellationToken).ConfigureAwait(false);
         }
-#pragma warning disable CA1031 // Context boundary, not classification: same rationale as _StoreElementAsync — the terminal backend failure is re-thrown wrapped with the container/manager context, original preserved as inner, cancellation excluded by the filter.
         catch (Exception exception) when (exception is not OperationCanceledException)
-#pragma warning restore CA1031
         {
             throw new InvalidOperationException(_BuildTerminalStoreFailureMessage(location.Path), exception);
         }

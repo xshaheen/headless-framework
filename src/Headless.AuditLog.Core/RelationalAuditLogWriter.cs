@@ -76,7 +76,6 @@ internal sealed class RelationalAuditLogWriter(RelationalAuditLogTable table, IJ
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
 
-#pragma warning disable MA0045 // This sync API intentionally avoids blocking on the async writer path.
     /// <summary>
     /// The synchronous counterpart of <see cref="WriteAsync"/>, for the sync <c>IAuditLogStore.Save</c> path, so it
     /// never blocks on the async path.
@@ -119,7 +118,6 @@ internal sealed class RelationalAuditLogWriter(RelationalAuditLogTable table, IJ
             command.ExecuteNonQuery();
         }
     }
-#pragma warning restore MA0045
 
     private async Task _WriteBatchedAsync(
         IReadOnlyList<AuditLogEntryData> entries,

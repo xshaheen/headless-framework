@@ -8,8 +8,6 @@ using Polly.Retry;
 
 namespace Tests;
 
-#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
-
 /// <summary>Runs the replay conformance suite against <c>RunAsync(NpgsqlConnection, …)</c>, which never replays.</summary>
 [Collection<PostgreSqlUnitOfWorkFixture>]
 public sealed class PostgreSqlConnectionReplayConformanceTests(PostgreSqlUnitOfWorkFixture fixture)

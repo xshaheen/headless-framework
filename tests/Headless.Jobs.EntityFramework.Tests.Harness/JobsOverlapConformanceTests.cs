@@ -10,8 +10,6 @@ using Microsoft.Extensions.Hosting;
 
 namespace Tests;
 
-#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
-
 /// <summary>
 /// Cross-provider conformance for the cron overlap policy. The in-memory suite proves the rule; this proves it holds
 /// inside a relational provider's materialization transaction, where the definition row lock is what makes the

@@ -127,9 +127,7 @@ public sealed class IdempotencyOracleSession : IAsyncDisposable
         {
             outcome = "stale:" + e.Reason;
         }
-#pragma warning disable CA1031 // A provider error is an observable outcome to compare, not a harness failure.
         catch (Exception e)
-#pragma warning restore CA1031
         {
             outcome = "threw:" + _Describe(e);
         }
@@ -390,9 +388,7 @@ public sealed class IdempotencyOracleSession : IAsyncDisposable
                         {
                             return "stale:" + e.Reason;
                         }
-#pragma warning disable CA1031 // A provider error is an observable outcome to compare, not a harness failure.
                         catch (Exception e) when (e is not OperationCanceledException)
-#pragma warning restore CA1031
                         {
                             return "threw:" + _Describe(e);
                         }
@@ -644,9 +640,7 @@ public sealed class IdempotencyOracleSession : IAsyncDisposable
         {
             throw;
         }
-#pragma warning disable CA1031 // See the method comment: the failure is the observation.
         catch (Exception e)
-#pragma warning restore CA1031
         {
             return (null, _Describe(e));
         }

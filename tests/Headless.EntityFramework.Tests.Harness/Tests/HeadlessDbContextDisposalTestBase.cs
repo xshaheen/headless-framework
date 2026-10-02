@@ -35,7 +35,6 @@ public abstract class HeadlessDbContextDisposalTestBase<TContext> : TestBase
         services.ConfigureDbContext<TContext>((provider, _) => probe = provider.GetRequiredService<DisposalProbe>());
         await using var provider = services.BuildServiceProvider();
         var factory = provider.GetRequiredService<IDbContextFactory<TContext>>();
-#pragma warning disable VSTHRD103 // Exercise synchronous factory creation and disposal as separate contracts.
         var context = asynchronousFactory ? await factory.CreateDbContextAsync(AbortToken) : factory.CreateDbContext();
         probe.Should().NotBeNull();
         probe!.DisposeCount.Should().Be(0);
@@ -52,7 +51,6 @@ public abstract class HeadlessDbContextDisposalTestBase<TContext> : TestBase
         probe.DisposeCount.Should().Be(1);
         await context.DisposeAsync();
         context.Dispose();
-#pragma warning restore VSTHRD103
         probe.DisposeCount.Should().Be(1);
     }
 

@@ -157,9 +157,7 @@ internal sealed class SecretHasherCostCheckService(
         {
             // The host is stopping; an unfinished benchmark has nothing to report.
         }
-#pragma warning disable CA1031 // Nothing awaits this advisory background check, so a failed hash is logged instead of becoming an unobserved task exception.
         catch (Exception exception)
-#pragma warning restore CA1031
         {
             logger.LogSecretHasherCostCheckFailed(exception, algorithm.Id);
         }

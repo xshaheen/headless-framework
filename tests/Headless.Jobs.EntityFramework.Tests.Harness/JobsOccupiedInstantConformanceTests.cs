@@ -12,8 +12,6 @@ using Microsoft.Extensions.Hosting;
 
 namespace Tests;
 
-#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
-
 /// <summary>
 /// The occupied-instant ACCOUNTING matrix, driven over every persisted state a row can be in, against both
 /// paths that read it — materialization and recovery — and against both claim strategies.

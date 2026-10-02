@@ -126,13 +126,13 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
         db.Orders.Add(order);
 
         // when — sync save path drives the sync Dispatch (sync-over-async) bridge.
-#pragma warning disable VSTHRD103 // The sync save path is the path under test.
         // ReSharper disable once MethodHasAsyncOverload
         db.SaveChanges();
-#pragma warning restore VSTHRD103
 
         // then
-        (await _CountPublishedContainingAsync(marker)).Should().Be(1);
+        (await _CountPublishedContainingAsync(marker))
+            .Should()
+            .Be(1);
     }
 
     [Fact]
@@ -627,10 +627,9 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
         {
             return db.SaveChangesAsync(AbortToken);
         }
-#pragma warning disable VSTHRD103 // The sync branch drives the sync-over-async bridge callers compare against.
+
         // ReSharper disable once MethodHasAsyncOverload
         db.SaveChanges();
-#pragma warning restore VSTHRD103
         return Task.CompletedTask;
     }
 

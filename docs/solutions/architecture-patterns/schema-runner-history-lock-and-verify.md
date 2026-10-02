@@ -7,7 +7,7 @@ module: Headless.Hosting
 problem_type: architecture_pattern
 component: database
 severity: high
-tags: [schema-runner, storage-initializer, ddl, schema-history, advisory-lock, verify-mode, postgres, sqlserver]
+tags: [schema-runner, storage-initializer, ddl, schema-history, advisory-lock, sp-getapplock, postgres, sqlserver]
 related_components:
   - Headless.Hosting
   - Headless.Sql.PostgreSql

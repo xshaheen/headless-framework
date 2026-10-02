@@ -42,7 +42,7 @@ public sealed class PaymobCashOutException(string? message, HttpStatusCode statu
         {
             body = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
         }
-#pragma warning disable ERP022
+#pragma warning disable ERP022 // Best-effort read of the error body; the request already failed and is thrown below.
         catch
         {
             body = null;

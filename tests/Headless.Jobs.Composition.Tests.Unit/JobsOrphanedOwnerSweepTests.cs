@@ -174,9 +174,7 @@ public sealed class JobsOrphanedOwnerSweepTests : TestBase
             .Returns(call =>
             {
                 call[0] = null;
-#pragma warning disable MA0045 // NSubstitute's synchronous return callback must trip the membership fence before it returns.
                 membershipLost.Cancel();
-#pragma warning restore MA0045
                 finalFenceReached.TrySetResult();
                 return false;
             });

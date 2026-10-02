@@ -344,7 +344,6 @@ public sealed class CronSchedulePositionProviderTests : TestBase
     }
 
     [Fact]
-#pragma warning disable MA0158 // The regression must contend on the provider's existing object-backed monitor.
     public async Task should_honor_cancellation_received_while_waiting_for_the_definition_lock()
     {
         var provider = _Create();
@@ -367,12 +366,10 @@ public sealed class CronSchedulePositionProviderTests : TestBase
             workerStarted.Set();
             try
             {
-#pragma warning disable MA0045 // The test needs a real thread parked on the call; awaiting would release it.
                 provider
                     .MaterializeCronScheduleOccurrenceAsync(_Materialization(definition), cancellation.Token)
                     .GetAwaiter()
                     .GetResult();
-#pragma warning restore MA0045
             }
             catch (Exception exception)
             {
@@ -388,9 +385,7 @@ public sealed class CronSchedulePositionProviderTests : TestBase
                 .SpinUntil(() => worker.ThreadState.HasFlag(ThreadState.WaitSleepJoin), TimeSpan.FromSeconds(5))
                 .Should()
                 .BeTrue("the materializer must be waiting on the held definition lock before cancellation");
-#pragma warning disable VSTHRD103 // Cancellation must be raised synchronously while the monitor is still held.
             cancellation.Cancel();
-#pragma warning restore VSTHRD103
         }
 
         worker.Join(TimeSpan.FromSeconds(5)).Should().BeTrue();
@@ -398,7 +393,6 @@ public sealed class CronSchedulePositionProviderTests : TestBase
         await _AssertPositionUnchangedAsync(provider, definition.Id);
         (await provider.GetAllCronJobOccurrencesAsync(null, AbortToken)).Should().BeEmpty();
     }
-#pragma warning restore MA0158
 
     [Fact]
     public async Task should_claim_the_committed_idle_occurrence_with_provider_owned_lease_time()

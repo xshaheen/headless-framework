@@ -27,8 +27,7 @@ internal sealed class CircuitBreakerMetrics
 
     public CircuitBreakerMetrics(IMeterFactory meterFactory)
     {
-        // Meter lifetime is managed by the IMeterFactory (DI container), not by this class.
-#pragma warning disable CA2000
+#pragma warning disable CA2000 // The IMeterFactory owns and disposes the meters it creates.
         var meter = meterFactory.Create("Headless.Messaging");
 #pragma warning restore CA2000
 

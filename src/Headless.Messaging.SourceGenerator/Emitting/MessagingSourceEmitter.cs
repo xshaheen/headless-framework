@@ -5,8 +5,6 @@ using Headless.SourceGenerators;
 
 namespace Headless.Messaging.SourceGenerator.Emitting;
 
-#pragma warning disable MA0076 // Generated source lines are clearer as interpolated templates.
-
 /// <summary>
 /// Writes the per-assembly registration source from a <see cref="MessagingRegistrationModel"/>. This is the generator's
 /// only emit path.
@@ -245,5 +243,3 @@ internal static class MessagingSourceEmitter
         writer.CloseBracket();
     }
 }
-
-#pragma warning restore MA0076

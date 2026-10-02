@@ -496,9 +496,7 @@ internal sealed partial class ConsumerRegister(
         {
             try
             {
-#pragma warning disable VSTHRD003 // Quiesce starts this generation-owned CancelAsync task before drain begins.
                 await quiesceTask.ConfigureAwait(false);
-#pragma warning restore VSTHRD003
             }
             catch (ObjectDisposedException)
             {
@@ -687,12 +685,12 @@ internal sealed partial class ConsumerRegister(
                     return false;
                 }
             }
-#pragma warning disable ERP022, RCS1075 // Listener cancellation/failure must not prevent client cleanup.
+#pragma warning disable ERP022 // Listener cancellation/failure must not prevent client cleanup.
             catch (Exception)
             {
                 // ignored
             }
-#pragma warning restore ERP022, RCS1075
+#pragma warning restore ERP022
         }
 
         // Circuit state is not touched here: only final teardown removes it, because it must survive a rebuild.
@@ -732,7 +730,6 @@ internal sealed partial class ConsumerRegister(
         return remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero;
     }
 
-#pragma warning disable VSTHRD003 // The caller-created task is explicitly deadline-bounded or fault-observed below.
     private async Task<bool> _WaitWithinShutdownBudgetAsync(Task task, long started, TimeSpan timeout)
     {
         if (task.IsCompleted)
@@ -759,7 +756,6 @@ internal sealed partial class ConsumerRegister(
             return false;
         }
     }
-#pragma warning restore VSTHRD003
 
     /// <summary>
     /// Starts a client generation for every subscription and returns once each client receives, with the establishment
@@ -1383,9 +1379,7 @@ internal sealed partial class ConsumerRegister(
         // SemaphoreSlim.Dispose never completes queued waiters and breaks the holder's release.
         // This handle-generation gate is intentionally left undisposed; disposal is signalled by
         // _disposing and checked before waiting and after acquiring the gate.
-#pragma warning disable CA2213 // Never dispose: queued waiters must observe disposal and release.
         public SemaphoreSlim ApplyGate { get; } = new(1, 1);
-#pragma warning restore CA2213
 
 #pragma warning disable IDE0032 // Uses Volatile read/write for cross-thread visibility between ApplyGate and admission logging.
         private long _lastAppliedEpoch;

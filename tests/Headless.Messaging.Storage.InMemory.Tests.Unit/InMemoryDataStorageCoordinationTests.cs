@@ -194,9 +194,7 @@ public sealed class InMemoryDataStorageCoordinationTests : TestBase
         services.AddUnitOfWork();
         // A resource-less unit holds nothing the container owns, so the provider's lifetime is irrelevant once
         // the returned unit has been disposed.
-#pragma warning disable CA2000 // The provider's disposal is irrelevant, per the note above.
         var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
-#pragma warning restore CA2000
 
         return await provider.GetRequiredService<IUnitOfWorkFactory>().BeginAsync();
     }

@@ -12,8 +12,6 @@ using Microsoft.Extensions.Hosting;
 
 namespace Tests;
 
-#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
-
 /// <summary>
 /// Occurrence rows created by the shared EF materialization path must be keyed with the same generator the SQL Server
 /// claim strategy resolves — the comb, not UUIDv7. SQL Server sorts <c>uniqueidentifier</c> by the trailing bytes,

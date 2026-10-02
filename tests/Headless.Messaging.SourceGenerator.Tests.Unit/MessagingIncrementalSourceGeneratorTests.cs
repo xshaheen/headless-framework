@@ -514,8 +514,6 @@ public sealed class MessagingIncrementalSourceGeneratorTests
     private static Diagnostic _Single(GeneratorDriver driver, string id) =>
         GeneratorTestHelper.GeneratorDiagnostics(driver).Should().ContainSingle(x => x.Id == id).Which;
 
-#pragma warning disable MA0045 // False positive: the tree was parsed from an in-memory string, so GetText returns its SourceText without I/O.
     private static string _Text(Diagnostic diagnostic) =>
         diagnostic.Location.SourceTree!.GetText().ToString(diagnostic.Location.SourceSpan);
-#pragma warning restore MA0045
 }

@@ -10,8 +10,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
 
-#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
-
 /// <summary>
 /// <c>RunAsync(db, …)</c> under a retrying execution strategy against SQLite in-memory: a transient failure
 /// before commit replays with a fresh unit of work; a failure after commit started (or after

@@ -2,8 +2,6 @@
 
 namespace Tests;
 
-#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
-
 /// <summary>Runs the database-clock ownership conformance suite against Postgres (expects <c>now()</c>).</summary>
 [Collection<PostgreSqlJobsCoordinationFixture>]
 public sealed class PostgreSqlDatabaseClockConformanceTests(PostgreSqlJobsCoordinationFixture fixture)

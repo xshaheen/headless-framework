@@ -6,8 +6,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Tests;
 
-#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
-
 /// <summary>
 /// Provider-agnostic specification of the unit-of-work contract: a singleton factory, explicit begin /
 /// complete / rollback, completion and failure callbacks, unit-local state, the terminal-claim rules, and

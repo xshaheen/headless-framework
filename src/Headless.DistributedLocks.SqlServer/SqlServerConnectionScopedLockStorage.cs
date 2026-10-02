@@ -517,11 +517,7 @@ internal sealed class SqlServerConnectionScopedLockStorage(
         {
             if (args.CurrentState is ConnectionState.Broken or ConnectionState.Closed)
             {
-                // StateChangeEventHandler is a synchronous void delegate, so there is no async path to flow
-                // CancelAsync (MA0045) through; the lost-token must be cancelled inline in the event handler.
-#pragma warning disable MA0045
                 _lostTokenSource.Cancel();
-#pragma warning restore MA0045
             }
         }
 
@@ -574,12 +570,12 @@ internal sealed class SqlServerConnectionScopedLockStorage(
                     _connectionGate.Release();
                 }
             }
-#pragma warning disable CA1031, ERP022 // Any probe failure means the connection is dead; surface loss via the lost token.
+#pragma warning disable ERP022 // Any probe failure means the connection is dead; surface loss via the lost token.
             catch
             {
                 await _lostTokenSource.CancelAsync().ConfigureAwait(false);
             }
-#pragma warning restore CA1031, ERP022
+#pragma warning restore ERP022
             finally
             {
                 Interlocked.Exchange(ref _probing, 0);

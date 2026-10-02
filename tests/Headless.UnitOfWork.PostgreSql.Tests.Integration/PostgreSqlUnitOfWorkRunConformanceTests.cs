@@ -2,8 +2,6 @@
 
 namespace Tests;
 
-#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
-
 /// <summary>Runs the <c>RunAsync</c> conformance suite against the raw-ADO PostgreSQL helper.</summary>
 [Collection<PostgreSqlUnitOfWorkFixture>]
 public sealed class PostgreSqlUnitOfWorkRunConformanceTests(PostgreSqlUnitOfWorkFixture fixture)

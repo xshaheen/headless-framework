@@ -131,7 +131,6 @@ internal sealed class KafkaConsumerClient : IConsumerClient
                     .WaitAsync(cancellationToken)
                     .ConfigureAwait(false);
             }
-#pragma warning disable ERP022
             catch (CreateTopicsException e) when (e.Message.Contains("already exists", StringComparison.Ordinal)) { }
             catch (Exception e) when (e is not OperationCanceledException)
             {
@@ -142,7 +141,6 @@ internal sealed class KafkaConsumerClient : IConsumerClient
                 };
                 OnLogCallback!(logArgs);
             }
-#pragma warning restore ERP022
         }
 
         return normalizedTopics;
@@ -423,12 +421,12 @@ internal sealed class KafkaConsumerClient : IConsumerClient
             {
                 consumerClient.Close();
             }
-#pragma warning disable RCS1075, ERP022
+#pragma warning disable ERP022 // Close is best-effort during shutdown; a failure must not stop Dispose from running.
             catch (Exception)
             {
                 // Best-effort shutdown. Dispose still releases native resources.
             }
-#pragma warning restore RCS1075, ERP022
+#pragma warning restore ERP022
 
             consumerClient.Dispose();
         }
@@ -448,9 +446,7 @@ internal sealed class KafkaConsumerClient : IConsumerClient
 
         lock (_lock)
         {
-#pragma warning disable CA1508 // Justification: other thread can initialize it
             if (_consumerClient == null)
-#pragma warning restore CA1508
             {
                 var config = new ConsumerConfig(
                     new Dictionary<string, string>(_kafkaOptions.MainConfig, StringComparer.Ordinal)

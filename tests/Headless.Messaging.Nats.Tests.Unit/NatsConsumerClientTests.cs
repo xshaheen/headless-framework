@@ -15,7 +15,6 @@ using NATS.Client.Core;
 using NATS.Client.JetStream;
 using MsOptions = Microsoft.Extensions.Options;
 
-#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
 namespace Tests;
 
 public sealed class NatsConsumerClientTests : TestBase

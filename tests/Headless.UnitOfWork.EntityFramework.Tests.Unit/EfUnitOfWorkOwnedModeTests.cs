@@ -8,8 +8,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Tests;
 
-#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
-
 /// <summary>
 /// Owned-mode <c>BeginAsync(db)</c> against SQLite in-memory: complete commits and drains, dispose rolls
 /// back, explicit rollback runs OnFailed, and the context binding is recorded and evicted.

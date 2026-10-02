@@ -9,8 +9,6 @@ using Headless.Sql;
 
 namespace Headless.Messaging.Persistence;
 
-#pragma warning disable CA2100 // SQL text is rendered from dialect output, table names, and fixed fragments; every value is a parameter.
-
 internal sealed partial class RelationalDataStorage
 {
     /// <summary>
@@ -221,12 +219,12 @@ internal sealed partial class RelationalDataStorage
                     Lane = persistedLane,
                     Retries = reader.GetInt32(3),
                     InlineAttempts = reader.GetInt32(4),
-#pragma warning disable CA1849, VSTHRD103, AsyncFixer02, MA0042 // the GetString(1) above already pulls the large Content column synchronously, so these remaining small columns cannot add blocking this row has not already paid for.
+#pragma warning disable CA1849 // the GetString(1) above already pulls the large Content column synchronously, so these remaining small columns cannot add blocking this row has not already paid for.
                     Added = reader.GetFieldValue<DateTimeOffset>(5),
                     NextRetryAt = reader.IsDBNull(6) ? null : reader.GetFieldValue<DateTimeOffset>(6),
                     LockedUntil = reader.IsDBNull(7) ? null : reader.GetFieldValue<DateTimeOffset>(7),
                     Owner = reader.IsDBNull(8) ? null : reader.GetString(8),
-#pragma warning restore CA1849, VSTHRD103, AsyncFixer02, MA0042
+#pragma warning restore CA1849
                 };
 
                 if (received && reader.GetBoolean(9))
@@ -259,9 +257,7 @@ internal sealed partial class RelationalDataStorage
                     mediumMessage.IsInboxOrphaned = reader.GetBoolean(19);
                 }
             }
-#pragma warning disable CA1031 // deliberately broad: one un-deserializable row must not abort or starve the batch
             catch (Exception ex)
-#pragma warning restore CA1031
             {
                 _logger.LogPoisonMessageSkipped(storageId, table, ex);
                 poisonMessages.Add(_CreatePoisonMessage(storageId, ex));
@@ -944,9 +940,7 @@ internal sealed partial class RelationalDataStorage
                     }
                 );
             }
-#pragma warning disable CA1031 // deliberately broad: one un-deserializable row must not abort the schedule batch
             catch (Exception ex)
-#pragma warning restore CA1031
             {
                 _logger.LogPoisonMessageSkipped(storageId, _publishedTable, ex);
                 poisonMessages.Add(_CreatePoisonMessage(storageId, ex));
@@ -1102,9 +1096,7 @@ internal sealed partial class RelationalDataStorage
                     }
                 );
             }
-#pragma warning disable CA1031 // one un-deserializable row must not abort or starve the batch
             catch (Exception ex)
-#pragma warning restore CA1031
             {
                 _logger.LogPoisonMessageSkipped(storageId, _publishedTable, ex);
                 poisonMessages.Add(_CreatePoisonMessage(storageId, ex));
@@ -1114,5 +1106,3 @@ internal sealed partial class RelationalDataStorage
         return messages;
     }
 }
-
-#pragma warning restore CA2100

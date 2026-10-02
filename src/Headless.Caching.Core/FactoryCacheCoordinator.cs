@@ -9,7 +9,6 @@ using Headless.Threading;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Caching;
 
 /// <summary>Coordinates factory-backed cache operations across cache providers.</summary>

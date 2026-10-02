@@ -9,7 +9,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.EntityFramework;
 
 internal sealed class HeadlessAuditPersistence(
@@ -132,9 +131,7 @@ internal sealed class HeadlessAuditPersistence(
         _ResolveEntityIds(entries);
         var snapshots = TrackedEntrySnapshot.Capture(context);
 
-#pragma warning disable MA0045 // Do not use blocking calls in a sync method (need to make calling method async)
         var auditEntries = _SaveEntries(context, entries);
-#pragma warning restore MA0045
 
         if (auditEntries.Count > 0)
         {
@@ -218,18 +215,10 @@ internal sealed class HeadlessAuditPersistence(
             return [];
         }
 
-#pragma warning disable MA0045 // Do not use blocking calls in a sync method (need to make calling method async)
-        var result = _auditStore.Save(entries, context);
-#pragma warning restore MA0045
-
-        if (result is null)
-        {
-            throw new InvalidOperationException(
+        return _auditStore.Save(entries, context)
+            ?? throw new InvalidOperationException(
                 "IAuditLogStore.Save returned null; implementation must return an empty list when no entries are saved, never null."
             );
-        }
-
-        return result;
     }
 
     private async Task<IReadOnlyList<IAuditLogStoreEntry>> _SaveEntriesAsync(

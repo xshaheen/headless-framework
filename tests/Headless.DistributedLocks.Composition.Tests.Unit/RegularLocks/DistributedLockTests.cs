@@ -607,7 +607,6 @@ public sealed class DistributedLockTests : TestBase
         try
         {
             // Start multiple waiters - they will wait for retry
-#pragma warning disable AsyncFixer04 // Intentionally not awaiting to simulate concurrent waiters
             _ = provider.TryAcquireAsync(
                 resource,
                 new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.FromSeconds(30) },
@@ -621,7 +620,6 @@ public sealed class DistributedLockTests : TestBase
                 cts.Token
             );
             await Task.Delay(100, AbortToken); // Give time for waiter2 to enter retry loop
-#pragma warning restore AsyncFixer04
 
             // when - third waiter should throw immediately when max exceeded
             var act = async () =>
@@ -657,7 +655,6 @@ public sealed class DistributedLockTests : TestBase
         try
         {
             // Start waiters on different resources
-#pragma warning disable AsyncFixer04 // Intentionally not awaiting to simulate concurrent waiters
             _ = provider.TryAcquireAsync(
                 "resource1",
                 new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.FromSeconds(30) },
@@ -671,7 +668,6 @@ public sealed class DistributedLockTests : TestBase
                 cts.Token
             );
             await Task.Delay(100, AbortToken);
-#pragma warning restore AsyncFixer04
 
             // when - third resource should throw
             var act = async () =>
@@ -895,9 +891,7 @@ public sealed class DistributedLockTests : TestBase
             .InsertAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
-#pragma warning disable CA1849, VSTHRD103 // Synchronous Cancel is intentional inside NSubstitute sync callback
                 callerCts.Cancel();
-#pragma warning restore CA1849, VSTHRD103
                 return ValueTask.FromException<DistributedLockAcquireResult>(
                     new OperationCanceledException(callerCts.Token)
                 );
@@ -1443,9 +1437,7 @@ public sealed class DistributedLockTests : TestBase
             .InsertAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
-#pragma warning disable CA1849, VSTHRD103 // Synchronous Cancel is intentional inside NSubstitute sync callback
                 cts.Cancel();
-#pragma warning restore CA1849, VSTHRD103
                 return ValueTask.FromException<DistributedLockAcquireResult>(new OperationCanceledException(cts.Token));
             });
 

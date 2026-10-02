@@ -7,8 +7,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Tests;
 
-#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
-
 /// <summary>
 /// Provider-portable acceptance scenarios for the unit-of-work contract against a real relational transaction
 /// (PostgreSQL, SQL Server): owned commit/rollback, observed (caller-owned) commit/rollback, independent units,

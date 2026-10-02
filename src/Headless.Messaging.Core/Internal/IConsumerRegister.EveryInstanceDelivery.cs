@@ -34,11 +34,9 @@ internal sealed partial class ConsumerRegister
         CancellationToken cancellationToken
     )
     {
-#pragma warning disable VSTHRD003 // False positive: the lambda starts the task it returns; the previous link is only passed along.
         return _establishments
             .GetOrAdd(handleName, static _ => new EstablishmentChain())
             .Append((previous, generation) => _NotifyAfterAsync(previous, descriptors, generation, cancellationToken));
-#pragma warning restore VSTHRD003
     }
 
     private async Task _NotifyAfterAsync(
@@ -48,9 +46,7 @@ internal sealed partial class ConsumerRegister
         CancellationToken cancellationToken
     )
     {
-#pragma warning disable VSTHRD003 // The chain's previous link is created by this register and never faults.
         await previous.ConfigureAwait(false);
-#pragma warning restore VSTHRD003
 
         try
         {
@@ -206,7 +202,6 @@ internal sealed partial class ConsumerRegister
             await client.RejectAsync(sender, CancellationToken.None).ConfigureAwait(false);
             traceHandle.Activity?.Dispose();
         }
-#pragma warning disable ERP022 // False positive: the fault is logged and counted; every-instance delivery commits rather than requeues by design.
         catch (Exception e)
         {
             // A fault outside the consumer is the core's or the transport's, so a redelivery would fault the same way:
@@ -231,7 +226,6 @@ internal sealed partial class ConsumerRegister
                 await _CommitFaultedEveryInstanceMessageAsync(client, transportMessage, sender).ConfigureAwait(false);
             }
         }
-#pragma warning restore ERP022
     }
 
     private async Task _CommitFaultedEveryInstanceMessageAsync(
@@ -244,12 +238,10 @@ internal sealed partial class ConsumerRegister
         {
             await client.CommitAsync(sender, CancellationToken.None).ConfigureAwait(false);
         }
-#pragma warning disable ERP022 // False positive: logged; a settlement that cannot be sent leaves the message to the broker's own redelivery.
         catch (Exception ex)
         {
             _logger.LogProcessReceivedMessageFailed(ex, transportMessage);
         }
-#pragma warning restore ERP022
     }
 
     /// <summary>
@@ -391,9 +383,7 @@ internal sealed partial class ConsumerRegister
             {
                 var previous = _tail;
                 var generation = ++_generation;
-#pragma warning disable VSTHRD003 // False positive: the lambda starts the task it returns; the previous link is only passed along.
                 var link = Task.Run(() => notify(previous, generation), CancellationToken.None);
-#pragma warning restore VSTHRD003
                 _tail = link;
                 return link;
             }

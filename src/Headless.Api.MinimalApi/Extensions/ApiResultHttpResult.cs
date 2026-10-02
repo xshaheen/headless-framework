@@ -10,7 +10,6 @@ using Microsoft.AspNetCore.Mvc;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 #pragma warning disable CA1000 // IEndpointMetadataProvider requires a static member on the returned generic type.
-#pragma warning disable RCS1158 // The metadata member is required by IEndpointMetadataProvider.
 namespace Headless.Primitives;
 
 /// <summary>

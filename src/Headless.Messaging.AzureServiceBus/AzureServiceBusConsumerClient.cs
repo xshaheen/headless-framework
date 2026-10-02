@@ -539,9 +539,7 @@ internal sealed class AzureServiceBusConsumerClient(
 
         try
         {
-#pragma warning disable CA1508 // Justification: other thread can initialize it
             if (_serviceBusProcessor == null && (lane != MessageLane.Queue || _serviceBusClient == null))
-#pragma warning restore CA1508
             {
                 // Shared, pool-owned resources: processors created from this client multiplex the
                 // same AMQP connection as the publish senders. This client is never disposed here.

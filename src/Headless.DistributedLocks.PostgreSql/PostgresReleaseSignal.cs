@@ -6,10 +6,7 @@ using Npgsql;
 
 namespace Headless.DistributedLocks.PostgreSql;
 
-#pragma warning disable VSTHRD003, VSTHRD110, MA0134, ERP022
-// The LISTEN loop is an owned background receiver. Disposal cancels and observes it; notification
-// fanout is best-effort and fault-observed through a continuation so the listener is never blocked
-// by a waiter callback.
+#pragma warning disable MA0134 // The owned listener task is awaited on dispose; fanout is fire-and-forget with a fault-logging continuation.
 /// <summary>
 /// Implements <see cref="IReleaseSignal"/> using PostgreSQL <c>LISTEN/NOTIFY</c> so blocked acquirers
 /// are woken promptly when a holder releases, rather than relying on the polling fallback alone.
@@ -215,4 +212,4 @@ internal sealed class PostgresReleaseSignal : IReleaseSignal, IAsyncDisposable
         return await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
     }
 }
-#pragma warning restore VSTHRD003, VSTHRD110, MA0134, ERP022
+#pragma warning restore MA0134

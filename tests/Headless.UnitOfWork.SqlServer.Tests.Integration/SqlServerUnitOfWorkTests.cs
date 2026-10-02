@@ -8,8 +8,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Tests;
 
-#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
-
 /// <summary>
 /// The owned and observed contracts of the SqlClient provider against a real SQL Server: an owned unit begins
 /// and commits its own transaction; an observed unit is completed by the caller after its commit, and a dispose

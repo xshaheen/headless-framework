@@ -107,9 +107,7 @@ internal sealed class DataProtectionStartupValidationService(
                 await _RunWriteProbeAsync(logger, keyManagementOptions, cancellationToken).ConfigureAwait(false);
             }
         }
-#pragma warning disable CA1031 // Last-resort startup boundary: any failure kind (backend exception, provisioning-guardrail InvalidOperationException, crypto failure) must flow into the configured mode; the original exception is preserved as the inner exception (Throw) or logged in full (LogOnly). Host-shutdown cancellation is excluded by the filter so it propagates untouched.
         catch (Exception exception) when (exception is not OperationCanceledException)
-#pragma warning restore CA1031
         {
             if (options.Mode is StartupValidationMode.LogOnly)
             {

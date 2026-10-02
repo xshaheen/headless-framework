@@ -178,9 +178,7 @@ internal sealed class FencedLeases(LeaseRequestResolver resolver, ILeaseStore st
 
                 throw;
             }
-#pragma warning disable CA1031 // The handler is caller code at a per-lease boundary: its failure is recorded in the result, and only its own lease rolls back.
             catch (Exception e)
-#pragma warning restore CA1031
             {
                 await unit.RollbackAsync().ConfigureAwait(false);
 

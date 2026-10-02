@@ -2,7 +2,6 @@
 
 using Headless.Checks;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Caching;
 
 /// <summary>Shared store-level operations composed by providers on top of <see cref="IFactoryCacheStore"/>.</summary>

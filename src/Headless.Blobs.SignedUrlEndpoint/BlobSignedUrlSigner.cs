@@ -107,7 +107,6 @@ internal sealed class BlobSignedUrlSigner(
 
     private static byte[] _Serialize(BlobSignedUrlGrant grant)
     {
-#pragma warning disable MA0045 // False positive: a MemoryStream and its BinaryWriter have no async disposal work, and minting is synchronous.
         using var stream = new MemoryStream();
 
         using (var writer = new BinaryWriter(stream, Encoding.UTF8, leaveOpen: true))
@@ -126,7 +125,6 @@ internal sealed class BlobSignedUrlSigner(
                 writer.Write(grant.MaxLength.Value);
             }
         }
-#pragma warning restore MA0045
 
         return stream.ToArray();
     }

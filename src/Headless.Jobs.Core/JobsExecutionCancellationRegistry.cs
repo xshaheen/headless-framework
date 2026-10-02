@@ -136,9 +136,7 @@ internal sealed class JobsExecutionCancellationRegistration(Guid jobId, Cancella
             {
                 try
                 {
-#pragma warning disable MA0045 // Synchronous signalling keeps removal and source disposal mutually exclusive.
                     CancellationSource.Cancel();
-#pragma warning restore MA0045
                 }
 #pragma warning disable ERP022 // Cancellation stays observable even when a consumer callback fails.
                 catch (AggregateException)

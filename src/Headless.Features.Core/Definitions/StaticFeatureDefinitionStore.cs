@@ -88,9 +88,7 @@ public sealed class StaticFeatureDefinitionStore : IStaticFeatureDefinitionStore
     {
         var context = new FeatureDefinitionContext();
 
-#pragma warning disable MA0045 // Do not use blocking calls in a sync method (need to make calling method async)
         using var scope = _serviceProvider.CreateScope();
-#pragma warning restore MA0045
 
         foreach (var type in _options.DefinitionProviders)
         {

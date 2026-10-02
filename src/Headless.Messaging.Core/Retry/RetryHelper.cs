@@ -104,9 +104,7 @@ internal static class RetryHelper
         // `Task.Delay(_, ct)` inside the orphan throws ObjectDisposedException instead of
         // OperationCanceledException, breaking the cooperative-cancel contract. Dispose the CTS
         // only after the orphan completes (fire-and-forget continuation).
-        // CA2000 false-positive: disposal IS guaranteed via the try/finally `ctsOwned` flag below,
-        // or transferred to the orphan-completion continuation.
-#pragma warning disable CA2000
+#pragma warning disable CA2000 // False positive: disposed in the finally via ctsOwned, or by the orphan-completion continuation.
         var callbackCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 #pragma warning restore CA2000
         var ctsOwned = true;

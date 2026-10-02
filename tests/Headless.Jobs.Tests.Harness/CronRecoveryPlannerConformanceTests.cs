@@ -4,8 +4,6 @@ using Headless.Testing.Tests;
 
 namespace Tests;
 
-#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
-
 /// <summary>
 /// The shared recovery-decision conformance suite (#834). Every provider runs the SAME scenarios, so the storage-
 /// agnostic decision in <c>CronRecoveryPlanner</c> is proven once per backend rather than described twice in

@@ -1137,9 +1137,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         sqs.DeleteMessageAsync(sourceQueue, "receipt-bag", Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
-#pragma warning disable MA0045 // A substitute callback returning the response value cannot await CancelAsync.
                 stop.Cancel();
-#pragma warning restore MA0045
                 return new DeleteMessageResponse();
             });
         sqs.ReceiveMessageAsync(Arg.Any<ReceiveMessageRequest>(), Arg.Any<CancellationToken>())

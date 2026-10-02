@@ -502,7 +502,6 @@ public sealed class FluentOptionsConsumerCompilationTests : TestBase
                 .Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error),
         ];
 
-#pragma warning disable MA0045 // These syntax trees are parsed from in-memory strings; synchronous traversal performs no I/O.
     private static InvocationExpressionSyntax[] _AssignedInvocations(CSharpCompilation compilation) =>
         [
             .. compilation
@@ -515,7 +514,6 @@ public sealed class FluentOptionsConsumerCompilationTests : TestBase
                 .Select(assignment => assignment.Right)
                 .OfType<InvocationExpressionSyntax>(),
         ];
-#pragma warning restore MA0045
 
     private static IMethodSymbol _BoundMethod(SemanticModel model, InvocationExpressionSyntax invocation)
     {

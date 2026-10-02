@@ -985,7 +985,7 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
     // Outbox 0 is the primary storage; additional outboxes are numbered from 1 in registration order.
     private sealed record RetryQuadrantKey(MessageType Direction, MessageLane Lane, int Outbox = 0);
 
-#pragma warning disable IDE1006, IDE0032 // Atomic state fields follow the processor's private-field convention.
+#pragma warning disable IDE1006 // Atomic state fields follow the processor's private-field convention.
     private sealed class RetryQuadrantState(
         RetryQuadrantKey key,
         string lockResource,
@@ -1064,7 +1064,7 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
             Interlocked.Exchange(ref _nextPollUtcTicks, 0);
         }
     }
-#pragma warning restore IDE1006, IDE0032
+#pragma warning restore IDE1006
 
     private static double _GetRandomUnitDouble()
     {

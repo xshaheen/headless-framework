@@ -175,12 +175,10 @@ public sealed class RedisConsumerClientTests : TestBase
             ]
         );
 
-#pragma warning disable CS1998 // The async iterator yields canned batches without awaiting.
     private static async IAsyncEnumerable<IEnumerable<RedisStreamMessages>> _Batches(params RedisStreamMessages[] batch)
     {
         yield return batch;
     }
-#pragma warning restore CS1998
 
     [Fact]
     public async Task should_propagate_exact_token_when_subscribing()

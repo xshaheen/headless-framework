@@ -79,8 +79,7 @@ internal sealed class ServiceBusProcessorFacade : IAsyncDisposable
             : _serviceBusProcessor!.StopProcessingAsync(cancellationToken);
     }
 
-#pragma warning disable CA1003, MA0046
-    // CA1003/MA0046: Must use Func<T, Task> to match Azure SDK's ServiceBusProcessor event signatures
+#pragma warning disable MA0046 // The events forward to ServiceBusProcessor, so they must match its Func<TArgs, Task> signatures.
     public event Func<ProcessMessageEventArgs, Task> ProcessMessageAsync
     {
         add => _serviceBusProcessor!.ProcessMessageAsync += value;
@@ -118,7 +117,7 @@ internal sealed class ServiceBusProcessorFacade : IAsyncDisposable
             }
         }
     }
-#pragma warning restore CA1003, MA0046
+#pragma warning restore MA0046
 
     public async ValueTask DisposeAsync()
     {

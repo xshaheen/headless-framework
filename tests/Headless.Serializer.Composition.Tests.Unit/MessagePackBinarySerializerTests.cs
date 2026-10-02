@@ -374,9 +374,7 @@ public sealed class MessagePackBinarySerializerTests
         var bytes = _serializer.SerializeToBytes(person)!;
 
         // when
-#pragma warning disable CA2263 // Prefer generic
         var result = _serializer.Deserialize<Person>(bytes.AsMemory());
-#pragma warning restore CA2263
 
         // then
         result.Should().NotBeNull();

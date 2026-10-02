@@ -9,8 +9,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Tests;
 
-#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
-
 /// <summary>
 /// A commit fault is in-doubt when the commit may have reached the database but no answer came back, and a definite
 /// failure when the database answered with an error or nothing was sent. The factory reports the first as

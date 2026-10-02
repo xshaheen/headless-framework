@@ -77,9 +77,7 @@ internal sealed class PermissionsInitializationBackgroundService(
         {
             try
             {
-#pragma warning disable VSTHRD003 // IHostedService pattern: task started in StartAsync, awaited in StopAsync
                 await _initializeDynamicPermissionsTask.WaitAsync(cancellationToken).ConfigureAwait(false);
-#pragma warning restore VSTHRD003
             }
             catch (OperationCanceledException) { }
         }

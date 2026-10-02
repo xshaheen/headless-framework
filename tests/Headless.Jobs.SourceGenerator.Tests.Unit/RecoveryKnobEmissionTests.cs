@@ -150,7 +150,6 @@ public sealed class RecoveryKnobEmissionTests
             .Contain(x => x.Id == "HF022" && x.Severity == DiagnosticSeverity.Error);
     }
 
-#pragma warning disable MA0045 // The trees are already in memory; going async would spread to every void test.
     private static string _Generate(string source)
     {
         var driver = GeneratorTestHelper.Run(source, out var diagnostics);
@@ -159,5 +158,4 @@ public sealed class RecoveryKnobEmissionTests
 
         return string.Join('\n', driver.GetRunResult().GeneratedTrees.Select(tree => tree.GetText().ToString()));
     }
-#pragma warning restore MA0045
 }

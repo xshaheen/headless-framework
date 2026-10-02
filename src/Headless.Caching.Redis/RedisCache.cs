@@ -1072,9 +1072,7 @@ public sealed class RedisCache(
                 ttlTasks[j] = batch.KeyTimeToLiveAsync(slidingOrLegacyHits[j].RedisKey, cacheOptions.ReadMode);
             }
 
-#pragma warning disable VSTHRD103 // IBatch.Execute() flushes queued commands; IDatabaseAsync.ExecuteAsync is unrelated.
             batch.Execute();
-#pragma warning restore VSTHRD103
             var ttlResults = await Task.WhenAll(ttlTasks).ConfigureAwait(false);
 
             for (var j = 0; j < slidingOrLegacyHits.Count; j++)
@@ -3537,8 +3535,7 @@ public sealed class RedisCache(
 
         if (valuesResult is null || valuesResult.Length < 2)
         {
-            // The replacement constructor depends on experimental RedisErrorKind; keep the stable API until it exits preview.
-#pragma warning disable CS0618
+#pragma warning disable CS0618 // The replacement constructor needs the experimental RedisErrorKind; keep this one until it exits preview.
             throw new RedisServerException("Unexpected set mutation script result.");
 #pragma warning restore CS0618
         }

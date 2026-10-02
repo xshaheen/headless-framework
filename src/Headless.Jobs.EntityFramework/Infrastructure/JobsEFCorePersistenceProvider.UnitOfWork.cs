@@ -20,7 +20,6 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         bool requireSavepoints
     ) => _ValidateRelationalResource(relationalResource, requireSavepoints);
 
-#pragma warning disable MA0045 // Validation and borrowing an existing connection/transaction are synchronous; no connection is opened.
     private void _ValidateRelationalResource(
         IRelationalUnitOfWorkResource relationalResource,
         bool requireSavepoints = false
@@ -67,7 +66,6 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
             throw;
         }
     }
-#pragma warning restore MA0045
 
     private static void _RequireKeyedSavepoints(TDbContext context)
     {
