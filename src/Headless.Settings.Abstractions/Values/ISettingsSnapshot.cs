@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics.CodeAnalysis;
+
 namespace Headless.Settings.Values;
 
 /// <summary>
@@ -17,7 +19,7 @@ namespace Headless.Settings.Values;
 /// </para>
 /// <para>
 /// <see cref="Revision"/> moves only when a resolved setting value changes. A reload that reads the same values keeps
-/// the same <see cref="Current"/> instance and the same revision, so anything keyed on the revision, such as a
+/// the same value instance and the same revision, so anything keyed on the revision, such as a
 /// rate-limit partition, is not reset by a reload that changed nothing.
 /// </para>
 /// </remarks>
@@ -25,14 +27,22 @@ namespace Headless.Settings.Values;
 [PublicAPI]
 public interface ISettingsSnapshot<T>
 {
-    /// <summary>Gets the value bound from the settings' current values, without waiting.</summary>
-    /// <remarks>Use <see cref="GetAsync"/> where the first load may not have finished, for example right after startup.</remarks>
-    /// <exception cref="InvalidOperationException">The first load has not completed yet.</exception>
-    T Current { get; }
+    /// <summary>
+    /// Gets the value bound from the settings' current values without waiting, for synchronous code such as a
+    /// rate-limiter partition factory.
+    /// </summary>
+    /// <remarks>
+    /// Returns <see langword="false"/> until the first load completes, for example right after startup or while the
+    /// settings store is unreachable, so the caller decides what "not loaded yet" means. Code that can await should use
+    /// <see cref="GetAsync"/>, which waits for the first load instead.
+    /// </remarks>
+    /// <param name="value">The current value, when the snapshot has loaded.</param>
+    /// <returns><see langword="true"/> when the snapshot has loaded and <paramref name="value"/> holds its value.</returns>
+    bool TryGetCurrent([MaybeNullWhen(false)] out T value);
 
     /// <summary>
     /// Gets the value bound from the settings' current values, loading the snapshot first when it has not loaded yet.
-    /// Once loaded this completes synchronously with <see cref="Current"/>.
+    /// Once loaded this completes synchronously with the current value.
     /// </summary>
     /// <param name="cancellationToken">The abort token.</param>
     /// <returns>The current value.</returns>
@@ -44,14 +54,14 @@ public interface ISettingsSnapshot<T>
     ValueTask<T> GetAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Gets the revision of <see cref="Current"/>: <c>1</c> after the first load, incremented by one each time a
+    /// Gets the revision of the current value: <c>1</c> after the first load, incremented by one each time a
     /// resolved setting value changes, and <c>0</c> before the first load.
     /// </summary>
     long Revision { get; }
 
     /// <summary>
-    /// Registers a listener called with the new value and revision after each change, once <see cref="Current"/> and
-    /// <see cref="Revision"/> already show them.
+    /// Registers a listener called with the new value and revision after each change, once <see cref="TryGetCurrent"/>
+    /// and <see cref="Revision"/> already show them.
     /// </summary>
     /// <remarks>
     /// A listener runs on the thread that reloaded the snapshot and must not block. An exception it throws is logged and

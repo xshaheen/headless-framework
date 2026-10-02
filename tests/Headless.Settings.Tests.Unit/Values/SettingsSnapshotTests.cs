@@ -74,21 +74,22 @@ public sealed class SettingsSnapshotTests : TestBase
         await sut.EnsureLoadedAsync(AbortToken);
 
         // then
-        sut.Current.Should().Be(new Policy(10, 100));
+        _CurrentOf(sut).Should().Be(new Policy(10, 100));
         sut.Revision.Should().Be(1);
     }
 
     [Fact]
-    public void should_throw_when_current_is_read_before_the_first_load()
+    public void should_report_no_current_value_before_the_first_load()
     {
         // given
         using var sut = _CreateSut();
 
         // when
-        var act = () => sut.Current;
+        var loaded = sut.TryGetCurrent(out var value);
 
         // then
-        act.Should().Throw<InvalidOperationException>();
+        loaded.Should().BeFalse();
+        value.Should().BeNull();
         sut.Revision.Should().Be(0);
     }
 
@@ -161,14 +162,14 @@ public sealed class SettingsSnapshotTests : TestBase
         // given
         using var sut = _CreateSut();
         await sut.EnsureLoadedAsync(AbortToken);
-        var current = sut.Current;
+        var current = _CurrentOf(sut);
 
         // when
         await sut.ReloadAsync(SettingsSnapshotReloadReason.Backstop, null, AbortToken);
 
         // then
         sut.Revision.Should().Be(1);
-        sut.Current.Should().BeSameAs(current);
+        _CurrentOf(sut).Should().BeSameAs(current);
         _binds.Should().Be(1);
     }
 
@@ -209,7 +210,7 @@ public sealed class SettingsSnapshotTests : TestBase
         await sut.ReloadAsync(SettingsSnapshotReloadReason.Backstop, null, AbortToken);
 
         // then
-        sut.Current.Should().Be(new Policy(20, 100));
+        _CurrentOf(sut).Should().Be(new Policy(20, 100));
         sut.Revision.Should().Be(2);
         _binds.Should().Be(2);
         notifications.Should().Equal((new Policy(20, 100), 2L));
@@ -276,7 +277,7 @@ public sealed class SettingsSnapshotTests : TestBase
         await sut.ReloadAsync(SettingsSnapshotReloadReason.Backstop, null, AbortToken);
 
         // then
-        sut.Current.Should().Be(new Policy(10, 100));
+        _CurrentOf(sut).Should().Be(new Policy(10, 100));
         sut.Revision.Should().Be(1);
         var (_, message) = _logger.Entries.Should().ContainSingle(x => x.Level == LogLevel.Error).Subject;
         message.Should().Contain(_PublicLimit).And.NotContain("not-a-number");
@@ -292,7 +293,7 @@ public sealed class SettingsSnapshotTests : TestBase
         await sut.ReloadAsync(SettingsSnapshotReloadReason.Establishment, null, AbortToken);
 
         // then
-        sut.Current.Should().Be(new Policy(10, 100));
+        _CurrentOf(sut).Should().Be(new Policy(10, 100));
         sut.Revision.Should().Be(1);
     }
 
@@ -331,7 +332,7 @@ public sealed class SettingsSnapshotTests : TestBase
 
         // then
         seenRevision.Should().Be(2);
-        sut.Current.Should().Be(new Policy(20, 100));
+        _CurrentOf(sut).Should().Be(new Policy(20, 100));
         _logger.Entries.Should().ContainSingle(x => x.Level == LogLevel.Error);
     }
 
@@ -372,7 +373,7 @@ public sealed class SettingsSnapshotTests : TestBase
         await TimerCountingTimeProvider.WaitUntilAsync(() => sut.Revision == 2, AbortToken);
 
         // then
-        sut.Current.Should().Be(new Policy(20, 100));
+        _CurrentOf(sut).Should().Be(new Policy(20, 100));
         _reads.Should().Be(3);
     }
 
@@ -444,7 +445,7 @@ public sealed class SettingsSnapshotTests : TestBase
         await TimerCountingTimeProvider.WaitUntilAsync(() => sut.Revision == 2, AbortToken);
 
         // then
-        sut.Current.Should().Be(new Policy(10, 200));
+        _CurrentOf(sut).Should().Be(new Policy(10, 200));
     }
 
     [Fact]
@@ -463,7 +464,7 @@ public sealed class SettingsSnapshotTests : TestBase
         await TimerCountingTimeProvider.WaitUntilAsync(() => sut.Revision == 3, AbortToken);
 
         // then
-        sut.Current.Should().Be(new Policy(20, 200));
+        _CurrentOf(sut).Should().Be(new Policy(20, 200));
     }
 
     #endregion
@@ -483,7 +484,7 @@ public sealed class SettingsSnapshotTests : TestBase
 
         // then
         await act.Should().NotThrowAsync();
-        sut.Current.Should().Be(new Policy(10, 100));
+        _CurrentOf(sut).Should().Be(new Policy(10, 100));
         sut.Revision.Should().Be(1);
         _logger.Entries.Should().ContainSingle(x => x.Level == LogLevel.Error);
     }
@@ -568,6 +569,13 @@ public sealed class SettingsSnapshotTests : TestBase
     }
 
     #endregion
+
+    private static TValue _CurrentOf<TValue>(ISettingsSnapshot<TValue> snapshot)
+    {
+        snapshot.TryGetCurrent(out var value).Should().BeTrue("the snapshot should have loaded");
+
+        return value!;
+    }
 
     private SettingsSnapshot<Policy> _CreateSut(Func<IReadOnlyDictionary<string, string?>, Policy>? bind = null)
     {

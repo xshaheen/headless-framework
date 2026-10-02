@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Frozen;
+using System.Diagnostics.CodeAnalysis;
 using Headless.Checks;
 using Headless.Settings.Definitions;
 using Microsoft.Extensions.Logging;
@@ -59,7 +60,7 @@ internal interface ISettingsSnapshotEntry
 /// <remarks>
 /// <para>
 /// Reloads are serialized, so the consumer, the subscription hook, the backstop, and settle re-reads never interleave and
-/// <see cref="Revision"/> never moves backward. <see cref="Current"/> and <see cref="Revision"/> live in one immutable
+/// <see cref="Revision"/> never moves backward. The value and <see cref="Revision"/> live in one immutable
 /// state swapped atomically, so a reader never sees a new value with an old revision.
 /// </para>
 /// <para>
@@ -118,12 +119,17 @@ internal sealed partial class SettingsSnapshot<T> : ISettingsSnapshot<T>, ISetti
 
     public TimeSpan Backstop { get; }
 
-    public T Current =>
-        _state is { } state
-            ? state.Value
-            : throw new InvalidOperationException(
-                $"The settings snapshot of {typeof(T).Name} has not loaded yet. Use GetAsync to wait for the first load."
-            );
+    public bool TryGetCurrent([MaybeNullWhen(false)] out T value)
+    {
+        if (_state is { } state)
+        {
+            value = state.Value;
+            return true;
+        }
+
+        value = default;
+        return false;
+    }
 
     public long Revision => _state?.Revision ?? 0;
 
@@ -166,7 +172,8 @@ internal sealed partial class SettingsSnapshot<T> : ISettingsSnapshot<T>, ISetti
     {
         await EnsureLoadedAsync(cancellationToken).ConfigureAwait(false);
 
-        return Current;
+        // EnsureLoadedAsync returns only once a state exists, and a state is never cleared.
+        return _state!.Value;
     }
 
     private async Task _ValidateNamesAsync(CancellationToken cancellationToken)
