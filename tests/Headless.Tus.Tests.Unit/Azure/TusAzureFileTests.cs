@@ -37,7 +37,7 @@ public sealed class TusAzureFileTests : TestBase
         file.FileId.Should().Be(fileId);
         file.BlobName.Should().Be(blobName);
         file.CurrentContentLength.Should().Be(contentLength);
-        file.ETag.Should().Be(etag.ToString());
+        file.ETag.Should().Be(etag);
         file.Metadata.Should().NotBeNull();
     }
 
@@ -98,7 +98,7 @@ public sealed class TusAzureFileTests : TestBase
     }
 
     [Fact]
-    public void should_expose_etag_as_string()
+    public void should_expose_blob_etag()
     {
         // given
         var etag = new ETag("0x8DC12345ABCDEF");
@@ -108,7 +108,7 @@ public sealed class TusAzureFileTests : TestBase
         var file = TusAzureFile.FromBlobProperties("file-id", "blob-name", properties);
 
         // then
-        file.ETag.Should().Be(etag.ToString());
+        file.ETag.Should().Be(etag);
     }
 
     [Fact]
