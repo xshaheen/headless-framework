@@ -200,8 +200,10 @@ public interface IIdempotencyRecordStore
 
     /// <summary>
     /// Reads <paramref name="key" />'s status on the provider's own connection, without the row lock or the unit of
-    /// work every other verb takes: no <c>FOR UPDATE</c>/<c>UPDLOCK</c>, so it never waits behind a concurrent
-    /// admission, fence, completion, or release the way <see cref="LockAsync" /> would.
+    /// work every other verb takes: no <c>FOR UPDATE</c>/<c>UPDLOCK</c>, so it never queues for the row lock a
+    /// concurrent admission, fence, completion, or release holds the way <see cref="LockAsync" /> would. A provider
+    /// whose plain reads take shared locks can still wait behind an uncommitted write: SQL Server with
+    /// <c>READ_COMMITTED_SNAPSHOT</c> off waits, up to the command timeout, until the writing transaction ends.
     /// </summary>
     /// <param name="key">The record key.</param>
     /// <param name="cancellationToken">Token used to cancel the database call.</param>
