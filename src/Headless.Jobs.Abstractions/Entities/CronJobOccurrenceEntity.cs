@@ -46,6 +46,7 @@ public class CronJobOccurrenceEntity<TCronJob>
         {
             throw new InvalidOperationException("Cron occurrences must remain system scoped.");
         }
+
         TenantId = null;
     }
 

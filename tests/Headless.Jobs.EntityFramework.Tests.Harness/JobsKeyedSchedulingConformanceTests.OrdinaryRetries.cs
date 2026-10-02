@@ -89,6 +89,7 @@ public abstract partial class JobsKeyedSchedulingConformanceTests<TFixture>
                 row.CorrelationId.Should().Be("original-correlation");
                 row.CausationId.Should().Be("original-cause");
             }
+
             rows.Where(row => row.Id != job.Id).Should().OnlyContain(row => row.ParentId == job.Id);
             job.Children.Should().OnlyContain(row => row.Request!.SequenceEqual(new byte[] { 4, 5 }));
         }
@@ -147,6 +148,7 @@ public abstract partial class JobsKeyedSchedulingConformanceTests<TFixture>
             row.CorrelationId = "original-correlation";
             row.CausationId = "original-cause";
         }
+
         await using var context = await host
             .Services.GetRequiredService<IDbContextFactory<RetryJobsDbContext>>()
             .CreateDbContextAsync(AbortToken);
@@ -160,6 +162,7 @@ public abstract partial class JobsKeyedSchedulingConformanceTests<TFixture>
             row.CorrelationId = "replacement-correlation";
             row.CausationId = "replacement-cause";
         }
+
         return (job, _OrdinaryRetryOccurrence(definition));
     }
 
@@ -198,6 +201,7 @@ public abstract partial class JobsKeyedSchedulingConformanceTests<TFixture>
             {
                 return ValueTask.FromResult(result);
             }
+
             var context = eventData.Context!;
             Contexts.Add(context.ContextId);
             Entities.AddRange(context.ChangeTracker.Entries().Select(entry => entry.Entity));
@@ -210,13 +214,16 @@ public abstract partial class JobsKeyedSchedulingConformanceTests<TFixture>
                     entry.Entity.RetryIntervals![0] = 99;
                     entry.Entity.CustomLabel = "failed-attempt";
                 }
+
                 foreach (var entry in context.ChangeTracker.Entries<CronJobOccurrenceEntity<CronJobEntity>>())
                 {
                     entry.Entity.Request![0] = 99;
                     entry.Entity.ExecutionTime = entry.Entity.ExecutionTime.AddHours(1);
                 }
+
                 throw new KeyedTransientFailureException();
             }
+
             return ValueTask.FromResult(result);
         }
     }

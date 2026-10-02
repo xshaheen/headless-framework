@@ -2,8 +2,7 @@
 title: Storage Initializer Lifecycle & Concurrent-Startup Safety
 date: 2026-05-25
 last_updated: 2026-09-27
-category: best-practices
-module: headless-storage
+module: headless-framework
 problem_type: best_practice
 component: background_job
 severity: high
@@ -11,25 +10,12 @@ related_components:
   - database
   - service_class
   - testing_framework
-tags:
-  - storage-initializer
-  - hosted-service
-  - idempotent-ddl
-  - startup-race
-  - dispose-order
-  - postgres
-  - sqlserver
-  - log-dedup
-  - shared-schema
-  - advisory-lock
-  - create-index-concurrently
+tags: [storage-initializer, hosted-service, idempotent-ddl, startup-race, dispose-order, postgres, sqlserver, advisory-lock]
 applies_when:
-  - Writing a new I{Feature}StorageInitializer for Postgres or SqlServer
+  - Writing a new I{Feature}StorageInitializer for Postgres or SqlServer, including one whose tables live in the shared headless schema
   - Reviewing concurrent-startup behavior of multiple replicas against one DB
-  - Diagnosing startup hangs or duplicate-DDL errors at host boot
-  - Adding a feature whose tables live in the shared headless schema
+  - Diagnosing startup hangs, duplicate-DDL errors, or DB-unreachable and auth failures during the initializer phase
   - Running CREATE INDEX CONCURRENTLY from an initializer that other replicas wait on
-  - Handling DB-unreachable or auth-failure during the initializer phase
   - Auditing dispose ordering between bootstrapper and repo-held resources
 ---
 
@@ -351,6 +337,6 @@ The same TCS/race/dedup discipline transfers to other startup-time initializers 
 
 - [Unified Provider Setup Builder Pattern](../architecture-patterns/unified-provider-setup-builder-pattern.md) — sibling doc covering the `Setup{Feature}` / `HeadlessXxxSetupBuilder` / `IStorageOptionsExtension` registration shape that puts these initializers in front of the host
 - [Startup pause gating and half-open recovery](../concurrency/startup-pause-gating-and-half-open-recovery.md) — `IHostedLifecycleService.StartingAsync` runs before `IHostedService.StartAsync`; same primitive the EF startup gate uses
-- [Messaging keyed-DI lock isolation](../architecture-patterns/messaging-keyed-di-lock-isolation-2026-05-19.md) — applies when multiple features share an initializer host
+- [Messaging keyed-DI lock isolation](../architecture-patterns/messaging-keyed-di-lock-isolation.md) — applies when multiple features share an initializer host
 - [Circuit-breaker transport thread-safety patterns](../concurrency/circuit-breaker-transport-thread-safety-patterns.md) — hosted-service dispose and timer-race prior art for the dispose discipline above
 - [Registration must durably establish liveness](../architecture-patterns/coordination-register-establishes-durable-liveness.md) — `Headless.Coordination` membership initializers follow this lifecycle; its concurrent-startup conformance test (boot N initializers via `Task.WhenAll`, assert table/index counts) is the cross-provider template referenced in §4, and it caught the `CREATE INDEX` 1913 second instance noted in §2

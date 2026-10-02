@@ -70,6 +70,7 @@ public abstract class TenantDatabaseFixture(TenantDatabaseProvider provider, Ten
                 command.CommandText = "SELECT CONVERT(int, SERVERPROPERTY('ProductMajorVersion'))";
                 ((int)(await command.ExecuteScalarAsync(timeout.Token))!).Should().Be(16);
             }
+
             connectionString.InitialCatalog = Placement.Database;
             _connectionString = connectionString.ConnectionString;
         }
@@ -82,6 +83,7 @@ public abstract class TenantDatabaseFixture(TenantDatabaseProvider provider, Ten
         {
             await creator.CreateAsync(timeout.Token);
         }
+
         var model = db.GetService<IDesignTimeModel>().Model;
         var operations = db.GetService<IMigrationsModelDiffer>().GetDifferences(null, model.GetRelationalModel());
         var commands = db.GetService<IMigrationsSqlGenerator>().Generate(operations, model);
@@ -102,6 +104,7 @@ public abstract class TenantDatabaseFixture(TenantDatabaseProvider provider, Ten
         {
             options.UseSqlServer(_connectionString);
         }
+
         options.AddHeadlessExtension();
         options.ReplaceService<IModelCacheKeyFactory, PlacementModelCacheKeyFactory>();
     }
@@ -149,6 +152,7 @@ public abstract class TenantDatabaseFixture(TenantDatabaseProvider provider, Ten
                 tables.Remove(table);
             }
         }
+
         CurrentTenant.Id = null;
     }
 
@@ -158,10 +162,12 @@ public abstract class TenantDatabaseFixture(TenantDatabaseProvider provider, Ten
         {
             await Services.DisposeAsync();
         }
+
         if (_container is not null)
         {
             await _container.DisposeAsync();
         }
+
         GC.SuppressFinalize(this);
     }
 }

@@ -1083,6 +1083,7 @@ public sealed class DistributedLockTests : TestBase
                 {
                     throw new TimeoutException("Transient error");
                 }
+
                 return ValueTask.FromResult(true);
             });
 

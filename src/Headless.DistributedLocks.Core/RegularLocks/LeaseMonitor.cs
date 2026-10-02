@@ -46,6 +46,7 @@ internal sealed class LeaseMonitor : IAsyncDisposable
     private int _disposed;
     private Task? _handleLostCancellationTask;
     private LeaseState _state = LeaseState.Held;
+
     private LeaseState State
     {
         get

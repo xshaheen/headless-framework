@@ -36,7 +36,7 @@ public readonly record struct CacheStoreEntryWrite<T>
     /// Gets the optional UTC timestamp at which this entry's value was created (its birth time). A genuine new
     /// value write sets it to "now"; a re-stamp (<see cref="IsRestamp"/>) carries the source entry's original
     /// <see cref="CreatedAt"/> forward so the birth time survives <c>NotModified</c> extensions and fail-safe
-    /// throttle restamps. Declared as an initializer-only nullable property (not <c>required</c>) so existing
+    /// throttle restamps. Declared as an initializer-only nullable property (not <see langword="required"/>) so existing
     /// construction sites that do not set it stay valid and persist <see langword="null"/>. No read-time verdict
     /// consumes it yet.
     /// </summary>

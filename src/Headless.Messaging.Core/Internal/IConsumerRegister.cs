@@ -40,15 +40,20 @@ internal sealed class ConsumerRegister(
     private readonly ConcurrentDictionary<string, SubscriptionHandle> _subscriptionHandles = new(
         StringComparer.Ordinal
     );
+
     private readonly ILogger _logger = logger;
     private readonly MessagingOptions _options = serviceProvider.GetRequiredService<IOptions<MessagingOptions>>().Value;
     private readonly TimeProvider _timeProvider = serviceProvider.GetRequiredService<TimeProvider>();
+
     private readonly MessagingTelemetry _telemetry =
         serviceProvider.GetService<MessagingTelemetry>() ?? MessagingTelemetry.Default;
+
     private readonly InboxMetricPolicy _inboxMetricPolicy =
         serviceProvider.GetService<InboxMetricPolicy>() ?? new InboxMetricPolicy(TenantTagName: null);
+
     private readonly IMessagingCapabilityModel _capabilityModel =
         serviceProvider.GetRequiredService<IMessagingCapabilityModel>();
+
     private readonly TimeSpan _pollingDelay = TimeSpan.FromSeconds(1);
 
     private readonly Guid _instanceId = (
@@ -61,8 +66,10 @@ internal sealed class ConsumerRegister(
     private readonly ConcurrentDictionary<string, EstablishmentChain> _establishments = new(StringComparer.Ordinal);
 
     private ICircuitBreakerStateManager? _circuitBreakerStateManager;
+
     private readonly IMiddlewareDescriptorRegistry? _middlewareDescriptorRegistry =
         serviceProvider.GetService<IMiddlewareDescriptorRegistry>();
+
     private IConsumerClientFactory _consumerClientFactory = null!;
 #pragma warning disable CA2213 // Disposed through the remaining-budget DisposeAsync(TimeSpan) overload.
     private IDispatcher _dispatcher = null!;
@@ -1349,6 +1356,7 @@ internal sealed class ConsumerRegister(
                                 LogSanitizer.Sanitize(receiveOutcome.OutcomeReason)
                             );
                         }
+
                         MessagingMetrics.RecordReceiveOutcome("skipped");
                         traceHandle.Activity?.SetTag(MessagingMetrics.TagReceiveOutcome, "skipped");
 
@@ -1374,6 +1382,7 @@ internal sealed class ConsumerRegister(
                                 LogSanitizer.Sanitize(consumerIdentity)
                             );
                         }
+
                         throw receiveOutcome.Exception!;
                     }
 

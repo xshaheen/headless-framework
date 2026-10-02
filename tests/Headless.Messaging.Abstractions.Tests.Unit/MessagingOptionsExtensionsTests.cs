@@ -191,6 +191,7 @@ public sealed class MessagingOptionsExtensionsTests : TestBase
                     {
                         options.WithHeaders(headers());
                     }
+
                     throw failure;
                 },
                 AbortToken
@@ -204,6 +205,7 @@ public sealed class MessagingOptionsExtensionsTests : TestBase
                     {
                         options.WithHeaders(headers());
                     }
+
                     throw failure;
                 },
                 AbortToken

@@ -306,6 +306,7 @@ public static partial class JobsCoordinationFixtureExtensions
             {
                 options.ConfigureScheduler(scheduler => scheduler.LeaseDuration = leaseDuration.Value);
             }
+
             options.UseEntityFramework(ef =>
             {
                 ef.UseJobsDbContext<TDbContext>(db =>
@@ -1094,6 +1095,7 @@ public static partial class JobsCoordinationFixtureExtensions
         {
             parameter.Value = value;
         }
+
         command.Parameters.Add(parameter);
     }
 }

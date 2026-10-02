@@ -1,8 +1,7 @@
 ---
 title: "Registration must durably establish liveness, not the first heartbeat (incarnation-guarded membership)"
 date: 2026-06-07
-category: docs/solutions/architecture-patterns
-module: Headless.Coordination
+module: Headless.Coordination.Core
 problem_type: architecture_pattern
 component: background_job
 severity: high
@@ -14,15 +13,7 @@ applies_when:
 related_components:
   - database
   - service_class
-tags:
-  - coordination
-  - membership
-  - heartbeat
-  - liveness
-  - incarnation-guard
-  - register
-  - server-clock
-  - conformance-test
+tags: [coordination, membership, heartbeat, liveness, incarnation-guard, register, server-clock, conformance-test]
 ---
 
 # Registration must durably establish liveness, not the first heartbeat
@@ -174,6 +165,6 @@ snapshots.Should().ContainSingle(s => s.Identity == identity && s.State == NodeL
 ## Related
 
 - [storage-initializer-lifecycle-correctness](../best-practices/storage-initializer-lifecycle-correctness.md) — the SqlServer `TRY/CATCH` envelope that *every* DDL block (including `CREATE INDEX`, error 1913) must carry; a sibling bug in this same PR violated it and was caught by the concurrent-startup conformance test.
-- [terminal-state-overwrite-on-redelivery](../logic-errors/terminal-state-overwrite-on-redelivery-2026-05-16.md) — same class of "storage's rejection signal is a contract, not a hint" that the incarnation guard relies on; also the source of the `CancellationToken.None` for must-complete writes pattern.
+- [terminal-state-overwrite-on-redelivery](../logic-errors/terminal-state-overwrite-on-redelivery.md) — same class of "storage's rejection signal is a contract, not a hint" that the incarnation guard relies on; also the source of the `CancellationToken.None` for must-complete writes pattern.
 - [unified-provider-setup-builder-pattern](./unified-provider-setup-builder-pattern.md) — the DI/builder grammar the coordination providers reuse.
 - GitHub: PR #416 (where this was caught/fixed); follow-ups #417 (Redis O(N) snapshot GETs), #418 (single-node `IsAliveAsync` SPI), #419 (SqlServer `SERIALIZABLE` 1205 deadlock-retry).

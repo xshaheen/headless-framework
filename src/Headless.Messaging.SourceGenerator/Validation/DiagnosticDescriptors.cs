@@ -14,6 +14,7 @@ namespace Headless.Messaging.SourceGenerator.Validation;
 internal static class DiagnosticDescriptors
 {
     private const string _Category = "Headless.Messaging.SourceGenerator";
+
     private const string _HelpLinkBase =
         "https://github.com/xshaheen/headless-framework/blob/main/docs/llms/messaging.md#";
 

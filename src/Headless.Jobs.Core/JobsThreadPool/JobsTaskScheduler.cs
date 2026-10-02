@@ -118,7 +118,7 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
     {
         Argument.IsNotNull(work);
 
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        Ensure.NotDisposed(_disposed, this);
 
         if (_isFrozen)
         {
@@ -199,6 +199,7 @@ internal sealed class JobsTaskScheduler : IAsyncDisposable
                 _EnsureWorkerAvailable();
                 waitCount = 0;
             }
+
             await _timeProvider.Delay(TimeSpan.FromMilliseconds(10), cancellationToken).ConfigureAwait(false);
         }
     }

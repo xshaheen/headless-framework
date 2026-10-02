@@ -57,6 +57,7 @@ public abstract class JobsCronMaterializationConformanceTests(Action<DbContextOp
             candidate.CorrelationId.Should().Be(definition.CorrelationId);
             candidate.CausationId.Should().Be(definition.CausationId);
         }
+
         candidates.Should().OnlyContain(row => row.CronJob == null);
     }
 
@@ -168,6 +169,7 @@ public abstract class JobsCronMaterializationConformanceTests(Action<DbContextOp
             occurrence.Function.Should().Be(definition.Function);
             occurrence.Request.Should().Equal(definition.Request!);
         }
+
         (await context.Set<CronJobEntity>().SingleAsync(x => x.Id == definitions[0].Id, AbortToken))
             .Function.Should()
             .Be("edited-after-snapshot");
@@ -182,6 +184,7 @@ public abstract class JobsCronMaterializationConformanceTests(Action<DbContextOp
         {
             options.AddInterceptors(fault);
         }
+
         var factory = new MaterializationFactory(options.Options);
         await using var context = factory.CreateDbContext();
         var style = HeadlessStorageNaming.ForProvider(context.Database.ProviderName);
@@ -326,6 +329,7 @@ public abstract class JobsCronMaterializationConformanceTests(Action<DbContextOp
                 LockIds.Add(command.Parameters.Cast<DbParameter>().Select(x => x.Value).OfType<Guid>().Single());
                 Phases.Add("lock");
             }
+
             return ValueTask.FromResult(result);
         }
 
@@ -354,6 +358,7 @@ public abstract class JobsCronMaterializationConformanceTests(Action<DbContextOp
                     await ResumeRead.Task.WaitAsync(TimeSpan.FromSeconds(10), cancellationToken);
                 }
             }
+
             return result;
         }
     }
@@ -400,9 +405,11 @@ public abstract class JobsCronMaterializationConformanceTests(Action<DbContextOp
                         row.Request![0] = 99;
                         row.ExecutionTime = row.ExecutionTime.AddHours(1);
                     }
+
                     throw new RetryFaultException();
                 }
             }
+
             return ValueTask.FromResult(result);
         }
     }

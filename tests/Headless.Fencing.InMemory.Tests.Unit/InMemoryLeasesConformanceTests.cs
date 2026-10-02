@@ -169,4 +169,10 @@ public sealed class InMemoryLeasesConformanceTests(InMemoryFencingFixture fixtur
     {
         return base.should_hand_the_sweep_the_progress_and_count_an_abandoned_lease_once();
     }
+
+    [Fact]
+    public override Task should_decide_expiry_by_the_database_clock_whatever_the_application_clock()
+    {
+        return base.should_decide_expiry_by_the_database_clock_whatever_the_application_clock();
+    }
 }

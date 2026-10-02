@@ -167,8 +167,10 @@ public sealed class SqlServerInboxOperationPolicyTests(SqlServerTestFixture fixt
                     overlapped = true;
                     break;
                 }
+
                 await Task.Delay(TimeSpan.FromMilliseconds(20), AbortToken);
             }
+
             await using var diagnostic = new SqlCommand(
                 """
                 SELECT COALESCE(STRING_AGG(CONVERT(nvarchar(max),CONCAT(session_id,':',blocking_session_id,':',wait_type)),N';'),N'no waiters')
@@ -193,6 +195,7 @@ public sealed class SqlServerInboxOperationPolicyTests(SqlServerTestFixture fixt
             await transaction.CommitAsync(AbortToken);
             await Task.WhenAll(deletion, mutation);
         }
+
         var result = await mutation;
         (await deletion).Should().Be(conflict && result.IsReplay ? 0 : 1);
         result
@@ -342,8 +345,10 @@ public sealed class SqlServerInboxOperationPolicyTests(SqlServerTestFixture fixt
                     blocked = true;
                     break;
                 }
+
                 await Task.Delay(TimeSpan.FromMilliseconds(20), AbortToken);
             }
+
             blocked.Should().BeTrue("both operations must overlap while waiting for the locked generation");
         }
         finally
@@ -351,6 +356,7 @@ public sealed class SqlServerInboxOperationPolicyTests(SqlServerTestFixture fixt
             await transaction.CommitAsync(AbortToken);
             await Task.WhenAll(claim, purge);
         }
+
         await _AssertRecoveryPurgeAsync(storage, message, claim, purge);
     }
 

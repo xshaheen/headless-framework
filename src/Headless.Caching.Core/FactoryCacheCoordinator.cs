@@ -62,6 +62,7 @@ public sealed partial class FactoryCacheCoordinator(
     private readonly string _cacheName = string.IsNullOrEmpty(cacheName)
         ? CachingDiagnostics.DefaultCacheName
         : cacheName;
+
     private readonly string _cacheTier = cacheTier ?? CachingMetrics.TierHybrid;
     private const int _MaxInertWarningKeys = 1024;
 

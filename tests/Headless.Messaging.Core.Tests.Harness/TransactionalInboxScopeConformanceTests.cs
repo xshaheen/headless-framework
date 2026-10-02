@@ -57,6 +57,7 @@ public abstract class TransactionalInboxScopeConformanceTests : TestBase
         {
             builder.AddHeadlessTenancy(tenancy => tenancy.Messaging(messaging => messaging.PropagateTenant()));
         }
+
         services
             .AddHeadlessMessaging(setup =>
             {
@@ -178,6 +179,7 @@ public abstract class TransactionalInboxScopeConformanceTests : TestBase
             effect.Should().NotBeNull();
             effect!.TenantId.Should().Be(expectedTenant);
         }
+
         var monitoring = storage.GetMonitoringApi();
         foreach (var lane in new[] { MessageLane.Bus, MessageLane.Queue })
         {

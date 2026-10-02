@@ -50,7 +50,7 @@ Declare a job as a class that implements `IJob` (no arguments) or `IJob<TArgs>` 
 
 ## Agent Rules
 
-- Treat `(Function, ContractVersion, Request bytes)` as a durable executable contract. A schema change needs an explicit version; do not infer it from CLR names or trace IDs. Initialize storage using the [current contract mappings](../solutions/guides/jobs-versioned-contracts.md) before starting workers or writers.
+- Treat `(Function, ContractVersion, Request bytes)` as a durable executable contract. A schema change needs an explicit version; do not infer it from CLR names or trace IDs. Initialize storage using the [current contract mappings](#contract-storage) before starting workers or writers.
 - Do NOT use Hangfire or Quartz — use `Headless.Jobs` for all background jobs in this framework.
 - A job is a class, never a method: a top-level, non-abstract, non-generic `public` or `internal` class that implements exactly one of `IJob` or `IJob<TArgs>` (`Headless.Jobs.Base`) and carries `[Job("owner.name")]` (`JobAttribute`). The identity is durable and persisted with every run; its first segment names the owning module. `Cron`, `TimeZone`, `Priority`, `MaxConcurrency`, `ContractVersion`, `Policy`, `OnMissedRun`, `MissedRunGraceSeconds`, and `OnOverlap` are named properties. Add `Headless.Jobs.SourceGenerator` to the project for compile-time registration.
 - Call `AddHeadlessJobs()` on `IServiceCollection`. There is no `app.UseJobs()` call — the scheduler starts automatically through `IHostedService` registered by `AddHeadlessJobs`.
@@ -746,7 +746,7 @@ New and replacement generations use `v1`, which hashes contract version, exact d
 
 Unknown algorithms reject ordinary observation explicitly; generation-fenced replacement keeps its existing eligibility checks.
 
-PostgreSQL and SQL Server use transaction-owned key locks plus filtered tenant/system uniqueness. Initialize the database according to the [keyed storage guide](../solutions/guides/jobs-keyed-scheduling.md). A compatible active unit of work with a joinable relational resource enlists keyed writes directly. Results returned inside them have `IsProvisional = true`; only post-commit acceleration is deferred.
+PostgreSQL and SQL Server use transaction-owned key locks plus filtered tenant/system uniqueness. Initialize the database according to the [keyed scheduling storage](#keyed-scheduling-storage). A compatible active unit of work with a joinable relational resource enlists keyed writes directly. Results returned inside them have `IsProvisional = true`; only post-commit acceleration is deferred.
 
 Transactional deadline writes use the exact captured open connection and live transaction after validating the actual configured provider/endpoint/database, including `OnConfiguring`. External connections must be unowned (`contextOwnsConnection: false`); owned external handles are rejected before the connection service is resolved. Keyed operations require savepoints before middleware, and the whole replacement kernel has a savepoint so a failed insert cannot leave only the retirement. Read-committed conflict dispositions leave the caller usable; stronger isolation may produce provider exceptions. Failed savepoint restoration or a poisoned transaction before commit requires outer rollback and a fresh unit of work. An unknown commit outcome may already be durable: reconcile the retained key and business state before recovery; do not assume rollback undid it or automatically replay it. `IsProvisional` is an immutable observation flag, not a notification that later changes. Committed rows remain authoritative if post-commit acceleration fails.
 
@@ -822,7 +822,7 @@ Core implementation of the Jobs scheduler: in-memory persistence provider, execu
 
 The in-memory pickup lease uses the injected `TimeProvider`. The EF operational store uses the **database clock** for acquisition, renewal, and reclaim. Claim predicates and stamps are translated into the existing SQL statement, avoiding both cross-node clock skew and a separate clock round trip.
 
-Keyed one-shot operations run schedule middleware before hashing final intent, normalize the new `DateTimeOffset` surface to common UTC microseconds, and preserve all current/historical generations indefinitely. Generation-fenced replacement is pending/unclaimed only; claimed cancellation is cooperative. Generic update/reset/retry/delete rejects retained keyed jobs. A static conditional continuation tree (`JobChain`) has no keyed identity/control. New and replacement generations use a policy-independent `v1` fingerprint. Matching duplicates preserve the winning policy even when explicit overrides differ. Replacement captures a new policy even for unchanged intent. The fingerprint and disposition contracts are described in the Abstractions section above and in the [storage guide](../solutions/guides/jobs-keyed-scheduling.md).
+Keyed one-shot operations run schedule middleware before hashing final intent, normalize the new `DateTimeOffset` surface to common UTC microseconds, and preserve all current/historical generations indefinitely. Generation-fenced replacement is pending/unclaimed only; claimed cancellation is cooperative. Generic update/reset/retry/delete rejects retained keyed jobs. A static conditional continuation tree (`JobChain`) has no keyed identity/control. New and replacement generations use a policy-independent `v1` fingerprint. Matching duplicates preserve the winning policy even when explicit overrides differ. Replacement captures a new policy even for unchanged intent. The fingerprint and disposition contracts are described in the Abstractions section above and in the [keyed scheduling storage](#keyed-scheduling-storage).
 
 An enlisted Jobs write into a pipeline-owned save (observed mode, from a domain-event handler) calls `IUnitOfWork.PreventRetry()`, which prevents automatic retries of that save because the handler is not re-run on replay and the job's separate context is not retained in the business change tracker. A later failure propagates unchanged; recover with a fresh context and aggregate graph after a known rollback, or reconcile an unknown commit first. A Jobs write inside the caller's own `RunAsync(db, …)` block leaves the block replayable, and saves whose only enlisted writes are entity-emitted integration events retain their existing retry behavior.
 
@@ -1381,6 +1381,79 @@ The `JobsDbContext<TTimeJob, TCronJob>.DbContextOptions` constructor must be `pu
 Install `Headless.Jobs.EntityFramework.PostgreSql` or `Headless.Jobs.EntityFramework.SqlServer` and select it inside the same `UseEntityFramework` builder to replace the CAS pickup path with a provider-native atomic claim-and-return operation. The scheduler and persistence contract remain database-agnostic. Register exactly one native claim provider; selecting both fails during registration.
 
 These packages are EF optimization extensions, not standalone persistence providers. The base package owns the full persistence contract plus provider-neutral mapping definitions and claim-transaction lifecycle primitives; each extension owns provider-specific claim execution, including SQL, parameters, and locking semantics.
+
+### Contract storage
+
+Headless provides the mappings; it does not initialize or alter the application's schema at runtime. Generate the initial schema from the application's actual `DbContext`, provider, custom entities, table names, and schema before starting workers, schedulers, or definition writers.
+
+Every executable row owns `(Function, ContractVersion, Request bytes)`. A materialized cron occurrence copies the definition tuple under its write lock and keeps its exact bytes across retries and restarts, so later definition edits do not change an existing occurrence's intent. Contract versions describe payload schemas independently of retries, leases, attempts, and business-key generations. `JobContract.InitialVersion` (`"1"`) is a CLR default, not a database default: every writer must supply a version.
+
+| Entity | Stored contract and context |
+| --- | --- |
+| `TimeJobEntity` | Required function/version, nullable request bytes, correlation, causation, and tenant |
+| `CronJobEntity` | Required function/version, nullable request bytes and lineage; definition remains system scope |
+| `CronJobOccurrenceEntity` | Its own required function/version, nullable exact request bytes, correlation, causation, and tenant; materialized cron occurrences remain system scope |
+
+`Function` holds 1 to 200 UTF-16 code units and `ContractVersion` 1 to 100. Both compare ordinally and case-sensitively, so `Invoice.Send` and `invoice.send`, or `V1` and `v1`, are different identities. Leading or trailing whitespace, control characters, and invalid surrogate sequences are rejected without normalization, trimming, or truncation; embedded ordinary spaces are permitted.
+
+PostgreSQL maps `varchar(200)` / `varchar(100)` with `COLLATE "C"`; SQL Server maps `nvarchar(200)` / `nvarchar(100)` with `COLLATE Latin1_General_100_BIN2`. PostgreSQL counts Unicode code points in its physical bound while the runtime contract counts UTF-16 units: 100 rocket emoji fill a function name, and 101 must fail on both providers. Rejecting edge whitespace also prevents aliases from SQL Server's padded string comparison.
+
+EF converters validate normal writes. Required, bounded columns do not reject blank strings or enforce the full Unicode contract, so raw SQL and custom writers must perform the same validation. Constructing a `JobFunctionDescriptor` validates a name and version without registering or executing it.
+
+The PostgreSQL and SQL Server claim conformance suites create tables from the production EF mappings and verify ordinal identity, UTF-16 bounds, round trips of jobs without arguments, required versions without database defaults, rejection of invalid writes, and occurrence payload preservation after parent edits and restart. Custom providers must keep these guarantees and reject unsupported executable versions before deserializing payloads.
+
+### Keyed scheduling storage
+
+Keyed scheduling is supported by the in-memory provider and the PostgreSQL and SQL Server relational providers. `IJobPersistenceProvider`, `ITimeJobManager`, and `IJobScheduler` expose keyed create, observe, replace, and generation-fenced cancellation. A persistence implementation must enforce atomic key arbitration, generation fencing, and retention across every mutation path; a read-then-insert adapter is insufficient. Unsupported implementations reject before effects.
+
+| Nullable time-job column | Meaning |
+| --- | --- |
+| `BusinessKey` | Ordinal caller key, at most 200 UTF-16 code units |
+| `IntentFingerprint` | SHA-256 of canonical durable intent, 64 lowercase hexadecimal characters |
+| `FingerprintAlgorithm` | Recorded algorithm; the current writer uses `v1`, maximum length 16 |
+| `Generation` | Positive generation within tenant/system scope, function, and business key |
+| `IsCurrentGeneration` | Current-key marker independent of execution status |
+
+Ordinary jobs have all five values null. Only the keyed scheduling API establishes a business key; a run ID, description, correlation ID, or payload field never implicitly becomes one.
+
+The schema carries an all-or-none check: either all five columns are null, or all are non-null with nonempty key, fingerprint, and algorithm strings and a positive generation. Keyed rows must have no parent or continuation run condition. The explicit `IS NOT NULL` tests matter because SQL check constraints accept an unknown result, so `Generation > 0` alone does not reject partial metadata.
+
+Four unique filtered or partial indexes enforce key ownership:
+
+| Scope | Indexed columns | Filter |
+| --- | --- | --- |
+| System generation history | `Function, BusinessKey, Generation` | Key present, tenant null |
+| Tenant generation history | `TenantId, Function, BusinessKey, Generation` | Key present, tenant non-null |
+| System current generation | `Function, BusinessKey` | Key present, tenant null, current true |
+| Tenant current generation | `TenantId, Function, BusinessKey` | Key present, tenant non-null, current true |
+
+The separate system indexes make null tenant scope explicit on both providers. Scope comparisons match the runtime's ordinal identity (PostgreSQL `C`, SQL Server `Latin1_General_100_BIN2`), with runtime validation rejecting padded or malformed values. Keep the logical UTF-16 bounds even though PostgreSQL `varchar(n)` counts characters differently.
+
+With `UseApplicationDbContext<TContext>(ConfigurationType.IgnoreModelCustomizer)`, configure the collations in the consumer model and finalize it last in `OnModelCreating`:
+
+```csharp
+var collation = Database.ProviderName switch
+{
+    "Npgsql.EntityFrameworkCore.PostgreSQL" => "C",
+    "Microsoft.EntityFrameworkCore.SqlServer" => "Latin1_General_100_BIN2",
+    _ => throw new NotSupportedException("This store does not support keyed Jobs."),
+};
+// snake_case names on PostgreSQL, PascalCase elsewhere; must match the database the model targets.
+var style = HeadlessStorageNaming.ForProvider(Database.ProviderName);
+modelBuilder.ApplyConfiguration(new TimeJobConfigurations<TimeJobEntity>("jobs", style, collation));
+modelBuilder.ApplyConfiguration(new CronJobConfigurations<CronJobEntity>("jobs", style, collation));
+modelBuilder.ApplyConfiguration(new CronJobOccurrenceConfigurations<CronJobEntity>("jobs", style, collation));
+
+modelBuilder.Entity<TimeJobEntity>().ToTable("scheduled_jobs", "application");
+modelBuilder.Entity<TimeJobEntity>().Property(job => job.BusinessKey).HasColumnName("business_key");
+modelBuilder.FinalizeJobsModel<TimeJobEntity>(this);
+```
+
+`FinalizeJobsModel<TTimeJob>(this)` builds the four keyed indexes and the metadata check constraint from the final mapped names, with the provider's identifier quoting and Boolean literal. It configures the EF model only and does not create or alter the database. A matching explicit model-default collation is also supported. Keyed scheduling and cancellation validate the finalized model's function, tenant, and business-key collations before touching a key, and reject with a diagnostic when finalization is missing or a collation differs; ordinary unkeyed operations remain available.
+
+The indexes and conditional writes enforce storage ownership; process-local locks alone are insufficient. Raw SQL or custom persistence writers must honor the entire keyed protocol, including validation, exact payload bytes, UTC microsecond due-time normalization, and the recorded fingerprint algorithm. Do not populate metadata by hand or recompute stored fingerprints with a newer serializer. The `v1` SHA-256 encoding uses the domain tag `headless-jobs-intent-v1`, followed by contract version, payload, and normalized due ticks, with signed length prefixes and little-endian integer encoding. Tenant/system scope, logical function name, and business key are enforced by key lookup rather than repeated in the hash.
+
+Retained keyed rows have no expiration, so include them in operational storage sizing and backups. The shared provider conformance suite initializes the actual EF mappings, checks all-or-none metadata and chain rejection through direct database writes, verifies current and history uniqueness in tenant and system scopes, and exercises concurrent matching and conflicting schedules, replacement, stale cancellation, ordinary mutation rejection, and restart observation.
 
 ### Install
 

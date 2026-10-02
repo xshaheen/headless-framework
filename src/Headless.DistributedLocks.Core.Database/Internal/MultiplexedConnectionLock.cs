@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
+using Headless.Checks;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
@@ -385,7 +386,7 @@ internal sealed class MultiplexedConnectionLock(DatabaseConnection connection) :
         {
             get
             {
-                ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+                Ensure.NotDisposed(Volatile.Read(ref _disposed) != 0, this);
 
                 // Lazily register a monitoring handle on first read. The connection outlives this handle until release,
                 // so it is safe to ask its monitor for a connection-lost token here.
@@ -408,7 +409,7 @@ internal sealed class MultiplexedConnectionLock(DatabaseConnection connection) :
 #pragma warning restore MA0173
 
                 var handle = Volatile.Read(ref _monitoringHandle);
-                ObjectDisposedException.ThrowIf(handle is null, this);
+                Ensure.NotDisposed(handle is null, this);
 
                 return handle.ConnectionLostToken;
             }

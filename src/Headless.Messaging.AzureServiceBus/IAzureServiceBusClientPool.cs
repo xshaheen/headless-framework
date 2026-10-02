@@ -3,6 +3,7 @@
 using System.Collections.Concurrent;
 using Azure.Messaging.ServiceBus;
 using Azure.Messaging.ServiceBus.Administration;
+using Headless.Checks;
 using Headless.Messaging.AzureServiceBus.Helpers;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -88,14 +89,14 @@ internal sealed class AzureServiceBusClientPool : IAzureServiceBusClientPool
 
     public ServiceBusClient GetClient()
     {
-        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        Ensure.NotDisposed(Volatile.Read(ref _disposed) != 0, this);
 
         return _GetOrCreateClient();
     }
 
     public ServiceBusAdministrationClient GetAdministrationClient()
     {
-        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        Ensure.NotDisposed(Volatile.Read(ref _disposed) != 0, this);
 
         var adminClient = Volatile.Read(ref _administrationClient);
 
@@ -106,7 +107,7 @@ internal sealed class AzureServiceBusClientPool : IAzureServiceBusClientPool
 
         lock (_clientLock)
         {
-            ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+            Ensure.NotDisposed(Volatile.Read(ref _disposed) != 0, this);
 
             return _administrationClient ??= _adminClientFactory(_options.Value);
         }
@@ -114,7 +115,7 @@ internal sealed class AzureServiceBusClientPool : IAzureServiceBusClientPool
 
     public ServiceBusSender GetSender(string entityPath)
     {
-        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        Ensure.NotDisposed(Volatile.Read(ref _disposed) != 0, this);
 
         var lazy = _senders.GetOrAdd(
             entityPath,
@@ -250,7 +251,7 @@ internal sealed class AzureServiceBusClientPool : IAzureServiceBusClientPool
             // Re-check disposal inside the lock: DisposeAsync reads _client under the same lock
             // after setting _disposed, so a creation racing shutdown either publishes the client
             // before the disposer reads it, or observes _disposed and throws — never leaks.
-            ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+            Ensure.NotDisposed(Volatile.Read(ref _disposed) != 0, this);
 
             if (_client is null)
             {

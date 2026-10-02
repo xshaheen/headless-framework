@@ -1,8 +1,7 @@
 ---
 title: "Tenant-scoped counters use a relational table row, not native database SEQUENCE objects"
 date: 2026-09-25
-category: design-patterns
-module: Headless.Sequences
+module: Headless.Sequences.Core
 problem_type: design_pattern
 component: database
 severity: high
@@ -17,15 +16,7 @@ related_components:
   - "Headless.Sequences.SqlServer"
   - "Headless.DistributedLocks.PostgreSql"
   - "Headless.DistributedLocks.SqlServer"
-tags:
-  - sequences
-  - native-sequence
-  - gap-free
-  - tenant-scoped
-  - counters
-  - postgresql
-  - sql-server
-  - unit-of-work
+tags: [sequences, native-sequence, gap-free, tenant-scoped, counters, postgresql, sql-server, unit-of-work]
 ---
 # Tenant-scoped counters are table rows, not native SEQUENCE objects
 

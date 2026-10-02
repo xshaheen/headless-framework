@@ -166,6 +166,7 @@ internal sealed class MessagingRetryPipeline
             _logger.RetryStrategyThrew(strategyException, state.StorageId, strategyException.GetType().Name);
             return TimeSpan.Zero;
         }
+
         if (generated is null)
         {
             return null;

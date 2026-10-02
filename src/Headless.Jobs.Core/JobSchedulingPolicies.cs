@@ -40,12 +40,14 @@ internal sealed class JobSchedulingPolicies
                 );
             }
         }
+
         foreach (var function in _byFunction.Keys)
         {
             if (!registry.Descriptors.TryGetValue(function, out var descriptor))
             {
                 throw new InvalidOperationException($"Configured job '{function}' is not registered in this host.");
             }
+
             if (descriptor.RequestType is { } requestType && _byRequest.ContainsKey(requestType))
             {
                 throw new InvalidOperationException(
@@ -104,7 +106,11 @@ internal sealed class JobSchedulingPolicies
                 nameof(options)
             );
         }
-        return options with { RetryIntervals = options.RetryIntervals?.ToArray() };
+
+        return options with
+        {
+            RetryIntervals = options.RetryIntervals?.ToArray(),
+        };
     }
 
     private static void _ValidateOptions(JobOptions options)
@@ -113,10 +119,12 @@ internal sealed class JobSchedulingPolicies
         {
             throw new ArgumentException("Job retries and retry intervals must be non-negative.", nameof(options));
         }
+
         if (options.OnNodeDeath is { } policy && !Enum.IsDefined(policy))
         {
             throw new ArgumentException("The node-death policy must be a defined value.", nameof(options));
         }
+
         if (options.IdempotencyKey is { } key)
         {
             // Same bounded-string rules as every other durable Jobs identity, so one validator and one collation
@@ -130,6 +138,7 @@ internal sealed class JobSchedulingPolicies
                     nameof(options)
                 );
             }
+
             JobContract.ValidateIdempotencyTtl(ttl);
         }
         else if (options.IdempotencyTtl is not null)

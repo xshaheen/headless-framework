@@ -721,6 +721,7 @@ public static class DependencyInjectionExtensions
 
         return services.AddKeyedTransient<TService>(serviceKey, (provider, _) => implementationFactory(provider));
     }
+
     #endregion
 
     #region Hosted Service

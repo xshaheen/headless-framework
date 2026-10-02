@@ -466,6 +466,7 @@ public sealed class ScheduledDeliveryEndpointTests : TestBase
                     }
                 );
         }
+
         appBuilder.Services.AddCors(o => o.AddPolicy("HeadlessMessagingDashboardCORS", p => p.AllowAnyOrigin()));
 
         var app = appBuilder.Build();
@@ -480,6 +481,7 @@ public sealed class ScheduledDeliveryEndpointTests : TestBase
                 }
             );
         }
+
         if (useAuthenticationMiddleware)
         {
             app.UseMiddleware<AuthMiddleware>();
@@ -499,6 +501,7 @@ public sealed class ScheduledDeliveryEndpointTests : TestBase
                 }
             );
         }
+
         app.UseCors("HeadlessMessagingDashboardCORS");
         app.UseAuthorization();
         app.MapMessagingDashboardEndpoints(config);

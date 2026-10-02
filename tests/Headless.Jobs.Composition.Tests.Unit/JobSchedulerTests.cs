@@ -86,6 +86,7 @@ public sealed class JobSchedulerTests : TestBase
         JobPriority.High,
         2
     );
+
     private static readonly JobFunctionDescriptor _RequestlessDescriptor = new(
         "requestless",
         null,
@@ -570,6 +571,7 @@ public sealed class JobSchedulerTests : TestBase
                 .Equal(typeof(Guid), typeof(CancellationToken));
             control.GetParameters()[^1].HasDefaultValue.Should().BeTrue();
         }
+
         _AssertOverload(methods, nameof(IJobScheduler.EnqueueAsync), true, typeof(JobOptions));
         _AssertOverload(methods, nameof(IJobScheduler.EnqueueAsync), false, typeof(JobOptions));
         var chainEnqueue = methods.Single(method =>

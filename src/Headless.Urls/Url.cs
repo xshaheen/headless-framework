@@ -27,6 +27,7 @@ public sealed class Url
     private bool _trailingHash;
 
     #region public properties
+
     /// <summary>
     /// The scheme of the URL, i.e. "http". Does not include ":" delimiter. Empty string if the URL is relative.
     /// </summary>
@@ -201,9 +202,11 @@ public sealed class Url
     public bool IsSecureScheme =>
         !IsRelative
         && (Scheme.OrdinalEquals("https", ignoreCase: true) || Scheme.OrdinalEquals("wss", ignoreCase: true));
+
     #endregion
 
     #region ctors and parsing methods
+
     /// <summary>
     /// Constructs a Url object from a string. Parsing is deferred until a component is first accessed, so a malformed
     /// <paramref name="baseUrl"/> surfaces a <see cref="UriFormatException"/> on first access of a parsed member
@@ -349,9 +352,11 @@ public sealed class Url
     {
         return UrlParser.ParsePathSegments(path);
     }
+
     #endregion
 
     #region fluent builder methods
+
     /// <summary>
     /// Appends a segment to the URL path, ensuring there is one and only one '/' character as a separator.
     /// </summary>
@@ -758,6 +763,7 @@ public sealed class Url
             _trailingSlash = false;
             _parsed = false;
         }
+
         return this;
     }
 
@@ -791,6 +797,7 @@ public sealed class Url
     #endregion
 
     #region conversion, equality, etc.
+
     /// <summary>
     /// Converts this Url object to its string representation.
     /// </summary>
@@ -963,9 +970,11 @@ public sealed class Url
     {
         return StringComparer.Ordinal.GetHashCode(ToString());
     }
+
     #endregion
 
     #region static utility methods
+
     /// <summary>
     /// Basically a Path.Combine for URLs. Ensures exactly one '/' separates each segment,
     /// and exactly one '&amp;' separates each query parameter.

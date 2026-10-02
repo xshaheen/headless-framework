@@ -32,6 +32,7 @@ public abstract class InboxOperationPolicyConformanceTests : TestBase
         {
             await storage.GetInboxOperationsApi().HoldAsync(_Request(Guid.NewGuid(), StatusName.Succeeded), AbortToken);
         }
+
         await AgeHistoryAsync(provider, TimeSpan.FromDays(100));
         var cutoffs = await storage.GetInboxHistoryRetentionCutoffsAsync(AbortToken);
         var audits = await Task.WhenAll(
@@ -203,6 +204,7 @@ public abstract class InboxOperationPolicyConformanceTests : TestBase
                 .BeTrue();
             await _LeaseAsync(storage, message);
         }
+
         (await operations.HoldAsync(_Request(incarnation, StatusName.Scheduled), AbortToken))
             .Outcome.Should()
             .Be(InboxOperationOutcome.Active);
@@ -375,6 +377,7 @@ public abstract class InboxOperationPolicyConformanceTests : TestBase
                 .Outcome.Should()
                 .Be(InboxOperationOutcome.Applied);
         }
+
         await _LeaseAsync(storage, message);
 
         (await operations.HoldAsync(_Request(incarnation, StatusName.Scheduled), AbortToken))
@@ -497,6 +500,7 @@ public abstract class InboxOperationPolicyConformanceTests : TestBase
         {
             services.AddSingleton(timeProvider);
         }
+
         services.AddHeadlessMessaging(ConfigureStorage);
         return services.BuildServiceProvider();
     }

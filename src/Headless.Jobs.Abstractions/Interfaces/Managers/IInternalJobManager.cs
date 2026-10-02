@@ -15,7 +15,9 @@ internal interface IInternalJobManager
     Task<(JobsWakeSchedule Wake, JobExecutionState[] Functions)> GetNextJobs(
         CancellationToken cancellationToken = default
     );
+
     Task ReleaseAcquiredResources(JobExecutionState[] context, CancellationToken cancellationToken = default);
+
     Task<JobExecutionState[]> SetTickersInProgress(
         JobExecutionState[] context,
         CancellationToken cancellationToken = default
@@ -72,8 +74,10 @@ internal interface IInternalJobManager
         bool allowWrap = false,
         CancellationToken cancellationToken = default
     );
+
     Task DeleteJob(Guid jobId, JobType type, CancellationToken cancellationToken = default);
     Task ReleaseDeadNodeResources(string instanceIdentifier, CancellationToken cancellationToken = default);
+
     Task ReleaseDeadNodeResources(
         IReadOnlyCollection<string> instanceIdentifiers,
         CancellationToken cancellationToken = default
@@ -95,6 +99,7 @@ internal interface IInternalJobManager
     /// completion — from the executor and the cancellation path — once the terminal write has committed.
     /// </summary>
     Task ApplyParentTerminalRunConditionsAsync(Guid parentId, CancellationToken cancellationToken = default);
+
     Task UpdateSkipTimeJobsWithUnifiedContextAsync(
         JobExecutionState[] context,
         CancellationToken cancellationToken = default

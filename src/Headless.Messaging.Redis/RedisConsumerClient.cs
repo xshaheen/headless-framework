@@ -26,8 +26,10 @@ internal sealed class RedisConsumerClient(
     private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private readonly TimeSpan _stalePendingClaimMinIdleTime = stalePendingClaimMinIdleTime ?? TimeSpan.FromMinutes(5);
+
     private readonly string _consumerName =
         $"{RedisPhysicalAddress.ConsumerGroup(lane, subscriptionName)}:{Environment.MachineName}:{Guid.NewGuid():N}";
+
     private int _disposed;
     private string[] _messageNames = null!;
 

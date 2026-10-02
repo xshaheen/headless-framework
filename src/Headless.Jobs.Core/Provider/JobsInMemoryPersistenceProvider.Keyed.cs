@@ -74,6 +74,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             {
                 throw new InvalidOperationException("The candidate run ID already exists.");
             }
+
             if (_childrenIndex.TryGetValue(row.Id, out var children) && !children.IsEmpty)
             {
                 throw new NotSupportedException(
@@ -218,6 +219,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             {
                 continue;
             }
+
             JobIntentFingerprint.RejectOrdinaryMetadata(candidate);
             _RejectKeyedParent(candidate.ParentId);
             // ReSharper disable once InconsistentlySynchronizedField -- _timeJobs is a ConcurrentDictionary; lock (_keyedOperations) coordinates compound index updates, not dictionary thread-safety.
@@ -225,6 +227,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             {
                 pending.Push(stored);
             }
+
             foreach (var child in candidate.Children)
             {
                 _RejectKeyedParent(candidate.Id);

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;
 using Microsoft.Extensions.DependencyInjection;
@@ -126,7 +127,7 @@ internal sealed class ScopedProbeFeature : IUnitOfWorkFeature, IDisposable
 {
     public bool IsDisposed { get; private set; }
 
-    public void Touch() => ObjectDisposedException.ThrowIf(IsDisposed, this);
+    public void Touch() => Ensure.NotDisposed(IsDisposed, this);
 
     public void Dispose() => IsDisposed = true;
 }

@@ -441,18 +441,23 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
         private readonly TaskCompletionSource _initialListenerStarted = new(
             TaskCreationOptions.RunContinuationsAsynchronously
         );
+
         private readonly TaskCompletionSource _initialListenerShutdown = new(
             TaskCreationOptions.RunContinuationsAsynchronously
         );
+
         private readonly TaskCompletionSource _releaseInitialListenerShutdown = new(
             TaskCreationOptions.RunContinuationsAsynchronously
         );
+
         private readonly TaskCompletionSource _replacementMetadataCreation = new(
             TaskCreationOptions.RunContinuationsAsynchronously
         );
+
         private readonly TaskCompletionSource _releaseReplacementMetadataCreation = new(
             TaskCreationOptions.RunContinuationsAsynchronously
         );
+
         private int _activeListenerCount;
         private int _createCount;
         private int _listenerCreateCount;

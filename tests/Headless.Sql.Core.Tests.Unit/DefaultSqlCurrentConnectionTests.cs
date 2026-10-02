@@ -289,6 +289,7 @@ public sealed class DefaultSqlCurrentConnectionTests : TestBase
             {
                 DisposeCallCount++;
             }
+
             base.Dispose(disposing);
         }
     }

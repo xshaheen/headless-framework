@@ -115,24 +115,31 @@ internal static class MessagingMetrics
     private static readonly Counter<long> _InboxDuplicates = MessagingDiagnostics.Meter.CreateCounter<long>(
         InboxDuplicatesName
     );
+
     private static readonly Counter<long> _InboxAttempts = MessagingDiagnostics.Meter.CreateCounter<long>(
         InboxAttemptsName
     );
+
     private static readonly Counter<long> _InboxRecoveries = MessagingDiagnostics.Meter.CreateCounter<long>(
         InboxRecoveriesName
     );
+
     private static readonly Counter<long> _InboxTerminal = MessagingDiagnostics.Meter.CreateCounter<long>(
         InboxTerminalName
     );
+
     private static readonly Counter<long> _InboxReplays = MessagingDiagnostics.Meter.CreateCounter<long>(
         InboxReplaysName
     );
+
     private static readonly Counter<long> _InboxRetention = MessagingDiagnostics.Meter.CreateCounter<long>(
         InboxRetentionName
     );
+
     private static readonly Counter<long> _InboxCapabilities = MessagingDiagnostics.Meter.CreateCounter<long>(
         InboxCapabilitiesName
     );
+
     private static readonly Counter<long> _OperatorOperations = MessagingDiagnostics.Meter.CreateCounter<long>(
         OperatorOperationsName
     );

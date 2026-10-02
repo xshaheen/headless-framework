@@ -92,6 +92,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     // double-dispatch this design exists to prevent. No analyzer enforces this.
 
     #region Core_Time_Ticker_Methods
+
     public IAsyncEnumerable<TimeJobEntity> QueueTimeJobsAsync(
         TimeJobEntity[] timeJobs,
         CancellationToken cancellationToken
@@ -905,6 +906,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
         return released + failed + skipped;
     }
+
     #endregion
 
     public async Task<TimeJobEntity[]> AcquireImmediateTimeJobsAsync(
@@ -1160,6 +1162,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     }
 
     #region Core_Cron_Ticker_Methods
+
     public async Task MigrateDefinedCronJobsAsync(
         CronSeedDefinition[] cronJobs,
         CancellationToken cancellationToken = default
@@ -2375,9 +2378,11 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             OnNodeDeath = committedDefinition.OnNodeDeath,
         };
     }
+
     #endregion
 
     #region Core_Cron_TickerOccurrence_Methods
+
     public async Task<int> UpdateCronJobOccurrenceAsync(
         JobExecutionState functionContext,
         CancellationToken cancellationToken

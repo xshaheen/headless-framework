@@ -140,6 +140,7 @@ public sealed class InMemoryInboxOperationPolicyTests : InboxOperationPolicyConf
                 purge.IsCompletedSuccessfully.Should().BeTrue();
             }
         }
+
         (await purge).Outcome.Should().Be(InboxOperationOutcome.Applied);
         await completion.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
         (await claim).Should().BeFalse();

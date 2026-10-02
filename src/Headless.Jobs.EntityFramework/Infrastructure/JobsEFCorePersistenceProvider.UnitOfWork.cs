@@ -56,6 +56,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                         + "enlist. Use the same database, or schedule through an injected scheduler for an autonomous write."
                 );
             }
+
             context.Database.SetDbConnection(connection, contextOwnsConnection: false);
             context.Database.UseTransaction(transaction);
             return context;
@@ -77,6 +78,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         {
             throw new NotSupportedException("Coordinated keyed Jobs writes require PostgreSQL or SQL Server.");
         }
+
         if (context.Database.CurrentTransaction?.SupportsSavepoints != true)
         {
             throw new NotSupportedException(
@@ -152,6 +154,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                     new AggregateException(failure, rollbackFailure)
                 );
             }
+
             throw;
         }
     }
@@ -209,6 +212,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                     new AggregateException(failure, rollbackFailure)
                 );
             }
+
             throw;
         }
     }

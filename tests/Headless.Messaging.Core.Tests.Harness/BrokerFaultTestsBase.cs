@@ -7,7 +7,7 @@ namespace Tests;
 
 /// <summary>Shared optional recovery scenarios for broker-backed transport leaves.</summary>
 [PublicAPI]
-public abstract class BrokerFaultTestsBase : TransportConsumerConformanceTestsBase
+public abstract class BrokerFaultTestsBase : TransportConsumerConformanceSessionTestsBase
 {
     public virtual async Task should_resume_delivery_once_after_consumer_pause()
     {

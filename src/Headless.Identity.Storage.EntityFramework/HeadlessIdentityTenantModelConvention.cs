@@ -160,14 +160,17 @@ internal sealed class HeadlessIdentityTenantModelConvention(Type[] entityTypes) 
                     $"Identity string key '{property.DeclaringType.Name}.{property.Name}' requires a bounded column type."
                 );
             }
+
             if (length is { } configured && configured != declared)
             {
                 throw new InvalidOperationException(
                     $"Identity string key '{property.DeclaringType.Name}.{property.Name}' has conflicting maximum and column-type lengths."
                 );
             }
+
             return declared;
         }
+
         return length;
     }
 

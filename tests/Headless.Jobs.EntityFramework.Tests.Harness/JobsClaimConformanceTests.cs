@@ -288,6 +288,7 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
                         ct
                     );
             }
+
             (await provider.ReclaimStalledCronJobOccurrencesAsync(ct)).Should().Be(1);
             var retry = (await provider.QueueTimedOutCronJobOccurrencesAsync(ct).ToArrayAsync(ct))
                 .Should()
@@ -615,6 +616,7 @@ public abstract class JobsClaimConformanceTests<TFixture>(TFixture fixture) : Te
                     ct
                 );
             }
+
             var first = firstHost.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
             var second = secondHost.Services.GetRequiredService<
                 IJobPersistenceProvider<TimeJobEntity, CronJobEntity>

@@ -2,21 +2,15 @@
 title: Cross-Package Structure Conventions — Storage Infix, Serializer Seam & Host Integrations
 date: 2026-06-21
 last_updated: 2026-09-26
-category: conventions
 module: headless-framework
-problem_type: naming_convention
+problem_type: convention
 component: package_structure
 severity: low
 related_components:
   - storage_providers
   - serialization
   - aspnetcore_integrations
-tags:
-  - naming
-  - package-structure
-  - storage
-  - serialization
-  - aspnetcore
+tags: [naming, package-structure, storage, serialization, aspnetcore]
 ---
 
 # Cross-Package Structure Conventions

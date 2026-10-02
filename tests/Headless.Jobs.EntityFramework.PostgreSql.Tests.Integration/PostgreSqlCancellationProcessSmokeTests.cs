@@ -62,6 +62,7 @@ public sealed class PostgreSqlCancellationProcessSmokeTests(PostgreSqlJobsCoordi
                         process.Kill(entireProcessTree: true);
                     }
                     catch (InvalidOperationException) { }
+
                     await process.WaitForExitAsync(CancellationToken.None);
                 }
 

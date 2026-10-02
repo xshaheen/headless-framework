@@ -64,6 +64,15 @@ jobs:
       - name: "Verify pre-push hook"
         run: bash scripts/test-pre-push.sh
 
+      # Both checks are stdlib Python over tracked files and finish in under a second, so they run on
+      # every event here instead of in a job of their own; ci-changes.sh skips docs-only changes for
+      # the .NET jobs, and these are the only checks a docs-only change gets.
+      - name: "Check docs/solutions frontmatter and index"
+        run: make docs-check
+
+      - name: "Check package dependency direction"
+        run: make check-layering
+
       - name: "Select checks from changed paths"
         id: changes
         env:
@@ -144,6 +153,16 @@ jobs:
           BuildDashboardSpa: "false"
           GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: make rebuild
+
+      # The build above fails on warnings and errors only. Info-level suggestions are gated here, on
+      # the projects the pull request changed, so the local `make verify-affected` gate and CI agree
+      # without making every PR pay for findings in projects it never touched.
+      - name: "Analyze changed projects (info level)"
+        if: github.event_name == 'pull_request'
+        env:
+          BuildDashboardSpa: "false"
+          GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: make quality-analyzers-affected AFFECTED_BASE=${{ github.event.pull_request.base.sha }}
 
   dashboards:
     name: "Frontend · ${{ matrix.name }} dashboard"

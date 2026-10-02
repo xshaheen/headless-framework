@@ -24,6 +24,7 @@ public sealed class JobSchedulingDefaultsTests : TestBase
         JobPriority.Normal,
         0
     );
+
     private static readonly JobFunctionDescriptor _Requestless = new(
         "requestless-defaults",
         null,
@@ -325,6 +326,7 @@ public sealed class JobSchedulingDefaultsTests : TestBase
                 var act = () => configure(callback);
                 act.Should().Throw<ArgumentException>();
             }
+
             var failure = new InvalidOperationException("callback failed");
             var throwing = () =>
                 configure(job =>
@@ -520,6 +522,7 @@ public sealed class JobSchedulingDefaultsTests : TestBase
             chain.Root.Then(new Request(), instant);
             chain.Root.Catch(new Request(), instant);
         }
+
         await scheduler.EnqueueAsync(chain.Build(), AbortToken);
         captured!.Children.Should().HaveCount(2);
         foreach (var node in captured.Children.Prepend(captured))

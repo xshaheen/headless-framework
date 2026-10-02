@@ -116,6 +116,7 @@ internal static class DashboardOperatorAuthority
         {
             auditIdentity.RemoveClaim(claim);
         }
+
         auditIdentity.AddClaim(new Claim(auditIdentity.NameClaimType, candidateActor));
 
         return OperatorAuthorityResult.Success(new OperatorAuthorizationContext(principal));

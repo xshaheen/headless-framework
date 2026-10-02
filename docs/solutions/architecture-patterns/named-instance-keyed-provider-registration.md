@@ -1,8 +1,7 @@
 ---
 title: Named-instance registration with keyed services and named options
 date: 2026-06-20
-category: architecture-patterns
-module: Headless.Blobs
+module: Headless.Blobs.Core
 problem_type: architecture_pattern
 component: service_class
 severity: medium
@@ -10,13 +9,7 @@ applies_when:
   - Adding multi-instance or named registration to an abstraction-plus-provider feature
   - A provider currently registers its client, normalizer, or options as shared DI singletons
   - The same provider must be registerable more than once with isolated configuration
-tags:
-  - blobs
-  - keyed-services
-  - named-options
-  - dependency-injection
-  - setup-builder
-  - per-instance-isolation
+tags: [blobs, keyed-services, named-options, dependency-injection, setup-builder, per-instance-isolation]
 ---
 
 # Named-instance registration with keyed services and named options
@@ -41,7 +34,7 @@ Compose three pieces per named instance — the **named-options + keyed-factory 
 
 Then expose resolution two ways, matching the caching precedent: a name-resolving provider (`IBlobStorageProvider` over `GetKeyedService<IService>(name)`) **and** keyed injection (`[FromKeyedServices("name")] IService`). The **default** (unnamed) instance stays a plain unkeyed `AddSingleton<IService>` so direct injection keeps working; named instances never touch the unkeyed registration.
 
-Provider packages contribute through C# 14 extension members: default overloads on the builder, named overloads on the instance builder, the standard options overload trio (`Action<TOptions>`, `IConfiguration`, `Action<TOptions, IServiceProvider>`). See the broader contract in [unified-provider-setup-builder-pattern.md](unified-provider-setup-builder-pattern.md) and the keyed-DI conventions in [keyed-services-for-overridable-abstractions.md](keyed-services-for-overridable-abstractions.md).
+Provider packages contribute through C# 14 extension members: default overloads on the builder, named overloads on the instance builder, the standard options overload trio (`Action<TOptions>`, `IConfiguration`, `Action<TOptions, IServiceProvider>`). See the broader contract in [unified-provider-setup-builder-pattern.md](unified-provider-setup-builder-pattern.md) and the keyed-DI conventions in [keyed-services-for-overridable-abstractions.md](../conventions/keyed-services-for-overridable-abstractions.md).
 
 ## Why This Matters
 
@@ -108,5 +101,5 @@ Engine-shape gotchas encountered across the six blob providers:
 ## Related
 
 - [unified-provider-setup-builder-pattern.md](unified-provider-setup-builder-pattern.md) — the per-slot builder contract (default/named/cross-cutting slots, deferred registration, called-once marker, overload trio).
-- [keyed-services-for-overridable-abstractions.md](keyed-services-for-overridable-abstractions.md) — `TryAddKeyedSingleton` defaults vs consumer `AddKeyedSingleton`, key-visibility discipline.
+- [keyed-services-for-overridable-abstractions.md](../conventions/keyed-services-for-overridable-abstractions.md) — `TryAddKeyedSingleton` defaults vs consumer `AddKeyedSingleton`, key-visibility discipline.
 - Reference implementation: `src/Headless.Blobs.Core/` (`HeadlessBlobsSetupBuilder`, `Setup.cs`, `KeyedServiceBlobStorageProvider`) and `src/Headless.Caching.Core/` (the original of this shape).

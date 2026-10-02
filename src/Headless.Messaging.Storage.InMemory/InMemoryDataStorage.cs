@@ -668,6 +668,7 @@ internal sealed partial class InMemoryDataStorage(
                     message.Owner = null;
                     message.LockedUntil = null;
                 }
+
                 return ValueTask.FromResult(true);
             }
         }
@@ -1198,6 +1199,7 @@ internal sealed partial class InMemoryDataStorage(
                                 "InMemory"
                             );
                         }
+
                         removed++;
                     }
                 }
@@ -1513,6 +1515,7 @@ internal sealed partial class InMemoryDataStorage(
                         newLease
                     );
                 }
+
                 claimed.Add(_ToSnapshot(candidate));
             }
         }

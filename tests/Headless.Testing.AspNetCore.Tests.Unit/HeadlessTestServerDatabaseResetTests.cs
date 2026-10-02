@@ -99,6 +99,7 @@ public sealed class HeadlessTestServerDatabaseResetTests : TestBase
             {
                 throw _CreateTransientException(exceptionKind);
             }
+
             return Task.CompletedTask;
         };
 

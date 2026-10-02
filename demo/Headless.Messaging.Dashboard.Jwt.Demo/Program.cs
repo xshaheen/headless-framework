@@ -100,6 +100,7 @@ app.MapPost(
             var stringToken = tokenHandler.WriteToken(token);
             return Results.Ok(stringToken);
         }
+
         return Results.Unauthorized();
     }
 );

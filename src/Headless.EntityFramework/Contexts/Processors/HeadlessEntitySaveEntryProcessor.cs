@@ -48,6 +48,7 @@ public sealed class HeadlessEntitySaveEntryProcessor(
                 {
                     _TrySetMultiTenantId(entry, context.TenantId);
                 }
+
                 _TrySetConcurrencyStamp(entry);
                 break;
             case EntityState.Modified:

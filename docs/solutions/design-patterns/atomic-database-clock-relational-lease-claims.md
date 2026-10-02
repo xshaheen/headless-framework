@@ -1,8 +1,7 @@
 ---
 title: Atomic database-clock relational lease claims
 date: 2026-07-13
-category: design-patterns
-module: Distributed persistence
+module: headless-framework
 problem_type: design_pattern
 component: database
 severity: high
@@ -14,13 +13,7 @@ applies_when:
 related_components:
   - background_job
   - service_class
-tags:
-  - distributed-leases
-  - database-clock
-  - clock-skew
-  - atomic-claim
-  - postgresql
-  - sql-server
+tags: [distributed-leases, database-clock, clock-skew, atomic-claim, postgresql, sql-server]
 ---
 
 # Atomic database-clock relational lease claims
@@ -126,8 +119,9 @@ await jobs
     .ConfigureAwait(false);
 ```
 
-The Jobs implementation names its database-clock predicates explicitly in
-`src/Headless.Jobs.EntityFramework/Infrastructure/JobsQueryExtensions.cs`. Native root and descendant
+The Jobs implementation names its database-clock predicates explicitly in the native claim strategies,
+`src/Headless.Jobs.EntityFramework.PostgreSql/PostgreSqlJobsClaimStrategy.cs` and
+`src/Headless.Jobs.EntityFramework.SqlServer/SqlServerJobsClaimStrategy.cs`. Native root and descendant
 claim updates use PostgreSQL `CURRENT_TIMESTAMP` and SQL Server `SYSUTCDATETIME()`. PostgreSQL
 Npgsql translates `DateTime.UtcNow` to `now()`, which is fixed at transaction start. Generic EF claims
 execute as individual update commands, while native multi-claim transactions use the explicit
@@ -248,7 +242,7 @@ statement.
   store-time authority principle for Coordination liveness.
 - `docs/solutions/design-patterns/redis-zset-semaphore-prune-count-separation.md` — Redis server time
   inside atomic semaphore acquisition.
-- `docs/solutions/tooling-decisions/redlock-multi-instance-not-adopted-2026-05-19.md` — related clock and
+- `docs/solutions/tooling-decisions/redlock-multi-instance-not-adopted.md` — related clock and
   ownership trade-offs.
 - [PostgreSQL date/time functions](https://www.postgresql.org/docs/current/functions-datetime.html) —
   `CURRENT_TIMESTAMP`/`now()` use transaction-start time; `clock_timestamp()` returns wall-clock time.

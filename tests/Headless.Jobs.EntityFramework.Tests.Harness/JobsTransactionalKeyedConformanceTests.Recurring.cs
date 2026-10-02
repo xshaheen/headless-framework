@@ -63,6 +63,7 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>
             {
                 await operation.Should().ThrowAsync<InjectedFailureException>();
             }
+
             (await fixture.CountProbeRowsAsync(AbortToken)).Should().Be(commit ? 2 : 0);
             (await fixture.CountCronJobsAsync(AbortToken)).Should().Be(commit ? 1 : 0);
             var store = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
@@ -72,6 +73,7 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>
                 persisted.Should().BeNull();
                 return;
             }
+
             persisted.Should().NotBeNull();
             persisted!.Expression.Should().Be(_RecurringExpression);
         });

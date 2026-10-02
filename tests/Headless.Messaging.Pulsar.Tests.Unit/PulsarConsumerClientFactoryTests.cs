@@ -21,6 +21,7 @@ public sealed class PulsarConsumerClientFactoryTests : TestBase
 {
     private readonly IConnectionFactory _connectionFactory = Substitute.For<IConnectionFactory>();
     private readonly ILoggerFactory _loggerFactory = NullLoggerFactory.Instance;
+
     private readonly IOptions<PulsarMessagingOptions> _options = Options.Create(
         new PulsarMessagingOptions { ServiceUrl = "pulsar://localhost:6650" }
     );

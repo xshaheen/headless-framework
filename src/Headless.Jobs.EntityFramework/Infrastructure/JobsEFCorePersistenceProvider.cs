@@ -26,9 +26,11 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
     where TCronJob : CronJobEntity, new()
 {
     private const int _MaxTreeDeleteRetryAttempts = 3;
+
     private static readonly ResiliencePropertyKey<bool> _TreeDeleteCommitStartedKey = new(
         "headless.jobs.tree-delete.commit-started"
     );
+
     private static readonly ResiliencePropertyKey<int> _TreeDeleteRootIdCountKey = new(
         "headless.jobs.tree-delete.root-id-count"
     );
@@ -316,6 +318,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                         // UpdateRange may mark new children Added and generate their keys during the initial fixup.
                         context.Entry(candidates[i]).State = intent[i].Entry.State;
                     }
+
                     var updatedIds = candidates.Select(candidate => candidate.Id).ToArray();
                     await _GuardTimeJobParentReferencesAsync(context, updatedIds, ct).ConfigureAwait(false);
                     if (
@@ -347,6 +350,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         {
             intent[i].Entry.CurrentValues.SetValues(persisted[i]);
         }
+
         return affected;
     }
 
@@ -530,6 +534,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
             )
             .Build();
     }
+
     #endregion
 
     #region Cron_Ticker_Implementations
@@ -1129,6 +1134,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
     #endregion
 
     #region Cron_TickerOccurrence_Implementations
+
     public async Task<CronJobOccurrenceEntity<TCronJob>[]> GetAllCronJobOccurrencesAsync(
         Expression<Func<CronJobOccurrenceEntity<TCronJob>, bool>>? predicate,
         CancellationToken cancellationToken = default
@@ -1249,6 +1255,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                             throw new InvalidOperationException("A cron occurrence requires an existing definition.");
                         }
                     }
+
                     // All definitions stay protected from edits and deletion throughout this single snapshot read.
                     Dictionary<Guid, TCronJob> definitions =
                         definitionIds.Length == 0
@@ -1264,6 +1271,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                         occurrence.SnapshotContract(definitions[occurrence.CronJobId]);
                         occurrence.CronJob = null!;
                     }
+
                     await context
                         .Set<CronJobOccurrenceEntity<TCronJob>>()
                         .AddRangeAsync(candidates, ct)
@@ -1278,6 +1286,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
             dbContext.Entry(cronJobOccurrences[i]).CurrentValues.SetValues(persisted[i]);
             cronJobOccurrences[i].CronJob = null!;
         }
+
         return inserted;
     }
 

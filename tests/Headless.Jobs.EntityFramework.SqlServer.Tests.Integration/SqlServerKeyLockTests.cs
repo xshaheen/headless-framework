@@ -10,12 +10,14 @@ public sealed class SqlServerKeyLockTests(JobsKeyLockSqlServerFixture fixture)
 {
     protected override string CountLocksSql =>
         "SELECT COUNT(*) FROM sys.dm_tran_locks WHERE request_session_id = @@SPID AND resource_type = 'APPLICATION'";
+
     protected override string TryLockSql =>
         """
             DECLARE @result int;
             EXEC @result = sys.sp_getapplock @Resource=@key, @LockMode='Exclusive', @LockOwner='Transaction', @LockTimeout=0;
             SELECT CAST(CASE WHEN @result >= 0 THEN 1 ELSE 0 END AS bit);
             """;
+
     protected override string ReadLockTimeoutSql => "SELECT @@LOCK_TIMEOUT";
     protected override string SetLockTimeoutSql => "SET LOCK_TIMEOUT 7000";
     protected override string CreateProbeTableSql => "CREATE TABLE #jobs_key_lock_probe (id int)";

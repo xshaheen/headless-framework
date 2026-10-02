@@ -47,6 +47,7 @@ public sealed partial class OutboxBridgeIntegrationTests
             {
                 order.EmitShipping();
             }
+
             db.Orders.Add(order);
 
             var save = async () => await _SaveAsync(db, synchronous);
@@ -100,6 +101,7 @@ public sealed partial class OutboxBridgeIntegrationTests
             {
                 throw new TransientOutboxException();
             }
+
             if (evidence.Calls != 1)
             {
                 return;

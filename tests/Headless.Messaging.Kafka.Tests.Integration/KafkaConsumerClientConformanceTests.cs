@@ -121,4 +121,10 @@ public sealed class KafkaConsumerClientConformanceTests(KafkaFixture fixture) : 
         (await replacement.RemainsEmptyAsync(TimeSpan.FromSeconds(5), AbortToken)).Should().BeTrue();
         Volatile.Read(ref terminalLogs).Should().Be(1);
     }
+
+    [Fact]
+    public override Task should_dispatch_empty_message_body()
+    {
+        return base.should_dispatch_empty_message_body();
+    }
 }

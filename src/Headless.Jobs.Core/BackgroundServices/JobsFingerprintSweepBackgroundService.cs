@@ -91,6 +91,7 @@ internal sealed class JobsFingerprintSweepBackgroundService(
                 {
                     JobsFingerprintSweepLog.DrainBoundReached(logger, batches * _batchSize);
                 }
+
                 if (!result.HasMore || wrapped)
                 {
                     _cursor = null;

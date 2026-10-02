@@ -225,6 +225,7 @@ internal sealed class MessagePublishRequestFactory(
         {
             headers[Headers.CausationId] = causationId;
         }
+
         headers[Headers.CorrelationSequence] = (options?.CorrelationSequence ?? 0).ToString(
             CultureInfo.InvariantCulture
         );

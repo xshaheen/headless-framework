@@ -1,8 +1,7 @@
 ---
 title: "Differentiating Client-Cancellation, Server-Timeout, and Code-Thrown Timeout in a Single ASP.NET Core IExceptionHandler"
-category: api
 date: 2026-05-07
-module: Headless.Api
+module: Headless.Api.Core
 problem_type: design_pattern
 component: service_class
 severity: medium
@@ -17,10 +16,6 @@ applies_when:
   - "Aligning ProblemDetails body shape between handler-emitted and middleware-emitted timeouts"
   - "Choosing between 499 (client closed request), 408 bare, and 408 with body"
   - "Configuring UseDeveloperExceptionPage without bypassing the IExceptionHandler chain"
-research:
-  agents: [context-analyzer, solution-extractor, related-docs-finder]
-  documented_at: 2026-05-07T15:00:00Z
-  conversation_context: "Folded RequestCanceledMiddleware into HeadlessApiExceptionHandler; differentiated three OCE flavors; backfilled 408/501 in IProblemDetailsCreator.Normalize"
 ---
 
 # Context
@@ -113,7 +108,7 @@ This routes any code-thrown `TimeoutException` to the 408 ProblemDetails factory
 
 ## 4. `Normalize()` backfilling for 408/501
 
-`src/Headless.Api.Core/Abstractions/IProblemDetailsCreator.cs`:
+`src/Headless.Api.Abstractions/IProblemDetailsCreator.cs`:
 
 ```csharp
 public void Normalize(ProblemDetails problemDetails)
@@ -274,7 +269,7 @@ Unit test coverage for `HeadlessApiExceptionHandler`:
 # Files Referenced
 
 - `src/Headless.Api.Core/Middlewares/HeadlessApiExceptionHandler.cs` — handler, OCE arm, `_IsCancellationException`, `case TimeoutException`
-- `src/Headless.Api.Core/Abstractions/IProblemDetailsCreator.cs` — `Normalize` with 408/501 backfill, `RequestTimeout()` / `NotImplemented()` factories
+- `src/Headless.Api.Abstractions/IProblemDetailsCreator.cs` — `Normalize` with 408/501 backfill, `RequestTimeout()` / `NotImplemented()` factories
 - `src/Headless.Api.Abstractions/Constants/ProblemDetailTitles.cs` — Types/Titles/Details constants
 - `src/Headless.Api.Core/SetupApiServices.cs` — `AddHeadlessProblemDetails` + `TryAddEnumerable` registration
 - `demo/Headless.Api.Demo/Program.cs` — pipeline-ordering example

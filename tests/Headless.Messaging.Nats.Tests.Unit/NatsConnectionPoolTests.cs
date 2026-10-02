@@ -12,6 +12,7 @@ namespace Tests;
 public sealed class NatsConnectionPoolTests : TestBase
 {
     private readonly ILogger<NatsConnectionPool> _logger = NullLogger<NatsConnectionPool>.Instance;
+
     private readonly MsOptions.IOptions<NatsMessagingOptions> _options = MsOptions.Options.Create(
         new NatsMessagingOptions { Servers = "nats://localhost:4222", ConnectionPoolSize = 3 }
     );

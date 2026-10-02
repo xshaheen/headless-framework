@@ -507,6 +507,7 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
                         storedConsumed = true;
                     }
                 }
+
                 // Each candidate targets a disjoint row fenced by its own watermark/revision CAS, so concurrent
                 // materializations across definitions never contend and the exactly-one-winner guarantee is
                 // unchanged. The bound keeps an N-node cluster from opening N x group-size connections at once.

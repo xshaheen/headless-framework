@@ -66,8 +66,10 @@ internal sealed class SubscribeExecutor(
     private readonly MessagingTelemetry _telemetry = telemetry ?? MessagingTelemetry.Default;
     private readonly string? _hostName = HostIdentity.GetInstanceHostname();
     private readonly MessagingOptions _options = options.Value;
+
     private readonly InboxMetricPolicy _inboxMetricPolicy =
         provider.GetService<InboxMetricPolicy>() ?? new InboxMetricPolicy(TenantTagName: null);
+
     private readonly IMessagingCapabilityModel? _capabilityModel = provider.GetService<IMessagingCapabilityModel>();
     private readonly RetryPolicyOptions _retryPolicy = options.Value.RetryPolicy;
     private readonly MessagingRetryPipeline _retryPipeline = new(options.Value.RetryPolicy, timeProvider, logger);

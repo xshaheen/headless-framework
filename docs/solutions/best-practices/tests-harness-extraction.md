@@ -2,16 +2,11 @@
 title: "When to extract a Headless.<Feature>.Tests.Harness package"
 date: 2026-09-18
 last_updated: 2026-09-25
-category: best-practices
 module: headless-framework
-problem_type: test_structure
+problem_type: best_practice
 component: test_project
 severity: medium
-tags:
-  - testing
-  - conformance
-  - testcontainers
-  - package-structure
+tags: [testing, conformance, testcontainers, package-structure]
 related_components:
   - integration_tests
   - provider_packages

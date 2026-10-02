@@ -64,6 +64,7 @@ public static class HeadlessDbContextOptionsBuilderExtensions
         private static readonly IGuidGenerator _Version7GuidGenerator = new SequentialGuidGenerator(
             SequentialGuidType.Version7
         );
+
         private static readonly IGuidGenerator _SqlServerGuidGenerator = new SequentialGuidGenerator(
             SequentialGuidType.SqlServer
         );

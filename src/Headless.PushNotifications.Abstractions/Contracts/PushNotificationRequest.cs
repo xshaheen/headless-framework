@@ -9,7 +9,7 @@ namespace Headless.PushNotifications;
 /// <remarks>
 /// <para>
 /// The same request is used for single-device and multicast sends; only the target client identifiers differ.
-/// New delivery options are added as optional <c>init</c> properties so the contract can grow without changing the
+/// New delivery options are added as optional <see langword="init"/> properties so the contract can grow without changing the
 /// method signatures. <see langword="null"/> means "not set" for every optional property.
 /// </para>
 /// <para>

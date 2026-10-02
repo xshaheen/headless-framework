@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -79,7 +80,7 @@ internal sealed class NatsConnectionPool : INatsConnectionPool
     /// </summary>
     public NatsConnection GetConnection()
     {
-        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        Ensure.NotDisposed(Volatile.Read(ref _disposed) != 0, this);
 
         var index = Interlocked.Increment(ref _index);
         return _connections[(index & 0x7FFF_FFFF) % _connections.Length];

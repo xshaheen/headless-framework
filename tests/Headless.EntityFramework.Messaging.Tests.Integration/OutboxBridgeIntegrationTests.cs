@@ -69,6 +69,7 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
         {
             order.EmitIntegrationEvent(new OrderShipped($"{marker}-1"));
         }
+
         var occurrence = order.GetIntegrationEvents().Single();
         db.Orders.Add(order);
 
@@ -300,6 +301,7 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
                 {
                     db.Orders.Add(new OrderEntity { Name = "second-business-batch" });
                 }
+
                 order.EmitIntegrationEvent(new OrderShipped($"evt-two-saves-{i}"));
                 saved.Add(order.GetIntegrationEvents().Single());
                 await _SaveAsync(db, synchronous);
@@ -384,6 +386,7 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
                 occurrence
             );
         }
+
         (await _CountOrdersAsync()).Should().Be(1);
         order.GetIntegrationEvents().Should().BeEmpty();
     }
@@ -479,6 +482,7 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
                 child
             );
         }
+
         var forwarded = (await _ReadPublishedAsync(provider, "evt-forwarded-root")).Single();
         _AssertOccurrence(forwarded, evidence.Forwarded);
         (await _CountOrdersAsync()).Should().Be(1);
@@ -538,6 +542,7 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
         {
             _RegisterJobs(services);
         }
+
         configureServices?.Invoke(services);
 
         var provider = services.BuildServiceProvider();
@@ -596,6 +601,7 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
         {
             rows.Add((reader.GetString(0), serializer.Deserialize(reader.GetString(1))!));
         }
+
         return rows;
     }
 
@@ -732,6 +738,7 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
             {
                 ((IIntegrationEventEmitter)order).AddIntegrationEvent(forwarded);
             }
+
             db.Orders.Add(order);
             using var saveTrace = new Activity("independent-save-trace");
             saveTrace.SetParentId(ActivityTraceId.CreateRandom(), ActivitySpanId.CreateRandom()).Start();

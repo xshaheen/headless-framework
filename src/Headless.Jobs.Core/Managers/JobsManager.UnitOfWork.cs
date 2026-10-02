@@ -69,6 +69,7 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
                 "The active unit of work is no longer active; the job row cannot be enlisted atomically."
             );
         }
+
         context.Relational.Validate();
         context.Writer.ValidateContext(context.Relational, context.RequireSavepoints);
 

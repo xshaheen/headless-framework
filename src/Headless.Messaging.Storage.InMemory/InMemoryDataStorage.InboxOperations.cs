@@ -111,6 +111,7 @@ internal sealed partial class InMemoryDataStorage
                 cancellationToken.ThrowIfCancellationRequested();
                 _inboxAudit.Remove(candidate);
             }
+
             return ValueTask.FromResult(candidates.Length);
         }
     }
@@ -145,6 +146,7 @@ internal sealed partial class InMemoryDataStorage
                 cancellationToken.ThrowIfCancellationRequested();
                 _inboxOperationReceipts.Remove(candidate.OperationId);
             }
+
             return ValueTask.FromResult(candidates.Length);
         }
     }
@@ -398,6 +400,7 @@ internal sealed partial class InMemoryDataStorage
                     "InMemory"
                 );
             }
+
             return ValueTask.FromResult(result);
         }
     }

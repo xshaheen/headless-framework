@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
 using Headless.Coordination;
 using Headless.DistributedLocks;
 using Headless.Messaging.Configuration;
@@ -43,7 +44,7 @@ internal sealed class Bootstrapper(
 
         lock (_bootstrapLock)
         {
-            ObjectDisposedException.ThrowIf(_disposed, typeof(Bootstrapper));
+            Ensure.NotDisposed(_disposed, this);
 
             if (_isStopping)
             {

@@ -2,16 +2,11 @@
 title: "ProblemDetails error codes use the g:lower_snake_case shape"
 date: 2026-09-18
 last_updated: 2026-09-18
-category: conventions
-module: Headless.Api
-problem_type: naming_convention
+module: Headless.Api.Core
+problem_type: convention
 component: api_contract
 severity: medium
-tags:
-  - problem-details
-  - error-codes
-  - localization
-  - resx
+tags: [problem-details, error-codes, localization, resx]
 related_components:
   - MessageDescriber
   - Messages.resx

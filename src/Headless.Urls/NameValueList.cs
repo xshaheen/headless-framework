@@ -138,6 +138,7 @@ public sealed class NameValueList<TValue>(bool caseSensitiveNames)
                 return this[i].Value;
             }
         }
+
         return default;
     }
 
@@ -153,6 +154,7 @@ public sealed class NameValueList<TValue>(bool caseSensitiveNames)
                 return true;
             }
         }
+
         value = default;
         return false;
     }
@@ -181,6 +183,7 @@ public sealed class NameValueList<TValue>(bool caseSensitiveNames)
                 return true;
             }
         }
+
         return false;
     }
 

@@ -13,6 +13,7 @@ namespace Headless.Messaging.Processor;
 internal sealed class CollectorProcessor : IProcessor
 {
     private const int _ItemBatch = 1000;
+
     private static readonly CleanupCategory[] _Categories =
     [
         CleanupCategory.Published,

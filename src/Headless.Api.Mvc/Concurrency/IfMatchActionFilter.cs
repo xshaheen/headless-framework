@@ -33,6 +33,7 @@ internal sealed class IfMatchActionFilter : IAsyncActionFilter
             context.Result = new ObjectResult(problem) { StatusCode = problem.Status };
             return;
         }
+
         _ = await next().ConfigureAwait(false);
     }
 }

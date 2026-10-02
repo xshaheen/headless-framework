@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
+
 namespace Headless.Jobs;
 
 internal sealed class RestartThrottleManager(Action onRestartTriggered, TimeProvider timeProvider) : IDisposable
@@ -17,7 +19,7 @@ internal sealed class RestartThrottleManager(Action onRestartTriggered, TimeProv
     {
         lock (_lock)
         {
-            ObjectDisposedException.ThrowIf(_disposed, this);
+            Ensure.NotDisposed(_disposed, this);
             _restartPending = true;
 
             // Create timer only when first needed

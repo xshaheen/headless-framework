@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
+using Headless.Checks;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -133,14 +134,14 @@ internal sealed class ConnectionFactory : IConnectionFactory, IAsyncDisposable
 
     public async Task<PulsarClient> RentClientAsync(CancellationToken cancellationToken = default)
     {
-        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+        Ensure.NotDisposed(Volatile.Read(ref _disposed) != 0, this);
 
         Task<PulsarClient> clientBuildTask;
 
         await _clientLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+            Ensure.NotDisposed(Volatile.Read(ref _disposed) != 0, this);
 
             if (_client is not null)
             {
@@ -181,7 +182,7 @@ internal sealed class ConnectionFactory : IConnectionFactory, IAsyncDisposable
         await _clientLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+            Ensure.NotDisposed(Volatile.Read(ref _disposed) != 0, this);
             return _client ??= client;
         }
         finally
