@@ -13,8 +13,6 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.Persistence;
 
-#pragma warning disable CA2100 // SQL text is rendered from dialect output, table names, and fixed fragments; every value is a parameter.
-
 /// <summary>
 /// The relational <see cref="IMonitoringApi"/>: message lookups, counts, pages, and hourly timelines for the dashboard,
 /// written once over the storage's dialect.
@@ -592,5 +590,3 @@ internal sealed class RelationalMonitoringApi(
         return await reader.IsDBNullAsync(ordinal, ct).ConfigureAwait(false) ? null : reader.GetString(ordinal);
     }
 }
-
-#pragma warning restore CA2100

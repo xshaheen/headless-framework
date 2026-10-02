@@ -2,8 +2,6 @@
 
 namespace Tests;
 
-#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
-
 /// <summary>Runs the resource-backed conformance suite against a real SQLite transaction.</summary>
 [Collection<SqliteUnitOfWorkFixture>]
 public sealed class SqliteUnitOfWorkResourceConformanceTests(SqliteUnitOfWorkFixture sqlite)

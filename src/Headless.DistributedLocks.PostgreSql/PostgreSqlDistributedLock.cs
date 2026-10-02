@@ -217,7 +217,6 @@ public static class PostgreSqlDistributedLock
         }
     }
 
-#pragma warning disable MA0045 // Backs the synchronous helpers, which exist for EF Core's synchronous SavingChanges path.
     private static bool _AcquireInSavepoint(
         PostgreSqlAdvisoryLockKey key,
         NpgsqlTransaction transaction,
@@ -253,7 +252,6 @@ public static class PostgreSqlDistributedLock
             throw;
         }
     }
-#pragma warning restore MA0045
 
     private static NpgsqlCommand _CreateAcquireCommand(
         NpgsqlConnection connection,

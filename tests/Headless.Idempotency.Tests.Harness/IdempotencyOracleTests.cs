@@ -15,7 +15,6 @@ namespace Tests;
 /// <c>IDEMPOTENCY_ORACLE_REPORT</c> a file the grouped report is also written to.
 /// <c>IDEMPOTENCY_ORACLE_PRECISION</c> overrides the timestamp tolerance in ticks, to measure raw precision drift.
 /// </remarks>
-#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
 public abstract class IdempotencyOracleTests<TFixture>(TFixture fixture) : TestBase
     where TFixture : IIdempotencyFixture
 {

@@ -59,7 +59,6 @@ public sealed class SqlServerDistributedLockTests(SqlServerDistributedLockFixtur
         acquiredWriter.Should().NotBeNull();
     }
 
-#pragma warning disable VSTHRD103, MA0045 // The synchronous DbTransaction overloads are the API under test.
     [Fact]
     public async Task should_acquire_and_release_synchronously_through_db_transaction()
     {
@@ -102,7 +101,6 @@ public sealed class SqlServerDistributedLockTests(SqlServerDistributedLockFixtur
         act.Should().NotThrow();
         SqlServerDistributedLock.TryAcquireWithTransaction(resource, transaction, TimeSpan.Zero).Should().BeTrue();
     }
-#pragma warning restore VSTHRD103, MA0045
 
     [Fact]
     public async Task should_succeed_when_the_transaction_already_holds_the_lock()
@@ -206,14 +204,12 @@ public sealed class SqlServerDistributedLockTests(SqlServerDistributedLockFixtur
         // when — the server ends the waiting session, which takes its locks with it
         var acquire = Task.Run(
             () =>
-#pragma warning disable MA0045 // The synchronous form is the path under test.
                 SqlServerApplicationLock.TryAcquireTransaction(
                     transaction,
                     _Encode(resource),
                     TimeSpan.FromSeconds(30),
                     TimeSpan.FromSeconds(30)
                 ),
-#pragma warning restore MA0045
             AbortToken
         );
         await _WaitUntilBlockedAsync(sessionId);
@@ -572,9 +568,7 @@ public sealed class SqlServerDistributedLockTests(SqlServerDistributedLockFixtur
     {
         await using var connection = await _OpenAsync();
         await using var command = connection.CreateCommand();
-#pragma warning disable CA2100 // KILL takes no parameters; the session id is a server-issued smallint.
         command.CommandText = string.Create(CultureInfo.InvariantCulture, $"KILL {sessionId}");
-#pragma warning restore CA2100
         await command.ExecuteNonQueryAsync(AbortToken);
     }
 

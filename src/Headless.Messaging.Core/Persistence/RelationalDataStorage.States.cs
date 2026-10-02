@@ -8,8 +8,6 @@ using Headless.Sql;
 
 namespace Headless.Messaging.Persistence;
 
-#pragma warning disable CA2100 // SQL text is rendered from dialect output, table names, and fixed fragments; every value is a parameter.
-
 internal sealed partial class RelationalDataStorage
 {
     /// <summary>
@@ -838,5 +836,3 @@ internal sealed partial class RelationalDataStorage
         return changed;
     }
 }
-
-#pragma warning restore CA2100
