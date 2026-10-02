@@ -77,6 +77,66 @@ public sealed class ConsumeContextTests
     }
 
     [Fact]
+    public void should_record_a_reply_under_its_declared_type_apart_from_the_callback_response()
+    {
+        // given
+        var context = _CreateContext();
+        var reply = new ConcreteResponse("quoted");
+
+        // when
+        context.RecordReply<IResponseContract>(reply);
+
+        // then
+        context.HasReply.Should().BeTrue();
+        context.Reply.Should().BeSameAs(reply);
+        context.ReplyType.Should().Be<IResponseContract>();
+        context.Response.Should().BeNull();
+        context.ResponseType.Should().BeNull();
+    }
+
+    [Fact]
+    public void should_record_a_null_reply_as_a_reply()
+    {
+        // given
+        var context = _CreateContext();
+
+        // when
+        context.RecordReply<ConcreteResponse>(null);
+
+        // then
+        context.HasReply.Should().BeTrue();
+        context.Reply.Should().BeNull();
+        context.ReplyType.Should().Be<ConcreteResponse>();
+    }
+
+    [Fact]
+    public void should_leave_the_reply_empty_when_not_recorded()
+    {
+        // given
+        var context = _CreateContext();
+
+        // then
+        context.HasReply.Should().BeFalse();
+        context.Reply.Should().BeNull();
+        context.ReplyType.Should().BeNull();
+    }
+
+    [Fact]
+    public void should_throw_when_recording_a_reply_after_completion()
+    {
+        // given
+        var context = _CreateContext();
+        context.MarkCompleted();
+
+        // when
+        var act = () => context.RecordReply(new ConcreteResponse("too-late"));
+
+        // then
+        act.Should().Throw<InvalidOperationException>();
+        context.HasReply.Should().BeFalse();
+    }
+
+    [Fact]
     public void should_store_next_callback_name()
     {
         // given

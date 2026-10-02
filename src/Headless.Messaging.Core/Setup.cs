@@ -399,6 +399,7 @@ public static class SetupMessaging
                     EveryInstance = consumer.EveryInstance,
                     DeclaringModule = consumer.Source,
                     OnSubscriptionEstablished = consumer.OnSubscriptionEstablished,
+                    ResponseType = consumer.ResponseType,
                 },
                 contractVersions.GetValueOrDefault(
                     (consumer.MessageType, consumer.Lane),
@@ -447,13 +448,15 @@ public static class SetupMessaging
                     Dispatch = consumer.Dispatch,
                     OnSubscriptionEstablished = consumer.OnSubscriptionEstablished,
                     DeclaringModule = consumer.DeclaringModule,
+                    ResponseType = consumer.ResponseType,
                 };
 
                 var key = new ConsumerRegistrationKey(resolved.MessageName, resolved.Lane, resolved.ConsumerType);
                 var settings = new ConsumerRegistrationSettings(
                     resolved.ConsumerIdentity,
                     resolved.MessageContractVersion,
-                    resolved.EveryInstance
+                    resolved.EveryInstance,
+                    resolved.ResponseType
                 );
 
                 if (registeredKeys.TryGetValue(key, out var existing))
@@ -536,9 +539,12 @@ public static class SetupMessaging
         }
     }
 
+    // The response type is a setting: a redeclaration that answers with another type, or not at all, would change what the
+    // caller receives.
     private readonly record struct ConsumerRegistrationSettings(
         string ConsumerIdentity,
         string MessageContractVersion,
-        bool EveryInstance
+        bool EveryInstance,
+        Type? ResponseType
     );
 }

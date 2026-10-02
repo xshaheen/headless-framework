@@ -2065,6 +2065,9 @@ Roslyn incremental source generator that registers `[BusConsumer]` and `[QueueCo
 | <a id="hm007"></a>HM007 | The consumer class, a type containing it, or a consumed message type is private, protected, or `file`-local, so generated code cannot name it. | Make the type and every type containing it `public` or `internal`. |
 | <a id="hm008"></a>HM008 | The consumer class is abstract or generic, or nested in a generic type, so a delivery cannot construct it. | Put the attribute on a concrete, non-generic class. |
 | <a id="hm009"></a>HM009 | One class carries both `[BusConsumer]` and `[QueueConsumer]`. Nothing is generated. | Keep one lane attribute; split the class when it must consume on both lanes. |
+| <a id="hm010"></a>HM010 | A class that implements `IRespond<TRequest, TResponse>` carries `[BusConsumer]`. A reply goes to one caller, and only the Queue lane gives a request exactly one consumer. | Put `[QueueConsumer]` on the responder. |
+| <a id="hm011"></a>HM011 | One class implements both `IConsume<T>` and `IRespond<T, TResponse>` for the same `T`. | Implement only `IRespond<T, TResponse>`; a responder that a plain enqueue reaches runs and discards its result. |
+| <a id="hm012"></a>HM012 | One class implements `IRespond<TRequest, TResponse>` for the same request with two or more response types. | Answer each request with one response type; put alternatives in one response contract. |
 
 ### Install
 

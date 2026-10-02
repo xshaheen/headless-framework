@@ -2,6 +2,7 @@
 
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
+using Headless.Messaging.Runtime;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -77,6 +78,25 @@ public sealed class RequestReplyCapabilityTests : TestBase
         provider.GetService<IReplyTransport>().Should().NotBeNull();
     }
 
+    [Fact]
+    public async Task should_carry_a_module_declared_responder_response_type_to_its_metadata_and_executor_descriptor()
+    {
+        // given
+        await using var provider = _CreateProvider(transport: null, requestsEnabled: true, withResponder: true);
+
+        // when
+        var metadata = provider.GetRequiredService<ConsumerRegistry>().GetAll().Single();
+        var descriptor = provider.GetRequiredService<IConsumerServiceSelector>().SelectCandidates().Single();
+
+        // then
+        metadata.ResponseType.Should().Be<Quote>();
+        metadata.IsResponder.Should().BeTrue();
+        metadata.Lane.Should().Be(MessageLane.Queue);
+        descriptor.ResponseType.Should().Be<Quote>();
+        descriptor.IsResponder.Should().BeTrue();
+        descriptor.MethodName.Should().Be(nameof(IRespond<,>.RespondAsync));
+    }
+
     // A non-null transport names a provider whose capability declaration, without request/reply support, replaces the
     // in-memory one; null keeps the in-memory declaration.
     private static ServiceProvider _CreateProvider(
@@ -91,6 +111,11 @@ public sealed class RequestReplyCapabilityTests : TestBase
         {
             setup.UseInMemory();
             setup.UseProcessLocalInMemoryStorage();
+
+            if (withResponder)
+            {
+                setup.AddModule<ResponderModule>();
+            }
         });
 
         if (transport is not null)
@@ -117,32 +142,20 @@ public sealed class RequestReplyCapabilityTests : TestBase
             services.AddSingleton(new RequestReplyMarkerService());
         }
 
-        if (withResponder)
-        {
-            // No generated module registers responders yet, so the responder is seeded into the registry before the
-            // host's registrations fold into it.
-            services.AddSingleton(sp =>
-            {
-                var registry = new ConsumerRegistry();
-                registry.Register(
-                    new ConsumerMetadata(
-                        typeof(GetQuote),
-                        typeof(GetQuoteResponder),
-                        _ResponderIdentity,
-                        1,
-                        MessageLane.Queue,
-                        _ResponderIdentity,
-                        MessageOptions.InitialContractVersion
-                    )
-                    {
-                        ResponseType = typeof(Quote),
-                    }
-                );
-                return SetupMessaging.BuildConsumerRegistry(sp, registry);
-            });
-        }
-
         return services.BuildServiceProvider();
+    }
+
+    // Declares the responder the way a generated module does, so the response type reaches the consumer registry through
+    // the same catalog path.
+    private sealed class ResponderModule : IMessagingModule
+    {
+        public static void Register(MessagingCatalogBuilder catalog)
+        {
+            catalog.AddQueueResponder<GetQuoteResponder, GetQuote, Quote>(
+                _ResponderIdentity,
+                static (_, _, _) => ValueTask.CompletedTask
+            );
+        }
     }
 
     private sealed record GetQuote(string Sku);

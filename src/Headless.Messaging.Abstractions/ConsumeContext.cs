@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.ComponentModel;
 using Headless.Checks;
 using Headless.UnitOfWork;
 
@@ -59,6 +60,18 @@ public record ConsumeContext
     internal string? ResponseDestination { get; private set; }
 
     internal bool IsResponseSuppressed { get; private set; }
+
+    /// <summary>
+    /// Whether a responder's dispatch recorded its result through <see cref="RecordReply{TResponse}"/>. Tells a
+    /// <see langword="null"/> result apart from no result.
+    /// </summary>
+    internal bool HasReply { get; private set; }
+
+    /// <summary>The value a responder returned for the request's caller; <see langword="null"/> when it returned none.</summary>
+    internal object? Reply { get; private set; }
+
+    /// <summary>The responder's declared response type, which names the reply's contract.</summary>
+    internal Type? ReplyType { get; private set; }
 
     /// <summary>
     /// Replaces the active cancellation token for downstream middleware and the inner consumer invocation.
@@ -175,6 +188,31 @@ public record ConsumeContext
         }
 
         IsResponseSuppressed = true;
+    }
+
+    /// <summary>
+    /// Records the value an <see cref="IRespond{TRequest, TResponse}"/> responder returned, so messaging can reply to the
+    /// request's caller. Generated dispatch calls this; application code does not.
+    /// </summary>
+    /// <remarks>
+    /// The reply is kept apart from the <see cref="SetResponse{TResponse}(TResponse)"/> callback response: a callback is a
+    /// new Bus message nobody awaits, while a reply goes only to the process that sent the request.
+    /// </remarks>
+    /// <typeparam name="TResponse">The responder's declared response type.</typeparam>
+    /// <param name="reply">The value the responder returned. May be <see langword="null"/>, which faults the request.</param>
+    /// <exception cref="InvalidOperationException">Thrown when the context is completed.</exception>
+    [EditorBrowsable(EditorBrowsableState.Never)]
+    public void RecordReply<TResponse>(TResponse? reply)
+        where TResponse : class
+    {
+        if (_isCompleted)
+        {
+            throw new InvalidOperationException("ConsumeContext is read-only after the consumer has completed.");
+        }
+
+        Reply = reply;
+        ReplyType = typeof(TResponse);
+        HasReply = true;
     }
 
     internal void MarkCompleted()

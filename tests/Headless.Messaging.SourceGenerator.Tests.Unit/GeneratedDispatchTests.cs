@@ -82,11 +82,27 @@ public sealed class GeneratedDispatchTests : TestBase
 
             public void Dispose() => probe.Calls.Add("disposed");
         }
+
+        public sealed record GetQuote(string Number);
+        public sealed record Quote(string Number);
+
+        [QueueConsumer("pricing.get-quote")]
+        public sealed class GetQuoteResponder(Tests.DispatchProbe probe) : IRespond<GetQuote, Quote>
+        {
+            async ValueTask<Quote> IRespond<GetQuote, Quote>.RespondAsync(ConsumeContext<GetQuote> context, CancellationToken cancellationToken)
+            {
+                await Task.Yield();
+                probe.Calls.Add("quote:" + context.Message.Number);
+                return string.Equals(context.Message.Number, "NONE", StringComparison.Ordinal) ? null! : new Quote("Q-" + context.Message.Number);
+            }
+        }
         """;
 
     private const string _InvoiceProjection = "billing.invoice-projection";
 
     private const string _PriceCache = "billing.price-cache";
+
+    private const string _GetQuote = "pricing.get-quote";
 
     [Fact]
     public async Task should_invoke_the_consume_overload_that_matches_the_typed_context()
@@ -233,6 +249,80 @@ public sealed class GeneratedDispatchTests : TestBase
         probe.Calls.Should().Equal("resolved", "established:1", "price:SKU-1");
     }
 
+    [Fact]
+    public void should_declare_a_responder_on_the_queue_lane_with_its_response_type()
+    {
+        // when
+        var declarations = _RegisterGeneratedModule(out var messageTypes);
+
+        // then
+        var responder = declarations.Single(x => string.Equals(x.Identity, _GetQuote, StringComparison.Ordinal));
+        responder.Lane.Should().Be(MessageLane.Queue);
+        responder.MessageType.Should().Be(messageTypes["GetQuote"]);
+        responder.ResponseType.Should().Be(messageTypes["Quote"]);
+        declarations
+            .Where(x => !string.Equals(x.Identity, _GetQuote, StringComparison.Ordinal))
+            .Should()
+            .OnlyContain(x => x.ResponseType == null);
+    }
+
+    [Fact]
+    public async Task should_record_the_value_respond_async_returned_as_the_reply_and_leave_the_callback_response_empty()
+    {
+        // given
+        var declarations = _RegisterGeneratedModule(out var messageTypes);
+        var responder = declarations.Single(x => string.Equals(x.Identity, _GetQuote, StringComparison.Ordinal));
+        await using var provider = new ServiceCollection().AddSingleton<DispatchProbe>().BuildServiceProvider();
+        var context = _Context(messageTypes["GetQuote"], "7");
+
+        // when
+        await responder.Dispatch(provider, context, AbortToken);
+
+        // then
+        provider.GetRequiredService<DispatchProbe>().Calls.Should().Equal("quote:7");
+        context.HasReply.Should().BeTrue();
+        context.ReplyType.Should().Be(messageTypes["Quote"]);
+        context.Reply.Should().BeOfType(messageTypes["Quote"]);
+        messageTypes["Quote"].GetProperty("Number")!.GetValue(context.Reply).Should().Be("Q-7");
+        context.Response.Should().BeNull();
+        context.ResponseType.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_record_a_null_result_as_a_reply_so_messaging_can_tell_it_from_no_reply()
+    {
+        // given
+        var declarations = _RegisterGeneratedModule(out var messageTypes);
+        var responder = declarations.Single(x => string.Equals(x.Identity, _GetQuote, StringComparison.Ordinal));
+        await using var provider = new ServiceCollection().AddSingleton<DispatchProbe>().BuildServiceProvider();
+        var context = _Context(messageTypes["GetQuote"], "NONE");
+
+        // when
+        await responder.Dispatch(provider, context, AbortToken);
+
+        // then
+        context.HasReply.Should().BeTrue();
+        context.Reply.Should().BeNull();
+        context.ReplyType.Should().Be(messageTypes["Quote"]);
+    }
+
+    [Fact]
+    public async Task should_record_no_reply_for_a_plain_consumer()
+    {
+        // given
+        var declarations = _RegisterGeneratedModule(out var messageTypes);
+        await using var provider = new ServiceCollection().AddSingleton<DispatchProbe>().BuildServiceProvider();
+        var context = _Context(messageTypes["InvoicePaid"], "INV-2");
+
+        // when
+        await declarations[0].Dispatch(provider, context, AbortToken);
+
+        // then
+        context.HasReply.Should().BeFalse();
+        context.Reply.Should().BeNull();
+        context.ReplyType.Should().BeNull();
+    }
+
     public sealed record UnrelatedMessage(string Number);
 
     private static IReadOnlyList<MessagingConsumerDeclaration> _RegisterGeneratedModule(
@@ -254,6 +344,8 @@ public sealed class GeneratedDispatchTests : TestBase
             ["InvoiceIssued"] = assembly.GetType("Billing.InvoiceIssued", throwOnError: true)!,
             ["InvoicePaid"] = assembly.GetType("Billing.InvoicePaid", throwOnError: true)!,
             ["PriceChanged"] = assembly.GetType("Billing.PriceChanged", throwOnError: true)!,
+            ["GetQuote"] = assembly.GetType("Billing.GetQuote", throwOnError: true)!,
+            ["Quote"] = assembly.GetType("Billing.Quote", throwOnError: true)!,
         };
 
         var module = assembly.GetType($"{GeneratorTestHelper.AssemblyName}.MessagingModule", throwOnError: true)!;

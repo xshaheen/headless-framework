@@ -8,7 +8,9 @@ namespace Headless.Messaging;
 /// <summary>
 /// Runs one attribute-declared consumer for one delivery. The Messaging source generator emits one per consumer class:
 /// it builds the class from the delivery's service scope, switches on the message type of <paramref name="context"/>, and
-/// calls the matching <see cref="IConsume{TMessage}.ConsumeAsync"/> with the typed context.
+/// calls the matching <see cref="IConsume{TMessage}.ConsumeAsync"/> with the typed context. For a request the class
+/// answers, it calls <see cref="IRespond{TRequest, TResponse}.RespondAsync"/> instead and records the returned value on
+/// <paramref name="context"/> as the reply.
 /// </summary>
 /// <param name="services">The service provider of the delivery's scope.</param>
 /// <param name="context">The typed <see cref="ConsumeContext{TMessage}"/> of the delivery.</param>
@@ -40,7 +42,7 @@ public delegate ValueTask SubscriptionEstablishedDispatch(
 /// <summary>
 /// Collects one host's generated consumer declarations while its consumer registry is built. Each generated
 /// <see cref="IMessagingModule"/> writes its <see cref="BusConsumerAttribute"/> and <see cref="QueueConsumerAttribute"/>
-/// consumers here, one entry per consumed message.
+/// consumers here, one entry per consumed message or answered request.
 /// </summary>
 /// <remarks>
 /// Generated code is the only intended caller, which is why the type is hidden from IntelliSense: no fluent call
@@ -116,6 +118,40 @@ public sealed class MessagingCatalogBuilder
         );
     }
 
+    /// <summary>Adds one request answered by a <see cref="QueueConsumerAttribute"/> responder.</summary>
+    /// <remarks>
+    /// A responder is its request's one Queue consumer. The response type travels with the entry so a host that declares
+    /// a responder can check at startup that its transport has a reply channel.
+    /// </remarks>
+    /// <typeparam name="TConsumer">The responder class.</typeparam>
+    /// <typeparam name="TRequest">One request the class implements <see cref="IRespond{TRequest, TResponse}"/> for.</typeparam>
+    /// <typeparam name="TResponse">The response type the class answers <typeparamref name="TRequest"/> with.</typeparam>
+    /// <param name="identity">The consumer identity from the attribute.</param>
+    /// <param name="dispatch">
+    /// The generated dispatch of the responder class, which records the value <c>RespondAsync</c> returned on the
+    /// delivery's context.
+    /// </param>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="identity"/> is empty or longer than <see cref="ConsumerMetadata.ConsumerIdentityMaxLength"/>.
+    /// </exception>
+    /// <exception cref="ArgumentNullException"><paramref name="dispatch"/> is <see langword="null"/>.</exception>
+    public void AddQueueResponder<TConsumer, TRequest, TResponse>(string identity, MessageConsumerDispatch dispatch)
+        where TConsumer : class, IRespond<TRequest, TResponse>
+        where TRequest : class
+        where TResponse : class
+    {
+        _Add(
+            typeof(TConsumer),
+            typeof(TRequest),
+            MessageLane.Queue,
+            identity,
+            everyInstance: false,
+            dispatch,
+            onSubscriptionEstablished: null,
+            typeof(TResponse)
+        );
+    }
+
     /// <summary>Runs one module's generated registration, attributing its entries to the module.</summary>
     internal void AddModule(Type moduleType, Action<MessagingCatalogBuilder> register)
     {
@@ -137,7 +173,8 @@ public sealed class MessagingCatalogBuilder
         string identity,
         bool everyInstance,
         MessageConsumerDispatch dispatch,
-        SubscriptionEstablishedDispatch? onSubscriptionEstablished
+        SubscriptionEstablishedDispatch? onSubscriptionEstablished,
+        Type? responseType = null
     )
     {
         // The generator already enforces the full owner.name rule at build time; these checks only keep a hand-written
@@ -155,7 +192,8 @@ public sealed class MessagingCatalogBuilder
                 identity,
                 everyInstance,
                 dispatch,
-                onSubscriptionEstablished
+                onSubscriptionEstablished,
+                responseType
             )
         );
     }
@@ -170,6 +208,9 @@ public sealed class MessagingCatalogBuilder
 /// <param name="EveryInstance">Whether every process receives every message; always false on the Queue lane.</param>
 /// <param name="Dispatch">The generated dispatch that runs the consumer class.</param>
 /// <param name="OnSubscriptionEstablished">The generated subscription hook of the class, when it has one.</param>
+/// <param name="ResponseType">
+/// The response type of a responder, or <see langword="null"/> for a consumer that does not answer requests.
+/// </param>
 internal sealed record MessagingConsumerDeclaration(
     string Source,
     Type ConsumerType,
@@ -178,5 +219,6 @@ internal sealed record MessagingConsumerDeclaration(
     string Identity,
     bool EveryInstance,
     MessageConsumerDispatch Dispatch,
-    SubscriptionEstablishedDispatch? OnSubscriptionEstablished
+    SubscriptionEstablishedDispatch? OnSubscriptionEstablished,
+    Type? ResponseType = null
 );

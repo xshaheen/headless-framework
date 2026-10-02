@@ -20,6 +20,7 @@ internal static class MessagingSourceEmitter
 
     private const string _ConsumeContext = "global::Headless.Messaging.ConsumeContext";
     private const string _Consume = "global::Headless.Messaging.IConsume";
+    private const string _Respond = "global::Headless.Messaging.IRespond";
     private const string _Lifecycle = "global::Headless.Messaging.IConsumerLifecycle";
     private const string _SubscriptionHook = "global::Headless.Messaging.IOnSubscriptionEstablished";
     private const string _ServiceProvider = "global::System.IServiceProvider";
@@ -86,6 +87,14 @@ internal static class MessagingSourceEmitter
                         : $"catalog.AddQueueConsumer<{consumer.TypeName}, {message}>({HandlerSource.Literal(consumer.Identity)}, dispatch: {registration.DispatcherName});"
                 );
             }
+
+            // Only a Queue class reaches emission with responders: a Bus responder fails the build.
+            foreach (var responder in consumer.Responders)
+            {
+                writer.AppendLine(
+                    $"catalog.AddQueueResponder<{consumer.TypeName}, {responder.RequestTypeName}, {responder.ResponseTypeName}>({HandlerSource.Literal(consumer.Identity)}, dispatch: {registration.DispatcherName});"
+                );
+            }
         }
 
         writer.CloseBracket();
@@ -115,8 +124,9 @@ internal static class MessagingSourceEmitter
 
     /// <summary>
     /// Emits the typed dispatcher of one consumer class: it builds the class through its factory from the delivery's
-    /// scope, runs the <c>IConsumerLifecycle</c> hooks around the delivery, calls <c>ConsumeAsync</c> through the interface
-    /// that matches the context's message type so explicit implementations work too, and releases an instance it created.
+    /// scope, runs the <c>IConsumerLifecycle</c> hooks around the delivery, calls <c>ConsumeAsync</c> or
+    /// <c>RespondAsync</c> through the interface that matches the context's message type so explicit implementations work
+    /// too, and releases an instance it created.
     /// </summary>
     private static void _WriteDispatcher(SourceCodeBuilder writer, ConsumerRegistrationModel registration)
     {
@@ -229,6 +239,19 @@ internal static class MessagingSourceEmitter
             writer.IncreaseIndentation();
             writer.AppendLine(
                 $"await (({_Consume}<{message}>)consumer).ConsumeAsync(typed, cancellationToken).ConfigureAwait(false);"
+            );
+            writer.AppendLine("return;");
+            writer.RemoveIndentations();
+        }
+
+        // The reply is recorded under the declared response type, which names the reply's contract, rather than the
+        // runtime type of the returned value. A null result is recorded too, so messaging can tell it from no reply.
+        foreach (var responder in consumer.Responders)
+        {
+            writer.AppendLine($"case {_ConsumeContext}<{responder.RequestTypeName}> typed:");
+            writer.IncreaseIndentation();
+            writer.AppendLine(
+                $"typed.RecordReply<{responder.ResponseTypeName}>(await (({_Respond}<{responder.RequestTypeName}, {responder.ResponseTypeName}>)consumer).RespondAsync(typed, cancellationToken).ConfigureAwait(false));"
             );
             writer.AppendLine("return;");
             writer.RemoveIndentations();
