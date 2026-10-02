@@ -1,33 +1,41 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Jobs.Exceptions;
 using Headless.Jobs.Models;
+using Headless.Reliability;
 using Microsoft.Extensions.Logging;
 using Polly;
 using Polly.Retry;
 
 namespace Headless.Jobs;
 
+/// <summary>
+/// Runs a job's attempts in process. The job's failure policy classifies each failure and paces retries the row stores
+/// no interval for; the row's durable <c>Retries</c> budget decides how many retries remain. No host setting caps or
+/// overrides either, so the policy a job declares is the policy it runs with.
+/// </summary>
 internal sealed class JobsRetryPipeline
 {
     private static readonly ResiliencePropertyKey<ExecutionState> _ExecutionKey = new("headless.jobs.retry");
-    private readonly JobsRetryOptions _options;
+    private readonly JobFunctionRegistry _registry;
     private readonly ILogger _logger;
     private readonly ResiliencePipeline _pipeline;
 
-    public JobsRetryPipeline(JobsRetryOptions options, TimeProvider timeProvider, ILogger logger)
+    public JobsRetryPipeline(JobFunctionRegistry registry, TimeProvider timeProvider, ILogger logger)
     {
-        _options = options;
+        _registry = registry;
         _logger = logger;
+
+        // Polly only sequences the attempts: the retry count is bounded by the row budget in ShouldHandle and every
+        // delay comes from DelayGenerator, so the attempt cap and base delay here are deliberately inert.
         _pipeline = new ResiliencePipelineBuilder { TimeProvider = timeProvider }
             .AddRetry(
                 new RetryStrategyOptions
                 {
                     MaxRetryAttempts = int.MaxValue,
-                    Delay = options.RetryStrategy.Delay,
-                    BackoffType = options.RetryStrategy.BackoffType,
-                    UseJitter = options.RetryStrategy.UseJitter,
-                    Randomizer = options.RetryStrategy.Randomizer,
-                    MaxDelay = options.RetryStrategy.MaxDelay,
+                    Delay = TimeSpan.Zero,
+                    BackoffType = DelayBackoffType.Constant,
+                    UseJitter = false,
                     ShouldHandle = _ShouldHandleAsync,
                     DelayGenerator = _DelayAsync,
                     OnRetry = _OnRetryAsync,
@@ -40,14 +48,13 @@ internal sealed class JobsRetryPipeline
         JobExecutionState job,
         Func<int, CancellationToken, ValueTask> attempt,
         Func<int, Exception, CancellationToken, ValueTask> onRetry,
-        Action<bool> onFailureClassified,
         CancellationToken cancellationToken
     )
     {
         var resilienceContext = ResilienceContextPool.Shared.Get(cancellationToken);
         resilienceContext.Properties.Set(
             _ExecutionKey,
-            new ExecutionState(job, job.RetryCount, attempt, onRetry, onFailureClassified)
+            new ExecutionState(job, job.RetryCount, _registry.GetFailurePolicy(job.FunctionName), attempt, onRetry)
         );
         try
         {
@@ -70,104 +77,76 @@ internal sealed class JobsRetryPipeline
         }
     }
 
-    private async ValueTask<bool> _ShouldHandleAsync(RetryPredicateArguments<object> args)
+    private ValueTask<bool> _ShouldHandleAsync(RetryPredicateArguments<object> args)
     {
+        // Cancellation belongs to the executor (durable cancel, shutdown, lease loss, or a foreign token), and a
+        // TerminateExecutionException is the handler choosing its own terminal status; neither is a retryable failure.
+        var exception = args.Outcome.Exception;
+        if (exception is null or OperationCanceledException or TerminateExecutionException)
+        {
+            return ValueTask.FromResult(false);
+        }
+
         var execution = args.Context.Properties.GetValue(_ExecutionKey, null!);
-        var shouldHandle = await _options
-            .RetryStrategy.ShouldHandle(
-                new RetryPredicateArguments<object>(args.Context, args.Outcome, args.AttemptNumber)
-            )
-            .ConfigureAwait(false);
-        execution.OnFailureClassified(shouldHandle);
-        if (!shouldHandle)
+        if (execution.Policy.ShouldFail(exception, out var ruleException))
         {
-            return false;
+            if (ruleException is not null)
+            {
+                _logger.LogJobFailRuleThrew(ruleException, execution.Job.JobId, execution.Job.FunctionName);
+            }
+
+            return ValueTask.FromResult(false);
         }
 
-        if (
-            execution.StartingRetryCount + args.AttemptNumber >= execution.Job.Retries
-            || execution.StartingRetryCount + args.AttemptNumber >= _options.RetryStrategy.MaxRetryAttempts
-        )
-        {
-            return false;
-        }
-
-        return true;
+        return ValueTask.FromResult(execution.StartingRetryCount + args.AttemptNumber < execution.Job.Retries);
     }
 
-    private async ValueTask<TimeSpan?> _DelayAsync(RetryDelayGeneratorArguments<object> args)
+    private static ValueTask<TimeSpan?> _DelayAsync(RetryDelayGeneratorArguments<object> args)
     {
         var execution = args.Context.Properties.GetValue(_ExecutionKey, null!);
+
+        // The durable count, not Polly's in-process attempt number, indexes the schedule, so a run resumed after a
+        // crash continues where the previous process stopped.
         var retryIndex = execution.StartingRetryCount + args.AttemptNumber;
         if (execution.Job.RetryIntervals is { Length: > 0 } intervals)
         {
-            // Clamp per-row intervals exactly like the DelayGenerator branch below. RetryIntervals is an
-            // unvalidated public int[] on the job entity, so a negative value (a plausible typo) would otherwise
-            // reach Polly as a negative TimeSpan and turn a scheduling mistake into a hard failure of the retry
-            // mechanism itself.
-            return _ClampCustomDelay(TimeSpan.FromSeconds(intervals[Math.Min(retryIndex, intervals.Length - 1)]));
+            // RetryIntervals is an unvalidated public int[] on the job entity, so a negative value (a plausible typo)
+            // would otherwise reach Polly as a negative TimeSpan and break the retry mechanism itself.
+            var seconds = intervals[Math.Min(retryIndex, intervals.Length - 1)];
+            return ValueTask.FromResult<TimeSpan?>(TimeSpan.FromSeconds(Math.Max(seconds, 0)));
         }
 
-        if (_options.RetryStrategy.DelayGenerator is not null)
-        {
-            var custom = await _options
-                .RetryStrategy.DelayGenerator(
-                    new RetryDelayGeneratorArguments<object>(args.Context, args.Outcome, args.AttemptNumber)
-                )
-                .ConfigureAwait(false);
-            if (custom is not null)
-            {
-                return _ClampCustomDelay(custom.Value);
-            }
-        }
-
-        // Returning null delegates built-in fixed/linear/exponential and jitter calculation to Polly.
-        return null;
+        return ValueTask.FromResult<TimeSpan?>(_PolicyDelay(execution.Policy, retryIndex));
     }
 
-    private TimeSpan _ClampCustomDelay(TimeSpan delay)
+    // A row that stores no intervals (a manager-added row, or a call that set only a retry count) is paced by the
+    // job's policy: its immediate retries run back-to-back and the rest wait the policy's jittered delayed delay. A
+    // budget larger than the policy keeps waiting the delay the doubling reached, which the policy caps.
+    private static TimeSpan _PolicyDelay(FailurePolicyDefinition policy, int retryIndex)
     {
-        var nonNegative = delay < TimeSpan.Zero ? TimeSpan.Zero : delay;
-        return _options.RetryStrategy.MaxDelay is { } maxDelay && nonNegative > maxDelay ? maxDelay : nonNegative;
+        var delayedAttempt = retryIndex - policy.ImmediateRetries + 1;
+        if (delayedAttempt < 1 || policy.DelayedRetries == 0)
+        {
+            return TimeSpan.Zero;
+        }
+
+        return policy.GetDelayedRetryDelay(delayedAttempt);
     }
 
-    private async ValueTask _OnRetryAsync(OnRetryArguments<object> args)
+    private static async ValueTask _OnRetryAsync(OnRetryArguments<object> args)
     {
         var execution = args.Context.Properties.GetValue(_ExecutionKey, null!);
-        var exception = args.Outcome.Exception!;
         var retryCount = execution.StartingRetryCount + args.AttemptNumber + 1;
-        await execution.OnRetry(retryCount, exception, args.Context.CancellationToken).ConfigureAwait(false);
-
-        if (_options.RetryStrategy.OnRetry is null)
-        {
-            return;
-        }
-
-        try
-        {
-            await _options
-                .RetryStrategy.OnRetry(
-                    new OnRetryArguments<object>(
-                        args.Context,
-                        args.Outcome,
-                        args.AttemptNumber,
-                        args.RetryDelay,
-                        args.Duration
-                    )
-                )
-                .ConfigureAwait(false);
-        }
-        catch (Exception observerException)
-        {
-            _logger.LogJobsRetryObserverFailed(observerException, execution.Job.JobId, execution.Job.FunctionName);
-        }
+        await execution
+            .OnRetry(retryCount, args.Outcome.Exception!, args.Context.CancellationToken)
+            .ConfigureAwait(false);
     }
 
     private sealed record ExecutionState(
         JobExecutionState Job,
         int StartingRetryCount,
+        FailurePolicyDefinition Policy,
         Func<int, CancellationToken, ValueTask> Attempt,
-        Func<int, Exception, CancellationToken, ValueTask> OnRetry,
-        Action<bool> OnFailureClassified
+        Func<int, Exception, CancellationToken, ValueTask> OnRetry
     );
 }

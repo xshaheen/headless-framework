@@ -335,7 +335,10 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
 
     internal JobsRetryOptions RetryOptions { get; } = new();
 
-    /// <summary>Configures direct Polly retry behavior and Jobs-owned exhaustion notification.</summary>
+    /// <summary>
+    /// Configures the notification raised when a job run fails terminally. Retries are declared per job through its
+    /// failure policy, not here.
+    /// </summary>
     /// <param name="configure">Action that mutates the retry options.</param>
     /// <returns>This builder for method chaining.</returns>
     public JobsOptionsBuilder<TTimeJob, TCronJob> ConfigureRetries(Action<JobsRetryOptions> configure)

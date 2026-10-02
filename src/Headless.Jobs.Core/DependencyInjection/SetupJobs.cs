@@ -156,7 +156,6 @@ public static class SetupJobs
         var retryOptions = optionInstance.RetryOptions;
         services.Configure<JobsRetryOptions, JobsRetryOptionsValidator>(configured =>
         {
-            configured.RetryStrategy = retryOptions.RetryStrategy;
             configured.OnExhausted = retryOptions.OnExhausted;
             configured.OnExhaustedTimeout = retryOptions.OnExhaustedTimeout;
         });

@@ -873,7 +873,6 @@ dotnet add package Headless.Jobs.Core
 using Headless.Jobs.Base;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Models;
-using Polly;
 
 // 1. Register Jobs, adding the generated module of every assembly that declares jobs
 builder.Services.AddHeadlessJobs(options =>
@@ -887,15 +886,7 @@ builder.Services.AddHeadlessJobs(options =>
         scheduler.FallbackIntervalChecker = TimeSpan.FromSeconds(30);
     });
     options.SetExceptionHandler<MyJobExceptionHandler>();
-    options.ConfigureRetries(retry =>
-    {
-        retry.RetryStrategy.ShouldHandle = args =>
-            ValueTask.FromResult(args.Outcome.Exception is HttpRequestException);
-        retry.RetryStrategy.Delay = TimeSpan.FromSeconds(30);
-        retry.RetryStrategy.BackoffType = DelayBackoffType.Exponential;
-        retry.RetryStrategy.UseJitter = true;
-        retry.RetryStrategy.MaxDelay = TimeSpan.FromMinutes(5);
-    });
+    options.ConfigureRetries(retry => retry.OnExhaustedTimeout = TimeSpan.FromSeconds(30));
 });
 
 // 2. Define a cron job (requires Jobs.SourceGenerator); services come from the constructor
@@ -1571,29 +1562,15 @@ await timeJobManager.AddAsync(
 - Status remains `InProgress` during retries; becomes `Failed` after exhaustion.
 - `JobContext.RetryCount` carries the current attempt number.
 - If `RetryIntervals` is shorter than `Retries`, the last interval is reused.
-- If `RetryIntervals` is null or empty, default is 30 seconds.
+- If `RetryIntervals` is null or empty, each retry waits the job's failure policy delay: none for its immediate retries, then its delayed-retry delay with jitter.
 
-Runtime execution uses Polly.Core directly. Configure the reusable pipeline through `JobsOptionsBuilder.ConfigureRetries`:
+The job's failure policy classifies each failure and the row's `Retries` decides how many retries remain; no host setting caps or overrides them. `JobsOptionsBuilder.ConfigureRetries` configures only the terminal-failure notification:
 
 ```csharp
-using Polly;
-using Polly.Retry;
-
 builder.Services.AddHeadlessJobs(options =>
 {
     options.ConfigureRetries(retry =>
     {
-        retry.RetryStrategy = new RetryStrategyOptions
-        {
-            MaxRetryAttempts = int.MaxValue, // optional global cap; row Retries remains durable
-            Delay = TimeSpan.FromSeconds(30),
-            BackoffType = DelayBackoffType.Exponential,
-            UseJitter = true,
-            MaxDelay = TimeSpan.FromMinutes(5),
-            ShouldHandle = args => ValueTask.FromResult(
-                args.Outcome.Exception is TimeoutException or HttpRequestException
-            ),
-        };
         retry.OnExhaustedTimeout = TimeSpan.FromSeconds(30);
         retry.OnExhausted = (context, ct) =>
         {
@@ -1605,9 +1582,9 @@ builder.Services.AddHeadlessJobs(options =>
 });
 ```
 
-`ShouldHandle` is always explicit; cancellation and `TerminateExecutionException` are excluded by default, and that default classification is exposed as `JobsRetryOptions.DefaultShouldHandle` for reuse when replacing `RetryStrategy`. Per-row `RetryIntervals` override Polly delay generation and retain fixed-schedule/final-interval reuse semantics. Otherwise Polly owns fixed, linear, exponential, jittered, capped, or custom delays. Jobs owns leases, durable counters, scheduling, and terminal state. The exhausted callback runs in a fresh DI scope only after an atomic owned transition to `Failed`; timeout or callback failure is logged and contained. Lease renewal remains active during attempts and delays; lease loss cancels the pipeline and prevents stale writes.
+Cancellation and `TerminateExecutionException` are never retried, and a failure the policy's fail rules match ends the run at once; a fail rule that throws counts as matched and is logged. Per-row `RetryIntervals` take precedence over the policy's delays and retain fixed-schedule/final-interval reuse semantics. Jobs owns leases, durable counters, scheduling, and terminal state. The exhausted callback runs once in a fresh DI scope after each atomic owned transition to `Failed`, whether the budget ran out, a fail rule matched, or crash recovery found the budget spent; a `TerminateExecutionException` does not invoke it. Timeout or callback failure is logged and contained. Lease renewal remains active during attempts and delays; lease loss cancels the pipeline and prevents stale writes.
 
-Never serialize `RetryStrategyOptions`, `ResiliencePipeline`, `ResilienceContext`, predicates, delay generators, or delegates.
+Never serialize fail-rule predicates or callback delegates.
 
 #### Global Exception Handler
 

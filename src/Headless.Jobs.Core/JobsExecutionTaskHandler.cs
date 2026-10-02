@@ -44,7 +44,9 @@ internal sealed class JobsExecutionTaskHandler
     private readonly ICurrentTenant? _currentTenant;
     private readonly bool _propagateTenant;
 
+#pragma warning disable IDE0290 // Fix makes the code worse: a primary constructor would capture eleven dependencies and spread the derived lease and retry state across field initializers.
     public JobsExecutionTaskHandler(
+#pragma warning restore IDE0290
         IServiceProvider serviceProvider,
         TimeProvider timeProvider,
         IJobsInstrumentation jobsInstrumentation,
@@ -71,7 +73,7 @@ internal sealed class JobsExecutionTaskHandler
         _leaseDuration = schedulerOptions.LeaseDuration;
         _cancellationObservationInterval = schedulerOptions.ResolveCancellationObservationInterval();
         _retryOptions = retryOptions ?? new JobsRetryOptions();
-        _retryPipeline = new JobsRetryPipeline(_retryOptions, timeProvider, logger);
+        _retryPipeline = new JobsRetryPipeline(functionRegistry, timeProvider, logger);
     }
 
     private static TimeSpan _Lateness(DateTime scheduledFor, DateTime startedAt)
@@ -473,7 +475,7 @@ internal sealed class JobsExecutionTaskHandler
             // policy) consumed one budget unit for the interrupted attempt, so a row can resume with a persisted
             // RetryCount past its budget. Terminalize it here WITHOUT invoking the handler — otherwise a handler
             // that reliably kills or wedges its host runs one more full attempt per lease cycle, forever.
-            var crashRecoveryBudget = Math.Min(context.Retries, _retryOptions.RetryStrategy.MaxRetryAttempts);
+            var crashRecoveryBudget = context.Retries;
             if (context.RetryCount > crashRecoveryBudget)
             {
                 if (!await beginCompletionAsync().ConfigureAwait(false))
@@ -533,7 +535,6 @@ internal sealed class JobsExecutionTaskHandler
             }
 
             Exception? lastException = null;
-            var lastFailureRetryable = false;
             var success = false;
 
             try
@@ -601,7 +602,6 @@ internal sealed class JobsExecutionTaskHandler
                                 await _ObserveJobExceptionAsync(exception, context, retryToken).ConfigureAwait(false);
                             }
                         },
-                        retryable => lastFailureRetryable = retryable,
                         cancellationTokenSource.Token
                     )
                     .ConfigureAwait(false);
@@ -818,22 +818,20 @@ internal sealed class JobsExecutionTaskHandler
                     // The terminal row no longer owns a renewable lease. Stop renewal before invoking
                     // user code so the renewal loop cannot mistake the expected terminal fence for loss.
                     await stopRenewalAsync().ConfigureAwait(false);
+
+                    // Every Failed transition this execution owns is reported once, whether the budget ran out, a fail
+                    // rule matched, or cancellation the executor does not own ended the run, so a consumer alerting on
+                    // OnExhausted never misses a terminal failure. #278: run it under the job's tenant scope.
+                    using (_EnterTenantScope(context))
+                    {
+                        await _InvokeOnExhaustedAsync(context, lastException, cancellationToken).ConfigureAwait(false);
+                    }
                 }
                 else
                 {
                     // Fenced terminal write — this Failed status was not persisted (the row was reclaimed).
                     // Flag lease loss so the child-processing guard leaves children for reclaim.
                     context.LeaseLost = true;
-                }
-
-                var retryBudget = Math.Min(context.Retries, _retryOptions.RetryStrategy.MaxRetryAttempts);
-                if (affected > 0 && lastFailureRetryable && context.RetryCount >= retryBudget)
-                {
-                    // #278: run the exhausted callback under the job's tenant scope.
-                    using (_EnterTenantScope(context))
-                    {
-                        await _InvokeOnExhaustedAsync(context, lastException, cancellationToken).ConfigureAwait(false);
-                    }
                 }
             }
         }
@@ -1390,9 +1388,10 @@ internal static partial class JobsExecutionTaskHandlerLog
     [LoggerMessage(
         EventId = 3108,
         Level = LogLevel.Warning,
-        Message = "Jobs Polly retry observer failed for job {JobId} ({Function}); retry and durable state continue."
+        Message = "A FailWhen rule of the failure policy for job {JobId} ({Function}) threw; the failure is treated "
+            + "as matched, so the job fails without its remaining retries. Fix the rule."
     )]
-    public static partial void LogJobsRetryObserverFailed(
+    public static partial void LogJobFailRuleThrew(
         this ILogger logger,
         Exception exception,
         Guid jobId,
