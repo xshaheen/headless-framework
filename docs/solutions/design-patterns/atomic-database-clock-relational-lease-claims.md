@@ -81,7 +81,7 @@ WHERE job.id = candidate.id
 RETURNING job.id, job.locked_until;
 ```
 
-SQL Server declares a command-local `@claimNow = SYSUTCDATETIME()` and reuses it in the CTE and
+SQL Server declares a command-local `@now = TODATETIMEOFFSET(SYSUTCDATETIME(), 0)` and reuses it in the CTE and
 `DATEADD` setter before `OUTPUT inserted`. The declaration and update are sent as one command and one
 round trip. EF paths put
 `DateTime.UtcNow` inside the `ExecuteUpdate` expression tree so the provider translates the comparison
@@ -122,8 +122,10 @@ await jobs
 The Jobs implementation names its database-clock predicates explicitly in the native claim strategies,
 `src/Headless.Jobs.EntityFramework.PostgreSql/PostgreSqlJobsClaimStrategy.cs` and
 `src/Headless.Jobs.EntityFramework.SqlServer/SqlServerJobsClaimStrategy.cs`. Native root and descendant
-claim updates use PostgreSQL `CURRENT_TIMESTAMP` and SQL Server `SYSUTCDATETIME()`. PostgreSQL
-Npgsql translates `DateTime.UtcNow` to `now()`, which is fixed at transaction start. Generic EF claims
+claim updates use PostgreSQL `clock_timestamp()`, captured once per statement in a `MATERIALIZED` CTE,
+and SQL Server `SYSUTCDATETIME()`, captured into a `@now` variable. Both come from the shared SQL
+dialects (`PostgreSqlDialect`, `SqlServerDialect`). Npgsql translates `DateTime.UtcNow` to `now()`,
+which is fixed at transaction start. Generic EF claims
 execute as individual update commands, while native multi-claim transactions use the explicit
 statement-time snapshot above. Provider translation must be proven by integration tests rather than
 inferred from LINQ behavior.
