@@ -191,7 +191,6 @@ internal sealed class ApnsTokenSource(TimeProvider timeProvider) : IDisposable
             && timeProvider.GetUtcNow() - current.MintedAt >= _MinimumRemintAge;
     }
 
-#pragma warning disable MA0045 // The writers flush into an in-memory buffer on dispose; nothing here blocks on I/O.
     private ApnsProviderToken _Mint(KeyEntry entry, long generation)
     {
         var now = timeProvider.GetUtcNow();
@@ -224,7 +223,6 @@ internal sealed class ApnsTokenSource(TimeProvider timeProvider) : IDisposable
 
         return new ApnsProviderToken($"{signingInput}.{Base64Url.EncodeToString(signature)}", generation, now);
     }
-#pragma warning restore MA0045
 
     private sealed class KeyEntry : IDisposable
     {

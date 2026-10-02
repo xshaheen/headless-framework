@@ -2,8 +2,6 @@
 
 namespace Tests;
 
-#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
-
 /// <summary>Runs the RunOnly claim-filter conformance suite against PostgreSql.</summary>
 [Collection<PostgreSqlJobsCoordinationFixture>]
 public sealed class PostgreSqlRunOnlyTests(PostgreSqlJobsCoordinationFixture fixture)

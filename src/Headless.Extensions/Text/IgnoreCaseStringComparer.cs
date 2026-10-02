@@ -106,6 +106,7 @@ public sealed class IgnoreCaseStringComparer : StringComparer
         {
             return 0;
         }
+#pragma warning disable RCS0008 // CSharpier removes the blank line this rule asks for before an unchecked block.
         unchecked
         {
             int index = 0,
@@ -119,6 +120,7 @@ public sealed class IgnoreCaseStringComparer : StringComparer
 
             return hash;
         }
+#pragma warning restore RCS0008
     }
 
     private static bool _GetNextSymbol(string value, ref int startIndex, out char symbol)

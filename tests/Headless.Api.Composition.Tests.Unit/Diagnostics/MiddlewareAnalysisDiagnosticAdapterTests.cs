@@ -20,8 +20,8 @@ public sealed class MiddlewareAnalysisDiagnosticAdapterTests
         context.Response.StatusCode = StatusCodes.Status202Accepted;
 
         // when
-        sut.OnMiddlewareStarting(context, "OrdersMiddleware", Guid.Empty, 123);
-        sut.OnMiddlewareFinished(context, "OrdersMiddleware", Guid.Empty, 456, 17);
+        sut.OnMiddlewareStarting(context, "OrdersMiddleware", 123);
+        sut.OnMiddlewareFinished(context, "OrdersMiddleware", 456, 17);
 
         // then
         logger.Entries.Should().HaveCount(2);
@@ -40,7 +40,7 @@ public sealed class MiddlewareAnalysisDiagnosticAdapterTests
         var exception = new InvalidOperationException("outer", new ArgumentException("inner"));
 
         // when
-        sut.OnMiddlewareException(exception, new DefaultHttpContext(), "FailureMiddleware", Guid.Empty, 9, 3);
+        sut.OnMiddlewareException(exception, "FailureMiddleware", 9, 3);
 
         // then
         var entry = logger.Entries.Should().ContainSingle().Which;
@@ -57,14 +57,7 @@ public sealed class MiddlewareAnalysisDiagnosticAdapterTests
         var sut = new MiddlewareAnalysisDiagnosticAdapter(logger);
 
         // when
-        sut.OnMiddlewareException(
-            new InvalidOperationException("ignored"),
-            new DefaultHttpContext(),
-            "DisabledMiddleware",
-            Guid.Empty,
-            1,
-            2
-        );
+        sut.OnMiddlewareException(new InvalidOperationException("ignored"), "DisabledMiddleware", 1, 2);
 
         // then
         logger.Entries.Should().BeEmpty();

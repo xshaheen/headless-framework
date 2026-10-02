@@ -5,9 +5,6 @@ using Headless.UnitOfWork;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
-#pragma warning disable xUnit1051 // The dedicated-thread race bodies pass CancellationToken.None deliberately: the race must not abort with the test token.
-#pragma warning disable MA0045 // Dedicated blocking threads in the race tests; async here would pool-hop and change the race.
-
 namespace Tests;
 
 public sealed class UnitOfWorkFactoryTests : TestBase

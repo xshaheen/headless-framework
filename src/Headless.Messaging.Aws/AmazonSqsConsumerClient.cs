@@ -409,9 +409,7 @@ internal sealed class AmazonSqsConsumerClient(
             {
                 lock (_connectionLock)
                 {
-#pragma warning disable CA1508 // Justification: other thread can initialize it
                     _snsClient ??= AwsClientFactory.CreateSnsClient(_amazonSqsOptions);
-#pragma warning restore CA1508
                 }
             }
 
@@ -419,9 +417,7 @@ internal sealed class AmazonSqsConsumerClient(
             {
                 lock (_connectionLock)
                 {
-#pragma warning disable CA1508 // Justification: other thread can initialize it
                     _sqsClient ??= AwsClientFactory.CreateSqsClient(_amazonSqsOptions);
-#pragma warning restore CA1508
                 }
 
                 if (lane == MessageLane.Bus && string.IsNullOrWhiteSpace(_queueUrl))

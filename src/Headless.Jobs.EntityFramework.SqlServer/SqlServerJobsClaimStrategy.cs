@@ -18,8 +18,6 @@ using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
-#pragma warning disable IDE0130 // Provider implementation intentionally lives in the shared Jobs infrastructure namespace.
-#pragma warning disable RCS1015 // SQL parameter names intentionally match lowercase placeholders in the command text.
 namespace Headless.Jobs;
 
 internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>(
@@ -35,12 +33,10 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
 {
-#pragma warning disable RCS1158 // Static member in generic type should use a type parameter
     private static readonly SqlColumnType[] _DirectCandidateTypes = [SqlColumnType.Guid, SqlColumnType.Timestamp];
 
     // Function names are matched as the column stores them, in the database's default collation.
     private static readonly SqlColumnType _FunctionType = SqlColumnType.Text(0);
-#pragma warning restore RCS1158
     private readonly TimeSpan _leaseDuration = optionsBuilder.LeaseDuration;
 
     // The maximum number of nodes on a root-to-leaf path the tree claim leases (root = depth 1). A timed
@@ -605,6 +601,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         {
             return null;
         }
+
         return inserted is Guid insertedId ? insertedId : null;
     }
 

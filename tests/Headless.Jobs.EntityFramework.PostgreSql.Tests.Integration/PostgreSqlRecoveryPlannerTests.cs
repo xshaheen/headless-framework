@@ -2,8 +2,6 @@
 
 namespace Tests;
 
-#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
-
 /// <summary>Runs the shared recovery-decision scenarios against PostgreSQL.</summary>
 [Collection<PostgreSqlJobsCoordinationFixture>]
 public sealed class PostgreSqlRecoveryPlannerTests(PostgreSqlJobsCoordinationFixture fixture)

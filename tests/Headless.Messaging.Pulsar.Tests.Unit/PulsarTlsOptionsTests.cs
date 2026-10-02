@@ -4,7 +4,6 @@ using System.Security.Authentication;
 using Headless.Messaging.Pulsar;
 using Headless.Testing.Tests;
 
-#pragma warning disable CA5398 // Avoid hardcoding SslProtocols 'Tls12' to ensure your application remains secure in the future.
 namespace Tests;
 
 public sealed class PulsarTlsOptionsTests : TestBase

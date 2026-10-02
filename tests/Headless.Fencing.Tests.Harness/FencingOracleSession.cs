@@ -126,9 +126,7 @@ public sealed class FencingOracleSession : IAsyncDisposable
         {
             throw;
         }
-#pragma warning disable CA1031 // A provider error is an observable outcome to compare, not a harness failure.
         catch (Exception e)
-#pragma warning restore CA1031
         {
             outcome = "threw:" + _Describe(e);
         }
@@ -454,9 +452,7 @@ public sealed class FencingOracleSession : IAsyncDisposable
         {
             throw;
         }
-#pragma warning disable CA1031 // See the method comment: the failure is the observation.
         catch (Exception e)
-#pragma warning restore CA1031
         {
             return (null, _Describe(e));
         }

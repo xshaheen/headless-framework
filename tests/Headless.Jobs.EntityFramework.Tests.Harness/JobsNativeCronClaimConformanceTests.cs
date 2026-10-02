@@ -14,8 +14,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
 
-#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
-
 public abstract class JobsNativeCronClaimConformanceTests<TFixture>(TFixture fixture) : TestBase
     where TFixture : class, IJobsCoordinationFixture
 {

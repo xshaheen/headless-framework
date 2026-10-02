@@ -50,9 +50,7 @@ internal sealed partial class IdempotencyRetentionService(
             {
                 return;
             }
-#pragma warning disable CA1031 // A hosted-service loop boundary: a failed purge is logged and retried next interval instead of stopping the host.
             catch (Exception e)
-#pragma warning restore CA1031
             {
                 LogPurgeFailed(logger, e);
             }

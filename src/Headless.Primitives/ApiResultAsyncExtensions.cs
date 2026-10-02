@@ -8,7 +8,6 @@ namespace Headless.Primitives;
 /// delegates take a <see cref="CancellationToken"/> flow the caller's token into the continuation.
 /// </summary>
 [PublicAPI]
-#pragma warning disable VSTHRD003 // These extension methods intentionally await externally-provided tasks with ConfigureAwait(false).
 public static class ApiResultAsyncExtensions
 {
     extension<T>(ApiResult<T> result)

@@ -187,17 +187,13 @@ internal sealed class TenantCatalogService(
                 )
                 .ConfigureAwait(false);
         }
-#pragma warning disable CA1031 // The store already answered, so only the cache write (or its option validation) can have faulted: this path keeps the store-derived outcome and issues no second store read. OperationCanceledException is excluded so caller cancellation still propagates.
         catch (Exception fault) when (fault is not OperationCanceledException && storeAnswered)
-#pragma warning restore CA1031
         {
             logger.LogTenantCatalogCacheWriteFaulted(fault, nameof(TenantIdentifierCacheItem));
 
             return freshFromStore;
         }
-#pragma warning disable CA1031 // The factory never ran, so the fault is on the cache read side: this path degrades it to a miss and falls through to the store. OperationCanceledException is excluded so caller cancellation still propagates.
         catch (Exception fault) when (fault is not OperationCanceledException && !factoryStarted)
-#pragma warning restore CA1031
         {
             logger.LogTenantCatalogCacheReadFaultedDegradingToMiss(fault, nameof(TenantIdentifierCacheItem));
 
@@ -402,9 +398,7 @@ internal sealed class TenantCatalogService(
         {
             return await cache.GetAsync(cacheKey, cancellationToken).ConfigureAwait(false);
         }
-#pragma warning disable CA1031 // Cache read faults degrade to a miss by design; the store is the source of truth and is consulted next. OperationCanceledException is excluded so caller cancellation still propagates.
         catch (Exception fault) when (fault is not OperationCanceledException)
-#pragma warning restore CA1031
         {
             logger.LogTenantCatalogCacheReadFaultedDegradingToMiss(fault, typeof(T).Name);
 
@@ -428,9 +422,7 @@ internal sealed class TenantCatalogService(
         {
             await cache.UpsertAsync(cacheKey, value, expiration, cancellationToken).ConfigureAwait(false);
         }
-#pragma warning disable CA1031 // Cache write faults must never surface to the caller: the store-derived outcome already computed is authoritative regardless of whether the cache write below succeeds. OperationCanceledException is excluded so caller cancellation still propagates.
         catch (Exception fault) when (fault is not OperationCanceledException)
-#pragma warning restore CA1031
         {
             logger.LogTenantCatalogCacheWriteFaulted(fault, typeof(T).Name);
         }

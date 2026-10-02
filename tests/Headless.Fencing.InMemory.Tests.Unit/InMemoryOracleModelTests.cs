@@ -9,7 +9,6 @@ namespace Tests;
 /// stores observe every generated history identically. A failure here means the oracle, not a provider, is
 /// nondeterministic, and no provider verdict it gives can be trusted.
 /// </summary>
-#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
 public sealed class InMemoryOracleModelTests : TestBase
 {
     [Fact]

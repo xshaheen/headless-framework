@@ -8,8 +8,6 @@ using Npgsql;
 
 namespace Tests;
 
-#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
-
 /// <summary>
 /// The owned and observed contracts of the Npgsql provider against a real PostgreSQL: an owned unit begins and
 /// commits its own transaction; an observed unit is completed by the caller after its commit, and a dispose that

@@ -24,10 +24,11 @@ for format in sha1 sha256; do
   ln -s "$repo_root/.githooks" .githooks
   make -s -f "$repo_root/Makefile" hooks
   test "$(git config --worktree --get core.hooksPath)" = .githooks
-  test "$(git config --local --get core.hooksPath)" = /dev/null
-  echo "PASS: $format registration uses worktree config"
+  # The shared setting is the fallback for worktrees registered without `make hooks`.
+  test "$(git config --local --get core.hooksPath)" = .githooks
+  echo "PASS: $format registration uses worktree config and the shared fallback"
 
-  test "$(git -C "$sibling" config --get core.hooksPath)" = /dev/null
+  test "$(git -C "$sibling" config --get core.hooksPath)" = .githooks
   make -s -C "$sibling" -f "$repo_root/Makefile" hooks
   test "$(git -C "$sibling" config --worktree --get core.hooksPath)" = .githooks
   git -C "$sibling" config --worktree core.hooksPath .sibling-hooks

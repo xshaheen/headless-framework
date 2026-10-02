@@ -446,11 +446,9 @@ internal sealed class FileSystemBlobStorage : IBlobStorage
 
             var fileStream = new FileStream(fullPath, streamOptions);
 
-#pragma warning disable CA2000 // Ownership transfers to the returned BlobDownloadResult ([MustDisposeResource]).
             // FileName is the full container-relative key (location.Path), matching AWS/Azure/Redis/SSH — not just the
             // last path segment.
             return new BlobDownloadResult(fileStream, location.Path, BlobStorageHelpers.ToUserMetadata(metadata));
-#pragma warning restore CA2000
         }
         catch (Exception e) when (e is FileNotFoundException or DirectoryNotFoundException)
         {

@@ -6,7 +6,6 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Tests.Fixture;
 
-#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
 namespace Tests;
 
 public sealed class AuditLogIntegrationTests : TestBase
@@ -135,9 +134,7 @@ public sealed class AuditLogIntegrationTests : TestBase
         db.GeneratedOrders.Add(order);
 
         // when
-#pragma warning disable VSTHRD103 // The synchronous overload is the path under test.
         db.SaveChanges(acceptAllChangesOnSuccess: false);
-#pragma warning restore VSTHRD103
 
         // then
         order.Id.Should().BePositive();

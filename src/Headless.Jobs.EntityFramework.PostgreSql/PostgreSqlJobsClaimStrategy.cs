@@ -18,8 +18,6 @@ using Microsoft.Extensions.Logging;
 using Npgsql;
 using NpgsqlTypes;
 
-#pragma warning disable IDE0130 // Provider implementation intentionally lives in the shared Jobs infrastructure namespace.
-#pragma warning disable RCS1015 // SQL parameter names intentionally match lowercase placeholders in the command text.
 namespace Headless.Jobs;
 
 internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>(
@@ -35,12 +33,10 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
     where TCronJob : CronJobEntity, new()
 {
-#pragma warning disable RCS1158 // Static member in generic type should use a type parameter
     private static readonly SqlColumnType[] _DirectCandidateTypes = [SqlColumnType.Guid, SqlColumnType.Timestamp];
 
     // Function names are matched as the column stores them, in the database's default collation.
     private static readonly SqlColumnType _FunctionType = SqlColumnType.Text(0);
-#pragma warning restore RCS1158
     private readonly TimeSpan _leaseDuration = optionsBuilder.LeaseDuration;
 
     // The maximum number of nodes on a root-to-leaf path the tree claim leases (root = depth 1). A timed

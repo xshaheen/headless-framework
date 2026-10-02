@@ -3,7 +3,6 @@
 using Azure;
 using Azure.Storage.Blobs.Specialized;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Tus;
 
 public sealed partial class TusAzureStore

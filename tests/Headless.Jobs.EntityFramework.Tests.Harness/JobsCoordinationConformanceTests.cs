@@ -16,8 +16,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
 
-#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
-
 /// <summary>
 /// Cross-provider Jobs+Coordination conformance scenarios that must hold identically on every backend:
 /// <list type="bullet">

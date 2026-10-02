@@ -152,9 +152,7 @@ internal static class CompositeAcquireCoordinator
                     formationLossSource ??= new CancellationTokenSource();
                     formationLossRegistrations.Add(
                         child.LostToken.Register(
-#pragma warning disable MA0045 // CancellationToken.Register requires a synchronous callback.
                             static state => ((CancellationTokenSource)state!).Cancel(),
-#pragma warning restore MA0045
                             formationLossSource
                         )
                     );
@@ -543,7 +541,6 @@ internal static class CompositeAcquireCoordinator
         (errors ??= []).Add(exception);
     }
 
-#pragma warning disable VSTHRD003 // These helpers explicitly cancel and drain operation tasks before ownership ends.
     /// <summary>
     /// Cancels and drains the pending child acquire, capturing a handle that wins the cancellation race so rollback
     /// can still release it — an acquire that completes after we stop waiting would otherwise leave the lock held
@@ -615,7 +612,6 @@ internal static class CompositeAcquireCoordinator
         }
         catch (OperationCanceledException) { }
     }
-#pragma warning restore VSTHRD003
 
     private static async Task<CompositeAcquireResult> _RollbackForTimeoutAsync(
         List<IDistributedLease> acquired,

@@ -5,7 +5,6 @@ using Headless.Abstractions;
 using Headless.Checks;
 using Microsoft.Extensions.Logging;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
 
 /// <summary>

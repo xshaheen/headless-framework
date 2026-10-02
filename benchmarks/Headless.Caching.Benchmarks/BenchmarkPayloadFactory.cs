@@ -13,10 +13,8 @@ internal static class BenchmarkPayloadFactory
 
         var bytes = new byte[sizeBytes];
 
-#pragma warning disable CA5394 // Benchmark payload generation requires deterministic seeded data.
         var random = new Random(seed);
         random.NextBytes(bytes);
-#pragma warning restore CA5394
 
         return new BenchmarkPayload(
             seed,

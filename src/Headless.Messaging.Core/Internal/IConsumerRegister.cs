@@ -320,9 +320,7 @@ internal sealed class ConsumerRegister(
         {
             try
             {
-#pragma warning disable VSTHRD003 // Quiesce starts this generation-owned CancelAsync task before drain begins.
                 await quiesceTask.ConfigureAwait(false);
-#pragma warning restore VSTHRD003
             }
             catch (ObjectDisposedException)
             {
@@ -479,12 +477,12 @@ internal sealed class ConsumerRegister(
                     return false;
                 }
             }
-#pragma warning disable ERP022, RCS1075 // Listener cancellation/failure must not prevent client cleanup.
+#pragma warning disable ERP022 // Listener cancellation/failure must not prevent client cleanup.
             catch (Exception)
             {
                 // ignored
             }
-#pragma warning restore ERP022, RCS1075
+#pragma warning restore ERP022
         }
 
         // Dispose all handles; only remove circuit state on final teardown,
@@ -545,7 +543,6 @@ internal sealed class ConsumerRegister(
         return remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero;
     }
 
-#pragma warning disable VSTHRD003 // The caller-created task is explicitly deadline-bounded or fault-observed below.
     private async Task<bool> _WaitWithinShutdownBudgetAsync(Task task, long started, TimeSpan timeout)
     {
         if (task.IsCompleted)
@@ -572,7 +569,6 @@ internal sealed class ConsumerRegister(
             return false;
         }
     }
-#pragma warning restore VSTHRD003
 
     /// <summary>
     /// Starts a client generation for every subscription and returns once each client receives, with the establishment
@@ -830,11 +826,9 @@ internal sealed class ConsumerRegister(
         CancellationToken cancellationToken
     )
     {
-#pragma warning disable VSTHRD003 // False positive: the lambda starts the task it returns; the previous link is only passed along.
         return _establishments
             .GetOrAdd(handleName, static _ => new EstablishmentChain())
             .Append((previous, generation) => _NotifyAfterAsync(previous, descriptors, generation, cancellationToken));
-#pragma warning restore VSTHRD003
     }
 
     private async Task _NotifyAfterAsync(
@@ -844,9 +838,7 @@ internal sealed class ConsumerRegister(
         CancellationToken cancellationToken
     )
     {
-#pragma warning disable VSTHRD003 // The chain's previous link is created by this register and never faults.
         await previous.ConfigureAwait(false);
-#pragma warning restore VSTHRD003
 
         try
         {
@@ -1468,9 +1460,7 @@ internal sealed class ConsumerRegister(
                         }
                     }
 
-#pragma warning disable CA1849, VSTHRD103
                     var content = _serializer.Serialize(message);
-#pragma warning restore VSTHRD103, CA1849
 
                     var stored = await _storage
                         .StoreReceivedExceptionMessageAsync(
@@ -1780,7 +1770,6 @@ internal sealed class ConsumerRegister(
             await client.RejectAsync(sender, CancellationToken.None).ConfigureAwait(false);
             traceHandle.Activity?.Dispose();
         }
-#pragma warning disable ERP022 // False positive: the fault is logged and counted; every-instance delivery commits rather than requeues by design.
         catch (Exception e)
         {
             // A fault outside the consumer is the core's or the transport's, so a redelivery would fault the same way:
@@ -1805,7 +1794,6 @@ internal sealed class ConsumerRegister(
                 await _CommitFaultedEveryInstanceMessageAsync(client, transportMessage, sender).ConfigureAwait(false);
             }
         }
-#pragma warning restore ERP022
     }
 
     private async Task _CommitFaultedEveryInstanceMessageAsync(
@@ -1818,12 +1806,10 @@ internal sealed class ConsumerRegister(
         {
             await client.CommitAsync(sender, CancellationToken.None).ConfigureAwait(false);
         }
-#pragma warning disable ERP022 // False positive: logged; a settlement that cannot be sent leaves the message to the broker's own redelivery.
         catch (Exception ex)
         {
             _logger.LogProcessReceivedMessageFailed(ex, transportMessage);
         }
-#pragma warning restore ERP022
     }
 
     /// <summary>
@@ -2405,9 +2391,7 @@ internal sealed class ConsumerRegister(
             {
                 var previous = _tail;
                 var generation = ++_generation;
-#pragma warning disable VSTHRD003 // False positive: the lambda starts the task it returns; the previous link is only passed along.
                 var link = Task.Run(() => notify(previous, generation), CancellationToken.None);
-#pragma warning restore VSTHRD003
                 _tail = link;
                 return link;
             }
@@ -2424,9 +2408,7 @@ internal sealed class ConsumerRegister(
         // SemaphoreSlim.Dispose never completes queued waiters and breaks the holder's release.
         // This handle-generation gate is intentionally left undisposed; disposal is signalled by
         // _disposing and checked before waiting and after acquiring the gate.
-#pragma warning disable CA2213 // Never dispose: queued waiters must observe disposal and release.
         public SemaphoreSlim ApplyGate { get; } = new(1, 1);
-#pragma warning restore CA2213
 
 #pragma warning disable IDE0032 // Uses Volatile read/write for cross-thread visibility between ApplyGate and admission logging.
         private long _lastAppliedEpoch;

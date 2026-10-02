@@ -217,9 +217,7 @@ internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
 
     public async ValueTask<IUnitOfWork> BeginOwnedUnitAsync(CancellationToken cancellationToken = default)
     {
-#pragma warning disable CA2000 // The owned unit opens this connection and closes it when the unit ends; disposing it here would end the unit's transaction.
         var connection = _storage.CreateConnection();
-#pragma warning restore CA2000
 
         try
         {

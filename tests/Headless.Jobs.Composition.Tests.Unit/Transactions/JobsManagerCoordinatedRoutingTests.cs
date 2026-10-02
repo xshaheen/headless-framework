@@ -1463,9 +1463,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
         }
         else
         {
-#pragma warning disable MA0045 // _CreateSut is the synchronous factory the tests arrange through.
             unitOfWorkServices.Dispose();
-#pragma warning restore MA0045
         }
 
         var logger = new CapturingLogger<JobsManager<TimeJobEntity, CronJobEntity>>();
@@ -1507,11 +1505,7 @@ public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
         };
     }
 
-    // Every fake resource factory completes synchronously (no real I/O), so the manager's ValueTask<IUnitOfWork>
-    // is already complete by the time this returns — this is not a blocking wait on async work.
-#pragma warning disable MA0045
     private static IUnitOfWork _AwaitSync(ValueTask<IUnitOfWork> pending) => pending.GetAwaiter().GetResult();
-#pragma warning restore MA0045
 
     private static Task _StartWorkerAsync(Sut sut)
     {

@@ -8,7 +8,6 @@ using Headless.Jobs.JobsThreadPool;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Jobs.BackgroundServices;
 
 internal sealed class JobsFallbackBackgroundService(
@@ -144,7 +143,6 @@ internal sealed class JobsFallbackBackgroundService(
             {
                 break;
             }
-#pragma warning disable ERP022 // Background service must continue running even if individual operations fail.
             catch (Exception exception)
             {
                 // Swallow unexpected exceptions so they don't bubble up
@@ -152,7 +150,6 @@ internal sealed class JobsFallbackBackgroundService(
                 logger.LogJobsFallbackTickFailed(exception, _fallbackJobPeriod);
                 await timeProvider.Delay(_fallbackJobPeriod, loopToken).ConfigureAwait(false);
             }
-#pragma warning restore ERP022
         }
 
         _LogMembershipLossIfLost(stoppingToken);

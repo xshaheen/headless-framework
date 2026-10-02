@@ -38,9 +38,7 @@ builder.AddHeadless(encryption =>
 });
 
 // Redis connection (required by Headless.DistributedLocks.Redis)
-#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
 builder.Services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect("localhost:6379"));
-#pragma warning restore MA0045
 
 // Messages
 builder.Services.AddHeadlessMessaging(setup =>

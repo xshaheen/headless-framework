@@ -12,8 +12,6 @@ using Polly.Retry;
 
 namespace Tests;
 
-#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
-
 /// <summary>
 /// The per-attempt-connection runner behind <c>RunAsync(NpgsqlDataSource, …)</c> and
 /// <c>RunAsync(Func&lt;CancellationToken, ValueTask&lt;SqlConnection&gt;&gt;, …)</c>: which replay policy applies, and

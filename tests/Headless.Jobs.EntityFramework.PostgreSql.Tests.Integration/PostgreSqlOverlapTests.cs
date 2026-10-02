@@ -2,8 +2,6 @@
 
 namespace Tests;
 
-#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
-
 /// <summary>Runs the cron overlap-policy conformance suite against PostgreSQL.</summary>
 [Collection<PostgreSqlJobsCoordinationFixture>]
 public sealed class PostgreSqlOverlapTests(PostgreSqlJobsCoordinationFixture fixture)

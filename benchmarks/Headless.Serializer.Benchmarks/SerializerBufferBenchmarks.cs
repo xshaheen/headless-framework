@@ -3,9 +3,7 @@
 using BenchmarkDotNet.Attributes;
 
 // The baseline methods call reflection-based System.Text.Json overloads directly to reproduce the pre-redesign
-// Stream path. Those overloads are annotated RequiresUnreferencedCode/RequiresDynamicCode; this is a benchmark
-// exe (never trimmed/AOT-published), so the analyzer warnings are intentionally suppressed.
-#pragma warning disable IL2026, IL3050
+// Stream path.
 
 namespace Headless.Serializer.Benchmarks;
 

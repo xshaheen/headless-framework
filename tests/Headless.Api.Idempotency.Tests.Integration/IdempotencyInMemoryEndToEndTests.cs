@@ -8,10 +8,7 @@ using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 
-// CA2025: `_PostAsync` builds an `HttpRequestMessage` under `using var` and awaits `SendAsync` inline, so the request
-// disposes only after the SendAsync task completes. The in-flight test stores the returned Task to interleave with
-// another request, which the analyzer cannot see is safe.
-#pragma warning disable CA2025
+#pragma warning disable CA2025 // False positive: _PostAsync awaits SendAsync before its request disposes; tests only hold the outer task.
 
 namespace Tests;
 

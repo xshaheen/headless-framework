@@ -7,8 +7,6 @@ using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 
-#pragma warning disable CA2025 // False positive: _PostAsync awaits SendAsync before the request is disposed.
-
 namespace Tests;
 
 /// <summary>

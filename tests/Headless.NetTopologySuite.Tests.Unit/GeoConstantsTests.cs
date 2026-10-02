@@ -104,7 +104,11 @@ public sealed class GeoConstantsTests
     }
 
     [Fact]
-    [SuppressMessage("Reliability", "CA1869:Cache and reuse 'JsonSerializerOptions' instances")]
+    [SuppressMessage(
+        "Reliability",
+        "CA1869:Cache and reuse 'JsonSerializerOptions' instances",
+        Justification = "The options exist only to carry the converter under test, once per test."
+    )]
     public void should_not_write_bbox_when_create_geo_json_converter()
     {
         // given

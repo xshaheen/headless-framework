@@ -970,7 +970,7 @@ public sealed class ConsumerRegisterTests : TestBase
     /// <c>IDataStorage</c> member by hand.
     /// </summary>
     // DispatchProxy requires the proxy type to be non-sealed (it subclasses it at runtime).
-#pragma warning disable CA1852, MA0053 // Cannot seal: DispatchProxy subclasses this type when the proxy is created.
+#pragma warning disable CA1852 // Cannot seal: DispatchProxy subclasses this type when the proxy is created.
     private class RecordingDataStorage : DispatchProxy
     {
         public Headless.Messaging.Persistence.IDataStorage Inner { get; set; } = null!;
@@ -1064,7 +1064,7 @@ public sealed class ConsumerRegisterTests : TestBase
 
             return task;
         }
-#pragma warning restore CA1852, MA0053
+#pragma warning restore CA1852
     }
 
     /// <summary>

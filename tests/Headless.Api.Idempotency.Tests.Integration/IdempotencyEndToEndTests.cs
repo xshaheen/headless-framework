@@ -6,10 +6,7 @@ using Headless.Constants;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Builder;
 
-// CA2025: `_Post` builds an `HttpRequestMessage` under `using var` and awaits `SendAsync` inline,
-// so the request disposes only after the SendAsync task completes. Concurrency tests store the
-// returned Task to interleave with another request, which the analyzer cannot see is safe.
-#pragma warning disable CA2025
+#pragma warning disable CA2025 // False positive: _Post awaits SendAsync before its request disposes; tests only hold the outer task.
 
 namespace Tests;
 

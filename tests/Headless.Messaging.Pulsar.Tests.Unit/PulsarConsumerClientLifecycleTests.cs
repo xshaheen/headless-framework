@@ -52,12 +52,10 @@ public sealed class PulsarConsumerClientLifecycleTests : TestBase
 
     private static T _GetField<T>(object instance, string fieldName)
     {
-#pragma warning disable REFL017 // The test intentionally inspects private lifecycle state to force the lock interleaving.
         return (T)
             instance
                 .GetType()
                 .GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.DeclaredOnly)!
                 .GetValue(instance)!;
-#pragma warning restore REFL017
     }
 }

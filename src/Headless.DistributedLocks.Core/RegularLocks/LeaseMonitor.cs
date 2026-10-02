@@ -4,7 +4,6 @@ using Headless.Checks;
 using Microsoft.Extensions.Logging;
 using Nito.AsyncEx;
 
-#pragma warning disable IDE0130
 // ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
 
@@ -117,9 +116,7 @@ internal sealed class LeaseMonitor : IAsyncDisposable
                 // LostToken callback threw — Cancel() wraps the failures).
                 try
                 {
-#pragma warning disable MA0045 // Cancel() runs in a synchronous ContinueWith delegate and relies on its synchronous AggregateException; it cannot be async.
                     faultState.HandleLostSource.Cancel();
-#pragma warning restore MA0045
                 }
                 catch (ObjectDisposedException)
                 {
@@ -134,24 +131,24 @@ internal sealed class LeaseMonitor : IAsyncDisposable
                     {
                         faultState.Logger.LogLeaseMonitorFaulted(aggregate, faultState.Resource, faultState.LeaseId);
                     }
-#pragma warning disable ERP022, CA1031 // Defensive: a faulting logger must not propagate from this continuation.
+#pragma warning disable ERP022 // Defensive: a faulting logger must not propagate from this continuation.
                     catch
                     {
                         // Intentionally empty.
                     }
-#pragma warning restore ERP022, CA1031
+#pragma warning restore ERP022
                 }
 
                 try
                 {
                     faultState.Logger.LogLeaseMonitorFaulted(task.Exception!, faultState.Resource, faultState.LeaseId);
                 }
-#pragma warning disable ERP022, CA1031 // Defensive: a faulting logger must not propagate from this continuation.
+#pragma warning disable ERP022 // Defensive: a faulting logger must not propagate from this continuation.
                 catch
                 {
                     // Intentionally empty.
                 }
-#pragma warning restore ERP022, CA1031
+#pragma warning restore ERP022
             },
             continuationState,
             CancellationToken.None,
@@ -212,7 +209,6 @@ internal sealed class LeaseMonitor : IAsyncDisposable
         {
             await _disposalSource.CancelAsync().ConfigureAwait(false);
             _nudgeSignal.Set();
-#pragma warning disable VSTHRD003 // DisposeAsync is the owner that drains the background monitor task.
             try
             {
                 await MonitoringTask.ConfigureAwait(false);
@@ -231,15 +227,13 @@ internal sealed class LeaseMonitor : IAsyncDisposable
                 {
                     _logger.LogLeaseMonitorFaulted(exception, _leaseHandle.Resource, _leaseHandle.LeaseId);
                 }
-#pragma warning disable ERP022, CA1031 // Defensive: best-effort log; ignore further logger faults during teardown.
+#pragma warning disable ERP022 // Defensive: best-effort log; ignore further logger faults during teardown.
                 catch
                 {
                     // Intentionally empty.
                 }
-#pragma warning restore ERP022, CA1031
+#pragma warning restore ERP022
             }
-
-#pragma warning restore VSTHRD003
 
             handleLostCancellationTask = Volatile.Read(ref _handleLostCancellationTask);
 
@@ -341,9 +335,7 @@ internal sealed class LeaseMonitor : IAsyncDisposable
     {
         try
         {
-#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
             _handleLostSource.Cancel();
-#pragma warning restore MA0045 // Do not use blocking calls, even when the calling method must become async
         }
         catch (ObjectDisposedException)
         {
@@ -355,12 +347,12 @@ internal sealed class LeaseMonitor : IAsyncDisposable
             {
                 _logger.LogLeaseMonitorFaulted(aggregate, _leaseHandle.Resource, _leaseHandle.LeaseId);
             }
-#pragma warning disable ERP022, CA1031 // Defensive: best-effort log from detached cancellation task.
+#pragma warning disable ERP022 // Defensive: best-effort log from detached cancellation task.
             catch
             {
                 // Intentionally empty.
             }
-#pragma warning restore ERP022, CA1031
+#pragma warning restore ERP022
         }
         finally
         {

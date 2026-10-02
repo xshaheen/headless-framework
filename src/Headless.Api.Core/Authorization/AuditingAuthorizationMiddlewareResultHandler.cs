@@ -63,12 +63,10 @@ internal sealed partial class AuditingAuthorizationMiddlewareResultHandler<TCont
             // connection timeouts bound how long this can run.
             await writer.WriteAsync(request, CancellationToken.None).ConfigureAwait(false);
         }
-#pragma warning disable CA1031, ERP022 // Boundary: a failed audit write must not turn a 401/403 into a 500, so it is logged and the denial proceeds.
         catch (Exception ex)
         {
             LogAuditWriteFailed(logger, ex, request.Action, (endpoint as RouteEndpoint)?.RoutePattern.RawText);
         }
-#pragma warning restore CA1031, ERP022
     }
 
     private static List<string> _GetPolicyNames(Endpoint? endpoint)

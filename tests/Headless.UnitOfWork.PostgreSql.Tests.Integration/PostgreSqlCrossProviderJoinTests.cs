@@ -9,8 +9,6 @@ using Npgsql;
 
 namespace Tests;
 
-#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
-
 /// <summary>
 /// The mixed-stack join: EF Core owns the unit of work, and a raw-ADO helper handed the context's connection —
 /// a Dapper repository, a bulk insert — wraps its own work in the Npgsql <c>RunAsync(connection, …)</c> and

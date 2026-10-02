@@ -6,7 +6,6 @@ using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Monitoring;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Messaging;
 
 /// <summary>

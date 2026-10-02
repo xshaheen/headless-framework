@@ -10,8 +10,7 @@ using Headless.Sql;
 
 namespace Headless.Messaging.Persistence;
 
-#pragma warning disable CA2100 // SQL text is rendered from dialect output, table names, and fixed fragments; every value is a parameter.
-#pragma warning disable CA1849, VSTHRD103, AsyncFixer02, MA0042 // Once a row is buffered, these small typed reads cannot add blocking I/O.
+#pragma warning disable CA1849 // Once a row is buffered, these small typed reads cannot add blocking I/O.
 
 internal sealed partial class RelationalDataStorage
 {
@@ -343,4 +342,4 @@ internal sealed partial class RelationalDataStorage
     }
 }
 
-#pragma warning restore CA1849, VSTHRD103, AsyncFixer02, MA0042, CA2100
+#pragma warning restore CA1849

@@ -36,6 +36,7 @@ internal sealed class RelationalReadAuditLog<TContext>(RelationalAuditLogTable t
     private readonly ISqlDialect _dialect = table.Dialect;
     private readonly string _createdAt = table.Column("CreatedAt");
     private readonly string _id = table.Column("Id");
+
     private readonly string _select =
         $"SELECT {string.Join(", ", _Columns.Select(table.Column))} FROM {table.Qualified}";
 

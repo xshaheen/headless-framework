@@ -17,7 +17,6 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
-#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
 namespace Tests;
 
 public sealed class RetryProcessorDistributedLockTests : IDisposable

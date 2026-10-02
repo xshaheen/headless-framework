@@ -45,8 +45,10 @@ internal sealed class RelationalPermissionGrantRepository(
     private readonly ISqlDialect _dialect = tables.Dialect;
     private readonly string _select = _BuildSelect(tables);
     private readonly string _byTenant = _BuildByTenant(tables);
+
     private readonly string _byScope =
         $"{tables.Column("ProviderName")} = @ProviderName AND {tables.Column("ProviderKey")} = @ProviderKey";
+
     private readonly string _id = tables.Column("Id");
     private readonly string _name = tables.Column("Name");
     private readonly ConcurrentDictionary<int, string> _insertSql = new();

@@ -9,7 +9,6 @@ using Headless.Jobs.JobsThreadPool;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Jobs.BackgroundServices;
 
 internal sealed class JobsSchedulerBackgroundService : BackgroundService, IJobsHostScheduler

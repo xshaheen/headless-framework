@@ -29,9 +29,7 @@ public sealed class AuditStoreDbContext(DbContextOptions<AuditStoreDbContext> op
         var builder = new DbContextOptionsBuilder<AuditStoreDbContext>().UseSqlite(conn);
 
         var db = new AuditStoreDbContext(builder.Options);
-#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
         db.Database.EnsureCreated();
-#pragma warning restore MA0045
         return (db, conn);
     }
 }

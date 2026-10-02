@@ -30,6 +30,7 @@ internal sealed class RelationalSettingValueRecordRepository(
     private readonly string _providerKey = tables.Column("ProviderKey");
     private readonly string _insert = _BuildInsert(tables);
     private readonly string _update = _BuildUpdate(tables);
+
     private readonly string _delete =
         $"DELETE FROM {tables.Values} WHERE {tables.Dialect.InList(tables.Column("Id"), "Ids", SqlColumnType.Guid)};";
 

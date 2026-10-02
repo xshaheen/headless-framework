@@ -55,7 +55,6 @@ internal static class ApnsPayloadWriter
 
         var buffer = new ArrayBufferWriter<byte>(512);
 
-#pragma warning disable MA0045 // False positive: a synchronous in-memory JSON writer in a synchronous method; await using would add nothing.
         using (var writer = new Utf8JsonWriter(buffer))
         {
             switch (notification)
@@ -133,9 +132,7 @@ internal static class ApnsPayloadWriter
 
         var buffer = new ArrayBufferWriter<byte>(512);
 
-#pragma warning disable MA0045 // False positive: a synchronous in-memory JSON writer in a synchronous method; await using would add nothing.
         using (var writer = new Utf8JsonWriter(buffer))
-#pragma warning restore MA0045
         {
             _WriteLiveActivityNotification(writer, notification, timeProvider);
         }

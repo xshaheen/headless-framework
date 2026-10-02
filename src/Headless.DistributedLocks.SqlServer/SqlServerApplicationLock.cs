@@ -244,7 +244,6 @@ internal static class SqlServerApplicationLock
     /// <exception cref="ArgumentException">Thrown when SQL Server rejects the parameters (<c>sp_getapplock</c> returns -999).</exception>
     /// <exception cref="DistributedLockDeadlockException">Thrown when SQL Server detects a deadlock (<c>sp_getapplock</c> returns -3).</exception>
     /// <exception cref="LockCleanupFailedException">Thrown when the acquire failed and releasing what it may have been granted failed too.</exception>
-#pragma warning disable MA0045 // TryAcquireTransaction is synchronous by contract for callers such as EF Core SavingChanges interceptors.
     public static bool TryAcquireTransaction(
         SqlTransaction transaction,
         string resource,
@@ -296,7 +295,6 @@ internal static class SqlServerApplicationLock
 
         return MapAcquireResult(resource, result, acquireTimeout, CancellationToken.None);
     }
-#pragma warning restore MA0045
 
     private static async ValueTask<int> _ExecuteAcquireAsync(
         SqlConnection connection,

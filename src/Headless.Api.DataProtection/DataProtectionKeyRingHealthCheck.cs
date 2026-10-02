@@ -112,9 +112,7 @@ internal sealed class DataProtectionKeyRingHealthCheck(
             // activation.
             xmlRepository = keyManagementOptions.Value.XmlRepository;
         }
-#pragma warning disable CA1031 // Health-check boundary: any resolution failure becomes an Unhealthy result carrying the exception; nothing is swallowed. Cancellation is excluded by the filter so it propagates untouched.
         catch (Exception exception) when (exception is not OperationCanceledException)
-#pragma warning restore CA1031
         {
             return new HealthCheckResult(
                 context.Registration.FailureStatus,
@@ -183,9 +181,7 @@ internal sealed class DataProtectionKeyRingHealthCheck(
                 ? HealthCheckResult.Healthy(ExistenceProbeHealthyDescription)
                 : new HealthCheckResult(context.Registration.FailureStatus, ContainerMissingDescription);
         }
-#pragma warning disable CA1031 // Health-check boundary: any backend failure (provider exception types this package deliberately does not reference) becomes an Unhealthy result carrying the exception. Cancellation is excluded by the filter so it propagates untouched.
         catch (Exception exception) when (exception is not OperationCanceledException)
-#pragma warning restore CA1031
         {
             return new HealthCheckResult(
                 context.Registration.FailureStatus,
@@ -209,9 +205,7 @@ internal sealed class DataProtectionKeyRingHealthCheck(
 
             return HealthCheckResult.Healthy(healthyDescription);
         }
-#pragma warning disable CA1031 // Health-check boundary: the probe wraps terminal backend failures in InvalidOperationException, but this catch stays broad for symmetry with the existence path — any failure becomes an Unhealthy result carrying the exception. Cancellation is excluded by the filter so it propagates untouched.
         catch (Exception exception) when (exception is not OperationCanceledException)
-#pragma warning restore CA1031
         {
             return new HealthCheckResult(context.Registration.FailureStatus, failedDescription, exception);
         }

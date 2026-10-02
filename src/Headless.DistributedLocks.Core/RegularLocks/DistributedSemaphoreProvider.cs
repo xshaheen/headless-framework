@@ -489,7 +489,7 @@ internal sealed class DistributedSemaphoreProvider(
             return handle;
         }
 
-#pragma warning disable CA2000
+#pragma warning disable CA2000 // Ownership is transferred to the returned handle and drained from DisposeAsync.
         var monitor = new LeaseMonitor(handle, timeProvider, logger);
 #pragma warning restore CA2000
         _monitorRegistry.Register(resource, leaseId, monitor);

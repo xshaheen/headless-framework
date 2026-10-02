@@ -27,9 +27,7 @@ public sealed class InfiniteRetryProcessorTests : TestBase
         var sut = new InfiniteRetryProcessor(inner, LoggerFactory);
 
         // when
-#pragma warning disable CA2025 // The test awaits the processor task before provider/cancellation disposal.
         var run = sut.ProcessAsync(context);
-#pragma warning restore CA2025
 
         await _WaitUntilAsync(() => inner.Calls == 1 && timeProvider.DelayCount == 1, AbortToken);
         var firstDelay = timeProvider.DelayAt(0);
@@ -71,9 +69,7 @@ public sealed class InfiniteRetryProcessorTests : TestBase
         var sut = new InfiniteRetryProcessor(inner, LoggerFactory);
 
         // when
-#pragma warning disable CA2025 // The test awaits the processor task before provider/cancellation disposal.
         var run = sut.ProcessAsync(context);
-#pragma warning restore CA2025
 
         await _WaitUntilAsync(() => inner.Calls == 1 && timeProvider.DelayCount == 1, AbortToken);
         await timeProvider.FireNextTimerAsync();

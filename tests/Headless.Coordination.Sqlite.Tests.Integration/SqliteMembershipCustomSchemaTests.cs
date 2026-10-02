@@ -4,7 +4,6 @@ using Headless.Testing.Tests;
 
 namespace Tests;
 
-#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
 /// <summary>
 /// Proves the feature-owned <c>ConfigureStorage(o =&gt; o.Schema = …)</c> setting reaches the SQLite DDL and DML, where
 /// a schema is a prefix of every object name.

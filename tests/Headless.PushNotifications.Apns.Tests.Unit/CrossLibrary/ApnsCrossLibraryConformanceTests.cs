@@ -681,9 +681,7 @@ public sealed class ApnsCrossLibraryConformanceTests : TestBase
 
     private static JsonObject _Load(string relativePath)
     {
-#pragma warning disable MA0045 // False positive: it also feeds MemberData, which xUnit discovers synchronously.
         return JsonNode.Parse(File.ReadAllText(Path.Combine(_Directory, relativePath)))!.AsObject();
-#pragma warning restore MA0045
     }
 
     private static string _String(JsonNode? node, string property) => node![property]!.GetValue<string>();

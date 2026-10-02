@@ -288,7 +288,7 @@ internal static class Parser
         {
             throw;
         }
-#pragma warning disable ERP022
+#pragma warning disable ERP022 // Documentation is optional; failing to read it for an external type must not fail the generator.
         catch
         {
             // Documentation extraction can fail for external types - acceptable

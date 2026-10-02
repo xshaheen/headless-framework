@@ -255,9 +255,7 @@ public abstract class IdentityTenantConformanceTests<TFixture>(TFixture fixture)
                     ProviderKey = "global",
                 },
             };
-#pragma warning disable VSTHRD103 // Exercise synchronous Add and tenant stamping before the database rejects the duplicate key.
             target.Add(duplicate);
-#pragma warning restore VSTHRD103
             var failure = (
                 await target.Invoking(x => x.SaveChangesAsync(AbortToken)).Should().ThrowAsync<DbUpdateException>()
             ).Which;

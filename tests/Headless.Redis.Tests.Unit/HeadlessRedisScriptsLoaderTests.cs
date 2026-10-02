@@ -420,8 +420,7 @@ public sealed class HeadlessRedisScriptsLoaderTests : TestBase
     private static void _AssertNoWritableEndpointMetadata(RedisConnectionException exception)
     {
         exception.FailureType.Should().Be(ConnectionFailureType.UnableToConnect);
-        // This assertion intentionally verifies the legacy constructor's retry flag while the replacement API remains experimental.
-#pragma warning disable SER007
+#pragma warning disable SER007 // Flags is still experimental; the test must assert the CommandRetryNever flag the loader sets.
         exception.Flags.Should().Be(CommandFlags.CommandRetryNever);
 #pragma warning restore SER007
         exception.CommandStatus.Should().Be(CommandStatus.Unknown);
@@ -429,10 +428,7 @@ public sealed class HeadlessRedisScriptsLoaderTests : TestBase
 
     private static byte[] _CreateScriptHash(string source)
     {
-        // CA5350: SHA1 is mandatory here, not a security choice — Redis identifies cached scripts by
-        // the SHA1 of their source (SCRIPT LOAD / EVALSHA). This recomputes that exact digest to
-        // then the loader's hashing behavior; it is not used to protect any secret or integrity.
-#pragma warning disable CA5350
+#pragma warning disable CA5350 // Redis keys cached scripts by the SHA1 of their source; this digest has no security role.
         return SHA1.HashData(Encoding.UTF8.GetBytes(source));
 #pragma warning restore CA5350
     }

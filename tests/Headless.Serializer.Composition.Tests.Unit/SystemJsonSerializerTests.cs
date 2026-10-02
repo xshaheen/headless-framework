@@ -223,9 +223,7 @@ public sealed class SystemJsonSerializerTests
         using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
 
         // when
-#pragma warning disable CA2263 // Prefer generic
         var result = _serializer.Deserialize<TestClass>(stream);
-#pragma warning restore CA2263
 
         // then
         result.Should().NotBeNull();

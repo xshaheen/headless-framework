@@ -79,7 +79,6 @@ internal static class JobIntentFingerprint
             StringComparison.Ordinal
         );
 
-#pragma warning disable MA0045 // Pure in-memory canonical hashing has no asynchronous I/O; synchronous MemoryStream disposal is intentional.
     internal static string Compute<TJob>(TJob job, string? algorithm)
         where TJob : TimeJobEntity<TJob>
     {
@@ -102,7 +101,6 @@ internal static class JobIntentFingerprint
         writer.Flush();
         return Convert.ToHexStringLower(SHA256.HashData(buffer.GetBuffer().AsSpan(0, checked((int)buffer.Length))));
     }
-#pragma warning restore MA0045
 
     private static void _WriteBytes(BinaryWriter writer, byte[]? bytes)
     {

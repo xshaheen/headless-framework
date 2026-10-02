@@ -43,7 +43,6 @@ internal static class SymbolExtensions
 
         foreach (var syntax in declaringSyntax)
         {
-#pragma warning disable MA0045 // Parser callbacks consume this helper synchronously, and Roslyn has already materialized these declarations.
             if (
                 syntax.GetSyntax() is TypeDeclarationSyntax typeDeclaration
                 && string.Equals(
@@ -61,7 +60,6 @@ internal static class SymbolExtensions
 
                 return modifiers;
             }
-#pragma warning restore MA0045
         }
 
         return null;

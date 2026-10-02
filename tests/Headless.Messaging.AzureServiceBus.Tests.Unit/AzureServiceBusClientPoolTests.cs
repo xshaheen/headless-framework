@@ -320,9 +320,7 @@ public sealed class AzureServiceBusClientPoolTests : TestBase
             _ =>
             {
                 factoryEntered.SetResult();
-#pragma warning disable MA0045 // The client factory contract is synchronous; blocking here creates the controlled race this test verifies.
                 releaseFactory.Task.Wait(AbortToken);
-#pragma warning restore MA0045
                 return client;
             }
         );
@@ -357,9 +355,7 @@ public sealed class AzureServiceBusClientPoolTests : TestBase
             .Returns(_ =>
             {
                 createEntered.SetResult();
-#pragma warning disable MA0045 // ServiceBusClient.CreateSender is synchronous; blocking here creates the in-flight disposal race under test.
                 releaseCreate.Task.Wait(AbortToken);
-#pragma warning restore MA0045
                 return lateSender;
             });
 

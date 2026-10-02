@@ -15,7 +15,6 @@ namespace Tests;
 /// <c>FENCING_ORACLE_REPORT</c> a file the grouped report is also written to. <c>FENCING_ORACLE_PRECISION</c> overrides
 /// the provider's timestamp tolerance in ticks, to measure raw precision drift.
 /// </remarks>
-#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
 public abstract class FencingOracleTests<TFixture>(TFixture fixture) : TestBase
     where TFixture : ILeasesFixture
 {

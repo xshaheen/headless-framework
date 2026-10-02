@@ -183,7 +183,6 @@ public static class MembershipOracleSeeds
 /// Differential check of a relational store against the in-memory model: generated histories run on both, step by
 /// step, and any difference fails with the seed and a shrunk history that replays it.
 /// </summary>
-#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
 public abstract class MembershipOracleTests<TFixture>(TFixture fixture) : TestBase
     where TFixture : ICoordinationOracleFixture
 {
@@ -230,4 +229,3 @@ public abstract class MembershipOracleTests<TFixture>(TFixture fixture) : TestBa
             .BeEmpty(string.Join(Environment.NewLine, divergences.Take(3).Select(static d => d.Describe())));
     }
 }
-#pragma warning restore CA1707

@@ -9,8 +9,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
 
-#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
-
 /// <summary>
 /// Two <see cref="DbContext" /> types over one SQL Server database, the second built over the first one's
 /// connection: the second joins the first one's unit by adopting its SqlClient transaction, so both contexts'

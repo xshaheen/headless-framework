@@ -14,14 +14,10 @@ namespace Headless.DistributedLocks;
 /// </summary>
 internal sealed class DatabaseCommand(DbCommand command, DatabaseConnection connection) : IDisposable
 {
-#pragma warning disable CA2213 // Not owned by the command; the connection outlives every command created against it.
-#pragma warning restore CA2213
-
     /// <summary>The underlying command's parameter collection.</summary>
     public IDataParameterCollection Parameters => command.Parameters;
 
-    // SQL here is always a constant emitted by the lock strategies / monitor, never user input.
-#pragma warning disable CA2100
+#pragma warning disable CA2100 // Callers pass only constant SQL from the lock strategies and monitor, never user input.
     /// <summary>
     /// Sets the SQL text of the command. Only accepts static, trusted strings emitted by lock strategies
     /// or the connection monitor — never user input.

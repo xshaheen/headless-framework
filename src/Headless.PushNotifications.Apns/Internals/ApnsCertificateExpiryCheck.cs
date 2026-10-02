@@ -79,7 +79,6 @@ internal sealed class ApnsCertificateExpiryCheck(
 
     private void _Recheck(ApnsCertificateHolder holder)
     {
-#pragma warning disable CA1031 // A timer callback is a background loop boundary: an escaping exception would crash the process, so every failure is logged and the next tick tries again.
         try
         {
             var expiresAt = ApnsCertificateLoader.GetExpiresAt(holder.Certificate);
@@ -98,6 +97,5 @@ internal sealed class ApnsCertificateExpiryCheck(
         {
             logger.LogCertificateCheckFailed(e, _instance);
         }
-#pragma warning restore CA1031
     }
 }

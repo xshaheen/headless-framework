@@ -15,7 +15,6 @@ namespace Tests.CrossLibrary;
 /// </summary>
 public sealed class ApnsBroadcastCrossLibraryTests : TestBase
 {
-#pragma warning disable MA0045 // Lazy<T> factories are synchronous; each reads a small fixture file once per process.
     private static readonly Lazy<JsonObject> _Fixture = new(() =>
         JsonNode
             .Parse(
@@ -31,7 +30,6 @@ public sealed class ApnsBroadcastCrossLibraryTests : TestBase
             "broadcast"
         ]!.AsObject()
     );
-#pragma warning restore MA0045
 
     private FakeApnsServer _server = null!;
 
