@@ -168,7 +168,8 @@ public sealed class SequencesSetupTests : TestBase
     [Theory]
     [InlineData(" invoice")]
     [InlineData("invoice ")]
-    public void should_reject_a_padded_name_added_through_options(string name)
+    [InlineData("inv\0oice")]
+    public void should_reject_a_name_no_provider_keeps_unchanged_added_through_options(string name)
     {
         var options = _Options(setup => setup.ConfigureOptions(o => o.Policies[name] = new SequencePolicy()));
 
@@ -180,7 +181,8 @@ public sealed class SequencesSetupTests : TestBase
     [InlineData("  ")]
     [InlineData("invoice ")]
     [InlineData(" invoice")]
-    public void should_refuse_a_blank_or_padded_policy_name_at_the_builder(string name)
+    [InlineData("inv\0oice")]
+    public void should_refuse_a_blank_or_unportable_policy_name_at_the_builder(string name)
     {
         var act = () =>
             new ServiceCollection().AddHeadlessSequences(setup =>

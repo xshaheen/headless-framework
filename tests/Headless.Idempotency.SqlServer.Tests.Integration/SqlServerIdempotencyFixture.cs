@@ -86,6 +86,7 @@ public abstract class SqlServerIdempotencyFixtureBase : HeadlessSqlServerFixture
             $"""
             IF OBJECT_ID(N'{HeadlessStorageDefaults.Schema}.IdempotencyRecords', N'U') IS NOT NULL DROP TABLE {_Records};
             IF OBJECT_ID(N'{HeadlessStorageDefaults.Schema}.IdempotencyRecordGenerations', N'SO') IS NOT NULL DROP SEQUENCE [{HeadlessStorageDefaults.Schema}].[IdempotencyRecordGenerations];
+            IF OBJECT_ID(N'{HeadlessStorageDefaults.Schema}.headless_schema_history', N'U') IS NOT NULL DROP TABLE [{HeadlessStorageDefaults.Schema}].[headless_schema_history];
             IF SCHEMA_ID(N'{HeadlessStorageDefaults.Schema}') IS NOT NULL EXEC(N'DROP SCHEMA [{HeadlessStorageDefaults.Schema}]');
             SELECT CAST(is_read_committed_snapshot_on AS int) FROM sys.databases WHERE database_id = DB_ID();
             """,

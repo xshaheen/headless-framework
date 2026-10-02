@@ -18,8 +18,10 @@ namespace Headless.Features.Values;
 /// <see cref="DeleteAsync"/>) update both the database and the cache immediately.
 /// <para>
 /// Every member throws <see cref="ArgumentException"/> before touching storage when a feature name, provider name, or
-/// provider key starts or ends with white space. SQL Server ignores trailing spaces when it compares keys while
-/// PostgreSQL keeps them, so <c>"acme"</c> and <c>"acme "</c> would address one row on one provider and two on the other.
+/// provider key is text some provider would not keep unchanged: surrounding white space (SQL Server ignores trailing spaces when
+/// it compares keys, so <c>"acme"</c> and <c>"acme "</c> would address one row there and two on PostgreSQL), a NUL
+/// character (PostgreSQL cannot store it), or an unpaired UTF-16 surrogate (SqlClient rewrites it to U+FFFD, merging
+/// distinct keys). See <c>Argument.IsPortableKey</c>.
 /// </para>
 /// </remarks>
 public interface IFeatureValueStore
@@ -106,9 +108,9 @@ public sealed class FeatureValueStore(
 
     private static void _EnsureKey(string? providerName, string? providerKey, string? name = null)
     {
-        Argument.HasNoSurroundingWhiteSpace(providerName);
-        Argument.HasNoSurroundingWhiteSpace(providerKey);
-        Argument.HasNoSurroundingWhiteSpace(name);
+        Argument.IsPortableKey(providerName);
+        Argument.IsPortableKey(providerKey);
+        Argument.IsPortableKey(name);
     }
 
     /// <inheritdoc/>
@@ -192,7 +194,7 @@ public sealed class FeatureValueStore(
 
         foreach (var name in values.Keys)
         {
-            Argument.HasNoSurroundingWhiteSpace(name);
+            Argument.IsPortableKey(name);
         }
 
         if (values.Count == 0)

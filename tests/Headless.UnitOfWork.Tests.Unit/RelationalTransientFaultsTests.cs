@@ -60,6 +60,19 @@ public sealed class RelationalTransientFaultsTests : TestBase
         RelationalTransientFaults.IsTransient(exception, CancellationToken.None).Should().Be(expected);
     }
 
+    [Theory]
+    [InlineData(5, 5, true)] // SQLITE_BUSY: the write lock stayed held past the driver's busy wait
+    [InlineData(5, 517, true)] // SQLITE_BUSY_SNAPSHOT: another writer committed after this transaction's snapshot
+    [InlineData(6, 6, true)] // SQLITE_LOCKED: the same conflict inside one shared cache
+    [InlineData(19, 1555, false)] // SQLITE_CONSTRAINT_PRIMARYKEY
+    [InlineData(1, 1, false)] // SQLITE_ERROR
+    public void should_classify_sqlite_faults_by_result_code(int errorCode, int extendedErrorCode, bool expected)
+    {
+        var exception = new Microsoft.Data.Sqlite.SqliteException(errorCode, extendedErrorCode);
+
+        RelationalTransientFaults.IsTransient(exception, CancellationToken.None).Should().Be(expected);
+    }
+
     [Fact]
     public void should_classify_a_sql_server_error_that_is_not_the_first_in_the_batch()
     {

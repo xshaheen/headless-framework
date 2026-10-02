@@ -4,6 +4,7 @@ using System.Diagnostics;
 using Headless.Abstractions;
 using Headless.Domain;
 using Headless.EntityFramework;
+using Headless.Hosting.Initialization.Schema;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
@@ -548,7 +549,7 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
 
         // Initialize messaging outbox tables and EF business tables in the shared database. The messaging host
         // is intentionally not started, so the relay never drains rows — outbox-row assertions stay deterministic.
-        await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
+        await provider.GetRequiredService<SchemaRunner>().ApplyAsync(AbortToken);
 
         await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<BridgeTestDbContext>();

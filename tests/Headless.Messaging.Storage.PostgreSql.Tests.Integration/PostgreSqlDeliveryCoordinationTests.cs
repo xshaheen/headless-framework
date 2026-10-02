@@ -66,7 +66,7 @@ public sealed class PostgreSqlDeliveryCoordinationTests(PostgreSqlTestFixture fi
         services.AddDbContext<CoordinationDbContext>(options => options.UseNpgsql(fixture.ConnectionString));
         services.Configure<PostgreSqlOptions>(x => x.ConnectionString = configuredConnectionString);
         services.Configure<MessagingOptions>(x => x.Version = "v1");
-        services.AddSingleton<IStorageInitializer, PostgreSqlStorageInitializer>();
+        services.AddTestMessagingSchema();
         services.AddSingleton<ISerializer, JsonUtf8Serializer>();
         services.AddSingleton(TimeProvider.System);
 
@@ -74,16 +74,16 @@ public sealed class PostgreSqlDeliveryCoordinationTests(PostgreSqlTestFixture fi
         await using var scope = provider.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<CoordinationDbContext>();
         var factory = scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>();
-        IDeliveryCoordinationResolver storage = new PostgreSqlDataStorage(
-            provider.GetRequiredService<IOptions<PostgreSqlOptions>>(),
-            TestStorageOptions.For(),
+        IDeliveryCoordinationResolver storage = new RelationalDataStorage(
+            provider.GetRequiredService<IOptions<PostgreSqlOptions>>().Value.ToStorage(),
             provider.GetRequiredService<IOptions<MessagingOptions>>(),
-            provider.GetRequiredService<IStorageInitializer>(),
+            TestStorageOptions.For(),
+            provider.GetRequiredService<IStorageTableNames>(),
             provider.GetRequiredService<ISerializer>(),
             new SequentialGuidGenerator(SequentialGuidType.Version7),
             TimeProvider.System,
             new NullNodeMembership(),
-            NullLogger<PostgreSqlDataStorage>.Instance
+            NullLogger<RelationalDataStorage>.Instance
         );
 
         await using var unit = await factory.BeginAsync(db, cancellationToken: AbortToken);

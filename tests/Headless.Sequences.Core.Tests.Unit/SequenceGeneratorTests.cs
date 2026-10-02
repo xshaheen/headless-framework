@@ -217,7 +217,38 @@ public sealed class SequenceGeneratorTests : TestBase
         var act = async () => await context.Generator.NextAsync(name, partition, AbortToken);
 
         // then
-        await act.Should().ThrowAsync<ArgumentException>().WithMessage("*whitespace*");
+        await act.Should().ThrowAsync<ArgumentException>().WithMessage("*white space*");
+        context.Store.ReceivedCalls().Should().BeEmpty();
+    }
+
+    public static TheoryData<string, string?, string?> KeyPartsNoProviderKeepsUnchanged =>
+        new()
+        {
+            { "rec\0eipt", null, null },
+            { "receipt", "20\026", null },
+            { "receipt", null, "t\01" },
+            // Built in code: a lone surrogate in an attribute argument does not survive UTF-8 metadata encoding.
+            { "receipt" + (char)0xD800, null, null },
+            { "receipt", (char)0xDC00 + "2026", null },
+            { "receipt", null, "t1" + (char)0xDBFF },
+        };
+
+    [Theory]
+    [MemberData(nameof(KeyPartsNoProviderKeepsUnchanged))]
+    public async Task should_refuse_a_key_part_with_a_nul_or_an_unpaired_surrogate(
+        string name,
+        string? partition,
+        string? tenantId
+    )
+    {
+        // PostgreSQL fails the statement on NUL, and SqlClient sends an unpaired surrogate as U+FFFD, so SQL Server
+        // would share one counter between keys that differ only in which lone surrogate they carry.
+        var context = new SequenceTestContext();
+        context.Tenant.Id = tenantId;
+
+        var act = async () => await context.Generator.NextAsync(name, partition, AbortToken);
+
+        await act.Should().ThrowAsync<ArgumentException>().WithMessage("*storage providers would disagree*");
         context.Store.ReceivedCalls().Should().BeEmpty();
     }
 

@@ -57,50 +57,7 @@ public sealed class SqlServerMembershipNativeTests(SqlServerMembershipFixture fi
         columns.Should().Contain("CurrentIncarnation");
         columns.Should().Contain("LastBeat");
         columns.Should().Contain("LeftAt");
-        columns.Should().NotContain("DateCreated");
-        columns.Should().NotContain("DateUpdated");
         columns.Should().NotContain("cluster_name");
-    }
-
-    [Fact]
-    public async Task should_rename_legacy_timestamp_columns_without_losing_membership_rows()
-    {
-        await _DropSchemaAsync();
-        var createdAt = new DateTime(2026, 7, 25, 10, 0, 0, DateTimeKind.Utc);
-        var updatedAt = createdAt.AddMinutes(5);
-        await _CreateLegacyTimestampTablesAsync(createdAt, updatedAt);
-
-        await using var node = await fixture.CreateNodeAsync(_Cluster(), "migration-node", AbortToken);
-        await using var connection = new SqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(AbortToken);
-
-        var columns = await _ReadStringsAsync(
-            connection,
-            $$"""
-            SELECT c.name
-            FROM sys.columns c
-            WHERE c.object_id IN (OBJECT_ID(N'{{_Schema}}.CoordinationDescriptor'), OBJECT_ID(N'{{_Schema}}.CoordinationNodeGeneration'));
-            """
-        );
-        await using var command = new SqlCommand(
-            $$"""
-            SELECT count(*)
-            FROM {{_Schema}}.CoordinationNodeGeneration generation
-            JOIN {{_Schema}}.CoordinationDescriptor descriptor
-              ON descriptor.ClusterName = generation.ClusterName AND descriptor.NodeId = generation.NodeId
-            WHERE generation.UpdatedAt = @updatedAt
-              AND descriptor.CreatedAt = @createdAt;
-            """,
-            connection
-        );
-        command.Parameters.AddWithValue("@updatedAt", updatedAt);
-        command.Parameters.AddWithValue("@createdAt", createdAt);
-
-        columns.Should().Contain("CreatedAt");
-        columns.Should().Contain("UpdatedAt");
-        columns.Should().NotContain("DateCreated");
-        columns.Should().NotContain("DateUpdated");
-        Convert.ToInt32(await command.ExecuteScalarAsync(AbortToken), CultureInfo.InvariantCulture).Should().Be(1);
     }
 
     [Fact]
@@ -311,48 +268,12 @@ public sealed class SqlServerMembershipNativeTests(SqlServerMembershipFixture fi
             DROP TABLE IF EXISTS {{_Schema}}.CoordinationLiveness;
             DROP TABLE IF EXISTS {{_Schema}}.CoordinationDescriptor;
             DROP TABLE IF EXISTS {{_Schema}}.CoordinationNodeGeneration;
+            DROP TABLE IF EXISTS {{_Schema}}.headless_schema_history;
             IF SCHEMA_ID(N'{{_Schema}}') IS NOT NULL EXEC(N'DROP SCHEMA [{{_Schema}}]');
             """,
             connection
         );
 
-        await command.ExecuteNonQueryAsync(AbortToken);
-    }
-
-    private async Task _CreateLegacyTimestampTablesAsync(DateTime createdAt, DateTime updatedAt)
-    {
-        await using var connection = new SqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(AbortToken);
-        await using var command = new SqlCommand(
-            $$"""
-            IF SCHEMA_ID(N'{{_Schema}}') IS NULL EXEC(N'CREATE SCHEMA [{{_Schema}}]');
-            CREATE TABLE {{_Schema}}.CoordinationNodeGeneration (
-                ClusterName nvarchar(200) NOT NULL,
-                NodeId nvarchar(400) NOT NULL,
-                CurrentIncarnation bigint NOT NULL,
-                DateUpdated datetime2(7) NOT NULL,
-                PRIMARY KEY (ClusterName, NodeId)
-            );
-            CREATE TABLE {{_Schema}}.CoordinationDescriptor (
-                ClusterName nvarchar(200) NOT NULL,
-                NodeId nvarchar(400) NOT NULL,
-                Incarnation bigint NOT NULL,
-                HostName nvarchar(max) NULL,
-                Endpoints nvarchar(max) NOT NULL DEFAULT N'{}',
-                Role nvarchar(200) NULL,
-                Metadata nvarchar(max) NOT NULL DEFAULT N'{}',
-                DateCreated datetime2(7) NOT NULL,
-                PRIMARY KEY (ClusterName, NodeId, Incarnation)
-            );
-            INSERT INTO {{_Schema}}.CoordinationNodeGeneration VALUES (N'legacy', N'node-a', 1, @updatedAt);
-            INSERT INTO {{_Schema}}.CoordinationDescriptor
-                (ClusterName, NodeId, Incarnation, DateCreated)
-            VALUES (N'legacy', N'node-a', 1, @createdAt);
-            """,
-            connection
-        );
-        command.Parameters.AddWithValue("@updatedAt", updatedAt);
-        command.Parameters.AddWithValue("@createdAt", createdAt);
         await command.ExecuteNonQueryAsync(AbortToken);
     }
 

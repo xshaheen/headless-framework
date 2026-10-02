@@ -2,6 +2,7 @@
 
 using Headless.Checks;
 using Headless.MultiTenancy;
+using Headless.Sql;
 using Microsoft.Extensions.Options;
 
 namespace Headless.Fencing;
@@ -12,16 +13,9 @@ namespace Headless.Fencing;
 /// </summary>
 internal sealed class LeaseRequestResolver(ICurrentTenant currentTenant, IOptionsMonitor<FencingOptions> options)
 {
-    // SQL Server pads nvarchar values with trailing spaces before comparing them, under every collation and in
-    // primary-key uniqueness, so "a" and "a " would share one lease there while PostgreSQL keeps them apart. Refusing
-    // surrounding whitespace keeps key parts ordinal on every provider.
-    private const string _MergeReason =
-        " must not start or end with whitespace: some providers ignore trailing spaces when comparing keys, which "
-        + "would merge two leases.";
-
-    private const string _KindWhitespaceMessage = "A lease kind" + _MergeReason;
-    private const string _ResourceWhitespaceMessage = "A lease resource" + _MergeReason;
-    private const string _TenantIdWhitespaceMessage = "A lease tenant id" + _MergeReason;
+    // Every key part must be text every provider stores, compares, and returns unchanged, whichever provider this
+    // host uses: a key one provider merges (trailing spaces on SQL Server), rejects (NUL on PostgreSQL), or rewrites
+    // (an unpaired surrogate on SQL Server) would make the providers disagree about which lease a call names.
 
     /// <summary>Validates a grant's arguments and the current tenant, and returns the lease key.</summary>
     /// <exception cref="ArgumentException">The kind, resource, or current tenant id is invalid.</exception>
@@ -64,8 +58,13 @@ internal sealed class LeaseRequestResolver(ICurrentTenant currentTenant, IOption
         return kind;
     }
 
-    /// <summary>Checks a grant or renewal duration against the configured bounds.</summary>
+    /// <summary>
+    /// Checks a grant or renewal duration against the configured bounds and returns it truncated to whole
+    /// microseconds, the finest resolution every provider stores, so a lease expires at the same offset from its
+    /// grant whichever provider holds it.
+    /// </summary>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="duration" /> is outside the bounds.</exception>
+    [MustUseReturnValue]
     public TimeSpan ValidateDuration(TimeSpan duration)
     {
         // Read on every call so a bound changed through options reload applies to the next grant.
@@ -81,7 +80,8 @@ internal sealed class LeaseRequestResolver(ICurrentTenant currentTenant, IOption
             );
         }
 
-        return duration;
+        // Checked before truncating, so a duration a tick past the maximum is refused rather than rounded into range.
+        return SqlPortable.Truncate(duration);
     }
 
     /// <summary>Checks a renewal's progress against the size limits, before anything is written.</summary>
@@ -115,14 +115,14 @@ internal sealed class LeaseRequestResolver(ICurrentTenant currentTenant, IOption
     {
         Argument.IsNotNullOrWhiteSpace(kind, paramName: paramName);
         Argument.HasMaxLength(kind, FencingFieldLimits.KindMaxLength, paramName: paramName);
-        Argument.HasNoSurroundingWhiteSpace(kind, _KindWhitespaceMessage, paramName);
+        Argument.IsPortableKey(kind, paramName: paramName);
     }
 
     private static void _ValidateResource(string resource, string paramName)
     {
         Argument.IsNotNullOrWhiteSpace(resource, paramName: paramName);
         Argument.HasMaxLength(resource, FencingFieldLimits.ResourceMaxLength, paramName: paramName);
-        Argument.HasNoSurroundingWhiteSpace(resource, _ResourceWhitespaceMessage, paramName);
+        Argument.IsPortableKey(resource, paramName: paramName);
     }
 
     private static string _NormalizeTenantId(string? tenantId, string what, string paramName)
@@ -151,7 +151,7 @@ internal sealed class LeaseRequestResolver(ICurrentTenant currentTenant, IOption
             );
         }
 
-        Argument.HasNoSurroundingWhiteSpace(tenantId, _TenantIdWhitespaceMessage, paramName);
+        Argument.IsPortableKey(tenantId, paramName: paramName);
 
         return tenantId;
     }

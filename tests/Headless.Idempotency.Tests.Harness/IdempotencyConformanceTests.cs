@@ -4,6 +4,7 @@ using System.Text;
 using Headless.Idempotency;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;
+using Xunit;
 
 namespace Tests;
 
@@ -35,6 +36,14 @@ public abstract class IdempotencyConformanceTests<TFixture>(TFixture fixture) : 
     protected const string RecoveryContract = "test-recovery.v1";
 
     protected TFixture Fixture { get; } = fixture;
+
+    private void _SkipUnlessEnlistedAdmission()
+    {
+        Assert.SkipUnless(
+            Fixture.SupportsEnlistedAdmission,
+            "The provider refuses an admission inside a caller's unit; its own tests assert the refusal."
+        );
+    }
 
     #region Admission races
 
@@ -89,8 +98,103 @@ public abstract class IdempotencyConformanceTests<TFixture>(TFixture fixture) : 
         }
     }
 
+    public virtual async Task should_admit_exactly_once_and_complete_exactly_once_under_parallel_racers()
+    {
+        const int racers = 12;
+        var key = CreateKey();
+        await using var hostA = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
+        await using var hostB = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
+
+        // Every racer is released at once, half through each host, so the store alone decides who wins.
+        var admitStart = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var admitting = Enumerable
+            .Range(0, racers)
+            .Select(i =>
+                Task.Run(
+                    async () =>
+                    {
+                        await admitStart.Task;
+
+                        return await (i % 2 == 0 ? hostA : hostB).Operations.AdmitAsync(
+                            key,
+                            Fingerprint,
+                            leaseDuration: LongLease,
+                            retention: Retention,
+                            cancellationToken: AbortToken
+                        );
+                    },
+                    AbortToken
+                )
+            )
+            .ToList();
+
+        admitStart.SetResult();
+        var admissions = await Task.WhenAll(admitting);
+
+        var admitted = admissions.Where(static a => a.IsAdmitted).ToList();
+        admitted.Should().ContainSingle("exactly one racer is admitted");
+        var winner = admitted[0];
+        admissions
+            .Where(static a => !a.IsAdmitted)
+            .Should()
+            .HaveCount(racers - 1)
+            .And.AllSatisfy(a =>
+            {
+                a.Disposition.Should().Be(IdempotentDisposition.InFlight, "nothing completed while they raced");
+                a.Generation.Should().Be(winner.Generation, "every loser sees the winner holding the key");
+            });
+
+        // Every racer then completes the one admitted attempt, each with its own result.
+        var completeStart = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var completing = Enumerable
+            .Range(0, racers)
+            .Select(i =>
+                Task.Run(
+                    async () =>
+                    {
+                        await completeStart.Task;
+
+                        try
+                        {
+                            await (i % 2 == 0 ? hostA : hostB).Operations.CompleteAsync(
+                                winner,
+                                Payload($"racer-{i}"),
+                                Contract,
+                                cancellationToken: AbortToken
+                            );
+
+                            return (Racer: i, Refusal: (IdempotentLeaseStatus?)null);
+                        }
+                        catch (StaleAdmissionException e)
+                        {
+                            return (Racer: i, Refusal: e.Reason);
+                        }
+                    },
+                    AbortToken
+                )
+            )
+            .ToList();
+
+        completeStart.SetResult();
+        var completions = await Task.WhenAll(completing);
+
+        var completed = completions.Where(static c => c.Refusal is null).ToList();
+        completed.Should().ContainSingle("exactly one completion is stored");
+        completions
+            .Where(static c => c.Refusal is not null)
+            .Should()
+            .HaveCount(racers - 1)
+            .And.AllSatisfy(c => c.Refusal.Should().Be(IdempotentLeaseStatus.Completed));
+
+        var stored = await Fixture.ReadRecordAsync(HostKey(key), AbortToken);
+        stored!.Status.Should().Be(IdempotencyRecordStatus.Completed);
+        stored.Generation.Should().Be(winner.Generation);
+        Text(stored.Result!).Should().Be($"racer-{completed[0].Racer}", "the one stored result is the winner's");
+    }
+
     public virtual async Task should_serialize_parallel_enlisted_admissions_and_replay_the_winner()
     {
+        _SkipUnlessEnlistedAdmission();
         var key = CreateKey();
         await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
         var start = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -149,6 +253,7 @@ public abstract class IdempotencyConformanceTests<TFixture>(TFixture fixture) : 
 
     public virtual async Task should_admit_a_blocked_admission_when_the_enlisted_winner_rolls_back()
     {
+        _SkipUnlessEnlistedAdmission();
         var key = CreateKey();
         await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
         await using var winner = await Fixture.BeginUnitAsync(host, AbortToken);
@@ -242,6 +347,7 @@ public abstract class IdempotencyConformanceTests<TFixture>(TFixture fixture) : 
 
     public virtual async Task should_leave_no_record_when_an_enlisted_admission_rolls_back()
     {
+        _SkipUnlessEnlistedAdmission();
         var key = CreateKey();
         await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
 
@@ -421,7 +527,7 @@ public abstract class IdempotencyConformanceTests<TFixture>(TFixture fixture) : 
         (await Fixture.ReadRecordAsync(HostKey(key), AbortToken))!.Generation.Should().Be(hostScope.Generation);
     }
 
-    public virtual async Task should_refuse_keys_with_surrounding_whitespace_before_any_write()
+    public virtual async Task should_refuse_keys_no_provider_stores_unchanged_before_any_write()
     {
         var key = CreateKey();
         await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
@@ -431,9 +537,11 @@ public abstract class IdempotencyConformanceTests<TFixture>(TFixture fixture) : 
 
         // SQL Server compares nvarchar with trailing spaces padded away, so "k " would land on the record of "k" (a
         // read of "k " there even returns it), and a padded admission would report the unpadded key in flight.
-        foreach (var padded in (string[])[key + " ", " " + key, key + "\t"])
+        // PostgreSQL fails the statement on NUL, and SqlClient sends an unpaired surrogate as U+FFFD, so SQL Server
+        // would merge keys that differ only in which lone surrogate they carry.
+        foreach (var unportable in (string[])[key + " ", " " + key, key + "\t", key + "\0", key + (char)0xD800])
         {
-            var admit = async () => await AdmitAsync(host, padded);
+            var admit = async () => await AdmitAsync(host, unportable);
 
             await admit.Should().ThrowAsync<ArgumentException>();
         }

@@ -9,7 +9,8 @@ namespace Headless.UnitOfWork;
 
 /// <summary>
 /// Classifies a relational failure as transient: a fault that a replay of the whole transaction, on a fresh
-/// transaction, may cure. It is the framework's default replay filter and the composition point a narrower
+/// transaction, may cure. It is the framework's default replay filter (the unit-of-work runner, the SQL store kit's
+/// autonomous calls, the Jobs claim scopes) and the composition point a narrower
 /// classifier builds on (the Jobs tree delete adds its own foreign-key conflicts); reuse or compose it in a
 /// hand-rolled retry loop around <c>RunAsync</c> so a custom loop keeps the framework's classification.
 /// </summary>
@@ -27,7 +28,8 @@ namespace Headless.UnitOfWork;
 /// <see cref="DbException.IsTransient" /> is only one signal. Npgsql and MySqlConnector override it, so their
 /// connection, capacity, and lock faults arrive classified. SQL Server's <c>SqlException</c> overrides neither it
 /// nor <see cref="DbException.SqlState" />, which is why the SQL Server half matches on error numbers instead,
-/// over every error the exception carries.
+/// over every error the exception carries. <c>Microsoft.Data.Sqlite</c> leaves <see cref="DbException.IsTransient" />
+/// false for a busy or locked database, so its result code is matched too.
 /// </para>
 /// <para>
 /// The commit phase is not this classifier's concern: whoever replays must refuse to replay a commit, which may
@@ -62,6 +64,7 @@ public static class RelationalTransientFaults
             || (
                 SqlServerTransientFaults.IsSqlClientException(databaseException)
                 && SqlServerTransientFaults.HasTransientError(databaseException)
-            );
+            )
+            || SqliteTransientFaults.IsTransient(databaseException);
     }
 }

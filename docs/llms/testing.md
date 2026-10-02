@@ -377,7 +377,7 @@ Testcontainers fixtures for integration testing.
   - `HeadlessAzuriteFixture`
   - `HeadlessLocalStackFixture`
   - `HeadlessMinioFixture`
-  - `HeadlessSqlServerFixture` (architecture-aware: SQL Server 2022 on x86_64, Azure SQL Edge on ARM64)
+  - `HeadlessSqlServerFixture` (architecture-aware: SQL Server 2022 on x86_64, Azure SQL Edge on ARM64; set `HEADLESS_SQLSERVER_IMAGE` to override, see below)
 - `TestContextMessageSink` — xUnit v3 diagnostic-message forwarder
 - Automatic container lifecycle management via `Testcontainers.Xunit`
 
@@ -392,6 +392,17 @@ Floating tags such as `:latest` force Docker to hit the registry on every pull t
 The fixtures create their containers with Testcontainers reuse enabled, except `HeadlessRabbitMqFixture`, `HeadlessKafkaFixture`, and `HeadlessPulsarFixture`. These broker fixtures need clean restart semantics, so they always create fresh containers. When the host opts in with `testcontainers.reuse.enable=true` in `~/.testcontainers.properties` or the `TESTCONTAINERS_REUSE_ENABLE=true` environment variable, repeated local runs reattach to an already-warm reusable container instead of paying the cold-start cost. CI leaves reuse disabled, so reuse becomes a no-op and Ryuk reaps containers as usual.
 
 Because a reused container keeps state between runs, tests must be idempotent across runs: use drop-before-create (`DROP TABLE IF EXISTS` / `IF OBJECT_ID(...) IS NOT NULL DROP ...`) or guarded create (`CREATE ... IF NOT EXISTS`) rather than assuming a clean database. Each integration project reuses its own container in each checkout of the repository, keyed by the test assembly name (`headless.fixture` label) and the checkout's root directory (`headless.checkout` label), so neither two projects nor two worktrees running the same project share state. A removed worktree leaves its stopped containers behind; find them with `docker ps -a --filter label=headless.checkout=<path>`.
+
+#### SQL Server image override
+
+On ARM64, `HeadlessSqlServerFixture` runs Azure SQL Edge, which is a different engine build from SQL Server 2022: deadlock detection, catalog visibility, and error numbers can differ. To run a suite against real SQL Server on an ARM64 host that can emulate x86_64 (OrbStack or Docker Desktop with Rosetta), set `HEADLESS_SQLSERVER_IMAGE` to the image before the test process starts:
+
+```bash
+HEADLESS_SQLSERVER_IMAGE=mcr.microsoft.com/mssql/server:2022-latest \
+  make test-project TEST_PROJECT=tests/Headless.Sql.SqlServer.Tests.Integration/Headless.Sql.SqlServer.Tests.Integration.csproj
+```
+
+Unset, the default is unchanged. The image name is part of the reuse hash, so the override gets its own container instead of reattaching to the Azure SQL Edge one. Emulated startup is slower; the fixture still waits for the "SQL Server is now ready" log line and a successful login.
 
 ### Install
 

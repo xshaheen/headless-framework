@@ -27,6 +27,13 @@ public interface ILeasesFixture
     /// </summary>
     bool RunsUnitsOnConnections => true;
 
+    /// <summary>
+    /// Whether the provider grants a lease inside a caller's unit. SQLite refuses: it has no counter that survives the
+    /// caller's rollback, so a rolled-back grant's generation could be issued again. The suite then skips the
+    /// enlisted-grant scenarios, and the oracle expects the refusal instead of the model's grant.
+    /// </summary>
+    bool SupportsEnlistedGrant => true;
+
     /// <summary>Creates an unopened connection to the database that holds the leases.</summary>
     DbConnection CreateConnection();
 

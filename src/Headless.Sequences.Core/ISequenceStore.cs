@@ -32,25 +32,26 @@ public interface ISequenceStore
     );
 
     /// <summary>
-    /// Throws when <paramref name="resource" /> cannot host this provider's write: its transaction belongs to another
-    /// provider, it targets a different database than the one configured, or its connection is not open.
+    /// Throws when <paramref name="unitOfWork" /> cannot host this provider's write: it has no live transaction, its
+    /// transaction belongs to another provider, it targets a different database than the one configured, or its
+    /// connection is not open.
     /// </summary>
-    /// <param name="resource">The unit of work's relational resource.</param>
-    /// <exception cref="InvalidOperationException">The resource cannot host the write.</exception>
-    void ValidateEnlistment(IRelationalUnitOfWorkResource resource);
+    /// <param name="unitOfWork">The active unit of work.</param>
+    /// <exception cref="InvalidOperationException">The unit cannot host the write.</exception>
+    void ValidateEnlistment(IUnitOfWork unitOfWork);
 
     /// <summary>
-    /// Increments the counter on <paramref name="resource" />'s connection and inside its transaction, without
+    /// Increments the counter on <paramref name="unitOfWork" />'s connection and inside its transaction, without
     /// committing. The row stays locked until that transaction ends.
     /// </summary>
-    /// <param name="resource">The unit of work's relational resource, already accepted by <see cref="ValidateEnlistment" />.</param>
+    /// <param name="unitOfWork">The unit of work, already accepted by <see cref="ValidateEnlistment" />.</param>
     /// <param name="key">The counter's key.</param>
     /// <param name="insertValue">The value stored when the key has no row yet.</param>
     /// <param name="delta">The amount added to an existing row.</param>
     /// <param name="cancellationToken">Token used to cancel the database command.</param>
     /// <returns>The counter's value after the increment.</returns>
     ValueTask<long> IncrementEnlistedAsync(
-        IRelationalUnitOfWorkResource resource,
+        IUnitOfWork unitOfWork,
         SequenceKey key,
         long insertValue,
         long delta,

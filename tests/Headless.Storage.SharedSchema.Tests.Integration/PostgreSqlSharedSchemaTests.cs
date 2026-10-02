@@ -55,6 +55,7 @@ public sealed class PostgreSqlSharedSchemaTests(PostgreSqlSharedSchemaFixture fi
     protected override IReadOnlyDictionary<string, string[]> ExpectedRawTables { get; } =
         new Dictionary<string, string[]>(StringComparer.Ordinal)
         {
+            ["SchemaRunner"] = ["headless_schema_history"],
             ["AuditLog"] = ["audit_log_entries"],
             ["Coordination"] = ["coordination_descriptor", "coordination_liveness", "coordination_node_generation"],
             ["DistributedLocks"] = [],
@@ -67,7 +68,6 @@ public sealed class PostgreSqlSharedSchemaTests(PostgreSqlSharedSchemaFixture fi
                 "messaging_inbox_operation_receipts",
                 "messaging_published",
                 "messaging_received",
-                "messaging_schema_state",
             ],
             ["Permissions"] = ["permission_definitions", "permission_grants", "permission_group_definitions"],
             ["Sequences"] = ["sequences"],
@@ -209,6 +209,136 @@ public sealed class PostgreSqlSharedSchemaTests(PostgreSqlSharedSchemaFixture fi
         }
 
         return schemas;
+    }
+
+    protected override async Task ExecuteAsync(string connectionString, string sql, CancellationToken cancellationToken)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(sql, connection);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    protected override async Task<IReadOnlyList<string>> QueryLinesAsync(
+        string connectionString,
+        string sql,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(sql, connection);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+
+        var lines = new List<string>();
+
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            lines.Add(reader.GetString(0));
+        }
+
+        return lines;
+    }
+
+    // Objects owned by an extension are described by the extension line alone: Messaging installs pg_trgm when it
+    // can, and its functions are the extension's, not a feature's.
+    protected override string SchemaShapeSql =>
+        """
+            WITH rels AS (
+                SELECT c.oid, n.nspname, c.relname, c.relkind
+                FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+                WHERE n.nspname NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
+                    AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.objid = c.oid AND d.deptype = 'e')
+            )
+            SELECT line FROM (
+                SELECT 'relation ' || r.nspname || '.' || r.relname || ' kind=' || r.relkind::text AS line
+                FROM rels r
+                UNION ALL
+                SELECT 'column ' || r.nspname || '.' || r.relname || '.' || a.attname
+                    || ' type=' || format_type(a.atttypid, a.atttypmod)
+                    || CASE WHEN a.attnotnull THEN ' not null' ELSE ' null' END
+                    || coalesce(' default=' || pg_get_expr(ad.adbin, ad.adrelid), '')
+                    || CASE WHEN a.attidentity <> '' THEN ' identity=' || a.attidentity::text ELSE '' END
+                    || CASE WHEN a.attgenerated <> '' THEN ' generated=' || a.attgenerated::text ELSE '' END
+                    || coalesce(' collation=' || co.collname, '')
+                    || ' position=' || a.attnum
+                FROM rels r
+                    JOIN pg_attribute a ON a.attrelid = r.oid AND a.attnum > 0 AND NOT a.attisdropped
+                    JOIN pg_type ty ON ty.oid = a.atttypid
+                    LEFT JOIN pg_attrdef ad ON ad.adrelid = a.attrelid AND ad.adnum = a.attnum
+                    LEFT JOIN pg_collation co ON co.oid = a.attcollation AND a.attcollation <> ty.typcollation
+                WHERE r.relkind IN ('r', 'p', 'v', 'm')
+                UNION ALL
+                SELECT 'index ' || r.nspname || '.' || r.relname || ' ' || pg_get_indexdef(r.oid)
+                FROM rels r
+                WHERE r.relkind IN ('i', 'I')
+                UNION ALL
+                SELECT 'constraint ' || n.nspname || '.' || t.conname || ' on ' || coalesce(t.conrelid::regclass::text, '-')
+                    || ' ' || pg_get_constraintdef(t.oid)
+                FROM pg_constraint t JOIN pg_namespace n ON n.oid = t.connamespace
+                WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+                UNION ALL
+                SELECT 'sequence ' || s.schemaname || '.' || s.sequencename || ' type=' || s.data_type::text
+                    || ' start=' || s.start_value || ' min=' || s.min_value || ' max=' || s.max_value
+                    || ' increment=' || s.increment_by || ' cycle=' || s.cycle || ' cache=' || s.cache_size
+                FROM pg_sequences s
+                WHERE s.schemaname NOT IN ('pg_catalog', 'information_schema')
+                UNION ALL
+                SELECT 'routine ' || n.nspname || '.' || p.proname || '(' || pg_get_function_identity_arguments(p.oid)
+                    || ') ' || md5(pg_get_functiondef(p.oid))
+                FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+                WHERE n.nspname NOT IN ('pg_catalog', 'information_schema') AND p.prokind IN ('f', 'p')
+                    AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.objid = p.oid AND d.deptype = 'e')
+                UNION ALL
+                SELECT 'extension ' || e.extname || ' in ' || n.nspname
+                FROM pg_extension e JOIN pg_namespace n ON n.oid = e.extnamespace
+            ) shape
+            ORDER BY line COLLATE "C";
+            """;
+
+    protected override string HistoryLinesSql(string schema)
+    {
+        return $"""
+            SELECT feature || '/' || step_version || ' ' || checksum || ' ' || description
+            FROM "{schema}".headless_schema_history
+            ORDER BY feature, step_version;
+            """;
+    }
+
+    protected override string DeleteHistoryRowSql(string schema, string feature, string version)
+    {
+        return $"""
+            DELETE FROM "{schema}".headless_schema_history WHERE feature = '{feature}' AND step_version = '{version}';
+            """;
+    }
+
+    protected override string SetChecksumSql(string schema, string feature, string version, string checksum)
+    {
+        return $"""
+            UPDATE "{schema}".headless_schema_history SET checksum = '{checksum}'
+            WHERE feature = '{feature}' AND step_version = '{version}';
+            """;
+    }
+
+    protected override async Task ExecuteScriptWithPlainClientAsync(
+        string connectionString,
+        string script,
+        CancellationToken cancellationToken
+    )
+    {
+        // psql inside the container, the client a DBA would use. ON_ERROR_STOP turns a failed statement into a
+        // non-zero exit code instead of an ERROR line on stderr that psql otherwise skips past.
+        var database = new NpgsqlConnectionStringBuilder(connectionString).Database!;
+        var path = $"/tmp/{database}-{Guid.NewGuid():N}.sql";
+        await fixture.Container.CopyAsync(System.Text.Encoding.UTF8.GetBytes(script), path, ct: cancellationToken);
+
+        var result = await fixture.Container.ExecAsync(
+            ["psql", "-v", "ON_ERROR_STOP=1", "-U", "postgres", "-d", database, "-f", path],
+            cancellationToken
+        );
+
+        result.ExitCode.Should().Be(0, result.Stderr);
+        result.Stderr.Should().NotContain("ERROR");
     }
 
     protected override void AssertIdentifierLimits(IReadOnlyList<CatalogObject> objects)

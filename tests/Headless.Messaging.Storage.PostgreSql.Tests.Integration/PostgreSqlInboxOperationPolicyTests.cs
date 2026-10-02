@@ -22,7 +22,7 @@ public sealed class PostgreSqlInboxOperationPolicyTests(PostgreSqlTestFixture fi
     public async Task should_apply_configured_timeout_to_blocked_history_queries(bool receipts)
     {
         await using var provider = _CreateProvider();
-        await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
         provider.GetRequiredService<IOptions<MessagingOptions>>().Value.CommandTimeout = TimeSpan.FromSeconds(1);
         var storage = provider.GetRequiredService<IDataStorage>();
         var schema = provider.GetRequiredService<IOptions<MessagingStorageOptions>>().Value.Schema;
@@ -61,7 +61,7 @@ public sealed class PostgreSqlInboxOperationPolicyTests(PostgreSqlTestFixture fi
     public async Task should_use_database_history_clock_and_exact_cutoff(int skewDays)
     {
         await using var provider = _CreateProvider(new FakeTimeProvider(DateTimeOffset.UtcNow.AddDays(skewDays)));
-        await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
         var storage = provider.GetRequiredService<IDataStorage>();
         var schema = provider.GetRequiredService<IOptions<MessagingStorageOptions>>().Value.Schema;
         await storage.GetInboxOperationsApi().HoldAsync(_Request(Guid.NewGuid(), StatusName.Succeeded), AbortToken);
@@ -88,13 +88,12 @@ public sealed class PostgreSqlInboxOperationPolicyTests(PostgreSqlTestFixture fi
     }
 
     [Fact]
-    public async Task should_initialize_and_repair_history_indexes_on_reentry()
+    public async Task should_create_history_indexes_and_keep_them_on_reentry()
     {
         await using var provider = _CreateProvider();
-        var initializer = provider.GetRequiredService<IStorageInitializer>();
         var schema = provider.GetRequiredService<IOptions<MessagingStorageOptions>>().Value.Schema;
-        await initializer.InitializeAsync(AbortToken);
-        await initializer.InitializeAsync(AbortToken);
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
         await using var count = new NpgsqlCommand(
@@ -102,18 +101,6 @@ public sealed class PostgreSqlInboxOperationPolicyTests(PostgreSqlTestFixture fi
             connection
         );
         count.Parameters.AddWithValue("@Schema", schema);
-        (await count.ExecuteScalarAsync(AbortToken)).Should().Be(3L);
-        await using var drop = new NpgsqlCommand(
-            $"""
-            DROP INDEX "{schema}"."idx_messaging_inbox_receipts_type_created";
-            DROP INDEX "{schema}"."idx_messaging_inbox_audit_type_created";
-            DROP INDEX "{schema}"."idx_messaging_inbox_audit_operation";
-            """,
-            connection
-        );
-        await drop.ExecuteNonQueryAsync(AbortToken);
-        await initializer.InitializeAsync(AbortToken);
-        await initializer.InitializeAsync(AbortToken);
         (await count.ExecuteScalarAsync(AbortToken)).Should().Be(3L);
     }
 
@@ -123,7 +110,7 @@ public sealed class PostgreSqlInboxOperationPolicyTests(PostgreSqlTestFixture fi
     public async Task should_serialize_receipt_deletion_with_operation_replay(bool conflict)
     {
         await using var provider = _CreateProvider();
-        await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
         var storage = provider.GetRequiredService<IDataStorage>();
         var schema = provider.GetRequiredService<IOptions<MessagingStorageOptions>>().Value.Schema;
         var request = _Request(Guid.NewGuid(), StatusName.Succeeded);
@@ -135,7 +122,7 @@ public sealed class PostgreSqlInboxOperationPolicyTests(PostgreSqlTestFixture fi
         await blocker.OpenAsync(AbortToken);
         await using var transaction = await blocker.BeginTransactionAsync(AbortToken);
         await using var operationLock = new NpgsqlCommand(
-            "SELECT pg_advisory_xact_lock(hashtextextended(@OperationId::text,0));",
+            "SELECT pg_advisory_xact_lock(hashtextextended('headless.messaging.inbox.operation.' || @OperationId::text,0));",
             blocker,
             transaction
         );
@@ -216,7 +203,7 @@ public sealed class PostgreSqlInboxOperationPolicyTests(PostgreSqlTestFixture fi
 
     protected override async Task ExpireGenerationAsync(ServiceProvider provider, Guid storageId)
     {
-        var table = provider.GetRequiredService<IStorageInitializer>().GetReceivedTableName();
+        var table = provider.GetRequiredService<IStorageTableNames>().GetReceivedTableName();
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
         await using var command = new NpgsqlCommand(
@@ -234,8 +221,8 @@ public sealed class PostgreSqlInboxOperationPolicyTests(PostgreSqlTestFixture fi
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow.AddDays(30));
         await using var provider = _CreateProvider(clock);
-        var initializer = provider.GetRequiredService<IStorageInitializer>();
-        await initializer.InitializeAsync(AbortToken);
+        var tableNames = provider.GetRequiredService<IStorageTableNames>();
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
         var storage = provider.GetRequiredService<IDataStorage>();
         var message = await _AdmitAsync(storage, lane);
         await _LeaseAsync(storage, message);
@@ -249,7 +236,7 @@ public sealed class PostgreSqlInboxOperationPolicyTests(PostgreSqlTestFixture fi
 
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
-        var table = initializer.GetReceivedTableName();
+        var table = tableNames.GetReceivedTableName();
         await using var expire = new NpgsqlCommand(
             $"""UPDATE {table} SET "locked_until"=clock_timestamp()-INTERVAL '1 second', "next_retry_at"=clock_timestamp()-INTERVAL '1 second' WHERE "id"=@Id;""",
             connection
@@ -284,13 +271,13 @@ public sealed class PostgreSqlInboxOperationPolicyTests(PostgreSqlTestFixture fi
     public async Task should_serialize_blocked_recovery_claim_and_orphan_purge(MessageLane lane)
     {
         await using var provider = _CreateProvider();
-        var initializer = provider.GetRequiredService<IStorageInitializer>();
-        await initializer.InitializeAsync(AbortToken);
+        var tableNames = provider.GetRequiredService<IStorageTableNames>();
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
         var storage = provider.GetRequiredService<IDataStorage>();
         var message = await _AdmitAsync(storage, lane);
         await _LeaseAsync(storage, message);
         (await storage.DeferReceivedInboxOrphanAsync(message, AbortToken)).Should().BeTrue();
-        var table = initializer.GetReceivedTableName();
+        var table = tableNames.GetReceivedTableName();
         await using var blocker = new NpgsqlConnection(fixture.ConnectionString);
         await blocker.OpenAsync(AbortToken);
         await using var transaction = await blocker.BeginTransactionAsync(AbortToken);

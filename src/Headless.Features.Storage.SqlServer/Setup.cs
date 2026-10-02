@@ -1,15 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using FluentValidation;
 using Headless.Checks;
 using Headless.Constants;
 using Headless.Features.Repositories;
 using Headless.Features.SqlServer;
-using Headless.Serializer;
 using Headless.Sql;
+using Headless.Sql.SqlServer;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Features;
@@ -125,31 +123,12 @@ public static class SetupFeaturesSqlServer
                 services.Configure<SqlServerFeaturesOptions, SqlServerFeaturesOptionsValidator>(_configureWithServices);
             }
 
-            services.AddOptions<FeaturesStorageOptions, SqlServerFeaturesStorageOptionsValidator>();
-            services.AddInitializerHostedService<SqlServerFeaturesStorageInitializer>();
-            services.TryAddSingleton<IJsonSerializer>(_ => new SystemJsonSerializer());
-            services.TryAddSingleton<IFeatureValueRecordRepository, SqlServerFeatureValueRecordRepository>();
-            services.TryAddSingleton<IFeatureDefinitionRecordRepository, SqlServerFeatureDefinitionRecordRepository>();
-        }
-    }
-
-    private sealed class SqlServerFeaturesStorageOptionsValidator : AbstractValidator<FeaturesStorageOptions>
-    {
-        public SqlServerFeaturesStorageOptionsValidator()
-        {
-            RuleFor(x => x.Schema).IsValidIdentifierFor(StorageProvider.SqlServer);
-            RuleFor(x => x.FeatureValuesTableName)
-                .IsValidIdentifierFor(StorageProvider.SqlServer)
-                .FitsDerivedPostgreSqlNames(FeaturesStorageNames.ValuesIndexes)
-                .When(x => x.FeatureValuesTableName is not null);
-            RuleFor(x => x.FeatureDefinitionsTableName)
-                .IsValidIdentifierFor(StorageProvider.SqlServer)
-                .FitsDerivedPostgreSqlNames(FeaturesStorageNames.DefinitionsIndexes)
-                .When(x => x.FeatureDefinitionsTableName is not null);
-            RuleFor(x => x.FeatureGroupDefinitionsTableName)
-                .IsValidIdentifierFor(StorageProvider.SqlServer)
-                .FitsDerivedPostgreSqlNames(FeaturesStorageNames.GroupsIndexes)
-                .When(x => x.FeatureGroupDefinitionsTableName is not null);
+            RelationalFeaturesStorage.AddServices<SqlServerFeaturesOptions>(
+                services,
+                SqlServerDialect.Instance,
+                StorageProvider.SqlServer,
+                SqlServerFeaturesSchemaContribution.Create
+            );
         }
     }
 }

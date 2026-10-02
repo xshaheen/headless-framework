@@ -16,14 +16,30 @@ namespace Headless.Coordination;
 [PublicAPI]
 public readonly record struct NodeId
 {
+    /// <summary>
+    /// The longest node id, in characters. Every membership store keys rows by the cluster name and the node id
+    /// together, and SQL Server caps a clustered key at 900 bytes: two bytes per character for both, plus the
+    /// incarnation, must fit.
+    /// </summary>
+    public const int MaxLength = 256;
+
     /// <summary>Initializes a <see cref="NodeId"/> with the given string value.</summary>
-    /// <param name="value">The node identifier string. Must not be null, empty, or whitespace.</param>
+    /// <param name="value">
+    /// The node identifier string. Must not be null or blank, and must be text every membership store keeps unchanged
+    /// as a key.
+    /// </param>
     /// <exception cref="ArgumentException">
-    /// Thrown when <paramref name="value"/> is empty or contains only whitespace.
+    /// Thrown when <paramref name="value"/> is empty or whitespace-only, or is text some store would merge, reject, or
+    /// rewrite (see <see cref="Argument.IsPortableKey"/>).
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Thrown when <paramref name="value"/> is longer than <see cref="MaxLength"/>.
     /// </exception>
     public NodeId(string value)
     {
-        Value = Argument.IsNotNullOrWhiteSpace(value);
+        Argument.IsNotNullOrWhiteSpace(value);
+        Argument.HasMaxLength(value, MaxLength);
+        Value = Argument.IsPortableKey(value);
     }
 
     /// <summary>The underlying string value of this node identifier.</summary>

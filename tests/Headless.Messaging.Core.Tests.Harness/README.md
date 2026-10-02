@@ -241,9 +241,28 @@ public sealed class PostgreSqlStorageTests(PostgreSqlFixture fixture) : DataStor
         // Create configured storage instance
     }
 
-    protected override IStorageInitializer GetInitializer()
+    protected override IStorageTableNames GetTableNames()
     {
-        // Create storage initializer
+        // Return the storage's table-name resolver
+    }
+
+    protected override ISerializer GetSerializer()
+    {
+        // Return the serializer the storage uses
+    }
+
+    protected override (IDataStorage Storage, MessagingOptions Options) CreateSchedulingTestStorage(TimeProvider clock)
+    {
+        // Create a storage whose application clock is the given one
+    }
+
+    protected override Task<int> CountReceivedMessagesByIdentityAsync(
+        string messageId,
+        string consumerIdentity,
+        CancellationToken cancellationToken
+    )
+    {
+        // Count received rows for the message and consumer identity
     }
 
     // Expose base tests

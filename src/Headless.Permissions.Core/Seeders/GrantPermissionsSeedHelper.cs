@@ -23,7 +23,7 @@ public interface IGrantPermissionsSeedHelper
     /// </summary>
     /// <param name="roleName">Name of the role to receive the grants.</param>
     /// <param name="tenantId">Optional tenant to scope the grants; uses the ambient tenant when <see langword="null"/>.</param>
-    /// <exception cref="ArgumentException"><paramref name="roleName"/> or <paramref name="tenantId"/> starts or ends with white space.</exception>
+    /// <exception cref="ArgumentException"><paramref name="roleName"/> or <paramref name="tenantId"/> is text some provider would not keep unchanged as a key.</exception>
     ValueTask GrantAllPermissionsToRoleAsync(
         string roleName,
         string? tenantId = null,
@@ -44,8 +44,8 @@ public sealed class GrantPermissionsSeedHelper(
         CancellationToken cancellationToken = default
     )
     {
-        Argument.HasNoSurroundingWhiteSpace(roleName);
-        Argument.HasNoSurroundingWhiteSpace(tenantId);
+        Argument.IsPortableKey(roleName);
+        Argument.IsPortableKey(tenantId);
 
         using var _ = currentTenant.Change(tenantId);
 

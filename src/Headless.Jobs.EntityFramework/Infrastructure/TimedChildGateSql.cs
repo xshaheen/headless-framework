@@ -16,11 +16,13 @@ namespace Headless.Jobs.Infrastructure;
 internal static class TimedChildGateSql
 {
     /// <summary>
-    /// Returns a leading <c>AND (...)</c> clause for a fallback candidate <c>WHERE</c>. <paramref name="rootAlias"/>
-    /// is the candidate row's alias; the parent is read through a correlated <c>EXISTS</c> subquery. The clause is
-    /// self-contained SQL structure built only from provider-delimited identifiers and enum-name literals.
+    /// Returns a leading <c>AND (...)</c> clause for a fallback candidate <c>WHERE</c>. The candidate row's columns
+    /// are unqualified, so the clause embeds in a claim whose table alias the dialect chooses; each gated run
+    /// condition reads the parent through its own <c>IN</c> subquery, so no column inside a subquery has to name the
+    /// candidate row. The clause is self-contained SQL structure built only from provider-delimited identifiers and
+    /// enum-name literals.
     /// </summary>
-    public static string Build(TimeJobRelationalMapping mapping, string rootAlias)
+    public static string Build(TimeJobRelationalMapping mapping)
     {
         const string onSuccess = nameof(RunCondition.OnSuccess);
         const string onFailure = nameof(RunCondition.OnFailure);
@@ -32,28 +34,30 @@ internal static class TimedChildGateSql
         const string failed = nameof(JobStatus.Failed);
         const string cancelled = nameof(JobStatus.Cancelled);
 
-        var runCondition = $"{rootAlias}.{mapping.RunCondition}";
-        var parentStatus = $"gate_parent.{mapping.Status}";
+        var runCondition = mapping.RunCondition;
+        var onSuccessParent = parentIn($"'{succeeded}', '{dueDone}'");
+        var onFailureParent = parentIn($"'{failed}'");
+        var onCancelledParent = parentIn($"'{cancelled}'");
+        var onFailureOrCancelledParent = parentIn($"'{failed}', '{cancelled}'");
+        var onAnyParent = parentIn($"'{succeeded}', '{dueDone}', '{failed}', '{cancelled}'");
 
         // A NULL RunCondition is ungated (matches the in-memory and EF C#-null-semantics behavior). It needs its own
         // arm because SQL three-valued logic makes `NULL NOT IN (...)` evaluate to UNKNOWN — without this the row
         // would be rejected forever, contradicting the other two providers.
         return $"""
-            AND ({rootAlias}.{mapping.ParentId} IS NULL
+            AND ({mapping.ParentId} IS NULL
                  OR {runCondition} IS NULL
                  OR {runCondition} NOT IN ('{onSuccess}', '{onFailure}', '{onCancelled}', '{onFailureOrCancelled}', '{onAny}')
-                 OR EXISTS (
-                     SELECT 1
-                     FROM {mapping.Table} AS gate_parent
-                     WHERE gate_parent.{mapping.Id} = {rootAlias}.{mapping.ParentId}
-                       AND (
-                           ({runCondition} = '{onSuccess}' AND {parentStatus} IN ('{succeeded}', '{dueDone}'))
-                           OR ({runCondition} = '{onFailure}' AND {parentStatus} = '{failed}')
-                           OR ({runCondition} = '{onCancelled}' AND {parentStatus} = '{cancelled}')
-                           OR ({runCondition} = '{onFailureOrCancelled}' AND {parentStatus} IN ('{failed}', '{cancelled}'))
-                           OR ({runCondition} = '{onAny}' AND {parentStatus} IN ('{succeeded}', '{dueDone}', '{failed}', '{cancelled}'))
-                       )
-                 ))
+                 OR ({runCondition} = '{onSuccess}' AND {onSuccessParent})
+                 OR ({runCondition} = '{onFailure}' AND {onFailureParent})
+                 OR ({runCondition} = '{onCancelled}' AND {onCancelledParent})
+                 OR ({runCondition} = '{onFailureOrCancelled}' AND {onFailureOrCancelledParent})
+                 OR ({runCondition} = '{onAny}' AND {onAnyParent}))
             """;
+
+        string parentIn(string statuses)
+        {
+            return $"{mapping.ParentId} IN (SELECT gate_parent.{mapping.Id} FROM {mapping.Table} AS gate_parent WHERE gate_parent.{mapping.Status} IN ({statuses}))";
+        }
     }
 }

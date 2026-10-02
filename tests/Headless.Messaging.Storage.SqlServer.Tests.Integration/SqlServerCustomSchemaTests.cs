@@ -39,7 +39,7 @@ public sealed class SqlServerCustomSchemaTests(SqlServerTestFixture fixture) : T
         try
         {
             // when
-            await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
+            await provider.ApplyMessagingSchemaAsync(AbortToken);
 
             var storage = provider.GetRequiredService<IDataStorage>();
             var messageId = Guid.NewGuid().ToString("D");
@@ -69,20 +69,7 @@ public sealed class SqlServerCustomSchemaTests(SqlServerTestFixture fixture) : T
         {
             await using var cleanup = new SqlConnection(fixture.ConnectionString);
             await cleanup.OpenAsync(AbortToken);
-            await cleanup.ExecuteAsync(
-                $"""
-                DROP TABLE IF EXISTS [{_Schema}].[MessagingInboxAudit];
-                DROP TABLE IF EXISTS [{_Schema}].[MessagingInboxOperationReceipts];
-                DROP TABLE IF EXISTS [{_Schema}].[MessagingSchemaState];
-                DROP TABLE IF EXISTS [{_Schema}].[MessagingPublished];
-                DROP TABLE IF EXISTS [{_Schema}].[MessagingReceived];
-                DROP TYPE IF EXISTS [{_Schema}].[HeadlessMessagingIdList];
-                DROP TYPE IF EXISTS [{_Schema}].[HeadlessMessagingOwnerList];
-                DROP TYPE IF EXISTS [{_Schema}].[HeadlessMessagingPoisonMessageList];
-                DROP TYPE IF EXISTS [{_Schema}].[HeadlessMessagingConsumerIdentityList];
-                DROP SCHEMA IF EXISTS [{_Schema}];
-                """
-            );
+            await cleanup.ExecuteAsync(TestMessagingSchema.DropSql(_Schema));
         }
     }
 }

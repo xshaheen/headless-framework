@@ -2,6 +2,7 @@
 
 using Headless.AuditLog;
 using Headless.Hosting.Initialization;
+using Headless.Hosting.Initialization.Schema;
 using Headless.Testing.Tests;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
@@ -31,10 +32,12 @@ public sealed class SqlServerAuditLogFailureModesTests(SqlServerAuditLogFixture 
         var initializer = host.Services.GetRequiredService<IEnumerable<IInitializer>>().Single();
         initializer.IsInitialized.Should().BeFalse();
 
+        // The schema runner names the features whose connection failed and keeps the driver error as the cause.
         await FluentActions
             .Awaiting(() => initializer.WaitForInitializationAsync(AbortToken))
             .Should()
-            .ThrowAsync<SqlException>();
+            .ThrowAsync<SchemaRunnerException>()
+            .WithInnerException(typeof(SqlException));
     }
 
     [Fact]
@@ -114,6 +117,7 @@ public sealed class SqlServerAuditLogFailureModesTests(SqlServerAuditLogFixture 
         await using var command = new SqlCommand(
             $"""
             IF OBJECT_ID(N'{schema}.AuditLogEntries', N'U') IS NOT NULL DROP TABLE [{schema}].[AuditLogEntries];
+            IF OBJECT_ID(N'{schema}.headless_schema_history', N'U') IS NOT NULL DROP TABLE [{schema}].[headless_schema_history];
             IF EXISTS (SELECT * FROM sys.schemas WHERE name = N'{schema}') EXEC(N'DROP SCHEMA [{schema}]');
             """,
             connection
@@ -144,7 +148,7 @@ public sealed class SqlServerAuditLogFailureModesTests(SqlServerAuditLogFixture 
         await using var connection = new SqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
         // Nonclustered indexes only (type = 2) — excludes the clustered PK so the count matches
-        // the 6 CREATE NONCLUSTERED INDEX statements in SqlServerAuditLogStorageInitializer.
+        // the 6 CREATE NONCLUSTERED INDEX statements in SqlServerAuditLogSchemaContribution.
         await using var command = new SqlCommand(
             $"SELECT COUNT(*) FROM sys.indexes WHERE object_id = OBJECT_ID(N'[{schema}].[{table}]') AND type = 2;",
             connection

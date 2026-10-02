@@ -16,9 +16,21 @@ public sealed class RedisMembershipConformanceTests(RedisMembershipFixture fixtu
     private readonly RedisMembershipFixture _fixture = fixture;
 
     [Fact]
+    public override Task should_register_a_node_at_the_maximum_cluster_name_and_node_id_lengths()
+    {
+        return base.should_register_a_node_at_the_maximum_cluster_name_and_node_id_lengths();
+    }
+
+    [Fact]
     public override Task should_register_and_appear_in_live_set()
     {
         return base.should_register_and_appear_in_live_set();
+    }
+
+    [Fact]
+    public override Task should_allocate_exactly_one_through_n_for_concurrent_allocations()
+    {
+        return base.should_allocate_exactly_one_through_n_for_concurrent_allocations();
     }
 
     [Fact]

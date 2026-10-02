@@ -201,8 +201,8 @@ public sealed class PermissionManager(
         CancellationToken cancellationToken = default
     )
     {
-        Argument.HasNoSurroundingWhiteSpace(providerName);
-        Argument.HasNoSurroundingWhiteSpace(providerKey);
+        Argument.IsPortableKey(providerName);
+        Argument.IsPortableKey(providerKey);
 
         var permissionGrants = await repository
             .GetListAsync(providerName, providerKey, cancellationToken)

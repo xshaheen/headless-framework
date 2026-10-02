@@ -5,6 +5,7 @@ using Headless.Caching;
 using Headless.Coordination;
 using Headless.DistributedLocks;
 using Headless.Hosting.Initialization;
+using Headless.Hosting.Initialization.Schema;
 using Headless.Jobs;
 using Headless.Jobs.DbContextFactory;
 using Headless.Messaging;
@@ -87,6 +88,208 @@ public abstract class SharedSchemaTestsBase : TestBase
     /// <summary>Asserts provider-specific identifier constraints, such as PostgreSQL's silent truncation.</summary>
     protected virtual void AssertIdentifierLimits(IReadOnlyList<CatalogObject> objects) { }
 
+    /// <summary>Runs one statement against the database.</summary>
+    protected abstract Task ExecuteAsync(string connectionString, string sql, CancellationToken cancellationToken);
+
+    /// <summary>Runs a query whose rows each project one string, and returns them in order.</summary>
+    protected abstract Task<IReadOnlyList<string>> QueryLinesAsync(
+        string connectionString,
+        string sql,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>
+    /// A query that describes every framework object in the database, one line per table, column (type, nullability,
+    /// default, identity, collation), index, constraint, sequence, and routine, in a stable order. Names the engine
+    /// generates are masked, so two databases built by the same DDL describe identically.
+    /// </summary>
+    protected abstract string SchemaShapeSql { get; }
+
+    /// <summary>A query that lists the history rows of <paramref name="schema" /> as one line each, in a stable order.</summary>
+    protected abstract string HistoryLinesSql(string schema);
+
+    /// <summary>Deletes one history row, as if the code gained a step the database has not received.</summary>
+    protected abstract string DeleteHistoryRowSql(string schema, string feature, string version);
+
+    /// <summary>Overwrites one history row's checksum.</summary>
+    protected abstract string SetChecksumSql(string schema, string feature, string version, string checksum);
+
+    /// <summary>Runs a deploy script with the engine's plain client, with no Headless code on the path.</summary>
+    protected abstract Task ExecuteScriptWithPlainClientAsync(
+        string connectionString,
+        string script,
+        CancellationToken cancellationToken
+    );
+
+    [Fact]
+    public async Task should_verify_every_feature_and_name_each_step_whose_history_row_is_missing()
+    {
+        var connectionString = await CreateDatabaseAsync(AbortToken);
+
+        try
+        {
+            var runner = _BuildFullRunner(connectionString, out var owners);
+            await using var _ = owners;
+            await runner.ApplyAsync(AbortToken);
+
+            (await runner.RunAsync(SchemaRunnerMode.Verify, AbortToken))
+                .Should()
+                .BeEmpty("a database the runner applied holds every registered step");
+
+            foreach (var (schema, feature, version) in _Steps(runner))
+            {
+                await ExecuteAsync(connectionString, DeleteHistoryRowSql(schema, feature, version), AbortToken);
+
+                var verify = () => runner.RunAsync(SchemaRunnerMode.Verify, AbortToken);
+                var failure = (await verify.Should().ThrowAsync<SchemaRunnerException>()).Which;
+
+                var mismatch = failure.Mismatches.Should().ContainSingle().Which;
+
+                mismatch.Kind.Should().Be(SchemaMismatchKind.Missing);
+                (mismatch.Schema, mismatch.Feature, mismatch.Version).Should().Be((schema, feature, version));
+                failure.Message.Should().Contain($"Missing {schema}/{feature}/{version}");
+
+                // Apply re-runs the idempotent step against its existing objects and records it again.
+                var reapplied = await runner.ApplyAsync(AbortToken);
+                reapplied.AppliedSteps.Should().Equal(new SchemaAppliedStep(schema, feature, version));
+            }
+
+            (await runner.RunAsync(SchemaRunnerMode.Verify, AbortToken)).Should().BeEmpty();
+        }
+        finally
+        {
+            await DropDatabaseAsync(connectionString, CancellationToken.None);
+        }
+    }
+
+    [Fact]
+    public async Task should_fail_both_modes_naming_each_step_whose_recorded_checksum_changed()
+    {
+        var connectionString = await CreateDatabaseAsync(AbortToken);
+
+        try
+        {
+            var runner = _BuildFullRunner(connectionString, out var owners);
+            await using var _ = owners;
+            await runner.ApplyAsync(AbortToken);
+            var tampered = new string('0', 64);
+
+            foreach (var (schema, feature, version) in _Steps(runner))
+            {
+                await ExecuteAsync(connectionString, SetChecksumSql(schema, feature, version, tampered), AbortToken);
+
+                foreach (var mode in new[] { SchemaRunnerMode.Verify, SchemaRunnerMode.Apply })
+                {
+                    var run = () => runner.RunAsync(mode, AbortToken);
+                    var failure = (await run.Should().ThrowAsync<SchemaRunnerException>()).Which;
+                    var mismatch = failure.Mismatches.Should().ContainSingle().Which;
+
+                    mismatch.Kind.Should().Be(SchemaMismatchKind.Checksum);
+                    (mismatch.Schema, mismatch.Feature, mismatch.Version).Should().Be((schema, feature, version));
+                    mismatch.ActualChecksum.Should().Be(tampered);
+                    failure.Message.Should().Contain($"Checksum {schema}/{feature}/{version}");
+                }
+
+                var expected = (await runner.VerifyAsync(AbortToken)).Single().ExpectedChecksum!;
+                await ExecuteAsync(connectionString, SetChecksumSql(schema, feature, version, expected), AbortToken);
+            }
+
+            (await runner.RunAsync(SchemaRunnerMode.Verify, AbortToken)).Should().BeEmpty();
+        }
+        finally
+        {
+            await DropDatabaseAsync(connectionString, CancellationToken.None);
+        }
+    }
+
+    [Fact]
+    public async Task should_build_the_same_catalog_from_the_exported_script_as_from_apply()
+    {
+        var appliedDatabase = await CreateDatabaseAsync(AbortToken);
+        var exportedDatabase = await CreateDatabaseAsync(AbortToken);
+
+        try
+        {
+            var applier = _BuildFullRunner(appliedDatabase, out var applierOwners);
+            await using var _ = applierOwners;
+            var exporter = _BuildFullRunner(exportedDatabase, out var exporterOwners);
+            await using var __ = exporterOwners;
+
+            await applier.ApplyAsync(AbortToken);
+            var script = exporter.ExportScript(exporter.Contributions[0].Dialect);
+
+            await ExecuteScriptWithPlainClientAsync(exportedDatabase, script, AbortToken);
+            var afterFirstRun = await QueryLinesAsync(exportedDatabase, SchemaShapeSql, AbortToken);
+            await ExecuteScriptWithPlainClientAsync(exportedDatabase, script, AbortToken);
+
+            var applied = await QueryLinesAsync(appliedDatabase, SchemaShapeSql, AbortToken);
+            var exported = await QueryLinesAsync(exportedDatabase, SchemaShapeSql, AbortToken);
+
+            applied.Should().NotBeEmpty();
+            exported.Should().Equal(applied, "the deploy script must build exactly what the runner builds");
+            afterFirstRun.Should().Equal(exported, "running the script a second time must change nothing");
+
+            const string schema = HeadlessStorageDefaults.Schema;
+            (await QueryLinesAsync(exportedDatabase, HistoryLinesSql(schema), AbortToken))
+                .Should()
+                .Equal(await QueryLinesAsync(appliedDatabase, HistoryLinesSql(schema), AbortToken));
+            (await exporter.RunAsync(SchemaRunnerMode.Verify, AbortToken))
+                .Should()
+                .BeEmpty("verify mode must accept a database built by the deploy script");
+        }
+        finally
+        {
+            await DropDatabaseAsync(appliedDatabase, CancellationToken.None);
+            await DropDatabaseAsync(exportedDatabase, CancellationToken.None);
+        }
+    }
+
+    private static IEnumerable<(string Schema, string Feature, string Version)> _Steps(SchemaRunner runner)
+    {
+        return runner.Contributions.SelectMany(c => c.Steps.Select(s => (c.Schema, c.Feature, s.Version)));
+    }
+
+    /// <summary>
+    /// A runner over every contribution the raw families and the default Messaging storage register against one
+    /// database, as one application carrying all of them would build it.
+    /// </summary>
+    private SchemaRunner _BuildFullRunner(string connectionString, out ContributionOwners owners)
+    {
+        var host = _BuildHost(connectionString, "node-runner", includeJobs: false);
+        var messaging = _BuildMessaging(connectionString);
+        owners = new ContributionOwners(host, messaging);
+
+        SchemaContribution[] contributions =
+        [
+            .. host.Services.GetServices<SchemaContribution>(),
+            .. messaging.GetServices<SchemaContribution>(),
+        ];
+
+        // Every family with a table or sequence must contribute, so a family that stops registering fails here
+        // rather than silently dropping out of the verify and export coverage.
+        var families = ExpectedRawTables
+            .Where(f => f.Value.Length > 0 || ExpectedRawSequences.ContainsKey(f.Key))
+            .Select(f => f.Key)
+            .Where(f => !string.Equals(f, "SchemaRunner", StringComparison.Ordinal));
+        contributions.Select(c => c.Feature).Should().Contain(families);
+        contributions.Should().OnlyContain(c => c.Schema == HeadlessStorageDefaults.Schema);
+        TestContext.Current.TestOutputHelper?.WriteLine(
+            $"Contributions: {string.Join(", ", contributions.Select(c => $"{c.Feature} ({c.Steps.Count} steps)"))}"
+        );
+
+        return new SchemaRunner(contributions);
+    }
+
+    /// <summary>Disposes the host and service provider whose registrations built a runner's contributions.</summary>
+    private sealed class ContributionOwners(IHost host, ServiceProvider messaging) : IAsyncDisposable
+    {
+        public async ValueTask DisposeAsync()
+        {
+            await messaging.DisposeAsync();
+            host.Dispose();
+        }
+    }
+
     [Fact]
     public async Task should_initialize_every_feature_into_the_shared_schema_when_hosts_start_concurrently()
     {
@@ -110,16 +313,15 @@ public abstract class SharedSchemaTestsBase : TestBase
         await using var messagingA = _BuildMessaging(connectionString);
         await using var messagingB = _BuildMessaging(connectionString);
 
-        // when: both hosts and both messaging initializers race the empty database at once
+        // when: both hosts and both messaging schema runners race the empty database at once
         await Task.WhenAll(
             hostA.StartAsync(AbortToken),
             hostB.StartAsync(AbortToken),
-            messagingA.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken),
-            messagingB.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken)
+            messagingA.GetRequiredService<SchemaRunner>().ApplyAsync(AbortToken),
+            messagingB.GetRequiredService<SchemaRunner>().ApplyAsync(AbortToken)
         );
 
-        // PostgreSQL creates the lock fence sequence on the first fenced acquire rather than at startup, so race
-        // that first acquire from both hosts too.
+        // A fenced acquire from each host proves startup created the lock fence sequence it reads.
         await Task.WhenAll(_AcquireFencedLockAsync(hostA), _AcquireFencedLockAsync(hostB));
 
         // then: every raw family's objects are in the shared schema, and Jobs has none yet
@@ -144,7 +346,7 @@ public abstract class SharedSchemaTestsBase : TestBase
 
         await using var messagingC = _BuildMessaging(connectionString);
         await hostC.StartAsync(AbortToken);
-        await messagingC.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
+        await messagingC.GetRequiredService<SchemaRunner>().ApplyAsync(AbortToken);
         await _AcquireFencedLockAsync(hostC);
 
         // then: the restart created nothing

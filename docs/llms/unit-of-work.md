@@ -1,6 +1,6 @@
 ---
 domain: Unit of Work
-packages: UnitOfWork.Abstractions, UnitOfWork, UnitOfWork.EntityFramework, UnitOfWork.PostgreSql, UnitOfWork.SqlServer
+packages: UnitOfWork.Abstractions, UnitOfWork, UnitOfWork.EntityFramework, UnitOfWork.PostgreSql, UnitOfWork.SqlServer, UnitOfWork.Sqlite
 ---
 
 # Unit of Work
@@ -42,7 +42,7 @@ See [Choosing a Provider](#choosing-a-provider) for the package-selection table.
 - Use `OnFailed` only to release a non-transactional resource reserved in anticipation of commit (a lock, a reservation) — not as a substitute for a proper rollback-safe design. Its faults are logged, never propagated.
 - The factory is the only receiver that opens a unit of work. `BeginAsync`, `Enlist`, and `RunAsync` are extension members on `IUnitOfWorkFactory`; no context, connection, or helper type carries a second spelling, and none of them take a `services:` parameter.
 - Under a retrying EF execution strategy, `BeginAsync(db)` throws by design — a user-initiated transaction cannot survive a strategy replay. Use `factory.RunAsync(db, ...)`, which runs begin → operation → complete *inside* the strategy and only lets a failure replay before the commit has started.
-- Raw-ADO replay is opt-in and belongs to one spelling per provider: `RunAsync(NpgsqlDataSource, …)` and `RunAsync(Func<CancellationToken, ValueTask<SqlConnection>>, …)` open a connection per attempt and replay under `UnitOfWorkRetryOptions.RetryStrategy` (host default) or the call's `retry:` argument. `RunAsync(connection, …)` never replays, and neither overload replays when both are `null`. Set `ShouldHandle = UnitOfWorkRetryOptions.DefaultShouldHandle` (or compose with it); Polly's own default replays every non-cancellation exception. Issue the block's commands on the connection it receives, never on one held from outside.
+- Raw-ADO replay is opt-in and belongs to one spelling per provider: `RunAsync(NpgsqlDataSource, …)` and `RunAsync(Func<CancellationToken, ValueTask<SqlConnection>>, …)` (`SqliteConnection` on SQLite) open a connection per attempt and replay under `UnitOfWorkRetryOptions.RetryStrategy` (host default) or the call's `retry:` argument. `RunAsync(connection, …)` never replays, and neither overload replays when both are `null`. Set `ShouldHandle = UnitOfWorkRetryOptions.DefaultShouldHandle` (or compose with it); Polly's own default replays every non-cancellation exception. Issue the block's commands on the connection it receives, never on one held from outside.
 - Catch `UnitOfWorkInDoubtException` around a `CompleteAsync` or `RunAsync` whose business operation must not apply twice. It means the commit's outcome is unknown, not that it rolled back: check the operation's durable idempotency key before retrying. Any other commit exception is a certain rollback.
 - Replay re-runs the block that owns the unit, so an enlisted publish or Jobs write issued directly inside your own `RunAsync(db, …)` block leaves it replayable: a transient failure anywhere in the block replays it with a fresh unit, the first attempt's rows roll back, and the replayed block writes them again. An enlisted write ends replay where a replay would not re-run it. One place is an *observed-mode* unit — the `HeadlessDbContext` save pipeline's own save, from a domain-event handler, which the pipeline replays without re-running the handler; there both the publish and the Jobs write call `IUnitOfWork.PreventRetry()` before writing, and so does a save through a sibling context that joined that unit over the shared connection and wrote rows, because the pipeline's replay restores only its own context's tracker. Another is a `SaveChangesAsync` inside your own block that dispatched domain or integration events: the successful save clears the aggregate's events, so a replayed block would re-insert the aggregate with nothing left to dispatch and commit it without the handlers' rows; the save calls `PreventRetry()` before clearing them. After any mark the fault is surfaced outside the strategy, so reconcile an ambiguous post-commit fault with a durable idempotency key instead of retrying blind. The EF integration-event dispatcher is exempt in the pipeline-owned save: it marks the occurrences the save pipeline re-publishes on a replayed attempt.
 - `GetFeature<TFeature>()` is a bridge-package seam, not an application API. Use the typed accessors a bridge ships (`unit.Outbox`, `unit.Jobs`, `unit.TransactionLocks`, `unit.Sequences`, `unit.Leases`, `unit.Idempotency`); register a feature (a singleton implementing `IUnitOfWorkFeature`) only when writing such a bridge.
@@ -103,10 +103,10 @@ Every `RunAsync` applies one replay policy, whatever the provider: a fault befor
 |---|---|---|
 | `RunAsync(DbContext, …)` | Yes, when the context's execution strategy retries | EF Core's strategy (`EnableRetryOnFailure` or a custom one); `UnitOfWorkRetryOptions` does not apply |
 | `RunAsync(NpgsqlDataSource, …)` | Yes, when a strategy is configured; each attempt opens its own connection | The call's `retry:`, else `UnitOfWorkRetryOptions.RetryStrategy`; off when both are `null` |
-| `RunAsync(Func<CancellationToken, ValueTask<SqlConnection>>, …)` | Same as the data-source overload; the factory returns a new connection per attempt | Same |
-| `RunAsync(NpgsqlConnection, …)` / `RunAsync(SqlConnection, …)` | Never — the caller owns the connection, and a replay on the connection that just failed is pointless | — |
+| `RunAsync(Func<CancellationToken, ValueTask<SqlConnection>>, …)` / `RunAsync(Func<CancellationToken, ValueTask<SqliteConnection>>, …)` | Same as the data-source overload; the factory returns a new connection per attempt | Same |
+| `RunAsync(NpgsqlConnection, …)` / `RunAsync(SqlConnection, …)` / `RunAsync(SqliteConnection, …)` | Never — the caller owns the connection, and a replay on the connection that just failed is pointless | — |
 
-Replay is off by default because turning it on changes failure semantics for existing blocks and repeats any non-transactional effect inside them (an HTTP call, a file write) on every attempt. `UnitOfWorkRetryOptions.DefaultShouldHandle` replays what a whole-transaction replay can cure: a failure the driver reports as transient (a dropped connection), a serialization failure (SQLSTATE `40001`, SQL Server `3960`), a deadlock (`40P01`, SQL Server `1205`), and on SQL Server, where SqlClient reports nothing as transient itself, the same error-number set EF Core's `SqlServerTransientExceptionDetector` replays under `EnableRetryOnFailure` (connection drops, Azure throttling, pool limits), read across every error the exception carries. So an EF block and a raw-ADO block on the same database replay the same faults. It never replays a cancellation, a constraint violation, the client-side command timeout (`-2`, which may have completed on the server), or anything that is not a database fault. Serializable workloads — CockroachDB, or PostgreSQL at `Serializable` — raise `40001` as normal operation and expect exactly this replay.
+Replay is off by default because turning it on changes failure semantics for existing blocks and repeats any non-transactional effect inside them (an HTTP call, a file write) on every attempt. `UnitOfWorkRetryOptions.DefaultShouldHandle` replays what a whole-transaction replay can cure: a failure the driver reports as transient (a dropped connection), a serialization failure (SQLSTATE `40001`, SQL Server `3960`), a deadlock (`40P01`, SQL Server `1205`), and on SQL Server, where SqlClient reports nothing as transient itself, the same error-number set EF Core's `SqlServerTransientExceptionDetector` replays under `EnableRetryOnFailure` (connection drops, Azure throttling, pool limits), read across every error the exception carries, and on SQLite `SQLITE_BUSY` and `SQLITE_LOCKED`, which `Microsoft.Data.Sqlite` does not report as transient. So an EF block and a raw-ADO block on the same database replay the same faults. It never replays a cancellation, a constraint violation, the client-side command timeout (`-2`, which may have completed on the server), or anything that is not a database fault. Serializable workloads — CockroachDB, or PostgreSQL at `Serializable` — raise `40001` as normal operation and expect exactly this replay.
 
 ### The failure hook and rollback
 
@@ -201,6 +201,7 @@ Every illegal transition throws with a message naming the remedy — never a bar
 | `Headless.UnitOfWork.EntityFramework` | EF Core owns the transaction (`DbContext`). | The unit of work is raw ADO. | `BeginAsync(db)` cannot run under a retrying execution strategy — use `RunAsync(db, …)` there. Never references `Headless.EntityFramework` (the dependency flows the other way), so it stays usable by any EF consumer. |
 | `Headless.UnitOfWork.PostgreSql` | Raw `NpgsqlConnection` transactions. | EF owns the transaction (use the EF provider). | No commit edge to observe: observed mode is fully explicit — the caller must call `CompleteAsync`/`RollbackAsync` itself, or a forgotten completion is logged. Replay only through `RunAsync(NpgsqlDataSource, …)`, which opens a connection per attempt; the connection overloads never replay. |
 | `Headless.UnitOfWork.SqlServer` | Raw `SqlConnection` transactions. | EF owns the transaction (use the EF provider). | Same explicit-completion contract as PostgreSQL. Replay only through `RunAsync(connectionFactory, …)`, because SqlClient ships no `DbDataSource`. |
+| `Headless.UnitOfWork.Sqlite` | Raw `SqliteConnection` transactions, for the Headless stores that have a SQLite provider. | Many concurrent writers: SQLite admits one writer per file. | Same explicit-completion contract as PostgreSQL. Every unit begins `IMMEDIATE`, holding the database write lock until it ends. Replay only through `RunAsync(connectionFactory, …)`, as on SQL Server. |
 | The resource-less core (`Headless.UnitOfWork`, no provider) | A coordination window with no transaction of its own — a test harness, or a script whose post-commit work should drain once at the end. | Any case that needs a joinable relational resource — a relational write cannot enlist in a resource-less unit, and a resource-bearing begin underneath it is an independent unit, not a participant. | No relational write enlists on it; each resource-bearing operation underneath opens and commits its own transaction. Messaging's in-memory storage is the one participant that can join it, through its buffer — which is what the test harness relies on. |
 
 ---
@@ -274,7 +275,7 @@ Implements the singleton `UnitOfWorkFactory`, the in-process unit engine with th
 - `OnFailed` drain (log-and-continue) on rollback, abandon, and commit fault; `RollbackAsync` idempotent; a commit fault transitions to `Failed` before the exception propagates.
 - An observed unit disposed un-completed after its transaction finished logs the forgotten-completion warning.
 - `GetFeature<T>()` resolves an `IUnitOfWorkFeature` singleton from the host container the factory was registered in, and throws `InvalidOperationException` naming the type when that registration is scoped or transient.
-- `RelationalTransientFaults.IsTransient(exception, cancellationToken)`: the framework's shared replay classification — a driver-reported transient fault, a serialization failure (`40001`) or deadlock (`40P01`) reported by SQLSTATE, and on SQL Server (where SqlClient reports neither signal) the same error-number set EF Core replays under `EnableRetryOnFailure`, read across every error the exception carries; never a cancellation, a client-side command timeout, or a constraint violation. It backs the framework's own replay filters; a hand-rolled retry loop around `RunAsync` reuses it so its classification stays the framework's, and a narrower classifier composes it (the Jobs tree delete adds its foreign-key conflicts). It is classification only: the loop that applies it must still refuse to replay a commit, which may have succeeded on the server before it failed on the wire.
+- `RelationalTransientFaults.IsTransient(exception, cancellationToken)`: the framework's shared replay classification — a driver-reported transient fault, a serialization failure (`40001`) or deadlock (`40P01`) reported by SQLSTATE, and on SQL Server (where SqlClient reports neither signal) the same error-number set EF Core replays under `EnableRetryOnFailure`, read across every error the exception carries; never a cancellation, a client-side command timeout, or a constraint violation. It backs the framework's own replay filters, including the store kit's autonomous calls (`SqlAutonomousTransaction` in `Headless.Sql.Core`) and the Jobs claim scopes, which retry on it with the same commit rule `RunAsync` applies: a fault raised before the commit started may retry, one raised by the commit never does and surfaces unchanged. See [sql.md](sql.md#store-statement-kit-for-provider-authors). A hand-rolled retry loop around `RunAsync` reuses it so its classification stays the framework's, and a narrower classifier composes it (the Jobs tree delete adds its foreign-key conflicts). It is classification only: the loop that applies it must still refuse to replay a commit, which may have succeeded on the server before it failed on the wire.
 
 ### Design constraints
 
@@ -582,3 +583,36 @@ None.
 ### Runtime behavior
 
 Registers the singleton `IUnitOfWorkFactory` only.
+
+---
+
+## Headless.UnitOfWork.Sqlite
+
+Runs raw-ADO `SqliteConnection` work as a unit of work, so rows that Headless stores write inside the transaction, such as a gap-free sequence value or a fenced lease, commit and roll back with it.
+
+### API and behavior
+
+- `IUnitOfWorkFactory.BeginAsync(connection, isolation, ct)` — owned mode, as on PostgreSQL. The transaction begins `IMMEDIATE`, so the unit holds the database write lock from this line; a second unit's `BeginAsync` waits for it, up to the connection's `Default Timeout`, then fails with `SQLITE_BUSY`. `Microsoft.Data.Sqlite` runs every level but `ReadUncommitted` as serializable.
+- `IUnitOfWorkFactory.Enlist(connection, transaction)` — observed mode for a transaction you commit yourself. Begin it with `BeginTransaction()` (immediate); a `deferred: true` transaction that reads before it writes can fail with `SQLITE_BUSY` when another writer got there first.
+- `IUnitOfWorkFactory.RunAsync(connection, operation, isolation, ct)` (and the `TResult` overload) — joins a live unit on the connection, else begin → operation → complete. Never replays.
+- `IUnitOfWorkFactory.RunAsync(connectionFactory, operation, isolation, retry, ct)` (and the `TResult` overload) — each attempt takes a new `SqliteConnection` from the factory, as on SQL Server. `SQLITE_BUSY` and `SQLITE_LOCKED` before the commit are transient under `UnitOfWorkRetryOptions.DefaultShouldHandle`.
+- `AddSqliteUnitOfWork()` — registers the singleton factory (idempotent; there are no provider options).
+
+### Design constraints
+
+Observed mode is explicit, as on PostgreSQL. The replaying overload takes a connection factory because `Microsoft.Data.Sqlite` ships no `DbDataSource`. "Same database" (`RelationalDatabaseIdentity`) compares the file path SQLite reports, with symbolic links resolved, so name the file by its real path in every connection string a store and a unit share.
+
+### Install
+
+```bash
+dotnet add package Headless.UnitOfWork.Sqlite
+```
+
+### Configuration
+
+None.
+
+### Runtime behavior
+
+Registers the singleton `IUnitOfWorkFactory` only.
+

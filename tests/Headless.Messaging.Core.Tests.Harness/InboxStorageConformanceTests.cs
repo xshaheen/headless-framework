@@ -21,7 +21,7 @@ public abstract class InboxStorageConformanceTests : TestBase
     public async Task should_defer_orphan_and_release_ownership_without_consuming_failure_retries(MessageLane lane)
     {
         await using var provider = _CreateProvider();
-        await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
         var storage = provider.GetRequiredService<IDataStorage>();
         var envelope = _CreateMessage(lane);
         var winner = (await _AdmitAsync(storage, envelope)).Message;
@@ -55,7 +55,7 @@ public abstract class InboxStorageConformanceTests : TestBase
     public async Task should_require_every_fence_component_for_orphan_deferral_and_confirmation(MessageLane lane)
     {
         await using var provider = _CreateProvider();
-        await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
         var storage = provider.GetRequiredService<IDataStorage>();
         var envelope = _CreateMessage(lane);
         var message = (await _AdmitAsync(storage, envelope)).Message;
@@ -120,7 +120,7 @@ public abstract class InboxStorageConformanceTests : TestBase
             options.RetryBatchSize = 1;
             options.OrphanProbeBatchSize = 2;
         });
-        await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
         var storage = provider.GetRequiredService<IDataStorage>();
         var orphanIds = new List<Guid>();
         Guid ordinaryId = default;
@@ -162,9 +162,7 @@ public abstract class InboxStorageConformanceTests : TestBase
                 lane,
                 message.InboxAttemptFence
             );
-            (await _MutateLeaseAsync(storage, "defer", identity, DateTimeOffset.UtcNow.AddMinutes(-10 + i)))
-                .Should()
-                .BeTrue();
+            (await _MutateLeaseAsync(storage, "defer", identity, TimeSpan.Zero)).Should().BeTrue();
         }
 
         var ordinary = (await storage.GetReceivedMessagesOfNeedRetryAsync(lane, null, AbortToken)).ToList();
@@ -186,7 +184,7 @@ public abstract class InboxStorageConformanceTests : TestBase
         // given - due inbox retries, due inbox orphans, and due non-inbox retries for two consumers that two
         // ConsumeOnly hosts split between them
         await using var provider = _CreateProvider();
-        await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
         var storage = provider.GetRequiredService<IDataStorage>();
         const string orders = "orders.consumer";
         const string billing = "billing.consumer";
@@ -221,7 +219,7 @@ public abstract class InboxStorageConformanceTests : TestBase
     {
         // given
         await using var provider = _CreateProvider();
-        await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
         var storage = provider.GetRequiredService<IDataStorage>();
         var retry = await _SeedDueInboxRowAsync(storage, lane, "orders.consumer", orphaned: false);
         var orphan = await _SeedDueInboxRowAsync(storage, lane, "orders.consumer", orphaned: true);
@@ -253,7 +251,7 @@ public abstract class InboxStorageConformanceTests : TestBase
     public async Task should_require_complete_inbox_fence_for_release_and_deferral(string operation, MessageLane lane)
     {
         await using var provider = _CreateProvider();
-        await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
         var storage = provider.GetRequiredService<IDataStorage>();
         var envelope = _CreateMessage(lane);
         var winner = (await _AdmitAsync(storage, envelope)).Message;
@@ -271,7 +269,8 @@ public abstract class InboxStorageConformanceTests : TestBase
         var fence = winner.InboxAttemptFence!;
         fence.Should().NotBeNull();
         var identity = new MessageLeaseIdentity(winner.StorageId, winner.Owner, winner.LockedUntil!.Value, lane, fence);
-        var nextRetryAt = winner.LockedUntil.Value.AddMinutes(1);
+        // Longer than the dispatch lease, so a deferred row's due time lands past the lease it replaced.
+        var deferDelay = TimeSpan.FromHours(1);
         foreach (var invalidFence in _InvalidFences(fence).Values)
         {
             (
@@ -282,7 +281,7 @@ public abstract class InboxStorageConformanceTests : TestBase
                     {
                         InboxAttemptFence = invalidFence,
                     },
-                    nextRetryAt
+                    deferDelay
                 )
             )
                 .Should()
@@ -294,14 +293,20 @@ public abstract class InboxStorageConformanceTests : TestBase
             unchanged.InboxAttemptFence.Should().Be(fence);
         }
 
-        (await _MutateLeaseAsync(storage, operation, identity, nextRetryAt)).Should().BeTrue();
+        (await _MutateLeaseAsync(storage, operation, identity, deferDelay)).Should().BeTrue();
         var released = (await _AdmitAsync(storage, envelope)).Message;
         released.Owner.Should().BeNull();
         released.LockedUntil.Should().BeNull();
-        released
-            .NextRetryAt.Should()
-            .Be(string.Equals(operation, "defer", StringComparison.Ordinal) ? nextRetryAt : winner.NextRetryAt);
-        (await _MutateLeaseAsync(storage, operation, identity, nextRetryAt)).Should().BeFalse();
+        if (string.Equals(operation, "defer", StringComparison.Ordinal))
+        {
+            released.NextRetryAt.Should().NotBeNull().And.BeAfter(winner.LockedUntil.Value);
+        }
+        else
+        {
+            released.NextRetryAt.Should().Be(winner.NextRetryAt);
+        }
+
+        (await _MutateLeaseAsync(storage, operation, identity, deferDelay)).Should().BeFalse();
     }
 
     [Theory]
@@ -324,7 +329,7 @@ public abstract class InboxStorageConformanceTests : TestBase
     public async Task should_require_complete_inbox_fence_before_reserving_attempt(MessageLane lane, string field)
     {
         await using var provider = _CreateProvider();
-        await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
         var storage = provider.GetRequiredService<IDataStorage>();
         var envelope = _CreateMessage(lane);
         var message = (await _AdmitAsync(storage, envelope)).Message;
@@ -359,7 +364,7 @@ public abstract class InboxStorageConformanceTests : TestBase
     )
     {
         await using var provider = _CreateProvider();
-        await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
         var storage = provider.GetRequiredService<IDataStorage>();
         var envelope = _CreateMessage(lane);
         var message = (await _AdmitAsync(storage, envelope)).Message;
@@ -391,14 +396,7 @@ public abstract class InboxStorageConformanceTests : TestBase
         }
 
         // A claim-time identity must remain valid throughout the inline retry burst.
-        (
-            await _MutateLeaseAsync(
-                storage,
-                recoverThroughPickup ? "defer" : "release",
-                capturedLease,
-                DateTimeOffset.MinValue
-            )
-        )
+        (await _MutateLeaseAsync(storage, recoverThroughPickup ? "defer" : "release", capturedLease, TimeSpan.Zero))
             .Should()
             .BeTrue();
         var successor = (await _AdmitAsync(storage, envelope)).Message;
@@ -507,7 +505,7 @@ public abstract class InboxStorageConformanceTests : TestBase
     public async Task should_accept_identity_length_boundaries_and_normalize_blank_tenants(MessageLane lane)
     {
         await using var provider = _CreateProvider();
-        await provider.GetRequiredService<IStorageInitializer>().InitializeAsync(AbortToken);
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
         var storage = provider.GetRequiredService<IDataStorage>();
         var message = _CreateMessage(lane);
         message.Origin.Headers[Headers.MessageId] = new string('i', MessageOptions.MessageIdMaxLength);
@@ -623,7 +621,7 @@ public abstract class InboxStorageConformanceTests : TestBase
             lane,
             message.InboxAttemptFence
         );
-        (await _MutateLeaseAsync(storage, "defer", identity, DateTimeOffset.UtcNow.AddMinutes(-5))).Should().BeTrue();
+        (await _MutateLeaseAsync(storage, "defer", identity, TimeSpan.Zero)).Should().BeTrue();
 
         return message.StorageId;
     }
@@ -644,7 +642,7 @@ public abstract class InboxStorageConformanceTests : TestBase
             await storage.ChangeReceiveStateAsync(
                 stored,
                 StatusName.Failed,
-                nextRetryAt: DateTimeOffset.UtcNow.AddMinutes(-5),
+                retryDelay: RetryDelay.Exactly(TimeSpan.Zero),
                 cancellationToken: AbortToken
             )
         )
@@ -658,7 +656,7 @@ public abstract class InboxStorageConformanceTests : TestBase
         IDataStorage storage,
         string operation,
         MessageLeaseIdentity identity,
-        DateTimeOffset nextRetryAt
+        TimeSpan deferDelay
     ) =>
         operation switch
         {
@@ -668,7 +666,7 @@ public abstract class InboxStorageConformanceTests : TestBase
                 AbortToken
             ) == 1,
             "defer" => await ((ICircuitRetryDeferralStorage)storage).DeferReceivedRetryAsync(
-                new(identity, nextRetryAt),
+                new(identity, deferDelay),
                 AbortToken
             ),
             _ => throw new ArgumentOutOfRangeException(nameof(operation)),

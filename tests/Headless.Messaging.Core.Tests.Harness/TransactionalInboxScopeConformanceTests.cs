@@ -77,8 +77,8 @@ public abstract class TransactionalInboxScopeConformanceTests : TestBase
         var currentTenant = provider.GetRequiredService<ICurrentTenant>();
         using var callerTenantScope = currentTenant.Change(ambientTenant);
         var storage = provider.GetRequiredService<IDataStorage>();
-        var initializer = provider.GetRequiredService<IStorageInitializer>();
-        await initializer.InitializeAsync(AbortToken);
+        var tableNames = provider.GetRequiredService<IStorageTableNames>();
+        await provider.ApplyMessagingSchemaAsync(AbortToken);
         await using (var setupScope = provider.CreateAsyncScope())
         {
             var db = setupScope.ServiceProvider.GetRequiredService<InboxScopeDbContext>();
@@ -127,7 +127,7 @@ public abstract class TransactionalInboxScopeConformanceTests : TestBase
                 var db = competingScope.ServiceProvider.GetRequiredService<InboxScopeDbContext>();
                 await db.Database.OpenConnectionAsync(cancellationToken);
                 await using var command = db.Database.GetDbConnection().CreateCommand();
-                command.CommandText = ReplaceAttemptSql(initializer.GetReceivedTableName());
+                command.CommandText = ReplaceAttemptSql(tableNames.GetReceivedTableName());
                 var id = command.CreateParameter();
                 id.ParameterName = "@id";
                 id.Value = admitted.Message.StorageId;

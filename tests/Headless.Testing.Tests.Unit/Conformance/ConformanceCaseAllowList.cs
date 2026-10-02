@@ -122,6 +122,11 @@ internal static class ConformanceCaseAllowList
             "The in-memory store keeps envelopes as live objects rather than serialized rows, so there is no persisted envelope to corrupt into a poison row."
         ),
         new(
+            "InMemoryDataStorageTests",
+            "should_store_and_find_rows_under_a_version_containing_sql_metacharacters",
+            "The in-memory store keeps no per-row version column and builds no SQL, so there is no bound version to read back or quote to break; the relational storages run the case."
+        ),
+        new(
             "InMemoryDistributedLockTests",
             "should_fire_handle_lost_token_when_lock_holding_connection_dies",
             "The in-process lock has no backing connection to kill."
@@ -245,6 +250,16 @@ internal static class ConformanceCaseAllowList
             "SqlServerReaderWriterLockConformanceTests",
             "should_prefer_queued_writer_over_new_reader",
             "Writer preference relies on a queued-writer marker that only the Redis provider keeps; the provider puts no such marker on a SQL Server application lock, so a new reader is granted while a writer waits."
+        ),
+        new(
+            "SqliteDialectConformanceTests",
+            "should_retry_engine_chosen_deadlock_victims_and_apply_each_call_once",
+            "SQLite begins every write transaction IMMEDIATE and admits one writer per database file, so two transactions never hold one row each and wait on the other: the engine cannot choose a deadlock victim."
+        ),
+        new(
+            "SqliteDialectConformanceTests",
+            "should_surface_the_deadlock_after_the_attempt_cap_and_apply_nothing",
+            "SQLite begins every write transaction IMMEDIATE and admits one writer per database file, so no deadlock can be forced on any attempt; busy waits are covered by the SQLite dialect's own tests."
         ),
     ];
 }

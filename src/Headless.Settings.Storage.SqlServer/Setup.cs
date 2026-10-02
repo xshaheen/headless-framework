@@ -1,15 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using FluentValidation;
 using Headless.Checks;
 using Headless.Constants;
-using Headless.Serializer;
 using Headless.Settings.Repositories;
 using Headless.Settings.SqlServer;
 using Headless.Sql;
+using Headless.Sql.SqlServer;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Settings;
@@ -125,28 +123,12 @@ public static class SetupSettingsSqlServer
                 services.Configure<SqlServerSettingsOptions, SqlServerSettingsOptionsValidator>(_configureWithServices);
             }
 
-            services.AddOptions<SettingsStorageOptions, SqlServerSettingsStorageOptionsValidator>();
-            services.AddInitializerHostedService<SqlServerSettingsStorageInitializer>();
-            services.TryAddSingleton<IJsonSerializer>(_ => new SystemJsonSerializer());
-            services.TryAddSingleton<ISettingValueRecordRepository, SqlServerSettingValueRecordRepository>();
-            services.TryAddSingleton<ISettingDefinitionRecordRepository, SqlServerSettingDefinitionRecordRepository>();
-        }
-    }
-
-    /// <summary>Validates <see cref="SettingsStorageOptions"/> for use with the SQL Server backend, ensuring schema and table name identifiers are valid.</summary>
-    private sealed class SqlServerSettingsStorageOptionsValidator : AbstractValidator<SettingsStorageOptions>
-    {
-        public SqlServerSettingsStorageOptionsValidator()
-        {
-            RuleFor(x => x.Schema).IsValidIdentifierFor(StorageProvider.SqlServer);
-            RuleFor(x => x.SettingValuesTableName)
-                .IsValidIdentifierFor(StorageProvider.SqlServer)
-                .FitsDerivedPostgreSqlNames(SettingsStorageNames.ValuesIndexes)
-                .When(x => x.SettingValuesTableName is not null);
-            RuleFor(x => x.SettingDefinitionsTableName)
-                .IsValidIdentifierFor(StorageProvider.SqlServer)
-                .FitsDerivedPostgreSqlNames(SettingsStorageNames.DefinitionsIndexes)
-                .When(x => x.SettingDefinitionsTableName is not null);
+            RelationalSettingsStorage.AddServices<SqlServerSettingsOptions>(
+                services,
+                SqlServerDialect.Instance,
+                StorageProvider.SqlServer,
+                SqlServerSettingsSchemaContribution.Create
+            );
         }
     }
 }

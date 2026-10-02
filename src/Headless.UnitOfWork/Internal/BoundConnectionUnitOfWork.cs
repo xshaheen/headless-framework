@@ -44,7 +44,7 @@ internal static class BoundConnectionUnitOfWork
     /// <summary>Enlists an observed <paramref name="resource" /> on <paramref name="connection" /> and records the binding.</summary>
     public static IUnitOfWork Enlist(IUnitOfWorkFactory factory, DbConnection connection, IUnitOfWorkResource resource)
     {
-#pragma warning disable MA0045 // The async form would make this worse: Enlist is synchronous like IUnitOfWorkFactory.Enlist, and the check does no I/O.
+#pragma warning disable MA0045 // False positive: Enlist is synchronous by contract, and the async check exists only so a begin can wait for a stale unit's rollback.
         DbConnectionUnitOfWorkBinding.ThrowIfBound(connection);
 #pragma warning restore MA0045
 

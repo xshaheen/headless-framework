@@ -1,9 +1,5 @@
 using Dapper;
-using Headless.Messaging.Configuration;
-using Headless.Messaging.Persistence;
-using Headless.Messaging.Storage.SqlServer;
 using Microsoft.Data.SqlClient;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
 
@@ -12,10 +8,9 @@ public sealed class SqlServerStorageTest(SqlServerTestFixture fixture) : IAsyncL
 {
     public async ValueTask InitializeAsync()
     {
-        var storage = _GetStorageInitializer();
         try
         {
-            await storage.InitializeAsync();
+            await TestMessagingSchema.ApplyAsync(fixture.ConnectionString);
         }
         catch (Exception ex)
         {
@@ -74,18 +69,5 @@ public sealed class SqlServerStorageTest(SqlServerTestFixture fixture) : IAsyncL
 
         var result = connection.QueryFirstOrDefault<string>(sql);
         result.Should().Be(table);
-    }
-
-    private IStorageInitializer _GetStorageInitializer()
-    {
-        var services = new ServiceCollection();
-        services.AddOptions();
-        services.AddLogging();
-        services.Configure<SqlServerOptions>(x => x.ConnectionString = fixture.ConnectionString);
-        services.Configure<MessagingOptions>(x => x.Version = "v1");
-        services.AddSingleton<IStorageInitializer, SqlServerStorageInitializer>();
-
-        var provider = services.BuildServiceProvider();
-        return provider.GetRequiredService<IStorageInitializer>();
     }
 }

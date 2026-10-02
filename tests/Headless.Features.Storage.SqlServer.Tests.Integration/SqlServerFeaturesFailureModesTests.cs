@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Hosting.Initialization;
+using Headless.Hosting.Initialization.Schema;
 using Headless.Testing.Tests;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
@@ -32,10 +33,12 @@ public sealed class SqlServerFeaturesFailureModesTests(SqlServerFeaturesFixture 
             .Single(x => x is IHostedLifecycleService);
         initializer.IsInitialized.Should().BeFalse();
 
+        // The schema runner names the features whose connection failed and keeps the driver error as the cause.
         await FluentActions
             .Awaiting(() => initializer.WaitForInitializationAsync(AbortToken))
             .Should()
-            .ThrowAsync<SqlException>();
+            .ThrowAsync<SchemaRunnerException>()
+            .WithInnerException(typeof(SqlException));
     }
 
     [Fact]
@@ -101,7 +104,7 @@ public sealed class SqlServerFeaturesFailureModesTests(SqlServerFeaturesFixture 
         await using var connection = new SqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
         // Nonclustered indexes only (type = 2) across the schema — excludes the clustered PKs so the
-        // count matches the 6 CREATE [UNIQUE] INDEX statements in SqlServerFeaturesStorageInitializer.
+        // count matches the 6 CREATE [UNIQUE] INDEX statements in SqlServerFeaturesSchemaContribution.
         await using var command = new SqlCommand(
             """
             SELECT COUNT(*)
