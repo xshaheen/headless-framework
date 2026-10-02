@@ -28,4 +28,17 @@ public abstract class MessageConsumerAttribute : Attribute
     /// rather than moving the old one.
     /// </remarks>
     public string Identity { get; }
+
+    /// <summary>
+    /// The failure policy of this consumer: a type derived from <see cref="Headless.Reliability.FailurePolicy"/> with a
+    /// public parameterless constructor, for example <c>FailurePolicy = typeof(PaymentsFailurePolicy)</c>. When unset,
+    /// the consumer uses the host's default failure policy.
+    /// </summary>
+    /// <remarks>
+    /// The Messaging source generator reads this property and validates the type at build time, so the runtime never
+    /// creates the policy by reflection. Host tuning and configuration can still replace or adjust the declared policy.
+    /// An every-instance <see cref="BusConsumerAttribute"/> consumer cannot declare one: its deliveries are at most
+    /// once and never stored, so there is nothing to retry.
+    /// </remarks>
+    public Type? FailurePolicy { get; set; }
 }
