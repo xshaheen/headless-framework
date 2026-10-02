@@ -16,8 +16,11 @@ namespace Headless.Sql;
 /// <remarks>
 /// <para>
 /// Statement fragments a store hands to the dialect name columns unqualified and write the database clock as
-/// <see cref="SqlDialectTokens.Now" />. Every rendered statement reads that clock only after the rows it decides on are
-/// locked, so no decision is made on a clock read from before a lock wait.
+/// <see cref="SqlDialectTokens.Now" />. A locked read, fenced transition, claim, and batch lock read that clock only
+/// after the rows they decide on are locked. <see cref="SqlUpsert" /> and <see cref="SqlInsertIfAbsent" /> may read it
+/// before waiting on a concurrent writer of the same key, so a value they stamp can be early by that wait: decide a
+/// lease or a due time with a locked read followed by a fenced transition, never with an upsert guard that compares
+/// against the clock.
 /// </para>
 /// <para>
 /// No rendered statement uses <c>TRY/CATCH</c> or a session <c>SET</c>, and no statement can
@@ -210,7 +213,10 @@ public interface ISqlDialect
 [PublicAPI]
 public static class SqlDialectTokens
 {
-    /// <summary>The database clock, read once per statement after the statement's row locks are held.</summary>
+    /// <summary>
+    /// The database clock, read once per statement. See <see cref="ISqlDialect" /> for which shapes read it after their
+    /// row locks are held.
+    /// </summary>
     public const string Now = "{now}";
 
     /// <summary>
