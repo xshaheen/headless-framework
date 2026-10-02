@@ -56,6 +56,10 @@ QUALITY_FIX_SEVERITY ?= hidden
 QUALITY_FIX_ARGS = --no-restore --severity "$(QUALITY_FIX_SEVERITY)" -v minimal --diagnostics $(QUALITY_DIAGNOSTICS)
 QUALITY_BUILD_ARGS = --configuration "$(CONFIGURATION)" --no-restore --no-incremental -v:q -nologo /clp:NoSummary $(MSBUILD_ARGS)
 TEST_MAX_PARALLEL ?= 3
+# Local unit-test runs only. The full unit suite (128 modules, 15k tests) measured 142 s at 3, 91 s at 6
+# and 92 s at 8 parallel modules on a 14-core machine. TEST_MAX_PARALLEL stays at 3 for integration
+# modules, which each start containers, and for CI's smaller runners.
+UNIT_TEST_MAX_PARALLEL ?= 6
 TEST_TIMEOUT ?= 15m
 # Inner-loop build flags. Analyzers are over half of the compiler's CPU on this solution (9 analyzer
 # packs, AnalysisMode=All, AnalysisLevel=latest-all, EnforceCodeStyleInBuild), and MinVer shells out
@@ -89,8 +93,24 @@ GRAPH = $(PYTHON) eng/tools/project_graph.py
 PROOF = $(PYTHON) eng/tools/proof.py
 # One timestamp per make invocation, so every stage of a target writes into the same bundle.
 PROOF_RUN := $(ARTIFACTS_DIR)/proof/$(shell date -u +%Y%m%dT%H%M%SZ)
-# Coverage costs ~0.4s per test module; it is reported, never gated.
-AFFECTED_COVERAGE ?= true
+# Coverage is reported, never gated, and costs ~0.4 s per test module plus a merge (~20 s on a
+# whole-solution run), so the inner loop skips it and the pre-PR verify keeps it.
+AFFECTED_COVERAGE ?= false
+VERIFY_COVERAGE ?= true
+# `dotnet format` spends ~10 s loading a solution filter before it analyzes anything (measured: 16 s
+# through a one-project filter, 6 s on the project file), but one load per project does not scale.
+# Up to this many changed projects it runs per project file; above it, once over the filter.
+FORMAT_PER_PROJECT_MAX ?= 2
+AFFECTED_ANALYZER_STAGE = if [ -s "$$run/changed.txt" ]; then \
+		Configuration="$(CONFIGURATION)" $(PROOF) run --dir "$$run" --name analyzers -- bash -c ' \
+			run="$$1"; shift; worst=0; \
+			if [ "$$(wc -l < "$$run/changed.txt")" -le $(FORMAT_PER_PROJECT_MAX) ]; then \
+				i=0; while IFS= read -r project; do i=$$((i + 1)); \
+					$(DOTNET) format analyzers "$$project" "$$@" --report "$$run/analyzers/$$i" || { rc=$$?; [ $$rc -gt $$worst ] && worst=$$rc; }; \
+				done < "$$run/changed.txt"; \
+			else $(DOTNET) format analyzers "$$run/changed.slnf" "$$@" --report "$$run/analyzers" || worst=$$?; fi; \
+			exit $$worst' bash "$$run" --no-restore --verify-no-changes --severity "$(QUALITY_SEVERITY)" -v minimal $(if $(QUALITY_DIAGNOSTICS),--diagnostics $(QUALITY_DIAGNOSTICS),) || true; \
+	fi;
 AFFECTED_PREPARE = $(ASSERT_RESTORED); prepare() { \
 	git rev-parse --verify -q "$(AFFECTED_BASE)^{commit}" >/dev/null || { printf 'ERROR: AFFECTED_BASE=%s does not resolve to a commit. Fetch it, or pass AFFECTED_BASE=<ref>.\n' "$(AFFECTED_BASE)" >&2; return 2; }; \
 	rm -rf "$$1"; $(GRAPH) affected --base "$(AFFECTED_BASE)" --out-dir "$$1"; }; prepare
@@ -104,11 +124,11 @@ AFFECTED_BUILD_STAGES = if [ -s "$$run/build.txt" ]; then \
 AFFECTED_UNIT_STAGE = if [ $$status -ne 0 ]; then $(PROOF) skip --dir "$$run" --name unit-tests --reason "an earlier stage failed; --no-build would test stale binaries"; \
 	elif [ -s "$$run/unit.txt" ]; then \
 		coverage_args=(); \
-		if [ "$(AFFECTED_COVERAGE)" = "true" ]; then \
+		if [ "$$coverage" = "true" ]; then \
 			settings="$$($(DOTNET) msbuild "$(COVERAGE_SETTINGS_PROJECT)" -getProperty:HeadlessCoverageSettingsPath -nologo -v:quiet)"; \
 			coverage_args=(--coverage --coverage-output-format cobertura --coverage-settings "$$settings"); \
 		fi; \
-		$(PROOF) run --dir "$$run" --name unit-tests -- $(DOTNET) test --solution "$$run/unit.slnf" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$$run/unit-tests" --max-parallel-test-modules $(TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER) $${coverage_args[@]+"$${coverage_args[@]}"} || status=1; \
+		$(PROOF) run --dir "$$run" --name unit-tests -- $(DOTNET) test --solution "$$run/unit.slnf" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$$run/unit-tests" --max-parallel-test-modules $(UNIT_TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER) $${coverage_args[@]+"$${coverage_args[@]}"} || status=1; \
 		if [ -n "$$(find "$$run/unit-tests" -name '*.cobertura.xml' -print -quit 2>/dev/null)" ]; then \
 			$(PROOF) run --dir "$$run" --name coverage-merge -- $(DOTNET) dotnet-coverage merge --nologo --output "$$run/coverage/merged.cobertura.xml" --output-format cobertura "$$run/unit-tests/**/*.cobertura.xml" || status=1; \
 		fi; \
@@ -285,18 +305,18 @@ quality-analyzers-project: ## Report build warnings/errors and analyzer suggesti
 		if [ $$format_status -ne 0 ] && [ $$format_status -ne 2 ]; then cat "$(QUALITY_FORMAT_LOG)"; exit $$format_status; fi
 
 # quality-analyzers rebuilds all ~430 projects --no-incremental and then formats the whole solution.
-# This runs the same gate over only the projects the branch changed: one --no-incremental build of a
-# solution filter (so analyzers re-run on them) and one `dotnet format analyzers` pass, recorded as a
-# proof bundle so every finding survives, grouped by rule. Dependents are compiled by build-affected;
-# an analyzer finding in an untouched project still needs `make quality-analyzers` to surface.
+# This runs the same gate over only the projects the branch changed: an incremental build for compiler
+# errors, then `dotnet format analyzers`, which runs every analyzer itself at every severity, so a
+# separate --no-incremental analyzer build would repeat its work. The result is a proof bundle with every
+# finding grouped by rule. An analyzer finding in an untouched project still needs `make quality-analyzers`.
 .PHONY: quality-analyzers-affected
 quality-analyzers-affected: ## Analyze the projects changed vs AFFECTED_BASE; writes a proof bundle under artifacts/proof/.
 	@$(AFFECTED_PREPARE) "$(PROOF_RUN)-quality"; \
 	run="$(PROOF_RUN)-quality"; status=0; \
 	if [ ! -s "$$run/changed.txt" ]; then printf '\033[33m[quality-analyzers-affected]\033[0m no changed project vs %s; nothing analyzed.\n' "$(AFFECTED_BASE)"; exit 0; fi; \
 	$(PROOF) run --dir "$$run" --name restore -- $(DOTNET) restore "$$run/changed.slnf" --locked-mode -v:q -nologo || status=1; \
-	$(PROOF) run --dir "$$run" --name analyzers-build -- $(DOTNET) build "$$run/changed.slnf" $(QUALITY_BUILD_ARGS) || status=1; \
-	Configuration="$(CONFIGURATION)" $(PROOF) run --dir "$$run" --name analyzers -- $(DOTNET) format analyzers "$$run/changed.slnf" --no-restore --verify-no-changes --severity "$(QUALITY_SEVERITY)" -v minimal --report "$$run/analyzers" $(if $(QUALITY_DIAGNOSTICS),--diagnostics $(QUALITY_DIAGNOSTICS),) || true; \
+	$(PROOF) run --dir "$$run" --name build -- $(DOTNET) build "$$run/changed.slnf" --configuration "$(CONFIGURATION)" --no-restore -v:minimal -nologo $(MSBUILD_ARGS) || status=1; \
+	$(AFFECTED_ANALYZER_STAGE) \
 	$(PROOF) summarize --dir "$$run" > /dev/null || status=1; \
 	$(PROOF_REPORT) "$$run"; exit $$status
 
@@ -445,7 +465,7 @@ build-affected: ## Build the affected projects (changed + direct dependents + th
 .PHONY: test-affected
 test-affected: ## Build the affected set, then run its *.Tests.Unit projects; writes a proof bundle under artifacts/proof/.
 	@$(AFFECTED_PREPARE) "$(PROOF_RUN)-test"; \
-	run="$(PROOF_RUN)-test"; status=0; \
+	run="$(PROOF_RUN)-test"; status=0; coverage="$(AFFECTED_COVERAGE)"; \
 	$(AFFECTED_BUILD_STAGES) \
 	$(AFFECTED_UNIT_STAGE) \
 	$(PROOF) summarize --dir "$$run" > /dev/null || status=1; \
@@ -466,13 +486,10 @@ test-affected-integration: ## Build the affected set, then run its *.Tests.Integ
 .PHONY: verify-affected
 verify-affected: ## Build, unit-test (with coverage), and analyze the affected set; one proof bundle for the PR body.
 	@$(AFFECTED_PREPARE) "$(PROOF_RUN)-verify"; \
-	run="$(PROOF_RUN)-verify"; status=0; \
+	run="$(PROOF_RUN)-verify"; status=0; coverage="$(VERIFY_COVERAGE)"; \
 	$(AFFECTED_BUILD_STAGES) \
 	$(AFFECTED_UNIT_STAGE) \
-	if [ -s "$$run/changed.txt" ]; then \
-		$(PROOF) run --dir "$$run" --name analyzers-build -- $(DOTNET) build "$$run/changed.slnf" $(QUALITY_BUILD_ARGS) || status=1; \
-		Configuration="$(CONFIGURATION)" $(PROOF) run --dir "$$run" --name analyzers -- $(DOTNET) format analyzers "$$run/changed.slnf" --no-restore --verify-no-changes --severity "$(QUALITY_SEVERITY)" -v minimal --report "$$run/analyzers" || true; \
-	fi; \
+	$(AFFECTED_ANALYZER_STAGE) \
 	$(PROOF) summarize --dir "$$run" > /dev/null || status=1; \
 	$(PROOF_REPORT) "$$run"; exit $$status
 
@@ -485,9 +502,9 @@ test-timeout: ## Run all tests with an explicit MTP timeout. SDK defaults still 
 	$(MAKE) test TEST_ARGS='$(TEST_ARGS) --timeout $(TEST_TIMEOUT)'
 
 .PHONY: test-unit
-test-unit: build ## Run every *.Tests.Unit module in parallel (honors TEST_MAX_PARALLEL).
+test-unit: build ## Run every *.Tests.Unit module in parallel (honors UNIT_TEST_MAX_PARALLEL, default 6).
 	@mkdir -p "$(TEST_RESULTS_DIR)/unit"
-	$(DOTNET) test --test-modules "$(UNIT_TEST_MODULES)" --root-directory "$(CURDIR)" --results-directory "$(TEST_RESULTS_DIR)/unit" --max-parallel-test-modules $(TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER)
+	$(DOTNET) test --test-modules "$(UNIT_TEST_MODULES)" --root-directory "$(CURDIR)" --results-directory "$(TEST_RESULTS_DIR)/unit" --max-parallel-test-modules $(UNIT_TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER)
 
 .PHONY: test-integration
 test-integration: build ## Run every *.Tests.Integration module (honors TEST_MAX_PARALLEL; needs Docker). Lower TEST_MAX_PARALLEL on memory-constrained hosts.
