@@ -28,6 +28,13 @@ public sealed class JobRequeueTests : TestBase
 
     #region Scheduler
 
+    [Fact]
+    public void default_requeue_outcome_is_a_refusal_not_a_success()
+    {
+        // An uninitialized outcome (a default struct field, an unconfigured test double) must never read as a move.
+        default(JobRequeueOutcome).Should().NotBe(JobRequeueOutcome.Requeued);
+    }
+
     [Theory]
     [InlineData(JobRequeueOutcome.Requeued, 1)]
     [InlineData(JobRequeueOutcome.NotFailed, 0)]
@@ -246,6 +253,24 @@ public sealed class JobRequeueTests : TestBase
         var (store, _) = _Create();
 
         (await store.RequeueCronJobOccurrenceAsync(Guid.NewGuid(), AbortToken)).Should().Be(JobRequeueOutcome.NotFound);
+    }
+
+    [Fact]
+    public async Task occurrence_whose_definition_is_missing_is_not_found_and_unchanged()
+    {
+        var (store, _) = _Create();
+        var definition = _Definition(CronOverlapPolicy.Skip);
+        await store.InsertCronJobsAsync([definition], AbortToken);
+        var occurrence = _Occurrence(definition, _FailedAt, JobStatus.Failed);
+        await store.InsertCronJobOccurrencesAsync([occurrence], AbortToken);
+        await store.RemoveCronJobsAsync([definition.Id], AbortToken);
+
+        (await store.RequeueCronJobOccurrenceAsync(occurrence.Id, AbortToken)).Should().Be(JobRequeueOutcome.NotFound);
+
+        (await store.GetAllCronJobOccurrencesAsync(x => x.Id == occurrence.Id, AbortToken))
+            .Single()
+            .Status.Should()
+            .Be(JobStatus.Failed);
     }
 
     [Fact]

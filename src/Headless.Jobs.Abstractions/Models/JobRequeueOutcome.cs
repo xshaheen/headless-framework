@@ -4,16 +4,17 @@ namespace Headless.Jobs.Models;
 
 /// <summary>
 /// The outcome of one requeue request. Every value other than <see cref="Requeued"/> is a refusal that left the
-/// stored row unchanged, so an operator can tell why nothing happened without parsing an exception.
+/// stored row unchanged, so an operator can tell why nothing happened without parsing an exception. The zero value is
+/// a refusal, so an uninitialized outcome never reads as a successful requeue.
 /// </summary>
 [PublicAPI]
 public enum JobRequeueOutcome
 {
-    /// <summary>The row moved from <c>Failed</c> back to <c>Idle</c> and will run again.</summary>
-    Requeued = 0,
-
     /// <summary>No row has the requested identifier.</summary>
-    NotFound = 1,
+    NotFound = 0,
+
+    /// <summary>The row moved from <c>Failed</c> back to <c>Idle</c> and will run again.</summary>
+    Requeued = 1,
 
     /// <summary>
     /// The row is not <c>Failed</c>. A repeated request for a row that was already requeued lands here, so requeue is

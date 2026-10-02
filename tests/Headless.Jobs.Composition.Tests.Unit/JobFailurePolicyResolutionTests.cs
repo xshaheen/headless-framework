@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Frozen;
 using Headless.Jobs;
 using Headless.Jobs.BackgroundServices;
 using Headless.Jobs.Base;
@@ -214,6 +215,32 @@ public sealed class JobFailurePolicyResolutionTests : TestBase
         // then: 1.2 seconds rounds up to 2, and its doubling, 2.4 seconds, rounds up to 3.
         stored.Retries.Should().Be(2);
         stored.RetryIntervals.Should().Equal(2, 3);
+    }
+
+    [Theory]
+    [InlineData(_Declared)]
+    [InlineData(_Undeclared)]
+    public void should_return_a_fresh_interval_array_from_every_flattened_policy_call(string functionName)
+    {
+        // given: the declared identity has its own policy and the undeclared one falls back to the host default.
+        var policy = new FailurePolicyBuilder().Delayed(2, TimeSpan.FromSeconds(10), TimeSpan.FromMinutes(1)).Build();
+        var registry = JobFunctionRegistryBuilder.Build([], [], []) with
+        {
+            FailurePolicies = new Dictionary<string, FailurePolicyDefinition>(StringComparer.Ordinal)
+            {
+                [_Declared] = policy,
+            }.ToFrozenDictionary(StringComparer.Ordinal),
+            DefaultFailurePolicy = policy,
+        };
+
+        // when: a caller changes the intervals it stored on a row
+        var first = registry.GetFlattenedFailurePolicy(functionName).RetryIntervals!;
+        first[0] = 999;
+        var second = registry.GetFlattenedFailurePolicy(functionName).RetryIntervals!;
+
+        // then
+        second.Should().NotBeSameAs(first);
+        second.Should().Equal(10, 20);
     }
 
     [Theory]

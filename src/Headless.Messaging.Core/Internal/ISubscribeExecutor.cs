@@ -649,10 +649,11 @@ internal sealed class SubscribeExecutor(
         }
         else if (!affected)
         {
-            // Storage proves the row is already terminal — a redelivered already-exhausted message.
-            // OnExhausted is skipped here; the log line is only emitted when the decision would
-            // otherwise have fired the callback (Stop redeliveries never fire OnExhausted regardless,
-            // so suppressing the log avoids noise for non-callback paths).
+            // Storage proves the row is already terminal — a redelivered message, or a racing writer
+            // that won the terminal CAS. Every terminal consume failure (budget spent, fail rule,
+            // built-in permanent, deserialization, unregistered consumer) fires OnExhausted once, from
+            // the writer whose terminal write lands; this loser stops silently. The skip is logged only
+            // for a terminal decision, so a lost non-terminal write adds no noise.
             if (decision.Outcome == MessagingRetryDecision.Kind.Exhausted)
             {
                 logger.SkippingOnExhaustedAlreadyTerminal(message.StorageId);

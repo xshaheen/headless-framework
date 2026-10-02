@@ -1655,8 +1655,8 @@ await timeJobManager.AddAsync(
 - Retries run automatically when a job's `ExecuteAsync` throws.
 - Status remains `InProgress` during retries; becomes `Failed` after exhaustion.
 - `JobContext.RetryCount` carries the current attempt number.
-- If `RetryIntervals` is shorter than `Retries`, the last interval is reused.
-- If `RetryIntervals` is null or empty, each retry waits the job's failure policy delay: none for its immediate retries, then its delayed-retry delay with jitter.
+- If `RetryIntervals` is shorter than `Retries`, the last interval is reused. Each stored interval is clamped to between zero and `FailurePolicyDefinition.MaxDelayLimit` (24 hours).
+- If `RetryIntervals` is null or empty, each retry waits the job's failure policy delay: none for its immediate retries, then its delayed-retry delay with jitter. A retry past the immediate retries of a policy with no delayed retries waits 30 seconds.
 
 The job's failure policy classifies each failure and the row's `Retries` decides how many retries remain; no host setting caps or overrides them. `JobsOptionsBuilder.ConfigureRetries` configures only the terminal-failure notification:
 

@@ -140,6 +140,35 @@ public sealed class ConsumerFailurePolicyResolutionTests : TestBase
     }
 
     [Fact]
+    public void should_apply_configuration_to_each_lane_policy_of_one_identity()
+    {
+        // given
+        using var provider = _BuildProvider(
+            setup => setup.AddModule<TwoLaneLedgerModule>(),
+            _Configuration(
+                ($"Headless:Messaging:Consumers:{StrictLedgerModule.Identity}:FailurePolicy:DelayedRetries", "7")
+            )
+        );
+        var consumers = provider
+            .GetRequiredService<ConsumerRegistry>()
+            .GetAll()
+            .Where(x => string.Equals(x.ConsumerIdentity, StrictLedgerModule.Identity, StringComparison.Ordinal))
+            .ToArray();
+
+        // when
+        var bus = consumers.Single(x => x.Lane == MessageLane.Bus).FailurePolicy!;
+        var queue = consumers.Single(x => x.Lane == MessageLane.Queue).FailurePolicy!;
+
+        // then
+        bus.DelayedRetries.Should().Be(7);
+        bus.ImmediateRetries.Should().Be(1);
+        bus.ShouldFail(new CardDeclinedException()).Should().BeTrue();
+        queue.DelayedRetries.Should().Be(7);
+        queue.ImmediateRetries.Should().Be(4);
+        queue.ShouldFail(new CardDeclinedException()).Should().BeFalse();
+    }
+
+    [Fact]
     public void should_resolve_the_framework_default_for_an_undeclared_untuned_consumer()
     {
         // given
@@ -537,6 +566,30 @@ public sealed class ConsumerFailurePolicyResolutionTests : TestBase
                 failurePolicy: static () => new LenientPolicy()
             );
         }
+    }
+
+    public sealed class TwoLaneLedgerModule : IMessagingModule
+    {
+        public static void Register(MessagingCatalogBuilder catalog)
+        {
+            catalog.AddBusConsumer<LedgerProjection, InvoiceIssued>(
+                StrictLedgerModule.Identity,
+                everyInstance: false,
+                TestConsumers.Dispatch<LedgerProjection, InvoiceIssued>(),
+                failurePolicy: static () => new StrictPolicy()
+            );
+            catalog.AddQueueConsumer<LedgerProjection, OrderShipped>(
+                StrictLedgerModule.Identity,
+                TestConsumers.Dispatch<LedgerProjection, OrderShipped>(),
+                failurePolicy: static () => new QueueLedgerPolicy()
+            );
+        }
+    }
+
+    public sealed class QueueLedgerPolicy : FailurePolicy
+    {
+        protected override void Configure(FailurePolicyBuilder policy) =>
+            policy.Immediate(4).Delayed(1, TimeSpan.FromSeconds(5), TimeSpan.FromMinutes(1));
     }
 
     public sealed class EveryInstancePolicyModule : IMessagingModule

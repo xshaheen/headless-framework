@@ -191,8 +191,9 @@ internal static class ConsumerTuningApplier
         }
     }
 
-    // Every entry of one identity shares one resolved definition, so the overrides are applied once and the result is
-    // shared again.
+    // One identity can be declared on both the Bus and the Queue lane, each with its own policy, so the overrides are
+    // applied to every entry's own definition. Entries that shared one definition keep sharing the overridden result.
+    // The overrides are the same for every entry, so the first invalid result is reported once for the path.
     private static void _ApplyFailurePolicyOverrides(
         ConsumerMetadata[] tuned,
         string identity,
@@ -201,22 +202,36 @@ internal static class ConsumerTuningApplier
         List<string> errors
     )
     {
-        var current = tuned
-            .First(x => string.Equals(x.ConsumerIdentity, identity, StringComparison.Ordinal))
-            .FailurePolicy!;
+        var resolvedBySource = new Dictionary<FailurePolicyDefinition, FailurePolicyDefinition>(
+            ReferenceEqualityComparer.Instance
+        );
 
-        FailurePolicyDefinition resolved;
-        try
+        for (var index = 0; index < tuned.Length; index++)
         {
-            resolved = current.With(overrides);
-        }
-        catch (ArgumentException exception)
-        {
-            errors.Add($"Configuration '{path}' does not describe a valid failure policy: {exception.Message}");
-            return;
-        }
+            var metadata = tuned[index];
+            if (!string.Equals(metadata.ConsumerIdentity, identity, StringComparison.Ordinal))
+            {
+                continue;
+            }
 
-        _Apply(tuned, identity, metadata => metadata with { FailurePolicy = resolved });
+            var source = metadata.FailurePolicy!;
+            if (!resolvedBySource.TryGetValue(source, out var resolved))
+            {
+                try
+                {
+                    resolved = source.With(overrides);
+                }
+                catch (ArgumentException exception)
+                {
+                    errors.Add($"Configuration '{path}' does not describe a valid failure policy: {exception.Message}");
+                    return;
+                }
+
+                resolvedBySource.Add(source, resolved);
+            }
+
+            tuned[index] = metadata with { FailurePolicy = resolved };
+        }
     }
 
     private static ConfiguredSettings _ReadConfiguredSettings(IConfigurationSection consumer, List<string> errors)

@@ -17,6 +17,10 @@ namespace Headless.Jobs;
 internal sealed class JobsRetryPipeline
 {
     private static readonly ResiliencePropertyKey<ExecutionState> _ExecutionKey = new("headless.jobs.retry");
+
+    // The wait before a retry that neither a stored interval nor the policy's delayed tier paces; it is the delay every
+    // retry waited before jobs carried a failure policy.
+    private static readonly TimeSpan _UnpacedRetryDelay = TimeSpan.FromSeconds(30);
     private readonly JobFunctionRegistry _registry;
     private readonly ILogger _logger;
     private readonly ResiliencePipeline _pipeline;
@@ -111,9 +115,13 @@ internal sealed class JobsRetryPipeline
         if (execution.Job.RetryIntervals is { Length: > 0 } intervals)
         {
             // RetryIntervals is an unvalidated public int[] on the job entity, so a negative value (a plausible typo)
-            // would otherwise reach Polly as a negative TimeSpan and break the retry mechanism itself.
+            // would otherwise reach Polly as a negative TimeSpan and break the retry mechanism itself, and an
+            // oversized one would park the row far past any delay a failure policy may declare.
             var seconds = intervals[Math.Min(retryIndex, intervals.Length - 1)];
-            return ValueTask.FromResult<TimeSpan?>(TimeSpan.FromSeconds(Math.Max(seconds, 0)));
+            var delay = TimeSpan.FromSeconds(Math.Max(seconds, 0));
+            return ValueTask.FromResult<TimeSpan?>(
+                delay > FailurePolicyDefinition.MaxDelayLimit ? FailurePolicyDefinition.MaxDelayLimit : delay
+            );
         }
 
         return ValueTask.FromResult<TimeSpan?>(_PolicyDelay(execution.Policy, retryIndex));
@@ -121,16 +129,18 @@ internal sealed class JobsRetryPipeline
 
     // A row that stores no intervals (a manager-added row, or a call that set only a retry count) is paced by the
     // job's policy: its immediate retries run back-to-back and the rest wait the policy's jittered delayed delay. A
-    // budget larger than the policy keeps waiting the delay the doubling reached, which the policy caps.
+    // budget larger than the policy keeps waiting the delay the doubling reached, which the policy caps. A retry past
+    // the immediate tier of a policy with no delayed tier has no policy delay at all, so it waits the framework
+    // fallback rather than hammering a failing dependency back-to-back for the rest of the row's budget.
     private static TimeSpan _PolicyDelay(FailurePolicyDefinition policy, int retryIndex)
     {
         var delayedAttempt = retryIndex - policy.ImmediateRetries + 1;
-        if (delayedAttempt < 1 || policy.DelayedRetries == 0)
+        if (delayedAttempt < 1)
         {
             return TimeSpan.Zero;
         }
 
-        return policy.GetDelayedRetryDelay(delayedAttempt);
+        return policy.DelayedRetries == 0 ? _UnpacedRetryDelay : policy.GetDelayedRetryDelay(delayedAttempt);
     }
 
     private static async ValueTask _OnRetryAsync(OnRetryArguments<object> args)

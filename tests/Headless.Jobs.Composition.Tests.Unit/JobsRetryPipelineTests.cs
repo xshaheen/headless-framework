@@ -63,12 +63,34 @@ public sealed class JobsRetryPipelineTests : TestBase
     }
 
     [Fact]
-    public async Task should_retry_back_to_back_when_the_policy_has_no_delayed_tier()
+    public async Task should_cap_a_stored_interval_at_the_max_delay_limit()
     {
-        var run = await _RunToExhaustionAsync(FailurePolicyDefinition.None, retries: 2, retryIntervals: []);
+        var run = await _RunToExhaustionAsync(FailurePolicyDefinition.None, retries: 1, retryIntervals: [200_000]);
+
+        run.Delays.Should().Equal(FailurePolicyDefinition.MaxDelayLimit);
+    }
+
+    [Fact]
+    public async Task should_retry_back_to_back_within_the_policy_immediate_tier()
+    {
+        var policy = new FailurePolicyBuilder().Immediate(2).Build();
+
+        var run = await _RunToExhaustionAsync(policy, retries: 2, retryIntervals: []);
 
         run.Attempts.Should().Equal(0, 1, 2);
         run.Delays.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_wait_the_fallback_delay_for_a_retry_the_policy_does_not_pace()
+    {
+        var policy = new FailurePolicyBuilder().Immediate(1).Build();
+
+        var run = await _RunToExhaustionAsync(policy, retries: 3, retryIntervals: null);
+
+        // The first retry is the policy's immediate one; the two retries past it have no policy delay to wait.
+        run.Attempts.Should().Equal(0, 1, 2, 3);
+        run.Delays.Should().Equal(TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
     }
 
     [Fact]
