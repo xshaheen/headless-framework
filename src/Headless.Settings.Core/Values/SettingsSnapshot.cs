@@ -1,0 +1,440 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using System.Collections.Frozen;
+using Headless.Checks;
+using Headless.Settings.Definitions;
+using Microsoft.Extensions.Logging;
+
+namespace Headless.Settings.Values;
+
+/// <summary>Why a snapshot is being reloaded; decides whether a reload that saw no change re-reads again.</summary>
+internal enum SettingsSnapshotReloadReason
+{
+    /// <summary>The host is starting. Undefined names and a bind failure fail the start.</summary>
+    Startup = 1,
+
+    /// <summary>A <see cref="SettingChangedMessage"/> named settings this snapshot tracks.</summary>
+    Message = 2,
+
+    /// <summary>The every-instance subscription was established, first or after a gap.</summary>
+    Establishment = 3,
+
+    /// <summary>The backstop timer fired.</summary>
+    Backstop = 4,
+
+    /// <summary>A delayed re-read scheduled by an earlier message or establishment reload. Never schedules more.</summary>
+    Settle = 5,
+}
+
+/// <summary>The type-erased side of a registered snapshot that the consumer and the hosted service drive.</summary>
+internal interface ISettingsSnapshotEntry
+{
+    /// <summary>The setting names the snapshot is bound from.</summary>
+    IReadOnlySet<string> Names { get; }
+
+    /// <summary>The backstop re-read interval.</summary>
+    TimeSpan Backstop { get; }
+
+    /// <summary>Validates the names and performs the startup load. Throws when either fails.</summary>
+    Task LoadAsync(CancellationToken cancellationToken);
+
+    /// <summary>Re-reads the snapshot. Failures are logged, never thrown, except cancellation.</summary>
+    /// <param name="reason">Why the reload runs.</param>
+    /// <param name="announcedNames">The tracked names a message announced, for <see cref="SettingsSnapshotReloadReason.Message"/>.</param>
+    /// <param name="cancellationToken">The abort token.</param>
+    Task ReloadAsync(
+        SettingsSnapshotReloadReason reason,
+        IReadOnlyCollection<string>? announcedNames,
+        CancellationToken cancellationToken
+    );
+}
+
+/// <summary>Builds a <typeparamref name="T"/> from Global settings and keeps it current. See <see cref="ISettingsSnapshot{T}"/>.</summary>
+/// <remarks>
+/// <para>
+/// Reloads are serialized, so the consumer, the subscription hook, the backstop, and settle re-reads never interleave and
+/// <see cref="Revision"/> never moves backward. <see cref="Current"/> and <see cref="Revision"/> live in one immutable
+/// state swapped atomically, so a reader never sees a new value with an old revision.
+/// </para>
+/// <para>
+/// With a hybrid setting cache, a peer can receive <see cref="SettingChangedMessage"/> before its own
+/// <c>CacheInvalidationMessage</c>; the two travel on separate subscriptions with no ordering between them. A reload in
+/// that window reads the old L1 value. So a message reload whose announced names did not change, and an establishment
+/// reload that changed nothing, re-read a few more times over the next seconds. The setting cache offers no local-only
+/// read or eviction to avoid the window instead, and removing the entry would evict the shared tier and broadcast.
+/// </para>
+/// </remarks>
+internal sealed partial class SettingsSnapshot<T> : ISettingsSnapshot<T>, ISettingsSnapshotEntry, IDisposable
+{
+    /// <summary>Delays between settle re-reads, cumulative from the reload that scheduled them.</summary>
+    internal static readonly TimeSpan[] SettleDelays =
+    [
+        TimeSpan.FromMilliseconds(500),
+        TimeSpan.FromMilliseconds(1500),
+        TimeSpan.FromSeconds(3),
+    ];
+
+    private readonly HashSet<string> _names;
+    private readonly Func<IReadOnlyDictionary<string, string?>, T> _bind;
+    private readonly ISettingManager _settingManager;
+    private readonly ISettingDefinitionManager _definitionManager;
+    private readonly TimeProvider _timeProvider;
+    private readonly ILogger _logger;
+    private readonly SemaphoreSlim _reloadLock = new(1, 1);
+    private readonly CancellationTokenSource _disposeCts = new();
+    private readonly Lock _listenersLock = new();
+    private Action<T, long>[] _listeners = [];
+    private volatile State? _state;
+    private int _disposed;
+
+    public SettingsSnapshot(
+        IReadOnlyCollection<string> names,
+        Func<IReadOnlyDictionary<string, string?>, T> bind,
+        TimeSpan backstop,
+        ISettingManager settingManager,
+        ISettingDefinitionManager definitionManager,
+        TimeProvider timeProvider,
+        ILogger<SettingsSnapshot<T>> logger
+    )
+    {
+        _names = new HashSet<string>(names, StringComparer.Ordinal);
+        Names = _names.ToFrozenSet(StringComparer.Ordinal);
+        _bind = bind;
+        Backstop = backstop;
+        _settingManager = settingManager;
+        _definitionManager = definitionManager;
+        _timeProvider = timeProvider;
+        _logger = logger;
+    }
+
+    public IReadOnlySet<string> Names { get; }
+
+    public TimeSpan Backstop { get; }
+
+    public T Current =>
+        _state is { } state
+            ? state.Value
+            : throw new InvalidOperationException(
+                $"The settings snapshot of {typeof(T).Name} has not been loaded yet. It loads when the host starts."
+            );
+
+    public long Revision => _state?.Revision ?? 0;
+
+    public IDisposable OnChange(Action<T, long> listener)
+    {
+        Argument.IsNotNull(listener);
+
+        lock (_listenersLock)
+        {
+            _listeners = [.. _listeners, listener];
+        }
+
+        return new Subscription(this, listener);
+    }
+
+    public async Task LoadAsync(CancellationToken cancellationToken)
+    {
+        var undefined = new List<string>();
+
+        foreach (var name in _names)
+        {
+            if (await _definitionManager.FindAsync(name, cancellationToken).ConfigureAwait(false) is null)
+            {
+                undefined.Add(name);
+            }
+        }
+
+        if (undefined.Count != 0)
+        {
+            throw new InvalidOperationException(
+                $"The settings snapshot of {typeof(T).Name} tracks undefined settings: {string.Join(", ", undefined)}."
+            );
+        }
+
+        await _ReloadAsync(SettingsSnapshotReloadReason.Startup, announcedNames: null, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public async Task ReloadAsync(
+        SettingsSnapshotReloadReason reason,
+        IReadOnlyCollection<string>? announcedNames,
+        CancellationToken cancellationToken
+    )
+    {
+        try
+        {
+            await _ReloadAsync(reason, announcedNames, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (ObjectDisposedException) when (Volatile.Read(ref _disposed) != 0)
+        {
+            // The host is shutting down; nothing reads this snapshot any more.
+        }
+        catch (Exception e)
+        {
+            LogReloadFailed(_logger, e, typeof(T).Name, reason);
+        }
+    }
+
+    public void Dispose()
+    {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        {
+            return;
+        }
+
+        // Pending settle re-reads observe the cancellation and stop; one already waiting on the lock sees it disposed.
+        _disposeCts.Cancel();
+        _disposeCts.Dispose();
+        _reloadLock.Dispose();
+    }
+
+    private async Task _ReloadAsync(
+        SettingsSnapshotReloadReason reason,
+        IReadOnlyCollection<string>? announcedNames,
+        CancellationToken cancellationToken
+    )
+    {
+        FrozenDictionary<string, string?>? before;
+        FrozenDictionary<string, string?> after;
+
+        await _reloadLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+
+        try
+        {
+            before = _state?.Raw;
+            after = await _ReadAsync(cancellationToken).ConfigureAwait(false);
+
+            if (before is null || !_SameValues(before, after, _names))
+            {
+                _Apply(reason, before, after);
+            }
+        }
+        finally
+        {
+            _reloadLock.Release();
+        }
+
+        // Settle only when the values this trigger is about did not show up yet; see the class remarks.
+        var watched = reason switch
+        {
+            SettingsSnapshotReloadReason.Message => announcedNames,
+            SettingsSnapshotReloadReason.Establishment => _names,
+            _ => null,
+        };
+
+        // With no earlier state there is nothing the trigger could still be waiting to replace.
+        if (
+            watched is { Count: > 0 }
+            && before is not null
+            && _state is { } current
+            && _SameValues(before, current.Raw, watched)
+        )
+        {
+            _ = _SettleAsync(before, watched);
+        }
+    }
+
+    private void _Apply(
+        SettingsSnapshotReloadReason reason,
+        FrozenDictionary<string, string?>? before,
+        FrozenDictionary<string, string?> after
+    )
+    {
+        T value;
+
+        try
+        {
+            value = _bind(after);
+        }
+        catch (Exception e) when (reason is not SettingsSnapshotReloadReason.Startup)
+        {
+            // Keep serving the last good value: one bad operator value must not take a running process down.
+            LogBindFailed(_logger, e, typeof(T).Name, string.Join(", ", _Changed(before, after)));
+
+            return;
+        }
+
+        var state = new State(value, (_state?.Revision ?? 0) + 1, after);
+        _state = state;
+
+        Action<T, long>[] listeners;
+
+        lock (_listenersLock)
+        {
+            listeners = _listeners;
+        }
+
+        foreach (var listener in listeners)
+        {
+            try
+            {
+                listener(state.Value, state.Revision);
+            }
+            catch (Exception e)
+            {
+                LogListenerFailed(_logger, e, typeof(T).Name, state.Revision);
+            }
+        }
+    }
+
+    private async Task _SettleAsync(FrozenDictionary<string, string?> baseline, IReadOnlyCollection<string> watched)
+    {
+        CancellationToken token;
+
+        try
+        {
+            token = _disposeCts.Token;
+        }
+        catch (ObjectDisposedException)
+        {
+            return;
+        }
+
+        try
+        {
+            foreach (var delay in SettleDelays)
+            {
+                await Task.Delay(delay, _timeProvider, token).ConfigureAwait(false);
+                await ReloadAsync(SettingsSnapshotReloadReason.Settle, announcedNames: null, token)
+                    .ConfigureAwait(false);
+
+                if (_state is { } state && !_SameValues(baseline, state.Raw, watched))
+                {
+                    return;
+                }
+            }
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            // The snapshot was disposed with the host.
+        }
+        catch (ObjectDisposedException)
+        {
+            // The snapshot was disposed between two re-reads.
+        }
+    }
+
+    private async Task<FrozenDictionary<string, string?>> _ReadAsync(CancellationToken cancellationToken)
+    {
+        var values = await _settingManager
+            .GetAllAsync(_names, SettingValueProviderNames.Global, providerKey: null, fallback: true, cancellationToken)
+            .ConfigureAwait(false);
+
+        // The manager omits names with no value; every tracked name is present here so bind sees a complete map.
+        var raw = new Dictionary<string, string?>(_names.Count, StringComparer.Ordinal);
+
+        foreach (var name in _names)
+        {
+            raw[name] = null;
+        }
+
+        foreach (var value in values)
+        {
+            if (_names.Contains(value.Name))
+            {
+                raw[value.Name] = value.Value;
+            }
+        }
+
+        return raw.ToFrozenDictionary(StringComparer.Ordinal);
+    }
+
+    private static bool _SameValues(
+        FrozenDictionary<string, string?> left,
+        FrozenDictionary<string, string?> right,
+        IEnumerable<string> names
+    )
+    {
+        foreach (var name in names)
+        {
+            left.TryGetValue(name, out var leftValue);
+            right.TryGetValue(name, out var rightValue);
+
+            if (!string.Equals(leftValue, rightValue, StringComparison.Ordinal))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private IEnumerable<string> _Changed(
+        FrozenDictionary<string, string?>? before,
+        FrozenDictionary<string, string?> after
+    )
+    {
+        return before is null ? _names : _names.Where(name => !_SameValues(before, after, [name]));
+    }
+
+    private void _Unsubscribe(Action<T, long> listener)
+    {
+        lock (_listenersLock)
+        {
+            var index = Array.IndexOf(_listeners, listener);
+
+            if (index >= 0)
+            {
+                _listeners = [.. _listeners[..index], .. _listeners[(index + 1)..]];
+            }
+        }
+    }
+
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "SettingsSnapshotBindFailed",
+        Level = LogLevel.Error,
+        Message = "Binding the settings snapshot of {SnapshotType} failed; keeping the last good value. Changed settings: {SettingNames}"
+    )]
+    private static partial void LogBindFailed(
+        ILogger logger,
+        Exception exception,
+        string snapshotType,
+        string settingNames
+    );
+
+    [LoggerMessage(
+        EventId = 2,
+        EventName = "SettingsSnapshotListenerFailed",
+        Level = LogLevel.Error,
+        Message = "A change listener of the settings snapshot of {SnapshotType} failed at revision {Revision}"
+    )]
+    private static partial void LogListenerFailed(
+        ILogger logger,
+        Exception exception,
+        string snapshotType,
+        long revision
+    );
+
+    [LoggerMessage(
+        EventId = 3,
+        EventName = "SettingsSnapshotReloadFailed",
+        Level = LogLevel.Error,
+        Message = "Reloading the settings snapshot of {SnapshotType} failed ({Reason}); keeping the last good value"
+    )]
+    private static partial void LogReloadFailed(
+        ILogger logger,
+        Exception exception,
+        string snapshotType,
+        SettingsSnapshotReloadReason reason
+    );
+
+    private sealed record State(T Value, long Revision, FrozenDictionary<string, string?> Raw);
+
+    private sealed class Subscription(SettingsSnapshot<T> owner, Action<T, long> listener) : IDisposable
+    {
+        private int _disposed;
+
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) == 0)
+            {
+                owner._Unsubscribe(listener);
+            }
+        }
+    }
+}
