@@ -109,6 +109,70 @@ public sealed class ValueConverterTests : TestBase
         first.Should().NotContainKey("fr");
     }
 
+    [Fact]
+    public void locale_comparer_should_snapshot_inner_dictionaries_so_in_place_edits_are_detected()
+    {
+        var comparer = new LocalesValueComparer();
+        Locales current = new()
+        {
+            ["en"] = new Dictionary<string, string>(StringComparer.Ordinal) { ["name"] = "Book" },
+        };
+        var snapshot = comparer.SnapshotExpression.Compile()(current);
+
+        current["en"]["name"] = "Novel";
+
+        snapshot!["en"]["name"].Should().Be("Book");
+        comparer.EqualsExpression.Compile()(current, snapshot).Should().BeFalse();
+    }
+
+    [Fact]
+    public void json_comparer_should_compare_by_serialized_content()
+    {
+        var comparer = new JsonValueComparer<Dictionary<string, object?>?>();
+        var equals = comparer.EqualsExpression.Compile();
+        var hash = comparer.HashCodeExpression.Compile();
+        Dictionary<string, object?> first = new(StringComparer.Ordinal)
+        {
+            ["count"] = 3,
+            ["tags"] = new List<string> { "a" },
+        };
+        Dictionary<string, object?> same = new(StringComparer.Ordinal)
+        {
+            ["count"] = 3,
+            ["tags"] = new List<string> { "a" },
+        };
+        Dictionary<string, object?> changed = new(StringComparer.Ordinal)
+        {
+            ["count"] = 4,
+            ["tags"] = new List<string> { "a" },
+        };
+
+        equals(first, same).Should().BeTrue();
+        hash(first).Should().Be(hash(same));
+        equals(first, changed).Should().BeFalse();
+        equals(null, null).Should().BeTrue();
+        equals(first, null).Should().BeFalse();
+        equals(null, first).Should().BeFalse();
+        hash(null).Should().Be(0);
+    }
+
+    [Fact]
+    public void json_comparer_snapshot_should_be_a_deep_copy_that_detects_nested_in_place_edits()
+    {
+        var comparer = new JsonValueComparer<Dictionary<string, object?>?>();
+        var tags = new List<string> { "a" };
+        Dictionary<string, object?> current = new(StringComparer.Ordinal) { ["tags"] = tags };
+        var snapshot = comparer.SnapshotExpression.Compile()(current);
+
+        comparer.EqualsExpression.Compile()(current, snapshot).Should().BeTrue();
+
+        tags.Add("b");
+
+        snapshot.Should().NotBeSameAs(current);
+        comparer.EqualsExpression.Compile()(current, snapshot).Should().BeFalse();
+        comparer.SnapshotExpression.Compile()(null).Should().BeNull();
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("")]

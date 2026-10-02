@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.AuditLog.Internal;
+using Headless.EntityFramework.Configurations;
 using Headless.Hosting.Initialization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
@@ -43,28 +44,32 @@ internal sealed class AuditLogEntryConfiguration(AuditLogStorageOptions options,
         builder.Property(e => e.CorrelationId).HasMaxLength(AuditLogFieldLimits.CorrelationId);
         builder.Property(e => e.ErrorCode).HasMaxLength(AuditLogFieldLimits.ErrorCode);
 
-        // JSON stored as string columns — universally portable across all DB providers
+        // JSON stored as string columns — universally portable across all DB providers. Each collection gets a
+        // JSON comparer: without one EF snapshots the reference and an in-place mutation is never saved.
         // Note: Dictionary<string, object?> round-trips values as JsonElement on read.
         // Consumers must use JsonElement APIs (GetDecimal, GetInt32, etc.) for typed access.
         builder
             .Property(e => e.OldValues)
             .HasConversion(
                 v => v == null ? null : JsonSerializer.Serialize(v, _JsonOptions),
-                v => v == null ? null : JsonSerializer.Deserialize<Dictionary<string, object?>>(v, _JsonOptions)
+                v => v == null ? null : JsonSerializer.Deserialize<Dictionary<string, object?>>(v, _JsonOptions),
+                new JsonValueComparer<Dictionary<string, object?>?>(_JsonOptions)
             );
 
         builder
             .Property(e => e.NewValues)
             .HasConversion(
                 v => v == null ? null : JsonSerializer.Serialize(v, _JsonOptions),
-                v => v == null ? null : JsonSerializer.Deserialize<Dictionary<string, object?>>(v, _JsonOptions)
+                v => v == null ? null : JsonSerializer.Deserialize<Dictionary<string, object?>>(v, _JsonOptions),
+                new JsonValueComparer<Dictionary<string, object?>?>(_JsonOptions)
             );
 
         builder
             .Property(e => e.ChangedFields)
             .HasConversion(
                 v => v == null ? null : JsonSerializer.Serialize(v, _JsonOptions),
-                v => v == null ? null : JsonSerializer.Deserialize<List<string>>(v, _JsonOptions)
+                v => v == null ? null : JsonSerializer.Deserialize<List<string>>(v, _JsonOptions),
+                new JsonValueComparer<List<string>?>(_JsonOptions)
             );
 
         // Optional: override to native JSON column type (e.g., "jsonb" for PostgreSQL).
