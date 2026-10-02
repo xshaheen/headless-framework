@@ -969,7 +969,9 @@
         "type": "Project",
         "dependencies": {
           "Headless.Coordination.Core": "[1.0.0, )",
-          "Headless.Hosting": "[1.0.0, )"
+          "Headless.Hosting": "[1.0.0, )",
+          "Headless.Sql.Abstractions": "[1.0.0, )",
+          "Headless.Sql.Core": "[1.0.0, )"
         }
       },
       "headless.coordination.postgresql": {
@@ -989,8 +991,7 @@
           "Headless.Extensions": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Headless.Sql.SqlServer": "[1.0.0, )",
-          "Microsoft.Data.SqlClient": "[7.0.2, )",
-          "Polly.Core": "[8.7.0, )"
+          "Microsoft.Data.SqlClient": "[7.0.2, )"
         }
       },
       "headless.core": {
@@ -1071,7 +1072,8 @@
       "headless.hosting": {
         "type": "Project",
         "dependencies": {
-          "Headless.FluentValidation": "[1.0.0, )"
+          "Headless.FluentValidation": "[1.0.0, )",
+          "OpenTelemetry.Api": "[1.18.0, )"
         }
       },
       "headless.jobs.abstractions": {
@@ -1114,6 +1116,7 @@
           "Headless.Extensions": "[1.0.0, )",
           "Headless.Jobs.Abstractions": "[1.0.0, )",
           "Headless.Jobs.Core": "[1.0.0, )",
+          "Headless.Sql.Core": "[1.0.0, )",
           "Microsoft.EntityFrameworkCore.Relational": "[10.0.12, )",
           "Polly.Core": "[8.7.0, )"
         }
@@ -1123,6 +1126,7 @@
         "dependencies": {
           "Headless.Coordination.PostgreSql": "[1.0.0, )",
           "Headless.Jobs.EntityFramework": "[1.0.0, )",
+          "Headless.Sql.PostgreSql": "[1.0.0, )",
           "Headless.UnitOfWork.EntityFramework": "[1.0.0, )",
           "Npgsql.EntityFrameworkCore.PostgreSQL": "[10.0.3, )"
         }
@@ -1133,9 +1137,9 @@
           "Headless.Coordination.SqlServer": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
           "Headless.Jobs.EntityFramework": "[1.0.0, )",
+          "Headless.Sql.SqlServer": "[1.0.0, )",
           "Headless.UnitOfWork.EntityFramework": "[1.0.0, )",
-          "Microsoft.EntityFrameworkCore.SqlServer": "[10.0.12, )",
-          "Polly.Core": "[8.7.0, )"
+          "Microsoft.EntityFrameworkCore.SqlServer": "[10.0.12, )"
         }
       },
       "headless.jobs.sourcegenerator": {
@@ -1189,6 +1193,8 @@
           "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
           "Headless.Messaging.Queue.Abstractions": "[1.0.0, )",
           "Headless.MultiTenancy": "[1.0.0, )",
+          "Headless.Sql.Abstractions": "[1.0.0, )",
+          "Headless.Sql.Core": "[1.0.0, )",
           "Headless.UnitOfWork": "[1.0.0, )",
           "OpenTelemetry.Api": "[1.18.0, )",
           "Polly.Core": "[8.7.0, )"
@@ -1302,15 +1308,6 @@
           "Microsoft.Data.SqlClient": "[7.0.2, )"
         }
       },
-      "headless.messaging.storage.sqlserver.entityframework": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Messaging.Core": "[1.0.0, )",
-          "Headless.Messaging.Storage.SqlServer": "[1.0.0, )",
-          "Headless.UnitOfWork.EntityFramework": "[1.0.0, )",
-          "Microsoft.EntityFrameworkCore.Relational": "[10.0.12, )"
-        }
-      },
       "headless.messaging.testing": {
         "type": "Project",
         "dependencies": {
@@ -1381,14 +1378,20 @@
       "headless.sql.core": {
         "type": "Project",
         "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
           "Headless.Sql.Abstractions": "[1.0.0, )",
-          "Nito.AsyncEx": "[5.1.2, )"
+          "Headless.UnitOfWork": "[1.0.0, )",
+          "Nito.AsyncEx": "[5.1.2, )",
+          "OpenTelemetry.Api": "[1.18.0, )"
         }
       },
       "headless.sql.postgresql": {
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )",
           "Headless.Sql.Abstractions": "[1.0.0, )",
           "Headless.Sql.Core": "[1.0.0, )",
           "Npgsql": "[10.0.3, )"
@@ -1398,6 +1401,8 @@
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )",
           "Headless.Sql.Abstractions": "[1.0.0, )",
           "Headless.Sql.Core": "[1.0.0, )",
           "Microsoft.Data.SqlClient": "[7.0.2, )"

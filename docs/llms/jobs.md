@@ -1443,21 +1443,29 @@ The separate system indexes make null tenant scope explicit on both providers. S
 With `UseApplicationDbContext<TContext>(ConfigurationType.IgnoreModelCustomizer)`, configure the collations in the consumer model and finalize it last in `OnModelCreating`:
 
 ```csharp
-var collation = Database.ProviderName switch
-{
-    "Npgsql.EntityFrameworkCore.PostgreSQL" => "C",
-    "Microsoft.EntityFrameworkCore.SqlServer" => "Latin1_General_100_BIN2",
-    _ => throw new NotSupportedException("This store does not support keyed Jobs."),
-};
-// snake_case names on PostgreSQL, PascalCase elsewhere; must match the database the model targets.
-var style = HeadlessStorageNaming.ForProvider(Database.ProviderName);
-modelBuilder.ApplyConfiguration(new TimeJobConfigurations<TimeJobEntity>("jobs", style, collation));
-modelBuilder.ApplyConfiguration(new CronJobConfigurations<CronJobEntity>("jobs", style, collation));
-modelBuilder.ApplyConfiguration(new CronJobOccurrenceConfigurations<CronJobEntity>("jobs", style, collation));
+using Microsoft.EntityFrameworkCore;
 
-modelBuilder.Entity<TimeJobEntity>().ToTable("scheduled_jobs", "application");
-modelBuilder.Entity<TimeJobEntity>().Property(job => job.BusinessKey).HasColumnName("business_key");
-modelBuilder.FinalizeJobsModel<TimeJobEntity>(this);
+public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
+{
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        var collation = Database.ProviderName switch
+        {
+            "Npgsql.EntityFrameworkCore.PostgreSQL" => "C",
+            "Microsoft.EntityFrameworkCore.SqlServer" => "Latin1_General_100_BIN2",
+            _ => throw new NotSupportedException("This store does not support keyed Jobs."),
+        };
+        // snake_case names on PostgreSQL, PascalCase elsewhere; must match the database the model targets.
+        var style = HeadlessStorageNaming.ForProvider(Database.ProviderName);
+        modelBuilder.ApplyConfiguration(new TimeJobConfigurations<TimeJobEntity>("jobs", style, collation));
+        modelBuilder.ApplyConfiguration(new CronJobConfigurations<CronJobEntity>("jobs", style, collation));
+        modelBuilder.ApplyConfiguration(new CronJobOccurrenceConfigurations<CronJobEntity>("jobs", style, collation));
+
+        modelBuilder.Entity<TimeJobEntity>().ToTable("scheduled_jobs", "application");
+        modelBuilder.Entity<TimeJobEntity>().Property(job => job.BusinessKey).HasColumnName("business_key");
+        modelBuilder.FinalizeJobsModel<TimeJobEntity>(this);
+    }
+}
 ```
 
 `FinalizeJobsModel<TTimeJob>(this)` builds the four keyed indexes and the metadata check constraint from the final mapped names, with the provider's identifier quoting and Boolean literal. It configures the EF model only and does not create or alter the database. A matching explicit model-default collation is also supported. Keyed scheduling and cancellation validate the finalized model's function, tenant, and business-key collations before touching a key, and reject with a diagnostic when finalization is missing or a collation differs; ordinary unkeyed operations remain available.

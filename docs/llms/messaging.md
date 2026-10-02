@@ -493,7 +493,7 @@ Register the broker through `MessagingSetupBuilder.RegisterExtension(...)` with 
 - singleton `IConsumerClientFactory`
 - any broker-owned singletons such as connection pools
 
-```csharp
+```csharp no-compile
 public static class SetupMessagesMyBroker
 {
     extension(MessagingSetupBuilder setup)
