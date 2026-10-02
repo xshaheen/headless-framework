@@ -99,6 +99,8 @@ internal sealed partial class SettingsSnapshotHostedService(
 
     private static TimeSpan _Jittered(TimeSpan interval)
     {
+#pragma warning disable CA5394 // False positive: jitter only spreads replicas' re-reads; nothing depends on it being unpredictable.
         return interval * (0.9 + (Random.Shared.NextDouble() * 0.2));
+#pragma warning restore CA5394
     }
 }

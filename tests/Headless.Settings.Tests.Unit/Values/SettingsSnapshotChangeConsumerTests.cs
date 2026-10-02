@@ -32,9 +32,9 @@ public sealed class SettingsSnapshotChangeConsumerTests : TestBase
         await sut.ConsumeAsync(_Context(SettingValueProviderNames.Global, _Theme, "Other.Setting"), AbortToken);
 
         // then
-        var reload = theme.Reloads.Should().ContainSingle().Subject;
-        reload.Reason.Should().Be(SettingsSnapshotReloadReason.Message);
-        reload.Names.Should().Equal(_Theme);
+        var (reason, names) = theme.Reloads.Should().ContainSingle().Subject;
+        reason.Should().Be(SettingsSnapshotReloadReason.Message);
+        names.Should().Equal(_Theme);
         limit.Reloads.Should().BeEmpty();
     }
 

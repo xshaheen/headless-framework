@@ -209,8 +209,8 @@ public sealed class SettingsSnapshotTests : TestBase
         // then
         sut.Current.Should().Be(new Policy(10, 100));
         sut.Revision.Should().Be(1);
-        var entry = _logger.Entries.Should().ContainSingle(x => x.Level == LogLevel.Error).Subject;
-        entry.Message.Should().Contain(_PublicLimit).And.NotContain("not-a-number");
+        var (_, message) = _logger.Entries.Should().ContainSingle(x => x.Level == LogLevel.Error).Subject;
+        message.Should().Contain(_PublicLimit).And.NotContain("not-a-number");
     }
 
     [Fact]
