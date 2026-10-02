@@ -3,21 +3,11 @@ title: "One schema runner: per-database lock, history table, verify mode, and de
 date: 2026-09-30
 last_updated: 2026-09-30
 category: architecture-patterns
-module: headless-hosting
-problem_type: design_pattern
+module: Headless.Hosting
+problem_type: architecture_pattern
 component: database
 severity: high
-tags:
-  - schema-runner
-  - storage-initializer
-  - ddl
-  - schema-history
-  - advisory-lock
-  - sp-getapplock
-  - verify-mode
-  - deploy-script
-  - postgres
-  - sqlserver
+tags: [schema-runner, storage-initializer, ddl, schema-history, advisory-lock, verify-mode, postgres, sqlserver]
 related_components:
   - Headless.Hosting
   - Headless.Sql.PostgreSql
