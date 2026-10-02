@@ -187,7 +187,9 @@ public sealed class SettingsSnapshotChangeConsumerTests : TestBase
             {
                 services.AddSingleton(settingManager);
                 services.AddSingleton(definitionManager);
-                services.AddMessageContract<SettingChangedMessage>(SettingChangedMessage.MessageName, "1");
+                services.ConfigureMessaging(static messaging =>
+                    messaging.Message<SettingChangedMessage>(SettingChangedMessage.MessageName, "1")
+                );
 
                 if (registerSnapshot)
                 {

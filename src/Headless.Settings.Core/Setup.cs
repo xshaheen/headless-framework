@@ -133,7 +133,7 @@ public static class SetupSettings
             // Contributed here rather than by AddHeadlessSettings: an every-instance consumer fails startup on a
             // transport without every-instance support, so only a host that opts into snapshots takes that requirement.
             // Inert without AddHeadlessMessaging; repeated contributions register the module once.
-            services.AddMessagingModule<Core.MessagingModule>();
+            services.ConfigureMessaging(static messaging => messaging.AddModule<Core.MessagingModule>());
 
             return services;
         }
