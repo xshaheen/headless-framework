@@ -81,6 +81,12 @@ internal sealed class MessageQueueMarkerService(string name)
 }
 
 /// <summary>
+/// A marker service registered when the host opts in to sending requests. Bootstrap reads it to reject a transport
+/// without a reply channel before the host reports ready; a host without it opens no reply listener.
+/// </summary>
+internal sealed class RequestReplyMarkerService;
+
+/// <summary>
 /// Provides a fluent API for fine-grained configuration of messaging services within a dependency injection container.
 /// This builder allows registration of middleware and other messaging extensions.
 /// </summary>

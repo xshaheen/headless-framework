@@ -96,6 +96,24 @@ public sealed class ProviderHeaderContributionTests
         act.Should().Throw<InvalidOperationException>().WithMessage("*reserved header*traceparent*");
     }
 
+    [Theory]
+    [InlineData("headless-request-id")]
+    [InlineData("headless-reply-to")]
+    [InlineData("headless-request-deadline")]
+    [InlineData("headless-in-reply-to")]
+    [InlineData("headless-reply-status")]
+    public void should_reject_request_reply_contribution_header(string header)
+    {
+        // given
+        var factory = _CreateFactory(new FakeProviderConfig(header, static message => message.Key));
+
+        // when
+        var act = () => factory.Create(new TestMessage("tenant-1"));
+
+        // then
+        act.Should().Throw<InvalidOperationException>().WithMessage($"*reserved header*{header}*");
+    }
+
     [Fact]
     public void should_reject_contribution_value_with_control_characters()
     {

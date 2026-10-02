@@ -205,6 +205,9 @@ public static class SetupMessaging
         //Sender
         services.TryAddSingleton<IMessageSender, MessageSender>();
 
+        // Resolved only by a responder host, which bootstrap admits only on a transport that registers IReplyTransport.
+        services.TryAddSingleton<ReplySender>();
+
         services.TryAddSingleton<ISerializer, JsonUtf8Serializer>();
 
         // One id per host: every-instance subscriptions name their per-process broker object after it.

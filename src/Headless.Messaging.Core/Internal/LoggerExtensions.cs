@@ -930,4 +930,20 @@ internal static partial class LoggerExtensions
         string? messageId,
         string? messageName
     );
+
+    [LoggerMessage(
+        EventId = 111,
+        EventName = "ReplyAddressRefused",
+        Level = LogLevel.Warning,
+        Message = "The reply to request {RequestId} was not sent: its reply address '{ReplyAddress}' is outside the reserved reply namespace."
+    )]
+    public static partial void ReplyAddressRefused(this ILogger logger, string? requestId, string? replyAddress);
+
+    [LoggerMessage(
+        EventId = 112,
+        EventName = "ReplySendFailed",
+        Level = LogLevel.Warning,
+        Message = "The reply to request {RequestId} could not be sent and is not retried; the caller will time out."
+    )]
+    public static partial void ReplySendFailed(this ILogger logger, Exception exception, string? requestId);
 }

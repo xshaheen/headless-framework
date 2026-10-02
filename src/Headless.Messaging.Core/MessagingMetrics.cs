@@ -45,6 +45,7 @@ internal static class MessagingMetrics
     internal const string OperatorOperationsName = "messaging.operator.operations";
     internal const string ReceiveOutcomesName = "messaging.receive.outcomes";
     internal const string EveryInstanceDeliveriesName = "messaging.every_instance.deliveries";
+    internal const string RequestReplyDroppedRepliesName = "messaging.request_reply.dropped_replies";
 
     // --- Dimension (tag) names --------------------------------------------------------------------------------
 
@@ -59,6 +60,12 @@ internal static class MessagingMetrics
     internal const string TagPersistenceType = "messaging.persistence.type";
     internal const string TagReceiveOutcome = "messaging.receive.outcome";
     internal const string TagEveryInstanceOutcome = "messaging.every_instance.outcome";
+    internal const string TagRequestReplyDropReason = "messaging.request_reply.drop_reason";
+
+    // --- Request/reply drop reasons ---------------------------------------------------------------------------
+
+    // A request named a reply destination outside the reserved reply namespace, so the responder wrote nothing.
+    internal const string DropReasonInvalidReplyAddress = "invalid_reply_address";
 
     // --- Instruments ------------------------------------------------------------------------------------------
 
@@ -151,6 +158,10 @@ internal static class MessagingMetrics
         EveryInstanceDeliveriesName
     );
 
+    private static readonly Counter<long> _RequestReplyDroppedReplies = MessagingDiagnostics.Meter.CreateCounter<long>(
+        RequestReplyDroppedRepliesName
+    );
+
     /// <summary>Whether any messaging instrument currently has a subscribed listener.</summary>
     internal static bool AnyEnabled =>
         _MessagesPublished.Enabled
@@ -172,7 +183,8 @@ internal static class MessagingMetrics
         || _InboxRetention.Enabled
         || _InboxCapabilities.Enabled
         || _ReceiveOutcomes.Enabled
-        || _EveryInstanceDeliveries.Enabled;
+        || _EveryInstanceDeliveries.Enabled
+        || _RequestReplyDroppedReplies.Enabled;
 
     internal static void RecordInbox(
         InboxMetricKind kind,
@@ -453,6 +465,20 @@ internal static class MessagingMetrics
         }
 
         _EveryInstanceDeliveries.Add(1, tags);
+    }
+
+    /// <summary>
+    /// Records a reply that was not delivered, tagged only with the drop reason: request and instance identifiers are
+    /// unbounded, so they never become metric tags.
+    /// </summary>
+    internal static void RecordDroppedReply(string reason)
+    {
+        if (!_RequestReplyDroppedReplies.Enabled)
+        {
+            return;
+        }
+
+        _RequestReplyDroppedReplies.Add(1, new KeyValuePair<string, object?>(TagRequestReplyDropReason, reason));
     }
 
     private static TagList _CreateDeliveryTags(

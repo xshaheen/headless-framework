@@ -384,6 +384,23 @@ internal sealed class Bootstrapper(
         {
             gate.EnsureEveryInstanceSupported(identity);
         }
+
+        // Runs before the reply listener and any processor start, so a host that sends requests or answers them on a
+        // transport without a reply channel fails before it reports ready, instead of timing out every call later.
+        if (serviceProvider.GetService<RequestReplyMarkerService>() is not null)
+        {
+            gate.EnsureRequestReplySupported();
+        }
+
+        foreach (
+            var identity in consumers
+                .Where(static x => x.IsResponder)
+                .Select(static x => x.ConsumerIdentity)
+                .Distinct(StringComparer.Ordinal)
+        )
+        {
+            gate.EnsureRequestReplySupported(identity);
+        }
     }
 
     /// <summary>

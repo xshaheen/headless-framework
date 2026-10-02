@@ -16,6 +16,10 @@ internal sealed class MemoryQueue(ILogger<MemoryQueue> logger)
     private readonly Dictionary<(MessageLane Lane, string GroupId), int> _nextClientIndexes = [];
     private readonly Dictionary<string, int> _nextQueueGroupIndexes = [];
 
+    // Reply addresses live here rather than on a transport instance, so hosts that share one MemoryQueue also share
+    // reply addresses, as processes sharing one broker do.
+    private readonly Dictionary<string, InMemoryReplyListener> _replyListeners = new(StringComparer.Ordinal);
+
     /// <summary>
     /// Registers a consumer client for a specific group.
     /// </summary>
@@ -182,6 +186,53 @@ internal sealed class MemoryQueue(ILogger<MemoryQueue> logger)
         }
     }
 
+    /// <summary>Makes <paramref name="listener"/> the receiver of replies sent to <paramref name="address"/>.</summary>
+    public void RegisterReplyListener(string address, InMemoryReplyListener listener)
+    {
+        lock (_lock)
+        {
+            _replyListeners.Add(address, listener);
+        }
+    }
+
+    /// <summary>Stops delivering replies sent to <paramref name="address"/> to <paramref name="listener"/>.</summary>
+    public void UnregisterReplyListener(string address, InMemoryReplyListener listener)
+    {
+        lock (_lock)
+        {
+            if (_replyListeners.TryGetValue(address, out var registered) && ReferenceEquals(registered, listener))
+            {
+                _replyListeners.Remove(address);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Hands a copy of <paramref name="reply"/> to the listener at <paramref name="address"/>. A reply to an address
+    /// nobody listens on is dropped, as the caller has gone.
+    /// </summary>
+    public void SendReply(string address, TransportMessage reply)
+    {
+        InMemoryReplyListener? listener;
+        lock (_lock)
+        {
+            _replyListeners.TryGetValue(address, out listener);
+        }
+
+        if (listener is null)
+        {
+            logger.NoReplyListener(address);
+            return;
+        }
+
+        listener.Deliver(
+            new TransportMessage(
+                reply.Headers.ToDictionary(o => o.Key, o => o.Value, StringComparer.Ordinal),
+                reply.Body
+            )
+        );
+    }
+
     private bool _TryDeliverToGroup(MessageLane lane, string groupId, TransportMessage message)
     {
         var key = (lane, groupId);
@@ -233,4 +284,11 @@ internal static partial class MemoryQueueLog
         Message = "No active consumer client for queue message name '{MessageName}'. Message dropped (no-op)."
     )]
     public static partial void NoActiveConsumerQueue(this ILogger logger, string messageName);
+
+    [LoggerMessage(
+        EventId = 3011,
+        Level = LogLevel.Debug,
+        Message = "No reply listener at address '{ReplyAddress}'. Reply dropped (no-op)."
+    )]
+    public static partial void NoReplyListener(this ILogger logger, string replyAddress);
 }

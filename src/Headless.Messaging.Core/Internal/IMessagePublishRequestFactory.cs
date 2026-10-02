@@ -71,6 +71,11 @@ internal sealed class MessagePublishRequestFactory(
         Headers.RequestedDeliveryMode,
         Headers.ResolvedDeliveryMode,
         Headers.DeliveryCoordinated,
+        Headers.RequestId,
+        Headers.ReplyTo,
+        Headers.RequestDeadline,
+        Headers.InReplyTo,
+        Headers.ReplyStatus,
     };
 
     private static readonly HashSet<string> _ProviderReservedHeaders = new(_ReservedHeaders, StringComparer.Ordinal)
