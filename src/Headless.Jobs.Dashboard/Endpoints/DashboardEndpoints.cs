@@ -6,6 +6,7 @@ using Headless.Jobs.Enums;
 using Headless.Jobs.Hubs;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
+using Headless.Jobs.Models;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -160,8 +161,17 @@ internal static class DashboardEndpoints
             .WithName("DeleteCronJobOccurrence")
             .WithSummary("Delete cron job occurrence");
 
+        apiGroup
+            .MapPost("/cron-job-occurrence/requeue", RequeueCronJobOccurrenceAsync)
+            .WithName("RequeueCronJobOccurrence")
+            .WithSummary("Requeue a failed cron job occurrence");
+
         // Job operations
         apiGroup.MapPost("/job/cancel", CancelJobAsync).WithName("CancelJob").WithSummary("Cancel job by ID");
+        apiGroup
+            .MapPost("/job/requeue", RequeueJobAsync)
+            .WithName("RequeueJob")
+            .WithSummary("Requeue a failed time job by ID");
 
         // Literal "id" segment (not a route parameter): the SPA calls "job-request/id" and supplies
         // jobId + jobType via query string, which _GetJobRequest binds. Avoids a dead {id} route token.
@@ -734,6 +744,30 @@ internal static class DashboardEndpoints
         }
 
         return Results.BadRequest();
+    }
+
+    internal static async Task<IResult> RequeueJobAsync(
+        Guid id,
+        IJobScheduler scheduler,
+        CancellationToken cancellationToken
+    )
+    {
+        return _RequeueResult(await scheduler.RequeueAsync(id, cancellationToken).ConfigureAwait(false));
+    }
+
+    internal static async Task<IResult> RequeueCronJobOccurrenceAsync(
+        Guid id,
+        IJobScheduler scheduler,
+        CancellationToken cancellationToken
+    )
+    {
+        return _RequeueResult(await scheduler.RequeueOccurrenceAsync(id, cancellationToken).ConfigureAwait(false));
+    }
+
+    // The refusal name is the body so the dashboard's error alert tells the operator why nothing happened.
+    private static IResult _RequeueResult(JobRequeueOutcome outcome)
+    {
+        return outcome == JobRequeueOutcome.Requeued ? Results.Ok() : Results.BadRequest(outcome.ToString());
     }
 
     private static async Task<IResult> _GetJobRequest<TTimeJob, TCronJob>(

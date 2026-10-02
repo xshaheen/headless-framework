@@ -428,6 +428,68 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         return true;
     }
 
+    public async Task<JobRequeueOutcome> RequeueTimeJobAsync(Guid jobId, CancellationToken cancellationToken = default)
+    {
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
+        var jobs = dbContext.Set<TTimeJob>();
+
+        // One autocommit statement whose predicate carries every eligibility rule, so a concurrent requeue, a keyed
+        // supersede, or a claim can only make it match no row. ExecutionTime is re-stamped to the database clock in
+        // the same statement: the main peek ignores rows older than a second, and the store is the clock it compares.
+        var affected = await jobs.Where(x =>
+                x.Id == jobId
+                && x.Status == JobStatus.Failed
+                && x.ParentId == null
+                && !jobs.Any(child => child.ParentId == x.Id)
+                && (x.BusinessKey == null || x.IsCurrentGeneration == true)
+            )
+            .ExecuteUpdateAsync(
+                setters =>
+                    setters
+                        .SetProperty(x => x.Status, JobStatus.Idle)
+                        .SetProperty(x => x.RetryCount, 0)
+                        .SetProperty(x => x.ExceptionMessage, _ => null)
+                        .SetProperty(x => x.SkippedReason, _ => null)
+                        .SetProperty(x => x.OwnerId, _ => null)
+                        .SetProperty(x => x.LockedUntil, _ => null)
+                        .SetProperty(x => x.ExecutedAt, _ => null)
+                        .SetProperty(x => x.ElapsedTime, 0L)
+                        .SetProperty(x => x.CancelRequested, valueExpression: false)
+                        .SetProperty(x => x.ExecutionTime, _ => DateTime.UtcNow)
+                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        if (affected == 1)
+        {
+            return JobRequeueOutcome.Requeued;
+        }
+
+        // Nothing moved; read the row back only to name the refusal.
+        var row = await jobs.AsNoTracking()
+            .Where(x => x.Id == jobId)
+            .Select(x => new
+            {
+                x.Status,
+                IsChainMember = x.ParentId != null || jobs.Any(child => child.ParentId == x.Id),
+                x.BusinessKey,
+                x.IsCurrentGeneration,
+            })
+            .SingleOrDefaultAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        if (row is null)
+        {
+            return JobRequeueOutcome.NotFound;
+        }
+
+        return JobRequeueRules.RefuseTimeJob(row.Status, row.IsChainMember, row.BusinessKey, row.IsCurrentGeneration)
+            ?? JobRequeueOutcome.Conflict;
+    }
+
     public async Task<bool?> IsTimeJobCancellationRequestedAsync(
         Guid jobId,
         CancellationToken cancellationToken = default
