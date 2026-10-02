@@ -289,6 +289,7 @@ internal sealed partial class RelationalDataStorage
     /// own, retried on a transient fault raised before its commit.
     /// </summary>
     private Task<T> _RunAsync<T>(
+        string operation,
         DbTransaction? transaction,
         Func<DbConnection, DbTransaction, CancellationToken, Task<T>> body,
         CancellationToken cancellationToken
@@ -297,7 +298,7 @@ internal sealed partial class RelationalDataStorage
         if (transaction is null)
         {
             return SqlAutonomousTransaction
-                .RunAsync(_CreateConnection, body, _timeProvider, cancellationToken)
+                .RunAsync(operation, _CreateConnection, body, _timeProvider, cancellationToken)
                 .AsTask();
         }
 
@@ -315,6 +316,7 @@ internal sealed partial class RelationalDataStorage
     /// transition's fence and assignments read the database clock as <see cref="SqlDialectTokens.Now"/>.
     /// </summary>
     private Task<T> _TransitionAsync<T>(
+        string operation,
         DbTransaction? transaction,
         string table,
         string fence,
@@ -334,6 +336,7 @@ internal sealed partial class RelationalDataStorage
             + _dialect.Render(new SqlFencedTransition(table, key, fence, set, returning));
 
         return _RunAsync(
+            operation,
             transaction,
             (connection, tx, ct) =>
                 RelationalCommand.ExecuteReaderAsync(

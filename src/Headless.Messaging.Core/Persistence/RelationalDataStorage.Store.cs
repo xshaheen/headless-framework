@@ -246,7 +246,8 @@ internal sealed partial class RelationalDataStorage
             DueAfter: null
         );
 
-        var stored = await _StoreReceivedAsync(row, cancellationToken).ConfigureAwait(false);
+        var stored = await _StoreReceivedAsync("messaging.store_received_exception_message", row, cancellationToken)
+            .ConfigureAwait(false);
         return stored is not null;
     }
 
@@ -299,7 +300,11 @@ internal sealed partial class RelationalDataStorage
 
         // Adopt the authoritative persisted row id: a redelivery that rewrites an existing row keeps that row's id, so
         // the freshly generated StorageId would be stale and the caller's later state change (by id) would no-op.
-        if (await _StoreReceivedAsync(row, cancellationToken).ConfigureAwait(false) is { } stored)
+        if (
+            await _StoreReceivedAsync("messaging.store_received_message", row, cancellationToken)
+                .ConfigureAwait(false) is
+            { } stored
+        )
         {
             mediumMessage.StorageId = stored.Id;
             mediumMessage.Added = stored.Added;
@@ -364,6 +369,7 @@ internal sealed partial class RelationalDataStorage
     /// durable retry counters.
     /// </remarks>
     private async ValueTask<(Guid Id, DateTimeOffset Added, DateTimeOffset? NextRetryAt)?> _StoreReceivedAsync(
+        string operation,
         ReceivedRow row,
         CancellationToken cancellationToken
     )
@@ -492,6 +498,7 @@ internal sealed partial class RelationalDataStorage
 
             var (found, stored) = await SqlAutonomousTransaction
                 .RunAsync(
+                    operation,
                     _CreateConnection,
                     async (connection, transaction, ct) =>
                     {

@@ -23,6 +23,7 @@ internal sealed partial class RelationalDataStorage
     )
     {
         return _GetMessagesOfNeedRetryAsync(
+            "messaging.get_published_messages_of_need_retry",
             _publishedTable,
             lane,
             orphaned: false,
@@ -42,6 +43,7 @@ internal sealed partial class RelationalDataStorage
     )
     {
         return _GetMessagesOfNeedRetryAsync(
+            "messaging.get_received_messages_of_need_retry",
             _receivedTable,
             lane,
             orphaned: false,
@@ -54,9 +56,18 @@ internal sealed partial class RelationalDataStorage
         MessageLane lane,
         IReadOnlyCollection<string>? consumerIdentities,
         CancellationToken cancellationToken = default
-    ) => _GetMessagesOfNeedRetryAsync(_receivedTable, lane, orphaned: true, consumerIdentities, cancellationToken);
+    ) =>
+        _GetMessagesOfNeedRetryAsync(
+            "messaging.get_received_inbox_orphans_of_need_retry",
+            _receivedTable,
+            lane,
+            orphaned: true,
+            consumerIdentities,
+            cancellationToken
+        );
 
     private async ValueTask<IEnumerable<MediumMessage>> _GetMessagesOfNeedRetryAsync(
+        string operation,
         string table,
         MessageLane lane,
         bool orphaned,
@@ -99,6 +110,7 @@ internal sealed partial class RelationalDataStorage
 
         return await SqlAutonomousTransaction
             .RunAsync(
+                operation,
                 _CreateConnection,
                 async (connection, transaction, ct) =>
                 {
@@ -390,7 +402,12 @@ internal sealed partial class RelationalDataStorage
         CancellationToken cancellationToken = default
     )
     {
-        return _ReclaimDeadOwnersAsync(_publishedTable, deadOwners, cancellationToken);
+        return _ReclaimDeadOwnersAsync(
+            "messaging.reclaim_dead_published_owners",
+            _publishedTable,
+            deadOwners,
+            cancellationToken
+        );
     }
 
     /// <summary>
@@ -403,10 +420,16 @@ internal sealed partial class RelationalDataStorage
         CancellationToken cancellationToken = default
     )
     {
-        return _ReclaimDeadOwnersAsync(_receivedTable, deadOwners, cancellationToken);
+        return _ReclaimDeadOwnersAsync(
+            "messaging.reclaim_dead_received_owners",
+            _receivedTable,
+            deadOwners,
+            cancellationToken
+        );
     }
 
     private async ValueTask<int> _ReclaimDeadOwnersAsync(
+        string operation,
         string table,
         IReadOnlyCollection<string> deadOwners,
         CancellationToken cancellationToken
@@ -429,6 +452,7 @@ internal sealed partial class RelationalDataStorage
 
         return await SqlAutonomousTransaction
             .RunAsync(
+                operation,
                 _CreateConnection,
                 async (connection, transaction, ct) =>
                 {
@@ -511,7 +535,13 @@ internal sealed partial class RelationalDataStorage
     {
         if (_IsReceived(table))
         {
-            return await _DeleteExpiredReceivedAsync(timeout, batchCount, cancellationToken).ConfigureAwait(false);
+            return await _DeleteExpiredReceivedAsync(
+                    "messaging.delete_expired_received",
+                    timeout,
+                    batchCount,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
         }
 
         // The cutoff is the caller's retention decision, so it stays a parameter rather than the database clock. The
@@ -528,6 +558,7 @@ internal sealed partial class RelationalDataStorage
 
         return await SqlAutonomousTransaction
             .RunAsync(
+                "messaging.delete_expired_published",
                 _CreateConnection,
                 (connection, transaction, ct) =>
                     RelationalCommand.ExecuteNonQueryAsync(
@@ -558,6 +589,7 @@ internal sealed partial class RelationalDataStorage
     /// expiry index, and both skip rows another transaction holds.
     /// </remarks>
     private async ValueTask<int> _DeleteExpiredReceivedAsync(
+        string operation,
         DateTimeOffset timeout,
         int batchCount,
         CancellationToken cancellationToken
@@ -596,6 +628,7 @@ internal sealed partial class RelationalDataStorage
 
         var deleted = await SqlAutonomousTransaction
             .RunAsync(
+                operation,
                 _CreateConnection,
                 async (connection, transaction, ct) =>
                 {
@@ -1004,6 +1037,7 @@ internal sealed partial class RelationalDataStorage
         // the client then observes cancellation, and the claim must not lose winners it already leased.
         var claimed = await SqlAutonomousTransaction
             .RunAsync(
+                "messaging.claim_delayed_messages",
                 _CreateConnection,
                 async (connection, transaction, ct) =>
                 {

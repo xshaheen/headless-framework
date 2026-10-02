@@ -250,6 +250,7 @@ internal sealed class RelationalMembershipStore : IMembershipStore
         cancellationToken.ThrowIfCancellationRequested();
 
         return _RunAsync(
+            "coordination.allocate_incarnation",
             async (connection, transaction, ct) =>
             {
                 await using var command = _Command(_allocateSql, connection, transaction);
@@ -288,6 +289,7 @@ internal sealed class RelationalMembershipStore : IMembershipStore
         var metadata = _Serialize(descriptor.Metadata);
 
         await _RunAsync(
+                "coordination.upsert_descriptor",
                 async (connection, transaction, ct) =>
                 {
                     // The generation lock is held to the end of the transaction, so the incarnation checked here stays
@@ -336,6 +338,7 @@ internal sealed class RelationalMembershipStore : IMembershipStore
         cancellationToken.ThrowIfCancellationRequested();
 
         return _RunAsync(
+            "coordination.heartbeat",
             async (connection, transaction, ct) =>
             {
                 await using var command = _Command(_heartbeatSql, connection, transaction);
@@ -368,7 +371,7 @@ internal sealed class RelationalMembershipStore : IMembershipStore
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        return _ExecuteNonQueryAsync(_leaveSql, identity, cancellationToken);
+        return _ExecuteNonQueryAsync("coordination.leave", _leaveSql, identity, cancellationToken);
     }
 
     public async ValueTask<IReadOnlyList<NodeLivenessSnapshot>> ReadLivenessAsync(
@@ -380,6 +383,7 @@ internal sealed class RelationalMembershipStore : IMembershipStore
         await _PruneAsync().ConfigureAwait(false);
 
         var snapshots = await _RunAsync(
+                "coordination.read_liveness",
                 async (connection, transaction, ct) =>
                 {
                     await using var command = _Command(_readLivenessSql, connection, transaction);
@@ -412,6 +416,7 @@ internal sealed class RelationalMembershipStore : IMembershipStore
         cancellationToken.ThrowIfCancellationRequested();
 
         return _RunAsync(
+            "coordination.read_node_liveness",
             async (connection, transaction, ct) =>
             {
                 await using var command = _Command(_readNodeLivenessSql, connection, transaction);
@@ -434,6 +439,7 @@ internal sealed class RelationalMembershipStore : IMembershipStore
         cancellationToken.ThrowIfCancellationRequested();
 
         var identities = await _RunAsync(
+                "coordination.read_live_nodes",
                 async (connection, transaction, ct) =>
                 {
                     await using var command = _Command(_readLiveNodesSql, connection, transaction);
@@ -469,6 +475,7 @@ internal sealed class RelationalMembershipStore : IMembershipStore
         try
         {
             await _RunAsync(
+                    "coordination.prune",
                     async (connection, transaction, ct) =>
                     {
                         foreach (var sql in _pruneSql)
@@ -491,12 +498,14 @@ internal sealed class RelationalMembershipStore : IMembershipStore
     }
 
     private async ValueTask _ExecuteNonQueryAsync(
+        string operation,
         string sql,
         NodeIdentity identity,
         CancellationToken cancellationToken
     )
     {
         await _RunAsync(
+                operation,
                 async (connection, transaction, ct) =>
                 {
                     await using var command = _Command(sql, connection, transaction);
@@ -510,11 +519,18 @@ internal sealed class RelationalMembershipStore : IMembershipStore
     }
 
     private ValueTask<T> _RunAsync<T>(
+        string operation,
         Func<DbConnection, DbTransaction, CancellationToken, Task<T>> body,
         CancellationToken cancellationToken
     )
     {
-        return SqlAutonomousTransaction.RunAsync(_storage.CreateConnection, body, _timeProvider, cancellationToken);
+        return SqlAutonomousTransaction.RunAsync(
+            operation,
+            _storage.CreateConnection,
+            body,
+            _timeProvider,
+            cancellationToken
+        );
     }
 
     private DbCommand _Command(string sql, DbConnection connection, DbTransaction transaction)

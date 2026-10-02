@@ -17,6 +17,7 @@ public sealed class SqlAutonomousTransactionTests : TestBase
         var connections = new List<FakeConnection>();
 
         var result = await SqlAutonomousTransaction.RunAsync(
+            "test.call",
             () => _Track(connections),
             static (_, _, _) => Task.FromResult(42),
             TimeProvider.System,
@@ -30,6 +31,34 @@ public sealed class SqlAutonomousTransactionTests : TestBase
         connections[0].WasDisposed.Should().BeTrue();
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task should_refuse_a_blank_operation_before_opening_a_connection(string operation)
+    {
+        var connections = new List<FakeConnection>();
+
+        var run = async () =>
+            await SqlAutonomousTransaction.RunAsync(
+                operation,
+                () => _Track(connections),
+                static (_, _, _) => Task.FromResult(42),
+                TimeProvider.System,
+                AbortToken
+            );
+        var retry = async () =>
+            await SqlAutonomousTransaction.RetryAsync(
+                operation,
+                static (_, _) => Task.FromResult(42),
+                TimeProvider.System,
+                cancellationToken: AbortToken
+            );
+
+        await run.Should().ThrowAsync<ArgumentException>().WithParameterName(nameof(operation));
+        await retry.Should().ThrowAsync<ArgumentException>().WithParameterName(nameof(operation));
+        connections.Should().BeEmpty();
+    }
+
     public static TheoryData<string> TransientFaults => ["driver-flag", "40001", "40P01"];
 
     [Theory]
@@ -40,6 +69,7 @@ public sealed class SqlAutonomousTransactionTests : TestBase
         var attempts = 0;
 
         var result = await SqlAutonomousTransaction.RunAsync(
+            "test.call",
             () => _Track(connections),
             (_, _, _) => ++attempts == 1 ? throw _Transient(fault) : Task.FromResult(attempts),
             TimeProvider.System,
@@ -61,6 +91,7 @@ public sealed class SqlAutonomousTransactionTests : TestBase
         var connections = new List<FakeConnection>();
 
         var result = await SqlAutonomousTransaction.RunAsync(
+            "test.call",
             () => _Track(connections, beginFault: connections.Count == 0 ? _Transient("driver-flag") : null),
             static (_, _, _) => Task.FromResult(7),
             TimeProvider.System,
@@ -82,6 +113,7 @@ public sealed class SqlAutonomousTransactionTests : TestBase
 
         var act = async () =>
             await SqlAutonomousTransaction.RunAsync(
+                "test.call",
                 () => _Track(connections, commitFault: commitFault),
                 (_, _, _) => Task.FromResult(++bodyRuns),
                 TimeProvider.System,
@@ -105,6 +137,7 @@ public sealed class SqlAutonomousTransactionTests : TestBase
 
         var act = async () =>
             await SqlAutonomousTransaction.RunAsync<int>(
+                "test.call",
                 () => _Track(connections),
                 (_, _, _) => throw fault,
                 TimeProvider.System,
@@ -124,6 +157,7 @@ public sealed class SqlAutonomousTransactionTests : TestBase
 
         var act = async () =>
             await SqlAutonomousTransaction.RunAsync<int>(
+                "test.call",
                 () => _Track(connections),
                 async (_, _, _) =>
                 {
@@ -146,6 +180,7 @@ public sealed class SqlAutonomousTransactionTests : TestBase
 
         var act = async () =>
             await SqlAutonomousTransaction.RunAsync<int>(
+                "test.call",
                 () => _Track(connections),
                 (_, _, _) => throw _Transient("40P01"),
                 TimeProvider.System,
@@ -163,6 +198,7 @@ public sealed class SqlAutonomousTransactionTests : TestBase
         var connections = new List<FakeConnection>();
 
         var result = await SqlAutonomousTransaction.RunAsync(
+            "test.call",
             () => _Track(connections),
             async (_, _, _) =>
             {
@@ -187,6 +223,7 @@ public sealed class SqlAutonomousTransactionTests : TestBase
 
         var act = async () =>
             await SqlAutonomousTransaction.RetryAsync<int>(
+                "test.call",
                 (_, _) => throw fault,
                 TimeProvider.System,
                 (ex, attemptNumber) => retries.Add((ex, attemptNumber)),
@@ -203,6 +240,7 @@ public sealed class SqlAutonomousTransactionTests : TestBase
         var attempts = new List<SqlAutonomousAttempt>();
 
         var result = await SqlAutonomousTransaction.RetryAsync(
+            "test.call",
             (attempt, _) =>
             {
                 attempts.Add(attempt);
@@ -225,6 +263,7 @@ public sealed class SqlAutonomousTransactionTests : TestBase
 
         var act = async () =>
             await SqlAutonomousTransaction.RetryAsync<int>(
+                "test.call",
                 (attempt, _) =>
                 {
                     runs++;

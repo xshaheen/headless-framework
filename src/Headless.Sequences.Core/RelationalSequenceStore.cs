@@ -43,6 +43,7 @@ internal sealed class RelationalSequenceStore(
         // transaction is already gone when the retry starts. A stricter server default would turn a concurrent first
         // use into a serialization failure.
         return SqlAutonomousTransaction.RunAsync(
+            "sequences.increment",
             () => _dialect.CreateConnection(_options.ConnectionString),
             (connection, transaction, ct) => _ExecuteAsync(connection, transaction, key, insertValue, delta, ct),
             _timeProvider,

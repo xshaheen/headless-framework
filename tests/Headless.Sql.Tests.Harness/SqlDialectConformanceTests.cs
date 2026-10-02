@@ -590,6 +590,7 @@ public abstract class SqlDialectConformanceTests : TestBase
         // from being the victim, so every attempt deadlocks and the call runs out of attempts.
         var act = async () =>
             await SqlAutonomousTransaction.RunAsync(
+                "test.call",
                 () => Dialect.CreateConnection(ConnectionString),
                 async (connection, transaction, cancellationToken) =>
                 {
@@ -644,6 +645,7 @@ public abstract class SqlDialectConformanceTests : TestBase
         return Task.Run(
             async () =>
                 await SqlAutonomousTransaction.RunAsync(
+                    "test.call",
                     () => Dialect.CreateConnection(ConnectionString),
                     async (connection, transaction, cancellationToken) =>
                     {

@@ -66,6 +66,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                 ? timeJobs
                 : [.. timeJobs.Take(JobsClaimStrategyDefaults.MaxCandidatePageSize)];
         var (claim, leasedDescendantIds) = await _ExecuteWithRetryAsync(
+                JobsClaimRetry.ClaimTimeJobs,
                 async (attempt, ct) =>
                 {
                     await using var claimTransaction = await JobsClaimTransaction<TDbContext>.CreateAsync(
@@ -142,6 +143,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
 
         TimeJobEntity[] claimed;
         var (claim, leasedDescendantIds) = await _ExecuteWithRetryAsync(
+                JobsClaimRetry.ClaimTimedOutTimeJobs,
                 async (attempt, ct) =>
                 {
                     await using var claimTransaction = await JobsClaimTransaction<TDbContext>.CreateAsync(
@@ -264,6 +266,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
         }
 
         var claimed = await _ExecuteWithRetryAsync(
+                JobsClaimRetry.ClaimCronJobOccurrences,
                 async (attempt, ct) =>
                 {
                     CronJobOccurrenceEntity<TCronJob>[] attemptClaimed = [];
@@ -418,6 +421,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
         }
 
         var claimed = await _ExecuteWithRetryAsync(
+                JobsClaimRetry.ClaimTimedOutCronJobOccurrences,
                 async (attempt, ct) =>
                 {
                     await using var claimTransaction = await JobsClaimTransaction<TDbContext>.CreateAsync(
@@ -854,11 +858,12 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
     }
 
     private Task<TResult> _ExecuteWithRetryAsync<TResult>(
+        string operation,
         Func<SqlAutonomousAttempt, CancellationToken, Task<TResult>> action,
         CancellationToken cancellationToken
     )
     {
-        return JobsClaimRetry.RunAsync(action, timeProvider, logger, cancellationToken);
+        return JobsClaimRetry.RunAsync(operation, action, timeProvider, logger, cancellationToken);
     }
 
     private readonly record struct ClaimResult(Guid[] Ids, DateTimeOffset ClaimedAt);

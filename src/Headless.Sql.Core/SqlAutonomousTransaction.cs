@@ -29,24 +29,31 @@ namespace Headless.Sql;
 public static class SqlAutonomousTransaction
 {
     /// <summary>Runs <paramref name="body" /> in a new transaction, retrying a transient fault raised before the commit.</summary>
+    /// <param name="operation">
+    /// The store call this is, in <c>feature.verb</c> form (<c>fencing.grant</c>); the span and every metric carry it as
+    /// <c>headless.sql.operation</c>. Pass a constant: each distinct value is a separate metric series.
+    /// </param>
     /// <param name="createConnection">Creates an unopened connection; each attempt gets a new one.</param>
     /// <param name="body">The statements; they must decide everything the result reports.</param>
     /// <param name="timeProvider">The clock retries wait on.</param>
     /// <param name="cancellationToken">Token used to cancel the call and the waits between attempts.</param>
     /// <returns>The committed attempt's result.</returns>
     public static ValueTask<T> RunAsync<T>(
+        string operation,
         Func<DbConnection> createConnection,
         Func<DbConnection, DbTransaction, CancellationToken, Task<T>> body,
         TimeProvider timeProvider,
         CancellationToken cancellationToken = default
     )
     {
+        Argument.IsNotNullOrWhiteSpace(operation);
         Argument.IsNotNull(createConnection);
         Argument.IsNotNull(body);
 
         // Each attempt opens its own connection and transaction, so the victim's rolled-back transaction is already
         // disposed and the retry starts clean.
         return RetryAsync(
+            operation,
             (attempt, ct) => _RunOnceAsync(createConnection, body, attempt, ct),
             timeProvider,
             onRetry: null,
@@ -58,6 +65,10 @@ public static class SqlAutonomousTransaction
     /// Runs <paramref name="attempt" />, and runs it again when it fails with a transient fault before it marked its
     /// commit as started, up to <see cref="TransientRetry.MaxAttempts" /> attempts in total.
     /// </summary>
+    /// <param name="operation">
+    /// The store call this is, in <c>feature.verb</c> form (<c>jobs.claim</c>); the span and every metric carry it as
+    /// <c>headless.sql.operation</c>. Pass a constant: each distinct value is a separate metric series.
+    /// </param>
     /// <param name="attempt">
     /// One self-contained attempt: it opens its own connection and transaction, and calls
     /// <see cref="SqlAutonomousAttempt.MarkCommitStarted" /> immediately before it commits.
@@ -73,18 +84,21 @@ public static class SqlAutonomousTransaction
     /// attempt's, propagates unchanged.
     /// </remarks>
     public static ValueTask<T> RetryAsync<T>(
+        string operation,
         Func<SqlAutonomousAttempt, CancellationToken, Task<T>> attempt,
         TimeProvider timeProvider,
         Action<Exception, int>? onRetry = null,
         CancellationToken cancellationToken = default
     )
     {
+        Argument.IsNotNullOrWhiteSpace(operation);
         Argument.IsNotNull(attempt);
         Argument.IsNotNull(timeProvider);
 
         // Unobserved calls keep the plain path: no span, no clock read, no extra async frame.
         return SqlAutonomousTelemetry.IsEnabled
             ? SqlAutonomousTelemetry.ObserveAsync(
+                operation,
                 observer => _RetryAsync(attempt, timeProvider, onRetry, observer, cancellationToken),
                 timeProvider,
                 cancellationToken

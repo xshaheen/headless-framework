@@ -20,6 +20,7 @@ public sealed class SqlAutonomousTelemetryTests : TestBase
     private const string _Duration = "headless.sql.autonomous.duration";
     private const string _Attempts = "headless.sql.autonomous.attempts";
     private const string _Retries = "headless.sql.autonomous.retries";
+    private const string _Operation = "test.call";
 
     private static readonly string _FaultType = typeof(FakeDbException).FullName!;
 
@@ -29,6 +30,7 @@ public sealed class SqlAutonomousTelemetryTests : TestBase
         using var recorder = new TelemetryRecorder(SqlDiagnostics.SourceName);
 
         var result = await SqlAutonomousTransaction.RetryAsync(
+            _Operation,
             static (_, _) => Task.FromResult(5),
             TimeProvider.System,
             cancellationToken: AbortToken
@@ -39,6 +41,7 @@ public sealed class SqlAutonomousTelemetryTests : TestBase
         var span = recorder.Activities.Should().ContainSingle().Which;
         span.OperationName.Should().Be("sql.autonomous_transaction");
         span.Status.Should().Be(ActivityStatusCode.Unset);
+        span.GetTagItem("headless.sql.operation").Should().Be(_Operation);
         span.GetTagItem("headless.sql.outcome").Should().Be("success");
         span.GetTagItem("headless.sql.attempts").Should().Be(1);
         span.GetTagItem("error.type").Should().BeNull();
@@ -48,13 +51,25 @@ public sealed class SqlAutonomousTelemetryTests : TestBase
         duration.Value.Should().BeGreaterThanOrEqualTo(0);
         duration
             .Tags.Should()
-            .Equal(new Dictionary<string, object?>(StringComparer.Ordinal) { ["headless.sql.outcome"] = "success" });
+            .Equal(
+                new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["headless.sql.operation"] = _Operation,
+                    ["headless.sql.outcome"] = "success",
+                }
+            );
 
         var attempts = recorder.Of(_Attempts).Should().ContainSingle().Which;
         attempts.Value.Should().Be(1);
         attempts
             .Tags.Should()
-            .Equal(new Dictionary<string, object?>(StringComparer.Ordinal) { ["headless.sql.outcome"] = "success" });
+            .Equal(
+                new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["headless.sql.operation"] = _Operation,
+                    ["headless.sql.outcome"] = "success",
+                }
+            );
 
         recorder.Of(_Retries).Should().BeEmpty();
     }
@@ -66,6 +81,7 @@ public sealed class SqlAutonomousTelemetryTests : TestBase
         var runs = 0;
 
         var result = await SqlAutonomousTransaction.RetryAsync(
+            _Operation,
             (_, _) =>
                 ++runs == 1 ? throw new FakeDbException(isTransient: false, sqlState: "40P01") : Task.FromResult(runs),
             TimeProvider.System,
@@ -82,6 +98,7 @@ public sealed class SqlAutonomousTelemetryTests : TestBase
             .Equal(
                 new Dictionary<string, object?>(StringComparer.Ordinal)
                 {
+                    ["headless.sql.operation"] = _Operation,
                     ["error.type"] = _FaultType,
                     ["db.response.status_code"] = "40P01",
                 }
@@ -110,6 +127,7 @@ public sealed class SqlAutonomousTelemetryTests : TestBase
         var runs = 0;
 
         await SqlAutonomousTransaction.RetryAsync(
+            _Operation,
             (_, _) => ++runs == 1 ? throw new NumberedDbException(1205) : Task.FromResult(runs),
             TimeProvider.System,
             cancellationToken: AbortToken
@@ -123,6 +141,7 @@ public sealed class SqlAutonomousTelemetryTests : TestBase
             .Equal(
                 new Dictionary<string, object?>(StringComparer.Ordinal)
                 {
+                    ["headless.sql.operation"] = _Operation,
                     ["error.type"] = typeof(NumberedDbException).FullName,
                     ["db.response.status_code"] = "1205",
                 }
@@ -136,6 +155,7 @@ public sealed class SqlAutonomousTelemetryTests : TestBase
 
         var act = async () =>
             await SqlAutonomousTransaction.RetryAsync<int>(
+                _Operation,
                 (attempt, _) =>
                 {
                     attempt.MarkCommitStarted();
@@ -164,6 +184,7 @@ public sealed class SqlAutonomousTelemetryTests : TestBase
 
         var act = async () =>
             await SqlAutonomousTransaction.RetryAsync<int>(
+                _Operation,
                 (_, _) => throw fault,
                 TimeProvider.System,
                 cancellationToken: AbortToken
@@ -182,6 +203,7 @@ public sealed class SqlAutonomousTelemetryTests : TestBase
 
         var act = async () =>
             await SqlAutonomousTransaction.RetryAsync<int>(
+                _Operation,
                 (_, _) => throw new FakeDbException(isTransient: false, sqlState: "40001"),
                 TimeProvider.System,
                 cancellationToken: AbortToken
@@ -208,6 +230,7 @@ public sealed class SqlAutonomousTelemetryTests : TestBase
 
         var act = async () =>
             await SqlAutonomousTransaction.RetryAsync<int>(
+                _Operation,
                 async (_, _) =>
                 {
                     await cancellation.CancelAsync();
@@ -232,6 +255,7 @@ public sealed class SqlAutonomousTelemetryTests : TestBase
         Activity? inside = null;
 
         await SqlAutonomousTransaction.RetryAsync(
+            _Operation,
             (_, _) =>
             {
                 inside = Activity.Current;
@@ -255,6 +279,7 @@ public sealed class SqlAutonomousTelemetryTests : TestBase
         Activity? inside = null;
 
         await SqlAutonomousTransaction.RetryAsync(
+            _Operation,
             (_, _) =>
             {
                 inside = Activity.Current;
@@ -276,6 +301,7 @@ public sealed class SqlAutonomousTelemetryTests : TestBase
         Activity? inside = null;
 
         await SqlAutonomousTransaction.RetryAsync(
+            _Operation,
             (_, _) =>
             {
                 inside = Activity.Current;
@@ -300,6 +326,7 @@ public sealed class SqlAutonomousTelemetryTests : TestBase
         errorType ??= _FaultType;
         var expected = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
+            ["headless.sql.operation"] = _Operation,
             ["headless.sql.outcome"] = outcome,
             ["error.type"] = errorType,
         };
@@ -313,6 +340,7 @@ public sealed class SqlAutonomousTelemetryTests : TestBase
         var span = recorder.Activities.Should().ContainSingle().Which;
         span.Status.Should().Be(ActivityStatusCode.Error);
         span.StatusDescription.Should().BeNull("a driver message can quote key values");
+        span.GetTagItem("headless.sql.operation").Should().Be(_Operation);
         span.GetTagItem("headless.sql.outcome").Should().Be(outcome);
         span.GetTagItem("headless.sql.attempts").Should().Be(attempts);
         span.GetTagItem("error.type").Should().Be(errorType);
