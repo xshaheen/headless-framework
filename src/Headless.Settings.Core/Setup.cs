@@ -16,6 +16,8 @@ using Headless.Settings.ValueProviders;
 using Headless.Settings.Values;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 namespace Headless.Settings;
 
@@ -68,6 +70,70 @@ public static class SetupSettings
                     options.ValueProviders.Add<T>();
                 }
             });
+
+            return services;
+        }
+
+        /// <summary>
+        /// Registers an <see cref="ISettingsSnapshot{T}"/>: a <typeparamref name="T"/> bound from Global settings, loaded in
+        /// the background without blocking host startup (or on the first <c>GetAsync</c>), and kept current by change
+        /// announcements and a backstop re-read.
+        /// </summary>
+        /// <remarks>
+        /// When the host uses messaging, this also registers the every-instance consumer of
+        /// <see cref="SettingChangedMessage"/> that reloads snapshots, so the transport must support every-instance Bus
+        /// delivery. Without messaging the snapshot refreshes on its backstop interval only.
+        /// </remarks>
+        /// <typeparam name="T">The type the settings are bound to.</typeparam>
+        /// <param name="configure">Names the settings, sets the bind function, and optionally the backstop interval.</param>
+        /// <returns>The service collection for further registration.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
+        /// <exception cref="InvalidOperationException">
+        /// A snapshot of <typeparamref name="T"/> is already registered, or the builder names no settings or sets no bind
+        /// function.
+        /// </exception>
+        public IServiceCollection AddSettingsSnapshot<T>(Action<SettingsSnapshotBuilder<T>> configure)
+        {
+            Argument.IsNotNull(configure);
+
+            if (services.IsAdded<ISettingsSnapshot<T>>())
+            {
+                throw new InvalidOperationException(
+                    $"A settings snapshot of {typeof(T).Name} is already registered. Register each type once."
+                );
+            }
+
+            var builder = new SettingsSnapshotBuilder<T>();
+            configure(builder);
+            var (names, bind, backstop) = builder.Build();
+
+            services.RequireRegisteredService<ISettingManager>(
+                requiredBy: "Headless settings snapshots",
+                remedy: "Call AddHeadlessSettings(...) before the host starts."
+            );
+
+            services.TryAddSingleton(TimeProvider.System);
+            services.AddSingleton(provider => new SettingsSnapshot<T>(
+                names,
+                bind,
+                backstop,
+                provider.GetRequiredService<ISettingManager>(),
+                provider.GetRequiredService<ISettingDefinitionManager>(),
+                provider.GetRequiredService<TimeProvider>(),
+                provider.GetRequiredService<ILogger<SettingsSnapshot<T>>>()
+            ));
+            services.AddSingleton<ISettingsSnapshot<T>>(static provider =>
+                provider.GetRequiredService<SettingsSnapshot<T>>()
+            );
+            services.AddSingleton<ISettingsSnapshotEntry>(static provider =>
+                provider.GetRequiredService<SettingsSnapshot<T>>()
+            );
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IHostedService, SettingsSnapshotHostedService>());
+
+            // Contributed here rather than by AddHeadlessSettings: an every-instance consumer fails startup on a
+            // transport without every-instance support, so only a host that opts into snapshots takes that requirement.
+            // Inert without AddHeadlessMessaging; repeated contributions register the module once.
+            services.ConfigureMessaging(static messaging => messaging.AddModule<Core.MessagingModule>());
 
             return services;
         }
