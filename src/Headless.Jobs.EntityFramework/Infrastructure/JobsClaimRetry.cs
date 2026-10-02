@@ -15,8 +15,15 @@ namespace Headless.Jobs.Infrastructure;
 /// </summary>
 internal static partial class JobsClaimRetry
 {
+    // Shared by every provider's claim strategy, so one claim reports under one operation whatever the database.
+    public const string ClaimTimeJobs = "jobs.claim_time_jobs";
+    public const string ClaimTimedOutTimeJobs = "jobs.claim_timed_out_time_jobs";
+    public const string ClaimCronJobOccurrences = "jobs.claim_cron_job_occurrences";
+    public const string ClaimTimedOutCronJobOccurrences = "jobs.claim_timed_out_cron_job_occurrences";
+
     /// <summary>Runs <paramref name="scope" />, retrying a transient fault raised before its commit.</summary>
     public static async Task<TResult> RunAsync<TResult>(
+        string operation,
         Func<SqlAutonomousAttempt, CancellationToken, Task<TResult>> scope,
         TimeProvider timeProvider,
         ILogger logger,
@@ -25,6 +32,7 @@ internal static partial class JobsClaimRetry
     {
         return await SqlAutonomousTransaction
             .RetryAsync(
+                operation,
                 scope,
                 timeProvider,
                 (ex, attemptNumber) => LogClaimRetry(logger, attemptNumber, TransientRetry.MaxAttempts, ex),

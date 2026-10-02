@@ -51,6 +51,7 @@ internal sealed partial class RelationalDataStorage
 
         return await SqlAutonomousTransaction
             .RunAsync(
+                "messaging.delete_expired_inbox_audits",
                 _CreateConnection,
                 async (connection, transaction, ct) =>
                 {
@@ -162,6 +163,7 @@ internal sealed partial class RelationalDataStorage
             cancellationToken.ThrowIfCancellationRequested();
             deleted += await SqlAutonomousTransaction
                 .RunAsync(
+                    "messaging.delete_expired_inbox_receipts",
                     _CreateConnection,
                     async (connection, transaction, ct) =>
                     {

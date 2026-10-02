@@ -167,22 +167,34 @@ internal sealed partial class RelationalDataStorage
     public ValueTask<InboxOperationResult> HoldAsync(
         InboxOperationRequest request,
         CancellationToken cancellationToken = default
-    ) => _ExecuteInboxOperationAsync(MessagingOperationType.Hold, request, cancellationToken);
+    ) => _ExecuteInboxOperationAsync("messaging.inbox_hold", MessagingOperationType.Hold, request, cancellationToken);
 
     public ValueTask<InboxOperationResult> ReleaseHoldAsync(
         InboxOperationRequest request,
         CancellationToken cancellationToken = default
-    ) => _ExecuteInboxOperationAsync(MessagingOperationType.ReleaseHold, request, cancellationToken);
+    ) =>
+        _ExecuteInboxOperationAsync(
+            "messaging.inbox_release_hold",
+            MessagingOperationType.ReleaseHold,
+            request,
+            cancellationToken
+        );
 
     public ValueTask<InboxOperationResult> ForceReprocessAsync(
         InboxOperationRequest request,
         CancellationToken cancellationToken = default
-    ) => _ExecuteInboxOperationAsync(MessagingOperationType.ForceReprocess, request, cancellationToken);
+    ) =>
+        _ExecuteInboxOperationAsync(
+            "messaging.inbox_force_reprocess",
+            MessagingOperationType.ForceReprocess,
+            request,
+            cancellationToken
+        );
 
     public ValueTask<InboxOperationResult> PurgeAsync(
         InboxOperationRequest request,
         CancellationToken cancellationToken = default
-    ) => _ExecuteInboxOperationAsync(MessagingOperationType.Purge, request, cancellationToken);
+    ) => _ExecuteInboxOperationAsync("messaging.inbox_purge", MessagingOperationType.Purge, request, cancellationToken);
 
     /// <summary>
     /// Runs one audited inbox operation. The operation id's lock serializes concurrent requests that share it, so a
@@ -190,6 +202,7 @@ internal sealed partial class RelationalDataStorage
     /// is refused as a conflict.
     /// </summary>
     private async ValueTask<InboxOperationResult> _ExecuteInboxOperationAsync(
+        string operation,
         MessagingOperationType operationType,
         InboxOperationRequest request,
         CancellationToken cancellationToken
@@ -199,6 +212,7 @@ internal sealed partial class RelationalDataStorage
 
         var (result, row) = await SqlAutonomousTransaction
             .RunAsync(
+                operation,
                 _CreateConnection,
                 async (connection, transaction, ct) =>
                 {

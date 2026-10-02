@@ -213,18 +213,31 @@ internal sealed partial class RelationalDataStorage
     public ValueTask<ScheduledDeliveryOperationResult> RevokeAsync(
         ScheduledDeliveryOperationRequest request,
         CancellationToken cancellationToken = default
-    ) => _ExecuteScheduledOperationAsync(MessagingOperationType.Revoke, request, cancellationToken);
+    ) =>
+        _ExecuteScheduledOperationAsync(
+            "messaging.scheduled_revoke",
+            MessagingOperationType.Revoke,
+            request,
+            cancellationToken
+        );
 
     public ValueTask<ScheduledDeliveryOperationResult> DispatchNowAsync(
         ScheduledDeliveryOperationRequest request,
         CancellationToken cancellationToken = default
-    ) => _ExecuteScheduledOperationAsync(MessagingOperationType.DispatchNow, request, cancellationToken);
+    ) =>
+        _ExecuteScheduledOperationAsync(
+            "messaging.scheduled_dispatch_now",
+            MessagingOperationType.DispatchNow,
+            request,
+            cancellationToken
+        );
 
     /// <summary>
     /// Runs one audited scheduled-delivery operation under its operation id's lock, so a retried request replays its
     /// stored receipt and a different request under a used id is refused as a conflict.
     /// </summary>
     private async ValueTask<ScheduledDeliveryOperationResult> _ExecuteScheduledOperationAsync(
+        string operation,
         MessagingOperationType operationType,
         ScheduledDeliveryOperationRequest request,
         CancellationToken cancellationToken
@@ -234,6 +247,7 @@ internal sealed partial class RelationalDataStorage
 
         var (result, row) = await SqlAutonomousTransaction
             .RunAsync(
+                operation,
                 _CreateConnection,
                 async (connection, transaction, ct) =>
                 {

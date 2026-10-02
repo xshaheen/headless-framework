@@ -191,6 +191,7 @@ internal sealed class RelationalLeaseStore : ILeaseStore, ILeaseEnlistedGrantGua
     )
     {
         return _RunAutonomousAsync(
+            "fencing.grant",
             (connection, transaction, ct) => _GrantAsync(connection, transaction, key, duration, ct),
             cancellationToken
         );
@@ -293,6 +294,7 @@ internal sealed class RelationalLeaseStore : ILeaseStore, ILeaseEnlistedGrantGua
     )
     {
         return _RunAutonomousAsync(
+            "fencing.renew",
             (connection, transaction, ct) =>
                 _RenewAsync(connection, transaction, key, generation, duration, progress, ct),
             cancellationToken
@@ -321,6 +323,7 @@ internal sealed class RelationalLeaseStore : ILeaseStore, ILeaseEnlistedGrantGua
     )
     {
         return _RunAutonomousAsync(
+            "fencing.settle",
             (connection, transaction, ct) =>
                 _EndAsync(connection, transaction, _settleSql, LeaseSettlementStatus.Settled, key, generation, ct),
             cancellationToken
@@ -355,6 +358,7 @@ internal sealed class RelationalLeaseStore : ILeaseStore, ILeaseEnlistedGrantGua
     )
     {
         return _RunAutonomousAsync(
+            "fencing.release",
             (connection, transaction, ct) =>
                 _EndAsync(connection, transaction, _releaseSql, LeaseSettlementStatus.Released, key, generation, ct),
             cancellationToken
@@ -548,6 +552,7 @@ internal sealed class RelationalLeaseStore : ILeaseStore, ILeaseEnlistedGrantGua
         while (true)
         {
             var deleted = await _RunAutonomousAsync(
+                    "fencing.purge",
                     async (connection, transaction, ct) =>
                     {
                         await using var command = _Command(_purgeSql, connection, transaction);
@@ -631,11 +636,18 @@ internal sealed class RelationalLeaseStore : ILeaseStore, ILeaseEnlistedGrantGua
     }
 
     private ValueTask<T> _RunAutonomousAsync<T>(
+        string operation,
         Func<DbConnection, DbTransaction, CancellationToken, Task<T>> body,
         CancellationToken cancellationToken
     )
     {
-        return SqlAutonomousTransaction.RunAsync(_storage.CreateConnection, body, _timeProvider, cancellationToken);
+        return SqlAutonomousTransaction.RunAsync(
+            operation,
+            _storage.CreateConnection,
+            body,
+            _timeProvider,
+            cancellationToken
+        );
     }
 
     private DbCommand _Command(string sql, DbConnection connection, DbTransaction transaction, LeaseKey? key = null)

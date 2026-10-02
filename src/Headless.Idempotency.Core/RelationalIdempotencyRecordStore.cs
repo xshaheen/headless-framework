@@ -538,6 +538,7 @@ internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
     )
     {
         return _RunAutonomousAsync(
+            "idempotency.renew",
             async (connection, transaction, ct) =>
             {
                 await using var command = _Command(_renewSql, connection, transaction, key);
@@ -580,6 +581,7 @@ internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
     )
     {
         return _RunReadOnlyAsync(
+            "idempotency.peek",
             async (connection, transaction, ct) =>
             {
                 await using var command = _Command(_peekSql, connection, transaction, key);
@@ -619,6 +621,7 @@ internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
         var age = olderThan > _MaxPurgeAge ? _MaxPurgeAge : olderThan;
 
         return _RunAutonomousAsync(
+            "idempotency.purge",
             async (connection, transaction, ct) =>
             {
                 await using var command = _Command(_purgeSql, connection, transaction);
@@ -656,11 +659,18 @@ internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
     }
 
     private ValueTask<T> _RunAutonomousAsync<T>(
+        string operation,
         Func<DbConnection, DbTransaction, CancellationToken, Task<T>> body,
         CancellationToken cancellationToken
     )
     {
-        return SqlAutonomousTransaction.RunAsync(_storage.CreateConnection, body, _timeProvider, cancellationToken);
+        return SqlAutonomousTransaction.RunAsync(
+            operation,
+            _storage.CreateConnection,
+            body,
+            _timeProvider,
+            cancellationToken
+        );
     }
 
     /// <summary>
@@ -669,16 +679,18 @@ internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
     /// whose autonomous transaction takes a write lock at begin (SQLite) supplies a transaction that does not.
     /// </summary>
     private ValueTask<T> _RunReadOnlyAsync<T>(
+        string operation,
         Func<DbConnection, DbTransaction, CancellationToken, Task<T>> body,
         CancellationToken cancellationToken
     )
     {
         if (_storage.BeginReadOnlyTransaction is not { } begin)
         {
-            return _RunAutonomousAsync(body, cancellationToken);
+            return _RunAutonomousAsync(operation, body, cancellationToken);
         }
 
         return SqlAutonomousTransaction.RetryAsync(
+            operation,
             async (attempt, ct) =>
             {
                 await using var connection = _storage.CreateConnection();

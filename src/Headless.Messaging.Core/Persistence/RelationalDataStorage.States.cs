@@ -65,6 +65,7 @@ internal sealed partial class RelationalDataStorage
     )
     {
         return _ChangeStateAsync(
+            "messaging.change_publish_state",
             _publishedTable,
             message,
             state,
@@ -90,6 +91,7 @@ internal sealed partial class RelationalDataStorage
     )
     {
         return _ChangeStateAsync(
+            "messaging.change_publish_retry_state",
             _publishedTable,
             message,
             state,
@@ -119,6 +121,7 @@ internal sealed partial class RelationalDataStorage
     )
     {
         return _ChangeStateAsync(
+            "messaging.change_receive_state",
             _receivedTable,
             message,
             state,
@@ -144,6 +147,7 @@ internal sealed partial class RelationalDataStorage
     )
     {
         return _ChangeStateAsync(
+            "messaging.change_receive_retry_state",
             _receivedTable,
             message,
             state,
@@ -164,6 +168,7 @@ internal sealed partial class RelationalDataStorage
     )
     {
         return _ChangeStateAsync(
+            "messaging.complete_received_inbox",
             _receivedTable,
             message,
             StatusName.Succeeded,
@@ -246,6 +251,7 @@ internal sealed partial class RelationalDataStorage
     }
 
     private async ValueTask<bool> _ChangeStateAsync(
+        string operation,
         string table,
         MediumMessage message,
         StatusName state,
@@ -298,6 +304,7 @@ internal sealed partial class RelationalDataStorage
         }
 
         return await _TransitionAsync(
+                operation,
                 transaction,
                 table,
                 fence,
@@ -347,7 +354,13 @@ internal sealed partial class RelationalDataStorage
         CancellationToken cancellationToken = default
     )
     {
-        return _ReserveAttemptAsync(_publishedTable, message, originalInlineAttempts, cancellationToken);
+        return _ReserveAttemptAsync(
+            "messaging.reserve_publish_attempt",
+            _publishedTable,
+            message,
+            originalInlineAttempts,
+            cancellationToken
+        );
     }
 
     public ValueTask<bool> ReserveReceiveAttemptAsync(
@@ -356,10 +369,17 @@ internal sealed partial class RelationalDataStorage
         CancellationToken cancellationToken = default
     )
     {
-        return _ReserveAttemptAsync(_receivedTable, message, originalInlineAttempts, cancellationToken);
+        return _ReserveAttemptAsync(
+            "messaging.reserve_receive_attempt",
+            _receivedTable,
+            message,
+            originalInlineAttempts,
+            cancellationToken
+        );
     }
 
     private async ValueTask<bool> _ReserveAttemptAsync(
+        string operation,
         string table,
         MediumMessage message,
         int originalInlineAttempts,
@@ -377,6 +397,7 @@ internal sealed partial class RelationalDataStorage
         }
 
         return await _TransitionAsync(
+                operation,
                 transaction: null,
                 table,
                 fence,
@@ -418,7 +439,14 @@ internal sealed partial class RelationalDataStorage
         CancellationToken cancellationToken = default
     )
     {
-        return _LeaseAsync(_publishedTable, message, leaseDuration, reserve: null, cancellationToken);
+        return _LeaseAsync(
+            "messaging.lease_publish",
+            _publishedTable,
+            message,
+            leaseDuration,
+            reserve: null,
+            cancellationToken
+        );
     }
 
     public ValueTask<bool> LeasePublishAndReserveAttemptAsync(
@@ -428,7 +456,14 @@ internal sealed partial class RelationalDataStorage
         CancellationToken cancellationToken = default
     )
     {
-        return _LeaseAsync(_publishedTable, message, leaseDuration, originalInlineAttempts, cancellationToken);
+        return _LeaseAsync(
+            "messaging.lease_publish_and_reserve_attempt",
+            _publishedTable,
+            message,
+            leaseDuration,
+            originalInlineAttempts,
+            cancellationToken
+        );
     }
 
     /// <summary>
@@ -442,7 +477,14 @@ internal sealed partial class RelationalDataStorage
         CancellationToken cancellationToken = default
     )
     {
-        return _LeaseAsync(_receivedTable, message, leaseDuration, reserve: null, cancellationToken);
+        return _LeaseAsync(
+            "messaging.lease_receive",
+            _receivedTable,
+            message,
+            leaseDuration,
+            reserve: null,
+            cancellationToken
+        );
     }
 
     public ValueTask<bool> LeaseReceiveAndReserveAttemptAsync(
@@ -452,7 +494,14 @@ internal sealed partial class RelationalDataStorage
         CancellationToken cancellationToken = default
     )
     {
-        return _LeaseAsync(_receivedTable, message, leaseDuration, originalInlineAttempts, cancellationToken);
+        return _LeaseAsync(
+            "messaging.lease_receive_and_reserve_attempt",
+            _receivedTable,
+            message,
+            leaseDuration,
+            originalInlineAttempts,
+            cancellationToken
+        );
     }
 
     /// <summary>
@@ -465,6 +514,7 @@ internal sealed partial class RelationalDataStorage
     /// deadline, and the stored deadline is read back so the caller's fence matches durable state exactly.
     /// </remarks>
     private async ValueTask<bool> _LeaseAsync(
+        string operation,
         string table,
         MediumMessage message,
         TimeSpan leaseDuration,
@@ -492,6 +542,7 @@ internal sealed partial class RelationalDataStorage
             : [_t.LockedUntil, _t.Owner];
 
         var lease = await _TransitionAsync(
+                operation,
                 transaction: null,
                 table,
                 fence,
@@ -732,6 +783,7 @@ internal sealed partial class RelationalDataStorage
             $"{_t.IntentType}=@IntentType AND {_Same(_t.Owner, "Owner")} AND {_t.LockedUntil}=@LockedUntil AND {_t.LockedUntil} > {SqlDialectTokens.Now} AND {_InboxAttemptGuard(matchStorageId: true)} AND {_terminalGuard}";
 
         return await _TransitionAsync(
+                "messaging.defer_received_retry",
                 transaction: null,
                 _receivedTable,
                 fence,
@@ -760,16 +812,23 @@ internal sealed partial class RelationalDataStorage
     public ValueTask<bool> DeferReceivedInboxOrphanAsync(
         MediumMessage message,
         CancellationToken cancellationToken = default
-    ) => _SetInboxRoutabilityAsync(message, orphaned: true, cancellationToken);
+    ) => _SetInboxRoutabilityAsync("messaging.defer_received_inbox_orphan", message, orphaned: true, cancellationToken);
 
     public ValueTask<bool> ConfirmReceivedInboxRoutableAsync(
         MediumMessage message,
         CancellationToken cancellationToken = default
-    ) => _SetInboxRoutabilityAsync(message, orphaned: false, cancellationToken);
+    ) =>
+        _SetInboxRoutabilityAsync(
+            "messaging.confirm_received_inbox_routable",
+            message,
+            orphaned: false,
+            cancellationToken
+        );
 
     // Orphaning defers the probe and releases ownership; confirming keeps the live claim so the caller can dispatch.
     // Both accept an already-matching orphan flag because the fence, not a state change, authorizes the caller.
     private async ValueTask<bool> _SetInboxRoutabilityAsync(
+        string operation,
         MediumMessage message,
         bool orphaned,
         CancellationToken cancellationToken = default
@@ -788,6 +847,7 @@ internal sealed partial class RelationalDataStorage
             $"{_t.IntentType}=@IntentType AND {_t.Generation}=@Generation AND {_t.GenerationIncarnationId}=@GenerationIncarnationId AND {_t.AttemptId}=@AttemptId AND {_Same(_t.Owner, "Owner")} AND {_t.LockedUntil}=@LockedUntil AND {_t.LockedUntil} > {SqlDialectTokens.Now}";
 
         var (changed, nextRetryAt) = await _TransitionAsync(
+                operation,
                 transaction: null,
                 _receivedTable,
                 fencePredicate,

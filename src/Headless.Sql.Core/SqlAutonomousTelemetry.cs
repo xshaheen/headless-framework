@@ -30,6 +30,7 @@ internal static class SqlAutonomousTelemetry
     internal const string AttemptsName = "headless.sql.autonomous.attempts";
     internal const string RetriesName = "headless.sql.autonomous.retries";
 
+    internal const string TagOperation = "headless.sql.operation";
     internal const string TagOutcome = "headless.sql.outcome";
     internal const string TagAttempts = "headless.sql.attempts";
     internal const string TagAttempt = "headless.sql.attempt";
@@ -89,13 +90,16 @@ internal static class SqlAutonomousTelemetry
     /// span is <see cref="Activity.Current" /> only inside the call and the caller's context never sees it.
     /// </summary>
     internal static async ValueTask<T> ObserveAsync<T>(
+        string operation,
         Func<Observer, ValueTask<T>> call,
         TimeProvider timeProvider,
         CancellationToken cancellationToken
     )
     {
         using var activity = SqlDiagnostics.ActivitySource.StartActivity(ActivityName, ActivityKind.Internal);
-        var observer = new Observer(activity, timeProvider);
+        // Set at the start, not the end, so a sampler or processor that reads the span early can attribute it.
+        activity?.SetTag(TagOperation, operation);
+        var observer = new Observer(operation, activity, timeProvider);
 
         try
         {
@@ -155,7 +159,7 @@ internal static class SqlAutonomousTelemetry
     }
 
     /// <summary>The observation of one call; the retry loop reports each attempt and each retry to it.</summary>
-    internal sealed class Observer(Activity? activity, TimeProvider timeProvider)
+    internal sealed class Observer(string operation, Activity? activity, TimeProvider timeProvider)
     {
         private readonly long _startedAt = timeProvider.GetTimestamp();
         private SqlAutonomousAttempt? _current;
@@ -176,7 +180,7 @@ internal static class SqlAutonomousTelemetry
 
             if (_Retries.Enabled)
             {
-                var tags = new TagList { { TagErrorType, errorType } };
+                var tags = new TagList { { TagOperation, operation }, { TagErrorType, errorType } };
 
                 if (statusCode is not null)
                 {
@@ -225,7 +229,7 @@ internal static class SqlAutonomousTelemetry
         public void Complete(string outcome, Exception? fault)
         {
             var errorType = fault is null ? null : _ErrorType(fault);
-            var tags = new TagList { { TagOutcome, outcome } };
+            var tags = new TagList { { TagOperation, operation }, { TagOutcome, outcome } };
 
             if (errorType is not null)
             {

@@ -118,6 +118,7 @@ internal sealed partial class RelationalDataStorage
 
         var (inserted, stored) = await SqlAutonomousTransaction
             .RunAsync(
+                "messaging.admit_received_message",
                 _CreateConnection,
                 async (connection, transaction, ct) =>
                 {
