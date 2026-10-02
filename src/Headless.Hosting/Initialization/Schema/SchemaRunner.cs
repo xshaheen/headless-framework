@@ -61,8 +61,10 @@ public sealed partial class SchemaRunner(
     private static readonly TimeSpan _LockPollInterval = TimeSpan.FromMilliseconds(100);
 
     private readonly TimeSpan _lockTimeout = lockTimeout ?? DefaultLockTimeout;
+
     private readonly int _commandTimeoutSeconds = (int)
         Math.Ceiling((commandTimeout ?? DefaultCommandTimeout).TotalSeconds);
+
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private readonly ILogger _logger = logger ?? (ILogger)NullLogger.Instance;
 
