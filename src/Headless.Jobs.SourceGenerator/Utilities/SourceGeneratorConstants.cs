@@ -13,7 +13,6 @@ internal static class SourceGeneratorConstants
     public const string ScheduleMiddlewareAttributeMetadataName = "Headless.Jobs.JobScheduleMiddlewareAttribute`1";
     public const string ExecuteMiddlewareAttributeMetadataName = "Headless.Jobs.JobExecuteMiddlewareAttribute`1";
     public const string DescriptorMetadataAttributeName = "Headless.Jobs.JobFunctionDescriptorMetadataAttribute";
-    public const string FailurePolicyMetadataName = "Headless.Reliability.FailurePolicy";
 
     /// <summary>
     /// Assembly name for which nothing is generated. No assembly in this repository has this name; the exclusion

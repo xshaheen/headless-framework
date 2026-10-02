@@ -49,6 +49,8 @@ An exception that no rule matches is retryable. Rules accumulate; a repeated `Fa
 
 `FailurePolicyOverrides` carries nullable `ImmediateRetries`, `DelayedRetries`, `DelayedInitialDelay`, and `DelayedMaxDelay`. `definition.With(overrides)` replaces only the supplied values, keeps the fail rules, and validates the combined result the way the builder does. Fail rules are code and cannot come from configuration. The properties are settable so configuration binding can populate them.
 
+`FailurePolicyOverrides.TryParse(settings, errors, out overrides)` reads the children of a `FailurePolicy` configuration section, given as `(Key, Path, Value)` tuples so the package stays free of a configuration dependency. Keys match case-insensitively; retries parse as invariant integers and delays as invariant `TimeSpan` values. Range checks are left to `With`. Each unknown key or unparseable value adds one error naming its path, every setting is read so all problems surface at once, and any error makes the result `null`. Messaging and Jobs use it for their `FailurePolicy` configuration overrides.
+
 ---
 
 ## Headless.Reliability.Abstractions
@@ -98,7 +100,7 @@ var wait = definition.GetDelayedRetryDelay(delayedAttempt: 3); // about 120 s, Â
 | `FailurePolicy` | Abstract base. Override `protected void Configure(FailurePolicyBuilder)`; call `Build()` to get the definition. |
 | `FailurePolicyBuilder` | `Immediate(retries)`, `Delayed(retries, initialDelay, maxDelay)`, `FailOn<TException>()`, `FailWhen(predicate)`, `Build()`. A second `Immediate` or `Delayed` call replaces the tier. |
 | `FailurePolicyDefinition` | Sealed and immutable. `ImmediateRetries`, `DelayedRetries`, `DelayedInitialDelay`, `DelayedMaxDelay`, `TotalAttempts`, `FailOnExceptionTypes`, `FailWhenRuleCount`, `GetDelayedRetryBaseDelay`, `GetDelayedRetryDelay`, `ShouldFail`, `With`, and `None`. |
-| `FailurePolicyOverrides` | Nullable numeric values that `With` applies over a resolved definition. |
+| `FailurePolicyOverrides` | Nullable numeric values that `With` applies over a resolved definition. `TryParse` reads them from configuration key/value settings. |
 
 ### Design constraints
 

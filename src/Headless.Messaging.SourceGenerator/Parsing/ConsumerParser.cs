@@ -67,7 +67,7 @@ internal static class ConsumerParser
             );
         }
 
-        foreach (var messageType in messageTypes.Where(type => !ConsumerValidator.IsAccessible(type)))
+        foreach (var messageType in messageTypes.Where(type => !GeneratedCodeAccessibility.IsAccessible(type)))
         {
             diagnostics.Add(
                 DiagnosticInfo.Create(

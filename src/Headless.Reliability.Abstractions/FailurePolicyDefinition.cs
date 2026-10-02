@@ -133,7 +133,9 @@ public sealed class FailurePolicyDefinition
         Argument.IsNotNull(random);
 
         var baseTicks = GetDelayedRetryBaseDelay(delayedAttempt).Ticks;
+#pragma warning disable CA5394 // False positive: the value only spreads retry delays; nothing security-sensitive depends on it.
         var factor = 1 - JitterFraction + (2 * JitterFraction * random.NextDouble());
+#pragma warning restore CA5394
         var jitteredTicks = Math.Round(baseTicks * factor, MidpointRounding.AwayFromZero);
 
         // The base delay is at most 24 hours, so the jittered tick count stays far inside the long range.

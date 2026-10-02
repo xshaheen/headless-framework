@@ -158,20 +158,7 @@ internal static class JobValidator
         ICollection<DiagnosticInfo> diagnostics
     )
     {
-        var policyBase = compilation.GetTypeByMetadataName(SourceGeneratorConstants.FailurePolicyMetadataName);
-        var isValid =
-            policyBase is not null
-            && policy
-                is INamedTypeSymbol { TypeKind: TypeKind.Class, IsAbstract: false, IsUnboundGenericType: false } named
-            && !_ContainsTypeParameter(named)
-            && _DerivesFrom(named, policyBase)
-            && _IsAccessible(named)
-            && compilation.IsSymbolAccessibleWithin(named, compilation.Assembly)
-            && named.InstanceConstructors.Any(constructor =>
-                constructor.Parameters.IsEmpty && constructor.DeclaredAccessibility == Accessibility.Public
-            );
-
-        if (!isValid)
+        if (!FailurePolicyType.IsValid(compilation, policy))
         {
             diagnostics.Add(
                 DiagnosticInfo.Create(
@@ -182,66 +169,5 @@ internal static class JobValidator
                 )
             );
         }
-    }
-
-    /// <summary>
-    /// Whether code emitted into the same assembly can name <paramref name="type"/>: every named type in it, its
-    /// containing types, and its type arguments are public or internal, and none is file-local.
-    /// </summary>
-    private static bool _IsAccessible(ITypeSymbol type)
-    {
-        switch (type)
-        {
-            case IArrayTypeSymbol array:
-                return _IsAccessible(array.ElementType);
-            case INamedTypeSymbol named:
-                for (INamedTypeSymbol? current = named; current is not null; current = current.ContainingType)
-                {
-                    if (
-                        current.IsFileLocal
-                        || current.DeclaredAccessibility
-                            is not (Accessibility.Public or Accessibility.Internal or Accessibility.ProtectedOrInternal)
-                    )
-                    {
-                        return false;
-                    }
-
-                    if (current.TypeArguments.Any(argument => !_IsAccessible(argument)))
-                    {
-                        return false;
-                    }
-                }
-
-                return true;
-            default:
-                return false;
-        }
-    }
-
-    private static bool _DerivesFrom(INamedTypeSymbol type, INamedTypeSymbol baseType)
-    {
-        for (var current = type.BaseType; current is not null; current = current.BaseType)
-        {
-            if (SymbolEqualityComparer.Default.Equals(current, baseType))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /// <summary>Whether the type, or a type containing it, still has an open type parameter the factory cannot bind.</summary>
-    private static bool _ContainsTypeParameter(INamedTypeSymbol type)
-    {
-        for (INamedTypeSymbol? current = type; current is not null; current = current.ContainingType)
-        {
-            if (current.TypeArguments.Any(argument => argument.TypeKind == TypeKind.TypeParameter))
-            {
-                return true;
-            }
-        }
-
-        return false;
     }
 }

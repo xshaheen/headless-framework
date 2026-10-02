@@ -269,64 +269,9 @@ internal static class ConsumerTuningApplier
     // Only the numbers are configurable: fail rules are code, so they always come from the resolved policy.
     private static FailurePolicyOverrides? _ReadFailurePolicy(IConfigurationSection section, List<string> errors)
     {
-        var overrides = new FailurePolicyOverrides();
-        var valid = true;
+        var settings = section.GetChildren().Select(setting => (setting.Key, setting.Path, setting.Value));
 
-        foreach (var setting in section.GetChildren())
-        {
-            if (string.Equals(setting.Key, "ImmediateRetries", StringComparison.OrdinalIgnoreCase))
-            {
-                overrides.ImmediateRetries = _ReadRetries(setting, errors, ref valid);
-            }
-            else if (string.Equals(setting.Key, "DelayedRetries", StringComparison.OrdinalIgnoreCase))
-            {
-                overrides.DelayedRetries = _ReadRetries(setting, errors, ref valid);
-            }
-            else if (string.Equals(setting.Key, "DelayedInitialDelay", StringComparison.OrdinalIgnoreCase))
-            {
-                overrides.DelayedInitialDelay = _ReadDelay(setting, errors, ref valid);
-            }
-            else if (string.Equals(setting.Key, "DelayedMaxDelay", StringComparison.OrdinalIgnoreCase))
-            {
-                overrides.DelayedMaxDelay = _ReadDelay(setting, errors, ref valid);
-            }
-            else
-            {
-                errors.Add(
-                    $"Configuration '{setting.Path}' is not a failure policy setting. The supported settings are "
-                        + "ImmediateRetries, DelayedRetries, DelayedInitialDelay, and DelayedMaxDelay."
-                );
-                valid = false;
-            }
-        }
-
-        return valid ? overrides : null;
-    }
-
-    private static int? _ReadRetries(IConfigurationSection setting, List<string> errors, ref bool valid)
-    {
-        if (int.TryParse(setting.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var retries))
-        {
-            return retries;
-        }
-
-        errors.Add($"Configuration '{setting.Path}' must be an integer.");
-        valid = false;
-
-        return null;
-    }
-
-    private static TimeSpan? _ReadDelay(IConfigurationSection setting, List<string> errors, ref bool valid)
-    {
-        if (TimeSpan.TryParse(setting.Value, CultureInfo.InvariantCulture, out var delay))
-        {
-            return delay;
-        }
-
-        errors.Add($"Configuration '{setting.Path}' must be a duration such as '00:00:30'.");
-        valid = false;
-
-        return null;
+        return FailurePolicyOverrides.TryParse(settings, errors, out var overrides) ? overrides : null;
     }
 
     private static TimeSpan? _ReadInboxRetention(IConfigurationSection setting, List<string> errors)
