@@ -15,7 +15,7 @@ internal static class GeneratorTestHelper
     private static readonly Lazy<ImmutableArray<MetadataReference>> _References = new(() =>
         GeneratorCompilation.LoadedAssemblyReferences(
             typeof(BusConsumerAttribute).Assembly,
-            typeof(MessagingCatalogBuilder).Assembly,
+            typeof(Headless.Messaging.Registration.MessagingContributionBuilder).Assembly, // Messaging.Core, which samples call ConfigureMessaging from
             typeof(ActivatorUtilities).Assembly,
             typeof(GeneratorTestHelper).Assembly
         )
