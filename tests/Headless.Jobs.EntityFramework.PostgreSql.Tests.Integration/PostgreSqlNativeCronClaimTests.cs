@@ -2,8 +2,6 @@
 
 namespace Tests;
 
-#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
-
 [Collection<PostgreSqlJobsCoordinationFixture>]
 public sealed class PostgreSqlNativeCronClaimTests(PostgreSqlJobsCoordinationFixture fixture)
     : JobsNativeCronClaimConformanceTests<PostgreSqlJobsCoordinationFixture>(fixture)

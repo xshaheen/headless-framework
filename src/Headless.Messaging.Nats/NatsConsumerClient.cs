@@ -1431,9 +1431,7 @@ internal sealed class NatsConsumerClient(
         {
             try
             {
-#pragma warning disable VSTHRD003 // This client owns and drains the SDK task started by ConnectAsync.
                 await connectTask.ConfigureAwait(false);
-#pragma warning restore VSTHRD003
             }
 #pragma warning disable ERP022 // The original ConnectAsync caller observes the failure; cleanup must continue.
             catch

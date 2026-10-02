@@ -7,7 +7,6 @@ using Headless.UnitOfWork.Internal;
 using Npgsql;
 using Polly.Retry;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.UnitOfWork;
 
 /// <summary>

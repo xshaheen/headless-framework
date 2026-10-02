@@ -107,9 +107,7 @@ public sealed class MembershipOracleSession : IMembershipOracleTarget
         {
             throw;
         }
-#pragma warning disable CA1031 // A store error is an observable outcome to compare, not a harness failure.
         catch (Exception e)
-#pragma warning restore CA1031
         {
             outcome = "threw:" + _Describe(e);
         }

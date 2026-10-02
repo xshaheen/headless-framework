@@ -1189,9 +1189,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
     {
         // given
         var timeProvider = new FakeTimeProvider();
-#pragma warning disable CA2000 // MessagePublisherHarness takes ownership of the supplied transport and disposes it with the publisher dependencies.
         var transport = new BlockingTransport();
-#pragma warning restore CA2000
         var timeout = TimeSpan.FromSeconds(5);
         await using var harness = _CreateHarness(timeProvider, timeout, transport);
 
@@ -1217,9 +1215,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
     {
         // given
         var timeProvider = new FakeTimeProvider();
-#pragma warning disable CA2000 // MessagePublisherHarness takes ownership of the supplied transport and disposes it with the publisher dependencies.
         var transport = new BlockingTransport();
-#pragma warning restore CA2000
         await using var harness = _CreateHarness(timeProvider, TimeSpan.FromHours(1), transport);
         using var callerCts = new CancellationTokenSource();
 
@@ -1247,9 +1243,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
         // given
         var timeProvider = new FakeTimeProvider();
         var serializer = new BlockingTransportSerializer();
-#pragma warning disable CA2000 // MessagePublisherHarness takes ownership of the supplied transport and disposes it with the publisher dependencies.
         var transport = new BlockingTransport();
-#pragma warning restore CA2000
         var timeout = TimeSpan.FromSeconds(5);
         await using var harness = _CreateHarness(timeProvider, timeout, transport, serializer);
 
@@ -1420,7 +1414,6 @@ public sealed class MessagePublisherDeliveryTests : TestBase
     private static StoredMessageCapture _CaptureStoredMessage(IDataStorage storage)
     {
         var capture = new StoredMessageCapture();
-#pragma warning disable AsyncFixer04 // Substitute configuration completes before the awaited publish.
         storage
             .StoreMessageAsync(
                 Arg.Any<string>(),
@@ -1435,7 +1428,6 @@ public sealed class MessagePublisherDeliveryTests : TestBase
                 capture.Value = stored;
                 return ValueTask.FromResult(stored);
             });
-#pragma warning restore AsyncFixer04
         return capture;
     }
 

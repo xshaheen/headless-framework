@@ -155,9 +155,7 @@ internal sealed class MessagingOutbox
                 return field;
             }
 
-#pragma warning disable MA0045 // False positive for this use: the connection is never opened, and a property cannot await its disposal.
             using var connection = Relational.CreateIdentityConnection();
-#pragma warning restore MA0045
             var identity =
                 $"{connection.GetType().FullName}|{connection.DataSource?.Trim().ToLowerInvariant()}|{connection.Database}";
             var hash = SHA256.HashData(Encoding.UTF8.GetBytes(identity));

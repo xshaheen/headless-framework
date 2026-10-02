@@ -27,7 +27,6 @@ namespace Headless.Messaging.Persistence;
 /// Every time-based decision reads the database clock inside the statement that decides, never the application clock,
 /// so replicas whose clocks disagree still agree on when a row falls due and when a lease ends.
 /// </remarks>
-#pragma warning disable CA2100 // SQL text is rendered from dialect output, table names, and fixed fragments; every value is a parameter.
 internal sealed partial class RelationalDataStorage
     : IDataStorage,
         IDelayedMessageClaimStorage,
@@ -435,4 +434,3 @@ internal sealed partial class RelationalDataStorage
 
     private readonly record struct PoisonMessage(Guid StorageId, string ExceptionInfo);
 }
-#pragma warning restore CA2100

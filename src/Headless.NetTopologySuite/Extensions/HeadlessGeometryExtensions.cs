@@ -176,9 +176,7 @@ public static class HeadlessGeometryExtensions
             geom1 = geom1.ChangePrecision(GeoConstants.StreetLevelPrecision);
             geom2 = geom2.ChangePrecision(GeoConstants.StreetLevelPrecision);
 
-#pragma warning disable ERP022
             return geom1.Overlaps(geom2);
-#pragma warning restore ERP022
         }
     }
 
@@ -210,9 +208,7 @@ public static class HeadlessGeometryExtensions
             geom1 = geom1.ChangePrecision(GeoConstants.StreetLevelPrecision);
             geom2 = geom2.ChangePrecision(GeoConstants.StreetLevelPrecision);
 
-#pragma warning disable ERP022
             return geom1.Intersection(geom2);
-#pragma warning restore ERP022
         }
     }
 
@@ -244,9 +240,7 @@ public static class HeadlessGeometryExtensions
             geom1 = geom1.ChangePrecision(GeoConstants.StreetLevelPrecision);
             geom2 = geom2.ChangePrecision(GeoConstants.StreetLevelPrecision);
 
-#pragma warning disable ERP022
             return geom1.Union(geom2);
-#pragma warning restore ERP022
         }
     }
 
@@ -278,9 +272,7 @@ public static class HeadlessGeometryExtensions
             geom1 = geom1.ChangePrecision(GeoConstants.StreetLevelPrecision);
             geom2 = geom2.ChangePrecision(GeoConstants.StreetLevelPrecision);
 
-#pragma warning disable ERP022
             return geom1.Difference(geom2);
-#pragma warning restore ERP022
         }
     }
 

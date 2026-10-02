@@ -96,12 +96,10 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         {
             throw;
         }
-#pragma warning disable ERP022 // The backstop is intentionally non-fatal to the scheduling poll (logged, not rethrown).
         catch (Exception exception)
         {
             logger.LogTimedChildSafetyNetFailed(exception);
         }
-#pragma warning restore ERP022
 
         var minCronGroupTask = _GetEarliestCronJobGroupAsync(cancellationToken);
         var minTimeJobsTask = persistenceProvider.GetEarliestTimeJobsAsync(cancellationToken);
@@ -1158,12 +1156,10 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
         {
             await ApplyParentTerminalRunConditionsAsync(jobId, CancellationToken.None).ConfigureAwait(false);
         }
-#pragma warning disable ERP022 // Non-fatal post-commit side effect: logged, not rethrown (backstops reconcile any miss).
         catch (Exception exception)
         {
             logger.LogTimedChildReconcileAfterCancellationFailed(exception, jobId);
         }
-#pragma warning restore ERP022
 
         return true;
     }

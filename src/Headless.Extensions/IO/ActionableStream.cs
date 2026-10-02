@@ -57,7 +57,7 @@ public sealed class ActionableStream(Stream stream, Action disposeAction) : Stre
         {
             _disposeAction.Invoke();
         }
-#pragma warning disable ERP022
+#pragma warning disable ERP022 // Dispose must not throw; the callback may hit resources that are already disposed.
         catch
         {
             /* ignore if these are already disposed; this is to make sure they are */
@@ -86,7 +86,7 @@ public sealed class ActionableStream(Stream stream, Action disposeAction) : Stre
             {
                 _disposeAction.Invoke();
             }
-#pragma warning disable ERP022
+#pragma warning disable ERP022 // Dispose must not throw; the callback may hit resources that are already disposed.
             catch
             {
                 /* ignore if these are already disposed; this is to make sure they are */

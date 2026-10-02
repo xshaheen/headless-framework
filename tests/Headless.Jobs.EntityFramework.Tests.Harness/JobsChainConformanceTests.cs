@@ -20,8 +20,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
 
-#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
-
 /// <summary>
 /// Provider-neutral conformance for typed <see cref="JobChain"/> runtime semantics on every relational backend
 /// (Postgres, SQL Server). Proves the storage-visible behaviors the native SQL introduced for deep claim/hydration

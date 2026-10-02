@@ -14,8 +14,6 @@ using Microsoft.Extensions.Time.Testing;
 
 namespace Tests.Dashboard;
 
-#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
-
 public sealed class JobsDashboardRepositoryTests : TestBase
 {
     private static readonly DateTime _Today = new(2026, 7, 17, 0, 0, 0, DateTimeKind.Utc);

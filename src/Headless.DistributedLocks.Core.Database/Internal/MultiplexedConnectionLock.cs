@@ -25,9 +25,7 @@ internal sealed class MultiplexedConnectionLock(DatabaseConnection connection) :
 {
     // Limits concurrent use of the connection to one acquire/release at a time. SemaphoreSlim (not Nito.AsyncEx.AsyncLock)
     // because the opportunistic path needs a zero-wait try-acquire, which AsyncLock does not expose.
-#pragma warning disable CA2213 // Disposed at the end of DisposeAsync, after the connection is torn down.
     private readonly SemaphoreSlim _mutex = new(initialCount: 1, maxCount: 1);
-#pragma warning restore CA2213
 
     private readonly Dictionary<object, TimeSpan> _heldLockIdentitiesToKeepaliveCadences = [];
     private readonly DatabaseConnection _connection = connection;
@@ -107,8 +105,7 @@ internal sealed class MultiplexedConnectionLock(DatabaseConnection connection) :
 
             if (lockCookie is not null)
             {
-                // The handle is the caller's resource — ownership transfers out via the returned Result.
-#pragma warning disable CA2000
+#pragma warning disable CA2000 // Ownership transfers to the caller through the returned Result.
                 var handle = new Handle<TLockCookie>(this, strategy, name, identity, lockCookie);
 #pragma warning restore CA2000
                 _heldLockIdentitiesToKeepaliveCadences.Add(identity, keepaliveCadence);
@@ -131,7 +128,7 @@ internal sealed class MultiplexedConnectionLock(DatabaseConnection connection) :
         // and let the exception fault the whole acquire loop. A not-yet-opened connection holds no locks (you cannot
         // hold an advisory lock on a closed connection), so treat the failed reuse like a broken connection and retry
         // on a fresh lock rather than failing the caller.
-#pragma warning disable ERP022
+#pragma warning disable ERP022 // A broken or never-opened connection is retried on a fresh lock, not surfaced to the caller.
         catch when (opportunistic && (IsConnectionBrokenNoLock || !_connectionOpened))
         {
             return _GetAlreadyBrokenResultNoLock();
@@ -394,8 +391,7 @@ internal sealed class MultiplexedConnectionLock(DatabaseConnection connection) :
                 // MA0173 suggests LazyInitializer.EnsureInitialize here, but that is unsafe for a *disposable*:
                 // the lock-free overload can run the factory on multiple racing threads and discards the losing
                 // handle WITHOUT disposing it, leaking a monitoring handle on every lost race. The CAS below is
-                // deliberate — it disposes the loser — so the analyzer is suppressed for this block.
-#pragma warning disable MA0173
+                // deliberate: it disposes the loser.
                 if (Volatile.Read(ref _monitoringHandle) is null)
                 {
                     var newHandle = @lock._connection.GetConnectionMonitoringHandle();
@@ -406,7 +402,6 @@ internal sealed class MultiplexedConnectionLock(DatabaseConnection connection) :
                         newHandle.Dispose();
                     }
                 }
-#pragma warning restore MA0173
 
                 var handle = Volatile.Read(ref _monitoringHandle);
                 Ensure.NotDisposed(handle is null, this);

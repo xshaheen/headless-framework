@@ -9,7 +9,7 @@ using Microsoft.Extensions.Http.Resilience;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
+#pragma warning disable IDE0130 // Registration API lives in the family root namespace, per the namespace policy.
 namespace Headless.Sms;
 
 /// <summary>

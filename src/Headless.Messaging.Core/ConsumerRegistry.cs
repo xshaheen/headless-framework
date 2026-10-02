@@ -189,9 +189,7 @@ internal sealed class ConsumerRegistry : IConsumerRegistry
 
         lock (_lock)
         {
-#pragma warning disable CA1508 // Justification: other thread can initialize it
             if (_frozen == null)
-#pragma warning restore CA1508
             {
                 _frozen = _consumers!.AsReadOnly();
                 _consumers = null; // Release for GC

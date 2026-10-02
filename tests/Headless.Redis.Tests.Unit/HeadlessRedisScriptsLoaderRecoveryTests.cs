@@ -127,8 +127,7 @@ public sealed class HeadlessRedisScriptsLoaderRecoveryTests : TestBase
 
     private static RedisServerException _RedisServerException(string message)
     {
-        // The replacement constructor depends on experimental RedisErrorKind; keep the stable API until it exits preview.
-#pragma warning disable CS0618
+#pragma warning disable CS0618 // The replacement constructor needs the experimental RedisErrorKind; keep this one until it exits preview.
         return new RedisServerException(message);
 #pragma warning restore CS0618
     }

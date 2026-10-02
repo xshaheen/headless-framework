@@ -165,12 +165,10 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>
         {
             await send().ConfigureAwait(false);
         }
-#pragma warning disable ERP022 // Observability-only side effect: logged, not rethrown.
         catch (Exception exception)
         {
             logger.LogClaimNotificationFailed(exception, jobId);
         }
-#pragma warning restore ERP022
     }
 
     // Returns rows this node claimed but will never dispatch because the claim enumeration aborted part-way. The
@@ -189,11 +187,9 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>
         {
             await ReleaseAcquiredResources([.. claimed], CancellationToken.None).ConfigureAwait(false);
         }
-#pragma warning disable ERP022 // Recovery side effect: logged, not rethrown — the original failure must surface.
         catch (Exception exception)
         {
             logger.LogAbandonedClaimReleaseFailed(exception, claimed.Count);
         }
-#pragma warning restore ERP022
     }
 }

@@ -9,8 +9,6 @@ using Polly.Retry;
 
 namespace Tests;
 
-#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
-
 /// <summary>
 /// The replaying <c>RunAsync(connectionFactory, …)</c> against SQLite's real lock conflict: a writer that holds the
 /// database past the busy timeout makes the first attempt fail with <c>SQLITE_BUSY</c>, which the default

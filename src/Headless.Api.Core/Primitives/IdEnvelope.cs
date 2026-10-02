@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-#pragma warning disable CA2225, IDE0130
+#pragma warning disable CA2225, IDE0130 // Envelopes ship in Headless.Primitives by policy; named From* methods would only duplicate the constructor.
 // ReSharper disable once CheckNamespace
 namespace Headless.Primitives;
 

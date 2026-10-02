@@ -106,10 +106,8 @@ public sealed class AsyncEvent<TEvent>(bool parallelInvoke = false) : IAsyncEven
     // dispatcher store heterogeneous event types in one FIFO.
     internal object CaptureHandlerSnapshot() => _handlers;
 
-#pragma warning disable RCS1158 // The opaque snapshot contains the closed generic Subscription type, so the cast must stay on AsyncEvent<TEvent>.
     internal static bool IsEmptyHandlerSnapshot(object handlerSnapshot) =>
         ((Subscription[])handlerSnapshot).Length == 0;
-#pragma warning restore RCS1158
 
     internal static ValueTask SafeInvokeHandlerSnapshotAsync(
         object handlerSnapshot,

@@ -2,8 +2,6 @@
 
 namespace Tests;
 
-#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
-
 /// <summary>Runs the occupied-instant accounting matrix against PostgreSQL, on both claim strategies.</summary>
 [Collection<PostgreSqlJobsCoordinationFixture>]
 public sealed class PostgreSqlOccupiedInstantTests(PostgreSqlJobsCoordinationFixture fixture)

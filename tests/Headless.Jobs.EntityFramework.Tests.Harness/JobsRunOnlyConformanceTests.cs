@@ -10,8 +10,6 @@ using Microsoft.Extensions.Hosting;
 
 namespace Tests;
 
-#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
-
 /// <summary>
 /// A host that limits what it runs with <c>RunOnly</c> never leases a row of a job it filtered out, on any relational
 /// claim path, and a host without the filter picks that row up.

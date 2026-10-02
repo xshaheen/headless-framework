@@ -61,10 +61,9 @@ public sealed class FluentValidationSchemaProcessor(
     private static readonly ConditionalWeakTable<
         Type,
         CachedResult<MethodInfo>
-    >.CreateValueCallback _GetValidatorMethodFactory =
-#pragma warning disable REFL017, REFL003 // Justification: Already of type ChildValidatorAdaptor<,>
-    static t => new CachedResult<MethodInfo>(t.GetMethod(nameof(ChildValidatorAdaptor<,>.GetValidator)));
-#pragma warning restore REFL017, REFL003
+    >.CreateValueCallback _GetValidatorMethodFactory = static t => new CachedResult<MethodInfo>(
+        t.GetMethod(nameof(ChildValidatorAdaptor<,>.GetValidator))
+    );
 
     private readonly ILogger _logger = _CreateLogger(serviceProvider);
     private readonly IReadOnlyList<FluentValidationRule> _rules = _CreateRules(rules);
@@ -91,9 +90,7 @@ public sealed class FluentValidationSchemaProcessor(
 
     private void _HandleObject(SchemaProcessorContext context)
     {
-#pragma warning disable MA0045 // Justification: We are using a scope to resolve the validator, this is fine.
         using var scope = serviceProvider.CreateScope();
-#pragma warning restore MA0045
         var validator = _GetValidator(scope.ServiceProvider, context.ContextualType);
 
         if (validator is null)
@@ -135,9 +132,7 @@ public sealed class FluentValidationSchemaProcessor(
             return;
         }
 
-#pragma warning disable MA0045 // Justification: We are using a scope to resolve the validator, this is fine.
         using var scope = serviceProvider.CreateScope();
-#pragma warning restore MA0045
         var declaringTypeValidator = _GetValidator(scope.ServiceProvider, declaringType);
         var propertyName = contextualProperty.PropertyInfo.Name;
 

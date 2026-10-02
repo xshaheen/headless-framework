@@ -199,9 +199,7 @@ internal sealed partial class HeadlessApiExceptionHandler(
             // Cancellation has its own handling earlier in the switch — let it propagate.
             throw;
         }
-#pragma warning disable CA1031 // Last-resort fallback path; creator failures must not re-throw out of the handler.
         catch (Exception creatorError)
-#pragma warning restore CA1031
         {
             _LogCreatorFailed(logger, creatorError, exception.GetType().Name);
             return false;
@@ -250,9 +248,7 @@ internal sealed partial class HeadlessApiExceptionHandler(
             // Cancellation has its own handling earlier in the switch — let it propagate.
             throw;
         }
-#pragma warning disable CA1031 // Last-resort fallback path; primary writer failures must not re-throw out of the handler.
         catch (Exception primaryWriteError)
-#pragma warning restore CA1031
         {
             _LogPrimaryWriteFailed(logger, primaryWriteError, exception.GetType().Name);
             return false;
@@ -286,9 +282,7 @@ internal sealed partial class HeadlessApiExceptionHandler(
             // Client cancelled while we were writing the fallback body — nothing else we can do.
             return false;
         }
-#pragma warning disable CA1031 // Do not catch general exception types — last-resort fallback path; we must not re-throw.
         catch (Exception fallbackError)
-#pragma warning restore CA1031
         {
             _LogFallbackWriteFailed(logger, fallbackError, fallbackError.GetType().Name);
             return false;

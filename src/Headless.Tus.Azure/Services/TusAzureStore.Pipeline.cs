@@ -8,7 +8,6 @@ using tusdotnet.Extensions.Store;
 using tusdotnet.Interfaces;
 using tusdotnet.Models;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Tus;
 
 public sealed partial class TusAzureStore : ITusPipelineStore
@@ -212,7 +211,7 @@ public sealed partial class TusAzureStore : ITusPipelineStore
                 pipeReader.AdvanceTo(result.Buffer.End);
                 await pipeReader.CompleteAsync().ConfigureAwait(false);
             }
-#pragma warning disable ERP022
+#pragma warning disable ERP022 // A cleanup fault must not replace the exception that is already propagating.
             catch
             {
                 // Ignore cleanup errors so the real exception propagates

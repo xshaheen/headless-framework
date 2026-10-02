@@ -35,9 +35,7 @@ internal sealed class StartupValidationRunner(IEnumerable<IHeadlessStartupValida
             {
                 throw;
             }
-#pragma warning disable CA1031 // Collecting, not swallowing: every failure is rethrown below, and running the rest first lets one start report every misconfiguration.
             catch (Exception exception)
-#pragma warning restore CA1031
             {
                 (failures ??= []).Add(exception);
             }

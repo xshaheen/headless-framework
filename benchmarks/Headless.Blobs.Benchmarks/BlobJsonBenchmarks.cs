@@ -2,8 +2,6 @@
 
 using BenchmarkDotNet.Attributes;
 
-#pragma warning disable IL2026, IL3050
-
 namespace Headless.Blobs.Benchmarks;
 
 public class BlobJsonBenchmarks : IAsyncDisposable

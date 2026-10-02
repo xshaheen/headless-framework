@@ -2,8 +2,6 @@
 
 namespace Tests.Provider;
 
-#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
-
 /// <summary>Runs the shared recovery-decision scenarios against the in-memory provider.</summary>
 public sealed class InMemoryCronRecoveryPlannerTests : CronRecoveryPlannerConformanceTests
 {

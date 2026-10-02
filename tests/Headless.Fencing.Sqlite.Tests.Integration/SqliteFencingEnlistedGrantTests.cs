@@ -6,8 +6,6 @@ using Headless.UnitOfWork;
 
 namespace Tests;
 
-#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
-
 /// <summary>
 /// SQLite refuses a grant inside a caller's unit, because SQLite has no counter that survives the caller's rollback:
 /// the generation a rolled-back grant drew would be drawn again as another holder's fencing token. The scenarios the

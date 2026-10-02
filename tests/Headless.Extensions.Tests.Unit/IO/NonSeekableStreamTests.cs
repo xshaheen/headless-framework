@@ -222,9 +222,7 @@ public sealed class NonSeekableStreamTests : TestBase
 
         // when
         sut.Dispose();
-#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
         var act = () => sut.Dispose();
-#pragma warning restore MA0045
 
         // then
         act.Should().NotThrow();

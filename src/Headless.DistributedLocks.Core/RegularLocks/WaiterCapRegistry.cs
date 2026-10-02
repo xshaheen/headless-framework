@@ -16,7 +16,6 @@ namespace Headless.DistributedLocks;
 /// events (reset-event ref-counting) keep that lifecycle in their own type — it is not portable here.
 /// All access is serialized on an internal lock; <see cref="Enter"/>/<see cref="Exit"/> must be paired.
 /// </remarks>
-#pragma warning disable MA0182 // Used by sibling distributed-lock projects through the shared namespace.
 internal sealed class WaiterCapRegistry(int? maxConcurrentWaitingResources, int? maxWaitersPerResource)
 {
     private readonly Dictionary<string, int> _waitersByResource = new(StringComparer.Ordinal);
@@ -84,4 +83,3 @@ internal sealed class WaiterCapRegistry(int? maxConcurrentWaitingResources, int?
         }
     }
 }
-#pragma warning restore MA0182

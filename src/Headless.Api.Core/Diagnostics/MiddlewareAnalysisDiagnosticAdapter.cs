@@ -4,7 +4,6 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DiagnosticAdapter;
 using Microsoft.Extensions.Logging;
 
-#pragma warning disable IDE0060
 namespace Headless.Api.Diagnostics;
 
 /// <summary>
@@ -18,28 +17,21 @@ public sealed partial class MiddlewareAnalysisDiagnosticAdapter(ILogger logger)
 {
     /// <summary>Handles the <see cref="DiagnosticSources.AnalysisOnMiddlewareStarting"/> event.</summary>
     [DiagnosticName(DiagnosticSources.AnalysisOnMiddlewareStarting)]
-    public void OnMiddlewareStarting(HttpContext httpContext, string name, Guid instance, long timestamp)
+    public void OnMiddlewareStarting(HttpContext httpContext, string name, long timestamp)
     {
         Extensions.MiddlewareStarting(logger, timestamp, name, httpContext.Request.Path);
     }
 
     /// <summary>Handles the <see cref="DiagnosticSources.AnalysisOnMiddlewareFinished"/> event.</summary>
     [DiagnosticName(DiagnosticSources.AnalysisOnMiddlewareFinished)]
-    public void OnMiddlewareFinished(HttpContext httpContext, string name, Guid instance, long timestamp, long duration)
+    public void OnMiddlewareFinished(HttpContext httpContext, string name, long timestamp, long duration)
     {
         Extensions.MiddlewareFinished(logger, timestamp, name, duration, httpContext.Response.StatusCode);
     }
 
     /// <summary>Handles the <see cref="DiagnosticSources.AnalysisOnMiddlewareException"/> event.</summary>
     [DiagnosticName(DiagnosticSources.AnalysisOnMiddlewareException)]
-    public void OnMiddlewareException(
-        Exception exception,
-        HttpContext httpContext,
-        string name,
-        Guid instance,
-        long timestamp,
-        long duration
-    )
+    public void OnMiddlewareException(Exception exception, string name, long timestamp, long duration)
     {
         if (!logger.IsEnabled(LogLevel.Information))
         {

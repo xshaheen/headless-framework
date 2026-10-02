@@ -2,7 +2,6 @@
 
 using System.Diagnostics;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Caching;
 
 // Instrumentation identity + emission helpers for the get-or-add pipeline: the parent cache.get_or_add span,

@@ -2,8 +2,6 @@
 
 namespace Tests;
 
-#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
-
 [Collection<SqlServerJobsCoordinationFixture>]
 public sealed class SqlServerGenericCronClaimTests(SqlServerJobsCoordinationFixture fixture)
     : JobsGenericCronClaimConformanceTests<SqlServerJobsCoordinationFixture>(fixture)

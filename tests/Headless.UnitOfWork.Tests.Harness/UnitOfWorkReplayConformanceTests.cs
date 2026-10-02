@@ -5,8 +5,6 @@ using Headless.UnitOfWork;
 
 namespace Tests;
 
-#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
-
 /// <summary>
 /// The replay and refusal policy every <c>RunAsync</c> spelling shares, asserted identically per provider: a
 /// fault before the commit replays the whole block with a fresh unit (only on a spelling that replays), a fault

@@ -12,7 +12,6 @@ using Microsoft.Extensions.Logging;
 using tusdotnet.Extensions.Store;
 using tusdotnet.Models;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Tus;
 
 public sealed partial class TusAzureStore

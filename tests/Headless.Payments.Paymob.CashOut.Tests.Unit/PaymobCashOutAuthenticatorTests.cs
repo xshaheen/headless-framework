@@ -10,7 +10,6 @@ using Microsoft.Extensions.Time.Testing;
 using WireMock.RequestBuilders;
 using WireMock.ResponseBuilders;
 
-#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
 namespace Tests;
 
 public sealed class PaymobCashOutAuthenticatorTests(PaymobCashOutFixture fixture)

@@ -54,9 +54,7 @@ internal sealed class HeadlessTenancyStartupValidator(
             {
                 collected.AddRange(validator.Validate(context));
             }
-#pragma warning disable CA1031, EPC12 // Last-resort fallback path: a single misbehaving validator must not abort the iteration; full exception detail flows through the synthetic diagnostic message and the validator-error log on the failure path. Host-shutdown cancellation (OperationCanceledException) is excluded by the filter so it propagates instead of being masked as a validator error.
             catch (Exception validatorError) when (validatorError is not OperationCanceledException)
-#pragma warning restore CA1031, EPC12
             {
                 logger.LogTenancyValidatorThrew(validatorError, validator.GetType().Name);
 

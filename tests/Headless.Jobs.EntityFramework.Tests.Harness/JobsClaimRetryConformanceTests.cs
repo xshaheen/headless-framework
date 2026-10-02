@@ -18,8 +18,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Tests;
 
-#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
-
 /// <summary>
 /// Native claim scopes retry a transient fault raised before their commit as a whole, in a fresh transaction, on every
 /// engine, and never retry a fault raised by the commit. Each provider supplies the exception its driver raises for a

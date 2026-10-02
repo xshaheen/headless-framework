@@ -507,9 +507,7 @@ public sealed class SqliteDialect : ISqlDialect
     {
         var buffer = new ArrayBufferWriter<byte>();
 
-#pragma warning disable MA0045 // False positive: the writer flushes into an in-memory buffer, so there is no I/O to await.
         using (var writer = new Utf8JsonWriter(buffer))
-#pragma warning restore MA0045
         {
             writer.WriteStartArray();
             writeElements(writer);

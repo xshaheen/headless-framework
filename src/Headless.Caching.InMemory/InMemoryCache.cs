@@ -12,7 +12,6 @@ using Nito.AsyncEx;
 namespace Headless.Caching;
 
 #pragma warning disable MA0106 // ConcurrentDictionary delegates intentionally capture mutation result state.
-#pragma warning disable RCS1229 // Several ValueTask members complete synchronously by design.
 
 /// <summary>
 /// Process-local in-memory cache implementing <see cref="IInMemoryCache"/> (the L1 tier), with capacity-capped
@@ -3228,4 +3227,4 @@ file static class ConcurrentDictionaryExtensions
     }
 }
 
-#pragma warning restore RCS1229, MA0106
+#pragma warning restore MA0106

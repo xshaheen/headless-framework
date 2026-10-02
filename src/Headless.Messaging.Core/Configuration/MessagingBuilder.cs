@@ -39,7 +39,7 @@ internal sealed class MessagingMarkerService
         {
             Version = FileVersionInfo.GetVersionInfo(Assembly.GetExecutingAssembly().Location).ProductVersion!;
         }
-#pragma warning disable ERP022
+#pragma warning disable ERP022 // Version is diagnostic; any failure, such as an empty Location in single-file apps, falls back to N/A.
         catch
         {
             Version = "N/A"; // Fallback in case of any error retrieving version info

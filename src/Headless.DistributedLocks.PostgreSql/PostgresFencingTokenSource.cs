@@ -39,6 +39,7 @@ internal sealed class PostgresFencingTokenSource(
 ) : IFencingTokenSource
 {
     private readonly TimeSpan _commandTimeout = options.Value.CommandTimeout;
+
     private readonly string _nextValueSql =
         $"SELECT nextval('{PostgreSqlDistributedLocksSchemaContribution.QualifiedSequence(storageOptions.Value.Schema)}')";
 

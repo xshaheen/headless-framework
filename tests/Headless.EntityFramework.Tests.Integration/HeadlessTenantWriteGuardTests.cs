@@ -448,9 +448,7 @@ public sealed class HeadlessTenantWriteGuardTests(
         db.Tests.Add(entity);
 
         // when
-#pragma warning disable VSTHRD103 // The guard's synchronous SaveChanges path is what this test covers.
         db.SaveChanges();
-#pragma warning restore VSTHRD103
 
         // then
         entity.TenantId.Should().Be("tenant-a");
@@ -601,9 +599,7 @@ public sealed class HeadlessTenantWriteGuardTests(
         entity.Name = "sync-changed-by-a";
 
         // when
-#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
         var act = () => db.SaveChanges();
-#pragma warning restore MA0045
 
         // then
         act.Should().Throw<CrossTenantWriteException>();

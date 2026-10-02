@@ -218,7 +218,6 @@ public sealed class PostgresTransactionLockTests(PostgreSqlDistributedLockFixtur
         await act.Should().ThrowAsync<InvalidOperationException>();
     }
 
-#pragma warning disable VSTHRD103, MA0045 // The synchronous DbTransaction overloads are the API under test.
     [Fact]
     public async Task should_acquire_and_release_synchronously_through_db_transaction()
     {
@@ -277,7 +276,6 @@ public sealed class PostgresTransactionLockTests(PostgreSqlDistributedLockFixtur
 
         act.Should().Throw<ArgumentException>().WithParameterName("transaction");
     }
-#pragma warning restore VSTHRD103, MA0045
 
     [Fact]
     public async Task should_restore_timeout_settings_when_strategy_uses_visible_transaction()
@@ -590,8 +588,7 @@ public sealed class PostgresTransactionLockTests(PostgreSqlDistributedLockFixtur
         return (long)(await command.ExecuteScalarAsync(AbortToken) ?? 0L);
     }
 
-#pragma warning disable CA2000
-    // The fake connection is externally owned, so DatabaseConnection does not dispose it (CA2000 applies here).
+#pragma warning disable CA2000 // Test fake with no resources; it must stay externally owned, so nothing disposes it.
     // isExternallyOwned MUST stay true: the savepoint-failure path under test only runs when the connection is
     // externally owned; flipping it to false skips the SAVEPOINT entirely and the wrong exception surfaces.
     private sealed class ThrowingSavePointDatabaseConnection()

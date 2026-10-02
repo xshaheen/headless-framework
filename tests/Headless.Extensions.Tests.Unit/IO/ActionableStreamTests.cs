@@ -365,9 +365,7 @@ public sealed class ActionableStreamTests : TestBase
         // when - dispose via both the async and sync surfaces
         await sut.DisposeAsync();
         await sut.DisposeAsync();
-#pragma warning disable VSTHRD103 // Deliberately exercising the synchronous Dispose surface for idempotency.
         sut.Dispose();
-#pragma warning restore VSTHRD103
 
         // then - the action fired exactly once (idempotent disposal)
         invocationCount.Should().Be(1);

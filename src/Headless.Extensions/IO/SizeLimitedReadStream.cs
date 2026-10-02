@@ -18,9 +18,7 @@ namespace Headless.IO;
 [PublicAPI]
 public sealed class SizeLimitedReadStream : Stream, IHasIsDisposed
 {
-#pragma warning disable CA2213 // Ownership is controlled by the leaveOpen constructor argument.
     private readonly Stream _stream;
-#pragma warning restore CA2213
     private readonly bool _leaveOpen;
     private bool _limitExceeded;
 

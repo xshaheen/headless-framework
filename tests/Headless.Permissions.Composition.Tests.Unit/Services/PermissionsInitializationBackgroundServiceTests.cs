@@ -13,12 +13,10 @@ namespace Tests.Services;
 
 public sealed class PermissionsInitializationBackgroundServiceTests : TestBase
 {
-#pragma warning disable CA2213 // Disposable fields should be disposed
     private readonly IServiceScopeFactory _serviceScopeFactory = Substitute.For<IServiceScopeFactory>();
     private readonly IServiceScope _serviceScope = Substitute.For<IServiceScope>();
     private readonly IServiceProvider _serviceProvider = Substitute.For<IServiceProvider>();
     private readonly IDynamicPermissionDefinitionStore _store = Substitute.For<IDynamicPermissionDefinitionStore>();
-#pragma warning restore CA2213
     private readonly FakeTimeProvider _timeProvider = new();
 
     public PermissionsInitializationBackgroundServiceTests()

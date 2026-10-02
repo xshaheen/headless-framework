@@ -10,8 +10,6 @@ using Microsoft.Extensions.Hosting;
 
 namespace Tests;
 
-#pragma warning disable CA1707 // Test names follow the repo's readable snake_case convention.
-
 /// <summary>
 /// Cross-provider conformance for misfire recovery. The in-memory suite proves the same scenarios, but it cannot
 /// prove them <i>for</i> a relational backend: recovery resolves occurrences and moves the watermark inside one

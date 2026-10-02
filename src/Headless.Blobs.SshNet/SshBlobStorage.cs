@@ -343,9 +343,7 @@ internal sealed partial class SshBlobStorage(
 
             var wrappedStream = new PooledClientStream(sftpStream, client, pool);
 
-#pragma warning disable CA2000 // Dispose objects before losing scope - ownership transferred to caller
             return new BlobDownloadResult(wrappedStream, location.Path, BlobStorageHelpers.ToUserMetadata(metadata));
-#pragma warning restore CA2000
         }
         catch (SftpPathNotFoundException ex)
         {

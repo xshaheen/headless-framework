@@ -30,7 +30,7 @@ builder
         {
             ValidateIssuerSigningKey = true,
             IssuerSigningKey = new SymmetricSecurityKey(key),
-#pragma warning disable CA5404
+#pragma warning disable CA5404 // Demo only: the app validates its own locally signed tokens; production must validate issuer and audience.
             ValidateIssuer = false, // DEMO ONLY — validate issuer in production
             ValidateAudience = false, // DEMO ONLY — validate audience in production
 #pragma warning restore CA5404

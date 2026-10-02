@@ -5,8 +5,6 @@ using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-
 namespace Headless.UnitOfWork;
 
 /// <summary>

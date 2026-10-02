@@ -66,9 +66,7 @@ public sealed class IdempotencyRecoveryPointPostgreSqlEndToEndTests(ApiIdempoten
             {
                 // The handler's own unit on the database that holds the records, so the point commits with its
                 // business writes. The unit opens the connection and ends with it.
-#pragma warning disable CA2000 // The unit owns the connection and closes it when it ends.
                 var connection = new NpgsqlConnection(fixture.ConnectionString);
-#pragma warning restore CA2000
 
                 return await services
                     .GetRequiredService<IUnitOfWorkFactory>()

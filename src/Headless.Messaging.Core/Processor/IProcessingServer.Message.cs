@@ -151,9 +151,7 @@ internal sealed class MessageProcessingServer(
         try
         {
             _logger.ServerShuttingDown();
-#pragma warning disable VSTHRD003 // Quiesce starts this generation-owned CancelAsync task before drain begins.
             await quiesceTask.ConfigureAwait(false);
-#pragma warning restore VSTHRD003
 
             var tasks = new List<Task>(retryTasks.Count + 1);
             tasks.AddRange(retryTasks);

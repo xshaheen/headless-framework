@@ -72,18 +72,16 @@ internal sealed class ReadOnlySequenceStream : Stream
     public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-#pragma warning disable MA0042 // Do not use blocking calls in an async method
         var bytesRead = Read(buffer, offset, count);
-#pragma warning restore MA0042 // Do not use blocking calls in an async method
 
         if (bytesRead == 0)
         {
             return _TaskOfZero;
         }
 
-#pragma warning disable VSTHRD103, CA1849, MA0042 // Call async methods when in an async method - This task is guaranteed to already be complete.
+#pragma warning disable CA1849 // Call async methods when in an async method - This task is guaranteed to already be complete.
         if (_lastReadTask?.Result == bytesRead)
-#pragma warning restore VSTHRD103, MA0042, CA1849 // Call async methods when in an async method
+#pragma warning restore CA1849 // Call async methods when in an async method
         {
             return _lastReadTask;
         }
