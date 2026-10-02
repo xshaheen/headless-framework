@@ -85,12 +85,12 @@ ASSERT_RESTORED = assert_restored() { local project="$$1" dir assets input; dir=
 # Collects every path this side changed, including uncommitted and untracked work. Diffing the merge
 # base rather than AFFECTED_BASE itself matters when the branch is behind: a plain two-dot diff also
 # reports the commits upstream has and we do not, which are not our changes and not ours to test.
-# Affected-scope tooling. eng/tools/project_graph.py selects projects from the ProjectReference
-# graph; eng/tools/proof.py runs each stage, keeps its log, and reduces TRX, analyzer reports,
+# Affected-scope tooling. scripts/project-graph.py selects projects from the ProjectReference
+# graph; scripts/proof.py runs each stage, keeps its log, and reduces TRX, analyzer reports,
 # compiler output and coverage into artifacts/proof/<run>/summary.{json,md}. Both are stdlib Python.
 PYTHON ?= python3
-GRAPH = $(PYTHON) eng/tools/project_graph.py
-PROOF = $(PYTHON) eng/tools/proof.py
+GRAPH = $(PYTHON) scripts/project-graph.py
+PROOF = $(PYTHON) scripts/proof.py
 # One timestamp per make invocation, so every stage of a target writes into the same bundle.
 PROOF_RUN := $(ARTIFACTS_DIR)/proof/$(shell date -u +%Y%m%dT%H%M%SZ)
 # Coverage is reported, never gated, and costs ~0.4 s per test module plus a merge (~20 s on a
@@ -192,8 +192,8 @@ hook-pre-commit: ## Git hook: format staged C# files and validate staged docs/so
 	while IFS= read -r file; do staged+=("$$file"); done < <(git diff --cached --name-only --diff-filter=ACMR -- '*.cs'); \
 	docs=(); while IFS= read -r file; do docs+=("$$file"); done < <(git diff --cached --name-only --diff-filter=ACMR -- 'docs/solutions/*.md' ':!docs/solutions/INDEX.md'); \
 	if [ "$${#docs[@]}" -gt 0 ]; then \
-		$(PYTHON) eng/tools/docs_check.py --quiet-warnings "$${docs[@]}" || { printf '\033[31m[pre-commit]\033[0m fix the docs/solutions frontmatter above (rules: eng/tools/docs_check.py).\n'; exit 1; }; \
-		$(PYTHON) eng/tools/docs_check.py --quiet-warnings >/dev/null 2>&1 || printf '\033[33m[pre-commit]\033[0m docs/solutions/INDEX.md may be stale; run `make docs-index` and stage it.\n'; \
+		$(PYTHON) scripts/docs-check.py --quiet-warnings "$${docs[@]}" || { printf '\033[31m[pre-commit]\033[0m fix the docs/solutions frontmatter above (rules: scripts/docs-check.py).\n'; exit 1; }; \
+		$(PYTHON) scripts/docs-check.py --quiet-warnings >/dev/null 2>&1 || printf '\033[33m[pre-commit]\033[0m docs/solutions/INDEX.md may be stale; run `make docs-index` and stage it.\n'; \
 	fi; \
 	if [ "$${#staged[@]}" -eq 0 ]; then exit 0; fi; \
 	for file in "$${staged[@]}"; do \
@@ -444,7 +444,7 @@ test-query: ## Run tests matching QUERY (MTP --filter-query). Solution-wide unle
 	@test -n "$(QUERY)" || (echo "QUERY is required. Example: make test-query QUERY='/Headless.Core.Tests.Unit/Tests.Abstractions/ClockTests/*'" && exit 2)
 	$(MAKE) $(TEST_SCOPE_TARGET) TEST_FILTER='--filter-query "$(QUERY)"'
 
-# The affected set comes from the ProjectReference graph (eng/tools/project_graph.py), not from
+# The affected set comes from the ProjectReference graph (scripts/project-graph.py), not from
 # directory names: changed projects plus their direct dependents, and every unit- or integration-test
 # project that is in that set or references a member of it directly. A change to a build-wide file
 # (global.json, Directory.*.props, .editorconfig, eng/analyzers) selects every project below it.
@@ -610,11 +610,11 @@ test-package-verifier: ## Run isolated positive and negative package-verifier fi
 
 .PHONY: docs-check
 docs-check: ## Validate docs/solutions frontmatter (fails) and references (warns), and check INDEX.md is current.
-	@$(PYTHON) eng/tools/docs_check.py
+	@$(PYTHON) scripts/docs-check.py
 
 .PHONY: docs-index
 docs-index: ## Regenerate docs/solutions/INDEX.md from each learning's frontmatter.
-	@$(PYTHON) eng/tools/docs_check.py --write-index --quiet-warnings
+	@$(PYTHON) scripts/docs-check.py --write-index --quiet-warnings
 
 # Benchmarks report evidence; nothing gates on them. BENCH_AREA names a project under benchmarks/
 # (Api.Idempotency, Blobs, Caching, Jobs, Messaging, Serializer). The JSON export is what
@@ -649,7 +649,7 @@ bench-compare: ## Run BENCH_AREA benchmarks at BASE (default AFFECTED_BASE) and 
 	out="$(CURDIR)/$(BENCH_DIR)/$(notdir $(PROOF_RUN))-$(BENCH_AREA)-compare"; \
 	$(BENCH_RUN); head_ref="$$(working_tree_ref)"; \
 	bench_run "$$base_ref" "$$out/base"; bench_run "$$head_ref" "$$out/head"; \
-	$(PYTHON) eng/tools/bench_compare.py --base "$$out/base" --head "$$out/head" --base-label "$$base_ref" | tee "$$out/compare.md"
+	$(PYTHON) scripts/bench-compare.py --base "$$out/base" --head "$$out/head" --base-label "$$base_ref" | tee "$$out/compare.md"
 
 .PHONY: outdated
 outdated: tools ## Check outdated NuGet dependencies.
