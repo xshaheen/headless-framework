@@ -612,6 +612,46 @@ public abstract class LeasesConformanceTests<TFixture>(TFixture fixture) : TestB
         (await Fixture.ReadHandoffsAsync(kind, AbortToken)).Should().HaveCount(3);
     }
 
+    public virtual async Task should_never_reissue_a_generation_granted_by_a_sweep_handler_that_threw()
+    {
+        var (kind, resource) = (CreateKind(), CreateResource());
+        await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
+        await SeedExpiredAsync(host, kind, 1);
+        long? rolledBack = null;
+
+        // The sweep hands its own unit to the handler; a grant there must be refused where the provider refuses
+        // enlisted grants, or else rolled back with the unit and never issued again.
+        var swept = await host.Leases.SweepExpiredAsync(
+            kind,
+            async (_, unit, ct) =>
+            {
+                var granted = await unit.Leases.GrantAsync(kind, resource, LongDuration, ct);
+                rolledBack = granted.Lease!.Generation;
+
+                throw new InvalidOperationException("handler failed after granting");
+            },
+            limit: 10,
+            AbortToken
+        );
+
+        var failure = swept.Failures.Should().ContainSingle().Subject;
+        var next = await host.Leases.GrantAsync(kind, resource, LongDuration, AbortToken);
+
+        next.Status.Should().Be(LeaseGrantStatus.Granted);
+
+        if (Fixture.SupportsEnlistedGrant)
+        {
+            failure.Exception.Should().BeOfType<InvalidOperationException>();
+            next.Lease!.Generation.Should()
+                .BeGreaterThan(rolledBack!.Value, "a rolled-back generation is never issued again");
+        }
+        else
+        {
+            failure.Exception.Should().BeOfType<NotSupportedException>();
+            rolledBack.Should().BeNull("the refused grant drew no generation");
+        }
+    }
+
     public virtual async Task should_not_reclaim_an_always_throwing_lease_within_one_sweep_call()
     {
         var kind = CreateKind();

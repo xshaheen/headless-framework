@@ -30,7 +30,7 @@ public sealed class SqliteFencingEnlistedGrantTests(SqliteFencingFixture fixture
 
         (await act.Should().ThrowAsync<NotSupportedException>())
             .Which.Message.Should()
-            .Contain("survives the caller's rollback");
+            .Contain("survives the unit's rollback");
         unit.Unit.State.Should().Be(UnitOfWorkState.Active, "the refusal comes before the unit is touched");
         await unit.CommitAsync(AbortToken);
         (await fixture.ReadLeaseAsync(new LeaseKey("", kind, resource), AbortToken)).Should().BeNull();

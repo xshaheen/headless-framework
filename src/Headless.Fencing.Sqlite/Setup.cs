@@ -133,8 +133,9 @@ public static class SetupFencingSqlite
     /// the same fencing token. Autonomous grants commit before they return their generation, so they are safe.
     /// </summary>
     internal const string EnlistedGrantRefusal =
-        "Headless.Fencing.Sqlite cannot grant a lease inside a caller's unit of work: SQLite has no counter that "
-        + "survives the caller's rollback, so a rolled-back grant's generation could be issued again as another "
-        + "holder's fencing token. Grant through IFencedLeases.GrantAsync, which commits the grant on its own; the "
-        + "unit can still renew, settle, release, or fence that lease.";
+        "Headless.Fencing.Sqlite cannot grant a lease inside a unit of work, including the unit an expired-lease "
+        + "sweep hands its handler: SQLite has no counter that survives the unit's rollback, so a rolled-back "
+        + "grant's generation could be issued again as another holder's fencing token. Grant through "
+        + "IFencedLeases.GrantAsync, which commits the grant on its own; the unit can still renew, settle, release, "
+        + "or fence that lease.";
 }

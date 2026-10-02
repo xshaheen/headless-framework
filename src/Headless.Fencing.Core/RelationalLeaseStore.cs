@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
-using System.Runtime.CompilerServices;
 using Headless.Checks;
 using Headless.Sql;
 using Headless.UnitOfWork;
@@ -59,10 +58,6 @@ internal sealed class RelationalLeaseStore : ILeaseStore, ILeaseEnlistedGrantGua
     private readonly string _claimFirstSql;
     private readonly string _claimAfterSql;
     private readonly string _purgeSql;
-
-    // The units this store began for its own calls, tracked only when enlisted grants are refused.
-    private static readonly object _OwnUnit = new();
-    private readonly ConditionalWeakTable<IUnitOfWork, object> _ownUnits = [];
 
     public RelationalLeaseStore(
         RelationalFencingStorage storage,
@@ -152,16 +147,9 @@ internal sealed class RelationalLeaseStore : ILeaseStore, ILeaseEnlistedGrantGua
 
         try
         {
-            var unit = await _storage
+            return await _storage
                 .BeginOwnedUnit(_unitOfWorkFactory, connection, cancellationToken)
                 .ConfigureAwait(false);
-
-            if (_storage.EnlistedGrantRefusal is not null)
-            {
-                _ownUnits.Add(unit, _OwnUnit);
-            }
-
-            return unit;
         }
         catch
         {
@@ -186,9 +174,9 @@ internal sealed class RelationalLeaseStore : ILeaseStore, ILeaseEnlistedGrantGua
 
     public void ValidateEnlistedGrant(IUnitOfWork unitOfWork)
     {
-        // A unit this store began commits before its caller sees the generation, so a rollback can never leave a
-        // caller holding a generation the store will draw again.
-        if (_storage.EnlistedGrantRefusal is { } reason && !_ownUnits.TryGetValue(unitOfWork, out _))
+        // No unit is exempt, not even one this store began: the expired-lease sweep hands its own unit to caller code
+        // that may grant and then roll back, which would let the store draw the same generation again.
+        if (_storage.EnlistedGrantRefusal is { } reason)
         {
             throw new NotSupportedException(reason);
         }
