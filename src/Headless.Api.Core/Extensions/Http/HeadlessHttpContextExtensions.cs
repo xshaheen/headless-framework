@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
+using System.Net;
+using System.Net.Sockets;
 using Headless.Checks;
 using Headless.Constants;
 using Microsoft.AspNetCore.Mvc;
@@ -118,6 +120,63 @@ public static class HeadlessHttpContextExtensions
         return ip is null ? null
             : ip.IsIPv4MappedToIPv6 ? ip.MapToIPv4().ToString()
             : ip.ToString();
+    }
+
+    /// <summary>
+    /// Returns a key that groups the client's address for rate limiting: the whole address for IPv4, and the
+    /// <paramref name="ipv6PrefixLength"/>-bit network (<c>2001:db8:1:2::/64</c>) for IPv6. One IPv6 host usually owns
+    /// a whole /64 and can rotate through it freely, so keying on the full address hands it a fresh budget per request.
+    /// </summary>
+    /// <param name="httpContext">The current HTTP context.</param>
+    /// <param name="ipv6PrefixLength">The IPv6 prefix length, from 0 to 128. Defaults to 64.</param>
+    /// <returns>The partition key, or <see langword="null"/> when no remote address is available.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="httpContext"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="ipv6PrefixLength"/> is outside 0 to 128.</exception>
+    /// <remarks>
+    /// Reads <see cref="ConnectionInfo.RemoteIpAddress"/>, like <see cref="GetIpAddress"/>, so behind a proxy it is
+    /// only as trustworthy as the <c>UseForwardedHeaders</c> configuration: with no known proxies or networks, any
+    /// client can forge <c>X-Forwarded-For</c> and choose its own partition. IPv4-mapped IPv6 addresses
+    /// (<c>::ffff:a.b.c.d</c>, which a dual-stack listener reports for IPv4 clients) are keyed as IPv4; masking them
+    /// as IPv6 would put every IPv4 client into the single <c>::/64</c> partition.
+    /// </remarks>
+    public static string? GetIpAddressPartition(this HttpContext httpContext, int ipv6PrefixLength = 64)
+    {
+        Argument.IsNotNull(httpContext);
+        Argument.IsInclusiveBetween(ipv6PrefixLength, 0, 128);
+
+        var ip = httpContext.Connection.RemoteIpAddress;
+
+        if (ip is null)
+        {
+            return null;
+        }
+
+        if (ip.IsIPv4MappedToIPv6)
+        {
+            return ip.MapToIPv4().ToString();
+        }
+
+        if (ip.AddressFamily != AddressFamily.InterNetworkV6)
+        {
+            return ip.ToString();
+        }
+
+        Span<byte> bytes = stackalloc byte[16];
+        ip.TryWriteBytes(bytes, out _);
+
+        var fullBytes = ipv6PrefixLength / 8;
+        var remainingBits = ipv6PrefixLength % 8;
+
+        if (remainingBits > 0)
+        {
+            bytes[fullBytes] &= (byte)(0xFF << (8 - remainingBits));
+            fullBytes++;
+        }
+
+        bytes[fullBytes..].Clear();
+
+        // Built from bytes, so a link-local scope id (fe80::1%eth0) does not split one network into many keys.
+        return string.Create(CultureInfo.InvariantCulture, $"{new IPAddress(bytes)}/{ipv6PrefixLength}");
     }
 
     /// <summary>Returns the <c>User-Agent</c> request header value, or <see langword="null"/> when absent.</summary>

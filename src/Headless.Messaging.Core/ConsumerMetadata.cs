@@ -28,7 +28,7 @@ public sealed record ConsumerMetadata(
 )
 {
     /// <summary>Maximum supported consumer identity length for durable inbox storage.</summary>
-    public const int ConsumerIdentityMaxLength = 200;
+    public const int ConsumerIdentityMaxLength = MessagingCatalogBuilder.ConsumerIdentityMaxLength;
 
     private static readonly IReadOnlyDictionary<Type, object> _EmptyProviderConfigs = new Dictionary<Type, object>();
 

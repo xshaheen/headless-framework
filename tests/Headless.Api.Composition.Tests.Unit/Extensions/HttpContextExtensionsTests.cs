@@ -110,6 +110,113 @@ public sealed class HttpContextExtensionsTests : TestBase
 
     #endregion
 
+    #region GetIpAddressPartition
+
+    [Theory]
+    [InlineData("172.16.0.1", "172.16.0.1")]
+    [InlineData("::ffff:172.16.0.1", "172.16.0.1")]
+    [InlineData("2001:db8:1:2:aaaa:bbbb:cccc:dddd", "2001:db8:1:2::/64")]
+    [InlineData("fe80::1%3", "fe80::/64")]
+    public void should_partition_ip_address(string remoteIp, string expected)
+    {
+        // given
+        var context = _CreateContext();
+        context.Connection.RemoteIpAddress = IPAddress.Parse(remoteIp);
+
+        // when
+        var result = context.GetIpAddressPartition();
+
+        // then
+        result.Should().Be(expected);
+    }
+
+    [Fact]
+    public void should_share_one_partition_across_ipv6_addresses_in_the_same_64()
+    {
+        // given
+        var first = _CreateContext();
+        first.Connection.RemoteIpAddress = IPAddress.Parse("2001:db8:1:2::1");
+        var second = _CreateContext();
+        second.Connection.RemoteIpAddress = IPAddress.Parse("2001:db8:1:2:ffff:ffff:ffff:ffff");
+        var otherNetwork = _CreateContext();
+        otherNetwork.Connection.RemoteIpAddress = IPAddress.Parse("2001:db8:1:3::1");
+
+        // when
+        var firstPartition = first.GetIpAddressPartition();
+        var secondPartition = second.GetIpAddressPartition();
+        var otherPartition = otherNetwork.GetIpAddressPartition();
+
+        // then
+        firstPartition.Should().Be(secondPartition);
+        otherPartition.Should().NotBe(firstPartition);
+    }
+
+    [Fact]
+    public void should_keep_ipv4_mapped_clients_out_of_the_shared_ipv6_partition()
+    {
+        // given
+        var first = _CreateContext();
+        first.Connection.RemoteIpAddress = IPAddress.Parse("::ffff:10.0.0.1");
+        var second = _CreateContext();
+        second.Connection.RemoteIpAddress = IPAddress.Parse("::ffff:10.0.0.2");
+
+        // when
+        var firstPartition = first.GetIpAddressPartition();
+        var secondPartition = second.GetIpAddressPartition();
+
+        // then
+        firstPartition.Should().NotBe(secondPartition);
+    }
+
+    [Theory]
+    [InlineData(48, "2001:db8:1::/48")]
+    [InlineData(56, "2001:db8:1:200::/56")]
+    [InlineData(60, "2001:db8:1:2a0::/60")]
+    [InlineData(128, "2001:db8:1:2ab::1/128")]
+    [InlineData(0, "::/0")]
+    public void should_mask_ipv6_to_the_configured_prefix(int prefixLength, string expected)
+    {
+        // given
+        var context = _CreateContext();
+        context.Connection.RemoteIpAddress = IPAddress.Parse("2001:db8:1:2ab::1");
+
+        // when
+        var result = context.GetIpAddressPartition(prefixLength);
+
+        // then
+        result.Should().Be(expected);
+    }
+
+    [Fact]
+    public void should_return_null_partition_when_no_remote_address()
+    {
+        // given
+        var context = _CreateContext();
+
+        // when
+        var result = context.GetIpAddressPartition();
+
+        // then
+        result.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(129)]
+    public void should_reject_ipv6_prefix_length_outside_0_to_128(int prefixLength)
+    {
+        // given
+        var context = _CreateContext();
+
+        // when
+        var act = () => context.GetIpAddressPartition(prefixLength);
+
+        // then
+        act.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    #endregion
+
     #region GetUserAgent
 
     [Fact]

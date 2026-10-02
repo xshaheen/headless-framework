@@ -341,7 +341,7 @@ public sealed class RequestClientTests : TestBase
     {
         // given
         await using var provider = await _StartHostAsync(configureServices: services =>
-            services.AddMessageContract<PriceQuote>("pricing.quote", "3")
+            services.ConfigureMessaging(m => m.Message<PriceQuote>("pricing.quote", "3"))
         );
         _responder.OnRequest = request => new ValueTask(Replies.SendOkAsync(provider, request, new PriceQuote(9m)));
 
