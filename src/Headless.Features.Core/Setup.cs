@@ -151,7 +151,9 @@ public static class SetupFeatures
 
         // The change announcement's wire name is declared rather than convention-derived, so services sharing a
         // broker agree on it whatever naming conventions each configures. Inert when the host does not use messaging.
-        services.AddMessageContract<FeatureChangedMessage>(FeatureChangedMessage.MessageName, "1");
+        services.ConfigureMessaging(static messaging =>
+            messaging.Message<FeatureChangedMessage>(FeatureChangedMessage.MessageName, "1")
+        );
 
         services.AddSingleton<IFeatureErrorsDescriptor, DefaultFeatureErrorsDescriptor>();
 

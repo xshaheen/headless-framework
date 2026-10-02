@@ -16,13 +16,15 @@ namespace Headless.Messaging.Registration;
 [PublicAPI]
 public sealed class MessagingContributionBuilder
 {
-    private readonly IServiceCollection _services;
     private readonly List<MessageContractBuilder> _contracts = [];
 
     internal MessagingContributionBuilder(IServiceCollection services)
     {
-        _services = services;
+        Services = services;
     }
+
+    /// <summary>The service collection this contribution records into, for Core's consumer tuning.</summary>
+    internal IServiceCollection Services { get; }
 
     /// <summary>
     /// Declares the contract of one message type for both lanes: the logical name publishing and consuming resolve the
@@ -68,26 +70,7 @@ public sealed class MessagingContributionBuilder
     public MessagingContributionBuilder AddModule<TModule>()
         where TModule : IMessagingModule
     {
-        _services.AddMessagingModuleContribution<TModule>();
-        return this;
-    }
-
-    /// <summary>
-    /// Tunes the deployment settings of one declared consumer, for example
-    /// <c>Tune("billing.invoice-projection", consumer =&gt; consumer.Concurrency(16))</c>.
-    /// </summary>
-    /// <remarks>
-    /// The identity is checked when messaging starts: an identity no registered consumer declares fails startup.
-    /// <paramref name="configure"/> runs once, synchronously, during this call.
-    /// </remarks>
-    /// <param name="identity">The consumer's identity.</param>
-    /// <param name="configure">Changes the consumer's deployment settings.</param>
-    /// <returns>This builder, for chaining.</returns>
-    /// <exception cref="ArgumentException"><paramref name="identity"/> is empty or whitespace.</exception>
-    /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
-    public MessagingContributionBuilder Tune(string identity, [InstantHandle] Action<ConsumerTuningBuilder> configure)
-    {
-        _services.AddConsumerTuning(identity, configure);
+        Services.AddMessagingModuleContribution<TModule>();
         return this;
     }
 
@@ -99,25 +82,9 @@ public sealed class MessagingContributionBuilder
     {
         foreach (var contract in _contracts)
         {
-            _services.AddSingleton<MessageDeclaration>(contract.Complete());
+            Services.AddSingleton<MessageDeclaration>(contract.Complete());
         }
 
         _contracts.Clear();
-    }
-}
-
-/// <summary>One generated module that a contribution or the host asked messaging to register.</summary>
-/// <param name="ModuleType">The generated module type, which identifies the module across contributions.</param>
-/// <param name="Register">Runs the module's generated registration against a catalog.</param>
-internal sealed record MessagingModuleContribution(Type ModuleType, Action<MessagingCatalogBuilder> Register);
-
-internal static class MessagingModuleContributionRecording
-{
-    public static void AddMessagingModuleContribution<TModule>(this IServiceCollection services)
-        where TModule : IMessagingModule
-    {
-        services.AddSingleton(
-            new MessagingModuleContribution(typeof(TModule), static catalog => TModule.Register(catalog))
-        );
     }
 }

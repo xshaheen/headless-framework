@@ -24,7 +24,6 @@ internal sealed record MessageDeclarationFold(
     /// route on both lanes; a later identical declaration, typically from a second module that shares the contracts
     /// package, merges into it, and a different one fails naming both.
     /// </summary>
-    /// <exception cref="ArgumentException">An <c>AddMessageContract</c> name or version is not valid.</exception>
     /// <exception cref="InvalidOperationException">Two contract declarations of one message type differ.</exception>
     public static MessageDeclarationFold Create(IEnumerable<MessageDeclaration> declarations)
     {
@@ -37,9 +36,6 @@ internal sealed record MessageDeclarationFold(
             {
                 case MessageContract contract:
                     _AddContract(contracts, contract);
-                    break;
-                case MessageContractDeclaration contractDeclaration:
-                    _AddContract(contracts, _ToContract(contractDeclaration));
                     break;
                 case MessageNameMappingDeclaration mapping:
                     nameMappings.Add(mapping);
@@ -61,32 +57,6 @@ internal sealed record MessageDeclarationFold(
             .ToArray();
 
         return new MessageDeclarationFold(contracts, routes, nameMappings);
-    }
-
-    /// <summary>
-    /// Reads one <c>AddMessageContract&lt;T&gt;(name, version)</c> declaration exactly as
-    /// <c>Message&lt;T&gt;(name, version)</c> with no further settings, so it merges with and conflicts against the
-    /// <c>ConfigureMessaging</c> declarations of the same type under the same rules.
-    /// </summary>
-    private static MessageContract _ToContract(MessageContractDeclaration declaration)
-    {
-        MessagingOptions.ValidateMessageName(declaration.Name);
-
-        var noSettings = new MessageContractLaneSettings(
-            RequiresRoutingAffinity: false,
-            DeliveryMode: null,
-            new ProviderConfigBag().Build()
-        );
-
-        return new MessageContract(
-            declaration.MessageType,
-            declaration.Name,
-            MessagingOptions.ValidateContractVersion(declaration.Version),
-            DeclaredCorrelationSelector: null,
-            CorrelationSelector: null,
-            noSettings,
-            noSettings
-        );
     }
 
     private static void _AddContract(List<MessageContract> contracts, MessageContract contract)

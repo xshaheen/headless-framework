@@ -2,7 +2,6 @@
 
 using System.Globalization;
 using Headless.Checks;
-using Headless.Messaging.Configuration;
 
 namespace Headless.Messaging.Registration;
 
@@ -48,7 +47,7 @@ public interface IBusContractBuilder<TMessage>
 
     /// <summary>
     /// Pins the delivery mode for autonomous Bus publishes of this message, overriding the host
-    /// <see cref="MessagingOptions.DefaultDeliveryMode"/>. A per-call <see cref="PublishOptions.DeliveryMode"/> still
+    /// <c>MessagingOptions.DefaultDeliveryMode</c>. A per-call <c>PublishOptions.DeliveryMode</c> still
     /// overrides it, and an enlisted publish is always durable.
     /// </summary>
     /// <param name="mode">The delivery mode.</param>
@@ -68,7 +67,7 @@ public interface IQueueContractBuilder<TMessage>
 
     /// <summary>
     /// Pins the delivery mode for autonomous Queue enqueues of this message, overriding the host
-    /// <see cref="MessagingOptions.DefaultDeliveryMode"/>. A per-call <see cref="QueueOptions.DeliveryMode"/> still
+    /// <c>MessagingOptions.DefaultDeliveryMode</c>. A per-call <c>QueueOptions.DeliveryMode</c> still
     /// overrides it, and an enlisted enqueue is always durable.
     /// </summary>
     /// <param name="mode">The delivery mode.</param>
@@ -116,9 +115,9 @@ internal sealed class MessageContractBuilder<TMessage> : MessageContractBuilder,
 
     public MessageContractBuilder(string name, string version)
     {
-        MessagingOptions.ValidateMessageName(name);
+        MessageContractRules.ValidateMessageName(name);
         _name = name;
-        _version = MessagingOptions.ValidateContractVersion(version);
+        _version = MessageContractRules.ValidateContractVersion(version);
         _bus = new LaneBuilder(this);
         _queue = new LaneBuilder(this);
     }
@@ -307,24 +306,6 @@ internal sealed record MessageContract(
             && Equals(DeclaredCorrelationSelector, other.DeclaredCorrelationSelector)
             && Bus.Equals(other.Bus)
             && Queue.Equals(other.Queue);
-    }
-
-    /// <summary>The route registration this contract contributes to one lane.</summary>
-    public MessageRegistration ToRegistration(MessageLane lane)
-    {
-        var settings = lane == MessageLane.Bus ? Bus : Queue;
-
-        return new MessageRegistration(
-            MessageType,
-            lane,
-            Name,
-            CorrelationSelector,
-            settings.ProviderConfigs,
-            Consumers: [],
-            ContractVersion: Version,
-            RequiresRoutingAffinity: settings.RequiresRoutingAffinity,
-            DeliveryMode: settings.DeliveryMode
-        );
     }
 
     /// <summary>Renders the declaration the way it was written, so a conflict message shows both sides.</summary>
