@@ -115,7 +115,23 @@ publish when attempted, while message contracts are validated only on the lanes 
 
 Callback responses always use the Bus delivery lane, even when the request arrived on Queue. Queue
 remains the request's origin metadata; the declared callback contract selects typed middleware while
-the concrete response type remains payload metadata.
+the concrete response type remains payload metadata. A callback is a durable, at-least-once message
+that nobody awaits; a caller that waits for one answer uses [request/reply](#requestreply).
+
+### Request/reply
+An awaited interaction on the Queue lane, not a third lane. A caller sends a request with
+`IRequestClient.RequestAsync<TRequest, TResponse>` after `AddRequestReply()`, the request's one Queue
+consumer answers it through `IRespond<TRequest, TResponse>`, and the reply returns over a reply
+channel that belongs to the calling process, addressed under the reserved `headless.reply.` prefix
+and never stored. A request is always sent directly and carries a framework request id, the caller's
+reply address, and an absolute deadline; the responder starts no work after the deadline, retries
+only inline, and replies only after its outcome is durable. The caller's continuation is at most
+once: its pending call lives only in its process, and a timeout is ambiguous because the responder
+may have finished. Every call ends in one typed outcome: the response, a timeout, a fault with a
+stable code (`no_responder` means no work ran), a response contract mismatch, a request never sent,
+or a request aborted because the caller stopped. A transport supports it only when it declares the
+capability; any other transport fails startup. Contrast with callbacks, which publish a durable Bus
+response that nobody awaits.
 
 ### Delivery mode
 The delivery choices on an autonomous publish/enqueue are `Durable` and `Direct`. Precedence is per
