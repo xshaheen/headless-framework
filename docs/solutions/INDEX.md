@@ -77,7 +77,7 @@ One row per learning. Search this file for a module, tag, or problem type, then 
 
 | Learning | Type | Module | Tags |
 | --- | --- | --- | --- |
-| [AsyncLocal ambient scope stranded across await: coordinator path silently dead](logic-errors/asynclocal-ambient-scope-stranded-across-await.md) | logic_error | Headless.CommitCoordination.Core | asynclocal, execution-context, async-await, ambient-scope, transactional-outbox, commit-coordination, false-green |
+| [AsyncLocal ambient scope stranded across await: coordinator path silently dead](logic-errors/asynclocal-ambient-scope-stranded-across-await.md) | logic_error | Headless.UnitOfWork | asynclocal, execution-context, async-await, ambient-scope, transactional-outbox, commit-coordination, false-green |
 | [Retry pipeline overwrites terminal message state on redelivery](logic-errors/terminal-state-overwrite-on-redelivery.md) | logic_error | Headless.Messaging.Core | messaging, retry-policy, idempotency, terminal-state, upsert-guard, redelivery, dispatcher, cancellation-token |
 
 ## messaging

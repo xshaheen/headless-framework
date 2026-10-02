@@ -1,7 +1,7 @@
 ---
 title: "AsyncLocal ambient scope stranded across await: coordinator path silently dead"
 date: 2026-06-09
-module: Headless.CommitCoordination.Core
+module: Headless.UnitOfWork
 problem_type: logic_error
 component: service_class
 symptoms:
