@@ -3,9 +3,9 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
-namespace Headless.Jobs.Api.Demo.Migrations;
+namespace Headless.Jobs.Console.Demo.Migrations;
 
-/// <summary>Creates the Jobs operational store schema.</summary>
+/// <inheritdoc />
 public partial class InitialJobsOperationalStore : Migration
 {
     /// <inheritdoc />
@@ -15,6 +15,7 @@ public partial class InitialJobsOperationalStore : Migration
 
         migrationBuilder.CreateTable(
             name: "cron_jobs",
+            schema: "headless",
             columns: table => new
             {
                 id = table.Column<Guid>(type: "uuid", nullable: false),
@@ -68,7 +69,6 @@ public partial class InitialJobsOperationalStore : Migration
                 created_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
                 updated_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
             },
-            schema: "headless",
             constraints: table =>
             {
                 table.PrimaryKey("pk_cron_jobs", x => x.id);
@@ -76,7 +76,58 @@ public partial class InitialJobsOperationalStore : Migration
         );
 
         migrationBuilder.CreateTable(
+            name: "time_job_idempotency_reservations",
+            schema: "headless",
+            columns: table => new
+            {
+                scope_key = table.Column<string>(
+                    type: "character varying(202)",
+                    maxLength: 202,
+                    nullable: false,
+                    collation: "C"
+                ),
+                function = table.Column<string>(
+                    type: "character varying(200)",
+                    maxLength: 200,
+                    nullable: false,
+                    collation: "C"
+                ),
+                contract_version = table.Column<string>(
+                    type: "character varying(100)",
+                    maxLength: 100,
+                    nullable: false,
+                    collation: "C"
+                ),
+                idempotency_key = table.Column<string>(
+                    type: "character varying(200)",
+                    maxLength: 200,
+                    nullable: false,
+                    collation: "C"
+                ),
+                tenant_id = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: true),
+                job_id = table.Column<Guid>(type: "uuid", nullable: false),
+                expires_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                created_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                updated_at = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+            },
+            constraints: table =>
+            {
+                table.PrimaryKey(
+                    "pk_time_job_idempotency_reservations",
+                    x => new
+                    {
+                        x.scope_key,
+                        x.function,
+                        x.contract_version,
+                        x.idempotency_key,
+                    }
+                );
+            }
+        );
+
+        migrationBuilder.CreateTable(
             name: "time_jobs",
+            schema: "headless",
             columns: table => new
             {
                 id = table.Column<Guid>(type: "uuid", nullable: false),
@@ -135,7 +186,6 @@ public partial class InitialJobsOperationalStore : Migration
                 parent_id = table.Column<Guid>(type: "uuid", nullable: true),
                 run_condition = table.Column<string>(type: "character varying(32)", maxLength: 32, nullable: true),
             },
-            schema: "headless",
             constraints: table =>
             {
                 table.PrimaryKey("pk_time_jobs", x => x.id);
@@ -146,15 +196,16 @@ public partial class InitialJobsOperationalStore : Migration
                 table.ForeignKey(
                     name: "fk_time_jobs_time_jobs_parent_id",
                     column: x => x.parent_id,
+                    principalSchema: "headless",
                     principalTable: "time_jobs",
-                    principalColumn: "id",
-                    principalSchema: "headless"
+                    principalColumn: "id"
                 );
             }
         );
 
         migrationBuilder.CreateTable(
             name: "cron_job_occurrences",
+            schema: "headless",
             columns: table => new
             {
                 id = table.Column<Guid>(type: "uuid", nullable: false),
@@ -190,16 +241,15 @@ public partial class InitialJobsOperationalStore : Migration
                 created_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
                 updated_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
             },
-            schema: "headless",
             constraints: table =>
             {
                 table.PrimaryKey("pk_cron_job_occurrences", x => x.id);
                 table.ForeignKey(
                     name: "fk_cron_job_occurrences_cron_jobs_cron_job_id",
                     column: x => x.cron_job_id,
+                    principalSchema: "headless",
                     principalTable: "cron_jobs",
                     principalColumn: "id",
-                    principalSchema: "headless",
                     onDelete: ReferentialAction.Cascade
                 );
             }
@@ -207,157 +257,164 @@ public partial class InitialJobsOperationalStore : Migration
 
         migrationBuilder.CreateIndex(
             name: "ix_cron_job_occurrences_cron_job_id",
+            schema: "headless",
             table: "cron_job_occurrences",
-            column: "cron_job_id",
-            schema: "headless"
+            column: "cron_job_id"
         );
 
         migrationBuilder.CreateIndex(
             name: "ix_cron_job_occurrences_execution_time",
+            schema: "headless",
             table: "cron_job_occurrences",
-            column: "execution_time",
-            schema: "headless"
+            column: "execution_time"
         );
 
         migrationBuilder.CreateIndex(
             name: "ix_cron_job_occurrences_owner_id_status",
+            schema: "headless",
             table: "cron_job_occurrences",
-            columns: ["owner_id", "status"],
-            schema: "headless"
+            columns: new[] { "owner_id", "status" }
         );
 
         migrationBuilder.CreateIndex(
             name: "ix_cron_job_occurrences_status_execution_time",
+            schema: "headless",
             table: "cron_job_occurrences",
-            columns: ["status", "execution_time"],
-            schema: "headless"
+            columns: new[] { "status", "execution_time" }
         );
 
         migrationBuilder.CreateIndex(
             name: "ix_cron_job_occurrences_status_locked_until",
+            schema: "headless",
             table: "cron_job_occurrences",
-            columns: ["status", "locked_until"],
-            schema: "headless"
+            columns: new[] { "status", "locked_until" }
         );
 
         migrationBuilder.CreateIndex(
             name: "uq_cron_job_occurrences_cron_job_id_execution_time",
-            table: "cron_job_occurrences",
-            columns: ["cron_job_id", "execution_time"],
             schema: "headless",
+            table: "cron_job_occurrences",
+            columns: new[] { "cron_job_id", "execution_time" },
             unique: true,
             filter: "\"status\" IN ('Idle', 'Queued', 'InProgress')"
         );
 
         migrationBuilder.CreateIndex(
             name: "ix_cron_jobs_evaluation_fingerprint",
+            schema: "headless",
             table: "cron_jobs",
-            column: "evaluation_fingerprint",
-            schema: "headless"
+            column: "evaluation_fingerprint"
         );
 
         migrationBuilder.CreateIndex(
             name: "ix_cron_jobs_expression",
+            schema: "headless",
             table: "cron_jobs",
-            column: "expression",
-            schema: "headless"
+            column: "expression"
         );
 
         migrationBuilder.CreateIndex(
             name: "ix_cron_jobs_fingerprint_retry_after_utc_id",
+            schema: "headless",
             table: "cron_jobs",
-            columns: ["fingerprint_retry_after_utc", "id"],
-            schema: "headless"
+            columns: new[] { "fingerprint_retry_after_utc", "id" }
         );
 
         migrationBuilder.CreateIndex(
             name: "ix_cron_jobs_function_expression",
+            schema: "headless",
             table: "cron_jobs",
-            columns: ["function", "expression"],
-            schema: "headless"
+            columns: new[] { "function", "expression" }
         );
 
         migrationBuilder.CreateIndex(
             name: "ix_cron_jobs_is_paused_next_due_utc",
+            schema: "headless",
             table: "cron_jobs",
-            columns: ["is_paused", "next_due_utc"],
-            schema: "headless"
+            columns: new[] { "is_paused", "next_due_utc" }
+        );
+
+        migrationBuilder.CreateIndex(
+            name: "ix_time_job_idempotency_reservations_expires_at",
+            schema: "headless",
+            table: "time_job_idempotency_reservations",
+            column: "expires_at"
         );
 
         migrationBuilder.CreateIndex(
             name: "ix_time_jobs_execution_time",
+            schema: "headless",
             table: "time_jobs",
-            column: "execution_time",
-            schema: "headless"
+            column: "execution_time"
         );
 
         migrationBuilder.CreateIndex(
             name: "ix_time_jobs_owner_id_status",
+            schema: "headless",
             table: "time_jobs",
-            columns: ["owner_id", "status"],
-            schema: "headless"
+            columns: new[] { "owner_id", "status" }
         );
 
         migrationBuilder.CreateIndex(
             name: "ix_time_jobs_parent_id",
+            schema: "headless",
             table: "time_jobs",
-            column: "parent_id",
-            schema: "headless"
+            column: "parent_id"
         );
 
         migrationBuilder.CreateIndex(
             name: "ix_time_jobs_status_execution_time",
+            schema: "headless",
             table: "time_jobs",
-            columns: ["status", "execution_time"],
-            schema: "headless"
+            columns: new[] { "status", "execution_time" }
         );
 
         migrationBuilder.CreateIndex(
             name: "ix_time_jobs_status_locked_until",
+            schema: "headless",
             table: "time_jobs",
-            columns: ["status", "locked_until"],
-            schema: "headless"
+            columns: new[] { "status", "locked_until" }
         );
 
         migrationBuilder.CreateIndex(
             name: "ix_time_jobs_tenant_id_status_execution_time",
+            schema: "headless",
             table: "time_jobs",
-            columns: ["tenant_id", "status", "execution_time"],
-            schema: "headless"
+            columns: new[] { "tenant_id", "status", "execution_time" }
         );
 
         migrationBuilder.CreateIndex(
             name: "ux_time_jobs_current_key_system",
-            table: "time_jobs",
-            columns: ["function", "business_key"],
             schema: "headless",
+            table: "time_jobs",
+            columns: new[] { "function", "business_key" },
             unique: true,
             filter: "business_key IS NOT NULL AND tenant_id IS NULL AND is_current_generation = TRUE"
         );
 
         migrationBuilder.CreateIndex(
             name: "ux_time_jobs_current_key_tenant",
-            table: "time_jobs",
-            columns: ["tenant_id", "function", "business_key"],
             schema: "headless",
+            table: "time_jobs",
+            columns: new[] { "tenant_id", "function", "business_key" },
             unique: true,
             filter: "business_key IS NOT NULL AND tenant_id IS NOT NULL AND is_current_generation = TRUE"
         );
 
         migrationBuilder.CreateIndex(
             name: "ux_time_jobs_key_generation_system",
-            table: "time_jobs",
-            columns: ["function", "business_key", "generation"],
             schema: "headless",
+            table: "time_jobs",
+            columns: new[] { "function", "business_key", "generation" },
             unique: true,
             filter: "business_key IS NOT NULL AND tenant_id IS NULL"
         );
 
         migrationBuilder.CreateIndex(
             name: "ux_time_jobs_key_generation_tenant",
-            table: "time_jobs",
-            columns: ["tenant_id", "function", "business_key", "generation"],
             schema: "headless",
+            table: "time_jobs",
+            columns: new[] { "tenant_id", "function", "business_key", "generation" },
             unique: true,
             filter: "business_key IS NOT NULL AND tenant_id IS NOT NULL"
         );
@@ -367,6 +424,8 @@ public partial class InitialJobsOperationalStore : Migration
     protected override void Down(MigrationBuilder migrationBuilder)
     {
         migrationBuilder.DropTable(name: "cron_job_occurrences", schema: "headless");
+
+        migrationBuilder.DropTable(name: "time_job_idempotency_reservations", schema: "headless");
 
         migrationBuilder.DropTable(name: "time_jobs", schema: "headless");
 
