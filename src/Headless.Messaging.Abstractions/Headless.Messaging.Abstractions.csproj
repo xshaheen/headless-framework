@@ -10,6 +10,8 @@
     <InternalsVisibleTo Include="Headless.EntityFramework.Messaging" />
     <!-- Grants Tests.Unit access to internal ConsumeContext.Response/ResponseType/ResponseCallbackName and MarkCompleted() for callback-capture unit assertions. -->
     <InternalsVisibleTo Include="Headless.Messaging.Core.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.Messaging.SourceGenerator.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.Messaging.Benchmarks" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />

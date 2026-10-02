@@ -68,7 +68,7 @@ public sealed class MessagingContributionBuilder
     public MessagingContributionBuilder AddModule<TModule>()
         where TModule : IMessagingModule
     {
-        _services.AddMessagingModuleContribution<TModule>();
+        _services.AddMessagingModule<TModule>();
         return this;
     }
 
@@ -103,21 +103,5 @@ public sealed class MessagingContributionBuilder
         }
 
         _contracts.Clear();
-    }
-}
-
-/// <summary>One generated module that a contribution or the host asked messaging to register.</summary>
-/// <param name="ModuleType">The generated module type, which identifies the module across contributions.</param>
-/// <param name="Register">Runs the module's generated registration against a catalog.</param>
-internal sealed record MessagingModuleContribution(Type ModuleType, Action<MessagingCatalogBuilder> Register);
-
-internal static class MessagingModuleContributionRecording
-{
-    public static void AddMessagingModuleContribution<TModule>(this IServiceCollection services)
-        where TModule : IMessagingModule
-    {
-        services.AddSingleton(
-            new MessagingModuleContribution(typeof(TModule), static catalog => TModule.Register(catalog))
-        );
     }
 }

@@ -49,6 +49,12 @@ public delegate ValueTask SubscriptionEstablishedDispatch(
 [EditorBrowsable(EditorBrowsableState.Never)]
 public sealed class MessagingCatalogBuilder
 {
+    /// <summary>
+    /// The longest consumer identity a module may declare. Durable inbox storage keys on the identity, so a longer one
+    /// cannot be stored.
+    /// </summary>
+    public const int ConsumerIdentityMaxLength = 200;
+
     private const string _FrameworkSource = "Headless.Messaging.Core";
 
     private readonly List<MessagingConsumerDeclaration> _consumers = [];
@@ -69,7 +75,7 @@ public sealed class MessagingCatalogBuilder
     /// the hook, or <see langword="null"/> when the class has none.
     /// </param>
     /// <exception cref="ArgumentException">
-    /// <paramref name="identity"/> is empty or longer than <see cref="ConsumerMetadata.ConsumerIdentityMaxLength"/>.
+    /// <paramref name="identity"/> is empty or longer than <see cref="ConsumerIdentityMaxLength"/>.
     /// </exception>
     /// <exception cref="ArgumentNullException"><paramref name="dispatch"/> is <see langword="null"/>.</exception>
     public void AddBusConsumer<TConsumer, TMessage>(
@@ -98,7 +104,7 @@ public sealed class MessagingCatalogBuilder
     /// <param name="identity">The consumer identity from the attribute.</param>
     /// <param name="dispatch">The generated dispatch of the consumer class.</param>
     /// <exception cref="ArgumentException">
-    /// <paramref name="identity"/> is empty or longer than <see cref="ConsumerMetadata.ConsumerIdentityMaxLength"/>.
+    /// <paramref name="identity"/> is empty or longer than <see cref="ConsumerIdentityMaxLength"/>.
     /// </exception>
     /// <exception cref="ArgumentNullException"><paramref name="dispatch"/> is <see langword="null"/>.</exception>
     public void AddQueueConsumer<TConsumer, TMessage>(string identity, MessageConsumerDispatch dispatch)
@@ -143,7 +149,7 @@ public sealed class MessagingCatalogBuilder
         // The generator already enforces the full owner.name rule at build time; these checks only keep a hand-written
         // or stale module from reaching durable storage with an identity it cannot hold.
         Argument.IsNotNullOrWhiteSpace(identity);
-        Argument.HasMaxLength(identity, ConsumerMetadata.ConsumerIdentityMaxLength);
+        Argument.HasMaxLength(identity, ConsumerIdentityMaxLength);
         Argument.IsNotNull(dispatch);
 
         _consumers.Add(

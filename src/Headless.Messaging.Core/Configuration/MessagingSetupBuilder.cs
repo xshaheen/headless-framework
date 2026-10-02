@@ -98,7 +98,7 @@ public sealed class MessagingSetupBuilder : IMessagingBuilder
     public MessagingSetupBuilder AddModule<TModule>()
         where TModule : IMessagingModule
     {
-        Services.AddMessagingModuleContribution<TModule>();
+        Services.AddMessagingModule<TModule>();
         return this;
     }
 
