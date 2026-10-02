@@ -75,6 +75,13 @@ internal sealed class SubscribeExecutor(
     private readonly RetryPolicyOptions _retryPolicy = options.Value.RetryPolicy;
     private readonly MessagingRetryPipeline _retryPipeline = new(options.Value.RetryPolicy, timeProvider, logger);
 
+    // Tenant propagation wraps only Bus consumers; a Queue responder of a propagating host still runs, and saves, under
+    // the request's tenant. Registrations are fixed once the container is built, so the probe runs once.
+    private readonly Lazy<bool> _propagatesTenantToResponders = new(() =>
+        provider.GetService<IMiddlewareDescriptorRegistry>()?.HasMiddleware<TenantPropagationConsumeMiddleware>()
+        == true
+    );
+
     private ResponderReplies? _responderReplies;
 
     public Task<OperateResult> ExecuteAsync(
@@ -263,13 +270,7 @@ internal sealed class SubscribeExecutor(
                     )
                     && middlewareDescriptors.Any(m => m.MiddlewareType == typeof(TenantPropagationConsumeMiddleware));
 
-                // Tenant propagation wraps only Bus consumers; a Queue responder of a propagating host still runs, and
-                // saves, under the request's tenant.
-                propagateTenant |=
-                    descriptor.IsResponder
-                    && middlewareRegistry?.Descriptors.Any(m =>
-                        m.MiddlewareType == typeof(TenantPropagationConsumeMiddleware)
-                    ) == true;
+                propagateTenant |= descriptor.IsResponder && _propagatesTenantToResponders.Value;
                 // Tenant-aware services can read the tenant at resolution, and auto-save runs after consume middleware.
                 using var tenantScope = propagateTenant
                     ? TenantContextScope.ChangeFromEnvelope(attemptServices, message.Origin, logger)
@@ -1054,7 +1055,8 @@ internal sealed class SubscribeExecutor(
             return null;
         }
 
-        if (!result.HasReply || result.Reply is null)
+        // A responder that returned null and one whose dispatch recorded nothing both leave the caller without an answer.
+        if (result.Reply is null)
         {
             throw new ResponderNullResponseException(descriptor.ConsumerType);
         }

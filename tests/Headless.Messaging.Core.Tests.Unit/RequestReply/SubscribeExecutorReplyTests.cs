@@ -29,7 +29,7 @@ public sealed class SubscribeExecutorReplyTests : TestBase
         await using var host = ResponderExecutorHost.Create();
         var repliesAtSuccessWrite = -1;
         host.OnStateWrite(StatusName.Succeeded, () => repliesAtSuccessWrite = host.Replies.Sent.Count);
-        host.OnInvoke(() => Task.FromResult(ResponderExecutorHost.Replied(new Quote(42))));
+        host.OnInvoke(() => Task.FromResult(ResponderExecutorHost.Replied(new PriceQuote(42))));
         var message = host.Request(TimeSpan.FromSeconds(30), tenantId: "tenant-a", correlationId: "chain-1");
 
         // when
@@ -43,7 +43,7 @@ public sealed class SubscribeExecutorReplyTests : TestBase
 
         var (expectedName, expectedVersion) = host
             .Provider.GetRequiredService<IMessagePublishRequestFactory>()
-            .ResolveContract(typeof(Quote), MessageLane.Queue);
+            .ResolveContract(typeof(PriceQuote), MessageLane.Queue);
         reply.Headers[Headers.InReplyTo].Should().Be(message.Origin.Headers[Headers.RequestId]);
         reply.Headers[Headers.ReplyStatus].Should().Be(ReplyProtocol.StatusOk);
         reply.Headers[Headers.MessageName].Should().Be(expectedName);
@@ -52,7 +52,10 @@ public sealed class SubscribeExecutorReplyTests : TestBase
         reply.Headers[Headers.CorrelationId].Should().Be("chain-1");
         reply.Headers[Headers.CausationId].Should().Be(message.Origin.Id);
         reply.Headers[Headers.MessageId].Should().NotBeNullOrWhiteSpace().And.NotBe(message.Origin.Id);
-        JsonSerializer.Deserialize<Quote>(reply.Body.Span, JsonSerializerOptions.Web).Should().Be(new Quote(42));
+        JsonSerializer
+            .Deserialize<PriceQuote>(reply.Body.Span, JsonSerializerOptions.Web)
+            .Should()
+            .Be(new PriceQuote(42));
     }
 
     [Fact]
@@ -60,7 +63,7 @@ public sealed class SubscribeExecutorReplyTests : TestBase
     {
         // given — a stale attempt: another attempt already finished the row
         await using var host = ResponderExecutorHost.Create(stateWriteTakesEffect: false);
-        host.OnInvoke(() => Task.FromResult(ResponderExecutorHost.Replied(new Quote(42))));
+        host.OnInvoke(() => Task.FromResult(ResponderExecutorHost.Replied(new PriceQuote(42))));
 
         // when
         await host.ExecuteAsync(host.Request(TimeSpan.FromSeconds(30)), AbortToken);
@@ -93,7 +96,7 @@ public sealed class SubscribeExecutorReplyTests : TestBase
                 )
         );
         replies = host.Replies;
-        host.OnInvoke(() => Task.FromResult(ResponderExecutorHost.Replied(new Quote(42))));
+        host.OnInvoke(() => Task.FromResult(ResponderExecutorHost.Replied(new PriceQuote(42))));
         var message = host.Request(TimeSpan.FromSeconds(30));
         message.InboxKey = new InboxKey(
             TenantId: null,
@@ -205,7 +208,7 @@ public sealed class SubscribeExecutorReplyTests : TestBase
         // given
         await using var host = ResponderExecutorHost.Create();
         host.Replies.FailWith = new InvalidOperationException("broker unavailable");
-        host.OnInvoke(() => Task.FromResult(ResponderExecutorHost.Replied(new Quote(42))));
+        host.OnInvoke(() => Task.FromResult(ResponderExecutorHost.Replied(new PriceQuote(42))));
 
         // when
         var result = await host.ExecuteAsync(host.Request(TimeSpan.FromSeconds(30)), AbortToken);
@@ -227,7 +230,7 @@ public sealed class SubscribeExecutorReplyTests : TestBase
             (services, context, _) =>
             {
                 observedTenant = services.GetRequiredService<ICurrentTenant>().Id;
-                ((ConsumeContext<QuoteRequest>)context).RecordReply(new Quote(1));
+                ((ConsumeContext<PriceQuoteRequest>)context).RecordReply(new PriceQuote(1));
                 return ValueTask.CompletedTask;
             }
         );
@@ -261,7 +264,7 @@ public sealed class SubscribeExecutorReplyTests : TestBase
         var descriptor = ResponderExecutorHost.ResponderDescriptor(
             (_, context, _) =>
             {
-                context.SetResponse(new Quote(1));
+                context.SetResponse(new PriceQuote(1));
                 return ValueTask.CompletedTask;
             }
         );

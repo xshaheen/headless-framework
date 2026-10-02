@@ -76,18 +76,19 @@ internal sealed class InMemoryReplyListener : IReplyListener
         {
             await foreach (var reply in _replies.Reader.ReadAllAsync(_closing.Token).ConfigureAwait(false))
             {
-                try
-                {
-                    await _onReply(reply, _closing.Token).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException) when (_closing.IsCancellationRequested)
+                var keepReceiving = await ReplyHandlerInvoker
+                    .InvokeAsync(
+                        _onReply,
+                        reply,
+                        (Logger: _logger, Address),
+                        static (state, e) => state.Logger.ReplyHandlerFailed(e, state.Address),
+                        _closing.Token
+                    )
+                    .ConfigureAwait(false);
+
+                if (!keepReceiving)
                 {
                     return;
-                }
-                catch (Exception e)
-                {
-                    // One faulty reply must not close the channel every other pending call depends on.
-                    _logger.ReplyHandlerFailed(e, Address);
                 }
             }
         }

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Globalization;
 using FluentValidation;
 
 namespace Headless.Messaging.Configuration;
@@ -50,6 +51,11 @@ internal sealed class RequestReplyOptionsValidator : AbstractValidator<RequestRe
             .GreaterThan(TimeSpan.Zero)
             .WithMessage("RequestReply.DefaultTimeout must be greater than zero.")
             .LessThanOrEqualTo(RequestReplyOptions.MaxDefaultTimeout)
-            .WithMessage("RequestReply.DefaultTimeout must not exceed 10 minutes.");
+            .WithMessage(
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"RequestReply.DefaultTimeout must not exceed {RequestReplyOptions.MaxDefaultTimeout.TotalMinutes} minutes."
+                )
+            );
     }
 }

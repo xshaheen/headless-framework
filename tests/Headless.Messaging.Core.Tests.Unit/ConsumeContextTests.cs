@@ -112,7 +112,6 @@ public sealed class ConsumeContextTests
         context.RecordReply<IResponseContract>(reply);
 
         // then
-        context.HasReply.Should().BeTrue();
         context.Reply.Should().BeSameAs(reply);
         context.ReplyType.Should().Be<IResponseContract>();
         context.Response.Should().BeNull();
@@ -129,7 +128,6 @@ public sealed class ConsumeContextTests
         context.RecordReply<ConcreteResponse>(null);
 
         // then
-        context.HasReply.Should().BeTrue();
         context.Reply.Should().BeNull();
         context.ReplyType.Should().Be<ConcreteResponse>();
     }
@@ -141,7 +139,6 @@ public sealed class ConsumeContextTests
         var context = _CreateContext();
 
         // then
-        context.HasReply.Should().BeFalse();
         context.Reply.Should().BeNull();
         context.ReplyType.Should().BeNull();
     }
@@ -158,7 +155,8 @@ public sealed class ConsumeContextTests
 
         // then
         act.Should().Throw<InvalidOperationException>();
-        context.HasReply.Should().BeFalse();
+        context.Reply.Should().BeNull();
+        context.ReplyType.Should().BeNull();
     }
 
     [Fact]

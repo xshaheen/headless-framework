@@ -95,9 +95,7 @@ public sealed class ProviderConformanceEvidenceTests(RedisMessagingFixture fixtu
             ),
             _BindRequestReply(
                 TransportConformanceScenario.RequestReplyCallerCleanup,
-                nameof(
-                    RedisRequestReplyConformanceTests.should_leave_no_reply_subscription_or_key_after_the_caller_stops
-                )
+                nameof(RedisRequestReplyConformanceTests.should_leave_no_reply_objects_after_the_caller_stops)
             ),
         ];
 

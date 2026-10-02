@@ -851,15 +851,7 @@ internal sealed class NatsConsumerClient(
         Dictionary<string, string?> headers;
         try
         {
-            headers = new Dictionary<string, string?>(StringComparer.Ordinal);
-
-            if (natsHeaders is { Count: > 0 })
-            {
-                foreach (var (key, values) in natsHeaders)
-                {
-                    headers[key] = values.Count > 0 ? values[0] : null;
-                }
-            }
+            headers = NatsTransport.ReadHeaders(natsHeaders);
         }
         catch (Exception ex)
         {

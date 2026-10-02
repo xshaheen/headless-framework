@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Concurrent;
-using System.Diagnostics.Metrics;
 using Headless.Messaging;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
@@ -39,8 +37,7 @@ public sealed class ReplySenderTests : TestBase
         var transport = Substitute.For<IReplyTransport>();
         transport.IsReplyAddress(Arg.Any<string>()).Returns(true);
         var sender = new ReplySender(transport, NullLogger<ReplySender>.Instance);
-        var reasons = new ConcurrentBag<string>();
-        using var listener = _ListenToDroppedReplies(reasons);
+        using var measurements = new RequestReplyMeasurements();
 
         // when
         var sent = await sender.SendAsync(address, _Reply(), AbortToken);
@@ -48,7 +45,7 @@ public sealed class ReplySenderTests : TestBase
         // then
         sent.Should().BeFalse();
         await transport.DidNotReceiveWithAnyArgs().SendAsync(default!, default, AbortToken);
-        reasons.Should().Equal("invalid_reply_address");
+        measurements.InvalidAddressDrops.Should().Equal("invalid_reply_address");
     }
 
     [Fact]
@@ -58,8 +55,7 @@ public sealed class ReplySenderTests : TestBase
         var transport = Substitute.For<IReplyTransport>();
         transport.IsReplyAddress(_ValidAddress).Returns(false);
         var sender = new ReplySender(transport, NullLogger<ReplySender>.Instance);
-        var reasons = new ConcurrentBag<string>();
-        using var listener = _ListenToDroppedReplies(reasons);
+        using var measurements = new RequestReplyMeasurements();
 
         // when
         var sent = await sender.SendAsync(_ValidAddress, _Reply(), AbortToken);
@@ -67,7 +63,7 @@ public sealed class ReplySenderTests : TestBase
         // then
         sent.Should().BeFalse();
         await transport.DidNotReceiveWithAnyArgs().SendAsync(default!, default, AbortToken);
-        reasons.Should().Equal("invalid_reply_address");
+        measurements.InvalidAddressDrops.Should().Equal("invalid_reply_address");
     }
 
     [Fact]
@@ -116,43 +112,5 @@ public sealed class ReplySenderTests : TestBase
             },
             "{}"u8.ToArray()
         );
-    }
-
-    private static MeterListener _ListenToDroppedReplies(ConcurrentBag<string> reasons)
-    {
-        var listener = new MeterListener
-        {
-            InstrumentPublished = (instrument, l) =>
-            {
-                if (
-                    string.Equals(instrument.Meter.Name, MessagingDiagnostics.SourceName, StringComparison.Ordinal)
-                    && string.Equals(
-                        instrument.Name,
-                        "messaging.request_reply.dropped_replies",
-                        StringComparison.Ordinal
-                    )
-                )
-                {
-                    l.EnableMeasurementEvents(instrument);
-                }
-            },
-        };
-        listener.SetMeasurementEventCallback<long>(
-            (_, _, tags, _) =>
-            {
-                foreach (var tag in tags)
-                {
-                    if (
-                        string.Equals(tag.Key, "messaging.request_reply.drop_reason", StringComparison.Ordinal)
-                        && tag.Value is string reason
-                    )
-                    {
-                        reasons.Add(reason);
-                    }
-                }
-            }
-        );
-        listener.Start();
-        return listener;
     }
 }

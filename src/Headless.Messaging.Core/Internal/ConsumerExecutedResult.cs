@@ -29,11 +29,6 @@ internal sealed class ConsumerExecutedResult(
     /// </summary>
     public string? ResponseCallbackName { get; init; } = responseCallbackName;
 
-    /// <summary>
-    /// Whether a responder's dispatch recorded a reply, which tells a <see langword="null"/> response apart from none.
-    /// </summary>
-    public bool HasReply { get; init; }
-
     /// <summary>The value a responder returned for the request's caller.</summary>
     public object? Reply { get; init; }
 

@@ -30,9 +30,7 @@ internal sealed class RequestClient(
 
     // Tenant propagation is registered as Bus publish middleware only, so a request on the Queue lane reads the ambient
     // tenant itself, and only on a host that opted in to propagating tenants.
-    private readonly bool _propagatesTenant = middlewareDescriptors.Descriptors.Any(static descriptor =>
-        descriptor.MiddlewareType == typeof(TenantPropagationPublishMiddleware)
-    );
+    private readonly bool _propagatesTenant = middlewareDescriptors.HasMiddleware<TenantPropagationPublishMiddleware>();
 
     public async Task<TResponse> RequestAsync<TRequest, TResponse>(
         TRequest request,
@@ -118,15 +116,10 @@ internal sealed class RequestClient(
 
         if (!pending.TryRegister(call, remaining, cancellationToken))
         {
-            throw new RequestNotSentException("The requester is stopping and sends no new requests.", requestId);
+            throw ReplyListenerHost.Stopping(requestId);
         }
 
-        var stamp = new RequestStamp(
-            requestId,
-            replyTo,
-            _ComputeDeadline(sentAt, timeout),
-            (_, tenantId) => call.Prepare(tenantId)
-        );
+        var stamp = new RequestStamp(requestId, replyTo, _ComputeDeadline(sentAt, timeout), call.Prepare);
 
         PublishReceipt receipt;
         try

@@ -111,7 +111,7 @@ public sealed class RequestDeadlineTests : TestBase
         host.OnInvoke(() =>
             ++attempts == 1
                 ? Task.FromException<ConsumerExecutedResult>(new TimeoutException("transient"))
-                : Task.FromResult(ResponderExecutorHost.Replied(new Quote(7)))
+                : Task.FromResult(ResponderExecutorHost.Replied(new PriceQuote(7)))
         );
 
         // when

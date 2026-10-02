@@ -280,7 +280,6 @@ public sealed class GeneratedDispatchTests : TestBase
 
         // then
         provider.GetRequiredService<DispatchProbe>().Calls.Should().Equal("quote:7");
-        context.HasReply.Should().BeTrue();
         context.ReplyType.Should().Be(messageTypes["Quote"]);
         context.Reply.Should().BeOfType(messageTypes["Quote"]);
         messageTypes["Quote"].GetProperty("Number")!.GetValue(context.Reply).Should().Be("Q-7");
@@ -301,7 +300,6 @@ public sealed class GeneratedDispatchTests : TestBase
         await responder.Dispatch(provider, context, AbortToken);
 
         // then
-        context.HasReply.Should().BeTrue();
         context.Reply.Should().BeNull();
         context.ReplyType.Should().Be(messageTypes["Quote"]);
     }
@@ -318,7 +316,6 @@ public sealed class GeneratedDispatchTests : TestBase
         await declarations[0].Dispatch(provider, context, AbortToken);
 
         // then
-        context.HasReply.Should().BeFalse();
         context.Reply.Should().BeNull();
         context.ReplyType.Should().BeNull();
     }

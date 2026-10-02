@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Text.Json.Serialization;
+using Headless.Messaging.Internal;
+using Headless.Messaging.Transport;
 
 namespace Headless.Messaging.RequestReply;
 
@@ -25,6 +27,15 @@ internal static class ReplyProtocol
         PropertyNameCaseInsensitive = true,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
+
+    /// <summary>
+    /// Makes a request id safe to log. The id is untrusted wire data, so it is bounded by the same limit as a reply
+    /// address.
+    /// </summary>
+    public static string? SanitizeRequestId(string? requestId)
+    {
+        return LogSanitizer.Sanitize(requestId, ReplyAddresses.MaxLength);
+    }
 
     /// <summary>Serializes a fault body. It is never empty, so every transport carries it.</summary>
     public static byte[] WriteFault(ReplyFault fault)

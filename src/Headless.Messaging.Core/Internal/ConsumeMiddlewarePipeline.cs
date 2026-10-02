@@ -69,9 +69,7 @@ internal sealed class ConsumeMiddlewarePipeline(
     // Tenant propagation registers only Bus consume middleware, which never wraps a Queue responder. A host that
     // propagates tenants still runs a responder under the request's tenant, the tenant its reply goes back under.
     private readonly Lazy<bool> _propagatesTenant = new(() =>
-        descriptorRegistry?.Descriptors.Any(static descriptor =>
-            descriptor.MiddlewareType == typeof(TenantPropagationConsumeMiddleware)
-        ) == true
+        descriptorRegistry?.HasMiddleware<TenantPropagationConsumeMiddleware>() == true
     );
 
     public async Task<ConsumerExecutedResult> ExecuteAsync(
@@ -196,7 +194,6 @@ internal sealed class ConsumeMiddlewarePipeline(
             consumeContext.ResponseCallbackName
         )
         {
-            HasReply = consumeContext.HasReply,
             Reply = consumeContext.Reply,
             ReplyType = consumeContext.ReplyType,
         };

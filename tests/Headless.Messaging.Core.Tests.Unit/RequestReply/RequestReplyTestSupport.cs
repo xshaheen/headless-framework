@@ -168,7 +168,11 @@ internal sealed class RequestReplyMeasurements : IDisposable
 
     public ConcurrentQueue<KeyValuePair<string, object?>[]> Durations { get; } = new();
 
+    /// <summary>The caller-side drop reasons: every dropped reply except one refused for its reply address.</summary>
     public ConcurrentQueue<string> Drops { get; } = new();
+
+    /// <summary>The replies a responder refused to send because the request named an invalid reply address.</summary>
+    public ConcurrentQueue<string> InvalidAddressDrops { get; } = new();
 
     public IEnumerable<string?> OutcomeValues =>
         Outcomes.Select(static tags =>
@@ -207,8 +211,12 @@ internal sealed class RequestReplyMeasurements : IDisposable
                         string.Equals(tag.Key, "messaging.request_reply.drop_reason", StringComparison.Ordinal)
                     ).Value!;
 
-                // The reply-sender tests run in parallel and record this reason; it is never the caller's.
-                if (!string.Equals(reason, "invalid_reply_address", StringComparison.Ordinal))
+                // A refused reply address is the responder's drop, never the caller's, so it is kept apart.
+                if (string.Equals(reason, "invalid_reply_address", StringComparison.Ordinal))
+                {
+                    InvalidAddressDrops.Enqueue(reason);
+                }
+                else
                 {
                     Drops.Enqueue(reason);
                     _drops.Writer.TryWrite(reason);

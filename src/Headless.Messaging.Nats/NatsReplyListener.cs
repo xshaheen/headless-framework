@@ -33,20 +33,16 @@ namespace Headless.Messaging.Nats;
 /// </remarks>
 internal sealed class NatsReplyListener : IReplyListener
 {
-    private static readonly TimeSpan _FirstResubscribeDelay = TimeSpan.FromSeconds(1);
-    private static readonly TimeSpan _MaxResubscribeDelay = TimeSpan.FromSeconds(30);
-
     private readonly NatsConnection _connection;
     private readonly string _subject;
     private readonly Func<TransportMessage, CancellationToken, ValueTask> _onReply;
-    private readonly TimeProvider _timeProvider;
+    private readonly ReplyListenerBackoff _backoff;
     private readonly ILogger _logger;
     private readonly CancellationTokenSource _closing = new();
-    private readonly Lock _addressLock = new();
     private readonly Task _maintain;
 
     // Unresolved while the subject is not live on the server; resolved with the subject once it is.
-    private TaskCompletionSource<string> _address = _NewAddressSource();
+    private readonly ReplyAddressGate _address = new();
     private INatsSub<ReadOnlyMemory<byte>>? _subscription;
     private int _disposed;
 
@@ -60,7 +56,7 @@ internal sealed class NatsReplyListener : IReplyListener
         _connection = connection;
         _subject = ReplyAddresses.Create();
         _onReply = onReply;
-        _timeProvider = timeProvider;
+        _backoff = new ReplyListenerBackoff(timeProvider);
         _logger = logger;
 
         _connection.ConnectionDisconnected += _OnConnectionDisconnectedAsync;
@@ -76,13 +72,7 @@ internal sealed class NatsReplyListener : IReplyListener
     {
         Ensure.NotDisposed(Volatile.Read(ref _disposed) != 0, this);
 
-        TaskCompletionSource<string> address;
-        lock (_addressLock)
-        {
-            address = _address;
-        }
-
-        return new ValueTask<string>(address.Task.WaitAsync(cancellationToken));
+        return _address.WaitAsync(cancellationToken);
     }
 
     public async ValueTask DisposeAsync()
@@ -97,14 +87,8 @@ internal sealed class NatsReplyListener : IReplyListener
         _connection.ConnectionOpened -= _OnConnectionOpenedAsync;
         _connection.MessageDropped -= _OnMessageDroppedAsync;
 
-        lock (_addressLock)
-        {
-            // A call still waiting for the address learns that the listener closed.
-            if (_address.TrySetException(new ObjectDisposedException(nameof(NatsReplyListener))))
-            {
-                _ = _address.Task.Exception;
-            }
-        }
+        // A call still waiting for the address learns that the listener closed.
+        _address.FailOnDispose(nameof(NatsReplyListener));
 
         await _closing.CancelAsync().ConfigureAwait(false);
 
@@ -115,8 +99,6 @@ internal sealed class NatsReplyListener : IReplyListener
 
     private async Task _MaintainAsync()
     {
-        var resubscribeDelay = _FirstResubscribeDelay;
-
         while (!_closing.IsCancellationRequested)
         {
             INatsSub<ReadOnlyMemory<byte>>? subscription = null;
@@ -138,7 +120,7 @@ internal sealed class NatsReplyListener : IReplyListener
                 // a reply published after the address is handed out cannot miss this process.
                 await _connection.PingAsync(_closing.Token).ConfigureAwait(false);
                 _PublishAddressIfConnected();
-                resubscribeDelay = _FirstResubscribeDelay;
+                _backoff.Reset();
                 _logger.ReplyListenerReady(_subject);
 
                 await foreach (var msg in subscription.Msgs.ReadAllAsync(_closing.Token).ConfigureAwait(false))
@@ -153,7 +135,7 @@ internal sealed class NatsReplyListener : IReplyListener
 
                 // The client completes a subscription's channel only when the subscription or its connection ends,
                 // which a reconnect does not do; subscribe again on the same subject.
-                _RetractAddress();
+                _address.Retract();
                 _logger.ReplyListenerLost(_subject);
             }
             catch (OperationCanceledException) when (_closing.IsCancellationRequested)
@@ -162,9 +144,9 @@ internal sealed class NatsReplyListener : IReplyListener
             }
             catch (Exception e)
             {
-                _RetractAddress();
+                _address.Retract();
                 failed = true;
-                _logger.ReplyListenerOpenFailed(e, _subject, resubscribeDelay);
+                _logger.ReplyListenerOpenFailed(e, _subject, _backoff.Delay);
             }
             finally
             {
@@ -176,21 +158,10 @@ internal sealed class NatsReplyListener : IReplyListener
                 }
             }
 
-            if (!failed)
-            {
-                continue;
-            }
-
-            try
-            {
-                await Task.Delay(resubscribeDelay, _timeProvider, _closing.Token).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (_closing.IsCancellationRequested)
+            if (failed && !await _backoff.WaitAsync(_closing.Token).ConfigureAwait(false))
             {
                 return;
             }
-
-            resubscribeDelay = TimeSpan.FromTicks(Math.Min(resubscribeDelay.Ticks * 2, _MaxResubscribeDelay.Ticks));
         }
     }
 
@@ -198,30 +169,13 @@ internal sealed class NatsReplyListener : IReplyListener
     // same lock, so an address published here is never left standing for a connection that is down.
     private void _PublishAddressIfConnected()
     {
-        lock (_addressLock)
-        {
-            if (_connection.ConnectionState is NatsConnectionState.Open)
-            {
-                _address.TrySetResult(_subject);
-            }
-        }
+        _address.Publish(_subject, () => _connection.ConnectionState is NatsConnectionState.Open);
     }
 
     // Makes callers wait for the subject to be live again instead of sending a request whose reply reaches nobody.
-    private void _RetractAddress()
-    {
-        lock (_addressLock)
-        {
-            if (Volatile.Read(ref _disposed) == 0 && _address.Task.IsCompleted)
-            {
-                _address = _NewAddressSource();
-            }
-        }
-    }
-
     private ValueTask _OnConnectionDisconnectedAsync(object? sender, NatsEventArgs args)
     {
-        _RetractAddress();
+        _address.Retract();
         return ValueTask.CompletedTask;
     }
 
@@ -272,17 +226,7 @@ internal sealed class NatsReplyListener : IReplyListener
         TransportMessage reply;
         try
         {
-            var headers = new Dictionary<string, string?>(StringComparer.Ordinal);
-
-            if (msg.Headers is { Count: > 0 })
-            {
-                foreach (var (key, values) in msg.Headers)
-                {
-                    headers[key] = values.Count > 0 ? values[0] : null;
-                }
-            }
-
-            reply = new TransportMessage(headers, msg.Data);
+            reply = new TransportMessage(NatsTransport.ReadHeaders(msg.Headers), msg.Data);
         }
         catch (Exception e)
         {
@@ -290,19 +234,15 @@ internal sealed class NatsReplyListener : IReplyListener
             return;
         }
 
-        try
-        {
-            await _onReply(reply, _closing.Token).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (_closing.IsCancellationRequested)
-        {
-            // Closing: the caller's pending calls are being failed by the requester's shutdown.
-        }
-        catch (Exception e)
-        {
-            // One faulty reply must not stop the channel every other pending call depends on.
-            _logger.ReplyHandlerFailed(e, _subject);
-        }
+        await ReplyHandlerInvoker
+            .InvokeAsync(
+                _onReply,
+                reply,
+                (Logger: _logger, Address: _subject),
+                static (state, e) => state.Logger.ReplyHandlerFailed(e, state.Address),
+                _closing.Token
+            )
+            .ConfigureAwait(false);
     }
 
     private async Task _UnsubscribeAsync(INatsSub<ReadOnlyMemory<byte>> subscription)
@@ -316,11 +256,6 @@ internal sealed class NatsReplyListener : IReplyListener
             // A connection that is gone or closing already dropped the subscription on the server.
             _logger.ReplyListenerUnsubscribeFailed(e, _subject);
         }
-    }
-
-    private static TaskCompletionSource<string> _NewAddressSource()
-    {
-        return new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
     }
 }
 

@@ -91,7 +91,7 @@ public sealed class ProviderConformanceEvidenceTests : TestBase
             ),
             _Bind(
                 TransportConformanceScenario.RequestReplyCallerCleanup,
-                nameof(InMemoryProviderConformanceTests.should_leave_no_reply_listener_after_the_caller_stops)
+                nameof(InMemoryProviderConformanceTests.should_leave_no_reply_objects_after_the_caller_stops)
             ),
         ];
 

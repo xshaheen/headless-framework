@@ -100,7 +100,7 @@ public sealed class ProviderConformanceEvidenceTests(RabbitMqFixture fixture) : 
             ),
             _BindRequestReply(
                 TransportConformanceScenario.RequestReplyCallerCleanup,
-                nameof(RabbitMqRequestReplyConformanceTests.should_leave_no_reply_queue_after_the_caller_stops)
+                nameof(RabbitMqRequestReplyConformanceTests.should_leave_no_reply_objects_after_the_caller_stops)
             ),
         ];
 

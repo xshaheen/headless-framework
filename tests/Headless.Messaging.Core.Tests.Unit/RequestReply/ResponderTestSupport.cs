@@ -44,17 +44,16 @@ internal sealed class RecordingReplyTransport : IReplyTransport
     }
 }
 
-public sealed record QuoteRequest(string Sku);
-
-public sealed record Quote(decimal Price);
-
-public sealed class QuoteResponder : IRespond<QuoteRequest, Quote>
+public sealed class QuoteResponder : IRespond<PriceQuoteRequest, PriceQuote>
 {
     public const string Identity = "tests.quote-responder";
 
-    public ValueTask<Quote> RespondAsync(ConsumeContext<QuoteRequest> context, CancellationToken cancellationToken)
+    public ValueTask<PriceQuote> RespondAsync(
+        ConsumeContext<PriceQuoteRequest> context,
+        CancellationToken cancellationToken
+    )
     {
-        return ValueTask.FromResult(new Quote(42));
+        return ValueTask.FromResult(new PriceQuote(42));
     }
 }
 
@@ -125,7 +124,7 @@ internal sealed class ResponderExecutorHost : IAsyncDisposable
 
         services ??= new ServiceCollection();
         services.AddLogging();
-        services.ConfigureMessaging(messaging => messaging.Message<QuoteRequest>(MessageName));
+        services.ConfigureMessaging(messaging => messaging.Message<PriceQuoteRequest>(MessageName));
         services.AddHeadlessMessaging(setup =>
         {
             setup.UseInMemory();
@@ -249,7 +248,7 @@ internal sealed class ResponderExecutorHost : IAsyncDisposable
         return new MediumMessage
         {
             StorageId = Guid.NewGuid(),
-            Origin = new Message(headers, new QuoteRequest("sku-1")),
+            Origin = new Message(headers, new PriceQuoteRequest("sku-1")),
             Content = "{}",
             Lane = MessageLane.Queue,
             Added = Clock.GetUtcNow(),
@@ -278,13 +277,12 @@ internal sealed class ResponderExecutorHost : IAsyncDisposable
     }
 
     /// <summary>The result of an attempt whose responder returned <paramref name="reply"/>.</summary>
-    public static ConsumerExecutedResult Replied(Quote? reply)
+    public static ConsumerExecutedResult Replied(PriceQuote? reply)
     {
         return new ConsumerExecutedResult(null, null, "message-id", null, null)
         {
-            HasReply = true,
             Reply = reply,
-            ReplyType = typeof(Quote),
+            ReplyType = typeof(PriceQuote),
         };
     }
 
@@ -296,12 +294,12 @@ internal sealed class ResponderExecutorHost : IAsyncDisposable
             MethodName = "RespondAsync",
             Lane = MessageLane.Queue,
             ConsumerType = typeof(QuoteResponder),
-            MessageType = typeof(QuoteRequest),
+            MessageType = typeof(PriceQuoteRequest),
             MessageName = MessageName,
             SubscriptionName = "tests",
             ConsumerIdentity = QuoteResponder.Identity,
             MessageContractVersion = "1",
-            ResponseType = typeof(Quote),
+            ResponseType = typeof(PriceQuote),
         };
     }
 

@@ -26,9 +26,6 @@ internal sealed class ReplyListenerHost(
     private volatile bool _stopping;
     private int _closed;
 
-    /// <summary>Gets whether the requester has begun to stop and accepts no new calls.</summary>
-    public bool IsStopping => _stopping;
-
     public async ValueTask StartAsync(CancellationToken stoppingToken)
     {
         if (_stopping)
@@ -68,7 +65,7 @@ internal sealed class ReplyListenerHost(
     {
         if (_stopping)
         {
-            throw _Stopping();
+            throw Stopping();
         }
 
         IReplyListener listener;
@@ -83,7 +80,7 @@ internal sealed class ReplyListenerHost(
         catch (Exception e)
         {
             throw _stopping
-                ? _Stopping()
+                ? Stopping()
                 : new RequestNotSentException(
                     "The reply listener failed to open, so no request can be sent.",
                     requestId: null,
@@ -97,11 +94,7 @@ internal sealed class ReplyListenerHost(
         }
         catch (ObjectDisposedException e)
         {
-            throw new RequestNotSentException(
-                "The requester is stopping and sends no new requests.",
-                requestId: null,
-                e
-            );
+            throw Stopping(innerException: e);
         }
     }
 
@@ -142,8 +135,13 @@ internal sealed class ReplyListenerHost(
         return StopAsync(Timeout.InfiniteTimeSpan);
     }
 
-    private static RequestNotSentException _Stopping()
+    /// <summary>Creates the failure of a call refused because the requester is stopping.</summary>
+    internal static RequestNotSentException Stopping(string? requestId = null, Exception? innerException = null)
     {
-        return new RequestNotSentException("The requester is stopping and sends no new requests.");
+        return new RequestNotSentException(
+            "The requester is stopping and sends no new requests.",
+            requestId,
+            innerException
+        );
     }
 }

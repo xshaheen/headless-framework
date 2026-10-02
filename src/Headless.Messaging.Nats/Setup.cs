@@ -141,11 +141,7 @@ public static class SetupNatsMessaging
                 sp.GetRequiredService<INatsConnectionPool>(),
                 MessageLane.Queue
             ));
-            services.AddSingleton<IReplyTransport>(sp => new NatsReplyTransport(
-                sp.GetRequiredService<INatsConnectionPool>(),
-                sp.GetService<TimeProvider>() ?? TimeProvider.System,
-                sp.GetRequiredService<ILogger<NatsReplyTransport>>()
-            ));
+            services.AddSingleton<IReplyTransport, NatsReplyTransport>();
             services.AddSingleton<IConsumerClientFactory, NatsConsumerClientFactory>();
             services.AddSingleton<INatsConnectionPool, NatsConnectionPool>();
         }

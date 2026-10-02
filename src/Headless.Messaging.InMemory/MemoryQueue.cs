@@ -234,12 +234,7 @@ internal sealed class MemoryQueue(ILogger<MemoryQueue> logger)
             return;
         }
 
-        listener.Deliver(
-            new TransportMessage(
-                reply.Headers.ToDictionary(o => o.Key, o => o.Value, StringComparer.Ordinal),
-                reply.Body
-            )
-        );
+        listener.Deliver(_Copy(reply));
     }
 
     private bool _TryDeliverToGroup(MessageLane lane, string groupId, TransportMessage message)
@@ -254,13 +249,17 @@ internal sealed class MemoryQueue(ILogger<MemoryQueue> logger)
         var consumerClient = clients[nextIndex % clients.Count];
         _nextClientIndexes[key] = (nextIndex + 1) % clients.Count;
 
-        var messageCopy = new TransportMessage(
-            message.Headers.ToDictionary(o => o.Key, o => o.Value, StringComparer.Ordinal),
+        consumerClient.AddSubscribeMessage(_Copy(message));
+        return true;
+    }
+
+    // Each receiver gets its own headers, as from a real broker, so one consumer's changes never reach another.
+    private static TransportMessage _Copy(TransportMessage message)
+    {
+        return new TransportMessage(
+            new Dictionary<string, string?>(message.Headers, StringComparer.Ordinal),
             message.Body
         );
-
-        consumerClient.AddSubscribeMessage(messageCopy);
-        return true;
     }
 }
 

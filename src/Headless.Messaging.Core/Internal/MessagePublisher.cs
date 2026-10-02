@@ -57,8 +57,8 @@ internal sealed class MessagePublisher(
     /// Sends a request on the Queue lane through the normal Queue publish middleware. It is always sent directly, so the
     /// call's options, the contract's delivery policy, and the host default cannot route it through the outbox. The
     /// request's protocol headers and message id are stamped by the factory from <paramref name="request"/>, after
-    /// middleware ran, and <see cref="RequestStamp.OnPrepared"/> receives the final envelope's message id and tenant
-    /// before the transport send.
+    /// middleware ran, and <see cref="RequestStamp.OnPrepared"/> receives the final envelope's tenant before the
+    /// transport send.
     /// </summary>
     /// <returns>
     /// The receipt of the sent request, or an empty receipt when publish middleware suppressed it.
@@ -170,9 +170,8 @@ internal sealed class MessagePublisher(
                         DeliveryMetadata.Stamp(prepared.Message.Headers, decision);
                         if (request is not null)
                         {
-                            var headers = prepared.Message.Headers;
-                            headers.TryGetValue(Headers.TenantId, out var tenantId);
-                            request.OnPrepared(headers[Headers.MessageId]!, tenantId);
+                            prepared.Message.Headers.TryGetValue(Headers.TenantId, out var tenantId);
+                            request.OnPrepared(tenantId);
                         }
 
                         var transport = transportResolver(lane);

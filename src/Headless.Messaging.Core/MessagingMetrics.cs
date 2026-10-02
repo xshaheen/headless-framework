@@ -65,6 +65,19 @@ internal static class MessagingMetrics
     internal const string TagRequestReplyDropReason = "messaging.request_reply.drop_reason";
     internal const string TagRequestReplyOutcome = "messaging.request_reply.outcome";
 
+    // --- Receive outcomes ------------------------------------------------------------------------------------
+
+    internal const string ReceiveOutcomeAccepted = "accepted";
+    internal const string ReceiveOutcomeRejected = "rejected";
+    internal const string ReceiveOutcomeCancelled = "cancelled";
+
+    // Settled without running the consumer: a receive middleware skipped the message, or a request reached a consumer
+    // that cannot answer it.
+    internal const string ReceiveOutcomeSkipped = "skipped";
+
+    // A request whose caller had already stopped waiting, settled without running the consumer.
+    internal const string ReceiveOutcomeExpired = "expired";
+
     // --- Request/reply drop reasons ---------------------------------------------------------------------------
 
     // A request named a reply destination outside the reserved reply namespace, so the responder wrote nothing.

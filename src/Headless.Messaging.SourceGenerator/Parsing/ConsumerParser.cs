@@ -51,7 +51,7 @@ internal static class ConsumerParser
         var attributeLocation = attribute.ApplicationSyntaxReference is { } syntaxReference
             ? syntaxReference.SyntaxTree.GetLocation(syntaxReference.Span)
             : classIdentifier.GetLocation();
-        var typeName = classSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        var typeName = _Name(classSymbol);
 
         ConsumerValidator.ValidateClass(classSymbol, classIdentifier, diagnostics);
 
@@ -149,16 +149,9 @@ internal static class ConsumerParser
     /// <summary>The <c>T</c> of every <c>IConsume&lt;T&gt;</c> the class implements, directly or through a base type.</summary>
     private static List<ITypeSymbol> _ResolveMessageTypes(Compilation compilation, INamedTypeSymbol classSymbol)
     {
-        var consume = compilation.GetTypeByMetadataName(SourceGeneratorConstants.ConsumeInterfaceMetadataName);
-        if (consume is null)
-        {
-            return [];
-        }
-
         return
         [
-            .. classSymbol
-                .AllInterfaces.Where(type => SymbolEqualityComparer.Default.Equals(type.OriginalDefinition, consume))
+            .. _ImplementedInterfaces(compilation, classSymbol, SourceGeneratorConstants.ConsumeInterfaceMetadataName)
                 .Select(type => type.TypeArguments[0]),
         ];
     }
@@ -172,18 +165,32 @@ internal static class ConsumerParser
         INamedTypeSymbol classSymbol
     )
     {
-        var respond = compilation.GetTypeByMetadataName(SourceGeneratorConstants.RespondInterfaceMetadataName);
-        if (respond is null)
+        return
+        [
+            .. _ImplementedInterfaces(compilation, classSymbol, SourceGeneratorConstants.RespondInterfaceMetadataName)
+                .Select(type => (type.TypeArguments[0], type.TypeArguments[1])),
+        ];
+    }
+
+    /// <summary>
+    /// Every construction of the generic interface <paramref name="metadataName"/> the class implements, directly or
+    /// through a base type; none when the compilation does not reference the interface.
+    /// </summary>
+    private static IEnumerable<INamedTypeSymbol> _ImplementedInterfaces(
+        Compilation compilation,
+        INamedTypeSymbol classSymbol,
+        string metadataName
+    )
+    {
+        var definition = compilation.GetTypeByMetadataName(metadataName);
+        if (definition is null)
         {
             return [];
         }
 
-        return
-        [
-            .. classSymbol
-                .AllInterfaces.Where(type => SymbolEqualityComparer.Default.Equals(type.OriginalDefinition, respond))
-                .Select(type => (type.TypeArguments[0], type.TypeArguments[1])),
-        ];
+        return classSymbol.AllInterfaces.Where(type =>
+            SymbolEqualityComparer.Default.Equals(type.OriginalDefinition, definition)
+        );
     }
 
     /// <summary>

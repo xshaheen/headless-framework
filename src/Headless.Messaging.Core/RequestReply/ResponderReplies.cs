@@ -178,6 +178,6 @@ internal sealed class ResponderReplies(
     private static string? _RequestId(Message request)
     {
         request.Headers.TryGetValue(Headers.RequestId, out var requestId);
-        return LogSanitizer.Sanitize(requestId, ReplyAddresses.MaxLength);
+        return ReplyProtocol.SanitizeRequestId(requestId);
     }
 }

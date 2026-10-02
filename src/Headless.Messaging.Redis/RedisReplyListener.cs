@@ -31,21 +31,20 @@ namespace Headless.Messaging.Redis;
 /// </remarks>
 internal sealed class RedisReplyListener : IReplyListener
 {
-    private static readonly TimeSpan _FirstResubscribeDelay = TimeSpan.FromSeconds(1);
-    private static readonly TimeSpan _MaxResubscribeDelay = TimeSpan.FromSeconds(30);
-
     private readonly IRedisConnectionPool _connectionPool;
     private readonly string _replyAddress;
     private readonly RedisChannel _channel;
     private readonly Func<TransportMessage, CancellationToken, ValueTask> _onReply;
-    private readonly TimeProvider _timeProvider;
+    private readonly ReplyListenerBackoff _backoff;
     private readonly ILogger _logger;
     private readonly CancellationTokenSource _closing = new();
-    private readonly Lock _addressLock = new();
     private readonly Task _maintain;
 
     // Unresolved while the channel is not live on the server; resolved with the address once it is.
-    private TaskCompletionSource<string> _address = _NewAddressSource();
+    private readonly ReplyAddressGate _address = new();
+
+    // Guards which multiplexer the listener follows, so closing cannot race the loop attaching to a new one.
+    private readonly Lock _followLock = new();
 
     // The multiplexer whose connection events this listener follows, and the subscriber of the live subscription.
     private IConnectionMultiplexer? _connection;
@@ -64,7 +63,7 @@ internal sealed class RedisReplyListener : IReplyListener
         // Literal, so the address is matched exactly and never read as a pattern.
         _channel = RedisChannel.Literal(_replyAddress);
         _onReply = onReply;
-        _timeProvider = timeProvider;
+        _backoff = new ReplyListenerBackoff(timeProvider);
         _logger = logger;
 
         _maintain = Task.Run(_MaintainAsync);
@@ -76,13 +75,7 @@ internal sealed class RedisReplyListener : IReplyListener
     {
         Ensure.NotDisposed(Volatile.Read(ref _disposed) != 0, this);
 
-        TaskCompletionSource<string> address;
-        lock (_addressLock)
-        {
-            address = _address;
-        }
-
-        return new ValueTask<string>(address.Task.WaitAsync(cancellationToken));
+        return _address.WaitAsync(cancellationToken);
     }
 
     public async ValueTask DisposeAsync()
@@ -92,17 +85,14 @@ internal sealed class RedisReplyListener : IReplyListener
             return;
         }
 
-        lock (_addressLock)
+        lock (_followLock)
         {
             // The multiplexer is shared and outlives this listener, so its events must stop reaching it.
             _Follow(connection: null);
-
-            // A call still waiting for the address learns that the listener closed.
-            if (_address.TrySetException(new ObjectDisposedException(nameof(RedisReplyListener))))
-            {
-                _ = _address.Task.Exception;
-            }
         }
+
+        // A call still waiting for the address learns that the listener closed.
+        _address.FailOnDispose(nameof(RedisReplyListener));
 
         await _closing.CancelAsync().ConfigureAwait(false);
 
@@ -113,8 +103,6 @@ internal sealed class RedisReplyListener : IReplyListener
 
     private async Task _MaintainAsync()
     {
-        var resubscribeDelay = _FirstResubscribeDelay;
-
         while (!_closing.IsCancellationRequested)
         {
             ISubscriber? subscriber = null;
@@ -122,7 +110,7 @@ internal sealed class RedisReplyListener : IReplyListener
             try
             {
                 var connection = await _connectionPool.ConnectAsync(_closing.Token).ConfigureAwait(false);
-                lock (_addressLock)
+                lock (_followLock)
                 {
                     if (Volatile.Read(ref _disposed) != 0)
                     {
@@ -140,7 +128,7 @@ internal sealed class RedisReplyListener : IReplyListener
                 await subscriber.PingAsync().WaitAsync(_closing.Token).ConfigureAwait(false);
                 Volatile.Write(ref _subscriber, subscriber);
                 _PublishAddressIfConnected();
-                resubscribeDelay = _FirstResubscribeDelay;
+                _backoff.Reset();
                 _logger.ReplyListenerReady(_replyAddress);
 
                 await foreach (var message in queue.WithCancellation(_closing.Token).ConfigureAwait(false))
@@ -156,8 +144,8 @@ internal sealed class RedisReplyListener : IReplyListener
                 // The queue completes only when the channel is unsubscribed or its multiplexer is disposed, which a
                 // reconnect does not do; subscribe again on the same channel, through whichever multiplexer the pool
                 // hands out.
-                _RetractAddress(force: true);
-                _logger.ReplyListenerLost(_replyAddress, resubscribeDelay);
+                _address.Retract();
+                _logger.ReplyListenerLost(_replyAddress, _backoff.Delay);
             }
             catch (OperationCanceledException) when (_closing.IsCancellationRequested)
             {
@@ -165,8 +153,8 @@ internal sealed class RedisReplyListener : IReplyListener
             }
             catch (Exception e)
             {
-                _RetractAddress(force: true);
-                _logger.ReplyListenerOpenFailed(e, _replyAddress, resubscribeDelay);
+                _address.Retract();
+                _logger.ReplyListenerOpenFailed(e, _replyAddress, _backoff.Delay);
             }
             finally
             {
@@ -178,20 +166,14 @@ internal sealed class RedisReplyListener : IReplyListener
                 }
             }
 
-            try
-            {
-                await Task.Delay(resubscribeDelay, _timeProvider, _closing.Token).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (_closing.IsCancellationRequested)
+            if (!await _backoff.WaitAsync(_closing.Token).ConfigureAwait(false))
             {
                 return;
             }
-
-            resubscribeDelay = TimeSpan.FromTicks(Math.Min(resubscribeDelay.Ticks * 2, _MaxResubscribeDelay.Ticks));
         }
     }
 
-    // Moves the connection-event handlers to the multiplexer the subscription lives on. Called under the address lock.
+    // Moves the connection-event handlers to the multiplexer the subscription lives on. Called under the follow lock.
     private void _Follow(IConnectionMultiplexer? connection)
     {
         if (ReferenceEquals(_connection, connection))
@@ -219,39 +201,21 @@ internal sealed class RedisReplyListener : IReplyListener
     // subscription that is down.
     private void _PublishAddressIfConnected()
     {
-        lock (_addressLock)
-        {
-            if (Volatile.Read(ref _subscriber) is { } subscriber && subscriber.IsConnected(_channel))
-            {
-                _address.TrySetResult(_replyAddress);
-            }
-        }
+        _address.Publish(_replyAddress, _IsSubscriptionLive);
     }
 
     // Makes callers wait for the channel to be live again instead of sending a request whose reply reaches nobody.
     // A failure event can arrive after the multiplexer already reconnected, or concern only the interactive connection;
     // retracting then would withhold the address until a reconnect that never comes, so an event retracts only while
     // the subscription is actually down.
-    private void _RetractAddress(bool force)
-    {
-        lock (_addressLock)
-        {
-            if (
-                Volatile.Read(ref _disposed) != 0
-                || !_address.Task.IsCompleted
-                || (!force && Volatile.Read(ref _subscriber) is { } subscriber && subscriber.IsConnected(_channel))
-            )
-            {
-                return;
-            }
-
-            _address = _NewAddressSource();
-        }
-    }
-
     private void _OnConnectionFailed(object? sender, ConnectionFailedEventArgs args)
     {
-        _RetractAddress(force: false);
+        _address.Retract(isStillLive: _IsSubscriptionLive);
+    }
+
+    private bool _IsSubscriptionLive()
+    {
+        return Volatile.Read(ref _subscriber) is { } subscriber && subscriber.IsConnected(_channel);
     }
 
     // The multiplexer re-sends every subscription once a connection is back, so the channel is live again once the
@@ -307,19 +271,15 @@ internal sealed class RedisReplyListener : IReplyListener
             return;
         }
 
-        try
-        {
-            await _onReply(reply, _closing.Token).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (_closing.IsCancellationRequested)
-        {
-            // Closing: the caller's pending calls are being failed by the requester's shutdown.
-        }
-        catch (Exception e)
-        {
-            // One faulty reply must not stop the channel every other pending call depends on.
-            _logger.ReplyHandlerFailed(e, _replyAddress);
-        }
+        await ReplyHandlerInvoker
+            .InvokeAsync(
+                _onReply,
+                reply,
+                (Logger: _logger, Address: _replyAddress),
+                static (state, e) => state.Logger.ReplyHandlerFailed(e, state.Address),
+                _closing.Token
+            )
+            .ConfigureAwait(false);
     }
 
     // Unsubscribing by channel also drops the local registration of a subscribe that failed half-way; the channel is
@@ -335,11 +295,6 @@ internal sealed class RedisReplyListener : IReplyListener
             // A connection that is gone already dropped the subscription on the server.
             _logger.ReplyListenerUnsubscribeFailed(e, _replyAddress);
         }
-    }
-
-    private static TaskCompletionSource<string> _NewAddressSource()
-    {
-        return new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
     }
 }
 

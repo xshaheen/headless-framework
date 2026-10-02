@@ -129,11 +129,7 @@ public static class SetupRabbitMqMessaging
                 sp.GetRequiredService<IConnectionChannelPool>(),
                 MessageLane.Queue
             ));
-            services.AddSingleton<IReplyTransport>(sp => new RabbitMqReplyTransport(
-                sp.GetRequiredService<IConnectionChannelPool>(),
-                sp.GetService<TimeProvider>() ?? TimeProvider.System,
-                sp.GetRequiredService<ILogger<RabbitMqReplyTransport>>()
-            ));
+            services.AddSingleton<IReplyTransport, RabbitMqReplyTransport>();
             services.AddSingleton<IConsumerClientFactory, RabbitMqConsumerClientFactory>();
             services.AddSingleton<IConnectionChannelPool, ConnectionChannelPool>();
         }

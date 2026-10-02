@@ -425,34 +425,42 @@ internal sealed class Bootstrapper(
     /// </remarks>
     private HashSet<MessageRouteKey> _GetRegisteredRoutes(MessagingCapabilityModel capabilities)
     {
-        var registry = serviceProvider.GetRequiredService<ConsumerRegistry>();
-        var routes = registry
-            .GetAll()
-            .Select(static consumer => new MessageRouteKey(consumer.MessageType, consumer.MessageName, consumer.Lane))
-            .ToHashSet();
+        var routes = new HashSet<MessageRouteKey>();
 
-        foreach (var (registration, route) in _GetDeclaredRoutes(registry))
+        foreach (var (route, needsTransportLane) in _GetAllRoutes())
         {
-            if (
-                registration.DeclaresMessage
-                && !capabilities.Supports(registration.Lane, MessagingProviderRole.Transport)
-            )
-            {
-                continue;
-            }
-
-            routes.Add(route);
-        }
-
-        foreach (var route in _GetEffectiveMessageNameRoutes(registry))
-        {
-            if (capabilities.Supports(route.Lane, MessagingProviderRole.Transport))
+            if (!needsTransportLane || capabilities.Supports(route.Lane, MessagingProviderRole.Transport))
             {
                 routes.Add(route);
             }
         }
 
         return routes;
+    }
+
+    /// <summary>
+    /// Every route the host names, in order: consumer routes, declared routes, then effective message-name routes.
+    /// <c>NeedsTransportLane</c> marks a route that names a message for both lanes, and so counts only on a lane the
+    /// transport carries.
+    /// </summary>
+    private IEnumerable<(MessageRouteKey Route, bool NeedsTransportLane)> _GetAllRoutes()
+    {
+        var registry = serviceProvider.GetRequiredService<ConsumerRegistry>();
+
+        foreach (var consumer in registry.GetAll())
+        {
+            yield return (new MessageRouteKey(consumer.MessageType, consumer.MessageName, consumer.Lane), false);
+        }
+
+        foreach (var (registration, route) in _GetDeclaredRoutes(registry))
+        {
+            yield return (route, registration.DeclaresMessage);
+        }
+
+        foreach (var route in _GetEffectiveMessageNameRoutes(registry))
+        {
+            yield return (route, true);
+        }
     }
 
     private IEnumerable<(MessageRegistration Registration, MessageRouteKey Route)> _GetDeclaredRoutes(
@@ -493,14 +501,7 @@ internal sealed class Bootstrapper(
     /// </remarks>
     private void _CheckReplyNamespaceIsFree()
     {
-        var registry = serviceProvider.GetRequiredService<ConsumerRegistry>();
-        var routes = registry
-            .GetAll()
-            .Select(static consumer => new MessageRouteKey(consumer.MessageType, consumer.MessageName, consumer.Lane))
-            .Concat(_GetDeclaredRoutes(registry).Select(static declared => declared.Route))
-            .Concat(_GetEffectiveMessageNameRoutes(registry));
-
-        foreach (var route in routes)
+        foreach (var (route, _) in _GetAllRoutes())
         {
             if (route.MessageName.StartsWith(ReplyAddresses.Prefix, StringComparison.Ordinal))
             {

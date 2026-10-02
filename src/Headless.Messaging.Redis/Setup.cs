@@ -8,7 +8,6 @@ using Headless.Messaging.Transport;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 
@@ -140,11 +139,7 @@ public static class SetupRedisMessaging
             services.AddSingleton<RedisBusTransport>();
             services.AddSingleton<IBusTransport>(sp => sp.GetRequiredService<RedisBusTransport>());
             services.AddSingleton<IQueueTransport, RedisTransport>();
-            services.AddSingleton<IReplyTransport>(sp => new RedisReplyTransport(
-                sp.GetRequiredService<IRedisConnectionPool>(),
-                sp.GetService<TimeProvider>() ?? TimeProvider.System,
-                sp.GetRequiredService<ILogger<RedisReplyTransport>>()
-            ));
+            services.AddSingleton<IReplyTransport, RedisReplyTransport>();
             services.AddSingleton<IRedisConnectionPool, RedisConnectionPool>();
             services.TryAddEnumerable(
                 ServiceDescriptor.Singleton<

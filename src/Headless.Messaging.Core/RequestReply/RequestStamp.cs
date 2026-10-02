@@ -11,12 +11,12 @@ namespace Headless.Messaging.RequestReply;
 /// <param name="ReplyTo">The address of the calling process's reply listener.</param>
 /// <param name="Deadline">The instant after which the responder neither starts the work nor replies.</param>
 /// <param name="OnPrepared">
-/// Receives the final envelope's message id and tenant after publish middleware ran and before the request leaves the
-/// process, so the pending call knows the tenant a reply must carry before any reply can arrive.
+/// Receives the final envelope's tenant after publish middleware ran and before the request leaves the process, so the
+/// pending call knows the tenant a reply must carry before any reply can arrive.
 /// </param>
 internal sealed record RequestStamp(
     string RequestId,
     string ReplyTo,
     DateTimeOffset Deadline,
-    Action<string, string?> OnPrepared
+    Action<string?> OnPrepared
 );

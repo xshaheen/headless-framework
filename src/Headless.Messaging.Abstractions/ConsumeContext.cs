@@ -61,12 +61,6 @@ public record ConsumeContext
 
     internal bool IsResponseSuppressed { get; private set; }
 
-    /// <summary>
-    /// Whether a responder's dispatch recorded its result through <see cref="RecordReply{TResponse}"/>. Tells a
-    /// <see langword="null"/> result apart from no result.
-    /// </summary>
-    internal bool HasReply { get; private set; }
-
     /// <summary>The value a responder returned for the request's caller; <see langword="null"/> when it returned none.</summary>
     internal object? Reply { get; private set; }
 
@@ -220,7 +214,6 @@ public record ConsumeContext
 
         Reply = reply;
         ReplyType = typeof(TResponse);
-        HasReply = true;
     }
 
     internal void MarkCompleted()

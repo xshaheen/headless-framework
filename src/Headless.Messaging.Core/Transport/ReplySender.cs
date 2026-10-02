@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging.Internal;
+using Headless.Messaging.RequestReply;
 using Microsoft.Extensions.Logging;
 
 namespace Headless.Messaging.Transport;
@@ -28,7 +29,7 @@ internal sealed class ReplySender(IReplyTransport transport, ILogger<ReplySender
         if (!ReplyAddresses.IsInReplyNamespace(address) || !transport.IsReplyAddress(address))
         {
             logger.ReplyAddressRefused(
-                LogSanitizer.Sanitize(requestId, ReplyAddresses.MaxLength),
+                ReplyProtocol.SanitizeRequestId(requestId),
                 LogSanitizer.Sanitize(address, ReplyAddresses.MaxLength)
             );
             MessagingMetrics.RecordDroppedReply(MessagingMetrics.DropReasonInvalidReplyAddress);
@@ -46,7 +47,7 @@ internal sealed class ReplySender(IReplyTransport transport, ILogger<ReplySender
         }
         catch (Exception e)
         {
-            logger.ReplySendFailed(e, LogSanitizer.Sanitize(requestId, ReplyAddresses.MaxLength));
+            logger.ReplySendFailed(e, ReplyProtocol.SanitizeRequestId(requestId));
             return false;
         }
     }

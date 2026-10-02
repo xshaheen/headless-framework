@@ -29,19 +29,15 @@ namespace Headless.Messaging.RabbitMq;
 /// </remarks>
 internal sealed class RabbitMqReplyListener : IReplyListener
 {
-    private static readonly TimeSpan _FirstReconnectDelay = TimeSpan.FromSeconds(1);
-    private static readonly TimeSpan _MaxReconnectDelay = TimeSpan.FromSeconds(30);
-
     private readonly IConnectionChannelPool _connectionChannelPool;
     private readonly Func<TransportMessage, CancellationToken, ValueTask> _onReply;
-    private readonly TimeProvider _timeProvider;
+    private readonly ReplyListenerBackoff _backoff;
     private readonly ILogger _logger;
     private readonly CancellationTokenSource _closing = new();
-    private readonly Lock _addressLock = new();
     private readonly Task _maintain;
 
     // Unresolved while the listener connects; resolved with the address its current queue is consumed under.
-    private TaskCompletionSource<string> _address = _NewAddressSource();
+    private readonly ReplyAddressGate _address = new();
     private int _disposed;
 
     public RabbitMqReplyListener(
@@ -53,7 +49,7 @@ internal sealed class RabbitMqReplyListener : IReplyListener
     {
         _connectionChannelPool = connectionChannelPool;
         _onReply = onReply;
-        _timeProvider = timeProvider;
+        _backoff = new ReplyListenerBackoff(timeProvider);
         _logger = logger;
 
         // Connecting runs in the background so a broker that is briefly unreachable at startup delays calls, which
@@ -70,13 +66,7 @@ internal sealed class RabbitMqReplyListener : IReplyListener
     {
         Ensure.NotDisposed(Volatile.Read(ref _disposed) != 0, this);
 
-        TaskCompletionSource<string> address;
-        lock (_addressLock)
-        {
-            address = _address;
-        }
-
-        return new ValueTask<string>(address.Task.WaitAsync(cancellationToken));
+        return _address.WaitAsync(cancellationToken);
     }
 
     public async ValueTask DisposeAsync()
@@ -86,14 +76,8 @@ internal sealed class RabbitMqReplyListener : IReplyListener
             return;
         }
 
-        lock (_addressLock)
-        {
-            // A call still waiting for the first address learns that the listener closed.
-            if (_address.TrySetException(new ObjectDisposedException(nameof(RabbitMqReplyListener))))
-            {
-                _ = _address.Task.Exception;
-            }
-        }
+        // A call still waiting for the first address learns that the listener closed.
+        _address.FailOnDispose(nameof(RabbitMqReplyListener));
 
         await _closing.CancelAsync().ConfigureAwait(false);
 
@@ -104,8 +88,6 @@ internal sealed class RabbitMqReplyListener : IReplyListener
 
     private async Task _MaintainAsync()
     {
-        var reconnectDelay = _FirstReconnectDelay;
-
         while (!_closing.IsCancellationRequested)
         {
             var lost = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -146,12 +128,13 @@ internal sealed class RabbitMqReplyListener : IReplyListener
                     )
                     .ConfigureAwait(false);
 
-                _PublishAddress(address);
-                reconnectDelay = _FirstReconnectDelay;
+                _address.Publish(address);
+                _backoff.Reset();
                 _logger.ReplyListenerReady(address);
 
                 var reason = await lost.Task.WaitAsync(_closing.Token).ConfigureAwait(false);
-                _RetractAddress();
+                // Makes callers wait for the next address instead of stamping one whose queue is gone.
+                _address.Retract();
                 _logger.ReplyListenerLost(address, reason);
             }
             catch (OperationCanceledException) when (_closing.IsCancellationRequested)
@@ -160,50 +143,19 @@ internal sealed class RabbitMqReplyListener : IReplyListener
             }
             catch (Exception e)
             {
-                _RetractAddress();
+                _address.Retract();
                 failed = true;
-                _logger.ReplyListenerOpenFailed(e, reconnectDelay);
+                _logger.ReplyListenerOpenFailed(e, _backoff.Delay);
             }
             finally
             {
                 await _CloseAsync(channel, connection, address).ConfigureAwait(false);
             }
 
-            if (!failed)
-            {
-                // A lost listener reconnects at once; only repeated failures to reconnect back off.
-                continue;
-            }
-
-            try
-            {
-                await Task.Delay(reconnectDelay, _timeProvider, _closing.Token).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (_closing.IsCancellationRequested)
+            // A lost listener reconnects at once; only repeated failures to reconnect back off.
+            if (failed && !await _backoff.WaitAsync(_closing.Token).ConfigureAwait(false))
             {
                 return;
-            }
-
-            reconnectDelay = TimeSpan.FromTicks(Math.Min(reconnectDelay.Ticks * 2, _MaxReconnectDelay.Ticks));
-        }
-    }
-
-    private void _PublishAddress(string address)
-    {
-        lock (_addressLock)
-        {
-            _address.TrySetResult(address);
-        }
-    }
-
-    // Makes callers wait for the next address instead of stamping one whose queue is gone.
-    private void _RetractAddress()
-    {
-        lock (_addressLock)
-        {
-            if (Volatile.Read(ref _disposed) == 0 && _address.Task.IsCompleted)
-            {
-                _address = _NewAddressSource();
             }
         }
     }
@@ -250,24 +202,15 @@ internal sealed class RabbitMqReplyListener : IReplyListener
             return;
         }
 
-        try
-        {
-            await _onReply(reply, _closing.Token).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (_closing.IsCancellationRequested)
-        {
-            // Closing: the caller's pending calls are being failed by the requester's shutdown.
-        }
-        catch (Exception e)
-        {
-            // One faulty reply must not stop the channel every other pending call depends on.
-            _logger.ReplyHandlerFailed(e, address);
-        }
-    }
-
-    private static TaskCompletionSource<string> _NewAddressSource()
-    {
-        return new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        await ReplyHandlerInvoker
+            .InvokeAsync(
+                _onReply,
+                reply,
+                (Logger: _logger, Address: address),
+                static (state, e) => state.Logger.ReplyHandlerFailed(e, state.Address),
+                _closing.Token
+            )
+            .ConfigureAwait(false);
     }
 
     /// <summary>

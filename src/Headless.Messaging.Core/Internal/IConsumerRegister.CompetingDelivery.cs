@@ -21,9 +21,6 @@ namespace Headless.Messaging.Internal;
 /// </summary>
 internal sealed partial class ConsumerRegister
 {
-    private const string _ReceiveOutcomeExpired = "expired";
-    private const string _ReceiveOutcomeNoResponder = "skipped";
-
     /// <summary>
     /// Delivers one message of a competing subscription: resolves its consumer and circuit, runs the receive stage,
     /// then stores and dispatches it through the inbox, or stores a poison row and commits.
@@ -135,8 +132,12 @@ internal sealed partial class ConsumerRegister
                         is { } requestOutcome
                 )
                 {
-                    MessagingMetrics.RecordReceiveOutcome(requestOutcome);
-                    traceHandle.Activity?.SetTag(MessagingMetrics.TagReceiveOutcome, requestOutcome);
+                    var receiveOutcomeTag =
+                        requestOutcome is UnservableRequest.Expired
+                            ? MessagingMetrics.ReceiveOutcomeExpired
+                            : MessagingMetrics.ReceiveOutcomeSkipped;
+                    MessagingMetrics.RecordReceiveOutcome(receiveOutcomeTag);
+                    traceHandle.Activity?.SetTag(MessagingMetrics.TagReceiveOutcome, receiveOutcomeTag);
 
                     _TracingAfter(traceHandle, transportMessage, _serverAddress);
                     consumeOutcomeRecorded = true;
@@ -148,7 +149,7 @@ internal sealed partial class ConsumerRegister
                     // The caller of an expired request is gone; the caller of an unanswerable one learns that no work
                     // ran instead of timing out.
                     if (
-                        string.Equals(requestOutcome, _ReceiveOutcomeNoResponder, StringComparison.Ordinal)
+                        requestOutcome is UnservableRequest.NoResponder
                         && _GetResponderReplies() is { } noResponderReplies
                     )
                     {
@@ -213,8 +214,11 @@ internal sealed partial class ConsumerRegister
                         );
                     }
 
-                    MessagingMetrics.RecordReceiveOutcome("skipped");
-                    traceHandle.Activity?.SetTag(MessagingMetrics.TagReceiveOutcome, "skipped");
+                    MessagingMetrics.RecordReceiveOutcome(MessagingMetrics.ReceiveOutcomeSkipped);
+                    traceHandle.Activity?.SetTag(
+                        MessagingMetrics.TagReceiveOutcome,
+                        MessagingMetrics.ReceiveOutcomeSkipped
+                    );
 
                     _TracingAfter(traceHandle, transportMessage, _serverAddress);
                     consumeOutcomeRecorded = true;
@@ -228,8 +232,11 @@ internal sealed partial class ConsumerRegister
                 if (receiveOutcome.Result == ReceiveRingResult.Cancelled)
                 {
                     receiveOutcomeCancelled = true;
-                    MessagingMetrics.RecordReceiveOutcome("cancelled");
-                    traceHandle.Activity?.SetTag(MessagingMetrics.TagReceiveOutcome, "cancelled");
+                    MessagingMetrics.RecordReceiveOutcome(MessagingMetrics.ReceiveOutcomeCancelled);
+                    traceHandle.Activity?.SetTag(
+                        MessagingMetrics.TagReceiveOutcome,
+                        MessagingMetrics.ReceiveOutcomeCancelled
+                    );
                     if (_logger.IsEnabled(LogLevel.Debug))
                     {
                         _logger.ReceiveOutcomeCancelled(
@@ -249,8 +256,11 @@ internal sealed partial class ConsumerRegister
                     exceptionInfo = dispatchBypassException.ExpandMessage();
                     message = _BuildPoisonMessage(transportMessage, receiveContext, dispatchBypassException);
 
-                    MessagingMetrics.RecordReceiveOutcome("rejected");
-                    traceHandle.Activity?.SetTag(MessagingMetrics.TagReceiveOutcome, "rejected");
+                    MessagingMetrics.RecordReceiveOutcome(MessagingMetrics.ReceiveOutcomeRejected);
+                    traceHandle.Activity?.SetTag(
+                        MessagingMetrics.TagReceiveOutcome,
+                        MessagingMetrics.ReceiveOutcomeRejected
+                    );
                     if (_logger.IsEnabled(LogLevel.Warning))
                     {
                         _logger.ReceiveMessageRejected(
@@ -281,8 +291,11 @@ internal sealed partial class ConsumerRegister
 
                     // The delivery continued to admission; the ring's copy-on-write headers/body
                     // (already reflected in the deserialized message) are what storage persists.
-                    MessagingMetrics.RecordReceiveOutcome("accepted");
-                    traceHandle.Activity?.SetTag(MessagingMetrics.TagReceiveOutcome, "accepted");
+                    MessagingMetrics.RecordReceiveOutcome(MessagingMetrics.ReceiveOutcomeAccepted);
+                    traceHandle.Activity?.SetTag(
+                        MessagingMetrics.TagReceiveOutcome,
+                        MessagingMetrics.ReceiveOutcomeAccepted
+                    );
                 }
             }
             catch (Exception e) when (!receiveOutcomeCancelled)
@@ -295,8 +308,11 @@ internal sealed partial class ConsumerRegister
                 // Every row built here is a poison-on-arrival outcome: subscriber-not-found,
                 // contract-version mismatch, a Stage A deserialization failure, or a receive
                 // middleware fault the ring converted into a reject.
-                MessagingMetrics.RecordReceiveOutcome("rejected");
-                traceHandle.Activity?.SetTag(MessagingMetrics.TagReceiveOutcome, "rejected");
+                MessagingMetrics.RecordReceiveOutcome(MessagingMetrics.ReceiveOutcomeRejected);
+                traceHandle.Activity?.SetTag(
+                    MessagingMetrics.TagReceiveOutcome,
+                    MessagingMetrics.ReceiveOutcomeRejected
+                );
             }
 
             if (message.HasException())
@@ -567,11 +583,12 @@ internal sealed partial class ConsumerRegister
     }
 
     /// <summary>
-    /// The receive outcome of a request no consumer may run for, or <see langword="null"/> when it continues to the
-    /// receive stage: <c>expired</c> when its caller already stopped waiting, and <c>skipped</c> when it reached a
-    /// consumer that does not respond, which is then answered with a <c>no_responder</c> fault.
+    /// Why no consumer may run for a request, or <see langword="null"/> when it continues to the receive stage:
+    /// <see cref="UnservableRequest.Expired"/>, recorded as <c>expired</c>, when its caller already stopped waiting, and
+    /// <see cref="UnservableRequest.NoResponder"/>, recorded as <c>skipped</c>, when it reached a consumer that does not
+    /// respond, which is then answered with a <c>no_responder</c> fault.
     /// </summary>
-    private string? _ResolveUnservableRequestOutcome(
+    private UnservableRequest? _ResolveUnservableRequestOutcome(
         TransportMessage transportMessage,
         ConsumerExecutorDescriptor? executor,
         string consumerIdentity
@@ -588,7 +605,7 @@ internal sealed partial class ConsumerRegister
                 );
             }
 
-            return _ReceiveOutcomeExpired;
+            return UnservableRequest.Expired;
         }
 
         if (executor is { IsResponder: false })
@@ -599,7 +616,7 @@ internal sealed partial class ConsumerRegister
                 LogSanitizer.Sanitize(consumerIdentity)
             );
 
-            return _ReceiveOutcomeNoResponder;
+            return UnservableRequest.NoResponder;
         }
 
         return null;
@@ -609,5 +626,15 @@ internal sealed partial class ConsumerRegister
     private ResponderReplies? _GetResponderReplies()
     {
         return _responderReplies ??= serviceProvider.GetService<ResponderReplies>();
+    }
+
+    /// <summary>Why a request is settled on receive without running its consumer.</summary>
+    private enum UnservableRequest
+    {
+        /// <summary>Its caller already stopped waiting.</summary>
+        Expired,
+
+        /// <summary>It reached a consumer that is not a responder, so nothing can answer it.</summary>
+        NoResponder,
     }
 }

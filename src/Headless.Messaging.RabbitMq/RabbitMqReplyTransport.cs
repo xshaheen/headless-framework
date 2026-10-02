@@ -86,7 +86,7 @@ internal sealed class RabbitMqReplyTransport(
         {
             // The channel can report open while its connection is closed; dispose it so the pool does not hand it out
             // again.
-            logger.ReplyChannelStateInconsistencyDetected();
+            logger.ChannelStateInconsistencyDetected();
             await channel.DisposeAsync().ConfigureAwait(false);
             throw;
         }
@@ -95,14 +95,4 @@ internal sealed class RabbitMqReplyTransport(
             connectionChannelPool.Return(channel);
         }
     }
-}
-
-internal static partial class RabbitMqReplyTransportLog
-{
-    [LoggerMessage(
-        EventId = 3008,
-        Level = LogLevel.Warning,
-        Message = "Reply channel state inconsistency detected: channel is reported as open, but its underlying connection is closed. Forcing channel closure."
-    )]
-    public static partial void ReplyChannelStateInconsistencyDetected(this ILogger logger);
 }

@@ -280,28 +280,37 @@ internal sealed partial class ConsumerRegister
         switch (receiveOutcome.Result)
         {
             case ReceiveRingResult.Skipped:
-                MessagingMetrics.RecordReceiveOutcome("skipped");
+                MessagingMetrics.RecordReceiveOutcome(MessagingMetrics.ReceiveOutcomeSkipped);
                 MessagingMetrics.RecordEveryInstanceDelivery(consumerIdentity, "skipped");
-                traceHandle.Activity?.SetTag(MessagingMetrics.TagReceiveOutcome, "skipped");
+                traceHandle.Activity?.SetTag(
+                    MessagingMetrics.TagReceiveOutcome,
+                    MessagingMetrics.ReceiveOutcomeSkipped
+                );
                 _TracingAfter(traceHandle, transportMessage, _serverAddress);
                 return true;
             case ReceiveRingResult.Cancelled:
-                MessagingMetrics.RecordReceiveOutcome("cancelled");
-                traceHandle.Activity?.SetTag(MessagingMetrics.TagReceiveOutcome, "cancelled");
+                MessagingMetrics.RecordReceiveOutcome(MessagingMetrics.ReceiveOutcomeCancelled);
+                traceHandle.Activity?.SetTag(
+                    MessagingMetrics.TagReceiveOutcome,
+                    MessagingMetrics.ReceiveOutcomeCancelled
+                );
                 throw receiveOutcome.Exception!;
             case ReceiveRingResult.Rejected:
             {
                 var reason = receiveOutcome.OutcomeReason ?? receiveOutcome.Exception!.ExpandMessage();
-                MessagingMetrics.RecordReceiveOutcome("rejected");
-                traceHandle.Activity?.SetTag(MessagingMetrics.TagReceiveOutcome, "rejected");
+                MessagingMetrics.RecordReceiveOutcome(MessagingMetrics.ReceiveOutcomeRejected);
+                traceHandle.Activity?.SetTag(
+                    MessagingMetrics.TagReceiveOutcome,
+                    MessagingMetrics.ReceiveOutcomeRejected
+                );
                 _DropEveryInstanceMessage(transportMessage, consumerIdentity, receiveOutcome.Exception, reason);
                 _TracingError(traceHandle, transportMessage, client.BrokerAddress, receiveOutcome.Exception!);
                 return true;
             }
         }
 
-        MessagingMetrics.RecordReceiveOutcome("accepted");
-        traceHandle.Activity?.SetTag(MessagingMetrics.TagReceiveOutcome, "accepted");
+        MessagingMetrics.RecordReceiveOutcome(MessagingMetrics.ReceiveOutcomeAccepted);
+        traceHandle.Activity?.SetTag(MessagingMetrics.TagReceiveOutcome, MessagingMetrics.ReceiveOutcomeAccepted);
 
         var delivery = new MediumMessage
         {

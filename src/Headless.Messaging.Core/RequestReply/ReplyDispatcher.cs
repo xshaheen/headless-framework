@@ -23,15 +23,16 @@ internal sealed class ReplyDispatcher(PendingRequests pending, ISerializer seria
 
         // A reply naming no call, or a call this process never made or has long forgotten, answers nothing here. A call
         // not yet prepared has not left the process, so a reply naming it cannot be genuine.
-        if (string.IsNullOrWhiteSpace(requestId) || !pending.TryGet(requestId, out var request) || !request.IsPrepared)
+        if (string.IsNullOrWhiteSpace(requestId) || !pending.TryGet(requestId, out var entry) || !entry.IsPrepared)
         {
             _Drop(requestId, MessagingMetrics.DropReasonUnknown);
             return;
         }
 
-        if (request.State is not PendingRequestState.Pending)
+        // An entry drops its call only after the call ended, so a missing call is a finished one.
+        if (entry.Call is not { State: PendingRequestState.Pending } request)
         {
-            _DropFinished(request);
+            _DropFinished(entry);
             return;
         }
 
@@ -40,14 +41,14 @@ internal sealed class ReplyDispatcher(PendingRequests pending, ISerializer seria
         // Null equals only null: a reply without a tenant never answers a tenant's call, and the reverse.
         if (!string.Equals(_Normalize(replyTenantId), request.TenantId, StringComparison.Ordinal))
         {
-            logger.ReplyTenantMismatch(LogSanitizer.Sanitize(requestId, ReplyAddresses.MaxLength));
+            logger.ReplyTenantMismatch(ReplyProtocol.SanitizeRequestId(requestId));
             MessagingMetrics.RecordDroppedReply(MessagingMetrics.DropReasonTenantMismatch);
             return;
         }
 
         if (!request.TryClaimForReply())
         {
-            _DropFinished(request);
+            _DropFinished(entry);
             return;
         }
 
@@ -116,11 +117,11 @@ internal sealed class ReplyDispatcher(PendingRequests pending, ISerializer seria
         return message.Value ?? throw new RequestFaultedException(request.RequestId, RequestFaultCodes.NullResponse);
     }
 
-    private void _DropFinished(PendingRequest request)
+    private void _DropFinished(PendingRequestEntry entry)
     {
         _Drop(
-            request.RequestId,
-            request.State is PendingRequestState.Replied
+            entry.RequestId,
+            entry.State is PendingRequestState.Replied
                 ? MessagingMetrics.DropReasonDuplicate
                 : MessagingMetrics.DropReasonLate
         );
@@ -130,7 +131,7 @@ internal sealed class ReplyDispatcher(PendingRequests pending, ISerializer seria
     {
         if (logger.IsEnabled(LogLevel.Debug))
         {
-            logger.ReplyDropped(LogSanitizer.Sanitize(requestId, ReplyAddresses.MaxLength), reason);
+            logger.ReplyDropped(ReplyProtocol.SanitizeRequestId(requestId), reason);
         }
 
         MessagingMetrics.RecordDroppedReply(reason);

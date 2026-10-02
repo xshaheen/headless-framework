@@ -94,7 +94,7 @@ public sealed class ProviderConformanceEvidenceTests(NatsFixture fixture) : Test
             ),
             _BindRequestReply(
                 TransportConformanceScenario.RequestReplyCallerCleanup,
-                nameof(NatsRequestReplyConformanceTests.should_leave_no_reply_subscription_after_the_caller_stops)
+                nameof(NatsRequestReplyConformanceTests.should_leave_no_reply_objects_after_the_caller_stops)
             ),
         ];
 
