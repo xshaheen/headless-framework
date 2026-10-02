@@ -1196,7 +1196,7 @@ Roslyn incremental source generator that eliminates reflection and manual job re
 - **Construction through DI**: the typed invoker builds the job class with `ActivatorUtilities.CreateInstance` from the run's scope, so the container selects the constructor (`[ActivatorUtilitiesConstructor]` picks one of several) and resolves its parameters, including `[FromKeyedServices]`.
 - **Incremental**: declarations are reduced to value models when discovered, so an edit that does not change a `[Job]` or middleware declaration reuses every generator step and re-emits nothing.
 - **Collision safety**: HF005 rejects a duplicate identity and HF011 a duplicate argument type within a compilation. Provider construction reports cross-assembly conflicts deterministically.
-- **Diagnostics**: HF001–HF022 (HF002, HF006, and HF010 are retired), listed with their causes and fixes under [Diagnostics](#diagnostics).
+- **Diagnostics**: HF001–HF023 (HF002, HF006, and HF010 are retired), listed with their causes and fixes under [Diagnostics](#diagnostics).
 
 ### Diagnostics
 
@@ -1223,6 +1223,7 @@ Every rule is reported at compile time in category `Headless.Jobs.SourceGenerato
 | <a id="hf020"></a>HF020 | `OnMissedRun` is not a defined `MissedRunPolicy` value. | Pass a `MissedRunPolicy` member. |
 | <a id="hf021"></a>HF021 | `MissedRunGraceSeconds` is zero or negative. | Pass a positive number of seconds, or leave it unset to inherit the scheduler default. |
 | <a id="hf022"></a>HF022 | `OnOverlap` is not a defined `CronOverlapPolicy` value. | Pass a `CronOverlapPolicy` member. |
+| <a id="hf023"></a>HF023 | The `FailurePolicy` type does not derive from `Headless.Reliability.FailurePolicy`, is abstract or an open generic, is private, protected, or `file`-local, or has no public parameterless constructor, so the generated factory cannot construct it. Nothing is generated. | Point `FailurePolicy` at a concrete, non-generic `public` or `internal` class derived from `FailurePolicy` with a public parameterless constructor. |
 
 ### Install
 
