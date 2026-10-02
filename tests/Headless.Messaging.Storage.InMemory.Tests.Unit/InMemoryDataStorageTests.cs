@@ -1491,6 +1491,54 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
         return base.should_not_reclaim_dead_owner_rows_with_expired_lease();
     }
 
+    [Fact]
+    public override Task should_admit_exactly_one_of_many_admissions_of_one_key_released_together()
+    {
+        return base.should_admit_exactly_one_of_many_admissions_of_one_key_released_together();
+    }
+
+    [Fact]
+    public override Task should_decide_delayed_message_due_on_database_clock()
+    {
+        return base.should_decide_delayed_message_due_on_database_clock();
+    }
+
+    [Fact]
+    public override Task should_decide_published_retry_due_on_database_clock()
+    {
+        return base.should_decide_published_retry_due_on_database_clock();
+    }
+
+    [Fact]
+    public override Task should_decide_received_retry_due_on_database_clock()
+    {
+        return base.should_decide_received_retry_due_on_database_clock();
+    }
+
+    [Theory]
+    [InlineData(true, true)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(false, false)]
+    public override Task should_make_core_scheduled_retry_due_after_its_delay_on_database_clock(
+        bool published,
+        bool applicationClockAhead
+    )
+    {
+        return base.should_make_core_scheduled_retry_due_after_its_delay_on_database_clock(
+            published,
+            applicationClockAhead
+        );
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public override Task should_stamp_initial_dispatch_grace_from_database_clock(bool published)
+    {
+        return base.should_stamp_initial_dispatch_grace_from_database_clock(published);
+    }
+
     #endregion
 
     [Fact]
