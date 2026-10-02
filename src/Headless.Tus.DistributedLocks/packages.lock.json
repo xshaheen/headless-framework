@@ -406,7 +406,7 @@
         "type": "Project",
         "dependencies": {
           "Headless.Hosting": "[1.0.0, )",
-          "tusdotnet": "[2.11.2, )"
+          "tusdotnet": "[2.12.0, )"
         }
       },
       "headless.unitofwork.abstractions": {
@@ -636,9 +636,9 @@
       },
       "tusdotnet": {
         "type": "CentralTransitive",
-        "requested": "[2.11.2, )",
-        "resolved": "2.11.2",
-        "contentHash": "NKdtFoulB2Ehb0qfIQX0qTn9kJ7Bsf1M8rEncWcwvt1TEUxIzgmMqjfrHeNR4jAJmNGMDrLZPwKL8vOXJeyKHw=="
+        "requested": "[2.12.0, )",
+        "resolved": "2.12.0",
+        "contentHash": "q4uBCdkENl8kLRLeXe3PV5+52RwdisobobdWlB7ARoYonbozL9gdF+y4zWlZt1Deq/vZRO9F7b1r7Xz4O83cdg=="
       }
     }
   }
