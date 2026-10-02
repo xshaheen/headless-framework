@@ -12,7 +12,30 @@ public sealed class SettingsSnapshotHostedServiceTests : TestBase
     private readonly TimerCountingTimeProvider _timeProvider = new();
 
     [Fact]
-    public async Task should_load_every_snapshot_on_start()
+    public async Task should_start_without_waiting_for_the_first_load()
+    {
+        // given - a store that does not answer
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var entry = new FakeEntry(TimeSpan.FromMinutes(1)) { LoadGate = gate };
+        using var sut = new SettingsSnapshotHostedService(
+            [entry],
+            _timeProvider,
+            NullLogger<SettingsSnapshotHostedService>.Instance
+        );
+
+        // when
+        await sut.StartAsync(AbortToken).WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // then - the load runs in the background and completes once the store answers
+        await entry.WaitForLoadsAsync(1);
+        entry.IsLoaded.Should().BeFalse();
+        gate.SetResult();
+        await TimerCountingTimeProvider.WaitUntilAsync(() => entry.IsLoaded, AbortToken);
+        await sut.StopAsync(AbortToken);
+    }
+
+    [Fact]
+    public async Task should_load_every_snapshot_in_the_background()
     {
         // given
         var first = new FakeEntry(TimeSpan.FromMinutes(1));
@@ -25,6 +48,7 @@ public sealed class SettingsSnapshotHostedServiceTests : TestBase
 
         // when
         await sut.StartAsync(AbortToken);
+        await TimerCountingTimeProvider.WaitUntilAsync(() => first.IsLoaded && second.IsLoaded, AbortToken);
         await sut.StopAsync(AbortToken);
 
         // then
@@ -33,21 +57,33 @@ public sealed class SettingsSnapshotHostedServiceTests : TestBase
     }
 
     [Fact]
-    public async Task should_fail_start_when_a_load_fails()
+    public async Task should_retry_a_failed_first_load_with_backoff()
     {
         // given
-        var entry = new FakeEntry(TimeSpan.FromMinutes(1)) { LoadFailure = new InvalidOperationException("undefined") };
+        var entry = new FakeEntry(TimeSpan.FromMinutes(1)) { FailedLoads = 2 };
         using var sut = new SettingsSnapshotHostedService(
             [entry],
             _timeProvider,
             NullLogger<SettingsSnapshotHostedService>.Instance
         );
+        await sut.StartAsync(AbortToken);
+        await entry.WaitForLoadsAsync(1);
+        await _timeProvider.WaitForTimersAsync(1, AbortToken);
 
-        // when
-        var act = () => sut.StartAsync(AbortToken);
+        // when - the first retry waits the initial delay, the second twice that
+        _timeProvider.Advance(SettingsSnapshotHostedService.InitialRetryDelay);
+        await entry.WaitForLoadsAsync(2);
+        await _timeProvider.WaitForTimersAsync(2, AbortToken);
+        _timeProvider.Advance(SettingsSnapshotHostedService.InitialRetryDelay);
+        var beforeDoubledDelay = entry.Loads;
+        _timeProvider.Advance(SettingsSnapshotHostedService.InitialRetryDelay);
+        await entry.WaitForLoadsAsync(3);
 
         // then
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("undefined");
+        beforeDoubledDelay.Should().Be(2);
+        await TimerCountingTimeProvider.WaitUntilAsync(() => entry.IsLoaded, AbortToken);
+        entry.Backstops.Should().Be(0);
+        await sut.StopAsync(AbortToken);
     }
 
     [Fact]
@@ -154,11 +190,18 @@ public sealed class SettingsSnapshotHostedServiceTests : TestBase
         private readonly List<SettingsSnapshotReloadReason> _reasons = [];
         private int _backstops;
 
-        public int Loads { get; private set; }
+        private int _loads;
+        private volatile bool _loaded;
+
+        public int Loads => Volatile.Read(ref _loads);
 
         public int Backstops => Volatile.Read(ref _backstops);
 
-        public Exception? LoadFailure { get; init; }
+        /// <summary>How many first-load attempts fail before one succeeds.</summary>
+        public int FailedLoads { get; init; }
+
+        /// <summary>When set, a load waits on it, so a test can hold the first load open.</summary>
+        public TaskCompletionSource? LoadGate { get; init; }
 
         public bool FailFirstBackstop { get; init; }
 
@@ -166,12 +209,27 @@ public sealed class SettingsSnapshotHostedServiceTests : TestBase
 
         public TimeSpan Backstop { get; } = backstop;
 
-        public Task LoadAsync(CancellationToken cancellationToken)
-        {
-            Loads++;
+        public bool IsLoaded => _loaded;
 
-            return LoadFailure is null ? Task.CompletedTask : Task.FromException(LoadFailure);
+        public async Task EnsureLoadedAsync(CancellationToken cancellationToken)
+        {
+            var attempt = Interlocked.Increment(ref _loads);
+
+            if (LoadGate is not null)
+            {
+                await LoadGate.Task.WaitAsync(cancellationToken);
+            }
+
+            if (attempt <= FailedLoads)
+            {
+                throw new InvalidOperationException("store down");
+            }
+
+            _loaded = true;
         }
+
+        public Task WaitForLoadsAsync(int count) =>
+            TimerCountingTimeProvider.WaitUntilAsync(() => Loads >= count, AbortToken);
 
         public Task ReloadAsync(
             SettingsSnapshotReloadReason reason,

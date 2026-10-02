@@ -9,9 +9,11 @@ namespace Headless.Settings.Values;
 /// <remarks>
 /// <para>
 /// The value is resolved at <see cref="SettingValueProviderNames.Global"/> scope with the usual fallback to the
-/// definition default, so a tenant or user override never shadows it. The snapshot is loaded when the host starts and
-/// reloaded when a <see cref="SettingChangedMessage"/> names one of its settings, when its every-instance subscription
-/// is established, and on a backstop timer.
+/// definition default, so a tenant or user override never shadows it. Loading never blocks host startup: the first
+/// load runs in the background as soon as the host starts, retrying until it succeeds, and the first
+/// <see cref="GetAsync"/> call loads it on demand if it has not finished. The snapshot is then reloaded when a
+/// <see cref="SettingChangedMessage"/> names one of its settings, when its every-instance subscription is established,
+/// and on a backstop timer.
 /// </para>
 /// <para>
 /// <see cref="Revision"/> moves only when a resolved setting value changes. A reload that reads the same values keeps
@@ -21,11 +23,25 @@ namespace Headless.Settings.Values;
 /// </remarks>
 /// <typeparam name="T">The type the settings are bound to.</typeparam>
 [PublicAPI]
-public interface ISettingsSnapshot<out T>
+public interface ISettingsSnapshot<T>
 {
-    /// <summary>Gets the value bound from the settings' current values.</summary>
-    /// <exception cref="InvalidOperationException">The snapshot has not been loaded yet; it loads when the host starts.</exception>
+    /// <summary>Gets the value bound from the settings' current values, without waiting.</summary>
+    /// <remarks>Use <see cref="GetAsync"/> where the first load may not have finished, for example right after startup.</remarks>
+    /// <exception cref="InvalidOperationException">The first load has not completed yet.</exception>
     T Current { get; }
+
+    /// <summary>
+    /// Gets the value bound from the settings' current values, loading the snapshot first when it has not loaded yet.
+    /// Once loaded this completes synchronously with <see cref="Current"/>.
+    /// </summary>
+    /// <param name="cancellationToken">The abort token.</param>
+    /// <returns>The current value.</returns>
+    /// <exception cref="InvalidOperationException">A tracked setting is not defined.</exception>
+    /// <remarks>
+    /// When the first load fails, for example because the store is unreachable or the bind function rejects a value,
+    /// the exception propagates to this caller and the next call tries again.
+    /// </remarks>
+    ValueTask<T> GetAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Gets the revision of <see cref="Current"/>: <c>1</c> after the first load, incremented by one each time a

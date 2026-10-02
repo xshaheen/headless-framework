@@ -29,7 +29,7 @@ public sealed class SettingsSnapshotBuilder<T>
     internal SettingsSnapshotBuilder() { }
 
     /// <summary>Adds the names of the settings the snapshot is bound from. Repeated calls add to the set.</summary>
-    /// <param name="names">Setting names. Each must be a defined setting, or the host fails to start.</param>
+    /// <param name="names">Setting names. Each must be a defined setting, or every load throws naming the undefined ones.</param>
     /// <returns>This builder.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="names"/> or one of its items is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">A name is empty or whitespace.</exception>
@@ -48,8 +48,8 @@ public sealed class SettingsSnapshotBuilder<T>
     /// <summary>Sets how the resolved values bind to <typeparamref name="T"/>.</summary>
     /// <param name="bind">
     /// Receives every tracked name mapped to its resolved value, <see langword="null"/> when the setting has no value
-    /// and no default. Runs only when a value changed. An exception it throws at startup fails the start; afterwards it
-    /// is logged and the snapshot keeps its last good value.
+    /// and no default. Runs only when a value changed. An exception it throws on the first load reaches the
+    /// <c>GetAsync</c> caller and is retried; afterwards it is logged and the snapshot keeps its last good value.
     /// </param>
     /// <returns>This builder.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="bind"/> is <see langword="null"/>.</exception>

@@ -71,7 +71,7 @@ public sealed class SettingsSnapshotTests : TestBase
         using var sut = _CreateSut();
 
         // when
-        await sut.LoadAsync(AbortToken);
+        await sut.EnsureLoadedAsync(AbortToken);
 
         // then
         sut.Current.Should().Be(new Policy(10, 100));
@@ -93,11 +93,74 @@ public sealed class SettingsSnapshotTests : TestBase
     }
 
     [Fact]
+    public async Task should_load_on_demand_when_get_is_awaited_before_any_load()
+    {
+        // given
+        using var sut = _CreateSut();
+
+        // when
+        var value = await sut.GetAsync(AbortToken);
+
+        // then
+        value.Should().Be(new Policy(10, 100));
+        sut.Revision.Should().Be(1);
+        sut.IsLoaded.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_complete_get_synchronously_once_loaded()
+    {
+        // given
+        using var sut = _CreateSut();
+        await sut.EnsureLoadedAsync(AbortToken);
+
+        // when
+        var pending = sut.GetAsync(AbortToken);
+
+        // then
+        pending.IsCompletedSuccessfully.Should().BeTrue();
+        (await pending).Should().Be(new Policy(10, 100));
+        _reads.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_surface_a_failed_first_load_and_retry_on_the_next_get()
+    {
+        // given
+        using var sut = _CreateSut();
+        _readFailure = new InvalidOperationException("store down");
+
+        // when
+        var failed = () => sut.GetAsync(AbortToken).AsTask();
+        await failed.Should().ThrowAsync<InvalidOperationException>().WithMessage("store down");
+        _readFailure = null;
+        var value = await sut.GetAsync(AbortToken);
+
+        // then
+        value.Should().Be(new Policy(10, 100));
+        sut.Revision.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_read_once_when_first_loads_run_concurrently()
+    {
+        // given
+        using var sut = _CreateSut();
+
+        // when
+        await Task.WhenAll(Enumerable.Range(0, 8).Select(_ => sut.GetAsync(AbortToken).AsTask()));
+
+        // then
+        _reads.Should().Be(1);
+        sut.Revision.Should().Be(1);
+    }
+
+    [Fact]
     public async Task should_keep_revision_and_skip_bind_when_values_are_unchanged()
     {
         // given
         using var sut = _CreateSut();
-        await sut.LoadAsync(AbortToken);
+        await sut.EnsureLoadedAsync(AbortToken);
         var current = sut.Current;
 
         // when
@@ -122,7 +185,7 @@ public sealed class SettingsSnapshotTests : TestBase
             _timeProvider,
             new CapturingLogger<SettingsSnapshot<ListPolicy>>()
         );
-        await sut.LoadAsync(AbortToken);
+        await sut.EnsureLoadedAsync(AbortToken);
 
         // when
         await sut.ReloadAsync(SettingsSnapshotReloadReason.Backstop, null, AbortToken);
@@ -137,7 +200,7 @@ public sealed class SettingsSnapshotTests : TestBase
     {
         // given
         using var sut = _CreateSut();
-        await sut.LoadAsync(AbortToken);
+        await sut.EnsureLoadedAsync(AbortToken);
         var notifications = new List<(Policy Value, long Revision)>();
         using var subscription = sut.OnChange((value, revision) => notifications.Add((value, revision)));
         _stored[_PublicLimit] = "20";
@@ -165,7 +228,7 @@ public sealed class SettingsSnapshotTests : TestBase
         });
 
         // when
-        await sut.LoadAsync(AbortToken);
+        await sut.EnsureLoadedAsync(AbortToken);
 
         // then
         seen.Should().NotBeNull();
@@ -182,7 +245,7 @@ public sealed class SettingsSnapshotTests : TestBase
         using var sut = _CreateSut();
 
         // when
-        var act = () => sut.LoadAsync(AbortToken);
+        var act = () => sut.EnsureLoadedAsync(AbortToken);
 
         // then
         (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage($"*{_UserLimit}*");
@@ -195,7 +258,7 @@ public sealed class SettingsSnapshotTests : TestBase
         using var sut = _CreateSut(_ => throw new FormatException("bad value"));
 
         // when
-        var act = () => sut.LoadAsync(AbortToken);
+        var act = () => sut.EnsureLoadedAsync(AbortToken);
 
         // then
         await act.Should().ThrowAsync<FormatException>();
@@ -206,7 +269,7 @@ public sealed class SettingsSnapshotTests : TestBase
     {
         // given
         using var sut = _CreateSut();
-        await sut.LoadAsync(AbortToken);
+        await sut.EnsureLoadedAsync(AbortToken);
         _stored[_PublicLimit] = "not-a-number";
 
         // when
@@ -257,7 +320,7 @@ public sealed class SettingsSnapshotTests : TestBase
     {
         // given
         using var sut = _CreateSut();
-        await sut.LoadAsync(AbortToken);
+        await sut.EnsureLoadedAsync(AbortToken);
         long? seenRevision = null;
         using var failing = sut.OnChange((_, _) => throw new InvalidOperationException("listener"));
         using var working = sut.OnChange((_, revision) => seenRevision = revision);
@@ -277,7 +340,7 @@ public sealed class SettingsSnapshotTests : TestBase
     {
         // given
         using var sut = _CreateSut();
-        await sut.LoadAsync(AbortToken);
+        await sut.EnsureLoadedAsync(AbortToken);
         var calls = 0;
         var subscription = sut.OnChange((_, _) => calls++);
         subscription.Dispose();
@@ -299,7 +362,7 @@ public sealed class SettingsSnapshotTests : TestBase
     {
         // given - the announcement arrives before this replica's cache drops the old value
         using var sut = _CreateSut();
-        await sut.LoadAsync(AbortToken);
+        await sut.EnsureLoadedAsync(AbortToken);
         await sut.ReloadAsync(SettingsSnapshotReloadReason.Message, [_PublicLimit], AbortToken);
         sut.Revision.Should().Be(1);
         _stored[_PublicLimit] = "20";
@@ -318,7 +381,7 @@ public sealed class SettingsSnapshotTests : TestBase
     {
         // given
         using var sut = _CreateSut();
-        await sut.LoadAsync(AbortToken);
+        await sut.EnsureLoadedAsync(AbortToken);
 
         // when
         await sut.ReloadAsync(SettingsSnapshotReloadReason.Message, [_PublicLimit], AbortToken);
@@ -340,7 +403,7 @@ public sealed class SettingsSnapshotTests : TestBase
     {
         // given
         using var sut = _CreateSut();
-        await sut.LoadAsync(AbortToken);
+        await sut.EnsureLoadedAsync(AbortToken);
 
         // when
         await sut.ReloadAsync(SettingsSnapshotReloadReason.Backstop, null, AbortToken);
@@ -355,7 +418,7 @@ public sealed class SettingsSnapshotTests : TestBase
     {
         // given
         using var sut = _CreateSut();
-        await sut.LoadAsync(AbortToken);
+        await sut.EnsureLoadedAsync(AbortToken);
         _stored[_PublicLimit] = "not-a-number";
 
         // when
@@ -372,7 +435,7 @@ public sealed class SettingsSnapshotTests : TestBase
     {
         // given - the hybrid cache flushes its L1 in its own establishment hook, in no order against this one
         using var sut = _CreateSut();
-        await sut.LoadAsync(AbortToken);
+        await sut.EnsureLoadedAsync(AbortToken);
         await sut.ReloadAsync(SettingsSnapshotReloadReason.Establishment, null, AbortToken);
         _stored[_UserLimit] = "200";
 
@@ -389,7 +452,7 @@ public sealed class SettingsSnapshotTests : TestBase
     {
         // given - two announcements; the second reload sees only the first name's new value
         using var sut = _CreateSut();
-        await sut.LoadAsync(AbortToken);
+        await sut.EnsureLoadedAsync(AbortToken);
         _stored[_PublicLimit] = "20";
         await sut.ReloadAsync(SettingsSnapshotReloadReason.Message, [_UserLimit], AbortToken);
         sut.Revision.Should().Be(2);
@@ -412,7 +475,7 @@ public sealed class SettingsSnapshotTests : TestBase
     {
         // given
         using var sut = _CreateSut();
-        await sut.LoadAsync(AbortToken);
+        await sut.EnsureLoadedAsync(AbortToken);
         _readFailure = new InvalidOperationException("store down");
 
         // when
@@ -430,7 +493,7 @@ public sealed class SettingsSnapshotTests : TestBase
     {
         // given
         using var sut = _CreateSut();
-        await sut.LoadAsync(AbortToken);
+        await sut.EnsureLoadedAsync(AbortToken);
         using var cancelled = new CancellationTokenSource();
         await cancelled.CancelAsync();
 
@@ -447,7 +510,7 @@ public sealed class SettingsSnapshotTests : TestBase
     {
         // given
         var sut = _CreateSut();
-        await sut.LoadAsync(AbortToken);
+        await sut.EnsureLoadedAsync(AbortToken);
         await sut.ReloadAsync(SettingsSnapshotReloadReason.Message, [_PublicLimit], AbortToken);
         _timeProvider.TimersCreated.Should().Be(1);
 
@@ -472,7 +535,7 @@ public sealed class SettingsSnapshotTests : TestBase
     {
         // given
         using var sut = _CreateSut();
-        await sut.LoadAsync(AbortToken);
+        await sut.EnsureLoadedAsync(AbortToken);
         var observed = new List<long>();
         using var subscription = sut.OnChange(
             (_, revision) =>

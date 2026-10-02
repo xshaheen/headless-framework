@@ -10,8 +10,8 @@ namespace Headless.Settings.Values;
 /// <summary>Why a snapshot is being reloaded; decides whether a reload that saw no change re-reads again.</summary>
 internal enum SettingsSnapshotReloadReason
 {
-    /// <summary>The host is starting. Undefined names and a bind failure fail the start.</summary>
-    Startup = 1,
+    /// <summary>The first load, on demand or in the background. Undefined names and a bind failure throw to the caller.</summary>
+    Initial = 1,
 
     /// <summary>A <see cref="SettingChangedMessage"/> named settings this snapshot tracks.</summary>
     Message = 2,
@@ -35,8 +35,14 @@ internal interface ISettingsSnapshotEntry
     /// <summary>The backstop re-read interval.</summary>
     TimeSpan Backstop { get; }
 
-    /// <summary>Validates the names and performs the startup load. Throws when either fails.</summary>
-    Task LoadAsync(CancellationToken cancellationToken);
+    /// <summary>Whether the first load has completed.</summary>
+    bool IsLoaded { get; }
+
+    /// <summary>
+    /// Validates the names and performs the first load unless it already completed. Throws when either fails, so the
+    /// caller decides whether to retry.
+    /// </summary>
+    Task EnsureLoadedAsync(CancellationToken cancellationToken);
 
     /// <summary>Re-reads the snapshot. Failures are logged, never thrown, except cancellation.</summary>
     /// <param name="reason">Why the reload runs.</param>
@@ -85,6 +91,7 @@ internal sealed partial class SettingsSnapshot<T> : ISettingsSnapshot<T>, ISetti
     private readonly Lock _listenersLock = new();
     private Action<T, long>[] _listeners = [];
     private volatile State? _state;
+    private volatile bool _namesValidated;
     private int _disposed;
 
     public SettingsSnapshot(
@@ -115,10 +122,17 @@ internal sealed partial class SettingsSnapshot<T> : ISettingsSnapshot<T>, ISetti
         _state is { } state
             ? state.Value
             : throw new InvalidOperationException(
-                $"The settings snapshot of {typeof(T).Name} has not been loaded yet. It loads when the host starts."
+                $"The settings snapshot of {typeof(T).Name} has not loaded yet. Use GetAsync to wait for the first load."
             );
 
     public long Revision => _state?.Revision ?? 0;
+
+    public bool IsLoaded => _state is not null;
+
+    public ValueTask<T> GetAsync(CancellationToken cancellationToken = default)
+    {
+        return _state is { } state ? ValueTask.FromResult(state.Value) : _LoadAndGetAsync(cancellationToken);
+    }
 
     public IDisposable OnChange(Action<T, long> listener)
     {
@@ -132,7 +146,30 @@ internal sealed partial class SettingsSnapshot<T> : ISettingsSnapshot<T>, ISetti
         return new Subscription(this, listener);
     }
 
-    public async Task LoadAsync(CancellationToken cancellationToken)
+    public async Task EnsureLoadedAsync(CancellationToken cancellationToken)
+    {
+        if (_state is not null)
+        {
+            return;
+        }
+
+        if (!_namesValidated)
+        {
+            await _ValidateNamesAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        await _ReloadAsync(SettingsSnapshotReloadReason.Initial, announcedNames: null, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private async ValueTask<T> _LoadAndGetAsync(CancellationToken cancellationToken)
+    {
+        await EnsureLoadedAsync(cancellationToken).ConfigureAwait(false);
+
+        return Current;
+    }
+
+    private async Task _ValidateNamesAsync(CancellationToken cancellationToken)
     {
         var undefined = new List<string>();
 
@@ -151,8 +188,7 @@ internal sealed partial class SettingsSnapshot<T> : ISettingsSnapshot<T>, ISetti
             );
         }
 
-        await _ReloadAsync(SettingsSnapshotReloadReason.Startup, announcedNames: null, cancellationToken)
-            .ConfigureAwait(false);
+        _namesValidated = true;
     }
 
     public Task ReloadAsync(
@@ -218,6 +254,12 @@ internal sealed partial class SettingsSnapshot<T> : ISettingsSnapshot<T>, ISetti
 
         try
         {
+            // Concurrent first loads queue on the lock; the ones after the winner find the state and read nothing.
+            if (reason is SettingsSnapshotReloadReason.Initial && _state is { } loaded)
+            {
+                return loaded.Raw;
+            }
+
             before = _state?.Raw;
             after = await _ReadAsync(cancellationToken).ConfigureAwait(false);
 
@@ -261,7 +303,7 @@ internal sealed partial class SettingsSnapshot<T> : ISettingsSnapshot<T>, ISetti
         {
             value = _bind(after);
         }
-        catch (Exception e) when (reason is not SettingsSnapshotReloadReason.Startup)
+        catch (Exception e) when (reason is not SettingsSnapshotReloadReason.Initial)
         {
             // Keep serving the last good value: one bad operator value must not take a running process down.
             LogBindFailed(_logger, e, typeof(T).Name, string.Join(", ", _Changed(before, after)));

@@ -75,8 +75,9 @@ public static class SetupSettings
         }
 
         /// <summary>
-        /// Registers an <see cref="ISettingsSnapshot{T}"/>: a <typeparamref name="T"/> bound from Global settings, loaded when
-        /// the host starts and kept current by change announcements and a backstop re-read.
+        /// Registers an <see cref="ISettingsSnapshot{T}"/>: a <typeparamref name="T"/> bound from Global settings, loaded in
+        /// the background without blocking host startup (or on the first <c>GetAsync</c>), and kept current by change
+        /// announcements and a backstop re-read.
         /// </summary>
         /// <remarks>
         /// When the host uses messaging, this also registers the every-instance consumer of
@@ -132,7 +133,7 @@ public static class SetupSettings
             // Contributed here rather than by AddHeadlessSettings: an every-instance consumer fails startup on a
             // transport without every-instance support, so only a host that opts into snapshots takes that requirement.
             // Inert without AddHeadlessMessaging; repeated contributions register the module once.
-            services.ConfigureMessaging(static messaging => messaging.AddModule<Core.MessagingModule>());
+            services.AddMessagingModule<Core.MessagingModule>();
 
             return services;
         }

@@ -5,11 +5,21 @@ using Microsoft.Extensions.Logging;
 
 namespace Headless.Settings.Values;
 
-/// <summary>Loads every registered settings snapshot when the host starts, then re-reads each on its backstop interval.</summary>
+/// <summary>
+/// Loads every registered settings snapshot in the background once the host starts, then re-reads each on its backstop
+/// interval.
+/// </summary>
 /// <remarks>
-/// The first load runs in <see cref="StartAsync"/>, after every hosted service's <c>StartingAsync</c>, so the relational
-/// settings schema exists by then whatever order the host registered settings and snapshots in. A failure there fails
-/// the host: a process must not serve on a policy it never read.
+/// <para>
+/// Host startup never waits on a snapshot: a slow or unreachable settings store must not hold back the rest of the host.
+/// The first load is attempted as soon as the loop runs and retried with exponential backoff, capped at the snapshot's
+/// backstop interval, until it succeeds. A caller that needs the value before then awaits
+/// <see cref="ISettingsSnapshot{T}.GetAsync"/>, which loads on demand and shares the same serialized load.
+/// </para>
+/// <para>
+/// Each snapshot keeps its own jittered due time, so different intervals stay independent and replicas started together
+/// do not read in lockstep.
+/// </para>
 /// </remarks>
 internal sealed partial class SettingsSnapshotHostedService(
     IEnumerable<ISettingsSnapshotEntry> snapshots,
@@ -17,17 +27,10 @@ internal sealed partial class SettingsSnapshotHostedService(
     ILogger<SettingsSnapshotHostedService> logger
 ) : BackgroundService
 {
+    /// <summary>The first retry delay after a failed first load; it doubles up to the snapshot's backstop interval.</summary>
+    internal static readonly TimeSpan InitialRetryDelay = TimeSpan.FromSeconds(1);
+
     private readonly ISettingsSnapshotEntry[] _snapshots = [.. snapshots];
-
-    public override async Task StartAsync(CancellationToken cancellationToken)
-    {
-        foreach (var snapshot in _snapshots)
-        {
-            await snapshot.LoadAsync(cancellationToken).ConfigureAwait(false);
-        }
-
-        await base.StartAsync(cancellationToken).ConfigureAwait(false);
-    }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -36,14 +39,14 @@ internal sealed partial class SettingsSnapshotHostedService(
             return;
         }
 
-        // Each snapshot keeps its own jittered due time, so different intervals stay independent and replicas started
-        // together do not read in lockstep.
         var due = new DateTimeOffset[_snapshots.Length];
+        var retryDelay = new TimeSpan[_snapshots.Length];
         var now = timeProvider.GetUtcNow();
 
         for (var i = 0; i < _snapshots.Length; i++)
         {
-            due[i] = now + _Jittered(_snapshots[i].Backstop);
+            due[i] = now;
+            retryDelay[i] = InitialRetryDelay;
         }
 
         try
@@ -66,20 +69,25 @@ internal sealed partial class SettingsSnapshotHostedService(
                         continue;
                     }
 
-                    try
+                    var snapshot = _snapshots[i];
+
+                    if (snapshot.IsLoaded)
                     {
-                        await _snapshots[i]
-                            .ReloadAsync(SettingsSnapshotReloadReason.Backstop, announcedNames: null, stoppingToken)
-                            .ConfigureAwait(false);
-                    }
-                    catch (Exception e)
-                        when (e is not OperationCanceledException || !stoppingToken.IsCancellationRequested)
-                    {
-                        // A failed re-read must not end the loop and with it the host; the next interval tries again.
-                        LogBackstopFailed(logger, e);
+                        await _ReloadAsync(snapshot, stoppingToken).ConfigureAwait(false);
+                        due[i] = timeProvider.GetUtcNow() + _Jittered(snapshot.Backstop);
+
+                        continue;
                     }
 
-                    due[i] = timeProvider.GetUtcNow() + _Jittered(_snapshots[i].Backstop);
+                    if (await _TryLoadAsync(snapshot, retryDelay[i], stoppingToken).ConfigureAwait(false))
+                    {
+                        due[i] = timeProvider.GetUtcNow() + _Jittered(snapshot.Backstop);
+                    }
+                    else
+                    {
+                        due[i] = timeProvider.GetUtcNow() + retryDelay[i];
+                        retryDelay[i] = _NextRetryDelay(retryDelay[i], snapshot.Backstop);
+                    }
                 }
             }
         }
@@ -87,6 +95,55 @@ internal sealed partial class SettingsSnapshotHostedService(
         {
             // The host is stopping.
         }
+    }
+
+    private async Task<bool> _TryLoadAsync(
+        ISettingsSnapshotEntry snapshot,
+        TimeSpan retryDelay,
+        CancellationToken stoppingToken
+    )
+    {
+        try
+        {
+            await snapshot.EnsureLoadedAsync(stoppingToken).ConfigureAwait(false);
+
+            return true;
+        }
+        catch (Exception e) when (e is not OperationCanceledException || !stoppingToken.IsCancellationRequested)
+        {
+            LogInitialLoadFailed(logger, e, string.Join(", ", snapshot.Names), retryDelay);
+
+            return false;
+        }
+    }
+
+    private async Task _ReloadAsync(ISettingsSnapshotEntry snapshot, CancellationToken stoppingToken)
+    {
+        try
+        {
+            await snapshot
+                .ReloadAsync(SettingsSnapshotReloadReason.Backstop, announcedNames: null, stoppingToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception e) when (e is not OperationCanceledException || !stoppingToken.IsCancellationRequested)
+        {
+            // A failed re-read must not end the loop and with it the host; the next interval tries again.
+            LogBackstopFailed(logger, e);
+        }
+    }
+
+    private static TimeSpan _NextRetryDelay(TimeSpan current, TimeSpan backstop)
+    {
+        var doubled = current * 2;
+
+        return doubled < backstop ? doubled : backstop;
+    }
+
+    private static TimeSpan _Jittered(TimeSpan interval)
+    {
+#pragma warning disable CA5394 // False positive: jitter only spreads replicas' re-reads; nothing depends on it being unpredictable.
+        return interval * (0.9 + (Random.Shared.NextDouble() * 0.2));
+#pragma warning restore CA5394
     }
 
     [LoggerMessage(
@@ -97,10 +154,16 @@ internal sealed partial class SettingsSnapshotHostedService(
     )]
     private static partial void LogBackstopFailed(ILogger logger, Exception exception);
 
-    private static TimeSpan _Jittered(TimeSpan interval)
-    {
-#pragma warning disable CA5394 // False positive: jitter only spreads replicas' re-reads; nothing depends on it being unpredictable.
-        return interval * (0.9 + (Random.Shared.NextDouble() * 0.2));
-#pragma warning restore CA5394
-    }
+    [LoggerMessage(
+        EventId = 5,
+        EventName = "SettingsSnapshotInitialLoadFailed",
+        Level = LogLevel.Error,
+        Message = "Loading the settings snapshot of {SettingNames} failed; retrying in {RetryDelay}"
+    )]
+    private static partial void LogInitialLoadFailed(
+        ILogger logger,
+        Exception exception,
+        string settingNames,
+        TimeSpan retryDelay
+    );
 }

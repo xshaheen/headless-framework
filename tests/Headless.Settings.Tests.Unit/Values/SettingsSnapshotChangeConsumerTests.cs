@@ -239,7 +239,9 @@ public sealed class SettingsSnapshotChangeConsumerTests : TestBase
 
         public TimeSpan Backstop => TimeSpan.FromMinutes(1);
 
-        public Task LoadAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+        public bool IsLoaded => true;
+
+        public Task EnsureLoadedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
         public Task ReloadAsync(
             SettingsSnapshotReloadReason reason,

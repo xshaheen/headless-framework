@@ -133,7 +133,8 @@ builder.Services.AddSettingsSnapshot<RateLimitPolicy>(snapshot => snapshot
 
 public sealed class RateLimitPartitioner(ISettingsSnapshot<RateLimitPolicy> policy)
 {
-    public RateLimitPolicy Current => policy.Current;
+    // Completes synchronously once the snapshot has loaded; before that it waits for the first load.
+    public ValueTask<RateLimitPolicy> GetPolicyAsync(CancellationToken ct) => policy.GetAsync(ct);
 
     // Moves only when a value changed, so a partition keyed on it is not reset by a reload that changed nothing.
     public long Revision => policy.Revision;
@@ -143,8 +144,8 @@ public sealed class RateLimitPartitioner(ISettingsSnapshot<RateLimitPolicy> poli
 - **Scope.** Values resolve at `Global` scope with the usual fallback to configuration and the definition default, so a tenant or user value never shadows them. A setting defined with `IsInherited = false` reads the `Global` value only. A per-tenant value is not a snapshot's job; write a consumer of your own.
 - **Bind.** `Bind` receives every tracked name mapped to its resolved string, `null` when the setting has no value and no default. It runs only when a value changed.
 - **Revision.** `Revision` is `1` after the first load and moves by one each time a resolved value changes. A reload that reads the same values keeps the same `Current` instance and revision. The comparison is on the raw setting values, so it holds whatever equality `T` has, including a record holding a collection.
-- **Startup.** Every snapshot loads in its hosted service's `StartAsync`, after every `StartingAsync` hook, so the relational settings schema exists whatever order the host registered settings and snapshots in. An undefined name or a `Bind` exception there fails the host: a process does not serve on a policy it never read. Reading `Current` before the load throws `InvalidOperationException`.
-- **Bad values later.** A `Bind` exception after startup is logged with the setting names, never their values, and the snapshot keeps its last good value and revision.
+- **Loading.** A snapshot never blocks host startup. Its hosted service starts the first load in the background as soon as the host runs, and retries a failed first load with exponential backoff from one second up to the backstop interval, logging each failure. `GetAsync` returns the value, waiting for (or starting) the first load when it has not finished, and completes synchronously afterwards; a failed first load throws to that caller, and the next call tries again. `Current` is the synchronous read and throws `InvalidOperationException` until the first load completes, so use it only where the value is known to be loaded. An undefined setting name makes every load throw, naming it.
+- **Bad values later.** A `Bind` exception after the first load is logged with the setting names, never their values, and the snapshot keeps its last good value and revision.
 - **Listeners.** `OnChange((value, revision) => ...)` runs after `Current` and `Revision` show the change. A listener exception is logged and does not stop the other listeners. Dispose the returned handle to unregister.
 - **Change announcements.** One framework consumer, identity `headless.settings.snapshot`, receives every `SettingChangedMessage` in every process and reloads the snapshots tracking an announced name at `Global` scope. It never filters on `OriginHostName`, so the writing process refreshes too. It reloads every snapshot each time its subscription is established, first or after a gap, because delivery is at most once. When a reload does not yet see the announced value, it re-reads a few times over the next few seconds, which closes the cache ordering window described above.
 - **Transport.** `AddSettingsSnapshot` contributes that consumer, and only when the host uses messaging. It is an [every-instance consumer](messaging.md#every-instance-bus-delivery), so a host on a transport without every-instance delivery (AWS SNS/SQS, or Azure Service Bus without `AutoProvision`) fails at startup once it registers a snapshot. Such a host runs the snapshot without messaging. A host that never calls `AddSettingsSnapshot` is unaffected.
@@ -179,7 +180,7 @@ Defines the provider-agnostic interfaces for dynamic application settings manage
 - `SettingValue` — immutable record `SettingValue(string Name, string? Value, SettingValueProvider? Provider = null)` returned by `GetAsync` and `GetAllAsync`; `Provider` attributes the resolving value provider (or `null` on a miss)
 - `SettingValueProvider` — immutable record `SettingValueProvider(string Name, string? Key)` identifying the provider name and its per-provider key
 - `ISettingDefinitionContext` — context passed to `ISettingDefinitionProvider.Define()`; exposes the factory `Add(SettingDefinitionCreateOptions options)` (creates, registers, and returns the definition), plus `GetOrDefault(name)` and `GetAll()`
-- `ISettingsSnapshot<T>` — a typed value bound from Global settings, held in memory: `Current`, `Revision` (moves only when a value changed), and `OnChange(listener)`. Registered with `AddSettingsSnapshot<T>` from `Headless.Settings.Core`; see [Settings snapshot](#settings-snapshot)
+- `ISettingsSnapshot<T>` — a typed value bound from Global settings, held in memory: `GetAsync` (waits for the first load), `Current` (synchronous, after the first load), `Revision` (moves only when a value changed), and `OnChange(listener)`. Registered with `AddSettingsSnapshot<T>` from `Headless.Settings.Core`; see [Settings snapshot](#settings-snapshot)
 - `SettingValueProviderNames` — constants `DefaultValue`, `Configuration`, `Global`, `Tenant`, `User` for targeting built-in providers
 - General extension members on `ISettingManager`: `IsTrueAsync`, `IsFalseAsync`, `GetAsync<T>` (deserializes JSON), `SetAsync<T>` (serializes to JSON)
 - Scoped extension members: `GetForTenantAsync` / `SetForTenantAsync` / `GetAllForTenantAsync` (and `*ForCurrentTenant*` variants), equivalent `*ForUser*` / `*ForCurrentUser*` set, `GetGlobalAsync` / `SetGlobalAsync` / `GetAllGlobalAsync`, `GetDefaultAsync` / `GetAllDefaultAsync`, `GetInConfigurationAsync` / `GetAllInConfigurationAsync`. The `GetAll*` helpers return `IReadOnlyList<SettingValue>`
@@ -377,7 +378,8 @@ builder.Services.AddSettingsSnapshot<UploadPolicy>(snapshot => snapshot
 
 public sealed class UploadValidator(ISettingsSnapshot<UploadPolicy> policy)
 {
-    public bool IsAllowed(long size) => size <= policy.Current.MaxFileSize;
+    public async ValueTask<bool> IsAllowedAsync(long size, CancellationToken ct) =>
+        size <= (await policy.GetAsync(ct)).MaxFileSize;
 }
 ```
 

@@ -20,10 +20,6 @@
     <ProjectReference Include="..\Headless.DistributedLocks.Abstractions\Headless.DistributedLocks.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Messaging.Abstractions\Headless.Messaging.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Messaging.Bus.Abstractions\Headless.Messaging.Bus.Abstractions.csproj" />
-    <!-- Messaging.Core hosts the generated MessagingModule that registers the settings-snapshot change consumer from
-         its [BusConsumer] attribute. The module is contributed only by AddSettingsSnapshot and stays inert without
-         AddHeadlessMessaging. -->
-    <ProjectReference Include="..\Headless.Messaging.Core\Headless.Messaging.Core.csproj" />
     <!-- Generates this assembly's MessagingModule at build time; the module ships compiled into this package, so
          consumers of the package need neither the generator nor a dependency on it. -->
     <ProjectReference
