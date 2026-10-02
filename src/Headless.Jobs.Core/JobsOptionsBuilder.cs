@@ -7,6 +7,7 @@ using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Models;
+using Headless.Reliability;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -27,6 +28,7 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     private readonly List<string> _runOnly = [];
     private JobOptions _jobDefaults = new();
     private readonly Dictionary<Type, JobOptions> _jobOptionsByRequest = [];
+    private FailurePolicyDefinition? _defaultFailurePolicy;
 
     /// <summary>
     /// Adds one assembly's generated job functions and middleware, for example
@@ -54,8 +56,8 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     /// </summary>
     /// <remarks>
     /// The identity is checked when the host's job registry is built: an identity no registered module declares fails
-    /// startup. <c>Headless:Jobs:Jobs:{identity}</c> configuration (<c>Concurrency</c>, <c>Priority</c>) applies after
-    /// every <c>Tune</c> call. <paramref name="configure"/> runs once, synchronously, during this call.
+    /// startup. <c>Headless:Jobs:Jobs:{identity}</c> configuration (<c>Concurrency</c>, <c>Priority</c>,
+    /// <c>FailurePolicy</c>) applies after every <c>Tune</c> call. <paramref name="configure"/> runs once, synchronously, during this call.
     /// </remarks>
     /// <param name="identity">The job's <c>[Job]</c> identity.</param>
     /// <param name="configure">Changes the job's deployment settings.</param>
@@ -95,19 +97,70 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
         return this;
     }
 
-    /// <summary>Sets retry and node-death defaults for this host. Invocation metadata is not accepted.</summary>
+    /// <summary>
+    /// Sets the failure policy of every job on this host that neither declares one on its attribute nor has one tuned.
+    /// Without this call such a job does not retry.
+    /// </summary>
+    /// <remarks>
+    /// <c>Headless:Jobs:Jobs:{identity}:FailurePolicy</c> configuration still adjusts the retry counts and delays of a
+    /// job that uses the default. A later call replaces an earlier one; the value is captured when
+    /// <c>AddHeadlessJobs</c> returns.
+    /// </remarks>
+    /// <typeparam name="TPolicy">The policy type; it is built once, during this call.</typeparam>
+    /// <returns>This builder, for chaining.</returns>
+    /// <exception cref="ArgumentException">The policy's retry counts or delays are out of range.</exception>
+    public JobsOptionsBuilder<TTimeJob, TCronJob> DefaultFailurePolicy<TPolicy>()
+        where TPolicy : FailurePolicy, new()
+    {
+        _defaultFailurePolicy = new TPolicy().Build();
+        return this;
+    }
+
+    /// <summary>
+    /// Sets the host's default job failure policy inline, for example
+    /// <c>DefaultFailurePolicy(p =&gt; p.Delayed(3, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(10)))</c>.
+    /// See <see cref="DefaultFailurePolicy{TPolicy}"/>.
+    /// </summary>
+    /// <param name="configure">Describes the policy; it runs once, synchronously, during this call.</param>
+    /// <returns>This builder, for chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">The policy's retry counts or delays are out of range.</exception>
+    public JobsOptionsBuilder<TTimeJob, TCronJob> DefaultFailurePolicy(
+        [InstantHandle] Action<FailurePolicyBuilder> configure
+    )
+    {
+        Argument.IsNotNull(configure);
+
+        var builder = new FailurePolicyBuilder();
+        configure(builder);
+        _defaultFailurePolicy = builder.Build();
+        return this;
+    }
+
+    /// <summary>
+    /// Sets the node-death default for this host. Retries are not accepted: a job's failure policy owns them, so use
+    /// <see cref="DefaultFailurePolicy{TPolicy}"/> instead. Invocation metadata is not accepted.
+    /// </summary>
+    /// <param name="options">Startup policy settings.</param>
+    /// <returns>This builder for method chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="options"/> is null.</exception>
+    /// <exception cref="ArgumentException">
+    /// The options set retries or retry intervals, contain invalid settings, or carry invocation metadata.
+    /// </exception>
     public JobsOptionsBuilder<TTimeJob, TCronJob> ConfigureDefaults(JobOptions options)
     {
         _jobDefaults = JobSchedulingPolicies.Snapshot(options);
         return this;
     }
 
-    /// <summary>Authors retry and node-death defaults for this host.</summary>
+    /// <summary>Authors the node-death default for this host. See <see cref="ConfigureDefaults(JobOptions)"/>.</summary>
     /// <remarks>Invokes the callback once synchronously with a fresh builder, then validates and snapshots its options. Asynchronous callbacks are not supported.</remarks>
-    /// <param name="configure">Authors startup policy settings; invocation metadata is not accepted.</param>
+    /// <param name="configure">Authors startup policy settings; retries and invocation metadata are not accepted.</param>
     /// <returns>This builder for method chaining.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="configure"/> is null.</exception>
-    /// <exception cref="ArgumentException">The authored policy contains invalid settings or invocation metadata.</exception>
+    /// <exception cref="ArgumentException">
+    /// The authored policy sets retries or retry intervals, contains invalid settings, or carries invocation metadata.
+    /// </exception>
     public JobsOptionsBuilder<TTimeJob, TCronJob> ConfigureDefaults(Action<JobOptionsBuilder> configure)
     {
         Argument.IsNotNull(configure);
@@ -116,20 +169,35 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
         return ConfigureDefaults(builder.Build());
     }
 
-    /// <summary>Overrides host defaults for the generated handler accepting this request type.</summary>
+    /// <summary>
+    /// Overrides the host's node-death default for the generated handler accepting this request type. Retries are not
+    /// accepted: the job's failure policy owns them.
+    /// </summary>
+    /// <typeparam name="TRequest">The request type accepted by the generated handler.</typeparam>
+    /// <param name="options">Startup policy settings.</param>
+    /// <returns>This builder for method chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="options"/> is null.</exception>
+    /// <exception cref="ArgumentException">
+    /// The options set retries or retry intervals, contain invalid settings, or carry invocation metadata.
+    /// </exception>
     public JobsOptionsBuilder<TTimeJob, TCronJob> ConfigureJob<TRequest>(JobOptions options)
     {
         _jobOptionsByRequest[typeof(TRequest)] = JobSchedulingPolicies.Snapshot(options);
         return this;
     }
 
-    /// <summary>Authors policy overrides for the generated handler accepting this request type.</summary>
+    /// <summary>
+    /// Authors the node-death override for the generated handler accepting this request type. See
+    /// <see cref="ConfigureJob{TRequest}(JobOptions)"/>.
+    /// </summary>
     /// <remarks>Invokes the callback once synchronously with a fresh builder, then validates and snapshots its options. Asynchronous callbacks are not supported.</remarks>
     /// <typeparam name="TRequest">The request type accepted by the generated handler.</typeparam>
-    /// <param name="configure">Authors startup policy settings; invocation metadata is not accepted.</param>
+    /// <param name="configure">Authors startup policy settings; retries and invocation metadata are not accepted.</param>
     /// <returns>This builder for method chaining.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="configure"/> is null.</exception>
-    /// <exception cref="ArgumentException">The authored policy contains invalid settings or invocation metadata.</exception>
+    /// <exception cref="ArgumentException">
+    /// The authored policy sets retries or retry intervals, contains invalid settings, or carries invocation metadata.
+    /// </exception>
     public JobsOptionsBuilder<TTimeJob, TCronJob> ConfigureJob<TRequest>(Action<JobOptionsBuilder> configure)
     {
         Argument.IsNotNull(configure);
@@ -139,6 +207,9 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     }
 
     internal JobSchedulingPolicies FreezeSchedulingPolicies() => new(_jobDefaults, _jobOptionsByRequest, []);
+
+    /// <summary>The <c>DefaultFailurePolicy</c> authored so far, captured when <c>AddHeadlessJobs</c> returns.</summary>
+    internal FailurePolicyDefinition? FreezeDefaultFailurePolicy() => _defaultFailurePolicy;
 
     /// <summary>The <c>RunOnly</c> entries authored so far, snapshotted when <c>AddHeadlessJobs</c> returns.</summary>
     internal string[] FreezeRunOnly() => [.. _runOnly];

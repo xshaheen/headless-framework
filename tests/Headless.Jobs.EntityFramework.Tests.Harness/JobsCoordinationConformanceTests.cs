@@ -1983,6 +1983,41 @@ public abstract class JobsCoordinationConformanceTests<TFixture>(TFixture fixtur
         }
     }
 
+    public virtual async Task should_seed_failure_policy_retries_only_when_the_definition_is_created()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+
+        using var host = fixture.BuildHost("cron-seed-retries-node");
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+
+        var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+        await persistence.MigrateDefinedCronJobsAsync([seed("0 */5 * * * *", 5, [0, 0, 30, 60, 120])], ct);
+        var created = (await persistence.GetCronJobsAsync(predicate: null, ct)).Single();
+
+        // A redeploy with a changed policy, and one that also moves the schedule, must leave the seeded retries alone.
+        await persistence.MigrateDefinedCronJobsAsync([seed("0 */5 * * * *", 1, [10])], ct);
+        await persistence.MigrateDefinedCronJobsAsync([seed("0 */10 * * * *", 1, [10])], ct);
+        var reseeded = (await persistence.GetCronJobsAsync(predicate: null, ct)).Single();
+
+        created.Retries.Should().Be(5);
+        created.RetryIntervals.Should().Equal(0, 0, 30, 60, 120);
+        reseeded.Expression.Should().Be("0 */10 * * * *");
+        reseeded.Retries.Should().Be(5);
+        reseeded.RetryIntervals.Should().Equal(0, 0, 30, 60, 120);
+
+        static CronSeedDefinition seed(string expression, int retries, int[] intervals) =>
+            new(
+                "seeded-retries",
+                expression,
+                MissedRunPolicy.Coalesce,
+                JobsRecoveryDefaults.MissedRunGraceSeconds,
+                CronOverlapPolicy.Allow,
+                Retries: retries,
+                RetryIntervals: intervals
+            );
+    }
+
     public virtual async Task concurrent_seeders_accept_only_the_verified_deterministic_id_winner()
     {
         var ct = AbortToken;

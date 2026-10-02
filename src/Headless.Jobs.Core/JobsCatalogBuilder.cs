@@ -5,6 +5,7 @@ using System.Globalization;
 using Headless.Checks;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Models;
+using Headless.Reliability;
 using Microsoft.Extensions.Configuration;
 
 namespace Headless.Jobs;
@@ -115,16 +116,24 @@ public sealed class JobsCatalogBuilder
 
     /// <summary>
     /// Freezes the catalog into one host's registry: detects conflicts across modules, applies tuning and then
-    /// configuration, and resolves the host's run filter.
+    /// configuration, resolves every job's failure policy, and resolves the host's run filter.
     /// </summary>
+    /// <param name="tunings">The host's <c>Tune</c> calls, in registration order.</param>
+    /// <param name="runOnly">The host's <c>RunOnly</c> entries.</param>
+    /// <param name="configuration">The configuration whose <c>Headless:Jobs:Jobs</c> section tunes jobs, if any.</param>
+    /// <param name="defaultFailurePolicy">
+    /// The failure policy of a job that neither declares nor tunes one, or <see langword="null"/> for no retries.
+    /// </param>
     /// <exception cref="InvalidOperationException">
     /// Two modules declare one identity, argument type, or job type; tuning or configuration names an unknown job or
-    /// carries an invalid value; or a <c>RunOnly</c> entry matches no registered job.
+    /// carries an invalid value; a declared failure policy is null or invalid; or a <c>RunOnly</c> entry matches no
+    /// registered job.
     /// </exception>
     internal JobFunctionRegistry Build(
         IEnumerable<JobTuning> tunings,
         IReadOnlyCollection<string> runOnly,
-        IConfiguration? configuration
+        IConfiguration? configuration,
+        FailurePolicyDefinition? defaultFailurePolicy = null
     )
     {
         _ThrowOnConflicts();
@@ -141,6 +150,8 @@ public sealed class JobsCatalogBuilder
         var options = new Dictionary<string, JobOptions>(StringComparer.Ordinal);
         var schedule = new List<JobScheduleMiddlewareRegistration>(_schedule);
         var execute = new List<JobExecuteMiddlewareRegistration>(_execute);
+        var tunedPolicies = new Dictionary<string, FailurePolicyDefinition>(StringComparer.Ordinal);
+        var policyOverrides = new List<ConfiguredFailurePolicy>();
         var errors = new List<string>();
 
         foreach (var tuning in tunings)
@@ -157,14 +168,27 @@ public sealed class JobsCatalogBuilder
                 options[tuning.Identity] = tunedOptions;
             }
 
+            if (tuning.FailurePolicy is { } tunedPolicy)
+            {
+                tunedPolicies[tuning.Identity] = tunedPolicy;
+            }
+
             _AddMissingMiddleware(schedule, tuning.ScheduleMiddleware);
             _AddMissingMiddleware(execute, tuning.ExecuteMiddleware);
         }
 
         if (configuration is not null)
         {
-            _ApplyConfiguration(configuration, functions, descriptors, errors);
+            _ApplyConfiguration(configuration, functions, descriptors, policyOverrides, errors);
         }
+
+        var failurePolicies = _ResolveFailurePolicies(
+            functions,
+            tunedPolicies,
+            policyOverrides,
+            defaultFailurePolicy ?? FailurePolicyDefinition.None,
+            errors
+        );
 
         if (errors.Count != 0)
         {
@@ -189,13 +213,84 @@ public sealed class JobsCatalogBuilder
             // Resolved against every registered identity, so a filter never makes a job unschedulable.
             RunFilter = JobsRunFilter.Create(runOnly, frozenFunctions.Keys),
             OptionsByFunction = options.ToFrozenDictionary(StringComparer.Ordinal),
+            FailurePolicies = failurePolicies.ToFrozenDictionary(StringComparer.Ordinal),
+            DefaultFailurePolicy = defaultFailurePolicy ?? FailurePolicyDefinition.None,
         };
+    }
+
+    /// <summary>
+    /// Resolves one failure policy per job: the tuned policy, else the declared one, else the host default, then the
+    /// configured numeric overrides. The declared factory runs for every job, even a tuned one, so a broken declaration
+    /// fails startup on every host instead of only on hosts that do not tune it.
+    /// </summary>
+    private Dictionary<string, FailurePolicyDefinition> _ResolveFailurePolicies(
+        Dictionary<string, JobFunctionRegistration> functions,
+        Dictionary<string, FailurePolicyDefinition> tunedPolicies,
+        List<ConfiguredFailurePolicy> policyOverrides,
+        FailurePolicyDefinition defaultFailurePolicy,
+        List<string> errors
+    )
+    {
+        var resolved = new Dictionary<string, FailurePolicyDefinition>(StringComparer.Ordinal);
+        foreach (var (identity, registration) in functions)
+        {
+            var declared = _BuildDeclaredFailurePolicy(identity, registration, errors);
+            resolved[identity] = tunedPolicies.GetValueOrDefault(identity) ?? declared ?? defaultFailurePolicy;
+        }
+
+        foreach (var (identity, path, overrides) in policyOverrides)
+        {
+            try
+            {
+                resolved[identity] = resolved[identity].With(overrides);
+            }
+            catch (ArgumentException exception)
+            {
+                errors.Add($"Configuration '{path}' does not describe a valid failure policy: {exception.Message}");
+            }
+        }
+
+        return resolved;
+    }
+
+    private FailurePolicyDefinition? _BuildDeclaredFailurePolicy(
+        string identity,
+        JobFunctionRegistration registration,
+        List<string> errors
+    )
+    {
+        if (registration.FailurePolicy is not { } factory)
+        {
+            return null;
+        }
+
+        var source = _functions.First(x => string.Equals(x.Name, identity, StringComparison.Ordinal)).Source;
+        var policy = factory();
+        if (policy is null)
+        {
+            errors.Add($"The failure policy factory of job '{identity}' in '{source}' returned null.");
+            return null;
+        }
+
+        try
+        {
+            return policy.Build();
+        }
+        catch (ArgumentException exception)
+        {
+            var type = policy.GetType();
+            errors.Add(
+                $"Failure policy {type.FullName ?? type.Name} of job '{identity}' in '{source}' is invalid: {exception.Message}"
+            );
+            return null;
+        }
     }
 
     private static void _ApplyConfiguration(
         IConfiguration configuration,
         Dictionary<string, JobFunctionRegistration> functions,
         Dictionary<string, JobFunctionDescriptor> descriptors,
+        List<ConfiguredFailurePolicy> policyOverrides,
         List<string> errors
     )
     {
@@ -243,16 +338,86 @@ public sealed class JobsCatalogBuilder
                         );
                     }
                 }
+                else if (string.Equals(setting.Key, "FailurePolicy", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (_ReadFailurePolicy(setting, errors) is { } overrides)
+                    {
+                        policyOverrides.Add(new(job.Key, setting.Path, overrides));
+                    }
+                }
                 else
                 {
                     errors.Add(
-                        $"Configuration '{setting.Path}' is not a job setting. Supported settings are Concurrency and Priority."
+                        $"Configuration '{setting.Path}' is not a job setting. Supported settings are Concurrency, Priority, and FailurePolicy."
                     );
                 }
             }
 
             _Apply(functions, descriptors, job.Key, maxConcurrency, priority);
         }
+    }
+
+    // Only the numbers are configurable: fail rules are code, so they always come from the resolved policy.
+    private static FailurePolicyOverrides? _ReadFailurePolicy(IConfigurationSection section, List<string> errors)
+    {
+        var overrides = new FailurePolicyOverrides();
+        var valid = true;
+
+        foreach (var setting in section.GetChildren())
+        {
+            if (string.Equals(setting.Key, "ImmediateRetries", StringComparison.OrdinalIgnoreCase))
+            {
+                overrides.ImmediateRetries = _ReadRetries(setting, errors, ref valid);
+            }
+            else if (string.Equals(setting.Key, "DelayedRetries", StringComparison.OrdinalIgnoreCase))
+            {
+                overrides.DelayedRetries = _ReadRetries(setting, errors, ref valid);
+            }
+            else if (string.Equals(setting.Key, "DelayedInitialDelay", StringComparison.OrdinalIgnoreCase))
+            {
+                overrides.DelayedInitialDelay = _ReadDelay(setting, errors, ref valid);
+            }
+            else if (string.Equals(setting.Key, "DelayedMaxDelay", StringComparison.OrdinalIgnoreCase))
+            {
+                overrides.DelayedMaxDelay = _ReadDelay(setting, errors, ref valid);
+            }
+            else
+            {
+                errors.Add(
+                    $"Configuration '{setting.Path}' is not a failure policy setting. The supported settings are "
+                        + "ImmediateRetries, DelayedRetries, DelayedInitialDelay, and DelayedMaxDelay."
+                );
+                valid = false;
+            }
+        }
+
+        return valid ? overrides : null;
+    }
+
+    private static int? _ReadRetries(IConfigurationSection setting, List<string> errors, ref bool valid)
+    {
+        if (int.TryParse(setting.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var retries))
+        {
+            return retries;
+        }
+
+        errors.Add($"Configuration '{setting.Path}' must be an integer.");
+        valid = false;
+
+        return null;
+    }
+
+    private static TimeSpan? _ReadDelay(IConfigurationSection setting, List<string> errors, ref bool valid)
+    {
+        if (TimeSpan.TryParse(setting.Value, CultureInfo.InvariantCulture, out var delay))
+        {
+            return delay;
+        }
+
+        errors.Add($"Configuration '{setting.Path}' must be a duration such as '00:00:30'.");
+        valid = false;
+
+        return null;
     }
 
     private static void _Apply(
@@ -363,3 +528,6 @@ public sealed class JobsCatalogBuilder
         }
     }
 }
+
+/// <summary>One job's <c>FailurePolicy</c> configuration section, applied after its policy is otherwise resolved.</summary>
+internal readonly record struct ConfiguredFailurePolicy(string Identity, string Path, FailurePolicyOverrides Overrides);

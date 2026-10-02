@@ -86,13 +86,16 @@ public sealed class JobsTuningTests : TestBase
     }
 
     [Fact]
-    public async Task should_resolve_tuned_retry_options_for_the_job_only()
+    public async Task should_resolve_tuned_node_death_options_for_the_job_only()
     {
         // given
         var services = _Services(options =>
             options
-                .ConfigureDefaults(defaults => defaults.WithRetries(1))
-                .Tune(TestJobs.BillingCloseDay, job => job.Options(policy => policy.WithRetries(7)))
+                .ConfigureDefaults(defaults => defaults.WithNodeDeathPolicy(NodeDeathPolicy.Skip))
+                .Tune(
+                    TestJobs.BillingCloseDay,
+                    job => job.Options(policy => policy.WithNodeDeathPolicy(NodeDeathPolicy.MarkFailed))
+                )
         );
         await using var provider = services.BuildServiceProvider();
         var registry = provider.GetRequiredService<JobFunctionRegistry>();
@@ -101,8 +104,14 @@ public sealed class JobsTuningTests : TestBase
         var policies = provider.GetRequiredService<JobSchedulingPolicies>();
 
         // then
-        policies.Resolve(registry.Descriptors[TestJobs.BillingCloseDay], call: null).Retries.Should().Be(7);
-        policies.Resolve(registry.Descriptors[TestJobs.BillingSendInvoice], call: null).Retries.Should().Be(1);
+        policies
+            .Resolve(registry.Descriptors[TestJobs.BillingCloseDay], call: null)
+            .OnNodeDeath.Should()
+            .Be(NodeDeathPolicy.MarkFailed);
+        policies
+            .Resolve(registry.Descriptors[TestJobs.BillingSendInvoice], call: null)
+            .OnNodeDeath.Should()
+            .Be(NodeDeathPolicy.Skip);
     }
 
     [Fact]
@@ -111,8 +120,11 @@ public sealed class JobsTuningTests : TestBase
         // given
         var services = _Services(options =>
             options
-                .ConfigureJob<InvoiceArgs>(policy => policy.WithRetries(2))
-                .Tune(TestJobs.BillingSendInvoice, job => job.Options(new JobOptions { Retries = 3 }))
+                .ConfigureJob<InvoiceArgs>(policy => policy.WithNodeDeathPolicy(NodeDeathPolicy.Skip))
+                .Tune(
+                    TestJobs.BillingSendInvoice,
+                    job => job.Options(new JobOptions { OnNodeDeath = NodeDeathPolicy.MarkFailed })
+                )
         );
         await using var provider = services.BuildServiceProvider();
 

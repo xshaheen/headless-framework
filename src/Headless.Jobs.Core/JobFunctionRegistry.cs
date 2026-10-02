@@ -4,6 +4,7 @@ using Headless.Jobs.Base;
 using Headless.Jobs.Instrumentation;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Models;
+using Headless.Reliability;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -223,9 +224,27 @@ internal sealed record JobFunctionRegistry(
     /// </summary>
     public JobsRunFilter RunFilter { get; init; } = JobsRunFilter.All;
 
-    /// <summary>Retry and node-death overrides tuned per job identity.</summary>
+    /// <summary>Node-death overrides tuned per job identity.</summary>
     public FrozenDictionary<string, JobOptions> OptionsByFunction { get; init; } =
         FrozenDictionary<string, JobOptions>.Empty;
+
+    /// <summary>
+    /// The resolved failure policy of every registered job: the tuned policy, else the declared one, else
+    /// <see cref="DefaultFailurePolicy"/>, with <c>Headless:Jobs:Jobs:{identity}:FailurePolicy</c> configuration
+    /// applied last.
+    /// </summary>
+    public FrozenDictionary<string, FailurePolicyDefinition> FailurePolicies { get; init; } =
+        FrozenDictionary<string, FailurePolicyDefinition>.Empty;
+
+    /// <summary>The host's default failure policy; without one a failed run does not retry.</summary>
+    public FailurePolicyDefinition DefaultFailurePolicy { get; init; } = FailurePolicyDefinition.None;
+
+    /// <summary>
+    /// Returns the failure policy that classifies and paces the retries of <paramref name="functionName"/>. A function
+    /// this host does not register, such as a row another deployment scheduled, takes the host default.
+    /// </summary>
+    public FailurePolicyDefinition GetFailurePolicy(string functionName) =>
+        FailurePolicies.GetValueOrDefault(functionName) ?? DefaultFailurePolicy;
 }
 
 /// <summary>

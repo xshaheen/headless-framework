@@ -1435,7 +1435,9 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 onOverlap,
                 evaluationFingerprint,
                 contractVersion,
-                timeZoneId
+                timeZoneId,
+                retries,
+                retryIntervals
             ) in cronJobs
         )
         {
@@ -1522,6 +1524,8 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 OnMissedRun = onMissedRun,
                 MissedRunGraceSeconds = missedRunGraceSeconds,
                 OnOverlap = onOverlap,
+                Retries = retries,
+                RetryIntervals = retryIntervals?.ToArray(),
                 EvaluationFingerprint = evaluationFingerprint,
             };
 

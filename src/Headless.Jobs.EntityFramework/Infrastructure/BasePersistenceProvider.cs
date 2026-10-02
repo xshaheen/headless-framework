@@ -1237,6 +1237,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                     x.EvaluationFingerprint,
                     x.ContractVersion,
                     x.TimeZoneId,
+                    x.Retries,
+                    x.RetryIntervals,
                     Id: existingByFunction.TryGetValue(x.Function, out var existingDefinition)
                         ? existingDefinition.Id
                         : JobsSeedId.ForCronSeed(x.Function)
@@ -1258,6 +1260,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                 evaluationFingerprint,
                 contractVersion,
                 timeZoneId,
+                retries,
+                retryIntervals,
                 _
             ) in orderedCronJobs
         )
@@ -1328,6 +1332,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                     OnMissedRun = onMissedRun,
                     MissedRunGraceSeconds = missedRunGraceSeconds,
                     OnOverlap = onOverlap,
+                    Retries = retries,
+                    RetryIntervals = retryIntervals?.ToArray(),
                     EvaluationFingerprint = evaluationFingerprint,
                 };
                 await cronSet.AddAsync(entity, cancellationToken).ConfigureAwait(false);

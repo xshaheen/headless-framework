@@ -8,6 +8,7 @@ using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Internal;
 using Headless.Jobs.Models;
+using Headless.Reliability;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -241,7 +242,8 @@ internal sealed class JobsInitializationHostedService(
                     scopedProvider
                         .GetRequiredService<CronScheduleCache>()
                         .ComputeEvaluationFingerprint(x.Value.TimeZoneId),
-                    functionRegistry.Descriptors[x.Key].ContractVersion
+                    functionRegistry.Descriptors[x.Key].ContractVersion,
+                    functionRegistry.GetFailurePolicy(x.Key)
                 )
             )
             .ToArray();
@@ -298,14 +300,16 @@ internal sealed class JobsInitializationHostedService(
     /// <summary>
     /// Resolves one declared function's knobs — attribute value, else the scheduler-wide default — and rejects any
     /// that a hand-written registration could still carry out of range; the source generator already rejects them for
-    /// attributes.
+    /// attributes. The retries come from the job's resolved failure policy, flattened the same way a scheduling call
+    /// stores them.
     /// </summary>
     private static CronSeedDefinition _ToSeed(
         string function,
         JobFunctionRegistration registration,
         SchedulerOptionsBuilder schedulerOptions,
         string evaluationFingerprint,
-        string contractVersion
+        string contractVersion,
+        FailurePolicyDefinition failurePolicy
     )
     {
         var onMissedRun = registration.OnMissedRun ?? schedulerOptions.DefaultMissedRunPolicy;
@@ -342,6 +346,8 @@ internal sealed class JobsInitializationHostedService(
             );
         }
 
+        var (retries, retryIntervals) = JobSchedulingPolicies.Flatten(failurePolicy);
+
         return new CronSeedDefinition(
             function,
             registration.CronExpression,
@@ -350,7 +356,9 @@ internal sealed class JobsInitializationHostedService(
             onOverlap,
             evaluationFingerprint,
             contractVersion,
-            registration.TimeZoneId
+            registration.TimeZoneId,
+            retries,
+            retryIntervals
         );
     }
 }

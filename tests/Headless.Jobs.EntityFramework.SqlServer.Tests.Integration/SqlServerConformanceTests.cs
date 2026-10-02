@@ -200,6 +200,12 @@ public sealed class SqlServerConformanceTests(SqlServerJobsCoordinationFixture f
     }
 
     [Fact]
+    public override Task should_seed_failure_policy_retries_only_when_the_definition_is_created()
+    {
+        return base.should_seed_failure_policy_retries_only_when_the_definition_is_created();
+    }
+
+    [Fact]
     public override Task concurrent_seeders_accept_only_the_verified_deterministic_id_winner()
     {
         return base.concurrent_seeders_accept_only_the_verified_deterministic_id_winner();

@@ -5,31 +5,49 @@ using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Models;
+using Headless.Reliability;
 
 namespace Tests;
 
 public static class JobsKeyedPolicyScenarios
 {
+    /// <summary>
+    /// The row each host's policy stores. The retries and intervals are what <see cref="FailurePolicy"/> flattens to:
+    /// <c>host + 2</c> delayed retries doubling from <c>host + 3</c> seconds, capped at <c>host + 7</c> seconds.
+    /// </summary>
     public static JobOptions Policy(int host) =>
         new()
         {
             Retries = host + 2,
-            RetryIntervals = [host + 3, host + 7],
+            RetryIntervals = host == 0 ? [3, 6] : [4, 8, 8],
             OnNodeDeath = host == 0 ? NodeDeathPolicy.Skip : NodeDeathPolicy.MarkFailed,
         };
+
+    public static void FailurePolicy(int host, FailurePolicyBuilder policy) =>
+        policy.Delayed(host + 2, TimeSpan.FromSeconds(host + 3), TimeSpan.FromSeconds(host + 7));
 
     public static void Configure<TRequest>(
         JobsOptionsBuilder<TimeJobEntity, CronJobEntity> options,
         int host,
-        string source
+        string source,
+        string functionName
     )
     {
-        options.ConfigureDefaults(
-            string.Equals(source, "host", StringComparison.Ordinal) ? Policy(host) : new JobOptions { Retries = 9 }
-        );
+        var nodeDeath = new JobOptions { OnNodeDeath = Policy(host).OnNodeDeath };
+        if (string.Equals(source, "host", StringComparison.Ordinal))
+        {
+            options.DefaultFailurePolicy(policy => FailurePolicy(host, policy)).ConfigureDefaults(nodeDeath);
+        }
+        else
+        {
+            options.DefaultFailurePolicy(policy => policy.Immediate(9));
+        }
+
         if (string.Equals(source, "function", StringComparison.Ordinal))
         {
-            options.ConfigureJob<TRequest>(Policy(host));
+            options
+                .Tune(functionName, job => job.FailurePolicy(policy => FailurePolicy(host, policy)))
+                .ConfigureJob<TRequest>(nodeDeath);
         }
     }
 
