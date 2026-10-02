@@ -30,4 +30,31 @@ internal static class CoordinatedWriteContextFactory
                     + "DbContext pooling requires."
             );
     }
+
+    /// <summary>
+    /// Validates, when <c>UseApplicationDbContext</c> is called, that Jobs can construct <typeparamref name="TContext" />
+    /// itself. Jobs creates its contexts outside any request scope: from a pooled factory, and by cloning the options
+    /// onto a unit of work's connection. Both need the single-argument <c>DbContextOptions&lt;TContext&gt;</c>
+    /// constructor. A context deriving from <c>HeadlessDbContext</c> cannot declare one, because it takes
+    /// request-scoped services, so the message names the supported alternative instead of only the constructor.
+    /// </summary>
+    public static void RequireApplicationContextConstructor<TContext>()
+        where TContext : DbContext
+    {
+        if (typeof(TContext).GetConstructor([typeof(DbContextOptions<TContext>)]) is not null)
+        {
+            return;
+        }
+
+        var name = typeof(TContext).Name;
+
+        throw new InvalidOperationException(
+            $"Jobs cannot share {name} through UseApplicationDbContext. Jobs creates its contexts outside any request "
+                + $"scope (from a pooled factory, and cloned onto a unit of work's connection), so {name} must declare a "
+                + $"public constructor accepting a single DbContextOptions<{name}> argument. A context deriving from "
+                + "HeadlessDbContext cannot, because it takes request-scoped services (the current tenant and the save "
+                + "pipeline). Register a dedicated Jobs context with UseJobsDbContext<TJobsContext>() instead, where "
+                + "TJobsContext derives from JobsDbContext<TTimeJob, TCronJob>; it can use the same database."
+        );
+    }
 }

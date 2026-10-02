@@ -5,6 +5,7 @@ using Headless.Checks;
 using Headless.Jobs.Customizer;
 using Headless.Jobs.DbContextFactory;
 using Headless.Jobs.Entities;
+using Headless.Jobs.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -63,6 +64,14 @@ public class JobsEfCoreOptionBuilder<TTimeJob, TCronJob>
     /// Uses the application's existing <typeparamref name="TDbContext"/> to store job data alongside
     /// other application tables. The job entities must be configured in the existing context.
     /// </summary>
+    /// <remarks>
+    /// Jobs creates the context outside any request scope, so it must declare a public constructor accepting a
+    /// single <c>DbContextOptions&lt;TDbContext&gt;</c> argument. A context deriving from <c>HeadlessDbContext</c>
+    /// cannot; use <see cref="UseJobsDbContext{TDbContext}" /> with a <c>JobsDbContext</c> on the same database.
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// <typeparamref name="TDbContext"/> has no constructor accepting only <c>DbContextOptions&lt;TDbContext&gt;</c>.
+    /// </exception>
     /// <typeparam name="TDbContext">The application <see cref="DbContext"/> that includes the job entities.</typeparam>
     /// <param name="configurationType">Controls how the EF model is registered (pooled or non-pooled).</param>
     public JobsEfCoreOptionBuilder<TTimeJob, TCronJob> UseApplicationDbContext<TDbContext>(
@@ -70,6 +79,8 @@ public class JobsEfCoreOptionBuilder<TTimeJob, TCronJob>
     )
         where TDbContext : DbContext
     {
+        // Fail at the registration call, with the remedy, rather than at DI build with only the constructor rule.
+        CoordinatedWriteContextFactory.RequireApplicationContextConstructor<TDbContext>();
         ServiceBuilder.UseApplicationDbContext<TDbContext, TTimeJob, TCronJob>(this, configurationType);
         return this;
     }
