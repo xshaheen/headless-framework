@@ -49,6 +49,15 @@ public static class GeneralMessageDescriber
         return new ErrorDescriptor(code: GeneralErrorCodes.NotAuthorized, description: Messages.g_not_authorized);
     }
 
+    /// <summary>Returns a descriptor for a request rejected by an HTTP rate limiter (<c>g:rate_limit_exceeded</c>).</summary>
+    public static ErrorDescriptor RateLimitExceeded()
+    {
+        return new ErrorDescriptor(
+            code: GeneralErrorCodes.RateLimitExceeded,
+            description: Messages.g_rate_limit_exceeded
+        );
+    }
+
     /// <summary>Returns a descriptor for a temporarily unavailable feature (<c>g:feature_currently_not_available</c>).</summary>
     public static ErrorDescriptor FeatureCurrentlyUnavailable()
     {

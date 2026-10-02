@@ -46,6 +46,9 @@
   <data name="g:not_authorized" xml:space="preserve">
     <value>You are not authenticated to execute request.</value>
   </data>
+  <data name="g:rate_limit_exceeded" xml:space="preserve">
+    <value>Too many requests. Try again later.</value>
+  </data>
   <data name="auth:invalid_token" xml:space="preserve">
     <value>Invalid token.</value>
   </data>
