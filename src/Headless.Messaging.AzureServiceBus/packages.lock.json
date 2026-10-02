@@ -8,12 +8,6 @@
         "resolved": "2.1.0",
         "contentHash": "OOHNlH7GF39qk0Pv4cIQWA99hUh3nujDgGE2nADPpw88lD7s2qwlxEhuJIBfstC8ng3B1yY6SQy2JW/tddlMAQ=="
       },
-      "Asyncify": {
-        "type": "Direct",
-        "requested": "[0.9.7, )",
-        "resolved": "0.9.7",
-        "contentHash": "NWaKPk8W6v9oyV6nPAubkiANegI5QDa/h/OkqKXdpfG1teU1rbHQYCMHno/uz5/XxUyWfY++8WQT4+ljMXQZNA=="
-      },
       "Azure.Messaging.ServiceBus": {
         "type": "Direct",
         "requested": "[7.20.2, )",
