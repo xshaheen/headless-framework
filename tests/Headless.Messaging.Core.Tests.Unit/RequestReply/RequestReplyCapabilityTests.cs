@@ -2,6 +2,7 @@
 
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
+using Headless.Messaging.Registration;
 using Headless.Messaging.Runtime;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
@@ -97,20 +98,87 @@ public sealed class RequestReplyCapabilityTests : TestBase
         descriptor.MethodName.Should().Be(nameof(IRespond<,>.RespondAsync));
     }
 
+    [Fact]
+    public async Task should_fail_bootstrap_naming_the_message_when_its_name_is_inside_the_reply_namespace()
+    {
+        // given
+        await using var provider = _CreateProvider(
+            transport: null,
+            declare: static messaging => messaging.Message<GetQuote>("headless.reply.quotes")
+        );
+        var bootstrapper = provider.GetRequiredService<IBootstrapper>();
+
+        // when
+        var act = () => bootstrapper.BootstrapAsync(AbortToken);
+
+        // then
+        await act.Should()
+            .ThrowAsync<MessagingConfigurationException>()
+            .WithMessage($"*'headless.reply.quotes'*{typeof(GetQuote).FullName}*'{ReplyAddresses.Prefix}'*");
+        bootstrapper.IsStarted.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_fail_bootstrap_when_the_message_name_prefix_moves_a_responder_into_the_reply_namespace()
+    {
+        // given
+        await using var provider = _CreateProvider(
+            transport: null,
+            withResponder: true,
+            messageNamePrefix: "headless.reply"
+        );
+        var bootstrapper = provider.GetRequiredService<IBootstrapper>();
+
+        // when
+        var act = () => bootstrapper.BootstrapAsync(AbortToken);
+
+        // then
+        await act.Should()
+            .ThrowAsync<MessagingConfigurationException>()
+            .WithMessage($"*'{ReplyAddresses.Prefix}*{nameof(MessagingOptions.MessageNamePrefix)}*");
+        bootstrapper.IsStarted.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_start_when_a_message_name_only_resembles_the_reply_namespace()
+    {
+        // given
+        await using var provider = _CreateProvider(
+            transport: null,
+            declare: static messaging => messaging.Message<GetQuote>("headless.replyish.quotes")
+        );
+        var bootstrapper = provider.GetRequiredService<IBootstrapper>();
+
+        // when
+        await bootstrapper.BootstrapAsync(AbortToken);
+
+        // then
+        bootstrapper.IsStarted.Should().BeTrue();
+    }
+
     // A non-null transport names a provider whose capability declaration, without request/reply support, replaces the
     // in-memory one; null keeps the in-memory declaration.
     private static ServiceProvider _CreateProvider(
         string? transport,
         bool requestsEnabled = false,
-        bool withResponder = false
+        bool withResponder = false,
+        Action<MessagingContributionBuilder>? declare = null,
+        string? messageNamePrefix = null
     )
     {
         var services = new ServiceCollection();
         services.AddLogging();
+
+        if (declare is not null)
+        {
+            services.ConfigureMessaging(declare);
+        }
+
         services.AddHeadlessMessaging(setup =>
         {
             setup.UseInMemory();
             setup.UseProcessLocalInMemoryStorage();
+            setup.Options.MessageNamePrefix = messageNamePrefix;
 
             if (withResponder)
             {

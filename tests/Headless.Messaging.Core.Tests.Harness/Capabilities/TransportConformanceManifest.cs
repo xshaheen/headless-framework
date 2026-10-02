@@ -296,6 +296,11 @@ public static class TransportConformanceManifest
                     TransportConformanceScenario.MalformedEnvelopeTerminalSettlement,
                     ConformanceSupport.Supported
                 )
+                .WithRequestReplyScenarios(ConformanceSupport.Supported)
+                .WithScenario(
+                    TransportConformanceScenario.RequestReplyStartupRejection,
+                    ConformanceSupport.NotApplicable("RabbitMQ supports request/reply, so startup accepts it.")
+                )
                 .EnableRealBrokerLeaf(),
             ["AWS/LocalStack"] = TransportConformanceProfile
                 .CreateDisabled("AWS/LocalStack")

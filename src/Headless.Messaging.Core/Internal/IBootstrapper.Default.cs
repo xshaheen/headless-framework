@@ -7,6 +7,7 @@ using Headless.Messaging.Configuration;
 using Headless.Messaging.Registration;
 using Headless.Messaging.RequestReply;
 using Headless.Messaging.Runtime;
+using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -363,6 +364,7 @@ internal sealed class Bootstrapper(
             );
 
         _CheckMessageNameCollisions();
+        _CheckReplyNamespaceIsFree();
         var capabilities = serviceProvider.GetRequiredService<MessagingCapabilityModel>();
         capabilities.ValidateRoutingAffinityStartup(
             serviceProvider
@@ -429,7 +431,7 @@ internal sealed class Bootstrapper(
             .Select(static consumer => new MessageRouteKey(consumer.MessageType, consumer.MessageName, consumer.Lane))
             .ToHashSet();
 
-        foreach (var registration in registry.DeclaredRoutes)
+        foreach (var (registration, route) in _GetDeclaredRoutes(registry))
         {
             if (
                 registration.DeclaresMessage
@@ -439,22 +441,7 @@ internal sealed class Bootstrapper(
                 continue;
             }
 
-            var rawName = registration.MessageName;
-            if (
-                rawName is null
-                && !registry.TryGetRawMessageName(registration.MessageType, registration.Lane, out rawName)
-            )
-            {
-                rawName = options.Value.Conventions.GetMessageName(registration.MessageType);
-            }
-
-            routes.Add(
-                new MessageRouteKey(
-                    registration.MessageType,
-                    options.Value.ApplyMessageNamePrefix(rawName),
-                    registration.Lane
-                )
-            );
+            routes.Add(route);
         }
 
         foreach (var route in _GetEffectiveMessageNameRoutes(registry))
@@ -466,6 +453,62 @@ internal sealed class Bootstrapper(
         }
 
         return routes;
+    }
+
+    private IEnumerable<(MessageRegistration Registration, MessageRouteKey Route)> _GetDeclaredRoutes(
+        ConsumerRegistry registry
+    )
+    {
+        foreach (var registration in registry.DeclaredRoutes)
+        {
+            var rawName = registration.MessageName;
+            if (
+                rawName is null
+                && !registry.TryGetRawMessageName(registration.MessageType, registration.Lane, out rawName)
+            )
+            {
+                rawName = options.Value.Conventions.GetMessageName(registration.MessageType);
+            }
+
+            yield return (
+                registration,
+                new MessageRouteKey(
+                    registration.MessageType,
+                    options.Value.ApplyMessageNamePrefix(rawName),
+                    registration.Lane
+                )
+            );
+        }
+    }
+
+    /// <summary>
+    /// Rejects any message name inside the reserved reply namespace, on either lane and whether or not the transport
+    /// carries that lane.
+    /// </summary>
+    /// <remarks>
+    /// A responder writes a reply to whatever address a request names once the address passes the namespace check, so
+    /// a lane destination under <see cref="ReplyAddresses.Prefix"/> could receive forged replies. The check
+    /// runs on the effective names, after <see cref="MessagingOptions.MessageNamePrefix"/>, because a prefix can move an
+    /// otherwise harmless name into the namespace.
+    /// </remarks>
+    private void _CheckReplyNamespaceIsFree()
+    {
+        var registry = serviceProvider.GetRequiredService<ConsumerRegistry>();
+        var routes = registry
+            .GetAll()
+            .Select(static consumer => new MessageRouteKey(consumer.MessageType, consumer.MessageName, consumer.Lane))
+            .Concat(_GetDeclaredRoutes(registry).Select(static declared => declared.Route))
+            .Concat(_GetEffectiveMessageNameRoutes(registry));
+
+        foreach (var route in routes)
+        {
+            if (route.MessageName.StartsWith(ReplyAddresses.Prefix, StringComparison.Ordinal))
+            {
+                throw new MessagingConfigurationException(
+                    $"Message name '{route.MessageName}' of {route.ContractType.FullName ?? route.ContractType.Name} on lane {route.Lane} is inside the reserved reply namespace '{ReplyAddresses.Prefix}'. Rename the message, or change {nameof(MessagingOptions.MessageNamePrefix)} if it adds the reserved prefix."
+                );
+            }
+        }
     }
 
     private IEnumerable<MessageRouteKey> _GetEffectiveMessageNameRoutes(ConsumerRegistry registry)

@@ -9,6 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using RabbitMQ.Client;
+using RabbitMQ.Client.Exceptions;
 using Testcontainers.RabbitMq;
 
 namespace Tests;
@@ -50,6 +51,58 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
             throw new InvalidOperationException(
                 $"rabbitmqctl delete_queue {queueName} failed ({result.ExitCode}): {result.Stderr}"
             );
+        }
+    }
+
+    /// <summary>
+    /// Lists the default virtual host's queues as the broker node reports them, the way an operator inspects them, so
+    /// a test sees queues that belong to other connections, exclusive ones included.
+    /// </summary>
+    public async Task<IReadOnlyList<RabbitMqBrokerQueue>> ListQueuesAsOperatorAsync(CancellationToken cancellationToken)
+    {
+        var result = await Container.ExecAsync(
+            ["rabbitmqctl", "list_queues", "-q", "--no-table-headers", "name", "durable", "exclusive"],
+            cancellationToken
+        );
+
+        if (result.ExitCode != 0)
+        {
+            throw new InvalidOperationException($"rabbitmqctl list_queues failed ({result.ExitCode}): {result.Stderr}");
+        }
+
+        return result
+            .Stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(static line => line.Split('\t'))
+            .Select(static columns => new RabbitMqBrokerQueue(
+                columns[0],
+                Durable: bool.Parse(columns[1]),
+                Exclusive: bool.Parse(columns[2])
+            ))
+            .ToArray();
+    }
+
+    /// <summary>
+    /// Returns whether the broker holds <paramref name="queueName"/>, by a passive declare on a channel of its own. An
+    /// exclusive queue of another connection answers with <c>RESOURCE_LOCKED</c> rather than its details, which still
+    /// proves it exists.
+    /// </summary>
+    public async ValueTask<bool> QueueExistsAsync(string queueName, CancellationToken cancellationToken)
+    {
+        var connection = await GetConnectionAsync();
+        await using var channel = await connection.CreateChannelAsync(cancellationToken: cancellationToken);
+
+        try
+        {
+            await channel.QueueDeclarePassiveAsync(queueName, cancellationToken);
+            return true;
+        }
+        catch (OperationInterruptedException e) when (e.ShutdownReason?.ReplyCode == Constants.NotFound)
+        {
+            return false;
+        }
+        catch (OperationInterruptedException e) when (e.ShutdownReason?.ReplyCode == Constants.ResourceLocked)
+        {
+            return true;
         }
     }
 
@@ -275,3 +328,6 @@ public sealed class RabbitMqFixture : HeadlessRabbitMqFixture, ICollectionFixtur
         await base.DisposeAsyncCore();
     }
 }
+
+/// <summary>A queue as <c>rabbitmqctl list_queues</c> reports it.</summary>
+public sealed record RabbitMqBrokerQueue(string Name, bool Durable, bool Exclusive);
