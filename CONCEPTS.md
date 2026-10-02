@@ -652,3 +652,21 @@ and the cron job enumerates tenants in application code, scheduling one tenant-s
 per tenant. The framework ships an optional `ITenantDirectory` enumeration capability (implemented
 by all v1 tenant-catalog stores) that an app can call for this enumeration step, but builds no
 fan-out orchestration on top of it — the fan-out loop itself is still application code.
+
+## Reliability (failure handling)
+
+### Failure policy
+
+The declaration of how a message consumer or a job reacts to a failed attempt: a number of
+immediate retries, then a number of delayed retries with exponential backoff, and fail rules
+(`FailOn<T>()`, `FailWhen(...)`) that end the run at once. A consumer or job names a `FailurePolicy`
+type on its attribute; `Tune`, configuration, and a host default override or replace it. Total
+attempts are `1 + immediate + delayed`. An every-instance consumer cannot carry one.
+
+### Terminal failure
+
+The state a run reaches when its failure policy gives up: a received message in `Failed` with no
+`NextRetryAt`, or a time job or cron occurrence in `Failed`. `OnExhausted` fires once per terminal
+failure. An operator re-executes a terminal message from the Messaging dashboard and requeues a
+terminal job from the Jobs dashboard. *Avoid:* "dead letter" as a separate state; a terminal failure
+stays in storage, and forwarding it to a broker address is a separate action.
