@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Microsoft.AspNetCore.Cors.Infrastructure;
-using tusdotnet.Constants;
+using tusdotnet.Helpers;
 
 namespace Headless.Tus;
 
@@ -20,49 +20,23 @@ public static class TusCorsDefaults
     /// (<c>Access-Control-Expose-Headers</c>): the creation <c>Location</c>, the protocol/version
     /// negotiation headers, and every <c>Upload-*</c> state header.
     /// </summary>
-    /// <remarks>
-    /// A superset of tusdotnet's <c>CorsHelper.GetExposedHeaders()</c>: adds
-    /// <c>Upload-Defer-Length</c>, which HEAD responses carry for defer-length uploads but the
-    /// upstream helper omits. <see cref="AllowedHeaders"/>/<see cref="AllowedMethods"/> have no
-    /// upstream equivalent.
-    /// </remarks>
-    public static IReadOnlyList<string> ExposedHeaders { get; } =
-    [
-        "Location",
-        HeaderConstants.TusResumable,
-        HeaderConstants.TusVersion,
-        HeaderConstants.TusExtension,
-        HeaderConstants.TusMaxSize,
-        HeaderConstants.TusChecksumAlgorithm,
-        HeaderConstants.UploadOffset,
-        HeaderConstants.UploadLength,
-        HeaderConstants.UploadDeferLength,
-        HeaderConstants.UploadMetadata,
-        HeaderConstants.UploadChecksum,
-        HeaderConstants.UploadExpires,
-        HeaderConstants.UploadConcat,
-    ];
+    /// <remarks>Same list as tusdotnet's <c>CorsHelper.GetExposedHeaders()</c>.</remarks>
+    public static IReadOnlyList<string> ExposedHeaders { get; } = [.. CorsHelper.GetExposedHeaders()];
 
     /// <summary>
     /// Request headers a tus client sends (<c>Access-Control-Allow-Headers</c>): the protocol
     /// header, the <c>Upload-*</c> request headers, the PATCH content type, and
     /// <c>X-HTTP-Method-Override</c> for clients behind proxies that block PATCH/DELETE.
     /// </summary>
-    public static IReadOnlyList<string> AllowedHeaders { get; } =
-    [
-        HeaderConstants.TusResumable,
-        HeaderConstants.UploadLength,
-        HeaderConstants.UploadDeferLength,
-        HeaderConstants.UploadOffset,
-        HeaderConstants.UploadMetadata,
-        HeaderConstants.UploadChecksum,
-        HeaderConstants.UploadConcat,
-        HeaderConstants.XHttpMethodOveride,
-        HeaderConstants.ContentType,
-    ];
+    /// <remarks>Same list as tusdotnet's <c>CorsHelper.GetAllowedHeaders()</c>.</remarks>
+    public static IReadOnlyList<string> AllowedHeaders { get; } = [.. CorsHelper.GetAllowedHeaders()];
 
-    /// <summary>HTTP methods the tus 1.0.0 protocol uses (<c>Access-Control-Allow-Methods</c>).</summary>
-    public static IReadOnlyList<string> AllowedMethods { get; } = ["GET", "POST", "HEAD", "PATCH", "DELETE", "OPTIONS"];
+    /// <summary>HTTP methods the tus 1.0.0 protocol uses (<c>Access-Control-Allow-Methods</c>), plus <c>GET</c>.</summary>
+    /// <remarks>
+    /// tusdotnet's <c>CorsHelper.GetAllowedMethods()</c> plus <c>GET</c>: a readable store
+    /// (<c>ITusReadableStore</c>) is usually served from a download endpoint under the same CORS policy.
+    /// </remarks>
+    public static IReadOnlyList<string> AllowedMethods { get; } = [.. CorsHelper.GetAllowedMethods(), "GET"];
 }
 
 /// <summary>CORS policy helpers for tus endpoints.</summary>
