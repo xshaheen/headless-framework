@@ -11,6 +11,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Npgsql;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
@@ -196,6 +197,14 @@ public static class SetupPostgreSqlDistributedLocks
         );
         services.TryAddSingleton<IReleaseSignal, PostgresReleaseSignal>();
         services.TryAddSingleton<IFencingTokenSource, PostgresFencingTokenSource>();
+        // The runner creates the fence sequence at startup on the same data source the token source reads, so verify
+        // mode and the exported deploy script cover it like every other feature's objects.
+        services.AddHeadlessSchemaContribution(sp =>
+            PostgreSqlDistributedLocksSchemaContribution.Create(
+                sp.GetRequiredService<IOptions<DistributedLocksStorageOptions>>().Value,
+                sp.GetRequiredService<NpgsqlDataSource>()
+            )
+        );
         // The unit-of-work feature behind unit.TransactionLocks; resolved by GetFeature on a host that also registered
         // a unit-of-work provider, inert otherwise.
         services.TryAddSingleton<IUnitOfWorkTransactionLocks, PostgreSqlUnitOfWorkTransactionLocks>();

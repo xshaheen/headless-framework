@@ -717,7 +717,12 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
             var deferralRejectionLogged = false;
             foreach (var work in _OrderDispositions(circuitWork))
             {
-                deferralRejectionLogged = await _DisposeCircuitClaimAsync(connection, work, deferralRejectionLogged)
+                deferralRejectionLogged = await _DisposeCircuitClaimAsync(
+                        connection,
+                        context,
+                        work,
+                        deferralRejectionLogged
+                    )
                     .ConfigureAwait(false);
             }
         }

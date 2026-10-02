@@ -80,12 +80,29 @@ public static class CoordinationFixtureExtensions
         );
     }
 
-    public static async ValueTask<CoordinationNodeHandle> CreateNodeAsync(
+    public static ValueTask<CoordinationNodeHandle> CreateNodeAsync(
         this ICoordinationFixture fixture,
         string clusterName,
         string nodeId,
         MembershipLostBehavior lostBehavior,
         string? schema = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return fixture.CreateNodeAsync(clusterName, nodeId, lostBehavior, schema, configure: null, cancellationToken);
+    }
+
+    /// <summary>
+    /// Creates a node whose <see cref="CoordinationOptions"/> are the defaults above, then adjusted by
+    /// <paramref name="configure"/>.
+    /// </summary>
+    public static async ValueTask<CoordinationNodeHandle> CreateNodeAsync(
+        this ICoordinationFixture fixture,
+        string clusterName,
+        string nodeId,
+        MembershipLostBehavior lostBehavior,
+        string? schema,
+        Action<CoordinationOptions>? configure,
         CancellationToken cancellationToken = default
     )
     {
@@ -116,6 +133,7 @@ public static class CoordinationFixtureExtensions
                 options.DeadThreshold = DeadThreshold;
                 options.DeadRetentionWindow = DeadRetentionWindow;
                 options.MembershipLostBehavior = lostBehavior;
+                configure?.Invoke(options);
             });
         });
 

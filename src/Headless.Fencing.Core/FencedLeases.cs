@@ -20,7 +20,7 @@ internal sealed class FencedLeases(LeaseRequestResolver resolver, ILeaseStore st
     )
     {
         var key = resolver.Resolve(kind, resource);
-        resolver.ValidateDuration(duration);
+        duration = resolver.ValidateDuration(duration);
 
         var result = await store.GrantAsync(key, duration, cancellationToken).ConfigureAwait(false);
         alerts.OnGranted(result);
@@ -57,7 +57,7 @@ internal sealed class FencedLeases(LeaseRequestResolver resolver, ILeaseStore st
     )
     {
         var key = LeaseRequestResolver.ResolveLease(lease);
-        resolver.ValidateDuration(duration);
+        duration = resolver.ValidateDuration(duration);
         LeaseRequestResolver.ValidateProgress(progress);
 
         return await store

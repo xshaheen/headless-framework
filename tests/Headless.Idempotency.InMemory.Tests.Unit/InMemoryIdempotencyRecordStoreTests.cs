@@ -2,6 +2,7 @@
 
 using System.Text;
 using Headless.Idempotency;
+using Headless.Idempotency.InMemory;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;
 using Microsoft.Extensions.DependencyInjection;
@@ -54,6 +55,28 @@ public sealed class InMemoryIdempotencyRecordStoreTests : TestBase
         peek.Should().Be(IdempotencyPeekStatus.Absent);
         fresh.IsAdmitted.Should().BeTrue("the completed record's retention ended");
         fresh.IsTakeover.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_stamp_one_admission_from_one_clock_reading_when_the_wall_clock_steps_back()
+    {
+        // given — the clock steps back 27 µs after its first reading, as a wall clock can between the record's insert
+        // and its admission, which are two store calls
+        var start = new DateTimeOffset(2026, 9, 26, 12, 0, 0, TimeSpan.Zero);
+        var clock = new SteppingBackTimeProvider(start, TimeSpan.FromMicroseconds(27));
+        await using var services = _CreateServices(clock);
+        var operations = services.GetRequiredService<IIdempotentOperations>();
+
+        // when
+        var admitted = await _AdmitAsync(operations, _Fingerprint);
+
+        // then — the lease and the retention of one admission come from the same instant
+        var record = services
+            .GetRequiredService<InMemoryIdempotencyStorage>()
+            .Table.Read(new IdempotencyRecordKey("", "key-1"));
+        clock.Readings.Should().BeGreaterThan(1, "the scenario needs the clock read more than once");
+        record!.LeaseExpiresAt.Should().Be(admitted.LeaseExpiresAt);
+        (record.RetentionUntil - record.LeaseExpiresAt!.Value).Should().Be(_Retention - _Lease);
     }
 
     [Fact]
@@ -268,6 +291,19 @@ public sealed class InMemoryIdempotencyRecordStoreTests : TestBase
                 cancellationToken: AbortToken
             )
             .AsTask();
+    }
+
+    /// <summary>Returns <c>start</c> on the first reading and <c>start - stepBack</c> on every later one.</summary>
+    private sealed class SteppingBackTimeProvider(DateTimeOffset start, TimeSpan stepBack) : TimeProvider
+    {
+        private int _readings;
+
+        public int Readings => Volatile.Read(ref _readings);
+
+        public override DateTimeOffset GetUtcNow()
+        {
+            return Interlocked.Increment(ref _readings) == 1 ? start : start - stepBack;
+        }
     }
 
     private static ServiceProvider _CreateServices(TimeProvider? clock = null)

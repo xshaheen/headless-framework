@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Hosting.Initialization;
+using Headless.Hosting.Initialization.Schema;
 using Headless.Sequences;
 using Headless.Sequences.SqlServer;
 using Headless.Testing.Tests;
@@ -35,10 +36,12 @@ public sealed class SqlServerSequencesStorageInitializerTests(SqlServerSequences
         var initializer = host.Services.GetRequiredService<IEnumerable<IInitializer>>().Single();
         initializer.IsInitialized.Should().BeFalse();
 
+        // The schema runner names the features whose connection failed and keeps the driver error as the cause.
         await FluentActions
             .Awaiting(() => initializer.WaitForInitializationAsync(AbortToken))
             .Should()
-            .ThrowAsync<SqlException>();
+            .ThrowAsync<SchemaRunnerException>()
+            .WithInnerException(typeof(SqlException));
     }
 
     [Fact]

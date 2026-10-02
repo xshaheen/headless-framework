@@ -1,0 +1,525 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using System.Data;
+using System.Data.Common;
+using System.Globalization;
+using System.Text;
+using System.Text.Json;
+using Headless.Constants;
+using Microsoft.Data.SqlClient;
+
+namespace Headless.Sql.SqlServer;
+
+/// <summary>The SQL Server dialect: PascalCase names, <c>_BIN2</c> key collation, and a clock variable.</summary>
+/// <remarks>
+/// <para>
+/// <c>SYSUTCDATETIME()</c> is evaluated once when a statement starts, before it waits on any lock, so a statement
+/// that decides on the clock never reads it inline: the clock is captured into <c>@now</c> in a statement of its own,
+/// after the locking read has waited out any other holder.
+/// </para>
+/// <para>
+/// Row locks are <c>UPDLOCK, HOLDLOCK, ROWLOCK</c>: <c>HOLDLOCK</c> keeps the lock to the end of the transaction and,
+/// when the row is absent, locks the key range on the clustered primary key, so two first writers of one key
+/// serialize and an insert never collides. Claims and batch deletes skip locked rows with <c>READPAST</c>, plus
+/// <c>READCOMMITTEDLOCK</c> so they behave the same whether or not the database runs read committed snapshot isolation
+/// (<c>READPAST</c> is refused under a snapshot read, and the hint is the default otherwise).
+/// </para>
+/// </remarks>
+[PublicAPI]
+public sealed class SqlServerDialect : ISqlDialect
+{
+    private const string _Clock = "DECLARE @now datetimeoffset(7) = TODATETIMEOFFSET(SYSUTCDATETIME(), 0);";
+    private const string _SkipLocked = "UPDLOCK, READPAST, ROWLOCK, READCOMMITTEDLOCK";
+
+    private SqlServerDialect() { }
+
+    /// <summary>Gets the dialect. It is stateless.</summary>
+    public static SqlServerDialect Instance { get; } = new();
+
+    public string DisplayName => "SQL Server";
+
+    public TimeSpan TimestampPrecision => TimeSpan.FromTicks(1);
+
+    public Type ConnectionType => typeof(SqlConnection);
+
+    public Type TransactionType => typeof(SqlTransaction);
+
+    public DbConnection CreateConnection(string connectionString)
+    {
+        return new SqlConnection(connectionString);
+    }
+
+    public string Name(string pascalName)
+    {
+        return pascalName;
+    }
+
+    public string Quote(string identifier)
+    {
+        return $"[{identifier.Replace("]", "]]", StringComparison.Ordinal)}]";
+    }
+
+    public string Qualify(string schema, string identifier)
+    {
+        return $"{Quote(schema)}.{Quote(identifier)}";
+    }
+
+    public string NextSequenceValue(string qualifiedSequence)
+    {
+        return $"NEXT VALUE FOR {qualifiedSequence}";
+    }
+
+    public string ShiftByDuration(string instant, string parameter, bool subtract = false)
+    {
+        // One DATEADD per unit: a single DATEADD takes an int, which overflows in nanoseconds after about two seconds
+        // and in seconds after about 68 years.
+        var sign = subtract ? "-" : "";
+
+        return $"DATEADD(nanosecond, {sign}@{parameter}Nanoseconds, DATEADD(second, {sign}@{parameter}Seconds, DATEADD(day, {sign}@{parameter}Days, {instant})))";
+    }
+
+    public string BooleanLiteral(bool value)
+    {
+        return value ? "1" : "0";
+    }
+
+    public string NewGuid()
+    {
+        return "NEWID()";
+    }
+
+    public string ShiftBySeconds(string instant, string seconds)
+    {
+        return $"DATEADD(second, CONVERT(int, {seconds}), {instant})";
+    }
+
+    public string Limit(string limitParameter, string? offsetParameter = null)
+    {
+        return $"OFFSET {(offsetParameter is null ? "0" : "@" + offsetParameter)} ROWS FETCH NEXT @{limitParameter} ROWS ONLY";
+    }
+
+    public string LikeIgnoringCase(string expression, string patternParameter)
+    {
+        return $"{expression} LIKE @{patternParameter} ESCAPE '\\'";
+    }
+
+    public string ReadWithoutWaiting(string table)
+    {
+        // READPAST is refused under a snapshot read, so READCOMMITTEDLOCK keeps it valid whether or not the database
+        // runs read committed snapshot isolation.
+        return $"{table} WITH (READPAST, READCOMMITTEDLOCK)";
+    }
+
+    public void AddDuration(DbCommand command, string parameter, TimeSpan duration)
+    {
+        var days = checked((int)(duration.Ticks / TimeSpan.TicksPerDay));
+        var ticksWithinDay = duration.Ticks % TimeSpan.TicksPerDay;
+
+        command.Parameters.Add(new SqlParameter(parameter + "Days", SqlDbType.Int) { Value = days });
+        command.Parameters.Add(
+            new SqlParameter(parameter + "Seconds", SqlDbType.Int)
+            {
+                Value = (int)(ticksWithinDay / TimeSpan.TicksPerSecond),
+            }
+        );
+        command.Parameters.Add(
+            new SqlParameter(parameter + "Nanoseconds", SqlDbType.Int)
+            {
+                Value = (int)(ticksWithinDay % TimeSpan.TicksPerSecond * 100),
+            }
+        );
+    }
+
+    public void AddParameter(DbCommand command, string parameter, SqlColumnType type, object? value)
+    {
+        var sqlParameter = type.Kind switch
+        {
+            // Sized to the column, so the plan is reused across values and the comparison keeps the column's collation.
+            SqlColumnKind.KeyText or SqlColumnKind.Text => new SqlParameter(
+                parameter,
+                SqlDbType.NVarChar,
+                type.MaxLength
+            ),
+            SqlColumnKind.Int16 => new SqlParameter(parameter, SqlDbType.SmallInt),
+            SqlColumnKind.Int32 => new SqlParameter(parameter, SqlDbType.Int),
+            SqlColumnKind.Int64 => new SqlParameter(parameter, SqlDbType.BigInt),
+            SqlColumnKind.Timestamp => new SqlParameter(parameter, SqlDbType.DateTimeOffset),
+            SqlColumnKind.Binary => type.MaxLength > 0
+                ? new SqlParameter(parameter, SqlDbType.Binary, type.MaxLength)
+                : new SqlParameter(parameter, SqlDbType.VarBinary, -1),
+            SqlColumnKind.Guid => new SqlParameter(parameter, SqlDbType.UniqueIdentifier),
+            SqlColumnKind.Boolean => new SqlParameter(parameter, SqlDbType.Bit),
+            SqlColumnKind.Json => new SqlParameter(parameter, SqlDbType.NVarChar, -1),
+            _ => throw new ArgumentOutOfRangeException(nameof(type), type.Kind, "Unknown column kind."),
+        };
+
+        sqlParameter.Value = value switch
+        {
+            null => DBNull.Value,
+            ReadOnlyMemory<byte> bytes => bytes.ToArray(),
+            _ => value,
+        };
+
+        command.Parameters.Add(sqlParameter);
+    }
+
+    public string KeysetAfter(IReadOnlyList<string> columns, IReadOnlyList<string> parameters)
+    {
+        // T-SQL has no row-value comparison: (a, b, c) > (x, y, z) expanded.
+        var terms = new List<string>(columns.Count);
+
+        for (var i = 0; i < columns.Count; i++)
+        {
+            var equalities = Enumerable.Range(0, i).Select(j => $"{columns[j]} = @{parameters[j]}");
+
+            terms.Add("(" + string.Join(" AND ", equalities.Append($"{columns[i]} > @{parameters[i]}")) + ")");
+        }
+
+        return "(" + string.Join(" OR ", terms) + ")";
+    }
+
+    public string InList(string expression, string parameter, SqlColumnType elementType)
+    {
+        // OPENJSON with a typed WITH clause yields one typed column per element; no table type has to exist first.
+        return $"{expression} IN (SELECT [value] FROM OPENJSON(@{parameter}) WITH ([value] {_ListElementType(elementType)} '$'))";
+    }
+
+    public void AddListParameter<T>(
+        DbCommand command,
+        string parameter,
+        SqlColumnType elementType,
+        IReadOnlyCollection<T> values
+    )
+    {
+        command.Parameters.Add(CreateListParameter(parameter, elementType, values));
+    }
+
+    public DbParameter CreateListParameter<T>(
+        string parameter,
+        SqlColumnType elementType,
+        IReadOnlyCollection<T> values
+    )
+    {
+        _ListElementType(elementType);
+
+        return new SqlParameter(parameter, SqlDbType.NVarChar, -1) { Value = JsonSerializer.Serialize(values) };
+    }
+
+    public string InTuples(
+        IReadOnlyList<string> expressions,
+        string parameter,
+        IReadOnlyList<SqlColumnType> elementTypes
+    )
+    {
+        _ValidateTuples(expressions, elementTypes, static type => _ListElementType(type));
+        var columns = string.Join(
+            ", ",
+            elementTypes.Select(
+                (type, i) => string.Create(CultureInfo.InvariantCulture, $"[c{i}] {_ListElementType(type)} '$[{i}]'")
+            )
+        );
+        var matches = string.Join(
+            " AND ",
+            expressions.Select(
+                (expression, i) => string.Create(CultureInfo.InvariantCulture, $"t.[c{i}] = {expression}")
+            )
+        );
+
+        // T-SQL has no row-value IN, so the row list is read as typed columns and matched with EXISTS.
+        return $"EXISTS (SELECT 1 FROM OPENJSON(@{parameter}) WITH ({columns}) AS t WHERE {matches})";
+    }
+
+    public IReadOnlyList<DbParameter> CreateTupleListParameters(
+        string parameter,
+        IReadOnlyList<SqlColumnType> elementTypes,
+        IReadOnlyCollection<IReadOnlyList<object>> rows
+    )
+    {
+        _ValidateTupleRows(elementTypes, rows, static type => _ListElementType(type));
+
+        // Each row is a JSON array, read back by position.
+        return [new SqlParameter(parameter, SqlDbType.NVarChar, -1) { Value = JsonSerializer.Serialize(rows) }];
+    }
+
+    public string Render(SqlLockedRead statement)
+    {
+        return $"""
+            SELECT {string.Join(", ", statement.Columns)}
+            FROM {statement.Table} WITH (UPDLOCK, HOLDLOCK, ROWLOCK)
+            WHERE {_Key(statement.Key, alias: null)}{_And(statement.KeyPredicate)};
+            """;
+    }
+
+    public string Render(SqlFencedTransition statement)
+    {
+        var fence = _Clocked(statement.Fence);
+
+        if (statement.Set is null)
+        {
+            return $"""
+                {_Clock}
+                SELECT CAST(CASE WHEN EXISTS (
+                    SELECT 1 FROM {statement.Table} WHERE {_Key(statement.Key, alias: null)} AND ({fence})
+                ) THEN 1 ELSE 0 END AS bit);
+                """;
+        }
+
+        // The UPDATE is its own guard: its WHERE carries the fence, so the check and the write are one decision. The
+        // row stays locked by the preceding locking read, so the final read returns exactly what this batch wrote.
+        return $"""
+            {_Clock}
+            UPDATE {statement.Table}
+            SET {_Clocked(statement.Set)}
+            WHERE {_Key(statement.Key, alias: null)} AND ({fence});
+            {_AppliedAndReturning(statement.Table, statement.Key, statement.Returning)}
+            """;
+    }
+
+    public string Render(SqlInsertIfAbsent statement)
+    {
+        var columns = statement.Key.Select(static k => k.Column).Concat(statement.Columns);
+        var values = statement.Key.Select(static k => "@" + k.Parameter).Concat(statement.Values.Select(_Clocked));
+
+        // The existence check takes the key-range lock, so a concurrent insert of the same key waits here instead of
+        // raising a duplicate-key error, which would doom a caller's transaction running with XACT_ABORT ON.
+        return $"""
+            {_Clock}
+            INSERT INTO {statement.Table} ({string.Join(", ", columns)})
+            SELECT {string.Join(", ", values)}
+            WHERE NOT EXISTS (
+                SELECT 1 FROM {statement.Table} WITH (UPDLOCK, HOLDLOCK, ROWLOCK) WHERE {_Key(
+                statement.Key,
+                alias: null
+            )}{_And(statement.KeyPredicate)}
+            );
+            {_AppliedAndReturning(statement.Table, statement.Key, statement.Returning, statement.KeyPredicate)}
+            """;
+    }
+
+    public string Render(SqlClaimNext statement)
+    {
+        // Nothing waits, so the clock can be read first.
+        return $"""
+            {_Clock}
+            WITH candidate AS (
+                SELECT TOP ({(statement.BatchSizeParameter is null ? "1" : "@" + statement.BatchSizeParameter)}) *
+                FROM {statement.Table} WITH ({_SkipLocked})
+                WHERE {_Clocked(statement.Filter)}
+                ORDER BY {string.Join(", ", statement.OrderBy)}
+            )
+            UPDATE candidate
+            SET {_Clocked(statement.Set)}
+            OUTPUT {string.Join(", ", statement.Returning.Select(static c => "inserted." + c))};
+            """;
+    }
+
+    public string Render(SqlDeleteBatch statement)
+    {
+        return $"""
+            {_Clock}
+            WITH doomed AS (
+                SELECT TOP (@{statement.BatchSizeParameter}) *
+                FROM {statement.Table} WITH ({_SkipLocked})
+                WHERE {_Clocked(statement.Filter)}
+            )
+            DELETE FROM doomed;
+            """;
+    }
+
+    public string Render(SqlUpsert statement)
+    {
+        var columns = statement.Key.Select(static k => k.Column).Concat(statement.Columns);
+        var values = statement.Key.Select(static k => "@" + k.Parameter).Concat(statement.Values.Select(_Clocked));
+        var key = _Key(statement.Key, alias: null);
+        var guard = statement.Guard is null ? "" : $" AND ({_Stored(_Clocked(statement.Guard))})";
+        var returning =
+            statement.Returning.Count == 0
+                ? ""
+                : ", " + string.Join(", ", statement.Returning.Select(static c => "t." + c));
+
+        // The existence check takes the key lock, or the key-range lock when the row is absent, so two first writers
+        // of one key serialize and the insert never collides. The clock is read after that wait.
+        return $"""
+            DECLARE @now datetimeoffset(7);
+            DECLARE @outcome smallint = {(int)SqlUpsertOutcome.Refused};
+            IF EXISTS (SELECT 1 FROM {statement.Table} WITH (UPDLOCK, HOLDLOCK, ROWLOCK) WHERE {key})
+            BEGIN
+                SET @now = TODATETIMEOFFSET(SYSUTCDATETIME(), 0);
+                UPDATE stored
+                SET {_Stored(_Clocked(statement.Set))}
+                FROM {statement.Table} AS stored
+                WHERE {_Key(statement.Key, "stored")}{guard};
+                IF @@ROWCOUNT > 0 SET @outcome = {(int)SqlUpsertOutcome.Updated};
+            END
+            ELSE
+            BEGIN
+                SET @now = TODATETIMEOFFSET(SYSUTCDATETIME(), 0);
+                INSERT INTO {statement.Table} ({string.Join(", ", columns)})
+                VALUES ({string.Join(", ", values)});
+                SET @outcome = {(int)SqlUpsertOutcome.Inserted};
+            END;
+            SELECT @outcome{returning}
+            FROM (SELECT 1 AS one) AS x
+            LEFT JOIN {statement.Table} AS t ON @outcome > 0 AND {_Key(statement.Key, "t")};
+            """;
+    }
+
+    public string Render(SqlClockedStatement statement)
+    {
+        return $"""
+            {_Clock}
+            {_Clocked(statement.Sql)}
+            """;
+    }
+
+    public string Render(SqlInsert statement)
+    {
+        return $"""
+            {_Clock}
+            INSERT INTO {statement.Table} ({string.Join(", ", statement.Columns)})
+            OUTPUT {string.Join(", ", statement.Returning.Select(static c => "inserted." + c))}
+            VALUES ({string.Join(", ", statement.Values.Select(_Clocked))});
+            """;
+    }
+
+    public string Render(SqlLockBatch statement)
+    {
+        // Nothing waits, so the clock can be read first.
+        return $"""
+            {_Clock}
+            SELECT TOP (@{statement.BatchSizeParameter}) {_Clocked(string.Join(", ", statement.Columns))}
+            FROM {statement.Table} WITH ({_SkipLocked})
+            WHERE {_Clocked(statement.Filter)}
+            ORDER BY {string.Join(", ", statement.OrderBy)};
+            """;
+    }
+
+    public string Render(SqlTransactionLock statement)
+    {
+        // A transaction-owned application lock ends with the transaction. The wait is left to the command timeout; a
+        // refusal (a deadlock, or a cancelled wait) is raised so it cannot pass for an acquired lock.
+        return $"""
+            DECLARE @lockResult int;
+            EXEC @lockResult = sp_getapplock @Resource = @{statement.ResourceParameter}, @LockMode = N'Exclusive', @LockOwner = N'Transaction', @LockTimeout = -1;
+            IF @lockResult < 0 THROW 51000, N'The application lock was not granted.', 1;
+            """;
+    }
+
+    public SqlErrorKind Classify(Exception exception)
+    {
+        return exception is SqlException { Number: var number }
+            ? number switch
+            {
+                SqlErrorCodes.SqlServer.DuplicateKeyUniqueIndex
+                or SqlErrorCodes.SqlServer.DuplicateKeyUniqueConstraint => SqlErrorKind.UniqueViolation,
+                SqlErrorCodes.SqlServer.DeadlockVictim => SqlErrorKind.Deadlock,
+                SqlErrorCodes.SqlServer.SnapshotUpdateConflict => SqlErrorKind.SerializationConflict,
+                2714 or 1913 or 2759 => SqlErrorKind.DuplicateObject,
+                1222 => SqlErrorKind.LockTimeout,
+                SqlErrorCodes.SqlServer.UncommittableTransaction => SqlErrorKind.TransactionAborted,
+                _ => SqlErrorKind.None,
+            }
+            : SqlErrorKind.None;
+    }
+
+    private static void _ValidateTuples(
+        IReadOnlyList<string> expressions,
+        IReadOnlyList<SqlColumnType> elementTypes,
+        Action<SqlColumnType> ensureListable
+    )
+    {
+        if (expressions.Count < 2 || expressions.Count != elementTypes.Count)
+        {
+            throw new ArgumentException(
+                "A tuple list needs at least two expressions and one element type per expression.",
+                nameof(elementTypes)
+            );
+        }
+
+        foreach (var type in elementTypes)
+        {
+            ensureListable(type);
+        }
+    }
+
+    private static void _ValidateTupleRows(
+        IReadOnlyList<SqlColumnType> elementTypes,
+        IReadOnlyCollection<IReadOnlyList<object>> rows,
+        Action<SqlColumnType> ensureListable
+    )
+    {
+        foreach (var type in elementTypes)
+        {
+            ensureListable(type);
+        }
+
+        foreach (var row in rows)
+        {
+            if (row.Count != elementTypes.Count || row.Any(static value => value is null))
+            {
+                throw new ArgumentException("Every tuple row needs one non-null value per element type.", nameof(rows));
+            }
+        }
+    }
+
+    private static string _ListElementType(SqlColumnType elementType)
+    {
+        return elementType.Kind switch
+        {
+            SqlColumnKind.KeyText or SqlColumnKind.Text => elementType.MaxLength > 0
+                ? string.Create(CultureInfo.InvariantCulture, $"nvarchar({elementType.MaxLength})")
+                : "nvarchar(max)",
+            SqlColumnKind.Int16 => "smallint",
+            SqlColumnKind.Int32 => "int",
+            SqlColumnKind.Int64 => "bigint",
+            SqlColumnKind.Timestamp => "datetimeoffset(7)",
+            SqlColumnKind.Guid => "uniqueidentifier",
+            SqlColumnKind.Boolean => "bit",
+            SqlColumnKind.Binary or SqlColumnKind.Json => throw new ArgumentException(
+                "A list parameter cannot hold binary or JSON values.",
+                nameof(elementType)
+            ),
+            _ => throw new ArgumentOutOfRangeException(nameof(elementType), elementType.Kind, "Unknown column kind."),
+        };
+    }
+
+    private static string _AppliedAndReturning(
+        string table,
+        IReadOnlyList<SqlKeyColumn> key,
+        IReadOnlyList<string> returning,
+        string? keyPredicate = null
+    )
+    {
+        // @@ROWCOUNT must be read by the very next statement. The re-read runs under the lock the batch already holds.
+        var columns = returning.Count == 0 ? "" : ", " + string.Join(", ", returning.Select(static c => "t." + c));
+
+        return $"""
+            DECLARE @applied bit = CASE WHEN @@ROWCOUNT > 0 THEN 1 ELSE 0 END;
+            SELECT @applied{columns}
+            FROM (SELECT 1 AS one) AS x
+            LEFT JOIN {table} AS t ON @applied = 1 AND {_Key(key, "t")}{_And(keyPredicate)};
+            """;
+    }
+
+    private static string _And(string? predicate)
+    {
+        return predicate is null ? "" : $" AND ({predicate})";
+    }
+
+    private static string _Stored(string fragment)
+    {
+        return fragment.Replace(SqlDialectTokens.Stored, "stored", StringComparison.Ordinal);
+    }
+
+    private static string _Clocked(string fragment)
+    {
+        return fragment.Replace(SqlDialectTokens.Now, "@now", StringComparison.Ordinal);
+    }
+
+    private static string _Key(IReadOnlyList<SqlKeyColumn> key, string? alias)
+    {
+        var prefix = alias is null ? "" : alias + ".";
+
+        return string.Join(" AND ", key.Select(k => $"{prefix}{k.Column} = @{k.Parameter}"));
+    }
+}

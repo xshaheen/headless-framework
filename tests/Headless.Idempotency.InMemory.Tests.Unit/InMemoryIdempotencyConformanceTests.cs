@@ -3,14 +3,20 @@
 namespace Tests;
 
 // Every scenario applies: a resource-less unit plays the transaction, holding each record's lock until it ends.
-[Collection<InMemoryIdempotencyFixture>]
-public sealed class InMemoryIdempotencyConformanceTests(InMemoryIdempotencyFixture fixture)
-    : IdempotencyConformanceTests<InMemoryIdempotencyFixture>(fixture)
+[Collection<InMemoryIdempotencyConformanceFixture>]
+public sealed class InMemoryIdempotencyConformanceTests(InMemoryIdempotencyConformanceFixture fixture)
+    : IdempotencyConformanceTests<InMemoryIdempotencyConformanceFixture>(fixture)
 {
     [Fact]
     public override Task should_admit_exactly_one_of_many_parallel_autonomous_admissions()
     {
         return base.should_admit_exactly_one_of_many_parallel_autonomous_admissions();
+    }
+
+    [Fact]
+    public override Task should_admit_exactly_once_and_complete_exactly_once_under_parallel_racers()
+    {
+        return base.should_admit_exactly_once_and_complete_exactly_once_under_parallel_racers();
     }
 
     [Fact]
@@ -62,9 +68,9 @@ public sealed class InMemoryIdempotencyConformanceTests(InMemoryIdempotencyFixtu
     }
 
     [Fact]
-    public override Task should_refuse_keys_with_surrounding_whitespace_before_any_write()
+    public override Task should_refuse_keys_no_provider_stores_unchanged_before_any_write()
     {
-        return base.should_refuse_keys_with_surrounding_whitespace_before_any_write();
+        return base.should_refuse_keys_no_provider_stores_unchanged_before_any_write();
     }
 
     [Fact]

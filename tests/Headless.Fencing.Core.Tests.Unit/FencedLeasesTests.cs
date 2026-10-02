@@ -31,6 +31,28 @@ public sealed class FencedLeasesTests : TestBase
     }
 
     [Fact]
+    public async Task should_hand_the_store_the_duration_truncated_to_microseconds()
+    {
+        // given
+        var context = new FencingTestContext();
+        var requested = FencingTestContext.Duration + TimeSpan.FromTicks(7);
+        context
+            .Store.GrantAsync(_Key, FencingTestContext.Duration, AbortToken)
+            .Returns(LeaseGrantResult.Held(3, DateTimeOffset.UnixEpoch));
+        context
+            .Store.RenewAsync(_Key, 7, FencingTestContext.Duration, null, AbortToken)
+            .Returns(new LeaseRenewalResult(LeaseRenewalStatus.Stale, null));
+
+        // when
+        await context.Leases.GrantAsync("job", "order-1", requested, AbortToken);
+        await context.Leases.RenewAsync(_Lease, requested, AbortToken);
+
+        // then
+        await context.Store.Received(1).GrantAsync(_Key, FencingTestContext.Duration, AbortToken);
+        await context.Store.Received(1).RenewAsync(_Key, 7, FencingTestContext.Duration, null, AbortToken);
+    }
+
+    [Fact]
     public async Task should_forward_renew_settle_and_release_with_the_lease_key_and_generation()
     {
         // given

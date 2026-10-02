@@ -24,7 +24,7 @@ namespace Headless.Fencing;
 /// </para>
 /// <para>
 /// Autonomous verbs commit before returning; a relational provider opens its own connection at READ COMMITTED and
-/// retries only deadlocks. Enlisted verbs run inside the unit (a relational provider on its connection and
+/// retries a transient fault raised before its commit. Enlisted verbs run inside the unit (a relational provider on its connection and
 /// transaction), never commit, and never retry. Argument, tenant, duration, and unit-state checks happen before a call
 /// reaches the store, and every enlisted call is preceded by <see cref="ValidateEnlistment" />, which decides what kind
 /// of unit the provider can write through. A provider package registers the implementation; application code never

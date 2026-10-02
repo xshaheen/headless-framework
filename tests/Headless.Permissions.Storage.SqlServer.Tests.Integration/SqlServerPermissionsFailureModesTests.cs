@@ -2,6 +2,7 @@
 
 using Headless.Caching;
 using Headless.Hosting.Initialization;
+using Headless.Hosting.Initialization.Schema;
 using Headless.Permissions;
 using Headless.Testing.Tests;
 using Microsoft.Data.SqlClient;
@@ -34,10 +35,12 @@ public sealed class SqlServerPermissionsFailureModesTests(SqlServerPermissionsFi
             .Single(x => x is IHostedLifecycleService);
         initializer.IsInitialized.Should().BeFalse();
 
+        // The schema runner names the features whose connection failed and keeps the driver error as the cause.
         await FluentActions
             .Awaiting(() => initializer.WaitForInitializationAsync(AbortToken))
             .Should()
-            .ThrowAsync<SqlException>();
+            .ThrowAsync<SchemaRunnerException>()
+            .WithInnerException(typeof(SqlException));
     }
 
     [Fact]
@@ -108,8 +111,7 @@ public sealed class SqlServerPermissionsFailureModesTests(SqlServerPermissionsFi
             IF OBJECT_ID(N'{schema}.PermissionGrants', N'U') IS NOT NULL DROP TABLE [{schema}].[PermissionGrants];
             IF OBJECT_ID(N'{schema}.PermissionDefinitions', N'U') IS NOT NULL DROP TABLE [{schema}].[PermissionDefinitions];
             IF OBJECT_ID(N'{schema}.PermissionGroupDefinitions', N'U') IS NOT NULL DROP TABLE [{schema}].[PermissionGroupDefinitions];
-            IF TYPE_ID(N'{schema}.HeadlessPermissionsIdList') IS NOT NULL DROP TYPE [{schema}].[HeadlessPermissionsIdList];
-            IF TYPE_ID(N'{schema}.HeadlessPermissionsNameList') IS NOT NULL DROP TYPE [{schema}].[HeadlessPermissionsNameList];
+            IF OBJECT_ID(N'{schema}.headless_schema_history', N'U') IS NOT NULL DROP TABLE [{schema}].[headless_schema_history];
             IF EXISTS (SELECT * FROM sys.schemas WHERE name = N'{schema}') EXEC(N'DROP SCHEMA [{schema}]');
             """,
             connection
@@ -140,7 +142,7 @@ public sealed class SqlServerPermissionsFailureModesTests(SqlServerPermissionsFi
         await using var connection = new SqlConnection(fixture.ConnectionString);
         await connection.OpenAsync(AbortToken);
         // Nonclustered indexes only (type = 2) across the schema — excludes the clustered PKs so the
-        // count matches the 5 CREATE [UNIQUE] INDEX statements in SqlServerPermissionsStorageInitializer.
+        // count matches the 5 CREATE [UNIQUE] INDEX statements in SqlServerPermissionsSchemaContribution.
         await using var command = new SqlCommand(
             """
             SELECT COUNT(*)

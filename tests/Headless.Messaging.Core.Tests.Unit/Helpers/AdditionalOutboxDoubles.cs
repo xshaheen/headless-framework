@@ -46,7 +46,7 @@ internal static class AdditionalOutboxDoubles
         bool initialized = true
     )
     {
-        var initializer = Substitute.For<IStorageInitializer>();
+        var initializer = Substitute.For<IOutboxStorageInitializer>();
         initializer.GetPublishedTableName().Returns($"{database}.published");
 
         var outbox = new MessagingOutbox(

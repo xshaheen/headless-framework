@@ -88,42 +88,52 @@ internal sealed partial class PostgresAdvisoryLock(bool isShared, TimeProvider t
         {
             acquireCommandResult = await acquireCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch (Exception exception)
+        // A connection that died took everything its backend held with it, so only a usable one needs cleanup.
+        catch (Exception exception) when (connection.CanExecuteQueries)
         {
-            await rollBackTransactionTimeoutVariablesIfNeededAsync(isAcquired: false).ConfigureAwait(false);
-            await _RestoreTimeoutSettingsIfNeededAsync(capturedTimeoutSettings, connection).ConfigureAwait(false);
+            var isLockTimeout = _HasSqlState(exception, SqlErrorCodes.PostgreSql.LockTimeout);
+            bool isHoldingLock;
 
-            if (exception is PostgresException postgresException)
+            try
             {
-                switch (postgresException.SqlState)
+                // Rolling back to the savepoint also drops a transaction-scoped lock taken under it.
+                await rollBackTransactionTimeoutVariablesIfNeededAsync(isAcquired: false).ConfigureAwait(false);
+                await _RestoreTimeoutSettingsIfNeededAsync(capturedTimeoutSettings, connection).ConfigureAwait(false);
+
+                // The server may have granted the lock before the client gave up on the statement: a cancel or a
+                // client command timeout can land after pg_[try_]advisory_lock returned, and a lock_timeout can race
+                // the grant (https://github.com/madelson/DistributedLock/issues/147). Checks use CancellationToken.None
+                // because aborting them would leave that question unanswered.
+                isHoldingLock = await _IsHoldingLockAsync(connection, key, CancellationToken.None)
+                    .ConfigureAwait(false);
+
+                // A lock_timeout that lost the race to the grant is a success. Any other failure must not leave a
+                // session lock behind, or it stays held for as long as the pooled connection lives.
+                if (isHoldingLock && !isLockTimeout && !_UseTransactionScopedLock(connection))
                 {
-                    // lock_timeout (https://www.postgresql.org/docs/current/errcodes-appendix.html). A PostgreSQL race
-                    // means we might have actually acquired the lock just before timing out, so re-check. We use
-                    // CancellationToken.None because if we DO hold the lock it would be invalid to abort the check.
-                    // See https://github.com/madelson/DistributedLock/issues/147.
-                    case SqlErrorCodes.PostgreSql.LockTimeout:
-                        return await _IsHoldingLockAsync(connection, key, CancellationToken.None).ConfigureAwait(false)
-                            ? _Cookie
-                            : null;
-                    // deadlock_detected
-                    case SqlErrorCodes.PostgreSql.DeadlockDetected:
-                        throw new InvalidOperationException(
-                            $"The distributed-lock request failed with SqlState '{postgresException.SqlState}' (deadlock_detected).",
-                            exception
-                        );
+                    await _ReleaseAsync(connection, key, isTry: true).ConfigureAwait(false);
                 }
             }
-
-            if (
-                exception is OperationCanceledException
-                && cancellationToken.IsCancellationRequested
-                // Transaction-scoped locks can only be released by rolling back; the savepoint rollback above already
-                // handled that, and the caller will dispose the transaction.
-                && !_UseTransactionScopedLock(connection)
-            )
+            catch (Exception cleanupFailure)
             {
-                // We bailed mid-acquire; make sure we didn't leave a lock behind.
-                await _ReleaseAsync(connection, key, isTry: true).ConfigureAwait(false);
+                throw new LockCleanupFailedException(
+                    [exception, cleanupFailure],
+                    $"Acquiring distributed lock '{resourceName}' failed and releasing what the server may have "
+                        + "granted failed too; the lock may stay held until its connection or transaction ends."
+                );
+            }
+
+            if (isLockTimeout)
+            {
+                return isHoldingLock ? _Cookie : null;
+            }
+
+            if (_HasSqlState(exception, SqlErrorCodes.PostgreSql.DeadlockDetected))
+            {
+                throw new InvalidOperationException(
+                    $"The distributed-lock request failed with SqlState '{SqlErrorCodes.PostgreSql.DeadlockDetected}' (deadlock_detected).",
+                    exception
+                );
             }
 
             throw;
@@ -357,6 +367,12 @@ internal sealed partial class PostgresAdvisoryLock(bool isShared, TimeProvider t
 
         command.SetCommandText(commandText.ToString());
         await command.ExecuteNonQueryAsync(CancellationToken.None).ConfigureAwait(false);
+    }
+
+    private static bool _HasSqlState(Exception exception, string sqlState)
+    {
+        return exception is PostgresException postgresException
+            && string.Equals(postgresException.SqlState, sqlState, StringComparison.Ordinal);
     }
 
     private static bool _UseTransactionScopedLock(DatabaseConnection connection)

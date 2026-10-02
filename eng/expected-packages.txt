@@ -21,6 +21,7 @@ Headless.Blobs.Core
 Headless.Blobs.FileSystem
 Headless.Blobs.MultiTenancy
 Headless.Blobs.Redis
+Headless.Blobs.SignedUrlEndpoint
 Headless.Blobs.SshNet
 Headless.Caching.Abstractions
 Headless.Caching.Bcl
@@ -41,6 +42,7 @@ Headless.Coordination.Core.Database
 Headless.Coordination.PostgreSql
 Headless.Coordination.Redis
 Headless.Coordination.SqlServer
+Headless.Coordination.Sqlite
 Headless.Core
 Headless.Couchbase
 Headless.Dashboard.Authentication
@@ -62,6 +64,7 @@ Headless.Emails.Mailkit
 Headless.EntityFramework
 Headless.EntityFramework.Core
 Headless.EntityFramework.Messaging
+Headless.EntityFramework.Testing
 Headless.Extensions
 Headless.Features.Abstractions
 Headless.Features.Core
@@ -73,6 +76,7 @@ Headless.Fencing.Core
 Headless.Fencing.InMemory
 Headless.Fencing.PostgreSql
 Headless.Fencing.SqlServer
+Headless.Fencing.Sqlite
 Headless.FluentValidation
 Headless.Generator.Primitives
 Headless.Generator.Primitives.Abstractions
@@ -84,6 +88,7 @@ Headless.Idempotency.Core
 Headless.Idempotency.InMemory
 Headless.Idempotency.PostgreSql
 Headless.Idempotency.SqlServer
+Headless.Idempotency.Sqlite
 Headless.Identity.Storage.EntityFramework
 Headless.Imaging.Abstractions
 Headless.Imaging.Core
@@ -138,6 +143,7 @@ Headless.Permissions.Storage.SqlServer
 Headless.Permissions.Testing
 Headless.Primitives
 Headless.PushNotifications.Abstractions
+Headless.PushNotifications.Apns
 Headless.PushNotifications.Core
 Headless.PushNotifications.Dev
 Headless.PushNotifications.Firebase
@@ -150,6 +156,7 @@ Headless.Sequences.Abstractions
 Headless.Sequences.Core
 Headless.Sequences.PostgreSql
 Headless.Sequences.SqlServer
+Headless.Sequences.Sqlite
 Headless.Serializer.Abstractions
 Headless.Serializer.Json
 Headless.Serializer.MessagePack
@@ -186,4 +193,5 @@ Headless.UnitOfWork.Abstractions
 Headless.UnitOfWork.EntityFramework
 Headless.UnitOfWork.PostgreSql
 Headless.UnitOfWork.SqlServer
+Headless.UnitOfWork.Sqlite
 Headless.Urls

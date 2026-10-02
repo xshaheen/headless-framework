@@ -369,7 +369,7 @@ internal sealed class SubscribeExecutor(
                 // consumer: ExecuteAsync stamps Headers.ExecutionInstanceId on every attempt, after the
                 // row was stored. Preserving here would drop that stamp from the persisted envelope.
                 MessageContentWrite.Refresh,
-                nextRetryAt: null,
+                retryDelay: null,
                 lockedUntil,
                 originalRetries: message.Retries,
                 originalInlineAttempts: message.InlineAttempts,
@@ -481,15 +481,7 @@ internal sealed class SubscribeExecutor(
         // leaves the row picked up by the polling query on restart (Failed/NULL is filtered out).
         // Only transition to Failed on terminal decisions (Stop, Exhausted) or when persisting
         // for the persisted-retry processor (Continue with inline budget exhausted, NextRetryAt set).
-        // Pass the message's current NextRetryAt so ResolveNextState can preserve InitialDispatchGrace
-        // on inline-in-flight transitions and pad the schedule against polling races.
-        var state = RetryHelper.ResolveNextState(
-            decision,
-            inlineRetries,
-            _retryPolicy,
-            timeProvider,
-            currentNextRetryAt: message.NextRetryAt
-        );
+        var state = RetryHelper.ResolveNextState(decision, inlineRetries, _retryPolicy);
 
         // Persist transition: inline budget consumed AND decision Continue means the call site
         // owns the Retries++ . The helper is pure with respect to MediumMessage; this is the only
@@ -572,7 +564,7 @@ internal sealed class SubscribeExecutor(
                 // _SetFailedState stamped the exception onto Origin, so the persisted envelope is stale
                 // until this write refreshes it.
                 MessageContentWrite.Refresh,
-                state.NextRetryAt,
+                state.NextRetry,
                 lockedUntil,
                 originalRetries,
                 originalInlineAttempts,

@@ -47,7 +47,7 @@ public sealed class ConsumeTelemetryPipelineTests : TestBase
                 Arg.Any<MediumMessage>(),
                 Arg.Any<StatusName>(),
                 Arg.Any<MessageContentWrite>(),
-                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<RetryDelay?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int>(),
                 Arg.Any<int>(),

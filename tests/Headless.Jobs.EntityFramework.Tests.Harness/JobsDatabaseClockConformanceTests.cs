@@ -164,6 +164,40 @@ public abstract class JobsDatabaseClockConformanceTests<TFixture>(TFixture fixtu
         }
     }
 
+    /// <summary>
+    /// Every test in this suite acquires a row and asserts on the SQL that ran. An acquire returns nothing once the node
+    /// has lost its coordination membership, so a heartbeat that stalls under a loaded run must not cost this host its
+    /// membership, or the suite fails on a missing row rather than on the clock it is guarding.
+    /// </summary>
+    public virtual async Task intercepted_host_keeps_its_owner_identity_across_a_heartbeat_stall()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        var clock = new StallingTimeProvider();
+        using var host = fixture.BuildInterceptedHost("clock-stall", new LeaseSqlCapture(), _LeaseDuration, clock);
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var persistence = host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+
+            // A two-second stall: what a busy container or a starved thread pool can impose on one heartbeat.
+            // Waiting out three heartbeat intervals lets the loop observe it.
+            clock.Stall(TimeSpan.FromSeconds(2));
+            await Task.Delay(3 * JobsCoordinationFixtureExtensions.InterceptedHostHeartbeatInterval, ct);
+
+            var timeJob = new TimeJobEntity { Id = Guid.NewGuid(), Function = "clock-stall-time" };
+            await persistence.AddTimeJobsAsync([timeJob], ct);
+
+            (await persistence.AcquireImmediateTimeJobsAsync([timeJob.Id], ct)).Should().ContainSingle();
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
     public virtual async Task reclaim_and_release_sweep_sql_is_owned_by_the_database_clock()
     {
         var ct = AbortToken;
@@ -339,6 +373,22 @@ public abstract class JobsDatabaseClockConformanceTests<TFixture>(TFixture fixtu
         finally
         {
             await host.StopAsync(ct);
+        }
+    }
+
+    /// <summary>The system clock, except that elapsed-time measurements can be made to jump forward.</summary>
+    private sealed class StallingTimeProvider : TimeProvider
+    {
+        private long _stallTicks;
+
+        public void Stall(TimeSpan duration)
+        {
+            Interlocked.Add(ref _stallTicks, (long)(duration.TotalSeconds * TimestampFrequency));
+        }
+
+        public override long GetTimestamp()
+        {
+            return System.GetTimestamp() + Interlocked.Read(ref _stallTicks);
         }
     }
 

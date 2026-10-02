@@ -17,6 +17,7 @@ Use `IDistributedReadWriteLock` when concurrent readers are safe and writers nee
 
 - Code against `IDistributedLock` from `Headless.DistributedLocks.Abstractions`; do not inject Redis storage types into application services.
 - Use `Headless.DistributedLocks.InMemory` only for tests, local development, or deliberately single-instance apps. It is not a cross-process lock.
+- The PostgreSQL and SQL Server fence sequences are created at host startup by the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts), never on first acquire. Code that builds a service provider without starting a host (a console tool, a test) must call `await provider.GetRequiredService<SchemaRunner>().ApplyAsync()` before its first fenced acquire.
 - Use `TryAcquireAsync(...)` when timeout is an expected branch; use `AcquireAsync(...)` when timeout should fail the workflow.
 - Use `TryAcquireAllAsync(...)` or `AcquireAllAsync(...)` when one operation must hold several resources. All three primitives have them: `IDistributedLock` takes `IEnumerable<string>`, `IDistributedReadWriteLock` takes `IEnumerable<DistributedReadWriteLockRequest>`, `IDistributedSemaphoreProvider` takes `IEnumerable<DistributedSemaphoreRequest>`. Pass the complete set in one call so the framework can sort it ordinally, deduplicate it, enforce one timeout budget, and compensate partial acquisition in reverse order.
 - When a caller needs both read and write locks, pass one mixed `DistributedReadWriteLockRequest` set through a single `AcquireAllAsync(...)`. Never nest `AcquireAllReadAsync(...)` inside `AcquireAllWriteAsync(...)` (or vice versa): neither call sees the complete set, so neither can order it, and two such callers can deadlock. Use the read-only / write-only sugar overloads only when the whole set is genuinely one mode. The same rule bans nesting a composite inside another composite, or acquiring one while already holding an unrelated lock.
@@ -667,6 +668,7 @@ PostgreSQL advisory-lock provider for mutex and reader-writer distributed locks.
 - Standard provider locks are session-scoped: they require a stable backend session from acquire through release. Use direct PostgreSQL connections or PgBouncer session pooling.
 - Under PgBouncer transaction or statement pooling, use the transaction-coupled static API with a caller-owned `NpgsqlTransaction`; do not use session-scoped handles.
 - Session-scoped locks have no TTL and no finalizer reclaim. `RenewAsync(...)` returns `true` only while the lock is still held and not observed lost, `GetExpirationAsync(...)` returns `null`, and the lock is released only when the handle is disposed or `ReleaseAsync()` is called. Always `await using` the handle; an abandoned handle leaks its connection and advisory lock until the provider is disposed. See [Connection-Scoped Locks](#connection-scoped-locks-database-engine).
+- A failed session-scoped acquire holds nothing afterwards, even when the server granted the lock just before the client gave up on the statement (a cancellation, surfaced as `OperationCanceledException`, or a client command timeout). While the connection is still usable, the provider checks `pg_locks` for the key and unlocks it, so a pooled connection never carries an orphaned advisory lock. If that check or unlock fails too, the acquire throws `LockCleanupFailedException` carrying both failures; treat the lock as possibly held until its connection ends.
 - `Monitoring = LockMonitoringMode.None` leaves `LostToken` as `CancellationToken.None` and avoids the active connection probe. `Monitor` and `AutoExtend` both opt into connection-death observation; there is no TTL to extend.
 - Resource-targeted inspection (`IsLockedAsync(resource)`, `GetLockInfoAsync(resource)`) can see remote holders because the caller supplies the advisory key. Provider-wide enumeration (`ListActiveLocksAsync()`, `GetActiveLocksCountAsync()`) remains local-handle only because `pg_locks` does not expose reversible resource names for the provider namespace once advisory keys are hashed.
 - Postgres does not provide an N-holder advisory semaphore; use Redis semaphores or a separate slot-table design when N-holder concurrency is required. Because there is no semaphore here, **semaphore composites do not apply to this provider**. Mutex and reader-writer composites do.
@@ -743,6 +745,8 @@ PostgreSqlDistributedLock.AcquireWithTransaction(
 
 The SQL Server helper has the same four shapes with a string resource name.
 
+Every helper on both engines treats the transaction as the lock's owner: asking again for a lock the transaction already holds succeeds, so an interceptor that runs on each `SaveChanges` of one transaction can take its lock every time. A failed or cancelled acquire leaves the caller's transaction usable and holding nothing new, as described for [the unit-of-work surface](#locks-inside-a-unit-of-work); the PostgreSQL helpers wrap each acquire in a savepoint for that.
+
 #### Locks inside a unit of work
 
 Inside a unit of work the transaction is the unit's, so the lock is taken through the unit rather than through a transaction object the caller has to dig out. `unit.TransactionLocks` is an accessor `Headless.DistributedLocks.Abstractions` adds to `IUnitOfWork`; `UsePostgreSql` and `UseSqlServer` register the feature behind it, and it needs no reference to the driver from the calling code.
@@ -769,7 +773,9 @@ await factory.RunAsync(
 
 - The resource encodes as `KeyPrefix + resource`, exactly as the provider's session locks do, so a session lock from `IDistributedLock` and a transaction lock on one logical name contend.
 - It refuses before any command runs, in the same shape as `unit.Outbox`: a unit that is no longer active, a unit with no relational resource (`IUnitOfWorkFactory.BeginAsync()` with no connection), a resource whose transaction already completed, or a transaction from another provider (a SQL Server unit under the PostgreSQL lock provider) each throw `InvalidOperationException` naming the condition. A host whose only lock provider is Redis or InMemory throws on the accessor itself.
-- `acquireTimeout` means the same on both engines. `AcquireAsync` defaults to 30 seconds and throws `LockAcquisitionTimeoutException` when the wait elapses; `TryAcquireAsync` defaults to one attempt and returns `null` instead. `Timeout.InfiniteTimeSpan` waits without bound on either call. PostgreSQL bounds the wait with a server-side `lock_timeout` applied inside a savepoint, so the setting never leaks to the rest of the unit and an expiry does not abort the transaction; SQL Server passes it as `sp_getapplock`'s `@LockTimeout`.
+- `acquireTimeout` means the same on both engines. `AcquireAsync` defaults to 30 seconds and throws `LockAcquisitionTimeoutException` when the wait elapses; `TryAcquireAsync` defaults to one attempt and returns `null` instead. `Timeout.InfiniteTimeSpan` waits without bound on either call. PostgreSQL bounds the wait with a server-side `lock_timeout` and puts the unit's previous value back once the lock is held, so the setting never leaks to the rest of the unit; SQL Server passes it as `sp_getapplock`'s `@LockTimeout`.
+- The unit's transaction owns the lock, so acquiring a resource the unit already holds succeeds at once on both engines, on every wait shape. Nothing stacks that needs a matching release: the unit's commit or rollback releases it once.
+- A failed acquire leaves the unit usable. A timeout, a cancellation (surfaced as `OperationCanceledException` on both engines), or any other failed acquire holds nothing afterwards, even when the server granted the lock just before the client gave up. PostgreSQL runs every acquire inside a savepoint and rolls back to it, which also lifts the abort a failed statement would otherwise put on the transaction. SQL Server releases what it granted; a timed-out `sp_getapplock` never dooms the transaction, but a cancel under `SET XACT_ABORT ON` makes SQL Server roll the whole transaction back.
 - The returned `TransactionLockHandle` is identity only. There is nothing to release, so it is not disposable; it carries the resource name for logging and assertions, and two handles for one resource compare equal.
 - A replayed `RunAsync` block begins a fresh transaction, so the lock is taken again inside it; the feature never calls `PreventRetry()`.
 - There is no synchronous form on the unit. A `SavingChanges` interceptor holds no unit handle; it keeps using the static helpers above.
@@ -796,7 +802,7 @@ services.AddHeadlessDistributedLocks(setup =>
 });
 ```
 
-The default is `"headless"`. The provider creates the `headless_distributed_locks_fence` sequence inside the configured schema, creating the schema when absent, and reads it as `"schema"."headless_distributed_locks_fence"`, so it never depends on `search_path`. The provider validates the schema against PostgreSQL's unquoted-identifier rules at startup.
+The default is `"headless"`. The provider contributes the `headless_distributed_locks_fence` sequence (step `DistributedLocks/1`) to the schema runner, which creates it inside the configured schema at startup, creating the schema when absent. The provider reads it as `"schema"."headless_distributed_locks_fence"`, so it never depends on `search_path`. The provider validates the schema against PostgreSQL's unquoted-identifier rules at startup.
 
 ### Runtime behavior
 
@@ -947,11 +953,11 @@ services.AddHeadlessDistributedLocks(setup =>
 });
 ```
 
-The default is `"headless"`, not `dbo`; the initializer creates the schema when absent. The provider validates it against SQL Server's regular-identifier rules at startup. The sequence inside it is named `DistributedLocksFence_{KeyPrefix}`, with every run of characters outside `A-Za-z0-9_` in the prefix collapsed to `_` and the name truncated to 128 characters, so the default prefix `distributed-lock:` gives `DistributedLocksFence_distributed_lock`. Each key prefix gets its own sequence, so replicas that share a prefix share a fence.
+The default is `"headless"`, not `dbo`; the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts) creates the schema when absent. The provider validates it against SQL Server's regular-identifier rules at startup. The sequence inside it is named `DistributedLocksFence_{KeyPrefix}`, with every run of characters outside `A-Za-z0-9_` in the prefix collapsed to `_` and the name truncated to 128 characters, so the default prefix `distributed-lock:` gives `DistributedLocksFence_distributed_lock`. Each key prefix gets its own sequence, so replicas that share a prefix share a fence.
 
 ### Runtime behavior
 
 - Registers `IDistributedLock` as singleton.
 - Registers `IDistributedReadWriteLock` as singleton.
-- Registers SQL Server storage, fencing-token source, storage initializer, `TimeProvider.System`, and `IGuidGenerator` when absent. The provider is wired with the in-process polling release signal, which paces its contended-acquire retry loop and wakes same-process waiters on release.
+- Registers SQL Server storage, fencing-token source, the fence-sequence schema contribution (step `DistributedLocks:DistributedLocksFence_<prefix>/1` for a non-default key prefix, applied only when `EnableFencing` is on), `TimeProvider.System`, and `IGuidGenerator` when absent. The provider is wired with the in-process polling release signal, which paces its contended-acquire retry loop and wakes same-process waiters on release.
 - Creates a sanitized SQL `SEQUENCE` for durable fencing when `EnableFencing` is `true`.

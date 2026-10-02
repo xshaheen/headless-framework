@@ -15,7 +15,7 @@ internal sealed class SequenceRequestResolver(ICurrentTenant currentTenant, IOpt
     {
         Argument.IsNotNullOrWhiteSpace(name);
         Argument.HasMaxLength(name, SequenceFieldLimits.NameMaxLength);
-        SequenceKeyText.EnsureNoSurroundingWhitespace(name, "name", nameof(name));
+        Argument.IsPortableKey(name);
 
         var storedPartition = _NormalizePartition(partition);
 
@@ -42,7 +42,7 @@ internal sealed class SequenceRequestResolver(ICurrentTenant currentTenant, IOpt
         }
 
         Argument.HasMaxLength(partition, SequenceFieldLimits.PartitionMaxLength);
-        SequenceKeyText.EnsureNoSurroundingWhitespace(partition, "partition", nameof(partition));
+        Argument.IsPortableKey(partition);
 
         return partition;
     }
@@ -75,7 +75,7 @@ internal sealed class SequenceRequestResolver(ICurrentTenant currentTenant, IOpt
             );
         }
 
-        SequenceKeyText.EnsureNoSurroundingWhitespace(tenantId, "tenant id", nameof(tenantId));
+        Argument.IsPortableKey(tenantId);
 
         return tenantId;
     }

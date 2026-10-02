@@ -10,7 +10,9 @@
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
     <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
+    <ProjectReference Include="..\Headless.Extensions\Headless.Extensions.csproj" />
     <ProjectReference Include="..\Headless.Sql.Abstractions\Headless.Sql.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Sql.Core\Headless.Sql.Core.csproj" />
   </ItemGroup>

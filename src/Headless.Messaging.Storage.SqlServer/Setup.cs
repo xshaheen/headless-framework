@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
+using Headless.Abstractions;
 using Headless.Checks;
 using Headless.Constants;
 using Headless.Messaging.Configuration;
@@ -8,6 +9,7 @@ using Headless.Messaging.Internal;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Storage.SqlServer;
 using Headless.Sql;
+using Headless.Sql.SqlServer;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -174,15 +176,20 @@ public static class SetupSqlServerMessaging
                 var options = Options.Create(
                     serviceProvider.GetRequiredService<IOptionsMonitor<SqlServerOptions>>().Get(optionsName)
                 );
-                var initializer = ActivatorUtilities.CreateInstance<SqlServerStorageInitializer>(
+                var storageOptions = serviceProvider.GetRequiredService<IOptions<MessagingStorageOptions>>();
+                var tableNames = new RelationalStorageTableNames(SqlServerDialect.Instance, storageOptions);
+                // An additional outbox holds published rows only, and its schema is applied by its own runner so an
+                // unreachable outbox database never fails the host's startup.
+                var initializer = ActivatorUtilities.CreateInstance<OutboxSchemaInitializer>(
                     serviceProvider,
-                    options
+                    SqlServerMessagingSchemaContribution.CreateOutbox(options.Value, storageOptions.Value),
+                    tableNames
                 );
-                initializer.OutboxOnly = true;
-                var storage = ActivatorUtilities.CreateInstance<SqlServerDataStorage>(
+                var storage = RelationalDataStorage.Create(
                     serviceProvider,
-                    options,
-                    initializer
+                    options.Value.ToStorage(),
+                    tableNames,
+                    SequentialGuidType.SqlServer
                 );
 
                 return new MessagingOutbox(registrationName, storage, initializer);
@@ -195,6 +202,15 @@ public static class SetupSqlServerMessaging
         var optionsBuilder = setup.Services.AddOptions<SqlServerOptions, SqlServerOptionsValidator>(optionsName);
         configureOptions(optionsBuilder);
         optionsBuilder.Configure(options => options.Version = setup.Options.Version);
+        // The host's deploy script describes every database the host writes to, so it carries the outbox's steps too;
+        // the host's runner only exports them, because the outbox's own runner applies them.
+        setup.Services.AddHeadlessSchemaContribution(serviceProvider =>
+            SqlServerMessagingSchemaContribution.CreateOutbox(
+                serviceProvider.GetRequiredService<IOptionsMonitor<SqlServerOptions>>().Get(optionsName),
+                serviceProvider.GetRequiredService<IOptions<MessagingStorageOptions>>().Value,
+                exportOnly: true
+            )
+        );
 
         return setup;
     }
@@ -226,10 +242,28 @@ public static class SetupSqlServerMessaging
             // identifier rules. The EF-context storage path reuses this extension and is validated here too.
             services.AddOptions<MessagingStorageOptions, SqlServerMessagingStorageOptionsValidator>();
             configureOptions(services);
-            services.AddSingleton<SqlServerDataStorage>();
-            services.AddSingleton<IDataStorage>(sp => sp.GetRequiredService<SqlServerDataStorage>());
-            services.AddSingleton<IDeliveryCoordinationResolver>(sp => sp.GetRequiredService<SqlServerDataStorage>());
-            services.AddSingleton<IStorageInitializer, SqlServerStorageInitializer>();
+            services.AddSingleton<IStorageTableNames>(sp => new RelationalStorageTableNames(
+                SqlServerDialect.Instance,
+                sp.GetRequiredService<IOptions<MessagingStorageOptions>>()
+            ));
+            services.AddSingleton(sp =>
+                RelationalDataStorage.Create(
+                    sp,
+                    sp.GetRequiredService<IOptions<SqlServerOptions>>().Value.ToStorage(),
+                    sp.GetRequiredService<IStorageTableNames>(),
+                    SequentialGuidType.SqlServer
+                )
+            );
+            services.AddSingleton<IDataStorage>(sp => sp.GetRequiredService<RelationalDataStorage>());
+            services.AddSingleton<IDeliveryCoordinationResolver>(sp => sp.GetRequiredService<RelationalDataStorage>());
+            // The messaging tables are applied by the Headless schema runner from this contribution, before the
+            // messaging bootstrapper starts; the provider runs no DDL of its own.
+            services.AddHeadlessSchemaContribution(sp =>
+                SqlServerMessagingSchemaContribution.Create(
+                    sp.GetRequiredService<IOptions<SqlServerOptions>>().Value,
+                    sp.GetRequiredService<IOptions<MessagingStorageOptions>>().Value
+                )
+            );
         }
     }
 

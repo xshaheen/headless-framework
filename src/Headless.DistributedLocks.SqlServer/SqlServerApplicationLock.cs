@@ -18,11 +18,15 @@ internal static class SqlServerApplicationLock
     /// <summary>Lock mode string for shared (reader) locks passed to <c>sp_getapplock @LockMode</c>.</summary>
     public const string SharedLockMode = "Shared";
 
+    private const string _SessionOwner = "Session";
+    private const string _TransactionOwner = "Transaction";
+
     /// <summary>
     /// Attempts to acquire a session-scoped application lock on <paramref name="resource"/> using
     /// <c>sys.sp_getapplock @LockOwner = 'Session'</c>. The lock survives transaction boundaries and is
     /// released explicitly via <see cref="ReleaseSessionAsync"/> or when the connection closes.
-    /// On cancellation, the lock is released before the <see cref="OperationCanceledException"/> propagates.
+    /// When the acquire command fails or is cancelled, a lock the server granted before the client gave up is
+    /// released before the failure propagates.
     /// </summary>
     /// <param name="connection">Open SQL Server connection on which to execute the lock command.</param>
     /// <param name="resource">Encoded resource name (must already be within the 255-character limit).</param>
@@ -47,6 +51,7 @@ internal static class SqlServerApplicationLock
     /// </exception>
     /// <exception cref="DistributedLockDeadlockException">Thrown when SQL Server detects a deadlock (<c>sp_getapplock</c> returns -3).</exception>
     /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> fires or SQL Server cancels the wait (<c>sp_getapplock</c> returns -2).</exception>
+    /// <exception cref="LockCleanupFailedException">Thrown when the acquire failed and releasing what it may have been granted failed too.</exception>
     public static async ValueTask<bool> TryAcquireSessionAsync(
         SqlConnection connection,
         string resource,
@@ -56,40 +61,34 @@ internal static class SqlServerApplicationLock
         CancellationToken cancellationToken = default
     )
     {
-        try
-        {
-            var result = await _ExecuteAcquireAsync(
-                    connection,
-                    transaction: null,
-                    resource,
-                    isShared,
-                    lockOwner: "Session",
-                    acquireTimeout,
-                    commandTimeout,
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
+        // A session acquire always runs on a connection that holds nothing for this resource (the storage dedicates
+        // one per lock), so whatever a failed acquire leaves held is this acquire's own grant.
+        var result = await _ExecuteAcquireAsync(
+                connection,
+                transaction: null,
+                resource,
+                isShared,
+                _SessionOwner,
+                acquireTimeout,
+                commandTimeout,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
 
-            return MapAcquireResult(resource, result, acquireTimeout, cancellationToken);
-        }
-        catch (OperationCanceledException)
-        {
-            await ReleaseSessionAsync(connection, resource, CancellationToken.None).ConfigureAwait(false);
-            throw;
-        }
+        return MapAcquireResult(resource, result, acquireTimeout, cancellationToken);
     }
 
     /// <summary>
-    /// Attempts to acquire a transaction-scoped application lock on <paramref name="resource"/> using
+    /// Attempts to acquire an exclusive transaction-scoped application lock on <paramref name="resource"/> using
     /// <c>sys.sp_getapplock @LockOwner = 'Transaction'</c>. The lock is automatically released when
-    /// <paramref name="transaction"/> commits or rolls back.
-    /// On cancellation, the lock is released before the <see cref="OperationCanceledException"/> propagates.
+    /// <paramref name="transaction"/> commits or rolls back. The transaction is the owner, so a lock it already holds
+    /// is reported as acquired. When the acquire command fails or is cancelled, a lock the server granted before the
+    /// client gave up is released before the failure propagates.
     /// </summary>
     /// <param name="transaction">
     /// Active SQL Server transaction that will own the lock. Its associated connection must be open.
     /// </param>
     /// <param name="resource">Encoded resource name (must already be within the 255-character limit).</param>
-    /// <param name="isShared"><see langword="true"/> for a shared lock; <see langword="false"/> for exclusive.</param>
     /// <param name="acquireTimeout">
     /// Maximum time to wait for the lock. Converted to milliseconds and passed as <c>@LockTimeout</c>.
     /// <see cref="Timeout.InfiniteTimeSpan"/> maps to <c>-1</c> (wait forever).
@@ -103,58 +102,59 @@ internal static class SqlServerApplicationLock
     /// </returns>
     /// <exception cref="InvalidOperationException">
     /// Thrown when <paramref name="transaction"/> has no associated open connection (already committed,
-    /// rolled back, or disposed), when a re-entrant infinite wait would deadlock (code 103), when SQL
-    /// Server returns an unsupported upgradeable lock mode (code 104), or when an unexpected
-    /// <c>sp_getapplock</c> return code is received.
+    /// rolled back, or disposed), when SQL Server returns an unsupported upgradeable lock mode (code 104), or when
+    /// an unexpected <c>sp_getapplock</c> return code is received.
     /// </exception>
     /// <exception cref="ArgumentException">Thrown when SQL Server rejects the resource name or lock mode parameters (<c>sp_getapplock</c> returns -999).</exception>
     /// <exception cref="DistributedLockDeadlockException">Thrown when SQL Server detects a deadlock (<c>sp_getapplock</c> returns -3).</exception>
     /// <exception cref="OperationCanceledException">Thrown when <paramref name="cancellationToken"/> fires or SQL Server cancels the wait (<c>sp_getapplock</c> returns -2).</exception>
+    /// <exception cref="LockCleanupFailedException">Thrown when the acquire failed and releasing what it may have been granted failed too.</exception>
     public static async ValueTask<bool> TryAcquireTransactionAsync(
         SqlTransaction transaction,
         string resource,
-        bool isShared,
         TimeSpan acquireTimeout,
         TimeSpan commandTimeout,
         CancellationToken cancellationToken = default
     )
     {
-        var connection =
-            transaction.Connection
-            ?? throw new InvalidOperationException(
-                "The transaction has no associated open connection (already committed, rolled back, or disposed)."
-            );
+        var connection = _RequireConnection(transaction);
 
-        try
+        // Its own round trip, not a guard inside the acquire batch: a failed acquire releases whatever the
+        // transaction holds afterwards, which is only safe when the transaction is known to have held nothing before.
+        await using (var isHeldCommand = _CreateIsHeldCommand(connection, transaction, resource, commandTimeout))
         {
-            var result = await _ExecuteAcquireAsync(
-                    connection,
-                    transaction,
-                    resource,
-                    isShared,
-                    lockOwner: "Transaction",
-                    acquireTimeout,
-                    commandTimeout,
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
+            if (
+                Convert.ToInt32(
+                    await isHeldCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false),
+                    CultureInfo.InvariantCulture
+                ) != 0
+            )
+            {
+                return true;
+            }
+        }
 
-            return MapAcquireResult(resource, result, acquireTimeout, cancellationToken);
-        }
-        catch (OperationCanceledException)
-        {
-            await _ReleaseTransactionAsync(connection, transaction, resource, CancellationToken.None)
-                .ConfigureAwait(false);
-            throw;
-        }
+        var result = await _ExecuteAcquireAsync(
+                connection,
+                transaction,
+                resource,
+                isShared: false,
+                _TransactionOwner,
+                acquireTimeout,
+                commandTimeout,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return MapAcquireResult(resource, result, acquireTimeout, cancellationToken);
     }
 
     /// <summary>
     /// Translates a raw <c>sp_getapplock</c> return code into a Boolean success flag or the appropriate
     /// exception. Return codes and their meanings: 0/1 = acquired; -1 = timeout (returns
     /// <see langword="false"/>); -2 = cancelled; -3 = deadlock; -999 = invalid parameters; 103 =
-    /// re-entrant (returns <see langword="false"/> unless the acquire timeout is infinite, which would
-    /// deadlock); 104 = unsupported mode.
+    /// the owner already holds the lock, reached only by a session acquire (returns <see langword="false"/> unless
+    /// the acquire timeout is infinite, which would deadlock); 104 = unsupported mode.
     /// </summary>
     /// <param name="resource">Resource name, used in exception messages.</param>
     /// <param name="result">Raw integer returned by <c>sp_getapplock</c>.</param>
@@ -230,28 +230,6 @@ internal static class SqlServerApplicationLock
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private static async ValueTask _ReleaseTransactionAsync(
-        SqlConnection connection,
-        SqlTransaction transaction,
-        string resource,
-        CancellationToken cancellationToken
-    )
-    {
-        if (connection.State != System.Data.ConnectionState.Open || transaction.Connection is null)
-        {
-            return;
-        }
-
-        await using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = """
-            IF APPLOCK_MODE(N'public', @resource, N'Transaction') <> N'NoLock'
-                EXEC sys.sp_releaseapplock @Resource = @resource, @LockOwner = N'Transaction', @DbPrincipal = N'public';
-            """;
-        command.Parameters.AddWithValue(nameof(resource), resource);
-        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-    }
-
     /// <summary>
     /// Synchronous form of <see cref="TryAcquireTransactionAsync"/> for callers on a synchronous path, such as an
     /// EF Core <c>SavingChanges</c> interceptor. Same return codes and exceptions; no cancellation token, so the
@@ -259,43 +237,66 @@ internal static class SqlServerApplicationLock
     /// </summary>
     /// <param name="transaction">Open SQL Server transaction that will own the lock.</param>
     /// <param name="resource">Encoded resource name.</param>
-    /// <param name="isShared"><see langword="true"/> for a shared lock; <see langword="false"/> for exclusive.</param>
     /// <param name="acquireTimeout">Maximum time to wait for the lock; passed as <c>@LockTimeout</c>.</param>
     /// <param name="commandTimeout">ADO.NET command timeout for the SQL command.</param>
-    /// <returns><see langword="true"/> if the lock was acquired; <see langword="false"/> on contention.</returns>
-    /// <exception cref="InvalidOperationException">Thrown when the transaction has no open connection, on a re-entrant infinite wait (code 103), an unsupported mode (code 104), or an unexpected return code.</exception>
+    /// <returns><see langword="true"/> if the lock was acquired or the transaction already held it; <see langword="false"/> on contention.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when the transaction has no open connection, an unsupported mode (code 104), or an unexpected return code.</exception>
     /// <exception cref="ArgumentException">Thrown when SQL Server rejects the parameters (<c>sp_getapplock</c> returns -999).</exception>
     /// <exception cref="DistributedLockDeadlockException">Thrown when SQL Server detects a deadlock (<c>sp_getapplock</c> returns -3).</exception>
+    /// <exception cref="LockCleanupFailedException">Thrown when the acquire failed and releasing what it may have been granted failed too.</exception>
+#pragma warning disable MA0045 // TryAcquireTransaction is synchronous by contract for callers such as EF Core SavingChanges interceptors.
     public static bool TryAcquireTransaction(
         SqlTransaction transaction,
         string resource,
-        bool isShared,
         TimeSpan acquireTimeout,
         TimeSpan commandTimeout
     )
     {
-        var connection =
-            transaction.Connection
-            ?? throw new InvalidOperationException(
-                "The transaction has no associated open connection (already committed, rolled back, or disposed)."
-            );
+        var connection = _RequireConnection(transaction);
+
+        // Its own round trip for the same reason as TryAcquireTransactionAsync.
+        using (var isHeldCommand = _CreateIsHeldCommand(connection, transaction, resource, commandTimeout))
+        {
+            if (Convert.ToInt32(isHeldCommand.ExecuteScalar(), CultureInfo.InvariantCulture) != 0)
+            {
+                return true;
+            }
+        }
 
         using var command = _CreateAcquireCommand(
             connection,
             transaction,
             resource,
-            isShared,
-            lockOwner: "Transaction",
+            isShared: false,
+            _TransactionOwner,
             acquireTimeout,
             commandTimeout
         );
 
-#pragma warning disable MA0045 // TryAcquireTransaction is synchronous by contract for callers such as EF Core SavingChanges interceptors.
-        var result = Convert.ToInt32(command.ExecuteScalar(), CultureInfo.InvariantCulture);
-#pragma warning restore MA0045
+        int result;
+
+        try
+        {
+            result = Convert.ToInt32(command.ExecuteScalar(), CultureInfo.InvariantCulture);
+        }
+        catch (Exception exception) when (_CanStillRelease(connection, transaction))
+        {
+            try
+            {
+                using var release = _CreateReleaseIfHeldCommand(connection, transaction, resource, _TransactionOwner);
+                release.ExecuteNonQuery();
+            }
+            catch (Exception cleanupFailure)
+            {
+                throw _CleanupFailed(resource, exception, cleanupFailure);
+            }
+
+            throw;
+        }
 
         return MapAcquireResult(resource, result, acquireTimeout, CancellationToken.None);
     }
+#pragma warning restore MA0045
 
     private static async ValueTask<int> _ExecuteAcquireAsync(
         SqlConnection connection,
@@ -318,10 +319,109 @@ internal static class SqlServerApplicationLock
             commandTimeout
         );
 
-        return Convert.ToInt32(
-            await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false),
-            CultureInfo.InvariantCulture
+        try
+        {
+            return Convert.ToInt32(
+                await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false),
+                CultureInfo.InvariantCulture
+            );
+        }
+        catch (Exception exception)
+        {
+            // The server can grant the lock just before the client stops listening (a cancel or a command timeout
+            // racing the grant), so release whatever this owner now holds before reporting the failure. Both callers
+            // guarantee the owner held nothing for this resource before the acquire, so this never drops an earlier
+            // hold. A connection or transaction that is already gone took its locks with it.
+            if (_CanStillRelease(connection, transaction))
+            {
+                try
+                {
+                    await using var release = _CreateReleaseIfHeldCommand(connection, transaction, resource, lockOwner);
+                    await release.ExecuteNonQueryAsync(CancellationToken.None).ConfigureAwait(false);
+                }
+                catch (Exception cleanupFailure)
+                {
+                    throw _CleanupFailed(resource, exception, cleanupFailure);
+                }
+            }
+
+            // SqlClient reports a cancel that interrupts a running command as a SqlException (number 0, "Operation
+            // cancelled by user"), not as an OperationCanceledException.
+            if (exception is not OperationCanceledException && cancellationToken.IsCancellationRequested)
+            {
+                throw new OperationCanceledException(
+                    $"Distributed lock acquisition for '{resource}' was cancelled.",
+                    exception,
+                    cancellationToken
+                );
+            }
+
+            throw;
+        }
+    }
+
+    private static SqlCommand _CreateIsHeldCommand(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        string resource,
+        TimeSpan commandTimeout
+    )
+    {
+        var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandTimeout = GetCommandTimeoutSeconds(commandTimeout);
+        command.CommandText =
+            "SELECT CASE WHEN APPLOCK_MODE(N'public', @resource, N'Transaction') <> N'NoLock' THEN 1 ELSE 0 END;";
+        command.Parameters.AddWithValue(nameof(resource), resource);
+
+        return command;
+    }
+
+    private static SqlCommand _CreateReleaseIfHeldCommand(
+        SqlConnection connection,
+        SqlTransaction? transaction,
+        string resource,
+        string lockOwner
+    )
+    {
+        var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = $$"""
+            IF APPLOCK_MODE(N'public', @resource, N'{{lockOwner}}') <> N'NoLock'
+                EXEC sys.sp_releaseapplock @Resource = @resource, @LockOwner = N'{{lockOwner}}', @DbPrincipal = N'public';
+            """;
+        command.Parameters.AddWithValue(nameof(resource), resource);
+
+        return command;
+    }
+
+    private static bool _CanStillRelease(SqlConnection connection, SqlTransaction? transaction)
+    {
+        // SqlClient detaches a transaction the server rolled back (a cancel under XACT_ABORT ON does that), and the
+        // rollback already released every lock it owned.
+        return connection.State == System.Data.ConnectionState.Open
+            && (transaction is null || transaction.Connection is not null);
+    }
+
+    private static LockCleanupFailedException _CleanupFailed(
+        string resource,
+        Exception acquireFailure,
+        Exception cleanupFailure
+    )
+    {
+        return new LockCleanupFailedException(
+            [acquireFailure, cleanupFailure],
+            $"Acquiring distributed lock '{resource}' failed and releasing what the server may have granted failed "
+                + "too; the lock may stay held until its connection or transaction ends."
         );
+    }
+
+    private static SqlConnection _RequireConnection(SqlTransaction transaction)
+    {
+        return transaction.Connection
+            ?? throw new InvalidOperationException(
+                "The transaction has no associated open connection (already committed, rolled back, or disposed)."
+            );
     }
 
     private static SqlCommand _CreateAcquireCommand(

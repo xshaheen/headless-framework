@@ -1,8 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Dapper;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
+using Microsoft.Data.SqlClient;
 
 namespace Tests;
 
@@ -12,6 +14,21 @@ public sealed partial class SqlServerStorageTests
     {
         _EnsureInitialized();
         return (_CreateStorage(clock), _messagingOptions!.Value);
+    }
+
+    protected override async Task MakeScheduledMessagesDueAsync(
+        IReadOnlyCollection<Guid> storageIds,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var connection = new SqlConnection(fixture.ConnectionString);
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                "UPDATE headless.MessagingPublished SET ExpiresAt=DATEADD(second,-1,SYSUTCDATETIME()) WHERE Id IN @Ids;",
+                new { Ids = storageIds },
+                cancellationToken: cancellationToken
+            )
+        );
     }
 
     [Fact]

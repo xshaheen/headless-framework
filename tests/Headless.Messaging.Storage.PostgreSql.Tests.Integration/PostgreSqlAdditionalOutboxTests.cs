@@ -55,4 +55,11 @@ public sealed class PostgreSqlAdditionalOutboxTests(PostgreSqlTestFixture fixtur
             "SELECT to_regclass('headless.\"messaging_received\"') IS NOT NULL;"
         );
     }
+
+    protected override async Task ExecuteScriptAsync(string connectionString, string script)
+    {
+        // PostgreSQL runs the whole script as one multi-statement command; it has no batch separator.
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.ExecuteAsync(script);
+    }
 }

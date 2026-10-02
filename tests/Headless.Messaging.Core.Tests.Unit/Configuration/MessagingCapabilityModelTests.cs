@@ -27,10 +27,10 @@ public sealed class MessagingCapabilityModelTests : TestBase
         services.AddHeadlessMessaging(_ => { });
         services.AddMessagingProviderCapabilities(_Transport("Unsupported", [MessageLane.Bus], true));
         services.AddMessagingProviderCapabilities(_Storage("InMemory"));
-        services.AddSingleton<IStorageInitializer>(_ =>
+        services.AddSingleton<IStorageTableNames>(_ =>
         {
             sideEffects++;
-            return new RecordingStorageInitializer(static () => { });
+            return Substitute.For<IStorageTableNames>();
         });
         services.AddSingleton<IProcessingServer>(_ =>
         {
@@ -243,7 +243,6 @@ public sealed class MessagingCapabilityModelTests : TestBase
     [Fact]
     public async Task should_start_with_explicit_durable_dedupe_only_opt_down_and_expose_tier()
     {
-        var storageInitializeCalls = 0;
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddHeadlessMessaging(setup =>
@@ -258,9 +257,7 @@ public sealed class MessagingCapabilityModelTests : TestBase
             _Storage("PostgreSql", MessagingInboxCapabilityTier.DurableDedupeOnly)
         );
         services.RemoveAll<IProcessingServer>();
-        services.AddSingleton<IStorageInitializer>(
-            new RecordingStorageInitializer(() => Interlocked.Increment(ref storageInitializeCalls))
-        );
+        services.AddSingleton(Substitute.For<IStorageTableNames>());
 
         await using var provider = services.BuildServiceProvider();
         var bootstrapper = provider.GetRequiredService<IBootstrapper>();
@@ -268,7 +265,6 @@ public sealed class MessagingCapabilityModelTests : TestBase
         await bootstrapper.BootstrapAsync(AbortToken);
 
         bootstrapper.IsStarted.Should().BeTrue();
-        storageInitializeCalls.Should().Be(1);
         provider
             .GetRequiredService<IMessagingCapabilityModel>()
             .InboxCapability.Should()
@@ -335,7 +331,7 @@ public sealed class MessagingCapabilityModelTests : TestBase
     [Fact]
     public async Task should_reject_publisher_only_dual_lane_routes_before_startup_side_effects()
     {
-        var storageInitializerCalls = 0;
+        var storageFactoryCalls = 0;
         var services = new ServiceCollection();
         services.AddLogging();
         services.ConfigureMessaging(messaging => messaging.Message<SharedContract>("orders.changed"));
@@ -344,10 +340,10 @@ public sealed class MessagingCapabilityModelTests : TestBase
             _Transport("SharedTopology", [MessageLane.Bus, MessageLane.Queue], independentLaneTopology: false)
         );
         services.AddMessagingProviderCapabilities(_Storage("InMemory"));
-        services.AddSingleton<IStorageInitializer>(_ =>
+        services.AddSingleton<IStorageTableNames>(_ =>
         {
-            Interlocked.Increment(ref storageInitializerCalls);
-            return Substitute.For<IStorageInitializer>();
+            Interlocked.Increment(ref storageFactoryCalls);
+            return Substitute.For<IStorageTableNames>();
         });
 
         await using var provider = services.BuildServiceProvider();
@@ -356,7 +352,7 @@ public sealed class MessagingCapabilityModelTests : TestBase
         await act.Should()
             .ThrowAsync<MessagingConfigurationException>()
             .WithMessage("*SharedTopology*independent*lane*topology*");
-        storageInitializerCalls.Should().Be(0);
+        storageFactoryCalls.Should().Be(0);
     }
 
     [Fact]
@@ -509,17 +505,16 @@ public sealed class MessagingCapabilityModelTests : TestBase
     public async Task should_validate_startup_before_resolving_storage_or_processing_servers()
     {
         var storageFactoryCalls = 0;
-        var storageInitializeCalls = 0;
         var processingServerFactoryCalls = 0;
         var clientFactoryCalls = 0;
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddHeadlessMessaging(_ => { });
         services.AddMessagingProviderCapabilities(_Storage("TestStorage"));
-        services.AddSingleton<IStorageInitializer>(_ =>
+        services.AddSingleton<IStorageTableNames>(_ =>
         {
             Interlocked.Increment(ref storageFactoryCalls);
-            return new RecordingStorageInitializer(() => Interlocked.Increment(ref storageInitializeCalls));
+            return Substitute.For<IStorageTableNames>();
         });
         services.AddSingleton<IProcessingServer>(_ =>
         {
@@ -538,7 +533,6 @@ public sealed class MessagingCapabilityModelTests : TestBase
 
         await act.Should().ThrowAsync<MessagingConfigurationException>().WithMessage("*transport provider*");
         storageFactoryCalls.Should().Be(0);
-        storageInitializeCalls.Should().Be(0);
         processingServerFactoryCalls.Should().Be(0);
         clientFactoryCalls.Should().Be(0);
         bootstrapper.IsStarted.Should().BeFalse();
@@ -620,19 +614,6 @@ public sealed class MessagingCapabilityModelTests : TestBase
             Interlocked.Increment(ref recorder.MiddlewareCalls);
             return next();
         }
-    }
-
-    private sealed class RecordingStorageInitializer(Action initialize) : IStorageInitializer
-    {
-        public Task InitializeAsync(CancellationToken cancellationToken = default)
-        {
-            initialize();
-            return Task.CompletedTask;
-        }
-
-        public string GetPublishedTableName() => "published";
-
-        public string GetReceivedTableName() => "received";
     }
 
     private sealed class RecordingProcessingServer : IProcessingServer

@@ -329,8 +329,7 @@ public sealed class SqlServerPermissionsStorageTests(SqlServerPermissionsFixture
             IF OBJECT_ID(N'{_Schema}.PermissionDefinitions', N'U') IS NOT NULL DROP TABLE [{_Schema}].[PermissionDefinitions];
             IF OBJECT_ID(N'{_Schema}.PermissionGroupDefinitions', N'U') IS NOT NULL DROP TABLE [{_Schema}].[PermissionGroupDefinitions];
             IF OBJECT_ID(N'{_Schema}.PermissionGrantInsertCommandCounter', N'U') IS NOT NULL DROP TABLE [{_Schema}].[PermissionGrantInsertCommandCounter];
-            IF TYPE_ID(N'{_Schema}.HeadlessPermissionsIdList') IS NOT NULL DROP TYPE [{_Schema}].[HeadlessPermissionsIdList];
-            IF TYPE_ID(N'{_Schema}.HeadlessPermissionsNameList') IS NOT NULL DROP TYPE [{_Schema}].[HeadlessPermissionsNameList];
+            IF OBJECT_ID(N'{_Schema}.headless_schema_history', N'U') IS NOT NULL DROP TABLE [{_Schema}].[headless_schema_history];
             IF EXISTS (SELECT * FROM sys.schemas WHERE name = N'{_Schema}') EXEC(N'DROP SCHEMA [{_Schema}]');
             """,
             connection
@@ -480,5 +479,31 @@ public sealed class SqlServerPermissionsStorageTests(SqlServerPermissionsFixture
         {
             action();
         }
+    }
+
+    [Fact]
+    public async Task should_not_match_a_stored_prefix_when_a_lookup_value_is_longer_than_its_column()
+    {
+        // given a grant whose name and provider key fill their columns
+        await _DropSchemaAsync();
+        using var host = _CreateHost();
+        await host.StartAsync(AbortToken);
+        var grantRepository = host.Services.GetRequiredService<IPermissionGrantRepository>();
+        var name = new string('n', PermissionGrantRecordConstants.NameMaxLength);
+        var providerKey = new string('k', PermissionGrantRecordConstants.ProviderKeyMaxLength);
+        await grantRepository.InsertAsync(
+            new PermissionGrantRecord(Guid.NewGuid(), name, "Role", providerKey, isGranted: true),
+            AbortToken
+        );
+
+        // when each lookup carries one character more than the column holds
+        var found = await grantRepository.FindAsync(name + "x", "Role", providerKey, AbortToken);
+        var byNames = await grantRepository.GetListAsync([name + "x"], "Role", providerKey, AbortToken);
+        var byScope = await grantRepository.GetListAsync("Role", providerKey + "x", AbortToken);
+
+        // then none of them matches the stored grant, which is the lookup value's prefix
+        found.Should().BeNull();
+        byNames.Should().BeEmpty();
+        byScope.Should().BeEmpty();
     }
 }

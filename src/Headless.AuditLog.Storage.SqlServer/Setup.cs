@@ -1,16 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using FluentValidation;
-using Headless.Abstractions;
 using Headless.AuditLog.SqlServer;
 using Headless.Checks;
 using Headless.Constants;
-using Headless.MultiTenancy;
-using Headless.Serializer;
 using Headless.Sql;
+using Headless.Sql.SqlServer;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.AuditLog;
@@ -159,46 +155,18 @@ public static class SetupAuditLogSqlServer
                 services.Configure<SqlServerAuditLogOptions, SqlServerAuditLogOptionsValidator>(_configureWithServices);
             }
 
-            services.AddOptions<AuditLogStorageOptions, SqlServerAuditLogStorageOptionsValidator>();
-            services.AddInitializerHostedService<SqlServerAuditLogStorageInitializer>();
-            services.TryAddSingleton<IJsonSerializer>(_ => new SystemJsonSerializer());
-            services.TryAddSingleton<SqlServerAuditLogWriter>();
-            services.TryAddScoped<IAuditLogStore, SqlServerAuditLogStore>();
-            services.TryAddSingleton(typeof(IAuditLog<>), typeof(SqlServerAuditLog<>));
-            services.TryAddSingleton(typeof(IAuditLogWriter<>), typeof(SqlServerAuditLog<>));
-            services.TryAddSingleton(typeof(IReadAuditLog<>), typeof(SqlServerReadAuditLog<>));
-            services.TryAddSingleton(TimeProvider.System);
-            services.TryAddSingleton<ICurrentTenant, NullCurrentTenant>();
-            services.TryAddSingleton<ICurrentUser, NullCurrentUser>();
-            services.TryAddSingleton<ICorrelationIdProvider, ActivityCorrelationIdProvider>();
-        }
-    }
-
-    private sealed class SqlServerAuditLogStorageOptionsValidator : AbstractValidator<AuditLogStorageOptions>
-    {
-        public SqlServerAuditLogStorageOptionsValidator()
-        {
-            RuleFor(x => x.Schema).IsValidIdentifierFor(StorageProvider.SqlServer);
-            RuleFor(x => x.TableName)
-                .IsValidIdentifierFor(StorageProvider.SqlServer)
-                .FitsDerivedPostgreSqlNames(AuditLogStorageNames.Indexes)
-                .When(x => x.TableName is not null);
-            // SqlServer only supports NvarcharMax; Jsonb/Json are PostgreSQL column types.
-            When(
-                x => x.JsonColumnType.HasValue,
-                () =>
-                {
-                    RuleFor(x => x.JsonColumnType!.Value)
-                        .Must(t => t is AuditLogJsonColumnType.NvarcharMax)
-                        .WithMessage(
-                            $"{nameof(AuditLogStorageOptions.JsonColumnType)} must be NvarcharMax for the SqlServer audit-log provider."
-                        );
-                }
+            RelationalAuditLogStorage.AddServices<SqlServerAuditLogOptions>(
+                services,
+                SqlServerDialect.Instance,
+                new RelationalAuditLogProvider(
+                    StorageProvider.SqlServer,
+                    AuditLogJsonColumnType.NvarcharMax,
+                    [AuditLogJsonColumnType.NvarcharMax],
+                    $"{nameof(AuditLogStorageOptions.JsonColumnType)} must be NvarcharMax for the SqlServer audit-log provider.",
+                    SqlServerAuditLogSchemaContribution.CreatedAtBinder
+                ),
+                SqlServerAuditLogSchemaContribution.Create
             );
-            RuleFor(x => x.CreatedAtColumnType!)
-                .MaximumLength(64)
-                .Matches(@"^[A-Za-z][A-Za-z0-9 ]*(\([0-9]+\))?$")
-                .When(x => !string.IsNullOrEmpty(x.CreatedAtColumnType));
         }
     }
 }

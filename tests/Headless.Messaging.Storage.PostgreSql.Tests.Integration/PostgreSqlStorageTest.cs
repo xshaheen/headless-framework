@@ -1,8 +1,4 @@
 using Dapper;
-using Headless.Messaging.Configuration;
-using Headless.Messaging.Persistence;
-using Headless.Messaging.Storage.PostgreSql;
-using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 
 namespace Tests;
@@ -12,8 +8,7 @@ public sealed class PostgreSqlStorageTest(PostgreSqlTestFixture fixture) : IAsyn
 {
     public async ValueTask InitializeAsync()
     {
-        var storage = _GetStorageInitializer();
-        await storage.InitializeAsync();
+        await TestMessagingSchema.ApplyAsync(fixture.ConnectionString);
     }
 
     public ValueTask DisposeAsync()
@@ -54,18 +49,5 @@ public sealed class PostgreSqlStorageTest(PostgreSqlTestFixture fixture) : IAsyn
         var result = connection.QueryFirstOrDefault<string>(sql);
         result.Should().NotBeNull();
         result.Should().Be(table);
-    }
-
-    private IStorageInitializer _GetStorageInitializer()
-    {
-        var services = new ServiceCollection();
-        services.AddOptions();
-        services.AddLogging();
-        services.Configure<PostgreSqlOptions>(x => x.ConnectionString = fixture.ConnectionString);
-        services.Configure<MessagingOptions>(x => x.Version = "v1");
-        services.AddSingleton<IStorageInitializer, PostgreSqlStorageInitializer>();
-
-        var provider = services.BuildServiceProvider();
-        return provider.GetRequiredService<IStorageInitializer>();
     }
 }

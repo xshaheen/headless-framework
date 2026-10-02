@@ -7,6 +7,7 @@
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Headless.Idempotency.InMemory.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.Idempotency.Tests.Harness" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />

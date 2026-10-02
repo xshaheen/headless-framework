@@ -63,4 +63,28 @@ public sealed class NodeIdentityTests : TestBase
         first.CompareTo(second).Should().BeNegative();
         second.CompareTo(first).Should().BePositive();
     }
+
+    [Fact]
+    public void should_refuse_a_node_id_no_membership_store_keeps_unchanged()
+    {
+        // Built in code: a lone surrogate in an attribute argument does not survive UTF-8 metadata encoding.
+        string[] unportable = ["pod-a ", " pod-a", "pod\0a", "pod-a" + (char)0xD800];
+
+        foreach (var value in unportable)
+        {
+            var act = () => new NodeId(value);
+
+            act.Should().Throw<ArgumentException>();
+        }
+    }
+
+    [Fact]
+    public void should_accept_a_node_id_at_the_maximum_length_and_refuse_a_longer_one()
+    {
+        new NodeId(new string('n', NodeId.MaxLength)).Value.Should().HaveLength(NodeId.MaxLength);
+
+        var act = () => new NodeId(new string('n', NodeId.MaxLength + 1));
+
+        act.Should().Throw<ArgumentOutOfRangeException>();
+    }
 }

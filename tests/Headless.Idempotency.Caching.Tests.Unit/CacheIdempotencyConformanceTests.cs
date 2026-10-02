@@ -15,6 +15,12 @@ public sealed class CacheIdempotencyConformanceTests(CacheIdempotencyFixture fix
     }
 
     [Fact]
+    public override Task should_admit_exactly_once_and_complete_exactly_once_under_parallel_racers()
+    {
+        return base.should_admit_exactly_once_and_complete_exactly_once_under_parallel_racers();
+    }
+
+    [Fact]
     public override Task should_return_conflict_for_a_different_fingerprint_and_keep_the_stored_result()
     {
         return base.should_return_conflict_for_a_different_fingerprint_and_keep_the_stored_result();
@@ -45,9 +51,9 @@ public sealed class CacheIdempotencyConformanceTests(CacheIdempotencyFixture fix
     }
 
     [Fact]
-    public override Task should_refuse_keys_with_surrounding_whitespace_before_any_write()
+    public override Task should_refuse_keys_no_provider_stores_unchanged_before_any_write()
     {
-        return base.should_refuse_keys_with_surrounding_whitespace_before_any_write();
+        return base.should_refuse_keys_no_provider_stores_unchanged_before_any_write();
     }
 
     [Fact]

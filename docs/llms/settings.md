@@ -234,6 +234,7 @@ Core implementation of dynamic settings management with hierarchical value provi
 - `SettingsInitializationBackgroundService` — seeds static definitions with up to 10 jittered exponential-back-off retries capped at 30 seconds; pre-caches dynamic definitions when enabled
 - `SettingManagementOptions` — tuning options for lock keys, cache expiries, dynamic store toggle
 - `SettingsStorageOptions` — schema and table name configuration shared across all storage providers
+- `RelationalSettingsOptions` — base of `PostgreSqlSettingsOptions` and `SqlServerSettingsOptions` (`ConnectionString`, `CommandTimeout`). Core also holds the one relational value and definition repository both raw providers run, written over the `ISqlDialect` statement kit; each provider package supplies only its options, DDL, and registration
 - `HeadlessSettingsSetupBuilder` — fluent builder returned to `AddHeadlessSettings`; exposes `ConfigureManagement`, `ConfigureStorage`, and `RegisterExtension`
 - `services.AddSettingDefinitionProvider<T>()` — registers a custom `ISettingDefinitionProvider`
 - `services.AddSettingValueProvider<T>()` — registers a custom value provider (idempotent by type)
@@ -247,7 +248,7 @@ Value providers are registered with the last-added provider having the highest r
 
 Encrypted settings (`isEncrypted: true`) are decrypted only when the resolving provider is store-backed (`Global`, `Tenant`, `User`). A plaintext `DefaultValue` or `IConfiguration` value resolved through fallback is returned as-is rather than fed to the decryptor.
 
-**Keys must not start or end with white space.** Every `ISettingValueStore` entry point throws `ArgumentException` before touching storage when a setting name, provider name, or provider key starts or ends with white space, on reads as well as writes. SQL Server ignores trailing spaces when it compares keys, so `"acme "` would read and overwrite the `"acme"` row there while PostgreSQL keeps the two apart. Normalize keys at your own boundary; the store refuses rather than trims.
+**Keys must be text every provider keeps unchanged.** Every `ISettingValueStore` entry point throws `ArgumentException` before touching storage when a setting name, provider name, or provider key starts or ends with white space, on reads as well as writes. SQL Server ignores trailing spaces when it compares keys, so `"acme "` would read and overwrite the `"acme"` row there while PostgreSQL keeps the two apart. Every provider must keep a key unchanged, so the store also refuses a NUL character (PostgreSQL cannot store it) and an unpaired UTF-16 surrogate (SqlClient sends it as U+FFFD, so SQL Server would merge keys that differ only in which lone surrogate they carry). The rule is `Argument.IsPortableKey`. Normalize keys at your own boundary; the store refuses rather than trims.
 
 `AddHeadlessSettings` is guarded on `ISettingManager` so it is safe to call more than once (only the first call registers the core). However, only one storage provider extension may be registered — a second call with a different provider throws at startup.
 
@@ -502,9 +503,9 @@ PostgreSQL raw-DDL storage for settings management.
 - `setup.UsePostgreSql(Action<PostgreSqlSettingsOptions> configure)` — overload for full option control
 - `setup.UsePostgreSql(Action<PostgreSqlSettingsOptions, IServiceProvider> configure)` — overload for late-bound configuration
 - `setup.UsePostgreSql()` — reads the connection registered by `AddPostgreSqlSql`, so one connection string serves every feature; see [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features)
-- Idempotent schema, table, and index creation at host startup via `PostgreSqlSettingsStorageInitializer`, with snake_case tables, columns, keys, and indexes (`setting_values`, `provider_key`, `ix_setting_values_name_provider_name_provider_key`)
+- Table and index creation at host startup as schema steps (`Settings/1` tables, `Settings/2` indexes) applied by the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts), with snake_case tables, columns, keys, and indexes (`setting_values`, `provider_key`, `ix_setting_values_name_provider_name_provider_key`)
 - Raw ADO.NET repositories for setting values and definitions
-- `PostgreSqlSettingsOptions` — connection string and command timeout
+- `PostgreSqlSettingsOptions` — connection string and command timeout, inherited from `RelationalSettingsOptions`
 - Shares `SettingsStorageOptions` with the EF provider (schema, table names, `InitializeOnStartup`)
 
 ### Install
@@ -562,9 +563,8 @@ Configure schema and table names through `SettingsStorageOptions` via `setup.Con
 
 ### Runtime behavior
 
-- Registers `PostgreSqlSettingsStorageInitializer` as `IHostedService` and `IInitializer`
-- Registers `PostgreSqlSettingValueRecordRepository` as `ISettingValueRecordRepository` (singleton)
-- Registers `PostgreSqlSettingDefinitionRecordRepository` as `ISettingDefinitionRecordRepository` (singleton)
+- Registers the settings schema contribution; the one schema runner applies it at startup
+- Registers the shared relational repositories from `Headless.Settings.Core`, over the PostgreSQL dialect, as `ISettingValueRecordRepository` and `ISettingDefinitionRecordRepository` (singletons)
 
 ---
 
@@ -579,9 +579,9 @@ SQL Server raw-DDL storage for settings management.
 - `setup.UseSqlServer(Action<SqlServerSettingsOptions> configure)` — overload for full option control
 - `setup.UseSqlServer(Action<SqlServerSettingsOptions, IServiceProvider> configure)` — overload for late-bound configuration
 - `setup.UseSqlServer()` — reads the connection registered by `AddSqlServerSql`, so one connection string serves every feature; see [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features)
-- Idempotent schema, table, and index creation at host startup via `SqlServerSettingsStorageInitializer`, with PascalCase tables, columns, keys, and indexes (`SettingValues`, `ProviderKey`, `IX_SettingValues_Name_ProviderName_ProviderKey`)
+- Table and index creation at host startup as schema steps (`Settings/1` tables, `Settings/2` indexes) applied by the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts), with PascalCase tables, columns, keys, and indexes (`SettingValues`, `ProviderKey`, `IX_SettingValues_Name_ProviderName_ProviderKey`)
 - Raw ADO.NET repositories for setting values and definitions
-- `SqlServerSettingsOptions` — connection string and command timeout
+- `SqlServerSettingsOptions` — connection string and command timeout, inherited from `RelationalSettingsOptions`
 - Shares `SettingsStorageOptions` with the EF provider (schema, table names, `InitializeOnStartup`)
 
 ### Install
@@ -639,6 +639,5 @@ Configure schema and table names through `SettingsStorageOptions` via `setup.Con
 
 ### Runtime behavior
 
-- Registers `SqlServerSettingsStorageInitializer` as `IHostedService` and `IInitializer`
-- Registers `SqlServerSettingValueRecordRepository` as `ISettingValueRecordRepository` (singleton)
-- Registers `SqlServerSettingDefinitionRecordRepository` as `ISettingDefinitionRecordRepository` (singleton)
+- Registers the settings schema contribution; the one schema runner applies it at startup
+- Registers the shared relational repositories from `Headless.Settings.Core`, over the SQL Server dialect, as `ISettingValueRecordRepository` and `ISettingDefinitionRecordRepository` (singletons)

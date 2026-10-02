@@ -15,6 +15,11 @@ namespace Headless.DistributedLocks;
 /// handle arrives per call, and the call refuses, before any command runs, a unit that is no longer active, carries
 /// no relational resource, or carries a transaction from another provider. The TTL leases of
 /// <see cref="IDistributedLock" /> are a different contract and never enlist.
+/// <para>
+/// The unit's transaction is the owner, so acquiring a resource the unit already holds succeeds at once on every
+/// wait shape. An acquire that times out, is cancelled, or fails leaves the unit's transaction usable and holding
+/// nothing it did not hold before.
+/// </para>
 /// </remarks>
 [PublicAPI]
 public interface IUnitOfWorkTransactionLocks : IUnitOfWorkFeature
@@ -35,6 +40,7 @@ public interface IUnitOfWorkTransactionLocks : IUnitOfWorkFeature
     /// <exception cref="InvalidOperationException">
     /// The unit is no longer active, exposes no relational resource, or its transaction belongs to another provider.
     /// </exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken" /> fired before the lock was held.</exception>
     ValueTask<TransactionLockHandle> AcquireAsync(
         IUnitOfWork unitOfWork,
         string resource,
@@ -57,6 +63,7 @@ public interface IUnitOfWorkTransactionLocks : IUnitOfWorkFeature
     /// <exception cref="InvalidOperationException">
     /// The unit is no longer active, exposes no relational resource, or its transaction belongs to another provider.
     /// </exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken" /> fired before the lock was held.</exception>
     ValueTask<TransactionLockHandle?> TryAcquireAsync(
         IUnitOfWork unitOfWork,
         string resource,

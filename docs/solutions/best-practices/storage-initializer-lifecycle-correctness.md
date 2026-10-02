@@ -21,6 +21,14 @@ applies_when:
 
 # Storage Initializer Lifecycle & Concurrent-Startup Safety
 
+> **Relational DDL no longer uses per-feature initializers.** The raw PostgreSQL and SQL Server providers contribute
+> schema steps to one `SchemaRunner`, which owns the per-database lock, the rerun-once rule, and the startup
+> lifecycle described in sections 1 and 2 below. See
+> [One schema runner](../architecture-patterns/schema-runner-history-lock-and-verify.md). The race analysis in
+> section 2 still explains why the runner behaves as it does. Sections 3 to 8 (failure handling, dispose paths,
+> log dedup, field limits) still apply as written, and the TCS skeleton lives on in `HostedInitializer`, which the
+> runner's initializer and non-relational initializers (Redis scripts, topology) use.
+
 ## Context
 
 Each raw provider package in the framework ships a `*StorageInitializer` registered through `AddInitializerHostedService<T>` so the host blocks `Starting` until the schema is ready. These initializers run idempotent DDL and must survive: parallel hosts in a rolling deploy racing the same fresh schema, DB unreachable, auth failure, partial-failure schemas from prior crashed runs, repeat host starts in test rigs, and exceptions on the SaveChanges path that race with `DbContext` disposal.

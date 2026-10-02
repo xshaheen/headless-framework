@@ -60,7 +60,7 @@ public sealed class SetupTests : TestBase
     [Fact]
     public async Task should_reject_bus_route_before_storage_or_broker_side_effects()
     {
-        var storageInitializeCalls = 0;
+        var storageResolveCalls = 0;
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddHeadlessMessaging(options =>
@@ -80,7 +80,11 @@ public sealed class SetupTests : TestBase
                 inboxCapability: MessagingInboxCapabilityTier.Transactional
             )
         );
-        services.AddSingleton<IStorageInitializer>(new RecordingStorageInitializer(() => storageInitializeCalls++));
+        services.AddSingleton<IStorageTableNames>(_ =>
+        {
+            storageResolveCalls++;
+            return new FixedStorageTableNames();
+        });
 
         await using var provider = services.BuildServiceProvider();
         var act = () => provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
@@ -88,15 +92,15 @@ public sealed class SetupTests : TestBase
         await act.Should()
             .ThrowAsync<MessagingConfigurationException>()
             .WithMessage("*Kafka*does not support Bus*Supported lanes: Queue*");
-        storageInitializeCalls.Should().Be(0);
+        storageResolveCalls.Should().Be(0);
     }
 
     [Fact]
     public async Task should_accept_message_contract_at_startup_when_transport_carries_only_the_queue()
     {
-        // A contract names the message on both lanes, so startup must skip the Bus lane Kafka does not carry. The
-        // storage initializer runs right after that validation and stops the bootstrap before any processor starts.
-        var storageInitializeCalls = 0;
+        // A contract names the message on both lanes, so startup must skip the Bus lane Kafka does not carry. Bootstrap
+        // reaches storage only after that validation, and the storage stops it there, before any processor starts.
+        var storageResolveCalls = 0;
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddHeadlessMessaging(options => options.UseKafka("localhost:9092"));
@@ -109,21 +113,18 @@ public sealed class SetupTests : TestBase
                 inboxCapability: MessagingInboxCapabilityTier.Transactional
             )
         );
-        // Bootstrap resolves the processing servers, and so the storage they write to, before it initializes storage.
         services.AddSingleton(Substitute.For<IDataStorage>());
-        services.AddSingleton<IStorageInitializer>(
-            new RecordingStorageInitializer(() =>
-            {
-                storageInitializeCalls++;
-                throw new StorageInitializationReachedException();
-            })
-        );
+        services.AddSingleton<IStorageTableNames>(_ =>
+        {
+            storageResolveCalls++;
+            throw new StorageReachedException();
+        });
 
         await using var provider = services.BuildServiceProvider();
         var act = () => provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
 
-        await act.Should().ThrowAsync<StorageInitializationReachedException>();
-        storageInitializeCalls.Should().Be(1);
+        await act.Should().ThrowAsync<StorageReachedException>();
+        storageResolveCalls.Should().Be(1);
     }
 
     [Fact]
@@ -241,16 +242,10 @@ public sealed class SetupTests : TestBase
             );
     }
 
-    private sealed class StorageInitializationReachedException : Exception;
+    private sealed class StorageReachedException : Exception;
 
-    private sealed class RecordingStorageInitializer(Action initialize) : IStorageInitializer
+    private sealed class FixedStorageTableNames : IStorageTableNames
     {
-        public Task InitializeAsync(CancellationToken cancellationToken = default)
-        {
-            initialize();
-            return Task.CompletedTask;
-        }
-
         public string GetPublishedTableName() => "published";
 
         public string GetReceivedTableName() => "received";

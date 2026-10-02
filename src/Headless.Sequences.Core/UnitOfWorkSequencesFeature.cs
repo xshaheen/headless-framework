@@ -40,7 +40,7 @@ internal sealed class UnitOfWorkSequencesFeature(SequenceRequestResolver resolve
         UnitOfWorkTransactions.RequireTransaction<DbTransaction>(unitOfWork, _Operation);
         var resource = (IRelationalUnitOfWorkResource)unitOfWork.Resource!;
 
-        store.ValidateEnlistment(resource);
+        store.ValidateEnlistment(unitOfWork);
 
         // The increment is not tracked by the unit's change tracker, so a replay cannot restore it; it has to be
         // re-run. An owned unit replays the caller's block, which takes the number again, so it stays replayable.
@@ -53,7 +53,7 @@ internal sealed class UnitOfWorkSequencesFeature(SequenceRequestResolver resolve
         }
 
         return await store
-            .IncrementEnlistedAsync(resource, key, policy.Start, policy.Step, cancellationToken)
+            .IncrementEnlistedAsync(unitOfWork, key, policy.Start, policy.Step, cancellationToken)
             .ConfigureAwait(false);
     }
 }

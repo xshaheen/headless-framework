@@ -3,9 +3,11 @@
 using Headless.Checks;
 using Headless.Sequences.PostgreSql;
 using Headless.Sql;
+using Headless.Sql.PostgreSql;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Sequences;
@@ -37,7 +39,7 @@ public static class SetupSequencesPostgreSql
         /// <returns>The builder, to allow chaining.</returns>
         /// <remarks>
         /// The counter table is created at host startup unless
-        /// <see cref="PostgreSqlSequencesOptions.InitializeOnStartup" /> is <see langword="false" />. A gap-free call
+        /// <see cref="RelationalSequencesOptions.InitializeOnStartup" /> is <see langword="false" />. A gap-free call
         /// is accepted only on a unit whose Npgsql connection reaches this same database.
         /// </remarks>
         /// <exception cref="ArgumentException"><paramref name="connectionString" /> is <see langword="null" /> or whitespace.</exception>
@@ -56,7 +58,7 @@ public static class SetupSequencesPostgreSql
         /// <returns>The builder, to allow chaining.</returns>
         /// <remarks>
         /// The counter table is created at host startup unless
-        /// <see cref="PostgreSqlSequencesOptions.InitializeOnStartup" /> is <see langword="false" />. A gap-free call
+        /// <see cref="RelationalSequencesOptions.InitializeOnStartup" /> is <see langword="false" />. A gap-free call
         /// is accepted only on a unit whose Npgsql connection reaches the configured database.
         /// </remarks>
         /// <exception cref="ArgumentNullException"><paramref name="configuration" /> is <see langword="null" />.</exception>
@@ -74,7 +76,7 @@ public static class SetupSequencesPostgreSql
         /// <returns>The builder, to allow chaining.</returns>
         /// <remarks>
         /// The counter table is created at host startup unless
-        /// <see cref="PostgreSqlSequencesOptions.InitializeOnStartup" /> is <see langword="false" />. A gap-free call
+        /// <see cref="RelationalSequencesOptions.InitializeOnStartup" /> is <see langword="false" />. A gap-free call
         /// is accepted only on a unit whose Npgsql connection reaches the configured database.
         /// </remarks>
         /// <exception cref="ArgumentNullException"><paramref name="configure" /> is <see langword="null" />.</exception>
@@ -95,7 +97,7 @@ public static class SetupSequencesPostgreSql
         /// <returns>The builder, to allow chaining.</returns>
         /// <remarks>
         /// The counter table is created at host startup unless
-        /// <see cref="PostgreSqlSequencesOptions.InitializeOnStartup" /> is <see langword="false" />. A gap-free call
+        /// <see cref="RelationalSequencesOptions.InitializeOnStartup" /> is <see langword="false" />. A gap-free call
         /// is accepted only on a unit whose Npgsql connection reaches the configured database.
         /// </remarks>
         /// <exception cref="ArgumentNullException"><paramref name="configure" /> is <see langword="null" />.</exception>
@@ -149,10 +151,22 @@ public static class SetupSequencesPostgreSql
                 );
             }
 
-            services.AddInitializerHostedService<PostgreSqlSequencesStorageInitializer>();
+            // The contribution factory reads options at first resolution, so InitializeOnStartup keeps its
+            // contract: false means the runner never creates the table (a migration tool owns it), while the
+            // initializer promise still completes for dependents.
+            services.AddHeadlessSchemaContribution(sp =>
+                PostgreSqlSequencesSchemaContribution.Create(
+                    sp.GetRequiredService<IOptions<PostgreSqlSequencesOptions>>().Value
+                )
+            );
             // The store waits between deadlock retries on this clock.
             services.TryAddSingleton(TimeProvider.System);
-            services.TryAddSingleton<ISequenceStore, PostgreSqlSequenceStore>();
+            services.TryAddSingleton<ISequenceStore>(sp => new RelationalSequenceStore(
+                PostgreSqlDialect.Instance,
+                sp.GetRequiredService<IOptions<PostgreSqlSequencesOptions>>().Value,
+                "Headless.Sequences.PostgreSql",
+                sp.GetRequiredService<TimeProvider>()
+            ));
         }
     }
 }

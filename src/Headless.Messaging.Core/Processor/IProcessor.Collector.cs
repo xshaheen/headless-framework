@@ -42,10 +42,10 @@ internal sealed class CollectorProcessor : IProcessor
         _timeProvider = serviceProvider.GetRequiredService<TimeProvider>();
         _waitingInterval = TimeSpan.FromSeconds(options.Value.CollectorCleaningInterval);
 
-        var initializer = _serviceProvider.GetRequiredService<IStorageInitializer>();
+        var tableNames = _serviceProvider.GetRequiredService<IStorageTableNames>();
 
-        _publishedTableName = initializer.GetPublishedTableName();
-        _receivedTableName = initializer.GetReceivedTableName();
+        _publishedTableName = tableNames.GetPublishedTableName();
+        _receivedTableName = tableNames.GetReceivedTableName();
     }
 
     public async Task ProcessAsync(ProcessingContext context)

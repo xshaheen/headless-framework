@@ -1,15 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using FluentValidation;
 using Headless.Checks;
 using Headless.Constants;
 using Headless.Permissions.PostgreSql;
 using Headless.Permissions.Repositories;
-using Headless.Serializer;
 using Headless.Sql;
+using Headless.Sql.PostgreSql;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Permissions;
@@ -138,34 +136,12 @@ public static class SetupPermissionsPostgreSql
                 );
             }
 
-            services.AddOptions<PermissionsStorageOptions, PostgreSqlPermissionsStorageOptionsValidator>();
-            services.AddInitializerHostedService<PostgreSqlPermissionsStorageInitializer>();
-            services.TryAddSingleton<IJsonSerializer>(_ => new SystemJsonSerializer());
-            services.TryAddSingleton<IPermissionGrantRepository, PostgreSqlPermissionGrantRepository>();
-            services.TryAddSingleton<
-                IPermissionDefinitionRecordRepository,
-                PostgreSqlPermissionDefinitionRecordRepository
-            >();
-        }
-    }
-
-    private sealed class PostgreSqlPermissionsStorageOptionsValidator : AbstractValidator<PermissionsStorageOptions>
-    {
-        public PostgreSqlPermissionsStorageOptionsValidator()
-        {
-            RuleFor(x => x.Schema).IsValidIdentifierFor(StorageProvider.PostgreSql);
-            RuleFor(x => x.PermissionGrantsTableName)
-                .IsValidIdentifierFor(StorageProvider.PostgreSql)
-                .FitsDerivedPostgreSqlNames(PermissionsStorageNames.GrantsIndexes)
-                .When(x => x.PermissionGrantsTableName is not null);
-            RuleFor(x => x.PermissionDefinitionsTableName)
-                .IsValidIdentifierFor(StorageProvider.PostgreSql)
-                .FitsDerivedPostgreSqlNames(PermissionsStorageNames.DefinitionsIndexes)
-                .When(x => x.PermissionDefinitionsTableName is not null);
-            RuleFor(x => x.PermissionGroupDefinitionsTableName)
-                .IsValidIdentifierFor(StorageProvider.PostgreSql)
-                .FitsDerivedPostgreSqlNames(PermissionsStorageNames.GroupsIndexes)
-                .When(x => x.PermissionGroupDefinitionsTableName is not null);
+            RelationalPermissionsStorage.AddServices<PostgreSqlPermissionsOptions>(
+                services,
+                PostgreSqlDialect.Instance,
+                StorageProvider.PostgreSql,
+                PostgreSqlPermissionsSchemaContribution.Create
+            );
         }
     }
 }

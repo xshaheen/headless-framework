@@ -25,7 +25,7 @@ internal sealed class SequenceTestContext
             .Returns(call => ValueTask.FromResult(call.ArgAt<long>(1)));
         Store
             .IncrementEnlistedAsync(
-                Arg.Any<IRelationalUnitOfWorkResource>(),
+                Arg.Any<IUnitOfWork>(),
                 Arg.Any<SequenceKey>(),
                 Arg.Any<long>(),
                 Arg.Any<long>(),

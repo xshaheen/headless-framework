@@ -95,7 +95,7 @@ public interface IPermissionManager
     /// target. Typically called when a user or role itself is deleted.
     /// </summary>
     /// <exception cref="ArgumentException">
-    /// <paramref name="providerName"/> or <paramref name="providerKey"/> starts or ends with white space.
+    /// <paramref name="providerName"/> or <paramref name="providerKey"/> is text some provider would not keep unchanged as a key.
     /// </exception>
     Task DeleteAsync(string providerName, string providerKey, CancellationToken cancellationToken = default);
 }
