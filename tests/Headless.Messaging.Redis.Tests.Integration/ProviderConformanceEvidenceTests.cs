@@ -77,6 +77,28 @@ public sealed class ProviderConformanceEvidenceTests(RedisMessagingFixture fixtu
                 TransportConformanceScenario.MalformedEnvelopeTerminalSettlement,
                 nameof(RedisConsumerConformanceTests.should_terminally_ack_malformed_entry_across_consumer_restart)
             ),
+            _BindRequestReply(
+                TransportConformanceScenario.RequestReplyRoundTrip,
+                nameof(RedisRequestReplyConformanceTests.should_return_the_typed_response_of_a_request)
+            ),
+            _BindRequestReply(
+                TransportConformanceScenario.RequestReplyCallerIsolation,
+                nameof(RedisRequestReplyConformanceTests.should_give_each_caller_only_its_own_replies)
+            ),
+            _BindRequestReply(
+                TransportConformanceScenario.RequestReplyCallerIsolation,
+                nameof(RedisRequestReplyConformanceTests.should_never_deliver_a_reply_to_a_restarted_caller)
+            ),
+            _BindRequestReply(
+                TransportConformanceScenario.RequestReplyForeignAddressRefusal,
+                nameof(RedisRequestReplyConformanceTests.should_never_write_a_reply_to_a_foreign_reply_address)
+            ),
+            _BindRequestReply(
+                TransportConformanceScenario.RequestReplyCallerCleanup,
+                nameof(
+                    RedisRequestReplyConformanceTests.should_leave_no_reply_subscription_or_key_after_the_caller_stops
+                )
+            ),
         ];
 
         await TransportConformanceTestBindings.ExecuteSupportedScenariosAsync(
@@ -84,6 +106,8 @@ public sealed class ProviderConformanceEvidenceTests(RedisMessagingFixture fixtu
             bindings,
             testClass =>
                 testClass == typeof(RedisConsumerConformanceTests) ? new RedisConsumerConformanceTests(fixture)
+                : testClass == typeof(RedisRequestReplyConformanceTests)
+                    ? new RedisRequestReplyConformanceTests(fixture)
                 : testClass == typeof(ProviderConformanceEvidenceTests) ? new ProviderConformanceEvidenceTests(fixture)
                 : throw new InvalidOperationException(
                     $"No Redis conformance test factory is registered for {testClass}."
@@ -93,4 +117,9 @@ public sealed class ProviderConformanceEvidenceTests(RedisMessagingFixture fixtu
 
     private static TransportConformanceTestBinding _Bind(TransportConformanceScenario scenario, string method) =>
         new(scenario, typeof(RedisConsumerConformanceTests), method);
+
+    private static TransportConformanceTestBinding _BindRequestReply(
+        TransportConformanceScenario scenario,
+        string method
+    ) => new(scenario, typeof(RedisRequestReplyConformanceTests), method);
 }

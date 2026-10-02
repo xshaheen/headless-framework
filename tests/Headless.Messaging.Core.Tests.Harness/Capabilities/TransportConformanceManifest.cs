@@ -533,6 +533,11 @@ public static class TransportConformanceManifest
                     TransportConformanceScenario.MalformedEnvelopeTerminalSettlement,
                     ConformanceSupport.Supported
                 )
+                .WithRequestReplyScenarios(ConformanceSupport.Supported)
+                .WithScenario(
+                    TransportConformanceScenario.RequestReplyStartupRejection,
+                    ConformanceSupport.NotApplicable("Redis supports request/reply, so startup accepts it.")
+                )
                 .EnableRealBrokerLeaf(),
         }.ToFrozenDictionary(StringComparer.Ordinal);
 

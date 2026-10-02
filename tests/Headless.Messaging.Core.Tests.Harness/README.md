@@ -98,11 +98,11 @@ Kafka is queue/consumer-group only in the current provider contract. Pulsar's Te
 | `SameNameLaneIsolation` | S | S | S | N/A | S | S† | S | S |
 | `StartupRejectionBeforeSideEffects` | U | U | U | S | U | U | U | U |
 | `MalformedEnvelopeTerminalSettlement` | S | S | S | S | S | U | N/A | S |
-| `RequestReplyRoundTrip` | S | S | N/A | N/A | U | U | S | U |
-| `RequestReplyCallerIsolation` | S | S | N/A | N/A | U | U | S | U |
-| `RequestReplyForeignAddressRefusal` | S | S | N/A | N/A | U | U | S | U |
-| `RequestReplyCallerCleanup` | S | S | N/A | N/A | U | U | S | U |
-| `RequestReplyStartupRejection` | N/A | N/A | U | U | U | U | N/A | U |
+| `RequestReplyRoundTrip` | S | S | N/A | N/A | U | U | S | S |
+| `RequestReplyCallerIsolation` | S | S | N/A | N/A | U | U | S | S |
+| `RequestReplyForeignAddressRefusal` | S | S | N/A | N/A | U | U | S | S |
+| `RequestReplyCallerCleanup` | S | S | N/A | N/A | U | U | S | S |
+| `RequestReplyStartupRejection` | N/A | N/A | U | U | U | U | N/A | N/A |
 
 Evidence anchors:
 
@@ -118,7 +118,7 @@ Evidence anchors:
 - NATS lane isolation, consumer-identity/replica semantics, terminal malformed acknowledgement, and legacy drain/roll-forward proof: `NatsConsumerClientTests` against Testcontainers NATS JetStream.
 - Pulsar lane isolation, consumer-identity/replica semantics, terminal malformed acknowledgement, and legacy drain/roll-forward proof: `PulsarConsumerClientHarnessTests` against Testcontainers Pulsar.
 - RabbitMQ lane isolation, consumer-identity/replica semantics, terminal malformed rejection, and legacy drain/roll-forward proof: `RabbitMqConsumerClientConformanceTests` against Testcontainers RabbitMQ.
-- InMemory request/reply round trip, caller isolation and restart, foreign reply-address refusal, and caller cleanup: `InMemoryProviderConformanceTests` running `TransportRequestReplyConformance`. RabbitMQ runs the same suite against Testcontainers RabbitMQ in `RabbitMqRequestReplyConformanceTests`, probing reply queues by passive declare; `RabbitMqReplyTransportTests` covers the exclusive reply queue's lifetime, sends to a deleted reply queue, refusal of `amq.gen-` and application queues, and re-declaration under a new address. NATS runs the suite in `NatsRequestReplyConformanceTests`, and again with stream provisioning disabled in `NatsRequestReplyWithoutStreamProvisioningTests`, probing reply subscriptions through the server's `connz` monitoring endpoint; `NatsReplyTransportTests` covers replies staying out of every JetStream stream, the reply subject surviving a server restart under the same address, immediate failure of a request no stream captures, and refusal of lane and inbox subjects. Kafka and AWS reject request/reply by design (`N/A`); Azure Service Bus and Pulsar reject it until their reply channels exist (`U`).
+- InMemory request/reply round trip, caller isolation and restart, foreign reply-address refusal, and caller cleanup: `InMemoryProviderConformanceTests` running `TransportRequestReplyConformance`. RabbitMQ runs the same suite against Testcontainers RabbitMQ in `RabbitMqRequestReplyConformanceTests`, probing reply queues by passive declare; `RabbitMqReplyTransportTests` covers the exclusive reply queue's lifetime, sends to a deleted reply queue, refusal of `amq.gen-` and application queues, and re-declaration under a new address. NATS runs the suite in `NatsRequestReplyConformanceTests`, and again with stream provisioning disabled in `NatsRequestReplyWithoutStreamProvisioningTests`, probing reply subscriptions through the server's `connz` monitoring endpoint; `NatsReplyTransportTests` covers replies staying out of every JetStream stream, the reply subject surviving a server restart under the same address, immediate failure of a request no stream captures, and refusal of lane and inbox subjects. Redis runs the suite in `RedisRequestReplyConformanceTests`, probing reply channels with `PUBSUB NUMSUB` and checking by `SCAN` that no key is named after a reply address; `RedisReplyTransportTests` covers a round trip that leaves no key under the reply namespace, the reply channel surviving a dropped subscription connection under the same address, a listener opened while the server is down handing out its address once the server comes up, and refusal of lane stream keys and unrelated channels with no write. Kafka and AWS reject request/reply by design (`N/A`); Azure Service Bus and Pulsar reject it until their reply channels exist (`U`).
 - AWS evidence is LocalStack-backed, not managed AWS. Azure evidence is a real isolated namespace tier, not an emulator.
 
 ### DataStorageCapabilities
