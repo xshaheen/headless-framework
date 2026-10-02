@@ -2076,4 +2076,22 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
     }
 
     #endregion
+
+    [Fact]
+    public override Task should_filter_monitoring_messages_by_intent_type()
+    {
+        return base.should_filter_monitoring_messages_by_intent_type();
+    }
+
+    [Fact]
+    public override Task should_store_received_bus_and_queue_rows_with_same_identity()
+    {
+        return base.should_store_received_bus_and_queue_rows_with_same_identity();
+    }
+
+    [Fact]
+    public override Task should_respect_initial_dispatch_grace()
+    {
+        return base.should_respect_initial_dispatch_grace();
+    }
 }

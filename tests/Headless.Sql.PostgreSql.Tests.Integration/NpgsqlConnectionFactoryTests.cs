@@ -69,4 +69,34 @@ public sealed class NpgsqlConnectionFactoryTests(NpgsqlTestFixture fixture) : Sq
         var result = await command.ExecuteScalarAsync(AbortToken);
         result.Should().Be(1);
     }
+
+    [Fact]
+    public override Task should_return_open_connection_for_all_providers()
+    {
+        return base.should_return_open_connection_for_all_providers();
+    }
+
+    [Fact]
+    public override Task should_support_concurrent_connection_creation()
+    {
+        return base.should_support_concurrent_connection_creation();
+    }
+
+    [Fact]
+    public override Task should_reuse_connection_across_operations()
+    {
+        return base.should_reuse_connection_across_operations();
+    }
+
+    [Fact]
+    public override Task should_handle_parallel_access_correctly()
+    {
+        return base.should_handle_parallel_access_correctly();
+    }
+
+    [Fact]
+    public override Task should_reconnect_after_connection_drop()
+    {
+        return base.should_reconnect_after_connection_drop();
+    }
 }

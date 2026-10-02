@@ -74,6 +74,7 @@ public abstract class InboxStorageConformanceTests : TestBase
             unchanged.InboxAttemptFence.Should().Be(fence);
             unchanged.NextRetryAt.Should().Be(message.NextRetryAt);
         }
+
         message.InboxAttemptFence = fence;
         (await storage.ConfirmReceivedInboxRoutableAsync(message, AbortToken))
             .Should()
@@ -153,6 +154,7 @@ public abstract class InboxStorageConformanceTests : TestBase
             {
                 ordinaryId = message.StorageId;
             }
+
             var identity = new MessageLeaseIdentity(
                 message.StorageId,
                 message.Owner,
@@ -420,6 +422,7 @@ public abstract class InboxStorageConformanceTests : TestBase
                 .Should()
                 .BeTrue();
         }
+
         var successorFence = successor.InboxAttemptFence!;
         successorFence.AttemptId.Should().NotBe(originalFence.AttemptId);
         var nextAttempt = successor.InlineAttempts++;
@@ -460,10 +463,12 @@ public abstract class InboxStorageConformanceTests : TestBase
         {
             message.Origin.Headers[Headers.MessageId] = value;
         }
+
         if (string.Equals(parameter, "message", StringComparison.Ordinal))
         {
             message.Origin.Headers[Headers.TenantId] = value;
         }
+
         var error = await Record.ExceptionAsync(async () =>
             await storage.AdmitReceivedMessageAsync(
                 string.Equals(parameter, "name", StringComparison.Ordinal) ? value! : "orders.created",

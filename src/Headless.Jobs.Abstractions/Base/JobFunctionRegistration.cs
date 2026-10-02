@@ -15,11 +15,11 @@ namespace Headless.Jobs;
 /// <para>
 /// <b>Additive-only evolution policy.</b> This record struct is baked into every consumer assembly's compiled
 /// <c>JobsModule</c>, so its shape is a binary contract. New per-function knobs must be added ONLY as new
-/// optional <c>init</c> members carrying a safe default — never reorder, rename, or remove existing members, never
-/// tighten an existing member to <c>required</c>, and never convert this to a positional record. Because the
+/// optional <see langword="init"/> members carrying a safe default — never reorder, rename, or remove existing members, never
+/// tighten an existing member to <see langword="required"/>, and never convert this to a positional record. Because the
 /// generator (and every hand-written registration) constructs it via an object initializer, adding an optional
 /// member keeps both already-compiled consumers and consumer source compiling against a newer runtime. The four
-/// members below are the current knobs and are <c>required</c>; future additions are the ones that must stay
+/// members below are the current knobs and are <see langword="required"/>; future additions are the ones that must stay
 /// optional.
 /// </para>
 /// </remarks>

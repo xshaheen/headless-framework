@@ -174,6 +174,7 @@ public sealed class InMemoryConsumerClientFactoryTests : TestBase
                 AbortToken
             );
         }
+
         var received = new int[clients.Length];
         for (var i = 0; i < clients.Length; i++)
         {

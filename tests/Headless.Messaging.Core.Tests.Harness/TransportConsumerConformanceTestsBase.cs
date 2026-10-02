@@ -33,6 +33,7 @@ public sealed class TransportConsumerConformanceSession(
         Channel.CreateUnbounded<TransportConformanceDelivery>(
             new UnboundedChannelOptions { SingleWriter = false, SingleReader = false }
         );
+
     private readonly ConcurrentQueue<LogMessageEventArgs> _logs = new();
 
     private readonly TimeSpan _listeningTimeout = listeningTimeout ?? TimeSpan.FromSeconds(2);
@@ -220,9 +221,12 @@ public sealed class TransportConsumerConformanceSession(
     }
 }
 
-/// <summary>Shared broker-observed transport, delivery, and settlement invariants.</summary>
+/// <summary>
+/// Provider wiring shared by broker-observed conformance suites: the manifest name and an isolated session factory.
+/// Suites derive from this rather than from each other so that a suite inherits only the cases it means to run.
+/// </summary>
 [PublicAPI]
-public abstract class TransportConsumerConformanceTestsBase : TestBase
+public abstract class TransportConsumerConformanceSessionTestsBase : TestBase
 {
     protected abstract string ProviderName { get; }
 
@@ -230,6 +234,28 @@ public abstract class TransportConsumerConformanceTestsBase : TestBase
         CancellationToken cancellationToken
     );
 
+    protected void RequireSupport(TransportConformanceScenario scenario)
+    {
+        if (!TransportConformanceManifest.Providers.TryGetValue(ProviderName, out var profile))
+        {
+            throw new InvalidOperationException($"{ProviderName} is not registered in the conformance manifest.");
+        }
+
+        var support = profile.Scenarios[scenario];
+        if (support.Status == ConformanceStatus.Supported)
+        {
+            return;
+        }
+
+        var evidence = support.IssueUrl is null ? support.Rationale : $"{support.Rationale} {support.IssueUrl}";
+        Assert.Skip($"{ProviderName} {scenario}: {support.Status}. {evidence}");
+    }
+}
+
+/// <summary>Shared broker-observed transport, delivery, and settlement invariants.</summary>
+[PublicAPI]
+public abstract class TransportConsumerConformanceTestsBase : TransportConsumerConformanceSessionTestsBase
+{
     protected virtual void ConfigureTransport(MessagingSetupBuilder setup)
     {
         throw new NotSupportedException(
@@ -260,8 +286,8 @@ public abstract class TransportConsumerConformanceTestsBase : TestBase
 
     public virtual async Task should_round_trip_queue_message_body_and_headers()
     {
-        _RequireSupport(TransportConformanceScenario.QueueRoundTrip);
-        _RequireSupport(TransportConformanceScenario.HeaderRoundTrip);
+        RequireSupport(TransportConformanceScenario.QueueRoundTrip);
+        RequireSupport(TransportConformanceScenario.HeaderRoundTrip);
 
         await using var session = await CreateSessionAsync(AbortToken);
         await session.StartAsync(cancellationToken: AbortToken);
@@ -286,7 +312,7 @@ public abstract class TransportConsumerConformanceTestsBase : TestBase
 
     public virtual async Task should_dispatch_empty_message_body()
     {
-        _RequireSupport(TransportConformanceScenario.EmptyBodyDispatch);
+        RequireSupport(TransportConformanceScenario.EmptyBodyDispatch);
 
         await using var session = await CreateSessionAsync(AbortToken);
         await session.StartAsync(cancellationToken: AbortToken);
@@ -302,7 +328,7 @@ public abstract class TransportConsumerConformanceTestsBase : TestBase
 
     public virtual async Task should_commit_real_delivery_and_prevent_redelivery()
     {
-        _RequireSupport(TransportConformanceScenario.CommitSettlement);
+        RequireSupport(TransportConformanceScenario.CommitSettlement);
 
         await using var session = await CreateSessionAsync(AbortToken);
         await session.StartAsync(cancellationToken: AbortToken);
@@ -342,7 +368,7 @@ public abstract class TransportConsumerConformanceTestsBase : TestBase
 
     public virtual async Task should_reject_real_delivery_and_observe_redelivery()
     {
-        _RequireSupport(TransportConformanceScenario.RejectRedelivery);
+        RequireSupport(TransportConformanceScenario.RejectRedelivery);
 
         await using var session = await CreateSessionAsync(AbortToken);
         await session.StartAsync(cancellationToken: AbortToken);
@@ -365,7 +391,7 @@ public abstract class TransportConsumerConformanceTestsBase : TestBase
 
     public virtual async Task should_isolate_unique_destinations()
     {
-        _RequireSupport(TransportConformanceScenario.QueueRoundTrip);
+        RequireSupport(TransportConformanceScenario.QueueRoundTrip);
 
         await using var firstSession = await CreateSessionAsync(AbortToken);
         await using var secondSession = await CreateSessionAsync(AbortToken);
@@ -389,7 +415,7 @@ public abstract class TransportConsumerConformanceTestsBase : TestBase
 
     public virtual async Task should_shutdown_idle_consumer_within_bound()
     {
-        _RequireSupport(TransportConformanceScenario.BoundedGracefulShutdown);
+        RequireSupport(TransportConformanceScenario.BoundedGracefulShutdown);
 
         await using var session = await CreateSessionAsync(AbortToken);
         await session.StartAsync(cancellationToken: AbortToken);
@@ -402,7 +428,7 @@ public abstract class TransportConsumerConformanceTestsBase : TestBase
 
     public virtual async Task should_bound_shutdown_while_handler_is_active()
     {
-        _RequireSupport(TransportConformanceScenario.BoundedGracefulShutdown);
+        RequireSupport(TransportConformanceScenario.BoundedGracefulShutdown);
 
         await using var session = await CreateSessionAsync(AbortToken);
         var handlerStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -433,28 +459,6 @@ public abstract class TransportConsumerConformanceTestsBase : TestBase
         }
 
         stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(2));
-    }
-
-    protected void RequireSupport(TransportConformanceScenario scenario)
-    {
-        _RequireSupport(scenario);
-    }
-
-    private void _RequireSupport(TransportConformanceScenario scenario)
-    {
-        if (!TransportConformanceManifest.Providers.TryGetValue(ProviderName, out var profile))
-        {
-            throw new InvalidOperationException($"{ProviderName} is not registered in the conformance manifest.");
-        }
-
-        var support = profile.Scenarios[scenario];
-        if (support.Status == ConformanceStatus.Supported)
-        {
-            return;
-        }
-
-        var evidence = support.IssueUrl is null ? support.Rationale : $"{support.Rationale} {support.IssueUrl}";
-        Assert.Skip($"{ProviderName} {scenario}: {support.Status}. {evidence}");
     }
 
     private static TransportMessage _CreateMessage(string destination, string messageId, ReadOnlyMemory<byte> body)

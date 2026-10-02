@@ -1278,7 +1278,7 @@ public sealed class InMemoryCache
 
             return _GetSetItems<string, T>(dictionaryCacheValue, pageIndex, pageSize, utcNow);
         }
-        else
+
         {
             var dictionaryCacheValue = await GetAsync<IDictionary<object, DateTime?>>(key, cancellationToken)
                 .ConfigureAwait(false);

@@ -1,7 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.DistributedLocks;
+using Headless.DistributedLocks.PostgreSql;
 using Microsoft.Extensions.DependencyInjection;
+using Npgsql;
 
 namespace Tests;
 
@@ -16,16 +18,25 @@ public sealed class PostgreSqlDistributedLockConformanceTests : DistributedLockT
 {
     private readonly ServiceProvider _services;
     private readonly IDistributedLock _provider;
+    private readonly string _connectionString;
+    private readonly string _keyPrefix;
 
     public PostgreSqlDistributedLockConformanceTests(PostgreSqlDistributedLockFixture fixture)
     {
+        _connectionString = fixture.ConnectionString;
+        _keyPrefix = $"conformance:{Faker.Random.AlphaNumeric(6)}:";
+
+        // Keepalive lets the provider notice a terminated backend while the held connection is idle; without it the
+        // connection-death cases would wait for the next command that never comes.
+        var connectionString = new NpgsqlConnectionStringBuilder(fixture.ConnectionString) { KeepAlive = 1 };
+
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddHeadlessDistributedLocks(setup =>
             setup.UsePostgreSql(options =>
             {
-                options.ConnectionString = fixture.ConnectionString;
-                options.KeyPrefix = $"conformance:{Faker.Random.AlphaNumeric(6)}:";
+                options.ConnectionString = connectionString.ConnectionString;
+                options.KeyPrefix = _keyPrefix;
             })
         );
 
@@ -36,6 +47,38 @@ public sealed class PostgreSqlDistributedLockConformanceTests : DistributedLockT
     protected override IDistributedLock GetLockProvider()
     {
         return _provider;
+    }
+
+    protected override async Task KillLockHoldingConnectionAsync(
+        IDistributedLease handle,
+        CancellationToken cancellationToken
+    )
+    {
+        // Resolve the exact advisory key so only the backend holding this handle's lock is terminated, not other
+        // connections sharing the container.
+        var key = PostgreSqlAdvisoryLockKey.FromString(_keyPrefix + handle.Resource, allowHashing: true);
+        var (key1, key2) = key.Keys;
+
+        await using var admin = new NpgsqlConnection(_connectionString);
+        await admin.OpenAsync(cancellationToken);
+
+        await using var command = admin.CreateCommand();
+        command.CommandText = """
+            SELECT pg_terminate_backend(l.pid)
+            FROM pg_catalog.pg_locks l
+            WHERE l.locktype = 'advisory'
+              AND l.granted
+              AND l.classid = @classId
+              AND l.objid = @objId
+              AND l.objsubid = @objSubId
+              AND l.pid <> pg_backend_pid()
+            """;
+        command.Parameters.AddWithValue("classId", key1);
+        command.Parameters.AddWithValue("objId", key2);
+        command.Parameters.AddWithValue("objSubId", (short)(key.HasSingleKey ? 1 : 2));
+
+        var terminated = await command.ExecuteScalarAsync(cancellationToken);
+        terminated.Should().Be(true, "the lock-holding backend should be found and terminated");
     }
 
     protected override async ValueTask DisposeAsyncCore()
@@ -212,10 +255,24 @@ public sealed class PostgreSqlDistributedLockConformanceTests : DistributedLockT
         return base.should_not_fire_handle_lost_token_on_clean_release();
     }
 
-    // Intentionally not overridden (not portable to the connection-scoped provider):
-    //  - should_get_expiration_for_locked_resource / should_get_lock_info_for_locked_resource:
-    //    session-scoped locks have no lease, so expiration and TimeToLive are always null.
-    //  - should_keep_lock_alive_when_auto_extend_is_enabled_smoke: there is no lease to auto-extend.
-    //  - should_timeout_when_try_to_lock_acquired_resource: relies on TTL expiry freeing the first
-    //    lock; session-scoped locks are held for the connection lifetime and never expire on TTL.
+    // Cases a connection-scoped lock cannot satisfy are allow-listed, with reasons, in
+    // tests/Headless.Testing.Tests.Unit/Conformance/ConformanceCaseAllowList.cs.
+
+    [Fact]
+    public override Task should_keep_lock_alive_when_auto_extend_is_enabled_smoke()
+    {
+        return base.should_keep_lock_alive_when_auto_extend_is_enabled_smoke();
+    }
+
+    [Fact]
+    public override Task should_fire_handle_lost_token_when_lock_holding_connection_dies()
+    {
+        return base.should_fire_handle_lost_token_when_lock_holding_connection_dies();
+    }
+
+    [Fact]
+    public override Task should_not_renew_after_lock_holding_connection_dies()
+    {
+        return base.should_not_renew_after_lock_holding_connection_dies();
+    }
 }

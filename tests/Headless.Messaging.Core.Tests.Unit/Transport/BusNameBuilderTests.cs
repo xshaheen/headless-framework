@@ -8,6 +8,7 @@ public sealed class BusNameBuilderTests
 {
     private static readonly BusNameRules _DotsAllowed = new(50, static c => c is '.' or '-' or '_');
     private static readonly BusNameRules _NoDots = new(255, static c => c is '-' or '_');
+
     private static readonly BusNameRules _AlphanumericEnds = new(
         50,
         static c => c is '.' or '-' or '_',

@@ -163,8 +163,10 @@ public sealed class PostgreSqlInboxOperationPolicyTests(PostgreSqlTestFixture fi
                     overlapped = true;
                     break;
                 }
+
                 await Task.Delay(TimeSpan.FromMilliseconds(20), AbortToken);
             }
+
             overlapped
                 .Should()
                 .BeTrue("receipt deletion and the public operation must both wait on the operation identity lock");
@@ -174,6 +176,7 @@ public sealed class PostgreSqlInboxOperationPolicyTests(PostgreSqlTestFixture fi
             await transaction.CommitAsync(AbortToken);
             await Task.WhenAll(deletion, mutation);
         }
+
         var result = await mutation;
         (await deletion).Should().Be(conflict && result.IsReplay ? 0 : 1);
         result
@@ -323,8 +326,10 @@ public sealed class PostgreSqlInboxOperationPolicyTests(PostgreSqlTestFixture fi
                     blocked = true;
                     break;
                 }
+
                 await Task.Delay(TimeSpan.FromMilliseconds(20), AbortToken);
             }
+
             blocked.Should().BeTrue("both operations must overlap while waiting for the locked generation");
         }
         finally
@@ -332,6 +337,7 @@ public sealed class PostgreSqlInboxOperationPolicyTests(PostgreSqlTestFixture fi
             await transaction.CommitAsync(AbortToken);
             await Task.WhenAll(claim, purge);
         }
+
         await _AssertRecoveryPurgeAsync(storage, message, claim, purge);
     }
 

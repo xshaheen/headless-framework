@@ -83,6 +83,7 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>
                                     "preflight disposal must preserve the caller before host disposal"
                                 );
                         }
+
                         // Assert after the rejected context AND its host are disposed: neither may close the caller's handle.
                         connection.State.Should().Be(ConnectionState.Open);
                         transaction.Connection.Should().BeSameAs(connection);
@@ -150,11 +151,13 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>
                                     ct
                                 );
                             }
+
                             // Observed mode: CompleteAsync only drains the registered OnCompleted callbacks here — the
                             // real commit belongs to the outer coordinated block's own unit.
                             await compatibleUnit.CompleteAsync(ct);
                             observer.Writes.Should().Be(1);
                         }
+
                         connection.State.Should().Be(ConnectionState.Open);
                         transaction.Connection.Should().BeSameAs(connection);
                         configured.State.Should().Be(ConnectionState.Closed);

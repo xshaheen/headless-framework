@@ -15,19 +15,24 @@ internal sealed class MessageObservationStore(TimeProvider? timeProvider = null)
     private readonly ConcurrentQueue<RecordedMessage> _consumed = new();
     private readonly ConcurrentQueue<RecordedMessage> _faulted = new();
     private readonly ConcurrentQueue<RecordedMessage> _exhausted = new();
+
     private readonly ConcurrentDictionary<
         (Type, MessageObservationType, MessageLane),
         ConcurrentQueue<RecordedMessage>
     > _typeIndex = [];
+
     private readonly ConcurrentDictionary<
         (Type, MessageObservationType),
         ConcurrentQueue<RecordedMessage>
     > _typeOnlyIndex = [];
+
     private readonly List<WaiterEntry> _waiters = [];
     private readonly Lock _waitersLock = new();
+
     private readonly ConcurrentDictionary<string, TaskCompletionSource> _publishedArrivals = new(
         StringComparer.Ordinal
     );
+
     private long _generation;
 
     /// <summary>

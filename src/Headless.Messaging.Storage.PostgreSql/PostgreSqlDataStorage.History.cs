@@ -117,6 +117,7 @@ internal sealed partial class PostgreSqlDataStorage
                 candidates.Add(reader.GetGuid(0));
             }
         }
+
         var deleted = 0;
         foreach (var operationId in candidates)
         {
@@ -146,6 +147,7 @@ internal sealed partial class PostgreSqlDataStorage
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
             deleted += count;
         }
+
         return deleted;
     }
 

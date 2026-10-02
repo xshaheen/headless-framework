@@ -265,6 +265,7 @@ internal sealed class PostgreSqlMonitoringApi(
                         message.IsCoordinated = delivery.IsCoordinated;
                         messages.Add(message);
                     }
+
                     return messages;
                 },
                 commandTimeout: _messagingOptions.CommandTimeout,

@@ -13,9 +13,11 @@ namespace Tests;
 public sealed partial class TenantCatalogServiceTests : TestBase
 {
     private readonly ITenantStore _store = Substitute.For<ITenantStore>();
+
     private readonly ICache<TenantIdentifierCacheItem> _identifierCache = Substitute.For<
         ICache<TenantIdentifierCacheItem>
     >();
+
     private readonly ICache<TenantInfoCacheItem> _infoCache = Substitute.For<ICache<TenantInfoCacheItem>>();
     private readonly TenantCatalogOptions _options = new();
     private readonly TenantCatalogService _sut;

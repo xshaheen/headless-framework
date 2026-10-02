@@ -23,6 +23,7 @@ public sealed class PublishedMessageEndpointTests : TestBase
 {
     private readonly IMonitoringApi _monitoringApi = Substitute.For<IMonitoringApi>();
     private readonly IDataStorage _dataStorage = Substitute.For<IDataStorage>();
+
     private readonly IScheduledDeliveryOperationsApi _scheduledOperationsApi =
         Substitute.For<IScheduledDeliveryOperationsApi>();
 

@@ -34,6 +34,7 @@ internal sealed class GatewayProxyAgent(
 
     private readonly ConsulDiscoveryOptions? _consulDiscoveryOptions =
         serviceProvider.GetService<ConsulDiscoveryOptions>();
+
     private readonly KeyedAsyncLock _keyedLock = keyedLock ?? new KeyedAsyncLock();
     private readonly bool _ownsKeyedLock = keyedLock is null;
     private readonly ILogger _logger = loggerFactory.CreateLogger<GatewayProxyAgent>();

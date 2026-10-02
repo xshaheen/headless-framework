@@ -18,6 +18,7 @@ public sealed class KafkaConsumerClientTests : TestBase
     private readonly IOptions<KafkaMessagingOptions> _options = Options.Create(
         new KafkaMessagingOptions { Servers = "localhost:9092" }
     );
+
     private readonly IServiceProvider _serviceProvider = new ServiceCollection().BuildServiceProvider();
 
     [Fact]

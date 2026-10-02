@@ -25,6 +25,7 @@ public sealed class DispatcherTests : TestBase
     private readonly ILogger<Dispatcher> _logger = Substitute.For<ILogger<Dispatcher>>();
     private readonly ISubscribeExecutor _executor = Substitute.For<ISubscribeExecutor>();
     private readonly IDataStorage _storage = Substitute.For<IDataStorage>();
+
     private readonly IServiceScopeFactory _scopeFactory = new ServiceCollection()
         .BuildServiceProvider()
         .GetRequiredService<IServiceScopeFactory>();
@@ -1063,6 +1064,7 @@ public sealed class DispatcherTests : TestBase
         {
             await Task.Delay(50, CancellationToken.None);
         }
+
         await cts.CancelAsync();
 
         // then
@@ -1497,6 +1499,7 @@ public sealed class DispatcherTests : TestBase
             {
                 await Task.Delay(10, AbortToken);
             }
+
             sender.ReceivedMessages.Should().ContainSingle().Which.Should().BeSameAs(message);
             await cts.CancelAsync();
         }
@@ -2179,6 +2182,7 @@ public sealed class DispatcherTests : TestBase
         private readonly CancellationTokenSource _startedCts = new();
         private readonly CancellationTokenSource _stoppingCts = new();
         private readonly CancellationTokenSource _stoppedCts = new();
+
         private readonly TaskCompletionSource<bool> _stopRequestedTcs = new(
             TaskCreationOptions.RunContinuationsAsynchronously
         );

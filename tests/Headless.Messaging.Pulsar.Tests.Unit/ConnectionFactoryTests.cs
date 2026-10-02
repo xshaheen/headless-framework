@@ -12,6 +12,7 @@ namespace Tests;
 public sealed class ConnectionFactoryTests : TestBase
 {
     private readonly ILogger<ConnectionFactory> _logger = NullLogger<ConnectionFactory>.Instance;
+
     private readonly IOptions<PulsarMessagingOptions> _options = Options.Create(
         new PulsarMessagingOptions { ServiceUrl = "pulsar://localhost:6650" }
     );

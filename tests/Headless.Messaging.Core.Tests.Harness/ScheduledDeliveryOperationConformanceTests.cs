@@ -465,6 +465,7 @@ public abstract class ScheduledDeliveryOperationConformanceTests : TestBase
         {
             services.AddSingleton(timeProvider);
         }
+
         services.AddHeadlessMessaging(ConfigureStorage);
         return services.BuildServiceProvider();
     }

@@ -16,6 +16,7 @@ namespace Tests;
 public sealed class AzureServiceBusConsumerClientTests : TestBase
 {
     private readonly ILogger _logger = Substitute.For<ILogger>();
+
     private readonly IOptions<AzureServiceBusMessagingOptions> _options = Options.Create(
         new AzureServiceBusMessagingOptions
         {
@@ -23,6 +24,7 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
                 "Endpoint=sb://mynamespace.servicebus.windows.net/;SharedAccessKeyName=myPolicy;SharedAccessKey=myKey",
         }
     );
+
     private readonly IServiceProvider _serviceProvider = new ServiceCollection().BuildServiceProvider();
     private readonly IAzureServiceBusClientPool _clientPool = Substitute.For<IAzureServiceBusClientPool>();
 

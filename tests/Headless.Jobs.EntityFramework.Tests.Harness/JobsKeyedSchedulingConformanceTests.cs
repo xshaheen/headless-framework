@@ -401,6 +401,7 @@ public abstract partial class JobsKeyedSchedulingConformanceTests<TFixture>(TFix
             builder.Services.AddSingleton(scheduleProbe);
             fixture.ConfigureUnitOfWork(builder.Services);
         }
+
         return builder.Build();
     }
 

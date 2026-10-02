@@ -161,4 +161,16 @@ public sealed class RabbitMqTransportTests(RabbitMqFixture fixture) : TransportT
     }
 
     #endregion
+
+    [Fact]
+    public override Task should_send_bus_message_successfully()
+    {
+        return base.should_send_bus_message_successfully();
+    }
+
+    [Fact]
+    public override Task should_send_queue_message_successfully()
+    {
+        return base.should_send_queue_message_successfully();
+    }
 }

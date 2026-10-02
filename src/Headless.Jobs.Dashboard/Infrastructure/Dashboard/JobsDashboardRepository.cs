@@ -30,9 +30,11 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
 {
     private readonly IServiceProvider _serviceProvider = Argument.IsNotNull(serviceProvider);
     private readonly JobsRequestSerializationOptions _serializationOptions = Argument.IsNotNull(serializationOptions);
+
     private readonly IJobPersistenceProvider<TTimeJob, TCronJob> _persistenceProvider = Argument.IsNotNull(
         persistenceProvider
     );
+
     private readonly IJobsHostScheduler _jobsHostScheduler = Argument.IsNotNull(jobsHostScheduler);
     private readonly IJobsDispatcher _dispatcher = Argument.IsNotNull(dispatcher);
     private readonly JobFunctionRegistry _functionRegistry = Argument.IsNotNull(functionRegistry);
@@ -633,6 +635,7 @@ internal sealed class JobsDashboardRepository<TTimeJob, TCronJob>(
                 2
             );
         }
+
         var jsonRequest = JobsHelper.ReadJobRequestAsString(jsonRequestBytes, _serializationOptions);
 
         if (!_functionRegistry.RequestTypes.TryGetValue(functionName, out var functionTypeContext))

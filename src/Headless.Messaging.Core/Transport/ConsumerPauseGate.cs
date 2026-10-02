@@ -48,6 +48,7 @@ internal sealed class ConsumerPauseGate
             _paused = true;
             _gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         }
+
         return new ValueTask<bool>(result: true);
     }
 
@@ -69,6 +70,7 @@ internal sealed class ConsumerPauseGate
             _paused = false;
             gateToComplete = _gate;
         }
+
         gateToComplete.TrySetResult();
         return new ValueTask<bool>(result: true);
     }
@@ -82,6 +84,7 @@ internal sealed class ConsumerPauseGate
             _paused = false;
             gateToComplete = _gate;
         }
+
         gateToComplete.TrySetResult();
     }
 

@@ -32,22 +32,27 @@ internal sealed partial class PostgreSqlDataStorage
         {
             where += " AND \"generation_incarnation_id\"=@IncarnationId";
         }
+
         if (!string.IsNullOrEmpty(query.ConsumerIdentity))
         {
             where += " AND \"consumer_identity\"=@ConsumerIdentity";
         }
+
         if (query.Lane is not null)
         {
             where += " AND \"intent_type\"=@IntentType";
         }
+
         if (query.Status is not null)
         {
             where += " AND \"status_name\"=@StatusName";
         }
+
         if (query.IsOrphaned is not null)
         {
             where += " AND \"is_inbox_orphaned\"=@IsOrphaned";
         }
+
         if (query.IsHeld is not null)
         {
             where += " AND \"is_held\"=@IsHeld";
@@ -257,6 +262,7 @@ internal sealed partial class PostgreSqlDataStorage
         {
             return;
         }
+
         var kind =
             operationType is MessagingOperationType.ForceReprocess ? InboxMetricKind.Replay : InboxMetricKind.Retention;
         var metricOutcome = operationType switch
@@ -430,6 +436,7 @@ internal sealed partial class PostgreSqlDataStorage
         {
             return null;
         }
+
         var targetKind = reader.GetString(11);
         var isInbox = string.Equals(targetKind, "Inbox", StringComparison.Ordinal);
         var incarnationId = isInbox && !reader.IsDBNull(0) ? reader.GetGuid(0) : Guid.Empty;

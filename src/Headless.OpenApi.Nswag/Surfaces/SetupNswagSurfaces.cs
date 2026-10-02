@@ -53,6 +53,7 @@ public static class SetupNswagSurfaces
                 }
             );
         }
+
         return services;
     }
 

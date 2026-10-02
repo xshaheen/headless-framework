@@ -53,6 +53,7 @@ internal sealed class PostgresFencingTokenSource(
     private readonly string _qualifiedSequence = $"""
         "{storageOptions.Value.Schema}"."{_SequenceName}"
         """;
+
     private readonly SemaphoreSlim _ensureGate = new(1, 1);
     private bool _sequenceEnsured;
 

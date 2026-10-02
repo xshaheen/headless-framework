@@ -50,8 +50,10 @@ internal sealed partial class CompatibleJobsClaimStrategy<TDbContext, TTimeJob, 
     where TCronJob : CronJobEntity, new()
 {
     private readonly Lock _compatibilityLock = new();
+
     private readonly ILogger _logger =
         logger ?? NullLogger<CompatibleJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>>.Instance;
+
     private IJobsClaimStrategy<TTimeJob, TCronJob>? _selectedStrategy;
 
     public async IAsyncEnumerable<TimeJobEntity> ClaimTimeJobsAsync(

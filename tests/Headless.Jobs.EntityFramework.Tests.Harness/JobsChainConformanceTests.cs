@@ -1549,6 +1549,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
             {
                 nodes.Add(_NewChild(nodes[^1].Id, RunCondition.OnSuccess, executionTime: null));
             }
+
             await persistence.AddTimeJobsAsync([.. nodes], ct);
 
             var candidates = await _PollEarliestUntilPresentAsync(persistence, nodes[0].Id, ct);
@@ -1628,6 +1629,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
         {
             JobsCoordinationFixtureExtensions.AddParameter(command, name, value);
         }
+
         await command.ExecuteNonQueryAsync();
     }
 

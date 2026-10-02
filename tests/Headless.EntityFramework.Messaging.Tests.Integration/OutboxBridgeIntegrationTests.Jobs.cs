@@ -108,6 +108,7 @@ public sealed partial class OutboxBridgeIntegrationTests
         {
             fault.Attempts[0].Should().Equal(fault.Attempts[1]);
         }
+
         var published = await _ReadPublishedAsync(provider, "evt-derived");
         published.Should().HaveCount(2);
         foreach (var occurrence in evidence.Children)
@@ -262,6 +263,7 @@ public sealed partial class OutboxBridgeIntegrationTests
                         db.DeadlineReceipts.Add(new DeadlineReceipt { Id = context.MessageId });
                         await db.SaveChangesAsync(token);
                     }
+
                     evidence.Results.Add(
                         await unitOfWork.Jobs.ScheduleKeyedAsync<DeadlineJob>(
                             new JobKey(context.MessageId),

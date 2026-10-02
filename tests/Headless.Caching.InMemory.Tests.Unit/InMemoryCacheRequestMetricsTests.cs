@@ -453,6 +453,7 @@ public sealed class InMemoryCacheRequestMetricsTests : TestBase
     {
         private readonly ConcurrentBag<(string Name, long Value, KeyValuePair<string, object?>[] Tags)> _measurements =
         [];
+
         private readonly MeterListener _listener;
 
         public MetricCollector()

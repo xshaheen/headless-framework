@@ -297,6 +297,7 @@ public sealed class UnitOfWorkFactoryTests : TestBase
                 return ValueTask.CompletedTask;
             })
         ) { }
+
         using (
             unitOfWork.OnFailed(_ =>
             {

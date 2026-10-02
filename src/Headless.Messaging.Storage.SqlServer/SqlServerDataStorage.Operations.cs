@@ -32,22 +32,27 @@ internal sealed partial class SqlServerDataStorage
         {
             where += " AND [GenerationIncarnationId]=@IncarnationId";
         }
+
         if (!string.IsNullOrEmpty(query.ConsumerIdentity))
         {
             where += " AND [ConsumerIdentityOrdinal]=CONVERT(varbinary(400),@ConsumerIdentity)";
         }
+
         if (query.Lane is not null)
         {
             where += " AND [IntentType]=@IntentType";
         }
+
         if (query.Status is not null)
         {
             where += " AND [StatusName]=@StatusName";
         }
+
         if (query.IsOrphaned is not null)
         {
             where += " AND [IsInboxOrphaned]=@IsOrphaned";
         }
+
         if (query.IsHeld is not null)
         {
             where += " AND [IsHeld]=@IsHeld";
@@ -262,6 +267,7 @@ internal sealed partial class SqlServerDataStorage
         {
             return;
         }
+
         MessagingMetrics.RecordInbox(
             operationType is MessagingOperationType.ForceReprocess ? InboxMetricKind.Replay : InboxMetricKind.Retention,
             row.ConsumerIdentity,
@@ -404,6 +410,7 @@ internal sealed partial class SqlServerDataStorage
         {
             return null;
         }
+
         return new SqlServerInboxOperationRow(
             reader.GetGuid(0),
             new InboxOperationState(
@@ -444,6 +451,7 @@ internal sealed partial class SqlServerDataStorage
         {
             return null;
         }
+
         var targetKind = reader.GetString(11);
         var isInbox = string.Equals(targetKind, "Inbox", StringComparison.Ordinal);
         var incarnationId = isInbox && !reader.IsDBNull(0) ? reader.GetGuid(0) : Guid.Empty;

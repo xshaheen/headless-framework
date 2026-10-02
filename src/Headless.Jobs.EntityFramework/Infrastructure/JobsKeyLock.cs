@@ -176,6 +176,7 @@ internal static class JobsKeyLock
                     $"Transaction-owned Jobs key lock failed with status {failure.ToString(CultureInfo.InvariantCulture)}."
                 );
             }
+
             throw new TimeoutException("Could not acquire the transaction-owned Jobs key lock.");
         }
     }

@@ -145,6 +145,7 @@ public sealed class ExpirationCleanupTests : TestBase
         {
             (await _store.FileExistAsync(fileId, AbortToken)).Should().BeTrue();
         }
+
         (await _store.FileExistAsync(noExpirationFileId, AbortToken)).Should().BeTrue();
 
         // when - run expiration cleanup (return value intentionally ignored; the assertions below

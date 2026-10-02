@@ -18,6 +18,7 @@ namespace Tests;
 public sealed class ControlledNodeMembership : INodeMembership
 {
     private readonly Lock _gate = new();
+
     private readonly Channel<NodeMembershipEvent> _events = Channel.CreateUnbounded<NodeMembershipEvent>(
         new UnboundedChannelOptions { SingleReader = false, SingleWriter = false }
     );

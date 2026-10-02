@@ -32,6 +32,7 @@ internal static class DbConnectionExtensions
             {
                 command.CommandTimeout = (int)Math.Min(Math.Ceiling(commandTimeout.Value.TotalSeconds), int.MaxValue);
             }
+
             command.Parameters.AddRange(sqlParams);
 
             if (transaction != null)
@@ -65,6 +66,7 @@ internal static class DbConnectionExtensions
             {
                 command.CommandTimeout = (int)Math.Min(Math.Ceiling(commandTimeout.Value.TotalSeconds), int.MaxValue);
             }
+
             command.Parameters.AddRange(sqlParams);
 
             if (transaction != null)
@@ -104,6 +106,7 @@ internal static class DbConnectionExtensions
             {
                 command.CommandTimeout = (int)Math.Min(Math.Ceiling(commandTimeout.Value.TotalSeconds), int.MaxValue);
             }
+
             command.Parameters.AddRange(sqlParams);
 
             var objValue = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);

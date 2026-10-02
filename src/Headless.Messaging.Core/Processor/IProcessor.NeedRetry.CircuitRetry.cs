@@ -122,6 +122,7 @@ internal sealed partial class MessageNeedToRetryProcessor
                         );
                         deferralRejectionLogged = true;
                     }
+
                     break;
                 case CircuitRetryDecisionKind.Retain:
                     if (Interlocked.Exchange(ref _monitorOnlyRetainWarned, 1) == 0)
@@ -131,6 +132,7 @@ internal sealed partial class MessageNeedToRetryProcessor
                             LogSanitizer.Sanitize(work.ConsumerIdentity)
                         );
                     }
+
                     break;
                 case CircuitRetryDecisionKind.ProbePending:
                     // This row does not own the shared probe generation. Retain its exact claim for

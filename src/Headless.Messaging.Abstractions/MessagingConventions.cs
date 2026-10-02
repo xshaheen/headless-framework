@@ -88,7 +88,7 @@ public sealed class MessagingConventions
     /// Creates the deterministic default handler identity for a runtime delegate subscription.
     /// </summary>
     /// <param name="declaringType">The type that declares or owns the delegate method.</param>
-    /// <param name="methodName">The method name of the delegate (use <c>nameof</c>).</param>
+    /// <param name="methodName">The method name of the delegate (use <see langword="nameof"/>).</param>
     /// <param name="messageType">The message type that the delegate handles.</param>
     /// <returns>A stable identity string in the form <c>{declaringTypeFullName}|{methodName}|{messageFullName}</c>.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="declaringType"/> or <paramref name="messageType"/> is <see langword="null"/>.</exception>

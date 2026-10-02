@@ -721,6 +721,7 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
             {
                 LastIssuedReceiveRetryLock = trackingLock;
             }
+
             return Task.FromResult<IDistributedLease?>(trackingLock);
         }
 

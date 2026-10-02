@@ -255,6 +255,7 @@ internal sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposabl
             {
                 endpoint.Ssl = factory.Ssl;
             }
+
             return cancellationToken => factory.CreateConnectionAsync(endpoints, cancellationToken);
         }
 

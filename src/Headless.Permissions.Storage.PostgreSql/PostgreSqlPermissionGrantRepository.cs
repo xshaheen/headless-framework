@@ -21,8 +21,10 @@ internal sealed class PostgreSqlPermissionGrantRepository(
 {
     // Keep statements bounded for predictable parse and lock duration; 100 rows use 700 parameters.
     private const int _MaxRowsPerInsert = 100;
+
     private const string _GrantColumns =
         @"""id"",""name"",""provider_name"",""provider_key"",""tenant_id"",""is_granted"",""created_at"",""updated_at""";
+
     private const string _TenantFilter = @"""tenant_id"" IS NOT DISTINCT FROM @TenantId";
 
     private readonly ConcurrentDictionary<int, string> _insertBatchSql = new();

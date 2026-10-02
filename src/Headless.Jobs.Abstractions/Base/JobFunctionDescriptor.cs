@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.ComponentModel;
+using Headless.Checks;
 using Headless.Jobs.Enums;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
@@ -51,7 +52,7 @@ public sealed record JobFunctionDescriptor
             );
         }
 
-        ArgumentNullException.ThrowIfNull(cronExpression);
+        Argument.IsNotNull(cronExpression);
 
         if (!Enum.IsDefined(priority))
         {

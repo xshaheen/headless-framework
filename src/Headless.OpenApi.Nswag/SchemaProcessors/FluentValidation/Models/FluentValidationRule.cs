@@ -37,7 +37,7 @@ public sealed class FluentValidationRule
     #region Rules
 
     /// <summary>
-    /// Adds the property to the schema's <c>required</c> list when a <c>NotNull</c> or <c>NotEmpty</c>
+    /// Adds the property to the schema's <c>"required"</c> list when a <c>NotNull</c> or <c>NotEmpty</c>
     /// validator is present.
     /// </summary>
     public static readonly FluentValidationRule RequiredRule = new()

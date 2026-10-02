@@ -626,6 +626,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         {
             return null;
         }
+
         return inserted is Guid insertedId ? insertedId : null;
     }
 
@@ -868,6 +869,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         {
             command.Parameters.Add(new SqlParameter(_ParameterName("rootId", index), rootIds[index]));
         }
+
         command.Parameters.Add(new SqlParameter("idle", nameof(JobStatus.Idle)));
         command.Parameters.Add(new SqlParameter("owner", owner));
         command.Parameters.Add(_DateTimeOffsetParameter("claimedAt", claimedAt));

@@ -23,6 +23,7 @@ internal sealed class HeadlessGuidIdValueGenerator : ValueGenerator<Guid>
     private static readonly IGuidGenerator _Version7Generator = new SequentialGuidGenerator(
         SequentialGuidType.Version7
     );
+
     private static readonly IGuidGenerator _SqlServerGenerator = new SequentialGuidGenerator(
         SequentialGuidType.SqlServer
     );

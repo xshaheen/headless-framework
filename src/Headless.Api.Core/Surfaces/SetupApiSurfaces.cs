@@ -63,6 +63,7 @@ public static class SetupApiSurfaces
             {
                 throw new InvalidOperationException($"API surface '{surface.SurfaceName}' is already configured.");
             }
+
             if (
                 existing.Any(value =>
                     string.Equals(
@@ -78,10 +79,12 @@ public static class SetupApiSurfaces
                 );
             }
         }
+
         foreach (var surface in surfaces)
         {
             services.AddSingleton(surface);
         }
+
         services.TryAddSingleton<ApiSurfaceRegistry>();
 
         return services;

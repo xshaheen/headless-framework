@@ -127,6 +127,7 @@ public abstract class TransactionalInboxRetryConformanceTests : TestBase
                     )
             );
         }
+
         fault.Armed = false;
 
         handlerEntries.Should().Be(1, "only persisted Messaging recovery may enter another handler attempt");
@@ -147,6 +148,7 @@ public abstract class TransactionalInboxRetryConformanceTests : TestBase
             var db = verificationScope.ServiceProvider.GetRequiredService<InboxRetryDbContext>();
             (await db.Effects.AnyAsync(effect => effect.Id == id, AbortToken)).Should().Be(committed);
         }
+
         (await admit())
             .Disposition.Should()
             .Be(committed ? InboxAdmissionDisposition.SucceededDuplicate : InboxAdmissionDisposition.InFlightDuplicate);
@@ -179,6 +181,7 @@ public abstract class TransactionalInboxRetryConformanceTests : TestBase
             );
             staleError.Should().BeOfType<StaleInboxAttemptException>();
         }
+
         originalInlineAttempts = recovered.InlineAttempts++;
         (await storage.ReserveReceiveAttemptAsync(recovered, originalInlineAttempts, AbortToken)).Should().BeTrue();
         await using (var recoveryScope = provider.CreateAsyncScope())
@@ -196,6 +199,7 @@ public abstract class TransactionalInboxRetryConformanceTests : TestBase
                     AbortToken
                 );
         }
+
         handlerEntries.Should().Be(2);
         (await admit()).Disposition.Should().Be(InboxAdmissionDisposition.SucceededDuplicate);
         await using var finalScope = provider.CreateAsyncScope();
@@ -313,6 +317,7 @@ public abstract class TransactionalInboxRetryConformanceTests : TestBase
             var db = verificationScope.ServiceProvider.GetRequiredService<InboxRetryDbContext>();
             (await db.Effects.AnyAsync(effect => effect.Id == id, AbortToken)).Should().BeTrue();
         }
+
         (await admit()).Disposition.Should().Be(InboxAdmissionDisposition.SucceededDuplicate);
     }
 
@@ -381,6 +386,7 @@ public abstract class TransactionalInboxRetryConformanceTests : TestBase
                 fault.TransactionStarts++;
                 fault.ThrowOnce(FailurePoint.BeforeEntry);
             }
+
             return ValueTask.FromResult(result);
         }
 

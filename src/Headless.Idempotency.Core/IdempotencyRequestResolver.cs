@@ -21,6 +21,7 @@ internal sealed class IdempotencyRequestResolver(
     private const string _MergeReason =
         " must not start or end with whitespace: some providers ignore trailing spaces when comparing keys, which "
         + "would merge two records.";
+
     private const string _ContractWhitespaceMessage = "An idempotency contract" + _MergeReason;
     private const string _KeyWhitespaceMessage = "An idempotency key" + _MergeReason;
     private const string _TenantIdWhitespaceMessage = "An idempotency tenant id" + _MergeReason;

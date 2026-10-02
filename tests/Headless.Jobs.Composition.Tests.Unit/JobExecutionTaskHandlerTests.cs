@@ -62,6 +62,7 @@ public sealed class JobExecutionTaskHandlerTests : TestBase
         {
             JobsExecutionContext.CacheFunctionReferences(root, registry);
         }
+
         var exhausted = false;
         var handler = new JobsExecutionTaskHandler(
             services,

@@ -160,6 +160,7 @@ public sealed class SqlServerPooledIsolationTests(SqlServerTestFixture fixture) 
                     )
                 );
             }
+
             (await storage.DeleteExpiresAsync(initializer.GetReceivedTableName(), now, 10, AbortToken)).Should().Be(1);
             (await monitoring.GetReceivedMessageAsync(received.Message.StorageId, AbortToken)).Should().BeNull();
 

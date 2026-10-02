@@ -18,6 +18,7 @@ internal sealed class LeaseRequestResolver(ICurrentTenant currentTenant, IOption
     private const string _MergeReason =
         " must not start or end with whitespace: some providers ignore trailing spaces when comparing keys, which "
         + "would merge two leases.";
+
     private const string _KindWhitespaceMessage = "A lease kind" + _MergeReason;
     private const string _ResourceWhitespaceMessage = "A lease resource" + _MergeReason;
     private const string _TenantIdWhitespaceMessage = "A lease tenant id" + _MergeReason;

@@ -84,9 +84,6 @@ public sealed class SqlServerIdempotencyConformanceTests(SqlServerIdempotencyFix
         return base.should_peek_absent_pending_completed_and_respect_retention_and_tenant_scope();
     }
 
-    // Not overridden here: without RCSI, a plain read can wait behind an uncommitted write's exclusive row lock, so
-    // the non-blocking guarantee only holds on PostgreSQL and on the SQL Server RCSI-on fixture below.
-
     [Fact]
     public override Task should_purge_only_records_past_retention_whose_lease_is_not_live()
     {

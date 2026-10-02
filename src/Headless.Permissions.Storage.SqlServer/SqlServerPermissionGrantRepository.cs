@@ -21,8 +21,10 @@ internal sealed class SqlServerPermissionGrantRepository(
 {
     // 100 rows use 700 parameters, safely below SQL Server's 2,100-parameter ceiling.
     private const int _MaxRowsPerInsert = 100;
+
     private const string _GrantColumns =
         "[Id],[Name],[ProviderName],[ProviderKey],[TenantId],[IsGranted],[CreatedAt],[UpdatedAt]";
+
     private const string _TenantFilter = "(([TenantId] IS NULL AND @TenantId IS NULL) OR [TenantId]=@TenantId)";
 
     private readonly ConcurrentDictionary<int, string> _insertBatchSql = new();

@@ -259,7 +259,7 @@ internal sealed class DedicatedConnectionOrTransactionDbDistributedLock(
                         newHandle.Dispose();
                     }
 
-                    ObjectDisposedException.ThrowIf(ReferenceEquals(existing, _DisposedSentinel), this);
+                    Ensure.NotDisposed(ReferenceEquals(existing, _DisposedSentinel), this);
 
                     return ((IDatabaseConnectionMonitoringHandle)existing).ConnectionLostToken;
                 }

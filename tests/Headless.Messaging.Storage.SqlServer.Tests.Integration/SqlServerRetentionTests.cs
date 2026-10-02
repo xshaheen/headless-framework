@@ -276,6 +276,7 @@ public sealed class SqlServerRetentionTests(SqlServerTestFixture fixture) : Test
                 }
             } while (await reader.NextResultAsync(AbortToken));
         }
+
         await connection.ExecuteAsync(
             new CommandDefinition("SET STATISTICS XML OFF;", transaction: transaction, cancellationToken: AbortToken)
         );

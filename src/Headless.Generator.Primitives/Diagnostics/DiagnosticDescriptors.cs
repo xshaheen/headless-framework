@@ -14,6 +14,7 @@ namespace Headless.Generator.Primitives.Diagnostics;
 internal static class DiagnosticDescriptors
 {
     private const string _Category = "Headless.Generator.Primitives";
+
     private const string _HelpLinkBase =
         "https://github.com/xshaheen/headless-framework/blob/main/docs/llms/utilities.md#";
 

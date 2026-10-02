@@ -256,4 +256,16 @@ public sealed class SqlServerDistributedLockConformanceTests : DistributedLockTe
     {
         return base.should_not_fire_handle_lost_token_on_clean_release();
     }
+
+    [Fact]
+    public override Task should_expose_none_handle_lost_token_without_monitoring()
+    {
+        return base.should_expose_none_handle_lost_token_without_monitoring();
+    }
+
+    [Fact]
+    public override Task should_keep_lock_alive_when_auto_extend_is_enabled_smoke()
+    {
+        return base.should_keep_lock_alive_when_auto_extend_is_enabled_smoke();
+    }
 }

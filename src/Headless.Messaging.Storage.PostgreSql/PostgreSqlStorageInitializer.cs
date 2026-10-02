@@ -262,6 +262,7 @@ internal sealed class PostgreSqlStorageInitializer(
                         )
                         .ConfigureAwait(false);
                 }
+
                 await _PublishInboxSchemaReadinessAsync(connection, cancellationToken).ConfigureAwait(false);
             }
         }

@@ -14,6 +14,7 @@ internal sealed class AzureServiceBusProviderConformanceDriver(AzureServiceBusFi
     private static readonly TransportConformanceProfile _Profile = TransportConformanceManifest.Providers[
         "Azure Service Bus"
     ];
+
     private string? _topicName;
 
     public override string ProviderName => _Profile.Provider;
@@ -115,6 +116,7 @@ internal sealed class AzureServiceBusProviderConformanceDriver(AzureServiceBusFi
             _topicName ??= await fixture.CreateTopicAsync(cancellationToken);
             topicName = _topicName;
         }
+
         return await fixture.CreateConformanceSessionAsync(
             endpoint,
             topicName,

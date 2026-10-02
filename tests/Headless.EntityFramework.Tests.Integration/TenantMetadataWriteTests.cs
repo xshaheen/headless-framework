@@ -155,6 +155,7 @@ public sealed class TenantMetadataWriteTests(
         {
             root.Detail!.Value = "compromised";
         }
+
         db.ChangeTracker.DetectChanges();
         db.Entry(root).State.Should().Be(EntityState.Unchanged);
         var save = () => db.SaveChangesAsync(AbortToken);
@@ -259,6 +260,7 @@ public sealed class TenantMetadataWriteTests(
             var save = () => db.SaveChangesAsync(AbortToken);
             await save.Should().ThrowAsync<DbUpdateConcurrencyException>();
         }
+
         db.ChangeTracker.Clear();
         (await db.Set<MetadataRow>().IgnoreQueryFilters().SingleAsync(AbortToken)).Detail!.Value.Should().Be("admin");
     }
@@ -411,6 +413,7 @@ public sealed class TenantMetadataWriteTests(
         {
             options.LogTo(sql.Add, [RelationalEventId.CommandExecuted]);
         }
+
         return new MetadataContext(provider.GetRequiredService<HeadlessDbContextServices>(), options.Options);
     }
 

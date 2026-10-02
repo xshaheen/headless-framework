@@ -42,6 +42,7 @@ public sealed class PersonConsumer(ILogger<PersonConsumer> logger) : IConsume<Va
                 context.Message.Name
             );
         }
+
         return ValueTask.CompletedTask;
     }
 }

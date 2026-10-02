@@ -128,6 +128,7 @@ public sealed class ProviderCapabilityEndpointTests : TestBase
                 MessagingCapabilityModel.Compose(second is null ? [first] : [first, second])
             );
         }
+
         builder.Services.AddRouting();
         builder.Services.AddAuthorization();
         builder.Services.AddCors(options =>

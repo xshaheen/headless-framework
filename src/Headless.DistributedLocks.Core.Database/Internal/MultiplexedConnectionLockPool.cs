@@ -24,6 +24,7 @@ internal sealed class MultiplexedConnectionLockPool(Func<string, DatabaseConnect
 {
     // Only LockAsync is needed here (no zero-wait/timed acquire), so Nito.AsyncEx.AsyncLock is appropriate.
     private readonly AsyncLock _lock = new();
+
     private readonly Dictionary<string, Queue<MultiplexedConnectionLock>> _poolsByConnectionString = new(
         StringComparer.Ordinal
     );

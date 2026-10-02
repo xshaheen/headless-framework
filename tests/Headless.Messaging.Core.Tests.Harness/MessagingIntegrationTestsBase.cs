@@ -15,38 +15,11 @@ using Tests.Helpers;
 namespace Tests;
 
 /// <summary>
-/// Base class for full pub-sub cycle integration tests with DI setup.
-/// Provides complete messaging infrastructure including transport and storage.
+/// Builds and bootstraps the messaging host the integration suite runs against. Classes that only need a
+/// bootstrapped transport-plus-storage stack derive from this directly so they do not inherit the suite's cases.
 /// </summary>
-/// <remarks>
-/// <para>
-/// This base class sets up a complete messaging system for integration tests:
-/// <list type="bullet">
-/// <item><description>ServiceCollection with logging and messaging services</description></item>
-/// <item><description>Abstract methods for transport and storage configuration</description></item>
-/// <item><description>Full pub-sub lifecycle test scenarios</description></item>
-/// </list>
-/// </para>
-/// <para>
-/// <strong>Usage:</strong>
-/// <code>
-/// public class RabbitMqIntegrationTests : MessagingIntegrationTestsBase
-/// {
-///     protected override void ConfigureTransport(MessagingSetupBuilder setup)
-///     {
-///         setup.UseRabbitMq(r => r.HostName = "localhost");
-///     }
-///
-///     protected override void ConfigureStorage(MessagingSetupBuilder setup)
-///     {
-///         setup.UsePostgreSql("connection-string");
-///     }
-/// }
-/// </code>
-/// </para>
-/// </remarks>
 [PublicAPI]
-public abstract class MessagingIntegrationTestsBase : TestBase
+public abstract class MessagingIntegrationHostTestsBase : TestBase
 {
     private ServiceProvider? _serviceProvider;
 
@@ -202,6 +175,94 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         await base.DisposeAsyncCore();
     }
 
+    protected async Task EnsureTestSubscriberReadyAsync(
+        string messageName = "test-message",
+        TimeSpan? timeout = null,
+        TimeSpan? retryInterval = null
+    )
+    {
+        var subscriber = ServiceProvider.GetRequiredService<TestSubscriber>();
+        var deadline = DateTimeOffset.UtcNow + (timeout ?? TimeSpan.FromSeconds(15));
+        var pause = retryInterval ?? TimeSpan.FromMilliseconds(250);
+        var lastMessageId = string.Empty;
+
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            subscriber.Clear();
+
+            var probe = new TestMessage
+            {
+                Id = Guid.NewGuid().ToString("N"),
+                Name = "ReadinessProbe",
+                Payload = "probe",
+            };
+
+            lastMessageId = probe.Id;
+
+            await Bus.PublishAsync(probe, new PublishOptions { MessageName = messageName }, AbortToken);
+
+            var received = await subscriber.WaitForMessageAsync(TimeSpan.FromSeconds(1), AbortToken);
+            if (
+                received
+                && subscriber.ReceivedMessages.Any(message =>
+                    string.Equals(message.Id, probe.Id, StringComparison.Ordinal)
+                )
+            )
+            {
+                subscriber.Clear();
+                return;
+            }
+
+            await Task.Delay(pause, AbortToken);
+        }
+
+        throw new TimeoutException(
+            $"Timed out waiting for test subscriber readiness on messageName '{messageName}'. Last probe id: '{lastMessageId}'."
+        );
+    }
+
+    protected string ResolveMessageName(string messageName)
+    {
+        return string.IsNullOrWhiteSpace(MessagingOptions.MessageNamePrefix)
+            ? messageName
+            : $"{MessagingOptions.MessageNamePrefix}.{messageName}";
+    }
+}
+
+/// <summary>
+/// Base class for full pub-sub cycle integration tests with DI setup.
+/// Provides complete messaging infrastructure including transport and storage.
+/// </summary>
+/// <remarks>
+/// <para>
+/// This base class sets up a complete messaging system for integration tests:
+/// <list type="bullet">
+/// <item><description>ServiceCollection with logging and messaging services</description></item>
+/// <item><description>Abstract methods for transport and storage configuration</description></item>
+/// <item><description>Full pub-sub lifecycle test scenarios</description></item>
+/// </list>
+/// </para>
+/// <para>
+/// <strong>Usage:</strong>
+/// <code>
+/// public class RabbitMqIntegrationTests : MessagingIntegrationTestsBase
+/// {
+///     protected override void ConfigureTransport(MessagingSetupBuilder setup)
+///     {
+///         setup.UseRabbitMq(r => r.HostName = "localhost");
+///     }
+///
+///     protected override void ConfigureStorage(MessagingSetupBuilder setup)
+///     {
+///         setup.UsePostgreSql("connection-string");
+///     }
+/// }
+/// </code>
+/// </para>
+/// </remarks>
+[PublicAPI]
+public abstract class MessagingIntegrationTestsBase : MessagingIntegrationHostTestsBase
+{
     public virtual async Task should_publish_and_consume_message_end_to_end()
     {
         // given
@@ -958,59 +1019,6 @@ public abstract class MessagingIntegrationTestsBase : TestBase
         }
 
         return matches;
-    }
-
-    protected async Task EnsureTestSubscriberReadyAsync(
-        string messageName = "test-message",
-        TimeSpan? timeout = null,
-        TimeSpan? retryInterval = null
-    )
-    {
-        var subscriber = ServiceProvider.GetRequiredService<TestSubscriber>();
-        var deadline = DateTimeOffset.UtcNow + (timeout ?? TimeSpan.FromSeconds(15));
-        var pause = retryInterval ?? TimeSpan.FromMilliseconds(250);
-        var lastMessageId = string.Empty;
-
-        while (DateTimeOffset.UtcNow < deadline)
-        {
-            subscriber.Clear();
-
-            var probe = new TestMessage
-            {
-                Id = Guid.NewGuid().ToString("N"),
-                Name = "ReadinessProbe",
-                Payload = "probe",
-            };
-
-            lastMessageId = probe.Id;
-
-            await Bus.PublishAsync(probe, new PublishOptions { MessageName = messageName }, AbortToken);
-
-            var received = await subscriber.WaitForMessageAsync(TimeSpan.FromSeconds(1), AbortToken);
-            if (
-                received
-                && subscriber.ReceivedMessages.Any(message =>
-                    string.Equals(message.Id, probe.Id, StringComparison.Ordinal)
-                )
-            )
-            {
-                subscriber.Clear();
-                return;
-            }
-
-            await Task.Delay(pause, AbortToken);
-        }
-
-        throw new TimeoutException(
-            $"Timed out waiting for test subscriber readiness on messageName '{messageName}'. Last probe id: '{lastMessageId}'."
-        );
-    }
-
-    protected string ResolveMessageName(string messageName)
-    {
-        return string.IsNullOrWhiteSpace(MessagingOptions.MessageNamePrefix)
-            ? messageName
-            : $"{MessagingOptions.MessageNamePrefix}.{messageName}";
     }
 
     private async Task<IReadOnlyList<MessageView>> _FindReceivedMessagesAsync(

@@ -41,6 +41,7 @@ public sealed class KafkaTransportTests : TestBase
         {
             headers[KafkaMessagingHeaders.KafkaKey] = raw;
         }
+
         _producer
             .ProduceAsync(Arg.Any<string>(), Arg.Any<Message<string, byte[]>>(), Arg.Any<CancellationToken>())
             .Returns(new DeliveryResult<string, byte[]> { Status = PersistenceStatus.Persisted });

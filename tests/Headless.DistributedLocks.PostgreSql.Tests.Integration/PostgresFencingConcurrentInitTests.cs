@@ -12,6 +12,7 @@ namespace Tests;
 public sealed class PostgresFencingConcurrentInitTests(PostgreSqlDistributedLockFixture fixture) : TestBase
 {
     private const string _SequenceName = "headless_distributed_locks_fence";
+
     private const string _QualifiedSequence = $"""
         "{HeadlessStorageDefaults.Schema}"."{_SequenceName}"
         """;

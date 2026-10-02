@@ -591,6 +591,7 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
                         {
                             _RecordInboxRecovery(message, InboxMetricOutcome.Orphaned);
                         }
+
                         continue;
                     }
 
@@ -604,10 +605,12 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
                     {
                         continue;
                     }
+
                     if (wasOrphaned)
                     {
                         _RecordInboxRecovery(message, InboxMetricOutcome.Routable);
                     }
+
                     message.Origin.Headers[Headers.ConsumerIdentity] = descriptor.ResolvedConsumerIdentity;
                 }
 
@@ -626,6 +629,7 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
                 {
                     _logger.RetrySkippedBecauseCircuitOpen(message.StorageId, LogSanitizer.Sanitize(consumerIdentity));
                 }
+
                 circuitWork.Add(new CircuitRetryWork(message, consumerIdentity!, decision));
             }
         }
@@ -657,6 +661,7 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
                     ).ReleaseUnlessTransferred();
                 }
             }
+
             throw;
         }
 
@@ -836,6 +841,7 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
                 {
                     _logger.PublishedRetryLockAcquireFailed(ex);
                 }
+
                 break;
             case MessageType.Subscribe:
                 if (failureCount >= _StoragePickupErrorEscalationThreshold)
@@ -846,6 +852,7 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
                 {
                     _logger.ReceivedRetryLockAcquireFailed(ex);
                 }
+
                 break;
             default:
                 throw new InvalidOperationException($"Unsupported retry direction '{state.Key.Direction}'.");
@@ -1037,6 +1044,7 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
 
         public string DisplayName =>
             Outbox is null ? $"{Key.Direction}-{Key.Lane}" : $"{Key.Direction}-{Key.Lane} ({Outbox.Name})";
+
         public TimeSpan CurrentInterval => TimeSpan.FromTicks(Interlocked.Read(ref _currentIntervalTicks));
 
         public Task? ActiveTask

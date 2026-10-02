@@ -93,11 +93,13 @@ internal sealed partial class HeadlessApiExceptionHandler(
                     {
                         return false;
                     }
+
                     if (httpContext.Response.HasStarted)
                     {
                         _LogResponseAlreadyStarted(logger, exception.GetType().Name);
                         return false;
                     }
+
                     httpContext.Response.StatusCode = StatusCodes.Status499ClientClosedRequest;
                     httpContext
                         .Features.Get<IHttpActivityFeature>()
@@ -116,6 +118,7 @@ internal sealed partial class HeadlessApiExceptionHandler(
                     {
                         _LogTenantResolutionMiddlewareMissing(logger, httpContext.Request.Path);
                     }
+
                     problemDetails = problemDetailsCreator.Forbidden(
                         detail: HeadlessProblemDetailsConstants.Details.TenantContextRequired,
                         error: HeadlessProblemDetailsConstants.Errors.TenantContextRequired
@@ -325,6 +328,7 @@ internal sealed partial class HeadlessApiExceptionHandler(
                         return true;
                     }
                 }
+
                 return false;
             }
 

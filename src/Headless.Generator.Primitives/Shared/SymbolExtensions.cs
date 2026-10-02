@@ -129,6 +129,7 @@ internal static class SymbolExtensions
                     return true;
                 }
             }
+
             return false;
         }
 
@@ -214,6 +215,7 @@ internal static class SymbolExtensions
 
             builder.Append(typeParameters[i]);
         }
+
         builder.Append('>');
 
         return builder.ToString();

@@ -60,6 +60,7 @@ internal static class CronValidator
                 {
                     output[partIndex++] = input.Slice(start, i - start).ToString();
                 }
+
                 start = i + 1;
             }
         }

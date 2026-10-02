@@ -417,6 +417,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             message.Owner = "node-a";
             message.LockedUntil = DateTimeOffset.UtcNow.AddMinutes(5);
         }
+
         first.InboxKey = new InboxKey(null, first.Origin.Id, MessageLane.Bus, first.Origin.Name, "v1", "missing", 0);
         var storage = Substitute.For<IDataStorage, IGracefulLeaseReleaseStorage>();
         _SetupReceivedMessages(storage, circuit, first, second);
@@ -442,6 +443,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         {
             await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("classification failed");
         }
+
         await ((IGracefulLeaseReleaseStorage)storage)
             .Received(1)
             .ReleaseReceivedLeasesAsync(
@@ -541,6 +543,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         {
             _SetupReceivedMessages(storage, message);
         }
+
         storage
             .ConfirmReceivedInboxRoutableAsync(message, Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult(accepted));
@@ -1624,6 +1627,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             }
             catch (TaskCanceledException) { }
             catch (OperationCanceledException) { }
+
             secondStopwatch.Stop();
         }
         finally
@@ -1760,6 +1764,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             sut.GetPickupFailureCountForTest(MessageType.Subscribe, MessageLane.Bus).Should().Be(cycle);
             sut.CurrentPollingInterval.Should().BeGreaterThan(TimeSpan.FromSeconds(1));
         }
+
         captured.Count(e => e.Id == 3110).Should().Be(2);
         captured.Count(e => e.Id == 74 && e.Level == LogLevel.Error).Should().Be(1);
 
@@ -2053,6 +2058,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
                 {
                     throw new InvalidOperationException("lock store down");
                 }
+
                 return Task.FromResult<IDistributedLease?>(Substitute.For<IDistributedLease>());
             });
         lockProvider

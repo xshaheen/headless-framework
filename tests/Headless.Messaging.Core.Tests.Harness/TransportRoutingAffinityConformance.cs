@@ -80,6 +80,7 @@ public static class TransportRoutingAffinityConformance
                         cancellationToken
                     );
             }
+
             if (mode == DeliveryMode.Durable)
             {
                 var storage = provider.GetRequiredService<IDataStorage>();

@@ -288,6 +288,7 @@ public sealed class BootstrapperTests : TestBase
         {
             // Shutdown may cancel the initializer before or immediately after its release.
         }
+
         processor.StartCount.Should().Be(0);
     }
 

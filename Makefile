@@ -81,7 +81,39 @@ ASSERT_RESTORED = assert_restored() { local project="$$1" dir assets input; dir=
 # Collects every path this side changed, including uncommitted and untracked work. Diffing the merge
 # base rather than AFFECTED_BASE itself matters when the branch is behind: a plain two-dot diff also
 # reports the commits upstream has and we do not, which are not our changes and not ours to test.
-AFFECTED_FILES = affected_files() { local base; base=$$(git merge-base "$(AFFECTED_BASE)" HEAD) || { printf 'ERROR: no common ancestor between HEAD and %s.\n' "$(AFFECTED_BASE)" >&2; return 2; }; { git -c core.quotePath=false diff --name-only "$$base"; git -c core.quotePath=false ls-files --others --exclude-standard; } | sort -u; }
+# Affected-scope tooling. eng/tools/project_graph.py selects projects from the ProjectReference
+# graph; eng/tools/proof.py runs each stage, keeps its log, and reduces TRX, analyzer reports,
+# compiler output and coverage into artifacts/proof/<run>/summary.{json,md}. Both are stdlib Python.
+PYTHON ?= python3
+GRAPH = $(PYTHON) eng/tools/project_graph.py
+PROOF = $(PYTHON) eng/tools/proof.py
+# One timestamp per make invocation, so every stage of a target writes into the same bundle.
+PROOF_RUN := $(ARTIFACTS_DIR)/proof/$(shell date -u +%Y%m%dT%H%M%SZ)
+# Coverage costs ~0.4s per test module; it is reported, never gated.
+AFFECTED_COVERAGE ?= true
+AFFECTED_PREPARE = $(ASSERT_RESTORED); prepare() { \
+	git rev-parse --verify -q "$(AFFECTED_BASE)^{commit}" >/dev/null || { printf 'ERROR: AFFECTED_BASE=%s does not resolve to a commit. Fetch it, or pass AFFECTED_BASE=<ref>.\n' "$(AFFECTED_BASE)" >&2; return 2; }; \
+	rm -rf "$$1"; $(GRAPH) affected --base "$(AFFECTED_BASE)" --out-dir "$$1"; }; prepare
+# Restore is asserted, not repeated: the solution-filter restore runs only when a selected project's
+# assets are missing or older than Directory.Packages.props or its lock file.
+AFFECTED_BUILD_STAGES = if [ -s "$$run/build.txt" ]; then \
+		stale=0; while IFS= read -r project; do assert_restored "$$project" 2>/dev/null || stale=1; done < "$$run/build.txt"; \
+		if [ $$stale -eq 1 ]; then $(PROOF) run --dir "$$run" --name restore -- $(DOTNET) restore "$$run/build.slnf" $(RESTORE_ARGS) -v:q -nologo || status=1; fi; \
+		$(PROOF) run --dir "$$run" --name build -- $(DOTNET) build "$$run/build.slnf" --configuration "$(CONFIGURATION)" --no-restore -v:q -nologo $(MSBUILD_ARGS) || status=1; \
+	fi;
+AFFECTED_UNIT_STAGE = if [ $$status -ne 0 ]; then $(PROOF) skip --dir "$$run" --name unit-tests --reason "an earlier stage failed; --no-build would test stale binaries"; \
+	elif [ -s "$$run/unit.txt" ]; then \
+		coverage_args=(); \
+		if [ "$(AFFECTED_COVERAGE)" = "true" ]; then \
+			settings="$$($(DOTNET) msbuild "$(COVERAGE_SETTINGS_PROJECT)" -getProperty:HeadlessCoverageSettingsPath -nologo -v:quiet)"; \
+			coverage_args=(--coverage --coverage-output-format cobertura --coverage-settings "$$settings"); \
+		fi; \
+		$(PROOF) run --dir "$$run" --name unit-tests -- $(DOTNET) test --solution "$$run/unit.slnf" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$$run/unit-tests" --max-parallel-test-modules $(TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER) $${coverage_args[@]+"$${coverage_args[@]}"} || status=1; \
+		if [ -n "$$(find "$$run/unit-tests" -name '*.cobertura.xml' -print -quit 2>/dev/null)" ]; then \
+			$(PROOF) run --dir "$$run" --name coverage-merge -- $(DOTNET) dotnet-coverage merge --nologo --output "$$run/coverage/merged.cobertura.xml" --output-format cobertura "$$run/unit-tests/**/*.cobertura.xml" || status=1; \
+		fi; \
+	else printf '\033[33m[affected]\033[0m no unit-test project covers the affected set; nothing ran.\n'; fi;
+PROOF_REPORT = report() { cat "$$1/summary.md"; printf '\033[36mProof bundle:\033[0m %s (summary.md for the PR body, summary.json for tools)\n' "$$1"; }; report
 DOTNET_OUTDATED_AUDIT_ARGS ?= --no-restore --idle-timeout $(DEPENDENCY_AUDIT_IDLE_TIMEOUT) --output "$(DEPENDENCY_AUDIT_DIR)/outdated.json" --output-format json
 DEPENDENCY_SECURITY_AUDIT_ARGS ?= --timeout-seconds "$(DEPENDENCY_SECURITY_AUDIT_TIMEOUT)" --output-dir "$(DEPENDENCY_AUDIT_DIR)/security" --project "$(PROJECT)" --scan vulnerable --include-transitive --scan deprecated
 NUGET_ADVISORY_AUDIT_ARGS ?= --timeout-seconds "$(NUGET_ADVISORY_AUDIT_TIMEOUT)" --output-dir "$(DEPENDENCY_AUDIT_DIR)/nuget-advisories" --scan vulnerable --include-transitive
@@ -99,8 +131,10 @@ help: ## Show available commands.
 	@printf "  make build\n"
 	@printf "  make test-project TEST_PROJECT=tests/Headless.Api.Composition.Tests.Unit/Headless.Api.Composition.Tests.Unit.csproj\n"
 	@printf "  make test-class CLASS='*ClockTests' TEST_PROJECT=tests/Headless.Core.Tests.Unit/Headless.Core.Tests.Unit.csproj\n"
+	@printf "  make verify-affected            # build + unit tests + analyzers for the change, with a proof bundle\n"
 	@printf "  make test-affected\n"
 	@printf "  make quality-analyzers-affected\n"
+	@printf "  make bench-compare BENCH_AREA=Caching BENCH_FILTER='*Memory*' BASE=origin/main\n"
 	@printf "  make coverage-json\n"
 	@printf "  make pack CONFIGURATION=Release\n\n"
 	@printf "Scoping notes:\n"
@@ -128,11 +162,19 @@ restore-project: ## Restore one project; preferred for focused project work.
 hooks: ## Point this worktree at the committed native hooks in .githooks.
 	git config --local extensions.worktreeConfig true
 	git config --worktree core.hooksPath .githooks
+	@# The shared setting is the fallback for a worktree created without `make hooks`; pointing it
+	@# at a missing directory made such worktrees run no hooks at all, silently.
+	git config --local core.hooksPath .githooks
 
 .PHONY: hook-pre-commit
-hook-pre-commit: ## Git hook: format staged C# files before commit.
+hook-pre-commit: ## Git hook: format staged C# files and validate staged docs/solutions frontmatter before commit.
 	@staged=(); safe=(); skipped=(); \
 	while IFS= read -r file; do staged+=("$$file"); done < <(git diff --cached --name-only --diff-filter=ACMR -- '*.cs'); \
+	docs=(); while IFS= read -r file; do docs+=("$$file"); done < <(git diff --cached --name-only --diff-filter=ACMR -- 'docs/solutions/*.md' ':!docs/solutions/INDEX.md'); \
+	if [ "$${#docs[@]}" -gt 0 ]; then \
+		$(PYTHON) eng/tools/docs_check.py --quiet-warnings "$${docs[@]}" || { printf '\033[31m[pre-commit]\033[0m fix the docs/solutions frontmatter above (rules: eng/tools/docs_check.py).\n'; exit 1; }; \
+		$(PYTHON) eng/tools/docs_check.py --quiet-warnings >/dev/null 2>&1 || printf '\033[33m[pre-commit]\033[0m docs/solutions/INDEX.md may be stale; run `make docs-index` and stage it.\n'; \
+	fi; \
 	if [ "$${#staged[@]}" -eq 0 ]; then exit 0; fi; \
 	for file in "$${staged[@]}"; do \
 		if git diff --quiet -- "$$file"; then safe+=("$$file"); else skipped+=("$$file"); fi; \
@@ -243,30 +285,20 @@ quality-analyzers-project: ## Report build warnings/errors and analyzer suggesti
 		if [ $$format_status -ne 0 ] && [ $$format_status -ne 2 ]; then cat "$(QUALITY_FORMAT_LOG)"; exit $$format_status; fi
 
 # quality-analyzers rebuilds all ~430 projects --no-incremental and then formats the whole solution.
-# This runs the same per-project gate over only the projects the branch touched, which is the useful
-# scope before a PR. It is a subset, not a replacement: an analyzer error in an untouched project
-# still needs `make quality-analyzers` (or CI's `Lint · .NET analyzers` job) to surface.
+# This runs the same gate over only the projects the branch changed: one --no-incremental build of a
+# solution filter (so analyzers re-run on them) and one `dotnet format analyzers` pass, recorded as a
+# proof bundle so every finding survives, grouped by rule. Dependents are compiled by build-affected;
+# an analyzer finding in an untouched project still needs `make quality-analyzers` to surface.
 .PHONY: quality-analyzers-affected
-quality-analyzers-affected: ## Run quality-analyzers-project over the src/tests projects changed vs AFFECTED_BASE.
-	@git rev-parse --verify -q "$(AFFECTED_BASE)^{commit}" >/dev/null || { printf 'ERROR: AFFECTED_BASE=%s does not resolve to a commit. Fetch it, or pass AFFECTED_BASE=<ref>.\n' "$(AFFECTED_BASE)" >&2; exit 2; }
-	@$(AFFECTED_FILES); \
-	files=$$(affected_files); \
-	projects=""; \
-	while IFS= read -r file; do \
-		[ -n "$$file" ] || continue; \
-		dir=$$(printf '%s\n' "$$file" | cut -d/ -f1-2); \
-		case "$$dir" in \
-			src/*|tests/*|demo/*) project="$$dir/$${dir#*/}.csproj"; if [ -f "$$project" ]; then projects="$$projects $$project"; fi ;; \
-		esac; \
-	done <<< "$$files"; \
-	projects=$$(printf '%s\n' $$projects | sort -u); \
-	if [ -z "$$projects" ]; then \
-		printf '\033[33m[quality-analyzers-affected]\033[0m no changed project vs %s; nothing analyzed. Use `make quality-analyzers` for the whole solution.\n' "$(AFFECTED_BASE)"; \
-		exit 0; \
-	fi; \
-	printf '\033[36m[quality-analyzers-affected]\033[0m %s project(s) vs %s:\n' "$$(printf '%s\n' $$projects | wc -l | tr -d ' ')" "$(AFFECTED_BASE)"; \
-	printf '  %s\n' $$projects; \
-	for project in $$projects; do $(MAKE) --no-print-directory quality-analyzers-project PROJECT="$$project"; done
+quality-analyzers-affected: ## Analyze the projects changed vs AFFECTED_BASE; writes a proof bundle under artifacts/proof/.
+	@$(AFFECTED_PREPARE) "$(PROOF_RUN)-quality"; \
+	run="$(PROOF_RUN)-quality"; status=0; \
+	if [ ! -s "$$run/changed.txt" ]; then printf '\033[33m[quality-analyzers-affected]\033[0m no changed project vs %s; nothing analyzed.\n' "$(AFFECTED_BASE)"; exit 0; fi; \
+	$(PROOF) run --dir "$$run" --name restore -- $(DOTNET) restore "$$run/changed.slnf" --locked-mode -v:q -nologo || status=1; \
+	$(PROOF) run --dir "$$run" --name analyzers-build -- $(DOTNET) build "$$run/changed.slnf" $(QUALITY_BUILD_ARGS) || status=1; \
+	Configuration="$(CONFIGURATION)" $(PROOF) run --dir "$$run" --name analyzers -- $(DOTNET) format analyzers "$$run/changed.slnf" --no-restore --verify-no-changes --severity "$(QUALITY_SEVERITY)" -v minimal --report "$$run/analyzers" $(if $(QUALITY_DIAGNOSTICS),--diagnostics $(QUALITY_DIAGNOSTICS),) || true; \
+	$(PROOF) summarize --dir "$$run" > /dev/null || status=1; \
+	$(PROOF_REPORT) "$$run"; exit $$status
 
 .PHONY: quality-fix
 quality-fix: ## Apply analyzer fixes for QUALITY_DIAGNOSTICS, then reformat. Rebuild afterwards to verify.
@@ -392,49 +424,61 @@ test-query: ## Run tests matching QUERY (MTP --filter-query). Solution-wide unle
 	@test -n "$(QUERY)" || (echo "QUERY is required. Example: make test-query QUERY='/Headless.Core.Tests.Unit/Tests.Abstractions/ClockTests/*'" && exit 2)
 	$(MAKE) $(TEST_SCOPE_TARGET) TEST_FILTER='--filter-query "$(QUERY)"'
 
-# Maps changed paths to *.Tests.Unit projects: a changed tests/<X>.Tests.Unit file selects that
-# project, and a changed src/<X> file selects tests/<X>.Tests.Unit when it exists. Integration and
-# Harness projects are deliberately out of scope (Docker, minutes per module) and are reported, not
-# run. Anything that maps to nothing is named explicitly so a run that tests nothing cannot read as
-# a pass.
+# The affected set comes from the ProjectReference graph (eng/tools/project_graph.py), not from
+# directory names: changed projects plus their direct dependents, and every unit- or integration-test
+# project that is in that set or references a member of it directly. A change to a build-wide file
+# (global.json, Directory.*.props, .editorconfig, eng/analyzers) selects every project below it.
+# All selected projects build in one invocation of a generated solution filter, all test modules run
+# to completion (one failure no longer hides the rest), and the results land in a proof bundle.
+.PHONY: affected
+affected: ## Print the projects and test projects affected by changes vs AFFECTED_BASE (JSON).
+	@$(GRAPH) affected --base "$(AFFECTED_BASE)"
+
+.PHONY: build-affected
+build-affected: ## Build the affected projects (changed + direct dependents + their tests) in one solution-filter build.
+	@$(AFFECTED_PREPARE) "$(PROOF_RUN)-build"; \
+	run="$(PROOF_RUN)-build"; status=0; \
+	$(AFFECTED_BUILD_STAGES) \
+	$(PROOF) summarize --dir "$$run" > /dev/null || status=1; \
+	$(PROOF_REPORT) "$$run"; exit $$status
+
 .PHONY: test-affected
-test-affected: ## Run only the *.Tests.Unit projects affected by changes vs AFFECTED_BASE (@{upstream}, else origin/main).
-	@git rev-parse --verify -q "$(AFFECTED_BASE)^{commit}" >/dev/null || { printf 'ERROR: AFFECTED_BASE=%s does not resolve to a commit. Fetch it, or pass AFFECTED_BASE=<ref>.\n' "$(AFFECTED_BASE)" >&2; exit 2; }
-	@$(AFFECTED_FILES); $(ASSERT_RESTORED); \
-	files=$$(affected_files); \
-	if [ -z "$$files" ]; then \
-		printf '\033[36m[test-affected]\033[0m no files changed vs %s; nothing to test.\n' "$(AFFECTED_BASE)"; \
-		exit 0; \
+test-affected: ## Build the affected set, then run its *.Tests.Unit projects; writes a proof bundle under artifacts/proof/.
+	@$(AFFECTED_PREPARE) "$(PROOF_RUN)-test"; \
+	run="$(PROOF_RUN)-test"; status=0; \
+	$(AFFECTED_BUILD_STAGES) \
+	$(AFFECTED_UNIT_STAGE) \
+	$(PROOF) summarize --dir "$$run" > /dev/null || status=1; \
+	$(PROOF_REPORT) "$$run"; exit $$status
+
+.PHONY: test-affected-integration
+test-affected-integration: ## Build the affected set, then run its *.Tests.Integration projects (needs Docker).
+	@$(AFFECTED_PREPARE) "$(PROOF_RUN)-integration"; \
+	run="$(PROOF_RUN)-integration"; status=0; \
+	$(AFFECTED_BUILD_STAGES) \
+	if [ $$status -ne 0 ]; then $(PROOF) skip --dir "$$run" --name integration-tests --reason "an earlier stage failed; --no-build would test stale binaries"; \
+	elif [ -s "$$run/integration.txt" ]; then \
+		$(PROOF) run --dir "$$run" --name integration-tests -- $(DOTNET) test --solution "$$run/integration.slnf" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$$run/integration-tests" --max-parallel-test-modules $(TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER) || status=1; \
 	fi; \
-	projects=""; no_unit=""; other=""; \
-	while IFS= read -r file; do \
-		[ -n "$$file" ] || continue; \
-		dir=$$(printf '%s\n' "$$file" | cut -d/ -f1-2); \
-		case "$$dir" in \
-			tests/*.Tests.Unit) projects="$$projects $$dir/$${dir#tests/}.csproj" ;; \
-			src/*) candidate="tests/$${dir#src/}.Tests.Unit/$${dir#src/}.Tests.Unit.csproj"; \
-				if [ -f "$$candidate" ]; then projects="$$projects $$candidate"; else no_unit="$$no_unit $$dir"; fi ;; \
-			tests/*|demo/*) no_unit="$$no_unit $$dir" ;; \
-			*) other="$$other $$dir" ;; \
-		esac; \
-	done <<< "$$files"; \
-	projects=$$(printf '%s\n' $$projects | sort -u); \
-	if [ -z "$$projects" ]; then \
-		printf '\033[33m[test-affected] NO UNIT TEST PROJECT MATCHED — nothing ran.\033[0m\n'; \
-		if [ -n "$$no_unit" ]; then printf '  changed project(s) with no *.Tests.Unit sibling: %s\n' "$$(printf '%s\n' $$no_unit | sort -u | tr '\n' ' ')"; fi; \
-		if [ -n "$$other" ]; then printf '  changed non-project path(s): %s\n' "$$(printf '%s\n' $$other | sort -u | tr '\n' ' ')"; fi; \
-		printf '  Pick a suite yourself: `make test-unit`, or `make test-project TEST_PROJECT=<csproj>`.\n'; \
-		exit 0; \
+	$(PROOF) summarize --dir "$$run" > /dev/null || status=1; \
+	$(PROOF_REPORT) "$$run"; exit $$status
+
+.PHONY: verify-affected
+verify-affected: ## Build, unit-test (with coverage), and analyze the affected set; one proof bundle for the PR body.
+	@$(AFFECTED_PREPARE) "$(PROOF_RUN)-verify"; \
+	run="$(PROOF_RUN)-verify"; status=0; \
+	$(AFFECTED_BUILD_STAGES) \
+	$(AFFECTED_UNIT_STAGE) \
+	if [ -s "$$run/changed.txt" ]; then \
+		$(PROOF) run --dir "$$run" --name analyzers-build -- $(DOTNET) build "$$run/changed.slnf" $(QUALITY_BUILD_ARGS) || status=1; \
+		Configuration="$(CONFIGURATION)" $(PROOF) run --dir "$$run" --name analyzers -- $(DOTNET) format analyzers "$$run/changed.slnf" --no-restore --verify-no-changes --severity "$(QUALITY_SEVERITY)" -v minimal --report "$$run/analyzers" || true; \
 	fi; \
-	printf '\033[36m[test-affected]\033[0m %s project(s) vs %s:\n' "$$(printf '%s\n' $$projects | wc -l | tr -d ' ')" "$(AFFECTED_BASE)"; \
-	printf '  %s\n' $$projects; \
-	if [ -n "$$no_unit" ]; then printf '\033[33m  not covered here (no *.Tests.Unit sibling): %s\033[0m\n' "$$(printf '%s\n' $$no_unit | sort -u | tr '\n' ' ')"; fi; \
-	for project in $$projects; do assert_restored "$$project"; done; \
-	mkdir -p "$(TEST_RESULTS_DIR)/affected"; \
-	for project in $$projects; do \
-		printf '\033[36m[test-affected]\033[0m running %s\n' "$$project"; \
-		$(DOTNET) test --project "$$project" --configuration "$(CONFIGURATION)" --no-restore --results-directory "$(TEST_RESULTS_DIR)/affected" $(TEST_ARGS) $(TEST_FILTER); \
-	done
+	$(PROOF) summarize --dir "$$run" > /dev/null || status=1; \
+	$(PROOF_REPORT) "$$run"; exit $$status
+
+.PHONY: check-layering
+check-layering: ## Check package dependency direction under src/ (Abstractions and Core packages).
+	@$(GRAPH) layering
 
 .PHONY: test-timeout
 test-timeout: ## Run all tests with an explicit MTP timeout. SDK defaults still provide TRX and dumps.
@@ -546,6 +590,49 @@ verify-messaging-package-compatibility: pack ## Verify current Messaging package
 .PHONY: test-package-verifier
 test-package-verifier: ## Run isolated positive and negative package-verifier fixtures.
 	./tests/scripts/verify-packages-tests.sh
+
+.PHONY: docs-check
+docs-check: ## Validate docs/solutions frontmatter (fails) and references (warns), and check INDEX.md is current.
+	@$(PYTHON) eng/tools/docs_check.py
+
+.PHONY: docs-index
+docs-index: ## Regenerate docs/solutions/INDEX.md from each learning's frontmatter.
+	@$(PYTHON) eng/tools/docs_check.py --write-index --quiet-warnings
+
+# Benchmarks report evidence; nothing gates on them. BENCH_AREA names a project under benchmarks/
+# (Api.Idempotency, Blobs, Caching, Jobs, Messaging, Serializer). The JSON export is what
+# bench-compare reads; the default `short` job trades precision for a run an agent can wait on.
+# Every run happens in a temporary worktree: BenchmarkDotNet locates its project by searching the
+# repository for <name>.csproj, and the copies under .worktrees/ make that search ambiguous. The
+# working tree is captured with `git stash create`, which includes uncommitted changes to tracked
+# files (not untracked ones) without touching the index or the stash list.
+BENCH_AREA ?=
+BENCH_FILTER ?= *
+BENCH_JOB ?= short
+BENCH_DIR ?= $(ARTIFACTS_DIR)/benchmark-runs
+BENCH_ARGS = --filter '$(BENCH_FILTER)' --job $(BENCH_JOB) --exporters json
+BENCH_RUN = bench_run() { \
+	local ref="$$1" out="$$2" tree rc; tree="$$(mktemp -d "$${TMPDIR:-/tmp}/headless-bench.XXXXXX")"; \
+	git worktree add --detach "$$tree" "$$ref" >/dev/null || return 1; \
+	printf '\033[36m[bench]\033[0m %s in %s\n' "$$ref" "$$tree"; \
+	(cd "$$tree" && $(DOTNET) run --configuration Release --project "benchmarks/Headless.$(BENCH_AREA).Benchmarks" -- $(BENCH_ARGS) --artifacts "$$out") && rc=0 || rc=$$?; \
+	git worktree remove --force "$$tree" >/dev/null 2>&1 || rm -rf "$$tree"; return $$rc; }; \
+	working_tree_ref() { git stash create 2>/dev/null || git rev-parse HEAD; }
+
+.PHONY: bench
+bench: ## Run BENCH_AREA benchmarks for the working tree (BENCH_FILTER, BENCH_JOB=short); JSON under artifacts/benchmark-runs/.
+	@test -n "$(BENCH_AREA)" || (echo "BENCH_AREA is required. Example: make bench BENCH_AREA=Caching BENCH_FILTER='*Memory*'" && exit 2)
+	@$(BENCH_RUN); bench_run "$$(working_tree_ref)" "$(CURDIR)/$(BENCH_DIR)/$(notdir $(PROOF_RUN))-$(BENCH_AREA)"
+
+.PHONY: bench-compare
+bench-compare: ## Run BENCH_AREA benchmarks at BASE (default AFFECTED_BASE) and for the working tree; print a before/after table.
+	@test -n "$(BENCH_AREA)" || (echo "BENCH_AREA is required. Example: make bench-compare BENCH_AREA=Caching BENCH_FILTER='*Memory*' BASE=origin/main" && exit 2)
+	@base_ref="$(or $(BASE),$(AFFECTED_BASE))"; \
+	git rev-parse --verify -q "$$base_ref^{commit}" >/dev/null || { printf 'ERROR: BASE=%s does not resolve to a commit.\n' "$$base_ref" >&2; exit 2; }; \
+	out="$(CURDIR)/$(BENCH_DIR)/$(notdir $(PROOF_RUN))-$(BENCH_AREA)-compare"; \
+	$(BENCH_RUN); head_ref="$$(working_tree_ref)"; \
+	bench_run "$$base_ref" "$$out/base"; bench_run "$$head_ref" "$$out/head"; \
+	$(PYTHON) eng/tools/bench_compare.py --base "$$out/base" --head "$$out/head" --base-label "$$base_ref" | tee "$$out/compare.md"
 
 .PHONY: outdated
 outdated: tools ## Check outdated NuGet dependencies.

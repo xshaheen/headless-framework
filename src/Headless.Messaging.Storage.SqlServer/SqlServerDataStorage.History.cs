@@ -117,6 +117,7 @@ internal sealed partial class SqlServerDataStorage
                 candidates.Add(reader.GetGuid(0));
             }
         }
+
         var deleted = 0;
         foreach (var operationId in candidates)
         {
@@ -150,6 +151,7 @@ internal sealed partial class SqlServerDataStorage
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
             deleted += count;
         }
+
         return deleted;
     }
 

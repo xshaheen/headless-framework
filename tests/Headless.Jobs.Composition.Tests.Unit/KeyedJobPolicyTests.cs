@@ -68,6 +68,7 @@ public sealed class KeyedJobPolicyTests : TestBase
         {
             services.AddSingleton(store);
         }
+
         return services.BuildServiceProvider();
     }
 
