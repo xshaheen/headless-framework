@@ -119,7 +119,22 @@ internal sealed class RequestClient(
             throw ReplyListenerHost.Stopping(requestId);
         }
 
-        var stamp = new RequestStamp(requestId, replyTo, _ComputeDeadline(sentAt, timeout), call.Prepare);
+        var stamp = new RequestStamp(
+            requestId,
+            replyTo,
+            _ComputeDeadline(sentAt, timeout),
+            tenantId =>
+            {
+                // Shutdown can begin while publish middleware runs; a request that has not reached the transport yet
+                // is held back rather than sent for a call that already failed.
+                if (pending.IsClosed)
+                {
+                    throw ReplyListenerHost.Stopping(requestId);
+                }
+
+                call.Prepare(tenantId);
+            }
+        );
 
         PublishReceipt receipt;
         try
@@ -127,6 +142,21 @@ internal sealed class RequestClient(
             receipt = await publisher
                 .PublishRequestAsync(request, _CreateQueueOptions(options), stamp, cancellationToken)
                 .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && call.IsPrepared)
+        {
+            // The transport publish timed out, not the caller: the broker may have taken the request, so its reply can
+            // still arrive. The call stays armed and ends with that reply or with its own timeout.
+            return (TResponse)await call.Outcome.ConfigureAwait(false);
+        }
+        catch (PublisherSentFailedException e)
+        {
+            pending.Discard(call);
+            throw new RequestNotSentException(
+                "The transport reported that the request could not be sent.",
+                requestId,
+                e
+            );
         }
         catch
         {

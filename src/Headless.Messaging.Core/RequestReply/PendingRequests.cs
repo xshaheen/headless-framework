@@ -12,13 +12,16 @@ internal sealed class PendingRequests
 {
     private readonly ConcurrentDictionary<string, PendingRequestEntry> _entries = new(StringComparer.Ordinal);
     private readonly Lock _lock = new();
-    private bool _closed;
+    private volatile bool _closed;
 
     /// <summary>Gets the number of calls still waiting for their outcome.</summary>
     public int PendingCount => _entries.Values.Count(static entry => entry.State is PendingRequestState.Pending);
 
     /// <summary>Gets the number of tracked entries, waiting calls and tombstones alike.</summary>
     public int TrackedCount => _entries.Count;
+
+    /// <summary>Gets whether the requester began to stop, so it accepts no new calls and sends no more requests.</summary>
+    public bool IsClosed => _closed;
 
     /// <summary>
     /// Starts tracking <paramref name="request"/> and arms its timeout, or returns <see langword="false"/> when the
@@ -34,9 +37,12 @@ internal sealed class PendingRequests
             }
 
             _entries[request.RequestId] = request.Entry;
+
+            // Armed under the lock Close takes, so a concurrent Close sees an armed call and ends it; arming after the
+            // lock would leave the timer and the token registration of a call Close already ended.
+            request.Arm(this, dueIn, cancellationToken);
         }
 
-        request.Arm(this, dueIn, cancellationToken);
         return true;
     }
 
@@ -50,6 +56,7 @@ internal sealed class PendingRequests
     {
         request.Discard();
         Remove(request.Entry);
+        request.Entry.StopRetention();
     }
 
     /// <summary>Removes <paramref name="entry"/> if it is still the entry tracked under its id.</summary>
@@ -146,6 +153,13 @@ internal sealed class PendingRequestEntry(string requestId, PendingRequest call)
             retention,
             Timeout.InfiniteTimeSpan
         );
+    }
+
+    // A call that ended while its request was still being sent, such as one the shutdown aborted, is discarded with no
+    // tombstone, so the retention timer has nothing left to remove.
+    internal void StopRetention()
+    {
+        _retentionTimer?.Dispose();
     }
 }
 

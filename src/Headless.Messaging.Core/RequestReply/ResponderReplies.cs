@@ -31,9 +31,6 @@ internal sealed class ResponderReplies(
     ILogger<ResponderReplies> logger
 )
 {
-    // Exception messages can be long; a fault detail is a hint for the caller, not a stack dump.
-    private const int _MaxDetailLength = 1024;
-
     // A host whose transport cannot reply never resolves a responder, but a plain consumer on it can still be reached by
     // a request; such a host drops the fault it cannot send.
     private readonly Lazy<ReplySender?> _sender = new(() =>
@@ -110,7 +107,7 @@ internal sealed class ResponderReplies(
                 fault = fault with
                 {
                     ExceptionType = cause.GetType().FullName ?? cause.GetType().Name,
-                    Detail = LogSanitizer.Sanitize(cause.Message, _MaxDetailLength),
+                    Detail = LogSanitizer.Sanitize(cause.Message, ReplyProtocol.MaxFaultDetailLength),
                 };
             }
 
@@ -138,8 +135,17 @@ internal sealed class ResponderReplies(
 
         request.Headers.TryGetValue(Headers.ReplyTo, out var address);
 
-        // The outcome the reply reports is already durable, so host shutdown must not abandon the send halfway.
-        await sender.SendAsync(address, reply, CancellationToken.None).ConfigureAwait(false);
+        // The outcome the reply reports is already durable, so host shutdown must not abandon the send halfway. The
+        // send is still bounded like any direct publish: a stalled broker must not hold the consumer that awaits it.
+        using var sendTimeout = new CancellationTokenSource(options.Value.TransportPublishTimeout, timeProvider);
+        try
+        {
+            await sender.SendAsync(address, reply, sendTimeout.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException e) when (sendTimeout.IsCancellationRequested)
+        {
+            logger.ReplySendFailed(e, _RequestId(request));
+        }
     }
 
     private Dictionary<string, string?> _CreateHeaders(Message request, string status, ActivityContext span)

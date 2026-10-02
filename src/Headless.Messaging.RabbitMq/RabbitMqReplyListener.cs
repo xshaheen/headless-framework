@@ -20,11 +20,12 @@ namespace Headless.Messaging.RabbitMq;
 /// </para>
 /// <para>
 /// The connection does not recover on its own. When the connection, the channel, or the consumer is lost, the listener
-/// opens a new connection and declares a new queue under a <b>new</b> address, and <see cref="WaitForAddressAsync"/>
-/// returns the new address once it is consumed. A call sent with the old address times out: its queue died with the
-/// old connection, and a reply to it is discarded by the broker. A fresh address, rather than the old name re-declared,
-/// lets the listener recover at once: until the broker notices the old connection is dead, which can take a heartbeat
-/// timeout after a network failure, it still holds the old exclusive queue and refuses to declare that name again.
+/// waits a short jittered backoff, then opens a new connection and declares a new queue under a <b>new</b> address, and
+/// <see cref="WaitForAddressAsync"/> returns the new address once it is consumed. A call sent with the old address times
+/// out: its queue died with the old connection, and a reply to it is discarded by the broker. A fresh address, rather
+/// than the old name re-declared, lets the listener recover after that backoff: until the broker notices the old
+/// connection is dead, which can take a heartbeat timeout after a network failure, it still holds the old exclusive
+/// queue and refuses to declare that name again.
 /// </para>
 /// </remarks>
 internal sealed class RabbitMqReplyListener : IReplyListener
@@ -94,7 +95,6 @@ internal sealed class RabbitMqReplyListener : IReplyListener
             IConnection? connection = null;
             IChannel? channel = null;
             string? address = null;
-            var failed = false;
 
             try
             {
@@ -144,7 +144,6 @@ internal sealed class RabbitMqReplyListener : IReplyListener
             catch (Exception e)
             {
                 _address.Retract();
-                failed = true;
                 _logger.ReplyListenerOpenFailed(e, _backoff.Delay);
             }
             finally
@@ -152,8 +151,9 @@ internal sealed class RabbitMqReplyListener : IReplyListener
                 await _CloseAsync(channel, connection, address).ConfigureAwait(false);
             }
 
-            // A lost listener reconnects at once; only repeated failures to reconnect back off.
-            if (failed && !await _backoff.WaitAsync(_closing.Token).ConfigureAwait(false))
+            // A lost listener backs off too, not only a failed reconnect: a broker that keeps accepting the connection
+            // and then dropping it would otherwise drive a tight reconnect loop. A successful open resets the delay.
+            if (!await _backoff.WaitAsync(_closing.Token).ConfigureAwait(false))
             {
                 return;
             }

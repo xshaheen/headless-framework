@@ -24,6 +24,12 @@ internal sealed class RecordingReplyTransport : IReplyTransport
 
     public Exception? FailWith { get; set; }
 
+    /// <summary>Makes every send wait until its token is canceled, like a broker in a brownout.</summary>
+    public bool StallSends { get; set; }
+
+    /// <summary>Completes when a stalled send has started.</summary>
+    public TaskCompletionSource SendStalled { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
     public ValueTask<IReplyListener> OpenListenerAsync(
         Func<TransportMessage, CancellationToken, ValueTask> onReply,
         CancellationToken cancellationToken = default
@@ -32,15 +38,24 @@ internal sealed class RecordingReplyTransport : IReplyTransport
         throw new NotSupportedException("A responder host only sends replies.");
     }
 
-    public ValueTask SendAsync(string address, TransportMessage reply, CancellationToken cancellationToken = default)
+    public async ValueTask SendAsync(
+        string address,
+        TransportMessage reply,
+        CancellationToken cancellationToken = default
+    )
     {
         if (FailWith is not null)
         {
             throw FailWith;
         }
 
+        if (StallSends)
+        {
+            SendStalled.TrySetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+        }
+
         Sent.Enqueue((address, reply));
-        return ValueTask.CompletedTask;
     }
 }
 

@@ -155,8 +155,9 @@ public sealed class NatsReplyTransportTests(NatsFixture fixture) : TestBase
                     AbortToken
                 );
 
-        // then
-        await act.Should().ThrowAsync<PublisherSentFailedException>();
+        // then — JetStream refused the send, so the request never left: not sent, with the transport's failure inside
+        var thrown = await act.Should().ThrowAsync<RequestNotSentException>();
+        thrown.Which.InnerException.Should().BeOfType<PublisherSentFailedException>();
         stopwatch
             .Elapsed.Should()
             .BeLessThan(timeout / 4, "JetStream answers at once when no stream captures a subject");

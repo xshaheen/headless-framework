@@ -219,6 +219,33 @@ public sealed class SubscribeExecutorReplyTests : TestBase
     }
 
     [Fact]
+    public async Task should_finish_the_attempt_after_the_transport_publish_timeout_when_the_reply_send_never_completes()
+    {
+        // given — a broker that accepts the reply write but never completes it
+        await using var host = ResponderExecutorHost.Create(options =>
+            options.TransportPublishTimeout = TimeSpan.FromSeconds(3)
+        );
+        host.Replies.StallSends = true;
+        host.OnInvoke(() => Task.FromResult(ResponderExecutorHost.Replied(new PriceQuote(42))));
+        var execution = host.Executor.ExecuteAsync(
+            host.Request(TimeSpan.FromSeconds(30)),
+            host.Provider,
+            ResponderExecutorHost.ResponderDescriptor(),
+            AbortToken
+        );
+        await host.Replies.SendStalled.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+
+        // when
+        host.Clock.Advance(TimeSpan.FromSeconds(3));
+
+        // then — the reply is given up, the consumed message stays done
+        var result = await execution.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+        result.Succeeded.Should().BeTrue();
+        host.Replies.Sent.Should().BeEmpty();
+        host.StateWrites().Should().ContainSingle().Which.Status.Should().Be(StatusName.Succeeded);
+    }
+
+    [Fact]
     public async Task should_run_the_responder_under_the_request_tenant_when_the_host_propagates_tenants()
     {
         // given — the responder records the tenant it observes while it answers

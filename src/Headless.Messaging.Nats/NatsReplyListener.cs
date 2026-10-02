@@ -102,7 +102,6 @@ internal sealed class NatsReplyListener : IReplyListener
         while (!_closing.IsCancellationRequested)
         {
             INatsSub<ReadOnlyMemory<byte>>? subscription = null;
-            var failed = false;
 
             try
             {
@@ -145,7 +144,6 @@ internal sealed class NatsReplyListener : IReplyListener
             catch (Exception e)
             {
                 _address.Retract();
-                failed = true;
                 _logger.ReplyListenerOpenFailed(e, _subject, _backoff.Delay);
             }
             finally
@@ -158,7 +156,10 @@ internal sealed class NatsReplyListener : IReplyListener
                 }
             }
 
-            if (failed && !await _backoff.WaitAsync(_closing.Token).ConfigureAwait(false))
+            // A lost subscription backs off too, not only a failed subscribe: a server that keeps accepting the
+            // subscription and then ending it would otherwise drive a tight resubscribe loop. A successful subscribe
+            // resets the delay.
+            if (!await _backoff.WaitAsync(_closing.Token).ConfigureAwait(false))
             {
                 return;
             }

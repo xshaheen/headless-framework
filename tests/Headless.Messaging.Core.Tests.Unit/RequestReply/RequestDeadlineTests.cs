@@ -44,6 +44,58 @@ public sealed class RequestDeadlineTests : TestBase
     }
 
     [Fact]
+    public async Task should_end_a_crash_recovered_request_as_expired_without_the_exhausted_callback_or_a_fault()
+    {
+        // given — the process died during the request's final inline attempt, and the row is picked up after the
+        // deadline: the reserved attempt count already covers the whole inline budget
+        await using var host = ResponderExecutorHost.Create(options =>
+            options.RetryPolicy.RetryStrategy = TestRetryStrategies.ZeroDelay(1)
+        );
+        var message = host.Request(TimeSpan.FromSeconds(5));
+        message.InlineAttempts = 2;
+        host.Clock.Advance(TimeSpan.FromSeconds(6));
+
+        // when
+        var result = await host.ExecuteAsync(message, AbortToken);
+
+        // then — ended as expired: no handler, no exhausted callback, no fault to a caller that is gone
+        result.Succeeded.Should().BeFalse();
+        host.Invoker.ReceivedCalls().Should().BeEmpty();
+        host.StateWrites().Should().ContainSingle().Which.Should().Be((StatusName.Failed, (RetryDelay?)null));
+        host.ExhaustedCalls.Should().Be(0);
+        host.Replies.Sent.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_run_the_consumer_of_a_bus_message_that_carries_an_expired_request_deadline()
+    {
+        // given — request headers on a Bus message, where no request can live
+        await using var host = ResponderExecutorHost.Create();
+        var message = host.Request(TimeSpan.FromSeconds(5));
+        message.Lane = MessageLane.Bus;
+        host.Clock.Advance(TimeSpan.FromSeconds(6));
+        var busConsumer = new ConsumerExecutorDescriptor
+        {
+            MethodName = "ConsumeAsync",
+            Lane = MessageLane.Bus,
+            ConsumerType = typeof(QuoteResponder),
+            MessageType = typeof(PriceQuoteRequest),
+            MessageName = ResponderExecutorHost.MessageName,
+            SubscriptionName = "tests",
+            ConsumerIdentity = QuoteResponder.Identity,
+            MessageContractVersion = "1",
+        };
+
+        // when
+        var result = await host.ExecuteAsync(message, AbortToken, busConsumer);
+
+        // then — consumed like any Bus message: no expiry, no reply
+        result.Succeeded.Should().BeTrue();
+        host.Invoker.ReceivedCalls().Should().ContainSingle();
+        host.Replies.Sent.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task should_treat_a_request_as_expired_when_the_responder_clock_runs_ahead_of_the_caller()
     {
         // given — the caller stamped a 5 s deadline, but the responder's clock is 10 s ahead of the caller's

@@ -166,7 +166,10 @@ internal sealed class SubscribeExecutor(
         return await _retryPipeline
             .ExecuteAsync(
                 (_, ct) => _ExecuteWithoutRetryAsync(message, descriptor!, dispatchServices, executionState, ct),
-                (inlineRetries, exception, delay, strategyFailed, ct) =>
+                // The dispatch token, not the pipeline's linked one: a linked token learns of a host stop only when the
+                // dispatch token's cancellation callbacks run, which CancelAsync defers, so a shutdown failure could
+                // otherwise be judged before its token shows the stop and be recorded as a consumer failure.
+                (inlineRetries, exception, delay, strategyFailed, _) =>
                     _HandleRetryAsync(
                         message,
                         exception,
@@ -175,7 +178,7 @@ internal sealed class SubscribeExecutor(
                         delay,
                         strategyFailed,
                         executionState,
-                        ct
+                        cancellationToken
                     ),
                 (inlineRetries, exception, ct) =>
                     _HandleNonRetryableAsync(message, exception, dispatchServices, inlineRetries, executionState, ct),
@@ -213,6 +216,14 @@ internal sealed class SubscribeExecutor(
                 return MessagingRetryAttempt.Completed(OperateResult.Success);
             }
 
+            // The recovery transition would exhaust the request, raising the exhausted callback and faulting a caller
+            // that is gone; an expired request ends silently instead, as it does at any other attempt start.
+            if (RequestEnvelope.IsExpired(message.Lane, message.Origin.Headers, timeProvider.GetUtcNow()))
+            {
+                return await _EndExpiredRequestAsync(message, dispatchServices, executionState, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
             return recoveryAttempt;
         }
 
@@ -234,7 +245,7 @@ internal sealed class SubscribeExecutor(
 
         // Checked at every attempt start, persisted pickups included: a request can wait in the inbox, behind an open
         // circuit, or for a crashed attempt's lease long after its caller gave up.
-        if (RequestEnvelope.IsExpired(message.Origin.Headers, timeProvider.GetUtcNow()))
+        if (RequestEnvelope.IsExpired(message.Lane, message.Origin.Headers, timeProvider.GetUtcNow()))
         {
             return await _EndExpiredRequestAsync(message, dispatchServices, executionState, cancellationToken)
                 .ConfigureAwait(false);
@@ -492,7 +503,7 @@ internal sealed class SubscribeExecutor(
     private bool _EndsRequestRetries(MediumMessage message, int inlineRetries, TimeSpan delay)
     {
         var headers = message.Origin.Headers;
-        if (!RequestEnvelope.IsRequest(headers))
+        if (!RequestEnvelope.IsRequest(message.Lane, headers))
         {
             return false;
         }
@@ -687,7 +698,7 @@ internal sealed class SubscribeExecutor(
             affected
             && decision.Outcome is not MessagingRetryDecision.Kind.Continue
             && !decision.IsRequestExpired
-            && RequestEnvelope.IsRequest(message.Origin.Headers)
+            && RequestEnvelope.IsRequest(message.Lane, message.Origin.Headers)
             && _GetResponderReplies() is { } replies
         )
         {
@@ -1041,7 +1052,7 @@ internal sealed class SubscribeExecutor(
             return null;
         }
 
-        if (!RequestEnvelope.IsRequest(message.Origin.Headers))
+        if (!RequestEnvelope.IsRequest(message.Lane, message.Origin.Headers))
         {
             // A plain enqueue reaches a responder like any Queue consumer; nobody awaits its answer.
             if (logger.IsEnabled(LogLevel.Debug))

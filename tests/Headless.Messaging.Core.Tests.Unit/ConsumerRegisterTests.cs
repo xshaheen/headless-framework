@@ -1170,7 +1170,8 @@ public sealed class ConsumerRegisterTests : TestBase
         Func<FailedInfo, CancellationToken, Task>? onExhausted = null,
         ICircuitBreakerStateManager? circuitBreaker = null,
         IReadOnlyDictionary<string, string?>? publisherHeaders = null,
-        Action<IServiceCollection>? configureServices = null
+        Action<IServiceCollection>? configureServices = null,
+        MessageLane lane = MessageLane.Bus
     )
     {
         await using var client = new InboxConsumerClient();
@@ -1201,6 +1202,11 @@ public sealed class ConsumerRegisterTests : TestBase
             setup.UseInMemory();
             setup.UseProcessLocalInMemoryStorage();
             setup.AddConsumer<BootstrapReadyConsumer>();
+            if (lane is MessageLane.Queue)
+            {
+                setup.AddConsumer<PlainQueueConsumer>();
+            }
+
             configureOptions?.Invoke(setup.Options);
             if (onExhausted is not null)
             {
@@ -1228,6 +1234,7 @@ public sealed class ConsumerRegisterTests : TestBase
 
         services.AddSingleton(dispatcher);
         services.AddSingleton<BootstrapReadyConsumer>();
+        services.AddSingleton<PlainQueueConsumer>();
         if (circuitBreaker is not null)
         {
             services.AddSingleton(circuitBreaker);
@@ -1255,7 +1262,18 @@ public sealed class ConsumerRegisterTests : TestBase
             provider.GetRequiredService<Headless.Messaging.Persistence.IDataStorage>(),
             out var recorder
         );
-        _AttachInboxProcessor(provider, register, client, dispatcher, serializer, storage);
+        _AttachInboxProcessor(
+            provider,
+            register,
+            client,
+            dispatcher,
+            serializer,
+            storage,
+            // A Queue subscription is keyed by its message name, a Bus subscription by its consumer identity.
+            groupKey: lane is MessageLane.Queue
+                ? new ConsumerSubscriptionKey("ready-messageName", MessageLane.Queue)
+                : null
+        );
 
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
@@ -1464,7 +1482,8 @@ public sealed class ConsumerRegisterTests : TestBase
             {
                 services.AddSingleton<TimeProvider>(clock);
                 services.AddSingleton<IReplyTransport>(replies);
-            }
+            },
+            lane: MessageLane.Queue
         );
 
         // then — settled and dropped: no inbox row, no poison row, no handler, no callback, no reply
@@ -1503,7 +1522,8 @@ public sealed class ConsumerRegisterTests : TestBase
             {
                 services.AddSingleton<TimeProvider>(clock);
                 services.AddSingleton<IReplyTransport>(replies);
-            }
+            },
+            lane: MessageLane.Queue
         );
 
         // then — no work ran, and the caller learns so at once instead of timing out
@@ -1524,6 +1544,42 @@ public sealed class ConsumerRegisterTests : TestBase
         reply.Headers[Headers.TenantId].Should().Be("tenant-a");
         reply.Headers[Headers.MessageId].Should().NotBeNullOrWhiteSpace();
         System.Text.Encoding.UTF8.GetString(reply.Body.Span).Should().Be("""{"code":"no_responder"}""");
+    }
+
+    [Fact]
+    public async Task receive_bus_message_carrying_request_headers_runs_its_bus_consumer()
+    {
+        // given — a foreign Bus message that happens to carry the request headers, with a deadline already past
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 10, 2, 12, 0, 0, TimeSpan.Zero));
+        var replies = new Tests.RequestReply.RecordingReplyTransport();
+        var outcomes = new ConcurrentQueue<string>();
+        using var listener = _ListenToReceiveOutcomes(outcomes);
+
+        // when
+        await using var run = await _RunReceiveDeliveryAsync(
+            null,
+            "receive-bus-with-request-headers",
+            "{}"u8.ToArray(),
+            publisherHeaders: _RequestHeaders(clock.GetUtcNow().AddSeconds(-1)),
+            configureServices: services =>
+            {
+                services.AddSingleton<TimeProvider>(clock);
+                services.AddSingleton<IReplyTransport>(replies);
+            }
+        );
+
+        // then — requests live on the Queue lane only, so the Bus message is admitted and dispatched as usual
+        run.Client.CommitCount.Should().Be(1);
+        run.Storage.Admissions.Should().ContainSingle();
+        await run
+            .Dispatcher.Received(1)
+            .EnqueueToExecute(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<ConsumerExecutorDescriptor>(),
+                Arg.Any<CancellationToken>()
+            );
+        replies.Sent.Should().BeEmpty();
+        outcomes.Should().NotContain("expired").And.NotContain("skipped");
     }
 
     private static Dictionary<string, string?> _RequestHeaders(DateTimeOffset deadline)
@@ -1974,6 +2030,20 @@ public sealed class ConsumerRegisterTests : TestBase
     }
 
     private sealed record BootstrapReadyMessage;
+
+    [QueueConsumer(Identity)]
+    private sealed class PlainQueueConsumer : IConsume<BootstrapReadyMessage>
+    {
+        public const string Identity = "tests.consumer-register.queue";
+
+        public ValueTask ConsumeAsync(
+            ConsumeContext<BootstrapReadyMessage> context,
+            CancellationToken cancellationToken
+        )
+        {
+            return ValueTask.CompletedTask;
+        }
+    }
 
     private sealed class QueueOnlyConsumer : IConsume<QueueOnlyMessage>
     {

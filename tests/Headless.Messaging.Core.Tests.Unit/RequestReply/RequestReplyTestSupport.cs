@@ -43,6 +43,12 @@ internal sealed class FakeResponder : IQueueTransport
 
     public Exception? FailWith { get; set; }
 
+    /// <summary>
+    /// Makes each send reach the broker but never be acknowledged, like a broker that stalls after accepting the
+    /// request, so the send ends only when the publish token is canceled.
+    /// </summary>
+    public bool StallAfterSend { get; set; }
+
     public BrokerAddress BrokerAddress => new("FakeResponder", "localhost");
 
     public async Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default)
@@ -54,6 +60,11 @@ internal sealed class FakeResponder : IQueueTransport
 
         Sent.Enqueue(message);
         await _requests.Writer.WriteAsync(message, cancellationToken);
+
+        if (StallAfterSend)
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+        }
 
         if (OnRequest is not null)
         {

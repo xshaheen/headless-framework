@@ -39,8 +39,15 @@ public interface IRequestClient
     /// <exception cref="ResponseContractMismatchException">
     /// The reply carries a response contract other than the one expected for <typeparamref name="TResponse"/>.
     /// </exception>
-    /// <exception cref="RequestNotSentException">The request never left the caller.</exception>
+    /// <exception cref="RequestNotSentException">
+    /// The request never left the caller, or the transport reported the send as failed.
+    /// </exception>
     /// <exception cref="RequestAbortedException">The requesting host stopped before the reply arrived.</exception>
+    /// <exception cref="Exception">
+    /// A <c>MessageDeserializationException</c>: the reply carries the expected response contract, but its body cannot
+    /// be read as <typeparamref name="TResponse"/>. It is the one failure outside <see cref="RequestReplyException"/>
+    /// besides the caller's own cancellation.
+    /// </exception>
     /// <exception cref="InvalidOperationException">
     /// The call runs inside a transactional inbox unit, or <see cref="RequestOptions.Headers"/> contains a reserved
     /// messaging header or control characters.

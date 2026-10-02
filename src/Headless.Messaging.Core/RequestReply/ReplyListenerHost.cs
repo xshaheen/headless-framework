@@ -142,6 +142,9 @@ internal sealed class ReplyListenerHost(
             "The requester is stopping and sends no new requests.",
             requestId,
             innerException
-        );
+        )
+        {
+            IsRequesterStopping = true,
+        };
     }
 }

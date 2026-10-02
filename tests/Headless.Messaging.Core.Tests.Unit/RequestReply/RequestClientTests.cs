@@ -168,10 +168,11 @@ public sealed class RequestClientTests : TestBase
     }
 
     [Fact]
-    public async Task should_surface_the_send_failure_and_remove_the_pending_call_when_the_transport_throws()
+    public async Task should_throw_not_sent_with_the_send_failure_and_remove_the_pending_call_when_the_broker_rejects_it()
     {
         // given
         await using var provider = await _StartHostAsync();
+        using var measurements = new RequestReplyMeasurements();
         _responder.FailWith = new InvalidOperationException("broker unreachable");
 
         // when
@@ -183,7 +184,92 @@ public sealed class RequestClientTests : TestBase
                 );
 
         // then
-        await act.Should().ThrowAsync<PublisherSentFailedException>();
+        var thrown = await act.Should().ThrowAsync<RequestNotSentException>();
+        thrown.Which.RequestId.Should().NotBeNullOrWhiteSpace();
+        thrown
+            .Which.InnerException.Should()
+            .BeOfType<PublisherSentFailedException>()
+            .Which.InnerException.Should()
+            .BeOfType<InvalidOperationException>();
+        _Pending(provider).TrackedCount.Should().Be(0);
+        measurements.OutcomeValues.Should().Equal("not_sent");
+    }
+
+    [Fact]
+    public async Task should_keep_waiting_and_return_the_reply_when_the_transport_publish_times_out()
+    {
+        // given — the broker took the request but never acknowledged it within the transport publish timeout
+        await using var provider = await _StartHostAsync(configureOptions: options =>
+            options.TransportPublishTimeout = TimeSpan.FromSeconds(2)
+        );
+        _responder.StallAfterSend = true;
+        var call = _Client(provider)
+            .RequestAsync<PriceQuoteRequest, PriceQuote>(
+                new PriceQuoteRequest("sku-1"),
+                new RequestOptions { Timeout = _Timeout },
+                AbortToken
+            );
+        var request = await _responder.NextRequestAsync(AbortToken);
+
+        // when — the send times out, then the responder that did receive the request answers
+        _time.Advance(TimeSpan.FromSeconds(2));
+        await Replies.SendOkAsync(provider, request, new PriceQuote(11m));
+
+        // then
+        (await call.WaitAsync(TimeSpan.FromSeconds(10), AbortToken))
+            .Should()
+            .Be(new PriceQuote(11m));
+    }
+
+    [Fact]
+    public async Task should_time_out_when_the_transport_publish_times_out_and_no_reply_arrives()
+    {
+        // given
+        await using var provider = await _StartHostAsync(configureOptions: options =>
+            options.TransportPublishTimeout = TimeSpan.FromSeconds(2)
+        );
+        using var measurements = new RequestReplyMeasurements();
+        _responder.StallAfterSend = true;
+        var call = _Client(provider)
+            .RequestAsync<PriceQuoteRequest, PriceQuote>(
+                new PriceQuoteRequest("sku-1"),
+                new RequestOptions { Timeout = _Timeout },
+                AbortToken
+            );
+        var request = await _responder.NextRequestAsync(AbortToken);
+
+        // when — the send times out, and nothing answers before the call's own timeout
+        _time.Advance(TimeSpan.FromSeconds(2));
+        _time.Advance(_Timeout - TimeSpan.FromSeconds(2));
+
+        // then — the call stays tracked, so a reply after the timeout is counted as late, not as unknown
+        var thrown = await call.Awaiting(x => x.WaitAsync(TimeSpan.FromSeconds(10), AbortToken))
+            .Should()
+            .ThrowAsync<RequestTimeoutException>();
+        thrown.Which.RequestId.Should().Be(request.Headers[Headers.RequestId]);
+        await Replies.SendOkAsync(provider, request, new PriceQuote(1m));
+        await measurements.WaitForDropAsync("late", AbortToken);
+    }
+
+    [Fact]
+    public async Task should_send_nothing_and_throw_not_sent_when_the_requester_stops_while_the_request_is_being_published()
+    {
+        // given — shutdown begins after the call registered, while publish middleware still runs
+        await using var provider = await _StartHostAsync(messaging =>
+            messaging.AddPublishMiddlewareFor<ClosingPendingRequestsMiddleware, PriceQuoteRequest>(MessageLane.Queue)
+        );
+
+        // when
+        var act = () =>
+            _Client(provider)
+                .RequestAsync<PriceQuoteRequest, PriceQuote>(
+                    new PriceQuoteRequest("sku-1"),
+                    cancellationToken: AbortToken
+                );
+
+        // then
+        await act.Should().ThrowAsync<RequestNotSentException>();
+        _responder.Sent.Should().BeEmpty();
         _Pending(provider).TrackedCount.Should().Be(0);
     }
 
@@ -646,7 +732,8 @@ public sealed class RequestClientTests : TestBase
         Action<MessagingBuilder>? configureMessaging = null,
         Action<IServiceCollection>? configureServices = null,
         IServiceCollection? services = null,
-        bool requests = true
+        bool requests = true,
+        Action<MessagingOptions>? configureOptions = null
     )
     {
         services ??= new ServiceCollection();
@@ -658,6 +745,7 @@ public sealed class RequestClientTests : TestBase
         {
             setup.UseInMemory();
             setup.UseProcessLocalInMemoryStorage();
+            configureOptions?.Invoke(setup.Options);
 
             if (requests)
             {
@@ -677,10 +765,18 @@ public sealed class RequestClientTests : TestBase
         Action<IServiceCollection>? configureServices = null,
         Action<RequestReplyOptions>? configureRequests = null,
         IServiceCollection? services = null,
-        bool requests = true
+        bool requests = true,
+        Action<MessagingOptions>? configureOptions = null
     )
     {
-        var provider = _BuildHost(configureRequests, configureMessaging, configureServices, services, requests);
+        var provider = _BuildHost(
+            configureRequests,
+            configureMessaging,
+            configureServices,
+            services,
+            requests,
+            configureOptions
+        );
         await provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
         return provider;
     }
@@ -710,6 +806,17 @@ public sealed class RequestClientTests : TestBase
         public ValueTask InvokeAsync(PublishContext<PriceQuoteRequest> context, Func<ValueTask> next)
         {
             return ValueTask.CompletedTask;
+        }
+    }
+
+    /// <summary>Starts the requester's shutdown from inside the publish pipeline, after the call registered.</summary>
+    private sealed class ClosingPendingRequestsMiddleware(PendingRequests pending)
+        : IPublishMiddleware<PublishContext<PriceQuoteRequest>>
+    {
+        public async ValueTask InvokeAsync(PublishContext<PriceQuoteRequest> context, Func<ValueTask> next)
+        {
+            pending.Close();
+            await next();
         }
     }
 

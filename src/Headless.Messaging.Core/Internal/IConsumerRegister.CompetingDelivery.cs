@@ -127,8 +127,8 @@ internal sealed partial class ConsumerRegister
                 // it: its caller already stopped waiting, or no responder can answer it. Like a receive skip, it leaves
                 // no storage row, fires no exhausted callback, and its probe is released by the finally below.
                 if (
-                    RequestEnvelope.IsRequest(transportMessage.Headers)
-                    && _ResolveUnservableRequestOutcome(transportMessage, executor, consumerIdentity)
+                    RequestEnvelope.IsRequest(lane, transportMessage.Headers)
+                    && _ResolveUnservableRequestOutcome(lane, transportMessage, executor, consumerIdentity)
                         is { } requestOutcome
                 )
                 {
@@ -362,7 +362,7 @@ internal sealed partial class ConsumerRegister
 
                 // A request rejected on arrival never reaches a consumer; its caller learns so at once. Only the delivery
                 // that stored the poison row answers, so a redelivery of it stays silent.
-                if (stored && RequestEnvelope.IsRequest(message.Headers) && _GetResponderReplies() is { } replies)
+                if (stored && RequestEnvelope.IsRequest(lane, message.Headers) && _GetResponderReplies() is { } replies)
                 {
                     await replies
                         .SendFaultAsync(
@@ -589,12 +589,13 @@ internal sealed partial class ConsumerRegister
     /// respond, which is then answered with a <c>no_responder</c> fault.
     /// </summary>
     private UnservableRequest? _ResolveUnservableRequestOutcome(
+        MessageLane lane,
         TransportMessage transportMessage,
         ConsumerExecutorDescriptor? executor,
         string consumerIdentity
     )
     {
-        if (RequestEnvelope.IsExpired(transportMessage.Headers, _timeProvider.GetUtcNow()))
+        if (RequestEnvelope.IsExpired(lane, transportMessage.Headers, _timeProvider.GetUtcNow()))
         {
             if (_logger.IsEnabled(LogLevel.Information))
             {

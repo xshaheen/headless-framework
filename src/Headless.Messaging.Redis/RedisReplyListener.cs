@@ -166,6 +166,8 @@ internal sealed class RedisReplyListener : IReplyListener
                 }
             }
 
+            // A lost subscription backs off as a failed one does, so a server that keeps accepting the subscription and
+            // then ending it cannot drive a tight resubscribe loop. A successful subscribe resets the delay.
             if (!await _backoff.WaitAsync(_closing.Token).ConfigureAwait(false))
             {
                 return;

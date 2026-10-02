@@ -5,15 +5,21 @@ using System.Globalization;
 namespace Headless.Messaging.RequestReply;
 
 /// <summary>
-/// Reads the request headers a responder acts on. Only a message that names a reply address is a request: every other
-/// Queue message keeps the ordinary consume path, whatever else it carries.
+/// Reads the request headers a responder acts on. Only a Queue message that names a reply address is a request: every
+/// other Queue message, and every Bus message whatever headers it carries, keeps the ordinary consume path.
 /// </summary>
 internal static class RequestEnvelope
 {
-    /// <summary>Whether <paramref name="headers"/> belong to a request whose caller awaits a reply.</summary>
-    public static bool IsRequest(IDictionary<string, string?> headers)
+    /// <summary>
+    /// Whether a message on <paramref name="lane"/> with <paramref name="headers"/> is a request whose caller awaits a
+    /// reply. Requests are sent only on the Queue lane, so request headers on a Bus message, such as one a foreign
+    /// publisher wrote, make it no request.
+    /// </summary>
+    public static bool IsRequest(MessageLane lane, IDictionary<string, string?> headers)
     {
-        return headers.TryGetValue(Headers.ReplyTo, out var replyTo) && !string.IsNullOrWhiteSpace(replyTo);
+        return lane is MessageLane.Queue
+            && headers.TryGetValue(Headers.ReplyTo, out var replyTo)
+            && !string.IsNullOrWhiteSpace(replyTo);
     }
 
     /// <summary>
@@ -41,8 +47,8 @@ internal static class RequestEnvelope
     /// Whether the request's caller stopped waiting by <paramref name="now"/>, read on this host's clock. Clock skew
     /// between the two hosts shifts the window by the skew.
     /// </summary>
-    public static bool IsExpired(IDictionary<string, string?> headers, DateTimeOffset now)
+    public static bool IsExpired(MessageLane lane, IDictionary<string, string?> headers, DateTimeOffset now)
     {
-        return IsRequest(headers) && GetDeadline(headers) is { } deadline && now >= deadline;
+        return IsRequest(lane, headers) && GetDeadline(headers) is { } deadline && now >= deadline;
     }
 }

@@ -3,8 +3,10 @@
 namespace Headless.Messaging;
 
 /// <summary>
-/// Base type of every failure an <see cref="IRequestClient"/> call reports, so a caller can catch all of them at once.
-/// Only the caller's own cancellation surfaces as <see cref="OperationCanceledException"/> instead.
+/// Base type of the request/reply outcomes an <see cref="IRequestClient"/> call fails with, so a caller can catch all of
+/// them at once. Two failures fall outside it: the caller's own cancellation surfaces as
+/// <see cref="OperationCanceledException"/>, and a response body that cannot be read as the response type surfaces as
+/// <c>MessageDeserializationException</c>.
 /// </summary>
 /// <param name="message">A description of the failure.</param>
 /// <param name="requestId">The request's identifier, or <see langword="null"/> when none was assigned yet.</param>
