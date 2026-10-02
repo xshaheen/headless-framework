@@ -609,6 +609,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         {
             return null;
         }
+
         return inserted is Guid insertedId ? insertedId : null;
     }
 
