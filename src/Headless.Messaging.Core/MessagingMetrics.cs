@@ -467,8 +467,9 @@ internal static class MessagingMetrics
 
     /// <summary>
     /// Records one receive-stage outcome per delivery: <c>accepted</c> when the delivery continued to
-    /// admission, <c>skipped</c> on a middleware-declared skip, <c>rejected</c> on poison-on-arrival
-    /// (explicit reject, middleware fault, undeclared outcome, or a Stage A deserialization failure),
+    /// admission, <c>skipped</c> on a middleware-declared skip or a request that reached a consumer that does not
+    /// respond, <c>expired</c> on a request that arrived after its caller stopped waiting, <c>rejected</c> on
+    /// poison-on-arrival (explicit reject, middleware fault, undeclared outcome, or a Stage A deserialization failure),
     /// and <c>cancelled</c> when the receive was aborted by its bound cancellation token.
     /// </summary>
     internal static void RecordReceiveOutcome(string outcome)

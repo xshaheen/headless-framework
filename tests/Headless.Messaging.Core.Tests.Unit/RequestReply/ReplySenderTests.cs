@@ -13,6 +13,11 @@ namespace Tests.RequestReply;
 /// Covers the one place replies leave a responder host: a request names its own reply address, so an address outside
 /// the reserved reply namespace must never reach the transport.
 /// </summary>
+/// <remarks>
+/// Its dropped-reply listener is process-wide, so it shares the request/reply collection with the caller tests, whose
+/// late replies would otherwise land in its measurements.
+/// </remarks>
+[Collection(RequestReplyCollection.Name)]
 public sealed class ReplySenderTests : TestBase
 {
     private const string _ValidAddress = "headless.reply.0f8fad5bd9cb469fa16570867728950e";

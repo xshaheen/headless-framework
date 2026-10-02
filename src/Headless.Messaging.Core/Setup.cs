@@ -11,6 +11,7 @@ using Headless.Messaging.Coordination;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Processor;
 using Headless.Messaging.Registration;
+using Headless.Messaging.RequestReply;
 using Headless.Messaging.Runtime;
 using Headless.Messaging.Serialization;
 using Headless.Messaging.Transactions;
@@ -207,6 +208,9 @@ public static class SetupMessaging
 
         // Resolved only by a responder host, which bootstrap admits only on a transport that registers IReplyTransport.
         services.TryAddSingleton<ReplySender>();
+
+        // Every consuming host can be reached by a request, so every one can answer it, even with a fault only.
+        services.TryAddSingleton<ResponderReplies>();
 
         services.TryAddSingleton<ISerializer, JsonUtf8Serializer>();
 

@@ -6,6 +6,7 @@ using Headless.Messaging.Diagnostics;
 using Headless.Messaging.Exceptions;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
+using Headless.Messaging.RequestReply;
 using Headless.Messaging.Retry;
 using Headless.Messaging.Runtime;
 using Headless.Messaging.Transport;
@@ -20,6 +21,9 @@ namespace Headless.Messaging.Internal;
 /// </summary>
 internal sealed partial class ConsumerRegister
 {
+    private const string _ReceiveOutcomeExpired = "expired";
+    private const string _ReceiveOutcomeNoResponder = "skipped";
+
     /// <summary>
     /// Delivers one message of a competing subscription: resolves its consumer and circuit, runs the receive stage,
     /// then stores and dispatches it through the inbox, or stores a poison row and commits.
@@ -122,6 +126,44 @@ internal sealed partial class ConsumerRegister
 
             try
             {
+                // A request is settled here, before the receive stage and inbox admission, when no work may run for
+                // it: its caller already stopped waiting, or no responder can answer it. Like a receive skip, it leaves
+                // no storage row, fires no exhausted callback, and its probe is released by the finally below.
+                if (
+                    RequestEnvelope.IsRequest(transportMessage.Headers)
+                    && _ResolveUnservableRequestOutcome(transportMessage, executor, consumerIdentity)
+                        is { } requestOutcome
+                )
+                {
+                    MessagingMetrics.RecordReceiveOutcome(requestOutcome);
+                    traceHandle.Activity?.SetTag(MessagingMetrics.TagReceiveOutcome, requestOutcome);
+
+                    _TracingAfter(traceHandle, transportMessage, _serverAddress);
+                    consumeOutcomeRecorded = true;
+
+                    // Settlement is must-complete: never abandon a commit on host shutdown.
+                    await client.CommitAsync(sender, CancellationToken.None).ConfigureAwait(false);
+                    transportSettled = true;
+
+                    // The caller of an expired request is gone; the caller of an unanswerable one learns that no work
+                    // ran instead of timing out.
+                    if (
+                        string.Equals(requestOutcome, _ReceiveOutcomeNoResponder, StringComparison.Ordinal)
+                        && _GetResponderReplies() is { } noResponderReplies
+                    )
+                    {
+                        await noResponderReplies
+                            .SendFaultAsync(
+                                new Message(transportMessage.Headers, value: null),
+                                RequestFaultCodes.NoResponder,
+                                exception: null
+                            )
+                            .ConfigureAwait(false);
+                    }
+
+                    return;
+                }
+
                 if (!canFindSubscriber)
                 {
                     var safeName = LogSanitizer.Sanitize(name);
@@ -301,6 +343,21 @@ internal sealed partial class ConsumerRegister
                 // Settlement is must-complete: never abandon a commit on host shutdown.
                 await client.CommitAsync(sender, CancellationToken.None).ConfigureAwait(false);
                 transportSettled = true;
+
+                // A request rejected on arrival never reaches a consumer; its caller learns so at once. Only the delivery
+                // that stored the poison row answers, so a redelivery of it stays silent.
+                if (stored && RequestEnvelope.IsRequest(message.Headers) && _GetResponderReplies() is { } replies)
+                {
+                    await replies
+                        .SendFaultAsync(
+                            message,
+                            dispatchBypassException is SubscriberNotFoundException
+                                ? RequestFaultCodes.NoResponder
+                                : RequestFaultCodes.RequestRejected,
+                            dispatchBypassException
+                        )
+                        .ConfigureAwait(false);
+                }
 
                 var bypassCallback = _options.RetryPolicy.OnExhausted;
 
@@ -507,5 +564,50 @@ internal sealed partial class ConsumerRegister
                 _circuitBreakerStateManager?.ReleaseHalfOpenProbe(circuitKey, admissionEpoch);
             }
         }
+    }
+
+    /// <summary>
+    /// The receive outcome of a request no consumer may run for, or <see langword="null"/> when it continues to the
+    /// receive stage: <c>expired</c> when its caller already stopped waiting, and <c>skipped</c> when it reached a
+    /// consumer that does not respond, which is then answered with a <c>no_responder</c> fault.
+    /// </summary>
+    private string? _ResolveUnservableRequestOutcome(
+        TransportMessage transportMessage,
+        ConsumerExecutorDescriptor? executor,
+        string consumerIdentity
+    )
+    {
+        if (RequestEnvelope.IsExpired(transportMessage.Headers, _timeProvider.GetUtcNow()))
+        {
+            if (_logger.IsEnabled(LogLevel.Information))
+            {
+                _logger.RequestExpiredOnReceive(
+                    LogSanitizer.Sanitize(transportMessage.Id),
+                    LogSanitizer.Sanitize(transportMessage.Name),
+                    LogSanitizer.Sanitize(consumerIdentity)
+                );
+            }
+
+            return _ReceiveOutcomeExpired;
+        }
+
+        if (executor is { IsResponder: false })
+        {
+            _logger.RequestHasNoResponder(
+                LogSanitizer.Sanitize(transportMessage.Id),
+                LogSanitizer.Sanitize(transportMessage.Name),
+                LogSanitizer.Sanitize(consumerIdentity)
+            );
+
+            return _ReceiveOutcomeNoResponder;
+        }
+
+        return null;
+    }
+
+    // Resolved on first use: a host that never receives a request never builds the reply path.
+    private ResponderReplies? _GetResponderReplies()
+    {
+        return _responderReplies ??= serviceProvider.GetService<ResponderReplies>();
     }
 }

@@ -7,6 +7,7 @@ using System.Runtime.CompilerServices;
 using FastExpressionCompiler;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Messages;
+using Headless.Messaging.MultiTenancy;
 using Headless.UnitOfWork;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -62,7 +63,16 @@ internal sealed class ConsumeMiddlewarePipeline(
     // direct middleware is registered at all and skip the scoped GetServices + array build on the (common)
     // zero-middleware consume path. A null probe (non-conforming container) always takes the slow path.
     private readonly IServiceProviderIsService? _serviceProbe = serviceProvider.GetService<IServiceProviderIsService>();
+
     private readonly ConcurrentDictionary<Type, bool> _hasDirectMiddleware = new();
+
+    // Tenant propagation registers only Bus consume middleware, which never wraps a Queue responder. A host that
+    // propagates tenants still runs a responder under the request's tenant, the tenant its reply goes back under.
+    private readonly Lazy<bool> _propagatesTenant = new(() =>
+        descriptorRegistry?.Descriptors.Any(static descriptor =>
+            descriptor.MiddlewareType == typeof(TenantPropagationConsumeMiddleware)
+        ) == true
+    );
 
     public async Task<ConsumerExecutedResult> ExecuteAsync(
         ConsumerContext context,
@@ -111,6 +121,11 @@ internal sealed class ConsumeMiddlewarePipeline(
             context.UnitOfWork,
             cancellationToken
         );
+        consumeContext.IsResponder = descriptor.IsResponder;
+        using var tenantScope =
+            descriptor.IsResponder && _propagatesTenant.Value
+                ? TenantContextScope.ChangeFromEnvelope(provider, context.MediumMessage.Origin, logger)
+                : null;
         var previousConsumeContext = consumeContextAccessor?.Current;
 
         try
@@ -156,7 +171,10 @@ internal sealed class ConsumeMiddlewarePipeline(
         }
 
         string? callbackName = null;
-        if (!consumeContext.IsResponseSuppressed)
+
+        // A responder answers through the reply, never through a callback, so a callback name the message carries is
+        // ignored for it rather than answering the caller twice.
+        if (!consumeContext.IsResponseSuppressed && !descriptor.IsResponder)
         {
             callbackName =
                 consumeContext.ResponseDestination
@@ -176,7 +194,12 @@ internal sealed class ConsumeMiddlewarePipeline(
             callbackName,
             callbackHeaders,
             consumeContext.ResponseCallbackName
-        );
+        )
+        {
+            HasReply = consumeContext.HasReply,
+            Reply = consumeContext.Reply,
+            ReplyType = consumeContext.ReplyType,
+        };
     }
 
     private async ValueTask _InvokeInnerAsync(

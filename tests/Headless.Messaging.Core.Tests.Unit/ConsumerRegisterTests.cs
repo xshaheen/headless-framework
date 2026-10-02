@@ -1169,7 +1169,8 @@ public sealed class ConsumerRegisterTests : TestBase
         Action<MessagingOptions>? configureOptions = null,
         Func<FailedInfo, CancellationToken, Task>? onExhausted = null,
         ICircuitBreakerStateManager? circuitBreaker = null,
-        IReadOnlyDictionary<string, string?>? publisherHeaders = null
+        IReadOnlyDictionary<string, string?>? publisherHeaders = null,
+        Action<IServiceCollection>? configureServices = null
     )
     {
         await using var client = new InboxConsumerClient();
@@ -1231,6 +1232,8 @@ public sealed class ConsumerRegisterTests : TestBase
         {
             services.AddSingleton(circuitBreaker);
         }
+
+        configureServices?.Invoke(services);
 
         var provider = services.BuildServiceProvider();
         var register = (ConsumerRegister)provider.GetRequiredService<IConsumerRegister>();
@@ -1434,6 +1437,131 @@ public sealed class ConsumerRegisterTests : TestBase
                 Arg.Any<ConsumerExecutorDescriptor>(),
                 Arg.Any<CancellationToken>()
             );
+    }
+
+    [Fact]
+    public async Task receive_expired_request_commits_and_skips_before_admission()
+    {
+        // given — a request whose caller stopped waiting a second ago on the responder's clock
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 10, 2, 12, 0, 0, TimeSpan.Zero));
+        var replies = new Tests.RequestReply.RecordingReplyTransport();
+        var outcomes = new ConcurrentQueue<string>();
+        using var listener = _ListenToReceiveOutcomes(outcomes);
+        var exhaustedFired = false;
+
+        // when
+        await using var run = await _RunReceiveDeliveryAsync(
+            null,
+            "receive-expired-request",
+            "{}"u8.ToArray(),
+            onExhausted: (_, _) =>
+            {
+                exhaustedFired = true;
+                return Task.CompletedTask;
+            },
+            publisherHeaders: _RequestHeaders(clock.GetUtcNow().AddSeconds(-1)),
+            configureServices: services =>
+            {
+                services.AddSingleton<TimeProvider>(clock);
+                services.AddSingleton<IReplyTransport>(replies);
+            }
+        );
+
+        // then — settled and dropped: no inbox row, no poison row, no handler, no callback, no reply
+        run.Client.CommitCount.Should().Be(1);
+        run.Client.RejectCount.Should().Be(0);
+        run.Storage.Admissions.Should().BeEmpty();
+        run.Storage.ReceivedExceptionRows.Should().BeEmpty();
+        await run
+            .Dispatcher.DidNotReceive()
+            .EnqueueToExecute(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<ConsumerExecutorDescriptor>(),
+                Arg.Any<CancellationToken>()
+            );
+        exhaustedFired.Should().BeFalse();
+        replies.Sent.Should().BeEmpty();
+        outcomes.Should().Contain("expired");
+    }
+
+    [Fact]
+    public async Task receive_request_for_a_plain_consumer_commits_skips_and_faults_with_no_responder()
+    {
+        // given — a live request reaches a consumer that implements IConsume<T>, not IRespond<T, TResponse>
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 10, 2, 12, 0, 0, TimeSpan.Zero));
+        var replies = new Tests.RequestReply.RecordingReplyTransport();
+        var headers = _RequestHeaders(clock.GetUtcNow().AddSeconds(30));
+        headers[Headers.TenantId] = "tenant-a";
+
+        // when
+        await using var run = await _RunReceiveDeliveryAsync(
+            null,
+            "receive-request-plain-consumer",
+            "{}"u8.ToArray(),
+            publisherHeaders: headers,
+            configureServices: services =>
+            {
+                services.AddSingleton<TimeProvider>(clock);
+                services.AddSingleton<IReplyTransport>(replies);
+            }
+        );
+
+        // then — no work ran, and the caller learns so at once instead of timing out
+        run.Client.CommitCount.Should().Be(1);
+        run.Storage.Admissions.Should().BeEmpty();
+        run.Storage.ReceivedExceptionRows.Should().BeEmpty();
+        await run
+            .Dispatcher.DidNotReceive()
+            .EnqueueToExecute(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<ConsumerExecutorDescriptor>(),
+                Arg.Any<CancellationToken>()
+            );
+        var (address, reply) = replies.Sent.Should().ContainSingle().Subject;
+        address.Should().Be(headers[Headers.ReplyTo]);
+        reply.Headers[Headers.InReplyTo].Should().Be(headers[Headers.RequestId]);
+        reply.Headers[Headers.ReplyStatus].Should().Be("fault");
+        reply.Headers[Headers.TenantId].Should().Be("tenant-a");
+        reply.Headers[Headers.MessageId].Should().NotBeNullOrWhiteSpace();
+        System.Text.Encoding.UTF8.GetString(reply.Body.Span).Should().Be("""{"code":"no_responder"}""");
+    }
+
+    private static Dictionary<string, string?> _RequestHeaders(DateTimeOffset deadline)
+    {
+        return new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            [Headers.RequestId] = Guid.NewGuid().ToString("D"),
+            [Headers.ReplyTo] = "headless.reply.test-caller",
+            [Headers.RequestDeadline] = deadline.ToString("O", System.Globalization.CultureInfo.InvariantCulture),
+        };
+    }
+
+    private static System.Diagnostics.Metrics.MeterListener _ListenToReceiveOutcomes(ConcurrentQueue<string> outcomes)
+    {
+        var listener = new System.Diagnostics.Metrics.MeterListener
+        {
+            InstrumentPublished = (instrument, meterListener) =>
+            {
+                if (string.Equals(instrument.Name, "messaging.receive.outcomes", StringComparison.Ordinal))
+                {
+                    meterListener.EnableMeasurementEvents(instrument);
+                }
+            },
+        };
+        listener.SetMeasurementEventCallback<long>(
+            (_, _, tags, _) =>
+            {
+                foreach (var tag in tags)
+                {
+                    if (string.Equals(tag.Key, "messaging.receive.outcome", StringComparison.Ordinal))
+                    {
+                        outcomes.Enqueue((string)tag.Value!);
+                    }
+                }
+            }
+        );
+        listener.Start();
+        return listener;
     }
 
     [Fact]

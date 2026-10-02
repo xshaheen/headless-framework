@@ -970,4 +970,54 @@ internal static partial class LoggerExtensions
         Message = "The reply listener failed to close cleanly during shutdown."
     )]
     public static partial void ReplyListenerCloseFailed(this ILogger logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 116,
+        EventName = "ReplyBuildFailed",
+        Level = LogLevel.Warning,
+        Message = "The reply to request {RequestId} could not be built, so it is not sent; the caller will time out."
+    )]
+    public static partial void ReplyBuildFailed(this ILogger logger, Exception exception, string? requestId);
+
+    [LoggerMessage(
+        EventId = 117,
+        EventName = "ResponderResultDiscarded",
+        Level = LogLevel.Debug,
+        Message = "Responder '{Consumer}' handled message {MessageId}, which is not a request; its result is discarded."
+    )]
+    public static partial void ResponderResultDiscarded(this ILogger logger, string? consumer, string? messageId);
+
+    [LoggerMessage(
+        EventId = 118,
+        EventName = "RequestExpiredOnReceive",
+        Level = LogLevel.Information,
+        Message = "Request {MessageId} (name '{MessageName}', consumer '{Consumer}') arrived after its deadline; it is committed and dropped without a reply."
+    )]
+    public static partial void RequestExpiredOnReceive(
+        this ILogger logger,
+        string? messageId,
+        string? messageName,
+        string? consumer
+    );
+
+    [LoggerMessage(
+        EventId = 119,
+        EventName = "RequestHasNoResponder",
+        Level = LogLevel.Warning,
+        Message = "Request {MessageId} (name '{MessageName}') reached consumer '{Consumer}', which does not respond to requests; it is committed and dropped with a no_responder fault."
+    )]
+    public static partial void RequestHasNoResponder(
+        this ILogger logger,
+        string? messageId,
+        string? messageName,
+        string? consumer
+    );
+
+    [LoggerMessage(
+        EventId = 120,
+        EventName = "RequestExpiredBeforeAttempt",
+        Level = LogLevel.Information,
+        Message = "Request stored as {StorageId} passed its deadline before an attempt started; it ends without running the consumer or replying."
+    )]
+    public static partial void RequestExpiredBeforeAttempt(this ILogger logger, Guid storageId);
 }

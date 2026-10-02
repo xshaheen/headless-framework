@@ -10,6 +10,7 @@ using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.MultiTenancy;
 using Headless.Messaging.Persistence;
+using Headless.Messaging.RequestReply;
 using Headless.Messaging.Retry;
 using Headless.Messaging.Runtime;
 using Headless.UnitOfWork;
@@ -73,6 +74,8 @@ internal sealed class SubscribeExecutor(
     private readonly IMessagingCapabilityModel? _capabilityModel = provider.GetService<IMessagingCapabilityModel>();
     private readonly RetryPolicyOptions _retryPolicy = options.Value.RetryPolicy;
     private readonly MessagingRetryPipeline _retryPipeline = new(options.Value.RetryPolicy, timeProvider, logger);
+
+    private ResponderReplies? _responderReplies;
 
     public Task<OperateResult> ExecuteAsync(
         MediumMessage message,
@@ -222,6 +225,14 @@ internal sealed class SubscribeExecutor(
             return MessagingRetryAttempt.Completed(OperateResult.Success);
         }
 
+        // Checked at every attempt start, persisted pickups included: a request can wait in the inbox, behind an open
+        // circuit, or for a crashed attempt's lease long after its caller gave up.
+        if (RequestEnvelope.IsExpired(message.Origin.Headers, timeProvider.GetUtcNow()))
+        {
+            return await _EndExpiredRequestAsync(message, dispatchServices, executionState, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         try
         {
             logger.ConsumerExecuting(
@@ -241,15 +252,24 @@ internal sealed class SubscribeExecutor(
                 // The runner and consumer must share the same DbContext, alive until commit or rollback.
                 await using var attemptScope = dispatchServices.CreateAsyncScope();
                 var attemptServices = attemptScope.ServiceProvider;
+                var middlewareRegistry = attemptServices.GetService<IMiddlewareDescriptorRegistry>();
                 var propagateTenant =
                     descriptor.MessageType is { } messageType
-                    && attemptServices.GetService<IMiddlewareDescriptorRegistry>() is { } middlewareRegistry
+                    && middlewareRegistry is not null
                     && middlewareRegistry.TryGetConsumeDescriptors(
                         messageType,
                         descriptor.Lane,
                         out var middlewareDescriptors
                     )
                     && middlewareDescriptors.Any(m => m.MiddlewareType == typeof(TenantPropagationConsumeMiddleware));
+
+                // Tenant propagation wraps only Bus consumers; a Queue responder of a propagating host still runs, and
+                // saves, under the request's tenant.
+                propagateTenant |=
+                    descriptor.IsResponder
+                    && middlewareRegistry?.Descriptors.Any(m =>
+                        m.MiddlewareType == typeof(TenantPropagationConsumeMiddleware)
+                    ) == true;
                 // Tenant-aware services can read the tenant at resolution, and auto-save runs after consume middleware.
                 using var tenantScope = propagateTenant
                     ? TenantContextScope.ChangeFromEnvelope(attemptServices, message.Origin, logger)
@@ -258,8 +278,12 @@ internal sealed class SubscribeExecutor(
                 await transactionRunner
                     .ExecuteAsync(
                         message,
-                        (unitOfWork, ct) =>
-                            _InvokeConsumerMethodAsync(message, descriptor, attemptServices, unitOfWork, ct),
+                        // The transactional tier binds the reply to the unit's commit, so the attempt returns none here.
+                        async (unitOfWork, ct) =>
+                        {
+                            _ = await _InvokeConsumerMethodAsync(message, descriptor, attemptServices, unitOfWork, ct)
+                                .ConfigureAwait(false);
+                        },
                         cancellationToken
                     )
                     .ConfigureAwait(false);
@@ -268,7 +292,7 @@ internal sealed class SubscribeExecutor(
             }
             else
             {
-                await _InvokeConsumerMethodAsync(
+                var pendingReply = await _InvokeConsumerMethodAsync(
                         message,
                         descriptor,
                         services: null,
@@ -276,7 +300,14 @@ internal sealed class SubscribeExecutor(
                         cancellationToken
                     )
                     .ConfigureAwait(false);
-                await _SetSuccessfulState(message, executionState).ConfigureAwait(false);
+                var updated = await _SetSuccessfulState(message, executionState).ConfigureAwait(false);
+
+                // Only the attempt whose success write took effect answers: a row another attempt already finished
+                // was answered, or failed, by that attempt.
+                if (updated && pendingReply is { } reply)
+                {
+                    await _SendReplyAsync(message, reply).ConfigureAwait(false);
+                }
             }
 
             _RecordInboxMetric(message, InboxMetricKind.Terminal, InboxMetricOutcome.Succeeded);
@@ -314,7 +345,31 @@ internal sealed class SubscribeExecutor(
             _ReleaseHalfOpenProbe(message);
             return MessagingRetryAttempt.Completed(OperateResult.Failed(ex));
         }
-        catch (Exception ex) when (_IsDeserializationException(ex))
+        catch (Exception ex) when (_HasCause<ResponderNullResponseException>(ex))
+        {
+            // Retrying cannot turn a null response into one, so the request ends here, whatever the host's retry
+            // classification says, and its caller gets the null_response fault.
+            logger.ConsumerExecuteFailed(
+                ex,
+                LogSanitizer.Sanitize(message.Origin.Name),
+                message.StorageId,
+                message.Origin.GetExecutionInstanceId()
+            );
+
+            await _SetFailedState(
+                    message,
+                    ex,
+                    dispatchServices,
+                    Math.Max(0, message.InlineAttempts - 1),
+                    MessagingRetryDecision.Stop,
+                    executionState,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            return MessagingRetryAttempt.Completed(OperateResult.Failed(ex));
+        }
+        catch (Exception ex) when (_HasCause<MessageDeserializationException>(ex))
         {
             logger.ConsumerExecuteFailed(
                 ex,
@@ -349,7 +404,7 @@ internal sealed class SubscribeExecutor(
         }
     }
 
-    private async ValueTask _SetSuccessfulState(MediumMessage message, RetryExecutionState? executionState)
+    private async ValueTask<bool> _SetSuccessfulState(MediumMessage message, RetryExecutionState? executionState)
     {
         // The cancellation token parameter is unused since F30 switched the storage write
         // to CancellationToken.None below. The method is private; the parameter is removed
@@ -384,6 +439,8 @@ internal sealed class SubscribeExecutor(
         }
 
         await _ReportSuccessfulStateAsync(message).ConfigureAwait(false);
+
+        return updated;
     }
 
     private async ValueTask _ReportSuccessfulStateAsync(MediumMessage message)
@@ -411,6 +468,7 @@ internal sealed class SubscribeExecutor(
             strategyFailed ? MessagingRetryDecision.Exhausted
             : !_retryPolicy.HasMoreInlineAttempts(inlineRetries) && message.Retries >= _retryPolicy.MaxPersistedRetries
                 ? MessagingRetryDecision.Exhausted
+            : _EndsRequestRetries(message, inlineRetries, delay) ? MessagingRetryDecision.Exhausted
             : MessagingRetryDecision.Continue(delay);
         var persisted = await _SetFailedState(
                 message,
@@ -423,6 +481,55 @@ internal sealed class SubscribeExecutor(
             )
             .ConfigureAwait(false);
         return persisted.Outcome == MessagingRetryDecision.Kind.Continue;
+    }
+
+    /// <summary>
+    /// Whether a request's retry, which the host policy would schedule, ends the request instead. Its caller waits
+    /// only until the deadline, so a retry that starts after it, or that waits for the persisted retry processor, can
+    /// never answer the caller; ending now sends the caller a fault while it still listens.
+    /// </summary>
+    private bool _EndsRequestRetries(MediumMessage message, int inlineRetries, TimeSpan delay)
+    {
+        var headers = message.Origin.Headers;
+        if (!RequestEnvelope.IsRequest(headers))
+        {
+            return false;
+        }
+
+        if (
+            !RetryHelper
+                .ResolveNextState(MessagingRetryDecision.Continue(delay), inlineRetries, _retryPolicy)
+                .IsInlineRetryInFlight
+        )
+        {
+            return true;
+        }
+
+        return RequestEnvelope.GetDeadline(headers) is { } deadline && timeProvider.GetUtcNow() + delay >= deadline;
+    }
+
+    private async Task<MessagingRetryAttempt> _EndExpiredRequestAsync(
+        MediumMessage message,
+        IServiceProvider dispatchServices,
+        RetryExecutionState? executionState,
+        CancellationToken cancellationToken
+    )
+    {
+        logger.RequestExpiredBeforeAttempt(message.StorageId);
+
+        var expired = new RequestExpiredException(RequestEnvelope.GetDeadline(message.Origin.Headers));
+        await _SetFailedState(
+                message,
+                expired,
+                dispatchServices,
+                Math.Max(0, message.InlineAttempts - 1),
+                MessagingRetryDecision.RequestExpired,
+                executionState,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return MessagingRetryAttempt.Completed(OperateResult.Failed(expired));
     }
 
     private async Task _HandleNonRetryableAsync(
@@ -573,6 +680,19 @@ internal sealed class SubscribeExecutor(
             .ConfigureAwait(false);
         executionState?.RecordLeaseTransition(affected, lockedUntil);
 
+        // The terminal write took effect, so this attempt owns the request's outcome and answers it, before the
+        // exhausted callback runs so the caller is not held up by it. An expired request's caller is gone.
+        if (
+            affected
+            && decision.Outcome is not MessagingRetryDecision.Kind.Continue
+            && !decision.IsRequestExpired
+            && RequestEnvelope.IsRequest(message.Origin.Headers)
+            && _GetResponderReplies() is { } replies
+        )
+        {
+            await replies.SendFaultAsync(message.Origin, ResponderReplies.FaultCodeFor(ex), ex).ConfigureAwait(false);
+        }
+
         if (affected && decision.Outcome == MessagingRetryDecision.Kind.Exhausted)
         {
             _RecordInboxMetric(message, InboxMetricKind.Terminal, InboxMetricOutcome.FailedExhausted);
@@ -610,7 +730,12 @@ internal sealed class SubscribeExecutor(
         // Skip the report when the conditional UPDATE returned zero affected rows: that signals a
         // broker redelivery of an already-terminal row, not a fresh failure — counting it would
         // wrongly accumulate toward the breaker threshold.
-        if (circuitBreakerStateManager is not null && affected)
+        if (decision.IsRequestExpired)
+        {
+            // An expired request is no consumer failure, so it neither counts toward nor holds the circuit.
+            _ReleaseHalfOpenProbe(message);
+        }
+        else if (circuitBreakerStateManager is not null && affected)
         {
             var reportedException = ex is SubscriberExecutionFailedException { InnerException: { } inner } ? inner : ex;
 
@@ -726,7 +851,12 @@ internal sealed class SubscribeExecutor(
         }
     }
 
-    private async Task _InvokeConsumerMethodAsync(
+    /// <summary>Runs the consumer of one attempt and publishes its callback response, if any.</summary>
+    /// <returns>
+    /// The reply to send once the success write takes effect, or <see langword="null"/> when there is none to send by
+    /// the caller: no request, or a transactional attempt whose reply is already bound to its commit.
+    /// </returns>
+    private async Task<PendingReply?> _InvokeConsumerMethodAsync(
         MediumMessage message,
         ConsumerExecutorDescriptor descriptor,
         IServiceProvider? services,
@@ -812,9 +942,20 @@ internal sealed class SubscribeExecutor(
                 }
             }
 
+            var pendingReply = _ResolveReply(message, descriptor, ret, traceHandle);
+            if (pendingReply is { } reply && unitOfWork is not null)
+            {
+                // Transactional tier: the reply leaves only after the attempt's commit is durable, and a rolled-back or
+                // indeterminate commit never runs the callback, so the caller is never told of work that did not land.
+                _RegisterReplyOnCommit(unitOfWork, message, reply);
+                pendingReply = null;
+            }
+
             // Fire the invoke success span only after the callback response publish completes so the success
             // event also reflects a successful callback publish; still fires on the no-callback path above.
             _TracingAfter(traceHandle, message.Origin.Name, descriptor.MethodName);
+
+            return pendingReply;
         }
         catch (OperationCanceledException oce)
         {
@@ -824,7 +965,7 @@ internal sealed class SubscribeExecutor(
             {
                 var e = new SubscriberExecutionFailedException(LogSanitizer.Sanitize(oce.Message), oce);
                 _TracingError(traceHandle, message.Origin.Name, descriptor.MethodName, e);
-                e.ReThrow();
+                throw e.ReThrow();
             }
 
             // A genuine cancellation (caller/shutdown token) propagates; stop the span un-errored so it is
@@ -838,7 +979,7 @@ internal sealed class SubscribeExecutor(
 
             _TracingError(traceHandle, message.Origin.Name, descriptor.MethodName, e);
 
-            e.ReThrow();
+            throw e.ReThrow();
         }
     }
 
@@ -887,11 +1028,76 @@ internal sealed class SubscribeExecutor(
     }
 
     #endregion
-    private static bool _IsDeserializationException(Exception? ex)
+    private PendingReply? _ResolveReply(
+        MediumMessage message,
+        ConsumerExecutorDescriptor descriptor,
+        ConsumerExecutedResult result,
+        MessagingTraceHandle traceHandle
+    )
+    {
+        if (!descriptor.IsResponder)
+        {
+            return null;
+        }
+
+        if (!RequestEnvelope.IsRequest(message.Origin.Headers))
+        {
+            // A plain enqueue reaches a responder like any Queue consumer; nobody awaits its answer.
+            if (logger.IsEnabled(LogLevel.Debug))
+            {
+                logger.ResponderResultDiscarded(
+                    descriptor.ResolvedConsumerIdentity,
+                    LogSanitizer.Sanitize(message.Origin.Headers.TryGetValue(Headers.MessageId, out var id) ? id : null)
+                );
+            }
+
+            return null;
+        }
+
+        if (!result.HasReply || result.Reply is null)
+        {
+            throw new ResponderNullResponseException(descriptor.ConsumerType);
+        }
+
+        return new PendingReply(
+            result.Reply,
+            result.ReplyType ?? descriptor.ResponseType!,
+            traceHandle.Activity?.Context ?? default
+        );
+    }
+
+    private void _RegisterReplyOnCommit(IUnitOfWork unitOfWork, MediumMessage message, PendingReply reply)
+    {
+        if (_GetResponderReplies() is not { } replies)
+        {
+            return;
+        }
+
+        var request = message.Origin;
+        unitOfWork.OnCompleted(() =>
+            replies.SendResponseAsync(request, reply.Response, reply.ResponseType, reply.ResponderSpan)
+        );
+    }
+
+    private ValueTask _SendReplyAsync(MediumMessage message, PendingReply reply)
+    {
+        return _GetResponderReplies() is { } replies
+            ? replies.SendResponseAsync(message.Origin, reply.Response, reply.ResponseType, reply.ResponderSpan)
+            : ValueTask.CompletedTask;
+    }
+
+    // Resolved on first use: a host that never receives a request never builds the reply path.
+    private ResponderReplies? _GetResponderReplies()
+    {
+        return _responderReplies ??= provider.GetService<ResponderReplies>();
+    }
+
+    private static bool _HasCause<TException>(Exception? ex)
+        where TException : Exception
     {
         for (var current = ex; current != null; current = current.InnerException)
         {
-            if (current is MessageDeserializationException)
+            if (current is TException)
             {
                 return true;
             }
@@ -899,4 +1105,7 @@ internal sealed class SubscribeExecutor(
 
         return false;
     }
+
+    /// <summary>A responder's answer waiting for its attempt's success write.</summary>
+    private readonly record struct PendingReply(object Response, Type ResponseType, ActivityContext ResponderSpan);
 }

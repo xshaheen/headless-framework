@@ -76,6 +76,31 @@ public sealed class ConsumeContextTests
         act.Should().Throw<InvalidOperationException>();
     }
 
+    [Theory]
+    [InlineData(nameof(ConsumeContext.SetResponse))]
+    [InlineData(nameof(ConsumeContext.SetResponseCallbackName))]
+    [InlineData(nameof(ConsumeContext.SetResponseDestination))]
+    public void should_throw_when_a_responder_sets_a_callback_response(string member)
+    {
+        // given — a responder answers its caller only by returning the response
+        var context = _CreateContext();
+        context.IsResponder = true;
+
+        // when
+        Action act = member switch
+        {
+            nameof(ConsumeContext.SetResponse) => () => context.SetResponse(new ConcreteResponse("callback")),
+            nameof(ConsumeContext.SetResponseCallbackName) => () => context.SetResponseCallbackName("next-hop"),
+            _ => () => context.SetResponseDestination("elsewhere"),
+        };
+
+        // then
+        act.Should().Throw<InvalidOperationException>().WithMessage("*responder*");
+        context.Response.Should().BeNull();
+        context.ResponseCallbackName.Should().BeNull();
+        context.ResponseDestination.Should().BeNull();
+    }
+
     [Fact]
     public void should_record_a_reply_under_its_declared_type_apart_from_the_callback_response()
     {
