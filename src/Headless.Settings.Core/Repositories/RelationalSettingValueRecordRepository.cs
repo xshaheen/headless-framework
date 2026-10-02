@@ -118,7 +118,7 @@ internal sealed class RelationalSettingValueRecordRepository(
             return Task.FromResult(new List<SettingValueRecord>());
         }
 
-        var nameList = _ListElement(names, SettingValueRecordConstants.NameMaxLength);
+        var nameList = SqlColumnType.LookupText(SettingValueRecordConstants.NameMaxLength, names);
 
         var sql = $"{_select} WHERE {_dialect.InList(_name, "Names", nameList)} AND {_byScope};";
 
@@ -287,22 +287,9 @@ internal sealed class RelationalSettingValueRecordRepository(
         return result;
     }
 
-    // Sized to the column, so the plan is reused and the comparison keeps the column's collation. A longer value is
-    // bound unsized: a sized SQL Server parameter would truncate it and match the rows that store its prefix.
     private void _AddFilter(DbCommand command, string parameter, int maxLength, string? value)
     {
-        _dialect.AddParameter(
-            command,
-            parameter,
-            SqlColumnType.Text(value?.Length > maxLength ? -1 : maxLength),
-            value
-        );
-    }
-
-    // A list binds each element the way _AddFilter binds one value: sized, unless an element is longer than the column.
-    private static SqlColumnType _ListElement(IEnumerable<string> values, int maxLength)
-    {
-        return SqlColumnType.Text(values.Any(value => value.Length > maxLength) ? -1 : maxLength);
+        _dialect.AddParameter(command, parameter, SqlColumnType.LookupText(maxLength, value), value);
     }
 
     private DbCommand _CreateCommand(DbConnection connection, DbTransaction? transaction, string sql)

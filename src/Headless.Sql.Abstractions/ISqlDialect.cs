@@ -238,6 +238,22 @@ public readonly record struct SqlColumnType(SqlColumnKind Kind, int MaxLength = 
     /// <summary>Text with the database's default collation.</summary>
     public static SqlColumnType Text(int maxLength) => new(SqlColumnKind.Text, maxLength);
 
+    /// <summary>
+    /// Text that looks up rows by a value compared with a column of <paramref name="maxLength" />: sized to the column,
+    /// so the plan is reused and the comparison keeps the column's collation, unless <paramref name="value" /> is
+    /// longer, in which case it binds unsized. A sized SQL Server parameter truncates an over-long value, which would
+    /// then match the rows that store its prefix.
+    /// </summary>
+    public static SqlColumnType LookupText(int maxLength, string? value) =>
+        Text(value?.Length > maxLength ? -1 : maxLength);
+
+    /// <summary>
+    /// The element type of a list of lookup values, sized as <see cref="LookupText(int, string)" /> sizes one value:
+    /// unsized when any element is longer than the column.
+    /// </summary>
+    public static SqlColumnType LookupText(int maxLength, IEnumerable<string> values) =>
+        Text(values.Any(value => value.Length > maxLength) ? -1 : maxLength);
+
     public static SqlColumnType Int16 => new(SqlColumnKind.Int16);
 
     public static SqlColumnType Int32 => new(SqlColumnKind.Int32);

@@ -173,14 +173,9 @@ internal sealed class RelationalReadAuditLog<TContext>(RelationalAuditLogTable t
         }
 
         filters.Add($"{table.Column(column)} = @{column}");
-        binders.Add(command => _dialect.AddParameter(command, column, _Filter(maxLength, value), value));
-    }
-
-    // Sized to the column, so the plan is reused and the comparison keeps the column's collation. A longer value is
-    // bound unsized: a sized SQL Server parameter would truncate it and match the rows that store its prefix.
-    private static SqlColumnType _Filter(int maxLength, string value)
-    {
-        return SqlColumnType.Text(value.Length > maxLength ? -1 : maxLength);
+        binders.Add(command =>
+            _dialect.AddParameter(command, column, SqlColumnType.LookupText(maxLength, value), value)
+        );
     }
 
     private static async Task<string?> _GetStringAsync(
