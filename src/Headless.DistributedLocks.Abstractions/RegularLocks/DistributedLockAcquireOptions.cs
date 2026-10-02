@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-#pragma warning disable IDE0130 // Folders only group files; the type ships in the family root namespace Headless.DistributedLocks.
+#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 // ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
 
