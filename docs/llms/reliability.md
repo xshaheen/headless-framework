@@ -11,7 +11,7 @@ packages: Reliability.Abstractions
 
 - **`Headless.Reliability.Abstractions`** holds `FailurePolicy`, `FailurePolicyBuilder`, `FailurePolicyDefinition`, and `FailurePolicyOverrides`. `Headless.Messaging.Abstractions` and `Headless.Jobs.Abstractions` reference it, so one policy type works for consumers and jobs alike.
 - Write a policy as a sealed class that derives from `FailurePolicy`. A runtime builds it once into an immutable `FailurePolicyDefinition` and executes that definition.
-- This guide covers the model. How a consumer or a job names its policy, how the policy resolves against host defaults and configuration, and what happens at the terminal failure belong to [messaging.md](messaging.md) and [jobs.md](jobs.md).
+- This guide covers the model and compares how the two runtimes apply it in [Messaging and Jobs](#messaging-and-jobs). The runtime details belong to [messaging.md](messaging.md#consumer-failure-policy) and [jobs.md](jobs.md#failure-policy).
 
 ## Agent Rules
 
@@ -50,6 +50,50 @@ An exception that no rule matches is retryable. Rules accumulate; a repeated `Fa
 `FailurePolicyOverrides` carries nullable `ImmediateRetries`, `DelayedRetries`, `DelayedInitialDelay`, and `DelayedMaxDelay`. `definition.With(overrides)` replaces only the supplied values, keeps the fail rules, and validates the combined result the way the builder does. Fail rules are code and cannot come from configuration. The properties are settable so configuration binding can populate them.
 
 `FailurePolicyOverrides.TryParse(settings, errors, out overrides)` reads the children of a `FailurePolicy` configuration section, given as `(Key, Path, Value)` tuples so the package stays free of a configuration dependency. Keys match case-insensitively; retries parse as invariant integers and delays as invariant `TimeSpan` values. Range checks are left to `With`. Each unknown key or unparseable value adds one error naming its path, every setting is read so all problems surface at once, and any error makes the result `null`. Messaging and Jobs use it for their `FailurePolicy` configuration overrides.
+
+## Messaging and Jobs
+
+One policy type works for a message consumer and for a job. Both runtimes resolve it the same way, end a failure in the same `Failed` state, and report it once through `OnExhausted`. They differ in where a delayed retry waits.
+
+### Where to set a policy
+
+- **On the handler**, with `FailurePolicy = typeof(TPolicy)` on the attribute, when the behavior belongs to the handler's code: which exceptions can never succeed, and how long a downstream outage usually lasts.
+- **On one host**, with `Tune(identity, ...)`, when a deployment needs a different policy for one handler.
+- **In configuration**, under the handler's `FailurePolicy` section, to change counts and delays without a redeploy.
+- **As the host default**, with `DefaultFailurePolicy`, for every handler that declares nothing.
+
+### Resolution order
+
+1. `Tune(identity, x => x.FailurePolicy<TPolicy>())` or `FailurePolicy(p => ...)` replaces the declared policy.
+2. Otherwise the policy the attribute declares.
+3. Otherwise the host's `DefaultFailurePolicy`, and without one the framework default.
+4. The `FailurePolicy` configuration section then overrides the numeric values of the winner (`ImmediateRetries`, `DelayedRetries`, `DelayedInitialDelay`, `DelayedMaxDelay`) and keeps its fail rules. An unknown key, an unparseable value, or an invalid combination fails startup with the configuration path.
+
+For a job, a scheduling call's `WithRetries` and `WithRetryIntervals` then override the stored retry count and intervals of that one run. Fail rules always come from the resolved policy. A Messaging publisher has no way to choose a consumer's policy.
+
+### Runtime comparison
+
+| | Message consumer | Job |
+| --- | --- | --- |
+| Declare | `[BusConsumer(id, FailurePolicy = typeof(T))]`, `[QueueConsumer(id, FailurePolicy = typeof(T))]` | `[Job(id, FailurePolicy = typeof(T))]` |
+| Replace on one host | `Tune(id, c => c.FailurePolicy<T>())` | `Tune(id, j => j.FailurePolicy<T>())` |
+| Configuration section | `Headless:Messaging:Consumers:{id}:FailurePolicy` | `Headless:Jobs:Jobs:{id}:FailurePolicy` |
+| Host default | `setup.DefaultFailurePolicy<T>()` on `MessagingSetupBuilder` | `options.DefaultFailurePolicy<T>()` on `JobsOptionsBuilder` |
+| Framework default | 2 immediate retries, then 5 delayed retries from 30 seconds capped at 15 minutes | No retries |
+| Immediate retries | Back-to-back inside the first dispatch | Back-to-back inside the run |
+| Delayed retries | Persisted with `NextRetryAt` set from the database clock plus the jittered delay; the retry processor picks the row up | In process, under the job's lease, waiting the stored interval |
+| Exceptions that end a failure at once | Fail rules, plus `ArgumentException` (and subtypes), `NotSupportedException`, and `SubscriberNotFoundException` | Fail rules; `TerminateExecutionException` keeps its own meaning and never reaches the policy |
+| Terminal state | `Failed`, with no `NextRetryAt` | `Failed` |
+| Terminal callback | `MessagingOptions.RetryPolicy.OnExhausted` | `JobsRetryOptions.OnExhausted` |
+| Operator recovery | Re-execute from the Messaging dashboard | `IJobScheduler.RequeueAsync` / `RequeueOccurrenceAsync`, or the requeue button on the Jobs dashboard |
+| Invalid policy type | HM005 build error | HF023 build error |
+| Not allowed on | Every-instance consumers (HM010 at build time, startup error otherwise) | Nothing |
+
+Messaging details: [Consumer failure policy](messaging.md#consumer-failure-policy). Jobs details: [Failure policy](jobs.md#failure-policy) and [Requeue a failed job](jobs.md#requeue-a-failed-job).
+
+### Valid policy types
+
+The source generators emit `static () => new TPolicy()` for a declared type, so the runtime never creates a policy by reflection. The type must derive from `FailurePolicy`, be a non-abstract class with no open type parameter (a closed generic such as `RetryTwice<Payments>` is accepted), be `public` or `internal` like every type that contains it, and have a public parameterless constructor. Anything else is HM005 in Messaging and HF023 in Jobs, and nothing is generated for that handler.
 
 ---
 
