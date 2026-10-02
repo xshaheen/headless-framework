@@ -14,6 +14,8 @@ Use `Headless.Messaging.Core` as the composition package, then add exactly one t
 Registration has three parts. A consumer class declares itself with `[BusConsumer(identity)]` or `[QueueConsumer(identity)]` and implements `IConsume<T>` for each message it handles. The Messaging source generator emits one `MessagingModule` per assembly, and the module that owns the consumers contributes it, together with its message contracts, through `services.ConfigureMessaging(...)`. The host calls `AddHeadlessMessaging(...)` once for transport, storage, and options, and tunes consumers by identity.
 
 ```csharp
+using Microsoft.EntityFrameworkCore;
+
 // Orders assembly: message, consumer, and the module entry point.
 public sealed record OrderPlaced(Guid OrderId);
 
@@ -78,7 +80,7 @@ This is the production default: `Headless.Messaging.RabbitMq` for transport and 
 - **Consumers declare themselves with one lane attribute**: put exactly one of `[BusConsumer("owner.name")]` or `[QueueConsumer("owner.name")]` on a class that implements `IConsume<T>`. The messages it handles are exactly the `IConsume<T>` interfaces it implements; one class may handle several. `[BusConsumer]` also takes `EveryInstance = true` (see [Every-instance Bus delivery](#every-instance-bus-delivery)). No fluent call declares a consumer, and nothing registers a consumer by scanning assemblies at runtime.
 - **The consumer identity is the consumer's durable name**: `owner.name` form, at most 200 characters, first segment naming the owning module. On the Bus lane it is the broker subscription name, so processes that register the same identity compete for each message wherever the module runs. It also keys the consumer's inbox rows, circuit breaker, metrics, `Tune`, configuration, and `ConsumeOnly`. Renaming it starts a new consumer with empty inbox history. Intentional reprocessing uses an explicit linked inbox generation; changing a schema version is not a dedupe-reset mechanism.
 - **A message has at most one Queue consumer**: the Queue lane is point-to-point and its destination is keyed by the message name. A second Queue consumer for one message fails the build (HM004) within an assembly and fails startup across assemblies. Use `[BusConsumer]` for fan-out.
-- **Modules contribute with `services.ConfigureMessaging(...)`, never a second `AddHeadlessMessaging`**: the host calls `AddHeadlessMessaging(...)` once for transports, storage, and options. A module calls `services.ConfigureMessaging(m => { m.AddModule<X.MessagingModule>(); m.Message<T>(...); })` from its own `Add{Module}` entry point, before or after the host's call. Nothing registers until some call adds the generated module; adding it twice registers it once. Identical contributions merge; one identity on two consumer classes in the same lane, or a conflicting contract, fails startup naming both sources. Framework consumers (HybridCache invalidation, distributed-lock release) use the same path. In a host that never calls `AddHeadlessMessaging`, contributions stay inert.
+- **Modules contribute with `services.ConfigureMessaging(...)`, never a second `AddHeadlessMessaging`**: the host calls `AddHeadlessMessaging(...)` once for transports, storage, and options. A module calls `services.ConfigureMessaging(m => { m.AddModule<X.MessagingModule>(); m.Message<T>(...); })` from its own `Add{Module}` entry point, before or after the host's call. Nothing registers until some call adds the generated module; adding it twice registers it once. Every contribution, `AddMessageContract` declaration, and `WithMessageNameMapping` call is recorded as a descriptor and folded once per service provider, when messaging first builds its consumer registry: at startup, or at an earlier publish that needs a message name. Identical contributions merge there; one identity on two consumer classes in the same lane, a conflicting contract, or one type mapped to two names fails at that point naming both sources. Framework consumers (HybridCache invalidation, distributed-lock release) use the same path. In a host that never calls `AddHeadlessMessaging`, contributions stay inert.
 - **Declare a message contract once, for both lanes**: `m.Message<T>(name, version = "1")` sets the logical name and schema version that publishing and consuming resolve `T` to on both lanes. Chain `.CorrelateBy(...)`, `.OnBus(b => ...)`, and `.OnQueue(q => ...)` for correlation, routing affinity, delivery mode, and provider settings. The message type needs no attribute and no Headless reference. Identical declarations from several modules merge; a different name, version, correlation selector, or lane setting fails startup naming both. Selectors compare by delegate, so share one declaration method rather than writing the same lambda twice.
 - **A library without a messaging dependency declares its contracts with `services.AddMessageContract<T>(name, version = "1")`**: it lives in `Headless.Messaging.Abstractions`, so a package that publishes or consumes a message but must not pull in `Headless.Messaging.Core` (Settings, Features, Permissions) still pins the message's name and version. It is exactly `Message<T>(name, version)` with no correlation or lane settings: it applies on both lanes, may run before or after `AddHeadlessMessaging`, merges with an identical `AddMessageContract` or `ConfigureMessaging` declaration of the same type, and fails naming both when they differ. In a host without messaging it stays inert. A package that already references `Headless.Messaging.Core`, or needs correlation or lane settings, uses `ConfigureMessaging`.
 - **Framework messages carry stable `headless.*` names**: every message a Headless package publishes or consumes is declared by that package as `headless.<domain>.<event>`, version `1`: through `ConfigureMessaging(m => m.Message<T>(...))` in packages that reference `Headless.Messaging.Core` (HybridCache, distributed locks), and through `AddMessageContract<T>(...)` in packages that stay on the messaging abstractions (Settings, Features, Permissions). The name is a `MessageName` constant on the message type. Host conventions (`UseConventions` prefix, suffix, kebab-case) never rename them, so services with different conventions interoperate on one broker; only `MessagingOptions.MessageNamePrefix` applies, as it does to every name. An application consumer of a framework message declares only its consumer, never a second `Message<T>` for it. The framework messages are `CacheInvalidationMessage` (`headless.caching.hybrid.invalidation`), `DistributedLockReleased` (`headless.locks.released`), `SettingChangedMessage` (`headless.settings.changed`), `FeatureChangedMessage` (`headless.features.changed`), `PermissionGrantChangedMessage` (`headless.permissions.grant-changed`), and `DynamicPermissionDefinitionsChanged` (`headless.permissions.definitions-changed`).
@@ -104,7 +106,7 @@ This is the production default: `Headless.Messaging.RabbitMq` for transport and 
 - Recover missing registrations with the exact consumer identity, logical contract name/version, and lane. Known orphans use independent probe capacity and consume no handler failure retries during deferral. They do not expire automatically; holds do not pause recovery. Unclaimed orphans allow Hold/ReleaseHold and unheld Purge, while live claims block these actions and ForceReprocess remains terminal-only.
 - Configure all four inbox history residence durations before enabling collection if existing evidence needs longer retention. Receipt replay and conflict detection last only while the receipt exists; deletion permits a new evaluation of the same operation ID. Audit references can extend receipt lifetime, but history deletion never releases a hold. History ages from original timestamps using the provider clock, and changing retention affects existing records.
 - **SQL Server pooled isolation**: monitoring, expiry cleanup, and delayed scheduling preserve skip-locked behavior with `READ_COMMITTED_SNAPSHOT` on or off, even on a pooled session another caller left at a stricter isolation level. Every transaction the storage opens, inbox admission included, sets READ COMMITTED itself.
-- **Consumer lifecycle semantics**: consumers are not registered in DI. Each delivery builds the consumer class with `ActivatorUtilities` from the delivery's scope, through generated typed dispatch (no reflection, no compiled expressions), and disposes it afterwards. `IConsumerLifecycle` runs per delivery on that instance. Do not treat it as application startup or shutdown.
+- **Consumer lifecycle semantics**: consumers need no DI registration. Each delivery builds the consumer class from the delivery's scope through generated typed dispatch (no reflection, no compiled expressions): `GetService<T>()` first, so an application's own registration of the class, or a decorator around it, is used with its lifetime, then `ActivatorUtilities.CreateInstance<T>` when the class is not registered. The dispatcher disposes only an instance it constructed; a container-resolved instance belongs to its scope or container. `IConsumerLifecycle` runs per delivery on that instance. Do not treat it as application startup or shutdown. A registered singleton consumer is shared by concurrent deliveries, so it must be thread-safe.
 - **Consumer startup is host-cancellable**: consumer factory creation, metadata provisioning, and subscription receive the host-stopping token. Provider implementations preserve `OperationCanceledException`; do not wrap shutdown cancellation as a broker failure.
 - **Core handles outbox automatically** when paired with EF Core -- messages are stored in database before being dispatched to transport.
 - **The EF adapter packages** (`Headless.Messaging.Storage.PostgreSql.EntityFramework` / `.SqlServer.EntityFramework`) let an enlisted publish join a unit of work open on `TContext`: `setup.UseEntityFramework<TContext>()` registers `Headless.UnitOfWork` (`AddEntityFrameworkUnitOfWork()`), but no interceptor opens that unit of work for the caller. Open it with `factory.RunAsync(db, ...)` (`Headless.UnitOfWork.EntityFramework`) or a manual `BeginAsync`/`CompleteAsync` pair, then publish through that unit's `Outbox`; an `IBus.PublishAsync` inside the same block still stores a standalone durable row that survives a rollback. `setup.UseEntityFramework<TContext>(o => o.EnableTransactionalOutbox = false)` (default `true`) is a separate switch that disables the EF inbox-transaction runner and its `Transactional` inbox-capability promotion — the receive side, not the publish-side unit-of-work requirement above. The raw storage packages expose only `UsePostgreSql` / `UseSqlServer` and have no EF or `Headless.UnitOfWork` dependency.
@@ -279,7 +281,7 @@ A runtime subscription sets `RuntimeSubscriptionOptions.EveryInstance = true`.
 - **At most once, no backlog**: a process receives only what is published while it is subscribed. Nothing is stored for the delivery: no inbox row or admission, no reservation or lease, no retry pipeline, no circuit breaker, and no dashboard row. Receive middleware, the contract-version check, and deserialization still run, and the consumer runs in a fresh scope with the consume middleware, then the message is committed.
 - **Failures are logged and committed**: a consumer exception, a receive-stage reject, a message no consumer on the subscription handles, and a fault outside the consumer (in the core or the transport client) are logged, counted in `messaging.every_instance.deliveries`, and committed. None is requeued, because a per-process subscription has no one else to redeliver to and a redelivery would fault the same way; `RetryPolicy.OnExhausted` is not called. The only reject is a delivery stopped by host shutdown or a client rebuild.
 - **Delivery outcomes**: `messaging.every_instance.outcome` is one of four values. `succeeded`: the consumer returned. `failed`: the consumer threw (`error.type` = the exception type). `dropped`: the message never reached the consumer or faulted outside it (`error.type` = the exception type when there is one, or `overflow` for a NATS subscription channel that discarded the message). `skipped`: receive middleware skipped it.
-- **Reconnect signal**: a consumer that implements `IOnSubscriptionEstablished` is called once its subscription receives: at host start (`IsReconnect = false`, `Generation = 1`), after every rebuild of the host's consumer clients (a broker failure, or a runtime subscription changing the topology), and after the transport re-establishes the subscription on its own. `IsReconnect = true` means messages may have been missed; a mirror of state should flush or reload. The hook runs on a new consumer instance in its own scope, and a failing hook is logged without stopping the subscription. Hooks of one subscription run one at a time in establishment order. Host startup waits for the first hooks; a rebuild does not wait and holds no lock while they run, so a hook may attach or detach a runtime subscription. Each call is bounded by `MessagingOptions.SubscriptionEstablishedTimeout` (default 30 seconds, `> 0`, `<= 5m`): on expiry the hook's token is canceled, a warning is logged, and startup and later establishments go on without it. Runtime subscriptions have no hook.
+- **Reconnect signal**: a consumer that implements `IOnSubscriptionEstablished` is called once its subscription receives: at host start (`IsReconnect = false`, `Generation = 1`), after every rebuild of its subscription's clients (a broker failure rebuilds every subscription), and after the transport re-establishes the subscription on its own. Attaching or detaching a runtime subscription rebuilds only the subscription groups it changes, so an unrelated every-instance consumer keeps its clients and its hook does not run. `IsReconnect = true` means messages may have been missed; a mirror of state should flush or reload. The hook runs in its own scope on an instance built the way a delivery builds it: the container's registration of the class when there is one, otherwise a new instance that is disposed afterwards. A failing hook is logged without stopping the subscription. Hooks of one subscription run one at a time in establishment order. Host startup waits for the first hooks; a rebuild does not wait and holds no lock while they run, so a hook may attach or detach a runtime subscription. Each call is bounded by `MessagingOptions.SubscriptionEstablishedTimeout` (default 30 seconds, `> 0`, `<= 5m`): on expiry the hook's token is canceled, a warning is logged, and startup and later establishments go on without it. Runtime subscriptions have no hook.
 - **Startup rules**: an every-instance consumer on a transport without every-instance support fails startup before any consumer client or broker object is created, with a `MessagingConfigurationException` that names the consumer and the provider; a runtime subscription is checked the same way before it attaches. Tuning an inbox retention or a circuit breaker onto an every-instance consumer, through `Tune` or configuration, fails startup, because neither means anything for a per-process, at-most-once subscription. `EveryInstance` exists only on `[BusConsumer]`, so the Queue lane cannot express it. A host whose only consumers are every-instance does not need an inbox tier from storage.
 - **`ConsumeOnly` does not apply**: a host started with `ConsumeOnly` still starts every every-instance consumer, because each process must keep its own state current. A `ConsumeOnly` entry that matches only every-instance consumers fails startup, since it would have no effect. Runtime subscriptions are not filtered either.
 - **Choose it for derived state only**: every-instance delivery refreshes what a process can rebuild. Work that must happen once, or must not be lost, stays on a competing consumer.
@@ -491,7 +493,7 @@ Register the broker through `MessagingSetupBuilder.RegisterExtension(...)` with 
 - singleton `IConsumerClientFactory`
 - any broker-owned singletons such as connection pools
 
-```csharp
+```csharp no-compile
 public static class SetupMessagesMyBroker
 {
     extension(MessagingSetupBuilder setup)
@@ -911,7 +913,7 @@ The collector obtains one fixed provider-clock history cutoff snapshot per invoc
     }
   }
   ```
-- Runtime subscriptions attach handlers after startup through `IRuntimeSubscriber`.
+- Runtime subscriptions attach handlers after startup through `IRuntimeSubscriber`. On a running host, `SubscribeAsync` and `UnsubscribeAsync` apply the change before they return. While the host is starting or rebuilding its clients after a broker failure, they return at once and the change applies when that finishes. If the changed subscription's old clients do not stop within the rebuild budget, or the broker is unreachable, the call still returns, the host reports itself unhealthy, and the transport health check's full rebuild applies the change. Only the subscription groups (subscription name, lane, and competing or every-instance kind) whose consumers or concurrency changed are stopped or started; every other group keeps its clients.
 
 ### Runtime behavior
 
@@ -979,7 +981,7 @@ var info = new FailedInfo
 {
     ServiceProvider = scope.ServiceProvider, // live dispatch scope, NOT the root provider
     MessageType = MessageType.Subscribe, // or MessageType.Publish
-    Message = message,
+    Message = mediumMessage.Origin, // the message envelope, not the payload
     Lane = MessageLane.Bus, // or MessageLane.Queue
     Exception = ex, // the exhausting exception
     StorageId = mediumMessage.StorageId, // storage row identifier for DLQ correlation
@@ -1573,6 +1575,9 @@ Spans and metrics for messaging publish, persist, consume, and subscriber-invoke
 ### Setup and use
 
 ```csharp
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Trace;
+
 // 1. Register enrichers / suppression on the messaging setup builder (optional).
 builder.Services.AddHeadlessMessaging(setup =>
 {
@@ -1808,6 +1813,8 @@ dotnet add package Headless.Messaging.Kafka
 ### Setup and use
 
 ```csharp
+using Confluent.Kafka;
+
 setup.UseKafka(options => options.Servers = "localhost:9092");
 
 setup.Tune(PlaceOrderWorker.Identity, consumer =>
@@ -2007,6 +2014,8 @@ dotnet add package Headless.Messaging.Redis
 ### Setup and use
 
 ```csharp
+using StackExchange.Redis;
+
 setup.UseRedis(options => options.Configuration = ConfigurationOptions.Parse("localhost:6379"));
 ```
 
@@ -2030,7 +2039,7 @@ Roslyn incremental source generator that registers `[BusConsumer]` and `[QueueCo
 
 - **Explicit registration**: the generated file (`MessagingModule.g.cs`) declares `<AssemblyName>.MessagingModule`, and nothing is registered until the module adds it with `AddModule<…MessagingModule>()` on `services.ConfigureMessaging(...)` or on the `AddHeadlessMessaging` setup. There is no module initializer and no runtime assembly scanning. Adding one module more than once registers it once. An assembly that declares no consumer gets no module.
 - **One entry per message**: a consumer class registers one entry for every `IConsume<T>` it implements, all with the attribute's identity, lane, `EveryInstance` flag, and `Policy` type.
-- **Typed dispatch**: each consumer class gets one generated dispatcher. It builds the class with `ActivatorUtilities.CreateInstance` from the delivery's scope, runs `IConsumerLifecycle` hooks when the class implements them, calls the `ConsumeAsync` that matches the context's message type (explicit interface implementations included), and disposes the instance it created. Dispatch uses no reflection and no compiled expressions.
+- **Typed dispatch**: each consumer class gets one generated factory and one generated dispatcher. The factory resolves the class from the delivery's scope with `GetService<T>()` and falls back to `ActivatorUtilities.CreateInstance<T>` when the container has no registration for it. The dispatcher builds the class through that factory, runs `IConsumerLifecycle` hooks when the class implements them, calls the `ConsumeAsync` that matches the context's message type (explicit interface implementations included), and disposes the instance only when the factory constructed it. An every-instance class that implements `IOnSubscriptionEstablished` also gets a generated hook call that builds the class through the same factory in its own scope. Dispatch and the hook use no reflection and no compiled expressions.
 - **Incremental**: declarations are reduced to value models when discovered, so an edit that does not change a consumer declaration reuses every generator step and re-emits nothing.
 - **Build-time checks**: HM001 to HM009 (HM005 is unassigned), listed under [Diagnostics](#messaging-source-generator-diagnostics). `EveryInstance` exists only on `[BusConsumer]`, so writing it on `[QueueConsumer]` is a compiler error rather than a generator rule.
 
@@ -2203,6 +2212,8 @@ dotnet add package Headless.Messaging.Testing
 ### Setup and use
 
 ```csharp
+using AwesomeAssertions;
+
 services.AddMessagingTestHarness();
 
 var harness = provider.GetRequiredService<MessagingTestHarness>();
@@ -2215,7 +2226,7 @@ await harness.ResetAsync();
 // a throwing delegate rolls it back and nothing is recorded.
 await harness.RunInUnitOfWorkAsync(async (sp, unit) =>
 {
-    await unit.Outbox.PublishAsync(new OrderPlaced("ORD-1"));
+    await unit.Outbox.PublishAsync(new OrderPlaced(Guid.NewGuid()));
 });
 
 var recorded = await harness.WaitForPublished<OrderPlaced>(TimeSpan.FromSeconds(5));

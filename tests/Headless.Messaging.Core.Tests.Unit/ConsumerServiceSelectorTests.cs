@@ -125,10 +125,12 @@ public sealed class ConsumerServiceSelectorTests
         services.AddLogging();
         services.AddHeadlessMessaging(messaging => messaging.Options.Version = "v1");
 
-        // A wildcard subscription has no message contract, so it is registered straight into the registry.
-        SetupMessaging
-            .GetOrAddConsumerRegistry(services)
-            .Register(
+        // A wildcard subscription has no message contract, so it is seeded into the registry before the host's
+        // registrations fold into it.
+        services.AddSingleton(sp =>
+        {
+            var registry = new ConsumerRegistry();
+            registry.Register(
                 new ConsumerMetadata(
                     typeof(SelectorTestMessage),
                     typeof(SelectorTestConsumer),
@@ -139,6 +141,8 @@ public sealed class ConsumerServiceSelectorTests
                     "v1"
                 )
             );
+            return SetupMessaging.BuildConsumerRegistry(sp, registry);
+        });
 
         using var provider = services.BuildServiceProvider();
         var selector = provider.GetRequiredService<IConsumerServiceSelector>();

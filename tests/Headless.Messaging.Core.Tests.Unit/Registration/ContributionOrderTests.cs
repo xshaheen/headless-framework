@@ -35,7 +35,7 @@ public sealed class ContributionOrderTests : TestBase
         using var provider = services.BuildServiceProvider();
 
         // then
-        var consumers = provider.GetDrainedConsumerRegistry().GetAll();
+        var consumers = provider.GetRequiredService<ConsumerRegistry>().GetAll();
         consumers
             .Select(consumer => (consumer.ConsumerType, consumer.Lane, consumer.MessageName, consumer.ConsumerIdentity))
             .Should()
@@ -64,7 +64,7 @@ public sealed class ContributionOrderTests : TestBase
         using var provider = services.BuildServiceProvider();
 
         // when
-        var consumers = provider.GetDrainedConsumerRegistry().GetAll();
+        var consumers = provider.GetRequiredService<ConsumerRegistry>().GetAll();
 
         // then
         consumers
@@ -86,7 +86,7 @@ public sealed class ContributionOrderTests : TestBase
         using var provider = services.BuildServiceProvider();
 
         // then
-        var consumer = provider.GetDrainedConsumerRegistry().GetAll().Should().ContainSingle().Subject;
+        var consumer = provider.GetRequiredService<ConsumerRegistry>().GetAll().Should().ContainSingle().Subject;
         consumer.ConsumerType.Should().Be<ContributedBusHandler>();
         consumer.ConsumerIdentity.Should().Be(_BeforeIdentity);
         consumer.Concurrency.Should().Be(2);
@@ -103,7 +103,7 @@ public sealed class ContributionOrderTests : TestBase
         using var provider = services.BuildServiceProvider();
 
         // when
-        var consumer = provider.GetDrainedConsumerRegistry().GetAll().Should().ContainSingle().Subject;
+        var consumer = provider.GetRequiredService<ConsumerRegistry>().GetAll().Should().ContainSingle().Subject;
 
         // then: tuning is a deployment setting layered in registration order, so the later value wins.
         consumer.Concurrency.Should().Be(7);
@@ -124,7 +124,7 @@ public sealed class ContributionOrderTests : TestBase
         using var provider = services.BuildServiceProvider();
 
         // when
-        var drain = () => provider.GetDrainedConsumerRegistry();
+        var drain = () => provider.GetRequiredService<ConsumerRegistry>();
 
         // then
         drain

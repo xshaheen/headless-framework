@@ -17,9 +17,16 @@ namespace Messaging.SourceGenerator.Tests
             catalog.AddBusConsumer<global::GlobalConsumer, global::GlobalMessage>("root.global", everyInstance: false, dispatch: Dispatch_GlobalConsumer);
         }
 
+        private static global::Billing_Handlers.Nested Create_Billing_Handlers_Nested(global::System.IServiceProvider services, out bool created)
+        {
+            var registered = global::Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetService<global::Billing_Handlers.Nested>(services);
+            created = registered is null;
+            return registered ?? global::Microsoft.Extensions.DependencyInjection.ActivatorUtilities.CreateInstance<global::Billing_Handlers.Nested>(services);
+        }
+
         private static async global::System.Threading.Tasks.ValueTask Dispatch_Billing_Handlers_Nested(global::System.IServiceProvider services, global::Headless.Messaging.ConsumeContext context, global::System.Threading.CancellationToken cancellationToken)
         {
-            var consumer = global::Microsoft.Extensions.DependencyInjection.ActivatorUtilities.CreateInstance<global::Billing_Handlers.Nested>(services);
+            var consumer = Create_Billing_Handlers_Nested(services, out _);
             switch (context)
             {
                 case global::Headless.Messaging.ConsumeContext<global::Billing.Payload> typed:
@@ -30,9 +37,16 @@ namespace Messaging.SourceGenerator.Tests
             }
         }
 
+        private static global::Billing.Handlers.Nested Create_Billing_Handlers_Nested_2(global::System.IServiceProvider services, out bool created)
+        {
+            var registered = global::Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetService<global::Billing.Handlers.Nested>(services);
+            created = registered is null;
+            return registered ?? global::Microsoft.Extensions.DependencyInjection.ActivatorUtilities.CreateInstance<global::Billing.Handlers.Nested>(services);
+        }
+
         private static async global::System.Threading.Tasks.ValueTask Dispatch_Billing_Handlers_Nested_2(global::System.IServiceProvider services, global::Headless.Messaging.ConsumeContext context, global::System.Threading.CancellationToken cancellationToken)
         {
-            var consumer = global::Microsoft.Extensions.DependencyInjection.ActivatorUtilities.CreateInstance<global::Billing.Handlers.Nested>(services);
+            var consumer = Create_Billing_Handlers_Nested_2(services, out _);
             switch (context)
             {
                 case global::Headless.Messaging.ConsumeContext<global::Billing.Payload> typed:
@@ -46,9 +60,16 @@ namespace Messaging.SourceGenerator.Tests
             }
         }
 
+        private static global::GlobalConsumer Create_GlobalConsumer(global::System.IServiceProvider services, out bool created)
+        {
+            var registered = global::Microsoft.Extensions.DependencyInjection.ServiceProviderServiceExtensions.GetService<global::GlobalConsumer>(services);
+            created = registered is null;
+            return registered ?? global::Microsoft.Extensions.DependencyInjection.ActivatorUtilities.CreateInstance<global::GlobalConsumer>(services);
+        }
+
         private static async global::System.Threading.Tasks.ValueTask Dispatch_GlobalConsumer(global::System.IServiceProvider services, global::Headless.Messaging.ConsumeContext context, global::System.Threading.CancellationToken cancellationToken)
         {
-            var consumer = global::Microsoft.Extensions.DependencyInjection.ActivatorUtilities.CreateInstance<global::GlobalConsumer>(services);
+            var consumer = Create_GlobalConsumer(services, out _);
             switch (context)
             {
                 case global::Headless.Messaging.ConsumeContext<global::GlobalMessage> typed:

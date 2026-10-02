@@ -84,14 +84,12 @@ internal static class ConsumerParser
 
         // The hook only runs for a process-local subscription, so on any other consumer it is dead code.
         var everyInstance = lane == ConsumerLane.Bus && values.EveryInstance;
-        if (
-            !everyInstance
-            && HandlerSymbols.Implements(
-                compilation,
-                classSymbol,
-                SourceGeneratorConstants.SubscriptionHookMetadataName
-            )
-        )
+        var implementsSubscriptionHook = HandlerSymbols.Implements(
+            compilation,
+            classSymbol,
+            SourceGeneratorConstants.SubscriptionHookMetadataName
+        );
+        if (!everyInstance && implementsSubscriptionHook)
         {
             diagnostics.Add(
                 DiagnosticInfo.Create(
@@ -124,7 +122,8 @@ internal static class ConsumerParser
                     compilation,
                     classSymbol,
                     SourceGeneratorConstants.ConsumerLifecycleMetadataName
-                )
+                ),
+                everyInstance && implementsSubscriptionHook
             );
 
         return new(

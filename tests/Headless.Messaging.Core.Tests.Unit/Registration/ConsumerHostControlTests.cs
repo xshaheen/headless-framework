@@ -32,7 +32,7 @@ public sealed class ConsumerHostControlTests : TestBase
 
         // when
         var ledger = provider
-            .GetDrainedConsumerRegistry()
+            .GetRequiredService<ConsumerRegistry>()
             .GetAll()
             .Where(x => x.ConsumerType == typeof(Fixture.LedgerProjection))
             .ToList();
@@ -97,7 +97,7 @@ public sealed class ConsumerHostControlTests : TestBase
         );
 
         // when
-        var act = () => provider.GetDrainedConsumerRegistry();
+        var act = () => provider.GetRequiredService<ConsumerRegistry>();
 
         // then
         act.Should()
@@ -120,7 +120,7 @@ public sealed class ConsumerHostControlTests : TestBase
         });
 
         // when
-        var act = () => provider.GetDrainedConsumerRegistry();
+        var act = () => provider.GetRequiredService<ConsumerRegistry>();
 
         // then
         act.Should()
@@ -139,7 +139,7 @@ public sealed class ConsumerHostControlTests : TestBase
         );
 
         // when
-        var consumers = provider.GetDrainedConsumerRegistry().GetAll();
+        var consumers = provider.GetRequiredService<ConsumerRegistry>().GetAll();
 
         // then
         consumers.Should().ContainSingle(x => x.ConsumerIdentity == TestConsumers.InvoiceProjection);
@@ -154,7 +154,7 @@ public sealed class ConsumerHostControlTests : TestBase
         );
 
         // when
-        var act = () => provider.GetDrainedConsumerRegistry();
+        var act = () => provider.GetRequiredService<ConsumerRegistry>();
 
         // then
         act.Should()
@@ -209,7 +209,7 @@ public sealed class ConsumerHostControlTests : TestBase
         );
 
         // when
-        var consumers = provider.GetDrainedConsumerRegistry().GetAll();
+        var consumers = provider.GetRequiredService<ConsumerRegistry>().GetAll();
 
         // then
         consumers
@@ -231,7 +231,7 @@ public sealed class ConsumerHostControlTests : TestBase
         );
 
         // when
-        var act = () => provider.GetDrainedConsumerRegistry();
+        var act = () => provider.GetRequiredService<ConsumerRegistry>();
 
         // then
         act.Should()
@@ -248,7 +248,7 @@ public sealed class ConsumerHostControlTests : TestBase
         );
 
         // when
-        var act = () => provider.GetDrainedConsumerRegistry();
+        var act = () => provider.GetRequiredService<ConsumerRegistry>();
 
         // then
         act.Should().Throw<InvalidOperationException>().WithMessage("*'billing.unknown'*");
@@ -272,7 +272,7 @@ public sealed class ConsumerHostControlTests : TestBase
         });
 
         // when
-        var consumers = provider.GetDrainedConsumerRegistry().GetAll();
+        var consumers = provider.GetRequiredService<ConsumerRegistry>().GetAll();
         var limit = provider
             .GetRequiredService<MethodMatcherCache>()
             .GetSubscriptionConcurrentLimit(
@@ -327,7 +327,7 @@ public sealed class ConsumerHostControlTests : TestBase
         });
 
         // when
-        var act = () => provider.GetDrainedConsumerRegistry();
+        var act = () => provider.GetRequiredService<ConsumerRegistry>();
 
         // then
         act.Should().Throw<InvalidOperationException>().WithMessage(expected);
@@ -426,8 +426,8 @@ public sealed class ConsumerHostControlTests : TestBase
         );
 
         // when
-        var matchesCompeting = () => provider.GetDrainedConsumerRegistry();
-        var matchesOnlyEveryInstance = () => onlyCache.GetDrainedConsumerRegistry();
+        var matchesCompeting = () => provider.GetRequiredService<ConsumerRegistry>();
+        var matchesOnlyEveryInstance = () => onlyCache.GetRequiredService<ConsumerRegistry>();
 
         // then
         matchesCompeting.Should().NotThrow("'billing.*' also matches a competing consumer");
@@ -450,7 +450,7 @@ public sealed class ConsumerHostControlTests : TestBase
         );
 
         // when
-        var act = () => provider.GetDrainedConsumerRegistry();
+        var act = () => provider.GetRequiredService<ConsumerRegistry>();
 
         // then
         act.Should()

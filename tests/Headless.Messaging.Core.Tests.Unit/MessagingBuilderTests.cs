@@ -22,7 +22,7 @@ public sealed class MessagingBuilderTests
         services.AddHeadlessMessaging(static setup => setup.AddConsumer<TestOrderConsumer>());
 
         using var provider = services.BuildServiceProvider();
-        var registry = provider.GetDrainedConsumerRegistry();
+        var registry = provider.GetRequiredService<ConsumerRegistry>();
 
         // then
         var orderConsumer = registry.GetAll().First(c => c.ConsumerType == typeof(TestOrderConsumer));
@@ -75,14 +75,15 @@ public sealed class MessagingBuilderTests
     {
         // given
         var services = new ServiceCollection();
+        services.AddHeadlessMessaging(messaging =>
+        {
+            messaging.WithMessageNameMapping<TestOrderMessage>("orders.placed");
+            messaging.WithMessageNameMapping<TestOrderMessage>("orders.created");
+        });
+        using var provider = services.BuildServiceProvider();
 
         // when
-        var act = () =>
-            services.AddHeadlessMessaging(messaging =>
-            {
-                messaging.WithMessageNameMapping<TestOrderMessage>("orders.placed");
-                messaging.WithMessageNameMapping<TestOrderMessage>("orders.created");
-            });
+        var act = () => provider.GetRequiredService<IConsumerRegistry>();
 
         // then
         act.Should().Throw<InvalidOperationException>().WithMessage("*already mapped to messageName*");
@@ -93,14 +94,15 @@ public sealed class MessagingBuilderTests
     {
         // given
         var services = new ServiceCollection();
+        services.AddHeadlessMessaging(messaging =>
+        {
+            messaging.WithMessageNameMapping<TestOrderMessage>("orders.placed");
+            messaging.WithMessageNameMapping<TestOrderMessage>("orders.placed");
+        });
+        using var provider = services.BuildServiceProvider();
 
         // when
-        var act = () =>
-            services.AddHeadlessMessaging(messaging =>
-            {
-                messaging.WithMessageNameMapping<TestOrderMessage>("orders.placed");
-                messaging.WithMessageNameMapping<TestOrderMessage>("orders.placed");
-            });
+        var act = () => provider.GetRequiredService<IConsumerRegistry>();
 
         // then
         act.Should().NotThrow();

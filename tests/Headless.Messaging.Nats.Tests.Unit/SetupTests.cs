@@ -118,6 +118,6 @@ public sealed class SetupTests : TestBase
 
     private static MessagingSetupBuilder _CreateSetup()
     {
-        return new MessagingSetupBuilder(new ServiceCollection(), new MessagingOptions(), new ConsumerRegistry());
+        return new MessagingSetupBuilder(new ServiceCollection(), new MessagingOptions());
     }
 }

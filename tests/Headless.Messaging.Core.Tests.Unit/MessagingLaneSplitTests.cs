@@ -37,7 +37,7 @@ public sealed class MessagingLaneSplitTests : TestBase
         services.ConfigureMessaging(messaging => messaging.Message<TestMessage>("events.orders"));
         services.AddHeadlessMessaging(setup => setup.AddConsumer<TestBusConsumer>());
 
-        var metadata = services.BuildServiceProvider().GetDrainedConsumerRegistry().GetAll().Single();
+        var metadata = services.BuildServiceProvider().GetRequiredService<ConsumerRegistry>().GetAll().Single();
 
         metadata.Lane.Should().Be(MessageLane.Bus);
         metadata.MessageName.Should().Be("events.orders");
@@ -51,7 +51,7 @@ public sealed class MessagingLaneSplitTests : TestBase
         services.ConfigureMessaging(messaging => messaging.Message<TestMessage>("jobs.orders"));
         services.AddHeadlessMessaging(setup => setup.AddConsumer<TestQueueConsumer>());
 
-        var metadata = services.BuildServiceProvider().GetDrainedConsumerRegistry().GetAll().Single();
+        var metadata = services.BuildServiceProvider().GetRequiredService<ConsumerRegistry>().GetAll().Single();
 
         metadata.Lane.Should().Be(MessageLane.Queue);
         metadata.MessageName.Should().Be("jobs.orders");

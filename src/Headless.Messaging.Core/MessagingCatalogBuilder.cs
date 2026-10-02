@@ -22,6 +22,22 @@ public delegate ValueTask MessageConsumerDispatch(
 );
 
 /// <summary>
+/// Runs <see cref="IOnSubscriptionEstablished.OnSubscriptionEstablishedAsync"/> on one attribute-declared every-instance
+/// consumer. The Messaging source generator emits one per consumer class that implements the hook: it builds the class
+/// the same way its <see cref="MessageConsumerDispatch"/> does, calls the hook, and releases the instance it created.
+/// </summary>
+/// <param name="services">The service provider of the hook's scope.</param>
+/// <param name="context">Which subscription was established.</param>
+/// <param name="cancellationToken">Cancelled when the subscription stops or the hook's time bound expires.</param>
+/// <returns>A <see cref="ValueTask"/> that completes when the consumer has resynchronized.</returns>
+[EditorBrowsable(EditorBrowsableState.Never)]
+public delegate ValueTask SubscriptionEstablishedDispatch(
+    IServiceProvider services,
+    SubscriptionEstablishedContext context,
+    CancellationToken cancellationToken
+);
+
+/// <summary>
 /// Collects one host's generated consumer declarations while its consumer registry is built. Each generated
 /// <see cref="IMessagingModule"/> writes its <see cref="BusConsumerAttribute"/> and <see cref="QueueConsumerAttribute"/>
 /// consumers here, one entry per consumed message.
@@ -48,6 +64,10 @@ public sealed class MessagingCatalogBuilder
     /// <param name="identity">The consumer identity from the attribute.</param>
     /// <param name="everyInstance">Whether every process receives every message.</param>
     /// <param name="dispatch">The generated dispatch of the consumer class.</param>
+    /// <param name="onSubscriptionEstablished">
+    /// The generated <see cref="IOnSubscriptionEstablished"/> call of an every-instance consumer class that implements
+    /// the hook, or <see langword="null"/> when the class has none.
+    /// </param>
     /// <exception cref="ArgumentException">
     /// <paramref name="identity"/> is empty or longer than <see cref="ConsumerMetadata.ConsumerIdentityMaxLength"/>.
     /// </exception>
@@ -55,12 +75,21 @@ public sealed class MessagingCatalogBuilder
     public void AddBusConsumer<TConsumer, TMessage>(
         string identity,
         bool everyInstance,
-        MessageConsumerDispatch dispatch
+        MessageConsumerDispatch dispatch,
+        SubscriptionEstablishedDispatch? onSubscriptionEstablished = null
     )
         where TConsumer : class, IConsume<TMessage>
         where TMessage : class
     {
-        _Add(typeof(TConsumer), typeof(TMessage), MessageLane.Bus, identity, everyInstance, dispatch);
+        _Add(
+            typeof(TConsumer),
+            typeof(TMessage),
+            MessageLane.Bus,
+            identity,
+            everyInstance,
+            dispatch,
+            onSubscriptionEstablished
+        );
     }
 
     /// <summary>Adds one message handled by a <see cref="QueueConsumerAttribute"/> consumer.</summary>
@@ -76,7 +105,15 @@ public sealed class MessagingCatalogBuilder
         where TConsumer : class, IConsume<TMessage>
         where TMessage : class
     {
-        _Add(typeof(TConsumer), typeof(TMessage), MessageLane.Queue, identity, everyInstance: false, dispatch);
+        _Add(
+            typeof(TConsumer),
+            typeof(TMessage),
+            MessageLane.Queue,
+            identity,
+            everyInstance: false,
+            dispatch,
+            onSubscriptionEstablished: null
+        );
     }
 
     /// <summary>Runs one module's generated registration, attributing its entries to the module.</summary>
@@ -99,7 +136,8 @@ public sealed class MessagingCatalogBuilder
         MessageLane lane,
         string identity,
         bool everyInstance,
-        MessageConsumerDispatch dispatch
+        MessageConsumerDispatch dispatch,
+        SubscriptionEstablishedDispatch? onSubscriptionEstablished
     )
     {
         // The generator already enforces the full owner.name rule at build time; these checks only keep a hand-written
@@ -116,7 +154,8 @@ public sealed class MessagingCatalogBuilder
                 lane,
                 identity,
                 everyInstance,
-                dispatch
+                dispatch,
+                onSubscriptionEstablished
             )
         );
     }
@@ -130,6 +169,7 @@ public sealed class MessagingCatalogBuilder
 /// <param name="Identity">The consumer identity.</param>
 /// <param name="EveryInstance">Whether every process receives every message; always false on the Queue lane.</param>
 /// <param name="Dispatch">The generated dispatch that runs the consumer class.</param>
+/// <param name="OnSubscriptionEstablished">The generated subscription hook of the class, when it has one.</param>
 internal sealed record MessagingConsumerDeclaration(
     string Source,
     Type ConsumerType,
@@ -137,5 +177,6 @@ internal sealed record MessagingConsumerDeclaration(
     MessageLane Lane,
     string Identity,
     bool EveryInstance,
-    MessageConsumerDispatch Dispatch
+    MessageConsumerDispatch Dispatch,
+    SubscriptionEstablishedDispatch? OnSubscriptionEstablished
 );

@@ -4,8 +4,21 @@ using Headless.SourceGenerators;
 
 namespace Headless.Messaging.SourceGenerator.Models;
 
-/// <summary>One consumer class as the emitter writes it: its model plus the dispatcher name chosen for the assembly.</summary>
-internal sealed record ConsumerRegistrationModel(ConsumerModel Consumer, string DispatcherName);
+/// <summary>
+/// One consumer class as the emitter writes it: its model plus the member names chosen for the assembly. The factory,
+/// the dispatcher, and the subscription hook share one suffix, so each class's members stay distinct.
+/// </summary>
+internal sealed record ConsumerRegistrationModel(ConsumerModel Consumer, string MemberSuffix)
+{
+    /// <summary>Builds the class for one call, preferring the container's registration.</summary>
+    public string FactoryName => "Create_" + MemberSuffix;
+
+    /// <summary>Runs one delivery.</summary>
+    public string DispatcherName => "Dispatch_" + MemberSuffix;
+
+    /// <summary>Runs the class's <c>IOnSubscriptionEstablished</c> hook.</summary>
+    public string SubscriptionHookName => "OnSubscriptionEstablished_" + MemberSuffix;
+}
 
 /// <summary>The complete input of the emitter for one assembly. Contains no locations or diagnostics.</summary>
 internal sealed record MessagingRegistrationModel(

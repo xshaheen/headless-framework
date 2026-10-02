@@ -40,7 +40,7 @@ public sealed record ConsumerMetadata(
 
     /// <summary>
     /// The circuit breaker overrides <c>Tune</c> or configuration gave this consumer. Applied to the
-    /// <see cref="ConsumerCircuitBreakerRegistry"/> during startup discovery.
+    /// <see cref="ConsumerCircuitBreakerRegistry"/> when the consumer registry is built.
     /// </summary>
     internal ConsumerCircuitBreakerOptions? CircuitBreakerOverride { get; init; }
 
@@ -58,6 +58,12 @@ public sealed record ConsumerMetadata(
 
     /// <summary>The generated dispatch that runs the consumer class.</summary>
     internal MessageConsumerDispatch? Dispatch { get; init; }
+
+    /// <summary>
+    /// The generated <see cref="IOnSubscriptionEstablished"/> call of an every-instance consumer class that implements
+    /// the hook, or <see langword="null"/>.
+    /// </summary>
+    internal SubscriptionEstablishedDispatch? OnSubscriptionEstablished { get; init; }
 
     /// <summary>The generated module that declared the consumer, or <see langword="null"/> outside modules.</summary>
     internal string? DeclaringModule { get; init; }

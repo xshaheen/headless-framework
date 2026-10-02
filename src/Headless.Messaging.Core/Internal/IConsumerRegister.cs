@@ -29,7 +29,7 @@ internal interface IConsumerRegister : IProcessingServer
     ValueTask OnTopologyChangedAsync(CancellationToken cancellationToken = default);
 }
 
-internal sealed class ConsumerRegister(
+internal sealed partial class ConsumerRegister(
     ILogger<ConsumerRegister> logger,
     IServiceProvider serviceProvider,
     IServiceScopeFactory serviceScopeFactory
@@ -43,6 +43,7 @@ internal sealed class ConsumerRegister(
 
     private readonly ILogger _logger = logger;
     private readonly MessagingOptions _options = serviceProvider.GetRequiredService<IOptions<MessagingOptions>>().Value;
+
     private readonly TimeProvider _timeProvider = serviceProvider.GetRequiredService<TimeProvider>();
 
     private readonly MessagingTelemetry _telemetry =
@@ -59,11 +60,6 @@ internal sealed class ConsumerRegister(
     private readonly Guid _instanceId = (
         serviceProvider.GetService<MessagingInstanceId>() ?? new MessagingInstanceId()
     ).Value;
-
-    // The establishment hooks of each every-instance subscription in this process, keyed by handle name. Kept across
-    // rebuilds on purpose: the generation count is what tells a consumer that an earlier subscription existed, so
-    // messages published between the two may never have arrived.
-    private readonly ConcurrentDictionary<string, EstablishmentChain> _establishments = new(StringComparer.Ordinal);
 
     private ICircuitBreakerStateManager? _circuitBreakerStateManager;
 
@@ -210,13 +206,18 @@ internal sealed class ConsumerRegister(
         }
     }
 
+    /// <summary>
+    /// Applies a runtime subscription change. Only the subscription groups whose shape changed are rebuilt: an added
+    /// group starts its clients, a removed one stops them, and a changed one does both. Every other group keeps its
+    /// clients, so an unrelated every-instance consumer is not re-established and its hook does not run.
+    /// </summary>
     public async ValueTask OnTopologyChangedAsync(CancellationToken cancellationToken = default)
     {
         var current = (LifecycleState)Volatile.Read(ref _state);
 
         if (current == LifecycleState.Running)
         {
-            await ReStartAsync(force: true, cancellationToken).ConfigureAwait(false);
+            await _RefreshTopologyAsync(cancellationToken).ConfigureAwait(false);
             return;
         }
 
@@ -232,9 +233,184 @@ internal sealed class ConsumerRegister(
                 && Interlocked.CompareExchange(ref _pendingTopologyRefresh, 0, 1) == 1
             )
             {
-                await ReStartAsync(force: true, cancellationToken).ConfigureAwait(false);
+                await _RefreshTopologyAsync(cancellationToken).ConfigureAwait(false);
             }
         }
+    }
+
+    private async ValueTask _RefreshTopologyAsync(CancellationToken cancellationToken)
+    {
+        if ((LifecycleState)Volatile.Read(ref _state) is LifecycleState.Disposing or LifecycleState.Disposed)
+        {
+            return;
+        }
+
+        await _restartGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await _ApplyTopologyChangeAsync().ConfigureAwait(false);
+            await _DrainPendingTopologyRefreshesAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            try
+            {
+                _restartGate.Release();
+            }
+            catch (ObjectDisposedException) { }
+        }
+    }
+
+    /// <summary>
+    /// Rebuilds the subscription groups whose shape differs from the running ones, under the restart gate. A group's
+    /// shape is its concurrency and its consumers, so it changes when a runtime subscription joins or leaves it.
+    /// </summary>
+    private async ValueTask _ApplyTopologyChangeAsync()
+    {
+        if ((LifecycleState)Volatile.Read(ref _state) != LifecycleState.Running)
+        {
+            return;
+        }
+
+        var desired = _selector
+            .GetCandidatesBySubscription()
+            .ToDictionary(
+                group => _CreateHandleName(group.Key),
+                group => (Group: group, Shape: _GetGroupShape(group.Key, group.Value)),
+                StringComparer.Ordinal
+            );
+
+        var stale = _subscriptionHandles
+            .Where(handle =>
+                !desired.TryGetValue(handle.Key, out var wanted)
+                || !string.Equals(wanted.Shape, handle.Value.Shape, StringComparison.Ordinal)
+            )
+            .ToArray();
+        var added = desired
+            .Where(wanted =>
+                !_subscriptionHandles.TryGetValue(wanted.Key, out var handle)
+                || !string.Equals(wanted.Value.Shape, handle.Shape, StringComparison.Ordinal)
+            )
+            .Select(static wanted => wanted.Value.Group)
+            .ToArray();
+
+        if (stale.Length == 0 && added.Length == 0)
+        {
+            return;
+        }
+
+        // Circuit state outlives the clients, as it does on a full rebuild: a consumer that returns keeps its history.
+        if (
+            !await _RetireHandlesAsync([.. stale.Select(static x => x.Value)], _RestartShutdownTimeout)
+                .ConfigureAwait(false)
+        )
+        {
+            _isHealthy = false;
+            _logger.ProcessorStopFailed(
+                new TimeoutException("The changed subscriptions did not stop before the topology deadline."),
+                nameof(ConsumerRegister)
+            );
+            return;
+        }
+
+        foreach (var handle in stale)
+        {
+            _subscriptionHandles.TryRemove(handle);
+        }
+
+        _RegisterKnownCircuits(desired.Values.Select(static x => x.Group));
+
+        try
+        {
+            // Nothing waits for the establishment hooks under the restart gate, for the reason a rebuild gives.
+            _ = await _StartSubscriptionsAsync(added).ConfigureAwait(false);
+            await _PauseSurvivorsOfOpenCircuitsAsync(added).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+            when ((LifecycleState)Volatile.Read(ref _state) is LifecycleState.Disposing or LifecycleState.Disposed)
+        {
+            // Final shutdown owns the handles that were published before it won.
+        }
+        catch
+        {
+            // A group that failed to start leaves the host short of a subscription; the health watchdog's full
+            // rebuild recovers it.
+            _isHealthy = false;
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Starting a group aborts any half-open probe of the circuits it delivers to, which reopens them without the pause
+    /// callback. A full rebuild pre-pauses every new handle, so nothing else is affected; after a partial one, a group
+    /// that kept running and shares such a circuit would stay resumed while it is Open, so it is paused here too.
+    /// </summary>
+    private async ValueTask _PauseSurvivorsOfOpenCircuitsAsync(
+        KeyValuePair<ConsumerSubscriptionKey, IReadOnlyList<ConsumerExecutorDescriptor>>[] started
+    )
+    {
+        if (_circuitBreakerStateManager is null || started.Length == 0)
+        {
+            return;
+        }
+
+        var startedNames = started.Select(static x => _CreateHandleName(x.Key)).ToHashSet(StringComparer.Ordinal);
+        var circuitKeys = started
+            .SelectMany(static x => x.Value)
+            .Where(static x => !x.EveryInstance)
+            .Select(CircuitBreakerKeys.For)
+            .Distinct(StringComparer.Ordinal);
+
+        foreach (var circuitKey in circuitKeys)
+        {
+            if (!_circuitBreakerStateManager.TryGetOpenEpoch(circuitKey, out var openEpoch))
+            {
+                continue;
+            }
+
+            foreach (var handle in _subscriptionHandles.Values)
+            {
+                if (
+                    !startedNames.Contains(handle.SubscriptionName)
+                    && handle.CircuitKeys.Contains(circuitKey)
+                    && !handle.IsPauseAppliedForEpoch(openEpoch)
+                )
+                {
+                    await _PauseSubscriptionAsync(handle, openEpoch).ConfigureAwait(false);
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// The shape of one subscription group, compared ordinally to decide whether a topology change touches it: the
+    /// concurrency its clients run with and every consumer they deliver to.
+    /// </summary>
+    private string _GetGroupShape(
+        ConsumerSubscriptionKey subscriptionKey,
+        IReadOnlyList<ConsumerExecutorDescriptor> descriptors
+    )
+    {
+        var consumers = descriptors
+            .Select(static x =>
+                string.Join(
+                    '\u001f',
+                    x.MessageName,
+                    x.ResolvedConsumerIdentity,
+                    x.HandlerId,
+                    x.ConsumerType?.AssemblyQualifiedName,
+                    x.MessageType?.AssemblyQualifiedName,
+                    x.MessageContractVersion
+                )
+            )
+            .Order(StringComparer.Ordinal);
+
+        return string.Join(
+            '\u001e',
+            consumers.Prepend(
+                _selector.GetSubscriptionConcurrentLimit(subscriptionKey).ToString(CultureInfo.InvariantCulture)
+            )
+        );
     }
 
     public void Dispose()
@@ -450,17 +626,49 @@ internal sealed class ConsumerRegister(
         var shutdownStarted = _timeProvider.GetTimestamp();
         var handles = _subscriptionHandles.Values.ToArray();
 
-        // Signal every subscription concurrently so one slow cancellation callback cannot delay the others.
-        if (handles.Length > 0)
+        if (!await _RetireHandlesAsync(handles, shutdownTimeout, shutdownStarted).ConfigureAwait(false))
         {
-            var cancellationTask = Task.WhenAll(handles.Select(handle => handle.CancelAsync().AsTask()));
-            if (
-                !await _WaitWithinShutdownBudgetAsync(cancellationTask, shutdownStarted, shutdownTimeout)
-                    .ConfigureAwait(false)
-            )
-            {
-                return false;
-            }
+            return false;
+        }
+
+        var finalizationTask = _FinalizePulseAsync(handles, removeCircuitState, _stoppingCtsRegistration, _stoppingCts);
+        if (
+            !await _WaitWithinShutdownBudgetAsync(finalizationTask, shutdownStarted, shutdownTimeout)
+                .ConfigureAwait(false)
+        )
+        {
+            return false;
+        }
+
+        _subscriptionHandles.Clear();
+        return true;
+    }
+
+    /// <summary>
+    /// Stops the clients of <paramref name="handles"/> within one budget: cancels every subscription concurrently,
+    /// waits for their consumer tasks, then disposes them. Returns <see langword="false"/> when the budget expires.
+    /// </summary>
+    private async Task<bool> _RetireHandlesAsync(
+        IReadOnlyCollection<SubscriptionHandle> handles,
+        TimeSpan shutdownTimeout,
+        long? started = null
+    )
+    {
+        if (handles.Count == 0)
+        {
+            return true;
+        }
+
+        var shutdownStarted = started ?? _timeProvider.GetTimestamp();
+
+        // Signal every subscription concurrently so one slow cancellation callback cannot delay the others.
+        var cancellationTask = Task.WhenAll(handles.Select(handle => handle.CancelAsync().AsTask()));
+        if (
+            !await _WaitWithinShutdownBudgetAsync(cancellationTask, shutdownStarted, shutdownTimeout)
+                .ConfigureAwait(false)
+        )
+        {
+            return false;
         }
 
         // Wait for all consumer tasks to complete
@@ -485,32 +693,11 @@ internal sealed class ConsumerRegister(
 #pragma warning restore ERP022
         }
 
-        // Dispose all handles; only remove circuit state on final teardown,
-        // not on transport restarts where state must survive broker reconnects.
-        if (handles.Length > 0)
-        {
-            var remaining = _GetRemainingTimeout(shutdownStarted, shutdownTimeout);
-            var disposalTask = Task.WhenAll(handles.Select(handle => handle.DisposeAsync(remaining).AsTask()));
-            if (
-                !await _WaitWithinShutdownBudgetAsync(disposalTask, shutdownStarted, shutdownTimeout)
-                    .ConfigureAwait(false)
-            )
-            {
-                return false;
-            }
-        }
-
-        var finalizationTask = _FinalizePulseAsync(handles, removeCircuitState, _stoppingCtsRegistration, _stoppingCts);
-        if (
-            !await _WaitWithinShutdownBudgetAsync(finalizationTask, shutdownStarted, shutdownTimeout)
-                .ConfigureAwait(false)
-        )
-        {
-            return false;
-        }
-
-        _subscriptionHandles.Clear();
-        return true;
+        // Circuit state is not touched here: only final teardown removes it, because it must survive a rebuild.
+        var remaining = _GetRemainingTimeout(shutdownStarted, shutdownTimeout);
+        var disposalTask = Task.WhenAll(handles.Select(handle => handle.DisposeAsync(remaining).AsTask()));
+        return await _WaitWithinShutdownBudgetAsync(disposalTask, shutdownStarted, shutdownTimeout)
+            .ConfigureAwait(false);
     }
 
     private async Task _FinalizePulseAsync(
@@ -574,23 +761,44 @@ internal sealed class ConsumerRegister(
     /// Starts a client generation for every subscription and returns once each client receives, with the establishment
     /// hooks that generation raised. The hooks run on their own and never fault; host startup waits for them.
     /// </summary>
-    private async ValueTask<IReadOnlyCollection<Task>> _StartSubscriptionsAsync()
+    private ValueTask<IReadOnlyCollection<Task>> _StartSubscriptionsAsync()
     {
         var subscriptions = _selector.GetCandidatesBySubscription();
-        List<Task>? startupTasks = null;
-        var establishments = new ConcurrentQueue<Task>();
+        _RegisterKnownCircuits(subscriptions);
+        return _StartSubscriptionsAsync([.. subscriptions]);
+    }
 
-        // Circuits belong to consumer identities, not to the subscriptions their clients consume, so an identity whose
-        // messages arrive through several clients trips once and pauses all of them. Arming the known set also stops
-        // unrecognized keys from reaching the OTel cardinality. Every-instance consumers have no circuit: their
-        // deliveries are at most once, so there is no retry backlog for a breaker to protect.
+    /// <summary>
+    /// Circuits belong to consumer identities, not to the subscriptions their clients consume, so an identity whose
+    /// messages arrive through several clients trips once and pauses all of them. Arming the known set also stops
+    /// unrecognized keys from reaching the OTel cardinality. Every-instance consumers have no circuit: their deliveries
+    /// are at most once, so there is no retry backlog for a breaker to protect.
+    /// </summary>
+    private void _RegisterKnownCircuits(
+        IEnumerable<KeyValuePair<ConsumerSubscriptionKey, IReadOnlyList<ConsumerExecutorDescriptor>>> subscriptions
+    )
+    {
         _circuitBreakerStateManager?.RegisterKnownConsumers(
             subscriptions
-                .Values.SelectMany(static x => x)
+                .SelectMany(static x => x.Value)
                 .Where(static x => !x.EveryInstance)
                 .Select(CircuitBreakerKeys.For)
                 .Distinct(StringComparer.Ordinal)
         );
+    }
+
+    /// <summary>
+    /// Starts a client generation for each of <paramref name="subscriptions"/> and returns once each client receives,
+    /// with the establishment hooks that generation raised.
+    /// </summary>
+    private async ValueTask<IReadOnlyCollection<Task>> _StartSubscriptionsAsync(
+        IReadOnlyCollection<
+            KeyValuePair<ConsumerSubscriptionKey, IReadOnlyList<ConsumerExecutorDescriptor>>
+        > subscriptions
+    )
+    {
+        List<Task>? startupTasks = null;
+        var establishments = new ConcurrentQueue<Task>();
 
         foreach (var match in subscriptions)
         {
@@ -623,6 +831,7 @@ internal sealed class ConsumerRegister(
                 Logger = _logger,
                 Cts = groupCts,
                 SubscriptionName = handleName,
+                Shape = _GetGroupShape(subscriptionKey, descriptors),
                 CircuitKeys = everyInstance
                     ? []
                     : match.Value.Select(CircuitBreakerKeys.For).ToFrozenSet(StringComparer.Ordinal),
@@ -814,137 +1023,6 @@ internal sealed class ConsumerRegister(
         await listeningTask.ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Raises one establishment of an every-instance subscription: at startup, after each rebuild, and when the client
-    /// reports that it recovered on its own. The hooks run off the caller, after the previous establishment's hooks of
-    /// the same subscription, so they keep establishment order without anyone holding the restart gate for them. The
-    /// returned task completes when this establishment's hooks finish or time out, and never faults.
-    /// </summary>
-    private Task _RaiseSubscriptionEstablished(
-        string handleName,
-        IReadOnlyList<ConsumerExecutorDescriptor> descriptors,
-        CancellationToken cancellationToken
-    )
-    {
-        return _establishments
-            .GetOrAdd(handleName, static _ => new EstablishmentChain())
-            .Append((previous, generation) => _NotifyAfterAsync(previous, descriptors, generation, cancellationToken));
-    }
-
-    private async Task _NotifyAfterAsync(
-        Task previous,
-        IReadOnlyList<ConsumerExecutorDescriptor> descriptors,
-        long generation,
-        CancellationToken cancellationToken
-    )
-    {
-        await previous.ConfigureAwait(false);
-
-        try
-        {
-            await _NotifySubscriptionEstablishedAsync(descriptors, generation, cancellationToken).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            // The client generation stopped; a later establishment raises its own hooks.
-        }
-    }
-
-    /// <summary>
-    /// Calls <see cref="IOnSubscriptionEstablished"/> on every consumer class of one every-instance subscription for
-    /// one establishment, each bounded by <see cref="MessagingOptions.SubscriptionEstablishedTimeout"/>.
-    /// </summary>
-    private async Task _NotifySubscriptionEstablishedAsync(
-        IReadOnlyList<ConsumerExecutorDescriptor> descriptors,
-        long generation,
-        CancellationToken cancellationToken
-    )
-    {
-        // Runtime subscriptions declare no identity and have no consumer class to call.
-        foreach (
-            var consumer in descriptors
-                .Where(static x => !string.IsNullOrWhiteSpace(x.ConsumerIdentity))
-                .GroupBy(static x => x.ConsumerType)
-        )
-        {
-            if (!typeof(IOnSubscriptionEstablished).IsAssignableFrom(consumer.Key))
-            {
-                continue;
-            }
-
-            var identity = consumer.First().ConsumerIdentity!;
-            var context = new SubscriptionEstablishedContext(
-                identity,
-                [.. consumer.Select(static x => x.MessageName).Distinct(StringComparer.Ordinal)],
-                IsReconnect: generation > 1,
-                generation
-            );
-
-            cancellationToken.ThrowIfCancellationRequested();
-            var timeout = _options.SubscriptionEstablishedTimeout;
-            using var timeoutCts = new CancellationTokenSource(timeout, _timeProvider);
-            using var hookCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
-            var hook = _InvokeSubscriptionEstablishedAsync(consumer.Key, context, hookCts.Token);
-
-            try
-            {
-                // Waits on the token too, so a hook that ignores it still releases the establishments queued behind it.
-                await hook.WaitAsync(hookCts.Token).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                hook.Forget();
-                throw;
-            }
-            catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)
-            {
-                hook.Forget();
-                _logger.SubscriptionEstablishedHookTimedOut(LogSanitizer.Sanitize(identity), timeout, generation);
-            }
-            catch (Exception ex)
-            {
-                _logger.SubscriptionEstablishedHookFailed(ex, LogSanitizer.Sanitize(identity), generation);
-            }
-        }
-    }
-
-    private async Task _InvokeSubscriptionEstablishedAsync(
-        Type consumerType,
-        SubscriptionEstablishedContext context,
-        CancellationToken cancellationToken
-    )
-    {
-        await using var scope = serviceScopeFactory.CreateAsyncScope();
-        var services = scope.ServiceProvider;
-
-        // A container-registered consumer is resolved and owned by the scope; an attribute-declared one is built the way
-        // its generated dispatch builds it, and disposed here because the scope does not track it.
-        var registered = services.GetService(consumerType);
-        var consumer = registered ?? ActivatorUtilities.CreateInstance(services, consumerType);
-
-        try
-        {
-            await ((IOnSubscriptionEstablished)consumer)
-                .OnSubscriptionEstablishedAsync(context, cancellationToken)
-                .ConfigureAwait(false);
-        }
-        finally
-        {
-            if (registered is null)
-            {
-                switch (consumer)
-                {
-                    case IAsyncDisposable asyncDisposable:
-                        await asyncDisposable.DisposeAsync().ConfigureAwait(false);
-                        break;
-                    case IDisposable disposable:
-                        disposable.Dispose();
-                        break;
-                }
-            }
-        }
-    }
-
     private async ValueTask _RestartCoreAsync()
     {
         var current = (LifecycleState)Volatile.Read(ref _state);
@@ -1028,7 +1106,7 @@ internal sealed class ConsumerRegister(
     {
         while (Interlocked.Exchange(ref _pendingTopologyRefresh, 0) == 1)
         {
-            await _RestartCoreAsync().ConfigureAwait(false);
+            await _ApplyTopologyChangeAsync().ConfigureAwait(false);
         }
     }
 
@@ -1198,9 +1276,6 @@ internal sealed class ConsumerRegister(
         CancellationToken hostShutdownToken
     )
     {
-        var subscription = subscriptionKey.SubscriptionName;
-        var lane = subscriptionKey.Lane;
-
         if (subscriptionKey.Kind is ConsumerSubscriptionKind.EveryInstance)
         {
             client.AttachCallbacks(
@@ -1212,1099 +1287,19 @@ internal sealed class ConsumerRegister(
             return;
         }
 
-        async Task onMessageCallback(TransportMessage transportMessage, object? sender)
-        {
-            long? probeEpoch = null;
-            var admissionEpoch = 0L;
-            var probeOutcomeTransferred = false;
-            var transportSettled = false;
-            MessagingTraceHandle traceHandle = default;
-
-            // Exactly one consume outcome (success or error) may be recorded per message: the trace handle is an
-            // immutable struct, so this flag is what keeps the subscriber-not-found path (error emitted inline,
-            // then routed to the poison store) from also emitting the success outcome on the same handle.
-            var consumeOutcomeRecorded = false;
-
-            // Receive-stage state: the context exists only when receive middleware ran for this
-            // delivery; the two flags below let the poison and cancellation handlers distinguish an
-            // explicit policy decision (Reject/Skip) from a middleware fault, and a cancellation
-            // bound to the receive token from a foreign one.
-            ReceiveContext? receiveContext = null;
-            var receiveRejectIsPolicy = false;
-            var receiveOutcomeCancelled = false;
-
-            // Resolved once up front: the consumer identity keys the circuit, the stored row, the metrics, and the
-            // header every later stage reads. A delivery no consumer claims has no identity and no circuit, so its
-            // poison row is labelled with the subscription it arrived on.
-            string? circuitKey = null;
-
-            try
-            {
-                var name = transportMessage.Name;
-                var canFindSubscriber = _selector.TryGetMessageNameExecutor(name, subscriptionKey, out var executor);
-                var consumerIdentity = executor?.ResolvedConsumerIdentity ?? subscription;
-
-                // Replaces whatever the publisher sent, so the header always names the consumer that received it.
-                transportMessage.Headers[Headers.ConsumerIdentity] = consumerIdentity;
-
-                if (executor is not null)
-                {
-                    circuitKey = CircuitBreakerKeys.For(executor);
-                }
-
-                if (_circuitBreakerStateManager is not null && circuitKey is not null)
-                {
-                    probeEpoch = _circuitBreakerStateManager.TryAcquireHalfOpenProbe(circuitKey);
-
-                    if (probeEpoch is null)
-                    {
-                        // Settlement is must-complete: never abandon a reject on host shutdown.
-                        await client.RejectAsync(sender, CancellationToken.None).ConfigureAwait(false);
-
-                        return;
-                    }
-
-                    admissionEpoch = probeEpoch.Value;
-                    if (_circuitBreakerStateManager.TryGetOpenEpoch(circuitKey, out var openEpoch))
-                    {
-                        var safeCircuitKey = LogSanitizer.Sanitize(circuitKey);
-                        if (clientHandle.IsPauseAppliedForEpoch(openEpoch))
-                        {
-                            if (_logger.IsEnabled(LogLevel.Warning))
-                            {
-                                _logger.DeliveryAdmittedWhileOpenAfterPause(safeCircuitKey);
-                            }
-                        }
-                        else
-                        {
-                            if (_logger.IsEnabled(LogLevel.Debug))
-                            {
-                                _logger.DeliveryAdmittedDuringPauseLatency(safeCircuitKey);
-                            }
-                        }
-                    }
-                }
-
-                if (_logger.IsEnabled(LogLevel.Debug))
-                {
-                    var safeMessageId = LogSanitizer.Sanitize(transportMessage.Id);
-                    var safeMessageName = LogSanitizer.Sanitize(transportMessage.Name);
-                    _logger.MessageReceived(safeMessageId, safeMessageName);
-                }
-
-                traceHandle = _TracingBefore(transportMessage, lane, _serverAddress);
-
-                Message message;
-                Exception? dispatchBypassException = null;
-                string? exceptionInfo = null;
-
-                try
-                {
-                    if (!canFindSubscriber)
-                    {
-                        var safeName = LogSanitizer.Sanitize(name);
-                        var safeSubscription = LogSanitizer.Sanitize(subscription);
-                        var error =
-                            $"Message can not be found subscriber. Name:{safeName}, Subscription:{safeSubscription}. {Environment.NewLine} Ensure a consumer is registered for the message on this subscription.";
-                        var ex = new SubscriberNotFoundException(error);
-
-                        _TracingError(traceHandle, transportMessage, client.BrokerAddress, ex);
-                        consumeOutcomeRecorded = true;
-
-                        throw ex;
-                    }
-
-                    // The receive ring: receive middleware wraps the inner steps (contract-version
-                    // validation, deserialization, null-payload check) when any descriptor matches;
-                    // otherwise the inner steps run directly and the delivery path is byte-for-byte
-                    // today's zero-middleware behavior.
-                    var receiveOutcome = await _RunReceiveRingAsync(
-                            transportMessage,
-                            executor!,
-                            lane,
-                            _RunInnerReceiveAsync,
-                            hostShutdownToken
-                        )
-                        .ConfigureAwait(false);
-
-                    if (receiveOutcome.Context is { } ringContext)
-                    {
-                        receiveContext = ringContext;
-                    }
-
-                    if (receiveOutcome.Result == ReceiveRingResult.Skipped)
-                    {
-                        // Skip commits and drops: no storage row, no exhausted callback, and the
-                        // half-open probe is released by the callback's finally (neither success nor
-                        // failure — a header-based filter decision must not advance the breaker).
-                        if (_logger.IsEnabled(LogLevel.Information))
-                        {
-                            _logger.ReceiveMessageSkipped(
-                                receiveOutcome.MiddlewareType!,
-                                LogSanitizer.Sanitize(transportMessage.Id),
-                                LogSanitizer.Sanitize(name),
-                                LogSanitizer.Sanitize(consumerIdentity),
-                                lane.ToString(),
-                                LogSanitizer.Sanitize(receiveOutcome.OutcomeReason)
-                            );
-                        }
-
-                        MessagingMetrics.RecordReceiveOutcome("skipped");
-                        traceHandle.Activity?.SetTag(MessagingMetrics.TagReceiveOutcome, "skipped");
-
-                        _TracingAfter(traceHandle, transportMessage, _serverAddress);
-                        consumeOutcomeRecorded = true;
-
-                        // Settlement is must-complete: never abandon a commit on host shutdown.
-                        await client.CommitAsync(sender, CancellationToken.None).ConfigureAwait(false);
-                        transportSettled = true;
-                        return;
-                    }
-
-                    if (receiveOutcome.Result == ReceiveRingResult.Cancelled)
-                    {
-                        receiveOutcomeCancelled = true;
-                        MessagingMetrics.RecordReceiveOutcome("cancelled");
-                        traceHandle.Activity?.SetTag(MessagingMetrics.TagReceiveOutcome, "cancelled");
-                        if (_logger.IsEnabled(LogLevel.Debug))
-                        {
-                            _logger.ReceiveOutcomeCancelled(
-                                LogSanitizer.Sanitize(transportMessage.Id),
-                                LogSanitizer.Sanitize(name),
-                                LogSanitizer.Sanitize(consumerIdentity)
-                            );
-                        }
-
-                        throw receiveOutcome.Exception!;
-                    }
-
-                    if (receiveOutcome.Result == ReceiveRingResult.Rejected)
-                    {
-                        dispatchBypassException = receiveOutcome.Exception!;
-                        receiveRejectIsPolicy = receiveOutcome.IsPolicyReject;
-                        exceptionInfo = dispatchBypassException.ExpandMessage();
-                        message = _BuildPoisonMessage(transportMessage, receiveContext, dispatchBypassException);
-
-                        MessagingMetrics.RecordReceiveOutcome("rejected");
-                        traceHandle.Activity?.SetTag(MessagingMetrics.TagReceiveOutcome, "rejected");
-                        if (_logger.IsEnabled(LogLevel.Warning))
-                        {
-                            _logger.ReceiveMessageRejected(
-                                dispatchBypassException is ReceiveMessageRejectedException
-                                    ? null
-                                    : dispatchBypassException,
-                                receiveOutcome.MiddlewareType!,
-                                LogSanitizer.Sanitize(transportMessage.Id),
-                                LogSanitizer.Sanitize(name),
-                                LogSanitizer.Sanitize(consumerIdentity),
-                                lane.ToString(),
-                                LogSanitizer.Sanitize(
-                                    receiveOutcome.OutcomeReason ?? dispatchBypassException.ExpandMessage()
-                                )
-                            );
-                        }
-
-                        // A middleware reject is a policy decision on this delivery, not a subscriber
-                        // fault: finalize the span as an error here (mirroring subscriber-not-found)
-                        // so the shared poison block below does not emit a success stop for it.
-                        if (!consumeOutcomeRecorded)
-                        {
-                            _TracingError(traceHandle, transportMessage, client.BrokerAddress, dispatchBypassException);
-                            consumeOutcomeRecorded = true;
-                        }
-                    }
-                    else
-                    {
-                        message = receiveOutcome.Message!;
-
-                        // The delivery continued to admission; the ring's copy-on-write headers/body
-                        // (already reflected in the deserialized message) are what storage persists.
-                        MessagingMetrics.RecordReceiveOutcome("accepted");
-                        traceHandle.Activity?.SetTag(MessagingMetrics.TagReceiveOutcome, "accepted");
-                    }
-                }
-                catch (Exception e) when (!receiveOutcomeCancelled)
-                {
-                    dispatchBypassException = e;
-                    receiveRejectIsPolicy = false;
-                    exceptionInfo = e.ExpandMessage();
-                    message = _BuildPoisonMessage(transportMessage, receiveContext, e);
-
-                    // Every row built here is a poison-on-arrival outcome: subscriber-not-found,
-                    // contract-version mismatch, a Stage A deserialization failure, or a receive
-                    // middleware fault the ring converted into a reject.
-                    MessagingMetrics.RecordReceiveOutcome("rejected");
-                    traceHandle.Activity?.SetTag(MessagingMetrics.TagReceiveOutcome, "rejected");
-                }
-
-                if (message.HasException())
-                {
-                    if (
-                        dispatchBypassException is not null
-                        && _circuitBreakerStateManager is not null
-                        && circuitKey is not null
-                    )
-                    {
-                        // An explicit Reject() (or its Stage A equivalents routed as policy) is a
-                        // policy decision on attacker-controllable input, not a subscriber failure:
-                        // neither report nor transfer the probe — the callback's finally releases it,
-                        // exactly like Skip. Middleware faults, undeclared outcomes, and version or
-                        // deserialization failures keep reporting, and the failure report owns the probe.
-                        if (!receiveRejectIsPolicy)
-                        {
-                            await _circuitBreakerStateManager
-                                .ReportFailureAsync(circuitKey, dispatchBypassException, CancellationToken.None)
-                                .ConfigureAwait(false);
-
-                            probeOutcomeTransferred = true;
-                        }
-                    }
-
-                    var content = _serializer.Serialize(message);
-
-                    var stored = await _storage
-                        .StoreReceivedExceptionMessageAsync(
-                            name,
-                            consumerIdentity,
-                            new MediumMessage
-                            {
-                                StorageId = Guid.Empty,
-                                Origin = message,
-                                Content = content,
-                                Lane = lane,
-                            },
-                            exceptionInfo,
-                            hostShutdownToken
-                        )
-                        .ConfigureAwait(false);
-
-                    // Settlement is must-complete: never abandon a commit on host shutdown.
-                    await client.CommitAsync(sender, CancellationToken.None).ConfigureAwait(false);
-                    transportSettled = true;
-
-                    var bypassCallback = _options.RetryPolicy.OnExhausted;
-
-                    if (stored && bypassCallback is not null)
-                    {
-                        // Poisoned-on-arrival messages bypass the normal Dispatcher scope,
-                        // so we create a fresh async scope here instead of using the root provider.
-                        // RetryHelper.InvokeOnExhaustedAsync applies the configured OnExhaustedTimeout
-                        // and swallows handler exceptions; pass the subscription/host shutdown token so a
-                        // cooperative callback can short-circuit when the consumer is stopping.
-                        await using var exhaustedScope = serviceScopeFactory.CreateAsyncScope();
-
-                        using var tenantScope = TenantContextScope.ChangeFromEnvelope(
-                            exhaustedScope.ServiceProvider,
-                            message,
-                            _logger
-                        );
-
-                        await RetryHelper
-                            .InvokeOnExhaustedAsync(
-                                bypassCallback,
-                                new FailedInfo
-                                {
-                                    ServiceProvider = exhaustedScope.ServiceProvider,
-                                    MessageType = MessageType.Subscribe,
-                                    Message = message,
-                                    Lane = lane,
-                                    Exception =
-                                        dispatchBypassException
-                                        ?? new InvalidOperationException(
-                                            exceptionInfo ?? "Received message contains exception information."
-                                        ),
-                                    // Poisoned-on-arrival messages bypass the dispatch scope and have
-                                    // no associated MediumMessage; storageId is the storage's
-                                    // sentinel here too (Guid.Empty == "no row identifier"), and the
-                                    // retry count is zero because no consume attempt ever ran.
-                                    StorageId = Guid.Empty,
-                                    RetryCount = 0,
-                                },
-                                _options.RetryPolicy.OnExhaustedTimeout,
-                                storageId: Guid.Empty,
-                                _logger,
-                                _timeProvider,
-                                hostShutdownToken
-                            )
-                            .ConfigureAwait(false);
-                    }
-                    else if (!stored)
-                    {
-                        if (_logger.IsEnabled(LogLevel.Information))
-                        {
-                            _logger.SkippingPoisonedOnExhaustedAlreadyTerminal(message.Id);
-                        }
-                    }
-
-                    _logger.ConsumerReceivedMessageAfterThreshold(message.Id, _options.RetryPolicy.MaxPersistedRetries);
-
-                    if (consumeOutcomeRecorded)
-                    {
-                        // The span + consume outcome were already finalized as an error (subscriber-not-found);
-                        // only the legacy EventCounter fires here so its counts match the pre-native bridge.
-                        MessageEventCounterSource.Log.WriteConsumeMetrics();
-                    }
-                    else
-                    {
-                        _TracingAfter(traceHandle, transportMessage, _serverAddress);
-                        consumeOutcomeRecorded = true;
-                    }
-                }
-                else
-                {
-                    var messageContractVersion = executor!.MessageContractVersion;
-                    if (
-                        string.IsNullOrWhiteSpace(executor.ConsumerIdentity)
-                        || string.IsNullOrWhiteSpace(messageContractVersion)
-                    )
-                    {
-                        // Runtime subscriptions are intentionally process-local and have no durable identity.
-                        // Preserve their legacy delivery path; bootstrap validation prevents configured durable
-                        // consumers from reaching this branch without a stable identity and contract version.
-                        var runtimeMessage = await _storage
-                            .StoreReceivedMessageAsync(
-                                name,
-                                consumerIdentity,
-                                new MediumMessage
-                                {
-                                    StorageId = Guid.Empty,
-                                    Origin = message,
-                                    Content = string.Empty,
-                                    Lane = lane,
-                                },
-                                CancellationToken.None
-                            )
-                            .ConfigureAwait(false);
-
-                        runtimeMessage.Origin = message;
-                        _TracingAfter(traceHandle, transportMessage, _serverAddress);
-                        consumeOutcomeRecorded = true;
-
-                        // The executor releases the HalfOpen probe with this epoch; without it the
-                        // release is a no-op and the probe slot stays held on this path.
-                        runtimeMessage.ProbeEpoch = admissionEpoch;
-                        await _dispatcher
-                            .EnqueueToExecute(runtimeMessage, executor, CancellationToken.None)
-                            .ConfigureAwait(false);
-                        probeOutcomeTransferred = true;
-
-                        await client.CommitAsync(sender, CancellationToken.None).ConfigureAwait(false);
-                        transportSettled = true;
-                        return;
-                    }
-
-                    var admission = await _storage
-                        .AdmitReceivedMessageAsync(
-                            name,
-                            consumerIdentity,
-                            message.Headers[Headers.ContractVersion]!,
-                            new MediumMessage
-                            {
-                                StorageId = Guid.Empty,
-                                Origin = message,
-                                Content = string.Empty,
-                                Lane = lane,
-                            },
-                            inboxRetention: executor.InboxRetention,
-                            cancellationToken: CancellationToken.None
-                        )
-                        .ConfigureAwait(false);
-
-                    admission.Message.Origin = message;
-
-                    var storageCapability = _capabilityModel.Providers.FirstOrDefault(capability =>
-                        capability.Role is MessagingProviderRole.Storage
-                    );
-                    if (storageCapability?.InboxCapability is { } inboxTier)
-                    {
-                        MessagingMetrics.RecordInbox(
-                            admission.Disposition is InboxAdmissionDisposition.Winner
-                                ? InboxMetricKind.Capability
-                                : InboxMetricKind.Duplicate,
-                            consumerIdentity,
-                            lane,
-                            admission.Disposition switch
-                            {
-                                InboxAdmissionDisposition.Winner => InboxMetricOutcome.Winner,
-                                InboxAdmissionDisposition.InFlightDuplicate => InboxMetricOutcome.InFlightDuplicate,
-                                InboxAdmissionDisposition.SucceededDuplicate => InboxMetricOutcome.SucceededDuplicate,
-                                InboxAdmissionDisposition.TerminalFailedDuplicate =>
-                                    InboxMetricOutcome.TerminalFailedDuplicate,
-                                _ => throw new InvalidOperationException(
-                                    $"Unsupported inbox admission disposition '{admission.Disposition}'."
-                                ),
-                            },
-                            inboxTier,
-                            storageCapability.Provider,
-                            message.Headers.TryGetValue(Headers.TenantId, out var tenantId) ? tenantId : null,
-                            _inboxMetricPolicy.TenantTagName
-                        );
-                    }
-
-                    _TracingAfter(traceHandle, transportMessage, _serverAddress);
-                    consumeOutcomeRecorded = true;
-
-                    // Settlement is must-complete: never abandon a commit on host shutdown.
-                    await client.CommitAsync(sender, CancellationToken.None).ConfigureAwait(false);
-                    transportSettled = true;
-
-                    if (admission.ShouldDispatch)
-                    {
-                        admission.Message.ProbeEpoch = admissionEpoch;
-                        await _dispatcher
-                            .EnqueueToExecute(admission.Message, executor, CancellationToken.None)
-                            .ConfigureAwait(false);
-
-                        probeOutcomeTransferred = true;
-                    }
-                }
-            }
-            catch (Exception e)
-            {
-                _logger.LogProcessReceivedMessageFailed(e, transportMessage);
-
-                if (!transportSettled)
-                {
-                    // Settlement is must-complete: never abandon a reject on host shutdown.
-                    await client.RejectAsync(sender, CancellationToken.None).ConfigureAwait(false);
-                }
-
-                if (e is OperationCanceledException)
-                {
-                    // Benign cancellation (host shutdown) is not a consume failure: stop (export) the span
-                    // without an error status, matching the publish/subscriber-invoke emission sites.
-                    traceHandle.Activity?.Dispose();
-                }
-                else if (!consumeOutcomeRecorded)
-                {
-                    _TracingError(traceHandle, transportMessage, client.BrokerAddress, e);
-                }
-            }
-            finally
-            {
-                if (probeEpoch is not null && !probeOutcomeTransferred && circuitKey is not null)
-                {
-                    _circuitBreakerStateManager?.ReleaseHalfOpenProbe(circuitKey, admissionEpoch);
-                }
-            }
-        }
-
-        client.AttachCallbacks(onMessageCallback, _WriteLog);
-    }
-
-    /// <summary>
-    /// Delivers one message of an every-instance subscription: receive middleware, the contract-version check, and
-    /// deserialization run as on the durable path, then the consumer runs in a fresh scope and the message is committed.
-    /// </summary>
-    /// <remarks>
-    /// Delivery is at most once by design, so nothing durable is involved: no inbox row or admission, no reservation or
-    /// lease, no retry pipeline, no circuit breaker, and no dashboard row. A consumer failure, a receive-stage reject,
-    /// and a message no consumer on the subscription handles are logged, counted, and committed; none is requeued,
-    /// because a per-process subscription has no one else to redeliver to and a poison message would loop forever.
-    /// </remarks>
-    private async Task _OnEveryInstanceMessageAsync(
-        IConsumerClient client,
-        ConsumerSubscriptionKey subscriptionKey,
-        TransportMessage transportMessage,
-        object? sender,
-        CancellationToken hostShutdownToken
-    )
-    {
-        var commitAttempted = false;
-        var consumeOutcomeRecorded = false;
-        MessagingTraceHandle traceHandle = default;
-        var lane = subscriptionKey.Lane;
-        var consumerIdentity = subscriptionKey.SubscriptionName;
-
-        try
-        {
-            var name = transportMessage.Name;
-            _selector.TryGetMessageNameExecutor(name, subscriptionKey, out var executor);
-            consumerIdentity = executor?.ResolvedConsumerIdentity ?? consumerIdentity;
-
-            // Replaces whatever the publisher sent, so the header always names the consumer that received it.
-            transportMessage.Headers[Headers.ConsumerIdentity] = consumerIdentity;
-
-            if (_logger.IsEnabled(LogLevel.Debug))
-            {
-                _logger.MessageReceived(
-                    LogSanitizer.Sanitize(transportMessage.Id),
-                    LogSanitizer.Sanitize(transportMessage.Name)
-                );
-            }
-
-            traceHandle = _TracingBefore(transportMessage, lane, _serverAddress);
-
-            if (executor is null)
-            {
-                var notFound = new SubscriberNotFoundException(
-                    $"Message can not be found subscriber. Name:{LogSanitizer.Sanitize(name)}, "
-                        + $"Subscription:{LogSanitizer.Sanitize(subscriptionKey.SubscriptionName)}."
-                );
-                _DropEveryInstanceMessage(transportMessage, consumerIdentity, notFound, notFound.Message);
-                _TracingError(traceHandle, transportMessage, client.BrokerAddress, notFound);
-                consumeOutcomeRecorded = true;
-            }
-            else
-            {
-                consumeOutcomeRecorded = await _ReceiveAndConsumeEveryInstanceAsync(
-                        client,
-                        subscriptionKey,
-                        executor,
-                        transportMessage,
-                        traceHandle,
-                        hostShutdownToken
-                    )
-                    .ConfigureAwait(false);
-            }
-
-            // Settlement is must-complete: never abandon a commit on host shutdown.
-            commitAttempted = true;
-            await client.CommitAsync(sender, CancellationToken.None).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException e) when (hostShutdownToken.IsCancellationRequested && !commitAttempted)
-        {
-            // The only reject: the consumer was stopped mid-delivery, not failed by the message, so this process may
-            // still take it if its subscription survives the stop.
-            _logger.LogProcessReceivedMessageFailed(e, transportMessage);
-            await client.RejectAsync(sender, CancellationToken.None).ConfigureAwait(false);
-            traceHandle.Activity?.Dispose();
-        }
-        catch (Exception e)
-        {
-            // A fault outside the consumer is the core's or the transport's, so a redelivery would fault the same way:
-            // a requeue on a per-process subscription only loops. Commit instead, like a consumer failure.
-            _logger.EveryInstanceDeliveryFaulted(
-                e,
-                LogSanitizer.Sanitize(consumerIdentity),
-                LogSanitizer.Sanitize(transportMessage.Headers.TryGetValue(Headers.MessageId, out var id) ? id : null),
-                LogSanitizer.Sanitize(
-                    transportMessage.Headers.TryGetValue(Headers.MessageName, out var messageName) ? messageName : null
-                )
-            );
-
-            if (!consumeOutcomeRecorded)
-            {
-                MessagingMetrics.RecordEveryInstanceDelivery(consumerIdentity, "dropped", e.GetType().FullName);
-                _TracingError(traceHandle, transportMessage, client.BrokerAddress, e);
-            }
-
-            if (!commitAttempted)
-            {
-                await _CommitFaultedEveryInstanceMessageAsync(client, transportMessage, sender).ConfigureAwait(false);
-            }
-        }
-    }
-
-    private async Task _CommitFaultedEveryInstanceMessageAsync(
-        IConsumerClient client,
-        TransportMessage transportMessage,
-        object? sender
-    )
-    {
-        try
-        {
-            await client.CommitAsync(sender, CancellationToken.None).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogProcessReceivedMessageFailed(ex, transportMessage);
-        }
-    }
-
-    /// <summary>
-    /// Runs the receive stage and the consumer of one every-instance delivery. Returns whether the consume outcome was
-    /// recorded on the trace; an exception it lets escape is a cancellation or a fault outside the consumer.
-    /// </summary>
-    private async Task<bool> _ReceiveAndConsumeEveryInstanceAsync(
-        IConsumerClient client,
-        ConsumerSubscriptionKey subscriptionKey,
-        ConsumerExecutorDescriptor executor,
-        TransportMessage transportMessage,
-        MessagingTraceHandle traceHandle,
-        CancellationToken hostShutdownToken
-    )
-    {
-        var consumerIdentity = executor.ResolvedConsumerIdentity;
-        ReceiveRingOutcome receiveOutcome;
-
-        try
-        {
-            receiveOutcome = await _RunReceiveRingAsync(
+        client.AttachCallbacks(
+            (transportMessage, sender) =>
+                _OnCompetingMessageAsync(
+                    client,
+                    subscriptionKey,
+                    clientHandle,
                     transportMessage,
-                    executor,
-                    subscriptionKey.Lane,
-                    _RunInnerReceiveAsync,
+                    sender,
                     hostShutdownToken
-                )
-                .ConfigureAwait(false);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            // A contract-version mismatch or a deserialization failure with no receive middleware to convert it.
-            receiveOutcome = new ReceiveRingOutcome(ReceiveRingResult.Rejected, Exception: ex);
-        }
-
-        switch (receiveOutcome.Result)
-        {
-            case ReceiveRingResult.Skipped:
-                MessagingMetrics.RecordReceiveOutcome("skipped");
-                MessagingMetrics.RecordEveryInstanceDelivery(consumerIdentity, "skipped");
-                traceHandle.Activity?.SetTag(MessagingMetrics.TagReceiveOutcome, "skipped");
-                _TracingAfter(traceHandle, transportMessage, _serverAddress);
-                return true;
-            case ReceiveRingResult.Cancelled:
-                MessagingMetrics.RecordReceiveOutcome("cancelled");
-                traceHandle.Activity?.SetTag(MessagingMetrics.TagReceiveOutcome, "cancelled");
-                throw receiveOutcome.Exception!;
-            case ReceiveRingResult.Rejected:
-            {
-                var reason = receiveOutcome.OutcomeReason ?? receiveOutcome.Exception!.ExpandMessage();
-                MessagingMetrics.RecordReceiveOutcome("rejected");
-                traceHandle.Activity?.SetTag(MessagingMetrics.TagReceiveOutcome, "rejected");
-                _DropEveryInstanceMessage(transportMessage, consumerIdentity, receiveOutcome.Exception, reason);
-                _TracingError(traceHandle, transportMessage, client.BrokerAddress, receiveOutcome.Exception!);
-                return true;
-            }
-        }
-
-        MessagingMetrics.RecordReceiveOutcome("accepted");
-        traceHandle.Activity?.SetTag(MessagingMetrics.TagReceiveOutcome, "accepted");
-
-        var delivery = new MediumMessage
-        {
-            StorageId = Guid.Empty,
-            Origin = receiveOutcome.Message!,
-            Content = string.Empty,
-            Lane = subscriptionKey.Lane,
-            Added = _timeProvider.GetUtcNow(),
-        };
-
-        try
-        {
-            // The invoker opens a fresh scope and runs the consume middleware, then the generated dispatch or the
-            // runtime handler, exactly as a durable delivery's final attempt would.
-            await _subscribeInvoker
-                .InvokeAsync(new ConsumerContext(executor, delivery), hostShutdownToken)
-                .ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (hostShutdownToken.IsCancellationRequested)
-        {
-            throw;
-        }
-#pragma warning disable ERP022 // False positive: the failure is logged and counted; every-instance delivery commits a failed message by design.
-        catch (Exception ex)
-        {
-            var failure = ex is SubscriberExecutionFailedException { InnerException: { } inner } ? inner : ex;
-            _logger.EveryInstanceConsumerFailed(
-                failure,
-                LogSanitizer.Sanitize(consumerIdentity),
-                LogSanitizer.Sanitize(transportMessage.Id),
-                LogSanitizer.Sanitize(transportMessage.Name)
-            );
-            MessagingMetrics.RecordEveryInstanceDelivery(consumerIdentity, "failed", failure.GetType().FullName);
-            _TracingError(traceHandle, transportMessage, client.BrokerAddress, failure);
-            return true;
-        }
-#pragma warning restore ERP022
-
-        MessagingMetrics.RecordEveryInstanceDelivery(consumerIdentity, "succeeded");
-        _TracingAfter(traceHandle, transportMessage, _serverAddress);
-        return true;
-    }
-
-    private void _DropEveryInstanceMessage(
-        TransportMessage transportMessage,
-        string consumerIdentity,
-        Exception? exception,
-        string reason
-    )
-    {
-        if (_logger.IsEnabled(LogLevel.Warning))
-        {
-            _logger.EveryInstanceMessageDropped(
-                exception is ReceiveMessageRejectedException ? null : exception,
-                LogSanitizer.Sanitize(consumerIdentity),
-                LogSanitizer.Sanitize(transportMessage.Id),
-                LogSanitizer.Sanitize(transportMessage.Name),
-                LogSanitizer.Sanitize(reason)
-            );
-        }
-
-        MessagingMetrics.RecordEveryInstanceDelivery(consumerIdentity, "dropped", exception?.GetType().FullName);
-    }
-
-    private static void _ValidateMessageContractVersion(
-        IDictionary<string, string?> headers,
-        ConsumerExecutorDescriptor executor
-    )
-    {
-        var receivedVersion = headers.TryGetValue(Headers.ContractVersion, out var value)
-            ? MessagingOptions.ValidateContractVersion(value ?? string.Empty)
-            : MessageOptions.InitialContractVersion;
-
-        headers[Headers.ContractVersion] = receivedVersion;
-
-        if (
-            !string.IsNullOrWhiteSpace(executor.MessageContractVersion)
-            && !string.Equals(executor.MessageContractVersion, receivedVersion, StringComparison.Ordinal)
-        )
-        {
-            throw new InvalidOperationException(
-                $"Message contract version '{receivedVersion}' does not match registered message contract version "
-                    + $"'{executor.MessageContractVersion}' for '{executor.MessageName}'."
-            );
-        }
-    }
-
-    /// <summary>
-    /// The inner receive steps the ring's innermost <c>next</c> runs: contract-version validation,
-    /// Stage A deserialization (wrapped in <see cref="MessageDeserializationException"/>), and the
-    /// null-payload check for typed consumers.
-    /// </summary>
-    private async ValueTask<Message> _RunInnerReceiveAsync(
-        IDictionary<string, string?> currentHeaders,
-        ReadOnlyMemory<byte> currentBody,
-        ConsumerExecutorDescriptor executor,
-        CancellationToken cancellationToken
-    )
-    {
-        _ValidateMessageContractVersion(currentHeaders, executor);
-
-        var effectiveTransport = new TransportMessage(currentHeaders, currentBody);
-        Message deserialized;
-
-        // Only the deserialize call is wrapped: a serializer failure is a terminal payload defect,
-        // while a version mismatch keeps its InvalidOperationException so middleware can catch it
-        // and convert it into a Reject decision before it reaches the poison store.
-        try
-        {
-            deserialized = await _serializer
-                .DeserializeAsync(effectiveTransport, executor.MessageType, cancellationToken)
-                .ConfigureAwait(false);
-        }
-        catch (Exception deserializeEx)
-        {
-            throw new MessageDeserializationException(
-                $"Failed to deserialize the message body for '{executor.MessageName}' into "
-                    + $"'{executor.MessageType}' (subscription '{executor.SubscriptionName}'): {deserializeEx.Message}",
-                deserializeEx
-            );
-        }
-
-        // An empty body for a typed consumer is the same deterministic payload defect as a malformed
-        // one; untyped consumers (null MessageType) keep Value = null passing as before.
-        if (executor.MessageType is { } typedPayload && deserialized.Value is null)
-        {
-            throw new MessageDeserializationException(MessageDeserializationException.EmptyBody(typedPayload));
-        }
-
-        deserialized.RemoveException();
-
-        return deserialized;
-    }
-
-    /// <summary>
-    /// Runs the receive stage for one delivery: the receive-middleware ring when descriptors match
-    /// this consumer, otherwise the inner steps directly (the pre-middleware fast path — no scope,
-    /// no context, no allocation beyond the outcome record).
-    /// </summary>
-    private async ValueTask<ReceiveRingOutcome> _RunReceiveRingAsync(
-        TransportMessage transportMessage,
-        ConsumerExecutorDescriptor executor,
-        MessageLane lane,
-        Func<
-            IDictionary<string, string?>,
-            ReadOnlyMemory<byte>,
-            ConsumerExecutorDescriptor,
-            CancellationToken,
-            ValueTask<Message>
-        > innerReceive,
-        CancellationToken hostShutdownToken
-    )
-    {
-        // Runtime subscriptions can carry a null payload type (no typed handler parameter). They
-        // still flow through the ring: object stands in as the context/lookup type, so global
-        // receive middleware runs and only descriptors explicitly registered for object match.
-        var messageType = executor.MessageType ?? typeof(object);
-        IReadOnlyList<MiddlewareDescriptor>? descriptors = null;
-        var hasDescriptors =
-            _middlewareDescriptorRegistry is not null
-            && _middlewareDescriptorRegistry.TryGetReceiveDescriptors(messageType, lane, out descriptors);
-
-        if (!hasDescriptors)
-        {
-            // Zero-middleware fast path: identical to the pre-receive-ring behavior. The header
-            // dictionary and body are the transport's own, exactly as before.
-            return new ReceiveRingOutcome(
-                ReceiveRingResult.Accepted,
-                Message: await innerReceive(
-                        transportMessage.Headers,
-                        transportMessage.Body,
-                        executor,
-                        hostShutdownToken
-                    )
-                    .ConfigureAwait(false)
-            );
-        }
-
-        var context = new ReceiveContext(
-            transportMessage.Id,
-            transportMessage.Name,
-            executor.ResolvedConsumerIdentity,
-            lane,
-            messageType,
-            executor.MessageContractVersion,
-            transportMessage.Headers,
-            transportMessage.Body,
-            hostShutdownToken
-        );
-
-        // Hoisted so every middleware's error filter captures one loop-invariant reference, and so
-        // the accept path can detect a post-success throw from any ring member.
-        var innerCompleted = new StrongBox<bool>(value: false);
-        Message? innerMessage = null;
-
-        Func<ValueTask> next = async () =>
-        {
-            // Single-shot: a second invocation would re-run version stamping and deserialization on
-            // a context that has already completed.
-            if (innerCompleted.Value)
-            {
-                throw new InvalidOperationException(
-                    "The receive pipeline's next delegate can only be invoked once per delivery."
-                );
-            }
-
-            // The inner steps always consume the context's CURRENT view: middleware transformations
-            // (SetHeader/RemoveHeader/ReplaceBody) apply before the framework reads the envelope. The
-            // received dictionary is never handed to the inner steps once a copy-on-write view exists.
-            var currentHeaders = ReferenceEquals(context.Headers, transportMessage.Headers)
-                ? transportMessage.Headers
-                : _AsWritableHeaders(context.Headers);
-
-            innerMessage = await innerReceive(currentHeaders, context.Body, executor, context.CancellationToken)
-                .ConfigureAwait(false);
-
-            context.MarkCompleted();
-            innerCompleted.Value = true;
-        };
-
-        async ValueTask InvokeMiddleware(IReceiveMiddleware middleware, Func<ValueTask> innerNext)
-        {
-            var middlewareType = middleware.GetType().FullName ?? middleware.GetType().Name;
-
-            try
-            {
-                await middleware.InvokeAsync(context, innerNext).ConfigureAwait(false);
-                context.MarkCompleted();
-            }
-            catch (Exception ex) when (innerCompleted.Value)
-            {
-                // The inner pipeline already produced its message; suppressing the fault keeps the
-                // accepted delivery instead of discarding it after its work has been done.
-                _logger.ReceivePostSuccessMiddlewareFailed(ex, middlewareType);
-                return;
-            }
-            catch (OperationCanceledException ex) when (ex.CancellationToken == context.CancellationToken)
-            {
-                throw new OperationCanceledException(ex.Message, ex, context.CancellationToken);
-            }
-
-            // A swapped-in token (SetCancellationToken) that became cancelled between middleware
-            // returns is a cooperative stop, not a fault.
-            context.CancellationToken.ThrowIfCancellationRequested();
-        }
-
-        // Per-delivery scope: middleware resolves from a fresh scope so scoped registrations see
-        // per-delivery state; the ring (and the scope) complete before any storage write or dispatch.
-        await using var scope = serviceScopeFactory.CreateAsyncScope();
-
-        IReceiveMiddleware? outermost = null;
-        foreach (var descriptor in descriptors!)
-        {
-            var middleware = scope
-                .ServiceProvider.GetServices(descriptor.ServiceType)
-                .FirstOrDefault(service => service?.GetType() == descriptor.MiddlewareType);
-            if (middleware is not IReceiveMiddleware matched)
-            {
-                continue;
-            }
-
-            outermost ??= matched;
-            var current = matched;
-            var innerNext = next;
-            next = () => InvokeMiddleware(current, innerNext);
-        }
-
-        if (outermost is null)
-        {
-            // Descriptors matched but every resolution came back empty (a registered service replaced
-            // by a different implementation): degrade to the direct inner run rather than dropping
-            // the delivery.
-            return new ReceiveRingOutcome(
-                ReceiveRingResult.Accepted,
-                Message: await innerReceive(
-                        transportMessage.Headers,
-                        transportMessage.Body,
-                        executor,
-                        hostShutdownToken
-                    )
-                    .ConfigureAwait(false)
-            );
-        }
-
-        var outermostType = outermost.GetType();
-
-        try
-        {
-            await next().ConfigureAwait(false);
-        }
-        catch (OperationCanceledException ex) when (ex.CancellationToken == context.CancellationToken)
-        {
-            return new ReceiveRingOutcome(
-                ReceiveRingResult.Cancelled,
-                Exception: ex,
-                Context: context,
-                MiddlewareType: outermostType.FullName ?? outermostType.Name
-            );
-        }
-        catch (Exception ex)
-        {
-            // Faults thrown from middleware code (or the inner steps when middleware let them
-            // escape) map to the Reject row; cancellation bound to the context token was handled above.
-            return new ReceiveRingOutcome(
-                ReceiveRingResult.Rejected,
-                Exception: ex,
-                Context: context,
-                MiddlewareType: outermostType.FullName ?? outermostType.Name,
-                OutcomeReason: context.Outcome is ReceiveOutcome.Reject ? context.OutcomeReason : null,
-                IsPolicyReject: false
-            );
-        }
-
-        if (innerCompleted.Value)
-        {
-            if (context.Outcome is ReceiveOutcome.Skip or ReceiveOutcome.Reject)
-            {
-                // Declaring an outcome after a completed next is contradictory — the delivery was
-                // already accepted. Treat it as the undeclared-outcome fault it is.
-                return new ReceiveRingOutcome(
-                    ReceiveRingResult.Rejected,
-                    Exception: new ReceiveOutcomeUndeclaredException(outermostType),
-                    Context: context,
-                    MiddlewareType: outermostType.FullName ?? outermostType.Name
-                );
-            }
-
-            return new ReceiveRingOutcome(
-                ReceiveRingResult.Accepted,
-                Message: innerMessage,
-                Context: context,
-                MiddlewareType: outermostType.FullName ?? outermostType.Name
-            );
-        }
-
-        // The ring returned without reaching the inner steps.
-        if (context.Outcome == ReceiveOutcome.Skip)
-        {
-            return new ReceiveRingOutcome(
-                ReceiveRingResult.Skipped,
-                Context: context,
-                MiddlewareType: outermostType.FullName ?? outermostType.Name,
-                OutcomeReason: context.OutcomeReason
-            );
-        }
-
-        var isPolicyReject = context.Outcome == ReceiveOutcome.Reject;
-        var rejectException = isPolicyReject
-            ? context.RejectCause ?? new ReceiveMessageRejectedException(context.OutcomeReason!)
-            : new ReceiveOutcomeUndeclaredException(outermostType);
-
-        return new ReceiveRingOutcome(
-            ReceiveRingResult.Rejected,
-            Exception: rejectException,
-            Context: context,
-            MiddlewareType: outermostType.FullName ?? outermostType.Name,
-            OutcomeReason: context.OutcomeReason,
-            IsPolicyReject: isPolicyReject
+                ),
+            _WriteLog
         );
     }
-
-    /// <summary>
-    /// Builds the poison-on-arrival envelope. The <c>data:</c> URI always carries the RECEIVED bytes
-    /// (capped); the headers are the CURRENT view when receive middleware transformed the envelope
-    /// (the framework's Exception stamp is allowed on that view), else the received headers.
-    /// </summary>
-    private Message _BuildPoisonMessage(TransportMessage transportMessage, ReceiveContext? context, Exception exception)
-    {
-        var headers =
-            context is not null && !ReferenceEquals(context.Headers, transportMessage.Headers)
-                ? _AsWritableHeaders(context.Headers)
-                : transportMessage.Headers;
-
-        headers[Headers.Exception] = exception.GetType().Name;
-
-        return new Message(headers, _BuildCappedDataUri(transportMessage.Body, headers));
-    }
-
-    /// <summary>
-    /// Builds the capped <c>data:</c> URI from the received body: whole at/below
-    /// <see cref="MessagingOptions.MaxPoisonEnvelopeBytes"/>, a <c>truncated</c>-marked prefix past
-    /// it, and omitted entirely beyond four times the cap (headers-only poison row). Measured on the
-    /// raw bytes, before base64 encoding.
-    /// </summary>
-    private string? _BuildCappedDataUri(ReadOnlyMemory<byte> receivedBody, IDictionary<string, string?> headers)
-    {
-        if (receivedBody.Length == 0)
-        {
-            return null;
-        }
-
-        var mediaType =
-            headers.TryGetValue(Headers.Type, out var type) && !string.IsNullOrWhiteSpace(type) ? type : "UnknownType";
-
-        if (_options.MaxPoisonEnvelopeBytes is not { } limit)
-        {
-            return $"data:{mediaType};base64," + receivedBody.Span.ToBase64();
-        }
-
-        if (receivedBody.Length > 4L * limit)
-        {
-            // Far past the cap: even a truncated prefix would dwarf the rest of the row.
-            return null;
-        }
-
-        if (receivedBody.Length <= limit)
-        {
-            return $"data:{mediaType};base64," + receivedBody.Span.ToBase64();
-        }
-
-        return $"data:{mediaType};truncated;base64," + receivedBody.Span[..limit].ToBase64();
-    }
-
-    private static Dictionary<string, string?> _AsWritableHeaders(IReadOnlyDictionary<string, string?> headers)
-    {
-        return new Dictionary<string, string?>(headers, StringComparer.Ordinal);
-    }
-
-    private enum ReceiveRingResult
-    {
-        Accepted = 0,
-        Skipped = 1,
-        Rejected = 2,
-        Cancelled = 3,
-    }
-
-    private sealed record ReceiveRingOutcome(
-        ReceiveRingResult Result,
-        Message? Message = null,
-        Exception? Exception = null,
-        ReceiveContext? Context = null,
-        string? MiddlewareType = null,
-        string? OutcomeReason = null,
-        bool IsPolicyReject = false
-    );
 
     private void _WriteLog(LogMessageEventArgs logMessage)
     {
@@ -2374,30 +1369,6 @@ internal sealed class ConsumerRegister(
         Disposed = 4,
     }
 
-    /// <summary>The establishments of one every-instance subscription: their count and the tail of their hooks.</summary>
-    private sealed class EstablishmentChain
-    {
-        private readonly Lock _sync = new();
-        private long _generation;
-        private Task _tail = Task.CompletedTask;
-
-        /// <summary>
-        /// Appends one establishment and returns its link; <paramref name="notify"/> receives the previous link and the
-        /// new generation, and runs on the thread pool so no hook runs on the raising thread under the lock.
-        /// </summary>
-        public Task Append(Func<Task, long, Task> notify)
-        {
-            lock (_sync)
-            {
-                var previous = _tail;
-                var generation = ++_generation;
-                var link = Task.Run(() => notify(previous, generation), CancellationToken.None);
-                _tail = link;
-                return link;
-            }
-        }
-    }
-
     private sealed class SubscriptionHandle
     {
         private readonly Lock _clientsLock = new();
@@ -2425,6 +1396,9 @@ internal sealed class ConsumerRegister(
         public required ILogger Logger { get; init; }
         public required CancellationTokenSource Cts { get; init; }
         public required string SubscriptionName { get; init; }
+
+        /// <summary>The group shape the clients were started for; a topology change rebuilds the handle when it differs.</summary>
+        public required string Shape { get; init; }
 
         /// <summary>The lane-qualified circuit keys of the consumer identities this handle's clients deliver to.</summary>
         public FrozenSet<string> CircuitKeys { get; init; } = [];
@@ -2568,51 +1542,6 @@ internal sealed class ConsumerRegister(
                 .ConfigureAwait(false);
         }
     }
-
-    #region Tracing
-
-    private MessagingTraceHandle _TracingBefore(TransportMessage message, MessageLane lane, BrokerAddress broker)
-    {
-        if (!MessagingDiagnostics.IsEnabled)
-        {
-            return default;
-        }
-
-        var now = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
-        var activity = _telemetry.ConsumeStart(message, lane, broker, now);
-
-        return new MessagingTraceHandle(activity, now);
-    }
-
-    private void _TracingAfter(MessagingTraceHandle traceHandle, TransportMessage message, BrokerAddress broker)
-    {
-        MessageEventCounterSource.Log.WriteConsumeMetrics();
-
-        if (!traceHandle.IsRecording)
-        {
-            return;
-        }
-
-        var now = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
-        MessagingTelemetry.ConsumeStop(traceHandle.Activity, message, broker, traceHandle.StartTimestampMs!.Value, now);
-    }
-
-    private static void _TracingError(
-        MessagingTraceHandle traceHandle,
-        TransportMessage message,
-        BrokerAddress broker,
-        Exception ex
-    )
-    {
-        if (!traceHandle.IsRecording)
-        {
-            return;
-        }
-
-        MessagingTelemetry.ConsumeError(traceHandle.Activity, message, broker, ex);
-    }
-
-    #endregion
 }
 
 internal static partial class ConsumerRegisterLog

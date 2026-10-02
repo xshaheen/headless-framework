@@ -84,13 +84,18 @@ public sealed class HybridCacheTwoReplicaInvalidationTests : TestBase
         await firstCache.LocalCache.UpsertAsync("key", "value", TimeSpan.FromMinutes(5), AbortToken);
         await secondCache.LocalCache.UpsertAsync("key", "value", TimeSpan.FromMinutes(5), AbortToken);
 
-        // when - a runtime subscription changes the second replica's topology, which rebuilds its consumer clients, so
-        // its invalidation subscription is re-established and anything published in between may be lost
+        // when - a runtime subscription joins the second replica's invalidation subscription, which rebuilds that
+        // subscription's clients, so it is re-established and anything published in between may be lost
         await using var handle = await second
             .GetRequiredService<IRuntimeSubscriber>()
             .SubscribeAsync<TopologyProbe>(
                 static (_, _, _) => ValueTask.CompletedTask,
-                new RuntimeSubscriptionOptions { HandlerId = "tests.topology-probe", EveryInstance = true },
+                new RuntimeSubscriptionOptions
+                {
+                    HandlerId = "tests.topology-probe",
+                    Identity = HybridCacheInvalidationConsumer.Identity,
+                    EveryInstance = true,
+                },
                 AbortToken
             );
 

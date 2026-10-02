@@ -71,18 +71,20 @@ public sealed class TypeSafePublishApiTests
     {
         // given
         var services = new ServiceCollection();
+        services.AddHeadlessMessaging(opt =>
+        {
+            opt.WithMessageNameMapping<OrderCreated>("orders.created");
+            opt.WithMessageNameMapping<OrderCreated>("orders.new"); // Different messageName
+            opt.UseInMemory();
+            opt.UseProcessLocalInMemoryStorage();
+        });
+        using var provider = services.BuildServiceProvider();
 
-        // when/Then
-        services
-            .Invoking(s =>
-                s.AddHeadlessMessaging(opt =>
-                {
-                    opt.WithMessageNameMapping<OrderCreated>("orders.created");
-                    opt.WithMessageNameMapping<OrderCreated>("orders.new"); // Different messageName
-                    opt.UseInMemory();
-                    opt.UseProcessLocalInMemoryStorage();
-                })
-            )
+        // when
+        var build = () => provider.GetRequiredService<IConsumerRegistry>();
+
+        // then
+        build
             .Should()
             .Throw<InvalidOperationException>()
             .WithMessage("*already mapped to messageName 'orders.created'*");
@@ -93,20 +95,20 @@ public sealed class TypeSafePublishApiTests
     {
         // given
         var services = new ServiceCollection();
+        services.AddHeadlessMessaging(opt =>
+        {
+            opt.WithMessageNameMapping<OrderCreated>("orders.created");
+            opt.WithMessageNameMapping<OrderCreated>("orders.created"); // Same messageName
+            opt.UseInMemory();
+            opt.UseProcessLocalInMemoryStorage();
+        });
+        using var provider = services.BuildServiceProvider();
 
-        // when/Then - Should not throw
-        services
-            .Invoking(s =>
-                s.AddHeadlessMessaging(opt =>
-                {
-                    opt.WithMessageNameMapping<OrderCreated>("orders.created");
-                    opt.WithMessageNameMapping<OrderCreated>("orders.created"); // Same messageName
-                    opt.UseInMemory();
-                    opt.UseProcessLocalInMemoryStorage();
-                })
-            )
-            .Should()
-            .NotThrow();
+        // when
+        var build = () => provider.GetRequiredService<IConsumerRegistry>();
+
+        // then
+        build.Should().NotThrow();
     }
 
     [Fact]

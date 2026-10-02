@@ -149,7 +149,7 @@ public sealed class EveryInstanceContractTests : TestBase
         using var provider = services.BuildServiceProvider();
 
         // when
-        var act = () => provider.GetDrainedConsumerRegistry();
+        var act = () => provider.GetRequiredService<ConsumerRegistry>();
 
         // then
         act.Should()
@@ -174,7 +174,7 @@ public sealed class EveryInstanceContractTests : TestBase
         using var provider = services.BuildServiceProvider();
 
         // when
-        var consumer = provider.GetDrainedConsumerRegistry().GetAll().Single();
+        var consumer = provider.GetRequiredService<ConsumerRegistry>().GetAll().Single();
 
         // then
         consumer.EveryInstance.Should().BeTrue();

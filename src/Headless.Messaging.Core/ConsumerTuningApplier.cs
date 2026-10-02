@@ -6,7 +6,7 @@ using Microsoft.Extensions.Configuration;
 
 namespace Headless.Messaging;
 
-/// <summary>The host-level controls applied to the consumers when the registrations drain.</summary>
+/// <summary>The host-level controls applied to the consumers when the consumer registry is built.</summary>
 /// <param name="Tunings">Every <c>Tune</c> call, in registration order.</param>
 /// <param name="ConsumeOnly">Every <c>ConsumeOnly</c> entry.</param>
 /// <param name="Configuration">The host configuration that tunes consumers by identity, if any.</param>

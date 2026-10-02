@@ -24,6 +24,10 @@ internal enum ConsumerLane
 /// </param>
 /// <param name="Disposal">How the dispatcher releases the instance it constructs.</param>
 /// <param name="HasLifecycle">Whether the class implements <c>IConsumerLifecycle</c>, whose hooks run around each delivery.</param>
+/// <param name="HasSubscriptionHook">
+/// Whether the every-instance class implements <c>IOnSubscriptionEstablished</c>, so the module hands messaging a
+/// generated call of it. Always false for any other consumer, where the hook never runs.
+/// </param>
 internal sealed record ConsumerModel(
     string TypeName,
     string DisplayName,
@@ -32,7 +36,8 @@ internal sealed record ConsumerModel(
     bool EveryInstance,
     EquatableArray<string> MessageTypeNames,
     HandlerDisposal Disposal,
-    bool HasLifecycle
+    bool HasLifecycle,
+    bool HasSubscriptionHook
 );
 
 /// <summary>

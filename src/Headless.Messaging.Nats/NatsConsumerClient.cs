@@ -43,9 +43,6 @@ internal sealed class NatsConsumerClient(
     // running past this would have its message redelivered by JetStream anyway (at-least-once).
     private static readonly TimeSpan _ShutdownDrainTimeout = TimeSpan.FromSeconds(30);
 
-    private readonly ConsumerPauseGate _pauseGate = new();
-    private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
-
 #pragma warning disable CA2213 // Disposal is deferred until the tokenless SDK connection attempt settles.
     private NatsConnection? _connection;
 #pragma warning restore CA2213
@@ -53,24 +50,10 @@ internal sealed class NatsConsumerClient(
     private NatsJSContext? _jsContext;
     private ReceiveTokenState _receiveTokenState = new();
     private IEnumerable<string>? _subscribedMessageNames;
-    private Func<CancellationToken, Task>? _onReestablished;
-    private int _connectionLost;
     private int _disposed;
 
-    // The core subscriptions an every-instance client is listening on, so a drop reported by the connection can be
-    // attributed to them.
-    private INatsSub<ReadOnlyMemory<byte>>[] _everyInstanceSubscriptions = [];
-    private int _droppedSinceSignal;
-    private int _dropSignalScheduled;
-
-    /// <summary>
-    /// How long a burst of messages dropped on a full subscription channel is collected before the client reports one
-    /// gap for all of them, so a slow consumer yields one signal per burst rather than one per dropped message.
-    /// </summary>
-    internal static readonly TimeSpan DropSignalCoalesceWindow = TimeSpan.FromSeconds(1);
-
-    /// <summary>The <c>error.type</c> of an every-instance delivery the subscription channel dropped.</summary>
-    internal const string DroppedOverflowErrorType = "overflow";
+    // Set by ConnectAsync for an every-instance client, which listens on core subscriptions instead of JetStream.
+    private NatsEveryInstanceListener? _everyInstance;
 
     public Func<TransportMessage, object?, Task>? OnMessageCallback { get; set; }
 
@@ -84,8 +67,20 @@ internal sealed class NatsConsumerClient(
 
     public void AttachReestablishedCallback(Func<CancellationToken, Task>? onReestablished)
     {
-        _onReestablished = onReestablished;
+        OnReestablished = onReestablished;
     }
+
+    /// <summary>Whether shutdown has started; a listener stops reporting to the consumer from then on.</summary>
+    internal bool IsDisposed => Volatile.Read(ref _disposed) != 0;
+
+    /// <summary>Completes once the client receives; the every-instance listener completes it for its subscriptions.</summary>
+    internal TaskCompletionSource Ready { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    /// <summary>The pause gate every receive loop waits on.</summary>
+    internal ConsumerPauseGate PauseGate { get; } = new();
+
+    /// <summary>The core's re-established callback, reported when the subscription may have missed messages.</summary>
+    internal Func<CancellationToken, Task>? OnReestablished { get; private set; }
 
     public BrokerAddress BrokerAddress => new("nats", BrokerAddressDisplay.FormatMany(_natsOptions.Servers));
 
@@ -107,9 +102,7 @@ internal sealed class NatsConsumerClient(
 
         if (kind is ConsumerSubscriptionKind.EveryInstance)
         {
-            connection.ConnectionDisconnected += _OnConnectionDisconnectedAsync;
-            connection.ConnectionOpened += _OnConnectionOpenedAsync;
-            connection.MessageDropped += _OnMessageDroppedAsync;
+            _everyInstance = new NatsEveryInstanceListener(this, name, _timeProvider, connection);
         }
 
         var connectTask = connect?.Invoke(connection) ?? connection.ConnectAsync().AsTask();
@@ -141,7 +134,7 @@ internal sealed class NatsConsumerClient(
         {
             var streamName = NatsPhysicalAddress.Stream(lane, streamGroup.Key);
             var subjects = new HashSet<string>(
-                BuildStreamSubjects(streamGroup, _ResolveShardedMessageNames(streamGroup))
+                BuildStreamSubjects(streamGroup, ResolveShardedMessageNames(streamGroup))
                     .Select(subject => NatsPhysicalAddress.Subject(lane, subject)),
                 StringComparer.Ordinal
             );
@@ -172,7 +165,7 @@ internal sealed class NatsConsumerClient(
                 // Stream does not exist yet; it will be created below.
             }
 
-            var expectedSubjects = _PruneOverlappingSubjects(subjects);
+            var expectedSubjects = PruneOverlappingSubjects(subjects);
 
             var config = new StreamConfig
             {
@@ -227,7 +220,7 @@ internal sealed class NatsConsumerClient(
                 if (liveConfig.Subjects is { } racedSubjects)
                 {
                     subjects.UnionWith(racedSubjects);
-                    expectedSubjects = _PruneOverlappingSubjects(subjects);
+                    expectedSubjects = PruneOverlappingSubjects(subjects);
                     config.Subjects = [.. expectedSubjects];
                 }
             }
@@ -338,7 +331,7 @@ internal sealed class NatsConsumerClient(
     // whose subject list overlaps (e.g. "a.b.>" together with "a.b.foo"), so a union that mixes a catch-all
     // wildcard with the exact leaf subjects it already covers must be collapsed to the wildcard alone. A bare
     // token equal to the wildcard's base (e.g. "a.b" vs "a.b.>") is NOT subsumed and is kept.
-    private static List<string> _PruneOverlappingSubjects(IEnumerable<string> subjects)
+    internal static List<string> PruneOverlappingSubjects(IEnumerable<string> subjects)
     {
         var all = subjects.Distinct(StringComparer.Ordinal).ToList();
 
@@ -376,7 +369,10 @@ internal sealed class NatsConsumerClient(
     {
         if (kind is ConsumerSubscriptionKind.EveryInstance)
         {
-            await _ListenEveryInstanceAsync(cancellationToken).ConfigureAwait(false);
+            var everyInstance =
+                _everyInstance
+                ?? throw new InvalidOperationException("ConnectAsync must complete before the NATS consumer listens.");
+            await everyInstance.ListenAsync(_subscribedMessageNames!, cancellationToken).ConfigureAwait(false);
             return;
         }
 
@@ -393,7 +389,7 @@ internal sealed class NatsConsumerClient(
         {
             var streamName = NatsPhysicalAddress.Stream(lane, streamGroup.Key);
             var subscriptionName = name;
-            var shardedMessageNames = _ResolveShardedMessageNames(streamGroup);
+            var shardedMessageNames = ResolveShardedMessageNames(streamGroup);
 
             foreach (var logicalSubject in BuildConsumerSubjects(streamGroup, shardedMessageNames))
             {
@@ -433,7 +429,7 @@ internal sealed class NatsConsumerClient(
 
         if (startupTasks.Count == 0)
         {
-            _ready.TrySetResult();
+            Ready.TrySetResult();
         }
         else
         {
@@ -461,7 +457,7 @@ internal sealed class NatsConsumerClient(
                 throw;
             }
 
-            _ready.TrySetResult();
+            Ready.TrySetResult();
         }
 
         if (tasks.Count == 0)
@@ -476,293 +472,7 @@ internal sealed class NatsConsumerClient(
         await Task.WhenAll(tasks).ConfigureAwait(false);
     }
 
-    // An every-instance client reads plain NATS subscriptions on the Bus subjects instead of a JetStream consumer:
-    // the server keeps nothing for a core subscription once its connection closes, so a crashed process leaves no
-    // durable consumer behind, and a publish reaches every subscriber of its subject. Publishing still goes through
-    // the stream, which FetchMessageNamesAsync keeps provisioning.
-    private async Task _ListenEveryInstanceAsync(CancellationToken cancellationToken)
-    {
-        var connection =
-            _connection
-            ?? throw new InvalidOperationException("ConnectAsync must complete before the NATS consumer listens.");
-
-        var subjects = BuildEveryInstanceSubjects(_subscribedMessageNames!, _ResolveShardedMessageNames);
-        var subscriptions = new List<INatsSub<ReadOnlyMemory<byte>>>(subjects.Count);
-
-        using var listeningCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-
-        try
-        {
-            try
-            {
-                foreach (var subject in subjects)
-                {
-                    subscriptions.Add(
-                        await connection
-                            .SubscribeCoreAsync(
-                                subject,
-                                serializer: NatsRawSerializer<ReadOnlyMemory<byte>>.Default,
-                                // The SDK ends the subscription when this token is cancelled. It is the token the
-                                // subject loops read with, so a loop that sees the channel close can already tell a
-                                // shutdown from a lost subscription.
-                                cancellationToken: listeningCts.Token
-                            )
-                            .ConfigureAwait(false)
-                    );
-                }
-
-                Volatile.Write(ref _everyInstanceSubscriptions, [.. subscriptions]);
-
-                // The server handles a connection's protocol in order, so its PONG proves it registered every SUB
-                // above: a message published after readiness cannot miss this process.
-                await connection.PingAsync(cancellationToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                _ready.TrySetCanceled(cancellationToken);
-                throw;
-            }
-            catch (Exception e)
-            {
-                var failure = e as BrokerConnectionException ?? new BrokerConnectionException(e);
-                _ready.TrySetException(failure);
-                throw failure;
-            }
-
-            _ready.TrySetResult();
-
-            if (subscriptions.Count == 0)
-            {
-                return;
-            }
-
-            var loops = subscriptions.ConvertAll(subscription =>
-                _ConsumeCoreSubscriptionAsync(subscription, listeningCts.Token)
-            );
-
-            // One subject loop ending means its subscription is gone; stop the siblings so a failure surfaces and
-            // the core rebuilds the whole client.
-            _ = await Task.WhenAny(loops).ConfigureAwait(false);
-            await listeningCts.CancelAsync().ConfigureAwait(false);
-            await Task.WhenAll(loops).ConfigureAwait(false);
-        }
-        finally
-        {
-            Volatile.Write(ref _everyInstanceSubscriptions, []);
-
-            foreach (var subscription in subscriptions)
-            {
-                await _UnsubscribeQuietlyAsync(subscription).ConfigureAwait(false);
-            }
-        }
-    }
-
-    private async Task _ConsumeCoreSubscriptionAsync(
-        INatsSub<ReadOnlyMemory<byte>> subscription,
-        CancellationToken cancellationToken
-    )
-    {
-        while (!cancellationToken.IsCancellationRequested)
-        {
-            await _pauseGate.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
-
-            NatsMsg<ReadOnlyMemory<byte>> msg;
-            using (var receiveLease = _AcquireReceiveLease(cancellationToken))
-            {
-                try
-                {
-                    msg = await subscription.Msgs.ReadAsync(receiveLease.Token).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-                {
-                    return;
-                }
-                catch (OperationCanceledException) when (_pauseGate.IsPaused)
-                {
-                    continue;
-                }
-                catch (ChannelClosedException ex)
-                {
-                    // Cancelling the listening token also completes the channel of every subscription made with it,
-                    // and the read can see the closed channel before the cancellation: that is a shutdown, not a fault.
-                    if (Volatile.Read(ref _disposed) != 0 || cancellationToken.IsCancellationRequested)
-                    {
-                        return;
-                    }
-
-                    // The SDK completes a subscription only when it or its connection ends; either way this client
-                    // no longer receives, so fail the listener for the core to rebuild it.
-                    throw new BrokerConnectionException(
-                        new InvalidOperationException(
-                            $"The NATS subscription to '{subscription.Subject}' ended while the consumer was listening.",
-                            ex
-                        )
-                    );
-                }
-            }
-
-            await _DispatchEnvelopeAsync(msg.Headers, msg.Data, jsMsg: null, settlement: msg, cancellationToken)
-                .ConfigureAwait(false);
-        }
-    }
-
-    private async Task _UnsubscribeQuietlyAsync(INatsSub<ReadOnlyMemory<byte>> subscription)
-    {
-        try
-        {
-            await subscription.DisposeAsync().ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            // Closing the connection drops the subscription on the server anyway, so a failed UNSUB leaks nothing.
-            OnLogCallback?.Invoke(
-                new LogMessageEventArgs
-                {
-                    LogType = MqLogType.ExceptionReceived,
-                    Reason = $"Failed to unsubscribe NATS subject '{subscription.Subject}': {ex}",
-                }
-            );
-        }
-    }
-
-    /// <summary>
-    /// The Bus subjects an every-instance client subscribes to: the same subjects a competing client's JetStream
-    /// consumers filter on, so both kinds receive the same messages. A subject a '.&gt;' wildcard in the list already
-    /// covers is dropped, because two core subscriptions matching one publish deliver it twice to this process.
-    /// </summary>
-    internal static IReadOnlyList<string> BuildEveryInstanceSubjects(
-        IEnumerable<string> messageNames,
-        Func<IEnumerable<string>, ISet<string>> resolveShardedMessageNames
-    )
-    {
-        Argument.IsNotNull(messageNames);
-        Argument.IsNotNull(resolveShardedMessageNames);
-
-        var names = messageNames.AsIReadOnlyList();
-
-        return
-        [
-            .. _PruneOverlappingSubjects(BuildConsumerSubjects(names, resolveShardedMessageNames(names)))
-                .Select(subject => NatsPhysicalAddress.Subject(MessageLane.Bus, subject)),
-        ];
-    }
-
-    private ValueTask _OnConnectionDisconnectedAsync(object? sender, NatsEventArgs args)
-    {
-        Volatile.Write(ref _connectionLost, 1);
-        return ValueTask.CompletedTask;
-    }
-
-    // The SDK reconnects on its own and re-sends every SUB before it raises ConnectionOpened, so the subscriptions
-    // are live again here. Messages published while the connection was down never reached them, and the consumer
-    // must learn that.
-    private async ValueTask _OnConnectionOpenedAsync(object? sender, NatsEventArgs args)
-    {
-        if (
-            Interlocked.Exchange(ref _connectionLost, 0) == 0
-            || !_ready.Task.IsCompletedSuccessfully
-            || Volatile.Read(ref _disposed) != 0
-            || _onReestablished is not { } onReestablished
-        )
-        {
-            return;
-        }
-
-        try
-        {
-            if (_connection is { } connection)
-            {
-                await connection.PingAsync().ConfigureAwait(false);
-            }
-
-            await onReestablished(CancellationToken.None).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            // A throwing event handler would reach the SDK's event loop; report it instead.
-            OnLogCallback?.Invoke(
-                new LogMessageEventArgs
-                {
-                    LogType = MqLogType.ExceptionReceived,
-                    Reason = $"Reporting a re-established NATS subscription failed: {ex}",
-                }
-            );
-        }
-    }
-
-    // A core subscription buffers deliveries in a bounded channel that drops the newest message once it is full, so a
-    // consumer slower than the publish rate silently misses invalidations. Each drop counts in the every-instance
-    // metric, and a burst of them is reported to the consumer once, like a reconnect, so it can discard state the
-    // missed messages would have changed.
-    private ValueTask _OnMessageDroppedAsync(object? sender, NatsMessageDroppedEventArgs args)
-    {
-        if (
-            Volatile.Read(ref _disposed) != 0
-            || !Array.Exists(
-                Volatile.Read(ref _everyInstanceSubscriptions),
-                subscription => ReferenceEquals(subscription, args.Subscription)
-            )
-        )
-        {
-            return ValueTask.CompletedTask;
-        }
-
-        MessagingMetrics.RecordEveryInstanceDelivery(name, "dropped", DroppedOverflowErrorType);
-        Interlocked.Increment(ref _droppedSinceSignal);
-
-        if (Interlocked.CompareExchange(ref _dropSignalScheduled, 1, 0) == 0)
-        {
-            _SignalDroppedBurstAsync().Forget();
-        }
-
-        return ValueTask.CompletedTask;
-    }
-
-    private async Task _SignalDroppedBurstAsync()
-    {
-        try
-        {
-            await Task.Delay(DropSignalCoalesceWindow, _timeProvider, CancellationToken.None).ConfigureAwait(false);
-
-            // Reopen the window before reading the count: a drop from here on schedules its own signal, which is at
-            // worst redundant, while a drop that lands after the count was read is still covered by this signal.
-            Volatile.Write(ref _dropSignalScheduled, 0);
-            var dropped = Interlocked.Exchange(ref _droppedSinceSignal, 0);
-
-            if (Volatile.Read(ref _disposed) != 0)
-            {
-                return;
-            }
-
-            OnLogCallback?.Invoke(
-                new LogMessageEventArgs
-                {
-                    LogType = MqLogType.AsyncErrorEvent,
-                    Reason = string.Create(
-                        CultureInfo.InvariantCulture,
-                        $"NATS every-instance consumer '{name}' dropped {dropped} message(s) because its subscription channel was full; reporting the gap to the consumer."
-                    ),
-                }
-            );
-
-            if (Volatile.Read(ref _onReestablished) is { } onReestablished)
-            {
-                await onReestablished(CancellationToken.None).ConfigureAwait(false);
-            }
-        }
-        catch (Exception ex)
-        {
-            OnLogCallback?.Invoke(
-                new LogMessageEventArgs
-                {
-                    LogType = MqLogType.ExceptionReceived,
-                    Reason = $"Reporting dropped NATS every-instance messages failed: {ex}",
-                }
-            );
-        }
-    }
-
-    private HashSet<string> _ResolveShardedMessageNames(IEnumerable<string> messageNames)
+    internal HashSet<string> ResolveShardedMessageNames(IEnumerable<string> messageNames)
     {
         var names = messageNames.ToHashSet(StringComparer.Ordinal);
 
@@ -806,7 +516,7 @@ internal sealed class NatsConsumerClient(
 
     public ValueTask WaitUntilReadyAsync(CancellationToken cancellationToken = default)
     {
-        return new ValueTask(_ready.Task.WaitAsync(cancellationToken));
+        return new ValueTask(Ready.Task.WaitAsync(cancellationToken));
     }
 
     private async Task _ConsumeSubjectAsync(
@@ -876,9 +586,9 @@ internal sealed class NatsConsumerClient(
                 while (!cancellationToken.IsCancellationRequested)
                 {
                     INatsJSMsg<ReadOnlyMemory<byte>>? msg;
-                    await _pauseGate.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
+                    await PauseGate.WaitIfPausedAsync(cancellationToken).ConfigureAwait(false);
 
-                    using var receiveLease = _AcquireReceiveLease(cancellationToken);
+                    using var receiveLease = AcquireReceiveLease(cancellationToken);
 
                     try
                     {
@@ -894,7 +604,7 @@ internal sealed class NatsConsumerClient(
                     {
                         break;
                     }
-                    catch (OperationCanceledException) when (_pauseGate.IsPaused)
+                    catch (OperationCanceledException) when (PauseGate.IsPaused)
                     {
                         continue;
                     }
@@ -1004,12 +714,12 @@ internal sealed class NatsConsumerClient(
 
     private ValueTask _DispatchMessageAsync(INatsJSMsg<ReadOnlyMemory<byte>> msg, CancellationToken cancellationToken)
     {
-        return _DispatchEnvelopeAsync(msg.Headers, msg.Data, msg, msg, cancellationToken);
+        return DispatchEnvelopeAsync(msg.Headers, msg.Data, msg, msg, cancellationToken);
     }
 
     // A JetStream delivery is its own settlement token. A core delivery passes the core message instead, which
     // CommitAsync and RejectAsync ignore: an every-instance subscription neither acknowledges nor redelivers.
-    private async ValueTask _DispatchEnvelopeAsync(
+    internal async ValueTask DispatchEnvelopeAsync(
         NatsHeaders? natsHeaders,
         ReadOnlyMemory<byte> data,
         INatsJSMsg<ReadOnlyMemory<byte>>? jsMsg,
@@ -1321,7 +1031,7 @@ internal sealed class NatsConsumerClient(
             return;
         }
 
-        if (!await _pauseGate.PauseAsync().ConfigureAwait(false))
+        if (!await PauseGate.PauseAsync().ConfigureAwait(false))
         {
             return;
         }
@@ -1336,14 +1046,14 @@ internal sealed class NatsConsumerClient(
             return;
         }
 
-        if (!_pauseGate.IsPaused)
+        if (!PauseGate.IsPaused)
         {
             return;
         }
 
         _ResetReceiveToken();
 
-        if (!await _pauseGate.ResumeAsync().ConfigureAwait(false))
+        if (!await PauseGate.ResumeAsync().ConfigureAwait(false))
         {
             return;
         }
@@ -1361,8 +1071,8 @@ internal sealed class NatsConsumerClient(
             return;
         }
 
-        _pauseGate.Release();
-        _ready.TrySetCanceled(CancellationToken.None);
+        PauseGate.Release();
+        Ready.TrySetCanceled(CancellationToken.None);
         await _CancelReceives().ConfigureAwait(false);
 
         // Drain in-flight concurrent handlers before disposing the semaphore and connection, so a
@@ -1463,7 +1173,7 @@ internal sealed class NatsConsumerClient(
         return disposeConnection?.Invoke(connection) ?? connection.DisposeAsync();
     }
 
-    private ReceiveTokenLease _AcquireReceiveLease(CancellationToken cancellationToken)
+    internal ReceiveTokenLease AcquireReceiveLease(CancellationToken cancellationToken)
     {
         ReceiveTokenState receiveTokenState;
         lock (_receiveLock)
@@ -1535,7 +1245,7 @@ internal sealed class NatsConsumerClient(
         }
     }
 
-    private sealed class ReceiveTokenState : IDisposable
+    internal sealed class ReceiveTokenState : IDisposable
     {
         private readonly Lock _lock = new();
         private CancellationTokenSource? _linkedSource;
@@ -1579,7 +1289,7 @@ internal sealed class NatsConsumerClient(
         }
     }
 
-    private sealed class ReceiveTokenLease(
+    internal sealed class ReceiveTokenLease(
         NatsConsumerClient owner,
         ReceiveTokenState receiveTokenState,
         CancellationToken cancellationToken

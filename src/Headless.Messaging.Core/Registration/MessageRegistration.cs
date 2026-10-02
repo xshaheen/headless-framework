@@ -3,9 +3,10 @@
 namespace Headless.Messaging.Registration;
 
 /// <summary>
-/// One message route recorded in the service collection and drained when messaging starts: either the lane half of a
+/// One message route the consumer registry folds when it is built: either the lane half of a
 /// <c>Message&lt;T&gt;(name, version)</c> contract, which declares the route's settings, or one generated consumer,
-/// which joins the route of its message.
+/// which joins the route of its message. Neither is registered in the container; the frozen registry holds the
+/// contract routes as <see cref="ConsumerRegistry.DeclaredRoutes"/>.
 /// </summary>
 internal sealed record MessageRegistration(
     Type MessageType,
@@ -64,4 +65,7 @@ internal sealed record MessageConsumerRegistration(
 
     /// <summary>The generated module that declared the consumer, for conflict messages.</summary>
     public string? DeclaringModule { get; init; }
+
+    /// <summary>The generated subscription hook of an every-instance consumer class, when it has one.</summary>
+    public SubscriptionEstablishedDispatch? OnSubscriptionEstablished { get; init; }
 }

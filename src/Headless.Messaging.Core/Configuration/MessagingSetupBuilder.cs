@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Registration;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -11,8 +10,7 @@ namespace Headless.Messaging.Configuration;
 /// <summary>
 /// Setup-time builder passed to the <c>AddHeadlessMessaging</c> delegate.
 /// Carries the <see cref="MessagingOptions"/> being configured plus the setup-only
-/// state (<see cref="IServiceCollection"/>, the consumer registry, the circuit-breaker
-/// registry, and the options-extension list) that must not leak into the runtime
+/// state (<see cref="IServiceCollection"/> and the options-extension list) that must not leak into the runtime
 /// <see cref="Microsoft.Extensions.Options.IOptions{TOptions}"/> instance.
 /// </summary>
 /// <remarks>
@@ -25,15 +23,13 @@ public sealed class MessagingSetupBuilder : IMessagingBuilder
 {
     private readonly List<string> _consumeOnly = [];
 
-    internal MessagingSetupBuilder(IServiceCollection services, MessagingOptions options, ConsumerRegistry registry)
+    internal MessagingSetupBuilder(IServiceCollection services, MessagingOptions options)
     {
         Argument.IsNotNull(services);
         Argument.IsNotNull(options);
-        Argument.IsNotNull(registry);
 
         Services = services;
         Options = options;
-        Registry = registry;
     }
 
     /// <summary>
@@ -189,10 +185,6 @@ public sealed class MessagingSetupBuilder : IMessagingBuilder
 
     internal IServiceCollection Services { get; }
 
-    internal ConsumerRegistry Registry { get; }
-
-    internal ConsumerCircuitBreakerRegistry CircuitBreakerRegistry { get; } = new();
-
     internal IList<IMessagesOptionsExtension> Extensions { get; } = [];
 
     internal List<OutboxStorageBuilder> OutboxBuilders { get; } = [];
@@ -213,9 +205,11 @@ public sealed class MessagingSetupBuilder : IMessagingBuilder
     public IMessagingBuilder WithMessageNameMapping<TMessage>(string messageName)
         where TMessage : class
     {
-        Argument.IsNotNullOrWhiteSpace(messageName);
+        MessagingOptions.ValidateMessageName(messageName);
 
-        Registry.RegisterMessageName(typeof(TMessage), messageName);
+        // Folded with every other declaration when the host's consumer registry freezes, where a second mapping of the
+        // type to a different name fails.
+        Services.AddSingleton<MessageDeclaration>(new MessageNameMappingDeclaration(typeof(TMessage), messageName));
         return this;
     }
 

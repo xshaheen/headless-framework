@@ -187,12 +187,21 @@ internal static class TestConsumers
     public const string BillingIssueInvoice = "billing.issue-invoice";
     public const string OrdersIssueInvoice = "orders.issue-invoice";
 
-    // Mirrors the generated dispatch: build the consumer from the delivery's scope and call the typed overload.
+    // Mirrors the generated dispatch: build the consumer from the delivery's scope, preferring its own registration, and
+    // call the typed overload.
     public static MessageConsumerDispatch Dispatch<TConsumer, TMessage>()
         where TConsumer : class, IConsume<TMessage>
         where TMessage : class =>
         static (services, context, cancellationToken) =>
-            ActivatorUtilities
-                .CreateInstance<TConsumer>(services)
-                .ConsumeAsync((ConsumeContext<TMessage>)context, cancellationToken);
+            Create<TConsumer>(services).ConsumeAsync((ConsumeContext<TMessage>)context, cancellationToken);
+
+    // Mirrors the generated subscription hook: build the consumer the same way its dispatch does and call the hook.
+    public static SubscriptionEstablishedDispatch SubscriptionHook<TConsumer>()
+        where TConsumer : class, IOnSubscriptionEstablished =>
+        static (services, context, cancellationToken) =>
+            Create<TConsumer>(services).OnSubscriptionEstablishedAsync(context, cancellationToken);
+
+    private static TConsumer Create<TConsumer>(IServiceProvider services)
+        where TConsumer : class =>
+        services.GetService<TConsumer>() ?? ActivatorUtilities.CreateInstance<TConsumer>(services);
 }

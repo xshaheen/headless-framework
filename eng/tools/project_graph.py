@@ -49,6 +49,9 @@ class Project:
     path: PurePosixPath  # repo-relative .csproj path
     references: set[str] = field(default_factory=set)
     dependents: set[str] = field(default_factory=set)
+    # Files outside the project directory that the project links as items, such as the guides a docs-example
+    # test compiles. A change to one changes what the project builds or tests, but no directory match finds it.
+    linked_inputs: set[str] = field(default_factory=set)
 
     @property
     def directory(self) -> PurePosixPath:
@@ -96,7 +99,11 @@ def load_graph() -> dict[str, Project]:
     for key, project in projects.items():
         root = read_project_xml(REPO_ROOT / key)
         for element in root.iter():
-            if element.tag.rsplit("}", 1)[-1] != "ProjectReference":
+            tag = element.tag.rsplit("}", 1)[-1]
+            if tag in LINKED_ITEM_TAGS:
+                _add_linked_input(project, element.get("Include"))
+                continue
+            if tag != "ProjectReference":
                 continue
             include = element.get("Include")
             if not include or "$(" in include:
@@ -110,6 +117,21 @@ def load_graph() -> dict[str, Project]:
                 project.references.add(target_key)
                 projects[target_key].dependents.add(key)
     return projects
+
+
+LINKED_ITEM_TAGS = {"None", "Content", "Compile", "EmbeddedResource", "AdditionalFiles"}
+
+
+def _add_linked_input(project: Project, include: str | None) -> None:
+    if not include or "$(" in include or "*" in include:
+        return
+    target = (REPO_ROOT / project.directory / include.replace("\\", "/")).resolve()
+    try:
+        target_key = PurePosixPath(target.relative_to(REPO_ROOT).as_posix())
+    except ValueError:
+        return
+    if project.directory not in target_key.parents:
+        project.linked_inputs.add(target_key.as_posix())
 
 
 def changed_files(base: str) -> list[str]:
@@ -141,6 +163,10 @@ def select_affected(base: str, projects: dict[str, Project], files: list[str] | 
     unmapped: list[str] = []
     global_triggers: list[str] = []
     by_directory = projects_by_directory(projects)
+    by_linked_input: dict[str, set[str]] = {}
+    for key, project in projects.items():
+        for linked in project.linked_inputs:
+            by_linked_input.setdefault(linked, set()).add(key)
 
     for file in files:
         path = PurePosixPath(file)
@@ -154,7 +180,7 @@ def select_affected(base: str, projects: dict[str, Project], files: list[str] | 
             global_triggers.append(file)
             changed.update(hits)
             continue
-        owners = owning_projects(file, by_directory)
+        owners = owning_projects(file, by_directory) | by_linked_input.get(file, set())
         if owners:
             changed.update(owners)
         else:

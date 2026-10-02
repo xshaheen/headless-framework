@@ -354,7 +354,6 @@ internal sealed class Bootstrapper(
                 "AddHeadlessMessaging() must be added on the service collection.   eg: services.AddHeadlessMessaging(...)"
             );
 
-        _DrainPendingMessageRegistrations();
         _CheckMessageNameCollisions();
         var capabilities = serviceProvider.GetRequiredService<MessagingCapabilityModel>();
         capabilities.ValidateRoutingAffinityStartup(
@@ -405,7 +404,7 @@ internal sealed class Bootstrapper(
             .Select(static consumer => new MessageRouteKey(consumer.MessageType, consumer.MessageName, consumer.Lane))
             .ToHashSet();
 
-        foreach (var registration in serviceProvider.GetServices<MessageRegistration>())
+        foreach (var registration in registry.DeclaredRoutes)
         {
             if (
                 registration.DeclaresMessage
@@ -828,9 +827,4 @@ internal sealed class Bootstrapper(
     }
 
     private readonly record struct ThirdPartyStopInitiation(Task StopTask, Task Initiated);
-
-    private void _DrainPendingMessageRegistrations()
-    {
-        SetupMessaging.DrainPendingMessageRegistrations(serviceProvider, options.Value);
-    }
 }

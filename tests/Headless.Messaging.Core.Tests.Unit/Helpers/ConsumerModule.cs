@@ -55,7 +55,12 @@ public sealed class ConsumerModule<TConsumer> : IMessagingModule
     {
         if (attribute is BusConsumerAttribute bus)
         {
-            catalog.AddBusConsumer<TClass, TMessage>(bus.Identity, bus.EveryInstance, _Dispatch<TMessage>);
+            // The generator hands messaging the hook only for an every-instance class that implements it.
+            var hook =
+                bus.EveryInstance && typeof(IOnSubscriptionEstablished).IsAssignableFrom(typeof(TClass))
+                    ? _OnSubscriptionEstablished
+                    : (SubscriptionEstablishedDispatch?)null;
+            catalog.AddBusConsumer<TClass, TMessage>(bus.Identity, bus.EveryInstance, _Dispatch<TMessage>, hook);
         }
         else
         {
@@ -63,8 +68,37 @@ public sealed class ConsumerModule<TConsumer> : IMessagingModule
         }
     }
 
-    // Mirrors the generated dispatch: a fresh instance per delivery, the lifecycle hooks around the typed call, and
-    // disposal of the instance it created.
+    // Mirrors the generated factory: the scope's own registration wins, and only a constructed instance is the caller's.
+    private static TConsumer _Create(IServiceProvider services, out bool created)
+    {
+        var registered = services.GetService<TConsumer>();
+        created = registered is null;
+        return registered ?? ActivatorUtilities.CreateInstance<TConsumer>(services);
+    }
+
+    // Mirrors the generated subscription hook: the consumer built through the same factory as its deliveries.
+    private static async ValueTask _OnSubscriptionEstablished(
+        IServiceProvider services,
+        SubscriptionEstablishedContext context,
+        CancellationToken cancellationToken
+    )
+    {
+        var consumer = _Create(services, out var created);
+        try
+        {
+            await ((IOnSubscriptionEstablished)consumer).OnSubscriptionEstablishedAsync(context, cancellationToken);
+        }
+        finally
+        {
+            if (created)
+            {
+                await _DisposeAsync(consumer);
+            }
+        }
+    }
+
+    // Mirrors the generated dispatch: an instance per delivery, the lifecycle hooks around the typed call, and disposal
+    // of an instance it created.
     private static async ValueTask _Dispatch<TMessage>(
         IServiceProvider services,
         ConsumeContext context,
@@ -72,7 +106,7 @@ public sealed class ConsumerModule<TConsumer> : IMessagingModule
     )
         where TMessage : class
     {
-        var consumer = ActivatorUtilities.CreateInstance<TConsumer>(services);
+        var consumer = _Create(services, out var created);
         try
         {
             if (consumer is IConsumerLifecycle lifecycle)
@@ -106,15 +140,23 @@ public sealed class ConsumerModule<TConsumer> : IMessagingModule
         }
         finally
         {
-            switch (consumer)
+            if (created)
             {
-                case IAsyncDisposable asyncDisposable:
-                    await asyncDisposable.DisposeAsync();
-                    break;
-                case IDisposable disposable:
-                    disposable.Dispose();
-                    break;
+                await _DisposeAsync(consumer);
             }
+        }
+    }
+
+    private static async ValueTask _DisposeAsync(TConsumer consumer)
+    {
+        switch (consumer)
+        {
+            case IAsyncDisposable asyncDisposable:
+                await asyncDisposable.DisposeAsync();
+                break;
+            case IDisposable disposable:
+                disposable.Dispose();
+                break;
         }
     }
 }

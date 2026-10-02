@@ -18,15 +18,14 @@ public static class MessagingContributionExtensions
     /// <remarks>
     /// <paramref name="configure"/> runs once, synchronously, during this call. A module calls this from its own
     /// <c>Add{Module}</c> entry point instead of calling <c>AddHeadlessMessaging</c>, which the host owns and calls once.
-    /// Identical contract declarations merge; conflicting ones fail naming both.
+    /// Every registration is recorded as a descriptor and folded once, when the host first builds its consumer registry
+    /// at startup or at an earlier publish. Identical contract declarations merge there; conflicting ones fail naming
+    /// both.
     /// </remarks>
     /// <param name="services">The host's service collection.</param>
     /// <param name="configure">Adds this module's registrations.</param>
     /// <returns>The same <paramref name="services"/>, for chaining.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
-    /// <exception cref="InvalidOperationException">
-    /// A contribution declares a message contract that conflicts with an earlier one.
-    /// </exception>
     public static IServiceCollection ConfigureMessaging(
         this IServiceCollection services,
         [InstantHandle] Action<MessagingContributionBuilder> configure
@@ -35,7 +34,7 @@ public static class MessagingContributionExtensions
         Argument.IsNotNull(services);
         Argument.IsNotNull(configure);
 
-        var builder = new MessagingContributionBuilder(services, SetupMessaging.GetOrAddConsumerRegistry(services));
+        var builder = new MessagingContributionBuilder(services);
         configure(builder);
         builder.Complete();
 

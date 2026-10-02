@@ -221,11 +221,67 @@ public sealed class RuntimeSubscriberIntegrationTests : TestBase
             .AsTask();
         await factory.WaitUntilInitialListenerShutdownAsync(AbortToken);
 
-        timeProvider.Advance(TimeSpan.FromSeconds(2));
+        // The restart reads its remaining budget and then arms a timer for it, so one advance can land between the two
+        // and leave the timer due past the advanced clock. Keep advancing, well short of the 30-second health check,
+        // until the restart observes its deadline.
+        for (var advanced = 0; advanced < 10 && !restartTask.IsCompleted; advanced++)
+        {
+            timeProvider.Advance(TimeSpan.FromSeconds(2));
+            _ = await Task.WhenAny(restartTask, Task.Delay(TimeSpan.FromMilliseconds(100), AbortToken));
+        }
+
         await restartTask.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
 
         factory.ListenerCreateCount.Should().Be(1, "a timed-out old generation must fence replacement startup");
         factory.MaximumConcurrentListenerCount.Should().Be(1);
+        provider
+            .GetRequiredService<IConsumerRegister>()
+            .IsHealthy()
+            .Should()
+            .BeFalse("the health check's full rebuild must apply the change the timeout left undone");
+
+        factory.ReleaseInitialListenerShutdown();
+    }
+
+    [Fact]
+    public async Task full_restart_timeout_does_not_overlap_the_previous_consumer_generation()
+    {
+        var timeProvider = new FakeTimeProvider();
+        var factory = new RestartRaceConsumerClientFactory(blockInitialListenerShutdown: true);
+        await using var provider = _CreateProvider(consumerClientFactory: factory, timeProvider: timeProvider);
+        var consumerRegister = provider.GetRequiredService<IConsumerRegister>();
+        var probe = provider.GetRequiredService<RecordingRuntimeProbe>();
+
+        await provider
+            .GetRequiredService<IRuntimeSubscriber>()
+            .SubscribeAsync<RuntimeMessage>(
+                probe.HandleAsync,
+                new RuntimeSubscriptionOptions
+                {
+                    MessageName = "runtime.timeout.initial",
+                    Identity = "runtime.timeout",
+                },
+                AbortToken
+            );
+        await provider.GetRequiredService<IBootstrapper>().BootstrapAsync(AbortToken);
+        await factory.WaitUntilInitialListenerStartedAsync(AbortToken);
+
+        // A rebuild after a broker failure retires every group at once, unlike a topology change.
+        var restartTask = consumerRegister.ReStartAsync(force: true, AbortToken).AsTask();
+        await factory.WaitUntilInitialListenerShutdownAsync(AbortToken);
+
+        // As above: keep advancing until the restart observes its deadline.
+        for (var advanced = 0; advanced < 10 && !restartTask.IsCompleted; advanced++)
+        {
+            timeProvider.Advance(TimeSpan.FromSeconds(2));
+            _ = await Task.WhenAny(restartTask, Task.Delay(TimeSpan.FromMilliseconds(100), AbortToken));
+        }
+
+        await restartTask.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+
+        factory.ListenerCreateCount.Should().Be(1, "a timed-out old generation must fence replacement startup");
+        factory.MaximumConcurrentListenerCount.Should().Be(1);
+        consumerRegister.IsHealthy().Should().BeFalse();
 
         factory.ReleaseInitialListenerShutdown();
     }

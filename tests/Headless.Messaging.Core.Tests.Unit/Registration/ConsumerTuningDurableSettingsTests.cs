@@ -173,7 +173,7 @@ public sealed class ConsumerTuningDurableSettingsTests : TestBase
     private static List<ConsumerMetadata> _LedgerConsumers(IServiceProvider provider) =>
         [
             .. provider
-                .GetDrainedConsumerRegistry()
+                .GetRequiredService<ConsumerRegistry>()
                 .GetAll()
                 .Where(x => string.Equals(x.ConsumerIdentity, _Ledger, StringComparison.Ordinal)),
         ];
