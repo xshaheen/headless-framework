@@ -170,6 +170,7 @@ internal sealed partial class ConsumerRegister
                             LogSanitizer.Sanitize(receiveOutcome.OutcomeReason)
                         );
                     }
+
                     MessagingMetrics.RecordReceiveOutcome("skipped");
                     traceHandle.Activity?.SetTag(MessagingMetrics.TagReceiveOutcome, "skipped");
 
@@ -195,6 +196,7 @@ internal sealed partial class ConsumerRegister
                             LogSanitizer.Sanitize(consumerIdentity)
                         );
                     }
+
                     throw receiveOutcome.Exception!;
                 }
 

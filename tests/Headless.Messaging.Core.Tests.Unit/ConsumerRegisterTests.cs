@@ -416,11 +416,7 @@ public sealed class ConsumerRegisterTests : TestBase
             "_PauseSurvivorsOfOpenCircuitsAsync",
             BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly,
             binder: null,
-            [
-                typeof(IReadOnlyCollection<
-                    KeyValuePair<ConsumerSubscriptionKey, IReadOnlyList<ConsumerExecutorDescriptor>>
-                >),
-            ],
+            [typeof(KeyValuePair<ConsumerSubscriptionKey, IReadOnlyList<ConsumerExecutorDescriptor>>[])],
             modifiers: null
         )!;
         await (ValueTask)pauseSurvivors.Invoke(register, [new[] { started }])!;

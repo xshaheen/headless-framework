@@ -17,6 +17,9 @@ namespace Headless.Messaging.Internal;
 /// </summary>
 internal sealed partial class ConsumerRegister
 {
+    // The establishment hooks of each every-instance subscription in this process, keyed by handle name. Kept across
+    // rebuilds on purpose: the generation count is what tells a consumer that an earlier subscription existed, so
+    // messages published between the two may never have arrived.
     private readonly ConcurrentDictionary<string, EstablishmentChain> _establishments = new(StringComparer.Ordinal);
 
     /// <summary>
