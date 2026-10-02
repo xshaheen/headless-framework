@@ -10,7 +10,7 @@ using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
 using Microsoft.Data.SqlClient;
 
-#pragma warning disable CA1849, VSTHRD103, AsyncFixer02, MA0042 // Once a row is buffered, these small typed reads cannot add blocking I/O.
+#pragma warning disable CA1849 // Once a row is buffered, these small typed reads cannot add blocking I/O.
 namespace Headless.Messaging.Storage.SqlServer;
 
 internal sealed partial class SqlServerDataStorage
@@ -432,4 +432,4 @@ internal sealed partial class SqlServerDataStorage
             .ConfigureAwait(false);
     }
 }
-#pragma warning restore CA1849, VSTHRD103, AsyncFixer02, MA0042
+#pragma warning restore CA1849

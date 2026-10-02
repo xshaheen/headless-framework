@@ -203,9 +203,7 @@ public sealed partial class EfAuditChangeCaptureTests : TestBase
         configure?.Invoke(builder);
 
         var db = new TestDbContext(builder.Options);
-#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
         db.Database.EnsureCreated();
-#pragma warning restore MA0045
         return (db, conn);
     }
 

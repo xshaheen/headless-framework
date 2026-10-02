@@ -9,7 +9,7 @@ using NpgsqlTypes;
 
 namespace Headless.Messaging.Storage.PostgreSql;
 
-#pragma warning disable CA1849, VSTHRD103, MA0042 // Buffered row reads cannot add blocking I/O.
+#pragma warning disable CA1849 // Buffered row reads cannot add blocking I/O.
 #pragma warning disable CA2100 // SQL structure is assembled only from provider-owned table names and fixed filter fragments; values remain parameterized.
 
 internal sealed partial class PostgreSqlDataStorage
@@ -473,4 +473,4 @@ internal sealed partial class PostgreSqlDataStorage
     }
 }
 
-#pragma warning restore CA2100, CA1849, VSTHRD103, MA0042
+#pragma warning restore CA2100, CA1849

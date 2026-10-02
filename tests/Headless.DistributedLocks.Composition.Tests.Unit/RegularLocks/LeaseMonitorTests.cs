@@ -381,9 +381,7 @@ public sealed class LeaseMonitorTests : TestBase
         sut.LostToken.Register(() =>
         {
             callbackInvoked.TrySetResult();
-#pragma warning disable MA0045 // CancellationToken.Register callbacks are synchronous; sync dispose is the behavior under test.
             sut.DisposeAsync().AsTask().GetAwaiter().GetResult();
-#pragma warning restore MA0045
             callbackCompleted.TrySetResult();
         });
 

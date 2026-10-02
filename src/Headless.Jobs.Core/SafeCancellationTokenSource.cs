@@ -36,9 +36,7 @@ internal sealed class SafeCancellationTokenSource : IDisposable
     {
         if (!IsDisposed)
         {
-#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
             _innerCts.Cancel();
-#pragma warning restore MA0045
         }
     }
 

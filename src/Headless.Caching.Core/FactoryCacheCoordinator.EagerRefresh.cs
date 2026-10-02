@@ -233,7 +233,6 @@ public sealed partial class FactoryCacheCoordinator
         IAsyncDisposable? distributedLease
     )
     {
-#pragma warning disable VSTHRD003 // This continuation intentionally races/observes the detached factory task.
         var ctsTransferred = false;
         try
         {
@@ -254,7 +253,6 @@ public sealed partial class FactoryCacheCoordinator
                 )
                 .ConfigureAwait(false);
         }
-#pragma warning restore VSTHRD003
         finally
         {
             if (!ctsTransferred)
@@ -281,7 +279,6 @@ public sealed partial class FactoryCacheCoordinator
         CancellationTokenSource internalCts
     )
     {
-#pragma warning disable VSTHRD003 // This continuation deliberately observes the detached eager factory task.
         try
         {
             var result = await factoryTask.ConfigureAwait(false);
@@ -314,7 +311,6 @@ public sealed partial class FactoryCacheCoordinator
             CachingMetrics.RecordRefresh(_cacheName, CachingMetrics.RefreshEager, CachingMetrics.OutcomeError);
             EventsHub.OnEagerRefresh(key, CacheFactoryOutcome.Error);
         }
-#pragma warning restore VSTHRD003
     }
 
     private async ValueTask _TryRearmSlidingEntryAsync<T>(

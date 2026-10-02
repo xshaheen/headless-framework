@@ -1026,7 +1026,6 @@ public sealed class TenantCatalogResolutionMiddlewareTests : TestBase
         return await client.SendAsync(request, AbortToken);
     }
 
-#pragma warning disable MA0045 // Writes to a MemoryStream; async disposal buys nothing and would spread to every caller.
     private static string _StripVolatile(string json)
     {
         using var doc = JsonDocument.Parse(json);
@@ -1058,7 +1057,6 @@ public sealed class TenantCatalogResolutionMiddlewareTests : TestBase
 
         return Encoding.UTF8.GetString(stream.ToArray());
     }
-#pragma warning restore MA0045
 }
 
 internal sealed record TenantCatalogResponse(string? Id, bool IsAvailable, string? Name = null);

@@ -557,9 +557,7 @@ internal sealed class ConnectionMonitor : IAsyncDisposable
     {
         try
         {
-#pragma warning disable VSTHRD003 // The caller always passes a task it just started against this connection.
             await task.ConfigureAwait(false);
-#pragma warning restore VSTHRD003
         }
 #pragma warning disable ERP022 // The worker loop intentionally ignores probe failures; loss is surfaced via state change/handle cancellation.
         catch
@@ -604,9 +602,7 @@ internal sealed class ConnectionMonitor : IAsyncDisposable
 
         public AlreadyCanceledHandle()
         {
-#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
             _cancellationTokenSource.Cancel();
-#pragma warning restore MA0045
         }
 
         public CancellationToken ConnectionLostToken => _cancellationTokenSource.Token;

@@ -116,9 +116,7 @@ internal sealed class LeaseMonitor : IAsyncDisposable
                 // LostToken callback threw — Cancel() wraps the failures).
                 try
                 {
-#pragma warning disable MA0045 // Cancel() runs in a synchronous ContinueWith delegate and relies on its synchronous AggregateException; it cannot be async.
                     faultState.HandleLostSource.Cancel();
-#pragma warning restore MA0045
                 }
                 catch (ObjectDisposedException)
                 {
@@ -211,7 +209,6 @@ internal sealed class LeaseMonitor : IAsyncDisposable
         {
             await _disposalSource.CancelAsync().ConfigureAwait(false);
             _nudgeSignal.Set();
-#pragma warning disable VSTHRD003 // DisposeAsync is the owner that drains the background monitor task.
             try
             {
                 await MonitoringTask.ConfigureAwait(false);
@@ -237,8 +234,6 @@ internal sealed class LeaseMonitor : IAsyncDisposable
                 }
 #pragma warning restore ERP022
             }
-
-#pragma warning restore VSTHRD003
 
             handleLostCancellationTask = Volatile.Read(ref _handleLostCancellationTask);
 
@@ -340,9 +335,7 @@ internal sealed class LeaseMonitor : IAsyncDisposable
     {
         try
         {
-#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
             _handleLostSource.Cancel();
-#pragma warning restore MA0045 // Do not use blocking calls, even when the calling method must become async
         }
         catch (ObjectDisposedException)
         {

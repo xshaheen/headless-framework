@@ -517,9 +517,7 @@ internal sealed class SqlServerConnectionScopedLockStorage(
         {
             if (args.CurrentState is ConnectionState.Broken or ConnectionState.Closed)
             {
-#pragma warning disable MA0045 // StateChangeEventHandler is a synchronous void delegate, so CancelAsync cannot be awaited here.
                 _lostTokenSource.Cancel();
-#pragma warning restore MA0045
             }
         }
 

@@ -56,9 +56,7 @@ public static class SetupPostgreSqlJobsEntityFramework
                         coordination.UsePostgreSql(
                             (options, provider) =>
                             {
-#pragma warning disable MA0045 // The options callback is synchronous, so the scope cannot be disposed asynchronously.
                                 using var scope = provider.CreateScope();
-#pragma warning restore MA0045
                                 var context = scope.ServiceProvider.GetRequiredService<TContext>();
                                 if (!context.Database.IsNpgsql())
                                 {

@@ -18,7 +18,6 @@ using Microsoft.Extensions.Logging;
 using Polly;
 using Polly.Retry;
 
-#pragma warning disable RCS1015 // SQL parameter names intentionally match lowercase placeholders in the command text.
 namespace Headless.Jobs;
 
 internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>(
@@ -1033,9 +1032,7 @@ internal sealed class SqlServerJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         return GetReadPastHints(result is true);
     }
 
-#pragma warning disable RCS1158 // Static member in generic type should use a type parameter
     internal static string GetReadPastHints(bool readCommittedSnapshotEnabled)
-#pragma warning restore RCS1158
     {
         return readCommittedSnapshotEnabled
             ? "UPDLOCK, READPAST, ROWLOCK, READCOMMITTEDLOCK"

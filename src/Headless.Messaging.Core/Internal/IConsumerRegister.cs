@@ -320,9 +320,7 @@ internal sealed class ConsumerRegister(
         {
             try
             {
-#pragma warning disable VSTHRD003 // Quiesce starts this generation-owned CancelAsync task before drain begins.
                 await quiesceTask.ConfigureAwait(false);
-#pragma warning restore VSTHRD003
             }
             catch (ObjectDisposedException)
             {
@@ -479,12 +477,12 @@ internal sealed class ConsumerRegister(
                     return false;
                 }
             }
-#pragma warning disable ERP022, RCS1075 // Listener cancellation/failure must not prevent client cleanup.
+#pragma warning disable ERP022 // Listener cancellation/failure must not prevent client cleanup.
             catch (Exception)
             {
                 // ignored
             }
-#pragma warning restore ERP022, RCS1075
+#pragma warning restore ERP022
         }
 
         // Dispose all handles; only remove circuit state on final teardown,
@@ -545,7 +543,6 @@ internal sealed class ConsumerRegister(
         return remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero;
     }
 
-#pragma warning disable VSTHRD003 // The caller-created task is explicitly deadline-bounded or fault-observed below.
     private async Task<bool> _WaitWithinShutdownBudgetAsync(Task task, long started, TimeSpan timeout)
     {
         if (task.IsCompleted)
@@ -572,7 +569,6 @@ internal sealed class ConsumerRegister(
             return false;
         }
     }
-#pragma warning restore VSTHRD003
 
     /// <summary>
     /// Starts a client generation for every subscription and returns once each client receives, with the establishment
@@ -830,11 +826,9 @@ internal sealed class ConsumerRegister(
         CancellationToken cancellationToken
     )
     {
-#pragma warning disable VSTHRD003 // False positive: the lambda starts the task it returns; the previous link is only passed along.
         return _establishments
             .GetOrAdd(handleName, static _ => new EstablishmentChain())
             .Append((previous, generation) => _NotifyAfterAsync(previous, descriptors, generation, cancellationToken));
-#pragma warning restore VSTHRD003
     }
 
     private async Task _NotifyAfterAsync(
@@ -844,9 +838,7 @@ internal sealed class ConsumerRegister(
         CancellationToken cancellationToken
     )
     {
-#pragma warning disable VSTHRD003 // The chain's previous link is created by this register and never faults.
         await previous.ConfigureAwait(false);
-#pragma warning restore VSTHRD003
 
         try
         {
@@ -2399,9 +2391,7 @@ internal sealed class ConsumerRegister(
             {
                 var previous = _tail;
                 var generation = ++_generation;
-#pragma warning disable VSTHRD003 // False positive: the lambda starts the task it returns; the previous link is only passed along.
                 var link = Task.Run(() => notify(previous, generation), CancellationToken.None);
-#pragma warning restore VSTHRD003
                 _tail = link;
                 return link;
             }

@@ -102,7 +102,6 @@ public sealed class PostgresTransactionLockTests(PostgreSqlDistributedLockFixtur
         await act.Should().ThrowAsync<InvalidOperationException>();
     }
 
-#pragma warning disable VSTHRD103, MA0045 // The synchronous DbTransaction overloads are the API under test.
     [Fact]
     public async Task should_acquire_and_release_synchronously_through_db_transaction()
     {
@@ -140,7 +139,6 @@ public sealed class PostgresTransactionLockTests(PostgreSqlDistributedLockFixtur
 
         act.Should().Throw<ArgumentException>().WithParameterName("transaction");
     }
-#pragma warning restore VSTHRD103, MA0045
 
     [Fact]
     public async Task should_restore_timeout_settings_when_strategy_uses_visible_transaction()

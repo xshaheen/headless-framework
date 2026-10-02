@@ -511,7 +511,6 @@ internal sealed class Dispatcher
         }
     }
 
-#pragma warning disable VSTHRD003 // The shared cleanup task is explicitly deadline-bounded and keeps running on timeout.
     private async Task _WaitForShutdownAsync(Task shutdownTask, TimeSpan timeout)
     {
         if (shutdownTask.IsCompleted)
@@ -535,7 +534,6 @@ internal sealed class Dispatcher
             _logger.ProcessorStopFailed(ex, nameof(Dispatcher));
         }
     }
-#pragma warning restore VSTHRD003
 
     private async Task _FinalizeShutdownAsync()
     {
@@ -822,7 +820,6 @@ internal sealed class Dispatcher
         _ClearBackgroundTasks();
     }
 
-#pragma warning disable VSTHRD003 // The caller-created finalization task is explicitly fault-observed here.
     private async Task _ObserveFinalizationAsync(Task finalizationTask)
     {
         try
@@ -834,7 +831,6 @@ internal sealed class Dispatcher
             _logger.ProcessorStopFailed(ex, nameof(Dispatcher));
         }
     }
-#pragma warning restore VSTHRD003
 
     private void _LogShutdownTimeout()
     {

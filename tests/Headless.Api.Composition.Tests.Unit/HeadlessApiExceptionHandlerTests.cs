@@ -20,7 +20,6 @@ using Microsoft.Extensions.Time.Testing;
 using HeadlessApiExceptionHandler = Headless.Api.Middlewares.HeadlessApiExceptionHandler;
 using JsonOptions = Microsoft.AspNetCore.Http.Json.JsonOptions;
 
-#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
 namespace Tests;
 
 public sealed class HeadlessApiExceptionHandlerTests : TestBase

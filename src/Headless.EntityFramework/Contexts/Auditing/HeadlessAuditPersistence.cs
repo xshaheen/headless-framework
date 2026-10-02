@@ -215,18 +215,10 @@ internal sealed class HeadlessAuditPersistence(
             return [];
         }
 
-#pragma warning disable MA0045 // Do not use blocking calls in a sync method (need to make calling method async)
-        var result = _auditStore.Save(entries, context);
-#pragma warning restore MA0045
-
-        if (result is null)
-        {
-            throw new InvalidOperationException(
+        return _auditStore.Save(entries, context)
+            ?? throw new InvalidOperationException(
                 "IAuditLogStore.Save returned null; implementation must return an empty list when no entries are saved, never null."
             );
-        }
-
-        return result;
     }
 
     private async Task<IReadOnlyList<IAuditLogStoreEntry>> _SaveEntriesAsync(

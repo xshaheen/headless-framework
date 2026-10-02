@@ -1,11 +1,5 @@
 ##########################################
-# Headless editor settings (optional scaffold)
-#
-# Copied on request by `dotnet build -t:HeadlessScaffoldConfigFiles`. This file carries editor,
-# formatter, and ReSharper settings only. Analyzer severities, code-style preferences, and naming
-# rules come from the SDK-injected Headless.NET.Sdk.*.editorconfig files, so an SDK upgrade applies
-# them without editing this file. A dotnet_diagnostic.<ID>.severity line added here outranks the SDK:
-# add one only to override the SDK on purpose.
+# Headless editor settings
 ##########################################
 
 # This file is the top-most EditorConfig file

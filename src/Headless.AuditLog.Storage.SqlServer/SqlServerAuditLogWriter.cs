@@ -52,7 +52,6 @@ internal sealed class SqlServerAuditLogWriter(
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
 
-#pragma warning disable MA0045 // This sync API intentionally avoids blocking on the async writer path.
     /// <summary>
     /// True-sync writer using <see cref="SqlCommand.ExecuteNonQuery"/>. Used by the sync
     /// <c>IAuditLogStore.Save</c> path to avoid <c>.GetAwaiter().GetResult()</c> on the async path.
@@ -119,7 +118,6 @@ internal sealed class SqlServerAuditLogWriter(
             command.ExecuteNonQuery();
         }
     }
-#pragma warning restore MA0045
 
     private string _BuildInsertSql(int rowCount)
     {

@@ -153,9 +153,7 @@ public static class XmlHelper
     {
         try
         {
-#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
             while (xmlReader.Read())
-#pragma warning restore MA0045
             {
                 // This space intentionally left blank
             }

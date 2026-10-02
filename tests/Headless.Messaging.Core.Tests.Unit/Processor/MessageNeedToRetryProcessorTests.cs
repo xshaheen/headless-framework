@@ -960,9 +960,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             .GetRetryDecision(MessageLane.Bus, "probe-consumer")
             .Returns(_ =>
             {
-#pragma warning disable MA0045 // Cancellation must complete inside this synchronous classification callback before dispatch resumes.
                 cts.Cancel();
-#pragma warning restore MA0045
                 return new CircuitRetryDecision(CircuitRetryDecisionKind.ProbeAcquired, null, null, 73L);
             });
         var dispatcher = Substitute.For<IDispatcher>();

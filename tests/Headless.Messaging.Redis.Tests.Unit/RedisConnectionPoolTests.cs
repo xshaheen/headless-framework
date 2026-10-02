@@ -65,7 +65,6 @@ public sealed class RedisConnectionPoolTests : TestBase
     }
 
     [Fact]
-#pragma warning disable MA0045 // This test intentionally verifies synchronous Dispose remains supported.
     public void should_dispose_without_error_when_no_connections_created()
     {
         // given
@@ -83,10 +82,8 @@ public sealed class RedisConnectionPoolTests : TestBase
         var action = () => pool.Dispose();
         action.Should().NotThrow();
     }
-#pragma warning restore MA0045
 
     [Fact]
-#pragma warning disable MA0045 // This test intentionally verifies synchronous Dispose remains supported.
     public void should_allow_multiple_dispose_calls()
     {
         // given
@@ -110,7 +107,6 @@ public sealed class RedisConnectionPoolTests : TestBase
 
         action.Should().NotThrow();
     }
-#pragma warning restore MA0045
 
     [Fact]
     public async Task should_dispose_async_without_error_when_no_connections_created()
@@ -182,7 +178,6 @@ public sealed class RedisConnectionPoolTests : TestBase
     }
 
     [Fact]
-#pragma warning disable VSTHRD103 // This test intentionally verifies synchronous Dispose remains supported.
     public async Task should_throw_when_connect_called_after_sync_dispose()
     {
         // given
@@ -203,7 +198,6 @@ public sealed class RedisConnectionPoolTests : TestBase
         // then
         await action.Should().ThrowAsync<ObjectDisposedException>();
     }
-#pragma warning restore VSTHRD103
 
     [Fact]
     public async Task should_throw_when_connect_called_after_async_dispose()

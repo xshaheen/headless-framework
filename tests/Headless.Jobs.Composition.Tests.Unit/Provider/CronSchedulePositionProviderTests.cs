@@ -366,12 +366,10 @@ public sealed class CronSchedulePositionProviderTests : TestBase
             workerStarted.Set();
             try
             {
-#pragma warning disable MA0045 // The test needs a real thread parked on the call; awaiting would release it.
                 provider
                     .MaterializeCronScheduleOccurrenceAsync(_Materialization(definition), cancellation.Token)
                     .GetAwaiter()
                     .GetResult();
-#pragma warning restore MA0045
             }
             catch (Exception exception)
             {

@@ -90,9 +90,7 @@ public sealed class FluentValidationSchemaProcessor(
 
     private void _HandleObject(SchemaProcessorContext context)
     {
-#pragma warning disable MA0045 // Justification: We are using a scope to resolve the validator, this is fine.
         using var scope = serviceProvider.CreateScope();
-#pragma warning restore MA0045
         var validator = _GetValidator(scope.ServiceProvider, context.ContextualType);
 
         if (validator is null)
@@ -134,9 +132,7 @@ public sealed class FluentValidationSchemaProcessor(
             return;
         }
 
-#pragma warning disable MA0045 // Justification: We are using a scope to resolve the validator, this is fine.
         using var scope = serviceProvider.CreateScope();
-#pragma warning restore MA0045
         var declaringTypeValidator = _GetValidator(scope.ServiceProvider, declaringType);
         var propertyName = contextualProperty.PropertyInfo.Name;
 

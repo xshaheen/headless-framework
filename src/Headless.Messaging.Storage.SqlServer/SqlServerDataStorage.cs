@@ -16,7 +16,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-#pragma warning disable RCS1084 // Use coalesce expression instead of conditional expression
 namespace Headless.Messaging.Storage.SqlServer;
 
 /// <summary>
@@ -2005,14 +2004,14 @@ internal sealed partial class SqlServerDataStorage(
                                 Lane = persistedLane,
                                 Retries = reader.GetInt32(3),
                                 InlineAttempts = reader.GetInt32(4),
-#pragma warning disable CA1849, VSTHRD103, AsyncFixer02, MA0042 // the GetString(1) above already pulls
+#pragma warning disable CA1849 // the GetString(1) above already pulls
                                 // the large Content column synchronously, so these remaining small columns
                                 // cannot add blocking this row has not already paid for.
                                 Added = reader.GetFieldValue<DateTimeOffset>(5),
                                 NextRetryAt = reader.IsDBNull(6) ? null : reader.GetFieldValue<DateTimeOffset>(6),
                                 LockedUntil = reader.IsDBNull(7) ? null : reader.GetFieldValue<DateTimeOffset>(7),
                                 Owner = reader.IsDBNull(8) ? null : reader.GetString(8),
-#pragma warning restore CA1849, VSTHRD103, AsyncFixer02, MA0042
+#pragma warning restore CA1849
                             };
 
                             if (reader.GetBoolean(9))

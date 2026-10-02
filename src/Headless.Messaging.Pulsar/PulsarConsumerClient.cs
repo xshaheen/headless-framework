@@ -103,9 +103,7 @@ internal sealed class PulsarConsumerClient(
     {
         try
         {
-#pragma warning disable VSTHRD003 // Cleanup intentionally observes an SDK task started by SubscribeAsync.
             var consumer = await consumerTask.ConfigureAwait(false);
-#pragma warning restore VSTHRD003
             await consumer.DisposeAsync().ConfigureAwait(false);
         }
 #pragma warning disable ERP022 // Best-effort cleanup for an SDK operation abandoned by caller cancellation.

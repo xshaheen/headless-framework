@@ -293,12 +293,12 @@ internal sealed class Bootstrapper(
         {
             unkeyedProvider = serviceProvider.GetService<IDistributedLock>();
         }
-#pragma warning disable RCS1075, ERP022 // Intentional: probe failure must not block startup. EventId 77 fallback emits below.
+#pragma warning disable ERP022 // Intentional: probe failure must not block startup. EventId 77 fallback emits below.
         catch (Exception)
         {
             // Intentional: probe failure must not block startup. EventId 77 fallback emits below.
         }
-#pragma warning restore RCS1075, ERP022
+#pragma warning restore ERP022
 
         if (unkeyedProvider is not null and not NullDistributedLock)
         {
@@ -744,12 +744,10 @@ internal sealed class Bootstrapper(
             }
         }
 
-#pragma warning disable VSTHRD003 // Every stop task was initiated above and remains fault-observed here.
         var outcomes = await Task.WhenAll(
                 stopTasks.Select(pair => _ObserveProcessorStopAsync(pair.Processor, pair.Task))
             )
             .ConfigureAwait(false);
-#pragma warning restore VSTHRD003
 
         // Awaiting Task.WhenAll surfaces only the first fault; aggregate explicitly so callers see every
         // processor that failed to stop, mirroring the start-failure path.
@@ -785,9 +783,7 @@ internal sealed class Bootstrapper(
     {
         try
         {
-#pragma warning disable VSTHRD003 // The caller initiated this processor stop and this method owns observation.
             await stopTask.ConfigureAwait(false);
-#pragma warning restore VSTHRD003
             return null;
         }
         catch (OperationCanceledException ex)

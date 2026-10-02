@@ -350,7 +350,7 @@ internal sealed class HeadlessSaveChangesPipeline(
 
         try
         {
-#pragma warning disable MA0045, AsyncFixer04 // Sync intentionally; _RunBlocking blocks on each unit-of-work verb before the using block ends.
+#pragma warning disable AsyncFixer04 // Sync intentionally; _RunBlocking blocks on each unit-of-work verb before the using block ends.
             // Sync twin of _ExecuteWithNewTransactionAsync — same open-then-enlist-then-complete shape.
             using var transaction = state.Context.Database.BeginTransaction(IsolationLevel.ReadCommitted);
             using var unitOfWork = unitOfWorkFactory.Enlist(state.Context, transaction);
@@ -371,7 +371,7 @@ internal sealed class HeadlessSaveChangesPipeline(
             _RunBlocking(unitOfWork.CompleteAsync(CancellationToken.None));
 
             return saved;
-#pragma warning restore MA0045, AsyncFixer04
+#pragma warning restore AsyncFixer04
         }
         catch (Exception exception) when (state.SaveContext.CommitStarted || retryPrevented)
         {
@@ -511,7 +511,6 @@ internal sealed class HeadlessSaveChangesPipeline(
         bool commitTransaction
     )
     {
-#pragma warning disable MA0045 // Sync intentionally.
         if (commitTransaction)
         {
             auditPersistence.PrepareForRetry(state.Context);
@@ -603,7 +602,6 @@ internal sealed class HeadlessSaveChangesPipeline(
             ExceptionDispatchInfo.Capture(caught).Throw();
             throw; // unreachable; satisfies analyzers
         }
-#pragma warning restore MA0045
     }
 
     // The finite budget also covers lifecycle events and new emitters, so recursive handlers fail before saving.
@@ -656,7 +654,6 @@ internal sealed class HeadlessSaveChangesPipeline(
         EventContext<object> domainEvent
     )
     {
-#pragma warning disable MA0045 // Sync SaveChanges path intentionally blocks; see comment above.
         var pending = dispatcher.DispatchAsync(domainEvent);
 
         if (pending.IsCompletedSuccessfully)
@@ -669,14 +666,12 @@ internal sealed class HeadlessSaveChangesPipeline(
         // GetResult() rethrows the original exception (no AggregateException wrapping by Task.Wait),
         // preserving the dispatcher's single-exception / AggregateException contract for the catch below.
         pending.AsTask().GetAwaiter().GetResult();
-#pragma warning restore MA0045
     }
 
     // The unit-of-work verbs are async-only by contract; the synchronous SaveChanges path blocks on them here,
     // in infrastructure, for the same reason as the domain-event bridge above.
     private static void _RunBlocking(ValueTask pending)
     {
-#pragma warning disable MA0045 // Sync SaveChanges path intentionally blocks; see comment above.
         if (pending.IsCompletedSuccessfully)
         {
             pending.GetAwaiter().GetResult();
@@ -684,7 +679,6 @@ internal sealed class HeadlessSaveChangesPipeline(
         }
 
         pending.AsTask().GetAwaiter().GetResult();
-#pragma warning restore MA0045
     }
 
     private static bool _RequiresExplicitTransaction(

@@ -182,9 +182,7 @@ internal static class CacheBenchmarkClientFactory
     private static ICacheBenchmarkClient _CreateHeadlessRedis(string keyPrefix)
     {
         var descriptor = _GetDescriptor(BenchmarkProviderIds.HeadlessRedis);
-#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
         var multiplexer = ConnectionMultiplexer.Connect(_GetRequiredRedisConnectionString());
-#pragma warning restore MA0045
         var scriptsLoader = new HeadlessRedisScriptsLoader(multiplexer);
         var cache = new RedisCache(
             new SystemJsonSerializer(),
@@ -308,9 +306,7 @@ internal static class CacheBenchmarkClientFactory
     private static ICacheBenchmarkClient _CreateFoundatioRedis(string keyPrefix)
     {
         var descriptor = _GetDescriptor(BenchmarkProviderIds.FoundatioRedis);
-#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
         var multiplexer = ConnectionMultiplexer.Connect(_GetRequiredRedisConnectionString());
-#pragma warning restore MA0045
         // #581: Foundatio.Redis 13.0.2 is compiled against StackExchange.Redis 2.x, but Central Package Management
         // forces SE.Redis 3.x onto the whole benchmark project, so calls into SE.Redis members whose signatures
         // changed between 2.x and 3.x can throw MissingMethodException at RUNTIME here (the build stays green — the

@@ -772,9 +772,7 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
 
     private static Task<int> _SaveAsync(RuntimeTestDbContext db, bool synchronous)
     {
-#pragma warning disable VSTHRD103 // Explicit synchronous SaveChanges conformance case.
         return synchronous ? Task.FromResult(db.SaveChanges()) : db.SaveChangesAsync(AbortToken);
-#pragma warning restore VSTHRD103
     }
 
     private static async Task<(ServiceProvider Provider, SqliteConnection Connection)> _CreateProviderAsync(

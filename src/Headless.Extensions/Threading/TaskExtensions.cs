@@ -33,10 +33,8 @@ public static class HeadlessTaskExtensions
         {
             try
             {
-#pragma warning disable VSTHRD003 // Justification: Its intended to be used.
                 // No need to resume on the original SynchronizationContext
                 await task.ConfigureAwait(false);
-#pragma warning restore VSTHRD003
             }
             catch
             {
@@ -118,9 +116,7 @@ public static class HeadlessTaskExtensions
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T? GetResultOrDefault<T>(this Task<T?> task)
     {
-#pragma warning disable VSTHRD104 // Justification: Its intended to be used.
         return task.Status == TaskStatus.RanToCompletion ? task.Result : default;
-#pragma warning restore VSTHRD104
     }
 
     // See: https://github.com/CommunityToolkit/dotnet/blob/main/src/CommunityToolkit.Common/Extensions/TaskExtensions.cs
@@ -173,7 +169,6 @@ public static class HeadlessTaskExtensions
 
     #region WithCancellation
 
-#pragma warning disable VSTHRD003 // These helpers exist to await a caller-supplied task; the caller owns where it was started.
     /// <summary>
     /// Wraps a task with one that will complete as cancelled based on a cancellation token,
     /// allowing someone to await a task but be able to break out early by cancelling the token.
@@ -284,7 +279,6 @@ public static class HeadlessTaskExtensions
         // on an incompleted task.
         await task.ConfigureAwait(continueOnCapturedContext);
     }
-#pragma warning restore VSTHRD003
 
     #endregion
 

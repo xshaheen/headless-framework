@@ -1458,10 +1458,8 @@ public sealed class CircuitBreakerStateManagerTests : TestBase
         // when & then — calling Dispose twice should not throw
         var act = () =>
         {
-#pragma warning disable MA0045 // Do not use blocking calls, even when the calling method must become async
             sut.Dispose();
             sut.Dispose();
-#pragma warning restore MA0045
         };
 
         act.Should().NotThrow();

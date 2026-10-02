@@ -14,7 +14,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using NpgsqlTypes;
 
-#pragma warning disable RCS1015 // SQL parameter names intentionally match lowercase placeholders in the command text.
 namespace Headless.Jobs;
 
 internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>(

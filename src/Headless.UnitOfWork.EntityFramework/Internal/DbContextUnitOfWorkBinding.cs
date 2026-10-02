@@ -178,9 +178,7 @@ internal static class DbContextUnitOfWorkBinding
             connectionUnit
                 .GetOrAdd(transaction, static (_, transaction) => new SharedConnectionContexts(transaction))
                 .Add(db);
-#pragma warning disable MA0045 // The lookup backs the synchronous db.UnitOfWork() accessor and SaveChanges; adopting a transaction on an already-open connection does no I/O.
             db.Database.UseTransaction(transaction);
-#pragma warning restore MA0045
         }
         else if (!ReferenceEquals(current.GetDbTransaction(), transaction))
         {

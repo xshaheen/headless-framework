@@ -115,9 +115,7 @@ public sealed partial class TusAzureStore
     {
         try
         {
-#pragma warning disable MA0045 // Use Async
             _containerClient.CreateIfNotExists(_options.ContainerPublicAccessType);
-#pragma warning restore MA0045
             _logger.BlobContainerInitialized(_options.ContainerName);
         }
         catch (Exception ex)

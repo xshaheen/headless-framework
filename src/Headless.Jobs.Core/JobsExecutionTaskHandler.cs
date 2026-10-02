@@ -294,7 +294,7 @@ internal sealed class JobsExecutionTaskHandler
             // at method end, so renewalCts is never disposed when this runs.
             // ReSharper disable once AccessToDisposedClosure
             await renewalCts.CancelAsync().ConfigureAwait(false);
-#pragma warning disable ERP022, VSTHRD003 // Teardown faults must not fail the job; renewalTask was started here and is awaited to bound its lifetime.
+#pragma warning disable ERP022 // Teardown faults must not fail the job; renewalTask was started here and is awaited to bound its lifetime.
             try
             {
                 await renewalTask.ConfigureAwait(false);
@@ -303,7 +303,7 @@ internal sealed class JobsExecutionTaskHandler
             {
                 // ignored
             }
-#pragma warning restore ERP022, VSTHRD003
+#pragma warning restore ERP022
         }
 
         CancellationTokenSource? observationCts = null;
@@ -324,7 +324,7 @@ internal sealed class JobsExecutionTaskHandler
             }
 
             await observationCts.CancelAsync().ConfigureAwait(false);
-#pragma warning disable ERP022, VSTHRD003 // Teardown is bounded to the locally owned observer task.
+#pragma warning disable ERP022 // Teardown is bounded to the locally owned observer task.
             try
             {
                 await observationTask.ConfigureAwait(false);
@@ -333,7 +333,7 @@ internal sealed class JobsExecutionTaskHandler
             {
                 // The observer logs store failures itself; teardown must not replace the execution outcome.
             }
-#pragma warning restore ERP022, VSTHRD003
+#pragma warning restore ERP022
         }
 
         var executionReleased = false;
@@ -942,7 +942,6 @@ internal sealed class JobsExecutionTaskHandler
         CancellationTokenSource handlerCts
     )
     {
-#pragma warning disable VSTHRD003 // The task is user handler work intentionally observed by this ownership continuation.
 #pragma warning disable ERP022 // The bounded caller already logged handler failure; this continuation only releases the CTS.
         try
         {
@@ -956,7 +955,7 @@ internal sealed class JobsExecutionTaskHandler
         {
             handlerCts.Dispose();
         }
-#pragma warning restore ERP022, VSTHRD003
+#pragma warning restore ERP022
     }
 
     private async Task _InvokeOnExhaustedAsync(
@@ -1023,7 +1022,6 @@ internal sealed class JobsExecutionTaskHandler
         CancellationTokenSource callbackCts
     )
     {
-#pragma warning disable VSTHRD003 // The task is user callback work intentionally observed by this ownership continuation.
 #pragma warning disable ERP022 // The bounded caller already logged callback failure; this continuation only releases resources.
         try
         {
@@ -1038,7 +1036,7 @@ internal sealed class JobsExecutionTaskHandler
             callbackCts.Dispose();
             await scope.DisposeAsync().ConfigureAwait(false);
         }
-#pragma warning restore ERP022, VSTHRD003
+#pragma warning restore ERP022
     }
 
     private async Task _ObserveDurableCancellationLoopAsync(

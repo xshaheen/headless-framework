@@ -210,9 +210,7 @@ internal sealed class ConnectionFactory : IConnectionFactory, IAsyncDisposable
     {
         try
         {
-#pragma warning disable VSTHRD003 // Cleanup intentionally observes an SDK task started by BuildAsync.
             var client = await clientTask.ConfigureAwait(false);
-#pragma warning restore VSTHRD003
             await client.CloseAsync().ConfigureAwait(false);
         }
 #pragma warning disable ERP022 // Best-effort cleanup for an SDK operation abandoned by caller cancellation.
