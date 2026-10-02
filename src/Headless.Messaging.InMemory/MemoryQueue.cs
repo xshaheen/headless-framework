@@ -207,6 +207,15 @@ internal sealed class MemoryQueue(ILogger<MemoryQueue> logger)
         }
     }
 
+    /// <summary>Whether a reply listener is registered at <paramref name="address"/>.</summary>
+    internal bool HasReplyListener(string address)
+    {
+        lock (_lock)
+        {
+            return _replyListeners.ContainsKey(address);
+        }
+    }
+
     /// <summary>
     /// Hands a copy of <paramref name="reply"/> to the listener at <paramref name="address"/>. A reply to an address
     /// nobody listens on is dropped, as the caller has gone.

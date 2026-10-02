@@ -73,6 +73,26 @@ public sealed class ProviderConformanceEvidenceTests : TestBase
                 TransportConformanceScenario.SameNameLaneIsolation,
                 nameof(InMemoryProviderConformanceTests.should_isolate_same_logical_name_between_bus_and_queue)
             ),
+            _Bind(
+                TransportConformanceScenario.RequestReplyRoundTrip,
+                nameof(InMemoryProviderConformanceTests.should_return_the_typed_response_of_a_request)
+            ),
+            _Bind(
+                TransportConformanceScenario.RequestReplyCallerIsolation,
+                nameof(InMemoryProviderConformanceTests.should_give_each_caller_only_its_own_replies)
+            ),
+            _Bind(
+                TransportConformanceScenario.RequestReplyCallerIsolation,
+                nameof(InMemoryProviderConformanceTests.should_never_deliver_a_reply_to_a_restarted_caller)
+            ),
+            _Bind(
+                TransportConformanceScenario.RequestReplyForeignAddressRefusal,
+                nameof(InMemoryProviderConformanceTests.should_never_write_a_reply_to_a_foreign_reply_address)
+            ),
+            _Bind(
+                TransportConformanceScenario.RequestReplyCallerCleanup,
+                nameof(InMemoryProviderConformanceTests.should_leave_no_reply_listener_after_the_caller_stops)
+            ),
         ];
 
         await TransportConformanceTestBindings.ExecuteSupportedScenariosAsync(

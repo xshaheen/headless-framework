@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Transport;
+using Microsoft.Extensions.DependencyInjection;
 using Tests.Capabilities;
 using MessagingHeaders = Headless.Messaging.Headers;
 
@@ -88,8 +89,36 @@ public abstract class TransportProviderConformanceDriver
     /// </summary>
     public virtual bool SupportsEveryInstance => false;
 
+    /// <summary>
+    /// Whether the provider declares request/reply. A driver opts in once its provider registers a reply transport
+    /// and passes <see cref="RequestReply.TransportRequestReplyConformance"/>; a driver that does not must still wire
+    /// <see cref="ConfigureRequestReplyTransport"/>, so the suite can prove startup rejects requests on it.
+    /// </summary>
+    public virtual bool SupportsRequestReply => false;
+
     public virtual void ConfigureRoutingAffinityTransport(MessagingSetupBuilder setup) =>
         throw new NotSupportedException($"{ProviderName} does not support affinity.");
+
+    /// <summary>
+    /// Selects the provider's transport for one request/reply host. The suite calls it once per host, and each host
+    /// stands for its own process, so the hosts must reach one shared broker.
+    /// </summary>
+    public virtual void ConfigureRequestReplyTransport(MessagingSetupBuilder setup) =>
+        throw _Unsupported(nameof(ConfigureRequestReplyTransport));
+
+    /// <summary>
+    /// Adjusts one request/reply host's services after messaging registered its own, for wiring that must win over a
+    /// provider default, such as sharing one in-process broker between the hosts.
+    /// </summary>
+    public virtual void ConfigureRequestReplyServices(IServiceCollection services) { }
+
+    /// <summary>
+    /// Whether the broker still holds an object for <paramref name="replyAddress"/>: the queue, subscription, or channel
+    /// a caller's reply listener opened. The suite expects <see langword="true"/> while the caller runs and
+    /// <see langword="false"/> once it stopped, so a dead caller provably leaves nothing behind.
+    /// </summary>
+    public virtual ValueTask<bool> HasReplyObjectsAsync(string replyAddress, CancellationToken cancellationToken) =>
+        ValueTask.FromException<bool>(_Unsupported(nameof(HasReplyObjectsAsync)));
 
     public virtual Task AssertNativePublisherPathsAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 

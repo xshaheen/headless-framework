@@ -98,6 +98,11 @@ Kafka is queue/consumer-group only in the current provider contract. Pulsar's Te
 | `SameNameLaneIsolation` | S | S | S | N/A | S | S† | S | S |
 | `StartupRejectionBeforeSideEffects` | U | U | U | S | U | U | U | U |
 | `MalformedEnvelopeTerminalSettlement` | S | S | S | S | S | U | N/A | S |
+| `RequestReplyRoundTrip` | U | U | N/A | N/A | U | U | S | U |
+| `RequestReplyCallerIsolation` | U | U | N/A | N/A | U | U | S | U |
+| `RequestReplyForeignAddressRefusal` | U | U | N/A | N/A | U | U | S | U |
+| `RequestReplyCallerCleanup` | U | U | N/A | N/A | U | U | S | U |
+| `RequestReplyStartupRejection` | U | U | U | U | U | U | N/A | U |
 
 Evidence anchors:
 
@@ -113,6 +118,7 @@ Evidence anchors:
 - NATS lane isolation, consumer-identity/replica semantics, terminal malformed acknowledgement, and legacy drain/roll-forward proof: `NatsConsumerClientTests` against Testcontainers NATS JetStream.
 - Pulsar lane isolation, consumer-identity/replica semantics, terminal malformed acknowledgement, and legacy drain/roll-forward proof: `PulsarConsumerClientHarnessTests` against Testcontainers Pulsar.
 - RabbitMQ lane isolation, consumer-identity/replica semantics, terminal malformed rejection, and legacy drain/roll-forward proof: `RabbitMqConsumerClientConformanceTests` against Testcontainers RabbitMQ.
+- InMemory request/reply round trip, caller isolation and restart, foreign reply-address refusal, and caller cleanup: `InMemoryProviderConformanceTests` running `TransportRequestReplyConformance`. Kafka and AWS reject request/reply by design (`N/A`); Azure Service Bus and Pulsar reject it until their reply channels exist (`U`).
 - AWS evidence is LocalStack-backed, not managed AWS. Azure evidence is a real isolated namespace tier, not an emulator.
 
 ### DataStorageCapabilities
@@ -127,6 +133,19 @@ protected override DataStorageCapabilities Capabilities => new()
     SupportsMonitoringApi = true,     // Monitoring/stats API (default: true)
 };
 ```
+
+## Request/Reply Conformance
+
+`TransportRequestReplyConformance` (in `RequestReply/`) runs request/reply end to end: each scenario starts a caller host and a responder host against one broker, with in-memory storage, so only the transport varies. A provider leaf wires it through its `TransportProviderConformanceDriver`:
+
+| Driver member | Override when | Contract |
+|---|---|---|
+| `SupportsRequestReply` | The provider declares request/reply | `true` runs the suite; `false` runs `AssertRejectedAtStartupAsync` instead |
+| `ConfigureRequestReplyTransport(MessagingSetupBuilder)` | Always, supported or not | Selects the provider for one host; called once per host, and every host must reach the same broker |
+| `ConfigureRequestReplyServices(IServiceCollection)` | Wiring must win over a provider default | Runs after `AddHeadlessMessaging` for each host |
+| `HasReplyObjectsAsync(string replyAddress, CancellationToken)` | The provider declares request/reply | Whether the broker still holds the queue, subscription, or channel behind a reply address; must be `true` while the caller runs |
+
+Call each `Assert*Async` method from its own `[Fact]` with `AbortToken`: round trip, two callers, responder failure, no responder, timeout without a running responder, late reply, foreign reply address, restarted caller, tenant flow, and stopped-caller cleanup. The timeout scenario starts and stops a responder host before calling, so a broker that refuses sends to unprovisioned destinations still reaches a timeout. Each scenario names its contracts after a fresh run id, so leaves may share one broker container.
 
 ## Creating Transport Provider Tests
 

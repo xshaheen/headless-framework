@@ -12,72 +12,13 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Tests;
 
 /// <summary>
-/// A caller host and a responder host on one shared in-memory transport stand in for two services: the caller awaits
-/// the one outcome of each request through its own reply channel, and the responder answers with a response or a typed
-/// fault, or not at all once the caller has stopped waiting.
+/// A caller host and a responder host on one shared in-memory transport stand in for two services. The shared
+/// request/reply conformance suite covers the outcomes every provider must show; these cover the ones that need host
+/// wiring the suite keeps fixed, a contract version the two hosts disagree on and a responder clock that drifted.
 /// </summary>
 public sealed class InMemoryRequestReplyHostTests : TestBase
 {
     private static readonly RequestOptions _Patient = new() { Timeout = TimeSpan.FromSeconds(10) };
-
-    [Fact]
-    public async Task should_return_the_responder_response_to_the_caller()
-    {
-        // given
-        var transport = new MemoryQueue(NullLogger<MemoryQueue>.Instance);
-        await using var responder = await _StartResponderAsync(transport);
-        await using var caller = await _StartCallerAsync(transport);
-
-        // when
-        var quote = await caller
-            .GetRequiredService<IRequestClient>()
-            .RequestAsync<GetQuote, Quote>(new GetQuote("sku-1"), _Patient, AbortToken);
-
-        // then
-        quote.Should().Be(new Quote("sku-1", 42m));
-        responder.GetRequiredService<ResponderProbe>().Handled.Should().Equal("quote:sku-1");
-    }
-
-    [Fact]
-    public async Task should_fail_the_call_with_handler_failed_when_the_responder_throws()
-    {
-        // given
-        var transport = new MemoryQueue(NullLogger<MemoryQueue>.Instance);
-        await using var responder = await _StartResponderAsync(transport);
-        await using var caller = await _StartCallerAsync(transport);
-
-        // when
-        var act = () =>
-            caller
-                .GetRequiredService<IRequestClient>()
-                .RequestAsync<GetBrokenQuote, Quote>(new GetBrokenQuote("sku-1"), _Patient, AbortToken);
-
-        // then — the default classifier treats ArgumentException as permanent, so the fault follows one attempt
-        var fault = (await act.Should().ThrowAsync<RequestFaultedException>()).Which;
-        fault.Code.Should().Be(RequestFaultCodes.HandlerFailed);
-        fault.RemoteExceptionType.Should().BeNull("the responder host did not opt in to exception details");
-        responder.GetRequiredService<ResponderProbe>().Handled.Should().Equal("broken:sku-1");
-    }
-
-    [Fact]
-    public async Task should_fail_the_call_with_no_responder_without_running_a_plain_consumer()
-    {
-        // given — the request's only consumer implements IConsume<T>, not IRespond<T, TResponse>
-        var transport = new MemoryQueue(NullLogger<MemoryQueue>.Instance);
-        await using var responder = await _StartResponderAsync(transport);
-        await using var caller = await _StartCallerAsync(transport);
-
-        // when
-        var act = () =>
-            caller
-                .GetRequiredService<IRequestClient>()
-                .RequestAsync<GetStock, Quote>(new GetStock("sku-1"), _Patient, AbortToken);
-
-        // then
-        var fault = (await act.Should().ThrowAsync<RequestFaultedException>()).Which;
-        fault.Code.Should().Be(RequestFaultCodes.NoResponder);
-        responder.GetRequiredService<ResponderProbe>().Handled.Should().BeEmpty();
-    }
 
     [Fact]
     public async Task should_fail_the_call_with_request_rejected_when_the_responder_rejects_the_contract_version()
@@ -179,9 +120,7 @@ public sealed class InMemoryRequestReplyHostTests : TestBase
     private static void _NameContracts(MessagingContributionBuilder messaging, string legacyQuoteVersion)
     {
         messaging.Message<GetQuote>("pricing.get-quote");
-        messaging.Message<GetBrokenQuote>("pricing.get-broken-quote");
         messaging.Message<GetLegacyQuote>("pricing.get-legacy-quote", legacyQuoteVersion);
-        messaging.Message<GetStock>("pricing.get-stock");
         messaging.Message<Quote>("pricing.quote");
     }
 
@@ -197,11 +136,7 @@ public sealed class InMemoryRequestReplyHostTests : TestBase
 
 public sealed record GetQuote(string Sku);
 
-public sealed record GetBrokenQuote(string Sku);
-
 public sealed record GetLegacyQuote(string Sku);
-
-public sealed record GetStock(string Sku);
 
 public sealed record Quote(string Sku, decimal Price);
 
@@ -210,21 +145,12 @@ public sealed class ResponderProbe
     public ConcurrentQueue<string> Handled { get; } = new();
 }
 
-public sealed class QuoteDesk(ResponderProbe probe)
-    : IRespond<GetQuote, Quote>,
-        IRespond<GetBrokenQuote, Quote>,
-        IRespond<GetLegacyQuote, Quote>
+public sealed class QuoteDesk(ResponderProbe probe) : IRespond<GetQuote, Quote>, IRespond<GetLegacyQuote, Quote>
 {
     public ValueTask<Quote> RespondAsync(ConsumeContext<GetQuote> context, CancellationToken cancellationToken)
     {
         probe.Handled.Enqueue("quote:" + context.Message.Sku);
         return ValueTask.FromResult(new Quote(context.Message.Sku, 42m));
-    }
-
-    public ValueTask<Quote> RespondAsync(ConsumeContext<GetBrokenQuote> context, CancellationToken cancellationToken)
-    {
-        probe.Handled.Enqueue("broken:" + context.Message.Sku);
-        throw new ArgumentException("The pricing table has no row for this SKU.", nameof(context));
     }
 
     public ValueTask<Quote> RespondAsync(ConsumeContext<GetLegacyQuote> context, CancellationToken cancellationToken)
@@ -234,30 +160,13 @@ public sealed class QuoteDesk(ResponderProbe probe)
     }
 }
 
-public sealed class StockLog(ResponderProbe probe) : IConsume<GetStock>
-{
-    public ValueTask ConsumeAsync(ConsumeContext<GetStock> context, CancellationToken cancellationToken)
-    {
-        probe.Handled.Enqueue("stock:" + context.Message.Sku);
-        return ValueTask.CompletedTask;
-    }
-}
-
 /// <summary>What the source generator emits for the responders above, written out for a test assembly without it.</summary>
 public sealed class PricingModule : IMessagingModule
 {
     public static void Register(MessagingCatalogBuilder catalog)
     {
         catalog.AddQueueResponder<QuoteDesk, GetQuote, Quote>("pricing.quote-desk", _Respond<GetQuote>());
-        catalog.AddQueueResponder<QuoteDesk, GetBrokenQuote, Quote>("pricing.quote-desk", _Respond<GetBrokenQuote>());
         catalog.AddQueueResponder<QuoteDesk, GetLegacyQuote, Quote>("pricing.quote-desk", _Respond<GetLegacyQuote>());
-        catalog.AddQueueConsumer<StockLog, GetStock>(
-            "pricing.stock-log",
-            static (services, context, cancellationToken) =>
-                ActivatorUtilities
-                    .CreateInstance<StockLog>(services)
-                    .ConsumeAsync((ConsumeContext<GetStock>)context, cancellationToken)
-        );
     }
 
     private static MessageConsumerDispatch _Respond<TRequest>()
