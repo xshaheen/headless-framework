@@ -107,13 +107,13 @@ public abstract class HeadlessDbContextLifecycleTestBase<TContext> : TestBase
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task should_open_a_private_scope_for_a_pooled_factory_context_only_when_used(bool asynchronousDisposal)
+    public async Task should_give_a_pooled_factory_context_a_private_scope_disposed_with_it(bool asynchronousDisposal)
     {
         await using var provider = _BuildProvider(pooled: true, out _);
         var factory = provider.GetRequiredService<IDbContextFactory<TContext>>();
         var context = await factory.CreateDbContextAsync(AbortToken);
 
-        // A factory context has no scope until something asks for a scoped collaborator.
+        // A factory context is unbound, so asking for its services opens a private scope.
         var services = ((IHeadlessDbContext)context).ServiceProvider;
         services.Should().NotBeSameAs(provider);
         var probe = services.GetRequiredService<DisposalProbe>();

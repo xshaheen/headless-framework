@@ -58,6 +58,10 @@ internal sealed class HeadlessDbContextRuntime(DbContext db)
     // Per lease. Cleared by Release before a pooled instance goes back to the pool.
     private IServiceProvider? _boundServices;
     private IServiceScope? _ownedScope;
+
+    // True once a registration or factory bound the context. An adopted or private scope is a fallback that an explicit
+    // binding replaces, because something (such as a derived constructor) may read ServiceProvider before binding.
+    private bool _explicitlyBound;
     private IHeadlessSaveChangesPipeline? _pipeline;
     private ICurrentTenant? _currentTenant;
     private TenantGuardOptions? _guardOptions;
@@ -104,14 +108,31 @@ internal sealed class HeadlessDbContextRuntime(DbContext db)
     /// <summary>Binds this lease to the DI scope that resolved the context.</summary>
     public void Bind(IServiceProvider services)
     {
-        if (_boundServices is not null)
+        if (ReferenceEquals(_boundServices, services))
+        {
+            _explicitlyBound = true;
+
+            return;
+        }
+
+        if (_explicitlyBound)
         {
             throw new InvalidOperationException(
                 $"'{_db.GetType().Name}' is already bound to a service scope. A context instance serves one scope at a time."
             );
         }
 
+        // Replace a fallback binding: dispose the private scope it opened (an adopted scope is borrowed), and drop the
+        // collaborators resolved from it.
+        var fallbackScope = _ownedScope;
+        _ownedScope = null;
+        _pipeline = null;
+        _currentTenant = null;
+        _guardOptions = null;
+        DisposeScope(fallbackScope, _db.GetType());
+
         _boundServices = services;
+        _explicitlyBound = true;
     }
 
     /// <summary>
@@ -153,6 +174,7 @@ internal sealed class HeadlessDbContextRuntime(DbContext db)
 
         _ownedScope = null;
         IsScopeLeased = false;
+        _explicitlyBound = false;
         _boundServices = null;
         _pipeline = null;
         _currentTenant = null;
@@ -168,19 +190,26 @@ internal sealed class HeadlessDbContextRuntime(DbContext db)
     private IServiceProvider? _AdoptOptionsScope()
     {
         var application = _GetApplicationServices();
-        var root = application.GetService<HeadlessRootServiceProvider>()?.Services;
 
-        if (root is null)
+        if (application.GetService<HeadlessRootServiceProvider>() is null || IsRootProvider(application))
         {
             return null;
         }
 
-        // Resolving IServiceProvider returns the provider's own scope, which normalizes the root ServiceProvider to the
-        // root scope a singleton receives. This holds for Microsoft.Extensions.DependencyInjection; the Headless
-        // registrations bind explicitly and never reach this fallback.
-        var current = application.GetService<IServiceProvider>() ?? application;
+        return application.GetService<IServiceProvider>() ?? application;
+    }
 
-        return ReferenceEquals(current, root) ? null : current;
+    /// <summary>
+    /// Whether <paramref name="services"/> is the root provider, compared against the root a singleton captured. An
+    /// unknown provider (no Headless services registered) is treated as not the root.
+    /// </summary>
+    public static bool IsRootProvider(IServiceProvider services)
+    {
+        var root = services.GetService<HeadlessRootServiceProvider>()?.Services;
+
+        // Resolving IServiceProvider returns the provider's own scope, which normalizes the root ServiceProvider to the
+        // root scope a singleton receives. This holds for Microsoft.Extensions.DependencyInjection.
+        return root is not null && ReferenceEquals(services.GetService<IServiceProvider>() ?? services, root);
     }
 
     private IServiceProvider _OpenPrivateScope()
@@ -206,7 +235,7 @@ internal sealed class HeadlessDbContextRuntime(DbContext db)
             || entry.Metadata.IsOwned()
             || !entry.Metadata.IsTenantOwned()
             || !_GetGuardOptions().GuardWrites
-            || ServiceProvider.GetRequiredService<ITenantWriteGuardBypass>().IsActive
+            || _SingletonServices().GetRequiredService<ITenantWriteGuardBypass>().IsActive
         )
         {
             return;

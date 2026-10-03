@@ -2,6 +2,7 @@
 
 using System.Diagnostics.CodeAnalysis;
 using Headless.Checks;
+using Headless.EntityFramework.Contexts.Runtime;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -15,10 +16,15 @@ namespace Headless.EntityFramework;
 /// <remarks>
 /// Each path registers its own scoped context descriptor before calling EF Core, whose registration uses
 /// <c>TryAdd</c> for the context and so keeps ours: the context the scope resolves is bound to that scope. A context
-/// registered by the application first, through plain EF Core, stays unbound and opens a private scope on first use.
+/// registered by the application first, through plain EF Core, is not bound explicitly: with per-scope options it
+/// borrows the scope that built them, and with singleton options it opens a private scope on first use.
 /// </remarks>
 internal static class HeadlessDbContextRegistration
 {
+    // Keys the context's own implementation-type registration, so DI selects and caches its constructor exactly as a
+    // plain EF Core registration would; the unkeyed descriptor resolves it and binds the scope.
+    private static readonly object _ImplementationKey = new();
+
     /// <summary>EF Core's default pool size.</summary>
     public const int DefaultPoolSize = 1024;
 
@@ -46,9 +52,15 @@ internal static class HeadlessDbContextRegistration
 
         services.AddDiRegisteredInterceptorsConfiguration<TDbContext>();
 
-        var activate = ActivatorUtilities.CreateFactory<TDbContext>([]);
         services.TryAdd(
-            new ServiceDescriptor(typeof(TDbContext), sp => _Bind(activate(sp, arguments: null), sp), contextLifetime)
+            new ServiceDescriptor(typeof(TDbContext), _ImplementationKey, typeof(TDbContext), contextLifetime)
+        );
+        services.TryAdd(
+            new ServiceDescriptor(
+                typeof(TDbContext),
+                sp => _Bind(sp.GetRequiredKeyedService<TDbContext>(_ImplementationKey), sp),
+                contextLifetime
+            )
         );
 
         services.AddDbContext<TDbContext>(
@@ -111,7 +123,12 @@ internal static class HeadlessDbContextRegistration
             );
         }
 
-        owner.Runtime.Bind(services);
+        // A transient context resolved from the root would otherwise bind the root, and scoped collaborators resolved
+        // from it would live for the host's lifetime; left unbound, it opens a private scope instead.
+        if (!HeadlessDbContextRuntime.IsRootProvider(services))
+        {
+            owner.Runtime.Bind(services);
+        }
 
         return context;
     }
