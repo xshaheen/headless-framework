@@ -3,9 +3,6 @@
 using Headless.Checks;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
-using Headless.Messaging.MultiTenancy;
-using Headless.MultiTenancy;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.RequestReply;
@@ -19,18 +16,11 @@ internal sealed class RequestClient(
     ReplyListenerHost listener,
     PendingRequests pending,
     IConsumeContextAccessor consumeContextAccessor,
-    ICurrentTenant currentTenant,
     TimeProvider timeProvider,
-    IOptions<MessagingOptions> messagingOptions,
-    IMiddlewareDescriptorRegistry middlewareDescriptors,
-    ILogger<RequestClient> logger
+    IOptions<MessagingOptions> messagingOptions
 ) : IRequestClient
 {
     private readonly TimeSpan _defaultTimeout = messagingOptions.Value.RequestReply.DefaultTimeout;
-
-    // Tenant propagation is registered as Bus publish middleware only, so a request on the Queue lane reads the ambient
-    // tenant itself, and only on a host that opted in to propagating tenants.
-    private readonly bool _propagatesTenant = middlewareDescriptors.HasMiddleware<TenantPropagationPublishMiddleware>();
 
     public async Task<TResponse> RequestAsync<TRequest, TResponse>(
         TRequest request,
@@ -195,18 +185,14 @@ internal sealed class RequestClient(
         }
     }
 
-    private QueueOptions _CreateQueueOptions(RequestOptions? options)
+    // Only the caller's explicit tenant is set here; the Queue-lane publish middleware stamps the ambient tenant when the
+    // host propagates tenants, and the final envelope's tenant reaches the pending call through the request stamp.
+    private static QueueOptions _CreateQueueOptions(RequestOptions? options)
     {
         return new QueueOptions
         {
             DeliveryMode = DeliveryMode.Direct,
-            TenantId =
-                options?.TenantId
-                ?? (
-                    _propagatesTenant
-                        ? TenantPropagationPublishMiddleware.ResolveAmbientTenant(currentTenant, logger)
-                        : null
-                ),
+            TenantId = options?.TenantId,
             CorrelationId = options?.CorrelationId,
             Headers = options?.Headers,
         };

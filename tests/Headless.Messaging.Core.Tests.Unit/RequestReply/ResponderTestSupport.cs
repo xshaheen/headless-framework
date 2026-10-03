@@ -323,6 +323,24 @@ internal sealed class ResponderExecutorHost : IAsyncDisposable
         };
     }
 
+    /// <summary>A plain Queue consumer of the same message: it answers nothing, so a request reaching it has no responder.</summary>
+    public static ConsumerExecutorDescriptor PlainQueueDescriptor(MessageConsumerDispatch dispatch)
+    {
+        return new ConsumerExecutorDescriptor
+        {
+            FailurePolicy = MessagingOptions.FrameworkDefaultFailurePolicy,
+            Dispatch = dispatch,
+            MethodName = "ConsumeAsync",
+            Lane = MessageLane.Queue,
+            ConsumerType = typeof(QuoteResponder),
+            MessageType = typeof(PriceQuoteRequest),
+            MessageName = MessageName,
+            SubscriptionName = "tests",
+            ConsumerIdentity = QuoteResponder.Identity,
+            MessageContractVersion = "1",
+        };
+    }
+
     /// <summary>Makes every consumer invocation, on either tier, end with the result <paramref name="attempt"/> gives.</summary>
     public void OnInvoke(Func<Task<ConsumerExecutedResult>> attempt)
     {

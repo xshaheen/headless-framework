@@ -276,6 +276,83 @@ public sealed class SubscribeExecutorReplyTests : TestBase
     }
 
     [Fact]
+    public async Task should_run_a_plain_queue_consumer_under_the_envelope_tenant_when_the_host_propagates_tenants()
+    {
+        // given — a plain Queue consumer, not a responder, records the tenant it observes
+        var builder = Host.CreateApplicationBuilder();
+        builder.AddHeadlessTenancy(tenancy => tenancy.Messaging(messaging => messaging.PropagateTenant()));
+        await using var host = ResponderExecutorHost.Create(realInvoker: true, services: builder.Services);
+        string? observedTenant = null;
+        var descriptor = ResponderExecutorHost.PlainQueueDescriptor(
+            (services, _, _) =>
+            {
+                observedTenant = services.GetRequiredService<ICurrentTenant>().Id;
+                return ValueTask.CompletedTask;
+            }
+        );
+
+        // when
+        var result = await host.ExecuteAsync(
+            host.Request(TimeSpan.FromSeconds(30), tenantId: "tenant-a", asRequest: false),
+            AbortToken,
+            descriptor
+        );
+
+        // then
+        result.Succeeded.Should().BeTrue();
+        observedTenant.Should().Be("tenant-a");
+        host.Replies.Sent.Should().BeEmpty();
+        host.Provider.GetRequiredService<ICurrentTenant>().Id.Should().BeNull("the tenant scope ends with the attempt");
+    }
+
+    [Fact]
+    public async Task should_run_a_plain_queue_consumer_under_the_envelope_tenant_on_the_transactional_tier()
+    {
+        // given — the attempt scope's services resolve under the envelope tenant, as the inbox runner's DbContext would
+        var builder = Host.CreateApplicationBuilder();
+        builder.AddHeadlessTenancy(tenancy => tenancy.Messaging(messaging => messaging.PropagateTenant()));
+        RecordingReplyTransport? replies = null;
+        await using var host = ResponderExecutorHost.Create(
+            options => options.RequiredInboxCapability = MessagingInboxCapabilityTier.Transactional,
+            services =>
+                services.AddScoped<IInboxTransactionRunner>(sp => new FakeInboxTransactionRunner(
+                    sp.GetRequiredService<IUnitOfWorkFactory>(),
+                    InboxCommit.Commit,
+                    replies!
+                )),
+            realInvoker: true,
+            services: builder.Services
+        );
+        replies = host.Replies;
+        string? observedTenant = null;
+        var descriptor = ResponderExecutorHost.PlainQueueDescriptor(
+            (services, _, _) =>
+            {
+                observedTenant = services.GetRequiredService<ICurrentTenant>().Id;
+                return ValueTask.CompletedTask;
+            }
+        );
+        var message = host.Request(TimeSpan.FromSeconds(30), tenantId: "tenant-a", asRequest: false);
+        message.InboxKey = new InboxKey(
+            TenantId: "tenant-a",
+            message.Origin.Id,
+            MessageLane.Queue,
+            ResponderExecutorHost.MessageName,
+            "1",
+            QuoteResponder.Identity,
+            Generation: 0
+        );
+
+        // when
+        var result = await host.ExecuteAsync(message, AbortToken, descriptor);
+
+        // then
+        result.Succeeded.Should().BeTrue();
+        observedTenant.Should().Be("tenant-a");
+        host.Provider.GetRequiredService<ICurrentTenant>().Id.Should().BeNull("the tenant scope ends with the attempt");
+    }
+
+    [Fact]
     public async Task should_fault_a_responder_that_tries_to_publish_a_callback_response()
     {
         // given — the responder answers through the callback slot instead of returning its response

@@ -79,13 +79,6 @@ internal sealed class SubscribeExecutor(
     // inline delay serves every consumer, and each execution supplies its consumer's classifier.
     private readonly MessagingConsumeRetryPipeline _retryPipeline = new(timeProvider);
 
-    // Tenant propagation wraps only Bus consumers; a Queue responder of a propagating host still runs, and saves, under
-    // the request's tenant. Registrations are fixed once the container is built, so the probe runs once.
-    private readonly Lazy<bool> _propagatesTenantToResponders = new(() =>
-        provider.GetService<IMiddlewareDescriptorRegistry>()?.HasMiddleware<TenantPropagationConsumeMiddleware>()
-        == true
-    );
-
     private ResponderReplies? _responderReplies;
 
     public Task<OperateResult> ExecuteAsync(
@@ -351,7 +344,6 @@ internal sealed class SubscribeExecutor(
                     )
                     && middlewareDescriptors.Any(m => m.MiddlewareType == typeof(TenantPropagationConsumeMiddleware));
 
-                propagateTenant |= descriptor.IsResponder && _propagatesTenantToResponders.Value;
                 // Tenant-aware services can read the tenant at resolution, and auto-save runs after consume middleware.
                 using var tenantScope = propagateTenant
                     ? TenantContextScope.ChangeFromEnvelope(attemptServices, message.Origin, logger)
