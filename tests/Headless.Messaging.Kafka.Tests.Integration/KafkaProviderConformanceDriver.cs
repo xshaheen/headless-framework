@@ -17,6 +17,10 @@ internal sealed class KafkaProviderConformanceDriver(KafkaFixture fixture) : Tra
         Headless.Messaging.Configuration.MessagingSetupBuilder setup
     ) => setup.UseKafka(fixture.ConnectionString);
 
+    // The same transport a consuming host uses, so the startup-rejection proof runs against the real provider wiring.
+    public override void ConfigureRequestReplyTransport(Headless.Messaging.Configuration.MessagingSetupBuilder setup) =>
+        ConfigureRoutingAffinityTransport(setup);
+
     public override void AssertNativeRoutingAffinity(TransportConformanceDelivery delivery, string expectedKey)
     {
         var native = delivery

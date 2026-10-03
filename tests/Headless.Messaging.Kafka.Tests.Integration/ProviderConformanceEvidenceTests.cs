@@ -6,6 +6,7 @@ using Headless.Messaging.Persistence;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Tests.Capabilities;
+using Tests.RequestReply;
 
 namespace Tests;
 
@@ -15,6 +16,13 @@ public sealed class ProviderConformanceEvidenceTests(KafkaFixture fixture) : Tes
     [Fact]
     public Task should_prove_routing_affinity_mapping_or_rejection() =>
         TransportRoutingAffinityConformance.AssertAsync(new KafkaProviderConformanceDriver(fixture), AbortToken);
+
+    [Fact]
+    public Task should_reject_requests_and_responders_at_startup_on_a_transport_without_request_reply() =>
+        TransportRequestReplyConformance.AssertRejectedAtStartupAsync(
+            new KafkaProviderConformanceDriver(fixture),
+            AbortToken
+        );
 
     [Fact]
     public async Task should_execute_every_supported_manifest_scenario()
@@ -60,6 +68,11 @@ public sealed class ProviderConformanceEvidenceTests(KafkaFixture fixture) : Tes
                 TransportConformanceScenario.StartupRejectionBeforeSideEffects,
                 typeof(ProviderConformanceEvidenceTests),
                 nameof(should_reject_bus_route_before_storage_or_broker_side_effects)
+            ),
+            new(
+                TransportConformanceScenario.RequestReplyStartupRejection,
+                typeof(ProviderConformanceEvidenceTests),
+                nameof(should_reject_requests_and_responders_at_startup_on_a_transport_without_request_reply)
             ),
             _Bind(
                 TransportConformanceScenario.MalformedEnvelopeTerminalSettlement,

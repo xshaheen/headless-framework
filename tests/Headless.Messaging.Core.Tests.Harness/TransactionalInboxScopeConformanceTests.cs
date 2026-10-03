@@ -32,23 +32,28 @@ public abstract class TransactionalInboxScopeConformanceTests : TestBase
     protected abstract string ReplaceAttemptSql(string receivedTable);
 
     [Theory]
-    [InlineData(false, false, true, null, false)]
-    [InlineData(true, false, true, null, false)]
-    [InlineData(false, true, true, null, false)]
-    [InlineData(true, true, true, null, false)]
-    [InlineData(false, false, true, "dispatch-tenant", false)]
-    [InlineData(false, true, true, "dispatch-tenant", false)]
-    [InlineData(false, false, false, "dispatch-tenant", false)]
-    [InlineData(true, false, true, null, true)]
-    [InlineData(false, true, true, null, true)]
-    [InlineData(false, false, true, "dispatch-tenant", true)]
-    [InlineData(true, true, true, "dispatch-tenant", true)]
+    [InlineData(false, false, true, null, false, MessageLane.Bus)]
+    [InlineData(true, false, true, null, false, MessageLane.Bus)]
+    [InlineData(false, true, true, null, false, MessageLane.Bus)]
+    [InlineData(true, true, true, null, false, MessageLane.Bus)]
+    [InlineData(false, false, true, "dispatch-tenant", false, MessageLane.Bus)]
+    [InlineData(false, true, true, "dispatch-tenant", false, MessageLane.Bus)]
+    [InlineData(false, false, false, "dispatch-tenant", false, MessageLane.Bus)]
+    [InlineData(true, false, true, null, true, MessageLane.Bus)]
+    [InlineData(false, true, true, null, true, MessageLane.Bus)]
+    [InlineData(false, false, true, "dispatch-tenant", true, MessageLane.Bus)]
+    [InlineData(true, true, true, "dispatch-tenant", true, MessageLane.Bus)]
+    [InlineData(false, false, true, "dispatch-tenant", false, MessageLane.Queue)]
+    [InlineData(true, true, true, null, false, MessageLane.Queue)]
+    [InlineData(false, false, false, "dispatch-tenant", false, MessageLane.Queue)]
+    [InlineData(false, false, true, "dispatch-tenant", true, MessageLane.Queue)]
     public async Task should_commit_or_rollback_handler_state_and_outbox_in_the_attempt_scope(
         bool explicitSave,
         bool rejectFence,
         bool propagateTenant,
         string? ambientTenant,
-        bool pooled
+        bool pooled,
+        MessageLane lane
     )
     {
         var state = new ExecutionState { ExplicitSave = explicitSave };
@@ -72,19 +77,26 @@ public abstract class TransactionalInboxScopeConformanceTests : TestBase
             builder.AddHeadlessTenancy(tenancy => tenancy.Messaging(messaging => messaging.PropagateTenant()));
         }
 
-        services
-            .AddHeadlessMessaging(setup =>
-            {
-                setup.UseInMemory();
-                ConfigureStorage(setup);
-                setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.Transactional;
-            })
-            .AddBusConsumeMiddleware<InboxScopeMiddleware>();
+        var messagingBuilder = services.AddHeadlessMessaging(setup =>
+        {
+            setup.UseInMemory();
+            ConfigureStorage(setup);
+            setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.Transactional;
+        });
+        messagingBuilder.AddBusConsumeMiddleware<InboxScopeMiddleware>();
+        messagingBuilder.AddQueueConsumeMiddleware<InboxScopeMiddleware>();
         services.ConfigureMessaging(messaging =>
         {
             messaging.Message<InboxScopeMessage>("tests.inbox-scope");
             messaging.Message<InboxScopeOutput>("tests.inbox-scope.output");
-            messaging.AddModule<InboxScopeModule>();
+            if (lane is MessageLane.Queue)
+            {
+                messaging.AddModule<InboxScopeQueueModule>();
+            }
+            else
+            {
+                messaging.AddModule<InboxScopeModule>();
+            }
         });
 
         await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
@@ -124,7 +136,7 @@ public abstract class TransactionalInboxScopeConformanceTests : TestBase
                     StorageId = Guid.Empty,
                     Origin = origin,
                     Content = string.Empty,
-                    Lane = MessageLane.Bus,
+                    Lane = lane,
                 },
                 cancellationToken: AbortToken
             );
@@ -203,7 +215,7 @@ public abstract class TransactionalInboxScopeConformanceTests : TestBase
         }
 
         var monitoring = storage.GetMonitoringApi();
-        foreach (var lane in new[] { MessageLane.Bus, MessageLane.Queue })
+        foreach (var outgoingLane in new[] { MessageLane.Bus, MessageLane.Queue })
         {
             var outgoing = await monitoring.GetMessagesAsync(
                 new MessageQuery
@@ -211,7 +223,7 @@ public abstract class TransactionalInboxScopeConformanceTests : TestBase
                     MessageType = MessageType.Publish,
                     Name = "tests.inbox-scope.output",
                     Content = state.Id.ToString(),
-                    Lane = lane,
+                    Lane = outgoingLane,
                     PageSize = 10,
                 },
                 AbortToken
@@ -310,6 +322,16 @@ public abstract class TransactionalInboxScopeConformanceTests : TestBase
             catalog.AddBusConsumer<InboxScopeConsumer, InboxScopeMessage>(
                 "tests.inbox-scope.consumer",
                 everyInstance: false,
+                TestConsumerDispatch.FromServices<InboxScopeConsumer, InboxScopeMessage>()
+            );
+    }
+
+    /// <summary>The same consumer declared on the Queue lane, so the theory proves the attempt scope on both lanes.</summary>
+    public sealed class InboxScopeQueueModule : IMessagingModule
+    {
+        public static void Register(MessagingCatalogBuilder catalog) =>
+            catalog.AddQueueConsumer<InboxScopeConsumer, InboxScopeMessage>(
+                "tests.inbox-scope.queue-consumer",
                 TestConsumerDispatch.FromServices<InboxScopeConsumer, InboxScopeMessage>()
             );
     }

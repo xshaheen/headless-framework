@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Globalization;
 using System.Security.Claims;
 using Headless.Abstractions;
 using Headless.Messaging;
@@ -1806,6 +1807,70 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
         var redelivery = await _AdmitAsync(storage, origin);
         redelivery.Disposition.Should().Be(InboxAdmissionDisposition.TerminalFailedDuplicate);
         redelivery.Message.StorageId.Should().Be(admitted.Message.StorageId);
+    }
+
+    [Fact]
+    public async Task force_reprocess_should_give_the_child_its_own_copy_of_a_request_envelope()
+    {
+        // given — a terminal request row, with the reply address and deadline its caller stamped
+        _EnsureInitialized();
+        var storage = GetStorage();
+        var origin = CreateMessage("inbox-replayed-request", "orders.quote");
+        origin.Headers[Headers.RequestId] = "req-1";
+        origin.Headers[Headers.ReplyTo] = "headless.reply.caller";
+        origin.Headers[Headers.RequestDeadline] = _fakeTimeProvider!
+            .GetUtcNow()
+            .ToString("O", CultureInfo.InvariantCulture);
+        var admitted = await _AdmitAsync(storage, origin, lane: MessageLane.Queue);
+        admitted.Message.InlineAttempts++;
+        (await storage.LeaseReceiveAndReserveAttemptAsync(admitted.Message, TimeSpan.FromMinutes(1), 0, AbortToken))
+            .Should()
+            .BeTrue();
+        (
+            await storage.ChangeReceiveRetryStateAsync(
+                admitted.Message,
+                StatusName.Failed,
+                MessageContentWrite.Preserve,
+                retryDelay: null,
+                lockedUntil: null,
+                originalRetries: 0,
+                originalInlineAttempts: 1,
+                AbortToken
+            )
+        )
+            .Should()
+            .BeTrue();
+        var authorization = new OperatorAuthorizationContext(
+            new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Name, "operator-a")], "test"))
+        );
+
+        // when
+        var forced = await storage
+            .GetInboxOperationsApi()
+            .ForceReprocessAsync(
+                new InboxOperationRequest(
+                    Guid.NewGuid(),
+                    admitted.Message.InboxGeneration!.IncarnationId,
+                    StatusName.Failed,
+                    "replay after repair",
+                    authorization
+                ),
+                AbortToken
+            );
+        _fakeTimeProvider.Advance(_messagingOptions!.Value.RetryPolicy.InitialDispatchGrace + TimeSpan.FromSeconds(1));
+        var child = (await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Queue, null, AbortToken)).Single();
+
+        // then — the child is the next generation with the parent's envelope copied verbatim
+        forced.Outcome.Should().Be(InboxOperationOutcome.Applied);
+        child.StorageId.Should().Be(forced.ChildStorageId!.Value);
+        child.InboxKey!.Generation.Should().Be(1);
+        child.Origin.Headers.Should().Contain(Headers.ReplyTo, "headless.reply.caller");
+        child.Origin.Headers.Should().ContainKey(Headers.RequestDeadline);
+
+        // the executor strips the reply address from the generation it runs; the parent's envelope does not follow
+        child.Origin.Headers.Remove(Headers.ReplyTo);
+        var parent = await storage.GetMonitoringApi().GetReceivedMessageAsync(admitted.Message.StorageId, AbortToken);
+        parent!.Origin.Headers.Should().Contain(Headers.ReplyTo, "headless.reply.caller");
     }
 
     [Fact]

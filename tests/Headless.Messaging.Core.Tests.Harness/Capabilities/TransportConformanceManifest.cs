@@ -345,6 +345,7 @@ public static class TransportConformanceManifest
                         "Amazon SQS has no .NET temporary-queue client and bills per-process queue churn, so the provider rejects request/reply at startup."
                     )
                 )
+                .WithScenario(TransportConformanceScenario.RequestReplyStartupRejection, ConformanceSupport.Supported)
                 .EnableRealBrokerLeaf(),
             ["Kafka"] = TransportConformanceProfile
                 .CreateDisabled("Kafka")
@@ -403,6 +404,7 @@ public static class TransportConformanceManifest
                         "Kafka cannot address one process short of a partition per instance, so the provider rejects request/reply at startup."
                     )
                 )
+                .WithScenario(TransportConformanceScenario.RequestReplyStartupRejection, ConformanceSupport.Supported)
                 .EnableRealBrokerLeaf(),
             ["Pulsar"] = TransportConformanceProfile
                 .CreateDisabled("Pulsar")
@@ -438,6 +440,7 @@ public static class TransportConformanceManifest
                         _RequestReplyIssueUrl
                     )
                 )
+                .WithScenario(TransportConformanceScenario.RequestReplyStartupRejection, ConformanceSupport.Supported)
                 .EnableRealBrokerLeaf(),
             ["Azure Service Bus"] = TransportConformanceProfile
                 .CreateDisabled("Azure Service Bus")
@@ -469,6 +472,7 @@ public static class TransportConformanceManifest
                         _RequestReplyIssueUrl
                     )
                 )
+                .WithScenario(TransportConformanceScenario.RequestReplyStartupRejection, ConformanceSupport.Supported)
                 .EnableRealBrokerLeaf(),
             ["InMemory"] = TransportConformanceProfile
                 .CreateDisabled("InMemory")

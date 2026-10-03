@@ -166,10 +166,6 @@ internal sealed class PendingRequestEntry(string requestId, PendingRequest call)
 /// <summary>One call waiting for its reply. Exactly one terminal transition wins; every other one is a no-op.</summary>
 internal sealed class PendingRequest
 {
-    // ITimer and a timer-backed CancellationTokenSource accept at most uint.MaxValue - 1 milliseconds; a longer call
-    // timeout is legal on RequestOptions, so every duration handed to a timer is clamped.
-    internal static readonly TimeSpan MaxTimerDuration = TimeSpan.FromMilliseconds(uint.MaxValue - 1);
-
     private readonly TaskCompletionSource<object> _outcome = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly TimeProvider _timeProvider;
     private ITimer? _timeoutTimer;
@@ -235,11 +231,6 @@ internal sealed class PendingRequest
 
     public TimeSpan TimeoutDuration { get; }
 
-    internal static TimeSpan ClampTimerDuration(TimeSpan duration)
-    {
-        return duration > MaxTimerDuration ? MaxTimerDuration : duration;
-    }
-
     internal void Arm(PendingRequests owner, TimeSpan dueIn, CancellationToken cancellationToken)
     {
         Entry.Owner = owner;
@@ -250,7 +241,7 @@ internal sealed class PendingRequest
                 request.TryEnd(new RequestTimeoutException(request.RequestId, request.TimeoutDuration));
             },
             this,
-            ClampTimerDuration(dueIn),
+            dueIn,
             Timeout.InfiniteTimeSpan
         );
 
@@ -333,6 +324,6 @@ internal sealed class PendingRequest
     {
         _cancellation.Dispose();
         _timeoutTimer?.Dispose();
-        Entry.Retire(_timeProvider, ClampTimerDuration(TimeoutDuration));
+        Entry.Retire(_timeProvider, TimeoutDuration);
     }
 }

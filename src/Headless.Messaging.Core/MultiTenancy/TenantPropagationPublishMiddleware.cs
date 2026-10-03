@@ -29,19 +29,17 @@ public sealed class TenantPropagationPublishMiddleware(
         if (
             context.Options?.SuppressAmbientBusinessContext != true
             && context.Options?.TenantId is null
-            && ResolveAmbientTenant(_currentTenant, logger) is { } ambientTenantId
+            && _ResolveAmbientTenant(_currentTenant, logger) is { } ambientTenantId
         )
         {
-            // Stamp TenantId on a concrete options record that matches the publish intent so
-            // downstream middleware and the factory receive the correct derived type.
-            MessageOptions stamped = context.Lane switch
-            {
-                MessageLane.Queue => (context.Options as QueueOptions ?? new QueueOptions()) with
-                {
-                    TenantId = ambientTenantId,
-                },
-                _ => (context.Options as PublishOptions ?? new PublishOptions()) with { TenantId = ambientTenantId },
-            };
+            // Stamp the tenant on the record the caller passed: `with` keeps its runtime type (QueueOptions,
+            // PublishOptions, or an enlisted write's OutboxOptions) and every other field, so the factory still sees
+            // the caller's message name, headers, correlation, and callback. Only a publish without options gets the
+            // lane's autonomous record.
+            MessageOptions stamped =
+                context.Options is { } options ? options with { TenantId = ambientTenantId }
+                : context.Lane is MessageLane.Queue ? new QueueOptions { TenantId = ambientTenantId }
+                : new PublishOptions { TenantId = ambientTenantId };
             context.WithOptions(stamped);
         }
 
@@ -51,10 +49,9 @@ public sealed class TenantPropagationPublishMiddleware(
     /// <summary>
     /// Returns the ambient tenant a message may carry, or <see langword="null"/> when there is none. A blank tenant is
     /// treated as absent, and one longer than <see cref="MessageOptions.TenantIdMaxLength"/> is dropped and logged rather
-    /// than failing the send, so a bad ambient source never blocks publishing. Every path that stamps the ambient tenant
-    /// applies these same rules.
+    /// than failing the send, so a bad ambient source never blocks publishing.
     /// </summary>
-    internal static string? ResolveAmbientTenant(ICurrentTenant currentTenant, ILogger? logger)
+    private static string? _ResolveAmbientTenant(ICurrentTenant currentTenant, ILogger? logger)
     {
         if (currentTenant.Id is not { } ambientTenantId || string.IsNullOrWhiteSpace(ambientTenantId))
         {

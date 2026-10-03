@@ -13,10 +13,13 @@ using Headless.Messaging.Transport;
 using Headless.Testing.Testcontainers;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NATS.Client.Core;
+using NATS.Client.JetStream;
 using Testcontainers.Nats;
+using Tests.Helpers;
 using Tests.RequestReply;
 using INatsConnectionPool = Headless.Messaging.Nats.INatsConnectionPool;
 using MessagingHeaders = Headless.Messaging.Headers;
@@ -36,6 +39,7 @@ public sealed class NatsReplyTransportTests(NatsFixture fixture) : TestBase
     private static readonly TimeSpan _Bound = TimeSpan.FromSeconds(30);
 
     private readonly List<NatsConnectionPool> _pools = [];
+    private readonly List<ILoggerFactory> _loggerFactories = [];
 
     [Fact]
     public async Task should_store_requests_in_the_operator_stream_but_never_a_reply_in_any_stream()
@@ -163,6 +167,53 @@ public sealed class NatsReplyTransportTests(NatsFixture fixture) : TestBase
             .BeLessThan(timeout / 4, "JetStream answers at once when no stream captures a subject");
     }
 
+    [Fact]
+    public async Task should_warn_once_naming_the_stream_that_captures_the_reply_subject()
+    {
+        // given — an operator stream whose subject filter covers every reply subject
+        var streamName = $"REPLY_CAPTURE_{Guid.NewGuid():N}";
+        var js = new NatsJSContext(await fixture.GetConnectionAsync());
+        await fixture.EnsureStreamAsync(streamName, $"{ReplyAddresses.Prefix}>");
+        var log = new List<(LogLevel Level, EventId EventId, string Message)>();
+
+        try
+        {
+            // when
+            await using var listener = await _CreateTransport(_CreatePool(fixture.ConnectionString), log)
+                .OpenListenerAsync((_, _) => ValueTask.CompletedTask, AbortToken);
+            var address = await listener.WaitForAddressAsync(AbortToken).AsTask().WaitAsync(_Bound, AbortToken);
+
+            // then — the address is served regardless, and one warning names the stream
+            address.Should().StartWith(ReplyAddresses.Prefix);
+            await _WaitUntilAsync(() => _CapturedWarnings(log).Count > 0);
+            var warning = _CapturedWarnings(log).Should().ContainSingle().Subject;
+            warning.Level.Should().Be(LogLevel.Warning);
+            warning.Message.Should().Contain(streamName).And.Contain(address);
+        }
+        finally
+        {
+            // The sibling test asserts that no stream ever stores a reply, so this stream must not outlive the test.
+            await js.DeleteStreamAsync(streamName, AbortToken);
+        }
+    }
+
+    [Fact]
+    public async Task should_not_warn_when_no_stream_captures_the_reply_subject()
+    {
+        // given — only the lane streams exist
+        var log = new List<(LogLevel Level, EventId EventId, string Message)>();
+
+        // when
+        await using var listener = await _CreateTransport(_CreatePool(fixture.ConnectionString), log)
+            .OpenListenerAsync((_, _) => ValueTask.CompletedTask, AbortToken);
+        await listener.WaitForAddressAsync(AbortToken).AsTask().WaitAsync(_Bound, AbortToken);
+
+        // then — the check ran against a live JetStream API and found nothing to warn about
+        await Task.Delay(TimeSpan.FromSeconds(2), AbortToken);
+        _CapturedWarnings(log).Should().BeEmpty();
+        log.Should().NotContain(entry => entry.EventId.Id == 14, "the check itself must not fail on a healthy server");
+    }
+
     [Theory]
     [InlineData("headless.queue.forged-{0}")]
     [InlineData("headless.bus.forged-{0}")]
@@ -194,6 +245,11 @@ public sealed class NatsReplyTransportTests(NatsFixture fixture) : TestBase
         foreach (var pool in _pools)
         {
             await pool.DisposeAsync();
+        }
+
+        foreach (var factory in _loggerFactories)
+        {
+            factory.Dispose();
         }
 
         await base.DisposeAsyncCore();
@@ -246,6 +302,38 @@ public sealed class NatsReplyTransportTests(NatsFixture fixture) : TestBase
     private static NatsReplyTransport _CreateTransport(INatsConnectionPool pool)
     {
         return new NatsReplyTransport(pool, TimeProvider.System, NullLogger<NatsReplyTransport>.Instance);
+    }
+
+    private NatsReplyTransport _CreateTransport(
+        INatsConnectionPool pool,
+        List<(LogLevel Level, EventId EventId, string Message)> log
+    )
+    {
+        // Fully qualified: the test base exposes a LoggerFactory property of its own.
+        var factory = Microsoft.Extensions.Logging.LoggerFactory.Create(logging =>
+            logging.AddProvider(new CapturingLoggerProvider(log))
+        );
+        _loggerFactories.Add(factory);
+        return new NatsReplyTransport(pool, TimeProvider.System, factory.CreateLogger<NatsReplyTransport>());
+    }
+
+    private static List<(LogLevel Level, EventId EventId, string Message)> _CapturedWarnings(
+        List<(LogLevel Level, EventId EventId, string Message)> log
+    )
+    {
+        lock (log)
+        {
+            return [.. log.Where(static entry => entry.EventId.Id == 13)];
+        }
+    }
+
+    private static async Task _WaitUntilAsync(Func<bool> condition)
+    {
+        using var bound = new CancellationTokenSource(_Bound);
+        while (!condition())
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(50), bound.Token);
+        }
     }
 
     private static TransportMessage _Reply(string inReplyTo)

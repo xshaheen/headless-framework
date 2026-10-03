@@ -4,6 +4,7 @@ using Headless.Checks;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Logging;
 using NATS.Client.Core;
+using NATS.Client.JetStream;
 
 namespace Headless.Messaging.Nats;
 
@@ -33,6 +34,9 @@ namespace Headless.Messaging.Nats;
 /// </remarks>
 internal sealed class NatsReplyListener : IReplyListener
 {
+    // Long enough for a healthy JetStream API to answer, short enough that a stalled one is forgotten quickly.
+    private static readonly TimeSpan _StreamCheckBound = TimeSpan.FromSeconds(5);
+
     private readonly NatsConnection _connection;
     private readonly string _subject;
     private readonly Func<TransportMessage, CancellationToken, ValueTask> _onReply;
@@ -122,6 +126,10 @@ internal sealed class NatsReplyListener : IReplyListener
                 _backoff.Reset();
                 _logger.ReplyListenerReady(_subject);
 
+                // Runs beside the receive loop, after the address is out, so a slow or absent JetStream API never
+                // delays a call.
+                _ = _WarnWhenAStreamCapturesRepliesAsync();
+
                 await foreach (var msg in subscription.Msgs.ReadAllAsync(_closing.Token).ConfigureAwait(false))
                 {
                     await _DeliverAsync(msg).ConfigureAwait(false);
@@ -162,6 +170,49 @@ internal sealed class NatsReplyListener : IReplyListener
             if (!await _backoff.WaitAsync(_closing.Token).ConfigureAwait(false))
             {
                 return;
+            }
+        }
+    }
+
+    // A reply is a core publish, but a stream whose subject filter covers the reply subject stores a copy of every
+    // reply, and an operator rarely intends that. The check is best effort: it only warns, it is bounded so an
+    // unresponsive JetStream API cannot hold the listener, and any failure, including a server without JetStream, is
+    // logged at debug and otherwise ignored.
+    private async Task _WarnWhenAStreamCapturesRepliesAsync()
+    {
+        try
+        {
+            using var bound = CancellationTokenSource.CreateLinkedTokenSource(_closing.Token);
+            bound.CancelAfter(_StreamCheckBound);
+
+            var streams = new List<string>();
+            await foreach (
+                var stream in new NatsJSContext(_connection)
+                    .ListStreamNamesAsync(_subject, bound.Token)
+                    .ConfigureAwait(false)
+            )
+            {
+                streams.Add(stream);
+            }
+
+            if (streams.Count == 0)
+            {
+                return;
+            }
+
+            if (_logger.IsEnabled(LogLevel.Warning))
+            {
+                var names = string.Join(", ", streams);
+                _logger.ReplySubjectCapturedByStreams(_subject, names);
+            }
+        }
+        catch (Exception e)
+        {
+            // While closing, the check's outcome no longer matters to anyone.
+            if (!_closing.IsCancellationRequested && _logger.IsEnabled(LogLevel.Debug))
+            {
+                var exceptionType = e.GetType().Name;
+                _logger.ReplySubjectStreamCheckSkipped(_subject, exceptionType);
             }
         }
     }
@@ -345,5 +396,25 @@ internal static partial class NatsReplyListenerLog
         this ILogger logger,
         Exception exception,
         string replyAddress
+    );
+
+    [LoggerMessage(
+        EventId = 13,
+        EventName = "NatsReplySubjectCapturedByStreams",
+        Level = LogLevel.Warning,
+        Message = "NATS reply subject '{ReplyAddress}' is captured by JetStream stream(s) {Streams}; every reply to this host is stored there. Narrow the stream's subjects so they exclude 'headless.reply.>'."
+    )]
+    public static partial void ReplySubjectCapturedByStreams(this ILogger logger, string replyAddress, string streams);
+
+    [LoggerMessage(
+        EventId = 14,
+        EventName = "NatsReplySubjectStreamCheckSkipped",
+        Level = LogLevel.Debug,
+        Message = "Could not check whether a JetStream stream captures NATS reply subject '{ReplyAddress}' ({ExceptionType}); the check is best effort and the listener is unaffected."
+    )]
+    public static partial void ReplySubjectStreamCheckSkipped(
+        this ILogger logger,
+        string replyAddress,
+        string exceptionType
     );
 }

@@ -35,10 +35,16 @@ public static class SetupMessagingTenancy
     {
         Argument.IsNotNull(builder);
 
+        // Both lanes, so a plain enqueue stamps the ambient tenant and a Queue consumer runs under the envelope tenant
+        // exactly as a Bus publish and consumer do; each middleware type still has one scoped registration.
         builder
             .AddBusConsumeMiddleware<TenantPropagationConsumeMiddleware>()
             .WithPriority(TenantPropagationConsumeMiddleware.Priority)
+            .AddQueueConsumeMiddleware<TenantPropagationConsumeMiddleware>()
+            .WithPriority(TenantPropagationConsumeMiddleware.Priority)
             .AddBusPublishMiddleware<TenantPropagationPublishMiddleware>()
+            .WithPriority(TenantPropagationPublishMiddleware.Priority)
+            .AddQueuePublishMiddleware<TenantPropagationPublishMiddleware>()
             .WithPriority(TenantPropagationPublishMiddleware.Priority);
 
         // Standardized ICurrentTenant primitives — see Headless.Messaging.Core/Setup.cs for the
@@ -78,7 +84,11 @@ public sealed class HeadlessMessagingTenancyBuilder
         _builder = Argument.IsNotNull(builder);
     }
 
-    /// <summary>Registers publish and consume middleware that propagates tenant context through messages.</summary>
+    /// <summary>
+    /// Registers publish and consume middleware that propagates tenant context through messages on both the Bus and
+    /// the Queue lane: every publish and enqueue stamps the ambient tenant, and every consumer runs under the
+    /// envelope's tenant.
+    /// </summary>
     /// <returns>The same messaging tenancy builder.</returns>
     public HeadlessMessagingTenancyBuilder PropagateTenant()
     {

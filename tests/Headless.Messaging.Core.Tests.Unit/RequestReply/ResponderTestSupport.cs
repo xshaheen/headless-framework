@@ -140,7 +140,11 @@ internal sealed class ResponderExecutorHost : IAsyncDisposable
 
         services ??= new ServiceCollection();
         services.AddLogging();
-        services.ConfigureMessaging(messaging => messaging.Message<PriceQuoteRequest>(MessageName));
+        services.ConfigureMessaging(messaging =>
+        {
+            messaging.Message<PriceQuoteRequest>(MessageName);
+            messaging.Message<PriceQuote>(PriceQuoteContract.Name, PriceQuoteContract.Version);
+        });
         services.AddHeadlessMessaging(setup =>
         {
             setup.UseInMemory();
@@ -226,11 +230,20 @@ internal sealed class ResponderExecutorHost : IAsyncDisposable
     }
 
     /// <summary>A request the way the caller's publish path stamps it, with a deadline on the caller's clock.</summary>
+    /// <param name="timeUntilDeadline">How long after the host clock's current instant the caller stops waiting.</param>
+    /// <param name="tenantId">The tenant header, when the request carries one.</param>
+    /// <param name="correlationId">The correlation header, when the request carries one.</param>
+    /// <param name="asRequest">Whether the message carries the request headers at all.</param>
+    /// <param name="generation">
+    /// The inbox generation the row belongs to, or <see langword="null"/> for a message not yet admitted. Generation
+    /// 0 is the delivery itself; a higher one is a replay child an operator forced from a terminal parent.
+    /// </param>
     public MediumMessage Request(
         TimeSpan timeUntilDeadline,
         string? tenantId = null,
         string? correlationId = null,
-        bool asRequest = true
+        bool asRequest = true,
+        long? generation = null
     )
     {
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
@@ -261,7 +274,7 @@ internal sealed class ResponderExecutorHost : IAsyncDisposable
             headers[Headers.CorrelationId] = correlationId;
         }
 
-        return new MediumMessage
+        var message = new MediumMessage
         {
             StorageId = Guid.NewGuid(),
             Origin = new Message(headers, new PriceQuoteRequest("sku-1")),
@@ -269,6 +282,21 @@ internal sealed class ResponderExecutorHost : IAsyncDisposable
             Lane = MessageLane.Queue,
             Added = Clock.GetUtcNow(),
         };
+
+        if (generation is { } admittedGeneration)
+        {
+            message.InboxKey = new InboxKey(
+                tenantId,
+                headers[Headers.MessageId]!,
+                MessageLane.Queue,
+                MessageName,
+                "1",
+                QuoteResponder.Identity,
+                admittedGeneration
+            );
+        }
+
+        return message;
     }
 
     /// <summary>
@@ -320,6 +348,24 @@ internal sealed class ResponderExecutorHost : IAsyncDisposable
             ConsumerIdentity = QuoteResponder.Identity,
             MessageContractVersion = "1",
             ResponseType = typeof(PriceQuote),
+        };
+    }
+
+    /// <summary>A plain Queue consumer of the same message: it answers nothing, so a request reaching it has no responder.</summary>
+    public static ConsumerExecutorDescriptor PlainQueueDescriptor(MessageConsumerDispatch dispatch)
+    {
+        return new ConsumerExecutorDescriptor
+        {
+            FailurePolicy = MessagingOptions.FrameworkDefaultFailurePolicy,
+            Dispatch = dispatch,
+            MethodName = "ConsumeAsync",
+            Lane = MessageLane.Queue,
+            ConsumerType = typeof(QuoteResponder),
+            MessageType = typeof(PriceQuoteRequest),
+            MessageName = MessageName,
+            SubscriptionName = "tests",
+            ConsumerIdentity = QuoteResponder.Identity,
+            MessageContractVersion = "1",
         };
     }
 

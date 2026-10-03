@@ -22,6 +22,10 @@ internal sealed class PulsarProviderConformanceDriver(PulsarFixture fixture) : T
         Headless.Messaging.Configuration.MessagingSetupBuilder setup
     ) => setup.UsePulsar(fixture.ConnectionString);
 
+    // The same transport a consuming host uses, so the startup-rejection proof runs against the real provider wiring.
+    public override void ConfigureRequestReplyTransport(Headless.Messaging.Configuration.MessagingSetupBuilder setup) =>
+        ConfigureRoutingAffinityTransport(setup);
+
     public override async Task AssertNativePublisherPathsAsync(CancellationToken cancellationToken)
     {
         await _AssertNativePublisherPathsAsync(MessageLane.Queue, cancellationToken);

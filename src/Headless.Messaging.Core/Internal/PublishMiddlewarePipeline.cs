@@ -254,10 +254,12 @@ internal sealed class PublishMiddlewarePipeline(
     {
         var directMiddleware = _ResolveDirectMiddleware(provider, context);
 
-        if (
-            descriptorRegistry is not null
-            && descriptorRegistry.TryGetPublishDescriptors(context.MessageType, context.Lane, out var descriptors)
-        )
+        if (descriptorRegistry is null)
+        {
+            return directMiddleware;
+        }
+
+        if (descriptorRegistry.TryGetPublishDescriptors(context.MessageType, context.Lane, out var descriptors))
         {
             return
             [
@@ -269,7 +271,12 @@ internal sealed class PublishMiddlewarePipeline(
             ];
         }
 
-        return directMiddleware;
+        // A lane with no descriptors still runs middleware registered straight into DI, but never middleware the
+        // builder registered for the other lane: the registry is the only source of lane membership for those types.
+        // Most hosts have nothing registered straight into DI, so skip the filter and its allocation for them.
+        return directMiddleware.Length == 0
+            ? directMiddleware
+            : [.. _GetUntrackedDirectMiddleware(directMiddleware, MiddlewareDirection.Publish)];
     }
 
     private object[] _ResolveDirectMiddleware(IServiceProvider provider, PublishContext context)
