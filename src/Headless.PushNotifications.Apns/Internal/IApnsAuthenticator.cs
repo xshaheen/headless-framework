@@ -6,20 +6,6 @@ using Headless.Checks;
 
 namespace Headless.PushNotifications.Apns.Internal;
 
-/// <summary>The credentials one APNs request carries.</summary>
-/// <param name="BearerToken">The provider token for the <c>authorization</c> header, or <see langword="null"/> to send none.</param>
-/// <param name="Generation">The provider token's mint generation; 0 when there is no token.</param>
-internal readonly record struct ApnsCredential(string? BearerToken, long Generation)
-{
-    public void Apply(HttpRequestMessage message)
-    {
-        if (BearerToken is not null)
-        {
-            message.Headers.Authorization = new AuthenticationHeaderValue("bearer", BearerToken);
-        }
-    }
-}
-
 /// <summary>How an instance authenticates to APNs, chosen once from its options when the service is built.</summary>
 internal interface IApnsAuthenticator
 {
@@ -42,6 +28,20 @@ internal interface IApnsAuthenticator
         ApnsCredential rejected,
         CancellationToken cancellationToken
     );
+}
+
+/// <summary>The credentials one APNs request carries.</summary>
+/// <param name="BearerToken">The provider token for the <c>authorization</c> header, or <see langword="null"/> to send none.</param>
+/// <param name="Generation">The provider token's mint generation; 0 when there is no token.</param>
+internal readonly record struct ApnsCredential(string? BearerToken, long Generation)
+{
+    public void Apply(HttpRequestMessage message)
+    {
+        if (BearerToken is not null)
+        {
+            message.Headers.Authorization = new AuthenticationHeaderValue("bearer", BearerToken);
+        }
+    }
 }
 
 /// <summary>Token mode: a cached ES256 provider token in the <c>authorization: bearer</c> header.</summary>

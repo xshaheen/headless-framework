@@ -6,6 +6,35 @@ using Headless.Checks;
 namespace Headless.Messaging.Registration;
 
 /// <summary>
+/// Collects one <c>Message&lt;T&gt;</c> declaration until its contribution completes, then freezes it into an immutable
+/// <see cref="MessageContract"/>.
+/// </summary>
+internal abstract class MessageContractBuilder
+{
+    private bool _completed;
+
+    public abstract MessageContract Build();
+
+    public MessageContract Complete()
+    {
+        _completed = true;
+        return Build();
+    }
+
+    // The chained calls land after Message<T> returns, so the declaration is only read once its contribution callback
+    // ends. A builder kept past that point would change nothing, so the late call fails instead of being lost.
+    protected void EnsureNotCompleted()
+    {
+        if (_completed)
+        {
+            throw new InvalidOperationException(
+                "A message contract can only be configured inside the ConfigureMessaging callback that declared it."
+            );
+        }
+    }
+}
+
+/// <summary>
 /// Configures one message contract, declared once for both lanes with <c>Message&lt;T&gt;(name, version)</c>.
 /// </summary>
 /// <remarks>
@@ -73,35 +102,6 @@ public interface IQueueContractBuilder<TMessage>
     /// <param name="mode">The delivery mode.</param>
     /// <returns>This builder, for chaining.</returns>
     IQueueContractBuilder<TMessage> WithDeliveryMode(DeliveryMode mode);
-}
-
-/// <summary>
-/// Collects one <c>Message&lt;T&gt;</c> declaration until its contribution completes, then freezes it into an immutable
-/// <see cref="MessageContract"/>.
-/// </summary>
-internal abstract class MessageContractBuilder
-{
-    private bool _completed;
-
-    public abstract MessageContract Build();
-
-    public MessageContract Complete()
-    {
-        _completed = true;
-        return Build();
-    }
-
-    // The chained calls land after Message<T> returns, so the declaration is only read once its contribution callback
-    // ends. A builder kept past that point would change nothing, so the late call fails instead of being lost.
-    protected void EnsureNotCompleted()
-    {
-        if (_completed)
-        {
-            throw new InvalidOperationException(
-                "A message contract can only be configured inside the ConfigureMessaging callback that declared it."
-            );
-        }
-    }
 }
 
 internal sealed class MessageContractBuilder<TMessage> : MessageContractBuilder, IMessageContractBuilder<TMessage>

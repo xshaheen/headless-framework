@@ -3,13 +3,6 @@
 #pragma warning disable CA2225 // Named From* methods would only duplicate the public constructor the implicit conversion already calls.
 namespace Headless.Primitives;
 
-/// <summary>Marker contract for response envelopes that carry a single string identifier.</summary>
-public interface IIdEnvelope
-{
-    /// <summary>The string representation of the resource identifier.</summary>
-    string Id { get; }
-}
-
 /// <summary>
 /// API response envelope that carries a single newly-created or affected resource identifier.
 /// Serializes as <c>{ "id": "..." }</c>. Implicit conversions from <see cref="string"/>,
@@ -33,4 +26,11 @@ public sealed record IdEnvelope(string Id) : IIdEnvelope
     /// <summary>Wraps a <see cref="long"/> identifier formatted with <see cref="CultureInfo.InvariantCulture"/>.</summary>
     /// <param name="operand">The <see cref="long"/> identifier to wrap.</param>
     public static implicit operator IdEnvelope(long operand) => new(operand.ToString(CultureInfo.InvariantCulture));
+}
+
+/// <summary>Marker contract for response envelopes that carry a single string identifier.</summary>
+public interface IIdEnvelope
+{
+    /// <summary>The string representation of the resource identifier.</summary>
+    string Id { get; }
 }

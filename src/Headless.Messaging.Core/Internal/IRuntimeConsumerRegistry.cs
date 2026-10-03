@@ -11,11 +11,6 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.Internal;
 
-internal interface IRuntimeMessageHandlerInvoker
-{
-    ValueTask InvokeAsync(object consumeContext, IServiceProvider services, CancellationToken cancellationToken);
-}
-
 internal interface IRuntimeConsumerRegistry
 {
     IReadOnlyList<ConsumerExecutorDescriptor> GetDescriptors();
@@ -35,6 +30,11 @@ internal interface IRuntimeConsumerRegistry
         MessageLane lane,
         [NotNullWhen(true)] out IRuntimeMessageHandlerInvoker? invoker
     );
+}
+
+internal interface IRuntimeMessageHandlerInvoker
+{
+    ValueTask InvokeAsync(object consumeContext, IServiceProvider services, CancellationToken cancellationToken);
 }
 
 internal sealed class EmptyRuntimeConsumerRegistry : IRuntimeConsumerRegistry

@@ -6,6 +6,7 @@ using Microsoft.CodeAnalysis.CSharp;
 
 namespace Headless.SourceGenerators;
 
+#pragma warning disable MA0048 // A topic file: its types are peers with no main type, so the file is named for the topic.
 /// <summary>Which dispose pattern a handler class implements, decided at build time so the generated call stays typed.</summary>
 internal enum HandlerDisposal
 {

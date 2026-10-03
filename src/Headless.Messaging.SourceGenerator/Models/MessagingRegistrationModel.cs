@@ -4,6 +4,12 @@ using Headless.SourceGenerators;
 
 namespace Headless.Messaging.SourceGenerator.Models;
 
+/// <summary>The complete input of the emitter for one assembly. Contains no locations or diagnostics.</summary>
+internal sealed record MessagingRegistrationModel(
+    string AssemblyName,
+    EquatableArray<ConsumerRegistrationModel> Consumers
+);
+
 /// <summary>
 /// One consumer class as the emitter writes it: its model plus the member names chosen for the assembly. The factory,
 /// the dispatcher, and the subscription hook share one suffix, so each class's members stay distinct.
@@ -19,12 +25,6 @@ internal sealed record ConsumerRegistrationModel(ConsumerModel Consumer, string 
     /// <summary>Runs the class's <c>IOnSubscriptionEstablished</c> hook.</summary>
     public string SubscriptionHookName => "OnSubscriptionEstablished_" + MemberSuffix;
 }
-
-/// <summary>The complete input of the emitter for one assembly. Contains no locations or diagnostics.</summary>
-internal sealed record MessagingRegistrationModel(
-    string AssemblyName,
-    EquatableArray<ConsumerRegistrationModel> Consumers
-);
 
 /// <summary>
 /// The combined outcome for one assembly. <see cref="Model"/> is <see langword="null"/> when nothing may be emitted,

@@ -12,26 +12,6 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Fencing;
 
-/// <summary>What differs between relational providers: the dialect and the unit-of-work entry for its connections.</summary>
-/// <param name="Dialect">The provider's dialect.</param>
-/// <param name="PackageName">The provider package's name, for messages.</param>
-/// <param name="BeginOwnedUnit">Begins an owned unit at READ COMMITTED on a connection of the dialect.</param>
-/// <param name="AddUnitOfWork">The provider's unit-of-work registration.</param>
-/// <param name="SchemaContribution">
-/// Builds the provider's schema contribution (its DDL, in its dialect) for the schema runner from the bound options.
-/// </param>
-/// <param name="EnlistedGrantRefusal">
-/// Why the provider refuses a grant inside a caller's unit, or <see langword="null" /> when it accepts one.
-/// </param>
-internal sealed record RelationalFencingProvider(
-    ISqlDialect Dialect,
-    string PackageName,
-    Func<IUnitOfWorkFactory, DbConnection, CancellationToken, ValueTask<IUnitOfWork>> BeginOwnedUnit,
-    Action<IServiceCollection> AddUnitOfWork,
-    Func<RelationalFencingOptions, FencingStorageOptions, SchemaContribution> SchemaContribution,
-    string? EnlistedGrantRefusal = null
-);
-
 /// <summary>
 /// Registers a relational provider: its options and validators, the one relational lease store over its dialect, and
 /// the one storage initializer.
@@ -121,3 +101,23 @@ internal sealed class RelationalFencingProviderExtension<TOptions, TOptionsValid
         services.TryAddSingleton<ILeaseStore, RelationalLeaseStore>();
     }
 }
+
+/// <summary>What differs between relational providers: the dialect and the unit-of-work entry for its connections.</summary>
+/// <param name="Dialect">The provider's dialect.</param>
+/// <param name="PackageName">The provider package's name, for messages.</param>
+/// <param name="BeginOwnedUnit">Begins an owned unit at READ COMMITTED on a connection of the dialect.</param>
+/// <param name="AddUnitOfWork">The provider's unit-of-work registration.</param>
+/// <param name="SchemaContribution">
+/// Builds the provider's schema contribution (its DDL, in its dialect) for the schema runner from the bound options.
+/// </param>
+/// <param name="EnlistedGrantRefusal">
+/// Why the provider refuses a grant inside a caller's unit, or <see langword="null" /> when it accepts one.
+/// </param>
+internal sealed record RelationalFencingProvider(
+    ISqlDialect Dialect,
+    string PackageName,
+    Func<IUnitOfWorkFactory, DbConnection, CancellationToken, ValueTask<IUnitOfWork>> BeginOwnedUnit,
+    Action<IServiceCollection> AddUnitOfWork,
+    Func<RelationalFencingOptions, FencingStorageOptions, SchemaContribution> SchemaContribution,
+    string? EnlistedGrantRefusal = null
+);

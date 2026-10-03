@@ -4,9 +4,6 @@ using Headless.Checks;
 
 namespace Headless.PushNotifications.Apns.Internal;
 
-/// <summary>A validated notification ready to send: its JSON payload and its APNs request headers.</summary>
-internal sealed record ApnsPreparedNotification(byte[] Payload, ApnsRequestHeaders Headers);
-
 /// <summary>The APNs request headers a notification decides, computed from its type and the instance options.</summary>
 /// <param name="PushType">The <c>apns-push-type</c> value.</param>
 /// <param name="Topic">The <c>apns-topic</c> value: the bundle identifier plus the push type's suffix.</param>
@@ -236,3 +233,6 @@ internal sealed record ApnsRequestHeaders(
         return priority ?? ApnsPriority.PowerConsiderate;
     }
 }
+
+/// <summary>A validated notification ready to send: its JSON payload and its APNs request headers.</summary>
+internal sealed record ApnsPreparedNotification(byte[] Payload, ApnsRequestHeaders Headers);

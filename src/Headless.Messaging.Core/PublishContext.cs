@@ -5,11 +5,6 @@ using Headless.Messaging.Internal;
 
 namespace Headless.Messaging;
 
-internal interface ICompletablePublishContext
-{
-    void MarkCompleted();
-}
-
 /// <summary>Object-typed publish context shared by publish middleware.</summary>
 [PublicAPI]
 public abstract class PublishContext
@@ -175,6 +170,11 @@ public abstract class PublishContext
             throw new InvalidOperationException("PublishContext is read-only after next() returned.");
         }
     }
+}
+
+internal interface ICompletablePublishContext
+{
+    void MarkCompleted();
 }
 
 /// <summary>Strongly-typed publish context for middleware registered against a specific message type.</summary>

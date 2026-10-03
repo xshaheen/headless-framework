@@ -3,62 +3,6 @@
 namespace Headless.MultiTenancy;
 
 /// <summary>
-/// Shared, non-PII posture identifiers for the <c>Catalog</c> tenancy seam. <c>Headless.MultiTenancy</c>
-/// records <see cref="AccessorCapability"/> when a store is configured via <c>Catalog(...)</c>.
-/// <c>Headless.Api.Core</c>'s pre-auth resolution middleware is the intended caller that records
-/// <see cref="ResolutionCapability"/> and marks <see cref="ResolutionPipelineRuntimeMarker"/> once an
-/// identifier source is registered, and its <c>UseStatusCodesRewriter()</c> marks
-/// <see cref="StatusCodesRewriterRuntimeMarker"/> ahead of authorization or
-/// <see cref="StatusCodesRewriterAfterAuthorizationRuntimeMarker"/> after it — <see cref="TenantCatalogPostureValidator"/>
-/// cross-checks both packages' contributions against these shared string constants so a typo in either
-/// package fails loudly instead of silently producing an unchecked posture.
-/// </summary>
-[PublicAPI]
-public static class TenantCatalogPosture
-{
-    /// <summary>The tenancy posture seam name this catalog contributes to.</summary>
-    public const string Seam = "Catalog";
-
-    /// <summary>
-    /// Capability label recorded when a tenant store is configured: <see cref="ICurrentTenantInfo"/>
-    /// metadata reads are available, independent of whether identifier-based resolution is active.
-    /// </summary>
-    public const string AccessorCapability = "catalog-accessor";
-
-    /// <summary>
-    /// Capability label recorded when identifier-based resolution is active (the pre-auth HTTP
-    /// middleware, or an equivalent identifier-source caller).
-    /// </summary>
-    public const string ResolutionCapability = "catalog-resolution";
-
-    /// <summary>
-    /// Runtime marker a resolution-capable seam records once at least one identifier source is
-    /// registered and the resolution pipeline hook is wired. Its absence alongside
-    /// <see cref="ResolutionCapability"/> means resolution was declared active but nothing will ever
-    /// call it — a startup-blocking misconfiguration.
-    /// </summary>
-    public const string ResolutionPipelineRuntimeMarker = "IdentifierResolutionPipelineActive";
-
-    /// <summary>
-    /// Runtime marker recorded when the HTTP seam's status-codes rewriter middleware is added to the
-    /// pipeline ahead of authorization. The mapping-integrity check's authorization tier only fails the evaluation and
-    /// marks the request; the generic tenant rejection that keeps a mismatch indistinguishable from an
-    /// unknown identifier is written by that middleware. Its absence alongside
-    /// <see cref="ResolutionCapability"/> therefore leaves a tenant-enumeration oracle open.
-    /// </summary>
-    public const string StatusCodesRewriterRuntimeMarker = "StatusCodesRewriterActive";
-
-    /// <summary>
-    /// Runtime marker recorded when the status-codes rewriter is added to the pipeline after authorization.
-    /// A failed authorization evaluation short-circuits before reaching it, so the mismatch rejection is
-    /// never written; its presence alongside <see cref="ResolutionCapability"/> fails startup even when a
-    /// correctly placed rewriter was also recorded, because the misplaced one may serve a branch the
-    /// correctly placed one does not wrap.
-    /// </summary>
-    public const string StatusCodesRewriterAfterAuthorizationRuntimeMarker = "StatusCodesRewriterAfterAuthorization";
-}
-
-/// <summary>
 /// Validates that the <see cref="TenantCatalogPosture.Seam"/> posture is internally consistent:
 /// resolution-capable without a configured store, without a registered pipeline, or without the
 /// status-codes rewriter that writes the mapping-integrity rejection — or with that rewriter placed after
@@ -157,4 +101,60 @@ internal sealed class TenantCatalogPostureValidator : IHeadlessTenancyValidator
             );
         }
     }
+}
+
+/// <summary>
+/// Shared, non-PII posture identifiers for the <c>Catalog</c> tenancy seam. <c>Headless.MultiTenancy</c>
+/// records <see cref="AccessorCapability"/> when a store is configured via <c>Catalog(...)</c>.
+/// <c>Headless.Api.Core</c>'s pre-auth resolution middleware is the intended caller that records
+/// <see cref="ResolutionCapability"/> and marks <see cref="ResolutionPipelineRuntimeMarker"/> once an
+/// identifier source is registered, and its <c>UseStatusCodesRewriter()</c> marks
+/// <see cref="StatusCodesRewriterRuntimeMarker"/> ahead of authorization or
+/// <see cref="StatusCodesRewriterAfterAuthorizationRuntimeMarker"/> after it — <see cref="TenantCatalogPostureValidator"/>
+/// cross-checks both packages' contributions against these shared string constants so a typo in either
+/// package fails loudly instead of silently producing an unchecked posture.
+/// </summary>
+[PublicAPI]
+public static class TenantCatalogPosture
+{
+    /// <summary>The tenancy posture seam name this catalog contributes to.</summary>
+    public const string Seam = "Catalog";
+
+    /// <summary>
+    /// Capability label recorded when a tenant store is configured: <see cref="ICurrentTenantInfo"/>
+    /// metadata reads are available, independent of whether identifier-based resolution is active.
+    /// </summary>
+    public const string AccessorCapability = "catalog-accessor";
+
+    /// <summary>
+    /// Capability label recorded when identifier-based resolution is active (the pre-auth HTTP
+    /// middleware, or an equivalent identifier-source caller).
+    /// </summary>
+    public const string ResolutionCapability = "catalog-resolution";
+
+    /// <summary>
+    /// Runtime marker a resolution-capable seam records once at least one identifier source is
+    /// registered and the resolution pipeline hook is wired. Its absence alongside
+    /// <see cref="ResolutionCapability"/> means resolution was declared active but nothing will ever
+    /// call it — a startup-blocking misconfiguration.
+    /// </summary>
+    public const string ResolutionPipelineRuntimeMarker = "IdentifierResolutionPipelineActive";
+
+    /// <summary>
+    /// Runtime marker recorded when the HTTP seam's status-codes rewriter middleware is added to the
+    /// pipeline ahead of authorization. The mapping-integrity check's authorization tier only fails the evaluation and
+    /// marks the request; the generic tenant rejection that keeps a mismatch indistinguishable from an
+    /// unknown identifier is written by that middleware. Its absence alongside
+    /// <see cref="ResolutionCapability"/> therefore leaves a tenant-enumeration oracle open.
+    /// </summary>
+    public const string StatusCodesRewriterRuntimeMarker = "StatusCodesRewriterActive";
+
+    /// <summary>
+    /// Runtime marker recorded when the status-codes rewriter is added to the pipeline after authorization.
+    /// A failed authorization evaluation short-circuits before reaching it, so the mismatch rejection is
+    /// never written; its presence alongside <see cref="ResolutionCapability"/> fails startup even when a
+    /// correctly placed rewriter was also recorded, because the misplaced one may serve a branch the
+    /// correctly placed one does not wrap.
+    /// </summary>
+    public const string StatusCodesRewriterAfterAuthorizationRuntimeMarker = "StatusCodesRewriterAfterAuthorization";
 }

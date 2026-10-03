@@ -2,6 +2,7 @@
 
 namespace Headless.PushNotifications.Apns;
 
+#pragma warning disable MA0048 // A topic file: its types are peers with no main type, so the file is named for the topic.
 /// <summary>
 /// How urgently the system presents an alert notification, sent as the <c>interruption-level</c> key.
 /// </summary>
