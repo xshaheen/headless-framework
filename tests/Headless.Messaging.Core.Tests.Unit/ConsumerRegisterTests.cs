@@ -8,6 +8,7 @@ using Headless.Messaging.Configuration;
 using Headless.Messaging.Exceptions;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
+using Headless.Messaging.Registration;
 using Headless.Messaging.Runtime;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
@@ -895,7 +896,7 @@ public sealed class ConsumerRegisterTests : TestBase
     [Fact]
     public async Task open_admission_during_pause_latency_logs_debug_without_warning()
     {
-        var logs = new List<(LogLevel Level, EventId EventId)>();
+        var logs = new List<(LogLevel Level, EventId EventId, string Message)>();
         var mockCircuitBreaker = Substitute.For<ICircuitBreakerStateManager>();
         mockCircuitBreaker.TryAcquireHalfOpenProbe($"0:{BootstrapReadyConsumer.Identity}").Returns(4L);
         mockCircuitBreaker
@@ -949,7 +950,7 @@ public sealed class ConsumerRegisterTests : TestBase
     [Fact]
     public async Task open_admission_after_pause_completed_logs_one_warning()
     {
-        var logs = new List<(LogLevel Level, EventId EventId)>();
+        var logs = new List<(LogLevel Level, EventId EventId, string Message)>();
         var mockCircuitBreaker = Substitute.For<ICircuitBreakerStateManager>();
         mockCircuitBreaker.TryAcquireHalfOpenProbe($"0:{BootstrapReadyConsumer.Identity}").Returns(4L);
         mockCircuitBreaker
@@ -1171,7 +1172,8 @@ public sealed class ConsumerRegisterTests : TestBase
         ICircuitBreakerStateManager? circuitBreaker = null,
         IReadOnlyDictionary<string, string?>? publisherHeaders = null,
         Action<IServiceCollection>? configureServices = null,
-        MessageLane lane = MessageLane.Bus
+        MessageLane lane = MessageLane.Bus,
+        bool queueResponder = false
     )
     {
         await using var client = new InboxConsumerClient();
@@ -1202,7 +1204,13 @@ public sealed class ConsumerRegisterTests : TestBase
             setup.UseInMemory();
             setup.UseProcessLocalInMemoryStorage();
             setup.AddConsumer<BootstrapReadyConsumer>();
-            if (lane is MessageLane.Queue)
+            // A request passes the pre-admission settlement only when its Queue consumer can answer it. A responder is
+            // declared the way a generated module does it, so its response type reaches the registry.
+            if (lane is MessageLane.Queue && queueResponder)
+            {
+                setup.AddModule<QueueResponderModule>();
+            }
+            else if (lane is MessageLane.Queue)
             {
                 setup.AddConsumer<PlainQueueConsumer>();
             }
@@ -1235,6 +1243,7 @@ public sealed class ConsumerRegisterTests : TestBase
         services.AddSingleton(dispatcher);
         services.AddSingleton<BootstrapReadyConsumer>();
         services.AddSingleton<PlainQueueConsumer>();
+        services.AddSingleton<QueueResponder>();
         if (circuitBreaker is not null)
         {
             services.AddSingleton(circuitBreaker);
@@ -1588,6 +1597,167 @@ public sealed class ConsumerRegisterTests : TestBase
             );
         replies.Sent.Should().BeEmpty();
         outcomes.Should().NotContain("expired").And.NotContain("skipped").And.NotContain("no_responder");
+    }
+
+    [Fact]
+    public async Task receive_request_rejected_by_middleware_stores_poison_row_and_faults_with_request_rejected()
+    {
+        // given — a live request for a responder, refused by receive middleware before any consume attempt
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 10, 2, 12, 0, 0, TimeSpan.Zero));
+        var replies = new Tests.RequestReply.RecordingReplyTransport();
+        var headers = _RequestHeaders(clock.GetUtcNow().AddSeconds(30));
+        headers[Headers.TenantId] = "tenant-a";
+        var middleware = new RecordingReceiveMiddleware
+        {
+            Behavior = (context, _) =>
+            {
+                context.Reject("envelope-defect", new InvalidOperationException("bad envelope"));
+                return ValueTask.CompletedTask;
+            },
+        };
+
+        // when
+        await using var run = await _RunReceiveDeliveryAsync(
+            middleware,
+            "receive-rejected-request",
+            "{}"u8.ToArray(),
+            publisherHeaders: headers,
+            configureServices: services =>
+            {
+                services.AddSingleton<TimeProvider>(clock);
+                services.AddSingleton<IReplyTransport>(replies);
+            },
+            lane: MessageLane.Queue,
+            queueResponder: true
+        );
+
+        // then — the poison row is kept for the operator, and the caller learns at once that no work ran
+        run.Client.CommitCount.Should().Be(1);
+        run.Storage.ReceivedExceptionRows.Should().ContainSingle();
+        var (address, reply) = replies.Sent.Should().ContainSingle().Subject;
+        address.Should().Be(headers[Headers.ReplyTo]);
+        reply.Headers[Headers.InReplyTo].Should().Be(headers[Headers.RequestId]);
+        reply.Headers[Headers.ReplyStatus].Should().Be("fault");
+        reply.Headers[Headers.TenantId].Should().Be("tenant-a");
+        System.Text.Encoding.UTF8.GetString(reply.Body.Span).Should().Be("""{"code":"request_rejected"}""");
+    }
+
+    [Fact]
+    public async Task receive_request_for_an_unregistered_consumer_stores_poison_row_and_faults_with_no_responder()
+    {
+        // given — a request whose message name no consumer on this subscription claims
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 10, 2, 12, 0, 0, TimeSpan.Zero));
+        var replies = new Tests.RequestReply.RecordingReplyTransport();
+        var headers = _RequestHeaders(clock.GetUtcNow().AddSeconds(30));
+        headers[Headers.MessageName] = "unknown-messageName";
+
+        // when
+        await using var run = await _RunReceiveDeliveryAsync(
+            null,
+            "receive-request-unknown-consumer",
+            "{}"u8.ToArray(),
+            publisherHeaders: headers,
+            configureServices: services =>
+            {
+                services.AddSingleton<TimeProvider>(clock);
+                services.AddSingleton<IReplyTransport>(replies);
+            },
+            lane: MessageLane.Queue
+        );
+
+        // then
+        run.Client.CommitCount.Should().Be(1);
+        run.Storage.Admissions.Should().BeEmpty();
+        run.Storage.ReceivedExceptionRows.Should().ContainSingle();
+        var (address, reply) = replies.Sent.Should().ContainSingle().Subject;
+        address.Should().Be(headers[Headers.ReplyTo]);
+        reply.Headers[Headers.InReplyTo].Should().Be(headers[Headers.RequestId]);
+        System.Text.Encoding.UTF8.GetString(reply.Body.Span).Should().Be("""{"code":"no_responder"}""");
+    }
+
+    [Fact]
+    public async Task receive_redelivered_poisoned_request_sends_no_second_fault()
+    {
+        // given — a rejected request already holds its poison row
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 10, 2, 12, 0, 0, TimeSpan.Zero));
+        var replies = new Tests.RequestReply.RecordingReplyTransport();
+        var headers = _RequestHeaders(clock.GetUtcNow().AddSeconds(30));
+        var middleware = new RecordingReceiveMiddleware
+        {
+            Behavior = (context, _) =>
+            {
+                context.Reject("envelope-defect", new InvalidOperationException("bad envelope"));
+                return ValueTask.CompletedTask;
+            },
+        };
+        await using var run = await _RunReceiveDeliveryAsync(
+            middleware,
+            "receive-redelivered-poisoned-request",
+            "{}"u8.ToArray(),
+            publisherHeaders: headers,
+            configureServices: services =>
+            {
+                services.AddSingleton<TimeProvider>(clock);
+                services.AddSingleton<IReplyTransport>(replies);
+            },
+            lane: MessageLane.Queue,
+            queueResponder: true
+        );
+        replies.Sent.Should().ContainSingle();
+
+        // when — the broker delivers the same message again
+        var redelivered = new Dictionary<string, string?>(headers, StringComparer.Ordinal)
+        {
+            [Headers.MessageId] = "receive-redelivered-poisoned-request",
+            [Headers.MessageName] = "ready-messageName",
+        };
+        await run.Client.OnMessageCallback!(new TransportMessage(redelivered, "{}"u8.ToArray()), null);
+
+        // then — settled again, but only the delivery that stored the row answered the caller
+        run.Client.CommitCount.Should().Be(2);
+        replies.Sent.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task receive_rejected_request_without_a_reply_transport_stores_poison_row_and_sends_nothing()
+    {
+        // given — a host whose transport cannot send replies at all
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 10, 2, 12, 0, 0, TimeSpan.Zero));
+        var headers = _RequestHeaders(clock.GetUtcNow().AddSeconds(30));
+        var middleware = new RecordingReceiveMiddleware
+        {
+            Behavior = (context, _) =>
+            {
+                context.Reject("envelope-defect", new InvalidOperationException("bad envelope"));
+                return ValueTask.CompletedTask;
+            },
+        };
+
+        // when
+        await using var run = await _RunReceiveDeliveryAsync(
+            middleware,
+            "receive-rejected-request-no-reply-transport",
+            "{}"u8.ToArray(),
+            publisherHeaders: headers,
+            configureServices: services =>
+            {
+                services.AddSingleton<TimeProvider>(clock);
+                for (var i = services.Count - 1; i >= 0; i--)
+                {
+                    if (services[i].ServiceType == typeof(IReplyTransport))
+                    {
+                        services.RemoveAt(i);
+                    }
+                }
+            },
+            lane: MessageLane.Queue,
+            queueResponder: true
+        );
+
+        // then — the row is stored and the delivery settles; the fault that cannot be sent is dropped, not thrown
+        run.Client.CommitCount.Should().Be(1);
+        run.Storage.ReceivedExceptionRows.Should().ContainSingle();
+        run.Provider.GetService<IReplyTransport>().Should().BeNull();
     }
 
     private static Dictionary<string, string?> _RequestHeaders(DateTimeOffset deadline)
@@ -2050,6 +2220,32 @@ public sealed class ConsumerRegisterTests : TestBase
         )
         {
             return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed record BootstrapReadyReply;
+
+    private sealed class QueueResponder : IRespond<BootstrapReadyMessage, BootstrapReadyReply>
+    {
+        public const string Identity = "tests.consumer-register.queue-responder";
+
+        public ValueTask<BootstrapReadyReply> RespondAsync(
+            ConsumeContext<BootstrapReadyMessage> context,
+            CancellationToken cancellationToken
+        )
+        {
+            return ValueTask.FromResult(new BootstrapReadyReply());
+        }
+    }
+
+    private sealed class QueueResponderModule : IMessagingModule
+    {
+        public static void Register(MessagingCatalogBuilder catalog)
+        {
+            catalog.AddQueueResponder<QueueResponder, BootstrapReadyMessage, BootstrapReadyReply>(
+                QueueResponder.Identity,
+                static (_, _, _) => ValueTask.CompletedTask
+            );
         }
     }
 

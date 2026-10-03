@@ -236,7 +236,7 @@ public sealed class RequestDeadlineTests : TestBase
     {
         // given — an operator forced a child generation from an expired request; the child carries the parent's
         // envelope verbatim, reply address and deadline included
-        var log = new List<(LogLevel Level, EventId EventId)>();
+        var log = new List<(LogLevel Level, EventId EventId, string Message)>();
         await using var host = ResponderExecutorHost.Create(configureServices: services =>
             services.AddLogging(logging => logging.AddProvider(new CapturingLoggerProvider(log)))
         );

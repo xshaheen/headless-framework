@@ -140,7 +140,11 @@ internal sealed class ResponderExecutorHost : IAsyncDisposable
 
         services ??= new ServiceCollection();
         services.AddLogging();
-        services.ConfigureMessaging(messaging => messaging.Message<PriceQuoteRequest>(MessageName));
+        services.ConfigureMessaging(messaging =>
+        {
+            messaging.Message<PriceQuoteRequest>(MessageName);
+            messaging.Message<PriceQuote>(PriceQuoteContract.Name, PriceQuoteContract.Version);
+        });
         services.AddHeadlessMessaging(setup =>
         {
             setup.UseInMemory();

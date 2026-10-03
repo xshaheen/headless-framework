@@ -42,13 +42,10 @@ public sealed class SubscribeExecutorReplyTests : TestBase
         var (address, reply) = host.Replies.Sent.Should().ContainSingle().Subject;
         address.Should().Be(ResponderExecutorHost.ReplyAddress);
 
-        var (expectedName, expectedVersion) = host
-            .Provider.GetRequiredService<IMessagePublishRequestFactory>()
-            .ResolveContract(typeof(PriceQuote), MessageLane.Queue);
         reply.Headers[Headers.InReplyTo].Should().Be(message.Origin.Headers[Headers.RequestId]);
         reply.Headers[Headers.ReplyStatus].Should().Be(ReplyProtocol.StatusOk);
-        reply.Headers[Headers.MessageName].Should().Be(expectedName);
-        reply.Headers[Headers.ContractVersion].Should().Be(expectedVersion);
+        reply.Headers[Headers.MessageName].Should().Be(PriceQuoteContract.Name);
+        reply.Headers[Headers.ContractVersion].Should().Be(PriceQuoteContract.Version);
         reply.Headers[Headers.TenantId].Should().Be("tenant-a");
         reply.Headers[Headers.CorrelationId].Should().Be("chain-1");
         reply.Headers[Headers.CausationId].Should().Be(message.Origin.Id);

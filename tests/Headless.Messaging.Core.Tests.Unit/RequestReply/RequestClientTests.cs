@@ -301,7 +301,7 @@ public sealed class RequestClientTests : TestBase
 
     [Theory]
     [InlineData("other.contract", null)]
-    [InlineData(null, "2")]
+    [InlineData(null, "9")]
     public async Task should_fail_with_a_contract_mismatch_when_the_reply_carries_another_response_contract(
         string? name,
         string? version
@@ -332,32 +332,44 @@ public sealed class RequestClientTests : TestBase
 
         // then
         var thrown = await act.Should().ThrowAsync<ResponseContractMismatchException>();
-        thrown.Which.ExpectedMessageName.Should().Be(nameof(PriceQuote));
-        thrown.Which.ExpectedContractVersion.Should().Be("1");
-        thrown.Which.ActualMessageName.Should().Be(name ?? nameof(PriceQuote));
-        thrown.Which.ActualContractVersion.Should().Be(version ?? "1");
+        thrown.Which.ExpectedMessageName.Should().Be(PriceQuoteContract.Name);
+        thrown.Which.ExpectedContractVersion.Should().Be(PriceQuoteContract.Version);
+        thrown.Which.ActualMessageName.Should().Be(name ?? PriceQuoteContract.Name);
+        thrown.Which.ActualContractVersion.Should().Be(version ?? PriceQuoteContract.Version);
     }
 
     [Fact]
     public async Task should_expect_the_response_contract_declared_for_the_response_type()
     {
-        // given
-        await using var provider = await _StartHostAsync(configureServices: services =>
-            services.ConfigureMessaging(m => m.Message<PriceQuote>("pricing.quote", "3"))
+        // given — a reply stamped with the type's conventional name and version, not the declared contract
+        await using var provider = await _StartHostAsync();
+        _responder.OnRequest = request => new ValueTask(
+            Replies.SendOkAsync(
+                provider,
+                request,
+                new PriceQuote(9m),
+                h =>
+                {
+                    h[Headers.MessageName] = nameof(PriceQuote);
+                    h[Headers.ContractVersion] = "1";
+                }
+            )
         );
-        _responder.OnRequest = request => new ValueTask(Replies.SendOkAsync(provider, request, new PriceQuote(9m)));
 
         // when
-        var quote = await _Client(provider)
-            .RequestAsync<PriceQuoteRequest, PriceQuote>(new PriceQuoteRequest("sku-1"), cancellationToken: AbortToken);
+        var act = () =>
+            _Client(provider)
+                .RequestAsync<PriceQuoteRequest, PriceQuote>(
+                    new PriceQuoteRequest("sku-1"),
+                    cancellationToken: AbortToken
+                );
 
-        // then
-        quote.Should().Be(new PriceQuote(9m));
-        provider
-            .GetRequiredService<IMessagePublishRequestFactory>()
-            .ResolveContract(typeof(PriceQuote), MessageLane.Queue)
-            .Should()
-            .Be(("pricing.quote", "3"));
+        // then — the caller holds the reply to the contract the host declared for the response type
+        var thrown = await act.Should().ThrowAsync<ResponseContractMismatchException>();
+        thrown.Which.ExpectedMessageName.Should().Be(PriceQuoteContract.Name);
+        thrown.Which.ExpectedContractVersion.Should().Be(PriceQuoteContract.Version);
+        thrown.Which.ActualMessageName.Should().Be(nameof(PriceQuote));
+        thrown.Which.ActualContractVersion.Should().Be("1");
     }
 
     [Fact]
@@ -912,6 +924,7 @@ public sealed class RequestClientTests : TestBase
         services ??= new ServiceCollection();
         services.AddLogging();
         services.AddSingleton<TimeProvider>(_time);
+        services.ConfigureMessaging(m => m.Message<PriceQuote>(PriceQuoteContract.Name, PriceQuoteContract.Version));
         configureServices?.Invoke(services);
 
         var messaging = services.AddHeadlessMessaging(setup =>
