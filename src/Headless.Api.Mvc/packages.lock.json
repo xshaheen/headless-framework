@@ -397,6 +397,7 @@
           "Headless.Hosting": "[1.0.0, )",
           "Headless.MultiTenancy": "[1.0.0, )",
           "Headless.Security": "[1.0.0, )",
+          "Headless.Serializer.Json": "[1.0.0, )",
           "Humanizer.Core": "[3.0.10, )",
           "Humanizer.Core.ar": "[3.0.10, )",
           "Microsoft.AspNetCore.MiddlewareAnalysis": "[10.0.12, )",
@@ -428,7 +429,6 @@
           "Headless.Checks": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
           "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
-          "Headless.Serializer.Json": "[1.0.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.12, )"
         }
