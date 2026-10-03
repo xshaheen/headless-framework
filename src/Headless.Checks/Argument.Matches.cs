@@ -3,7 +3,7 @@
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
-using Headless.Checks.Internals;
+using Headless.Checks.Internal;
 
 namespace Headless.Checks;
 

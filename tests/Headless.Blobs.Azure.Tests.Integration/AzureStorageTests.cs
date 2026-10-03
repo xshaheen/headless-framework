@@ -6,7 +6,7 @@ using Azure.Storage.Blobs.Models;
 using Headless.Abstractions;
 using Headless.Blobs;
 using Headless.Blobs.Azure;
-using Headless.Blobs.Internals;
+using Headless.Blobs.Internal;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 

@@ -2,7 +2,7 @@
 
 using System.Runtime.CompilerServices;
 using System.Text.Json.Serialization.Metadata;
-using Headless.Blobs.Internals;
+using Headless.Blobs.Internal;
 using Headless.Checks;
 using Headless.Serializer;
 

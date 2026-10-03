@@ -4,7 +4,7 @@ using System.Net;
 using Amazon.S3;
 using Amazon.S3.Model;
 using Headless.Abstractions;
-using Headless.Blobs.Internals;
+using Headless.Blobs.Internal;
 using Headless.Checks;
 using Headless.IO;
 using Headless.Primitives;

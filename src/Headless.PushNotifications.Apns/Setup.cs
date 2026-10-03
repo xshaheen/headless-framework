@@ -3,7 +3,7 @@
 using System.Net;
 using Headless.Checks;
 using Headless.PushNotifications.Apns;
-using Headless.PushNotifications.Apns.Internals;
+using Headless.PushNotifications.Apns.Internal;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;

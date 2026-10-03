@@ -2,7 +2,7 @@
 
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
-using Headless.Checks.Internals;
+using Headless.Checks.Internal;
 
 namespace Headless.Checks;
 

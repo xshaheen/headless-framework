@@ -6,7 +6,7 @@ using System.Net.Http.Json;
 using System.Text.Encodings.Web;
 using Headless.Checks;
 using Headless.Http;
-using Headless.Sms.Connekio.Internals;
+using Headless.Sms.Connekio.Internal;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 

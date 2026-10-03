@@ -4,7 +4,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json.Nodes;
 using Headless.Checks;
-using Headless.PushNotifications.Firebase.Internals;
+using Headless.PushNotifications.Firebase.Internal;
 
 namespace Headless.PushNotifications.Firebase;
 
