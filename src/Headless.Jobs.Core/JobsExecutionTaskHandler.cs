@@ -606,12 +606,13 @@ internal sealed class JobsExecutionTaskHandler
                     )
                     .ConfigureAwait(false);
             }
-            // Only cooperative exit with this execution's exact token after a durable request becomes Cancelled. Host
-            // shutdown and lease loss leave the row non-terminal for recovery; foreign cancellation remains a failure.
-            catch (OperationCanceledException ex)
-                when (cancellationTokenSource.IsCancellationRequested
-                    && ex.CancellationToken == cancellationTokenSource.Token
-                )
+            // Once this execution's token is cancelled, any cancellation that ends the run is the executor's, whatever
+            // token it carries: a handler that links its own timeout to the execution token (or an HttpClient timeout
+            // racing shutdown) surfaces a different token for the same stop. The registration always records a cause
+            // before it cancels the token, so durable cancellation becomes Cancelled while host shutdown and lease loss
+            // leave the row non-terminal for recovery. A cancellation that ends the run while the token is still live
+            // is the handler's own and falls through to the failure path once the retry budget is spent.
+            catch (OperationCanceledException ex) when (cancellationTokenSource.IsCancellationRequested)
             {
                 if (!executionOwnsRegistration())
                 {

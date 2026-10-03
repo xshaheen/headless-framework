@@ -176,24 +176,37 @@ internal sealed class SubscribeExecutor(
                     _HandleRetryAsync(message, exception, dispatchServices, budget, executionState, ct),
                 (_, exception, ct) =>
                     _HandleNonRetryableAsync(message, exception, dispatchServices, budget, executionState, ct),
-                exception => _IsRetryable(exception, budget.Policy, message.StorageId),
+                exception => _IsRetryable(exception, budget.Policy, message.StorageId, cancellationToken),
                 cancellationToken
             )
             .ConfigureAwait(false);
     }
 
     /// <summary>
-    /// Classifies a failed consume attempt. The handler's exceptions arrive wrapped, except a cancellation raised
-    /// while the consume token is cancelled (host shutdown, dispatcher stop), which arrives raw. An unwrapped
-    /// <see cref="OperationCanceledException"/> is never classified, because a cancelled dispatch writes nothing and
-    /// the fail rules must not turn it into a terminal failure. A cancellation the handler raised on its own token
-    /// (an HttpClient timeout, a CancelAfter) is wrapped and classified like any other failure. The built-in permanent
-    /// set always fails. Otherwise the consumer's fail rules see the handler's own exception, unwrapped from the
-    /// executor's wrapper exactly once, and anything they do not match is retried.
+    /// Classifies a failed consume attempt. Once the consume token is cancelled (host shutdown, dispatcher stop), an
+    /// <see cref="OperationCanceledException"/> is never classified, whatever token it carries, because a cancelled
+    /// dispatch writes nothing and the fail rules must not turn it into a terminal failure. While the consume token is
+    /// live, a cancellation is an ordinary failure: the handler's own (an HttpClient timeout, a CancelAfter) arrives
+    /// wrapped, and the transactional inbox runner's own post-handler work (consumer SaveChanges interceptors,
+    /// completing the inbox row) can surface one raw; both reach the fail rules and the retry budget. The built-in
+    /// permanent set always fails. Otherwise the consumer's fail rules see the handler's own exception, unwrapped from
+    /// the executor's wrapper exactly once, and anything they do not match is retried.
     /// </summary>
-    private bool _IsRetryable(Exception exception, FailurePolicyDefinition policy, Guid storageId)
+    /// <param name="exception">The attempt's failure.</param>
+    /// <param name="policy">The consumer's failure policy.</param>
+    /// <param name="storageId">The message row, for logging a throwing fail rule.</param>
+    /// <param name="cancellationToken">
+    /// The consume token, not the attempt's: the attempt token is also cancelled when the retry burst ends, which is
+    /// not a cancelled dispatch.
+    /// </param>
+    private bool _IsRetryable(
+        Exception exception,
+        FailurePolicyDefinition policy,
+        Guid storageId,
+        CancellationToken cancellationToken
+    )
     {
-        if (exception is OperationCanceledException)
+        if (RetryHelper.IsCancellation(exception, cancellationToken))
         {
             return false;
         }

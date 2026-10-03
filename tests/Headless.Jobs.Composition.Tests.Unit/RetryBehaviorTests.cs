@@ -766,6 +766,101 @@ public sealed class RetryBehaviorTests : TestBase
     }
 
     [Fact]
+    public async Task execute_task_async_leaves_the_row_non_terminal_when_shutdown_cancels_a_linked_handler_token()
+    {
+        // A handler that links its own timeout to the execution token surfaces the linked token on its
+        // cancellation, not the execution token; host shutdown must still leave the row for recovery.
+        var exhausted = new List<JobExhaustedContext>();
+        var exceptionHandler = Substitute.For<Headless.Jobs.Interfaces.IJobExceptionHandler>();
+        var (handler, context, manager, _) = _SetupRetryTestFixture(
+            [0],
+            retries: 3,
+            retryOptions: _ExhaustionRecordingOptions(exhausted),
+            configureServices: services => services.AddSingleton(exceptionHandler)
+        );
+        context.Type = JobType.TimeJob;
+        var invocations = 0;
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        context.CachedDelegate = async (_, _, token) =>
+        {
+            Interlocked.Increment(ref invocations);
+            using var handlerTimeout = CancellationTokenSource.CreateLinkedTokenSource(token);
+            handlerTimeout.CancelAfter(TimeSpan.FromHours(1));
+            started.TrySetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, handlerTimeout.Token);
+        };
+        using var hostStopping = new CancellationTokenSource();
+
+        var execution = handler.ExecuteTaskAsync(context, isDue: false, hostStopping.Token);
+        await started.Task.WaitAsync(AbortToken);
+        await hostStopping.CancelAsync();
+        await execution.WaitAsync(AbortToken);
+
+        invocations.Should().Be(1);
+        context.Status.Should().Be(JobStatus.InProgress);
+        exhausted.Should().BeEmpty();
+        await manager
+            .DidNotReceive()
+            .UpdateTickerAsync(
+                Arg.Is<JobExecutionState>(x => x.Status == JobStatus.Failed),
+                Arg.Any<CancellationToken>()
+            );
+        await exceptionHandler
+            .DidNotReceive()
+            .HandleExceptionAsync(
+                Arg.Any<Exception>(),
+                Arg.Any<Guid>(),
+                Arg.Any<JobType>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task execute_task_async_cancels_the_row_when_durable_cancellation_cancels_a_linked_handler_token()
+    {
+        var exhausted = new List<JobExhaustedContext>();
+        var timeProvider = new FakeTimeProvider();
+        var schedulerOptions = new SchedulerOptionsBuilder
+        {
+            LeaseDuration = TimeSpan.FromMinutes(1),
+            LeaseRenewalInterval = TimeSpan.FromSeconds(10),
+            CancellationObservationInterval = TimeSpan.FromSeconds(2),
+        };
+        var (handler, context, manager, _) = _SetupRetryTestFixture(
+            [0],
+            retries: 3,
+            retryOptions: _ExhaustionRecordingOptions(exhausted),
+            schedulerOptions: schedulerOptions,
+            timeProvider: timeProvider
+        );
+        context.Type = JobType.TimeJob;
+        manager
+            .IsTimeJobCancellationRequestedAsync(context.JobId, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<bool?>(false), Task.FromResult<bool?>(true));
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        context.CachedDelegate = async (_, _, token) =>
+        {
+            using var handlerTimeout = CancellationTokenSource.CreateLinkedTokenSource(token);
+            started.TrySetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, handlerTimeout.Token);
+        };
+
+        var execution = handler.ExecuteTaskAsync(context, isDue: false, cancellationToken: AbortToken);
+        await started.Task.WaitAsync(AbortToken);
+        timeProvider.Advance(TimeSpan.FromSeconds(2));
+        await execution.WaitAsync(AbortToken);
+
+        context.Status.Should().Be(JobStatus.Cancelled);
+        exhausted.Should().BeEmpty();
+        await manager
+            .DidNotReceive()
+            .UpdateTickerAsync(
+                Arg.Is<JobExecutionState>(x => x.Status == JobStatus.Failed),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
     public async Task execute_task_async_observes_durable_cancellation_on_the_configured_interval()
     {
         var timeProvider = new FakeTimeProvider();
