@@ -83,8 +83,23 @@ public sealed class DashboardEndpointMetadataTests : TestBase
         names.Should().NotContainNulls();
         names.OfType<string>().Should().OnlyHaveUniqueItems();
         names.Should().Contain("CancelJob");
+        names.Should().Contain("RequeueJob");
+        names.Should().Contain("RequeueCronJobOccurrence");
         names.Should().Contain("GetLiveNodes");
         names.Should().Contain("GetJobRequest");
+    }
+
+    [Theory]
+    [InlineData("RequeueJob", "/api/job/requeue")]
+    [InlineData("RequeueCronJobOccurrence", "/api/cron-job-occurrence/requeue")]
+    public async Task should_map_requeue_as_a_post_endpoint(string endpointName, string route)
+    {
+        await using var app = _CreateApp(new DashboardOptionsBuilder().WithNoAuth());
+
+        var endpoint = (RouteEndpoint)_GetEndpoint(app, endpointName);
+
+        endpoint.RoutePattern.RawText.Should().Be(route);
+        endpoint.Metadata.GetMetadata<IHttpMethodMetadata>()!.HttpMethods.Should().Equal("POST");
     }
 
     private static WebApplication _CreateApp(DashboardOptionsBuilder config)

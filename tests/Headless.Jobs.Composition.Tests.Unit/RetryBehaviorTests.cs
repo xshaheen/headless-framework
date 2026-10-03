@@ -1,16 +1,18 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Frozen;
 using Headless.Jobs;
 using Headless.Jobs.Enums;
+using Headless.Jobs.Exceptions;
 using Headless.Jobs.Instrumentation;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Models;
+using Headless.Reliability;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
-using Polly.Retry;
 
 namespace Tests;
 
@@ -90,7 +92,7 @@ public sealed class RetryBehaviorTests : TestBase
         int expectedAttempts
     )
     {
-        var options = _ZeroDelayRetryOptions();
+        var options = new JobsRetryOptions();
         var (handler, context, manager, attempts) = _SetupRetryTestFixture([], retries, retryOptions: options);
 
         await handler.ExecuteTaskAsync(context, isDue: true, cancellationToken: AbortToken);
@@ -104,36 +106,196 @@ public sealed class RetryBehaviorTests : TestBase
     }
 
     [Fact]
-    public async Task execute_task_async_does_not_retry_or_exhaust_permanent_failures()
+    public async Task execute_task_async_fails_at_once_and_notifies_exhaustion_when_a_fail_rule_matches()
     {
-        var exhausted = false;
-        var options = _ZeroDelayRetryOptions();
-        options.RetryStrategy.ShouldHandle = static args =>
-            ValueTask.FromResult(args.Outcome.Exception is TimeoutException);
-        options.OnExhausted = (_, _) =>
-        {
-            exhausted = true;
-            return Task.CompletedTask;
-        };
+        var exhausted = new List<JobExhaustedContext>();
+        var options = _ExhaustionRecordingOptions(exhausted);
+        var registry = _RegistryWith(
+            "TestFunction",
+            new FailurePolicyBuilder().FailOn<InvalidOperationException>().Build()
+        );
         var (handler, context, _, attempts) = _SetupRetryTestFixture(
-            [],
+            [0],
+            retries: 5,
+            retryOptions: options,
+            exceptionFactory: static () => new InvalidOperationException("permanent"),
+            functionRegistry: registry
+        );
+
+        await handler.ExecuteTaskAsync(context, isDue: true, cancellationToken: AbortToken);
+
+        attempts.Should().ContainSingle("a matching fail rule skips the remaining retries");
+        context.RetryCount.Should().Be(0);
+        context.Status.Should().Be(JobStatus.Failed);
+        exhausted.Should().ContainSingle().Which.Exception.Should().BeOfType<InvalidOperationException>();
+    }
+
+    [Fact]
+    public async Task execute_task_async_spends_the_row_budget_then_notifies_exhaustion_once()
+    {
+        var exhausted = new List<JobExhaustedContext>();
+        var options = _ExhaustionRecordingOptions(exhausted);
+        var (handler, context, _, attempts) = _SetupRetryTestFixture(
+            [0, 0],
+            retries: 2,
+            retryOptions: options,
+            exceptionFactory: static () => new TimeoutException("transient")
+        );
+
+        await handler.ExecuteTaskAsync(context, isDue: true, cancellationToken: AbortToken);
+
+        attempts.Select(x => x.RetryCount).Should().Equal(0, 1, 2);
+        context.Status.Should().Be(JobStatus.Failed);
+        exhausted.Should().ContainSingle().Which.RetryCount.Should().Be(2);
+    }
+
+    [Theory]
+    [InlineData(JobStatus.Skipped)]
+    [InlineData(JobStatus.Failed)]
+    public async Task execute_task_async_ends_with_the_requested_status_without_exhaustion_on_terminate_execution(
+        JobStatus requested
+    )
+    {
+        var exhausted = new List<JobExhaustedContext>();
+        var options = _ExhaustionRecordingOptions(exhausted);
+        var (handler, context, _, attempts) = _SetupRetryTestFixture(
+            [0],
             retries: 3,
             retryOptions: options,
-            exceptionFactory: static () => new InvalidOperationException("permanent")
+            exceptionFactory: () => new TerminateExecutionException(requested, "stop here")
         );
 
         await handler.ExecuteTaskAsync(context, isDue: true, cancellationToken: AbortToken);
 
         attempts.Should().ContainSingle();
+        context.Status.Should().Be(requested);
+        exhausted.Should().BeEmpty("a handler that terminates its own run did not exhaust a retry budget");
+    }
+
+    [Fact]
+    public async Task execute_task_async_retries_argument_exceptions()
+    {
+        var (handler, context, _, attempts) = _SetupRetryTestFixture(
+            [0],
+            retries: 2,
+#pragma warning disable MA0015 // False positive: the test stands in for a handler's argument failure, so no parameter of this lambda is involved.
+            exceptionFactory: static () => new ArgumentException("bad input", "request")
+#pragma warning restore MA0015
+        );
+
+        await handler.ExecuteTaskAsync(context, isDue: true, cancellationToken: AbortToken);
+
+        attempts.Should().HaveCount(3, "Jobs keeps no built-in permanent exception set beyond its own terminators");
+        context.Status.Should().Be(JobStatus.Failed);
+    }
+
+    [Theory]
+    [InlineData(typeof(InvalidOperationException), 1)]
+    [InlineData(typeof(TimeoutException), 4)]
+    public async Task execute_task_async_applies_the_host_default_fail_rules_to_an_undeclared_function(
+        Type exceptionType,
+        int expectedAttempts
+    )
+    {
+        var exhausted = new List<JobExhaustedContext>();
+        var options = _ExhaustionRecordingOptions(exhausted);
+        var registry = _EmptyRegistry with
+        {
+            DefaultFailurePolicy = new FailurePolicyBuilder().FailOn<InvalidOperationException>().Build(),
+        };
+        var (handler, context, _, attempts) = _SetupRetryTestFixture(
+            [0],
+            retries: 3,
+            retryOptions: options,
+            exceptionFactory: () => (Exception)Activator.CreateInstance(exceptionType, "failure")!,
+            functionRegistry: registry
+        );
+
+        await handler.ExecuteTaskAsync(context, isDue: true, cancellationToken: AbortToken);
+
+        attempts.Should().HaveCount(expectedAttempts);
+        context.Status.Should().Be(JobStatus.Failed);
+        exhausted.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task execute_task_async_logs_a_throwing_fail_rule_and_treats_it_as_matched()
+    {
+        var logger = new CapturingLogger<JobsExecutionTaskHandler>();
+        var exhausted = new List<JobExhaustedContext>();
+        var options = _ExhaustionRecordingOptions(exhausted);
+        var registry = _RegistryWith(
+            "TestFunction",
+            new FailurePolicyBuilder().FailWhen(static _ => throw new FormatException("broken rule")).Build()
+        );
+        var (handler, context, _, attempts) = _SetupRetryTestFixture(
+            [0],
+            retries: 3,
+            retryOptions: options,
+            exceptionFactory: static () => new TimeoutException("transient"),
+            functionRegistry: registry,
+            logger: logger
+        );
+
+        await handler.ExecuteTaskAsync(context, isDue: true, cancellationToken: AbortToken);
+
+        attempts.Should().ContainSingle("a fail rule that cannot classify the failure must not let it retry");
+        context.Status.Should().Be(JobStatus.Failed);
+        exhausted.Should().ContainSingle();
+        logger.Entries.Should().ContainSingle(e => e.EventId == 3108 && e.Level == LogLevel.Warning);
+    }
+
+    [Fact]
+    public async Task execute_task_async_retries_foreign_cancellation_then_notifies_exhaustion()
+    {
+        var exhausted = new List<JobExhaustedContext>();
+        var options = _ExhaustionRecordingOptions(exhausted);
+        var (handler, context, _, attempts) = _SetupRetryTestFixture([0], retries: 2, retryOptions: options);
+        using var foreignCancellation = new CancellationTokenSource();
+        await foreignCancellation.CancelAsync();
+        context.CachedDelegate = (_, jobContext, _) =>
+        {
+            attempts.Add(new Attempt(DateTime.UtcNow, jobContext.RetryCount));
+            throw new OperationCanceledException(foreignCancellation.Token);
+        };
+
+        await handler.ExecuteTaskAsync(context, isDue: true, cancellationToken: AbortToken);
+
+        attempts.Select(x => x.RetryCount).Should().Equal(0, 1, 2);
+        context.RetryCount.Should().Be(2);
+        context.Status.Should().Be(JobStatus.Failed);
+        exhausted.Should().ContainSingle().Which.Exception.Should().BeOfType<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task execute_task_async_fails_foreign_cancellation_at_once_when_a_fail_rule_matches_it()
+    {
+        var exhausted = new List<JobExhaustedContext>();
+        var options = _ExhaustionRecordingOptions(exhausted);
+        var registry = _RegistryWith(
+            "TestFunction",
+            new FailurePolicyBuilder().FailOn<OperationCanceledException>().Build()
+        );
+        var (handler, context, _, attempts) = _SetupRetryTestFixture(
+            [0],
+            retries: 5,
+            retryOptions: options,
+            exceptionFactory: static () => new TaskCanceledException("handler timeout"),
+            functionRegistry: registry
+        );
+
+        await handler.ExecuteTaskAsync(context, isDue: true, cancellationToken: AbortToken);
+
+        attempts.Should().ContainSingle("a fail rule matching a base type matches its subtypes");
         context.RetryCount.Should().Be(0);
         context.Status.Should().Be(JobStatus.Failed);
-        exhausted.Should().BeFalse();
+        exhausted.Should().ContainSingle().Which.Exception.Should().BeOfType<TaskCanceledException>();
     }
 
     [Fact]
     public async Task execute_task_async_persists_retry_count_before_the_next_attempt()
     {
-        var options = _ZeroDelayRetryOptions();
+        var options = new JobsRetryOptions();
         var (handler, context, manager, attempts) = _SetupRetryTestFixture([], retries: 1, retryOptions: options);
         var persistedBeforeSecondAttempt = false;
         manager
@@ -158,7 +320,7 @@ public sealed class RetryBehaviorTests : TestBase
     [Fact]
     public async Task execute_task_async_keeps_renewal_active_during_delay_and_fences_after_lease_loss()
     {
-        var options = _ZeroDelayRetryOptions();
+        var options = new JobsRetryOptions();
         var scheduler = new SchedulerOptionsBuilder
         {
             LeaseDuration = TimeSpan.FromSeconds(1),
@@ -190,7 +352,7 @@ public sealed class RetryBehaviorTests : TestBase
     [Fact]
     public async Task execute_task_async_resumes_from_the_durable_retry_count_without_resetting_the_budget()
     {
-        var options = _ZeroDelayRetryOptions();
+        var options = new JobsRetryOptions();
         var (handler, context, _, attempts) = _SetupRetryTestFixture([], retries: 2, retryOptions: options);
         context.RetryCount = 1;
 
@@ -204,7 +366,7 @@ public sealed class RetryBehaviorTests : TestBase
     public async Task execute_task_async_uses_a_fresh_scope_and_observes_each_failure()
     {
         var exceptionHandler = Substitute.For<Headless.Jobs.Interfaces.IJobExceptionHandler>();
-        var options = _ZeroDelayRetryOptions();
+        var options = new JobsRetryOptions();
         var (handler, context, _, attempts) = _SetupRetryTestFixture(
             [],
             retries: 1,
@@ -303,7 +465,7 @@ public sealed class RetryBehaviorTests : TestBase
             );
             var registry = catalog.Build([], [], configuration: null);
 
-            var options = _ZeroDelayRetryOptions();
+            var options = new JobsRetryOptions();
             var (handler, context, manager, _) = _SetupRetryTestFixture(
                 [],
                 retries: 1,
@@ -334,11 +496,13 @@ public sealed class RetryBehaviorTests : TestBase
     {
         var terminalWriteObserved = false;
         var callbackObservedTerminalWrite = false;
-        var options = _ZeroDelayRetryOptions();
-        options.OnExhausted = (_, _) =>
+        var options = new JobsRetryOptions
         {
-            callbackObservedTerminalWrite = terminalWriteObserved;
-            return Task.CompletedTask;
+            OnExhausted = (_, _) =>
+            {
+                callbackObservedTerminalWrite = terminalWriteObserved;
+                return Task.CompletedTask;
+            },
         };
         var (handler, context, manager, _) = _SetupRetryTestFixture([], retries: 1, retryOptions: options);
         manager
@@ -363,11 +527,13 @@ public sealed class RetryBehaviorTests : TestBase
     public async Task execute_task_async_does_not_invoke_exhausted_callback_after_a_stale_owner_write()
     {
         var callbackCount = 0;
-        var options = _ZeroDelayRetryOptions();
-        options.OnExhausted = (_, _) =>
+        var options = new JobsRetryOptions
         {
-            callbackCount++;
-            return Task.CompletedTask;
+            OnExhausted = (_, _) =>
+            {
+                callbackCount++;
+                return Task.CompletedTask;
+            },
         };
         var (handler, context, manager, _) = _SetupRetryTestFixture([], retries: 1, retryOptions: options);
         manager
@@ -383,12 +549,14 @@ public sealed class RetryBehaviorTests : TestBase
     public async Task execute_task_async_contains_exhausted_callback_failures_and_timeouts()
     {
         var callbackTokenCancelled = false;
-        var options = _ZeroDelayRetryOptions();
-        options.OnExhaustedTimeout = TimeSpan.FromMilliseconds(20);
-        options.OnExhausted = (_, token) =>
+        var options = new JobsRetryOptions
         {
-            token.Register(() => callbackTokenCancelled = true);
-            return Task.Delay(Timeout.InfiniteTimeSpan, token);
+            OnExhaustedTimeout = TimeSpan.FromMilliseconds(20),
+            OnExhausted = (_, token) =>
+            {
+                token.Register(() => callbackTokenCancelled = true);
+                return Task.Delay(Timeout.InfiniteTimeSpan, token);
+            },
         };
         var (handler, context, _, _) = _SetupRetryTestFixture([], retries: 0, retryOptions: options);
 
@@ -425,8 +593,7 @@ public sealed class RetryBehaviorTests : TestBase
                 await Task.Delay(Timeout.InfiniteTimeSpan, token);
             });
 
-        var options = _ZeroDelayRetryOptions();
-        options.OnExhaustedTimeout = TimeSpan.FromMilliseconds(20);
+        var options = new JobsRetryOptions { OnExhaustedTimeout = TimeSpan.FromMilliseconds(20) };
         var (handler, context, _, attempts) = _SetupRetryTestFixture(
             [],
             retries: 1,
@@ -565,6 +732,132 @@ public sealed class RetryBehaviorTests : TestBase
         await manager
             .DidNotReceive()
             .UpdateTickerAsync(Arg.Is<JobExecutionState>(x => x.Status == JobStatus.Cancelled), CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task execute_task_async_does_not_retry_host_shutdown_when_the_row_has_budget_left()
+    {
+        var (handler, context, manager, _) = _SetupRetryTestFixture([0], retries: 3);
+        context.Type = JobType.TimeJob;
+        var invocations = 0;
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        context.CachedDelegate = async (_, _, token) =>
+        {
+            Interlocked.Increment(ref invocations);
+            started.TrySetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, token);
+        };
+        using var hostStopping = new CancellationTokenSource();
+
+        var execution = handler.ExecuteTaskAsync(context, isDue: false, hostStopping.Token);
+        await started.Task.WaitAsync(AbortToken);
+        await hostStopping.CancelAsync();
+        await execution.WaitAsync(AbortToken);
+
+        invocations.Should().Be(1);
+        context.RetryCount.Should().Be(0);
+        context.Status.Should().Be(JobStatus.InProgress);
+        await manager
+            .DidNotReceive()
+            .UpdateTickerAsync(
+                Arg.Is<JobExecutionState>(x => x.Status == JobStatus.Failed),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task execute_task_async_leaves_the_row_non_terminal_when_shutdown_cancels_a_linked_handler_token()
+    {
+        // A handler that links its own timeout to the execution token surfaces the linked token on its
+        // cancellation, not the execution token; host shutdown must still leave the row for recovery.
+        var exhausted = new List<JobExhaustedContext>();
+        var exceptionHandler = Substitute.For<Headless.Jobs.Interfaces.IJobExceptionHandler>();
+        var (handler, context, manager, _) = _SetupRetryTestFixture(
+            [0],
+            retries: 3,
+            retryOptions: _ExhaustionRecordingOptions(exhausted),
+            configureServices: services => services.AddSingleton(exceptionHandler)
+        );
+        context.Type = JobType.TimeJob;
+        var invocations = 0;
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        context.CachedDelegate = async (_, _, token) =>
+        {
+            Interlocked.Increment(ref invocations);
+            using var handlerTimeout = CancellationTokenSource.CreateLinkedTokenSource(token);
+            handlerTimeout.CancelAfter(TimeSpan.FromHours(1));
+            started.TrySetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, handlerTimeout.Token);
+        };
+        using var hostStopping = new CancellationTokenSource();
+
+        var execution = handler.ExecuteTaskAsync(context, isDue: false, hostStopping.Token);
+        await started.Task.WaitAsync(AbortToken);
+        await hostStopping.CancelAsync();
+        await execution.WaitAsync(AbortToken);
+
+        invocations.Should().Be(1);
+        context.Status.Should().Be(JobStatus.InProgress);
+        exhausted.Should().BeEmpty();
+        await manager
+            .DidNotReceive()
+            .UpdateTickerAsync(
+                Arg.Is<JobExecutionState>(x => x.Status == JobStatus.Failed),
+                Arg.Any<CancellationToken>()
+            );
+        await exceptionHandler
+            .DidNotReceive()
+            .HandleExceptionAsync(
+                Arg.Any<Exception>(),
+                Arg.Any<Guid>(),
+                Arg.Any<JobType>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task execute_task_async_cancels_the_row_when_durable_cancellation_cancels_a_linked_handler_token()
+    {
+        var exhausted = new List<JobExhaustedContext>();
+        var timeProvider = new FakeTimeProvider();
+        var schedulerOptions = new SchedulerOptionsBuilder
+        {
+            LeaseDuration = TimeSpan.FromMinutes(1),
+            LeaseRenewalInterval = TimeSpan.FromSeconds(10),
+            CancellationObservationInterval = TimeSpan.FromSeconds(2),
+        };
+        var (handler, context, manager, _) = _SetupRetryTestFixture(
+            [0],
+            retries: 3,
+            retryOptions: _ExhaustionRecordingOptions(exhausted),
+            schedulerOptions: schedulerOptions,
+            timeProvider: timeProvider
+        );
+        context.Type = JobType.TimeJob;
+        manager
+            .IsTimeJobCancellationRequestedAsync(context.JobId, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<bool?>(false), Task.FromResult<bool?>(true));
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        context.CachedDelegate = async (_, _, token) =>
+        {
+            using var handlerTimeout = CancellationTokenSource.CreateLinkedTokenSource(token);
+            started.TrySetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, handlerTimeout.Token);
+        };
+
+        var execution = handler.ExecuteTaskAsync(context, isDue: false, cancellationToken: AbortToken);
+        await started.Task.WaitAsync(AbortToken);
+        timeProvider.Advance(TimeSpan.FromSeconds(2));
+        await execution.WaitAsync(AbortToken);
+
+        context.Status.Should().Be(JobStatus.Cancelled);
+        exhausted.Should().BeEmpty();
+        await manager
+            .DidNotReceive()
+            .UpdateTickerAsync(
+                Arg.Is<JobExecutionState>(x => x.Status == JobStatus.Failed),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
@@ -1348,7 +1641,8 @@ public sealed class RetryBehaviorTests : TestBase
         Action<IServiceCollection>? configureServices = null,
         SchedulerOptionsBuilder? schedulerOptions = null,
         JobFunctionRegistry? functionRegistry = null,
-        TimeProvider? timeProvider = null
+        TimeProvider? timeProvider = null,
+        ILogger<JobsExecutionTaskHandler>? logger = null
     )
     {
         var services = new ServiceCollection();
@@ -1381,7 +1675,7 @@ public sealed class RetryBehaviorTests : TestBase
             functionRegistry ?? _EmptyRegistry,
             new JobsExecutionCancellationRegistry(),
             schedulerOptions ?? new SchedulerOptionsBuilder(),
-            NullLogger<JobsExecutionTaskHandler>.Instance,
+            logger ?? NullLogger<JobsExecutionTaskHandler>.Instance,
             retryOptions
         );
 
@@ -1413,17 +1707,26 @@ public sealed class RetryBehaviorTests : TestBase
         return (handler, context, internalManager, attempts);
     }
 
-    private static JobsRetryOptions _ZeroDelayRetryOptions()
+    private static JobsRetryOptions _ExhaustionRecordingOptions(List<JobExhaustedContext> exhausted)
     {
-        return new()
+        return new JobsRetryOptions
         {
-            RetryStrategy = new RetryStrategyOptions
+            OnExhausted = (context, _) =>
             {
-                MaxRetryAttempts = int.MaxValue,
-                Delay = TimeSpan.Zero,
-                ShouldHandle = static args =>
-                    ValueTask.FromResult(args.Outcome.Exception is not null and not OperationCanceledException),
+                exhausted.Add(context);
+                return Task.CompletedTask;
             },
+        };
+    }
+
+    private static JobFunctionRegistry _RegistryWith(string functionName, FailurePolicyDefinition policy)
+    {
+        return _EmptyRegistry with
+        {
+            FailurePolicies = new Dictionary<string, FailurePolicyDefinition>(StringComparer.Ordinal)
+            {
+                [functionName] = policy,
+            }.ToFrozenDictionary(StringComparer.Ordinal),
         };
     }
 

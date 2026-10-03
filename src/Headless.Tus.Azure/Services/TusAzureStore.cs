@@ -42,6 +42,20 @@ namespace Headless.Tus;
 /// after seven days.
 /// </para>
 /// <para>
+/// <b>Write fencing:</b> the per-file lock is best-effort — a request can lose it without noticing
+/// (a process pause, a lock-backend failover) while a second request for the same upload proceeds.
+/// The blob itself therefore rejects stale writers: every block-list commit and metadata write
+/// sends the ETag the calling request read as <c>If-Match</c>, and carries the ETag each write
+/// returns into its next write. A writer whose view is stale fails with Azure's
+/// <c>RequestFailedException</c> (HTTP 412), which is deliberately <em>not</em> translated into a
+/// <c>TusStoreException</c>: tusdotnet answers that with 400, which tus clients treat as fatal,
+/// while the untranslated exception surfaces as a 500 that tus clients retry by issuing HEAD and
+/// resuming from the committed offset. The exception also aborts the request before tusdotnet
+/// writes <c>Upload-Offset</c>, so a client never sees a success offset for bytes that did not land.
+/// Each store call fences from its own read: the checksum header flow's verify step re-reads the
+/// blob, and its digest comparison is what rejects blocks a different writer staged in between.
+/// </para>
+/// <para>
 /// When <see cref="TusAzureStoreOptions.CreateContainerIfNotExists"/> is <see langword="true"/>
 /// (the default), the container is created <em>synchronously</em> inside the constructor. Any
 /// connectivity or authorization failure is therefore surfaced at startup, not on the first
@@ -125,9 +139,68 @@ public sealed partial class TusAzureStore
         }
     }
 
-    private static async Task _UpdateMetadataAsync(BlobClient blobClient, TusAzureFile file, CancellationToken token)
+    /// <summary>
+    /// Replaces the blob metadata with <paramref name="file"/>'s, only if the blob still carries the
+    /// ETag this request last observed, then records the new ETag for the request's next write.
+    /// </summary>
+    private async Task _UpdateMetadataAsync(BlobClient blobClient, TusAzureFile file, CancellationToken token)
     {
-        await blobClient.SetMetadataAsync(file.Metadata.ToAzure(), cancellationToken: token).ConfigureAwait(false);
+        try
+        {
+            var response = await blobClient
+                .SetMetadataAsync(file.Metadata.ToAzure(), _IfUnchanged(file), token)
+                .ConfigureAwait(false);
+
+            file.ETag = response.Value.ETag;
+        }
+        catch (RequestFailedException e) when (e.Status == 412)
+        {
+            _logger.StaleWriteRejected(file.FileId);
+
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Commits <paramref name="blockIds"/> together with <paramref name="file"/>'s metadata, only if
+    /// the blob still carries the ETag this request last observed, then records the new ETag.
+    /// </summary>
+    /// <remarks>
+    /// The HTTP headers must be re-supplied: Put Block List clears any <c>x-ms-blob-*</c> property
+    /// omitted from the request, which would wipe headers set at creation (custom content type,
+    /// cache control).
+    /// </remarks>
+    private async Task _CommitBlockListAsync(
+        BlockBlobClient client,
+        TusAzureFile file,
+        IEnumerable<string> blockIds,
+        CancellationToken token
+    )
+    {
+        var options = new CommitBlockListOptions
+        {
+            Metadata = file.Metadata.ToAzure(),
+            HttpHeaders = file.HttpHeaders,
+            Conditions = _IfUnchanged(file),
+        };
+
+        try
+        {
+            var response = await client.CommitBlockListAsync(blockIds, options, token).ConfigureAwait(false);
+
+            file.ETag = response.Value.ETag;
+        }
+        catch (RequestFailedException e) when (e.Status == 412)
+        {
+            _logger.StaleWriteRejected(file.FileId);
+
+            throw;
+        }
+    }
+
+    private static BlobRequestConditions _IfUnchanged(TusAzureFile file)
+    {
+        return new BlobRequestConditions { IfMatch = file.ETag };
     }
 
     private Task<List<BlobBlock>> _GetCommittedBlocksAsync(string fileId, CancellationToken token)
@@ -199,7 +272,7 @@ public sealed partial class TusAzureStore
     /// chunk that was already committed and verified. Skips the write when the state is already
     /// clean; must-complete because the caller's token is cancelled in exactly this scenario.
     /// </summary>
-    private static async Task _RefreshChunkTrackingForEmptyAppendAsync(
+    private async Task _RefreshChunkTrackingForEmptyAppendAsync(
         BlobClient blobClient,
         TusAzureFile file,
         long currentOffset
@@ -220,9 +293,7 @@ public sealed partial class TusAzureStore
         metadata.LastChunkChecksum = null;
         metadata.LastChunkOffset = currentOffset;
 
-        await blobClient
-            .SetMetadataAsync(metadata.ToAzure(), cancellationToken: CancellationToken.None)
-            .ConfigureAwait(false);
+        await _UpdateMetadataAsync(blobClient, file, CancellationToken.None).ConfigureAwait(false);
     }
 
     private BlobClient _GetBlobClient(string fileId)
@@ -263,4 +334,11 @@ internal static partial class TusAzureStoreLog
         Exception ex,
         string containerName
     );
+
+    [LoggerMessage(
+        EventId = 3251,
+        Level = LogLevel.Warning,
+        Message = "Rejected a write to file {FileId}: the blob changed since this request read it, so another request wrote it concurrently"
+    )]
+    public static partial void StaleWriteRejected(this ILogger logger, string fileId);
 }

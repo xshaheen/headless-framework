@@ -73,7 +73,7 @@ internal static class ConsumerParser
         var handledTypes = messageTypes
             .Concat(responders.SelectMany(responder => new[] { responder.Request, responder.Response }))
             .Distinct<ITypeSymbol>(SymbolEqualityComparer.Default);
-        foreach (var messageType in handledTypes.Where(type => !ConsumerValidator.IsAccessible(type)))
+        foreach (var messageType in handledTypes.Where(type => !GeneratedCodeAccessibility.IsAccessible(type)))
         {
             diagnostics.Add(
                 DiagnosticInfo.Create(
@@ -106,6 +106,29 @@ internal static class ConsumerParser
             );
         }
 
+        if (values.FailurePolicy is { } failurePolicy)
+        {
+            // Every-instance deliveries are at most once and never stored, so a policy there would be declared but inert.
+            if (everyInstance)
+            {
+                diagnostics.Add(
+                    DiagnosticInfo.Create(
+                        DiagnosticDescriptors.FailurePolicyOnEveryInstance,
+                        attributeLocation,
+                        classSymbol.Name
+                    )
+                );
+            }
+
+            ConsumerValidator.ValidateFailurePolicy(
+                compilation,
+                failurePolicy,
+                classSymbol.Name,
+                attributeLocation,
+                diagnostics
+            );
+        }
+
         var messageTypeNames = _SortedNames(messageTypes);
         var responderModels = responders
             .Select(responder => new ResponderModel(_Name(responder.Request), _Name(responder.Response)))
@@ -132,7 +155,8 @@ internal static class ConsumerParser
                     classSymbol,
                     SourceGeneratorConstants.ConsumerLifecycleMetadataName
                 ),
-                everyInstance && implementsSubscriptionHook
+                everyInstance && implementsSubscriptionHook,
+                values.FailurePolicy?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
             );
 
         return new(
@@ -277,13 +301,21 @@ internal static class ConsumerParser
             .ToEquatableArray();
 
     /// <summary>The values of one consumer attribute application, read without interpreting them.</summary>
-    private readonly record struct ConsumerAttributeValues(string? Identity, bool EveryInstance)
+    /// <remarks>
+    /// The policy symbol never leaves the parser: the model keeps only its name, so incremental caching compares values.
+    /// </remarks>
+    private readonly record struct ConsumerAttributeValues(
+        string? Identity,
+        bool EveryInstance,
+        ITypeSymbol? FailurePolicy
+    )
     {
         public static ConsumerAttributeValues Read(AttributeData attribute)
         {
             var identity =
                 attribute.ConstructorArguments.Length > 0 ? attribute.ConstructorArguments[0].Value as string : null;
             var everyInstance = false;
+            ITypeSymbol? failurePolicy = null;
 
             foreach (var named in attribute.NamedArguments)
             {
@@ -294,9 +326,17 @@ internal static class ConsumerParser
                 {
                     everyInstance = value;
                 }
+                else if (
+                    string.Equals(named.Key, "FailurePolicy", StringComparison.Ordinal)
+                    && named.Value.Value is ITypeSymbol { TypeKind: not TypeKind.Error } policy
+                )
+                {
+                    // An unresolved type is already a compiler error at the attribute, so it is not reported again.
+                    failurePolicy = policy;
+                }
             }
 
-            return new(identity, everyInstance);
+            return new(identity, everyInstance, failurePolicy);
         }
     }
 }

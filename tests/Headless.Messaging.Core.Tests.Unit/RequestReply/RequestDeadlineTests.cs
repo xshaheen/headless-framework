@@ -6,6 +6,7 @@ using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
+using Headless.Reliability;
 using Headless.Testing.Tests;
 
 namespace Tests.RequestReply;
@@ -48,15 +49,13 @@ public sealed class RequestDeadlineTests : TestBase
     {
         // given — the process died during the request's final inline attempt, and the row is picked up after the
         // deadline: the reserved attempt count already covers the whole inline budget
-        await using var host = ResponderExecutorHost.Create(options =>
-            options.RetryPolicy.RetryStrategy = TestRetryStrategies.ZeroDelay(1)
-        );
+        await using var host = ResponderExecutorHost.Create();
         var message = host.Request(TimeSpan.FromSeconds(5));
         message.InlineAttempts = 2;
         host.Clock.Advance(TimeSpan.FromSeconds(6));
 
         // when
-        var result = await host.ExecuteAsync(message, AbortToken);
+        var result = await host.ExecuteAsync(message, AbortToken, _Responder(new FailurePolicyBuilder().Immediate(1)));
 
         // then — ended as expired: no handler, no exhausted callback, no fault to a caller that is gone
         result.Succeeded.Should().BeFalse();
@@ -111,18 +110,24 @@ public sealed class RequestDeadlineTests : TestBase
     }
 
     [Fact]
-    public async Task should_end_terminally_when_the_next_inline_delay_would_start_after_the_deadline()
+    public async Task should_end_terminally_when_the_deadline_passes_during_an_attempt()
     {
-        // given — three inline retries 10 s apart, but the caller waits only 5 s
-        await using var host = ResponderExecutorHost.Create(options =>
-            options.RetryPolicy.RetryStrategy = TestRetryStrategies.FixedDelay(3, TimeSpan.FromSeconds(10))
-        );
-        host.OnInvoke(() => Task.FromException<ConsumerExecutedResult>(new TimeoutException("transient")));
+        // given — three immediate retries, but the attempt fails only after the caller's 5 s deadline
+        await using var host = ResponderExecutorHost.Create();
+        host.OnInvoke(() =>
+        {
+            host.Clock.Advance(TimeSpan.FromSeconds(6));
+            return Task.FromException<ConsumerExecutedResult>(new TimeoutException("transient"));
+        });
 
         // when
-        var result = await host.ExecuteAsync(host.Request(TimeSpan.FromSeconds(5)), AbortToken);
+        var result = await host.ExecuteAsync(
+            host.Request(TimeSpan.FromSeconds(5)),
+            AbortToken,
+            _Responder(new FailurePolicyBuilder().Immediate(3))
+        );
 
-        // then — one attempt, then a terminal write and a fault instead of an inline retry
+        // then — one attempt, then a terminal write and a fault instead of an immediate retry
         result.Succeeded.Should().BeFalse();
         host.Invoker.ReceivedCalls().Should().ContainSingle();
         host.StateWrites().Should().ContainSingle().Which.Should().Be((StatusName.Failed, (RetryDelay?)null));
@@ -130,21 +135,23 @@ public sealed class RequestDeadlineTests : TestBase
     }
 
     [Fact]
-    public async Task should_end_terminally_instead_of_scheduling_a_persisted_retry_when_the_inline_budget_runs_out()
+    public async Task should_end_terminally_instead_of_scheduling_a_delayed_retry_when_the_immediate_retries_run_out()
     {
-        // given — one inline retry, then the host policy would hand the row to the persisted retry processor
-        await using var host = ResponderExecutorHost.Create(options =>
-        {
-            options.RetryPolicy.RetryStrategy = TestRetryStrategies.ZeroDelay(1);
-            options.RetryPolicy.MaxPersistedRetries = 15;
-        });
+        // given — one immediate retry, then the failure policy would hand the row to the persisted retry processor
+        await using var host = ResponderExecutorHost.Create();
         host.OnInvoke(() => Task.FromException<ConsumerExecutedResult>(new TimeoutException("transient")));
         var message = host.Request(TimeSpan.FromSeconds(30));
 
         // when
-        var result = await host.ExecuteAsync(message, AbortToken);
+        var result = await host.ExecuteAsync(
+            message,
+            AbortToken,
+            _Responder(
+                new FailurePolicyBuilder().Immediate(1).Delayed(15, TimeSpan.FromSeconds(30), TimeSpan.FromMinutes(15))
+            )
+        );
 
-        // then — both inline attempts ran, and the last write is terminal with no persisted retry scheduled
+        // then — both immediate attempts ran, and the last write is terminal with no delayed retry scheduled
         result.Succeeded.Should().BeFalse();
         host.Invoker.ReceivedCalls().Should().HaveCount(2);
         host.StateWrites()[^1].Should().Be((StatusName.Failed, (RetryDelay?)null));
@@ -153,12 +160,10 @@ public sealed class RequestDeadlineTests : TestBase
     }
 
     [Fact]
-    public async Task should_retry_inline_while_the_deadline_leaves_time()
+    public async Task should_retry_immediately_while_the_deadline_leaves_time()
     {
         // given — the first attempt fails transiently, the second succeeds
-        await using var host = ResponderExecutorHost.Create(options =>
-            options.RetryPolicy.RetryStrategy = TestRetryStrategies.ZeroDelay(2)
-        );
+        await using var host = ResponderExecutorHost.Create();
         var attempts = 0;
         host.OnInvoke(() =>
             ++attempts == 1
@@ -167,7 +172,11 @@ public sealed class RequestDeadlineTests : TestBase
         );
 
         // when
-        var result = await host.ExecuteAsync(host.Request(TimeSpan.FromSeconds(30)), AbortToken);
+        var result = await host.ExecuteAsync(
+            host.Request(TimeSpan.FromSeconds(30)),
+            AbortToken,
+            _Responder(new FailurePolicyBuilder().Immediate(2))
+        );
 
         // then — one reply, from the attempt that succeeded
         result.Succeeded.Should().BeTrue();
@@ -176,43 +185,46 @@ public sealed class RequestDeadlineTests : TestBase
     }
 
     [Fact]
-    public async Task should_stop_after_one_attempt_when_the_host_classifies_the_failure_as_permanent()
+    public async Task should_stop_after_one_attempt_when_the_failure_policy_ends_the_failure_at_once()
     {
-        // given — the default classifier treats NotSupportedException as permanent
+        // given — NotSupportedException is in the built-in permanent set
         await using var host = ResponderExecutorHost.Create();
         host.OnInvoke(() => Task.FromException<ConsumerExecutedResult>(new NotSupportedException("bad sku")));
 
         // when
         var result = await host.ExecuteAsync(host.Request(TimeSpan.FromSeconds(30)), AbortToken);
 
-        // then — the caller gets the fault at once, while the attempt-start expiry above sends nothing
+        // then — the caller gets the fault at once, and the terminal failure fires the exhausted callback
         result.Succeeded.Should().BeFalse();
         host.Invoker.ReceivedCalls().Should().ContainSingle();
         host.StateWrites().Should().ContainSingle().Which.Should().Be((StatusName.Failed, (RetryDelay?)null));
         host.FaultCodes().Should().Equal(RequestFaultCodes.HandlerFailed);
-        host.ExhaustedCalls.Should().Be(0);
+        host.ExhaustedCalls.Should().Be(1);
     }
 
     [Fact]
-    public async Task should_keep_the_host_retry_policy_for_a_plain_queue_message()
+    public async Task should_keep_the_failure_policy_for_a_plain_queue_message()
     {
         // given — the same failure on a message that carries no request headers
-        await using var host = ResponderExecutorHost.Create(options =>
-        {
-            options.RetryPolicy.RetryStrategy = TestRetryStrategies.ZeroDelay(0);
-            options.RetryPolicy.MaxPersistedRetries = 3;
-        });
+        await using var host = ResponderExecutorHost.Create();
         host.OnInvoke(() => Task.FromException<ConsumerExecutedResult>(new TimeoutException("transient")));
         var message = host.Request(TimeSpan.Zero, asRequest: false);
 
         // when
-        await host.ExecuteAsync(message, AbortToken);
+        await host.ExecuteAsync(
+            message,
+            AbortToken,
+            _Responder(new FailurePolicyBuilder().Delayed(3, TimeSpan.FromSeconds(30), TimeSpan.FromMinutes(15)))
+        );
 
-        // then — handed to the persisted retry processor, exactly as before
+        // then — handed to the persisted retry processor, exactly as for any consumer
         var (status, nextRetry) = host.StateWrites().Should().ContainSingle().Subject;
         status.Should().Be(StatusName.Failed);
         nextRetry.Should().NotBeNull();
         message.Retries.Should().Be(1);
         host.Replies.Sent.Should().BeEmpty();
     }
+
+    private static ConsumerExecutorDescriptor _Responder(FailurePolicyBuilder policy) =>
+        ResponderExecutorHost.ResponderDescriptor(failurePolicy: policy.Build());
 }

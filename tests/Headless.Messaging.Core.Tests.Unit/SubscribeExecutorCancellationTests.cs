@@ -9,6 +9,7 @@ using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.RequestReply;
 using Headless.Messaging.Retry;
+using Headless.Reliability;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -44,10 +45,11 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
         };
     }
 
-    private static ConsumerExecutorDescriptor _CreateDescriptor()
+    private static ConsumerExecutorDescriptor _CreateDescriptor(FailurePolicyDefinition? failurePolicy = null)
     {
         return new ConsumerExecutorDescriptor
         {
+            FailurePolicy = failurePolicy ?? MessagingOptions.FrameworkDefaultFailurePolicy,
             Lane = MessageLane.Bus,
             ConsumerType = typeof(CancellationExecutorTestConsumer),
             MessageType = typeof(CancellationExecutorTestMessage),
@@ -353,7 +355,12 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
 
         // when
         await _CompleteAsShutdownAsync(
-            executor.ExecuteAsync(_CreateMediumMessage(), _EmptyScope, _CreateDescriptor(), dispatch.Token)
+            executor.ExecuteAsync(
+                _CreateMediumMessage(),
+                _EmptyScope,
+                _CreateDescriptor(FailurePolicyDefinition.None),
+                dispatch.Token
+            )
         );
 
         // then
@@ -377,8 +384,6 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
         {
             RetryPolicy =
             {
-                RetryStrategy = TestRetryStrategies.FixedDelay(0, TimeSpan.Zero),
-                MaxPersistedRetries = 0,
                 OnExhausted = (_, _) =>
                 {
                     onExhausted();

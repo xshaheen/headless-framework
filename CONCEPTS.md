@@ -197,7 +197,8 @@ recovery cannot undo a newer Open state.
 The terminal disposition for an inbound message rejected before any consume attempt runs: the
 framework never dispatches it, stores the received envelope (headers plus body as a `data:` URI)
 in a received-exception row, commits (acks) the transport delivery, and invokes the configured
-`RetryPolicy.OnExhausted` callback with no storage id. Produced by subscriber-not-found,
+`RetryPolicy.OnExhausted` callback once, with no storage id. It is one kind of terminal failure;
+the consumer's failure policy never runs for it. Produced by subscriber-not-found,
 contract-version mismatch, deserialization failure, and (with receive middleware) an explicit
 or defaulted Reject outcome.
 
@@ -224,8 +225,8 @@ host at startup; cross-module conflicts fail there, naming both sources.
 ### Consumer tuning and consume filter
 Host-side controls keyed by consumer identity. `Tune(identity, ...)`, then
 `Headless:Messaging:Consumers:{identity}` configuration, change a declared consumer's deployment
-settings (concurrency, inbox retention, circuit breaker, middleware, provider consumer
-settings) and never its identity, lane, or messages. `ConsumeOnly(...)` limits which
+settings (concurrency, inbox retention, circuit breaker, failure policy, middleware, provider
+consumer settings) and never its identity, lane, or messages. `ConsumeOnly(...)` limits which
 competing consumers a host runs, by exact identity or `owner.*` pattern; filtered consumers stay
 registered and publishable, and every-instance consumers always run.
 
@@ -238,7 +239,8 @@ its `MessagingInstanceId`, so every process receives every message, and the brok
 the subscription once the process no longer holds it. Delivery is at most once and only while the process
 is subscribed: no backlog, no inbox row, no retry, and a consumer failure is logged and committed. A
 consumer that mirrors state resynchronizes through `IOnSubscriptionEstablished`. `ConsumeOnly` never
-filters it, and an inbox retention or circuit breaker tuned onto it fails startup. The opposite kind,
+filters it. An inbox retention, circuit breaker, or failure policy tuned onto it fails startup, and
+a failure policy declared on its attribute fails the build (HM010). The opposite kind,
 the default, is a **competing** subscription: durable and shared, one copy per identity.
 
 ## Flagged ambiguities
@@ -668,3 +670,30 @@ and the cron job enumerates tenants in application code, scheduling one tenant-s
 per tenant. The framework ships an optional `ITenantDirectory` enumeration capability (implemented
 by all v1 tenant-catalog stores) that an app can call for this enumeration step, but builds no
 fan-out orchestration on top of it — the fan-out loop itself is still application code.
+
+## Reliability (failure handling)
+
+### Failure policy
+
+The declaration of how a message consumer or a job reacts to a failed attempt: a number of
+immediate retries, then a number of delayed retries with jittered exponential backoff, and fail
+rules (`FailOn<T>()`, `FailWhen(...)`) that end the run at once. A consumer or job names a
+`FailurePolicy` type on its attribute. `Tune` replaces the declaration, the host's
+`DefaultFailurePolicy` applies when neither exists, and configuration then overrides only the
+numbers; fail rules stay code. A job's scheduling call can still override its stored retry count.
+Total attempts are `1 + immediate + delayed`. Defaults differ by runtime: a consumer retries
+2 times at once and 5 times delayed; a job does not retry. Messaging persists each delayed retry
+with a `NextRetryAt`; Jobs flattens the policy into the row's `Retries` and `RetryIntervals` and
+retries in process. An every-instance consumer cannot carry one.
+
+### Terminal failure
+
+The state a run reaches when its failure policy gives up or a failure cannot be retried: a received
+message in `Failed` with no `NextRetryAt`, or a time job or cron occurrence in `Failed`. It covers a
+spent budget, a matched fail rule, foreign cancellation, and, in Messaging, the built-in permanent
+exceptions, a deserialization failure, a consumer no longer registered, and poison-on-arrival.
+`OnExhausted` fires once per terminal failure, on the node whose terminal write wins; a Jobs
+`TerminateExecutionException` is not one. An operator re-executes a terminal message from the
+Messaging dashboard and requeues a terminal job with `IJobScheduler.RequeueAsync` /
+`RequeueOccurrenceAsync` or from the Jobs dashboard. *Avoid:* "dead letter" as a separate state; a terminal failure
+stays in storage, and forwarding it to a broker address is a separate action.

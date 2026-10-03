@@ -52,7 +52,9 @@ Follow-up hardening extended the same affected-row contract to poisoned-on-arriv
 
 ### 1. Storage-layer terminal-row guard
 
-SQL Server ([SqlServerDataStorage.cs](../../../src/Headless.Messaging.Storage.SqlServer/SqlServerDataStorage.cs)) — the `_StoreReceivedMessage` MERGE adds a `WHEN MATCHED AND NOT (...)` predicate so the `UPDATE` branch is skipped for terminal rows; the `INSERT` branch is unaffected:
+The SQL Server and PostgreSQL storages have since merged into one shared relational storage: the received-message upsert now lives in [RelationalDataStorage.Store.cs](../../../src/Headless.Messaging.Core/Persistence/RelationalDataStorage.Store.cs) and the state writes in [RelationalDataStorage.States.cs](../../../src/Headless.Messaging.Core/Persistence/RelationalDataStorage.States.cs). The snippets below show the guard as it first landed in the per-provider files.
+
+SQL Server (originally `SqlServerDataStorage.cs`) — the `_StoreReceivedMessage` MERGE adds a `WHEN MATCHED AND NOT (...)` predicate so the `UPDATE` branch is skipped for terminal rows; the `INSERT` branch is unaffected:
 
 ```csharp
 MERGE {_receivedTable} WITH (HOLDLOCK) AS target
@@ -64,7 +66,7 @@ WHEN NOT MATCHED THEN
     INSERT (...);
 ```
 
-PostgreSQL ([PostgreSqlDataStorage.cs](../../../src/Headless.Messaging.Storage.PostgreSql/PostgreSqlDataStorage.cs)) — the `ON CONFLICT DO UPDATE` is gated by a matching `WHERE NOT (...)` clause. The same narrow shape is applied to every `ChangePublishStateAsync` / `ChangeReceiveStateAsync` `UPDATE` statement ([SqlServerDataStorage.cs](../../../src/Headless.Messaging.Storage.SqlServer/SqlServerDataStorage.cs), [PostgreSqlDataStorage.cs](../../../src/Headless.Messaging.Storage.PostgreSql/PostgreSqlDataStorage.cs)).
+PostgreSQL (originally `PostgreSqlDataStorage.cs`) — the `ON CONFLICT DO UPDATE` is gated by a matching `WHERE NOT (...)` clause. The same narrow shape is applied to every `ChangePublishStateAsync` / `ChangeReceiveStateAsync` `UPDATE` statement, now in [RelationalDataStorage.States.cs](../../../src/Headless.Messaging.Core/Persistence/RelationalDataStorage.States.cs).
 
 InMemory ([InMemoryDataStorage.cs:135-213, 253-327](../../../src/Headless.Messaging.Storage.InMemory/InMemoryDataStorage.cs)) — `ChangePublishStateAsync` and `ChangeReceiveStateAsync` short-circuit and return `false` when the existing row is `Succeeded`/`Failed` with `NextRetryAt is null`. `StoreReceivedExceptionMessageAsync` was rewritten as a single locked upsert keyed on (Version, MessageId, Group); the lookup-then-insert/update path is wrapped in `_receivedExceptionUpsertLock` so concurrent redeliveries cannot both decide "not found" and race.
 
@@ -131,6 +133,10 @@ Storage is the sole arbiter of terminal state, and a row in `(Succeeded | Failed
   - `tests/Headless.Messaging.Core.Tests.Unit/Retry/RetryHelperTests.cs` — covers `ResolveNextState`, `IsCancellation` token equality, OnExhausted timeout-CTS, and strategy-throw paths.
   - `tests/Headless.Messaging.Core.Tests.Unit/Configuration/MessagingOptionsCopyToTests.cs` — guards deep `CopyTo` of nested retry options so test harnesses don't share mutable state.
 - **When mocking storage in tests, match the current arity exactly.** During the `ValueTask<bool>` migration, NSubstitute `Received()` assertions that still used the pre-migration 2-arg shape matched zero calls, the tests passed green, and the actual behavior was unverified. Audit `Received(...)` and `When(...)` call sites whenever the storage interface gains a parameter. *(session history)*
+
+## Addendum (2026-10-02): every terminal consume failure fires OnExhausted
+
+Consumers now carry a failure policy, and the consume side no longer splits terminal failures into "exhausted" and "stopped". Every terminal consume failure fires `OnExhausted` exactly once: the retry budget spent, a fail rule matching, a built-in permanent failure, a payload that cannot be deserialized, or a message with no registered consumer. The callback is still gated on the winning terminal write, so it fires only from the writer whose conditional `UPDATE` reports a changed row. A writer that loses that CAS, such as a redelivery of a row that is already terminal, still returns `Stop` and fires nothing; it logs `SkippingOnExhaustedAlreadyTerminal` when its own decision was terminal. The "Stop redeliveries never fire `OnExhausted`" reading of section 3 still holds, but `Stop` now means only "lost the terminal write", never "a permanent failure that skips the callback".
 
 ## Related Issues
 

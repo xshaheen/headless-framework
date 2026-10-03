@@ -39,6 +39,10 @@ public sealed partial class TusAzureStore
     /// <exception cref="ArgumentNullException">
     /// thrown if <paramref name="fileId"/> or <paramref name="stream"/> is null
     /// </exception>
+    /// <exception cref="Azure.RequestFailedException">
+    /// thrown with status 412 when another request wrote the blob after this one read it; the write
+    /// is rejected rather than overwriting that request's data (see the <c>TusAzureStore</c> remarks)
+    /// </exception>
     public async Task<long> AppendDataAsync(string fileId, Stream stream, CancellationToken cancellationToken)
     {
         Argument.IsNotNull(fileId);
@@ -114,7 +118,7 @@ public sealed partial class TusAzureStore
     /// <see langword="true"/> when the chunk was deferred (a checksum is pending verification);
     /// <see langword="false"/> when the blocks were committed immediately.
     /// </returns>
-    private static async Task<bool> _CommitOrDeferChunkAsync(
+    private async Task<bool> _CommitOrDeferChunkAsync(
         BlobClient blobClient,
         BlockBlobClient blockBlobClient,
         TusAzureFile azureFile,
@@ -143,16 +147,10 @@ public sealed partial class TusAzureStore
             azureFile.Metadata.LastChunkChecksum = null;
             azureFile.Metadata.LastChunkOffset = chunkStartOffset;
 
-            // HttpHeaders must be re-supplied: Put Block List clears any x-ms-blob-* property omitted
-            // from the request, which would wipe headers set at creation (custom content type, cache
-            // control) on the first PATCH.
-            var options = new CommitBlockListOptions
-            {
-                Metadata = azureFile.Metadata.ToAzure(),
-                HttpHeaders = azureFile.HttpHeaders,
-            };
-            await blockBlobClient
-                .CommitBlockListAsync(allBlockIds, options, CancellationToken.None)
+            // allBlockIds was built from the committed list this request read, so the commit is fenced
+            // on the ETag read alongside it: if another request committed in between, this commit
+            // would replace that request's blocks and must fail instead.
+            await _CommitBlockListAsync(blockBlobClient, azureFile, allBlockIds, CancellationToken.None)
                 .ConfigureAwait(false);
 
             return false;

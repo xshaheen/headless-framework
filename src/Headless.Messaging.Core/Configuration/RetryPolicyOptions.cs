@@ -9,13 +9,22 @@ using Polly.Retry;
 namespace Headless.Messaging.Configuration;
 
 /// <summary>
-/// Configures message retry behavior across inline and persisted retry paths.
+/// Configures publish retries, the dispatch lease and grace shared by publishing and consuming, and the
+/// <see cref="OnExhausted"/> callback.
 /// </summary>
 /// <remarks>
-/// Total observable delivery attempts =
-/// <c>(RetryStrategy.MaxRetryAttempts + 1) × (MaxPersistedRetries + 1)</c>.
-/// Inline retries burst on each persisted pickup. To disable retry entirely set both
-/// <c>RetryStrategy.MaxRetryAttempts</c> and <see cref="MaxPersistedRetries"/> to 0.
+/// <para>
+/// <see cref="RetryStrategy"/> and <see cref="MaxPersistedRetries"/> govern publishing only. A failed publish is
+/// attempted at most <c>(RetryStrategy.MaxRetryAttempts + 1) × (MaxPersistedRetries + 1)</c> times: inline retries
+/// burst on each persisted pickup. To disable publish retry, set both to 0.
+/// </para>
+/// <para>
+/// Consuming follows each consumer's resolved failure policy instead (<c>Headless.Reliability.FailurePolicy</c>,
+/// declared on the consumer attribute, tuned, or the host default set through
+/// <c>MessagingSetupBuilder.DefaultFailurePolicy</c>). A failing message is attempted at most
+/// <c>1 + ImmediateRetries + DelayedRetries</c> times: the immediate retries run back-to-back in the first dispatch,
+/// and each delayed retry is one later pickup scheduled with the policy's exponential backoff.
+/// </para>
 /// </remarks>
 [PublicAPI]
 public sealed class RetryPolicyOptions
@@ -36,12 +45,13 @@ public sealed class RetryPolicyOptions
             );
 
     /// <summary>
-    /// Gets or sets the Polly retry strategy used for bounded inline delivery attempts.
+    /// Gets or sets the Polly retry strategy used for bounded inline publish attempts. It does not affect consuming,
+    /// whose retries and classification come from each consumer's failure policy.
     /// </summary>
     /// <remarks>
     /// <para>
     /// <c>RetryStrategy.MaxRetryAttempts</c> excludes the original execution; its
-    /// default value here is 2, so each pickup reserves at most three observable attempts.
+    /// default value here is 2, so each publish pickup reserves at most three observable attempts.
     /// </para>
     /// <para>
     /// <c>RetryStrategy.ShouldHandle</c> is required and defaults to
@@ -63,16 +73,17 @@ public sealed class RetryPolicyOptions
 
     /// <summary>
     /// Gets or sets the maximum number of persisted-retry pickups the retry processor will
-    /// attempt for a failed message. Default is 15.
+    /// attempt for a failed publish. Default is 15. It does not cap consume retries, which a consumer's failure policy
+    /// bounds through its delayed retries.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Persisted pickups burst inline retries on each pickup. Total observable attempts =
+    /// Persisted publish pickups burst inline retries on each pickup. Total observable publish attempts =
     /// <c>(RetryStrategy.MaxRetryAttempts + 1) × (MaxPersistedRetries + 1)</c>; with defaults this is
     /// <c>(2 + 1) × (15 + 1) = 48</c> attempts before <see cref="OnExhausted"/> fires.
     /// </para>
     /// <para>
-    /// Set to 0 to disable persisted retry (failure becomes terminal after inline budget is consumed).
+    /// Set to 0 to disable persisted publish retry (failure becomes terminal after the inline budget is consumed).
     /// </para>
     /// </remarks>
     public int MaxPersistedRetries { get; set; } = 15;
@@ -126,9 +137,9 @@ public sealed class RetryPolicyOptions
     public TimeSpan OnExhaustedTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
     /// <summary>
-    /// Returns <see langword="true"/> when more inline retry attempts remain within the policy
+    /// Returns <see langword="true"/> when more inline publish attempts remain within the policy
     /// budget. Pass the count of inline retries already completed on this pickup; the helper is
-    /// the single source of truth so the call sites in the Polly inline pipeline and the retry helper
+    /// the single source of truth so the publish call sites in the Polly inline pipeline and the retry helper
     /// cannot drift.
     /// </summary>
     /// <remarks>
@@ -156,15 +167,25 @@ public sealed class RetryPolicyOptions
     }
 
     /// <summary>
-    /// Gets or sets the callback invoked once retry attempts are exhausted
-    /// (the multiplicative budget
-    /// <c>(RetryStrategy.MaxRetryAttempts + 1) × (MaxPersistedRetries + 1)</c> is consumed).
-    /// Permanent failures (for example argument validation errors or subscriber-not-found) and
-    /// cancellations short-circuit the retry budget entirely and do not invoke this callback.
-    /// The callback runs inside the live dispatch scope carried by
-    /// <see cref="FailedInfo.ServiceProvider"/> and is awaited before the dispatch scope is disposed.
+    /// Gets or sets the callback invoked once for each message that fails for good.
     /// </summary>
     /// <remarks>
+    /// <para>
+    /// On publish it fires when the retry budget
+    /// <c>(RetryStrategy.MaxRetryAttempts + 1) × (MaxPersistedRetries + 1)</c> is consumed; a permanent failure there
+    /// short-circuits the budget and does not invoke this callback.
+    /// </para>
+    /// <para>
+    /// On consume it fires for every terminal failure: the consumer's failure policy budget is spent, one of its fail
+    /// rules matches, the failure is in the built-in permanent set (for example an argument validation error), the
+    /// payload fails to deserialize at execution, the stored message's consumer is no longer registered, or the message
+    /// is poisoned on arrival. It fires only when this node's terminal write wins: a node that finds the row already
+    /// terminal skips it. A host-shutdown cancellation is not a failure and never invokes it.
+    /// </para>
+    /// <para>
+    /// The callback runs inside the live dispatch scope carried by <see cref="FailedInfo.ServiceProvider"/> and is
+    /// awaited before the dispatch scope is disposed.
+    /// </para>
     /// <para>
     /// Delivery is <b>at-least-once</b>: under broker redelivery, partial failures, or crash-recover
     /// this callback MAY fire more than once for the same message. The handler MUST be idempotent

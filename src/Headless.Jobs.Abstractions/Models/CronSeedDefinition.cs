@@ -19,6 +19,14 @@ namespace Headless.Jobs.Models;
 /// IANA zone the expression is evaluated in, or <see langword="null"/> for the scheduler's default zone. Like the
 /// expression it is part of the declared schedule, so a changed zone repositions an existing definition.
 /// </param>
+/// <param name="Retries">
+/// Retry count to seed at creation, flattened from the job's resolved failure policy: its immediate plus its delayed
+/// retries.
+/// </param>
+/// <param name="RetryIntervals">
+/// Per-retry delays in whole seconds to seed at creation, or <see langword="null"/> when the policy does not retry:
+/// <c>0</c> for each immediate retry, then each delayed retry's delay before jitter, rounded up.
+/// </param>
 /// <remarks>
 /// The recovery and overlap settings are already resolved by the caller — attribute value, else the scheduler-wide setting, else
 /// the framework default — so the provider persists a concrete value rather than re-deriving one. That matters because
@@ -33,6 +41,10 @@ namespace Headless.Jobs.Models;
 /// Existing function/version/request tuples also remain unchanged. A new registration version cannot relabel
 /// previously stored request bytes; changing an existing payload contract requires an explicit definition edit.
 /// </para>
+/// <para>
+/// The retry settings follow the same creation-only rule, so a failure policy changed in code does not reach an existing
+/// definition; edit the definition through <c>ICronJobManager</c> instead.
+/// </para>
 /// </remarks>
 [PublicAPI]
 public readonly record struct CronSeedDefinition(
@@ -43,5 +55,7 @@ public readonly record struct CronSeedDefinition(
     CronOverlapPolicy OnOverlap,
     string? EvaluationFingerprint = null,
     string ContractVersion = JobContract.InitialVersion,
-    string? TimeZoneId = null
+    string? TimeZoneId = null,
+    int Retries = 0,
+    int[]? RetryIntervals = null
 );

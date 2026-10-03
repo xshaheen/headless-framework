@@ -91,6 +91,10 @@ internal static class MessagingSourceEmitter
         foreach (var registration in model.Consumers)
         {
             var consumer = registration.Consumer;
+            // A factory, not the Type, so the catalog never constructs the policy through reflection.
+            var policy = consumer.FailurePolicyTypeName is { } policyTypeName
+                ? $", failurePolicy: static () => new {policyTypeName}()"
+                : "";
             foreach (var message in consumer.MessageTypeNames)
             {
                 var hook = consumer.HasSubscriptionHook
@@ -98,8 +102,8 @@ internal static class MessagingSourceEmitter
                     : "";
                 writer.AppendLine(
                     consumer.Lane == ConsumerLane.Bus
-                        ? $"catalog.AddBusConsumer<{consumer.TypeName}, {message}>({HandlerSource.Literal(consumer.Identity)}, everyInstance: {(consumer.EveryInstance ? "true" : "false")}, dispatch: {registration.DispatcherName}{hook});"
-                        : $"catalog.AddQueueConsumer<{consumer.TypeName}, {message}>({HandlerSource.Literal(consumer.Identity)}, dispatch: {registration.DispatcherName});"
+                        ? $"catalog.AddBusConsumer<{consumer.TypeName}, {message}>({HandlerSource.Literal(consumer.Identity)}, everyInstance: {(consumer.EveryInstance ? "true" : "false")}, dispatch: {registration.DispatcherName}{hook}{policy});"
+                        : $"catalog.AddQueueConsumer<{consumer.TypeName}, {message}>({HandlerSource.Literal(consumer.Identity)}, dispatch: {registration.DispatcherName}{policy});"
                 );
             }
 
@@ -107,7 +111,7 @@ internal static class MessagingSourceEmitter
             foreach (var responder in consumer.Responders)
             {
                 writer.AppendLine(
-                    $"catalog.AddQueueResponder<{consumer.TypeName}, {responder.RequestTypeName}, {responder.ResponseTypeName}>({HandlerSource.Literal(consumer.Identity)}, dispatch: {registration.DispatcherName});"
+                    $"catalog.AddQueueResponder<{consumer.TypeName}, {responder.RequestTypeName}, {responder.ResponseTypeName}>({HandlerSource.Literal(consumer.Identity)}, dispatch: {registration.DispatcherName}{policy});"
                 );
             }
         }

@@ -10,6 +10,7 @@ using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.RequestReply;
 using Headless.Messaging.Transport;
+using Headless.Reliability;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -301,10 +302,14 @@ internal sealed class ResponderExecutorHost : IAsyncDisposable
         };
     }
 
-    public static ConsumerExecutorDescriptor ResponderDescriptor(MessageConsumerDispatch? dispatch = null)
+    public static ConsumerExecutorDescriptor ResponderDescriptor(
+        MessageConsumerDispatch? dispatch = null,
+        FailurePolicyDefinition? failurePolicy = null
+    )
     {
         return new ConsumerExecutorDescriptor
         {
+            FailurePolicy = failurePolicy ?? MessagingOptions.FrameworkDefaultFailurePolicy,
             Dispatch = dispatch,
             MethodName = "RespondAsync",
             Lane = MessageLane.Queue,

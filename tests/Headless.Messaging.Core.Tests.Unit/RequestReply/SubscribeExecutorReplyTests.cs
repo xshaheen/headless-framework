@@ -9,6 +9,7 @@ using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.RequestReply;
 using Headless.MultiTenancy;
+using Headless.Reliability;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;
 using Microsoft.Extensions.DependencyInjection;
@@ -168,10 +169,8 @@ public sealed class SubscribeExecutorReplyTests : TestBase
     [Fact]
     public async Task should_fault_with_null_response_after_one_attempt_when_the_responder_returns_null()
     {
-        // given — the host would retry a transient failure, but a null response is not one
-        await using var host = ResponderExecutorHost.Create(options =>
-            options.RetryPolicy.RetryStrategy = TestRetryStrategies.ZeroDelay(3)
-        );
+        // given — the failure policy would retry a transient failure, but a null response is not one
+        await using var host = ResponderExecutorHost.Create();
         host.OnInvoke(() => Task.FromResult(ResponderExecutorHost.Replied(null)));
 
         // when
@@ -281,11 +280,7 @@ public sealed class SubscribeExecutorReplyTests : TestBase
     {
         // given — the responder answers through the callback slot instead of returning its response
         await using var host = ResponderExecutorHost.Create(
-            options =>
-            {
-                options.RetryPolicy.RetryStrategy = TestRetryStrategies.ZeroDelay(0);
-                options.RequestReply.IncludeExceptionDetailsInFaults = true;
-            },
+            options => options.RequestReply.IncludeExceptionDetailsInFaults = true,
             realInvoker: true
         );
         var descriptor = ResponderExecutorHost.ResponderDescriptor(
@@ -293,7 +288,8 @@ public sealed class SubscribeExecutorReplyTests : TestBase
             {
                 context.SetResponse(new PriceQuote(1));
                 return ValueTask.CompletedTask;
-            }
+            },
+            FailurePolicyDefinition.None
         );
 
         // when

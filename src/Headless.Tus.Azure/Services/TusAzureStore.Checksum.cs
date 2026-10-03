@@ -78,6 +78,10 @@ public sealed partial class TusAzureStore : ITusChecksumStore
     /// between verification and rollback and leave an unverified (possibly corrupt) chunk durable,
     /// so verification and its cleanup are must-complete.
     /// </remarks>
+    /// <exception cref="Azure.RequestFailedException">
+    /// thrown with status 412 when another request wrote the blob after this one read it; the write
+    /// is rejected rather than overwriting that request's data (see the <c>TusAzureStore</c> remarks)
+    /// </exception>
     public async Task<bool> VerifyChecksumAsync(
         string fileId,
         string algorithm,
@@ -240,9 +244,7 @@ public sealed partial class TusAzureStore : ITusChecksumStore
         {
             file.Metadata.LastChunkBlocks = null;
             file.Metadata.LastChunkChecksum = null;
-            await blobClient
-                .SetMetadataAsync(file.Metadata.ToAzure(), cancellationToken: CancellationToken.None)
-                .ConfigureAwait(false);
+            await _UpdateMetadataAsync(blobClient, file, CancellationToken.None).ConfigureAwait(false);
 
             return;
         }
@@ -303,10 +305,10 @@ public sealed partial class TusAzureStore : ITusChecksumStore
         file.Metadata.LastChunkChecksum = null;
         file.Metadata.LastChunkOffset = null;
 
-        // HttpHeaders must be re-supplied: Put Block List clears any x-ms-blob-* property omitted
-        // from the request, which would wipe creation-time headers during rollback.
-        var options = new CommitBlockListOptions { Metadata = file.Metadata.ToAzure(), HttpHeaders = file.HttpHeaders };
-        await client.CommitBlockListAsync(prefix, options, CancellationToken.None).ConfigureAwait(false);
+        // Fenced on the ETag read with the file: the prefix and the recorded chunk start describe the
+        // blob this request saw, so a rollback over a block list another request has since committed
+        // must fail rather than truncate that request's data.
+        await _CommitBlockListAsync(client, file, prefix, CancellationToken.None).ConfigureAwait(false);
 
         _logger.LastChunkRolledBack(file.FileId, chunkStartOffset);
     }
@@ -447,7 +449,7 @@ public sealed partial class TusAzureStore : ITusChecksumStore
         // 1. Reads committed blocks from Azure
         // 2. Merges with LastChunkBlocks from metadata (staged blocks)
         // 3. Clears chunk tracking metadata (LastChunkBlocks, LastChunkChecksum)
-        // 4. Commits block list + metadata in single Azure operation
+        // 4. Commits block list + metadata in single Azure operation, conditional on the blob's ETag
 
         try
         {
@@ -473,14 +475,10 @@ public sealed partial class TusAzureStore : ITusChecksumStore
             file.Metadata.LastChunkBlocks = null;
             file.Metadata.LastChunkChecksum = null;
 
-            // ATOMIC: Commit blocks + update metadata in single operation. HttpHeaders must be
-            // re-supplied: Put Block List clears any x-ms-blob-* property omitted from the request.
-            var options = new CommitBlockListOptions
-            {
-                Metadata = file.Metadata.ToAzure(),
-                HttpHeaders = file.HttpHeaders,
-            };
-            await client.CommitBlockListAsync(allBlockIds, options, cancellationToken: token).ConfigureAwait(false);
+            // ATOMIC: Commit blocks + update metadata in single operation, fenced on the ETag read with
+            // the file so a staged range another request has since replaced or committed is never
+            // committed over that request's block list.
+            await _CommitBlockListAsync(client, file, allBlockIds, token).ConfigureAwait(false);
 
             _logger.LastChunkCommitted(file.FileId, allBlockIds.Count);
         }

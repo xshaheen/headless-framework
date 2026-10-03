@@ -6,7 +6,7 @@ using Microsoft.CodeAnalysis;
 namespace Tests;
 
 /// <summary>
-/// HM013: a <c>RequestAsync&lt;TRequest, TResponse&gt;</c> call is checked against the responders the project can see,
+/// HM014: a <c>RequestAsync&lt;TRequest, TResponse&gt;</c> call is checked against the responders the project can see,
 /// in its own assembly or published by a referenced one, and absence of a responder is never reported.
 /// </summary>
 public sealed class RequestCallCheckTests : TestBase
@@ -71,7 +71,7 @@ public sealed class RequestCallCheckTests : TestBase
         var driver = GeneratorTestHelper.Run(source);
 
         // then
-        _HM013(driver).Should().BeEmpty();
+        _HM014(driver).Should().BeEmpty();
     }
 
     [Fact]
@@ -84,7 +84,7 @@ public sealed class RequestCallCheckTests : TestBase
         var driver = GeneratorTestHelper.Run(source);
 
         // then
-        _HM013(driver).Should().BeEmpty();
+        _HM014(driver).Should().BeEmpty();
     }
 
     [Fact]
@@ -113,7 +113,7 @@ public sealed class RequestCallCheckTests : TestBase
         var driver = GeneratorTestHelper.Run("Checkout", source, [responderAssembly], out _, out _);
 
         // then
-        _HM013(driver).Should().BeEmpty();
+        _HM014(driver).Should().BeEmpty();
     }
 
     [Fact]
@@ -166,7 +166,7 @@ public sealed class RequestCallCheckTests : TestBase
         var driver = GeneratorTestHelper.Run(source);
 
         // then
-        _HM013(driver).Should().BeEmpty();
+        _HM014(driver).Should().BeEmpty();
     }
 
     [Fact]
@@ -197,7 +197,7 @@ public sealed class RequestCallCheckTests : TestBase
         var driver = GeneratorTestHelper.Run(source);
 
         // then
-        _HM013(driver).Should().BeEmpty();
+        _HM014(driver).Should().BeEmpty();
     }
 
     [Fact]
@@ -254,12 +254,12 @@ public sealed class RequestCallCheckTests : TestBase
         return output.ToMetadataReference();
     }
 
-    private static IEnumerable<Diagnostic> _HM013(GeneratorDriver driver) =>
+    private static IEnumerable<Diagnostic> _HM014(GeneratorDriver driver) =>
         GeneratorTestHelper
             .GeneratorDiagnostics(driver)
-            .Where(diagnostic => string.Equals(diagnostic.Id, "HM013", StringComparison.Ordinal));
+            .Where(diagnostic => string.Equals(diagnostic.Id, "HM014", StringComparison.Ordinal));
 
-    private static Diagnostic _Single(GeneratorDriver driver) => _HM013(driver).Should().ContainSingle().Which;
+    private static Diagnostic _Single(GeneratorDriver driver) => _HM014(driver).Should().ContainSingle().Which;
 
     private static string _Text(Diagnostic diagnostic) =>
         diagnostic.Location.SourceTree!.GetText().ToString(diagnostic.Location.SourceSpan);

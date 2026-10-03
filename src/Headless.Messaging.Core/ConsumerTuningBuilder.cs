@@ -3,6 +3,7 @@
 using Headless.Checks;
 using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Registration;
+using Headless.Reliability;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -26,6 +27,7 @@ public sealed class ConsumerTuningBuilder : IConsumerProviderConfigBuilder
     private byte? _concurrency;
     private TimeSpan? _inboxRetention;
     private ConsumerCircuitBreakerOptions? _circuitBreaker;
+    private FailurePolicyDefinition? _failurePolicy;
 
     internal ConsumerTuningBuilder(string identity)
     {
@@ -76,6 +78,34 @@ public sealed class ConsumerTuningBuilder : IConsumerProviderConfigBuilder
     }
 
     /// <summary>
+    /// Replaces the failure policy the consumer declares, or the host default when it declares none, on this host.
+    /// <c>Headless:Messaging:Consumers:{identity}:FailurePolicy</c> configuration still adjusts its retry counts and
+    /// delays. An every-instance consumer never retries, so tuning its failure policy fails startup.
+    /// </summary>
+    /// <typeparam name="TPolicy">The policy type; it is built once, during this call.</typeparam>
+    /// <returns>This builder, for chaining.</returns>
+    /// <exception cref="ArgumentException">The policy's retry counts or delays are out of range.</exception>
+    public ConsumerTuningBuilder FailurePolicy<TPolicy>()
+        where TPolicy : Reliability.FailurePolicy, new()
+    {
+        _failurePolicy = FailurePolicyDefinition.Create<TPolicy>();
+        return this;
+    }
+
+    /// <summary>
+    /// Replaces the consumer's failure policy with one described inline. See <see cref="FailurePolicy{TPolicy}"/>.
+    /// </summary>
+    /// <param name="configure">Describes the policy; it runs once, synchronously, during this call.</param>
+    /// <returns>This builder, for chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">The policy's retry counts or delays are out of range.</exception>
+    public ConsumerTuningBuilder FailurePolicy([InstantHandle] Action<FailurePolicyBuilder> configure)
+    {
+        _failurePolicy = FailurePolicyDefinition.Create(configure);
+        return this;
+    }
+
+    /// <summary>
     /// Runs <typeparamref name="TMiddleware"/> around every delivery to this consumer on this host, inside the global and
     /// per-message consume middleware. The middleware is resolved from the delivery's service scope; when it is not
     /// registered yet, it is registered as scoped.
@@ -103,7 +133,15 @@ public sealed class ConsumerTuningBuilder : IConsumerProviderConfigBuilder
     }
 
     internal ConsumerTuning Build() =>
-        new(Identity, _concurrency, [.. _middleware], _providerConfigs.Build(), _inboxRetention, _circuitBreaker);
+        new(
+            Identity,
+            _concurrency,
+            [.. _middleware],
+            _providerConfigs.Build(),
+            _inboxRetention,
+            _circuitBreaker,
+            _failurePolicy
+        );
 
     internal static TimeSpan ValidateInboxRetention(TimeSpan retention)
     {
@@ -124,7 +162,8 @@ internal sealed record ConsumerTuning(
     Type[] Middleware,
     IReadOnlyDictionary<Type, object> ProviderConfigs,
     TimeSpan? InboxRetention,
-    ConsumerCircuitBreakerOptions? CircuitBreaker
+    ConsumerCircuitBreakerOptions? CircuitBreaker,
+    FailurePolicyDefinition? FailurePolicy = null
 );
 
 /// <summary>One <c>Tune</c> call recorded in the service collection.</summary>

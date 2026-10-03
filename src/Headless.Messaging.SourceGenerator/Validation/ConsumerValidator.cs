@@ -24,7 +24,7 @@ internal static class ConsumerValidator
     )
     {
         var location = classIdentifier.GetLocation();
-        if (!IsAccessible(classSymbol))
+        if (!GeneratedCodeAccessibility.IsAccessible(classSymbol))
         {
             diagnostics.Add(
                 DiagnosticInfo.Create(
@@ -69,36 +69,25 @@ internal static class ConsumerValidator
     }
 
     /// <summary>
-    /// Whether code emitted into the same assembly can name <paramref name="type"/>: every named type in it, its
-    /// containing types, and its type arguments are public or internal, and none is file-local.
+    /// Checks that the generated factory <c>static () =&gt; new T()</c> compiles and yields a failure policy: the type
+    /// derives from <c>FailurePolicy</c>, is concrete and closed, is visible to generated code, and has a public
+    /// parameterless constructor.
     /// </summary>
-    public static bool IsAccessible(ITypeSymbol type)
+    public static void ValidateFailurePolicy(
+        Compilation compilation,
+        ITypeSymbol policy,
+        string className,
+        Location attributeLocation,
+        ICollection<DiagnosticInfo> diagnostics
+    )
     {
-        switch (type)
-        {
-            case IArrayTypeSymbol array:
-                return IsAccessible(array.ElementType);
-            case INamedTypeSymbol named:
-                for (INamedTypeSymbol? current = named; current is not null; current = current.ContainingType)
-                {
-                    if (
-                        current.IsFileLocal
-                        || current.DeclaredAccessibility
-                            is not (Accessibility.Public or Accessibility.Internal or Accessibility.ProtectedOrInternal)
-                    )
-                    {
-                        return false;
-                    }
-
-                    if (current.TypeArguments.Any(argument => !IsAccessible(argument)))
-                    {
-                        return false;
-                    }
-                }
-
-                return true;
-            default:
-                return false;
-        }
+        FailurePolicyType.Validate(
+            compilation,
+            policy,
+            className,
+            attributeLocation,
+            DiagnosticDescriptors.InvalidFailurePolicy,
+            diagnostics
+        );
     }
 }

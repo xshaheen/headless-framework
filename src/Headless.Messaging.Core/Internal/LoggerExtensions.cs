@@ -933,6 +933,19 @@ internal static partial class LoggerExtensions
 
     [LoggerMessage(
         EventId = 111,
+        EventName = "FailurePolicyRuleThrew",
+        Level = LogLevel.Error,
+        Message = "A FailWhen rule of the consumer's failure policy threw while classifying {ExceptionType} for message {StorageId}. The failure is treated as matched and the message fails without further retries."
+    )]
+    public static partial void FailurePolicyRuleThrew(
+        this ILogger logger,
+        Exception ex,
+        Guid storageId,
+        string exceptionType
+    );
+
+    [LoggerMessage(
+        EventId = 112,
         EventName = "ReplyAddressRefused",
         Level = LogLevel.Warning,
         Message = "The reply to request {RequestId} was not sent: its reply address '{ReplyAddress}' is outside the reserved reply namespace."
@@ -940,7 +953,7 @@ internal static partial class LoggerExtensions
     public static partial void ReplyAddressRefused(this ILogger logger, string? requestId, string? replyAddress);
 
     [LoggerMessage(
-        EventId = 112,
+        EventId = 113,
         EventName = "ReplySendFailed",
         Level = LogLevel.Warning,
         Message = "The reply to request {RequestId} could not be sent and is not retried; the caller will time out."
@@ -948,7 +961,7 @@ internal static partial class LoggerExtensions
     public static partial void ReplySendFailed(this ILogger logger, Exception exception, string? requestId);
 
     [LoggerMessage(
-        EventId = 113,
+        EventId = 114,
         EventName = "ReplyDropped",
         Level = LogLevel.Debug,
         Message = "Dropped the reply to request {RequestId}: {DropReason}."
@@ -956,7 +969,7 @@ internal static partial class LoggerExtensions
     public static partial void ReplyDropped(this ILogger logger, string? requestId, string dropReason);
 
     [LoggerMessage(
-        EventId = 114,
+        EventId = 115,
         EventName = "ReplyTenantMismatch",
         Level = LogLevel.Warning,
         Message = "Dropped the reply to request {RequestId}: it carries a different tenant than the request was sent under. The call keeps waiting and times out unless a matching reply arrives."
@@ -964,7 +977,7 @@ internal static partial class LoggerExtensions
     public static partial void ReplyTenantMismatch(this ILogger logger, string? requestId);
 
     [LoggerMessage(
-        EventId = 115,
+        EventId = 116,
         EventName = "ReplyListenerCloseFailed",
         Level = LogLevel.Warning,
         Message = "The reply listener failed to close cleanly during shutdown."
@@ -972,7 +985,7 @@ internal static partial class LoggerExtensions
     public static partial void ReplyListenerCloseFailed(this ILogger logger, Exception exception);
 
     [LoggerMessage(
-        EventId = 116,
+        EventId = 117,
         EventName = "ReplyBuildFailed",
         Level = LogLevel.Warning,
         Message = "The reply to request {RequestId} could not be built, so it is not sent; the caller will time out."
@@ -980,7 +993,7 @@ internal static partial class LoggerExtensions
     public static partial void ReplyBuildFailed(this ILogger logger, Exception exception, string? requestId);
 
     [LoggerMessage(
-        EventId = 117,
+        EventId = 118,
         EventName = "ResponderResultDiscarded",
         Level = LogLevel.Debug,
         Message = "Responder '{Consumer}' handled message {MessageId}, which is not a request; its result is discarded."
@@ -988,7 +1001,7 @@ internal static partial class LoggerExtensions
     public static partial void ResponderResultDiscarded(this ILogger logger, string? consumer, string? messageId);
 
     [LoggerMessage(
-        EventId = 118,
+        EventId = 119,
         EventName = "RequestExpiredOnReceive",
         Level = LogLevel.Information,
         Message = "Request {MessageId} (name '{MessageName}', consumer '{Consumer}') arrived after its deadline; it is committed and dropped without a reply."
@@ -1001,7 +1014,7 @@ internal static partial class LoggerExtensions
     );
 
     [LoggerMessage(
-        EventId = 119,
+        EventId = 120,
         EventName = "RequestHasNoResponder",
         Level = LogLevel.Warning,
         Message = "Request {MessageId} (name '{MessageName}') reached consumer '{Consumer}', which does not respond to requests; it is committed and dropped with a no_responder fault."
@@ -1014,7 +1027,7 @@ internal static partial class LoggerExtensions
     );
 
     [LoggerMessage(
-        EventId = 120,
+        EventId = 121,
         EventName = "RequestExpiredBeforeAttempt",
         Level = LogLevel.Information,
         Message = "Request stored as {StorageId} passed its deadline before an attempt started; it ends without running the consumer or replying."

@@ -17,6 +17,8 @@ internal static class GeneratorTestHelper
             typeof(BusConsumerAttribute).Assembly,
             typeof(Headless.Messaging.Registration.MessagingContributionBuilder).Assembly, // Messaging.Core, which samples call ConfigureMessaging from
             typeof(IRequestClient).Assembly, // Messaging.Queue.Abstractions, which request samples call
+            // The catalog's consumer methods take a failure policy factory, so generated modules compile against it.
+            typeof(Headless.Reliability.FailurePolicy).Assembly,
             typeof(ActivatorUtilities).Assembly,
             typeof(GeneratorTestHelper).Assembly
         )
