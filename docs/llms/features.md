@@ -83,11 +83,18 @@ public sealed class ReloadTenantFeatures(TenantFeatureCache cache) : IConsume<Fe
     {
         var message = context.Message;
 
-        // Scope matters: another tenant's override must not invalidate this tenant's snapshot.
-        if (
-            !string.Equals(message.ProviderName, FeatureValueProviderNames.Tenant, StringComparison.Ordinal)
-            || !string.Equals(message.ProviderKey, cache.TenantId, StringComparison.Ordinal)
-        )
+        // Scope matters: another tenant's or edition's write must not invalidate this tenant's snapshot. Its own
+        // edition's write must: a feature the tenant does not override resolves from the edition.
+        var concernsThisTenant = message.ProviderName switch
+        {
+            FeatureValueProviderNames.Tenant =>
+                string.Equals(message.ProviderKey, cache.TenantId, StringComparison.Ordinal),
+            FeatureValueProviderNames.Edition =>
+                string.Equals(message.ProviderKey, cache.EditionId, StringComparison.Ordinal),
+            _ => false,
+        };
+
+        if (!concernsThisTenant)
         {
             return;
         }
@@ -98,13 +105,11 @@ public sealed class ReloadTenantFeatures(TenantFeatureCache cache) : IConsume<Fe
         }
     }
 
-    // Announcements published while this process was not subscribed never arrive.
+    // Announcements published while this process was not subscribed never arrive. That includes the first
+    // establishment: anything loaded at startup was read before the subscription went live.
     public async ValueTask OnSubscriptionEstablishedAsync(SubscriptionEstablishedContext context, CancellationToken ct)
     {
-        if (context.IsReconnect)
-        {
-            await cache.ReloadAsync(ct);
-        }
+        await cache.ReloadAsync(ct);
     }
 }
 ```
@@ -116,6 +121,8 @@ The message carries feature names and the scope where they changed, never values
 The announcement follows a committed write. A feature write never joins a unit of work the caller has open: the EF store saves through a fresh context from `IDbContextFactory<TContext>`, and the PostgreSQL and SQL Server stores open their own connection and transaction. `SetAsync` commits before it returns, even inside a caller's `RunAsync(db, …)`, and the message goes out after that commit, so a peer that re-reads on it loads the new value. The write is not atomic with the caller's other writes: a `SetAsync` inside a unit that later rolls back leaves the feature value changed.
 
 This signal is separate from cache coherence, which `FeatureValueStore` already handles. A store-backed write updates or evicts its cache entry, and a distributed cache propagates the change through `CacheInvalidationMessage`. `FeatureChangedMessage` covers state that the framework cannot see, such as a value that a consumer copied into a field.
+
+The two messages travel on separate subscriptions, and nothing orders them. With a hybrid cache, a peer can receive `FeatureChangedMessage` before its own `CacheInvalidationMessage`, re-read, and get the old value from its local tier. A consumer that re-reads once on the announcement then stays stale until its next refresh. Re-read again a few seconds later when the first read shows no change, or rely on a periodic refresh.
 
 ### Startup Initialization
 

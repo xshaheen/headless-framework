@@ -124,13 +124,11 @@ public sealed class ReloadRolePermissions(MyPolicyCache cache) : IConsume<Permis
         }
     }
 
-    // Announcements published while this process was not subscribed never arrive.
+    // Announcements published while this process was not subscribed never arrive. That includes the first
+    // establishment: anything loaded at startup was read before the subscription went live.
     public async ValueTask OnSubscriptionEstablishedAsync(SubscriptionEstablishedContext context, CancellationToken ct)
     {
-        if (context.IsReconnect)
-        {
-            await cache.ReloadAsync(ct);
-        }
+        await cache.ReloadAsync(ct);
     }
 }
 ```
@@ -142,6 +140,8 @@ The message carries permission names and the scope that changed, never grant val
 The announcement follows a committed write. A grant write never joins a unit of work the caller has open: the EF store saves through a fresh context from `IDbContextFactory<TContext>`, and the PostgreSQL and SQL Server stores open their own connection and transaction. `SetAsync` commits before it returns, even inside a caller's `RunAsync(db, …)`, and the message goes out after that commit, so a peer that re-reads on it loads the new grant. The write is not atomic with the caller's other writes: a `SetAsync` inside a unit that later rolls back leaves the grant changed.
 
 This signal is separate from grant-cache coherence. A store-backed write evicts the affected cache entries directly. `PermissionGrantChangedMessage` exists for state the framework cannot see, such as a resolved grant decision that a consumer copied into a field of its own.
+
+The two messages travel on separate subscriptions, and nothing orders them. With a hybrid grant cache, a peer can receive `PermissionGrantChangedMessage` before its own `CacheInvalidationMessage`, re-read, and get the old grant from its local tier. A consumer that re-reads once on the announcement then keeps a revoked grant until its next refresh. Re-read again a few seconds later when the first read shows no change, and keep the periodic refresh short: a copied grant decision is only as current as its last re-read.
 
 ### Static vs. Dynamic Definition Store
 
