@@ -14,7 +14,7 @@
 
 [اللغة: العربية](README.ar.md)
 
-197 packages &bull; One setup grammar &bull; Swap any provider in one line
+198 packages &bull; One setup grammar &bull; Swap any provider in one line
 
 [Why Headless](#why-headless) &bull; [60-second start](#60-second-start) &bull; [One grammar, every domain](#one-grammar-every-domain) &bull; [What is in the box](#what-is-in-the-box) &bull; [Package catalog](#package-catalog)
 
@@ -44,7 +44,7 @@ builder.Services.AddHeadlessCaching(setup => setup.UseRedis(...)); // production
 
 Every service, repository, and handler that injects `ICache` is untouched by that edit. The same holds for `IBlobStorage` across S3, Azure, Cloudflare R2, the file system, Redis, and SFTP; for `IEmailSender` across SES, Azure Communication Services, and SMTP; and for messaging across eight transports.
 
-**You install three packages, not 197.** The catalog is large because the provider matrix is large. A service that needs caching installs `Headless.Caching.Abstractions`, `Headless.Caching.Core`, and one provider. Domain and application libraries reference the abstraction package alone. `Headless.Caching.Abstractions` pulls in one thing: `Headless.Extensions`.
+**You install three packages, not 198.** The catalog is large because the provider matrix is large. A service that needs caching installs `Headless.Caching.Abstractions`, `Headless.Caching.Core`, and one provider. Domain and application libraries reference the abstraction package alone. `Headless.Caching.Abstractions` pulls in two packages with no third-party dependencies: `Headless.Checks` and `Headless.Primitives`.
 
 **Tests do not need Docker to be fast.** Caching, distributed locks, and messaging ship in-memory providers; email, SMS, and push notifications ship dev providers that send nothing; blob storage runs against the local file system. Unit tests exercise the real contract with no containers. When you want the real backend, `Headless.Testing.Testcontainers` supplies the fixtures. The repository itself runs 122 unit-test projects and 63 integration-test projects on that split.
 
@@ -252,7 +252,7 @@ Provider packages are ordinary NuGet packages. To add a custom backend, implemen
 ## Package catalog
 
 <details>
-<summary><strong>All 197 packages, grouped by domain</strong> — expand to browse</summary>
+<summary><strong>All 198 packages, grouped by domain</strong> — expand to browse</summary>
 
 ### API & Web
 
@@ -693,6 +693,7 @@ Cross-cutting utilities that belong to no single domain.
 | [Headless.Hosting](src/Headless.Hosting/README.md) | .NET hosting utilities |
 | [Headless.Http.Resilience](src/Headless.Http.Resilience/README.md) | Declared side-effect classes for outbound HTTP calls |
 | [Headless.NetTopologySuite](src/Headless.NetTopologySuite/README.md) | Geospatial utilities |
+| [Headless.PhoneNumbers](src/Headless.PhoneNumbers/README.md) | Phone number formatting, normalization, and validation (libphonenumber) |
 | [Headless.Primitives](src/Headless.Primitives/README.md) | Value objects, result pattern, paging models, and domain primitives |
 | [Headless.Redis](src/Headless.Redis/README.md) | Redis utilities |
 | [Headless.Sitemaps](src/Headless.Sitemaps/README.md) | XML sitemap generation |

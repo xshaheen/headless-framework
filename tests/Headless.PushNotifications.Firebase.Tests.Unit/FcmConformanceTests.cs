@@ -2,7 +2,7 @@
 
 using Headless.PushNotifications;
 using Headless.PushNotifications.Firebase;
-using Headless.PushNotifications.Firebase.Internals;
+using Headless.PushNotifications.Firebase.Internal;
 
 namespace Tests;
 

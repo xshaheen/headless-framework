@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
-using Humanizer;
 
 namespace Headless.Features.Models;
 
@@ -38,22 +37,22 @@ public sealed class FeatureManagementOptions
     public string CrossApplicationsCommonLockKey { get; set; } = "features:common_update_lock";
 
     /// <summary>How long the cross-application common lock may be held before it expires. Default: 10 minutes.</summary>
-    public TimeSpan CrossApplicationsCommonLockExpiration { get; set; } = 10.Minutes();
+    public TimeSpan CrossApplicationsCommonLockExpiration { get; set; } = TimeSpan.FromMinutes(10);
 
     /// <summary>Maximum time to wait when acquiring the cross-application common lock. Default: 5 minutes.</summary>
-    public TimeSpan CrossApplicationsCommonLockAcquireTimeout { get; set; } = 5.Minutes();
+    public TimeSpan CrossApplicationsCommonLockAcquireTimeout { get; set; } = TimeSpan.FromMinutes(5);
 
     /// <summary>How long the per-application save lock may be held before it expires. Default: 10 minutes.</summary>
-    public TimeSpan ApplicationSaveLockExpiration { get; set; } = 10.Minutes();
+    public TimeSpan ApplicationSaveLockExpiration { get; set; } = TimeSpan.FromMinutes(10);
 
     /// <summary>Maximum time to wait when acquiring the per-application save lock. Default: 5 minutes.</summary>
-    public TimeSpan ApplicationSaveLockAcquireTimeout { get; set; } = 5.Minutes();
+    public TimeSpan ApplicationSaveLockAcquireTimeout { get; set; } = TimeSpan.FromMinutes(5);
 
     /// <summary>How long the per-application feature hash is cached in the distributed cache. Default: 30 days.</summary>
-    public TimeSpan FeaturesHashCacheExpiration { get; set; } = 30.Days();
+    public TimeSpan FeaturesHashCacheExpiration { get; set; } = TimeSpan.FromDays(30);
 
     /// <summary>How long the shared "features updated" stamp is retained in the distributed cache. Default: 30 days.</summary>
-    public TimeSpan CommonFeaturesUpdatedStampCacheExpiration { get; set; } = 30.Days();
+    public TimeSpan CommonFeaturesUpdatedStampCacheExpiration { get; set; } = TimeSpan.FromDays(30);
 
     /// <summary>
     /// Distributed cache key for the shared stamp that signals all instances to refresh their in-process caches.
@@ -65,7 +64,7 @@ public sealed class FeatureManagementOptions
     /// How long dynamic feature definitions are held in the in-process memory cache before the distributed cache stamp
     /// is re-checked. Default: 30 seconds.
     /// </summary>
-    public TimeSpan DynamicDefinitionsMemoryCacheExpiration { get; set; } = 30.Seconds();
+    public TimeSpan DynamicDefinitionsMemoryCacheExpiration { get; set; } = TimeSpan.FromSeconds(30);
 
     /// <summary>
     /// Optional named cache instance or store role-key used for feature-value caching.

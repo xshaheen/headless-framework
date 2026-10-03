@@ -4,7 +4,7 @@ using System.Collections.Concurrent;
 using System.Net;
 using Headless.PushNotifications;
 using Headless.PushNotifications.Apns;
-using Headless.PushNotifications.Apns.Internals;
+using Headless.PushNotifications.Apns.Internal;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;

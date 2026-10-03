@@ -6,7 +6,6 @@ using Headless.Checks;
 using Headless.Features.Definitions;
 using Headless.Features.Entities;
 using Headless.Features.Repositories;
-using Humanizer;
 
 namespace Headless.Features.Values;
 
@@ -101,7 +100,7 @@ public sealed class FeatureValueStore(
     ICache cache
 ) : IFeatureValueStore
 {
-    private readonly TimeSpan _cacheExpiration = 5.Hours();
+    private readonly TimeSpan _cacheExpiration = TimeSpan.FromHours(5);
 
     /// <summary>How many times a batch is planned and saved before a concurrent-writer collision is surfaced.</summary>
     private const int _MaxSaveAttempts = 3;

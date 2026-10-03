@@ -8,7 +8,6 @@ using Headless.Serializer.Modifiers;
 using Headless.Settings.Entities;
 using Headless.Settings.Models;
 using Headless.Settings.Repositories;
-using Humanizer;
 using Microsoft.Extensions.Options;
 using Nito.AsyncEx;
 
@@ -247,7 +246,11 @@ public sealed class DynamicSettingDefinitionStore(
             await distributedLockProvider
                 .TryAcquireAsync(
                     _options.CrossApplicationsCommonLockKey,
-                    new DistributedLockAcquireOptions { TimeUntilExpires = 10.Minutes(), AcquireTimeout = 5.Minutes() },
+                    new DistributedLockAcquireOptions
+                    {
+                        TimeUntilExpires = TimeSpan.FromMinutes(10),
+                        AcquireTimeout = TimeSpan.FromMinutes(5),
+                    },
                     cancellationToken
                 )
                 .ConfigureAwait(false)

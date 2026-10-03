@@ -1,12 +1,12 @@
 ---
 title: "Namespace policy: root-namespace anchor, shared family roots, three-tier placement"
 date: 2026-09-18
-last_updated: 2026-09-18
+last_updated: 2026-10-03
 module: headless-framework
 problem_type: convention
 component: package_structure
 severity: high
-tags: [namespaces, package-structure, extension-methods, cs0433]
+tags: [namespaces, package-structure, extension-methods, cs0433, internal]
 related_components:
   - provider_packages
   - registration_surface
@@ -85,6 +85,14 @@ could also plausibly pick. Never use a bare BCL-collision name such as `ServiceC
 **Deliberate exception to tier 3:** a helper whose foreign namespace would be root `System` on a near-universal
 type — `object.ToObject<T>` in `Headless.Serializer` — stays in its Headless namespace. Injecting into root
 `System` on `object` is pollution, not discoverability.
+
+## Implementation helpers live in `Internal`
+
+A package's non-public helpers sit in an `Internal/` folder under the `<RootNamespace>.Internal` namespace
+(`Headless.Messaging.Internal`, `Headless.Primitives.Internal`). The name is singular and never `Internals`. It
+marks a visibility tier rather than naming a group of types, as `Microsoft.EntityFrameworkCore.Internal` and
+`Microsoft.Extensions.*.Internal` do. A folder file name never carries a leading underscore. Name the file after
+its holder class.
 
 ## Augmentation packages
 

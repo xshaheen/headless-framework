@@ -2,7 +2,7 @@
 
 using Headless.Checks;
 using Headless.PushNotifications.Firebase;
-using Headless.PushNotifications.Firebase.Internals;
+using Headless.PushNotifications.Firebase.Internal;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;

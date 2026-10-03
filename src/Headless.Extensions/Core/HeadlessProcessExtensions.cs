@@ -2,12 +2,13 @@
 
 using System.Collections;
 using System.ComponentModel;
-using System.Reactive.Linq;
+using System.Runtime.CompilerServices;
+using System.Threading.Channels;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace System.Diagnostics;
 
-/// <summary>Extension methods for running a <see cref="Process"/> from a <see cref="ProcessStartInfo"/> as a task or observable, plus safe termination.</summary>
+/// <summary>Extension methods for running a <see cref="Process"/> from a <see cref="ProcessStartInfo"/> as a task or an asynchronous output stream, plus safe termination.</summary>
 public static class HeadlessProcessExtensions
 {
     /// <summary>
@@ -122,119 +123,139 @@ public static class HeadlessProcessExtensions
     }
 
     /// <summary>
-    /// Runs the process described by <paramref name="psi"/> and exposes its standard output/error and exit code as an
-    /// observable sequence, allowing reactive-style consumption of the streamed lines.
+    /// Runs the process described by <paramref name="psi"/> and streams its standard output/error lines as they are
+    /// printed, followed by a final exit-code item.
     /// </summary>
     /// <param name="psi">The <see cref="ProcessStartInfo"/> describing the process to start and which streams to redirect.</param>
+    /// <param name="cancellationToken">A token that, when canceled, terminates the process tree and ends the enumeration.</param>
     /// <returns>
-    /// An <see cref="IObservable{T}"/> that streams the process output.
-    /// OnNext: each standard output/error line as it is printed, then a final exit-code item.
-    /// OnError: an <see cref="InvalidOperationException"/> when the process cannot be started.
+    /// An <see cref="IAsyncEnumerable{T}"/> that starts the process when enumeration begins and yields each standard
+    /// output/error line in arrival order, then exactly one <see cref="ProcessStreamedOutputType.ExitCode"/> item.
+    /// Ending the enumeration early, by breaking out of the loop or by cancellation, terminates the process tree.
     /// </returns>
-    public static IObservable<ProcessObservedOutput> RunAsObservable(this ProcessStartInfo psi)
+    /// <exception cref="InvalidOperationException">Thrown during enumeration when the process cannot start.</exception>
+    /// <exception cref="OperationCanceledException">Thrown during enumeration when <paramref name="cancellationToken"/> is canceled.</exception>
+    public static async IAsyncEnumerable<ProcessStreamedOutput> RunAndStreamAsync(
+        this ProcessStartInfo psi,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default
+    )
     {
-        return Observable.Create<ProcessObservedOutput>(
-            async (observer, cancellationToken) =>
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // stdout and stderr DataReceived callbacks fire on independent thread-pool threads; an unbounded channel
+        // accepts concurrent writers and never rejects TryWrite, so neither callback can drop or block on a line.
+        var channel = Channel.CreateUnbounded<ProcessStreamedOutput>(
+            new UnboundedChannelOptions { SingleReader = true }
+        );
+
+        var process = new Process();
+        Task? exited = null;
+
+        try
+        {
+            process.StartInfo = psi;
+
+            if (psi.RedirectStandardError)
             {
-                using var process = new Process();
-
-                process.StartInfo = psi;
-
-                // stdout and stderr DataReceived callbacks fire on independent thread-pool threads. Rx requires
-                // OnNext to be serialized, so gate both handlers on a shared lock to honor the observer grammar.
-                var gate = new Lock();
-
-                if (psi.RedirectStandardError)
+                process.ErrorDataReceived += (_, e) =>
                 {
-                    process.ErrorDataReceived += (_, e) =>
+                    if (e.Data is not null)
                     {
-                        if (e.Data is null)
-                        {
-                            return;
-                        }
-
-                        lock (gate)
-                        {
-                            observer.OnNext(new ProcessObservedOutput(ProcessObservedOutputType.StandardError, e.Data));
-                        }
-                    };
-                }
-
-                if (psi.RedirectStandardOutput)
-                {
-                    process.OutputDataReceived += (_, e) =>
-                    {
-                        if (e.Data is null)
-                        {
-                            return;
-                        }
-
-                        lock (gate)
-                        {
-                            observer.OnNext(
-                                new ProcessObservedOutput(ProcessObservedOutputType.StandardOutput, e.Data)
-                            );
-                        }
-                    };
-                }
-
-                if (!process.Start())
-                {
-                    observer.OnError(new InvalidOperationException("Cannot start the process"));
-
-                    return;
-                }
-
-                if (psi.RedirectStandardError)
-                {
-                    process.BeginErrorReadLine();
-                }
-
-                if (psi.RedirectStandardOutput)
-                {
-                    process.BeginOutputReadLine();
-                }
-
-                if (psi.RedirectStandardInput)
-                {
-                    process.StandardInput.Close();
-                }
-
-                CancellationTokenRegistration registration = default;
-
-                try
-                {
-                    if (cancellationToken.CanBeCanceled && !process.HasExited)
-                    {
-                        registration = cancellationToken.Register(process.TryToKill);
+                        channel.Writer.TryWrite(
+                            new ProcessStreamedOutput(ProcessStreamedOutputType.StandardError, e.Data)
+                        );
                     }
+                };
+            }
 
-                    await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
-                }
-                finally
+            if (psi.RedirectStandardOutput)
+            {
+                process.OutputDataReceived += (_, e) =>
                 {
-                    await registration.DisposeAsync().ConfigureAwait(false);
+                    if (e.Data is not null)
+                    {
+                        channel.Writer.TryWrite(
+                            new ProcessStreamedOutput(ProcessStreamedOutputType.StandardOutput, e.Data)
+                        );
+                    }
+                };
+            }
+
+            if (!process.Start())
+            {
+                throw new InvalidOperationException("Cannot start the process");
+            }
+
+            if (psi.RedirectStandardError)
+            {
+                process.BeginErrorReadLine();
+            }
+
+            if (psi.RedirectStandardOutput)
+            {
+                process.BeginOutputReadLine();
+            }
+
+            if (psi.RedirectStandardInput)
+            {
+                process.StandardInput.Close();
+            }
+
+#pragma warning disable CA2025 // False positive: the finally block awaits this task before it disposes the process, on every path.
+            exited = _CompleteOnExitAsync(process, channel.Writer);
+#pragma warning restore CA2025
+
+            await foreach (var item in channel.Reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
+            {
+                yield return item;
+            }
+        }
+        finally
+        {
+            if (exited is not null)
+            {
+                // The consumer stopped before the process exited: by cancellation, an exception, or breaking out of
+                // the loop. Kill the tree so it does not outlive the enumeration, then wait so the process is not
+                // disposed while its stdio callbacks are still draining.
+                if (!exited.IsCompleted)
+                {
+                    process.TryToKill();
                 }
 
-                // Drain any buffered stdout/stderr callbacks before signalling completion.
-                // WaitForExitAsync returns as soon as the process exits, but async stdio event
-                // callbacks may still be in-flight. The no-argument WaitForExit() blocks until
-                // all redirected streams have been fully read, ensuring OnNext is never called
-                // after OnCompleted (which would violate the Rx contract).
+                await exited.ConfigureAwait(false);
+            }
+
+            process.Dispose();
+        }
+    }
+
+    private static async Task _CompleteOnExitAsync(Process process, ChannelWriter<ProcessStreamedOutput> writer)
+    {
+        try
+        {
+            await process.WaitForExitAsync().ConfigureAwait(false);
+
+            // WaitForExitAsync returns as soon as the process exits, but async stdio event callbacks may still be
+            // in-flight. The no-argument WaitForExit() blocks until all redirected streams have been fully read, so
+            // the exit-code item is always the last one written.
 #pragma warning disable CA1849 // Synchronous WaitForExit() is intentional: the async overload does not guarantee redirected stdio has drained.
-                process.WaitForExit();
+            process.WaitForExit();
 #pragma warning restore CA1849
 
-                observer.OnNext(
-                    new ProcessObservedOutput(
-                        ProcessObservedOutputType.ExitCode,
-                        process.ExitCode.ToString(CultureInfo.InvariantCulture)
-                    )
-                );
+            writer.TryWrite(
+                new ProcessStreamedOutput(
+                    ProcessStreamedOutputType.ExitCode,
+                    process.ExitCode.ToString(CultureInfo.InvariantCulture)
+                )
+            );
 
-                observer.OnCompleted();
-            }
-        );
+            writer.TryComplete();
+        }
+        catch (Exception exception)
+        {
+            // Hand any failure to the reader instead of losing it on an unobserved task.
+            writer.TryComplete(exception);
+        }
     }
 
     /// <summary>
@@ -268,12 +289,12 @@ public static class HeadlessProcessExtensions
     }
 }
 
-#region Run As Observable Return Types
+#region Run And Stream Return Types
 
-/// <summary>A single item streamed by <see cref="HeadlessProcessExtensions.RunAsObservable(ProcessStartInfo)"/>: an output line or the final exit code.</summary>
+/// <summary>A single item streamed by <see cref="HeadlessProcessExtensions.RunAndStreamAsync(ProcessStartInfo,CancellationToken)"/>: an output line or the final exit code.</summary>
 /// <param name="Type">Whether this item is standard output, standard error, or the exit code.</param>
 /// <param name="Text">The output line text, or the exit code rendered as a string.</param>
-public sealed record ProcessObservedOutput(ProcessObservedOutputType Type, string Text)
+public sealed record ProcessStreamedOutput(ProcessStreamedOutputType Type, string Text)
 {
     /// <summary>Returns the text, prefixed with <c>"error: "</c> for standard-error items.</summary>
     /// <returns>The formatted representation of this item.</returns>
@@ -281,16 +302,16 @@ public sealed record ProcessObservedOutput(ProcessObservedOutputType Type, strin
     {
         return Type switch
         {
-            ProcessObservedOutputType.StandardError => "error: " + Text,
+            ProcessStreamedOutputType.StandardError => "error: " + Text,
             _ => Text,
         };
     }
 }
 
-/// <summary>Identifies the kind of item produced by <see cref="HeadlessProcessExtensions.RunAsObservable(ProcessStartInfo)"/>.</summary>
+/// <summary>Identifies the kind of item produced by <see cref="HeadlessProcessExtensions.RunAndStreamAsync(ProcessStartInfo,CancellationToken)"/>.</summary>
 /// <remarks>Additional members may be added in future versions; consumers switching on this enum should include a default case.</remarks>
 [PublicAPI]
-public enum ProcessObservedOutputType
+public enum ProcessStreamedOutputType
 {
     /// <summary>A line written to standard output.</summary>
     StandardOutput = 0,

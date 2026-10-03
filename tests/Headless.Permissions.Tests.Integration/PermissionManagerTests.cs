@@ -8,7 +8,6 @@ using Headless.Primitives;
 using Headless.Testing.Helpers;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using MoreLinq;
 using Tests.TestSetup;
 
 namespace Tests;
@@ -121,8 +120,9 @@ public sealed class PermissionManagerTests(PermissionsTestFixture fixture) : Per
 
         var permissions = await permissionManager.GetAllAsync(currentUser, cancellationToken: AbortToken);
         permissions.Should().HaveCount(16);
-        var (granted, notGranted) = permissions.Partition(x => x.IsGranted);
-        var grantedPermission = granted.First();
+        var granted = permissions.Where(x => x.IsGranted).ToList();
+        var notGranted = permissions.Where(x => !x.IsGranted).ToList();
+        var grantedPermission = granted[0];
         grantedPermission.Name.Should().Be(somePermission.Name);
         notGranted.Should().HaveCount(15);
 

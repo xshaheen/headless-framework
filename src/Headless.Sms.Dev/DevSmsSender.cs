@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Headless.Sms.Dev.Internals;
+using Headless.Sms.Dev.Internal;
 
 namespace Headless.Sms.Dev;
 

@@ -1,24 +1,29 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Microsoft.AspNetCore.Http.Features;
-using Microsoft.Extensions.DiagnosticAdapter;
 using Microsoft.Extensions.Logging;
 
 namespace Headless.Api.Diagnostics;
 
 /// <summary>
-/// Diagnostic adapter that subscribes to the Kestrel bad-request event and writes a structured
-/// warning log entry. Register with <c>DiagnosticListener.SubscribeWithAdapter</c> on the
+/// Diagnostic observer that subscribes to the Kestrel bad-request event and writes a structured
+/// warning log entry. Register with <c>DiagnosticListener.Subscribe(observer, IsEnabled)</c> on the
 /// process-wide <see cref="System.Diagnostics.DiagnosticListener"/>.
 /// </summary>
 /// <seealso href="https://learn.microsoft.com/en-us/aspnet/core/fundamentals/servers/kestrel/diagnostics"/>
-internal sealed partial class BadRequestDiagnosticAdapter(ILogger logger)
+internal sealed partial class BadRequestDiagnosticAdapter(ILogger logger) : IObserver<KeyValuePair<string, object?>>
 {
-    /// <summary>Handles the <see cref="DiagnosticSources.KestrelOnBadRequest"/> diagnostic event.</summary>
-    [DiagnosticName(DiagnosticSources.KestrelOnBadRequest)]
-    public void OnBadRequest(KeyValuePair<string, object?> value)
+    /// <summary>Whether this observer handles the named diagnostic event.</summary>
+    public static bool IsEnabled(string eventName)
     {
-        if (value.Value is not IFeatureCollection featureCollection)
+        return string.Equals(eventName, DiagnosticSources.KestrelOnBadRequest, StringComparison.Ordinal);
+    }
+
+    /// <summary>Handles the <see cref="DiagnosticSources.KestrelOnBadRequest"/> diagnostic event.</summary>
+    /// <param name="value">The event name and its payload; Kestrel passes the connection's <see cref="IFeatureCollection"/>.</param>
+    public void OnNext(KeyValuePair<string, object?> value)
+    {
+        if (!IsEnabled(value.Key) || value.Value is not IFeatureCollection featureCollection)
         {
             return;
         }
@@ -30,6 +35,10 @@ internal sealed partial class BadRequestDiagnosticAdapter(ILogger logger)
             BadRequestEvent(logger, badRequestFeature.Error);
         }
     }
+
+    public void OnError(Exception error) { }
+
+    public void OnCompleted() { }
 
     [LoggerMessage(
         EventId = 5104,

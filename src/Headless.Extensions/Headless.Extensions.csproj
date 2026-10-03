@@ -6,10 +6,6 @@
     <RootNamespace>Headless</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="CommunityToolkit.HighPerformance" />
-    <PackageReference Include="Humanizer.Core" />
-    <PackageReference Include="Microsoft.Bcl.TimeProvider" />
-    <PackageReference Include="morelinq" />
     <!-- Exclude contentfiles to avoid parallel build race condition with .pp preprocessing.
          Instead, we preprocess the .pp file ourselves in _PreprocessMimeTypes target below. -->
     <PackageReference Include="MimeTypes" GeneratePathProperty="true">
@@ -18,10 +14,6 @@
     </PackageReference>
     <PackageReference Include="Nito.AsyncEx" />
     <PackageReference Include="Nito.Disposables" />
-    <PackageReference Include="libphonenumber-csharp" />
-    <PackageReference Include="Polly.Core" />
-    <PackageReference Include="System.Reactive" />
-    <PackageReference Include="TimeZoneConverter" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />

@@ -8,7 +8,6 @@ using System.Runtime.CompilerServices;
 using Headless.Checks;
 using Headless.Primitives;
 using Headless.Reflection;
-using Humanizer;
 
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace System;
@@ -133,7 +132,16 @@ public static class HeadlessEnumExtensions
 
                     displayName = value.GetFirstAttribute<DisplayAttribute>()?.Name;
 
-                    return !string.IsNullOrWhiteSpace(displayName) ? displayName : value.ToString().Humanize();
+                    if (!string.IsNullOrWhiteSpace(displayName))
+                    {
+                        return displayName;
+                    }
+
+                    var name = value.ToString();
+
+                    // Enum member names never start with a digit or a sign, so this is an undefined value's number
+                    // ("999", "-5"): keep it intact instead of splitting it into words.
+                    return name.Length > 0 && (char.IsDigit(name[0]) || name[0] == '-') ? name : name.ToSentence();
                 }
             );
         }

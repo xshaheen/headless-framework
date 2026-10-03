@@ -1,6 +1,6 @@
 ---
 domain: Utilities
-packages: FluentValidation, Generator.Primitives, Generator.Primitives.Abstractions, Hosting, Http.Resilience, NetTopologySuite, Redis, Sitemaps, Slugs
+packages: FluentValidation, Generator.Primitives, Generator.Primitives.Abstractions, Hosting, Http.Resilience, NetTopologySuite, PhoneNumbers, Redis, Sitemaps, Slugs
 ---
 
 # Utilities
@@ -12,9 +12,10 @@ packages: FluentValidation, Generator.Primitives, Generator.Primitives.Abstracti
 Install individually as needed -- these packages are independent of each other:
 
 - **Generator.Primitives + Generator.Primitives.Abstractions** -- Roslyn source generator for strongly-typed domain primitives (IDs, value types). Install both together. Define types implementing `IPrimitive<T>` and get auto-generated equality, JSON converters, EF Core value converters, Dapper handlers, and TypeConverters.
-- **FluentValidation** -- Enterprise validators on top of FluentValidation: phone numbers (`InternationalPhoneNumber()`, `MobilePhoneNumber()`), national IDs, collections, geo, pagination, URLs, IP addresses, string formats (slug/username/hex color/Base64/…), relative date/time (`InThePast()`/`MinimumAge()`, `TimeProvider`-based), enum names, and markup rejection (`NoScripts()`). Use `ErrorDescriptor` for structured API errors.
+- **FluentValidation** -- Enterprise validators on top of FluentValidation: national IDs, collections, geo, pagination, URLs, IP addresses, string formats (slug/username/hex color/Base64/…), relative date/time (`InThePast()`/`MinimumAge()`, `TimeProvider`-based), enum names, and markup rejection (`NoScripts()`). Use `ErrorDescriptor` for structured API errors.
 - **Http.Resilience** -- declare an outbound provider client's side-effect class (`OutboundEffect.Safe | Idempotent | Unsafe`) and derive its HttpClient resilience pipeline from it with `AddEffectResilienceHandler`. Used by the SMS and Paymob packages.
 - **Hosting** -- DI extensions (`AddIf`, `AddOrReplace*`, `Unregister<T>`), options validation with FluentValidation (`AddOptionsWithFluentValidation<T,V>`), database seeder infrastructure (`ISeeder`).
+- **PhoneNumbers** -- libphonenumber-backed phone number formatting, normalization, and parsing for the `PhoneNumber` value object, mobile-number validation, and the phone FluentValidation rules (`InternationalPhoneNumber()`, `MobilePhoneNumber()`, …).
 - **NetTopologySuite** -- Geometry precision, permissive operations, SQL Server geography sanitization (`SanitizeForSqlGeography()`), polygon simplification.
 - **Redis** -- definition-first Lua script loading/execution with StackExchange.Redis.
 - **Sitemaps** -- XML sitemap generation (`SitemapUrl`, `SitemapIndexBuilder`) with localized URL and image support.
@@ -25,7 +26,8 @@ CAPTCHA verification (Google reCAPTCHA v2/v3, Cloudflare Turnstile) moved out of
 ## Agent Rules
 
 - Use `Generator.Primitives` + `Generator.Primitives.Abstractions` **together** for strongly-typed domain primitives. Define a `readonly partial struct` implementing `IPrimitive<T>` with a static `Validate` method. The source generator handles everything else.
-- Use `Headless.FluentValidation` for validators, not raw `FluentValidation`. It provides `InternationalPhoneNumber()`, `EgyptianNationalId()`, `UniqueElements()`, `Latitude()`, `Longitude()`, `PageIndex()`, `PageSize()`, `Id()`, and more.
+- Use `Headless.FluentValidation` for validators, not raw `FluentValidation`. It provides `EgyptianNationalId()`, `UniqueElements()`, `Latitude()`, `Longitude()`, `PageIndex()`, `PageSize()`, `Id()`, and more.
+- Use `Headless.PhoneNumbers` for phone validation and formatting: the `InternationalPhoneNumber()`, `MobilePhoneNumber()`, and `PhoneNumber(countryCode)` rules, and `GetInternationalFormat()` / `Normalize()` on `PhoneNumber`. `PhoneNumber` itself lives in `Headless.Primitives` and carries no libphonenumber dependency.
 - Use `ErrorDescriptor` with `.WithErrorDescriptor()` for structured API error responses. Convert results via `result.Errors.ToErrorDescriptors()`.
 - Use `Headless.Hosting` for DI helpers. Key methods: `AddIf(condition, action)`, `AddIfElse(condition, ifAction, elseAction)`, `AddOrReplaceSingleton<TService, TImpl>()`, `Configure<TOptions, TValidator>(configuration, name)`.
 - Use `ISeeder` from Hosting for database seeding; register with `services.AddSeeder<T>()`. Run all seeders with `await app.Services.SeedAsync()` at startup. Use `[SeederPriority(n)]` to control order (lower runs first, default `0`); EF migrations seed first via `AddDbMigrationSeeder<TContext>()` (`SeederPriority` `int.MinValue`).
@@ -41,7 +43,6 @@ Extension library for FluentValidation providing additional validators and utili
 
 ### API and behavior
 
-- Phone number validation (international, country-specific, mobile-only) via `libphonenumber-csharp`
 - Egyptian National ID validation with checksum verification
 - Collection validators (unique elements, min/max counts)
 - Geo validators (latitude/longitude)
@@ -68,7 +69,6 @@ public sealed class UserValidator : AbstractValidator<User>
 {
     public UserValidator()
     {
-        RuleFor(x => x.PhoneNumber).InternationalPhoneNumber();
         RuleFor(x => x.Email).NotEmpty().EmailAddress();
         RuleFor(x => x.Roles).MinimumElements(1).UniqueElements();
         RuleFor(x => x.ApiEndpoint).HttpsOrLoopbackHttpUrl(); // HTTPS externally; HTTP only on loopback; no userinfo
@@ -77,14 +77,6 @@ public sealed class UserValidator : AbstractValidator<User>
 ```
 
 ### Setup and use
-
-#### Phone Number Validation
-
-```csharp
-RuleFor(x => x.Phone).BasicPhoneNumber(); // DataAnnotations check
-RuleFor(x => x.Phone).PhoneNumber(u => u.CountryCode); // Country-specific
-RuleFor(x => x.Phone).InternationalPhoneNumber(); // International format
-```
 
 #### Error Descriptor Integration
 
@@ -108,7 +100,6 @@ var errors = result.Errors.ToErrorDescriptors(); // IReadOnlyDictionary<string, 
 
 | Category | Validators |
 |----------|-----------|
-| Phone | `BasicPhoneNumber`, `PhoneNumber`, `InternationalPhoneNumber`, `PhoneCountryCode`, `MobilePhoneNumber`, `InternationalMobileNumber` |
 | National ID | `EgyptianNationalId` |
 | Collection | `MaximumElements`, `MinimumElements`, `UniqueElements` |
 | Geo | `Latitude`, `Longitude` |
@@ -121,6 +112,8 @@ var errors = result.Errors.ToErrorDescriptors(); // IReadOnlyDictionary<string, 
 | Safe Text | `NoScripts` |
 | Storage Identifier | `IsValidIdentifierFor(StorageProvider)` for a known dialect, `IsValidCrossProviderIdentifier` when the dialect is only known at runtime |
 | ID | `Id` (validates non-empty Guid, positive int/long) |
+
+The phone rules ship in [`Headless.PhoneNumbers`](#headlessphonenumbers), so this package carries no libphonenumber dependency. Their error codes (`g:invalid_phone_number`, `g:invalid_country_code`, `g:local_phone_number`, `g:invalid_mobile_number`) stay in `FluentValidatorErrorCodes` and `FluentValidatorErrorDescriber.PhoneNumbers`.
 
 ### Configuration
 
@@ -555,6 +548,61 @@ No configuration required.
 
 None.
 ---
+## Headless.PhoneNumbers
+
+libphonenumber-backed operations for phone numbers: formatting, normalization, region lookup, parsing, mobile-number validation, and FluentValidation rules.
+
+### API and behavior
+
+- Extension members on `Headless.Primitives.PhoneNumber` (namespace `Headless.PhoneNumbers`): `GetNationalFormat()`, `GetInternationalFormat()`, `GetRegionCodes()`, `Normalize()`, and `ToUtilsPhoneNumber()`.
+- Static extension members on `PhoneNumber`: `PhoneNumber.FromInternationalFormat(string?)`, `PhoneNumber.FromPhoneNumber(PhoneNumbers.PhoneNumber?)`, `PhoneNumber.Normalize(int code, string number)`, `PhoneNumber.NormalizeInternationalNumber(string)`, `PhoneNumber.GetNationalFormat(string?)`, and `PhoneNumber.GetInternationalFormat(string?)`.
+- `MobilePhoneNumberValidator.IsValid(...)` checks a possible mobile number by country calling code, by region code, or in international form (returning its normalized E.164 form).
+- FluentValidation rules in the `FluentValidation` namespace (`HeadlessPhoneNumberValidators`): `BasicPhoneNumber()`, `PhoneNumber(countryCodeFunc)`, `InternationalPhoneNumber()`, `MobilePhoneNumber(countryCodeFunc | regionCodeFunc)`, `InternationalMobileNumber()`, and `PhoneCountryCode()`.
+
+### Design constraints
+
+- `PhoneNumber` lives in `Headless.Primitives` and holds only `CountryCode` and a digits-only `Number`, so EF mappings, API views, and other foundation code use it without libphonenumber. Its `ToString()` returns the raw `+{CountryCode} {Number}`, not a formatted number; call `GetInternationalFormat()` for that.
+- Every formatting, normalization, and region member parses the number on each call. Cache the result when a hot path formats the same number repeatedly.
+- Inside a `Headless.*` namespace, a fully qualified `PhoneNumbers.X` now resolves to this package's `Headless.PhoneNumbers` namespace. Import libphonenumber with `using PhoneNumbers;` at file scope, or qualify it as `global::PhoneNumbers.X`.
+- Conversions to and from libphonenumber's `PhoneNumber` are explicit methods (`ToUtilsPhoneNumber()`, `PhoneNumber.FromPhoneNumber(...)`) because C# extension members cannot declare conversion operators.
+
+### Install
+
+```bash
+dotnet add package Headless.PhoneNumbers
+```
+
+### Setup and use
+
+```csharp
+using FluentValidation;
+using Headless.PhoneNumbers;
+using Headless.Primitives;
+
+public sealed class ContactValidator : AbstractValidator<Contact>
+{
+    public ContactValidator()
+    {
+        RuleFor(x => x.Phone).InternationalPhoneNumber(); // international format
+        RuleFor(x => x.Mobile).MobilePhoneNumber(x => x.CountryCode); // mobile-only, by calling code
+    }
+}
+
+var phone = PhoneNumber.FromInternationalFormat("+201018541323");
+var display = phone.GetInternationalFormat(); // "+20 10 18541323"
+var key = phone.Normalize(); // lookup-normalized form
+```
+
+### Configuration
+
+No configuration required.
+
+### Runtime behavior
+
+None. No DI registrations.
+
+---
+
 ## Headless.Redis
 
 Redis utilities and Lua script management for StackExchange.Redis.

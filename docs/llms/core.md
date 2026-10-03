@@ -10,7 +10,7 @@ packages: Core, Checks, Domain, Domain.LocalEventBus
 ## Orientation
 
 - **`Headless.Extensions`** — the framework's base utility library (result pattern, domain primitives, value objects, collections, IO, threading, reflection helpers, constants, validators). Almost every other `Headless.*` package depends on it. Documented separately — see [extensions.md](extensions.md).
-- **`Headless.Core`** — cross-cutting abstractions: `ICurrentUser`, `ICurrentLocale`, `ICurrentTimeZone`, `ITimezoneProvider`, `ICurrentPrincipalAccessor`, plus utilities (`SnappyCompressor`, `LogState` structured logging) and `AddHeadlessGuidGenerator()` for keyed GUID strategy registration. It also supplies the default `AsyncLocal`-backed implementations of the tenant-context contracts (`CurrentTenant`, `AsyncLocalCurrentTenantAccessor`, `NullCurrentTenant`, `TenantWriteGuardBypass`) — the contracts themselves (`ICurrentTenant`, `ICurrentTenantAccessor`, `ITenantWriteGuardBypass`, `CrossTenantWriteException`, `MissingTenantContextException`) live in `Headless.MultiTenancy.Abstractions` under the `Headless.MultiTenancy` namespace, which `Headless.Core` references. See [multi-tenancy.md](multi-tenancy.md) for the full tenancy surface, including the opt-in tenant catalog.
+- **`Headless.Core`** — cross-cutting abstractions: `ICurrentUser`, `ICurrentLocale`, `ICurrentTimeZone`, `ITimezoneProvider`, `ICurrentPrincipalAccessor`, plus utilities (`LogState` structured logging) and `AddHeadlessGuidGenerator()` for keyed GUID strategy registration. It also supplies the default `AsyncLocal`-backed implementations of the tenant-context contracts (`CurrentTenant`, `AsyncLocalCurrentTenantAccessor`, `NullCurrentTenant`, `TenantWriteGuardBypass`) — the contracts themselves (`ICurrentTenant`, `ICurrentTenantAccessor`, `ITenantWriteGuardBypass`, `CrossTenantWriteException`, `MissingTenantContextException`) live in `Headless.MultiTenancy.Abstractions` under the `Headless.MultiTenancy` namespace, which `Headless.Core` references. See [multi-tenancy.md](multi-tenancy.md) for the full tenancy surface, including the opt-in tenant catalog.
 - **Security** — string encryption, lookup hashes, and secret hashing (`Headless.Security.Abstractions`, `Headless.Security`, `Headless.Security.Argon2`) are documented separately — see [security.md](security.md).
 - **`Headless.Checks`** — guard clause library with `Argument` (preconditions) and `Ensure` (runtime assertions).
 - **`Headless.Domain`** — DDD abstractions: `Entity`, `AggregateRoot`, `ValueObject`, auditing interfaces, concurrency stamps, and event contracts. Domain (in-process) events use plain payloads through `IDomainEventEmitter`; integration (distributed) events use plain payloads through `IIntegrationEventEmitter`. `AggregateRoot` implements both emitters; integration events are dispatched by the ORM/messaging layer, not from this package (see [orm.md](orm.md)).
@@ -49,7 +49,7 @@ Core abstractions for building applications with multi-tenancy, user context, an
     - `ICurrentPrincipalAccessor` - Scoped `ClaimsPrincipal` access with temporary switching
     - `IPasswordGenerator` - Configurable secure password generation; remaining character pools are required only when filler or extra unique characters are needed
     - `ICancellationTokenProvider` - Cancellation token access with fallback logic
-    - `ITimezoneProvider` - Windows/IANA timezone conversion and listing
+    - `ITimezoneProvider` - Windows/IANA timezone conversion and listing; the TimeZoneConverter-backed `TzConvertTimezoneProvider` ships in `Headless.Api.Core` and is registered by its `AddHeadlessTimeService()`
     - `IHostIdentityAccessor` / `IBuildInformationAccessor` - Process identity and build info. `AddHeadlessHostIdentity()` registers the accessor (`TryAdd`, so feature packages call it too and the host's own call wins); `ApplicationName` defaults to the entry assembly title and `HostName` to `POD_NAMESPACE/POD_NAME`, then the machine name. There is no per-start instance id here on purpose: Coordination allocates the only one (`NodeIdentity`, `host@incarnation`) on top of this host name, so nothing can disagree with it. Coordination's node id, the settings/features/permissions definition-store locks, and the change-announcement origin all read from the accessor, so an override in `HostIdentityOptions` moves every subsystem at once.
     - `IEnumLocaleAccessor` - Localized enum display values
 
@@ -60,7 +60,6 @@ Core abstractions for building applications with multi-tenancy, user context, an
     - `CrossTenantWriteException` / `MissingTenantContextException` - tenant write-guard exception types (defined in `Headless.MultiTenancy.Abstractions`; non-transient, exclude from retry)
 
 - **Utilities**:
-    - `SnappyCompressor` - Snappy compression/decompression with JSON serialization (AOT-compatible)
     - `LogState` / `HeadlessLoggerExtensions` - Structured logging with fluent state builder, tags, and scoped properties
     - `AddHeadlessGuidGenerator()` - registers keyed `IGuidGenerator` strategies for Version7 and SQL Server GUID ordering, plus an unkeyed backend-agnostic default
 
@@ -100,7 +99,7 @@ logger.LogInformation(s => s.Tag("orders").Property("orderId", orderId), "Order 
 
 #### Retry and Deferred Execution
 
-For retries and delayed execution, use `Polly.Core` directly — it ships zero transitive dependencies on `net10.0`:
+For retries and delayed execution, reference the `Polly.Core` package and use it directly — the Headless foundation packages do not bring it in, and it ships zero transitive dependencies on `net10.0`:
 
 ```csharp
 using Polly;

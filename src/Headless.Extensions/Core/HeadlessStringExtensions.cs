@@ -1064,6 +1064,115 @@ public static class HeadlessStringExtensions
     }
 
     /// <summary>
+    /// Turns an identifier-style name into a sentence: <c>ValueWithoutAttributes</c> becomes
+    /// <c>Value without attributes</c>, <c>HTMLParser</c> becomes <c>HTML parser</c>, and <c>snake_case</c> becomes
+    /// <c>Snake case</c>.
+    /// </summary>
+    /// <param name="name">The PascalCase, camelCase, snake_case, or kebab-case name to convert.</param>
+    /// <returns>
+    /// The sentence, or <paramref name="name"/> itself when it is <see langword="null"/> or empty.
+    /// </returns>
+    /// <remarks>
+    /// Words split at underscores, hyphens, spaces, lower-to-upper transitions, letter/digit transitions, and before
+    /// the last capital of an acronym run. All-caps words of two or more letters stay as acronyms; other words are
+    /// lowercased, then the first letter of the result is capitalized.
+    /// </remarks>
+    /// <example>var result = "OrderLineItem".ToSentence(); // Returns "Order line item"</example>
+    [SystemPure]
+    [JetBrainsPure]
+    [return: NotNullIfNotNull(nameof(name))]
+    public static string? ToSentence(this string? name)
+    {
+        if (string.IsNullOrEmpty(name))
+        {
+            return name;
+        }
+
+        var builder = new StringBuilder(name.Length + 8);
+        var wordStart = -1;
+
+        for (var i = 0; i <= name.Length; i++)
+        {
+            var atEnd = i == name.Length;
+            var c = atEnd ? '\0' : name[i];
+
+            if (atEnd || c is '_' or '-' or ' ')
+            {
+                appendWord(builder, name, ref wordStart, i);
+
+                continue;
+            }
+
+            if (wordStart >= 0 && i > wordStart && _IsSentenceWordBoundary(name, i))
+            {
+                appendWord(builder, name, ref wordStart, i);
+            }
+
+            if (wordStart < 0)
+            {
+                wordStart = i;
+            }
+        }
+
+        if (builder.Length > 0)
+        {
+            builder[0] = char.ToUpperInvariant(builder[0]);
+        }
+
+        return builder.ToString();
+
+        static void appendWord(StringBuilder builder, string name, ref int wordStart, int end)
+        {
+            if (wordStart < 0)
+            {
+                return;
+            }
+
+            var word = name.AsSpan(wordStart, end - wordStart);
+            wordStart = -1;
+
+            if (builder.Length > 0)
+            {
+                builder.Append(' ');
+            }
+
+            if (word.Length > 1 && !word.ContainsAnyExceptInRange('A', 'Z'))
+            {
+                builder.Append(word);
+
+                return;
+            }
+
+            foreach (var ch in word)
+            {
+                builder.Append(char.ToLowerInvariant(ch));
+            }
+        }
+    }
+
+    private static bool _IsSentenceWordBoundary(string name, int index)
+    {
+        var previous = name[index - 1];
+        var current = name[index];
+
+        if (char.IsLower(previous) && char.IsUpper(current))
+        {
+            return true;
+        }
+
+        if (char.IsDigit(previous) != char.IsDigit(current))
+        {
+            return true;
+        }
+
+        // The last capital of an acronym run starts the next word: "HTMLParser" splits before "P".
+        return char.IsUpper(previous)
+            && char.IsUpper(current)
+            && index + 1 < name.Length
+            && char.IsLower(name[index + 1]);
+    }
+
+    /// <summary>
     /// Normalizes the format of a property path by ensuring each segment of the path is in camelCase.
     /// </summary>
     /// <param name="propertyName">The property path to normalize.</param>
