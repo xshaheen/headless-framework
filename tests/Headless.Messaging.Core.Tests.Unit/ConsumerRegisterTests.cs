@@ -1417,6 +1417,8 @@ public sealed class ConsumerRegisterTests : TestBase
     public async Task receive_skip_commits_without_storage_or_exhausted_callback()
     {
         var exhaustedFired = false;
+        var outcomes = new ConcurrentQueue<string>();
+        using var listener = _ListenToReceiveOutcomes(outcomes);
         var middleware = new RecordingReceiveMiddleware
         {
             Behavior = (context, _) =>
@@ -1444,6 +1446,7 @@ public sealed class ConsumerRegisterTests : TestBase
         run.Client.RejectCount.Should().Be(0);
         run.Storage.ReceivedExceptionRows.Should().BeEmpty("a skip must not persist any row");
         exhaustedFired.Should().BeFalse("a skip must not fire OnExhausted");
+        outcomes.Should().Contain("skipped").And.NotContain("no_responder");
         await circuitBreaker
             .DidNotReceive()
             .ReportFailureAsync(Arg.Any<string>(), Arg.Any<Exception>(), Arg.Any<CancellationToken>());
@@ -1509,6 +1512,8 @@ public sealed class ConsumerRegisterTests : TestBase
         // given — a live request reaches a consumer that implements IConsume<T>, not IRespond<T, TResponse>
         var clock = new FakeTimeProvider(new DateTimeOffset(2026, 10, 2, 12, 0, 0, TimeSpan.Zero));
         var replies = new Tests.RequestReply.RecordingReplyTransport();
+        var outcomes = new ConcurrentQueue<string>();
+        using var listener = _ListenToReceiveOutcomes(outcomes);
         var headers = _RequestHeaders(clock.GetUtcNow().AddSeconds(30));
         headers[Headers.TenantId] = "tenant-a";
 
@@ -1544,6 +1549,9 @@ public sealed class ConsumerRegisterTests : TestBase
         reply.Headers[Headers.TenantId].Should().Be("tenant-a");
         reply.Headers[Headers.MessageId].Should().NotBeNullOrWhiteSpace();
         System.Text.Encoding.UTF8.GetString(reply.Body.Span).Should().Be("""{"code":"no_responder"}""");
+
+        // and the counter names the deployment gap rather than a middleware policy
+        outcomes.Should().Contain("no_responder").And.NotContain("skipped").And.NotContain("expired");
     }
 
     [Fact]
@@ -1579,7 +1587,7 @@ public sealed class ConsumerRegisterTests : TestBase
                 Arg.Any<CancellationToken>()
             );
         replies.Sent.Should().BeEmpty();
-        outcomes.Should().NotContain("expired").And.NotContain("skipped");
+        outcomes.Should().NotContain("expired").And.NotContain("skipped").And.NotContain("no_responder");
     }
 
     private static Dictionary<string, string?> _RequestHeaders(DateTimeOffset deadline)

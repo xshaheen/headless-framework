@@ -71,12 +71,15 @@ internal static class MessagingMetrics
     internal const string ReceiveOutcomeRejected = "rejected";
     internal const string ReceiveOutcomeCancelled = "cancelled";
 
-    // Settled without running the consumer: a receive middleware skipped the message, or a request reached a consumer
-    // that cannot answer it.
+    // A receive middleware skipped the message, so it was settled without running the consumer.
     internal const string ReceiveOutcomeSkipped = "skipped";
 
     // A request whose caller had already stopped waiting, settled without running the consumer.
     internal const string ReceiveOutcomeExpired = "expired";
+
+    // A request that reached a consumer which cannot answer it, settled without running the consumer and answered with
+    // a no_responder fault. Kept apart from a middleware skip so an operator can tell a deployment gap from a policy.
+    internal const string ReceiveOutcomeNoResponder = "no_responder";
 
     // --- Request/reply drop reasons ---------------------------------------------------------------------------
 

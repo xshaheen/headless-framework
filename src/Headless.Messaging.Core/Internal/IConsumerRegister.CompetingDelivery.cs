@@ -135,7 +135,7 @@ internal sealed partial class ConsumerRegister
                     var receiveOutcomeTag =
                         requestOutcome is UnservableRequest.Expired
                             ? MessagingMetrics.ReceiveOutcomeExpired
-                            : MessagingMetrics.ReceiveOutcomeSkipped;
+                            : MessagingMetrics.ReceiveOutcomeNoResponder;
                     MessagingMetrics.RecordReceiveOutcome(receiveOutcomeTag);
                     traceHandle.Activity?.SetTag(MessagingMetrics.TagReceiveOutcome, receiveOutcomeTag);
 
@@ -587,7 +587,7 @@ internal sealed partial class ConsumerRegister
     /// <summary>
     /// Why no consumer may run for a request, or <see langword="null"/> when it continues to the receive stage:
     /// <see cref="UnservableRequest.Expired"/>, recorded as <c>expired</c>, when its caller already stopped waiting, and
-    /// <see cref="UnservableRequest.NoResponder"/>, recorded as <c>skipped</c>, when it reached a consumer that does not
+    /// <see cref="UnservableRequest.NoResponder"/>, recorded as <c>no_responder</c>, when it reached a consumer that does not
     /// respond, which is then answered with a <c>no_responder</c> fault.
     /// </summary>
     private UnservableRequest? _ResolveUnservableRequestOutcome(
