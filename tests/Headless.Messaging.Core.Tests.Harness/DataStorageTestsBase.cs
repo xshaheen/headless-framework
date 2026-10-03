@@ -586,6 +586,8 @@ public abstract partial class DataStorageTestsBase : TestBase
         (await storage.LeaseReceiveAndReserveAttemptAsync(admitted.Message, TimeSpan.FromMinutes(1), 0, AbortToken))
             .Should()
             .BeTrue();
+        // The terminal shape a consumer's fail rule (or spent budget) leaves behind after three delayed retries.
+        admitted.Message.Retries = 3;
         (
             await storage.ChangeReceiveRetryStateAsync(
                 admitted.Message,
@@ -645,6 +647,13 @@ public abstract partial class DataStorageTestsBase : TestBase
         page.Items.Should().ContainSingle();
         page.Items[0].ReplayParentIncarnationId.Should().Be(incarnation);
         page.Items[0].ReplayOperationId.Should().Be(operationId);
+
+        // The re-executed generation starts over with its consumer's full failure-policy budget.
+        var child = await storage.GetMonitoringApi().GetReceivedMessageAsync(first.ChildStorageId!.Value, AbortToken);
+        child.Should().NotBeNull();
+        child!.Retries.Should().Be(0);
+        child.InlineAttempts.Should().Be(0);
+        child.NextRetryAt.Should().NotBeNull("the child is due for a fresh dispatch");
     }
 
     public virtual async Task should_expire_terminal_poison_inbox_and_allow_readmission(MessageLane lane)
@@ -2546,14 +2555,25 @@ public abstract partial class DataStorageTestsBase : TestBase
             : await skewedStorage.LeaseReceiveAsync(message, TimeSpan.FromMinutes(1), AbortToken);
         leased.Should().BeTrue();
 
-        // The inline budget is spent, so Core hands the row to the persisted-retry processor after the delay.
+        // The inline budget is spent, so Core hands the row to the persisted-retry processor after the delay. A publish
+        // takes it from the host retry strategy; a consume takes it from the consumer's failure policy.
         var policy = new MessagingOptions().RetryPolicy;
         var retryDelay = TimeSpan.FromSeconds(3);
-        var state = Headless.Messaging.Retry.RetryHelper.ResolveNextState(
-            Headless.Messaging.Retry.MessagingRetryDecision.Continue(retryDelay),
-            inlineRetries: policy.RetryStrategy.MaxRetryAttempts,
-            policy
-        );
+        var state = published
+            ? Headless.Messaging.Retry.RetryHelper.ResolveNextState(
+                Headless.Messaging.Retry.MessagingRetryDecision.Continue(retryDelay),
+                inlineRetries: policy.RetryStrategy.MaxRetryAttempts,
+                policy
+            )
+            : Headless.Messaging.Retry.RetryHelper.ResolveNextState(
+                Headless.Messaging.Retry.MessagingRetryDecision.Continue(retryDelay),
+                retries: message.Retries,
+                inlineRetries: 0,
+                new Headless.Messaging.Retry.ConsumeRetryBudget(
+                    new Headless.Reliability.FailurePolicyBuilder().Delayed(1, retryDelay, retryDelay).Build()
+                ),
+                policy.InitialDispatchGrace
+            );
         state.IsInlineRetryInFlight.Should().BeFalse();
         var originalRetries = message.Retries;
         message.Retries++;
@@ -2605,6 +2625,80 @@ public abstract partial class DataStorageTestsBase : TestBase
         (await _PickUpRetriesAsync(skewedStorage, published))
             .Should()
             .Contain(m => m.StorageId == message.StorageId, "the delay has elapsed on the database");
+    }
+
+    public virtual async Task should_schedule_growing_consume_delayed_retries_from_the_storage_clock()
+    {
+        // given — a consumer that waits 1, 2, then (capped) 3 minutes. Each failed delayed attempt persists its delay
+        // as a duration that the store adds to its own clock, so NextRetryAt - storage now is the policy delay.
+        var policy = new Headless.Reliability.FailurePolicyBuilder()
+            .Delayed(4, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(3))
+            .Build();
+        var budget = new Headless.Messaging.Retry.ConsumeRetryBudget(policy);
+        var grace = new MessagingOptions().RetryPolicy.InitialDispatchGrace;
+        var storage = GetStorage();
+        var message = await storage.StoreReceivedMessageAsync(
+            "growing-consume-retry",
+            "growing-consume-retry-group",
+            CreateMessage(),
+            AbortToken
+        );
+        var monitoring = storage.GetMonitoringApi();
+        var observed = new List<TimeSpan>();
+
+        for (var n = 1; n <= 4; n++)
+        {
+            (await storage.LeaseReceiveAsync(message, TimeSpan.FromMinutes(1), AbortToken)).Should().BeTrue();
+            var expected = policy.GetDelayedRetryBaseDelay(n);
+            var state = Headless.Messaging.Retry.RetryHelper.ResolveNextState(
+                Headless.Messaging.Retry.MessagingRetryDecision.Continue(expected),
+                retries: message.Retries,
+                inlineRetries: 0,
+                budget,
+                grace
+            );
+            state.IsInlineRetryInFlight.Should().BeFalse();
+            var originalRetries = message.Retries;
+            message.Retries++;
+
+            var before = await _StorageNowAsync();
+            var changed = await storage.ChangeReceiveRetryStateAsync(
+                message,
+                state.NextStatus,
+                MessageContentWrite.Preserve,
+                state.NextRetry,
+                lockedUntil: null,
+                originalRetries,
+                originalInlineAttempts: message.InlineAttempts,
+                AbortToken
+            );
+            var after = await _StorageNowAsync();
+            changed.Should().BeTrue();
+            message.LockedUntil = null;
+            message.Owner = null;
+
+            var persisted = await monitoring.GetReceivedMessageAsync(message.StorageId, AbortToken);
+            persisted!.Retries.Should().Be(n);
+            persisted
+                .NextRetryAt.Should()
+                .NotBeNull()
+                .And.BeOnOrAfter(before.Add(expected))
+                .And.BeOnOrBefore(after.Add(expected), "delayed retry {0} is due its delay after the storage clock", n);
+            observed.Add(persisted.NextRetryAt!.Value - before);
+        }
+
+        // then — the delay doubles per attempt until the cap, then stays there.
+        observed[1].Should().BeGreaterThan(observed[0]);
+        observed[2].Should().BeGreaterThan(observed[1]);
+        observed[3].Should().BeCloseTo(observed[2], TimeSpan.FromSeconds(5));
+    }
+
+    private async Task<DateTimeOffset> _StorageNowAsync()
+    {
+        var databaseTime = await GetDatabaseUtcNowAsync(AbortToken);
+        return databaseTime is { } utc
+            ? new DateTimeOffset(DateTime.SpecifyKind(utc, DateTimeKind.Utc), TimeSpan.Zero)
+            : TimeProvider.GetUtcNow();
     }
 
     private static async Task<IEnumerable<MediumMessage>> _PickUpRetriesAsync(IDataStorage storage, bool published)
@@ -4033,10 +4127,10 @@ public abstract partial class DataStorageTestsBase : TestBase
             );
     }
 
-    public virtual async Task should_pickup_message_at_max_persisted_retries_and_exclude_above()
+    public virtual async Task should_cap_published_retry_pickup_at_max_persisted_retries_and_leave_received_uncapped()
     {
-        // given — with MaxPersistedRetries = 4, the pickup predicate is `Retries <= 4`.
-        // Retries == 4 is the LAST allowed pickup (where the helper returns Exhausted on
+        // given — the fixtures set MaxPersistedRetries = 4, which caps published rows only: `Retries <= 4`.
+        // Retries == 4 is the LAST allowed publish pickup (where the helper returns Exhausted on
         // budget consumption). Retries == 5 represents the terminal state past the budget
         // and must NOT be picked up. Total dispatches = (MaxPersistedRetries + 1) = 5.
         var storage = GetStorage();
@@ -4076,42 +4170,36 @@ public abstract partial class DataStorageTestsBase : TestBase
         retriable.Should().Contain(m => m.StorageId == atLimit.StorageId);
         retriable.Should().NotContain(m => m.StorageId == aboveLimit.StorageId);
 
-        // Same boundary semantics for received messages. Each scenario uses a distinct message
-        // (and therefore a distinct MessageId) so the (MessageId, Group) upsert identity on the
-        // received table does not collapse the two cases into a single row.
-        var atLimitRecv = await storage.StoreReceivedMessageAsync(
-            "max-retries-test-recv",
-            "group",
-            CreateMessage(),
-            AbortToken
-        );
-        atLimitRecv.Retries = 4;
-        await storage.ChangeReceiveStateAsync(
-            atLimitRecv,
-            StatusName.Failed,
-            retryDelay: RetryDelay.Exactly(TimeSpan.Zero),
-            cancellationToken: AbortToken
-        );
-
-        var aboveLimitRecv = await storage.StoreReceivedMessageAsync(
-            "above-retries-test-recv",
-            "group",
-            CreateMessage(),
-            AbortToken
-        );
-        aboveLimitRecv.Retries = 5;
-        await storage.ChangeReceiveStateAsync(
-            aboveLimitRecv,
-            StatusName.Failed,
-            retryDelay: RetryDelay.Exactly(TimeSpan.Zero),
-            cancellationToken: AbortToken
-        );
+        // A received row's budget is its consumer's failure policy, which only the executor knows: the claim must not
+        // clip it at the publish cap, so a consumer with 20 delayed retries is still picked up for retry 16 and beyond.
+        // Each scenario uses a distinct message (and therefore a distinct MessageId) so the (MessageId, Group) upsert
+        // identity on the received table does not collapse the cases into a single row.
+        var aboveCapReceived = new List<MediumMessage>();
+        foreach (var retries in new[] { 5, 16, 20 })
+        {
+            var received = await storage.StoreReceivedMessageAsync(
+                $"uncapped-retries-test-recv-{retries}",
+                "group",
+                CreateMessage(),
+                AbortToken
+            );
+            received.Retries = retries;
+            await storage.ChangeReceiveStateAsync(
+                received,
+                StatusName.Failed,
+                retryDelay: RetryDelay.Exactly(TimeSpan.Zero),
+                cancellationToken: AbortToken
+            );
+            aboveCapReceived.Add(received);
+        }
 
         var retriableReceived = (
             await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, null, AbortToken)
         ).ToList();
-        retriableReceived.Should().Contain(m => m.StorageId == atLimitRecv.StorageId);
-        retriableReceived.Should().NotContain(m => m.StorageId == aboveLimitRecv.StorageId);
+        retriableReceived
+            .Select(m => m.StorageId)
+            .Should()
+            .Contain(aboveCapReceived.Select(m => m.StorageId), "received pickup carries no global retry cap");
     }
 
     private async Task<MediumMessage> _StoreFailedPublishedMessageAsync(string name)

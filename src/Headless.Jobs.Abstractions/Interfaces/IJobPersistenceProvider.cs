@@ -270,6 +270,22 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     Task<bool?> IsTimeJobCancellationRequestedAsync(Guid jobId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Atomically moves a <c>Failed</c> standalone time job back to <c>Idle</c>: <c>RetryCount</c> 0, exception,
+    /// owner, lease, cancellation flag, and run audit cleared, and <c>ExecutionTime</c> set to the store's current
+    /// instant so the main peek claims it promptly. Stored <c>Retries</c> and <c>RetryIntervals</c> are kept.
+    /// </summary>
+    /// <param name="jobId">Identifier of the time job to requeue.</param>
+    /// <param name="cancellationToken">Token that aborts the requeue itself.</param>
+    /// <returns>
+    /// <see cref="JobRequeueOutcome.Requeued"/> when this call moved the row; otherwise the refusal reason. A chain
+    /// member (a row with a parent or with children) and a keyed row that is not its key's current generation are
+    /// refused. The transition is one conditional write from <c>Failed</c>, so of two concurrent requests at most one
+    /// moves the row.
+    /// </returns>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    Task<JobRequeueOutcome> RequeueTimeJobAsync(Guid jobId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Reconciles the <b>timed</b> chain descendants (<c>ExecutionTime != null</c>) of parents that have reached a
     /// terminal state — the release/skip half of the timed-descendant gate that the claim paths enforce. For
     /// every idle timed child whose parent is terminal: when its <c>RunCondition</c> matches the parent's terminal
@@ -860,6 +876,29 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// </remarks>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
     Task<int> ReclaimStalledCronJobOccurrencesAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Atomically moves a <c>Failed</c> cron occurrence back to <c>Idle</c>: <c>RetryCount</c> 0 and exception,
+    /// owner, lease, and run audit cleared. <c>ExecutionTime</c> is kept because it identifies the scheduled instant
+    /// the occurrence stands for, so the fallback claim picks the row up.
+    /// </summary>
+    /// <param name="occurrenceId">Identifier of the occurrence to requeue.</param>
+    /// <param name="cancellationToken">Token that aborts the requeue itself.</param>
+    /// <returns>
+    /// <see cref="JobRequeueOutcome.Requeued"/> when this call moved the row; otherwise the refusal reason. Under a
+    /// definition that forbids overlap, another unfinished occurrence of the same definition refuses the request with
+    /// <see cref="JobRequeueOutcome.Overlap"/>; another live occurrence at the same instant refuses it with
+    /// <see cref="JobRequeueOutcome.Conflict"/>.
+    /// </returns>
+    /// <remarks>
+    /// Both checks and the write run while holding the definition's materialization mutex, the same one occurrence
+    /// creation takes, so no new occurrence of the definition can appear between the check and the write.
+    /// </remarks>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    Task<JobRequeueOutcome> RequeueCronJobOccurrenceAsync(
+        Guid occurrenceId,
+        CancellationToken cancellationToken = default
+    );
 
     #endregion
 

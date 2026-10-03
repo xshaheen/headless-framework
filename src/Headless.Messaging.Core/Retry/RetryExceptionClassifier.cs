@@ -21,14 +21,20 @@ internal static class RetryExceptionClassifier
     /// </remarks>
     public static bool IsPermanent(Exception exception)
     {
-        var effective = exception is SubscriberExecutionFailedException { InnerException: { } inner }
-            ? inner
-            : exception;
-
-        return effective
+        return Unwrap(exception)
             is SubscriberNotFoundException
                 or ArgumentNullException
                 or ArgumentException
                 or NotSupportedException;
+    }
+
+    /// <summary>
+    /// Returns the handler's own exception when <paramref name="exception"/> is the executor's
+    /// <see cref="SubscriberExecutionFailedException"/> wrapper with an inner exception; otherwise
+    /// <paramref name="exception"/> itself. Unwraps exactly once.
+    /// </summary>
+    internal static Exception Unwrap(Exception exception)
+    {
+        return exception is SubscriberExecutionFailedException { InnerException: { } inner } ? inner : exception;
     }
 }

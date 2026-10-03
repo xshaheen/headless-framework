@@ -5,7 +5,7 @@ using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using Headless.PushNotifications;
 using Headless.PushNotifications.Apns;
-using Headless.PushNotifications.Apns.Internals;
+using Headless.PushNotifications.Apns.Internal;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;

@@ -54,11 +54,11 @@ Declare a job as a class that implements `IJob` (no arguments) or `IJob<TArgs>` 
 
 - Treat `(Function, ContractVersion, Request bytes)` as a durable executable contract. A schema change needs an explicit version; do not infer it from CLR names or trace IDs. Initialize storage using the [current contract mappings](#contract-storage) before starting workers or writers.
 - Do NOT use Hangfire or Quartz — use `Headless.Jobs` for all background jobs in this framework.
-- A job is a class, never a method: a top-level, non-abstract, non-generic `public` or `internal` class that implements exactly one of `IJob` or `IJob<TArgs>` (`Headless.Jobs.Base`) and carries `[Job("owner.name")]` (`JobAttribute`). The identity is durable and persisted with every run; its first segment names the owning module. `Cron`, `TimeZone`, `Priority`, `MaxConcurrency`, `ContractVersion`, `Policy`, `OnMissedRun`, `MissedRunGraceSeconds`, and `OnOverlap` are named properties. Add `Headless.Jobs.SourceGenerator` to the project for compile-time registration.
+- A job is a class, never a method: a top-level, non-abstract, non-generic `public` or `internal` class that implements exactly one of `IJob` or `IJob<TArgs>` (`Headless.Jobs.Base`) and carries `[Job("owner.name")]` (`JobAttribute`). The identity is durable and persisted with every run; its first segment names the owning module. `Cron`, `TimeZone`, `Priority`, `MaxConcurrency`, `ContractVersion`, `FailurePolicy`, `OnMissedRun`, `MissedRunGraceSeconds`, and `OnOverlap` are named properties. Add `Headless.Jobs.SourceGenerator` to the project for compile-time registration.
 - Call `AddHeadlessJobs()` on `IServiceCollection`. There is no `app.UseJobs()` call — the scheduler starts automatically through `IHostedService` registered by `AddHeadlessJobs`.
 - Add every generated module with `options.AddModule<TAssembly.JobsModule>()`, including the host's own assembly. Nothing registers implicitly: an assembly whose module is not added contributes no functions or middleware, even when it is loaded. Each host builds its own catalog from the modules it adds and freezes it into an immutable registry when that registry is first resolved, so hosts in one process may add different modules. Runtime services and Dashboard read only that per-host registry.
 - A module that owns jobs contributes its generated module from its own `Add{Module}` entry point with `services.ConfigureJobs(jobs => jobs.AddModule<TAssembly.JobsModule>())` instead of calling `AddHeadlessJobs`. `JobsContributionBuilder` is not generic, so the module need not know the host's entity types. Contributions are recorded as descriptors and applied in the order they were added, whether they come before or after `AddHeadlessJobs`; contributing a module twice is harmless, and a host that never calls `AddHeadlessJobs` ignores them. Two modules that declare one job identity, one argument type, or one job class fail startup with an error that names both modules.
-- Tune a declared job's deployment settings by identity with `Tune("billing.close-day", job => job.Concurrency(2))`, on `JobsOptionsBuilder` or `JobsContributionBuilder`. `JobTuningBuilder` sets `Concurrency(int)`, `Priority(JobPriority)`, `Options(...)` (retry and node-death overrides for that job), and per-job `UseExecuteMiddleware<T>()` / `UseScheduleMiddleware<T>()` resolved from DI. Tuning never declares a job or changes its identity, argument type, or cron schedule. Configuration binds after every `Tune` call from `Headless:Jobs:Jobs:{identity}` (`Concurrency`, `Priority`). An unknown identity, an unknown setting, or an invalid value fails startup.
+- Tune a declared job's deployment settings by identity with `Tune("billing.close-day", job => job.Concurrency(2))`, on `JobsOptionsBuilder` or `JobsContributionBuilder`. `JobTuningBuilder` sets `Concurrency(int)`, `Priority(JobPriority)`, `FailurePolicy<TPolicy>()` or `FailurePolicy(p => ...)`, `Options(...)` (the node-death override for that job), and per-job `UseExecuteMiddleware<T>()` / `UseScheduleMiddleware<T>()` resolved from DI. Tuning never declares a job or changes its identity, argument type, or cron schedule. Configuration binds after every `Tune` call from `Headless:Jobs:Jobs:{identity}` (`Concurrency`, `Priority`, and the `FailurePolicy` section). An unknown identity, an unknown setting, or an invalid value fails startup.
 - Split execution between hosts that share modules with `RunOnly("orders.*", "billing.close-day")` on `JobsOptionsBuilder`. An entry is an exact identity or an `owner.*` pattern matching the text before the first `.`; calls accumulate, and an entry that matches no registered job fails startup. Filtered-out jobs stay registered: the host still schedules them, seeds their cron definitions, and shows them in the Dashboard, but its claim, acquire, timed-out sweep, and next-occurrence queries never lease their rows, so a host without the filter runs them. An in-tree chain step runs with the root that claimed it.
 - Use `Jobs.EntityFramework` for durable persistence. Without it, jobs live in memory and are lost on restart.
 - Prefer `jobs.UsePostgreSql<AppDbContext>(coordination => coordination.ClusterName = "orders")` or the SQL Server sibling after registering the application context (a plain `DbContext` or a `HeadlessDbContext`, pooled or per-scope). These configure models, native claims, same-database cluster membership, and the EF Core unit-of-work provider that gives coordinated writes a transaction to enlist in. For advanced composition, configure `UsePostgreSqlClaims()` or `UseSqlServerClaims()` inside the existing `UseEntityFramework` builder. Configure only one. Omitting both deliberately keeps the portable EF optimistic-CAS claim path. The selected package also fixes the GUID ordering every EF Jobs row is keyed with — SQL Server comb, PostgreSQL UUIDv7 — so occurrence ids stay index-friendly on the paths that do not run through the native claim strategy.
@@ -75,6 +75,8 @@ Declare a job as a class that implements `IJob` (no arguments) or `IJob<TArgs>` 
 - Atomic enqueue: begin a unit of work on the application context (`await using var unit = await factory.BeginAsync(db, ct)`, or `factory.RunAsync(db, async (unit, ct) => { ...; await unit.Jobs.ScheduleAsync(request, dueAt, ct); }, cancellationToken: ct)` from `Headless.UnitOfWork.EntityFramework`) and schedule **through the unit** — `unit.Jobs`, `unit.TimeJobs<T>()`, `unit.CronJobs<T>()` (`Headless.Jobs.Abstractions`) — so domain writes and the job row commit as one transaction. The injected `IJobScheduler` and managers are autonomous singletons: they never enlist, whatever is open around them. `UsePostgreSql<TContext>` / `UseSqlServer<TContext>` wire the EF Core unit-of-work provider automatically; no separate registration call is needed. Cluster membership (`Headless.Coordination`) and transactional enlistment (the unit of work) remain different subsystems. The enlisted path throws on any failure; wrap in `try/catch`.
 - A job class is built for every run from that run's DI scope with `ActivatorUtilities.CreateInstance`, so constructor parameters resolve like scoped services. When a class has several public constructors, mark the one to use with `[ActivatorUtilitiesConstructor]`.
 - Use `IJobScheduler` for routine immediate, delayed, and recurring scheduling. A job with arguments is addressed by its argument value: `EnqueueAsync(new CloseDayArgs(day), ct)`, because each argument type belongs to exactly one job. A job without arguments is addressed by its class: `EnqueueAsync<CloseDayJob>(ct)`, constrained to `IJob`. There is no descriptor-based overload.
+- A job retries by its failure policy: declare it with `[Job(id, FailurePolicy = typeof(TPolicy))]`, replace it on a host with `Tune(id, j => j.FailurePolicy<TPolicy>())`, adjust its numbers under `Headless:Jobs:Jobs:{id}:FailurePolicy`, and set the host default with `options.DefaultFailurePolicy<TPolicy>()`. Without any of these a job does not retry. `ConfigureDefaults`, `ConfigureJob<TRequest>`, and `Tune(...).Options(...)` reject `Retries` and `RetryIntervals`; only a scheduling call's `WithRetries` / `WithRetryIntervals` override the stored count for one run. See [Failure policy](#failure-policy).
+- Requeue a `Failed` standalone time job with `scheduler.RequeueAsync(id, ct)` and a `Failed` cron occurrence with `scheduler.RequeueOccurrenceAsync(id, ct)`. Both return a `JobRequeueOutcome` instead of throwing for a refused row. See [Requeue a failed job](#requeue-a-failed-job).
 - `JobOptions` / `RecurringJobOptions` support description, durable retry count/intervals, and node-death policy; recurring options additionally accept nullable IANA `TimeZoneId`. Execution time and cron expression are method arguments. Do not add priority to scheduling options; priority comes from `[Job(Priority = ...)]`, and a host changes it with `Tune`.
 - Author static conditional continuation trees with the typed `JobChain` model (it replaces the removed fluent chain builder): `JobChain.Start(args)` or `JobChain.Start<TJob>()`, extend node handles with `Then` (on-success) / `Catch` (on-failure), then `await scheduler.EnqueueAsync(chain.Build(), ct)`. Each node allows one `Then` and one `Catch`; chains are capped at `SchedulerOptionsBuilder.MaxChainDepth` nodes deep (default 10); `Catch` is on-failure sugar and never recovers the parent. The tree is written atomically either way: through `unit.Jobs` with the unit, through the injected scheduler in the store's own transaction. See [Typed Job Chains](#typed-job-chains).
 - Import `Headless.Jobs` for ordinary scheduling callbacks with the singular `JobOptionsBuilder`; the plural generic `JobsOptionsBuilder<TTimeJob, TCronJob>` configures Core. Callbacks must finish synchronously. Builders support sequential reuse with copied retry arrays; `Build()` alone does not validate or accept work. Nullable setters restore inheritance, and an unset atomic assertion cannot weaken an inherited requirement. `WithIdempotencyKey` / `WithIdempotencyTtl` author the enqueue idempotency window per call; startup policy callbacks reject them — the window is never inherited from host or function policy.
@@ -133,6 +135,91 @@ The source generator (`Headless.Jobs.SourceGenerator`) reads every `[Job]` class
 The identity (`owner.name`, at most 200 characters) is the durable function name: `IJobScheduler` obtains it from the generated descriptor, while low-level manager callers set the entity `Function` directly. Priority (`JobPriority.Normal` / `High` / `Low` / `LongRunning`) and `MaxConcurrency` are the job's defaults; a host overrides them with `Tune`.
 
 Jobs with arguments are indexed by identity and by exact argument `Type`; jobs without arguments have `RequestType = null` and are indexed by their class. HF005 rejects a duplicate identity and HF011 a duplicate argument type in one compilation. Cross-assembly collisions fail the host's registry build with a deterministic ordinal-sorted report that names both modules, rather than choosing the first registration. Core builds one configuration-resolved runtime registry per `IHost` from the modules that host added.
+
+### Failure policy
+
+A job's failure policy decides how many times a failed run retries, how long each retry waits, and which exceptions fail the run at once. The policy model, its delay math, and how it compares with Messaging are in [reliability.md](reliability.md). Name the policy type on the attribute:
+
+```csharp
+using Headless.Reliability;
+
+public sealed record SyncInvoiceArgs(string InvoiceId);
+
+public sealed class LedgerFailurePolicy : FailurePolicy
+{
+    protected override void Configure(FailurePolicyBuilder policy) =>
+        policy
+            .Immediate(retries: 1)
+            .Delayed(retries: 4, initialDelay: TimeSpan.FromMinutes(1), maxDelay: TimeSpan.FromMinutes(10))
+            .FailOn<InvalidOperationException>();
+}
+
+[Job("billing.sync-invoice", FailurePolicy = typeof(LedgerFailurePolicy))]
+public sealed class SyncInvoiceJob : IJob<SyncInvoiceArgs>
+{
+    public ValueTask ExecuteAsync(JobContext<SyncInvoiceArgs> context, CancellationToken cancellationToken) =>
+        ValueTask.CompletedTask;
+}
+```
+
+The host sets the default for jobs that declare nothing, and replaces one job's policy by identity:
+
+```csharp
+builder.Services.AddHeadlessJobs(options =>
+{
+    options.DefaultFailurePolicy(policy => policy.Delayed(3, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(10)));
+    options.Tune("reports.daily", job => job.FailurePolicy(policy => policy.Immediate(2)));
+});
+```
+
+Configuration adjusts the numbers without a redeploy and keeps the fail rules:
+
+```json
+{
+  "Headless": {
+    "Jobs": {
+      "Jobs": {
+        "billing.sync-invoice": {
+          "FailurePolicy": { "DelayedRetries": 6, "DelayedMaxDelay": "00:30:00" }
+        }
+      }
+    }
+  }
+}
+```
+
+**Resolution.** `Tune(...).FailurePolicy(...)` replaces the declared policy; a job with neither gets `DefaultFailurePolicy`, and without that no retries. `Headless:Jobs:Jobs:{identity}:FailurePolicy` then overrides `ImmediateRetries`, `DelayedRetries`, `DelayedInitialDelay`, or `DelayedMaxDelay` of the winner. An unknown key, an invalid value, or a declared policy whose `Configure` throws fails startup. `ConfigureDefaults`, `ConfigureJob<TRequest>`, and `Tune(...).Options(...)` reject `Retries` and `RetryIntervals` with an `ArgumentException`, because the policy owns them.
+
+**What a row stores.** Scheduling flattens the resolved policy into the row's durable `Retries` and `RetryIntervals`: `Retries` is `ImmediateRetries + DelayedRetries`, each immediate retry stores `0` seconds, and each delayed retry stores its base delay rounded up to whole seconds. Jitter is not stored. A call that sets `WithRetries(n)` stores `n` and only the call's own intervals; a call that sets only `WithRetryIntervals(...)` keeps the policy's count with the call's intervals. Facade recurring definitions (`ScheduleRecurringAsync`) are flattened the same way when created. Jobs added through `ITimeJobManager`, `ICronJobManager`, or the dashboard keep the `Retries` and `RetryIntervals` they carry.
+
+A row with no intervals, such as a manager-added row or a call that set only a retry count, waits the policy's delays: no delay for its immediate retries, then the policy's jittered delayed delay, held at the cap once the doubling reaches it.
+
+**Execution.** Retries run in process under the job's lease, with the row `InProgress`; `RetryCount` is persisted before each wait, so a run resumed after a crash continues from the spent budget. Fail rules are looked up by function name when the run executes, so a changed fail rule applies to rows already stored; a changed count or delay applies only to rows scheduled afterwards. A failure a fail rule matches ends the run as `Failed` without its remaining retries, and a `FailWhen` that throws counts as a match and is logged. Cancellation and `TerminateExecutionException` never reach the policy. See [Error Handling and Retries](#error-handling-and-retries) for `OnExhausted`.
+
+**Cron definitions.** A `[Job(Cron = ...)]` definition is seeded with its resolved policy's flattened retries when the definition is created, and each occurrence runs with the definition's stored retries. Like `OnMissedRun`, the seed is never reapplied: a later policy change does not reach an existing definition. Edit it through `ICronJobManager` instead.
+
+### Requeue a failed job
+
+A run the policy gave up on stays `Failed`. An operator puts it back with `IJobScheduler`:
+
+```csharp
+public static async Task<bool> TryRequeueAsync(IJobScheduler scheduler, Guid jobId, CancellationToken ct)
+{
+    var outcome = await scheduler.RequeueAsync(jobId, ct);
+
+    // Every other outcome is a refusal that left the row unchanged; its name says why.
+    return outcome == JobRequeueOutcome.Requeued;
+}
+
+public static async Task<bool> TryRequeueOccurrenceAsync(IJobScheduler scheduler, Guid occurrenceId, CancellationToken ct) =>
+    await scheduler.RequeueOccurrenceAsync(occurrenceId, ct) == JobRequeueOutcome.Requeued;
+```
+
+- **`RequeueAsync(timeJobId)`** moves a `Failed` standalone time job to `Idle`: `RetryCount` returns to 0, the stored exception, owner, and lease are cleared, and `ExecutionTime` moves to the store's current instant, so the next claim runs it. The stored `Retries` and `RetryIntervals` are kept, so the row gets its full budget again.
+- **`RequeueOccurrenceAsync(occurrenceId)`** moves a `Failed` cron occurrence to `Idle` with the same reset. It keeps its `ExecutionTime`, which identifies the scheduled instant it stands for, so the fallback check (`FallbackIntervalChecker`) claims it rather than the main peek. An occurrence of a paused definition can be requeued and waits until the definition resumes.
+- **Refusals** leave the row unchanged and return the reason: `NotFound`; `NotFailed` (a repeated or concurrent requeue lands here, so requeue is safe to repeat); `ChainMember` (a time job with a parent or a child); `SupersededGeneration` (a keyed time job that is no longer its key's current generation); `Overlap` (the occurrence's definition forbids overlapping runs and another occurrence is unfinished, checked under the definition lock that occurrence creation takes); `Conflict` (the row changed during the request, or another live occurrence holds the instant).
+
+The Jobs dashboard shows a requeue button on `Failed` time jobs and occurrences. It calls `POST /api/job/requeue` and `POST /api/cron-job-occurrence/requeue` with the row id as the `id` query parameter; a refusal returns HTTP 400 with the outcome name as the body. A custom `IJobPersistenceProvider` implements `RequeueTimeJobAsync` and `RequeueCronJobOccurrenceAsync`.
 
 ### Typed Job Chains
 
@@ -631,7 +718,7 @@ Contracts, entity types, manager interfaces, and execution primitives for the Jo
 ### API and behavior
 
 - **Durable contract identity**: `[Job("invoice.create", ContractVersion = "schema-v2")]` and immutable `JobFunctionDescriptor.ContractVersion` declare the stored argument schema. The optional descriptor-constructor version defaults to `JobContract.InitialVersion` (`"1"`). `JobContract` defines a 200 UTF-16-unit function-name bound and a 100-unit version bound; names and versions are nonblank, ordinal, and reject surrounding whitespace, controls, and invalid Unicode without normalization or truncation.
-- **Jobs lineage**: `JobOptions` and `RecurringJobOptions` accept `CorrelationId` and `CausationId`. Persisted entities, `JobExecutionState`, and both execution-context forms carry contract version and Jobs-owned correlation, causation, and tenant metadata. `CronSeedDefinition` includes a trailing version (default `"1"`); consumers that deconstruct it must include that sixth member. Seeding applies that version only to newly created definitions; existing name/version/request tuples require an explicit definition edit. Ordinary time-job and cron-definition edits preserve stored correlation and causation, including when update forms omit them.
+- **Jobs lineage**: `JobOptions` and `RecurringJobOptions` accept `CorrelationId` and `CausationId`. Persisted entities, `JobExecutionState`, and both execution-context forms carry contract version and Jobs-owned correlation, causation, and tenant metadata. `CronSeedDefinition` includes a version (default `"1"`), a `TimeZoneId`, and trailing `Retries` and `RetryIntervals` (the definition's flattened failure policy); consumers that deconstruct it must include every member. Seeding applies that version only to newly created definitions; existing name/version/request tuples require an explicit definition edit. Ordinary time-job and cron-definition edits preserve stored correlation and causation, including when update forms omit them.
 - **Occurrence snapshots**: every new cron occurrence owns `Function`, `ContractVersion`, and a copy of serialized `Request` bytes. Provider implementations must read the current persisted definition under their materialization transaction or lock, including `InsertCronJobOccurrencesAsync` with an already-populated caller tuple. Existing-row pickup, retry, and recovery retain the stored tuple.
 - **Routine scheduling facade**: `IJobScheduler` resolves generated `[Job]` metadata from the argument type or the job class, serializes typed arguments, schedules immediate, delayed, and recurring jobs without copied function strings or entity construction, and durably pauses or resumes cron definitions by ID.
 - **Generated descriptors**: immutable `JobFunctionDescriptor` values expose function identity, nullable request type, cron metadata, priority, and maximum concurrency without exposing execution delegates.
@@ -641,7 +728,8 @@ Contracts, entity types, manager interfaces, and execution primitives for the Jo
 - **Job contracts**: `IJob` (`ExecuteAsync(JobContext, CancellationToken)`) and `IJob<TArgs>` (`ExecuteAsync(JobContext<TArgs>, CancellationToken)`), both returning `ValueTask`.
 - **Execution context**: `JobContext` and `JobContext<TArgs>` (whose `Request` is the deserialized argument) — exposes `Id`, `Type`, `RetryCount`, `IsDue`, `ScheduledFor`, `FunctionName`, recovery metadata, lineage, and durable `RequestCancellationAsync()` for time jobs.
 - **Generated execution delegate**: `JobFunctionDelegate(IServiceProvider, JobContext, CancellationToken)` keeps the cancellation token last. The generator emits one per job; it builds the job class from the run's scope and calls `ExecuteAsync`.
-- **Declaration attribute**: `JobAttribute` (`[Job("owner.name")]`) declares a job class with its identity and intrinsic defaults (cron, time zone, priority, concurrency, contract version, missed-run and overlap policies).
+- **Declaration attribute**: `JobAttribute` (`[Job("owner.name")]`) declares a job class with its identity and intrinsic defaults (cron, time zone, priority, concurrency, contract version, failure policy, missed-run and overlap policies). `FailurePolicy` takes a `typeof` a `Headless.Reliability.FailurePolicy` type; see [Failure policy](#failure-policy).
+- **Requeue**: `IJobScheduler.RequeueAsync(timeJobId, ct)` and `RequeueOccurrenceAsync(occurrenceId, ct)` return `JobRequeueOutcome` (`Requeued`, `NotFound`, `NotFailed`, `ChainMember`, `SupersededGeneration`, `Overlap`, `Conflict`). The persistence SPI adds `IJobPersistenceProvider.RequeueTimeJobAsync` and `RequeueCronJobOccurrenceAsync`. See [Requeue a failed job](#requeue-a-failed-job).
 - **Retry primitives**: `TimeJobEntity.Retries`, `RetryIntervals`, `RetryCount`; `CronJobEntity.Retries`, `RetryIntervals`.
 - **Node-death policy**: `NodeDeathPolicy` enum (`Retry` / `MarkFailed` / `Skip`) on both entity types; propagated from `CronJobEntity` to every generated occurrence.
 - **Atomic cron materialization SPI**: `MaterializeCronScheduleOccurrenceAsync` fences the expected revision and watermark, commits a new unclaimed `Idle` occurrence or recognizes an existing occurrence, and advances the schedule position in the same provider transaction. `CronScheduleMaterializationOutcome` distinguishes a lost fence, a future projection, a new row, an existing live row, and an already-terminal row.
@@ -806,7 +894,8 @@ Core implementation of the Jobs scheduler: in-memory persistence provider, execu
 - **Stable causal metadata**: a root time job uses its allocated row ID as correlation unless explicitly supplied. Jobs scheduled from an executing job inherit its correlation and use that parent execution row ID as causation; chain steps use their direct parent row ID. Root cron occurrences allocate correlation from their occurrence ID unless the definition carries explicit or inherited metadata. A parent with no explicit correlation contributes its execution row ID as the causal root. Retries preserve lineage independently of `Activity` traces, and existing tenant checks still apply.
 - **`AddHeadlessJobs()`**: single DI entry point; registers managers, background services, and the in-memory persistence provider.
 - **`ConfigureJobs(...)`**: module-owned contributions through the non-generic `JobsContributionBuilder` (`AddModule<TModule>()`, `Tune(identity, ...)`), applied when the host's registry is built, before or after `AddHeadlessJobs`.
-- **`Tune(identity, ...)` and `RunOnly(...)`**: per-job deployment settings bound from code and `Headless:Jobs:Jobs:{identity}`, and the host's run filter applied to every claim query of the in-memory and EF providers.
+- **`Tune(identity, ...)` and `RunOnly(...)`**: per-job deployment settings (concurrency, priority, failure policy, node-death override, middleware) bound from code and `Headless:Jobs:Jobs:{identity}`, and the host's run filter applied to every claim query of the in-memory and EF providers.
+- **`DefaultFailurePolicy<TPolicy>()` / `DefaultFailurePolicy(p => ...)`**: the failure policy of every job that neither declares nor tunes one. Without it such a job does not retry. A later call replaces an earlier one.
 - **`IJobScheduler` facade**: schedules `[Job]` classes by argument type or job class through generated descriptor indexes, maps supported options, controls cron pause/resume, and returns persisted entity IDs or locked-transition results.
 - **Injected identity and app time**: managers assign persisted IDs through `IGuidGenerator` and stamp audit/scheduling time through `TimeProvider`, including every descendant in a persisted job chain.
 - **Scheduler background service**: polls for due time jobs and cron occurrences on `FallbackIntervalChecker` cadence (default 30s); also driven by soft-notification signals for near-zero latency.
@@ -851,7 +940,7 @@ A job's stored argument is read immediately before its `ExecuteAsync` runs. A re
 
 Dashboard SignalR notifications are best-effort on the whole scheduling path: a hub failure is logged and never aborts a claim enumeration, so a dashboard or backplane outage cannot delay job dispatch. If a claim enumeration does abort for another reason, the rows already claimed in that batch are released back to `Idle` instead of waiting out their lease.
 
-Time-job cancellation is durable and job-ID-only through `IJobScheduler.CancelAsync(jobId)` or `context.RequestCancellationAsync()`. Idle jobs become `Cancelled` atomically; queued and in-progress jobs retain their status and set `CancelRequested`. The owning execution observes the flag before user code and then on a bounded `TimeProvider` cadence. Only a cooperative exit with that execution's exact token after durable observation writes terminal `Cancelled`. Host shutdown and lease loss are distinct causes; lease loss writes no terminal status, while an uncooperative handler keeps its natural result and leaves `CancelRequested` as audit data. An unrelated `OperationCanceledException` remains a failure.
+Time-job cancellation is durable and job-ID-only through `IJobScheduler.CancelAsync(jobId)` or `context.RequestCancellationAsync()`. Idle jobs become `Cancelled` atomically; queued and in-progress jobs retain their status and set `CancelRequested`. The owning execution observes the flag before user code and then on a bounded `TimeProvider` cadence. Once durable observation cancels that execution's token, a cooperative exit with any `OperationCanceledException` writes terminal `Cancelled`, whatever token the exception carries, so a handler that links its own `CancelAfter` source to the job token still ends `Cancelled`. Host shutdown and lease loss are distinct causes and write no terminal status, whatever token the exception carries; an uncooperative handler keeps its natural result and leaves `CancelRequested` as audit data. An `OperationCanceledException` that ends the run while the execution's token is live remains a failure, which the failure policy classifies and retries.
 
 Cron pause/resume is durable and definition-specific. Pause atomically marks the definition and skips pending `Idle` / `Queued` occurrences while preserving `InProgress` work. Resume uses a schedule-revision fence so concurrent nodes create at most one occurrence strictly after the injected `TimeProvider` instant, and rebases the definition's schedule watermark to the resume instant — which is what keeps the paused interval from being replayed once misfire recovery exists. Catch-up is no longer outside this contract: see [Misfire recovery](#misfire-recovery).
 
@@ -873,7 +962,6 @@ dotnet add package Headless.Jobs.Core
 using Headless.Jobs.Base;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Models;
-using Polly;
 
 // 1. Register Jobs, adding the generated module of every assembly that declares jobs
 builder.Services.AddHeadlessJobs(options =>
@@ -887,15 +975,7 @@ builder.Services.AddHeadlessJobs(options =>
         scheduler.FallbackIntervalChecker = TimeSpan.FromSeconds(30);
     });
     options.SetExceptionHandler<MyJobExceptionHandler>();
-    options.ConfigureRetries(retry =>
-    {
-        retry.RetryStrategy.ShouldHandle = args =>
-            ValueTask.FromResult(args.Outcome.Exception is HttpRequestException);
-        retry.RetryStrategy.Delay = TimeSpan.FromSeconds(30);
-        retry.RetryStrategy.BackoffType = DelayBackoffType.Exponential;
-        retry.RetryStrategy.UseJitter = true;
-        retry.RetryStrategy.MaxDelay = TimeSpan.FromMinutes(5);
-    });
+    options.ConfigureRetries(retry => retry.OnExhaustedTimeout = TimeSpan.FromSeconds(30));
 });
 
 // 2. Define a cron job (requires Jobs.SourceGenerator); services come from the constructor
@@ -963,21 +1043,25 @@ builder.Services.AddHeadlessJobs(options =>
 builder.Services.AddBilling();
 ```
 
-Configuration tunes the same settings without a redeploy and applies after every `Tune` call. Only `Concurrency` and `Priority` are accepted:
+Configuration tunes the same settings without a redeploy and applies after every `Tune` call. Only `Concurrency`, `Priority`, and the `FailurePolicy` section (`ImmediateRetries`, `DelayedRetries`, `DelayedInitialDelay`, `DelayedMaxDelay`) are accepted:
 
 ```json
 {
   "Headless": {
     "Jobs": {
       "Jobs": {
-        "billing.close-day": { "Concurrency": 2, "Priority": "High" }
+        "billing.close-day": {
+          "Concurrency": 2,
+          "Priority": "High",
+          "FailurePolicy": { "DelayedRetries": 3 }
+        }
       }
     }
   }
 }
 ```
 
-`Tune` also sets `Options(...)` and per-job middleware, but never the identity, argument type, or cron schedule. The host's registry build fails startup when a `Tune` call or configuration entry names an unknown identity or carries an invalid value, and when a `RunOnly` entry matches no registered job. A job outside the `RunOnly` filter stays registered: this host still schedules it, seeds its cron definition, and shows it in the Dashboard, while a host without the filter claims and runs it.
+`Tune` also sets `FailurePolicy(...)`, `Options(...)` (the node-death override), and per-job middleware, but never the identity, argument type, or cron schedule. The host's registry build fails startup when a `Tune` call or configuration entry names an unknown identity or carries an invalid value, and when a `RunOnly` entry matches no registered job. A job outside the `RunOnly` filter stays registered: this host still schedules it, seeds its cron definition, and shows it in the Dashboard, while a host without the filter claims and runs it.
 
 ### Middleware
 
@@ -1016,15 +1100,15 @@ Absolute scheduler facade calls require an explicit `DateTimeOffset` instant. `D
 
 A recurring definition written through `unit.Jobs` enlists like a one-shot job: the definition row and its store-anchored schedule position commit or roll back with the caller, and a unit without a compatible relational resource fails before persistence. Written through the injected scheduler, the definition is its own commit.
 
-Configure facade policies once with `ConfigureDefaults(new JobOptions { Retries = 3, RetryIntervals = [5, 30] })`, then override individual fields with `ConfigureJob<MyRequest>(new JobOptions { OnNodeDeath = NodeDeathPolicy.MarkFailed })` or, for a job without arguments, `Tune("billing.close-day", job => job.Options(options))`. The order of precedence is call, function, then application defaults; null fields inherit and an empty interval array explicitly replaces inherited intervals. Configuration snapshots retry arrays and freezes per host after the registration callback; unknown generated identities and invalid retry settings fail before use/startup. Configure each job through either `ConfigureJob<TRequest>` or `Tune(...).Options(...)`, not both.
+Retries come from each job's [failure policy](#failure-policy), not from startup policies. Configure the node-death default once with `ConfigureDefaults(new JobOptions { OnNodeDeath = NodeDeathPolicy.MarkFailed })`, then override it with `ConfigureJob<MyRequest>(new JobOptions { OnNodeDeath = NodeDeathPolicy.Skip })` or, for a job without arguments, `Tune("billing.close-day", job => job.Options(options))`. The order of precedence is call, function, then application defaults; null fields inherit. Configuration freezes per host after the registration callback; unknown generated identities and invalid settings fail before use/startup. Configure each job through either `ConfigureJob<TRequest>` or `Tune(...).Options(...)`, not both.
 
-Startup policies accept only retries, retry intervals, and node-death policy. Tenant, system scope, description, correlation, and causation remain per-invocation metadata; supplying them in startup policies throws. Concurrency and priority are not scheduling options: they come from the `[Job]` declaration, and a host overrides them with `Tune(identity, job => job.Concurrency(2).Priority(JobPriority.High))` or `Headless:Jobs:Jobs:{identity}` configuration.
+Startup policies accept only the node-death policy. `Retries` or `RetryIntervals` in a startup policy throw `ArgumentException` naming `DefaultFailurePolicy`, `[Job(FailurePolicy = ...)]`, and `Tune(...).FailurePolicy(...)` as the replacements. Tenant, system scope, description, correlation, and causation remain per-invocation metadata; supplying them in startup policies throws. Concurrency and priority are not scheduling options: they come from the `[Job]` declaration, and a host overrides them with `Tune(identity, job => job.Concurrency(2).Priority(JobPriority.High))` or `Headless:Jobs:Jobs:{identity}` configuration.
 
-The plural `JobsOptionsBuilder<TTimeJob, TCronJob>` also accepts `Action<JobOptionsBuilder>` for all three policy methods. Import `Headless.Jobs` for the singular options builder and `Headless.Jobs.Enums` for `NodeDeathPolicy`. For example, use `ConfigureDefaults(job => job.WithRetries(3).WithRetryIntervals(5, 30))`, `ConfigureJob<MyRequest>(job => job.WithNodeDeathPolicy(NodeDeathPolicy.MarkFailed))`, or `Tune("billing.close-day", job => job.Options(policy => policy.WithRetries(5)))`. Each callback runs once synchronously with a fresh builder; asynchronous callbacks are unsupported. Each successful call replaces the previous policy for that scope. Callback failures or invalid settings leave the prior policy intact. Retained builders and supplied arrays cannot change the captured policy or another host.
+The plural `JobsOptionsBuilder<TTimeJob, TCronJob>` also accepts `Action<JobOptionsBuilder>` for all three policy methods. Import `Headless.Jobs` for the singular options builder and `Headless.Jobs.Enums` for `NodeDeathPolicy`. For example, use `ConfigureDefaults(job => job.WithNodeDeathPolicy(NodeDeathPolicy.MarkFailed))`, `ConfigureJob<MyRequest>(job => job.WithNodeDeathPolicy(NodeDeathPolicy.Skip))`, or `Tune("billing.close-day", job => job.Options(policy => policy.WithNodeDeathPolicy(NodeDeathPolicy.Retry)))`. `WithRetries` and `WithRetryIntervals` belong on scheduling calls only. Each callback runs once synchronously with a fresh builder; asynchronous callbacks are unsupported. Each successful call replaces the previous policy for that scope. Callback failures or invalid settings leave the prior policy intact. Retained builders and supplied arrays cannot change the captured policy or another host.
 
 Bare `null` and `default` arguments are ambiguous between the options-record and callback configuration overloads. Use `options:` or a typed `JobOptions` argument for the record overload, and `configure:` or a typed `Action<JobOptionsBuilder>` for the callback overload. Both reject null arguments.
 
-Policies apply to facade one-shot scheduling, keyed scheduling/replacement, every chain node, and facade recurring definitions, which inherit retries and node-death policy. Attribute-seeded cron definitions and low-level manager calls retain their own settings. Ordinary ID-only cancellation and cron pause/resume retain their existing control semantics.
+Policies and the flattened failure policy apply to facade one-shot scheduling, keyed scheduling/replacement, every chain node, and facade recurring definitions. Attribute-seeded cron definitions take their retries from the failure policy at creation only, and low-level manager calls retain their own settings. Ordinary ID-only cancellation and cron pause/resume retain their existing control semantics.
 
 ```csharp
 using System.Text.Json;
@@ -1109,6 +1193,7 @@ Read [dashboards.md](dashboards.md) for the shared authentication modes and prod
 - **Responsive operational layout**: content cards shrink within mobile viewports while wide data tables retain their own overflow boundary.
 - **Live cluster view**: `GET /api/nodes` returns live node projections from `Headless.Coordination` membership; `NodeJoined` / `NodeLeft` / `NodeSuspected` push updates over SignalR — no polling required.
 - **Error monitoring**: surfaces failed, cancelled, and skipped jobs; retry counts; execution timings; exception messages.
+- **Requeue**: `Failed` time jobs and cron occurrences show a requeue button. `POST /api/job/requeue?id=…` and `POST /api/cron-job-occurrence/requeue?id=…` call `IJobScheduler.RequeueAsync` and `RequeueOccurrenceAsync`; HTTP 200 means the row was requeued, and HTTP 400 carries the refusal's `JobRequeueOutcome` name. See [Requeue a failed job](#requeue-a-failed-job).
 - **Storage-reduced cron graphs**: bundled providers select distinct UTC dates and aggregate status counts in storage;
   the dashboard does not load a cron job's lifetime occurrence entities to render its bounded history graph.
 - **Fluent builder**: `SetBasePath(path)`, `SetBackendDomain(domain)`, `SetCorsOrigins(origins)`, `SetCorsPolicy(policy)`.
@@ -1116,7 +1201,7 @@ Read [dashboards.md](dashboards.md) for the shared authentication modes and prod
 
 ### Design constraints
 
-The dashboard exposes operational endpoints that can create, update, delete, run, cancel, start, stop, and restart jobs. Authentication must be chosen explicitly — if no auth method (including `WithNoAuth()`) is called, the host fails to start, so the dashboard never ships publicly by omission. Treat `WithNoAuth()` as development-only unless the dashboard is isolated behind trusted network controls; production deployments should use `WithHostAuthentication(...)`, `WithBasicAuth(...)`, or `WithApiKey(...)`. No CORS policy is applied by default (same-origin only); use `SetCorsOrigins(...)` when the SPA is served cross-origin.
+The dashboard exposes operational endpoints that can create, update, delete, run, cancel, requeue, start, stop, and restart jobs. Authentication must be chosen explicitly — if no auth method (including `WithNoAuth()`) is called, the host fails to start, so the dashboard never ships publicly by omission. Treat `WithNoAuth()` as development-only unless the dashboard is isolated behind trusted network controls; production deployments should use `WithHostAuthentication(...)`, `WithBasicAuth(...)`, or `WithApiKey(...)`. No CORS policy is applied by default (same-origin only); use `SetCorsOrigins(...)` when the SPA is served cross-origin.
 
 Cron-occurrence graph selection remains history-derived: it first chooses the same inclusive UTC date window from
 distinct occurrence dates, then zero-fills gaps. `IJobPersistenceProvider.GetCronOccurrenceGraphStatusCountsAsync`
@@ -1196,7 +1281,7 @@ Roslyn incremental source generator that eliminates reflection and manual job re
 - **Construction through DI**: the typed invoker builds the job class with `ActivatorUtilities.CreateInstance` from the run's scope, so the container selects the constructor (`[ActivatorUtilitiesConstructor]` picks one of several) and resolves its parameters, including `[FromKeyedServices]`.
 - **Incremental**: declarations are reduced to value models when discovered, so an edit that does not change a `[Job]` or middleware declaration reuses every generator step and re-emits nothing.
 - **Collision safety**: HF005 rejects a duplicate identity and HF011 a duplicate argument type within a compilation. Provider construction reports cross-assembly conflicts deterministically.
-- **Diagnostics**: HF001–HF022 (HF002, HF006, and HF010 are retired), listed with their causes and fixes under [Diagnostics](#diagnostics).
+- **Diagnostics**: HF001–HF023 (HF002, HF006, and HF010 are retired), listed with their causes and fixes under [Diagnostics](#diagnostics).
 
 ### Diagnostics
 
@@ -1223,6 +1308,7 @@ Every rule is reported at compile time in category `Headless.Jobs.SourceGenerato
 | <a id="hf020"></a>HF020 | `OnMissedRun` is not a defined `MissedRunPolicy` value. | Pass a `MissedRunPolicy` member. |
 | <a id="hf021"></a>HF021 | `MissedRunGraceSeconds` is zero or negative. | Pass a positive number of seconds, or leave it unset to inherit the scheduler default. |
 | <a id="hf022"></a>HF022 | `OnOverlap` is not a defined `CronOverlapPolicy` value. | Pass a `CronOverlapPolicy` member. |
+| <a id="hf023"></a>HF023 | The `FailurePolicy` type does not derive from `Headless.Reliability.FailurePolicy`, is not a class, is abstract, still has an open type parameter (its own or a containing type's), is private, protected, or `file`-local, or has no public parameterless constructor, so the generated factory cannot construct it. A closed generic such as `RetryTwice<Payments>` is accepted. Nothing is generated. | Point `FailurePolicy` at a concrete, closed `public` or `internal` class derived from `FailurePolicy` with a public parameterless constructor. |
 
 ### Install
 
@@ -1549,7 +1635,7 @@ builder.Services.AddHeadlessJobs(options =>
 
 #### Retry Configuration
 
-`Retries`, `RetryCount`, and `RetryIntervals` remain the durable retry representation. `Retries` excludes the original execution. `RetryCount` is persisted monotonically before each wait so a recovered process resumes from the consumed budget. Set `Retries` and optional `RetryIntervals` (seconds between attempts) on the entity:
+A job's retries come from its [failure policy](#failure-policy), which scheduling flattens into `Retries`, `RetryCount`, and `RetryIntervals`, the durable retry representation. `Retries` excludes the original execution. `RetryCount` is persisted monotonically before each wait so a recovered process resumes from the consumed budget. A manager call bypasses policy resolution, so set `Retries` and optional `RetryIntervals` (seconds between attempts) on the entity yourself:
 
 ```csharp
 await timeJobManager.AddAsync(
@@ -1569,30 +1655,16 @@ await timeJobManager.AddAsync(
 - Retries run automatically when a job's `ExecuteAsync` throws.
 - Status remains `InProgress` during retries; becomes `Failed` after exhaustion.
 - `JobContext.RetryCount` carries the current attempt number.
-- If `RetryIntervals` is shorter than `Retries`, the last interval is reused.
-- If `RetryIntervals` is null or empty, default is 30 seconds.
+- If `RetryIntervals` is shorter than `Retries`, the last interval is reused. Each stored interval is clamped to between zero and `FailurePolicyDefinition.MaxDelayLimit` (24 hours).
+- If `RetryIntervals` is null or empty, each retry waits the job's failure policy delay: none for its immediate retries, then its delayed-retry delay with jitter. A retry past the immediate retries of a policy with no delayed retries waits 30 seconds.
 
-Runtime execution uses Polly.Core directly. Configure the reusable pipeline through `JobsOptionsBuilder.ConfigureRetries`:
+The job's failure policy classifies each failure and the row's `Retries` decides how many retries remain; no host setting caps or overrides them. `JobsOptionsBuilder.ConfigureRetries` configures only the terminal-failure notification:
 
 ```csharp
-using Polly;
-using Polly.Retry;
-
 builder.Services.AddHeadlessJobs(options =>
 {
     options.ConfigureRetries(retry =>
     {
-        retry.RetryStrategy = new RetryStrategyOptions
-        {
-            MaxRetryAttempts = int.MaxValue, // optional global cap; row Retries remains durable
-            Delay = TimeSpan.FromSeconds(30),
-            BackoffType = DelayBackoffType.Exponential,
-            UseJitter = true,
-            MaxDelay = TimeSpan.FromMinutes(5),
-            ShouldHandle = args => ValueTask.FromResult(
-                args.Outcome.Exception is TimeoutException or HttpRequestException
-            ),
-        };
         retry.OnExhaustedTimeout = TimeSpan.FromSeconds(30);
         retry.OnExhausted = (context, ct) =>
         {
@@ -1604,13 +1676,15 @@ builder.Services.AddHeadlessJobs(options =>
 });
 ```
 
-`ShouldHandle` is always explicit; cancellation and `TerminateExecutionException` are excluded by default, and that default classification is exposed as `JobsRetryOptions.DefaultShouldHandle` for reuse when replacing `RetryStrategy`. Per-row `RetryIntervals` override Polly delay generation and retain fixed-schedule/final-interval reuse semantics. Otherwise Polly owns fixed, linear, exponential, jittered, capped, or custom delays. Jobs owns leases, durable counters, scheduling, and terminal state. The exhausted callback runs in a fresh DI scope only after an atomic owned transition to `Failed`; timeout or callback failure is logged and contained. Lease renewal remains active during attempts and delays; lease loss cancels the pipeline and prevents stale writes.
+Cancellation of the run's own token (durable cancel, host shutdown, lease loss) and `TerminateExecutionException` are never retried. Once that token is cancelled, any `OperationCanceledException` that ends the run belongs to the executor, including one that carries a token the handler linked to it: durable cancel writes `Cancelled`, and host shutdown and lease loss leave the row non-terminal for recovery without invoking the exhausted callback. Otherwise, and a failure the policy's fail rules match ends the run at once; a fail rule that throws counts as matched and is logged. An `OperationCanceledException` the handler throws while that token is live, such as an `HttpClient` timeout or its own `CancelAfter`, is an ordinary failure: fail rules see it and the budget retries it. Declare `FailOn<OperationCanceledException>()` to end it at once; the rule also matches `TaskCanceledException`. Per-row `RetryIntervals` take precedence over the policy's delays and retain fixed-schedule/final-interval reuse semantics. Jobs owns leases, durable counters, scheduling, and terminal state. The exhausted callback runs once in a fresh DI scope after each atomic owned transition to `Failed`, whether the budget ran out, a fail rule matched, or crash recovery found the budget spent; a `TerminateExecutionException`, or a terminal status another node already wrote, does not invoke it. Timeout or callback failure is logged and contained. Lease renewal remains active during attempts and delays; lease loss cancels the pipeline and prevents stale writes.
 
-Never serialize `RetryStrategyOptions`, `ResiliencePipeline`, `ResilienceContext`, predicates, delay generators, or delegates.
+Never serialize fail-rule predicates or callback delegates.
+
+A terminal run stays `Failed`; there is no dead-letter status. Requeue it with `IJobScheduler.RequeueAsync` or `RequeueOccurrenceAsync`, or from the dashboard; see [Requeue a failed job](#requeue-a-failed-job).
 
 #### Global Exception Handler
 
-`HandleExceptionAsync` fires once per failed attempt — after each attempt's durable retry state is persisted (and once more at final failure) — not only once per job. Use it for per-attempt side effects (alerting, metrics, log sinks); use `JobsRetryOptions.OnExhausted` for the once-only notification after the retry budget is consumed. Each handler invocation is bounded by `OnExhaustedTimeout`; a hanging handler is logged and orphaned so it cannot stall retry progression.
+`HandleExceptionAsync` fires once per failed attempt — after each attempt's durable retry state is persisted (and once more at final failure) — not only once per job. Use it for per-attempt side effects (alerting, metrics, log sinks); use `JobsRetryOptions.OnExhausted` for the once-only notification when the run fails terminally. Each handler invocation is bounded by `OnExhaustedTimeout`; a hanging handler is logged and orphaned so it cannot stall retry progression.
 
 ```csharp
 public sealed class MyJobExceptionHandler(ILogger<MyJobExceptionHandler> logger)
@@ -1709,7 +1783,7 @@ itself: a check made inside the job sees only the current node.
 | `InProgress` | Actively executing (lease renewing) |
 | `Succeeded` | Completed successfully |
 | `DueDone` | Cron occurrence completed within its due window |
-| `Failed` | Retries exhausted or unhandled exception |
+| `Failed` | The failure policy gave up: retries exhausted or a fail rule matched, including on a cancellation the handler raised while the run's token was live. Requeue it with `RequeueAsync` / `RequeueOccurrenceAsync` |
 | `Cancelled` | Idle cancellation was accepted, or an executing time job cooperatively exited after observing durable `CancelRequested`; host shutdown and lease loss do not write this status |
 | `Skipped` | `TerminateExecutionException`, or the scheduler retired the occurrence before it ran (pause, definition update, missed-run recovery, overlap policy, dead owner) |
 
@@ -1797,6 +1871,7 @@ dotnet add package Headless.Jobs.EntityFramework.PostgreSql
 
 ```csharp
 using Headless.Jobs;
+using Headless.Jobs.Enums;
 using Headless.Jobs.Models;
 using Microsoft.EntityFrameworkCore;
 
@@ -1804,7 +1879,7 @@ builder.Services.AddDbContext<AppDbContext>(options => options.UseNpgsql(connect
 builder.Services.AddHeadlessJobs(jobs =>
 {
     jobs.UsePostgreSql<AppDbContext>(coordination => coordination.ClusterName = "orders");
-    jobs.ConfigureJob<OrderReminderRequest>(new JobOptions { Retries = 3 });
+    jobs.ConfigureJob<OrderReminderRequest>(new JobOptions { OnNodeDeath = NodeDeathPolicy.MarkFailed });
 });
 ```
 
@@ -1862,6 +1937,7 @@ dotnet add package Headless.Jobs.EntityFramework.SqlServer
 
 ```csharp
 using Headless.Jobs;
+using Headless.Jobs.Enums;
 using Headless.Jobs.Models;
 using Microsoft.EntityFrameworkCore;
 
@@ -1869,7 +1945,7 @@ builder.Services.AddDbContext<AppDbContext>(options => options.UseSqlServer(conn
 builder.Services.AddHeadlessJobs(jobs =>
 {
     jobs.UseSqlServer<AppDbContext>(coordination => coordination.ClusterName = "orders");
-    jobs.ConfigureJob<OrderReminderRequest>(new JobOptions { Retries = 3 });
+    jobs.ConfigureJob<OrderReminderRequest>(new JobOptions { OnNodeDeath = NodeDeathPolicy.MarkFailed });
 });
 ```
 

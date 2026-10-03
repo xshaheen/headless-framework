@@ -4,7 +4,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using Headless.PushNotifications.Firebase;
-using Headless.PushNotifications.Firebase.Internals;
+using Headless.PushNotifications.Firebase.Internal;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 

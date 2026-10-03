@@ -48,7 +48,8 @@ public static class SetupInMemory
                     "InMemory",
                     [MessageLane.Bus, MessageLane.Queue],
                     supportsIndependentLaneTopology: true,
-                    supportsEveryInstance: true
+                    supportsEveryInstance: true,
+                    supportsRequestReply: true
                 )
             );
             services.AddSingleton<MemoryQueue>();
@@ -58,6 +59,7 @@ public static class SetupInMemory
             services.AddSingleton<ITransport>(sp => sp.GetRequiredService<InMemoryBusTransport>());
             services.AddSingleton<InMemoryQueueTransport>();
             services.AddSingleton<IQueueTransport>(sp => sp.GetRequiredService<InMemoryQueueTransport>());
+            services.AddSingleton<IReplyTransport, InMemoryReplyTransport>();
         }
     }
 }

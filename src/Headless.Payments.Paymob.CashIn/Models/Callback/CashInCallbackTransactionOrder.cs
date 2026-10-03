@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Payments.Paymob.CashIn.Internals;
+using Headless.Payments.Paymob.CashIn.Internal;
 using Headless.Payments.Paymob.CashIn.Models.Orders;
 
 namespace Headless.Payments.Paymob.CashIn.Models.Callback;

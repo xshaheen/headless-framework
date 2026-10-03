@@ -2,8 +2,11 @@
 
 using Headless.Checks;
 using Headless.Messaging.Registration;
+using Headless.Messaging.RequestReply;
+using Headless.Reliability;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Headless.Messaging.Configuration;
 
@@ -134,14 +137,44 @@ public sealed class MessagingSetupBuilder : IMessagingBuilder
     }
 
     /// <summary>
+    /// Enables this host to send requests with <see cref="IRequestClient"/> and await their replies, for example
+    /// <c>setup.AddRequestReply(requests =&gt; requests.DefaultTimeout = TimeSpan.FromSeconds(10))</c>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// It registers <see cref="IRequestClient"/> and a reply listener that opens when messaging starts, before any
+    /// consumer, and closes when it stops. A host that never calls it registers no client and opens no reply channel;
+    /// a host that only answers requests does not need it.
+    /// </para>
+    /// <para>
+    /// The transport must support request/reply, or messaging fails to start naming the provider. Calling this more than
+    /// once is harmless; each <paramref name="configure"/> applies to the same <see cref="MessagingOptions.RequestReply"/>.
+    /// </para>
+    /// </remarks>
+    /// <param name="configure">Optionally changes the request/reply settings, such as the default timeout.</param>
+    /// <returns>This builder, for chaining.</returns>
+    public MessagingSetupBuilder AddRequestReply(Action<RequestReplyOptions>? configure = null)
+    {
+        configure?.Invoke(Options.RequestReply);
+
+        Services.TryAddSingleton<RequestReplyMarkerService>();
+        Services.TryAddSingleton<PendingRequests>();
+        Services.TryAddSingleton<ReplyDispatcher>();
+        Services.TryAddSingleton<ReplyListenerHost>();
+        Services.TryAddSingleton<IRequestClient, RequestClient>();
+
+        return this;
+    }
+
+    /// <summary>
     /// Tunes the deployment settings of one declared consumer on this host, for example
     /// <c>Tune("billing.invoice-projection", consumer =&gt; consumer.Concurrency(16))</c>. Equivalent to the same call on
     /// <c>services.ConfigureMessaging(...)</c>.
     /// </summary>
     /// <remarks>
     /// The identity is checked when messaging starts: an identity no registered consumer declares fails startup.
-    /// <c>Headless:Messaging:Consumers:{identity}</c> configuration (<c>Concurrency</c>, <c>InboxRetention</c>, and
-    /// <c>CircuitBreaker</c>) applies after every
+    /// <c>Headless:Messaging:Consumers:{identity}</c> configuration (<c>Concurrency</c>, <c>InboxRetention</c>,
+    /// <c>CircuitBreaker</c>, and <c>FailurePolicy</c>) applies after every
     /// <c>Tune</c> call. <paramref name="configure"/> runs once, synchronously, during this call.
     /// </remarks>
     /// <param name="identity">The consumer's identity.</param>
@@ -152,6 +185,40 @@ public sealed class MessagingSetupBuilder : IMessagingBuilder
     public MessagingSetupBuilder Tune(string identity, [InstantHandle] Action<ConsumerTuningBuilder> configure)
     {
         Services.AddConsumerTuning(identity, configure);
+        return this;
+    }
+
+    /// <summary>
+    /// Sets the failure policy of every competing consumer on this host that neither declares one on its attribute nor
+    /// has one tuned, and of every competing runtime subscription. Without this call such a consumer retries 2 times
+    /// at once, then 5 times after a delay that starts at 30 seconds and doubles up to 15 minutes.
+    /// </summary>
+    /// <remarks>
+    /// <c>Headless:Messaging:Consumers:{identity}:FailurePolicy</c> configuration still adjusts the retry counts and
+    /// delays of a consumer that uses the default. A later call replaces an earlier one.
+    /// </remarks>
+    /// <typeparam name="TPolicy">The policy type; it is built once, during this call.</typeparam>
+    /// <returns>This builder, for chaining.</returns>
+    /// <exception cref="ArgumentException">The policy's retry counts or delays are out of range.</exception>
+    public MessagingSetupBuilder DefaultFailurePolicy<TPolicy>()
+        where TPolicy : FailurePolicy, new()
+    {
+        Options.DefaultFailurePolicy = FailurePolicyDefinition.Create<TPolicy>();
+        return this;
+    }
+
+    /// <summary>
+    /// Sets the host's default consumer failure policy inline, for example
+    /// <c>DefaultFailurePolicy(p =&gt; p.Immediate(1).Delayed(3, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(10)))</c>.
+    /// See <see cref="DefaultFailurePolicy{TPolicy}"/>.
+    /// </summary>
+    /// <param name="configure">Describes the policy; it runs once, synchronously, during this call.</param>
+    /// <returns>This builder, for chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">The policy's retry counts or delays are out of range.</exception>
+    public MessagingSetupBuilder DefaultFailurePolicy([InstantHandle] Action<FailurePolicyBuilder> configure)
+    {
+        Options.DefaultFailurePolicy = FailurePolicyDefinition.Create(configure);
         return this;
     }
 

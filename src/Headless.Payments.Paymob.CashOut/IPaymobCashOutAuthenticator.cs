@@ -2,7 +2,7 @@
 
 using System.Net.Http.Json;
 using Headless.Http;
-using Headless.Payments.Paymob.CashOut.Internals;
+using Headless.Payments.Paymob.CashOut.Internal;
 using Headless.Payments.Paymob.CashOut.Models;
 using Headless.Urls;
 using Microsoft.Extensions.Options;

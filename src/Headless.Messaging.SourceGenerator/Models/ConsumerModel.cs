@@ -22,11 +22,19 @@ internal enum ConsumerLane
 /// <param name="MessageTypeNames">
 /// The fully qualified <c>T</c> of every <c>IConsume&lt;T&gt;</c> the class implements, in ordinal order.
 /// </param>
+/// <param name="Responders">
+/// Every <c>IRespond&lt;TRequest, TResponse&gt;</c> the class implements, in ordinal order of the request. Always empty on the
+/// Bus lane, where a responder fails the build.
+/// </param>
 /// <param name="Disposal">How the dispatcher releases the instance it constructs.</param>
 /// <param name="HasLifecycle">Whether the class implements <c>IConsumerLifecycle</c>, whose hooks run around each delivery.</param>
 /// <param name="HasSubscriptionHook">
 /// Whether the every-instance class implements <c>IOnSubscriptionEstablished</c>, so the module hands messaging a
 /// generated call of it. Always false for any other consumer, where the hook never runs.
+/// </param>
+/// <param name="FailurePolicyTypeName">
+/// The fully qualified (<c>global::</c>) name of the declared failure policy, which the module constructs through a
+/// generated factory; null when the consumer declares none and the host default applies.
 /// </param>
 internal sealed record ConsumerModel(
     string TypeName,
@@ -35,10 +43,17 @@ internal sealed record ConsumerModel(
     string Identity,
     bool EveryInstance,
     EquatableArray<string> MessageTypeNames,
+    EquatableArray<ResponderModel> Responders,
     HandlerDisposal Disposal,
     bool HasLifecycle,
-    bool HasSubscriptionHook
+    bool HasSubscriptionHook,
+    string? FailurePolicyTypeName
 );
+
+/// <summary>One request a consumer class answers, and the one response type it answers with.</summary>
+/// <param name="RequestTypeName">The fully qualified <c>TRequest</c>.</param>
+/// <param name="ResponseTypeName">The fully qualified <c>TResponse</c>.</param>
+internal sealed record ResponderModel(string RequestTypeName, string ResponseTypeName);
 
 /// <summary>
 /// The transform output for one consumer attribute application: the emission model plus what only validation needs,
@@ -49,7 +64,10 @@ internal sealed record ConsumerModel(
 /// </param>
 /// <param name="TypeName">The fully qualified class name, kept to detect a class that carries both lane attributes.</param>
 /// <param name="Identity">The declared identity, kept for duplicate detection even when <paramref name="Consumer"/> is null.</param>
-/// <param name="MessageTypeNames">The consumed message types, kept to detect a second Queue consumer for one message.</param>
+/// <param name="MessageTypeNames">
+/// The consumed and the answered message types, kept to detect a second Queue consumer for one message: a responder is its
+/// request's Queue consumer.
+/// </param>
 internal sealed record ConsumerResult(
     ConsumerModel? Consumer,
     ConsumerLane Lane,

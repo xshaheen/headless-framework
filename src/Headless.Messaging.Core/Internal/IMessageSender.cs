@@ -52,7 +52,7 @@ internal sealed class MessageSender : IMessageSender
     private readonly TimeProvider _timeProvider;
     private readonly MessagingTelemetry _telemetry;
     private readonly RetryPolicyOptions _retryPolicy;
-    private readonly MessagingRetryPipeline _retryPipeline;
+    private readonly MessagingPublishRetryPipeline _retryPipeline;
     private readonly CancellationToken _shutdownToken;
 
     public MessageSender(ILogger<MessageSender> logger, IServiceProvider serviceProvider)
@@ -68,7 +68,7 @@ internal sealed class MessageSender : IMessageSender
         var opts = serviceProvider.GetRequiredService<IOptions<MessagingOptions>>().Value;
         _options = opts;
         _retryPolicy = opts.RetryPolicy;
-        _retryPipeline = new MessagingRetryPipeline(_retryPolicy, _timeProvider, logger);
+        _retryPipeline = new MessagingPublishRetryPipeline(_retryPolicy, _timeProvider, logger);
 
         // IHostApplicationLifetime is optional so MessageSender remains usable in test contexts
         // (and non-hosted scenarios). When absent, shutdown cancellation cannot be observed and

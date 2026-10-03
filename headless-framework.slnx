@@ -319,6 +319,7 @@
         <Project Path="src\Headless.Urls\Headless.Urls.csproj" />
         <Project Path="src\Headless.Http.Resilience\Headless.Http.Resilience.csproj" />
         <Project Path="src\Headless.Primitives\Headless.Primitives.csproj" />
+        <Project Path="src\Headless.PhoneNumbers\Headless.PhoneNumbers.csproj" />
         <Project Path="src\Headless.Core\Headless.Core.csproj" />
         <Project Path="src/Headless.FluentValidation/Headless.FluentValidation.csproj" />
         <Project Path="src\Headless.Checks\Headless.Checks.csproj" />
@@ -343,6 +344,7 @@
         <Project Path="tests\Headless.Extensions.Tests.Unit\Headless.Extensions.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Hosting.Tests.Unit\Headless.Hosting.Tests.Unit.csproj" />
         <Project Path="tests\Headless.NetTopologySuite.Tests.Unit\Headless.NetTopologySuite.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.PhoneNumbers.Tests.Unit\Headless.PhoneNumbers.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Security.Tests.Unit\Headless.Security.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Security.Argon2.Tests.Unit\Headless.Security.Argon2.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Testing.AspNetCore.Tests.TestHost\Headless.Testing.AspNetCore.Tests.TestHost.csproj" />
@@ -513,6 +515,12 @@
     <Folder Name="/RateLimiting/Tests/">
         <Project Path="tests\Headless.RateLimiting.Tests.Integration\Headless.RateLimiting.Tests.Integration.csproj" />
         <Project Path="tests\Headless.RateLimiting.Tests.Unit\Headless.RateLimiting.Tests.Unit.csproj" />
+    </Folder>
+    <Folder Name="/Reliability/">
+        <Project Path="src\Headless.Reliability.Abstractions\Headless.Reliability.Abstractions.csproj" />
+    </Folder>
+    <Folder Name="/Reliability/Tests/">
+        <Project Path="tests\Headless.Reliability.Abstractions.Tests.Unit\Headless.Reliability.Abstractions.Tests.Unit.csproj" />
     </Folder>
     <Folder Name="/Seo/">
         <Project Path="src\Headless.Sitemaps\Headless.Sitemaps.csproj" />

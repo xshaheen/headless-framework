@@ -8,8 +8,12 @@ internal static class SourceGeneratorConstants
     public const string BusConsumerAttributeMetadataName = "Headless.Messaging.BusConsumerAttribute";
     public const string QueueConsumerAttributeMetadataName = "Headless.Messaging.QueueConsumerAttribute";
     public const string ConsumeInterfaceMetadataName = "Headless.Messaging.IConsume`1";
+    public const string RespondInterfaceMetadataName = "Headless.Messaging.IRespond`2";
     public const string SubscriptionHookMetadataName = "Headless.Messaging.IOnSubscriptionEstablished";
     public const string ConsumerLifecycleMetadataName = "Headless.Messaging.IConsumerLifecycle";
+    public const string RequestClientMetadataName = "Headless.Messaging.IRequestClient";
+    public const string ResponderMetadataAttributeName = "Headless.Messaging.ResponderMetadataAttribute";
+    public const string RequestMethodName = "RequestAsync";
 
     public const string GeneratedFileName = "MessagingModule.g.cs";
 }

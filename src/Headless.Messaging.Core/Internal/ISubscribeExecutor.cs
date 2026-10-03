@@ -10,8 +10,10 @@ using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.MultiTenancy;
 using Headless.Messaging.Persistence;
+using Headless.Messaging.RequestReply;
 using Headless.Messaging.Retry;
 using Headless.Messaging.Runtime;
+using Headless.Reliability;
 using Headless.UnitOfWork;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -72,7 +74,19 @@ internal sealed class SubscribeExecutor(
 
     private readonly IMessagingCapabilityModel? _capabilityModel = provider.GetService<IMessagingCapabilityModel>();
     private readonly RetryPolicyOptions _retryPolicy = options.Value.RetryPolicy;
-    private readonly MessagingRetryPipeline _retryPipeline = new(options.Value.RetryPolicy, timeProvider, logger);
+
+    // Consume retries follow each consumer's failure policy, not RetryPolicyOptions.RetryStrategy: one pipeline with no
+    // inline delay serves every consumer, and each execution supplies its consumer's classifier.
+    private readonly MessagingConsumeRetryPipeline _retryPipeline = new(timeProvider);
+
+    // Tenant propagation wraps only Bus consumers; a Queue responder of a propagating host still runs, and saves, under
+    // the request's tenant. Registrations are fixed once the container is built, so the probe runs once.
+    private readonly Lazy<bool> _propagatesTenantToResponders = new(() =>
+        provider.GetService<IMiddlewareDescriptorRegistry>()?.HasMiddleware<TenantPropagationConsumeMiddleware>()
+        == true
+    );
+
+    private ResponderReplies? _responderReplies;
 
     public Task<OperateResult> ExecuteAsync(
         MediumMessage message,
@@ -135,15 +149,25 @@ internal sealed class SubscribeExecutor(
                         + $"{Environment.NewLine} Ensure a consumer with this identity is registered for the message."
                 );
 
+                // The consumer this row belongs to is no longer registered, so no attempt can ever succeed: the row is
+                // a terminal failure. The terminal write is CAS-guarded and needs an active lease, which a row handed
+                // over without one does not hold yet; a lost lease means another node owns the row, so stop.
+                if (message.LockedUntil is null && !await _LeaseAsync(message, cancellationToken).ConfigureAwait(false))
+                {
+                    return OperateResult.Failed(exception);
+                }
+
                 // No subscriber.invoke span exists on the not-found path (BeforeSubscriberInvoke never ran), so
                 // there is nothing to mark with error status; the failure is surfaced via _SetFailedState below.
                 await _SetFailedState(
                         message,
                         exception,
                         dispatchServices,
-                        decision: MessagingRetryDecision.Stop,
-                        executionState: executionState,
-                        cancellationToken: cancellationToken
+                        new ConsumeRetryBudget(FailurePolicyDefinition.None),
+                        MessagingRetryDecision.Exhausted,
+                        budgetSpent: false,
+                        executionState,
+                        cancellationToken
                     )
                     .ConfigureAwait(false);
                 return OperateResult.Failed(exception);
@@ -153,31 +177,76 @@ internal sealed class SubscribeExecutor(
         //record instance id
         message.Origin.Headers[Headers.ExecutionInstanceId] = _hostName;
 
+        var budget = new ConsumeRetryBudget(descriptor!.FailurePolicy);
+
         return await _retryPipeline
             .ExecuteAsync(
-                (_, ct) => _ExecuteWithoutRetryAsync(message, descriptor!, dispatchServices, executionState, ct),
-                (inlineRetries, exception, delay, strategyFailed, ct) =>
-                    _HandleRetryAsync(
-                        message,
-                        exception,
-                        dispatchServices,
-                        inlineRetries,
-                        delay,
-                        strategyFailed,
-                        executionState,
-                        ct
-                    ),
-                (inlineRetries, exception, ct) =>
-                    _HandleNonRetryableAsync(message, exception, dispatchServices, inlineRetries, executionState, ct),
-                message.StorageId,
+                (_, ct) => _ExecuteWithoutRetryAsync(message, descriptor, budget, dispatchServices, executionState, ct),
+                // The dispatch token, not the pipeline's linked one: a linked token learns of a host stop only when the
+                // dispatch token's cancellation callbacks run, which CancelAsync defers, so a shutdown failure could
+                // otherwise be judged before its token shows the stop and be recorded as a consumer failure.
+                (_, exception, _, _) =>
+                    _HandleRetryAsync(message, exception, dispatchServices, budget, executionState, cancellationToken),
+                (_, exception, ct) =>
+                    _HandleNonRetryableAsync(message, exception, dispatchServices, budget, executionState, ct),
+                exception => _IsRetryable(exception, budget.Policy, message.StorageId, cancellationToken),
                 cancellationToken
             )
             .ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Classifies a failed consume attempt. Once the consume token is cancelled (host shutdown, dispatcher stop), an
+    /// <see cref="OperationCanceledException"/> is never classified, whatever token it carries, because a cancelled
+    /// dispatch writes nothing and the fail rules must not turn it into a terminal failure. While the consume token is
+    /// live, a cancellation is an ordinary failure: the handler's own (an HttpClient timeout, a CancelAfter) arrives
+    /// wrapped, and the transactional inbox runner's own post-handler work (consumer SaveChanges interceptors,
+    /// completing the inbox row) can surface one raw; both reach the fail rules and the retry budget. The built-in
+    /// permanent set always fails. Otherwise the consumer's fail rules see the handler's own exception, unwrapped from
+    /// the executor's wrapper exactly once, and anything they do not match is retried.
+    /// </summary>
+    /// <param name="exception">The attempt's failure.</param>
+    /// <param name="policy">The consumer's failure policy.</param>
+    /// <param name="storageId">The message row, for logging a throwing fail rule.</param>
+    /// <param name="cancellationToken">
+    /// The consume token, not the attempt's: the attempt token is also cancelled when the retry burst ends, which is
+    /// not a cancelled dispatch.
+    /// </param>
+    private bool _IsRetryable(
+        Exception exception,
+        FailurePolicyDefinition policy,
+        Guid storageId,
+        CancellationToken cancellationToken
+    )
+    {
+        if (RetryHelper.IsCancellation(exception, cancellationToken))
+        {
+            return false;
+        }
+
+        if (RetryExceptionClassifier.IsPermanent(exception))
+        {
+            return false;
+        }
+
+        var effective = RetryExceptionClassifier.Unwrap(exception);
+        if (!policy.ShouldFail(effective, out var ruleException))
+        {
+            return true;
+        }
+
+        if (ruleException is not null)
+        {
+            logger.FailurePolicyRuleThrew(ruleException, storageId, effective.GetType().Name);
+        }
+
+        return false;
+    }
+
     private async Task<MessagingRetryAttempt> _ExecuteWithoutRetryAsync(
         MediumMessage message,
         ConsumerExecutorDescriptor descriptor,
+        ConsumeRetryBudget budget,
         IServiceProvider dispatchServices,
         RetryExecutionState? executionState,
         CancellationToken cancellationToken
@@ -192,8 +261,16 @@ internal sealed class SubscribeExecutor(
         // state-write predicates validate the stored lease identity and activity.
         var needsLease = message.LockedUntil is null;
 
-        var inlineRetries = message.InlineAttempts;
-        if (RetryHelper.DetectCrashRecoveredReservation(inlineRetries, _retryPolicy) is { } recoveryAttempt)
+        // A crashed dispatch that already reserved its final attempt must not run another; a row already past its
+        // consumer's budget (the policy shrank since it was scheduled) must not run at all. Both end through the
+        // retry decision without invoking the handler, which bounds a crash loop to the consumer's budget.
+        if (
+            (
+                RetryHelper.DetectCrashRecoveredReservation(message.Retries, message.InlineAttempts, budget)
+                ?? RetryHelper.DetectBudgetOverrun(message.Retries, budget)
+            ) is
+            { } recoveryAttempt
+        )
         {
             // The recovery transition still writes CAS-guarded state, which requires an active
             // lease — take a plain lease (no fresh reservation; the crashed reservation is spent).
@@ -201,6 +278,20 @@ internal sealed class SubscribeExecutor(
             {
                 _ReleaseHalfOpenProbe(message);
                 return MessagingRetryAttempt.Completed(OperateResult.Success);
+            }
+
+            // The recovery transition would exhaust the request, raising the exhausted callback and faulting a caller
+            // that is gone; an expired request ends silently instead, as it does at any other attempt start.
+            if (RequestEnvelope.IsExpired(message.Lane, message.Origin.Headers, timeProvider.GetUtcNow()))
+            {
+                return await _EndExpiredRequestAsync(
+                        message,
+                        budget,
+                        dispatchServices,
+                        executionState,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
             }
 
             return recoveryAttempt;
@@ -222,6 +313,14 @@ internal sealed class SubscribeExecutor(
             return MessagingRetryAttempt.Completed(OperateResult.Success);
         }
 
+        // Checked at every attempt start, persisted pickups included: a request can wait in the inbox, behind an open
+        // circuit, or for a crashed attempt's lease long after its caller gave up.
+        if (RequestEnvelope.IsExpired(message.Lane, message.Origin.Headers, timeProvider.GetUtcNow()))
+        {
+            return await _EndExpiredRequestAsync(message, budget, dispatchServices, executionState, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         try
         {
             logger.ConsumerExecuting(
@@ -241,15 +340,18 @@ internal sealed class SubscribeExecutor(
                 // The runner and consumer must share the same DbContext, alive until commit or rollback.
                 await using var attemptScope = dispatchServices.CreateAsyncScope();
                 var attemptServices = attemptScope.ServiceProvider;
+                var middlewareRegistry = attemptServices.GetService<IMiddlewareDescriptorRegistry>();
                 var propagateTenant =
                     descriptor.MessageType is { } messageType
-                    && attemptServices.GetService<IMiddlewareDescriptorRegistry>() is { } middlewareRegistry
+                    && middlewareRegistry is not null
                     && middlewareRegistry.TryGetConsumeDescriptors(
                         messageType,
                         descriptor.Lane,
                         out var middlewareDescriptors
                     )
                     && middlewareDescriptors.Any(m => m.MiddlewareType == typeof(TenantPropagationConsumeMiddleware));
+
+                propagateTenant |= descriptor.IsResponder && _propagatesTenantToResponders.Value;
                 // Tenant-aware services can read the tenant at resolution, and auto-save runs after consume middleware.
                 using var tenantScope = propagateTenant
                     ? TenantContextScope.ChangeFromEnvelope(attemptServices, message.Origin, logger)
@@ -258,8 +360,12 @@ internal sealed class SubscribeExecutor(
                 await transactionRunner
                     .ExecuteAsync(
                         message,
-                        (unitOfWork, ct) =>
-                            _InvokeConsumerMethodAsync(message, descriptor, attemptServices, unitOfWork, ct),
+                        // The transactional tier binds the reply to the unit's commit, so the attempt returns none here.
+                        async (unitOfWork, ct) =>
+                        {
+                            _ = await _InvokeConsumerMethodAsync(message, descriptor, attemptServices, unitOfWork, ct)
+                                .ConfigureAwait(false);
+                        },
                         cancellationToken
                     )
                     .ConfigureAwait(false);
@@ -268,7 +374,7 @@ internal sealed class SubscribeExecutor(
             }
             else
             {
-                await _InvokeConsumerMethodAsync(
+                var pendingReply = await _InvokeConsumerMethodAsync(
                         message,
                         descriptor,
                         services: null,
@@ -276,7 +382,14 @@ internal sealed class SubscribeExecutor(
                         cancellationToken
                     )
                     .ConfigureAwait(false);
-                await _SetSuccessfulState(message, executionState).ConfigureAwait(false);
+                var updated = await _SetSuccessfulState(message, executionState).ConfigureAwait(false);
+
+                // Only the attempt whose success write took effect answers: a row another attempt already finished
+                // was answered, or failed, by that attempt.
+                if (updated && pendingReply is { } reply)
+                {
+                    await _SendReplyAsync(message, reply).ConfigureAwait(false);
+                }
             }
 
             _RecordInboxMetric(message, InboxMetricKind.Terminal, InboxMetricOutcome.Succeeded);
@@ -314,7 +427,32 @@ internal sealed class SubscribeExecutor(
             _ReleaseHalfOpenProbe(message);
             return MessagingRetryAttempt.Completed(OperateResult.Failed(ex));
         }
-        catch (Exception ex) when (_IsDeserializationException(ex))
+        catch (Exception ex) when (_HasCause<ResponderNullResponseException>(ex))
+        {
+            // Retrying cannot turn a null response into one, so the request ends here, whatever the host's retry
+            // classification says, and its caller gets the null_response fault.
+            logger.ConsumerExecuteFailed(
+                ex,
+                LogSanitizer.Sanitize(message.Origin.Name),
+                message.StorageId,
+                message.Origin.GetExecutionInstanceId()
+            );
+
+            await _SetFailedState(
+                    message,
+                    ex,
+                    dispatchServices,
+                    budget,
+                    MessagingRetryDecision.Stop,
+                    budgetSpent: false,
+                    executionState,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            return MessagingRetryAttempt.Completed(OperateResult.Failed(ex));
+        }
+        catch (Exception ex) when (_HasCause<MessageDeserializationException>(ex))
         {
             logger.ConsumerExecuteFailed(
                 ex,
@@ -327,8 +465,9 @@ internal sealed class SubscribeExecutor(
                     message,
                     ex,
                     dispatchServices,
-                    Math.Max(0, message.InlineAttempts - 1),
+                    budget,
                     MessagingRetryDecision.Exhausted,
+                    budgetSpent: false,
                     executionState,
                     cancellationToken
                 )
@@ -349,7 +488,7 @@ internal sealed class SubscribeExecutor(
         }
     }
 
-    private async ValueTask _SetSuccessfulState(MediumMessage message, RetryExecutionState? executionState)
+    private async ValueTask<bool> _SetSuccessfulState(MediumMessage message, RetryExecutionState? executionState)
     {
         // The cancellation token parameter is unused since F30 switched the storage write
         // to CancellationToken.None below. The method is private; the parameter is removed
@@ -384,6 +523,8 @@ internal sealed class SubscribeExecutor(
         }
 
         await _ReportSuccessfulStateAsync(message).ConfigureAwait(false);
+
+        return updated;
     }
 
     private async ValueTask _ReportSuccessfulStateAsync(MediumMessage message)
@@ -399,25 +540,24 @@ internal sealed class SubscribeExecutor(
         MediumMessage message,
         Exception exception,
         IServiceProvider dispatchServices,
-        int _,
-        TimeSpan delay,
-        bool strategyFailed,
+        ConsumeRetryBudget budget,
         RetryExecutionState? executionState,
         CancellationToken cancellationToken
     )
     {
-        var inlineRetries = Math.Max(0, message.InlineAttempts - 1);
-        var decision =
-            strategyFailed ? MessagingRetryDecision.Exhausted
-            : !_retryPolicy.HasMoreInlineAttempts(inlineRetries) && message.Retries >= _retryPolicy.MaxPersistedRetries
-                ? MessagingRetryDecision.Exhausted
-            : MessagingRetryDecision.Continue(delay);
+        var decision = budget.Decide(message.Retries, _InlineRetriesCompleted(message));
+        if (_EndsRequestRetries(message, budget, decision))
+        {
+            decision = MessagingRetryDecision.Exhausted;
+        }
+
         var persisted = await _SetFailedState(
                 message,
                 exception,
                 dispatchServices,
-                inlineRetries,
+                budget,
                 decision,
+                budgetSpent: true,
                 executionState,
                 cancellationToken
             )
@@ -425,36 +565,95 @@ internal sealed class SubscribeExecutor(
         return persisted.Outcome == MessagingRetryDecision.Kind.Continue;
     }
 
-    private async Task _HandleNonRetryableAsync(
+    /// <summary>
+    /// Whether a request's retry, which the host policy would schedule, ends the request instead. Its caller waits
+    /// only until the deadline, so a retry that starts after it, or that waits for the persisted retry processor, can
+    /// never answer the caller; ending now sends the caller a fault while it still listens.
+    /// </summary>
+    private bool _EndsRequestRetries(MediumMessage message, ConsumeRetryBudget budget, MessagingRetryDecision decision)
+    {
+        var headers = message.Origin.Headers;
+        if (
+            decision.Outcome != MessagingRetryDecision.Kind.Continue
+            || !RequestEnvelope.IsRequest(message.Lane, headers)
+        )
+        {
+            return false;
+        }
+
+        // Only an immediate retry runs in this dispatch; a delayed one waits for the persisted retry processor.
+        if (!budget.HasMoreInlineAttempts(message.Retries, _InlineRetriesCompleted(message)))
+        {
+            return true;
+        }
+
+        return RequestEnvelope.GetDeadline(headers) is { } deadline
+            && timeProvider.GetUtcNow() + decision.Delay >= deadline;
+    }
+
+    private async Task<MessagingRetryAttempt> _EndExpiredRequestAsync(
         MediumMessage message,
-        Exception exception,
+        ConsumeRetryBudget budget,
         IServiceProvider dispatchServices,
-        int _,
         RetryExecutionState? executionState,
         CancellationToken cancellationToken
     )
     {
-        var inlineRetries = Math.Max(0, message.InlineAttempts - 1);
+        logger.RequestExpiredBeforeAttempt(message.StorageId);
+
+        var expired = new RequestExpiredException(RequestEnvelope.GetDeadline(message.Origin.Headers));
+        await _SetFailedState(
+                message,
+                expired,
+                dispatchServices,
+                budget,
+                MessagingRetryDecision.RequestExpired,
+                budgetSpent: false,
+                executionState,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return MessagingRetryAttempt.Completed(OperateResult.Failed(expired));
+    }
+
+    private async Task _HandleNonRetryableAsync(
+        MediumMessage message,
+        Exception exception,
+        IServiceProvider dispatchServices,
+        ConsumeRetryBudget budget,
+        RetryExecutionState? executionState,
+        CancellationToken cancellationToken
+    )
+    {
+        // A fail rule or the built-in permanent set ends the message without spending the remaining retries. It is
+        // still a terminal failure, so it fires OnExhausted like a spent budget; a host-shutdown cancellation never
+        // gets that far because _SetFailedState writes nothing for it.
         await _SetFailedState(
                 message,
                 exception,
                 dispatchServices,
-                inlineRetries,
-                MessagingRetryDecision.Stop,
+                budget,
+                MessagingRetryDecision.Exhausted,
+                budgetSpent: false,
                 executionState,
                 cancellationToken
             )
             .ConfigureAwait(false);
     }
 
+    // The durable counter counts reserved attempts, the first one included, so the retries already run are one less.
+    private static int _InlineRetriesCompleted(MediumMessage message) => Math.Max(0, message.InlineAttempts - 1);
+
     private async Task<MessagingRetryDecision> _SetFailedState(
         MediumMessage message,
         Exception ex,
         IServiceProvider dispatchServices,
-        int inlineRetries = 0,
-        MessagingRetryDecision decision = default,
-        RetryExecutionState? executionState = null,
-        CancellationToken cancellationToken = default
+        ConsumeRetryBudget budget,
+        MessagingRetryDecision decision,
+        bool budgetSpent,
+        RetryExecutionState? executionState,
+        CancellationToken cancellationToken
     )
     {
         // Host shutdown: an OCE bound to the dispatch cancellation token (linked to host stopping)
@@ -470,7 +669,7 @@ internal sealed class SubscribeExecutor(
             return MessagingRetryDecision.Stop;
         }
 
-        _LogRetryDecision(message, ex, decision);
+        _LogRetryDecision(message, ex, decision, budget, budgetSpent);
         var originalInlineAttempts = message.InlineAttempts;
 
         message.Origin.AddOrUpdateException(ex);
@@ -481,7 +680,13 @@ internal sealed class SubscribeExecutor(
         // leaves the row picked up by the polling query on restart (Failed/NULL is filtered out).
         // Only transition to Failed on terminal decisions (Stop, Exhausted) or when persisting
         // for the persisted-retry processor (Continue with inline budget exhausted, NextRetryAt set).
-        var state = RetryHelper.ResolveNextState(decision, inlineRetries, _retryPolicy);
+        var state = RetryHelper.ResolveNextState(
+            decision,
+            message.Retries,
+            _InlineRetriesCompleted(message),
+            budget,
+            _retryPolicy.InitialDispatchGrace
+        );
 
         // Persist transition: inline budget consumed AND decision Continue means the call site
         // owns the Retries++ . The helper is pure with respect to MediumMessage; this is the only
@@ -573,6 +778,19 @@ internal sealed class SubscribeExecutor(
             .ConfigureAwait(false);
         executionState?.RecordLeaseTransition(affected, lockedUntil);
 
+        // The terminal write took effect, so this attempt owns the request's outcome and answers it, before the
+        // exhausted callback runs so the caller is not held up by it. An expired request's caller is gone.
+        if (
+            affected
+            && decision.Outcome is not MessagingRetryDecision.Kind.Continue
+            && !decision.IsRequestExpired
+            && RequestEnvelope.IsRequest(message.Lane, message.Origin.Headers)
+            && _GetResponderReplies() is { } replies
+        )
+        {
+            await replies.SendFaultAsync(message.Origin, ResponderReplies.FaultCodeFor(ex), ex).ConfigureAwait(false);
+        }
+
         if (affected && decision.Outcome == MessagingRetryDecision.Kind.Exhausted)
         {
             _RecordInboxMetric(message, InboxMetricKind.Terminal, InboxMetricOutcome.FailedExhausted);
@@ -592,10 +810,11 @@ internal sealed class SubscribeExecutor(
         }
         else if (!affected)
         {
-            // Storage proves the row is already terminal — a redelivered already-exhausted message.
-            // OnExhausted is skipped here; the log line is only emitted when the decision would
-            // otherwise have fired the callback (Stop redeliveries never fire OnExhausted regardless,
-            // so suppressing the log avoids noise for non-callback paths).
+            // Storage proves the row is already terminal — a redelivered message, or a racing writer
+            // that won the terminal CAS. Every terminal consume failure (budget spent, fail rule,
+            // built-in permanent, deserialization, unregistered consumer) fires OnExhausted once, from
+            // the writer whose terminal write lands; this loser stops silently. The skip is logged only
+            // for a terminal decision, so a lost non-terminal write adds no noise.
             if (decision.Outcome == MessagingRetryDecision.Kind.Exhausted)
             {
                 logger.SkippingOnExhaustedAlreadyTerminal(message.StorageId);
@@ -610,9 +829,14 @@ internal sealed class SubscribeExecutor(
         // Skip the report when the conditional UPDATE returned zero affected rows: that signals a
         // broker redelivery of an already-terminal row, not a fresh failure — counting it would
         // wrongly accumulate toward the breaker threshold.
-        if (circuitBreakerStateManager is not null && affected)
+        if (decision.IsRequestExpired)
         {
-            var reportedException = ex is SubscriberExecutionFailedException { InnerException: { } inner } ? inner : ex;
+            // An expired request is no consumer failure, so it neither counts toward nor holds the circuit.
+            _ReleaseHalfOpenProbe(message);
+        }
+        else if (circuitBreakerStateManager is not null && affected)
+        {
+            var reportedException = RetryExceptionClassifier.Unwrap(ex);
 
             var circuitKey = CircuitBreakerKeys.For(message);
             await circuitBreakerStateManager
@@ -710,15 +934,22 @@ internal sealed class SubscribeExecutor(
         );
     }
 
-    private void _LogRetryDecision(MediumMessage message, Exception ex, MessagingRetryDecision decision)
+    private void _LogRetryDecision(
+        MediumMessage message,
+        Exception ex,
+        MessagingRetryDecision decision,
+        ConsumeRetryBudget budget,
+        bool budgetSpent
+    )
     {
         switch (decision.Outcome)
         {
             case MessagingRetryDecision.Kind.Stop:
+            case MessagingRetryDecision.Kind.Exhausted when !budgetSpent:
                 logger.StoredMessageNonRetryableFailure(message.StorageId, ex.GetType().Name);
                 break;
             case MessagingRetryDecision.Kind.Exhausted:
-                logger.ConsumerStoredMessageAfterThreshold(message.StorageId, _retryPolicy.MaxPersistedRetries);
+                logger.ConsumerStoredMessageAfterThreshold(message.StorageId, budget.Policy.TotalAttempts);
                 break;
             case MessagingRetryDecision.Kind.Continue:
                 logger.ConsumerExecutionRetrying(message.StorageId, message.Retries);
@@ -726,7 +957,12 @@ internal sealed class SubscribeExecutor(
         }
     }
 
-    private async Task _InvokeConsumerMethodAsync(
+    /// <summary>Runs the consumer of one attempt and publishes its callback response, if any.</summary>
+    /// <returns>
+    /// The reply to send once the success write takes effect, or <see langword="null"/> when there is none to send by
+    /// the caller: no request, or a transactional attempt whose reply is already bound to its commit.
+    /// </returns>
+    private async Task<PendingReply?> _InvokeConsumerMethodAsync(
         MediumMessage message,
         ConsumerExecutorDescriptor descriptor,
         IServiceProvider? services,
@@ -812,23 +1048,27 @@ internal sealed class SubscribeExecutor(
                 }
             }
 
+            var pendingReply = _ResolveReply(message, descriptor, ret, traceHandle);
+            if (pendingReply is { } reply && unitOfWork is not null)
+            {
+                // Transactional tier: the reply leaves only after the attempt's commit is durable, and a rolled-back or
+                // indeterminate commit never runs the callback, so the caller is never told of work that did not land.
+                _RegisterReplyOnCommit(unitOfWork, message, reply);
+                pendingReply = null;
+            }
+
             // Fire the invoke success span only after the callback response publish completes so the success
             // event also reflects a successful callback publish; still fires on the no-callback path above.
             _TracingAfter(traceHandle, message.Origin.Name, descriptor.MethodName);
-        }
-        catch (OperationCanceledException oce)
-        {
-            // Re-throw TaskCanceledException from handler timeouts (HttpClient, etc.)
-            // so they propagate to _SetFailedState and are reported to the circuit breaker.
-            if (oce is TaskCanceledException && !oce.CancellationToken.IsCancellationRequested)
-            {
-                var e = new SubscriberExecutionFailedException(LogSanitizer.Sanitize(oce.Message), oce);
-                _TracingError(traceHandle, message.Origin.Name, descriptor.MethodName, e);
-                e.ReThrow();
-            }
 
-            // A genuine cancellation (caller/shutdown token) propagates; stop the span un-errored so it is
-            // exported rather than leaked into Activity.Current.
+            return pendingReply;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Only the consume token decides that the dispatch was cancelled: an HttpClient timeout or a
+            // handler-owned CancelAfter carries its own already-cancelled token, yet it is a handler failure and
+            // falls to the wrapping catch below. A cancellation of ours propagates raw so nothing terminal is
+            // written; stop the span un-errored so it is exported rather than leaked into Activity.Current.
             traceHandle.Activity?.Dispose();
             throw;
         }
@@ -838,7 +1078,7 @@ internal sealed class SubscribeExecutor(
 
             _TracingError(traceHandle, message.Origin.Name, descriptor.MethodName, e);
 
-            e.ReThrow();
+            throw e.ReThrow();
         }
     }
 
@@ -887,11 +1127,77 @@ internal sealed class SubscribeExecutor(
     }
 
     #endregion
-    private static bool _IsDeserializationException(Exception? ex)
+    private PendingReply? _ResolveReply(
+        MediumMessage message,
+        ConsumerExecutorDescriptor descriptor,
+        ConsumerExecutedResult result,
+        MessagingTraceHandle traceHandle
+    )
+    {
+        if (!descriptor.IsResponder)
+        {
+            return null;
+        }
+
+        if (!RequestEnvelope.IsRequest(message.Lane, message.Origin.Headers))
+        {
+            // A plain enqueue reaches a responder like any Queue consumer; nobody awaits its answer.
+            if (logger.IsEnabled(LogLevel.Debug))
+            {
+                logger.ResponderResultDiscarded(
+                    descriptor.ResolvedConsumerIdentity,
+                    LogSanitizer.Sanitize(message.Origin.Headers.TryGetValue(Headers.MessageId, out var id) ? id : null)
+                );
+            }
+
+            return null;
+        }
+
+        // A responder that returned null and one whose dispatch recorded nothing both leave the caller without an answer.
+        if (result.Reply is null)
+        {
+            throw new ResponderNullResponseException(descriptor.ConsumerType);
+        }
+
+        return new PendingReply(
+            result.Reply,
+            result.ReplyType ?? descriptor.ResponseType!,
+            traceHandle.Activity?.Context ?? default
+        );
+    }
+
+    private void _RegisterReplyOnCommit(IUnitOfWork unitOfWork, MediumMessage message, PendingReply reply)
+    {
+        if (_GetResponderReplies() is not { } replies)
+        {
+            return;
+        }
+
+        var request = message.Origin;
+        unitOfWork.OnCompleted(() =>
+            replies.SendResponseAsync(request, reply.Response, reply.ResponseType, reply.ResponderSpan)
+        );
+    }
+
+    private ValueTask _SendReplyAsync(MediumMessage message, PendingReply reply)
+    {
+        return _GetResponderReplies() is { } replies
+            ? replies.SendResponseAsync(message.Origin, reply.Response, reply.ResponseType, reply.ResponderSpan)
+            : ValueTask.CompletedTask;
+    }
+
+    // Resolved on first use: a host that never receives a request never builds the reply path.
+    private ResponderReplies? _GetResponderReplies()
+    {
+        return _responderReplies ??= provider.GetService<ResponderReplies>();
+    }
+
+    private static bool _HasCause<TException>(Exception? ex)
+        where TException : Exception
     {
         for (var current = ex; current != null; current = current.InnerException)
         {
-            if (current is MessageDeserializationException)
+            if (current is TException)
             {
                 return true;
             }
@@ -899,4 +1205,7 @@ internal sealed class SubscribeExecutor(
 
         return false;
     }
+
+    /// <summary>A responder's answer waiting for its attempt's success write.</summary>
+    private readonly record struct PendingReply(object Response, Type ResponseType, ActivityContext ResponderSpan);
 }

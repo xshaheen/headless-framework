@@ -6,6 +6,7 @@ using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Retry;
+using Headless.Reliability;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -128,6 +129,129 @@ public sealed class RetryHelperTests : TestBase
         attempt.Value.CanRetry.Should().BeTrue();
         attempt.Value.BypassClassification.Should().BeTrue();
         attempt.Value.Result.Exception.Should().BeOfType<InvalidOperationException>();
+    }
+
+    // ─── Consume budget: additive immediate and delayed tiers ─────────────────────────────────
+
+    [Theory]
+    [InlineData(0, 0, true)]
+    [InlineData(0, 1, true)]
+    [InlineData(0, 2, false)]
+    [InlineData(1, 0, false)]
+    [InlineData(3, 0, false)]
+    public void should_allow_immediate_retries_only_on_the_first_dispatch(
+        int retries,
+        int inlineRetriesCompleted,
+        bool expected
+    )
+    {
+        var budget = new ConsumeRetryBudget(_ConsumePolicy(immediate: 2, delayed: 3));
+
+        budget.HasMoreInlineAttempts(retries, inlineRetriesCompleted).Should().Be(expected);
+    }
+
+    [Fact]
+    public void should_decide_inline_then_delayed_then_exhausted_across_the_budget()
+    {
+        var policy = _ConsumePolicy(immediate: 2, delayed: 3);
+        var budget = new ConsumeRetryBudget(policy);
+
+        budget
+            .Decide(retries: 0, inlineRetriesCompleted: 0)
+            .Should()
+            .Be(MessagingRetryDecision.Continue(TimeSpan.Zero));
+        budget
+            .Decide(retries: 0, inlineRetriesCompleted: 1)
+            .Should()
+            .Be(MessagingRetryDecision.Continue(TimeSpan.Zero));
+
+        // Immediate retries spent: delayed retry n waits within the jitter band of initial × 2^(n-1).
+        for (var retries = 0; retries < 3; retries++)
+        {
+            var decision = budget.Decide(retries, inlineRetriesCompleted: retries == 0 ? 2 : 0);
+            decision.Outcome.Should().Be(MessagingRetryDecision.Kind.Continue);
+            var baseDelay = TimeSpan.FromSeconds(10 * Math.Pow(2, retries));
+            decision
+                .Delay.Should()
+                .BeCloseTo(
+                    baseDelay,
+                    (baseDelay * FailurePolicyDefinition.JitterFraction) + TimeSpan.FromMilliseconds(1)
+                );
+        }
+
+        budget.Decide(retries: 3, inlineRetriesCompleted: 0).Should().Be(MessagingRetryDecision.Exhausted);
+    }
+
+    [Fact]
+    public void should_flag_only_a_row_beyond_the_delayed_budget_as_over_budget()
+    {
+        var budget = new ConsumeRetryBudget(_ConsumePolicy(immediate: 2, delayed: 3));
+
+        RetryHelper
+            .DetectBudgetOverrun(retries: 3, budget)
+            .Should()
+            .BeNull("a row at its budget gets its final attempt");
+        var overrun = RetryHelper.DetectBudgetOverrun(retries: 4, budget);
+        overrun.Should().NotBeNull();
+        overrun.Value.BypassClassification.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(0, 2, false)]
+    [InlineData(0, 3, true)]
+    [InlineData(2, 0, false)]
+    [InlineData(2, 1, true)]
+    public void should_detect_a_spent_reservation_against_the_dispatch_budget(
+        int retries,
+        int reservedInlineAttempts,
+        bool expected
+    )
+    {
+        // A first dispatch of a 2-immediate policy reserves up to 3 attempts; a delayed pickup reserves 1.
+        var budget = new ConsumeRetryBudget(_ConsumePolicy(immediate: 2, delayed: 3));
+
+        RetryHelper
+            .DetectCrashRecoveredReservation(retries, reservedInlineAttempts, budget)
+            .HasValue.Should()
+            .Be(expected);
+    }
+
+    [Fact]
+    public void should_resolve_consume_state_from_the_same_budget_that_decided()
+    {
+        var budget = new ConsumeRetryBudget(_ConsumePolicy(immediate: 1, delayed: 2));
+        var grace = TimeSpan.FromSeconds(30);
+        var delayed = MessagingRetryDecision.Continue(TimeSpan.FromSeconds(12));
+
+        // First dispatch, one immediate retry left: in flight, padded only by the grace.
+        var inFlight = RetryHelper.ResolveNextState(
+            MessagingRetryDecision.Continue(TimeSpan.Zero),
+            0,
+            0,
+            budget,
+            grace
+        );
+        inFlight.IsInlineRetryInFlight.Should().BeTrue();
+        inFlight.NextStatus.Should().Be(StatusName.Scheduled);
+        inFlight.NextRetry.Should().Be(RetryDelay.AtLeast(grace));
+
+        // A delayed pickup never stays in flight, so its retry is persisted with the exact delay.
+        var persisted = RetryHelper.ResolveNextState(delayed, retries: 1, inlineRetries: 0, budget, grace);
+        persisted.IsInlineRetryInFlight.Should().BeFalse();
+        persisted.NextStatus.Should().Be(StatusName.Failed);
+        persisted.NextRetry.Should().Be(RetryDelay.Exactly(TimeSpan.FromSeconds(12)));
+
+        var terminal = RetryHelper.ResolveNextState(MessagingRetryDecision.Exhausted, 2, 0, budget, grace);
+        terminal.NextRetry.Should().BeNull();
+        terminal.NextStatus.Should().Be(StatusName.Failed);
+    }
+
+    private static FailurePolicyDefinition _ConsumePolicy(int immediate, int delayed)
+    {
+        return new FailurePolicyBuilder()
+            .Immediate(immediate)
+            .Delayed(delayed, TimeSpan.FromSeconds(10), TimeSpan.FromMinutes(10))
+            .Build();
     }
 
     // ─── IsCancellation accepts any OCE under a cancelled outer token ─────────────────────────

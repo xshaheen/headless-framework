@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Imaging.ImageSharp.Internals;
+using Headless.Imaging.ImageSharp.Internal;
 
 namespace Tests;
 

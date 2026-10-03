@@ -60,6 +60,26 @@ public sealed class MessagePublishRequestFactoryTests
         act.Should().Throw<InvalidOperationException>().WithMessage($"*{header}*reserved*");
     }
 
+    // The literals pin the wire names: a renamed constant would otherwise free its old name for custom headers.
+    [Theory]
+    [InlineData("headless-request-id")]
+    [InlineData("headless-reply-to")]
+    [InlineData("headless-request-deadline")]
+    [InlineData("headless-in-reply-to")]
+    [InlineData("headless-reply-status")]
+    public void should_reject_custom_request_reply_headers(string header)
+    {
+        var factory = _CreateFactory();
+        var options = new QueueOptions
+        {
+            Headers = new Dictionary<string, string?>(StringComparer.Ordinal) { [header] = "forged" },
+        };
+
+        var act = () => factory.Create(new CallbackResponse("accepted"), options, lane: MessageLane.Queue);
+
+        act.Should().Throw<InvalidOperationException>().WithMessage($"*{header}*reserved*");
+    }
+
     [Fact]
     public void should_reject_raw_routing_affinity_header()
     {

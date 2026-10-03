@@ -45,7 +45,8 @@ public sealed record MessagingProviderCapabilities
         bool supportsDelayedScheduling,
         MessagingInboxCapabilityTier? inboxCapability,
         IReadOnlyCollection<MessagingRoutingAffinityRoute>? routingAffinityRoutes = null,
-        bool supportsEveryInstance = false
+        bool supportsEveryInstance = false,
+        bool supportsRequestReply = false
     )
     {
         Argument.IsNotNullOrWhiteSpace(provider);
@@ -57,12 +58,22 @@ public sealed record MessagingProviderCapabilities
         InboxCapability = inboxCapability;
         RoutingAffinityRoutes = Array.AsReadOnly((routingAffinityRoutes ?? []).ToArray());
         SupportsEveryInstance = supportsEveryInstance;
+        SupportsRequestReply = supportsRequestReply;
 
         if (supportsEveryInstance && !Lanes.Contains(MessageLane.Bus))
         {
             throw new ArgumentException(
                 "Only a transport contribution that declares the Bus lane can support every-instance subscriptions.",
                 nameof(supportsEveryInstance)
+            );
+        }
+
+        if (supportsRequestReply && !Lanes.Contains(MessageLane.Queue))
+        {
+            throw new ArgumentException(
+                "Only a transport contribution that declares the Queue lane can support request/reply, because requests "
+                    + "are Queue messages.",
+                nameof(supportsRequestReply)
             );
         }
 
@@ -118,6 +129,13 @@ public sealed record MessagingProviderCapabilities
     /// </summary>
     public bool SupportsEveryInstance { get; }
 
+    /// <summary>
+    /// Whether the transport registers an <see cref="Headless.Messaging.Transport.IReplyTransport"/>, a reply channel addressed to one
+    /// process, and passes the shared request/reply conformance suite. A host that sends requests or declares a
+    /// responder fails at startup on a transport without it.
+    /// </summary>
+    public bool SupportsRequestReply { get; }
+
     /// <summary>Creates an immutable transport capability contribution.</summary>
     /// <param name="provider">The stable provider identifier.</param>
     /// <param name="lanes">The semantic lanes the transport carries.</param>
@@ -129,16 +147,21 @@ public sealed record MessagingProviderCapabilities
     /// Whether the transport supports every-instance Bus subscriptions; requires the Bus lane in
     /// <paramref name="lanes"/>.
     /// </param>
+    /// <param name="supportsRequestReply">
+    /// Whether the transport registers a reply transport and passes the request/reply conformance suite; requires the
+    /// Queue lane in <paramref name="lanes"/>.
+    /// </param>
     /// <exception cref="ArgumentException">
-    /// <paramref name="lanes"/> is empty or undefined, or <paramref name="supportsEveryInstance"/> is set without the Bus
-    /// lane.
+    /// <paramref name="lanes"/> is empty or undefined, <paramref name="supportsEveryInstance"/> is set without the Bus
+    /// lane, or <paramref name="supportsRequestReply"/> is set without the Queue lane.
     /// </exception>
     public static MessagingProviderCapabilities Transport(
         string provider,
         IReadOnlyCollection<MessageLane> lanes,
         bool supportsIndependentLaneTopology,
         IReadOnlyCollection<MessagingRoutingAffinityRoute>? routingAffinityRoutes = null,
-        bool supportsEveryInstance = false
+        bool supportsEveryInstance = false,
+        bool supportsRequestReply = false
     )
     {
         Argument.IsNotNull(lanes);
@@ -150,7 +173,8 @@ public sealed record MessagingProviderCapabilities
             supportsDelayedScheduling: false,
             inboxCapability: null,
             routingAffinityRoutes,
-            supportsEveryInstance
+            supportsEveryInstance,
+            supportsRequestReply
         );
     }
 

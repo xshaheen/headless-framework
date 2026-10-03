@@ -6,6 +6,7 @@ using Headless.Checks;
 using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Registration;
 using Headless.MultiTenancy;
+using Headless.Reliability;
 using Headless.UnitOfWork;
 
 namespace Headless.Messaging.Configuration;
@@ -311,6 +312,27 @@ public sealed class MessagingOptions
     public RetryProcessorOptions RetryProcessor { get; } = new();
 
     /// <summary>
+    /// Gets the request/reply configuration: the default request timeout and whether fault replies carry exception
+    /// details. It takes effect once the host enables requests with <see cref="MessagingSetupBuilder.AddRequestReply"/>
+    /// or declares a responder.
+    /// </summary>
+    public RequestReplyOptions RequestReply { get; } = new();
+
+    /// <summary>
+    /// The failure policy of a competing consumer that neither declares one nor has one tuned: 2 immediate retries, then
+    /// 5 delayed retries from 30 seconds capped at 15 minutes, and no fail rules.
+    /// </summary>
+    internal static FailurePolicyDefinition FrameworkDefaultFailurePolicy { get; } =
+        new FailurePolicyBuilder().Immediate(2).Delayed(5, TimeSpan.FromSeconds(30), TimeSpan.FromMinutes(15)).Build();
+
+    /// <summary>
+    /// The host's default consumer failure policy, set through <see cref="MessagingSetupBuilder.DefaultFailurePolicy{TPolicy}"/>
+    /// or <see cref="MessagingSetupBuilder.DefaultFailurePolicy(Action{FailurePolicyBuilder})"/>. A competing consumer
+    /// without a declared or tuned policy, and every competing runtime subscription, uses it.
+    /// </summary>
+    internal FailurePolicyDefinition DefaultFailurePolicy { get; set; } = FrameworkDefaultFailurePolicy;
+
+    /// <summary>
     /// Copies all public and internal-settable runtime properties of this instance to <paramref name="target"/>.
     /// Also copies nested options via their own <c>CopyTo</c> methods and replicates collection state.
     /// </summary>
@@ -350,10 +372,12 @@ public sealed class MessagingOptions
         target.RequiredInboxCapability = RequiredInboxCapability;
         target.DefaultDeliveryMode = DefaultDeliveryMode;
         target.MaxPoisonEnvelopeBytes = MaxPoisonEnvelopeBytes;
+        target.DefaultFailurePolicy = DefaultFailurePolicy;
         _CopyJsonSerializerOptions(JsonSerializerOptions, target.JsonSerializerOptions);
         RetryPolicy.CopyTo(target.RetryPolicy);
         CircuitBreaker.CopyTo(target.CircuitBreaker);
         RetryProcessor.CopyTo(target.RetryProcessor);
+        RequestReply.CopyTo(target.RequestReply);
     }
 
     /// <summary>
@@ -475,6 +499,7 @@ internal sealed class MessagingOptionsValidator : AbstractValidator<MessagingOpt
             .NotNull()
             .WithMessage("RetryPolicy must not be null.")
             .SetValidator(new RetryPolicyOptionsValidator());
+        RuleFor(x => x.RequestReply).SetValidator(new RequestReplyOptionsValidator());
         RuleFor(x => x.TransportPublishTimeout)
             .GreaterThan(TimeSpan.Zero)
             .WithMessage("TransportPublishTimeout must be greater than zero.")

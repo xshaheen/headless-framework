@@ -18,6 +18,11 @@ public sealed class MessagingIncrementalSourceGeneratorTests
 
         """;
 
+    private const string _PolicyUsing = """
+        using Headless.Reliability;
+
+        """;
+
     [Fact]
     public void should_register_one_consumer_entry_per_implemented_message_with_one_dispatcher()
     {
@@ -464,6 +469,376 @@ public sealed class MessagingIncrementalSourceGeneratorTests
         driver.GetRunResult().GeneratedTrees.Should().BeEmpty();
     }
 
+    [Theory]
+    [InlineData("QueueConsumer(\"billing.charge\", FailurePolicy = typeof(PaymentsPolicy))", "AddQueueConsumer")]
+    [InlineData("BusConsumer(\"billing.charge\", FailurePolicy = typeof(PaymentsPolicy))", "AddBusConsumer")]
+    public void should_register_a_declared_failure_policy_as_a_factory(string attribute, string method)
+    {
+        // given
+        var source =
+            _Usings
+            + _PolicyUsing
+            + $$"""
+                namespace Billing;
+
+                public sealed record ChargeCard(string OrderId);
+
+                public sealed class PaymentsPolicy : FailurePolicy
+                {
+                    protected override void Configure(FailurePolicyBuilder policy) => policy.Immediate(retries: 2);
+                }
+
+                [{{attribute}}]
+                public sealed class Charge : IConsume<ChargeCard>
+                {
+                    public ValueTask ConsumeAsync(ConsumeContext<ChargeCard> context, CancellationToken cancellationToken) => default;
+                }
+                """;
+
+        // when
+        var generated = _GenerateClean(source);
+
+        // then
+        _RegistrationLines(generated)
+            .Should()
+            .ContainSingle()
+            .Which.Should()
+            .StartWith($"catalog.{method}<global::Billing.Charge, global::Billing.ChargeCard>(")
+            .And.EndWith(
+                "dispatch: Dispatch_Billing_Charge, failurePolicy: static () => new global::Billing.PaymentsPolicy());"
+            );
+    }
+
+    [Theory]
+    [InlineData("public sealed class Policy { }", "typeof(Policy)")]
+    [InlineData("public sealed class Policy { }", "typeof(Policy[])")]
+    [InlineData(
+        "public abstract class Policy : FailurePolicy { protected override void Configure(FailurePolicyBuilder policy) { } }",
+        "typeof(Policy)"
+    )]
+    [InlineData(
+        "public sealed class Policy<T> : FailurePolicy { protected override void Configure(FailurePolicyBuilder policy) { } }",
+        "typeof(Policy<>)"
+    )]
+    [InlineData(
+        "public sealed class Policy : FailurePolicy { private Policy() { } protected override void Configure(FailurePolicyBuilder policy) { } }",
+        "typeof(Policy)"
+    )]
+    [InlineData(
+        "public sealed class Policy : FailurePolicy { public Policy(int retries) { } protected override void Configure(FailurePolicyBuilder policy) { } }",
+        "typeof(Policy)"
+    )]
+    [InlineData(
+        "file sealed class Policy : FailurePolicy { protected override void Configure(FailurePolicyBuilder policy) { } }",
+        "typeof(Policy)"
+    )]
+    public void should_fail_a_failure_policy_type_the_generated_factory_cannot_construct(
+        string declaration,
+        string policy
+    )
+    {
+        // given
+        var source =
+            _Usings
+            + _PolicyUsing
+            + $$"""
+                namespace Billing;
+
+                public sealed record ChargeCard(string OrderId);
+
+                {{declaration}}
+
+                [QueueConsumer("billing.charge", FailurePolicy = {{policy}})]
+                public sealed class Charge : IConsume<ChargeCard>
+                {
+                    public ValueTask ConsumeAsync(ConsumeContext<ChargeCard> context, CancellationToken cancellationToken) => default;
+                }
+                """;
+
+        // when
+        var driver = GeneratorTestHelper.Run(source);
+
+        // then
+        var diagnostic = _Single(driver, "HM005");
+        diagnostic.Severity.Should().Be(DiagnosticSeverity.Error);
+        diagnostic.GetMessage(CultureInfo.InvariantCulture).Should().Contain("Billing.").And.Contain("Charge");
+        driver.GetRunResult().GeneratedTrees.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void should_fail_a_failure_policy_on_an_every_instance_consumer()
+    {
+        // given
+        const string source =
+            _Usings
+            + _PolicyUsing
+            + """
+                namespace Billing;
+
+                public sealed record PriceChanged(string Sku);
+
+                public sealed class CachePolicy : FailurePolicy
+                {
+                    protected override void Configure(FailurePolicyBuilder policy) => policy.Immediate(retries: 2);
+                }
+
+                [BusConsumer("billing.price-cache", EveryInstance = true, FailurePolicy = typeof(CachePolicy))]
+                public sealed class PriceCache : IConsume<PriceChanged>
+                {
+                    public ValueTask ConsumeAsync(ConsumeContext<PriceChanged> context, CancellationToken cancellationToken) => default;
+                }
+                """;
+
+        // when
+        var driver = GeneratorTestHelper.Run(source);
+
+        // then
+        var diagnostic = _Single(driver, "HM010");
+        diagnostic.Severity.Should().Be(DiagnosticSeverity.Error);
+        diagnostic.GetMessage(CultureInfo.InvariantCulture).Should().Contain("PriceCache");
+        GeneratorTestHelper.GeneratorDiagnostics(driver).Should().NotContain(x => x.Id == "HM005");
+        driver.GetRunResult().GeneratedTrees.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void should_register_a_queue_responder_with_its_response_type_without_a_consume_interface()
+    {
+        // given
+        const string source =
+            _Usings
+            + """
+                namespace Pricing;
+
+                public sealed record GetQuote(string Sku);
+                public sealed record Quote(decimal Price);
+
+                [QueueConsumer("pricing.get-quote")]
+                public sealed class GetQuoteResponder : IRespond<GetQuote, Quote>
+                {
+                    public ValueTask<Quote> RespondAsync(ConsumeContext<GetQuote> context, CancellationToken cancellationToken) =>
+                        new(new Quote(1m));
+                }
+                """;
+
+        // when
+        var generated = _GenerateClean(source);
+
+        // then
+        _RegistrationLines(generated)
+            .Should()
+            .Equal(
+                "catalog.AddQueueResponder<global::Pricing.GetQuoteResponder, global::Pricing.GetQuote, global::Pricing.Quote>(\"pricing.get-quote\", dispatch: Dispatch_Pricing_GetQuoteResponder);"
+            );
+    }
+
+    [Fact]
+    public void should_register_the_consumed_and_the_responded_messages_of_one_queue_class()
+    {
+        // given
+        const string source =
+            _Usings
+            + """
+                namespace Pricing;
+
+                public sealed record GetQuote(string Sku);
+                public sealed record Quote(decimal Price);
+                public sealed record RefreshPrices(int Version);
+
+                [QueueConsumer("pricing.desk")]
+                public sealed class PricingDesk : IRespond<GetQuote, Quote>, IConsume<RefreshPrices>
+                {
+                    public ValueTask<Quote> RespondAsync(ConsumeContext<GetQuote> context, CancellationToken cancellationToken) =>
+                        new(new Quote(1m));
+                    public ValueTask ConsumeAsync(ConsumeContext<RefreshPrices> context, CancellationToken cancellationToken) => default;
+                }
+                """;
+
+        // when
+        var generated = _GenerateClean(source);
+
+        // then
+        _RegistrationLines(generated)
+            .Should()
+            .Equal(
+                "catalog.AddQueueConsumer<global::Pricing.PricingDesk, global::Pricing.RefreshPrices>(\"pricing.desk\", dispatch: Dispatch_Pricing_PricingDesk);",
+                "catalog.AddQueueResponder<global::Pricing.PricingDesk, global::Pricing.GetQuote, global::Pricing.Quote>(\"pricing.desk\", dispatch: Dispatch_Pricing_PricingDesk);"
+            );
+    }
+
+    [Fact]
+    public void should_fail_a_responder_on_the_bus_lane()
+    {
+        // given
+        const string source =
+            _Usings
+            + """
+                namespace Pricing;
+
+                public sealed record GetQuote(string Sku);
+                public sealed record Quote(decimal Price);
+
+                [BusConsumer("pricing.get-quote")]
+                public sealed class GetQuoteResponder : IRespond<GetQuote, Quote>
+                {
+                    public ValueTask<Quote> RespondAsync(ConsumeContext<GetQuote> context, CancellationToken cancellationToken) =>
+                        new(new Quote(1m));
+                }
+                """;
+
+        // when
+        var driver = GeneratorTestHelper.Run(source);
+
+        // then
+        var diagnostic = _Single(driver, "HM011");
+        diagnostic.Severity.Should().Be(DiagnosticSeverity.Error);
+        diagnostic.GetMessage(CultureInfo.InvariantCulture).Should().Contain("GetQuoteResponder");
+        _Text(diagnostic).Should().Be("BusConsumer(\"pricing.get-quote\")");
+        GeneratorTestHelper.GeneratorDiagnostics(driver).Should().NotContain(x => x.Id == "HM003");
+        driver.GetRunResult().GeneratedTrees.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void should_fail_a_class_that_consumes_and_responds_to_the_same_message()
+    {
+        // given
+        const string source =
+            _Usings
+            + """
+                namespace Pricing;
+
+                public sealed record GetQuote(string Sku);
+                public sealed record Quote(decimal Price);
+
+                [QueueConsumer("pricing.get-quote")]
+                public sealed class GetQuoteResponder : IConsume<GetQuote>, IRespond<GetQuote, Quote>
+                {
+                    public ValueTask ConsumeAsync(ConsumeContext<GetQuote> context, CancellationToken cancellationToken) => default;
+                    public ValueTask<Quote> RespondAsync(ConsumeContext<GetQuote> context, CancellationToken cancellationToken) =>
+                        new(new Quote(1m));
+                }
+                """;
+
+        // when
+        var driver = GeneratorTestHelper.Run(source);
+
+        // then
+        var diagnostic = _Single(driver, "HM012");
+        diagnostic.Severity.Should().Be(DiagnosticSeverity.Error);
+        diagnostic
+            .GetMessage(CultureInfo.InvariantCulture)
+            .Should()
+            .Contain("GetQuoteResponder")
+            .And.Contain("Pricing.GetQuote");
+        _Text(diagnostic).Should().Be("QueueConsumer(\"pricing.get-quote\")");
+        GeneratorTestHelper.GeneratorDiagnostics(driver).Should().NotContain(x => x.Id == "HM004");
+        driver.GetRunResult().GeneratedTrees.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void should_fail_a_class_that_responds_to_one_request_with_two_response_types()
+    {
+        // given
+        const string source =
+            _Usings
+            + """
+                namespace Pricing;
+
+                public sealed record GetQuote(string Sku);
+                public sealed record Quote(decimal Price);
+                public sealed record OtherQuote(decimal Price);
+
+                [QueueConsumer("pricing.get-quote")]
+                public sealed class GetQuoteResponder : IRespond<GetQuote, Quote>, IRespond<GetQuote, OtherQuote>
+                {
+                    public ValueTask<Quote> RespondAsync(ConsumeContext<GetQuote> context, CancellationToken cancellationToken) =>
+                        new(new Quote(1m));
+                    ValueTask<OtherQuote> IRespond<GetQuote, OtherQuote>.RespondAsync(ConsumeContext<GetQuote> context, CancellationToken cancellationToken) =>
+                        new(new OtherQuote(1m));
+                }
+                """;
+
+        // when
+        var driver = GeneratorTestHelper.Run(source);
+
+        // then
+        var diagnostic = _Single(driver, "HM013");
+        diagnostic.Severity.Should().Be(DiagnosticSeverity.Error);
+        diagnostic
+            .GetMessage(CultureInfo.InvariantCulture)
+            .Should()
+            .Contain("GetQuoteResponder")
+            .And.Contain("Pricing.GetQuote")
+            .And.Contain("Pricing.Quote")
+            .And.Contain("Pricing.OtherQuote");
+        _Text(diagnostic).Should().Be("QueueConsumer(\"pricing.get-quote\")");
+        driver.GetRunResult().GeneratedTrees.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void should_fail_a_plain_queue_consumer_for_a_message_that_has_a_responder()
+    {
+        // given
+        const string source =
+            _Usings
+            + """
+                namespace Pricing;
+
+                public sealed record GetQuote(string Sku);
+                public sealed record Quote(decimal Price);
+
+                [QueueConsumer("pricing.get-quote")]
+                public sealed class GetQuoteResponder : IRespond<GetQuote, Quote>
+                {
+                    public ValueTask<Quote> RespondAsync(ConsumeContext<GetQuote> context, CancellationToken cancellationToken) =>
+                        new(new Quote(1m));
+                }
+
+                [QueueConsumer("pricing.get-quote-audit")]
+                public sealed class GetQuoteAudit : IConsume<GetQuote>
+                {
+                    public ValueTask ConsumeAsync(ConsumeContext<GetQuote> context, CancellationToken cancellationToken) => default;
+                }
+                """;
+
+        // when
+        var driver = GeneratorTestHelper.Run(source);
+
+        // then
+        var diagnostic = _Single(driver, "HM004");
+        diagnostic.GetMessage(CultureInfo.InvariantCulture).Should().Contain("Pricing.GetQuote");
+        _Text(diagnostic).Should().Be("QueueConsumer(\"pricing.get-quote-audit\")");
+        driver.GetRunResult().GeneratedTrees.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void should_fail_a_response_type_the_generated_code_cannot_name()
+    {
+        // given
+        const string source =
+            _Usings
+            + """
+                namespace Pricing;
+
+                public sealed record GetQuote(string Sku);
+
+                [QueueConsumer("pricing.get-quote")]
+                public sealed class GetQuoteResponder : IRespond<GetQuote, GetQuoteResponder.Secret>
+                {
+                    private sealed record Secret(decimal Price);
+
+                    ValueTask<Secret> IRespond<GetQuote, Secret>.RespondAsync(ConsumeContext<GetQuote> context, CancellationToken cancellationToken) =>
+                        new(new Secret(1m));
+                }
+                """;
+
+        // when
+        var driver = GeneratorTestHelper.Run(source);
+
+        // then
+        _Single(driver, "HM007").GetMessage(CultureInfo.InvariantCulture).Should().Contain("GetQuoteResponder.Secret");
+        driver.GetRunResult().GeneratedTrees.Should().BeEmpty();
+    }
+
     [Fact]
     public void should_emit_nothing_for_an_assembly_without_consumers()
     {
@@ -485,15 +860,13 @@ public sealed class MessagingIncrementalSourceGeneratorTests
 
         descriptorsType.Should().NotBeNull();
 
-        // HM005 validated a failure-policy type; the declaration waits for the shared failure-policy model, and the
-        // ID stays unassigned so no rule ever changes meaning.
         descriptorsType!
             .GetFields(BindingFlags.Public | BindingFlags.Static)
             .Select(field => field.GetValue(null))
             .OfType<DiagnosticDescriptor>()
             .Select(descriptor => descriptor.Id)
             .Should()
-            .BeEquivalentTo(Enumerable.Range(1, 9).Where(number => number != 5).Select(number => $"HM{number:000}"));
+            .BeEquivalentTo(Enumerable.Range(1, 14).Select(number => $"HM{number:000}"));
     }
 
     private static string _GenerateClean(string source)

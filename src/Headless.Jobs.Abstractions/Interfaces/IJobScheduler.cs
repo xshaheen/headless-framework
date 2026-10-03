@@ -168,6 +168,40 @@ public interface IJobScheduler
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> is cancelled.</exception>
     Task<bool> ResumeCronAsync(Guid cronJobId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Puts a <c>Failed</c> standalone time job back to <c>Idle</c> so it runs again as soon as a node claims it.
+    /// </summary>
+    /// <param name="timeJobId">The time-job identifier.</param>
+    /// <param name="cancellationToken">Cancels only the durable requeue operation.</param>
+    /// <returns>
+    /// <see cref="JobRequeueOutcome.Requeued"/> when this call moved the row; otherwise the refusal reason, with the row
+    /// unchanged.
+    /// </returns>
+    /// <remarks>
+    /// The row restarts its retry budget: <c>RetryCount</c> returns to 0, the stored exception, owner, and lease are
+    /// cleared, and its execution time moves to the store's current instant. Its stored retry count and intervals are
+    /// kept. A chain member and a superseded keyed generation are refused. Requeue is one conditional transition from
+    /// <c>Failed</c>, so repeating it, or racing it against another requeue, moves the row at most once.
+    /// </remarks>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> is cancelled.</exception>
+    Task<JobRequeueOutcome> RequeueAsync(Guid timeJobId, CancellationToken cancellationToken = default);
+
+    /// <summary>Puts a <c>Failed</c> cron occurrence back to <c>Idle</c> so it runs again.</summary>
+    /// <param name="occurrenceId">The cron-occurrence identifier.</param>
+    /// <param name="cancellationToken">Cancels only the durable requeue operation.</param>
+    /// <returns>
+    /// <see cref="JobRequeueOutcome.Requeued"/> when this call moved the row; otherwise the refusal reason, with the row
+    /// unchanged.
+    /// </returns>
+    /// <remarks>
+    /// The occurrence keeps its execution time, which identifies the scheduled instant it stands for, so the fallback
+    /// claim picks it up rather than the main peek. When its definition forbids overlapping runs, the request is
+    /// refused while another occurrence of that definition is unfinished. The check runs under the same definition
+    /// lock that occurrence creation takes, so a requeue cannot slip in beside a newly created run.
+    /// </remarks>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> is cancelled.</exception>
+    Task<JobRequeueOutcome> RequeueOccurrenceAsync(Guid occurrenceId, CancellationToken cancellationToken = default);
+
     /// <summary>Enqueues a typed job for immediate execution and returns its persisted entity identifier.</summary>
     Task<Guid> EnqueueAsync<TArgs>(TArgs request, CancellationToken cancellationToken = default);
 

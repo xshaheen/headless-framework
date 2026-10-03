@@ -83,9 +83,9 @@ This is the production default: `Headless.Messaging.RabbitMq` for transport and 
 - **Modules contribute with `services.ConfigureMessaging(...)`, never a second `AddHeadlessMessaging`**: the host calls `AddHeadlessMessaging(...)` once for transports, storage, and options. A module calls `services.ConfigureMessaging(m => { m.AddModule<X.MessagingModule>(); m.Message<T>(...); })` from its own `Add{Module}` entry point, before or after the host's call. Nothing registers until some call adds the generated module; adding it twice registers it once. Every contribution and `WithMessageNameMapping` call is recorded as a descriptor and folded once per service provider, when messaging first builds its consumer registry: at startup, or at an earlier publish that needs a message name. Identical contributions merge there; one identity on two consumer classes in the same lane, a conflicting contract, or one type mapped to two names fails at that point naming both sources. `ConfigureMessaging` is the one way to contribute: framework packages (HybridCache, distributed locks, Settings, Features, Permissions) use it from `Messaging.Abstractions`, and `Tune(identity, ...)` is a `Messaging.Core` extension on the same builder. In a host that never calls `AddHeadlessMessaging`, contributions stay inert.
 - **Declare a message contract once, for both lanes**: `m.Message<T>(name, version = "1")` sets the logical name and schema version that publishing and consuming resolve `T` to on both lanes. Chain `.CorrelateBy(...)`, `.OnBus(b => ...)`, and `.OnQueue(q => ...)` for correlation, routing affinity, delivery mode, and provider settings. The message type needs no attribute and no Headless reference. Identical declarations from several modules merge; a different name, version, correlation selector, or lane setting fails startup naming both. Selectors compare by delegate, so share one declaration method rather than writing the same lambda twice.
 - **Framework messages carry stable `headless.*` names**: every message a Headless package publishes or consumes is declared by that package as `headless.<domain>.<event>`, version `1`: through `ConfigureMessaging(m => m.Message<T>(...))`, which keeps the packages on the messaging abstractions (HybridCache, distributed locks, Settings, Features, Permissions). The name is a `MessageName` constant on the message type. Host conventions (`UseConventions` prefix, suffix, kebab-case) never rename them, so services with different conventions interoperate on one broker; only `MessagingOptions.MessageNamePrefix` applies, as it does to every name. An application consumer of a framework message declares only its consumer, never a second `Message<T>` for it. The framework messages are `CacheInvalidationMessage` (`headless.caching.hybrid.invalidation`), `DistributedLockReleased` (`headless.locks.released`), `SettingChangedMessage` (`headless.settings.changed`), `FeatureChangedMessage` (`headless.features.changed`), `PermissionGrantChangedMessage` (`headless.permissions.grant-changed`), and `DynamicPermissionDefinitionsChanged` (`headless.permissions.definitions-changed`).
-- **Host controls are keyed by identity**: `Tune(identity, c => ...)` changes a declared consumer's deployment settings (concurrency, inbox retention, circuit breaker, middleware, provider consumer settings); `Headless:Messaging:Consumers:{identity}` configuration applies after every `Tune`; `ConsumeOnly(...)` limits which competing consumers a host runs. An identity no registered consumer declares fails startup.
+- **Host controls are keyed by identity**: `Tune(identity, c => ...)` changes a declared consumer's deployment settings (concurrency, inbox retention, circuit breaker, failure policy, middleware, provider consumer settings); `Headless:Messaging:Consumers:{identity}` configuration applies after every `Tune`; `ConsumeOnly(...)` limits which competing consumers a host runs. An identity no registered consumer declares fails startup.
 - **The same message can use both lanes**: one contract names the message on both lanes. A Bus consumer and a Queue consumer of the same message have independent subscriptions, inbox rows, middleware, circuits, and retry/backpressure state. Every built-in dual-lane transport declares independent physical lane topology. Startup validates contract routes only on lanes the transport carries, so Kafka (Queue-only) accepts every contract; a Bus consumer on Kafka still fails startup, and a Bus publish on Kafka fails when attempted.
-- **Runtime handlers are first-class**: Use `IRuntimeSubscriber` for ephemeral broker-attached delegates on the Bus lane. They share scoped DI, middleware, diagnostics, retry, and correlation semantics with class handlers. `RuntimeSubscriptionOptions.Identity` is the subscription's consumer identity and Bus subscription name.
+- **Runtime handlers are first-class**: Use `IRuntimeSubscriber` for ephemeral broker-attached delegates on the Bus lane. They share scoped DI, middleware, diagnostics, retry, and correlation semantics with class handlers; a competing runtime subscription retries by the host's default failure policy. `RuntimeSubscriptionOptions.Identity` is the subscription's consumer identity and Bus subscription name.
 - **The publisher verb selects the lane**: Use `IBus.PublishAsync` for broadcast Bus delivery and `IQueue.EnqueueAsync` for point-to-point Queue delivery.
 - **Use typed routing affinity**: set `RoutingAffinityKey`; reserve `headless-routing-affinity-key`. Validate registered route support from frozen capabilities before startup effects, and typed/native conflicts before durable writes. Provider session/FIFO topology still requires broker evidence.
 - **The receiver decides enlistment; the mode decides durability**: `IBus`/`IQueue` are autonomous — their rows are standalone and survive the caller's rollback, whatever unit of work is active. `unit.Outbox` is enlisted — its row is written inside that unit's transaction and discarded with it. Pick by which one you call; no option, per-type policy, or host default moves a publish between them. `DeliveryMode` (`Durable` default, `Direct`) applies to the autonomous surface only and is set per call (`PublishOptions.DeliveryMode` / `QueueOptions.DeliveryMode`), per type (`WithDeliveryMode`), or per host (`MessagingOptions.DefaultDeliveryMode`); `Direct` bypasses storage and rejects `Delay`/`ScheduledAt`. An enlisted publish is durable by construction and consults none of the three. See [Delivery Modes](#delivery-modes).
@@ -110,9 +110,12 @@ This is the production default: `Headless.Messaging.RabbitMq` for transport and 
 - **Core handles outbox automatically** when paired with EF Core -- messages are stored in database before being dispatched to transport.
 - **The EF adapter packages** (`Headless.Messaging.Storage.PostgreSql.EntityFramework` / `.SqlServer.EntityFramework`) let an enlisted publish join a unit of work open on `TContext`: `setup.UseEntityFramework<TContext>()` registers `Headless.UnitOfWork` (`AddEntityFrameworkUnitOfWork()`), but no interceptor opens that unit of work for the caller. Open it with `factory.RunAsync(db, ...)` (`Headless.UnitOfWork.EntityFramework`) or a manual `BeginAsync`/`CompleteAsync` pair, then publish through that unit's `Outbox`; an `IBus.PublishAsync` inside the same block still stores a standalone durable row that survives a rollback. `setup.UseEntityFramework<TContext>(o => o.EnableTransactionalOutbox = false)` (default `true`) is a separate switch that disables the EF inbox-transaction runner and its `Transactional` inbox-capability promotion — the receive side, not the publish-side unit-of-work requirement above. The raw storage packages expose only `UsePostgreSql` / `UseSqlServer` and have no EF or `Headless.UnitOfWork` dependency.
 - **Dashboard.K8s requires RBAC** permissions to read Services in the configured Kubernetes namespace.
-- **Callbacks enable async response routing**: Set `CallbackName` on `PublishOptions` (Bus) **or** `QueueOptions` (Queue). The response always publishes through the durable Bus path, including for a Queue-originated request; Queue remains origin metadata and exactly one Bus response is produced for a single Queue delivery. `SetResponse<TResponse>` preserves the declared response contract for typed middleware and the concrete payload value/type. This is not request/reply and remains at-least-once, so response consumers must be idempotent. A Bus request still fans out and each subscriber may emit its own response.
+- **Callbacks publish a response that nobody awaits**: Set `CallbackName` on `PublishOptions` (Bus) **or** `QueueOptions` (Queue). The response always publishes through the durable Bus path, including for a Queue-originated request; Queue remains origin metadata and exactly one Bus response is produced for a single Queue delivery. `SetResponse<TResponse>` preserves the declared response contract for typed middleware and the concrete payload value/type. A callback is fire-and-forget and at-least-once, so response consumers must be idempotent. A Bus request still fans out and each subscriber may emit its own response. When the caller must wait for the answer, use [Request/reply](#requestreply) instead; [Request/reply versus callbacks](#requestreply-versus-callbacks) compares the two.
+- **Request/reply awaits one answer on the Queue lane**: the calling host calls `setup.AddRequestReply()` and sends with `IRequestClient.RequestAsync<TRequest, TResponse>`; the responder is a `[QueueConsumer]` class that implements `IRespond<TRequest, TResponse>`. The caller's continuation is at most once and a timeout is ambiguous, so make responders idempotent. Return expected business outcomes such as "not found" in `TResponse`; a thrown exception becomes a `handler_failed` fault after inline retries. Only InMemory, RabbitMQ, NATS, and Redis support it; a host on any other transport that sends requests or declares a responder fails startup. See [Request/reply](#requestreply).
 - **Strict publish tenancy is opt-in**: Use `builder.AddHeadlessTenancy(tenancy => tenancy.Messaging(m => m.PropagateTenant().RequireTenantOnPublish()))`. The previous `MessagingBuilder.AddTenantPropagation()` extension has been removed; the root tenancy seam is the single composition point. When neither `PublishOptions.TenantId` nor ambient `ICurrentTenant` is set, the publish wrapper throws `Headless.MultiTenancy.MissingTenantContextException`. See [Strict Publish Tenancy](#strict-publish-tenancy) and the multi-tenancy doc's [Message Consumers](multi-tenancy.md#message-consumers) section.
-- **Retry behavior is configured via `MessagingOptions.RetryPolicy`**. `RetryStrategy` is a public Polly `RetryStrategyOptions` contract; `MaxPersistedRetries`, durable scheduling, leases, and terminal callbacks remain Messaging-owned. Configure `ShouldHandle` explicitly. `OnExhausted` fires only after a matched failure consumes the complete budget and the owned terminal write succeeds.
+- **A consumer retries by its failure policy**: declare one with `[BusConsumer(id, FailurePolicy = typeof(TPolicy))]` or `[QueueConsumer(id, FailurePolicy = typeof(TPolicy))]`, replace it on a host with `Tune(id, c => c.FailurePolicy<TPolicy>())`, adjust its numbers under `Headless:Messaging:Consumers:{id}:FailurePolicy`, and set the host default with `setup.DefaultFailurePolicy<TPolicy>()`. Without any of these a competing consumer retries 2 times at once, then 5 times from 30 seconds capped at 15 minutes. See [Consumer failure policy](#consumer-failure-policy) and the shared model in [reliability.md](reliability.md).
+- **`MessagingOptions.RetryPolicy.RetryStrategy` and `MaxPersistedRetries` govern publishing only**. Changing them does not change how a consumer retries. `RetryPolicy.OnExhausted` fires once for each terminal consume failure: the policy's budget is spent, a fail rule or the built-in permanent set matches, the payload fails to deserialize, the consumer is no longer registered, or the message is poisoned on arrival.
+- **An every-instance consumer takes no failure policy**: declaring one is HM010, and tuning or configuring one fails startup. Its deliveries are at most once and never stored.
 - **Retry pressure is quadrant-isolated**: Published-Bus, Published-Queue, Received-Bus, and Received-Queue own independent atomic claims, workers, lock resources, counters, failure state, cadence, and adaptive interval. `IRetryProcessorMonitor` remains an aggregate compatibility projection (maximum interval, backed off when any quadrant is backed off, reset all four); that aggregate never drives runtime scheduling or lock TTL.
 - **Distributed lock**: see [Distributed Lock Integration](#distributed-lock-integration) for when to enable, when to skip, and the two-layer model (per-row `LockedUntil` lease + coarse-grained distributed lock).
 - **Never write framework metadata through provider hatches**. For publish options, use typed properties; raw `Headers.TenantId` is accepted only by the tenant-integrity path and should not be authored directly.
@@ -129,7 +132,7 @@ This is the production default: `Headless.Messaging.RabbitMq` for transport and 
 - **Message lane**: Bus is broadcast/pub-sub and Queue is point-to-point. The publisher verb selects the lane (`IBus.PublishAsync` or `IQueue.EnqueueAsync`) and the consumer attribute selects the consumer's lane (`[BusConsumer]` or `[QueueConsumer]`). On the Bus lane every consumer identity gets one copy, shared by the processes that register it; on the Queue lane a message has one consumer and one destination keyed by the message name. Monitoring, dashboard JSON, testing, and runtime APIs use `MessageLane`; only intentional compatibility boundaries retain the `IntentType` database column, `headless-intent` header, and stable `0`/`1` values. Received-message identity includes the lane so the two paths do not collapse into one storage row.
 - **Consumer identity**: the `owner.name` string on the consumer attribute (at most 200 characters, `ConsumerMetadata.ConsumerIdentityMaxLength`). It is independent of the CLR type name, so a consumer class can be renamed or moved without losing its inbox history. On the Bus lane it is the broker subscription name; `ConsumerMetadata.SubscriptionName` is the identity on the Bus lane and the message name on the Queue lane. A consumer is keyed by lane, identity, message name, and contract version, so one identity covers every message its class handles.
 - **Envelope**: All transport messages carry framework headers such as message id, message-contract version, root correlation id, optional immediate causation id, message name, type, sent time, intent, and optional tenant id.
-- **Reserved headers**: `MessageId`, `ContractVersion`, `CorrelationId`, `CausationId`, `CorrelationSequence`, `CallbackName`, `MessageName`, `Type`, `SentTime`, `DelayTime`, and `Intent` are rejected in custom publish headers and provider contributions. `TenantId` is also framework-owned; provider contributions cannot write it, while raw publish headers are handled by the stricter tenant-integrity policy for compatibility.
+- **Reserved headers**: `MessageId`, `ContractVersion`, `CorrelationId`, `CausationId`, `CorrelationSequence`, `CallbackName`, `MessageName`, `Type`, `SentTime`, `DelayTime`, `Intent`, and the request/reply headers `RequestId` (`headless-request-id`), `ReplyTo` (`headless-reply-to`), `RequestDeadline` (`headless-request-deadline`), `InReplyTo` (`headless-in-reply-to`), and `ReplyStatus` (`headless-reply-status`) are rejected in custom publish headers, `RequestOptions.Headers`, and provider contributions. `TenantId` is also framework-owned; provider contributions cannot write it, while raw publish headers are handled by the stricter tenant-integrity policy for compatibility.
 - **Header validation**: custom header names, custom header values, and framework/provider-stamped header values all reject control characters before publish. This includes explicit `MessageId`, `CorrelationId`, `CallbackName`, and typed `TenantId`.
 - **Explicit message names**: `PublishOptions.MessageName` follows the same validator as registered message mappings. Invalid dot shapes and invalid characters are rejected before publish.
 - **Contract version**: `Message<T>(name, version)` is the normal authority and defaults to version `"1"`. `PublishOptions.ContractVersion` is an explicit per-send override for controlled compatibility work. Consumers validate the header before deserialization, expose it through `ConsumeContext.ContractVersion`, and treat a missing header as version `"1"` for legacy or external producers.
@@ -189,18 +192,18 @@ Two unit-of-work behaviors are documented, not defects. `IUnitOfWork.OnCompleted
 
 ## Provider Capabilities
 
-| Provider | Bus | Queue | Same-name lane isolation | Message hatch (`OnBus`/`OnQueue`) | Consumer hatch (`Tune`) |
-| --- | --- | --- | --- | --- | --- |
-| AWS | SNS topic to one SQS queue per consumer identity | Direct SQS destination | Yes | `UseAws(a => a.MessageGroupId(...))` | None |
-| Azure Service Bus | Topic/subscription per consumer identity | Queue | Yes | `UseAzureServiceBus(a => a.PartitionKey(...))` | None |
-| InMemory | One copy per consumer identity | One owned copy | Yes | None | None |
-| Kafka | No | Topic; Kafka consumer group named after the message | Not applicable; Queue-only | `OnQueue` only: `UseKafka(k => k.PartitionBy(...))` | `UseKafka(k => k.WithIsolationLevel(...))` |
-| NATS | Interest-retained lane stream, one durable per consumer identity | Work-queue-retained lane stream | Yes | `UseNats(n => n.SubjectShard(...))` | `UseNats(n => n.Sharded())` |
-| Pulsar | Lane topic + identity subscription | Lane topic + owned subscription | Yes | None | None |
-| RabbitMQ | Lane topic exchange, one queue per consumer identity | Lane direct exchange | Yes | None | `UseRabbitMq(r => r.PrefetchCount(...))` |
-| Redis | Lane Redis Stream + Redis consumer group named after the identity | Lane Redis Stream + Redis consumer group named after the message | Yes | None | None |
+| Provider | Bus | Queue | Same-name lane isolation | Message hatch (`OnBus`/`OnQueue`) | Consumer hatch (`Tune`) | Request/reply |
+| --- | --- | --- | --- | --- | --- | --- |
+| AWS | SNS topic to one SQS queue per consumer identity | Direct SQS destination | Yes | `UseAws(a => a.MessageGroupId(...))` | None | No; startup fails |
+| Azure Service Bus | Topic/subscription per consumer identity | Queue | Yes | `UseAzureServiceBus(a => a.PartitionKey(...))` | None | Not yet; startup fails |
+| InMemory | One copy per consumer identity | One owned copy | Yes | None | None | In-process reply channel |
+| Kafka | No | Topic; Kafka consumer group named after the message | Not applicable; Queue-only | `OnQueue` only: `UseKafka(k => k.PartitionBy(...))` | `UseKafka(k => k.WithIsolationLevel(...))` | No; startup fails |
+| NATS | Interest-retained lane stream, one durable per consumer identity | Work-queue-retained lane stream | Yes | `UseNats(n => n.SubjectShard(...))` | `UseNats(n => n.Sharded())` | Core NATS subject outside JetStream |
+| Pulsar | Lane topic + identity subscription | Lane topic + owned subscription | Yes | None | None | Not yet; startup fails |
+| RabbitMQ | Lane topic exchange, one queue per consumer identity | Lane direct exchange | Yes | None | `UseRabbitMq(r => r.PrefetchCount(...))` | Exclusive reply queue |
+| Redis | Lane Redis Stream + Redis consumer group named after the identity | Lane Redis Stream + Redis consumer group named after the message | Yes | None | None | Pub/sub channel |
 
-The shipped immutable descriptors are the runtime authority, not this table or raw DI shape. The dashboard `/api/meta` projection exposes those descriptors and their lanes. Executable provider conformance tests prove consumer-identity fan-out, replica competition, Queue ownership, and same-name isolation at each provider's supported tier. Kafka is intentionally Queue-only: a Bus consumer fails startup before provider or storage side effects, and a Bus publish fails when attempted.
+The shipped immutable descriptors are the runtime authority, not this table or raw DI shape. The dashboard `/api/meta` projection exposes those descriptors and their lanes. Executable provider conformance tests prove consumer-identity fan-out, replica competition, Queue ownership, and same-name isolation at each provider's supported tier. Kafka is intentionally Queue-only: a Bus consumer fails startup before provider or storage side effects, and a Bus publish fails when attempted. The request/reply column is the reply channel each provider uses; see [Request/reply](#requestreply) for its rules.
 
 ### Bus subscription names
 
@@ -281,7 +284,7 @@ A runtime subscription sets `RuntimeSubscriptionOptions.EveryInstance = true`.
 - **Failures are logged and committed**: a consumer exception, a receive-stage reject, a message no consumer on the subscription handles, and a fault outside the consumer (in the core or the transport client) are logged, counted in `messaging.every_instance.deliveries`, and committed. None is requeued, because a per-process subscription has no one else to redeliver to and a redelivery would fault the same way; `RetryPolicy.OnExhausted` is not called. The only reject is a delivery stopped by host shutdown or a client rebuild.
 - **Delivery outcomes**: `messaging.every_instance.outcome` is one of four values. `succeeded`: the consumer returned. `failed`: the consumer threw (`error.type` = the exception type). `dropped`: the message never reached the consumer or faulted outside it (`error.type` = the exception type when there is one, or `overflow` for a NATS subscription channel that discarded the message). `skipped`: receive middleware skipped it.
 - **Reconnect signal**: a consumer that implements `IOnSubscriptionEstablished` is called once its subscription receives: at host start (`IsReconnect = false`, `Generation = 1`), after every rebuild of its subscription's clients (a broker failure rebuilds every subscription), and after the transport re-establishes the subscription on its own. Attaching or detaching a runtime subscription rebuilds only the subscription groups it changes, so an unrelated every-instance consumer keeps its clients and its hook does not run. `IsReconnect = true` means messages may have been missed; a mirror of state should flush or reload. The hook runs in its own scope on an instance built the way a delivery builds it: the container's registration of the class when there is one, otherwise a new instance that is disposed afterwards. A failing hook is logged without stopping the subscription. Hooks of one subscription run one at a time in establishment order. Host startup waits for the first hooks; a rebuild does not wait and holds no lock while they run, so a hook may attach or detach a runtime subscription. Each call is bounded by `MessagingOptions.SubscriptionEstablishedTimeout` (default 30 seconds, `> 0`, `<= 5m`): on expiry the hook's token is canceled, a warning is logged, and startup and later establishments go on without it. Runtime subscriptions have no hook.
-- **Startup rules**: an every-instance consumer on a transport without every-instance support fails startup before any consumer client or broker object is created, with a `MessagingConfigurationException` that names the consumer and the provider; a runtime subscription is checked the same way before it attaches. Tuning an inbox retention or a circuit breaker onto an every-instance consumer, through `Tune` or configuration, fails startup, because neither means anything for a per-process, at-most-once subscription. `EveryInstance` exists only on `[BusConsumer]`, so the Queue lane cannot express it. A host whose only consumers are every-instance does not need an inbox tier from storage.
+- **Startup rules**: an every-instance consumer on a transport without every-instance support fails startup before any consumer client or broker object is created, with a `MessagingConfigurationException` that names the consumer and the provider; a runtime subscription is checked the same way before it attaches. A `FailurePolicy` declared on an every-instance consumer is HM010 at build time, and a hand-written module that declares one fails startup. Tuning an inbox retention, a circuit breaker, or a failure policy onto an every-instance consumer, through `Tune` or configuration, fails startup, because none of them means anything for a per-process, at-most-once subscription. `EveryInstance` exists only on `[BusConsumer]`, so the Queue lane cannot express it. A host whose only consumers are every-instance does not need an inbox tier from storage.
 - **`ConsumeOnly` does not apply**: a host started with `ConsumeOnly` still starts every every-instance consumer, because each process must keep its own state current. A `ConsumeOnly` entry that matches only every-instance consumers fails startup, since it would have no effect. Runtime subscriptions are not filtered either.
 - **Choose it for derived state only**: every-instance delivery refreshes what a process can rebuild. Work that must happen once, or must not be lost, stays on a competing consumer.
 
@@ -543,7 +546,7 @@ On the Bus lane, derive the broker-legal subscription name from the identity wit
 
 ### Header and payload rules
 
-The transport must round-trip at least `Headers.MessageId`, `Headers.MessageName`, `Headers.Type`, `Headers.CorrelationId`, `Headers.CorrelationSequence`, and `Headers.SentTime`. It also preserves optional headers such as `Headers.CallbackName`, `Headers.DelayTime`, `Headers.TenantId`, `Headers.TraceParent`, and custom application headers.
+The transport must round-trip at least `Headers.MessageId`, `Headers.MessageName`, `Headers.Type`, `Headers.CorrelationId`, `Headers.CorrelationSequence`, and `Headers.SentTime`. It also preserves optional headers such as `Headers.CallbackName`, `Headers.DelayTime`, `Headers.TenantId`, `Headers.TraceParent`, and custom application headers. On the Queue lane it preserves the request headers `Headers.RequestId`, `Headers.ReplyTo`, and `Headers.RequestDeadline`, and a reply transport preserves `Headers.InReplyTo`, `Headers.ReplyStatus`, `Headers.MessageId`, `Headers.MessageName`, `Headers.ContractVersion`, `Headers.TenantId`, and `Headers.TraceParent` on every reply.
 
 - `Headers.ConsumerIdentity` (`headless-msg-consumer-identity`) is stamped by Core on receipt, not on publish; transports must not set it.
 - `Headers.TenantId` is governed by [Strict Publish Tenancy](#strict-publish-tenancy) in Core; transports round-trip it verbatim and never originate, rewrite, or strip it.
@@ -571,6 +574,23 @@ Validate raw application headers before evaluating a selector that could overwri
 
 Startup checks establish local declaration consistency only. Broker I/O must separately prove the actual session, FIFO, or partition topology and permissions, so provider conformance binds every route to either a native mapping or deterministic rejection, covers direct publication and outbox dispatch, and preserves keys on broker redelivery.
 
+### Request/reply: `IReplyTransport`
+
+A provider supports [request/reply](#requestreply) by declaring `supportsRequestReply: true` in its `MessagingProviderCapabilities.Transport(...)` contribution and registering a singleton `IReplyTransport`. The flag requires the Queue lane, and Core rejects request/reply at startup on a transport that does not declare it. Core owns correlation, deadlines, tenant checks, fault encoding, and the decision to send; the reply transport only opens a per-process channel and moves replies to it. The seam lives in `Headless.Messaging.Transport`:
+
+- `IReplyTransport.OpenListenerAsync(onReply, cancellationToken)` opens the process's reply channel and returns an `IReplyListener`. Give each listener a fresh address, normally `ReplyAddresses.Create()` (`headless.reply.` followed by 32 hex digits), so a reply to a previous run of the process never reaches it. Invoke `onReply` once per reply, one at a time; an exception it throws is logged and does not stop the listener. Do not dispose the listener from inside `onReply`.
+- `IReplyListener.WaitForAddressAsync(cancellationToken)` waits until the channel can receive and returns its current address; it throws `ObjectDisposedException` once the listener is closed. While the connection is down, keep the address back, because a reply sent then reaches nobody. After a reconnect the address may stay the same only when no other process can hold it; otherwise return a new one, and calls sent with the old address time out. Disposing the listener removes every broker object it created, and a crash must leave none behind.
+- `IReplyTransport.SendAsync(address, reply, cancellationToken)` writes one reply. Throw `ArgumentException` for an address outside the reply namespace, and drop the reply without an error when nobody listens. Never store a reply, and never write it to a lane destination.
+- `IReplyTransport.IsReplyAddress(address)` defaults to `ReplyAddresses.IsInReplyNamespace`: the `headless.reply.` prefix, a non-empty remainder of ASCII letters, digits, `.`, `-`, and `_`, and at most `ReplyAddresses.MaxLength` (200) characters. Override it only to refuse more, such as names over a broker limit. Core sends only to an address that passes both checks; a request carries its own reply address, so on the responding host the address is untrusted input.
+
+```csharp no-compile
+services.AddMessagingProviderCapabilities(MessagingProviderCapabilities.Transport(
+    "MyBroker", [MessageLane.Queue], supportsIndependentLaneTopology: true, supportsRequestReply: true));
+services.AddSingleton<IReplyTransport, MyBrokerReplyTransport>();
+```
+
+Declare the flag only when the provider passes the request/reply conformance scenarios: round trip, callers receiving only their own replies, responder faults, `no_responder`, timeouts that never run the responder, late replies dropped, foreign reply addresses never written, a restarted caller never receiving an old reply, tenant flowing both ways, and no reply objects left after the caller stops.
+
 ### What a transport must not do
 
 - reimplement serialization policy already handled by `ISerializer`
@@ -586,6 +606,7 @@ Startup checks establish local declaration consistency only. Broker I/O must sep
 
 - `PublishReceipt` carries the resolved wire `MessageId` and nullable durable `StorageId`. Direct delivery returns no storage handle. Middleware suppression before terminal publication returns both values null. A receipt enlisted in the caller's active unit of work remains subject to that unit's completion or rollback and never implies consumer completion.
 - `IConsume<TMessage>` consumer contract, declared with exactly one of `[BusConsumer(identity)]` (optional `EveryInstance`, `Policy`) or `[QueueConsumer(identity)]` (optional `Policy`); both derive from `MessageConsumerAttribute`, which exposes `Identity` and `Policy`. `IOnSubscriptionEstablished` is the optional reconnect hook for every-instance consumers. `ConsumeContext.UnitOfWork` is the unit the inbox transaction runner enlisted the attempt in (the `Transactional` inbox tier), or `null` on the non-transactional tier: a consumer's own enlisted writes go through it — `context.UnitOfWork.Outbox.PublishAsync(…)`, `context.UnitOfWork.Jobs.ScheduleAsync(…)` — so a rolled-back attempt discards them with the inbox row; a callback response is published through the same unit. A consumer that also holds the inbox's `DbContext` reaches it as `db.UnitOfWork()`.
+- `IRespond<TRequest, TResponse>` is the responder contract for [request/reply](#requestreply): `ValueTask<TResponse> RespondAsync(ConsumeContext<TRequest>, CancellationToken)` on a `[QueueConsumer]` class, with both type parameters constrained to `class`. In a responder, `ConsumeContext.SetResponse`, `SetResponseCallbackName`, and `SetResponseDestination` throw `InvalidOperationException`, because the return value is the only answer. `ConsumeContext.RecordReply` is generated-code plumbing, hidden from IntelliSense; application code never calls it.
 - `MessageOptions` base options, including headers, correlation, mutually exclusive `Delay` and `ScheduledAt`, message id, message type, and tenant id.
 - `IMessageRevoker` deletes a scheduled row by `PublishReceipt.StorageId` before its first dispatch reservation. It returns `Revoked`, `NotFound`, or `AttemptReserved`, retains no audit record, and is not tenant-scoped. Use Jobs for keyed, replaceable, tenant-scoped, or transactional deadlines.
 - The enlisted publish contract lives here too: `IUnitOfWorkOutbox`, the `UnitOfWorkOutbox` binding, `OutboxOptions`, and the `unit.Outbox` accessor (an extension property on `IUnitOfWork`, in the `Headless.UnitOfWork` namespace, so holding the unit is enough to reach it). The accessor resolves the singleton `IUnitOfWorkOutbox` feature from the host container and binds it to the handle once per unit, keeping the binding as unit-local state (`GetOrAdd`), so repeated reads allocate nothing and a completed unit refuses the read; the binding owns nothing to dispose. `IUnitOfWorkOutbox` itself is plumbing — hidden from IntelliSense, public only so the unit-of-work packages can hand it out — and application code uses the binding. The implementation ships in `Headless.Messaging.Core` and is registered by `AddHeadlessMessaging`; `unit.Outbox` throws an `InvalidOperationException` naming `AddHeadlessMessaging` when the host registered no messaging.
@@ -701,6 +722,7 @@ None. This package registers no services.
 - `QueueOptions.Delay` or `QueueOptions.ScheduledAt` schedules durable queue delivery. Supply one scheduling form. `Direct` rejects either form; `OutboxOptions` accepts both.
 - `QueueOptionsBuilder` and the `QueueExtensions.EnqueueAsync` callback author canonical options snapshots without a Core dependency.
 - Every queue enqueue carries `MessageLane.Queue` through storage, tracing, dashboard projections, and consume context.
+- `IRequestClient.RequestAsync<TRequest, TResponse>(request, RequestOptions?, CancellationToken)` sends a request on the Queue lane and awaits one response. `RequestOptions` carries `Timeout`, `TenantId`, `CorrelationId`, and `Headers` only. Failures derive from `RequestReplyException` (`RequestTimeoutException`, `RequestFaultedException`, `ResponseContractMismatchException`, `RequestNotSentException`, `RequestAbortedException`), except the caller's own cancellation (`OperationCanceledException`) and an unreadable response body (`MessageDeserializationException`), and `RequestFaultCodes` holds the fault codes. `IRequestClient` is registered only by `setup.AddRequestReply()` in `Headless.Messaging.Core`. See [Request/reply](#requestreply).
 
 ### Install
 
@@ -751,18 +773,325 @@ None in this package. Runtime wiring is provided by `Headless.Messaging.Core` pl
 
 None. This package registers no services.
 
+## Request/reply
+
+A caller sends a typed request on the Queue lane and awaits one typed response. `IRequestClient.RequestAsync<TRequest, TResponse>` sends the request, the request's one Queue consumer answers it through `IRespond<TRequest, TResponse>`, and the reply returns over a reply channel that belongs to the calling process. Use it for latency-tolerant commands whose caller cannot continue without the answer, such as a quote, a validation result, or a reservation. It is not a durable workflow: the caller's pending call lives only in its process, so durable multi-step coordination stays with Jobs.
+
+### Request/reply versus callbacks
+
+| | Request/reply | Bus callback |
+| --- | --- | --- |
+| Who waits | The caller awaits `RequestAsync` | Nobody; the response is a new Bus message |
+| Declared by | A `[QueueConsumer]` class that implements `IRespond<TRequest, TResponse>` | `CallbackName` on the publish options, and `SetResponse` in an `IConsume<T>` consumer |
+| Response path | A reply channel of the calling process; never stored, never a lane message | A durable Bus publish |
+| Delivery | At most once: a lost reply ends the call in a timeout | At least once: response consumers must be idempotent |
+| Answers per request | One, from the request's one Queue consumer | One per consumer; a Bus request fans out |
+| Providers | InMemory, RabbitMQ, NATS, Redis | Every provider with a Bus lane |
+
+Use a callback when nothing waits for the answer or the answer must survive a restart. Use request/reply when the caller needs the answer to continue and can handle a timeout.
+
+### Setup
+
+The responding service declares the responder. It needs no request/reply registration of its own, only a transport that supports request/reply:
+
+```csharp
+// Contracts both services share: the request and the response.
+public sealed record GetQuote(string Sku, int Quantity);
+
+public sealed record Quote(string Sku, decimal UnitPrice, DateTimeOffset ValidUntil);
+
+public interface IPriceBook
+{
+    ValueTask<decimal> GetUnitPriceAsync(string sku, CancellationToken cancellationToken);
+}
+
+// Pricing service: the responder is the request's one Queue consumer.
+[QueueConsumer("pricing.get-quote")]
+public sealed class GetQuoteResponder(IPriceBook prices, TimeProvider clock) : IRespond<GetQuote, Quote>
+{
+    public async ValueTask<Quote> RespondAsync(ConsumeContext<GetQuote> context, CancellationToken cancellationToken)
+    {
+        var unitPrice = await prices.GetUnitPriceAsync(context.Message.Sku, cancellationToken);
+
+        return new Quote(context.Message.Sku, unitPrice, clock.GetUtcNow().AddMinutes(5));
+    }
+}
+
+builder.Services.AddHeadlessMessaging(setup =>
+{
+    setup.UseRabbitMq(options =>
+    {
+        options.HostName = "localhost";
+        options.UserName = builder.Configuration["RabbitMq:UserName"]!;
+        options.Password = builder.Configuration["RabbitMq:Password"]!;
+    });
+    setup.UseEntityFramework<AppDbContext>();
+    setup.AddModule<Pricing.MessagingModule>();
+});
+
+builder.Services.ConfigureMessaging(messaging =>
+{
+    messaging.Message<GetQuote>("pricing.get-quote");
+    messaging.Message<Quote>("pricing.quote");
+});
+```
+
+The calling service enables requests with `AddRequestReply` and injects `IRequestClient`:
+
+```csharp
+builder.Services.AddHeadlessMessaging(setup =>
+{
+    setup.UseRabbitMq(options =>
+    {
+        options.HostName = "localhost";
+        options.UserName = builder.Configuration["RabbitMq:UserName"]!;
+        options.Password = builder.Configuration["RabbitMq:Password"]!;
+    });
+    setup.UseEntityFramework<AppDbContext>();
+
+    // Registers IRequestClient and opens this host's reply channel when messaging starts.
+    setup.AddRequestReply(requests => requests.DefaultTimeout = TimeSpan.FromSeconds(10));
+});
+
+builder.Services.ConfigureMessaging(messaging =>
+{
+    messaging.Message<GetQuote>("pricing.get-quote");
+    messaging.Message<Quote>("pricing.quote");
+});
+
+public sealed class CheckoutPricing(IRequestClient requests)
+{
+    public Task<Quote> QuoteAsync(string sku, int quantity, CancellationToken cancellationToken) =>
+        requests.RequestAsync<GetQuote, Quote>(
+            new GetQuote(sku, quantity),
+            new RequestOptions { Timeout = TimeSpan.FromSeconds(5) },
+            cancellationToken
+        );
+}
+
+public sealed record GetQuote(string Sku, int Quantity);
+
+public sealed record Quote(string Sku, decimal UnitPrice, DateTimeOffset ValidUntil);
+```
+
+- **`AddRequestReply` is for callers only.** It registers `IRequestClient` and a reply listener that opens when messaging starts, before any consumer, and closes when it stops. A host that never calls it opens no reply channel and has no `IRequestClient` registration. Calling it more than once is harmless.
+- **Both services must resolve the response type to the same contract.** The responder stamps the response's contract name and version from its own registry, and the caller compares them with its own registry for `TResponse`. Declare the request and the response with `Message<T>` in a module both services add. The response contract needs no consumer.
+- **Options.** `RequestReplyOptions.DefaultTimeout` (`setup.Options.RequestReply`, default 30 seconds, greater than zero, at most 10 minutes) applies when a call sets no `RequestOptions.Timeout`. A per-call `Timeout` takes any positive value. `IncludeExceptionDetailsInFaults` (default `false`) is read by the responding host and applies there without `AddRequestReply`.
+- **Startup checks.** A host that calls `AddRequestReply`, or declares a responder, fails startup with a `MessagingConfigurationException` naming the transport when the transport does not support request/reply. A registered message name that starts with `headless.reply.` after `MessagingOptions.MessageNamePrefix` is applied fails startup on either lane, because that prefix is reserved for reply addresses.
+
+### Responders
+
+- **Declaration.** A responder is a `[QueueConsumer]` class that implements `IRespond<TRequest, TResponse>`. It is the request's one Queue consumer: a second Queue consumer or responder for the same request fails the build (HM004) or startup. `[BusConsumer]` on a responder is HM011, `IConsume<T>` and `IRespond<T, TResponse>` on one class for the same `T` is HM012, and two response types for one request is HM013. A `RequestAsync<TRequest, TResponse>` call whose `TResponse` is not what a responder the project can see answers `TRequest` with is HM014, a warning; a caller that sees no responder, the usual case for another service, is not checked.
+- **Cancellation.** The `RespondAsync` token is canceled when the host stops. It is not tied to the request's deadline or to the caller's cancellation, because work the responder accepted continues after the caller stops waiting.
+- **Never return null.** A `null` result ends the request at once, with no retry, and the caller gets a `null_response` fault.
+- **No callbacks.** In a responder, `SetResponse`, `SetResponseCallbackName`, and `SetResponseDestination` throw `InvalidOperationException`; the return value is the only answer. A `CallbackName` that the request carries on the wire is ignored.
+- **A plain enqueue still runs it.** `IQueue.EnqueueAsync` of the request type reaches the responder like any Queue consumer; it runs and its result is discarded.
+- **Only a Queue message is a request.** A Bus message that carries the request headers is consumed as an ordinary Bus message: no deadline check, no `no_responder` skip, and no reply.
+- **A request never reaches a plain consumer.** When a request arrives at a host whose consumer for that message is a plain `IConsume<T>`, the host commits and skips it before inbox admission (receive outcome `skipped`, no storage row) and answers with a `no_responder` fault, so that code always means no work ran.
+- **Normal consume pipeline.** A request is admitted to the inbox, deduplicated, and runs the Queue-lane receive and consume middleware, the circuit breaker, and the inbox transaction runner like any Queue message. `ConsumeOnly` filters a responder like any competing consumer.
+- **The reply leaves only after the outcome is durable.** On the `Transactional` inbox tier the reply is sent after the attempt's transaction commits; a rolled-back or indeterminate commit sends nothing. On other tiers it is sent after the success write takes effect. Only the attempt whose state write won replies. A crash between the durable outcome and the reply leaves the caller with a timeout. Sending a reply is best effort: a failure is logged and never retried. Each send is bounded by `MessagingOptions.TransportPublishTimeout`, not by host shutdown; a send that outlasts it is given up and logged like any other failed send, so a stalled broker cannot hold the responder's consumer.
+- **Tenant scope.** When the host registers messaging tenant propagation (`AddHeadlessTenancy(t => t.Messaging(m => m.PropagateTenant()))`), the responder runs inside the request's tenant scope, as a Bus consumer does. A plain Queue consumer keeps today's behavior. The reply carries the request's tenant verbatim, whatever the ambient tenant is.
+
+### Model expected outcomes in the response
+
+Return an expected business outcome, such as "not found", "rejected", or "out of stock", as part of `TResponse`. Throw only for failures. A thrown exception is retried inline under the host's retry policy and then reaches the caller as a `handler_failed` fault that carries no detail by default, so the caller cannot tell "not found" from a crash, and the responder wastes retries on an answer that will not change.
+
+```csharp
+public sealed record FindCustomer(Guid CustomerId);
+
+// "Not found" is an expected answer, so the response carries it instead of the responder throwing.
+public sealed record CustomerLookup(CustomerSummary? Customer)
+{
+    public static CustomerLookup NotFound { get; } = new(Customer: null);
+}
+
+public sealed record CustomerSummary(Guid Id, string DisplayName);
+
+public interface ICustomerDirectory
+{
+    ValueTask<CustomerSummary?> FindAsync(Guid customerId, CancellationToken cancellationToken);
+}
+
+[QueueConsumer("customers.find-customer")]
+public sealed class FindCustomerResponder(ICustomerDirectory directory) : IRespond<FindCustomer, CustomerLookup>
+{
+    public async ValueTask<CustomerLookup> RespondAsync(
+        ConsumeContext<FindCustomer> context,
+        CancellationToken cancellationToken
+    )
+    {
+        var customer = await directory.FindAsync(context.Message.CustomerId, cancellationToken);
+
+        return customer is null ? CustomerLookup.NotFound : new CustomerLookup(customer);
+    }
+}
+
+public sealed class CustomerNames(IRequestClient requests)
+{
+    public async Task<string?> GetDisplayNameAsync(Guid customerId, CancellationToken cancellationToken)
+    {
+        var lookup = await requests.RequestAsync<FindCustomer, CustomerLookup>(
+            new FindCustomer(customerId),
+            cancellationToken: cancellationToken
+        );
+
+        return lookup.Customer?.DisplayName;
+    }
+}
+```
+
+### Sending requests
+
+`RequestOptions` carries `Timeout`, `TenantId`, `CorrelationId`, and `Headers`, and nothing else:
+
+- **The framework owns the request.** It assigns the message id and a `headless-request-id` (a UUIDv7) to each call, so inbox duplicate detection never swallows a legitimate retry. `RequestOptions.Headers` rejects reserved messaging headers and control characters with `InvalidOperationException`.
+- **A request is always sent directly.** It is never captured in the outbox, delayed, scheduled, or given a callback name; `WithDeliveryMode` and `MessagingOptions.DefaultDeliveryMode` do not apply. The caller's storage keeps no published row for it.
+- **Middleware and tracing.** A request passes through the Queue-lane publish middleware; middleware that suppresses it ends the call with `RequestNotSentException`. The request span injects trace context, and the reply carries the responder span's `traceparent`. No Bus publish or consume middleware runs on a reply.
+- **Not inside a transactional inbox unit.** `RequestAsync` called while a consumer attempt runs inside an inbox transaction (its `ConsumeContext.UnitOfWork` is not null, which is every consumer on the `Transactional` tier) throws `InvalidOperationException`, because waiting for the reply would hold the database transaction and the inbox lease for the whole timeout. Send the request after the unit completes, or from a consumer on a non-transactional tier. An application unit of work opened with `IUnitOfWorkFactory` does not block a request, but the request never joins it: it is sent at once, and a rollback does not recall it.
+- **Tenant.** The request carries `RequestOptions.TenantId`, or else the ambient `ICurrentTenant.Id` when the host registers messaging tenant propagation, under the publish middleware's rules (a blank or over-length ambient value is skipped). The caller drops a reply whose tenant differs from the request's, where no tenant matches only no tenant, and the call then times out.
+- **Shutdown.** When the calling host stops, new calls throw `RequestNotSentException` and pending calls fail with `RequestAbortedException` before the reply listener closes. When the caller is itself a consumer, that failure during its own host's shutdown counts as shutdown, not as a consume failure: the attempt writes no failed state, raises no `RetryPolicy.OnExhausted`, sends no fault, reports no circuit-breaker failure, and the stored message is picked up again after restart.
+
+### Outcomes and exceptions
+
+A call that passes argument validation ends in exactly one outcome below, and it never returns `null`. Each failure outcome except the caller's own cancellation and an unreadable response body derives from `RequestReplyException`, which exposes `RequestId`, so one `catch` covers them. An unreadable response body surfaces as `MessageDeserializationException`, the one failure outside that hierarchy.
+
+| Outcome | Surfaces as | Did the responder run? | Safe to retry? |
+| --- | --- | --- | --- |
+| Response | The `TResponse` value | Yes, and its outcome is durable | Not needed |
+| Timeout | `RequestTimeoutException` (`Timeout`) | Unknown: it may have finished, or its reply may have been lost | Only when the responder is idempotent |
+| Fault | `RequestFaultedException` (`Code`, plus `RemoteExceptionType` and `Detail` when the responder host opts in) | Depends on `Code`; see below | Depends on `Code` |
+| Contract mismatch | `ResponseContractMismatchException` (expected and actual name and version) | Yes, it completed | No: the two services disagree on the response contract and need a coordinated deployment |
+| Not sent | `RequestNotSentException` | No when it never left the caller; almost never when the transport reported the send as failed | Yes when it never left the caller; when the transport reported a failure, only if the responder is idempotent |
+| Aborted | `RequestAbortedException` | Unknown: the request was sent and the caller stopped | Only when the responder is idempotent |
+| Caller canceled | `OperationCanceledException` | Unknown when the request was already sent; canceling ends only the wait | Only when the responder is idempotent |
+| Unreadable response body | `MessageDeserializationException` | Yes, it completed | No: fix the response contract |
+
+`RequestNotSentException` covers publish middleware that suppressed the request, a send the transport reported as failed (its `InnerException` is the transport's exception, such as `PublisherSentFailedException`), a calling host that is stopping, and a reply listener that did not become ready within the call's timeout, for example while the broker is unreachable. A transport-reported failure usually means the broker rejected the request, but a connection lost after the broker stored it surfaces the same way, so it is not a guarantee that no responder runs. A send that outlasts `MessagingOptions.TransportPublishTimeout` is not "not sent": the broker may have taken it, so the call keeps waiting and ends with the response or `RequestTimeoutException`. `RequestAsync` also throws `ArgumentNullException` for a null request and `InvalidOperationException` for the transactional-unit and reserved-header cases above.
+
+Fault codes are stable wire values in `RequestFaultCodes`:
+
+| Code | Meaning | Did work run? |
+| --- | --- | --- |
+| `handler_failed` | The responder failed terminally before the deadline: its immediate retries ran out or were cut short by the deadline, or its failure policy ended the failure at once (a fail rule or the built-in permanent set) | It ran and failed; its effects may be partial |
+| `no_responder` | The request reached a consumer that does not respond, or a host with no consumer for it; the host committed and skipped it | No. Safe to retry once a responder is deployed |
+| `request_rejected` | The responding host rejected the request on arrival: a contract version mismatch, a body it could not deserialize, or receive middleware that rejected it | No |
+| `null_response` | The responder returned `null` | It ran to completion |
+
+A fault body is never empty, and an unreadable one surfaces as `handler_failed`. `RemoteExceptionType` and `Detail` stay `null` unless the responding host sets `RequestReply.IncludeExceptionDetailsInFaults`, because exception messages can carry internal details.
+
+```csharp
+public sealed class QuoteGateway(IRequestClient requests)
+{
+    public async Task<Quote?> TryQuoteAsync(GetQuote request, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await requests.RequestAsync<GetQuote, Quote>(request, cancellationToken: cancellationToken);
+        }
+        catch (RequestNotSentException)
+        {
+            // Nothing reached a responder, so a retry cannot repeat work.
+            return null;
+        }
+        catch (RequestFaultedException e) when (e.Code == RequestFaultCodes.NoResponder)
+        {
+            // The request reached a consumer that does not respond, so no work ran.
+            return null;
+        }
+        catch (RequestTimeoutException)
+        {
+            // Ambiguous: the responder may have finished. Retry only when GetQuote is idempotent.
+            return null;
+        }
+    }
+}
+
+public sealed record GetQuote(string Sku, int Quantity);
+
+public sealed record Quote(string Sku, decimal UnitPrice);
+```
+
+### Deadlines, timeouts, and clock skew
+
+- **Every request has a deadline.** The deadline is the send time plus the call's timeout, carried as an absolute UTC instant in `headless-request-deadline`. The caller's own timer stays authoritative for the call.
+- **The responder checks the deadline on its own clock.** A request that arrives expired is committed and dropped before inbox admission: receive outcome `expired`, no storage row, no reply, no `RetryPolicy.OnExhausted`, and no circuit-breaker failure. The check repeats at the start of every attempt, including immediate retries, persisted pickups, and lease recovery after a crash; an expired request then ends terminally with the same absence of reply, callback, and breaker report. A request whose deadline header is missing or unreadable has no deadline.
+- **A started attempt is not interrupted.** The handler's token is not tied to the deadline, so an attempt that started in time runs to completion. Its reply then arrives after the caller stopped waiting and is dropped as `late`.
+- **Clock skew moves the window.** The deadline is written on the caller's clock and read on the responder's. A responder clock that runs ahead expires requests early; one that runs behind starts work after the caller gave up. Keep host clocks synchronized and timeouts much longer than the expected skew.
+- **A timeout is ambiguous.** The responder may have completed the work after the caller stopped waiting, or its reply may have been lost after the work became durable. Make responders idempotent, for example by deduplicating on a business key the request carries, before a caller retries after a timeout.
+- **The caller's continuation is at most once.** The pending call lives only in the calling process. A caller that restarts loses its pending calls, and its new listener has a new address, so a reply to the previous run never reaches it. There is no persisted caller state and no reply recovery.
+
+### Retries
+
+A request uses the responder's [failure policy](#consumer-failure-policy) and its fail rules, but only its immediate retries. It never takes a delayed retry through the persisted retry processor, because its caller waits only until the deadline:
+
+- **Immediate retries run while the deadline allows.** When the policy's immediate retries are spent, or the deadline has passed, the request ends as exhausted instead of scheduling a delayed retry, even when the policy declares delayed retries: the caller gets a `handler_failed` fault, then `RetryPolicy.OnExhausted` fires. The reply is sent before the callback runs, so the caller is not held up by it.
+- **A permanent failure ends at once.** A failure that a fail rule matches, or that is in the built-in permanent set, ends the request with a `handler_failed` fault, and `OnExhausted` fires, as for any consumer.
+- **A null response and an expired request never retry.** `null_response` ends the request without `OnExhausted`, and an expired request ends with neither a reply nor `OnExhausted`.
+- **A request rejected on arrival** (contract version, deserialization, or receive middleware) gets a `request_rejected` fault from the poison path, and `OnExhausted` fires as it does for any rejected delivery.
+
+Receive middleware that skips a request (`context.Skip(...)`) sends no reply, so its caller times out.
+
+### Telemetry
+
+| Instrument | Kind | Dimension and values |
+| --- | --- | --- |
+| `messaging.request_reply.requests` | Counter | `messaging.request_reply.outcome`: `replied`, `faulted`, `contract_mismatch`, `timed_out`, `canceled`, `aborted`, `not_sent`, `failed` |
+| `messaging.request_reply.duration` | Histogram (ms) | `messaging.request_reply.outcome` |
+| `messaging.request_reply.dropped_replies` | Counter | `messaging.request_reply.drop_reason`: `late` (the call already ended), `duplicate` (the call already had its reply), `unknown` (no call of this process sent it), `tenant_mismatch`, `invalid_reply_address` (counted on the responding host, which wrote nothing) |
+| `messaging.receive.outcomes` | Counter | `messaging.receive.outcome`: `expired` for a request dropped on arrival after its deadline; `skipped` for a request that reached a plain consumer, as for a receive-middleware skip |
+
+No request id, correlation id, or instance id is a metric dimension.
+
+### Provider support
+
+| Provider | Request/reply | Reply channel |
+| --- | --- | --- |
+| InMemory | Supported | An in-process channel per listener |
+| RabbitMQ | Supported | An exclusive, non-durable queue named `headless.reply.{32 hex}`, consumed with automatic acknowledgement on a connection of the listener's own; replies go through the default exchange with the queue name as routing key and never touch the lane exchanges |
+| NATS | Supported | A core NATS subscription, outside JetStream, on the subject `headless.reply.{32 hex}`, on a pooled connection |
+| Redis | Supported | A pub/sub subscription to the literal channel `headless.reply.{32 hex}`; `PUBLISH` writes no key |
+| Azure Service Bus | Not yet: startup fails until its reply channel ships | |
+| Pulsar | Not yet: startup fails until its reply channel ships | |
+| Kafka | No: startup fails | Kafka has no per-process address short of a partition per instance |
+| AWS SNS/SQS | No: startup fails | AWS has no .NET temporary-queue client, and per-process queues are billed |
+
+Every supported provider removes its reply objects when the caller stops or dies: the exclusive queue, subscription, or channel ends with its connection. A reply sent to an address nobody listens on is discarded by the broker without an error, and its call has already ended.
+
+**Behavior after a connection loss and at startup:**
+
+- **Every provider backs off before it reconnects.** After a lost channel and after a failed attempt alike, the listener waits a jittered delay of about 1 second, doubling up to 30 seconds, and starts over at about 1 second once a channel opens. A broker that keeps accepting and then dropping the listener cannot drive a tight reconnect loop, and a fleet that loses the broker at once does not reconnect in lockstep.
+- **RabbitMQ.** The listener's connection does not recover on its own. After the connection, channel, or consumer is lost, the listener opens a new connection and declares a new queue under a **new** address; calls sent with the old address time out. The listener connects in the background, so a broker that is unreachable at startup, or wrong credentials, never fails bootstrap: each call waits for the address inside its own timeout and then throws `RequestNotSentException`.
+- **NATS.** The address stays the same across reconnects, because the client re-subscribes. While the connection is down the listener withholds its address, so new calls wait inside their timeout; a call already waiting completes if its reply arrives after the reconnect, and a reply published during the outage is lost and its call times out. Subscribing runs in the background, so an unreachable server never fails bootstrap; calls throw `RequestNotSentException` when no address arrives within their timeout. A reply that arrives while the subscription's pending channel (`NatsOpts.SubPendingChannelCapacity`) is full is dropped with a warning, and its call times out.
+- **Redis.** The address stays the same across reconnects, because the multiplexer re-subscribes; while the subscription connection is down the address is withheld and replies published then are lost, as on NATS. Connecting and subscribing run in the background with a log entry per retry, so bootstrap never fails; calls throw `RequestNotSentException` when no address arrives within their timeout.
+
+**Operator rules:**
+
+- **NATS streams.** Keep JetStream streams on the lane prefixes (`headless.bus.>`, `headless.queue.>`). A stream whose subjects cover `headless.reply.>`, such as `headless.>` or `>`, stores every reply. A request whose subject no stream captures fails immediately with `RequestNotSentException`, whose `InnerException` is the `PublisherSentFailedException`, instead of timing out, for example with `StreamProvisioning` set to `Disabled` and no operator stream for the request's message.
+- **Redis channel prefix.** Every host that exchanges requests must use the same StackExchange.Redis `ConfigurationOptions.ChannelPrefix`. Pub/sub ignores the database number, so hosts that use different databases of one server share the reply namespace. Redis lane names are stream keys and reply addresses are channels, so they never collide.
+- **Redis Cluster.** Replies use classic `PUBLISH`, which the cluster forwards to every node: a reply reaches its caller whichever node either side uses, and each reply crosses the cluster bus once per node. Sharded pub/sub is not used. This path has no conformance run against a real cluster.
+- **RabbitMQ.** A reply is published without the mandatory flag, so a reply to a queue that is gone is discarded silently.
+
+**Broker permissions.** Reply confidentiality and integrity depend on the broker's access control over the reply namespace. A principal that can publish to a reply address can forge a reply: the caller accepts one only when its `headless-in-reply-to` matches a pending call, its tenant matches, and its response contract matches, but request ids travel in request headers that any reader of the request queue sees. A principal that can subscribe to the reply namespace can read replies. Grant callers and responders these permissions in addition to their lane permissions:
+
+| Provider | Caller (sends requests) | Responder (sends replies) | Notes |
+| --- | --- | --- | --- |
+| RabbitMQ | `configure` and `read` on queues matching `^headless\.reply\.` | `write` on the default exchange (`amq.default`) | The exclusive queue refuses consumers on other connections. `write` on the default exchange reaches any queue by name, so the broker cannot confine a responder to reply queues; the framework sends only to the reply namespace |
+| NATS | `subscribe` on `headless.reply.>` | `publish` on `headless.reply.>` | Deny `subscribe` on `headless.reply.>` to every other principal; a subscriber there sees every caller's replies |
+| Redis | `+subscribe` and `+unsubscribe` on channels `&headless.reply.*` | `+publish` on channels `&headless.reply.*` | Include the `ChannelPrefix` in the channel pattern. Grant `subscribe` only to callers |
+
 ## Headless.Messaging.Core
 
 ### API and behavior
 
 - `PublishReceipt` carries the resolved wire `MessageId` and nullable durable `StorageId`. Direct delivery returns no storage handle. Middleware suppression before terminal publication returns both values null. A receipt enlisted in the caller's active unit of work remains subject to that unit's completion or rollback and never implies consumer completion.
-- `services.AddHeadlessMessaging(setup => ...)`, called once by the host. `MessagingSetupBuilder` configures transport, storage, `Options`, `Instrumentation`, conventions, and host controls: `AddModule<TModule>()`, `Tune(identity, ...)`, `ConsumeOnly(...)`, and `WithMessageNameMapping<T>(name)`. It returns the `MessagingBuilder` that registers middleware.
+- `services.AddHeadlessMessaging(setup => ...)`, called once by the host. `MessagingSetupBuilder` configures transport, storage, `Options`, `Instrumentation`, conventions, and host controls: `AddModule<TModule>()`, `Tune(identity, ...)`, `ConsumeOnly(...)`, `DefaultFailurePolicy<TPolicy>()` or `DefaultFailurePolicy(p => ...)` (the failure policy of every competing consumer and runtime subscription that has none of its own), and `WithMessageNameMapping<T>(name)`. It returns the `MessagingBuilder` that registers middleware.
 - `services.ConfigureMessaging(m => ...)`: a module's contribution through `MessagingContributionBuilder`, before or after `AddHeadlessMessaging`: `AddModule<TModule>()`, `Message<T>(name, version)`, and `Tune(identity, ...)`. The callback runs once, synchronously; contracts are recorded when it returns, so a contract builder used after that throws.
 - `IMessagingModule`: the generated `<AssemblyName>.MessagingModule` of an assembly that declares `[BusConsumer]` or `[QueueConsumer]` classes. See [Headless.Messaging.SourceGenerator](#headlessmessagingsourcegenerator).
 - Message contracts: `Message<T>(name, version = "1")` returns `IMessageContractBuilder<T>` with `CorrelateBy(selector)`, `OnBus(Action<IBusContractBuilder<T>>)`, and `OnQueue(Action<IQueueContractBuilder<T>>)`. Both lane builders expose `RequireRoutingAffinity()` and `WithDeliveryMode(mode)`; provider packages add their message hatches to them. The name and version are stamped on every outgoing envelope and checked before durable dispatch.
-- Consumer tuning: `Tune(identity, Action<ConsumerTuningBuilder>)` with `Concurrency(byte)` (greater than zero), `InboxRetention(TimeSpan)` (positive whole seconds), `CircuitBreaker(Action<ConsumerCircuitBreakerOptions>)`, `UseMiddleware<TMiddleware>()`, and the provider consumer hatches. Tuning cannot declare a consumer or change its identity, lane, or messages.
+- Consumer tuning: `Tune(identity, Action<ConsumerTuningBuilder>)` with `Concurrency(byte)` (greater than zero), `InboxRetention(TimeSpan)` (positive whole seconds), `CircuitBreaker(Action<ConsumerCircuitBreakerOptions>)`, `FailurePolicy<TPolicy>()` or `FailurePolicy(Action<FailurePolicyBuilder>)`, `UseMiddleware<TMiddleware>()`, and the provider consumer hatches. Tuning cannot declare a consumer or change its identity, lane, or messages.
 - Consumer identity: validated at build time by the generator (HM001) and again at registration against `ConsumerMetadata.ConsumerIdentityMaxLength` (200), matching relational inbox admission. Bus and Queue identities are collision-scoped independently.
 - `IRuntimeSubscriber.SubscribeAsync<T>(handler, options)` attaches a delegate to the Bus lane after startup. `RuntimeSubscriptionOptions` carries `Identity` (the consumer identity and Bus subscription name, derived from `HandlerId` when omitted), `HandlerId` (defaults to `{DeclaringType}|{Method}|{Message}`, required for anonymous delegates), `MessageName`, `Concurrency`, `EveryInstance`, and `DuplicateBehavior` (`Reject` by default). The returned `RuntimeSubscriptionHandle` exposes `Identity`, `HandlerId`, `MessageName`, and `SubscriptionId`.
+- `setup.AddRequestReply(Action<RequestReplyOptions>? configure = null)` registers `IRequestClient` and the host's reply listener; `MessagingOptions.RequestReply` holds `DefaultTimeout` and `IncludeExceptionDetailsInFaults`. Responder registration, deadlines, inline-only request retries, and reply delivery live here too. See [Request/reply](#requestreply).
 - Publish, receive, and consume middleware.
 - Strict publish tenancy via `RequireTenantOnPublish()`.
 - Storage-backed retry/outbox and cleanup processors.
@@ -892,13 +1221,14 @@ The collector obtains one fixed provider-clock history cutoff snapshot per invoc
 - `MessagingOptions.RequiredInboxCapability` defaults to `MessagingInboxCapabilityTier.Transactional` and sets the minimum inbox guarantee required by durable consumers. The tier order is `ProcessLocal` < `DurableDedupeOnly` < `Transactional`; the configured storage must declare the selected tier or a stronger one. Selecting a weaker requirement is an explicit opt-down and does not change the provider's actual guarantees. Undefined tier values are rejected.
 - `MessagingInstrumentationOptions.IncludeTenantIdInMetricTags` defaults to `false`. Enable it only when the metrics backend and tenant population have an explicit cardinality budget; traces retain their separate tenant-tag policy.
 - `ConsumerThreadCount`, `SubscriberParallelExecuteThreadCount`, and `SubscriberParallelExecuteBufferFactor` accept 1 through 1,024; the subscriber thread-count × buffer-factor product must not exceed 100,000.
-- Retry configuration lives under `RetryPolicy`, publish/receive retry processors, and storage cleanup options. `RetryBatchSize` (default 200) and `SchedulerBatchSize` (default 1,000) accept 1 through 100,000. `SchedulerBatchSize` also bounds the in-memory near-term scheduler queue; overflow remains durable as `Delayed` work.
+- Consumer retries come from each consumer's failure policy (see [Consumer failure policy](#consumer-failure-policy)). Publish retries, the dispatch lease, and `OnExhausted` live under `RetryPolicy`; polling lives under `RetryProcessor`. `RetryBatchSize` (default 200) and `SchedulerBatchSize` (default 1,000) accept 1 through 100,000. `SchedulerBatchSize` also bounds the in-memory near-term scheduler queue; overflow remains durable as `Delayed` work.
 - `UseStorageLock` coordinates retry processors through a messaging-keyed distributed lock provider.
 - `DeadNodeReconcileInterval` (default 1 minute, `> 0`) sets the always-on dead-owner recovery reconcile cadence (see [Dead-owner recovery](#dead-owner-recovery)). Independent of `UseStorageLock`.
 - `ShutdownTimeout` (default 30 seconds, `> 0`, `<= 5m`) is one end-to-end messaging shutdown bound. Shutdown first quiesces every processor, then concurrently initiates all drains using the remaining portion of one monotonic deadline. Configure the generic host or orchestrator termination grace to exceed this value; an earlier kill intentionally falls back to normal lease-expiry recovery while eventual cleanup remains fault-observed.
 - `SubscriptionEstablishedTimeout` (default 30 seconds, `> 0`, `<= 5m`) bounds each `IOnSubscriptionEstablished` call (see [Every-instance Bus delivery](#every-instance-bus-delivery)).
+- `RequestReply.DefaultTimeout` (default 30 seconds, `> 0`, `<= 10m`) is the request timeout when a call sets no `RequestOptions.Timeout`. `RequestReply.IncludeExceptionDetailsInFaults` (default `false`) lets this host's responders put the exception type and message in fault replies; it applies whether or not the host calls `AddRequestReply`. See [Request/reply](#requestreply).
 - Register middleware through `MessagingBuilder.AddBusPublishMiddleware<T>()`, `AddReceiveMiddleware<T>()`, `AddBusConsumeMiddleware<T>()`, `AddPublishMiddlewareFor<TMiddleware,TMessage>(lane)`, `AddReceiveMiddlewareFor<TMiddleware,TMessage>(lane)`, and `AddConsumeMiddlewareFor<TMiddleware,TMessage>(lane)`. Middleware for one consumer attaches through `Tune(identity, c => c.UseMiddleware<T>())`.
-- Consumer deployment settings bind from `Headless:Messaging:Consumers:{identity}` after every `Tune` call: `Concurrency` (1 to 255), `InboxRetention` (a `TimeSpan` such as `30.00:00:00`), and `CircuitBreaker:Enabled`, `CircuitBreaker:FailureThreshold`, `CircuitBreaker:OpenDuration`. The transient-exception predicate is code-only. An unknown identity, an unknown setting, an invalid value, or an inbox retention or circuit breaker on an every-instance consumer fails startup.
+- Consumer deployment settings bind from `Headless:Messaging:Consumers:{identity}` after every `Tune` call: `Concurrency` (1 to 255), `InboxRetention` (a `TimeSpan` such as `30.00:00:00`), and `CircuitBreaker:Enabled`, `CircuitBreaker:FailureThreshold`, `CircuitBreaker:OpenDuration`, and `FailurePolicy:ImmediateRetries`, `FailurePolicy:DelayedRetries`, `FailurePolicy:DelayedInitialDelay`, `FailurePolicy:DelayedMaxDelay`. The transient-exception predicate and fail rules are code-only. An unknown identity, an unknown setting, an invalid value, or an inbox retention, circuit breaker, or failure policy on an every-instance consumer fails startup.
 
   ```json
   {
@@ -908,7 +1238,8 @@ The collector obtains one fixed provider-clock history cutoff snapshot per invoc
           "orders.projection": {
             "Concurrency": 8,
             "InboxRetention": "14.00:00:00",
-            "CircuitBreaker": { "FailureThreshold": 3, "OpenDuration": "00:01:00" }
+            "CircuitBreaker": { "FailureThreshold": 3, "OpenDuration": "00:01:00" },
+            "FailurePolicy": { "DelayedRetries": 8, "DelayedMaxDelay": "00:30:00" }
           }
         }
       }
@@ -923,17 +1254,75 @@ Registers messaging services, hosted processors, publishers, consumers, storage 
 
 ## Retry Policy
 
-`RetryStrategy.MaxRetryAttempts` excludes the original execution and controls inline retries through a reusable Polly `ResiliencePipeline`. Once the inline budget is exhausted, Messaging persists `NextRetryAt` and `MessageNeedToRetryProcessor` performs up to `MaxPersistedRetries` pickups. `InlineAttempts` is reserved atomically before each invocation, so process recovery cannot reset the current burst.
+Messaging retries in two directions with separate settings. A failed consume attempt follows the consumer's failure policy, described in [Consumer failure policy](#consumer-failure-policy). A failed publish follows `MessagingOptions.RetryPolicy.RetryStrategy` and `MaxPersistedRetries`, described in [Publish retries](#publish-retries). Both share the dispatch lease, the storage clock rules, and the `RetryPolicy.OnExhausted` callback.
 
-On PostgreSQL and SQL Server, the database clock decides due time as well as lease ownership: retry pickup compares `NextRetryAt`, and the delayed claim compares each scheduled `ExpiresAt`, against the database clock, and the store stamps `Added`, the initial-dispatch-grace `NextRetryAt`, the orphan-probe `NextRetryAt`, and failed-message `ExpiresAt` from that clock too. Core never hands the store an application-clock due time either: a retry transition passes a `RetryDelay`, and a circuit-open deferral passes the time left until the circuit's next probe, and the store adds that delay to its own clock in the same statement that writes the row, so a retry falls due after its configured delay by the database clock however far the application clock is skewed. A scheduled publish time is a genuine instant the caller chose, so it is stored as given and compared against the database clock. Retention stays on the application clock: a terminal row's `ExpiresAt` and the collector's cutoff that purges it are both the caller's, so they cannot drift from each other. InMemoryStorage uses its injected `TimeProvider` for all of these. The public `IDataStorage` SPI accepts a `DispatchTimeout` duration; PostgreSQL and SQL Server compare and stamp leases from one database-clock snapshot, read only after the rows the decision is about are locked, and InMemoryStorage uses its injected `TimeProvider`. A lease, a retry due time, a reserved attempt, or an operator action that waited for another transaction's row lock therefore decides on the clock as it stood when the lock was granted, never on a reading from before the wait: a transition of one row takes the row's lock before the statement that reads the clock, dead-owner reclaim locks the dead owners' rows before it compares their leases, and the claims and retention selections skip locked rows instead of waiting. A successful call returns the persisted `(LockedUntil, Owner)` identity on the message for fenced attempt and state writes. This eliminates client-clock skew from relational ownership, not duplicate delivery: genuine `DispatchTimeout` expiry permits a successor, and a process paused beyond its lease can resume already-running work alongside it. Delivery remains at-least-once.
+### Consumer failure policy
 
-Inbox lease release and retry deferral also require the complete stored inbox attempt fence, including generation, incarnation, and attempt ID. Missing or mismatched fences leave the row unchanged. Admission uses the same identity validation as PostgreSQL and SQL Server: nonblank contract names, consumer identities, and message IDs up to 200 characters; contract versions up to 100 characters; nonnegative generations; and nonblank tenant IDs up to 200 characters. Blank tenant headers normalize to no tenant.
+A competing consumer names a `FailurePolicy` type on its attribute. The policy model, its delay math, and how it compares with Jobs are in [reliability.md](reliability.md).
 
-Inline inbox reservations verify the complete active attempt fence before advancing the counter and preserve its attempt ID within the lease. Acquiring a fresh lease or claiming a due retry allocates a new attempt ID.
+```csharp
+using Headless.Reliability;
 
-For circuit-open received retries, built-in storage providers atomically advance `NextRetryAt` to the circuit's authoritative next eligible probe time while clearing only the exact live `(row, lane, Owner, LockedUntil)` lease generation. A stale generation is a no-op. Providers without the internal capability retain the claim for ordinary lease-expiry recovery instead of clearing the lease without advancing the schedule.
+public sealed class PaymentsFailurePolicy : FailurePolicy
+{
+    protected override void Configure(FailurePolicyBuilder policy) =>
+        policy
+            .Immediate(retries: 1)
+            .Delayed(retries: 6, initialDelay: TimeSpan.FromMinutes(1), maxDelay: TimeSpan.FromMinutes(30))
+            .FailOn<PaymentDeclinedException>();
+}
 
-During graceful shutdown, retry pickup is frozen before draining. A claimed lease is released early only when its exact `(row, lane, Owner, LockedUntil)` generation is locally known to have completed or to have been abandoned before execution. A handler still running at the shutdown deadline keeps its lease, and a crash performs no graceful release; both remain governed by normal `LockedUntil` expiry. This makes rolling restarts reclaim safe abandoned work promptly without turning lease release into an exactly-once claim. When `DispatchTimeout - InitialDispatchGrace` is greater than two minutes, startup emits EventId 97 so operators can measure valid handler duration and explicitly align the settings instead of blindly shortening the global lease.
+public sealed class PaymentDeclinedException(string message) : Exception(message);
+
+[QueueConsumer("payments.charge-order", FailurePolicy = typeof(PaymentsFailurePolicy))]
+public sealed class ChargeOrder : IConsume<PlaceOrder>
+{
+    public ValueTask ConsumeAsync(ConsumeContext<PlaceOrder> context, CancellationToken cancellationToken) =>
+        ValueTask.CompletedTask;
+}
+```
+
+The host sets the default for consumers that declare nothing, and replaces one consumer's policy by identity:
+
+```csharp
+builder.Services.AddHeadlessMessaging(setup =>
+{
+    // ... transport + storage ...
+    setup.DefaultFailurePolicy(policy =>
+        policy.Immediate(1).Delayed(3, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(10))
+    );
+    setup.Tune(
+        "orders.projection",
+        consumer => consumer.FailurePolicy(policy => policy.Delayed(10, TimeSpan.FromSeconds(30), TimeSpan.FromHours(1)))
+    );
+});
+```
+
+**Resolution.** `Tune` replaces the declared policy; a consumer with neither gets the host's `DefaultFailurePolicy`, and without that the framework default: 2 immediate retries, then 5 delayed retries from 30 seconds capped at 15 minutes, with no fail rules. `Headless:Messaging:Consumers:{identity}:FailurePolicy` then overrides `ImmediateRetries`, `DelayedRetries`, `DelayedInitialDelay`, or `DelayedMaxDelay` of the winner and keeps its fail rules. A publisher cannot choose a consumer's policy. One identity has one policy: a class that consumes several messages applies it to all of them, and two modules that declare one identity with different policy types fail startup naming both. A competing runtime subscription (`IRuntimeSubscriber`) uses the host default.
+
+**Attempts.** A failing message gets at most `1 + ImmediateRetries + DelayedRetries` attempts:
+
+- The first dispatch runs the first attempt and then the immediate retries back-to-back, with no delay.
+- Each delayed retry is one later dispatch with one attempt. The row is stored with `NextRetryAt` set to the database clock plus the policy's jittered delay for that retry, and the retry processor picks it up once it falls due. The processor polls every `RetryProcessor.BaseInterval` (adaptive), so a delayed retry can run up to one poll interval after its `NextRetryAt`. A delay shorter than the poll interval is not honored precisely.
+- Received-row pickup has no global retry-count cap: each row is judged against its own consumer's policy after it is claimed. A row whose stored retry count already exceeds the consumer's budget, because the policy shrank since the row was scheduled, ends as a spent budget without running the handler. A dispatch that crashed after reserving its final attempt ends the same way, so a crash loop cannot exceed the budget.
+
+With the framework default, a message that keeps failing runs 3 attempts at once, then 5 more after about 30 s, 60 s, 120 s, 240 s, and 480 s (each ±20% and each later by up to one poll interval), then fails terminally: 8 attempts.
+
+**Classification.** Fail rules see the handler's own exception, unwrapped from the executor's `SubscriberExecutionFailedException`. A failure ends at once, without its remaining retries, when a fail rule matches or the exception is in the built-in permanent set: `ArgumentException` and its subtypes, `NotSupportedException`, and `SubscriberNotFoundException`. A `FailWhen` predicate that throws counts as a match and is logged (EventId 111, `FailurePolicyRuleThrew`). Every other exception is retried. A cancellation of the consume token, such as host shutdown, is not a failure: once that token is cancelled, any `OperationCanceledException` that ends the attempt writes nothing, whatever token it carries, and the row is picked up again later. An `OperationCanceledException` raised while the consume token is live is an ordinary failure: fail rules see it and the policy retries it. That covers one the handler throws, such as an `HttpClient` timeout or a handler-owned `CancelAfter`, and one the transactional inbox's commit work raises after the handler, such as a consumer `SaveChanges` interceptor's `HttpClient` timeout; the latter reaches fail rules and `OnExhausted` unwrapped. To end such a cancellation at once, declare `FailOn<OperationCanceledException>()`, which also matches `TaskCanceledException`.
+
+**Terminal failure.** A message the policy gives up on is stored as `Failed` with no `NextRetryAt`; there is no separate dead-letter status. It stays until its retention expires, and an operator re-executes it from the Messaging dashboard (`POST /api/received/reexecute`). `RetryPolicy.OnExhausted` fires once for each terminal consume failure, and only on the node whose terminal write wins:
+
+- the policy's budget is spent;
+- a fail rule or the built-in permanent set matches;
+- the payload fails to deserialize at execution;
+- the stored message's consumer is no longer registered;
+- the message is poisoned on arrival (rejected before any consume attempt; the callback gets no storage id).
+
+An every-instance consumer has no failure policy and never calls `OnExhausted`; see [Every-instance Bus delivery](#every-instance-bus-delivery).
+
+### Publish retries
+
+`RetryPolicy.RetryStrategy` and `RetryPolicy.MaxPersistedRetries` govern publishing only. `RetryStrategy.MaxRetryAttempts` excludes the original execution and controls inline publish retries through a reusable Polly `ResiliencePipeline`. Once the inline budget is exhausted, Messaging persists `NextRetryAt` and `MessageNeedToRetryProcessor` performs up to `MaxPersistedRetries` pickups, which the published-row claim enforces. `InlineAttempts` is reserved atomically before each invocation, so process recovery cannot reset the current burst. A permanent publish failure ends without retry and without `OnExhausted`; only a spent publish budget invokes it.
 
 ```csharp
 using Polly;
@@ -955,9 +1344,9 @@ builder.Services.AddHeadlessMessaging(setup =>
 });
 ```
 
-The framework's default classification (retry anything that is not a cancellation and not classified permanent) is exposed as `RetryPolicyOptions.DefaultShouldHandle` — reuse or compose it when replacing `RetryStrategy` so a custom strategy does not silently drop the built-in failure classification.
+The framework's default publish classification (retry anything that is not a cancellation and not classified permanent) is exposed as `RetryPolicyOptions.DefaultShouldHandle`. Reuse or compose it when replacing `RetryStrategy`, so a custom strategy does not silently drop the built-in classification.
 
-Worked example with `RetryStrategy.MaxRetryAttempts = 2, MaxPersistedRetries = 2` — total (2+1)×(2+1) = 9 attempts:
+Worked publish example with `RetryStrategy.MaxRetryAttempts = 2, MaxPersistedRetries = 2`: total (2+1)×(2+1) = 9 attempts. With the defaults (2 and 15) a publish gets 48 attempts.
 
 ```
 pickup 1 (initial dispatch):
@@ -973,6 +1362,18 @@ pickup 3 (persisted retry #2):
   attempt 8 (inline retry #1) ── inline, after Polly delay
   attempt 9 (inline retry #2) ── final; on failure → Exhausted → OnExhausted fires
 ```
+
+### Storage clock and leases
+
+On PostgreSQL and SQL Server, the database clock decides due time as well as lease ownership: retry pickup compares `NextRetryAt`, and the delayed claim compares each scheduled `ExpiresAt`, against the database clock, and the store stamps `Added`, the initial-dispatch-grace `NextRetryAt`, the orphan-probe `NextRetryAt`, and failed-message `ExpiresAt` from that clock too. Core never hands the store an application-clock due time either: a retry transition passes a `RetryDelay`, and a circuit-open deferral passes the time left until the circuit's next probe, and the store adds that delay to its own clock in the same statement that writes the row, so a retry falls due after its configured delay by the database clock however far the application clock is skewed. A scheduled publish time is a genuine instant the caller chose, so it is stored as given and compared against the database clock. Retention stays on the application clock: a terminal row's `ExpiresAt` and the collector's cutoff that purges it are both the caller's, so they cannot drift from each other. InMemoryStorage uses its injected `TimeProvider` for all of these. The public `IDataStorage` SPI accepts a `DispatchTimeout` duration; PostgreSQL and SQL Server compare and stamp leases from one database-clock snapshot, read only after the rows the decision is about are locked, and InMemoryStorage uses its injected `TimeProvider`. A lease, a retry due time, a reserved attempt, or an operator action that waited for another transaction's row lock therefore decides on the clock as it stood when the lock was granted, never on a reading from before the wait: a transition of one row takes the row's lock before the statement that reads the clock, dead-owner reclaim locks the dead owners' rows before it compares their leases, and the claims and retention selections skip locked rows instead of waiting. A successful call returns the persisted `(LockedUntil, Owner)` identity on the message for fenced attempt and state writes. This eliminates client-clock skew from relational ownership, not duplicate delivery: genuine `DispatchTimeout` expiry permits a successor, and a process paused beyond its lease can resume already-running work alongside it. Delivery remains at-least-once.
+
+Inbox lease release and retry deferral also require the complete stored inbox attempt fence, including generation, incarnation, and attempt ID. Missing or mismatched fences leave the row unchanged. Admission uses the same identity validation as PostgreSQL and SQL Server: nonblank contract names, consumer identities, and message IDs up to 200 characters; contract versions up to 100 characters; nonnegative generations; and nonblank tenant IDs up to 200 characters. Blank tenant headers normalize to no tenant.
+
+Inline inbox reservations verify the complete active attempt fence before advancing the counter and preserve its attempt ID within the lease. Acquiring a fresh lease or claiming a due retry allocates a new attempt ID.
+
+For circuit-open received retries, built-in storage providers atomically advance `NextRetryAt` to the circuit's authoritative next eligible probe time while clearing only the exact live `(row, lane, Owner, LockedUntil)` lease generation. A stale generation is a no-op. Providers without the internal capability retain the claim for ordinary lease-expiry recovery instead of clearing the lease without advancing the schedule.
+
+During graceful shutdown, retry pickup is frozen before draining. A claimed lease is released early only when its exact `(row, lane, Owner, LockedUntil)` generation is locally known to have completed or to have been abandoned before execution. A handler still running at the shutdown deadline keeps its lease, and a crash performs no graceful release; both remain governed by normal `LockedUntil` expiry. This makes rolling restarts reclaim safe abandoned work promptly without turning lease release into an exactly-once claim. When `DispatchTimeout - InitialDispatchGrace` is greater than two minutes, startup emits EventId 97 so operators can measure valid handler duration and explicitly align the settings instead of blindly shortening the global lease.
 
 ### FailedInfo construction (for tests / fakes)
 
@@ -1008,11 +1409,11 @@ var info = new FailedInfo
 
 | Old property | New property | Notes |
 | --- | --- | --- |
-| `FailedRetryCount` | `RetryPolicy.MaxPersistedRetries` | Controls persisted-retry pickups. Total attempts = `(RetryStrategy.MaxRetryAttempts + 1) × (MaxPersistedRetries + 1)`. |
+| `FailedRetryCount` | `RetryPolicy.MaxPersistedRetries` (publish); the consumer's failure policy (consume) | Controls persisted publish pickups. Total publish attempts = `(RetryStrategy.MaxRetryAttempts + 1) × (MaxPersistedRetries + 1)`. Consume attempts = `1 + ImmediateRetries + DelayedRetries` of the consumer's policy. |
 | `FailedRetryInterval` | `RetryProcessorOptions.BaseInterval` | Default `60s`. |
 | `FallbackWindowLookbackSeconds` | *removed* | No replacement — `MessageNeedToRetryProcessor` now polls without a lookback window. |
-| `RetryBackoffStrategy` | `RetryPolicy.RetryStrategy` | Configure Polly's `RetryStrategyOptions` directly, including explicit `ShouldHandle`, backoff, jitter, delay generator, cap, and `OnRetry`. |
-| `FailedThresholdCallback` | `RetryPolicy.OnExhausted` | The Messaging-owned callback fires only after an owned terminal transition following complete retryable-budget exhaustion. |
+| `RetryBackoffStrategy` | `RetryPolicy.RetryStrategy` (publish); `FailurePolicyBuilder.Delayed` (consume) | Publish: configure Polly's `RetryStrategyOptions` directly, including explicit `ShouldHandle`, backoff, jitter, delay generator, cap, and `OnRetry`. Consume: the consumer's failure policy sets the delayed backoff. |
+| `FailedThresholdCallback` | `RetryPolicy.OnExhausted` | Fires once per owned terminal transition: a spent publish budget, or any terminal consume failure listed under [Consumer failure policy](#consumer-failure-policy). |
 
 ## Distributed Lock Integration
 
@@ -1435,6 +1836,7 @@ The circuit breaker operates per-process only. There is no cross-instance coordi
 - Starts background hosted service for message processing
 - Creates database tables for outbox storage (via storage provider)
 - Establishes transport connections (via transport provider)
+- Opens one reply channel per process when the host calls `AddRequestReply` (see [Request/reply](#requestreply))
 
 ---
 
@@ -1612,6 +2014,9 @@ All instruments register on the `Headless.Messaging` meter. Names and standard d
 | `messaging.subscriber.duration` | Histogram (ms) | `messaging.subscriber`, `messaging.operation` |
 | `messaging.persistence.duration` | Histogram (ms) | `messaging.operation`, `messaging.persistence.type` |
 | `messaging.message.size` | Histogram (bytes) | `messaging.operation`, `messaging.system` |
+| `messaging.request_reply.requests` | Counter | `messaging.request_reply.outcome` |
+| `messaging.request_reply.duration` | Histogram (ms) | `messaging.request_reply.outcome` |
+| `messaging.request_reply.dropped_replies` | Counter | `messaging.request_reply.drop_reason` |
 
 Framework span attributes: `headless.messaging.intent` (`bus`/`queue`), `tenant.id` (named and switched by `TenantTelemetryOptions`), `headless.messaging.retry_count` (suppressible), plus per-phase duration attributes (`headless.messaging.persistence.duration_ms`, `send.duration_ms`, `receive.duration_ms`, `invoke.duration_ms`) retained verbatim from the pre-migration bridge.
 
@@ -1625,6 +2030,7 @@ Framework span attributes: `headless.messaging.intent` (`bus`/`queue`), `tenant.
 - FIFO topic/queue support.
 - Message hatch on either lane builder: `.OnBus(b => b.UseAws(aws => aws.MessageGroupId(message => ...)))` or `.OnQueue(q => q.UseAws(...))`.
 - Every-instance consumers are not supported: startup fails naming the consumer.
+- Request/reply is not supported: AWS has no .NET temporary-queue client, so a host that sends requests or declares a responder fails startup. See [Request/reply](#requestreply).
 - Consumer startup honors host cancellation through SNS/SQS provisioning and subscription.
 
 ### Design constraints
@@ -1684,6 +2090,7 @@ Registers SNS/SQS clients, bus/queue transports, and AWS consumer client service
 - Session-aware processing.
 - Message hatch on either lane builder: `.OnBus(b => b.UseAzureServiceBus(asb => asb.PartitionKey(message => ...)))` or `.OnQueue(q => q.UseAzureServiceBus(...))`.
 - Consumer startup honors host cancellation through client, topology, and processor setup.
+- Request/reply is not supported yet: a host that sends requests or declares a responder fails startup until the provider's reply channel ships. See [Request/reply](#requestreply).
 - Shared connection: bus and queue publishing and consumer processors share one `ServiceBusClient` (one AMQP connection) per namespace with per-destination cached senders and a shared administration client; senders are drained before the client on shutdown, and consumers stop their processors without touching the shared client.
 
 ### Design constraints
@@ -1732,6 +2139,7 @@ Registers a shared client pool (one `ServiceBusClient` per namespace, shared by 
 - In-process bus and queue delivery.
 - Bus fan-out per consumer identity, competing replicas, Queue ownership, every-instance subscriptions, and same-name Bus/Queue isolation within the process.
 - No external broker.
+- Request/reply through an in-process reply channel per listener. See [Request/reply](#requestreply).
 - Consumer startup implements the same host-cancellable contract as broker-backed providers.
 
 ### Install
@@ -1800,6 +2208,7 @@ Registers in-memory storage and monitoring services. State is lost when the proc
 - Message hatch on the Queue lane builder only: `.OnQueue(q => q.UseKafka(kafka => kafka.PartitionBy(message => ...)))`.
 - Consumer hatch: `Tune(identity, c => c.UseKafka(kafka => kafka.WithIsolationLevel(IsolationLevel.ReadCommitted)))`.
 - A Queue consumer's Kafka `group.id` is its message name, so every host consuming that message joins one Kafka consumer group.
+- Request/reply is not supported: Kafka has no per-process address short of a partition per instance, so a host that sends requests or declares a responder fails startup. See [Request/reply](#requestreply).
 - Consumer startup honors host cancellation while creating topics and subscriptions.
 
 ### Design constraints
@@ -1861,6 +2270,7 @@ Registers Kafka transports, connection pool, consumer factory, and provider-spec
 - Message hatch on either lane builder: `.OnBus(b => b.UseNats(nats => nats.SubjectShard(message => ...)))` or `.OnQueue(q => q.UseNats(...))`.
 - Consumer hatch: `Tune(identity, c => c.UseNats(nats => nats.Sharded()))`, needed only when the producer shards a message this host declares without `SubjectShard(...)`.
 - Consumer startup honors host cancellation while connecting and provisioning JetStream topology, while preserving configured topology timeouts.
+- Request/reply over a core NATS subscription on `headless.reply.{32 hex}`, outside JetStream; the address survives reconnects. Keep JetStream streams off `headless.reply.>`. See [Request/reply](#requestreply).
 
 ### Design constraints
 
@@ -1919,6 +2329,7 @@ Registers NATS connection pool, transports, consumer factory, and stream initial
 - TLS-related options through provider configuration.
 - Configurable negative-ack redelivery with a one-minute default and a validated 100-millisecond minimum.
 - Consumer startup honors host cancellation while acquiring the client and subscribing, while preserving configured timeouts.
+- Request/reply is not supported yet: a host that sends requests or declares a responder fails startup until the provider's reply channel ships. See [Request/reply](#requestreply).
 
 ### Design constraints
 
@@ -1960,6 +2371,7 @@ Registers Pulsar connection factory, transports, and consumer client factory.
 - Bus exchange and queue delivery.
 - Consumer hatch: `Tune(identity, c => c.UseRabbitMq(rabbit => rabbit.PrefetchCount(...)))`.
 - Consumer startup threads host cancellation through connection, channel, exchange, queue, and binding operations.
+- Request/reply over an exclusive `headless.reply.{32 hex}` queue that each calling process declares on a connection of its own; the address changes after a connection loss. See [Request/reply](#requestreply).
 
 ### Design constraints
 
@@ -2006,6 +2418,7 @@ Registers RabbitMQ connection/channel pool, bus/queue transport, consumer client
 - One Queue copy per message: the Redis consumer group on the Queue stream is named after the message, and replicas compete inside it.
 - Lane-qualified stream keys, acknowledgements, pending-entry claim, and terminal poison handling.
 - Streams consumer startup honors host cancellation through connection, provisioning, and subscription.
+- Request/reply over pub/sub on the literal channel `headless.reply.{32 hex}`; replies write no key, and every host that exchanges requests must use the same `ChannelPrefix`. See [Request/reply](#requestreply).
 
 ### Install
 
@@ -2040,33 +2453,40 @@ Roslyn incremental source generator that registers `[BusConsumer]` and `[QueueCo
 ### API and behavior
 
 - **Explicit registration**: the generated file (`MessagingModule.g.cs`) declares `<AssemblyName>.MessagingModule`, and nothing is registered until the module adds it with `AddModule<…MessagingModule>()` on `services.ConfigureMessaging(...)` or on the `AddHeadlessMessaging` setup. There is no module initializer and no runtime assembly scanning. Adding one module more than once registers it once. An assembly that declares no consumer gets no module.
-- **One entry per message**: a consumer class registers one entry for every `IConsume<T>` it implements, all with the attribute's identity, lane, `EveryInstance` flag, and `Policy` type.
-- **Typed dispatch**: each consumer class gets one generated factory and one generated dispatcher. The factory resolves the class from the delivery's scope with `GetService<T>()` and falls back to `ActivatorUtilities.CreateInstance<T>` when the container has no registration for it. The dispatcher builds the class through that factory, runs `IConsumerLifecycle` hooks when the class implements them, calls the `ConsumeAsync` that matches the context's message type (explicit interface implementations included), and disposes the instance only when the factory constructed it. An every-instance class that implements `IOnSubscriptionEstablished` also gets a generated hook call that builds the class through the same factory in its own scope. Dispatch and the hook use no reflection and no compiled expressions.
-- **Incremental**: declarations are reduced to value models when discovered, so an edit that does not change a consumer declaration reuses every generator step and re-emits nothing.
-- **Build-time checks**: HM001 to HM009 (HM005 is unassigned), listed under [Diagnostics](#messaging-source-generator-diagnostics). `EveryInstance` exists only on `[BusConsumer]`, so writing it on `[QueueConsumer]` is a compiler error rather than a generator rule.
+- **One entry per message**: a consumer class registers one entry for every `IConsume<T>` and every `IRespond<TRequest, TResponse>` it implements, all with the attribute's identity, lane, `EveryInstance` flag, and a factory for its `FailurePolicy` type when it declares one. The factory is `static () => new TPolicy()`, so the runtime never creates a policy by reflection; the host builds it once per identity when it builds the consumer registry. A responder entry also carries its response type, which makes it a [request/reply](#requestreply) responder.
+- **Typed dispatch**: each consumer class gets one generated factory and one generated dispatcher. The factory resolves the class from the delivery's scope with `GetService<T>()` and falls back to `ActivatorUtilities.CreateInstance<T>` when the container has no registration for it. The dispatcher builds the class through that factory, runs `IConsumerLifecycle` hooks when the class implements them, calls the `ConsumeAsync` or `RespondAsync` that matches the context's message type (explicit interface implementations included) and records a responder's return value for the reply, and disposes the instance only when the factory constructed it. An every-instance class that implements `IOnSubscriptionEstablished` also gets a generated hook call that builds the class through the same factory in its own scope. Dispatch and the hook use no reflection and no compiled expressions.
+- **Responder metadata**: for each responder, the generated file also declares `[assembly: ResponderMetadataAttribute(typeof(TRequest), typeof(TResponse))]`. The generator in a referencing project reads it to check that project's `RequestAsync<TRequest, TResponse>` calls against the responder (HM013). The attribute is generated metadata; do not apply it by hand.
+- **Incremental**: declarations are reduced to value models when discovered, so an edit that does not change a consumer declaration reuses every generator step and re-emits nothing. Referenced responder metadata is read only while the project calls `RequestAsync`.
+- **Build-time checks**: HM001 to HM014, listed under [Diagnostics](#messaging-source-generator-diagnostics). `EveryInstance` exists only on `[BusConsumer]`, so writing it on `[QueueConsumer]` is a compiler error rather than a generator rule.
 
 ### Startup checks and host controls
 
 - **Keys**: a consumer is keyed by its lane, identity, message name, and contract version, so one identity can cover several messages. On the Bus lane one identity is one subscription: the host starts one consumer client for it that binds all its messages. On the Queue lane the host starts one client per message.
 - **Cross-module conflicts fail startup and name both sources**: one identity on two consumer classes in the same lane, and a second Queue consumer for one message. An identical declaration contributed twice registers once.
-- **`Tune(identity, c => ...)`** on the `AddHeadlessMessaging` setup or on `services.ConfigureMessaging(...)` changes a registered consumer's deployment settings on this host: `Concurrency(n)` (`0` is rejected), `InboxRetention(TimeSpan)`, `CircuitBreaker(...)`, `UseMiddleware<TMiddleware>()`, and the provider consumer hatches `UseKafka(...)`, `UseNats(...)`, and `UseRabbitMq(...)`. Several `Tune` calls for one identity apply in registration order, so a later value wins and middleware accumulates. `InboxRetention` or `CircuitBreaker` on an every-instance consumer fails startup. Tuned middleware implements `IConsumeMiddleware<ConsumeContext>`, runs only for that consumer, runs inside the global and per-message middleware, and is resolved from the delivery scope (registered as scoped when it is not already registered). A consumer that handles several messages takes the settings for each of them. An identity that no registered consumer declares fails startup.
-- **Configuration**: `Headless:Messaging:Consumers:{identity}` binds `Concurrency` (1 to 255), `InboxRetention` (a `TimeSpan` such as `30.00:00:00`), and `CircuitBreaker:Enabled`, `CircuitBreaker:FailureThreshold`, and `CircuitBreaker:OpenDuration`, and applies after every `Tune` call. An unknown identity, an unknown setting, or an invalid value fails startup.
+- **`Tune(identity, c => ...)`** on the `AddHeadlessMessaging` setup or on `services.ConfigureMessaging(...)` changes a registered consumer's deployment settings on this host: `Concurrency(n)` (`0` is rejected), `InboxRetention(TimeSpan)`, `CircuitBreaker(...)`, `FailurePolicy<TPolicy>()` or `FailurePolicy(p => ...)`, `UseMiddleware<TMiddleware>()`, and the provider consumer hatches `UseKafka(...)`, `UseNats(...)`, and `UseRabbitMq(...)`. Several `Tune` calls for one identity apply in registration order, so a later value wins and middleware accumulates. `InboxRetention`, `CircuitBreaker`, or `FailurePolicy` on an every-instance consumer fails startup. Tuned middleware implements `IConsumeMiddleware<ConsumeContext>`, runs only for that consumer, runs inside the global and per-message middleware, and is resolved from the delivery scope (registered as scoped when it is not already registered). A consumer that handles several messages takes the settings for each of them. An identity that no registered consumer declares fails startup.
+- **Configuration**: `Headless:Messaging:Consumers:{identity}` binds `Concurrency` (1 to 255), `InboxRetention` (a `TimeSpan` such as `30.00:00:00`), and `CircuitBreaker:Enabled`, `CircuitBreaker:FailureThreshold`, and `CircuitBreaker:OpenDuration`, and `FailurePolicy:ImmediateRetries`, `FailurePolicy:DelayedRetries`, `FailurePolicy:DelayedInitialDelay`, and `FailurePolicy:DelayedMaxDelay`, and applies after every `Tune` call and after the host default fills in. An unknown identity, an unknown setting, or an invalid value fails startup.
 - **`ConsumeOnly("orders.*", "billing.invoice-projection")`** on the `AddHeadlessMessaging` setup limits which competing consumers this host starts clients for; every-instance consumers are never filtered and always run. An entry is an exact identity or an `owner.*` pattern that matches the first identity segment. Consumers outside the filter stay registered, so the host still publishes their messages; another host consumes them. The filter also scopes the host's retry processor: its received-retry and inbox-orphan pickup queries never lease a row whose consumer identity is outside the filter, so the host never marks another host's healthy inbox row as an orphan or fails its retry as having no subscriber. Runtime subscriptions are never filtered: the pickups also include the identity of every competing runtime subscription attached to the host when the cycle runs, so the host that holds the delegate retries that subscription's failed rows. Every-instance consumers and subscriptions store no rows and add nothing. A host without the filter picks up rows of every identity, including identities no host registers. An entry that matches no registered consumer, or only every-instance consumers (the filter would not affect them), fails startup.
 
 ### Diagnostics
 
-<a id="messaging-source-generator-diagnostics"></a>Every rule is reported at compile time in category `Headless.Messaging.SourceGenerator`. HM006 is a warning; every other rule is an error. The table below is each rule's help link target.
+<a id="messaging-source-generator-diagnostics"></a>Every rule is reported at compile time in category `Headless.Messaging.SourceGenerator`. HM006 and HM014 are warnings; every other rule is an error. The table below is each rule's help link target.
 
 | Rule | Reported when | Fix |
 | --- | --- | --- |
 | <a id="hm001"></a>HM001 | The identity is not a compile-time constant, or is not in `owner.name` form: it is empty, longer than 200 characters, has no `.` separator or an empty segment, has surrounding white space, or contains a control character. | Pass a literal or `const` identity such as `"billing.invoice-projection"`, whose first segment names the owning module. |
 | <a id="hm002"></a>HM002 | Two consumer classes in one compilation use the same identity on the same lane. Nothing is generated. | Give each consumer class its own identity; one class covers several messages by implementing several `IConsume<T>`. |
-| <a id="hm003"></a>HM003 | The class carries a consumer attribute but implements no `IConsume<T>`. | Implement `IConsume<T>` for every message the consumer handles. |
-| <a id="hm004"></a>HM004 | A second `[QueueConsumer]` class in one compilation consumes a message that already has one. Nothing is generated. | Keep one Queue consumer per message; use `[BusConsumer]` for fan-out. |
+| <a id="hm003"></a>HM003 | The class carries a consumer attribute but implements neither `IConsume<T>` nor `IRespond<TRequest, TResponse>`. | Implement `IConsume<T>` for every message the consumer handles, or `IRespond<TRequest, TResponse>` for every request a `[QueueConsumer]` answers. |
+| <a id="hm004"></a>HM004 | A second `[QueueConsumer]` class in one compilation consumes or responds to a message that already has a Queue consumer or responder. A responder counts as its request's Queue consumer. Nothing is generated. | Keep one Queue consumer or responder per message; use `[BusConsumer]` for fan-out. |
+| <a id="hm005"></a>HM005 | The `FailurePolicy` type does not derive from `Headless.Reliability.FailurePolicy`, is not a class, is abstract, still has an open type parameter (its own or a containing type's), is private, protected, or `file`-local, or has no public parameterless constructor, so the generated factory cannot construct it. A closed generic such as `RetryTwice<Payments>` is accepted. Nothing is generated. | Point `FailurePolicy` at a concrete, closed `public` or `internal` class derived from `FailurePolicy` with a public parameterless constructor. |
 | <a id="hm006"></a>HM006 | A consumer that is not an every-instance `[BusConsumer]` implements `IOnSubscriptionEstablished`, whose hook never runs for it. | Set `EveryInstance = true` on a `[BusConsumer]`, or remove the interface. |
 | <a id="hm007"></a>HM007 | The consumer class, a type containing it, or a consumed message type is private, protected, or `file`-local, so generated code cannot name it. | Make the type and every type containing it `public` or `internal`. |
 | <a id="hm008"></a>HM008 | The consumer class is abstract or generic, or nested in a generic type, so a delivery cannot construct it. | Put the attribute on a concrete, non-generic class. |
 | <a id="hm009"></a>HM009 | One class carries both `[BusConsumer]` and `[QueueConsumer]`. Nothing is generated. | Keep one lane attribute; split the class when it must consume on both lanes. |
+| <a id="hm010"></a>HM010 | A `[BusConsumer]` with `EveryInstance = true` declares a `FailurePolicy`. Every-instance deliveries are at most once and never stored, so no policy can run. Nothing is generated. | Remove `FailurePolicy`, or make the consumer competing by removing `EveryInstance = true`. |
+| <a id="hm011"></a>HM011 | A class that implements `IRespond<TRequest, TResponse>` carries `[BusConsumer]`. A reply goes to one caller, and only the Queue lane gives a request exactly one consumer. | Put `[QueueConsumer]` on the responder. |
+| <a id="hm012"></a>HM012 | One class implements both `IConsume<T>` and `IRespond<T, TResponse>` for the same `T`. | Implement only `IRespond<T, TResponse>`; a responder that a plain enqueue reaches runs and discards its result. |
+| <a id="hm013"></a>HM013 | One class implements `IRespond<TRequest, TResponse>` for the same request with two or more response types. | Answer each request with one response type; put alternatives in one response contract. |
+| <a id="hm014"></a>HM014 | A `RequestAsync<TRequest, TResponse>` call expects a `TResponse` that no responder visible to the project answers `TRequest` with. A responder is visible when it is declared in the calling project or in a referenced assembly built with this generator. Without the fix, the call fails with `ResponseContractMismatchException`. | Request the responder's response type. When the call deliberately reads the reply into another type registered under the same message contract name and version, suppress the warning at the call with a reason. |
 
 ### Install
 

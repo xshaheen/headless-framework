@@ -60,7 +60,8 @@ Package READMEs are discovery pages. They explain why a package exists and link 
 | Task | Read |
 | --- | --- |
 | Publish or consume messages; declare consumers and message contracts; tune consumers; configure transports, outbox/inbox, retries, or ordering | [Messaging](messaging.md) |
-| Schedule or execute background jobs and recurring work | [Jobs](jobs.md) |
+| Schedule or execute background jobs and recurring work; set job retries or requeue failed jobs | [Jobs](jobs.md) |
+| Define a failure policy: immediate and delayed retries, backoff, and exceptions that end a failure at once | [Reliability](reliability.md) |
 | Acquire distributed locks, reader/writer locks, or semaphores, or fence stale writes with fencing tokens | [Distributed Locks](distributed-locks.md) |
 | Cap attempts per phone, email, IP, or card across replicas (OTP delivery, password reset, PIN verification) | [Rate Limiting](rate-limiting.md) |
 | Track node identity, liveness, and membership | [Coordination](coordination.md) |

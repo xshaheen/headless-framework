@@ -500,6 +500,15 @@ internal sealed class MessagingTelemetry(
         );
     }
 
+    /// <summary>
+    /// Writes <paramref name="context"/> into <paramref name="headers"/>, for an envelope that leaves the process outside
+    /// the publish pipeline, such as a reply to a request.
+    /// </summary>
+    internal static void InjectTraceContext(ActivityContext context, IDictionary<string, string?> headers)
+    {
+        _Inject(context, headers);
+    }
+
     private static void _Inject(ActivityContext context, IDictionary<string, string?> headers)
     {
         _Inject(new PropagationContext(context, Baggage.Current), headers);

@@ -5,6 +5,7 @@ using System.Runtime.CompilerServices;
 using Headless.Checks;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Messages;
+using Headless.Reliability;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -162,7 +163,8 @@ internal sealed class RuntimeConsumerRegistry(
             handlerId,
             concurrency,
             lane,
-            everyInstance
+            everyInstance,
+            everyInstance ? FailurePolicyDefinition.None : _options.DefaultFailurePolicy
         );
 
         lock (_lock)
@@ -345,7 +347,8 @@ internal sealed class RuntimeConsumerRegistry(
         string handlerId,
         byte concurrency,
         MessageLane lane,
-        bool everyInstance
+        bool everyInstance,
+        FailurePolicyDefinition failurePolicy
     )
         where TMessage : class
     {
@@ -360,6 +363,7 @@ internal sealed class RuntimeConsumerRegistry(
             HandlerId = handlerId,
             Lane = lane,
             EveryInstance = everyInstance,
+            FailurePolicy = failurePolicy,
         };
     }
 

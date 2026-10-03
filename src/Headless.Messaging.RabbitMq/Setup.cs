@@ -17,7 +17,8 @@ namespace Headless.Messaging;
 /// <remarks>
 /// Registers a single shared <c>ConnectionChannelPool</c> that multiplexes AMQP channels over one
 /// TCP connection. Bus uses a lane-qualified topic exchange; Queue uses a lane-qualified direct
-/// exchange. Each owned queue is bound with a lane-qualified routing key.
+/// exchange. Each owned queue is bound with a lane-qualified routing key. Request/reply is supported: a requesting
+/// process receives replies on an exclusive queue of its own, named under the reserved <c>headless.reply.</c> prefix.
 /// </remarks>
 public static class SetupRabbitMqMessaging
 {
@@ -113,7 +114,8 @@ public static class SetupRabbitMqMessaging
                     "RabbitMQ",
                     [MessageLane.Bus, MessageLane.Queue],
                     supportsIndependentLaneTopology: true,
-                    supportsEveryInstance: true
+                    supportsEveryInstance: true,
+                    supportsRequestReply: true
                 )
             );
             configureOptions(services);
@@ -127,6 +129,7 @@ public static class SetupRabbitMqMessaging
                 sp.GetRequiredService<IConnectionChannelPool>(),
                 MessageLane.Queue
             ));
+            services.AddSingleton<IReplyTransport, RabbitMqReplyTransport>();
             services.AddSingleton<IConsumerClientFactory, RabbitMqConsumerClientFactory>();
             services.AddSingleton<IConnectionChannelPool, ConnectionChannelPool>();
         }

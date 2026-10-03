@@ -159,4 +159,42 @@ public static class Headers
     /// Value: "headless-intent"
     /// </summary>
     public const string Intent = "headless-intent";
+
+    /// <summary>
+    /// Framework-generated identifier that correlates a request with its reply. Each request gets a new value, so it is
+    /// not the message identifier or the correlation identifier, which callers and middleware can set. This header is
+    /// framework-owned and cannot be overridden.
+    /// Value: "headless-request-id"
+    /// </summary>
+    public const string RequestId = "headless-request-id";
+
+    /// <summary>
+    /// Opaque reply address of the process that sent a request. Only the sending process listens on it, and a
+    /// responder writes only to an address inside the transport's reserved reply namespace. This header is
+    /// framework-owned and cannot be overridden.
+    /// Value: "headless-reply-to"
+    /// </summary>
+    public const string ReplyTo = "headless-reply-to";
+
+    /// <summary>
+    /// Absolute UTC instant, in ISO 8601 format, after which the responder neither starts nor replies to the request.
+    /// The responder checks it against its own clock. This header is framework-owned and cannot be overridden.
+    /// Value: "headless-request-deadline"
+    /// </summary>
+    public const string RequestDeadline = "headless-request-deadline";
+
+    /// <summary>
+    /// The <see cref="RequestId"/> of the request a reply answers. A reply carries its response contract in
+    /// <see cref="MessageName"/> and <see cref="ContractVersion"/>. This header is framework-owned and cannot be
+    /// overridden.
+    /// Value: "headless-in-reply-to"
+    /// </summary>
+    public const string InReplyTo = "headless-in-reply-to";
+
+    /// <summary>
+    /// Outcome a reply reports: <c>"ok"</c> when the body is the response, or <c>"fault"</c> when the body describes a
+    /// failure with a <c>RequestFaultCodes</c> code. This header is framework-owned and cannot be overridden.
+    /// Value: "headless-reply-status"
+    /// </summary>
+    public const string ReplyStatus = "headless-reply-status";
 }

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Globalization;
 using Headless.Checks;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
@@ -15,9 +16,9 @@ namespace Headless.Messaging.Retry;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Polly's configured <c>RetryStrategyOptions.ShouldHandle</c> classifies the failure and its
-/// delay configuration supplies the next retry delay. Messaging maps that runtime outcome into its
-/// own durable scheduled or terminal state.
+/// On publish, Polly's configured <c>RetryStrategyOptions.ShouldHandle</c> classifies the failure and its delay
+/// configuration supplies the next retry delay. On consume, the consumer's failure policy does both through
+/// <see cref="ConsumeRetryBudget"/>. Messaging maps either outcome into its own durable scheduled or terminal state.
 /// </para>
 /// <para>
 /// <c>MediumMessage.Retries</c> counts persisted-retry pickups only — inline iterations do not
@@ -37,14 +38,37 @@ internal static class RetryHelper
     /// mis-classify host-shutdown cancellations that arrive via a linked source.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// The outer-token <c>IsCancellationRequested</c> guard still distinguishes shutdown OCEs
     /// from unrelated timeout OCEs (e.g. an <c>HttpClient</c> timeout fires its own OCE while the
     /// outer token is NOT cancelled, so this method returns <see langword="false"/> and the
     /// failure flows through the normal retry pipeline).
+    /// </para>
+    /// <para>
+    /// A consumer awaiting a request when its host stops sees the requester's shutdown instead of an OCE: the reply
+    /// listener fails every pending call with <see cref="RequestAbortedException"/>, and refuses a new one with a
+    /// stopping <see cref="RequestNotSentException"/>, as soon as it quiesces, which can be before the dispatch
+    /// token's cancellation callbacks run. Under a cancelled token either one is the same shutdown, wherever it sits
+    /// in the exception chain.
+    /// </para>
     /// </remarks>
     public static bool IsCancellation(Exception ex, CancellationToken cancellationToken)
     {
-        return cancellationToken.IsCancellationRequested && ex is OperationCanceledException;
+        return cancellationToken.IsCancellationRequested
+            && (ex is OperationCanceledException || _IsRequesterShutdown(ex));
+    }
+
+    private static bool _IsRequesterShutdown(Exception ex)
+    {
+        for (Exception? current = ex; current is not null; current = current.InnerException)
+        {
+            if (current is RequestAbortedException or RequestNotSentException { IsRequesterStopping: true })
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -60,11 +84,48 @@ internal static class RetryHelper
         RetryPolicyOptions policy
     )
     {
-        if (reservedInlineAttempts < policy.RetryStrategy.MaxRetryAttempts + 1)
+        return reservedInlineAttempts < policy.RetryStrategy.MaxRetryAttempts + 1 ? null : _CrashRecoveredAttempt();
+    }
+
+    /// <summary>
+    /// The consume-side counterpart of <see cref="DetectCrashRecoveredReservation(int, RetryPolicyOptions)"/>: the
+    /// threshold is the consumer's own budget for the row's dispatch, so a delayed pickup (one attempt) and a first
+    /// dispatch (one attempt plus the immediate retries) each detect their own spent reservation.
+    /// </summary>
+    public static MessagingRetryAttempt? DetectCrashRecoveredReservation(
+        int retries,
+        int reservedInlineAttempts,
+        ConsumeRetryBudget budget
+    )
+    {
+        return budget.IsFinalAttemptReserved(retries, reservedInlineAttempts) ? _CrashRecoveredAttempt() : null;
+    }
+
+    /// <summary>
+    /// Detects a received row whose <see cref="MediumMessage.Retries"/> already exceeds its consumer's delayed
+    /// budget, typically because the consumer's policy shrank since the row was scheduled. Returns a synthetic
+    /// retryable attempt (classification bypassed) so the row ends through the same terminal path as a spent budget,
+    /// without invoking the handler; <see langword="null"/> while the row is within budget.
+    /// </summary>
+    public static MessagingRetryAttempt? DetectBudgetOverrun(int retries, ConsumeRetryBudget budget)
+    {
+        if (!budget.IsOverBudget(retries))
         {
             return null;
         }
 
+        var overrunException = new InvalidOperationException(
+            string.Create(
+                CultureInfo.InvariantCulture,
+                $"The message has used {retries} delayed retries, more than its consumer's failure policy allows ({budget.Policy.DelayedRetries})."
+            )
+        );
+
+        return MessagingRetryAttempt.Retryable(OperateResult.Failed(overrunException), bypassClassification: true);
+    }
+
+    private static MessagingRetryAttempt _CrashRecoveredAttempt()
+    {
         var recoveryException = new InvalidOperationException(
             "The process terminated after reserving the final inline delivery attempt."
         );
@@ -281,6 +342,40 @@ internal static class RetryHelper
             && policy.HasMoreInlineAttempts(inlineRetries)
             && !inlineBudgetWouldOversleep;
 
+        return _ResolveNextState(decision, isInlineRetryInFlight, policy.InitialDispatchGrace);
+    }
+
+    /// <summary>
+    /// The consume-side counterpart of <see cref="ResolveNextState(MessagingRetryDecision, int, RetryPolicyOptions)"/>:
+    /// whether the decision keeps the retry inside this dispatch comes from the consumer's
+    /// <paramref name="budget"/>, the same one that made the decision, so the persisted state cannot contradict it.
+    /// </summary>
+    /// <param name="decision">The decision for the failed attempt.</param>
+    /// <param name="retries">The delayed retries the row has used, before this failure.</param>
+    /// <param name="inlineRetries">The back-to-back retries this dispatch has already run.</param>
+    /// <param name="budget">The consumer's budget.</param>
+    /// <param name="initialDispatchGrace">The padding that keeps the retry processor off a row mid-burst.</param>
+    public static RetryNextState ResolveNextState(
+        MessagingRetryDecision decision,
+        int retries,
+        int inlineRetries,
+        ConsumeRetryBudget budget,
+        TimeSpan initialDispatchGrace
+    )
+    {
+        var isInlineRetryInFlight =
+            decision.Outcome == MessagingRetryDecision.Kind.Continue
+            && budget.HasMoreInlineAttempts(retries, inlineRetries);
+
+        return _ResolveNextState(decision, isInlineRetryInFlight, initialDispatchGrace);
+    }
+
+    private static RetryNextState _ResolveNextState(
+        MessagingRetryDecision decision,
+        bool isInlineRetryInFlight,
+        TimeSpan initialDispatchGrace
+    )
+    {
         var nextStatus = isInlineRetryInFlight ? StatusName.Scheduled : StatusName.Failed;
 
         if (decision.Outcome != MessagingRetryDecision.Kind.Continue)
@@ -303,14 +398,14 @@ internal static class RetryHelper
         // later (e.g., InitialDispatchGrace from initial store), since only the store reads the row's current value.
         return new RetryNextState(
             isInlineRetryInFlight,
-            RetryDelay.AtLeast(decision.Delay + policy.InitialDispatchGrace),
+            RetryDelay.AtLeast(decision.Delay + initialDispatchGrace),
             nextStatus
         );
     }
 }
 
 /// <summary>
-/// Value returned by <see cref="RetryHelper.ResolveNextState"/> describing the persistence state
+/// Value returned by the <c>RetryHelper.ResolveNextState</c> overloads describing the persistence state
 /// for a single failed delivery attempt.
 /// </summary>
 internal readonly record struct RetryNextState(

@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Exceptions;
 using Headless.Messaging.Messages;
+using Headless.Messaging.Retry;
 using Headless.Messaging.Runtime;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
@@ -280,28 +281,37 @@ internal sealed partial class ConsumerRegister
         switch (receiveOutcome.Result)
         {
             case ReceiveRingResult.Skipped:
-                MessagingMetrics.RecordReceiveOutcome("skipped");
+                MessagingMetrics.RecordReceiveOutcome(MessagingMetrics.ReceiveOutcomeSkipped);
                 MessagingMetrics.RecordEveryInstanceDelivery(consumerIdentity, "skipped");
-                traceHandle.Activity?.SetTag(MessagingMetrics.TagReceiveOutcome, "skipped");
+                traceHandle.Activity?.SetTag(
+                    MessagingMetrics.TagReceiveOutcome,
+                    MessagingMetrics.ReceiveOutcomeSkipped
+                );
                 _TracingAfter(traceHandle, transportMessage, _serverAddress);
                 return true;
             case ReceiveRingResult.Cancelled:
-                MessagingMetrics.RecordReceiveOutcome("cancelled");
-                traceHandle.Activity?.SetTag(MessagingMetrics.TagReceiveOutcome, "cancelled");
+                MessagingMetrics.RecordReceiveOutcome(MessagingMetrics.ReceiveOutcomeCancelled);
+                traceHandle.Activity?.SetTag(
+                    MessagingMetrics.TagReceiveOutcome,
+                    MessagingMetrics.ReceiveOutcomeCancelled
+                );
                 throw receiveOutcome.Exception!;
             case ReceiveRingResult.Rejected:
             {
                 var reason = receiveOutcome.OutcomeReason ?? receiveOutcome.Exception!.ExpandMessage();
-                MessagingMetrics.RecordReceiveOutcome("rejected");
-                traceHandle.Activity?.SetTag(MessagingMetrics.TagReceiveOutcome, "rejected");
+                MessagingMetrics.RecordReceiveOutcome(MessagingMetrics.ReceiveOutcomeRejected);
+                traceHandle.Activity?.SetTag(
+                    MessagingMetrics.TagReceiveOutcome,
+                    MessagingMetrics.ReceiveOutcomeRejected
+                );
                 _DropEveryInstanceMessage(transportMessage, consumerIdentity, receiveOutcome.Exception, reason);
                 _TracingError(traceHandle, transportMessage, client.BrokerAddress, receiveOutcome.Exception!);
                 return true;
             }
         }
 
-        MessagingMetrics.RecordReceiveOutcome("accepted");
-        traceHandle.Activity?.SetTag(MessagingMetrics.TagReceiveOutcome, "accepted");
+        MessagingMetrics.RecordReceiveOutcome(MessagingMetrics.ReceiveOutcomeAccepted);
+        traceHandle.Activity?.SetTag(MessagingMetrics.TagReceiveOutcome, MessagingMetrics.ReceiveOutcomeAccepted);
 
         var delivery = new MediumMessage
         {
@@ -327,7 +337,7 @@ internal sealed partial class ConsumerRegister
 #pragma warning disable ERP022 // False positive: the failure is logged and counted; every-instance delivery commits a failed message by design.
         catch (Exception ex)
         {
-            var failure = ex is SubscriberExecutionFailedException { InnerException: { } inner } ? inner : ex;
+            var failure = RetryExceptionClassifier.Unwrap(ex);
             _logger.EveryInstanceConsumerFailed(
                 failure,
                 LogSanitizer.Sanitize(consumerIdentity),

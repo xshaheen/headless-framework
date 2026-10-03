@@ -166,8 +166,10 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     public IReadOnlyCollection<RecordedMessage> Faulted => _store.Faulted;
 
     /// <summary>
-    /// Gets a snapshot of all messages whose retry budget was exhausted (the framework invoked
-    /// <c>RetryPolicy.OnExhausted</c>). Observed BEFORE the user-supplied callback runs.
+    /// Gets a snapshot of all messages that failed for good: the framework invoked <c>RetryPolicy.OnExhausted</c>
+    /// because the retry budget was spent, a fail rule or the built-in permanent set ended the message, the payload
+    /// failed to deserialize, the consumer is no longer registered, or the message was poisoned on arrival.
+    /// Observed BEFORE the user-supplied callback runs.
     /// </summary>
     public IReadOnlyCollection<RecordedMessage> Exhausted => _store.Exhausted;
 
@@ -368,8 +370,8 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     // -------------------------------------------------------------------------
 
     /// <summary>
-    /// Waits until the retry budget for a message of type <typeparamref name="T"/> is exhausted
-    /// (the framework invoked <c>RetryPolicy.OnExhausted</c>), or throws
+    /// Waits until a message of type <typeparamref name="T"/> fails for good (the framework invoked
+    /// <c>RetryPolicy.OnExhausted</c>; see <see cref="Exhausted"/> for every terminal path), or throws
     /// <see cref="MessageObservationTimeoutException"/> if <paramref name="timeout"/> elapses.
     /// </summary>
     public Task<RecordedMessage> WaitForExhausted<T>(
@@ -388,7 +390,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     }
 
     /// <summary>
-    /// Waits until an exhausted message of type <typeparamref name="T"/> satisfies <paramref name="predicate"/>,
+    /// Waits until a message of type <typeparamref name="T"/> that failed for good satisfies <paramref name="predicate"/>,
     /// or throws <see cref="MessageObservationTimeoutException"/> if <paramref name="timeout"/> elapses.
     /// </summary>
     public Task<RecordedMessage> WaitForExhausted<T>(
@@ -408,7 +410,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     }
 
     /// <summary>
-    /// Waits until the retry budget for a message of type <typeparamref name="T"/> is exhausted
+    /// Waits until a message of type <typeparamref name="T"/> fails for good
     /// for the given <paramref name="lane"/> (Bus vs Queue), or throws
     /// <see cref="MessageObservationTimeoutException"/> if <paramref name="timeout"/> elapses.
     /// </summary>

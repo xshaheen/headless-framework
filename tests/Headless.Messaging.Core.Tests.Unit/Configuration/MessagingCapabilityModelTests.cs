@@ -556,6 +556,69 @@ public sealed class MessagingCapabilityModelTests : TestBase
         model.IsFrozen.Should().BeTrue();
     }
 
+    [Fact]
+    public void should_reject_a_request_reply_capability_without_the_queue_lane()
+    {
+        var act = () =>
+            MessagingProviderCapabilities.Transport("Broker", [MessageLane.Bus], true, supportsRequestReply: true);
+
+        act.Should().Throw<ArgumentException>().WithMessage("*Queue lane*");
+    }
+
+    [Fact]
+    public void should_support_request_reply_only_when_every_queue_contribution_declares_it()
+    {
+        var supported = MessagingCapabilityModel.Compose([
+            MessagingProviderCapabilities.Transport("Broker", [MessageLane.Bus], true),
+            MessagingProviderCapabilities.Transport("Broker", [MessageLane.Queue], true, supportsRequestReply: true),
+        ]);
+        var unsupported = MessagingCapabilityModel.Compose([
+            MessagingProviderCapabilities.Transport("Broker", [MessageLane.Bus, MessageLane.Queue], true),
+        ]);
+
+        supported
+            .Providers.Single(x => x.Role == MessagingProviderRole.Transport)
+            .SupportsRequestReply.Should()
+            .BeTrue("a Bus-only contribution has no say over a Queue-lane property");
+        unsupported
+            .Providers.Single(x => x.Role == MessagingProviderRole.Transport)
+            .SupportsRequestReply.Should()
+            .BeFalse();
+    }
+
+    [Fact]
+    public void should_pass_the_request_reply_gate_when_the_transport_declares_it()
+    {
+        var model = MessagingCapabilityModel.Compose([
+            MessagingProviderCapabilities.Transport(
+                "Broker",
+                [MessageLane.Bus, MessageLane.Queue],
+                true,
+                supportsRequestReply: true
+            ),
+        ]);
+
+        var callerHost = () => model.EnsureRequestReplySupported();
+        var responderHost = () => model.EnsureRequestReplySupported("pricing.get-quote");
+
+        callerHost.Should().NotThrow();
+        responderHost.Should().NotThrow();
+    }
+
+    [Fact]
+    public void should_name_the_provider_and_the_responder_when_the_transport_has_no_request_reply_support()
+    {
+        var model = MessagingCapabilityModel.Compose([
+            MessagingProviderCapabilities.Transport("Broker", [MessageLane.Bus, MessageLane.Queue], true),
+        ]);
+
+        var callerHost = () => model.EnsureRequestReplySupported();
+        var responderHost = () => model.EnsureRequestReplySupported("pricing.get-quote");
+
+        callerHost.Should().Throw<MessagingConfigurationException>().WithMessage("*'Broker'*");
+        responderHost.Should().Throw<MessagingConfigurationException>().WithMessage("*'pricing.get-quote'*'Broker'*");
+    }
+
     private static MessagingProviderCapabilities _Transport(
         string provider,
         IReadOnlyCollection<MessageLane> lanes,

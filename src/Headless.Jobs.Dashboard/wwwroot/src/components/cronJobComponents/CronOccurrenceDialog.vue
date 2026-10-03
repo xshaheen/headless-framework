@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { watch, type PropType, toRef, onMounted, onUnmounted, ref } from 'vue'
 import { cronJobOccurrenceService } from '@/http/services/cronJobOccurrenceService'
+import { cronJobService } from '@/http/services/cronJobService'
 import { Status } from '@/http/services/types/base/baseHttpResponse.types'
 import { sleep } from '@/utilities/sleep'
 import { useDialog } from '@/composables/useDialog'
@@ -9,6 +10,7 @@ import type { GetCronJobOccurrenceResponse } from '@/http/services/types/cronJob
 import { ConfirmDialogProps } from '@/components/common/confirm-dialog-props'
 import PaginationFooter from '@/components/PaginationFooter.vue'
 import { formatTime } from '@/utilities/dateTimeParser'
+import { canRequeue } from '@/utilities/requeue'
 import { format } from 'timeago.js'
 
 const confirmDialog = useDialog<{ data: string }>().withComponent(
@@ -22,6 +24,7 @@ const exceptionDialog = useDialog<ConfirmDialogProps>().withComponent(
 // Use paginated service
 const getByCronJobIdPaginated = cronJobOccurrenceService.getByCronJobIdPaginated()
 const deleteCronOccurrence = cronJobOccurrenceService.deleteCronJobOccurrence()
+const requeueCronOccurrence = cronJobService.requeueOccurrence()
 
 // Pagination state
 const currentPage = ref(1)
@@ -156,6 +159,16 @@ watch(
 
 const hasStatus = (statusItem: string | number, statusEnum: Status) =>
   statusItem == Status[statusEnum]
+
+const requeue = async (id: string) => {
+  try {
+    await requeueCronOccurrence.requestAsync(id)
+  } catch {
+    // The HTTP interceptor already shows the refusal reason; the list is reloaded either way so the row reflects
+    // whatever state the server holds now.
+  }
+  await loadPageData()
+}
 
 const onSubmitConfirmDialog = async () => {
   confirmDialog.close()
@@ -401,6 +414,18 @@ const setRowProp = (propContext: { item: GetCronJobOccurrenceResponse }) => {
             <!-- Actions Column -->
             <template #[`item.actions`]="{ item }">
               <div class="actions-cell">
+                <v-btn
+                  v-if="canRequeue(item.status)"
+                  @click="requeue(item.id)"
+                  :disabled="requeueCronOccurrence.loader.value"
+                  icon
+                  variant="text"
+                  size="small"
+                  class="action-btn requeue-btn"
+                >
+                  <v-icon size="18">mdi-restart</v-icon>
+                  <v-tooltip activator="parent" location="top">Requeue Occurrence</v-tooltip>
+                </v-btn>
                 <v-btn
                   @click="confirmDialog.open({ data: item.id })"
                   :disabled="hasStatus(item.status, Status.InProgress)"
@@ -773,6 +798,11 @@ const setRowProp = (propContext: { item: GetCronJobOccurrenceResponse }) => {
 .delete-btn:hover {
   background: rgba(255, 0, 0, 0.15);
   color: #ff0000;
+}
+
+.requeue-btn:hover {
+  background: rgba(100, 181, 246, 0.15);
+  color: #1e88e5;
 }
 
 .spinning {

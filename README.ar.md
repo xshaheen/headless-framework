@@ -17,7 +17,7 @@
 [![GitHub Stars](https://img.shields.io/github/stars/xshaheen/headless-framework?style=social)](https://github.com/xshaheen/headless-framework)
 [![English](https://img.shields.io/badge/lang-English-2563EB?style=flat-square)](README.md)
 
-196 package &bull; نفس الـ setup في كل حتة &bull; بدّل أي provider بسطر واحد
+198 package &bull; نفس الـ setup في كل حتة &bull; بدّل أي provider بسطر واحد
 
 [ليه Headless](#ليه-headless) &bull; [ابدأ في 60 ثانية](#ابدأ-في-60-ثانية) &bull; [Setup واحد لكل المجالات](#setup-واحد-لكل-المجالات) &bull; [إيه اللي في الصندوق](#إيه-اللي-في-الصندوق) &bull; [فهرس الحزم](#فهرس-الحزم)
 
@@ -53,7 +53,7 @@ builder.Services.AddHeadlessCaching(setup => setup.UseRedis(...)); // production
 
 أي service أو repository أو handler بياخد `ICache` مش هيتأثر بالتعديل دا. ونفس الكلام على `IBlobStorage` بين S3 و Azure و Cloudflare R2 و FileSystem و Redis و SFTP، وعلى `IEmailSender` بين SES و Azure Communication Services و SMTP، وعلى الـ messaging بين 8 transports.
 
-**هتركّب 3 packages، مش 196.** الفهرس كبير عشان عدد الـ providers كبير. الخدمة اللي محتاجة caching بتركّب `Headless.Caching.Abstractions` و `Headless.Caching.Core` وprovider واحد. والـ libraries بتاعة الـ domain والـ application بتعتمد على الـ Abstractions package لوحدها: `Headless.Caching.Abstractions` بتجرّ وراها حاجة واحدة بس، هي `Headless.Extensions`.
+**هتركّب 3 packages، مش 198.** الفهرس كبير عشان عدد الـ providers كبير. الخدمة اللي محتاجة caching بتركّب `Headless.Caching.Abstractions` و `Headless.Caching.Core` وprovider واحد. والـ libraries بتاعة الـ domain والـ application بتعتمد على الـ Abstractions package لوحدها: `Headless.Caching.Abstractions` بتجرّ وراها package-ين بس، ومفيش فيهم أي dependency خارجية: `Headless.Checks` و `Headless.Primitives`.
 
 **الـ tests مش محتاجة Docker عشان تبقى سريعة.** الـ caching والـ distributed locks والـ messaging فيهم in-memory providers؛ والـ emails والـ SMS والـ push notifications فيهم dev providers مش بتبعت حاجة؛ والـ blob storage بيشتغل على الـ file system المحلي. يعني الـ unit tests بتجرّب نفس الـ contract الحقيقي من غير containers. ولما تحتاج الـ backend الحقيقي، `Headless.Testing.Testcontainers` بتجهّزلك الـ fixtures. الـ repo نفسه ماشي على التقسيمة دي: 122 مشروع unit tests و 63 مشروع integration tests.
 
@@ -291,7 +291,7 @@ packages الـ providers دي packages عادية على NuGet. عشان تضي
 </div>
 
 <details dir="rtl" align="right">
-<summary><strong>كل الـ 196 package، مرتّبة حسب الـ domain</strong> — اضغط للعرض</summary>
+<summary><strong>كل الـ 198 package، مرتّبة حسب الـ domain</strong> — اضغط للعرض</summary>
 
 ### API & Web
 
@@ -451,7 +451,7 @@ Message bus موزّع بـ transactional outbox، وretries، وdelayed deliver
 |---------|-------|
 | [Headless.Messaging.Abstractions](src/Headless.Messaging.Abstractions/README.md) | الـ interfaces والـ contracts الأساسية بتاعة الـ messaging |
 | [Headless.Messaging.Bus.Abstractions](src/Headless.Messaging.Bus.Abstractions/README.md) | الـ contracts بتاعة الـ publisher بنمط pub/sub |
-| [Headless.Messaging.Queue.Abstractions](src/Headless.Messaging.Queue.Abstractions/README.md) | الـ contracts بتاعة الـ publisher بنمط point-to-point |
+| [Headless.Messaging.Queue.Abstractions](src/Headless.Messaging.Queue.Abstractions/README.md) | الـ contracts بتاعة الـ publisher والـ request client بنمط point-to-point |
 | [Headless.Messaging.Core](src/Headless.Messaging.Core/README.md) | الـ runtime engine: outbox، وretries، وdelayed delivery، وorchestration للـ consumers |
 | [Headless.Messaging.Dashboard](src/Headless.Messaging.Dashboard/README.md) | Web UI لمتابعة الـ messages والـ failures وحالة النظام |
 | [Headless.Messaging.Dashboard.K8s](src/Headless.Messaging.Dashboard.K8s/README.md) | اكتشاف الـ nodes أوتوماتيك جوه Kubernetes |
@@ -493,6 +493,14 @@ Message bus موزّع بـ transactional outbox، وretries، وdelayed deliver
 | [Headless.Jobs.EntityFramework](src/Headless.Jobs.EntityFramework/README.md) | تخزين حالة الـ jobs على EF Core؛ بيستخدم `Headless.Caching.ICache` اختيارياً لـ caching الـ cron expressions |
 | [Headless.Jobs.EntityFramework.PostgreSql](src/Headless.Jobs.EntityFramework.PostgreSql/README.md) | Atomic claims في PostgreSQL بـ `FOR UPDATE SKIP LOCKED` |
 | [Headless.Jobs.EntityFramework.SqlServer](src/Headless.Jobs.EntityFramework.SqlServer/README.md) | Atomic claims في SQL Server بـ `UPDLOCK` و `READPAST` و `ROWLOCK` |
+
+### Reliability
+
+الـ failure policy model اللي الـ Messaging والـ Jobs بيشتركوا فيه.
+
+| Package | الوصف |
+|---------|-------|
+| [Headless.Reliability.Abstractions](src/Headless.Reliability.Abstractions/README.md) | `FailurePolicy`: retries فورية وretries مؤجلة بـ exponential backoff ليه حد أقصى، وfail rules بتنهي الـ failure على طول |
 
 ### OpenAPI
 
@@ -723,6 +731,7 @@ Base classes وbuilders وfixtures وتكامل Testcontainers لـ integration 
 | [Headless.Hosting](src/Headless.Hosting/README.md) | أدوات للـ .NET hosting |
 | [Headless.Http.Resilience](src/Headless.Http.Resilience/README.md) | الـ side-effect classes المعلنة للـ outbound HTTP calls |
 | [Headless.NetTopologySuite](src/Headless.NetTopologySuite/README.md) | أدوات geospatial |
+| [Headless.PhoneNumbers](src/Headless.PhoneNumbers/README.md) | تنسيق أرقام التليفونات والـ normalization والـ validation بتاعتها (libphonenumber) |
 | [Headless.Primitives](src/Headless.Primitives/README.md) | Value objects، والـ result pattern، وpaging models، وdomain primitives |
 | [Headless.Redis](src/Headless.Redis/README.md) | أدوات لـ Redis |
 | [Headless.Sitemaps](src/Headless.Sitemaps/README.md) | توليد XML sitemaps |

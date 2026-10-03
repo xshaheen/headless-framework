@@ -3,7 +3,7 @@
 using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.CompilerServices;
-using Headless.Checks.Internals;
+using Headless.Checks.Internal;
 
 namespace Headless.Checks;
 

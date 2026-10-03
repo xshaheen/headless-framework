@@ -4,7 +4,7 @@ using System.Collections.Concurrent;
 using System.Net;
 using Amazon.S3;
 using Amazon.S3.Model;
-using Headless.Blobs.Internals;
+using Headless.Blobs.Internal;
 using Headless.Threading;
 
 namespace Headless.Blobs.Aws;

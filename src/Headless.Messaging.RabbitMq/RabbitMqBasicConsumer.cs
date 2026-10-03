@@ -91,22 +91,7 @@ internal sealed class RabbitMqBasicConsumer(
         Dictionary<string, string?> headers;
         try
         {
-            headers = new Dictionary<string, string?>(StringComparer.Ordinal);
-
-            if (properties.Headers != null)
-            {
-                foreach (var header in properties.Headers)
-                {
-                    if (header.Value is byte[] val)
-                    {
-                        headers.Add(header.Key, Encoding.UTF8.GetString(val));
-                    }
-                    else
-                    {
-                        headers.Add(header.Key, header.Value?.ToString());
-                    }
-                }
-            }
+            headers = ReadHeaders(properties.Headers);
         }
         catch (Exception ex)
         {
@@ -215,6 +200,31 @@ internal sealed class RabbitMqBasicConsumer(
                 }
             );
         }
+    }
+
+    /// <summary>Converts AMQP header values, which carry strings as UTF-8 bytes, to the framework's string headers.</summary>
+    internal static Dictionary<string, string?> ReadHeaders(IDictionary<string, object?>? amqpHeaders)
+    {
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal);
+
+        if (amqpHeaders is null)
+        {
+            return headers;
+        }
+
+        foreach (var header in amqpHeaders)
+        {
+            if (header.Value is byte[] val)
+            {
+                headers.Add(header.Key, Encoding.UTF8.GetString(val));
+            }
+            else
+            {
+                headers.Add(header.Key, header.Value?.ToString());
+            }
+        }
+
+        return headers;
     }
 
     private static void _ValidateRequiredHeaders(Dictionary<string, string?> headers)

@@ -7,7 +7,6 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="FluentValidation" />
-    <PackageReference Include="libphonenumber-csharp" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Extensions\Headless.Extensions.csproj" />

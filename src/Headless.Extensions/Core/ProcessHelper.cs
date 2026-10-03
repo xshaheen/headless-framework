@@ -6,7 +6,7 @@ namespace Headless.Core;
 
 /// <summary>
 /// Convenience helpers for launching an external process from a file name and arguments, consuming its output either
-/// as a task that completes when the process exits or as an observable stream of output lines.
+/// as a task that completes when the process exits or as an asynchronous stream of output lines.
 /// </summary>
 [PublicAPI]
 public static class ProcessHelper
@@ -95,27 +95,35 @@ public static class ProcessHelper
     }
 
     /// <summary>
-    /// Runs the specified process and exposes its standard output/error and exit code as an observable sequence,
-    /// allowing reactive-style consumption of the streamed lines.
+    /// Runs the specified process and streams its standard output/error lines as they are printed, followed by a
+    /// final exit-code item.
     /// </summary>
     /// <param name="fileName">The executable or command to run.</param>
     /// <param name="arguments">The command-line arguments to pass, or <see langword="null"/> for none.</param>
+    /// <param name="cancellationToken">A token that, when canceled, terminates the process tree and ends the enumeration.</param>
     /// <returns>
-    /// An <see cref="IObservable{T}"/> that streams the process output.
-    /// OnNext: each standard output/error line as it is printed, then a final exit-code item.
-    /// OnError: an <see cref="InvalidOperationException"/> when the process cannot be started.
+    /// An <see cref="IAsyncEnumerable{T}"/> that starts the process when enumeration begins and yields each standard
+    /// output/error line in arrival order, then exactly one <see cref="ProcessStreamedOutputType.ExitCode"/> item.
+    /// Ending the enumeration early, by breaking out of the loop or by cancellation, terminates the process tree.
     /// </returns>
-    public static IObservable<ProcessObservedOutput> RunAsObservable(string fileName, string? arguments)
-    {
-        return RunAsObservable(fileName, arguments, workingDirectory: null);
-    }
-
-    /// <inheritdoc cref="RunAsObservable(string,string?)"/>
-    /// <param name="workingDirectory">The working directory for the process, or <see langword="null"/> to inherit the current one.</param>
-    public static IObservable<ProcessObservedOutput> RunAsObservable(
+    /// <exception cref="InvalidOperationException">Thrown during enumeration when the process cannot start.</exception>
+    /// <exception cref="OperationCanceledException">Thrown during enumeration when <paramref name="cancellationToken"/> is canceled.</exception>
+    public static IAsyncEnumerable<ProcessStreamedOutput> RunAndStreamAsync(
         string fileName,
         string? arguments,
-        string? workingDirectory
+        CancellationToken cancellationToken = default
+    )
+    {
+        return RunAndStreamAsync(fileName, arguments, workingDirectory: null, cancellationToken);
+    }
+
+    /// <inheritdoc cref="RunAndStreamAsync(string,string?,CancellationToken)"/>
+    /// <param name="workingDirectory">The working directory for the process, or <see langword="null"/> to inherit the current one.</param>
+    public static IAsyncEnumerable<ProcessStreamedOutput> RunAndStreamAsync(
+        string fileName,
+        string? arguments,
+        string? workingDirectory,
+        CancellationToken cancellationToken = default
     )
     {
         var psi = new ProcessStartInfo
@@ -137,15 +145,16 @@ public static class ProcessHelper
             psi.WorkingDirectory = workingDirectory;
         }
 
-        return psi.RunAsObservable();
+        return psi.RunAndStreamAsync(cancellationToken);
     }
 
-    /// <inheritdoc cref="RunAsObservable(string,string?)"/>
+    /// <inheritdoc cref="RunAndStreamAsync(string,string?,CancellationToken)"/>
     /// <param name="workingDirectory">The working directory for the process, or <see langword="null"/> to inherit the current one.</param>
-    public static IObservable<ProcessObservedOutput> RunAsObservable(
+    public static IAsyncEnumerable<ProcessStreamedOutput> RunAndStreamAsync(
         string fileName,
         IEnumerable<string>? arguments,
-        string? workingDirectory
+        string? workingDirectory,
+        CancellationToken cancellationToken = default
     )
     {
         var psi = new ProcessStartInfo
@@ -167,6 +176,6 @@ public static class ProcessHelper
             psi.WorkingDirectory = workingDirectory;
         }
 
-        return psi.RunAsObservable();
+        return psi.RunAndStreamAsync(cancellationToken);
     }
 }

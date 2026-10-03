@@ -11,11 +11,13 @@ using Headless.Messaging.Coordination;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Processor;
 using Headless.Messaging.Registration;
+using Headless.Messaging.RequestReply;
 using Headless.Messaging.Runtime;
 using Headless.Messaging.Serialization;
 using Headless.Messaging.Transactions;
 using Headless.Messaging.Transport;
 using Headless.MultiTenancy;
+using Headless.Reliability;
 using Headless.UnitOfWork;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -205,6 +207,12 @@ public static class SetupMessaging
         //Sender
         services.TryAddSingleton<IMessageSender, MessageSender>();
 
+        // Resolved only by a responder host, which bootstrap admits only on a transport that registers IReplyTransport.
+        services.TryAddSingleton<ReplySender>();
+
+        // Every consuming host can be reached by a request, so every one can answer it, even with a fault only.
+        services.TryAddSingleton<ResponderReplies>();
+
         services.TryAddSingleton<ISerializer, JsonUtf8Serializer>();
 
         // One id per host: every-instance subscriptions name their per-process broker object after it.
@@ -337,7 +345,8 @@ public static class SetupMessaging
         var controls = new MessagingHostControls(
             [.. provider.GetServices<MessagingTuningContribution>().Select(static x => x.Tuning)],
             [.. provider.GetServices<MessagingConsumeOnlyContribution>().SelectMany(static x => x.Entries)],
-            provider.GetService<IConfiguration>()
+            provider.GetService<IConfiguration>(),
+            options.DefaultFailurePolicy
         );
 
         var consumeFilter = _RegisterConsumers(registrations, options, registry, controls);
@@ -396,6 +405,8 @@ public static class SetupMessaging
                     EveryInstance = consumer.EveryInstance,
                     DeclaringModule = consumer.Source,
                     OnSubscriptionEstablished = consumer.OnSubscriptionEstablished,
+                    ResponseType = consumer.ResponseType,
+                    FailurePolicyFactory = consumer.FailurePolicyFactory,
                 },
                 contractVersions.GetValueOrDefault(
                     (consumer.MessageType, consumer.Lane),
@@ -419,6 +430,7 @@ public static class SetupMessaging
     {
         var registeredKeys =
             new Dictionary<ConsumerRegistrationKey, (ConsumerRegistrationSettings Settings, int Index)>();
+        var declaredPolicies = new Dictionary<(string Identity, MessageLane Lane), DeclaredFailurePolicy>();
         var consumers = new List<ConsumerMetadata>();
 
         foreach (var registration in registrations)
@@ -444,13 +456,19 @@ public static class SetupMessaging
                     Dispatch = consumer.Dispatch,
                     OnSubscriptionEstablished = consumer.OnSubscriptionEstablished,
                     DeclaringModule = consumer.DeclaringModule,
+                    ResponseType = consumer.ResponseType,
                 };
+
+                var policy = _ResolveDeclaredFailurePolicy(consumer, resolved, declaredPolicies);
+                resolved = resolved with { FailurePolicy = policy?.Definition };
 
                 var key = new ConsumerRegistrationKey(resolved.MessageName, resolved.Lane, resolved.ConsumerType);
                 var settings = new ConsumerRegistrationSettings(
                     resolved.ConsumerIdentity,
                     resolved.MessageContractVersion,
-                    resolved.EveryInstance
+                    resolved.EveryInstance,
+                    resolved.ResponseType,
+                    policy?.Type
                 );
 
                 if (registeredKeys.TryGetValue(key, out var existing))
@@ -462,8 +480,10 @@ public static class SetupMessaging
                         throw new InvalidOperationException(
                             $"Consumer {resolved.ConsumerType.FullName ?? resolved.ConsumerType.Name} is declared more "
                                 + $"than once for message name '{resolved.MessageName}' on lane {resolved.Lane} with "
-                                + $"conflicting settings: {existing.Settings} and {settings}. Declare the consumer once, "
-                                + "or make every declaration identical."
+                                + $"conflicting settings: {existing.Settings} in "
+                                + $"{_DescribeSource(consumers[existing.Index].DeclaringModule)} and {settings} in "
+                                + $"{_DescribeSource(resolved.DeclaringModule)}. Declare the consumer once, or make every "
+                                + "declaration identical."
                         );
                     }
 
@@ -533,9 +553,89 @@ public static class SetupMessaging
         }
     }
 
+    /// <summary>
+    /// Builds the failure policy one declaration names, once per identity, and rejects an identity whose declarations
+    /// name different policy types: the policy belongs to the identity, so two messages of one consumer cannot differ.
+    /// </summary>
+    private static DeclaredFailurePolicy? _ResolveDeclaredFailurePolicy(
+        MessageConsumerRegistration consumer,
+        ConsumerMetadata resolved,
+        Dictionary<(string Identity, MessageLane Lane), DeclaredFailurePolicy> declaredPolicies
+    )
+    {
+        var instance = consumer.FailurePolicyFactory?.Invoke();
+        if (consumer.FailurePolicyFactory is not null && instance is null)
+        {
+            throw new InvalidOperationException(
+                $"The failure policy factory of consumer '{resolved.ConsumerIdentity}' in "
+                    + $"{_DescribeSource(resolved.DeclaringModule)} returned null."
+            );
+        }
+
+        var type = instance?.GetType();
+        var identityKey = (resolved.ConsumerIdentity, resolved.Lane);
+
+        if (declaredPolicies.TryGetValue(identityKey, out var existing))
+        {
+            // Two classes sharing one identity is reported by the consumer registry with a more specific message.
+            if (existing.ConsumerType == resolved.ConsumerType && existing.Type != type)
+            {
+                throw new InvalidOperationException(
+                    $"Consumer identity '{resolved.ConsumerIdentity}' on lane {resolved.Lane} declares failure policy "
+                        + $"{_DescribePolicy(existing.Type)} in {_DescribeSource(existing.Source)} and "
+                        + $"{_DescribePolicy(type)} in {_DescribeSource(resolved.DeclaringModule)}. A failure policy "
+                        + "belongs to the consumer identity; declare the same policy for every message it consumes."
+                );
+            }
+
+            if (existing.Type == type)
+            {
+                return existing.Type is null ? null : existing;
+            }
+        }
+
+        FailurePolicyDefinition? definition = null;
+        if (instance is not null)
+        {
+            try
+            {
+                definition = instance.Build();
+            }
+            catch (ArgumentException exception)
+            {
+                throw new InvalidOperationException(
+                    $"Failure policy {_DescribePolicy(type)} of consumer '{resolved.ConsumerIdentity}' in "
+                        + $"{_DescribeSource(resolved.DeclaringModule)} is invalid: {exception.Message}",
+                    exception
+                );
+            }
+        }
+
+        var declared = new DeclaredFailurePolicy(type, definition, resolved.ConsumerType, resolved.DeclaringModule);
+        declaredPolicies.TryAdd(identityKey, declared);
+
+        return type is null ? null : declared;
+    }
+
+    private static string _DescribePolicy(Type? type) => type is null ? "(none)" : type.FullName ?? type.Name;
+
+    private static string _DescribeSource(string? module) => module ?? "a registration outside any module";
+
+    // The response type is a setting: a redeclaration that answers with another type, or not at all, would change what the
+    // caller receives.
     private readonly record struct ConsumerRegistrationSettings(
         string ConsumerIdentity,
         string MessageContractVersion,
-        bool EveryInstance
+        bool EveryInstance,
+        Type? ResponseType,
+        Type? FailurePolicy
+    );
+
+    /// <summary>The failure policy one consumer identity declares, built once.</summary>
+    private sealed record DeclaredFailurePolicy(
+        Type? Type,
+        FailurePolicyDefinition? Definition,
+        Type ConsumerType,
+        string? Source
     );
 }

@@ -1,13 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Runtime.InteropServices;
-using CommunityToolkit.HighPerformance;
 using Headless.Checks;
 
+#pragma warning disable CA5394 // CA5394: Random is an insecure random number generator.
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace System;
 
-#pragma warning disable CA5394 // CA5394: Random is an insecure random number generator.
 /// <summary>
 /// Extension methods on <see cref="Random"/> for picking items from collections and generating values of additional
 /// types. The underlying generator is not cryptographically secure; do not use for security-sensitive purposes.
@@ -472,7 +471,7 @@ public static class HeadlessRandomExtensions
             Argument.IsNotNullOrEmpty(items);
 
             var result = items.ToList();
-            random.Shuffle(result.AsSpan());
+            random.Shuffle(CollectionsMarshal.AsSpan(result));
 
             return result;
         }

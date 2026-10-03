@@ -131,6 +131,69 @@ public sealed class TransientRetryTests : TestBase
     }
 
     [Fact]
+    public async Task should_use_the_supplied_attempt_count_and_delay_schedule()
+    {
+        // given: four attempts with a 100/200/400 ms exponential schedule, as a file-lock retry would use
+        var clock = new FakeTimeProvider();
+        var attempts = 0;
+        var requestedDelays = new List<int>();
+
+        var task = TransientRetry
+            .RunAsync<int>(
+                _ =>
+                {
+                    attempts++;
+
+                    throw new TransientException();
+                },
+                _IsTransient,
+                maxAttempts: 4,
+                retryDelay: failedAttempt =>
+                {
+                    requestedDelays.Add(failedAttempt);
+
+                    return TimeSpan.FromMilliseconds(100) * Math.Pow(2, failedAttempt - 1);
+                },
+                clock,
+                AbortToken
+            )
+            .AsTask();
+
+        // when: one tick short of the first delay, then each full delay in turn
+        clock.Advance(TimeSpan.FromMilliseconds(99));
+        var attemptsBeforeFirstDelay = attempts;
+        clock.Advance(TimeSpan.FromMilliseconds(1));
+        clock.Advance(TimeSpan.FromMilliseconds(200));
+        clock.Advance(TimeSpan.FromMilliseconds(400));
+
+        // then
+        await FluentActions.Awaiting(() => task).Should().ThrowExactlyAsync<TransientException>();
+        attemptsBeforeFirstDelay.Should().Be(1);
+        attempts.Should().Be(4);
+        requestedDelays.Should().Equal(1, 2, 3);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public async Task should_reject_a_non_positive_attempt_count(int maxAttempts)
+    {
+        // when
+        var act = async () =>
+            await TransientRetry.RunAsync(
+                _ => ValueTask.FromResult(1),
+                _IsTransient,
+                maxAttempts,
+                _ => TimeSpan.Zero,
+                TimeProvider.System,
+                AbortToken
+            );
+
+        // then
+        await act.Should().ThrowAsync<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
     public async Task should_not_retry_a_failure_the_predicate_rejects()
     {
         // given

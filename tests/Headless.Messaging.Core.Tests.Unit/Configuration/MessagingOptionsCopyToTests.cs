@@ -75,6 +75,7 @@ public sealed class MessagingOptionsCopyToTests : TestBase
             nameof(MessagingOptions.CircuitBreaker),
             nameof(MessagingOptions.RetryPolicy),
             nameof(MessagingOptions.RetryProcessor),
+            nameof(MessagingOptions.RequestReply),
         };
 
         var actual = typeof(MessagingOptions)
@@ -97,13 +98,14 @@ public sealed class MessagingOptionsCopyToTests : TestBase
     }
 
     [Fact]
-    public void should_deep_copy_circuit_breaker_and_retry_processor_state()
+    public void should_deep_copy_nested_option_state()
     {
         var source = new MessagingOptions
         {
             CircuitBreaker = { FailureThreshold = 42, OpenDuration = TimeSpan.FromMinutes(7) },
             RetryProcessor = { BaseInterval = TimeSpan.FromSeconds(13), CircuitOpenRateThreshold = 0.42 },
             RetryPolicy = { DispatchTimeout = TimeSpan.FromSeconds(23) },
+            RequestReply = { DefaultTimeout = TimeSpan.FromSeconds(11), IncludeExceptionDetailsInFaults = true },
         };
 
         var target = new MessagingOptions();
@@ -121,6 +123,8 @@ public sealed class MessagingOptionsCopyToTests : TestBase
         target.RetryProcessor.BaseInterval.Should().Be(TimeSpan.FromSeconds(13));
         target.RetryProcessor.CircuitOpenRateThreshold.Should().Be(0.42);
         target.RetryPolicy.DispatchTimeout.Should().Be(TimeSpan.FromSeconds(23));
+        target.RequestReply.DefaultTimeout.Should().Be(TimeSpan.FromSeconds(11));
+        target.RequestReply.IncludeExceptionDetailsInFaults.Should().BeTrue();
     }
 
     [Fact]

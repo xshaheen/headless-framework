@@ -4,6 +4,7 @@ using System.ComponentModel;
 using Headless.Checks;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Models;
+using Headless.Reliability;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Jobs;
@@ -25,6 +26,7 @@ public sealed class JobTuningBuilder
     private int? _maxConcurrency;
     private JobPriority? _priority;
     private JobOptions? _options;
+    private FailurePolicyDefinition? _failurePolicy;
 
     internal JobTuningBuilder(string identity)
     {
@@ -62,25 +64,58 @@ public sealed class JobTuningBuilder
     }
 
     /// <summary>
-    /// Overrides the host's retry and node-death defaults for this job. A value supplied on a
-    /// scheduling call still wins over this one.
+    /// Replaces the failure policy the job declares, or the host default when it declares none, on this host.
+    /// <c>Headless:Jobs:Jobs:{identity}:FailurePolicy</c> configuration still adjusts its retry counts and delays, and a
+    /// scheduling call's <c>WithRetries</c> still overrides the stored retry count of that run.
     /// </summary>
-    /// <param name="options">Startup policy settings; invocation metadata is not accepted.</param>
+    /// <typeparam name="TPolicy">The policy type; it is built once, during this call.</typeparam>
+    /// <returns>This builder, for chaining.</returns>
+    /// <exception cref="ArgumentException">The policy's retry counts or delays are out of range.</exception>
+    public JobTuningBuilder FailurePolicy<TPolicy>()
+        where TPolicy : Reliability.FailurePolicy, new()
+    {
+        _failurePolicy = FailurePolicyDefinition.Create<TPolicy>();
+        return this;
+    }
+
+    /// <summary>
+    /// Replaces the job's failure policy with one described inline. See <see cref="FailurePolicy{TPolicy}"/>.
+    /// </summary>
+    /// <param name="configure">Describes the policy; it runs once, synchronously, during this call.</param>
+    /// <returns>This builder, for chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">The policy's retry counts or delays are out of range.</exception>
+    public JobTuningBuilder FailurePolicy([InstantHandle] Action<FailurePolicyBuilder> configure)
+    {
+        _failurePolicy = FailurePolicyDefinition.Create(configure);
+        return this;
+    }
+
+    /// <summary>
+    /// Overrides the host's node-death default for this job. A value supplied on a scheduling call still wins over this
+    /// one. Retries are not accepted here: the job's failure policy owns them, so tune it with
+    /// <see cref="FailurePolicy{TPolicy}"/> instead.
+    /// </summary>
+    /// <param name="options">Startup policy settings; retries and invocation metadata are not accepted.</param>
     /// <returns>This builder, for chaining.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="options"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentException">The options contain invalid settings or invocation metadata.</exception>
+    /// <exception cref="ArgumentException">
+    /// The options set retries or retry intervals, contain invalid settings, or carry invocation metadata.
+    /// </exception>
     public JobTuningBuilder Options(JobOptions options)
     {
         _options = JobSchedulingPolicies.Snapshot(options);
         return this;
     }
 
-    /// <summary>Authors the retry and node-death overrides for this job.</summary>
+    /// <summary>Authors the node-death override for this job. See <see cref="Options(JobOptions)"/>.</summary>
     /// <remarks>Invokes the callback once, synchronously, with a fresh builder.</remarks>
-    /// <param name="configure">Authors startup policy settings; invocation metadata is not accepted.</param>
+    /// <param name="configure">Authors startup policy settings; retries and invocation metadata are not accepted.</param>
     /// <returns>This builder, for chaining.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentException">The authored options contain invalid settings or invocation metadata.</exception>
+    /// <exception cref="ArgumentException">
+    /// The authored options set retries or retry intervals, contain invalid settings, or carry invocation metadata.
+    /// </exception>
     public JobTuningBuilder Options(Action<JobOptionsBuilder> configure)
     {
         Argument.IsNotNull(configure);
@@ -133,7 +168,8 @@ public sealed class JobTuningBuilder
         return this;
     }
 
-    internal JobTuning Build() => new(Identity, _maxConcurrency, _priority, _options, [.. _schedule], [.. _execute]);
+    internal JobTuning Build() =>
+        new(Identity, _maxConcurrency, _priority, _options, [.. _schedule], [.. _execute], _failurePolicy);
 
     // Prefixed with the job identity so the tuned registration orders deterministically next to generated middleware
     // and a type attached to two jobs keeps two distinct registrations.
@@ -147,5 +183,6 @@ internal sealed record JobTuning(
     JobPriority? Priority,
     JobOptions? Options,
     JobScheduleMiddlewareRegistration[] ScheduleMiddleware,
-    JobExecuteMiddlewareRegistration[] ExecuteMiddleware
+    JobExecuteMiddlewareRegistration[] ExecuteMiddleware,
+    FailurePolicyDefinition? FailurePolicy
 );

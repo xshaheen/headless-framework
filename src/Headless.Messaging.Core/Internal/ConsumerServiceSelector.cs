@@ -6,6 +6,7 @@ using Headless.Checks;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Runtime;
+using Headless.Reliability;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -96,6 +97,7 @@ internal sealed class ConsumerServiceSelector(IServiceProvider serviceProvider) 
             var descriptor = new ConsumerExecutorDescriptor
             {
                 ConsumerType = consumer.ConsumerType,
+                MethodName = consumer.IsResponder ? nameof(IRespond<,>.RespondAsync) : nameof(IConsume<>.ConsumeAsync),
                 MessageType = consumer.MessageType,
                 MessageName = consumer.MessageName,
                 SubscriptionName = consumer.SubscriptionName,
@@ -107,7 +109,10 @@ internal sealed class ConsumerServiceSelector(IServiceProvider serviceProvider) 
                 EveryInstance = consumer.EveryInstance,
                 Dispatch = consumer.Dispatch,
                 OnSubscriptionEstablished = consumer.OnSubscriptionEstablished,
+                ResponseType = consumer.ResponseType,
                 Middleware = consumer.Middleware,
+                // The registry resolves a policy for every competing consumer; an every-instance one never retries.
+                FailurePolicy = consumer.FailurePolicy ?? FailurePolicyDefinition.None,
             };
 
             results.Add(descriptor);

@@ -523,7 +523,7 @@ if (storage is IPresignedUrlBlobStorage presigned)
 The container manager is registered like `UseAws`, so `EnsureContainerAsync` creates buckets on MinIO. Presigned URLs keep the endpoint's scheme, so a local `http://` MinIO returns `http://` URLs.
 
 ```csharp
-// Local MinIO (for example the minio/minio container with its default root credentials).
+// Local MinIO (for example the chainguard/minio container with its default root credentials).
 builder.Services.AddHeadlessBlobs(blobs =>
     blobs.UseS3Compatible(
         "http://localhost:9000",

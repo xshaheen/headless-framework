@@ -1167,6 +1167,14 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
     public Task<bool?> IsTimeJobCancellationRequestedAsync(Guid jobId, CancellationToken cancellationToken = default) =>
         persistenceProvider.IsTimeJobCancellationRequestedAsync(jobId, cancellationToken);
 
+    public Task<JobRequeueOutcome> RequeueTimeJobAsync(Guid jobId, CancellationToken cancellationToken = default) =>
+        persistenceProvider.RequeueTimeJobAsync(jobId, cancellationToken);
+
+    public Task<JobRequeueOutcome> RequeueCronJobOccurrenceAsync(
+        Guid occurrenceId,
+        CancellationToken cancellationToken = default
+    ) => persistenceProvider.RequeueCronJobOccurrenceAsync(occurrenceId, cancellationToken);
+
     public async Task<bool> PauseCronJobAsync(Guid cronJobId, CancellationToken cancellationToken = default)
     {
         var now = timeProvider.GetUtcNow();

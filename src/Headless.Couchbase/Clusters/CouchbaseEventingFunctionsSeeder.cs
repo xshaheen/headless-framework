@@ -4,7 +4,6 @@ using System.Runtime.CompilerServices;
 using Couchbase;
 using Couchbase.Management.Eventing;
 using Couchbase.Query;
-using Humanizer;
 
 namespace Headless.Couchbase.Clusters;
 
@@ -60,7 +59,7 @@ public static class CouchbaseEventingFunctionsSeeder
             MetaDataKeySpace = metaDataKeyspace,
             Settings = new EventingFunctionSettings
             {
-                ExecutionTimeout = 1.Minutes(),
+                ExecutionTimeout = TimeSpan.FromMinutes(1),
                 DcpStreamBoundary = EventingFunctionDcpBoundary.Everything,
                 DeploymentStatus = EventingFunctionDeploymentStatus.Deployed,
                 ProcessingStatus = EventingFunctionProcessingStatus.Running,
@@ -75,7 +74,7 @@ public static class CouchbaseEventingFunctionsSeeder
 
         _SetDeploymentConfig(function, functionDeploymentConfig);
 
-        var upsertOptions = new UpsertFunctionOptions { Timeout = 1.Minutes(), Token = cancellationToken };
+        var upsertOptions = new UpsertFunctionOptions { Timeout = TimeSpan.FromMinutes(1), Token = cancellationToken };
 
         await cluster.EventingFunctions.UpsertFunctionAsync(function, upsertOptions).ConfigureAwait(false);
     }

@@ -25,6 +25,10 @@ public sealed class IncrementalCachingTests : TestBase
         "GenerationResult",
         "RegistrationModel",
         "Diagnostics",
+        "RequestCalls",
+        "LocalResponders",
+        "ReferencedResponders",
+        "RequestDiagnostics",
     ];
 
     // The Queue consumer comes first, so an edit to the Bus consumer does not move it and its result stays equal.
@@ -50,6 +54,12 @@ public sealed class IncrementalCachingTests : TestBase
         {
             public ValueTask ConsumeAsync(ConsumeContext<InvoiceIssued> context, CancellationToken cancellationToken) => default;
             public ValueTask ConsumeAsync(ConsumeContext<InvoicePaid> context, CancellationToken cancellationToken) => default;
+        }
+
+        // Exercises the request-call steps, so they are tracked and must be reused too.
+        public sealed class InvoiceLookup(IRequestClient requests)
+        {
+            public Task<InvoiceIssued> FindAsync(InvoicePaid paid) => requests.RequestAsync<InvoicePaid, InvoiceIssued>(paid);
         }
         """;
 

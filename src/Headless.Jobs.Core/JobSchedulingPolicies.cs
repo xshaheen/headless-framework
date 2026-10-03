@@ -2,6 +2,7 @@
 
 using Headless.Checks;
 using Headless.Jobs.Models;
+using Headless.Reliability;
 
 namespace Headless.Jobs;
 
@@ -11,23 +12,27 @@ internal sealed class JobSchedulingPolicies
     private readonly JobOptions _defaults;
     private readonly Dictionary<Type, JobOptions> _byRequest;
     private readonly Dictionary<string, JobOptions> _byFunction;
+    private readonly JobFunctionRegistry? _registry;
 
     internal JobSchedulingPolicies(
         JobOptions defaults,
         Dictionary<Type, JobOptions> byRequest,
-        Dictionary<string, JobOptions> byFunction
+        Dictionary<string, JobOptions> byFunction,
+        JobFunctionRegistry? registry = null
     )
     {
         _defaults = Snapshot(defaults);
         _byRequest = byRequest.ToDictionary(pair => pair.Key, pair => Snapshot(pair.Value));
         _byFunction = byFunction.ToDictionary(pair => pair.Key, pair => Snapshot(pair.Value), StringComparer.Ordinal);
+        _registry = registry;
     }
 
     /// <summary>
-    /// Combines the host's defaults and request-type overrides with the per-job options tuned into the host's registry.
+    /// Combines the host's defaults and request-type overrides with the per-job options and failure policies frozen
+    /// into the host's registry.
     /// </summary>
-    internal JobSchedulingPolicies WithFunctionOptions(IReadOnlyDictionary<string, JobOptions> byFunction) =>
-        new(_defaults, _byRequest, byFunction.ToDictionary(StringComparer.Ordinal));
+    internal JobSchedulingPolicies WithRegistry(JobFunctionRegistry registry) =>
+        new(_defaults, _byRequest, registry.OptionsByFunction.ToDictionary(StringComparer.Ordinal), registry);
 
     internal void Validate(JobFunctionRegistry registry)
     {
@@ -68,15 +73,33 @@ internal sealed class JobSchedulingPolicies
             }
         );
 
+    /// <summary>
+    /// Resolves the options a scheduling call stores. A call that supplies a retry count keeps it, with only its own
+    /// intervals; otherwise the job's failure policy is flattened into the stored count and intervals, and a call's own
+    /// intervals, when supplied, replace the flattened ones.
+    /// </summary>
     internal JobOptions Resolve(JobFunctionDescriptor descriptor, JobOptions? call)
     {
         var function =
             _byFunction.GetValueOrDefault(descriptor.FunctionName)
             ?? (descriptor.RequestType is { } requestType ? _byRequest.GetValueOrDefault(requestType) : null);
+        int retries;
+        int[]? retryIntervals;
+        if (call?.Retries is { } callRetries)
+        {
+            retries = callRetries;
+            retryIntervals = call.RetryIntervals?.ToArray();
+        }
+        else
+        {
+            (retries, var flattenedIntervals) = _FlattenedFailurePolicy(descriptor.FunctionName);
+            retryIntervals = call?.RetryIntervals?.ToArray() ?? flattenedIntervals;
+        }
+
         var result = (call ?? _defaults) with
         {
-            Retries = call?.Retries ?? function?.Retries ?? _defaults.Retries ?? 0,
-            RetryIntervals = (call?.RetryIntervals ?? function?.RetryIntervals ?? _defaults.RetryIntervals)?.ToArray(),
+            Retries = retries,
+            RetryIntervals = retryIntervals,
             OnNodeDeath =
                 call?.OnNodeDeath ?? function?.OnNodeDeath ?? _defaults.OnNodeDeath ?? Enums.NodeDeathPolicy.Retry,
             // The idempotency window is per call by contract: it is never inherited from host/function policy
@@ -88,10 +111,53 @@ internal sealed class JobSchedulingPolicies
         return result;
     }
 
+    /// <summary>
+    /// Flattens <paramref name="policy"/> into the retry count and per-retry intervals a job row stores: the immediate
+    /// plus the delayed retries, with <c>0</c> seconds for each immediate retry and then each delayed retry's delay
+    /// before jitter.
+    /// </summary>
+    /// <remarks>
+    /// The row stores whole seconds, so a delay with a fractional second rounds up rather than down: a retry may wait a
+    /// little longer than declared, never shorter, and a sub-second delay never collapses into an immediate retry.
+    /// Jitter cannot be stored per row, so the stored delay is the deterministic base delay.
+    /// </remarks>
+    internal static (int Retries, int[]? RetryIntervals) Flatten(FailurePolicyDefinition policy)
+    {
+        var retries = policy.ImmediateRetries + policy.DelayedRetries;
+        if (retries == 0)
+        {
+            return (0, null);
+        }
+
+        var intervals = new int[retries];
+        for (var delayedAttempt = 1; delayedAttempt <= policy.DelayedRetries; delayedAttempt++)
+        {
+            var delay = policy.GetDelayedRetryBaseDelay(delayedAttempt);
+
+            // The delay is capped at 24 hours, so the rounded-up second count fits an int.
+            intervals[policy.ImmediateRetries + delayedAttempt - 1] = (int)(
+                (delay.Ticks + TimeSpan.TicksPerSecond - 1) / TimeSpan.TicksPerSecond
+            );
+        }
+
+        return (retries, intervals);
+    }
+
     internal static JobOptions Snapshot(JobOptions options)
     {
         Argument.IsNotNull(options);
         _ValidateOptions(options);
+        if (options.Retries is not null || options.RetryIntervals is not null)
+        {
+            throw new ArgumentException(
+                "Startup job policies do not accept retries or retry intervals: a job's retries come from its "
+                    + "FailurePolicy. Declare one with [Job(FailurePolicy = typeof(...))], replace it with "
+                    + "Tune(...).FailurePolicy(...), or set the host default with DefaultFailurePolicy(...). A "
+                    + "scheduling call's WithRetries and WithRetryIntervals still override the stored retries.",
+                nameof(options)
+            );
+        }
+
         if (
             options.CorrelationId is not null
             || options.CausationId is not null
@@ -102,16 +168,18 @@ internal sealed class JobSchedulingPolicies
         )
         {
             throw new ArgumentException(
-                "Startup job policies accept only retry and node-death settings. Supply invocation metadata on each call.",
+                "Startup job policies accept only node-death settings. Supply invocation metadata on each call.",
                 nameof(options)
             );
         }
 
-        return options with
-        {
-            RetryIntervals = options.RetryIntervals?.ToArray(),
-        };
+        return options;
     }
+
+    // A hand-built scheduler without a registry takes the policy of an undeclared job on a host without a default:
+    // no retries.
+    private (int Retries, int[]? RetryIntervals) _FlattenedFailurePolicy(string functionName) =>
+        _registry?.GetFlattenedFailurePolicy(functionName) ?? Flatten(FailurePolicyDefinition.None);
 
     private static void _ValidateOptions(JobOptions options)
     {

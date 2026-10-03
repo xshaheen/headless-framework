@@ -12,6 +12,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Headless.Api.Core\Headless.Api.Core.csproj" />
     <ProjectReference Include="..\Headless.FluentValidation\Headless.FluentValidation.csproj" />
+    <ProjectReference Include="..\Headless.PhoneNumbers\Headless.PhoneNumbers.csproj" />
   </ItemGroup>
   <ItemGroup Label="Resources">
     <EmbeddedResource Update="Resources\FluentValidatorErrors.resx" />
