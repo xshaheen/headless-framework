@@ -48,7 +48,7 @@
     <PackageVersion Include="FluentValidation.DependencyInjectionExtensions" Version="12.1.1" />
     <PackageVersion Include="Foundatio" Version="13.0.4" />
     <PackageVersion Include="Foundatio.Redis" Version="13.0.4" />
-    <!-- Transitive-only pin: never referenced directly; WireMock.Net pulls the Humanizer meta-package through Handlebars.Net.Helpers.Humanizer, and this keeps it on the Humanizer.Core line Headless.Api.Core and Paymob use. -->
+    <!-- Transitive-only pin: never referenced directly; WireMock.Net pulls the Humanizer meta-package through Handlebars.Net.Helpers.Humanizer, and this keeps it on the Humanizer.Core line Headless.Api.Core uses. -->
     <PackageVersion Include="Humanizer" Version="3.0.10" />
     <PackageVersion Include="Humanizer.Core" Version="3.0.10" />
     <!-- Arabic satellite resources for Humanizer.Core; keep on the same version. -->

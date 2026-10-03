@@ -2,7 +2,6 @@
 
 using Headless.Payments.Paymob.CashIn.Internal;
 using Headless.Payments.Paymob.CashIn.Models.Payment;
-using Humanizer;
 
 namespace Headless.Payments.Paymob.CashIn.Models.Callback;
 
@@ -320,7 +319,7 @@ public sealed class CashInCallbackTransaction
             "MASTERCARD" => "MasterCard",
             "VISA" => "Visa",
             null => null,
-            _ => type.Humanize(),
+            _ => type.ToSentence(),
         };
 
         return new(cardNumber, type, bank);

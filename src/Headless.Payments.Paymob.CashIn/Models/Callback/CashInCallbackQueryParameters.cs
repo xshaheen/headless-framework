@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Payments.Paymob.CashIn.Internal;
-using Humanizer;
 
 namespace Headless.Payments.Paymob.CashIn.Models.Callback;
 
@@ -256,7 +255,7 @@ public sealed class CashInCallbackQueryParameters
             "MASTERCARD" => "MasterCard",
             "VISA" => "Visa",
             null => null,
-            _ => SourceDataSubType.Humanize(),
+            _ => SourceDataSubType.ToSentence(),
         };
 
         return new(SourceDataPan, type, Bank: null);
