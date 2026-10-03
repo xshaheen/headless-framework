@@ -4,7 +4,6 @@ using Headless.Features.Models;
 using Headless.Features.ValueProviders;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
-using MoreLinq;
 
 namespace Headless.Features.Values;
 
@@ -55,7 +54,7 @@ public sealed class FeatureValueProviderManager : IFeatureValueProviderManager
 
         var multipleProviders = providers
             .GroupBy(p => p.Name, StringComparer.Ordinal)
-            .FirstOrDefault(x => x.AtLeast(2));
+            .FirstOrDefault(x => x.Skip(1).Any());
 
         if (multipleProviders is null)
         {

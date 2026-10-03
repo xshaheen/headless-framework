@@ -6,7 +6,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json.Nodes;
 using Headless.Checks;
-using Headless.PushNotifications.Apns.Internals;
+using Headless.PushNotifications.Apns.Internal;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 

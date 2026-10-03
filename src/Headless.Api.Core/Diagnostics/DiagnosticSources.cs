@@ -5,7 +5,7 @@ namespace Headless.Api.Diagnostics;
 /// <summary>
 /// Well-known diagnostic event names emitted by Kestrel and
 /// <see cref="Microsoft.AspNetCore.MiddlewareAnalysis.AnalysisStartupFilter"/>.
-/// Use these constants when subscribing via <c>DiagnosticListener.SubscribeWithAdapter</c> to avoid
+/// Use these constants when subscribing via <c>DiagnosticListener.Subscribe</c> to avoid
 /// hard-coded string literals drifting from the platform values.
 /// </summary>
 public static class DiagnosticSources

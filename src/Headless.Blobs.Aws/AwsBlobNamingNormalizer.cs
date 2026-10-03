@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Text.RegularExpressions;
-using Headless.Blobs.Internals;
+using Headless.Blobs.Internal;
 using Headless.Core;
 
 namespace Headless.Blobs.Aws;

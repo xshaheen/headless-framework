@@ -6,7 +6,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Encodings.Web;
 using Headless.Checks;
-using Headless.Sms.Cequens.Internals;
+using Headless.Sms.Cequens.Internal;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 

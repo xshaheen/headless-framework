@@ -6,7 +6,7 @@ using Azure.Storage.Blobs.Models;
 using Azure.Storage.Blobs.Specialized;
 using Azure.Storage.Sas;
 using Headless.Abstractions;
-using Headless.Blobs.Internals;
+using Headless.Blobs.Internal;
 using Headless.Checks;
 using Headless.Primitives;
 using Microsoft.Extensions.Logging;

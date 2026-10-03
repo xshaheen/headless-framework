@@ -8,7 +8,7 @@ namespace Headless.Jobs.Internal;
 /// </summary>
 /// <remarks>
 /// <b>Hosted-service registration order is not the guarantee.</b> A consuming application may set
-/// <see cref="Microsoft.Extensions.Hosting.HostOptions.ServicesStartConcurrently"/>, which starts every hosted service
+/// <c>HostOptions.ServicesStartConcurrently</c>, which starts every hosted service
 /// at once; the scheduler would then begin dispatch selection while the activation drain is still running and could
 /// dispatch a uninitialized or stale-fingerprint definition under an unverified schedule interpretation — defeating the
 /// activation gate outright. This barrier makes the ordering explicit and independent of how the host starts services.

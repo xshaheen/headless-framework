@@ -19,6 +19,18 @@ public sealed class EnumExtensionsTests
         Online = 2,
     }
 
+#pragma warning disable CA1707 // Underscored and acronym member names are the inputs under test.
+    public enum NamingEnum
+    {
+        None = 0,
+        HTMLParser = 1,
+        Value1 = 2,
+        Snake_case_name = 3,
+        Id = 4,
+        IOStream = 5,
+    }
+#pragma warning restore CA1707
+
     private enum TestEnum
     {
         [Display(Name = "Display Name")]
@@ -85,6 +97,37 @@ public sealed class EnumExtensionsTests
 
         // then
         displayName.Should().Be("Value without attributes");
+    }
+
+    [Theory]
+    [InlineData(NamingEnum.HTMLParser, "HTML parser")]
+    [InlineData(NamingEnum.Value1, "Value 1")]
+    [InlineData(NamingEnum.Snake_case_name, "Snake case name")]
+    [InlineData(NamingEnum.Id, "Id")]
+    [InlineData(NamingEnum.IOStream, "IO stream")]
+    public void should_build_sentence_from_member_name_when_get_display_name_has_no_attribute(
+        NamingEnum value,
+        string expected
+    )
+    {
+        // when
+        var displayName = value.GetDisplayName();
+
+        // then
+        displayName.Should().Be(expected);
+    }
+
+    [Fact]
+    public void should_keep_sign_of_undefined_negative_value_when_get_display_name()
+    {
+        // given
+        const SignedIntBackedEnum value = (SignedIntBackedEnum)(-5);
+
+        // when
+        var displayName = value.GetDisplayName();
+
+        // then
+        displayName.Should().Be("-5");
     }
 
     [Fact]

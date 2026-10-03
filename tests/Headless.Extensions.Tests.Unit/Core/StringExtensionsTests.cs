@@ -258,6 +258,37 @@ public sealed class StringExtensionsTests(ITestOutputHelper output) : IDisposabl
     }
 
     [Theory]
+    [InlineData("ValueWithoutAttributes", "Value without attributes")]
+    [InlineData("orderLineItem", "Order line item")]
+    [InlineData("HTMLParser", "HTML parser")]
+    [InlineData("IOStream", "IO stream")]
+    [InlineData("snake_case_name", "Snake case name")]
+    [InlineData("kebab-case-name", "Kebab case name")]
+    [InlineData("Value1", "Value 1")]
+    [InlineData("Id", "Id")]
+    [InlineData("API", "API")]
+    public void should_split_identifier_into_sentence_when_to_sentence(string input, string expected)
+    {
+        // when
+        var result = input.ToSentence();
+
+        // then
+        result.Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    public void should_return_input_when_to_sentence_input_is_null_or_empty(string? input)
+    {
+        // when
+        var result = input.ToSentence();
+
+        // then
+        result.Should().Be(input);
+    }
+
+    [Theory]
     [InlineData("Customer.FirstName", "customer.firstName")]
     [InlineData("Customers[0].FirstName", "customers[0].firstName")]
     [InlineData("OrderDetails.Product.UnitPrice", "orderDetails.product.unitPrice")]

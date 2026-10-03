@@ -4,7 +4,7 @@ using System.Net;
 using System.Security.Cryptography;
 using FluentValidation;
 using FluentValidation.Results;
-using Headless.PushNotifications.Apns.Internals;
+using Headless.PushNotifications.Apns.Internal;
 
 namespace Headless.PushNotifications.Apns;
 

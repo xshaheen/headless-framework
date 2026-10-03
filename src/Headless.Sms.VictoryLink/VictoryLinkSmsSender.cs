@@ -3,7 +3,7 @@
 using System.Net.Http.Json;
 using System.Text.Encodings.Web;
 using Headless.Checks;
-using Headless.Sms.VictoryLink.Internals;
+using Headless.Sms.VictoryLink.Internal;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 

@@ -1,0 +1,15 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Description>Phone number formatting, normalization, mobile validation, and FluentValidation rules backed by libphonenumber for Headless Framework applications.</Description>
+    <PackageTags>headless;phone-numbers;libphonenumber;validation;dotnet</PackageTags>
+    <RootNamespace>Headless.PhoneNumbers</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="libphonenumber-csharp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.FluentValidation\Headless.FluentValidation.csproj" />
+    <ProjectReference Include="..\Headless.Primitives\Headless.Primitives.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Sms;
-using Headless.Sms.VictoryLink.Internals;
+using Headless.Sms.VictoryLink.Internal;
 
 namespace Tests;
 

@@ -23,11 +23,14 @@
     <PackageReference Include="Asp.Versioning.Http" />
     <PackageReference Include="DeviceDetector.NET" />
     <PackageReference Include="FluentValidation.DependencyInjectionExtensions" />
+    <PackageReference Include="Humanizer.Core" />
+    <!-- The identity throttling messages ship in Arabic (Messages.ar.resx), so the durations Humanizer formats into them need its Arabic resources too. -->
+    <PackageReference Include="Humanizer.Core.ar" />
     <PackageReference Include="Microsoft.AspNetCore.MiddlewareAnalysis" />
-    <PackageReference Include="Microsoft.Extensions.DiagnosticAdapter" />
     <PackageReference Include="Microsoft.Extensions.Http.Resilience" />
     <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" />
     <PackageReference Include="NetEscapades.AspNetCore.SecurityHeaders" />
+    <PackageReference Include="TimeZoneConverter" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Api.Abstractions\Headless.Api.Abstractions.csproj" />

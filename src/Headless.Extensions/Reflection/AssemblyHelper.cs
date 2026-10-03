@@ -2,7 +2,6 @@
 
 using System.Reflection;
 using System.Runtime.Loader;
-using MoreLinq;
 
 namespace Headless.Reflection;
 
@@ -92,9 +91,13 @@ public static class AssemblyHelper
     {
         var currentlyLoadedAssemblies = AppDomain.CurrentDomain.GetAssemblies();
 
-        var (excluded, included) = currentlyLoadedAssemblies.Partition(assembly =>
-            assembly.FullName is null || excludePredicate(assembly.FullName)
-        );
+        var excluded = new List<Assembly>();
+        var included = new List<Assembly>();
+
+        foreach (var assembly in currentlyLoadedAssemblies)
+        {
+            (assembly.FullName is null || excludePredicate(assembly.FullName) ? excluded : included).Add(assembly);
+        }
 
         // Put all the exclude assemblies as checked (dynamic assemblies with null FullName are already excluded above)
         HashSet<string> referencesCheckedNames = new(

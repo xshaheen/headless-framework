@@ -30,7 +30,10 @@ public static class SetupDiagnosticListener
         {
             var diagnosticListener = app.Services.GetRequiredService<DiagnosticListener>();
             var badRequest = new BadRequestDiagnosticAdapter(app.Logger);
-            var badRequestSubscription = diagnosticListener.SubscribeWithAdapter(badRequest);
+            var badRequestSubscription = diagnosticListener.Subscribe(
+                badRequest,
+                BadRequestDiagnosticAdapter.IsEnabled
+            );
 
             return badRequestSubscription;
         }
@@ -49,7 +52,10 @@ public static class SetupDiagnosticListener
         {
             var diagnosticListener = app.Services.GetRequiredService<DiagnosticListener>();
             var middlewareAnalysis = new MiddlewareAnalysisDiagnosticAdapter(app.Logger);
-            var middlewareAnalysisSubscription = diagnosticListener.SubscribeWithAdapter(middlewareAnalysis);
+            var middlewareAnalysisSubscription = diagnosticListener.Subscribe(
+                middlewareAnalysis,
+                MiddlewareAnalysisDiagnosticAdapter.IsEnabled
+            );
 
             return middlewareAnalysisSubscription;
         }

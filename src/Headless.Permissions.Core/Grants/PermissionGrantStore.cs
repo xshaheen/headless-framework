@@ -8,7 +8,6 @@ using Headless.Permissions.Definitions;
 using Headless.Permissions.Entities;
 using Headless.Permissions.Models;
 using Headless.Permissions.Repositories;
-using Humanizer;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 

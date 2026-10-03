@@ -3,7 +3,7 @@
 using System.Net;
 using Headless.PushNotifications;
 using Headless.PushNotifications.Firebase;
-using Headless.PushNotifications.Firebase.Internals;
+using Headless.PushNotifications.Firebase.Internal;
 using Headless.Testing.Tests;
 using Tests.Fakes;
 

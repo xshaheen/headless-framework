@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net.Http.Json;
-using Headless.Payments.Paymob.CashIn.Internals;
+using Headless.Payments.Paymob.CashIn.Internal;
 using Headless.Payments.Paymob.CashIn.Models;
 using Headless.Payments.Paymob.CashIn.Models.Auth;
 using Headless.Urls;

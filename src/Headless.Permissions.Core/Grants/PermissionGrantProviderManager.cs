@@ -4,7 +4,6 @@ using Headless.Permissions.GrantProviders;
 using Headless.Permissions.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
-using MoreLinq.Extensions;
 
 namespace Headless.Permissions.Grants;
 
@@ -51,7 +50,7 @@ public sealed class PermissionGrantProviderManager : IPermissionGrantProviderMan
 
         var multipleProviders = providers
             .GroupBy(p => p.Name, StringComparer.Ordinal)
-            .FirstOrDefault(x => x.AtLeast(2));
+            .FirstOrDefault(x => x.Skip(1).Any());
 
         if (multipleProviders is null)
         {

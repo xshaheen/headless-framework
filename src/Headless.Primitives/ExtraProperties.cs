@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.Reflection;
 using System.Text.Json.Serialization.Metadata;
 using Headless.Checks;
+using Headless.Primitives.Internal;
 
 namespace Headless.Primitives;
 

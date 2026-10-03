@@ -2,7 +2,7 @@
 
 using System.Text.Json.Nodes;
 using Headless.PushNotifications.Apns;
-using Headless.PushNotifications.Apns.Internals;
+using Headless.PushNotifications.Apns.Internal;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Time.Testing;
 
