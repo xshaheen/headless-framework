@@ -294,29 +294,6 @@ public sealed class TenantMetadataWriteTests(
         root.TenantId.Should().BeNull();
     }
 
-    [Fact]
-    public async Task should_remove_pre_tracking_handlers_on_runtime_disposal()
-    {
-        enabledFixture.CurrentTenant.Id = "tenant-a";
-        using var scope = enabledFixture.ServiceProvider.CreateScope();
-        await using var db = new DbContext(
-            new DbContextOptionsBuilder().UseNpgsql(enabledFixture.SqlConnectionString).Options
-        );
-        var runtime = new HeadlessDbContextRuntime(
-            db,
-            scope.ServiceProvider.GetRequiredService<HeadlessDbContextServices>()
-        );
-        runtime.Initialize();
-        await runtime.DisposeAsync();
-        await runtime.DisposeAsync();
-        var handlers = typeof(Microsoft.EntityFrameworkCore.ChangeTracking.ChangeTracker)
-            .GetFields(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
-            .Select(x => x.GetValue(db.ChangeTracker))
-            .OfType<Delegate>()
-            .SelectMany(x => x.GetInvocationList());
-        handlers.Should().NotContain(x => ReferenceEquals(x.Target, runtime));
-    }
-
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -408,17 +385,17 @@ public sealed class TenantMetadataWriteTests(
     {
         var options = new DbContextOptionsBuilder<MetadataContext>()
             .UseNpgsql(enabledFixture.SqlConnectionString)
-            .AddHeadlessExtension();
+            .AddHeadlessExtension()
+            .UseApplicationServiceProvider(provider);
         if (sql is not null)
         {
             options.LogTo(sql.Add, [RelationalEventId.CommandExecuted]);
         }
 
-        return new MetadataContext(provider.GetRequiredService<HeadlessDbContextServices>(), options.Options);
+        return new MetadataContext(options.Options);
     }
 
-    private sealed class MetadataContext(HeadlessDbContextServices services, DbContextOptions options)
-        : HeadlessDbContext(services, options)
+    private sealed class MetadataContext(DbContextOptions options) : HeadlessDbContext(options)
     {
         public override string DefaultSchema => "tenant_metadata";
 

@@ -5,10 +5,9 @@ using Tests.Fixtures;
 namespace Tests.Fixture;
 
 public sealed class TestHeadlessDbContext(
-    HeadlessDbContextServices services,
     RecordingHeadlessMessageDispatcher messageDispatcher,
     DbContextOptions options
-) : HeadlessDbContext(services, options)
+) : HeadlessDbContext(options)
 {
     public required DbSet<TestEntity> Tests { get; set; }
 

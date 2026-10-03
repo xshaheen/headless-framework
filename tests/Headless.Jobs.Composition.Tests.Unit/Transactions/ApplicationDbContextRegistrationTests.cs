@@ -10,23 +10,20 @@ using Microsoft.EntityFrameworkCore;
 namespace Tests.Transactions;
 
 /// <summary>
-/// UseApplicationDbContext must reject, at the registration call, a context Jobs cannot construct outside a request
-/// scope, and name the supported alternative. A HeadlessDbContext is the case applications actually hit: its only
-/// constructor takes request-scoped services.
+/// UseApplicationDbContext rejects, at the registration call, a context Jobs cannot construct outside a request scope,
+/// and accepts any context with the options-only constructor, a HeadlessDbContext included.
 /// </summary>
 public sealed class ApplicationDbContextRegistrationTests : TestBase
 {
     [Fact]
-    public void should_throw_naming_use_jobs_db_context_when_application_context_derives_from_headless_db_context()
+    public void should_accept_application_context_deriving_from_headless_db_context()
     {
         var builder = new JobsEfCoreOptionBuilder<TimeJobEntity, CronJobEntity>();
 
         var act = () =>
             builder.UseApplicationDbContext<HeadlessApplicationContext>(ConfigurationType.UseModelCustomizer);
 
-        act.Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage("*HeadlessApplicationContext*HeadlessDbContext*UseJobsDbContext*");
+        act.Should().NotThrow();
     }
 
     [Fact]
@@ -57,11 +54,9 @@ public sealed class ApplicationDbContextRegistrationTests : TestBase
     // Only the implicit parameterless constructor. Never instantiated: the check is reflection only.
     private sealed class MissingOptionsCtorContext : DbContext;
 
-    // The shape applications declare: the framework base context with its required services. Never instantiated.
-    private sealed class HeadlessApplicationContext(
-        HeadlessDbContextServices services,
-        DbContextOptions<HeadlessApplicationContext> options
-    ) : HeadlessDbContext(services, options)
+    // The shape applications declare: the framework base context, taking only its options. Never instantiated.
+    private sealed class HeadlessApplicationContext(DbContextOptions<HeadlessApplicationContext> options)
+        : HeadlessDbContext(options)
     {
         public override string? DefaultSchema => null;
     }

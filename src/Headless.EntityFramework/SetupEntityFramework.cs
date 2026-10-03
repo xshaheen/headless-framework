@@ -25,15 +25,18 @@ public static class SetupEntityFramework
     extension(IServiceCollection services)
     {
         /// <summary>
-        /// Registers <typeparamref name="TDbContext"/> together with the full Headless EF Core service set
-        /// (save pipeline, audit, multi-tenancy, domain-event bus bridge, compiled-query cache).
+        /// Registers <typeparamref name="TDbContext"/>, one instance per scope, together with the full Headless EF Core
+        /// service set (save pipeline, audit, multi-tenancy, domain-event bus bridge, compiled-query cache). Use
+        /// <c>AddHeadlessDbContextPool</c> to pool the context instead.
         /// </summary>
+        /// <remarks>
+        /// The context resolved from a scope is bound to that scope. <see cref="IDbContextFactory{TContext}"/> is
+        /// registered too: it creates a scope per context and disposes it with the context, so a derived constructor
+        /// may take scoped services.
+        /// </remarks>
         /// <typeparam name="TDbContext">The <see cref="HeadlessDbContext"/> subclass to register.</typeparam>
-        /// <param name="optionsAction">
-        /// Optional EF Core options callback. Do not pool the context here — see the
-        /// <see cref="HeadlessDbContext"/> remarks.
-        /// </param>
-        /// <param name="contextLifetime">DI lifetime for <typeparamref name="TDbContext"/>. Defaults to <see cref="ServiceLifetime.Scoped"/>.</param>
+        /// <param name="optionsAction">Optional EF Core options callback.</param>
+        /// <param name="contextLifetime">DI lifetime for <typeparamref name="TDbContext"/>: <see cref="ServiceLifetime.Scoped"/> (the default) or <see cref="ServiceLifetime.Transient"/>; <see cref="ServiceLifetime.Singleton"/> throws <see cref="ArgumentException"/>.</param>
         /// <param name="optionsLifetime">DI lifetime for <see cref="DbContextOptions{TContext}"/>. Defaults to <see cref="ServiceLifetime.Scoped"/>.</param>
         /// <returns>A builder for chaining additional Headless EF Core registrations.</returns>
         public IHeadlessDbContextBuilder AddHeadlessDbContext<TDbContext>(
@@ -61,7 +64,7 @@ public static class SetupEntityFramework
         /// Optional callback to customize <see cref="HeadlessDbContextOptions"/> (for example to add or
         /// replace save-entry processors).
         /// </param>
-        /// <param name="contextLifetime">DI lifetime for <typeparamref name="TDbContext"/>.</param>
+        /// <param name="contextLifetime">DI lifetime for <typeparamref name="TDbContext"/>: <see cref="ServiceLifetime.Scoped"/> (the default) or <see cref="ServiceLifetime.Transient"/>; <see cref="ServiceLifetime.Singleton"/> throws <see cref="ArgumentException"/>.</param>
         /// <param name="optionsLifetime">DI lifetime for <see cref="DbContextOptions{TContext}"/>.</param>
         /// <returns>A builder for chaining additional Headless EF Core registrations.</returns>
         public IHeadlessDbContextBuilder AddHeadlessDbContext<TDbContext>(
@@ -86,7 +89,7 @@ public static class SetupEntityFramework
         /// </summary>
         /// <typeparam name="TDbContext">The <see cref="HeadlessDbContext"/> subclass to register.</typeparam>
         /// <param name="optionsAction">Optional EF Core options callback that receives the scoped service provider.</param>
-        /// <param name="contextLifetime">DI lifetime for <typeparamref name="TDbContext"/>.</param>
+        /// <param name="contextLifetime">DI lifetime for <typeparamref name="TDbContext"/>: <see cref="ServiceLifetime.Scoped"/> (the default) or <see cref="ServiceLifetime.Transient"/>; <see cref="ServiceLifetime.Singleton"/> throws <see cref="ArgumentException"/>.</param>
         /// <param name="optionsLifetime">DI lifetime for <see cref="DbContextOptions{TContext}"/>.</param>
         /// <returns>A builder for chaining additional Headless EF Core registrations.</returns>
         public IHeadlessDbContextBuilder AddHeadlessDbContext<TDbContext>(
@@ -114,7 +117,7 @@ public static class SetupEntityFramework
         /// <param name="configureHeadlessOptions">
         /// Optional callback to customize <see cref="HeadlessDbContextOptions"/>.
         /// </param>
-        /// <param name="contextLifetime">DI lifetime for <typeparamref name="TDbContext"/>.</param>
+        /// <param name="contextLifetime">DI lifetime for <typeparamref name="TDbContext"/>: <see cref="ServiceLifetime.Scoped"/> (the default) or <see cref="ServiceLifetime.Transient"/>; <see cref="ServiceLifetime.Singleton"/> throws <see cref="ArgumentException"/>.</param>
         /// <param name="optionsLifetime">DI lifetime for <see cref="DbContextOptions{TContext}"/>.</param>
         /// <returns>A builder for chaining additional Headless EF Core registrations.</returns>
         public IHeadlessDbContextBuilder AddHeadlessDbContext<TDbContext>(
@@ -126,28 +129,121 @@ public static class SetupEntityFramework
             where TDbContext : HeadlessDbContext
         {
             var builder = services.AddHeadlessDbContextServices(configureHeadlessOptions);
-
-            // EF Core does not auto-discover IInterceptor registrations from the application container. A
-            // DI-registered IDbContextOptionsConfiguration<TDbContext> attaches them whenever EF Core builds this
-            // context's options — covering this AddDbContext registration AND a consumer's own plain
-            // AddDbContext<TDbContext>. Deduped by reference, so the consumer's own options-action adds are safe.
-            services.AddDiRegisteredInterceptorsConfiguration<TDbContext>();
-
-            services.AddDbContext<TDbContext>(
-                (serviceProvider, optionsBuilder) =>
-                {
-                    optionsAction?.Invoke(serviceProvider, optionsBuilder);
-                    optionsBuilder.AddHeadlessExtension();
-                },
+            HeadlessDbContextRegistration.AddPerScope<TDbContext>(
+                services,
+                optionsAction,
                 contextLifetime,
                 optionsLifetime
             );
 
-            // Register IDbContextFactory<TDbContext> alongside AddDbContext so consumers can
-            // resolve detached contexts (background work, IInitializer, BackgroundService) without
-            // a separate AddDbContextFactory call. Singleton wrapper that creates a fresh scope per
-            // call and transfers ownership to the returned context.
-            services.TryAddSingleton<IDbContextFactory<TDbContext>, HeadlessDbContextFactory<TDbContext>>();
+            return builder;
+        }
+
+        /// <summary>
+        /// Registers <typeparamref name="TDbContext"/> as a pooled context together with the full Headless EF Core
+        /// service set.
+        /// </summary>
+        /// <typeparam name="TDbContext">The <see cref="HeadlessDbContext"/> subclass to register.</typeparam>
+        /// <param name="optionsAction">Optional EF Core options callback, run once to build singleton options.</param>
+        /// <param name="poolSize">The maximum number of instances the pool retains. Defaults to 1024.</param>
+        /// <returns>A builder for chaining additional Headless EF Core registrations.</returns>
+        /// <remarks><inheritdoc cref="AddHeadlessDbContextPool{TDbContext}(IServiceCollection, Action{IServiceProvider, DbContextOptionsBuilder}?, Action{HeadlessDbContextOptions}?, int)" path="/remarks/node()"/></remarks>
+        public IHeadlessDbContextBuilder AddHeadlessDbContextPool<TDbContext>(
+            Action<DbContextOptionsBuilder>? optionsAction,
+            int poolSize = HeadlessDbContextRegistration.DefaultPoolSize
+        )
+            where TDbContext : HeadlessDbContext
+        {
+            return services.AddHeadlessDbContextPool<TDbContext>(
+                (_, ob) => optionsAction?.Invoke(ob),
+                configureHeadlessOptions: null,
+                poolSize
+            );
+        }
+
+        /// <summary>
+        /// Registers <typeparamref name="TDbContext"/> as a pooled context together with the full Headless EF Core
+        /// service set, with a callback to configure the Headless save pipeline options.
+        /// </summary>
+        /// <typeparam name="TDbContext">The <see cref="HeadlessDbContext"/> subclass to register.</typeparam>
+        /// <param name="optionsAction">Optional EF Core options callback, run once to build singleton options.</param>
+        /// <param name="configureHeadlessOptions">Optional callback to customize <see cref="HeadlessDbContextOptions"/>.</param>
+        /// <param name="poolSize">The maximum number of instances the pool retains. Defaults to 1024.</param>
+        /// <returns>A builder for chaining additional Headless EF Core registrations.</returns>
+        /// <remarks><inheritdoc cref="AddHeadlessDbContextPool{TDbContext}(IServiceCollection, Action{IServiceProvider, DbContextOptionsBuilder}?, Action{HeadlessDbContextOptions}?, int)" path="/remarks/node()"/></remarks>
+        public IHeadlessDbContextBuilder AddHeadlessDbContextPool<TDbContext>(
+            Action<DbContextOptionsBuilder>? optionsAction,
+            Action<HeadlessDbContextOptions>? configureHeadlessOptions,
+            int poolSize = HeadlessDbContextRegistration.DefaultPoolSize
+        )
+            where TDbContext : HeadlessDbContext
+        {
+            return services.AddHeadlessDbContextPool<TDbContext>(
+                (_, ob) => optionsAction?.Invoke(ob),
+                configureHeadlessOptions,
+                poolSize
+            );
+        }
+
+        /// <summary>
+        /// Registers <typeparamref name="TDbContext"/> as a pooled context together with the full Headless EF Core
+        /// service set. The options callback receives the root <see cref="IServiceProvider"/>.
+        /// </summary>
+        /// <typeparam name="TDbContext">The <see cref="HeadlessDbContext"/> subclass to register.</typeparam>
+        /// <param name="optionsAction">
+        /// Optional EF Core options callback, run once with the root service provider to build singleton options.
+        /// </param>
+        /// <param name="poolSize">The maximum number of instances the pool retains. Defaults to 1024.</param>
+        /// <returns>A builder for chaining additional Headless EF Core registrations.</returns>
+        /// <remarks><inheritdoc cref="AddHeadlessDbContextPool{TDbContext}(IServiceCollection, Action{IServiceProvider, DbContextOptionsBuilder}?, Action{HeadlessDbContextOptions}?, int)" path="/remarks/node()"/></remarks>
+        public IHeadlessDbContextBuilder AddHeadlessDbContextPool<TDbContext>(
+            Action<IServiceProvider, DbContextOptionsBuilder>? optionsAction,
+            int poolSize = HeadlessDbContextRegistration.DefaultPoolSize
+        )
+            where TDbContext : HeadlessDbContext
+        {
+            return services.AddHeadlessDbContextPool<TDbContext>(
+                optionsAction,
+                configureHeadlessOptions: null,
+                poolSize
+            );
+        }
+
+        /// <summary>
+        /// Registers <typeparamref name="TDbContext"/> as a pooled context together with the full Headless EF Core
+        /// service set. The options callback receives the root <see cref="IServiceProvider"/>, and an additional
+        /// callback customizes the Headless save pipeline options.
+        /// </summary>
+        /// <typeparam name="TDbContext">The <see cref="HeadlessDbContext"/> subclass to register.</typeparam>
+        /// <param name="optionsAction">
+        /// Optional EF Core options callback, run once with the root service provider to build singleton options.
+        /// </param>
+        /// <param name="configureHeadlessOptions">Optional callback to customize <see cref="HeadlessDbContextOptions"/>.</param>
+        /// <param name="poolSize">The maximum number of instances the pool retains. Defaults to 1024.</param>
+        /// <returns>A builder for chaining additional Headless EF Core registrations.</returns>
+        /// <remarks>
+        /// <para>
+        /// Pooling reuses context instances across scopes, which saves the per-request construction and service
+        /// resolution of a context. The context resolved from a scope is leased from the pool and bound to that
+        /// scope; disposing the scope returns it. <see cref="IDbContextFactory{TContext}"/> leases from the same pool:
+        /// a factory context opens a private scope only when it first needs a scoped collaborator, such as the save
+        /// pipeline, and disposes it with the context.
+        /// </para>
+        /// <para>
+        /// The options are built once, so the callback must not depend on scoped services. The context must declare
+        /// exactly one public constructor, taking its <c>DbContextOptions</c> and optionally singleton services, and
+        /// must not keep per-request state in its own fields.
+        /// </para>
+        /// </remarks>
+        public IHeadlessDbContextBuilder AddHeadlessDbContextPool<TDbContext>(
+            Action<IServiceProvider, DbContextOptionsBuilder>? optionsAction,
+            Action<HeadlessDbContextOptions>? configureHeadlessOptions,
+            int poolSize = HeadlessDbContextRegistration.DefaultPoolSize
+        )
+            where TDbContext : HeadlessDbContext
+        {
+            var builder = services.AddHeadlessDbContextServices(configureHeadlessOptions);
+            HeadlessDbContextRegistration.AddPooled<TDbContext>(services, optionsAction, poolSize);
 
             return builder;
         }
@@ -203,7 +299,7 @@ public static class SetupEntityFramework
             options.RegisterServices(services);
 
             services.AddOptions<TenantGuardOptions>();
-            services.TryAddScoped<HeadlessDbContextServices>();
+            services.TryAddSingleton<HeadlessRootServiceProvider>();
             services.TryAddScoped<IHeadlessSaveChangesPipeline, HeadlessSaveChangesPipeline>();
             // The save pipeline enlists its transaction in the scoped unit of work and resolves the unit bound
             // to a context through the EF provider's binding — both live in Headless.UnitOfWork.EntityFramework.

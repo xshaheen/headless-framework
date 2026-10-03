@@ -21,6 +21,8 @@ public sealed class SqlServerTenantCatalogFixture
 
     public DbContextOptions<TenantCatalogDbContext> DbOptions => _Core.DbOptions;
 
+    public void ConfigureProvider(DbContextOptionsBuilder builder) => _Core.ConfigureProvider(builder);
+
     public Task ResetAsync(CancellationToken cancellationToken) => _Core.ResetAsync(cancellationToken);
 
     public Task<ITenantStore> GetStoreAsync(CancellationToken cancellationToken) =>

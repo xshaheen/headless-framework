@@ -369,12 +369,8 @@ public sealed class IdentityTenantModelTests : TestBase
         return services.BuildServiceProvider();
     }
 
-    private sealed class IdentityContext<TPolicy>(
-        HeadlessDbContextServices services,
-        DbContextOptions<IdentityContext<TPolicy>> options
-    )
+    private sealed class IdentityContext<TPolicy>(DbContextOptions<IdentityContext<TPolicy>> options)
         : HeadlessIdentityDbContext<User, Role, string, UserClaim, Membership, Login, RoleClaim, Token, Passkey>(
-            services,
             options
         )
         where TPolicy : IPolicy

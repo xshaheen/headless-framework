@@ -180,10 +180,8 @@ public sealed class TenantModelPolicyTests : TestBase
         return services.BuildServiceProvider();
     }
 
-    private sealed class PolicyContext<TPolicy>(
-        HeadlessDbContextServices services,
-        DbContextOptions<PolicyContext<TPolicy>> options
-    ) : HeadlessDbContext(services, options)
+    private sealed class PolicyContext<TPolicy>(DbContextOptions<PolicyContext<TPolicy>> options)
+        : HeadlessDbContext(options)
         where TPolicy : IPolicy
     {
         public override string? DefaultSchema => null;

@@ -65,9 +65,10 @@ public class JobsEfCoreOptionBuilder<TTimeJob, TCronJob>
     /// other application tables. The job entities must be configured in the existing context.
     /// </summary>
     /// <remarks>
-    /// Jobs creates the context outside any request scope, so it must declare a public constructor accepting a
-    /// single <c>DbContextOptions&lt;TDbContext&gt;</c> argument. A context deriving from <c>HeadlessDbContext</c>
-    /// cannot; use <see cref="UseJobsDbContext{TDbContext}" /> with a <c>JobsDbContext</c> on the same database.
+    /// Jobs creates the context outside any request scope, from its pooled factory and cloned onto a unit of work's
+    /// connection for coordinated writes, so it must declare a public constructor accepting a single
+    /// <c>DbContextOptions&lt;TDbContext&gt;</c> argument. A <c>HeadlessDbContext</c> qualifies: a context created
+    /// outside a scope opens its own scope for the save pipeline.
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// <typeparamref name="TDbContext"/> has no constructor accepting only <c>DbContextOptions&lt;TDbContext&gt;</c>.
@@ -79,8 +80,8 @@ public class JobsEfCoreOptionBuilder<TTimeJob, TCronJob>
     )
         where TDbContext : DbContext
     {
-        // Fail at the registration call, with the remedy, rather than at DI build with only the constructor rule.
-        CoordinatedWriteContextFactory.RequireApplicationContextConstructor<TDbContext>();
+        // Fail at the registration call rather than later, when the service collection is configured.
+        CoordinatedWriteContextFactory.RequireOptionsConstructor<TDbContext>();
         ServiceBuilder.UseApplicationDbContext<TDbContext, TTimeJob, TCronJob>(this, configurationType);
         return this;
     }

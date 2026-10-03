@@ -111,12 +111,9 @@ public abstract class TenantIsolationKitConformanceTests<TFixture>(TFixture fixt
     {
         var options = new DbContextOptionsBuilder<MetadataTenantContext>();
         fixture.ConfigureOptions(options);
+        options.UseApplicationServiceProvider(_scope.ServiceProvider);
 
-        return new MetadataTenantContext(
-            _scope.ServiceProvider.GetRequiredService<HeadlessDbContextServices>(),
-            options.Options,
-            fixture.Placement
-        );
+        return new MetadataTenantContext(options.Options, fixture.Placement);
     }
 
     private async Task<Guid> _SeedAsync()

@@ -7,24 +7,39 @@ using Headless.EntityFramework.Configurations;
 using Headless.MultiTenancy;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Headless.EntityFramework.Contexts.Runtime;
 
 /// <summary>
-/// Per-<see cref="DbContext"/> runtime that wires the navigation-change tracker, runs framework
-/// conventions in <c>OnModelCreating</c>, and forwards <c>SaveChanges</c> calls to the
-/// <see cref="IHeadlessSaveChangesPipeline"/> resolved on <paramref name="services"/>.
+/// Per-<see cref="DbContext"/> runtime that wires the navigation-change tracker and the tenant stamp, runs
+/// framework conventions in <c>OnModelCreating</c>, and forwards <c>SaveChanges</c> to the
+/// <see cref="IHeadlessSaveChangesPipeline"/> of the context's current service binding.
 /// </summary>
 /// <remarks>
-/// One instance per active <see cref="DbContext"/>. <see cref="Initialize"/> must be called once after
-/// the DbContext is constructed so the navigation-change tracker can attach to
-/// <see cref="DbContext.ChangeTracker"/>.
+/// <para>
+/// The runtime separates what a context instance keeps for its whole life (the model, the EF configuration, the
+/// change-tracker handlers) from what belongs to one use of it (the DI scope its collaborators come from). That split
+/// is what makes the Headless bases poolable: EF snapshots the change-tracker handlers attached in the constructor
+/// and restores them on every lease, while the scope is bound per lease and released before the instance returns
+/// to the pool.
+/// </para>
+/// <para>
+/// A context is bound to the DI scope that resolved it: explicitly by the Headless registrations, or, for a context
+/// registered with plain EF Core, through its per-scope options, whose application provider is the scope that built
+/// them. A context created outside any scope (a pooled or stock <c>IDbContextFactory</c>, or <see langword="new"/> with options
+/// carrying the root provider) opens a private scope the first time it needs a scoped collaborator and disposes it
+/// with the context, so read-only use creates no scope at all. Singletons (the ambient tenant, the guard options) are
+/// read from the application provider without opening one.
+/// </para>
 /// </remarks>
-internal sealed class HeadlessDbContextRuntime(DbContext db, HeadlessDbContextServices services) : IAsyncDisposable
+internal sealed class HeadlessDbContextRuntime(DbContext db)
 {
     private static readonly MethodInfo _ConfigureQueryFiltersMethod = typeof(HeadlessDbContextRuntime).GetMethod(
         nameof(_ConfigureQueryFilters),
@@ -34,54 +49,150 @@ internal sealed class HeadlessDbContextRuntime(DbContext db, HeadlessDbContextSe
     private static readonly Type _DateTimeType = typeof(DateTime);
     private static readonly Type _NullableDateTimeType = typeof(DateTime?);
 
+    private readonly DbContext _db = db;
     private readonly HeadlessEntityFrameworkNavigationModifiedTracker _navigationModifiedTracker = new();
-    private bool _initialized;
-    private bool _stampTenantHandlerAttached;
 
-    public string? TenantId => services.TenantId;
+    // Fixed for the instance's life: the options, and so the application provider, never change across leases.
+    private IServiceProvider? _applicationServices;
 
-    internal IServiceProvider ServiceProvider => services.ServiceProvider;
+    // Per lease. Cleared by Release before a pooled instance goes back to the pool.
+    private IServiceProvider? _boundServices;
+    private IServiceScope? _ownedScope;
+    private IHeadlessSaveChangesPipeline? _pipeline;
+    private ICurrentTenant? _currentTenant;
+    private TenantGuardOptions? _guardOptions;
 
-    public void Initialize()
+    /// <summary>
+    /// Attaches the change-tracker handlers. Called once from the context constructor, after the runtime field is
+    /// assigned: reading <see cref="DbContext.ChangeTracker"/> builds the model, which calls back into the context's
+    /// <c>ConfigureConventions</c> and so into this runtime.
+    /// </summary>
+    public void AttachChangeTrackerHandlers()
     {
-        if (_initialized)
-        {
-            return;
-        }
-
-        db.ChangeTracker.Tracked += _navigationModifiedTracker.ChangeTrackerTracked;
-        db.ChangeTracker.StateChanged += _navigationModifiedTracker.ChangeTrackerStateChanged;
-        _initialized = true;
-
-        if (services.IsTenantWriteGuardEnabled)
-        {
-            db.ChangeTracker.Tracking += _OnTracking;
-            db.ChangeTracker.StateChanging += _OnStateChanging;
-            _stampTenantHandlerAttached = true;
-        }
+        // Attached in the constructor so EF's pool snapshot captures them and SetLease restores them on every lease;
+        // handlers attached later would be dropped by the next lease. The tenant stamp is always attached and checks
+        // the write-guard option when it fires, because the option is not known until a provider is bound.
+        _db.ChangeTracker.Tracked += _navigationModifiedTracker.ChangeTrackerTracked;
+        _db.ChangeTracker.StateChanged += _navigationModifiedTracker.ChangeTrackerStateChanged;
+        _db.ChangeTracker.Tracking += _OnTracking;
+        _db.ChangeTracker.StateChanging += _OnStateChanging;
     }
 
-    public ValueTask DisposeAsync()
+    /// <summary>The ambient tenant, read on every access so a tenant change inside one lease is observed.</summary>
+    public string? TenantId => (_currentTenant ??= _SingletonServices().GetRequiredService<ICurrentTenant>()).Id;
+
+    /// <summary>
+    /// The provider scoped collaborators resolve from: the bound scope, or the private scope opened on first use.
+    /// </summary>
+    public IServiceProvider ServiceProvider => _boundServices ??= _AdoptOptionsScope() ?? _OpenPrivateScope();
+
+    internal bool IsGuardReadsEnabled => _GetGuardOptions().GuardReads;
+
+    private TenantGuardOptions _GetGuardOptions() =>
+        _guardOptions ??= _SingletonServices().GetRequiredService<IOptions<TenantGuardOptions>>().Value;
+
+    private IServiceProvider _SingletonServices() => _boundServices ?? _GetApplicationServices();
+
+    private IServiceProvider _GetApplicationServices() =>
+        _applicationServices ??=
+            _db.GetService<IDbContextOptions>().FindExtension<CoreOptionsExtension>()?.ApplicationServiceProvider
+            ?? throw new InvalidOperationException(
+                $"'{_db.GetType().Name}' has no service provider. Resolve it from DI, create it through "
+                    + "IDbContextFactory, or build its options with UseApplicationServiceProvider(...)."
+            );
+
+    /// <summary>Binds this lease to the DI scope that resolved the context.</summary>
+    public void Bind(IServiceProvider services)
     {
-        if (!_initialized)
+        if (_boundServices is not null)
         {
-            return ValueTask.CompletedTask;
+            throw new InvalidOperationException(
+                $"'{_db.GetType().Name}' is already bound to a service scope. A context instance serves one scope at a time."
+            );
         }
 
-        db.ChangeTracker.Tracked -= _navigationModifiedTracker.ChangeTrackerTracked;
-        db.ChangeTracker.StateChanged -= _navigationModifiedTracker.ChangeTrackerStateChanged;
-
-        if (_stampTenantHandlerAttached)
-        {
-            db.ChangeTracker.Tracking -= _OnTracking;
-            db.ChangeTracker.StateChanging -= _OnStateChanging;
-            _stampTenantHandlerAttached = false;
-        }
-
-        _initialized = false;
-
-        return ValueTask.CompletedTask;
+        _boundServices = services;
     }
+
+    /// <summary>
+    /// <see langword="true"/> while a scope's lease holds this pooled instance. The context's own dispose is then a
+    /// no-op, as it is for EF Core's scoped pool lease: a consumer disposing a scope-resolved context early must not
+    /// return an instance the scope still holds, or the scope's later dispose would return it a second time, possibly
+    /// out from under the request that leased it in between.
+    /// </summary>
+    public bool IsScopeLeased { get; private set; }
+
+    /// <summary>Binds this pooled instance to the scope whose lease holds it until the scope ends.</summary>
+    public void BindScopeLease(IServiceProvider services)
+    {
+        Bind(services);
+        IsScopeLeased = true;
+    }
+
+    /// <summary>Ends the scope's hold, so the next dispose returns the instance to the pool.</summary>
+    public void EndScopeLease() => IsScopeLeased = false;
+
+    /// <summary>
+    /// Binds this lease to <paramref name="scope"/> and takes ownership of it: the scope is disposed with the
+    /// context. Used by the factory that creates a scope per context.
+    /// </summary>
+    public void BindOwnedScope(IServiceScope scope)
+    {
+        Bind(scope.ServiceProvider);
+        _ownedScope = scope;
+    }
+
+    /// <summary>
+    /// Clears the lease state and returns the scope this context owned, if any, for the caller to dispose after the
+    /// base context is disposed. Clearing comes first because disposing a pooled context returns it to the pool,
+    /// where another caller may lease and bind it at once.
+    /// </summary>
+    public IServiceScope? Release()
+    {
+        var ownedScope = _ownedScope;
+
+        _ownedScope = null;
+        IsScopeLeased = false;
+        _boundServices = null;
+        _pipeline = null;
+        _currentTenant = null;
+        _guardOptions = null;
+        _navigationModifiedTracker.Clear();
+
+        return ownedScope;
+    }
+
+    // Per-scope options carry the scope that built them, so a context EF activated in that scope belongs to it. The
+    // scope is borrowed, not owned: whoever created it disposes it. Root (singleton) options are never adopted, since
+    // scoped collaborators resolved from the root would live for the host's lifetime.
+    private IServiceProvider? _AdoptOptionsScope()
+    {
+        var application = _GetApplicationServices();
+        var root = application.GetService<HeadlessRootServiceProvider>()?.Services;
+
+        if (root is null)
+        {
+            return null;
+        }
+
+        // Resolving IServiceProvider returns the provider's own scope, which normalizes the root ServiceProvider to the
+        // root scope a singleton receives. This holds for Microsoft.Extensions.DependencyInjection; the Headless
+        // registrations bind explicitly and never reach this fallback.
+        var current = application.GetService<IServiceProvider>() ?? application;
+
+        return ReferenceEquals(current, root) ? null : current;
+    }
+
+    private IServiceProvider _OpenPrivateScope()
+    {
+        _ownedScope = _GetApplicationServices().GetRequiredService<IServiceScopeFactory>().CreateAsyncScope();
+        _boundServices = _ownedScope.ServiceProvider;
+
+        return _boundServices;
+    }
+
+    private IHeadlessSaveChangesPipeline _GetPipeline() =>
+        _pipeline ??= ServiceProvider.GetRequiredService<IHeadlessSaveChangesPipeline>();
 
     private void _OnTracking(object? sender, EntityTrackingEventArgs e) => _StampTenantOnAdded(e.Entry, e.State);
 
@@ -94,8 +205,8 @@ internal sealed class HeadlessDbContextRuntime(DbContext db, HeadlessDbContextSe
             targetState != EntityState.Added
             || entry.Metadata.IsOwned()
             || !entry.Metadata.IsTenantOwned()
-            || !services.IsTenantWriteGuardEnabled
-            || services.ServiceProvider.GetRequiredService<ITenantWriteGuardBypass>().IsActive
+            || !_GetGuardOptions().GuardWrites
+            || ServiceProvider.GetRequiredService<ITenantWriteGuardBypass>().IsActive
         )
         {
             return;
@@ -132,13 +243,8 @@ internal sealed class HeadlessDbContextRuntime(DbContext db, HeadlessDbContextSe
     {
         try
         {
-            return await services
-                .SaveChangesPipeline.SaveChangesAsync(
-                    db,
-                    baseSaveChangesAsync,
-                    acceptAllChangesOnSuccess,
-                    cancellationToken
-                )
+            return await _GetPipeline()
+                .SaveChangesAsync(_db, baseSaveChangesAsync, acceptAllChangesOnSuccess, cancellationToken)
                 .ConfigureAwait(false);
         }
         finally
@@ -153,7 +259,7 @@ internal sealed class HeadlessDbContextRuntime(DbContext db, HeadlessDbContextSe
     {
         try
         {
-            return services.SaveChangesPipeline.SaveChanges(db, baseSaveChanges, acceptAllChangesOnSuccess);
+            return _GetPipeline().SaveChanges(_db, baseSaveChanges, acceptAllChangesOnSuccess);
         }
         finally
         {
@@ -161,10 +267,62 @@ internal sealed class HeadlessDbContextRuntime(DbContext db, HeadlessDbContextSe
         }
     }
 
+    /// <summary>
+    /// Disposes a scope returned by <see cref="Release"/>. A secondary scope-dispose failure is logged rather than
+    /// thrown, so it never masks the primary disposal exception operators need.
+    /// </summary>
+    public static void DisposeScope(IServiceScope? scope, Type contextType)
+    {
+        if (scope is null)
+        {
+            return;
+        }
+
+        // The provider is gone once the scope is disposed, so the logger is resolved first.
+        var logger = scope.ServiceProvider.GetService<ILoggerFactory>()?.CreateLogger(contextType);
+
+        try
+        {
+            scope.Dispose();
+        }
+        catch (Exception scopeEx)
+        {
+            logger?.LogOwnedScopeDisposeFailed(scopeEx);
+        }
+    }
+
+    /// <inheritdoc cref="DisposeScope"/>
+    public static async ValueTask DisposeScopeAsync(IServiceScope? scope, Type contextType)
+    {
+        if (scope is null)
+        {
+            return;
+        }
+
+        var logger = scope.ServiceProvider.GetService<ILoggerFactory>()?.CreateLogger(contextType);
+
+        try
+        {
+            // MS DI scopes may hold async-only-disposable scoped services.
+            if (scope is IAsyncDisposable asyncScope)
+            {
+                await asyncScope.DisposeAsync().ConfigureAwait(false);
+            }
+            else
+            {
+                scope.Dispose();
+            }
+        }
+        catch (Exception scopeEx)
+        {
+            logger?.LogOwnedScopeDisposeFailed(scopeEx);
+        }
+    }
+
     public void ConfigureConventions(ModelConfigurationBuilder builder)
     {
         builder.AddBuildingBlocksPrimitivesConvertersMappings();
-        builder.Conventions.Add(_ => new HeadlessTenantModelConvention(db));
+        builder.Conventions.Add(_ => new HeadlessTenantModelConvention(_db));
     }
 
     public static void ProcessModelCreating(ModelBuilder builder)

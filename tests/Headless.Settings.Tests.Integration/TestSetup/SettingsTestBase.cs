@@ -69,16 +69,26 @@ public abstract class SettingsTestBase(SettingsTestFixture fixture) : TestBase
         });
         services.AddStringEncryptionService(builder.Configuration.GetRequiredSection("Headless:StringEncryption"));
 
-        services.AddDbContextFactory<SettingsTestDbContext>(options => options.UseNpgsql(Fixture.SqlConnectionString));
+        AddSettingsDbContextFactory(services);
 
         services.AddHeadlessSettings(setup =>
         {
             setup.ConfigureStorage(ConfigureSettingsStorage);
-            setup.UseEntityFramework<SettingsTestDbContext>();
+            UseSettingsEntityFramework(setup);
         });
     }
 
     protected virtual void ConfigureSettingsStorage(SettingsStorageOptions options) { }
+
+    protected virtual void AddSettingsDbContextFactory(IServiceCollection services)
+    {
+        services.AddDbContextFactory<SettingsTestDbContext>(options => options.UseNpgsql(Fixture.SqlConnectionString));
+    }
+
+    protected virtual void UseSettingsEntityFramework(HeadlessSettingsSetupBuilder setup)
+    {
+        setup.UseEntityFramework<SettingsTestDbContext>();
+    }
 
     private static void _AddDefaultStringEncryptionConfiguration(IConfigurationBuilder configuration)
     {

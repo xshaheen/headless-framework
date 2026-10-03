@@ -114,10 +114,8 @@ public sealed class TenantIndexPolicyTests : TestBase
         return services.BuildServiceProvider();
     }
 
-    private sealed class IndexContext<TPolicy>(
-        HeadlessDbContextServices services,
-        DbContextOptions<IndexContext<TPolicy>> options
-    ) : HeadlessDbContext(services, options)
+    private sealed class IndexContext<TPolicy>(DbContextOptions<IndexContext<TPolicy>> options)
+        : HeadlessDbContext(options)
         where TPolicy : IPolicy
     {
         public override string? DefaultSchema => null;

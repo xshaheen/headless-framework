@@ -287,11 +287,15 @@ public sealed class TenantIsolationDbAssertionsTests : TestBase
         var provider = builder.Services.BuildServiceProvider();
         _providers.Add(provider);
 
-        var options = new DbContextOptionsBuilder<NotesContext>().UseSqlite(connection).AddHeadlessExtension().Options;
+        var options = new DbContextOptionsBuilder<NotesContext>()
+            .UseSqlite(connection)
+            .AddHeadlessExtension()
+            .UseApplicationServiceProvider(provider)
+            .Options;
 
         NotesContext create()
         {
-            var context = new NotesContext(provider.GetRequiredService<HeadlessDbContextServices>(), options);
+            var context = new NotesContext(options);
             _created.Add(context);
 
             return context;
@@ -336,8 +340,7 @@ public sealed class TenantIsolationDbAssertionsTests : TestBase
     }
 }
 
-public sealed class NotesContext(HeadlessDbContextServices services, DbContextOptions<NotesContext> options)
-    : HeadlessDbContext(services, options)
+public sealed class NotesContext(DbContextOptions<NotesContext> options) : HeadlessDbContext(options)
 {
     public override string? DefaultSchema => null;
 
