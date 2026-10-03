@@ -323,7 +323,7 @@ public sealed class NatsReplyTransportTests(NatsFixture fixture) : TestBase
     {
         lock (log)
         {
-            return log.Where(static entry => entry.EventId.Id == 13).ToList();
+            return [.. log.Where(static entry => entry.EventId.Id == 13)];
         }
     }
 

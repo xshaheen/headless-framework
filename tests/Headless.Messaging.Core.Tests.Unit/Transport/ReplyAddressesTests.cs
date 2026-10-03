@@ -24,7 +24,7 @@ public sealed class ReplyAddressesTests : TestBase
     public void should_accept_an_address_exactly_at_the_maximum_length()
     {
         var address = ReplyAddresses.Prefix + new string('a', ReplyAddresses.MaxLength - ReplyAddresses.Prefix.Length);
-        address.Length.Should().Be(ReplyAddresses.MaxLength);
+        address.Should().HaveLength(ReplyAddresses.MaxLength);
 
         ReplyAddresses.IsInReplyNamespace(address).Should().BeTrue();
     }
