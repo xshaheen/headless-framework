@@ -248,8 +248,10 @@ internal sealed partial class JobsPostCommitSignalService(
             Log.PostCommitSignalAbandonedOnShutdown(_logger, signal.JobScope);
 
             // Mirror the deadline branch: the wait was abandoned, not the side effect. A fault surfacing after
-            // shutdown-budget cancellation must still be observed rather than die unobserved with the host.
-            if (work is { IsCompleted: false })
+            // shutdown-budget cancellation must still be observed rather than die unobserved with the host. The side
+            // effect can fault between the cancelled wait and this line, so observe it even when it has already
+            // completed: the continuation then logs at once, and does nothing for a side effect that succeeded.
+            if (work is not null)
             {
                 LateFaultObserver.ObserveLateFault(work, _logger, signal.JobScope, Log.PostCommitSignalFailed);
             }

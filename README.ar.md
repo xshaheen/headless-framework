@@ -467,7 +467,7 @@ Message bus موزّع بـ transactional outbox، وretries، وdelayed deliver
 | [Headless.Messaging.AzureServiceBus](src/Headless.Messaging.AzureServiceBus/README.md) | Azure Service Bus |
 | [Headless.Messaging.Nats](src/Headless.Messaging.Nats/README.md) | NATS مع JetStream |
 | [Headless.Messaging.Pulsar](src/Headless.Messaging.Pulsar/README.md) | Apache Pulsar |
-| [Headless.Messaging.Redis](src/Headless.Messaging.Redis/README.md) | Redis Streams للـ queues و Redis Pub/Sub للـ broadcast |
+| [Headless.Messaging.Redis](src/Headless.Messaging.Redis/README.md) | Redis Streams للـ Bus و Queue lanes |
 | [Headless.Messaging.InMemory](src/Headless.Messaging.InMemory/README.md) | In-memory (للتطوير والـ tests) |
 
 **الـ Storage backends:**

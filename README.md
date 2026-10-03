@@ -429,7 +429,7 @@ Distributed message bus with a transactional outbox, retries, delayed delivery, 
 | [Headless.Messaging.AzureServiceBus](src/Headless.Messaging.AzureServiceBus/README.md) | Azure Service Bus |
 | [Headless.Messaging.Nats](src/Headless.Messaging.Nats/README.md) | NATS with JetStream |
 | [Headless.Messaging.Pulsar](src/Headless.Messaging.Pulsar/README.md) | Apache Pulsar |
-| [Headless.Messaging.Redis](src/Headless.Messaging.Redis/README.md) | Redis Streams queues and Redis Pub/Sub broadcast |
+| [Headless.Messaging.Redis](src/Headless.Messaging.Redis/README.md) | Redis Streams for both the Bus and Queue lanes |
 | [Headless.Messaging.InMemory](src/Headless.Messaging.InMemory/README.md) | In-memory (dev/testing) |
 
 **Storage backends:**
