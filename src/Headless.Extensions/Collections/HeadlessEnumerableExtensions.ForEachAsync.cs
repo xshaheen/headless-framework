@@ -2,7 +2,6 @@
 
 using Headless.Checks;
 
-// ReSharper disable once CheckNamespace
 namespace System.Collections.Generic;
 
 public static partial class HeadlessEnumerableExtensions

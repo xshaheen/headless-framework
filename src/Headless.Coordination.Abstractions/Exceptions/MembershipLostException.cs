@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Coordination;
 
 /// <summary>Thrown when local ownership-sensitive work continues after membership loss is observed.</summary>

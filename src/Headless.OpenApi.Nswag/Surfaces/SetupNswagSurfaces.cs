@@ -8,7 +8,6 @@ using Microsoft.Extensions.DependencyInjection;
 using NSwag.AspNetCore;
 using NSwag.Generation.AspNetCore;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.OpenApi.Nswag;
 
 [PublicAPI]

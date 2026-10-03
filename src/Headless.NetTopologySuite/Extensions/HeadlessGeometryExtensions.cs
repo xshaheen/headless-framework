@@ -12,7 +12,6 @@ using NetTopologySuite.Simplify;
 // Declared in the NTS namespace so consumers get these extensions without an explicit
 // `using Headless.NetTopologySuite` directive. Re-audit method names on each NetTopologySuite
 // upgrade for collisions with newly added first-party NTS extension methods.
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace NetTopologySuite.Geometries;
 
 /// <summary>

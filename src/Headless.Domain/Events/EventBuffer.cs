@@ -2,7 +2,6 @@
 
 using Headless.Checks;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Domain;
 
 /// <summary>Stores pending event occurrences for entities that use composition or inherit <see cref="AggregateRoot"/>.</summary>

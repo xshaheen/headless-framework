@@ -3,7 +3,6 @@
 using Headless.Checks;
 using Headless.Jobs;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace OpenTelemetry.Trace;
 
 /// <summary>

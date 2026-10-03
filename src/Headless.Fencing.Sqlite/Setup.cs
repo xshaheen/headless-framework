@@ -15,7 +15,6 @@ using Extension = Headless.Fencing.RelationalFencingProviderExtension<
     Headless.Fencing.Sqlite.SqliteFencingStorageOptionsValidator
 >;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Fencing;
 
 /// <summary>Chooses SQLite as the fencing provider.</summary>

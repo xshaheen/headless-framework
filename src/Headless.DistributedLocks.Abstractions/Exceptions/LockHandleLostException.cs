@@ -2,8 +2,6 @@
 
 using Headless.Checks;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-// ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
 
 /// <summary>Exception raised by consumers when work should stop because the observed lock handle was lost.</summary>

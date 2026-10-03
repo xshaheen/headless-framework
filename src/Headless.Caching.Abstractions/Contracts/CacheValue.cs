@@ -7,7 +7,6 @@ using Headless.Checks;
 // not a comparable key. Implementing it would compare cached payloads (EqualityComparer<T>.Default),
 // which is a surprising and potentially expensive footgun. No call site compares instances.
 #pragma warning disable CA1815 // Override equals and operator equals on value types
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Caching;
 
 /// <summary>

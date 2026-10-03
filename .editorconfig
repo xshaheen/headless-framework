@@ -290,6 +290,14 @@ resharper_short_lived_http_client_highlighting = none
 # (synchronous Dispose paths, the IDistributedCache sync adapter) and two are guarded .Result reads.
 dotnet_diagnostic.VSTHRD002.severity = none
 
+# IDE0130: Namespace does not match folder structure. Namespaces follow the namespace policy (a
+# family root, plus a sub-namespace only for a distinct audience), not the folder layout, so the
+# folder match is off rather than suppressed file by file. ReSharper's CheckNamespace inspection is
+# the same check under its own key.
+dotnet_style_namespace_match_folder = false
+dotnet_diagnostic.IDE0130.severity = none
+resharper_check_namespace_highlighting = none
+
 [{demo,benchmarks,tests}/**/*.cs]
 
 # CA5394: Do not use insecure randomness

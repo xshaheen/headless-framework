@@ -15,7 +15,6 @@ using Extension = Headless.Idempotency.RelationalIdempotencyProviderExtension<
     Headless.Idempotency.SqlServer.SqlServerIdempotencyStorageOptionsValidator
 >;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Idempotency;
 
 /// <summary>Chooses SQL Server as the idempotency provider.</summary>

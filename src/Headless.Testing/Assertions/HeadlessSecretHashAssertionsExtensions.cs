@@ -2,7 +2,6 @@
 
 using Headless.Security;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace AwesomeAssertions.Collections;
 
 /// <summary>AwesomeAssertions extensions for columns that store secret hashes.</summary>

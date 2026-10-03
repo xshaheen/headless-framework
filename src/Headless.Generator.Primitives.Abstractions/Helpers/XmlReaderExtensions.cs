@@ -5,7 +5,6 @@ using System.Runtime.CompilerServices;
 using System.Xml;
 
 // ReSharper disable UnusedMember.Global
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Generator.Primitives;
 
 /// <summary>

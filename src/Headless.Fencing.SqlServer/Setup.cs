@@ -15,7 +15,6 @@ using Extension = Headless.Fencing.RelationalFencingProviderExtension<
     Headless.Fencing.SqlServer.SqlServerFencingStorageOptionsValidator
 >;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Fencing;
 
 /// <summary>Chooses SQL Server as the fencing provider.</summary>

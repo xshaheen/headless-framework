@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Primitives;
 
 /// <summary>Marker contract for response envelopes that carry a human-readable status message.</summary>

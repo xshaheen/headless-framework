@@ -3,7 +3,6 @@
 using FluentValidation;
 using Headless.Primitives;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Api.Contracts;
 
 internal sealed class PageMetadataRequestValidator : AbstractValidator<PageMetadataRequest>

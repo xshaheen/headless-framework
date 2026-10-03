@@ -3,7 +3,6 @@
 using Headless.DistributedLocks.InMemory;
 using Microsoft.Extensions.DependencyInjection;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
 
 /// <summary>

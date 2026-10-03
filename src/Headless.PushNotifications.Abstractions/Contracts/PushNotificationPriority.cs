@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.PushNotifications;
 
 /// <summary>Provider-neutral delivery priority of a <see cref="PushNotificationRequest"/>.</summary>

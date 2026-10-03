@@ -2,7 +2,6 @@
 
 using Headless.Checks;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Sms;
 
 /// <summary>The outcome of a bulk send: one <see cref="SmsRecipientResult"/> per recipient, in request order.</summary>

@@ -2,7 +2,6 @@
 
 using System.ComponentModel;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Generator.Primitives;
 
 /// <summary>Utility methods for working with <see cref="DateOnly"/> and <see cref="TimeOnly"/> values.</summary>

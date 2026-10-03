@@ -5,7 +5,6 @@ using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace System.Diagnostics;
 
 /// <summary>Extension methods for running a <see cref="Process"/> from a <see cref="ProcessStartInfo"/> as a task or an asynchronous output stream, plus safe termination.</summary>

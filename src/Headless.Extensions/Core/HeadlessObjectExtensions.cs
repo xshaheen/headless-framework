@@ -3,7 +3,6 @@
 using System.Runtime.CompilerServices;
 using Headless.Checks;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace System;
 
 /// <summary>General-purpose extension methods for <see cref="object"/> and arbitrary values.</summary>

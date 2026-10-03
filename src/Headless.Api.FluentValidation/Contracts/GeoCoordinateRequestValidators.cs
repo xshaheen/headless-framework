@@ -3,7 +3,6 @@
 using FluentValidation;
 using Headless.Validators;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Api.Contracts;
 
 /// <summary>FluentValidation rule-builder extensions for <see cref="GeoCoordinateRequest"/>.</summary>

@@ -6,7 +6,6 @@ using Headless.Hosting.Initialization;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.Options;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.EntityFrameworkCore;
 
 /// <summary>Extension members on <see cref="ModelBuilder"/> for registering Headless feature entity configurations.</summary>

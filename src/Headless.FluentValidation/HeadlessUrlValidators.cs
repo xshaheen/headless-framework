@@ -4,7 +4,6 @@ using FluentValidation.Results;
 using Headless.FluentValidation.Resources;
 using Headless.Primitives;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace FluentValidation;
 
 /// <summary>FluentValidation extension rules for URL and CORS origin string properties.</summary>

@@ -2,7 +2,6 @@
 
 using System.Runtime.InteropServices;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Caching;
 
 /// <summary>A point-in-time snapshot of a cache instance's best-effort event dispatcher.</summary>

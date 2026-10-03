@@ -3,7 +3,6 @@
 using Headless.Checks;
 using Headless.Messaging.Registration;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Messaging;
 
 /// <summary>Adds consumer tuning to a <c>ConfigureMessaging</c> contribution.</summary>

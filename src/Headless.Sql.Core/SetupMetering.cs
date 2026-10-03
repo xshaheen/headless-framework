@@ -3,7 +3,6 @@
 using Headless.Checks;
 using Headless.Sql;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace OpenTelemetry.Metrics;
 
 /// <summary>

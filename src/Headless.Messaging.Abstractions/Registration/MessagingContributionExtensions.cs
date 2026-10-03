@@ -4,7 +4,6 @@ using Headless.Checks;
 using Headless.Messaging.Registration;
 using Microsoft.Extensions.DependencyInjection;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Messaging;
 
 /// <summary>Lets a module contribute Messaging registrations without owning the host's messaging setup.</summary>

@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Generator.Primitives;
 
 /// <summary>Specifies that the attributed class or struct has an underlying primitive type.</summary>

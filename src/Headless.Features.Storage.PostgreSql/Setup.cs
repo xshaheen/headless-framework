@@ -9,7 +9,6 @@ using Headless.Sql.PostgreSql;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Features;
 
 /// <summary>Extension methods that register the PostgreSQL features storage provider.</summary>

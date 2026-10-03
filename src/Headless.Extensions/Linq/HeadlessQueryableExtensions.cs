@@ -3,7 +3,6 @@
 using System.Linq.Expressions;
 using Headless.Checks;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace System.Linq;
 
 /// <summary>Extensions for conditionally applying <c>Where</c> filters to <see cref="IQueryable{T}"/> sources.</summary>

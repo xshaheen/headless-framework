@@ -2,7 +2,6 @@
 
 using Headless.Checks;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Imaging;
 
 /// <summary>Parameters that control an image resize operation.</summary>

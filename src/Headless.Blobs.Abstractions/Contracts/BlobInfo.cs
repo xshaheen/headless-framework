@@ -2,7 +2,6 @@
 
 using System.Diagnostics;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Blobs;
 
 /// <summary>Metadata snapshot for a single blob returned by listing or info operations.</summary>

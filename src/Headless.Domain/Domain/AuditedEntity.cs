@@ -2,7 +2,6 @@
 
 using System.Diagnostics.CodeAnalysis;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Domain;
 
 /// <summary>

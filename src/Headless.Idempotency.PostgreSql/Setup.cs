@@ -15,7 +15,6 @@ using Extension = Headless.Idempotency.RelationalIdempotencyProviderExtension<
     Headless.Idempotency.PostgreSql.PostgreSqlIdempotencyStorageOptionsValidator
 >;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Idempotency;
 
 /// <summary>Chooses PostgreSQL as the idempotency provider.</summary>

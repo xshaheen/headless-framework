@@ -3,7 +3,6 @@
 using Headless.Api.MultiTenancy;
 using Microsoft.AspNetCore.Builder;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Api;
 
 /// <summary>
