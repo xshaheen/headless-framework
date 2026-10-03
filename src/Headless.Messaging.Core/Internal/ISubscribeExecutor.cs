@@ -112,6 +112,20 @@ internal sealed class SubscribeExecutor(
     {
         Argument.IsNotNull(dispatchServices);
 
+        // An operator replays a request long after its caller stopped waiting, so the replay runs for the operator,
+        // not the caller: with no reply address and no deadline it is a plain Queue message that gets the host's whole
+        // failure policy and answers nobody. Only this generation's envelope changes; the parent row keeps the
+        // original request.
+        if (
+            message.InboxKey is { Generation: > 0 } replayKey
+            && RequestEnvelope.IsRequest(message.Lane, message.Origin.Headers)
+        )
+        {
+            message.Origin.Headers.Remove(Headers.ReplyTo);
+            message.Origin.Headers.Remove(Headers.RequestDeadline);
+            logger.ReplayedRequestRunsWithoutCaller(message.StorageId, replayKey.Generation);
+        }
+
         if (descriptor == null)
         {
             var selector = provider.GetRequiredService<MethodMatcherCache>();
