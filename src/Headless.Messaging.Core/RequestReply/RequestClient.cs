@@ -105,7 +105,7 @@ internal sealed class RequestClient(
             );
         }
 
-        return remaining < timeout ? remaining : timeout;
+        return remaining.Min(timeout);
     }
 
     private async Task<TResponse> _RequestAsync<TRequest, TResponse>(

@@ -8,7 +8,6 @@ using Headless.Messaging.Configuration;
 using Headless.Messaging.Exceptions;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
-using Headless.Messaging.Registration;
 using Headless.Messaging.Runtime;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;

@@ -321,7 +321,10 @@ internal sealed class ConsumeMiddlewarePipeline(
 
         // A lane with no descriptors still runs middleware registered straight into DI, but never middleware the
         // builder registered for the other lane: the registry is the only source of lane membership for those types.
-        return [.. _GetUntrackedDirectMiddleware(directMiddleware, MiddlewareDirection.Consume)];
+        // Most hosts have nothing registered straight into DI, so skip the filter and its allocation for them.
+        return directMiddleware.Length == 0
+            ? directMiddleware
+            : [.. _GetUntrackedDirectMiddleware(directMiddleware, MiddlewareDirection.Consume)];
     }
 
     private object[] _ResolveDirectMiddleware(IServiceProvider provider, ConsumeContext context)
