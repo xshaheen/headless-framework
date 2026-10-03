@@ -839,6 +839,13 @@ public sealed class RequestClientTests : TestBase
     }
 
     [Fact]
+    public void should_bound_the_default_timeout_by_the_same_limit_as_a_call()
+    {
+        RequestReplyOptions.MaxDefaultTimeout.Should().Be(RequestOptions.MaxTimeout);
+        RequestOptions.MaxTimeout.Should().Be(TimeSpan.FromMinutes(10));
+    }
+
+    [Fact]
     public async Task should_use_the_configured_default_timeout()
     {
         // given

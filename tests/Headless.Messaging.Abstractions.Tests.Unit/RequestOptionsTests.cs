@@ -30,6 +30,29 @@ public sealed class RequestOptionsTests : TestBase
     }
 
     [Fact]
+    public void should_accept_a_timeout_at_the_upper_bound()
+    {
+        // when
+        var options = new RequestOptions { Timeout = RequestOptions.MaxTimeout };
+
+        // then
+        options.Timeout.Should().Be(TimeSpan.FromMinutes(10));
+    }
+
+    [Fact]
+    public void should_reject_a_timeout_longer_than_the_upper_bound()
+    {
+        // given
+        var timeout = RequestOptions.MaxTimeout + TimeSpan.FromTicks(1);
+
+        // when
+        var act = () => new RequestOptions { Timeout = timeout };
+
+        // then
+        act.Should().Throw<ArgumentOutOfRangeException>().WithParameterName(nameof(RequestOptions.Timeout));
+    }
+
+    [Fact]
     public void should_leave_the_timeout_unset_by_default_so_the_host_default_applies()
     {
         // when

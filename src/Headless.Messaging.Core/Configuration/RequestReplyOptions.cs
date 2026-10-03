@@ -13,8 +13,11 @@ namespace Headless.Messaging.Configuration;
 [PublicAPI]
 public sealed class RequestReplyOptions
 {
-    /// <summary>Gets the longest <see cref="DefaultTimeout"/> a host may configure.</summary>
-    public static readonly TimeSpan MaxDefaultTimeout = TimeSpan.FromMinutes(10);
+    /// <summary>
+    /// Gets the longest <see cref="DefaultTimeout"/> a host may configure: the same bound a call's
+    /// <see cref="RequestOptions.Timeout"/> has, so no call can wait longer than the host default may.
+    /// </summary>
+    public static readonly TimeSpan MaxDefaultTimeout = RequestOptions.MaxTimeout;
 
     /// <summary>
     /// Gets or sets how long a request waits for its reply when the call sets no <see cref="RequestOptions.Timeout"/>.

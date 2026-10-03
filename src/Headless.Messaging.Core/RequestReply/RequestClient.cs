@@ -150,7 +150,7 @@ internal sealed class RequestClient(
         var stamp = new RequestStamp(
             requestId,
             replyTo,
-            _ComputeDeadline(sentAt, timeout),
+            sentAt + timeout,
             tenantId =>
             {
                 // Shutdown can begin while publish middleware runs; a request that has not reached the transport yet
@@ -206,7 +206,7 @@ internal sealed class RequestClient(
 
     private async Task<string> _WaitForAddressAsync(TimeSpan timeout, CancellationToken cancellationToken)
     {
-        using var readiness = new CancellationTokenSource(PendingRequest.ClampTimerDuration(timeout), timeProvider);
+        using var readiness = new CancellationTokenSource(timeout, timeProvider);
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, readiness.Token);
 
         try
@@ -234,12 +234,6 @@ internal sealed class RequestClient(
             CorrelationId = options?.CorrelationId,
             Headers = options?.Headers,
         };
-    }
-
-    // RequestOptions.Timeout has no upper bound, so the deadline saturates instead of overflowing.
-    private static DateTimeOffset _ComputeDeadline(DateTimeOffset sentAt, TimeSpan timeout)
-    {
-        return timeout >= DateTimeOffset.MaxValue - sentAt ? DateTimeOffset.MaxValue : sentAt + timeout;
     }
 
     private static string _ClassifyFailure(Exception exception, CancellationToken cancellationToken)

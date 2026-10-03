@@ -14,17 +14,33 @@ namespace Headless.Messaging;
 public sealed record RequestOptions
 {
     /// <summary>
+    /// Gets the longest <see cref="Timeout"/> a call may ask for, and the longest default a host may configure: 10
+    /// minutes. A finished call keeps a small tombstone and a timer for its whole timeout, so the bound keeps the
+    /// caller's tracked entries proportional to its request rate.
+    /// </summary>
+    public static readonly TimeSpan MaxTimeout = TimeSpan.FromMinutes(10);
+
+    /// <summary>
     /// Gets how long the caller waits for the reply. <see langword="null"/> uses the host's default request timeout.
     /// </summary>
     /// <remarks>
     /// The timeout also sets the request's deadline, after which the responder neither starts the work nor replies.
     /// A timeout is ambiguous: the responder may still have completed the work.
     /// </remarks>
-    /// <exception cref="ArgumentOutOfRangeException">The value is zero or negative.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// The value is zero or negative, or longer than <see cref="MaxTimeout"/>.
+    /// </exception>
     public TimeSpan? Timeout
     {
         get;
-        init => field = Argument.IsPositive(value, paramName: nameof(Timeout));
+        init =>
+            field = value is { } timeout
+                ? Argument.IsLessThanOrEqualTo(
+                    Argument.IsPositive(timeout, paramName: nameof(Timeout)),
+                    MaxTimeout,
+                    paramName: nameof(Timeout)
+                )
+                : null;
     }
 
     /// <summary>
