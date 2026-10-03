@@ -313,10 +313,12 @@ internal sealed class ConsumeMiddlewarePipeline(
         // _ResolveDirectMiddleware already materializes a fresh array; reuse it directly instead of copying again.
         var directMiddleware = _ResolveDirectMiddleware(provider, context);
 
-        if (
-            descriptorRegistry is not null
-            && descriptorRegistry.TryGetConsumeDescriptors(context.MessageType, context.Lane, out var descriptors)
-        )
+        if (descriptorRegistry is null)
+        {
+            return directMiddleware;
+        }
+
+        if (descriptorRegistry.TryGetConsumeDescriptors(context.MessageType, context.Lane, out var descriptors))
         {
             return
             [
@@ -328,7 +330,9 @@ internal sealed class ConsumeMiddlewarePipeline(
             ];
         }
 
-        return directMiddleware;
+        // A lane with no descriptors still runs middleware registered straight into DI, but never middleware the
+        // builder registered for the other lane: the registry is the only source of lane membership for those types.
+        return [.. _GetUntrackedDirectMiddleware(directMiddleware, MiddlewareDirection.Consume)];
     }
 
     private object[] _ResolveDirectMiddleware(IServiceProvider provider, ConsumeContext context)

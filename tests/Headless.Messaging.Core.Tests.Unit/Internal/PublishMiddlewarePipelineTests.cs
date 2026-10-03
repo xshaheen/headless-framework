@@ -284,6 +284,72 @@ public sealed class PublishMiddlewarePipelineTests : TestBase
     }
 
     [Fact]
+    public async Task should_not_run_bus_registered_publish_middleware_on_the_queue_lane()
+    {
+        // given: object-typed middleware registered for the Bus lane only, and no Queue-lane middleware at all
+        var recorder = new MiddlewareCallRecorder();
+        var services = _CreateServices(recorder);
+        new MessagingBuilder(services).AddBusPublishMiddleware<RecordingPublishMiddlewareA>();
+        var provider = services.BuildServiceProvider();
+        var pipeline = new PublishMiddlewarePipeline(
+            provider,
+            provider.GetRequiredService<IMiddlewareDescriptorRegistry>()
+        );
+
+        // when
+        await pipeline.ExecuteAsync(
+            new MiddlewarePayload("hi"),
+            MessageLane.Queue,
+            options: null,
+            _DirectQueueDecision,
+            innerPublish: (_, _) =>
+            {
+                recorder.Record("inner");
+                return Task.CompletedTask;
+            },
+            cancellationToken: AbortToken
+        );
+
+        // then
+        recorder.Calls.Should().Equal("inner");
+    }
+
+    [Fact]
+    public async Task should_run_directly_registered_publish_middleware_on_both_lanes_beside_a_registry()
+    {
+        // given: middleware added to DI without the builder stays lane-agnostic, even when a registry exists
+        var recorder = new MiddlewareCallRecorder();
+        var services = _CreateServices(recorder);
+        services.AddScoped<IPublishMiddleware<PublishContext>, RecordingPublishMiddlewareA>();
+        new MessagingBuilder(services).AddPublishMiddlewareFor<
+            MutatingAfterNextTypedPublishMiddleware,
+            MiddlewarePayload
+        >(MessageLane.Bus);
+        var provider = services.BuildServiceProvider();
+        var pipeline = new PublishMiddlewarePipeline(
+            provider,
+            provider.GetRequiredService<IMiddlewareDescriptorRegistry>()
+        );
+
+        // when
+        await pipeline.ExecuteAsync(
+            new OtherMiddlewarePayload("hi"),
+            MessageLane.Queue,
+            options: null,
+            _DirectQueueDecision,
+            innerPublish: (_, _) =>
+            {
+                recorder.Record("inner");
+                return Task.CompletedTask;
+            },
+            cancellationToken: AbortToken
+        );
+
+        // then
+        recorder.Calls.Should().Equal("A.before", "inner", "A.after");
+    }
+
+    [Fact]
     public async Task should_dispatch_concrete_subtype_through_declared_contract_middleware()
     {
         // given
@@ -334,6 +400,16 @@ public sealed class PublishMiddlewarePipelineTests : TestBase
     private static DeliveryDecision _DirectDecision =>
         DeliveryDecisionResolver.Resolve(
             MessageLane.Bus,
+            DeliveryMode.Direct,
+            requireCoordination: false,
+            delay: null,
+            DeliveryCoordination.None,
+            DateTimeOffset.UnixEpoch
+        );
+
+    private static DeliveryDecision _DirectQueueDecision =>
+        DeliveryDecisionResolver.Resolve(
+            MessageLane.Queue,
             DeliveryMode.Direct,
             requireCoordination: false,
             delay: null,
