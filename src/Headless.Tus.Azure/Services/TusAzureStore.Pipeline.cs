@@ -37,6 +37,10 @@ public sealed partial class TusAzureStore : ITusPipelineStore
     /// <exception cref="ArgumentNullException">
     /// thrown if <paramref name="fileId"/> or <paramref name="pipeReader"/> is null
     /// </exception>
+    /// <exception cref="Azure.RequestFailedException">
+    /// thrown with status 412 when another request wrote the blob after this one read it; the write
+    /// is rejected rather than overwriting that request's data (see the <c>TusAzureStore</c> remarks)
+    /// </exception>
     public async Task<long> AppendDataAsync(string fileId, PipeReader pipeReader, CancellationToken cancellationToken)
     {
         Argument.IsNotNull(fileId);

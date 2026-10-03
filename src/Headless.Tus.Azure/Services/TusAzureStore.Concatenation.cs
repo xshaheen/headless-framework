@@ -231,7 +231,10 @@ public sealed partial class TusAzureStore : ITusConcatenationStore
             blobMetadata.EnsureWithinAzureMetadataLimit();
 
             // Commit all blocks to create the final file, applying the same content-type/HTTP headers the
-            // regular and partial create paths set (CreateFileAsync / CreatePartialFileAsync).
+            // regular and partial create paths set (CreateFileAsync / CreatePartialFileAsync). The final
+            // id was just generated and this request read no prior state for it, so there is no ETag to
+            // match; If-None-Match: * instead guarantees the commit creates the blob and can never replace
+            // an existing upload that happens to carry the same id.
             _EnsureWithinBlockLimit(blockIds.Count);
             var commitOptions = new CommitBlockListOptions
             {
@@ -239,6 +242,7 @@ public sealed partial class TusAzureStore : ITusConcatenationStore
                 HttpHeaders = await _blobHttpHeadersProvider
                     .GetBlobHttpHeadersAsync(blobMetadata.ToUser())
                     .ConfigureAwait(false),
+                Conditions = new BlobRequestConditions { IfNoneMatch = ETag.All },
             };
             await blockBlobClient
                 .CommitBlockListAsync(blockIds, commitOptions, cancellationToken)
@@ -299,7 +303,9 @@ public sealed partial class TusAzureStore : ITusConcatenationStore
     /// </summary>
     private async Task _DeletePartialFilesBestEffortAsync(string[] partialFiles)
     {
-        // The same partial may be listed multiple times in one Upload-Concat; delete each once.
+        // The same partial may be listed multiple times in one Upload-Concat; delete each once. The
+        // deletes are unconditional: the final blob already holds a copy of every partial, so a partial
+        // is consumed whatever happened to it since it was copied.
         foreach (var partialFileId in partialFiles.Distinct(StringComparer.Ordinal))
         {
             try

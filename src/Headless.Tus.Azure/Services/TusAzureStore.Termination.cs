@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Azure;
 using Azure.Storage.Blobs.Models;
 using Microsoft.Extensions.Logging;
 using tusdotnet.Interfaces;
@@ -19,7 +20,18 @@ public sealed partial class TusAzureStore : ITusTerminationStore
     /// caller does not mistake a failed deletion for success — a TUS <c>DELETE</c> must not report 204
     /// while the blob persists, and <c>RemoveExpiredFilesAsync</c> must not count an undeleted file.
     /// </remarks>
-    public async Task DeleteFileAsync(string fileId, CancellationToken cancellationToken)
+    public Task DeleteFileAsync(string fileId, CancellationToken cancellationToken)
+    {
+        // Unconditional: a tus DELETE runs under the file lock and asks for the upload to go whatever
+        // its state, so an ETag condition would only make a legitimate termination fail.
+        return _DeleteFileAsync(fileId, conditions: null, cancellationToken);
+    }
+
+    private async Task _DeleteFileAsync(
+        string fileId,
+        BlobRequestConditions? conditions,
+        CancellationToken cancellationToken
+    )
     {
         await _EnsureValidFileIdAsync(fileId).ConfigureAwait(false);
 
@@ -30,12 +42,13 @@ public sealed partial class TusAzureStore : ITusTerminationStore
         try
         {
             var response = await blobClient
-                .DeleteIfExistsAsync(DeleteSnapshotsOption.IncludeSnapshots, cancellationToken: cancellationToken)
+                .DeleteIfExistsAsync(DeleteSnapshotsOption.IncludeSnapshots, conditions, cancellationToken)
                 .ConfigureAwait(false);
 
             deleted = response.Value;
         }
-        catch (Exception e)
+        // A failed delete condition is an expected outcome for the caller that set it, not a fault.
+        catch (Exception e) when (conditions is null || e is not RequestFailedException { Status: 412 })
         {
             _logger.BlobDeleteFailed(e, blobClient.Name);
 
