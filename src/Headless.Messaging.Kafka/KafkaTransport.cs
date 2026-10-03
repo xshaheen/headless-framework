@@ -11,10 +11,18 @@ internal sealed class KafkaTransport(ILogger<KafkaTransport> logger, IKafkaConne
 {
     private readonly ILogger _logger = logger;
 
+    // Set once DisposeAsync runs: a later send fails instead of reaching the broker.
+    private int _disposed;
+
     public BrokerAddress BrokerAddress => new("kafka", connectionPool.ServersAddress);
 
     public async Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default)
     {
+        if (Volatile.Read(ref _disposed) != 0)
+        {
+            return OperateResult.Failed(new ObjectDisposedException(nameof(KafkaTransport)));
+        }
+
         var affinityKey = KafkaRoutingAffinity.Mapping.ResolveKey(message);
         var producer = connectionPool.RentProducer();
 
@@ -74,6 +82,7 @@ internal sealed class KafkaTransport(ILogger<KafkaTransport> logger, IKafkaConne
 
     public ValueTask DisposeAsync()
     {
+        Volatile.Write(ref _disposed, 1);
         return ValueTask.CompletedTask;
     }
 

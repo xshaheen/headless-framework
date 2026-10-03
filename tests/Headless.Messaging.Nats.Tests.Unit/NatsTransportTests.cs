@@ -23,6 +23,19 @@ public sealed class NatsTransportTests : TestBase
     }
 
     [Fact]
+    public async Task should_return_failed_result_without_sending_when_sending_after_dispose()
+    {
+        var transport = new NatsTransport(_logger, _pool);
+        await transport.DisposeAsync();
+
+        var result = await transport.SendAsync(_CreateTransportMessage("msg-123", "TestMessage"), AbortToken);
+
+        result.Succeeded.Should().BeFalse();
+        result.Exception.Should().BeOfType<ObjectDisposedException>();
+        _pool.DidNotReceive().GetConnection();
+    }
+
+    [Fact]
     public async Task should_have_correct_broker_address()
     {
         await using var transport = new NatsTransport(_logger, _pool);

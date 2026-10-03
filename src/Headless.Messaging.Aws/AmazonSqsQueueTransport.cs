@@ -17,10 +17,18 @@ internal sealed class AmazonSqsQueueTransport(
     private readonly SemaphoreSlim _semaphore = new(1, 1);
     private IAmazonSQS? _sqsClient;
 
+    // Set once DisposeAsync runs: a later send fails instead of reaching the broker.
+    private int _disposed;
+
     public BrokerAddress BrokerAddress => new("aws_sqs", _GetBrokerEndpoint());
 
     public async Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default)
     {
+        if (Volatile.Read(ref _disposed) != 0)
+        {
+            return OperateResult.Failed(new ObjectDisposedException(nameof(AmazonSqsQueueTransport)));
+        }
+
         try
         {
             if (!message.Name.IsAwsFifoName())
@@ -93,6 +101,11 @@ internal sealed class AmazonSqsQueueTransport(
 
     public ValueTask DisposeAsync()
     {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        {
+            return ValueTask.CompletedTask;
+        }
+
         _semaphore.Dispose();
         _sqsClient?.Dispose();
         return ValueTask.CompletedTask;

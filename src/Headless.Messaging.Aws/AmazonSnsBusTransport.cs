@@ -18,10 +18,18 @@ internal sealed class AmazonSnsBusTransport(
     private IAmazonSimpleNotificationService? _snsClient;
     private ConcurrentDictionary<string, string>? _topicArnMaps;
 
+    // Set once DisposeAsync runs: a later send fails instead of reaching the broker.
+    private int _disposed;
+
     public BrokerAddress BrokerAddress => new("aws_sns", _GetBrokerEndpoint());
 
     public async Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default)
     {
+        if (Volatile.Read(ref _disposed) != 0)
+        {
+            return OperateResult.Failed(new ObjectDisposedException(nameof(AmazonSnsBusTransport)));
+        }
+
         try
         {
             if (!message.Name.IsAwsFifoName())
@@ -185,6 +193,11 @@ internal sealed class AmazonSnsBusTransport(
 
     public async ValueTask DisposeAsync()
     {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        {
+            return;
+        }
+
         await castAndDispose(_semaphore).ConfigureAwait(false);
 
         if (_snsClient is not null)

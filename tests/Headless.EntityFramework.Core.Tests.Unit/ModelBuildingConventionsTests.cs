@@ -129,6 +129,87 @@ public sealed class ModelBuildingConventionsTests : TestBase
         state.GetTypeMapping().Converter!.ProviderClrType.Should().Be<string>();
     }
 
+    [Fact]
+    public async Task should_save_in_place_mutations_of_json_backed_building_block_values()
+    {
+        // given - a persisted row whose JSON-backed values are still tracked
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync(AbortToken);
+        await using var context = new PrimitiveConventionDbContext(
+            new DbContextOptionsBuilder<PrimitiveConventionDbContext>().UseSqlite(connection).Options
+        );
+        await context.Database.EnsureCreatedAsync(AbortToken);
+        var row = new PrimitiveConventionRow
+        {
+            Id = 1,
+            Amount = MoneyAmount.Zero,
+            AccountId = new AccountId("account-1"),
+            Attachment = _CreateFile(),
+            Names = new() { ["en"] = new(StringComparer.Ordinal) { ["name"] = "Book" } },
+        };
+        context.Rows.Add(row);
+        await context.SaveChangesAsync(AbortToken);
+
+        // when - nested mutable members are changed in place rather than replaced
+        row.Attachment!.Metadata!["checksum"] = "abc";
+        row.Names!["en"]["name"] = "Novel";
+        context.ChangeTracker.DetectChanges();
+        var entry = context.Entry(row);
+
+        // then - both columns are detected as modified and reach the database
+        entry.Property(static x => x.Attachment).IsModified.Should().BeTrue();
+        entry.Property(static x => x.Names).IsModified.Should().BeTrue();
+
+        await context.SaveChangesAsync(AbortToken);
+        context.ChangeTracker.Clear();
+        var stored = await context.Rows.SingleAsync(AbortToken);
+
+        stored.Attachment!.Metadata.Should().ContainKey("checksum");
+        stored.Names!["en"]["name"].Should().Be("Novel");
+    }
+
+    [Fact]
+    public async Task should_leave_unchanged_json_backed_building_block_values_unmodified()
+    {
+        await using var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync(AbortToken);
+        await using var context = new PrimitiveConventionDbContext(
+            new DbContextOptionsBuilder<PrimitiveConventionDbContext>().UseSqlite(connection).Options
+        );
+        await context.Database.EnsureCreatedAsync(AbortToken);
+        var row = new PrimitiveConventionRow
+        {
+            Id = 1,
+            Amount = MoneyAmount.Zero,
+            AccountId = new AccountId("account-1"),
+            Attachment = _CreateFile(),
+            Names = new() { ["en"] = new(StringComparer.Ordinal) { ["name"] = "Book" } },
+        };
+        context.Rows.Add(row);
+        await context.SaveChangesAsync(AbortToken);
+
+        context.ChangeTracker.DetectChanges();
+
+        context.Entry(row).State.Should().Be(EntityState.Unchanged);
+    }
+
+    private static Headless.Primitives.File _CreateFile()
+    {
+        return new Headless.Primitives.File
+        {
+            Id = "file-1",
+            DisplayName = "report.pdf",
+            SavedName = "file-1.pdf",
+            Url = "https://example.test/file-1.pdf",
+            Container = ["reports"],
+            ContentType = "application/pdf",
+            UploadedAt = new DateTimeOffset(2024, 6, 1, 12, 0, 0, TimeSpan.Zero),
+            Length = 42,
+            Private = false,
+            Metadata = new(StringComparer.Ordinal) { ["pages"] = 3 },
+        };
+    }
+
     private sealed class ComplexValueDbContext(DbContextOptions<ComplexValueDbContext> options) : DbContext(options)
     {
         protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -259,6 +340,10 @@ public sealed class ModelBuildingConventionsTests : TestBase
         public required AccountId AccountId { get; init; }
 
         public PrimitiveState State { get; init; }
+
+        public Headless.Primitives.File? Attachment { get; init; }
+
+        public Locales? Names { get; init; }
     }
 
     private enum PrimitiveState

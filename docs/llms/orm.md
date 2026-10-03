@@ -150,6 +150,7 @@ Change Data Capture (e.g. Debezium) is an advanced alternative that bypasses thi
 
 - This package is intentionally independent of `HeadlessDbContext`. Storage feature packages can consume its EF primitives without inheriting application-level ORM behavior.
 - `NormalizeDateTimeValueConverter` is the single UTC-normalization API; Core does not expose a parallel converter family.
+- A converter that stores a mutable reference type (a collection, dictionary, or object) as JSON needs a value comparer too. Without one, EF compares references and misses in-place edits, so they are never saved. Pair `JsonValueConverter<T>` with `JsonValueComparer<T>`, which treats two values as equal when they serialize to the same JSON and snapshots by deep copy; pass the converter's `JsonSerializerOptions` to both.
 - The package has no database-provider, hosting, interception, tenancy, auditing, or save-pipeline dependency.
 
 ### Install

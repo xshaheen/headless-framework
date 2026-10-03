@@ -22,10 +22,17 @@ public interface ITransport : IAsyncDisposable
     /// <summary>
     /// Sends a serialized message to the broker and returns whether the operation succeeded.
     /// </summary>
+    /// <remarks>
+    /// A broker failure is reported through the returned result, not thrown. That includes a send after
+    /// <see cref="IAsyncDisposable.DisposeAsync"/>: the transport returns a failed result carrying an
+    /// <see cref="ObjectDisposedException"/> and does not contact the broker, even when disposal released nothing
+    /// because a shared pool owns the connection.
+    /// </remarks>
     /// <param name="message">The transport message, carrying headers and a serialized body.</param>
     /// <param name="cancellationToken">A token to cancel the send operation.</param>
     /// <returns>
     /// An <see cref="OperateResult"/> that indicates success or carries the failure description.
     /// </returns>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was canceled.</exception>
     Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default);
 }

@@ -13,6 +13,9 @@ internal sealed class RabbitMqTransport : IBusTransport, IQueueTransport
     private readonly MessageLane _lane;
     private readonly ILogger _logger;
 
+    // Set once DisposeAsync runs: a later send fails instead of reaching the broker.
+    private int _disposed;
+
     public RabbitMqTransport(
         ILogger<RabbitMqTransport> logger,
         IConnectionChannelPool connectionChannelPool,
@@ -29,6 +32,11 @@ internal sealed class RabbitMqTransport : IBusTransport, IQueueTransport
 
     public async Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default)
     {
+        if (Volatile.Read(ref _disposed) != 0)
+        {
+            return OperateResult.Failed(new ObjectDisposedException(nameof(RabbitMqTransport)));
+        }
+
         Configuration.MessagingRoutingAffinityMapping.RejectUnsupported(message, "RabbitMq");
         cancellationToken.ThrowIfCancellationRequested();
         RabbitMqValidation.ValidateMessageName(message.Name);
@@ -93,6 +101,7 @@ internal sealed class RabbitMqTransport : IBusTransport, IQueueTransport
 
     public ValueTask DisposeAsync()
     {
+        Volatile.Write(ref _disposed, 1);
         return ValueTask.CompletedTask;
     }
 }

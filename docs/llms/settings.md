@@ -45,6 +45,7 @@ Define settings via `ISettingDefinitionProvider.Define()`. Read via `ISettingMan
 - To tune schema and table names, call `setup.ConfigureStorage(o => ...)` inside the same block. The `IConfiguration` overload binds the `Headless:Settings:Storage` section instead.
 - For EF storage: register `AddDbContextFactory<TContext>()` and call `modelBuilder.AddHeadlessSettings(this)` in `OnModelCreating` before calling `setup.UseEntityFramework<TContext>()`. The factory must be a singleton (the `AddDbContextFactory` / `AddPooledDbContextFactory` default): the EF repositories are singletons that would capture a scoped or transient factory for the life of the host, so startup refuses one with `InvalidServiceLifetimeException`. The `(SettingsStorageOptions)` overload exists when you already hold the options object.
 - Required services before `AddHeadlessSettings(...)`: `TimeProvider`, caching (`ICache`), distributed lock (`IDistributedLock`), and `IStringEncryptionService`. The core throws `InvalidOperationException` on startup if encryption is missing.
+- To keep an application-wide policy built from Global settings in memory, such as a rate limit an operator tunes at runtime, register `services.AddSettingsSnapshot<T>(...)` and inject `ISettingsSnapshot<T>`. Do not hand-write a cache, a `SettingChangedMessage` consumer, a poller, and a revision for it; see [Settings snapshot](#settings-snapshot).
 - `DeleteAsync(providerName, providerKey)` removes all setting values for a given provider and key — use it when cleaning up a deleted tenant or user.
 - Both `ISettingManager` and direct `ISettingValueRecordRepository` writes invalidate cached values (the repository removes the affected key after `SaveChangesAsync`). Only writes that bypass the repository entirely (raw SQL, direct `DbContext`) leave the cache stale.
 - `SettingDefinition.IsInherited = false` disables fallback for that setting: if no value exists at the requested provider, `GetAsync` returns a `SettingValue` with a `null` `Value` regardless of lower-priority providers.
@@ -75,6 +76,8 @@ The *static store* (`IStaticSettingDefinitionStore`) builds the setting catalog 
 
 ### Reacting to a change
 
+For a typed value bound from Global settings, use a [settings snapshot](#settings-snapshot): it is this consumer, a backstop, and a revision, already written. Write a consumer of your own only for state a snapshot does not fit, such as a value per tenant.
+
 `SettingManager` publishes one `SettingChangedMessage` over `IBus` after each successful `SetAsync` or `DeleteAsync`, listing every name that call changed, so an instance holding a resolved value learns it is stale instead of polling for it. The state it refreshes lives in each process, so consume it with an [every-instance consumer](messaging.md#every-instance-bus-delivery): every process receives every announcement instead of one replica taking the only copy. Delivery is at most once, so reload after a gap in the subscription too. Wire contract: `AddHeadlessSettings` declares the message as `headless.settings.changed`, contract version `1` (`SettingChangedMessage.MessageName`), so the consumer below needs no `Message<T>` declaration of its own. The host's naming conventions (`UseConventions`) do not rename it; only the host-wide `MessagingOptions.MessageNamePrefix` applies, as it does to every message.
 
 ```csharp
@@ -97,13 +100,11 @@ public sealed class ReloadLimits(MyPolicyCache cache) : IConsume<SettingChangedM
         }
     }
 
-    // Announcements published while this process was not subscribed never arrive.
+    // Announcements published while this process was not subscribed never arrive. That includes the first
+    // establishment: anything loaded at startup was read before the subscription went live.
     public async ValueTask OnSubscriptionEstablishedAsync(SubscriptionEstablishedContext context, CancellationToken ct)
     {
-        if (context.IsReconnect)
-        {
-            await cache.ReloadAsync(ct);
-        }
+        await cache.ReloadAsync(ct);
     }
 }
 ```
@@ -115,6 +116,41 @@ The message carries setting names and the scope they were written at, never valu
 The announcement follows a committed write. A setting write never joins a unit of work the caller has open: the EF store saves through a fresh context from `IDbContextFactory<TContext>`, and the PostgreSQL and SQL Server stores open their own connection and transaction. `SetAsync` commits before it returns, even inside a caller's `RunAsync(db, …)`, and the message goes out after that commit, so a peer that re-reads on it loads the new value. The write is not atomic with the caller's other writes: a `SetAsync` inside a unit that later rolls back leaves the setting changed.
 
 This is separate from cache coherence, which is already handled: a store-backed write evicts its own cache entry, and a hybrid cache broadcasts that eviction through `CacheInvalidationMessage`. The change signal exists for state the framework cannot see, such as a value a consumer copied into a field of its own.
+
+The two messages travel on separate subscriptions, and nothing orders them. With a hybrid cache, a peer can receive `SettingChangedMessage` before its own `CacheInvalidationMessage`, re-read, and get the old value from its local tier. A consumer that re-reads once on the announcement then stays stale until its next refresh. Re-read again a few seconds later when the first read shows no change, or rely on a periodic refresh.
+
+### Settings snapshot
+
+A settings snapshot holds a typed value bound from a fixed set of Global settings, in memory, in every process, and keeps it current. Register one per type with `AddSettingsSnapshot<T>` and inject `ISettingsSnapshot<T>`:
+
+```csharp
+builder.Services.AddSettingsSnapshot<RateLimitPolicy>(snapshot => snapshot
+    .Names(RateLimitSettings.PublicPerMinute, RateLimitSettings.AuthenticatedPerMinute)
+    .Bind(values => new RateLimitPolicy(
+        int.Parse(values[RateLimitSettings.PublicPerMinute] ?? "60", CultureInfo.InvariantCulture),
+        int.Parse(values[RateLimitSettings.AuthenticatedPerMinute] ?? "600", CultureInfo.InvariantCulture)))
+    .Backstop(TimeSpan.FromMinutes(1)));
+
+public sealed class RateLimitPartitioner(ISettingsSnapshot<RateLimitPolicy> policy)
+{
+    // Completes synchronously once the snapshot has loaded; before that it waits for the first load.
+    public ValueTask<RateLimitPolicy> GetPolicyAsync(CancellationToken ct) => policy.GetAsync(ct);
+
+    // Moves only when a value changed, so a partition keyed on it is not reset by a reload that changed nothing.
+    public long Revision => policy.Revision;
+}
+```
+
+- **Scope.** Values resolve at `Global` scope with the usual fallback to configuration and the definition default, so a tenant or user value never shadows them. A setting defined with `IsInherited = false` reads the `Global` value only. A per-tenant value is not a snapshot's job; write a consumer of your own.
+- **Bind.** `Bind` receives every tracked name mapped to its resolved string, `null` when the setting has no value and no default. It runs only when a value changed.
+- **Revision.** `Revision` is `1` after the first load and moves by one each time a resolved value changes. A reload that reads the same values keeps the same value instance and revision. The comparison is on the raw setting values, so it holds whatever equality `T` has, including a record holding a collection.
+- **Loading.** A snapshot never blocks host startup. Its hosted service starts the first load in the background as soon as the host runs, and retries a failed first load with jittered exponential backoff from one second up to the backstop interval, logging each failure as a warning. Names defined in the dynamic store can fail the first attempts until `SettingsInitializationBackgroundService` caches their definitions. `GetAsync` returns the value, waiting for (or starting) the first load when it has not finished, and completes synchronously afterwards; a failed first load throws to that caller, and the next call tries again. `TryGetCurrent(out value)` is the synchronous read for code that cannot await, such as a rate-limiter partition factory. It returns `false` until the first load completes, so the caller chooses what to do before then, typically a safe built-in default. It never throws. An undefined setting name makes every load throw, naming it.
+- **Bad values later.** A `Bind` exception after the first load is logged with the setting names, never their values, and the snapshot keeps its last good value and revision.
+- **Listeners.** `OnChange((value, revision) => ...)` runs after `TryGetCurrent` and `Revision` show the change. A listener exception is logged and does not stop the other listeners. Dispose the returned handle to unregister.
+- **Change announcements.** One framework consumer, identity `headless.settings.snapshot`, receives every `SettingChangedMessage` in every process and reloads the snapshots tracking an announced name at `Global` scope. It never filters on `OriginHostName`, so the writing process refreshes too. It reloads every loaded snapshot each time its subscription is established, first or after a gap, because delivery is at most once. Announcements and establishments skip a snapshot whose first load has not finished, so the subscription hook never makes host startup wait on the settings store; a write that lands between the first read and the subscription going live is picked up by the backstop. When a reload does not yet see the announced value, it re-reads a few times over the next few seconds, which closes the cache ordering window described above.
+- **Transport.** `AddSettingsSnapshot` contributes that consumer, and only when the host uses messaging. It is an [every-instance consumer](messaging.md#every-instance-bus-delivery), so a host on a transport without every-instance delivery (AWS SNS/SQS, or Azure Service Bus without `AutoProvision`) fails at startup once it registers a snapshot. Such a host runs the snapshot without messaging. A host that never calls `AddSettingsSnapshot` is unaffected.
+- **Backstop.** Each process re-reads every snapshot on its backstop interval, one minute by default and at most 30 days (`SettingsSnapshotBuilder<T>.MaxBackstop`), jittered by ±10%. This is the only refresh without messaging, and it catches announcements that were lost or never sent, such as configuration changes. The re-read goes through the setting cache: a write that evicts the cache is seen at the next tick, and a write that bypasses eviction (raw SQL, or a write through the PostgreSQL or SQL Server value repository directly) is seen only after `SettingManagementOptions.ValueCacheExpiration`.
+- **Several replicas.** Convergence across processes needs a shared (Redis) or hybrid setting cache. With a process-local cache (`UseInMemory`), each process's cache learns only its own writes, so another replica reads its cached value until it expires, through announcement, re-read, and backstop alike.
 
 ### Startup Initialization
 
@@ -144,6 +180,7 @@ Defines the provider-agnostic interfaces for dynamic application settings manage
 - `SettingValue` — immutable record `SettingValue(string Name, string? Value, SettingValueProvider? Provider = null)` returned by `GetAsync` and `GetAllAsync`; `Provider` attributes the resolving value provider (or `null` on a miss)
 - `SettingValueProvider` — immutable record `SettingValueProvider(string Name, string? Key)` identifying the provider name and its per-provider key
 - `ISettingDefinitionContext` — context passed to `ISettingDefinitionProvider.Define()`; exposes the factory `Add(SettingDefinitionCreateOptions options)` (creates, registers, and returns the definition), plus `GetOrDefault(name)` and `GetAll()`
+- `ISettingsSnapshot<T>` — a typed value bound from Global settings, held in memory: `GetAsync` (waits for the first load), `TryGetCurrent` (synchronous; `false` until the first load), `Revision` (moves only when a value changed), and `OnChange(listener)`. Registered with `AddSettingsSnapshot<T>` from `Headless.Settings.Core`; see [Settings snapshot](#settings-snapshot)
 - `SettingValueProviderNames` — constants `DefaultValue`, `Configuration`, `Global`, `Tenant`, `User` for targeting built-in providers
 - General extension members on `ISettingManager`: `IsTrueAsync`, `IsFalseAsync`, `GetAsync<T>` (deserializes JSON), `SetAsync<T>` (serializes to JSON)
 - Scoped extension members: `GetForTenantAsync` / `SetForTenantAsync` / `GetAllForTenantAsync` (and `*ForCurrentTenant*` variants), equivalent `*ForUser*` / `*ForCurrentUser*` set, `GetGlobalAsync` / `SetGlobalAsync` / `GetAllGlobalAsync`, `GetDefaultAsync` / `GetAllDefaultAsync`, `GetInConfigurationAsync` / `GetAllInConfigurationAsync`. The `GetAll*` helpers return `IReadOnlyList<SettingValue>`
@@ -238,6 +275,7 @@ Core implementation of dynamic settings management with hierarchical value provi
 - `HeadlessSettingsSetupBuilder` — fluent builder returned to `AddHeadlessSettings`; exposes `ConfigureManagement`, `ConfigureStorage`, and `RegisterExtension`
 - `services.AddSettingDefinitionProvider<T>()` — registers a custom `ISettingDefinitionProvider`
 - `services.AddSettingValueProvider<T>()` — registers a custom value provider (idempotent by type)
+- `services.AddSettingsSnapshot<T>(snapshot => ...)` — registers an `ISettingsSnapshot<T>` configured through `SettingsSnapshotBuilder<T>` (`Names`, `Bind`, `Backstop`, at most `MaxBackstop`), its startup load and backstop, and the every-instance change consumer when the host uses messaging. Registering the same `T` twice, or omitting `Names` or `Bind`, throws `InvalidOperationException`; see [Settings snapshot](#settings-snapshot)
 - `IClientVisibleSettingsReader` (`Headless.Settings.ClientVisibility`) — `GetAsync(PrincipalContext, …)` returns the value of every setting whose definition is `IsVisibleToClients`, keyed by name, through one `GetAllAsync(settingNames)` read, for example to include in the configuration an application returns to its front end. Headless ships no endpoint; see the client-config recipe in `docs/llms/permissions.md`
 
 ### Design constraints
@@ -330,6 +368,21 @@ public sealed class ConfigService(ISettingManager settings)
 }
 ```
 
+#### Register a Settings Snapshot
+
+```csharp
+builder.Services.AddSettingsSnapshot<UploadPolicy>(snapshot => snapshot
+    .Names("App.MaxFileSize")
+    .Bind(values => new UploadPolicy(
+        long.Parse(values["App.MaxFileSize"] ?? "10485760", CultureInfo.InvariantCulture))));
+
+public sealed class UploadValidator(ISettingsSnapshot<UploadPolicy> policy)
+{
+    public async ValueTask<bool> IsAllowedAsync(long size, CancellationToken ct) =>
+        size <= (await policy.GetAsync(ct)).MaxFileSize;
+}
+```
+
 #### Custom Value Provider
 
 ```csharp
@@ -409,6 +462,7 @@ Every object follows its database's naming convention. On PostgreSQL the tables,
 - Registers `ISettingDefinitionManager`, `IStaticSettingDefinitionStore`, `IDynamicSettingDefinitionStore`, `ISettingValueStore`, `ISettingValueProviderManager` as singletons
 - Registers `DefaultValueSettingValueProvider`, `ConfigurationSettingValueProvider`, `GlobalSettingValueProvider`, `TenantSettingValueProvider`, `UserSettingValueProvider` as singletons
 - Registers `SettingsInitializationBackgroundService` as hosted service
+- `AddSettingsSnapshot<T>` registers `ISettingsSnapshot<T>` as a singleton, one hosted service that loads and re-reads every snapshot, and, with messaging, the every-instance consumer `headless.settings.snapshot`
 
 ---
 

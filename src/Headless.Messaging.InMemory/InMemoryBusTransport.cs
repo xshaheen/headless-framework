@@ -11,6 +11,9 @@ internal sealed class InMemoryBusTransport(MemoryQueue queue, ILogger<InMemoryBu
 {
     private readonly ILogger _logger = logger;
 
+    // Set once DisposeAsync runs: a later send fails instead of reaching the broker.
+    private int _disposed;
+
     /// <summary>
     /// Gets the broker address information.
     /// </summary>
@@ -24,6 +27,11 @@ internal sealed class InMemoryBusTransport(MemoryQueue queue, ILogger<InMemoryBu
     /// <returns>A task that returns the operation result.</returns>
     public async Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default)
     {
+        if (Volatile.Read(ref _disposed) != 0)
+        {
+            return OperateResult.Failed(new ObjectDisposedException(nameof(InMemoryBusTransport)));
+        }
+
         Configuration.MessagingRoutingAffinityMapping.RejectUnsupported(message, "InMemory");
         var messageName = message.Name;
         var result = await InMemoryTransportCore
@@ -40,6 +48,7 @@ internal sealed class InMemoryBusTransport(MemoryQueue queue, ILogger<InMemoryBu
 
     public ValueTask DisposeAsync()
     {
+        Volatile.Write(ref _disposed, 1);
         return ValueTask.CompletedTask;
     }
 }

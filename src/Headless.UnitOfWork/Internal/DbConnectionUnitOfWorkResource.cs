@@ -1,22 +1,23 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
-using Microsoft.Data.Sqlite;
 
-namespace Headless.UnitOfWork;
+namespace Headless.UnitOfWork.Internal;
 
 /// <summary>
-/// The Microsoft.Data.Sqlite unit-of-work resource: exposes the live connection and transaction so stores place their
-/// rows inside the caller's transaction.
+/// The raw-ADO unit-of-work resource: exposes the live connection and transaction so participants (outbox, job,
+/// and store writers) place their rows inside the caller's transaction.
 /// </summary>
 /// <remarks>
 /// Owned mode began the transaction itself and commits or rolls it back on the unit's verbs, disposing the
 /// transaction afterwards and closing the connection when the provider opened it. Observed mode wraps a
-/// caller-committed transaction: both verbs are no-ops and the unit only coordinates the commit edge.
+/// caller-committed transaction: both verbs are no-ops and the unit only coordinates the commit edge. Completion is
+/// read through the driver's probe, because the drivers disagree on what a completed transaction still exposes.
 /// </remarks>
-internal sealed class SqliteUnitOfWorkResource(
-    SqliteConnection connection,
-    SqliteTransaction transaction,
+internal sealed class DbConnectionUnitOfWorkResource(
+    DbConnection connection,
+    DbTransaction transaction,
+    Func<DbTransaction, bool> isTransactionCompleted,
     bool owned,
     bool closeConnection = false
 ) : IRelationalUnitOfWorkResource
@@ -27,8 +28,7 @@ internal sealed class SqliteUnitOfWorkResource(
 
     public DbTransaction Transaction => transaction;
 
-    /// <summary>The driver detaches a transaction from its connection once it commits, rolls back, or is disposed.</summary>
-    public bool IsTransactionCompleted => transaction.Connection is null;
+    public bool IsTransactionCompleted => isTransactionCompleted(transaction);
 
     public async ValueTask CommitAsync(CancellationToken cancellationToken)
     {

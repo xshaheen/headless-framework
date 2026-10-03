@@ -165,7 +165,7 @@ public abstract class TransportTestsBase : TestBase
         results.Should().AllSatisfy(r => r.Succeeded.Should().BeTrue());
     }
 
-    public virtual async Task should_throw_when_transport_disposed()
+    public virtual async Task should_return_failed_result_when_sending_after_dispose()
     {
         // given
         var transport = _GetPrimaryTransport();
@@ -174,10 +174,11 @@ public abstract class TransportTestsBase : TestBase
         var message = CreateMessage();
 
         // when
-        var act = () => transport.SendAsync(message);
+        var result = await transport.SendAsync(message, AbortToken);
 
-        // then
-        await act.Should().ThrowAsync<ObjectDisposedException>();
+        // then - the contract is a failed result, never an exception, so publishers handle it like any send failure
+        result.Succeeded.Should().BeFalse();
+        result.Exception.Should().BeOfType<ObjectDisposedException>();
     }
 
     public virtual async Task should_handle_empty_message_body()

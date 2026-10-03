@@ -13,10 +13,18 @@ internal sealed class RedisTransport(
 {
     private readonly RedisMessagingOptions _options = options.Value;
 
+    // Set once DisposeAsync runs: a later send fails instead of reaching the broker.
+    private int _disposed;
+
     public BrokerAddress BrokerAddress => new("redis", _options.DisplayEndpoint);
 
     public async Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default)
     {
+        if (Volatile.Read(ref _disposed) != 0)
+        {
+            return OperateResult.Failed(new ObjectDisposedException(nameof(RedisTransport)));
+        }
+
         Configuration.MessagingRoutingAffinityMapping.RejectUnsupported(message, "Redis");
         cancellationToken.ThrowIfCancellationRequested();
         try
@@ -48,6 +56,7 @@ internal sealed class RedisTransport(
 
     public ValueTask DisposeAsync()
     {
+        Volatile.Write(ref _disposed, 1);
         return ValueTask.CompletedTask;
     }
 }

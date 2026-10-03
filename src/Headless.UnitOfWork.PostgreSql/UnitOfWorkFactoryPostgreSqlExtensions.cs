@@ -39,6 +39,8 @@ namespace Headless.UnitOfWork;
 [PublicAPI]
 public static class UnitOfWorkFactoryPostgreSqlExtensions
 {
+    private static readonly DbConnectionUnitOfWorkDriver<NpgsqlConnection> _Driver = new(_IsTransactionCompleted);
+
     extension(IUnitOfWorkFactory factory)
     {
         /// <summary>
@@ -61,12 +63,7 @@ public static class UnitOfWorkFactoryPostgreSqlExtensions
             Argument.IsNotNull(factory);
             Argument.IsNotNull(connection);
 
-            return BoundConnectionUnitOfWork.BeginAsync(
-                factory,
-                connection,
-                ct => _BeginOwnedAsync(connection, isolation, ct),
-                cancellationToken
-            );
+            return _Driver.BeginAsync(factory, connection, isolation, cancellationToken);
         }
 
         /// <summary>
@@ -83,11 +80,7 @@ public static class UnitOfWorkFactoryPostgreSqlExtensions
             Argument.IsNotNull(connection);
             Argument.IsNotNull(transaction);
 
-            return BoundConnectionUnitOfWork.Enlist(
-                factory,
-                connection,
-                new PostgreSqlUnitOfWorkResource(connection, transaction, owned: false)
-            );
+            return _Driver.Enlist(factory, connection, transaction);
         }
 
         /// <summary>
@@ -118,25 +111,7 @@ public static class UnitOfWorkFactoryPostgreSqlExtensions
             Argument.IsNotNull(connection);
             Argument.IsNotNull(operation);
 
-            return UnitOfWorkRunner.RunAsync(
-                () => DbConnectionUnitOfWorkBinding.TryGetAsync(connection),
-                ct =>
-                    BoundConnectionUnitOfWork.BeginAsync(
-                        factory,
-                        connection,
-                        beginCt => _BeginOwnedAsync(connection, isolation, beginCt),
-                        ct
-                    ),
-                async (unitOfWork, ct) =>
-                {
-                    await operation(unitOfWork, ct).ConfigureAwait(false);
-
-                    return true;
-                },
-                NoReplayUnitOfWorkExecutionStrategy.Instance,
-                UnitOfWorkRunner.LoggerFor(factory),
-                cancellationToken
-            );
+            return _Driver.RunAsync(factory, connection, operation, isolation, cancellationToken);
         }
 
         /// <summary>
@@ -164,20 +139,7 @@ public static class UnitOfWorkFactoryPostgreSqlExtensions
             Argument.IsNotNull(connection);
             Argument.IsNotNull(operation);
 
-            return UnitOfWorkRunner.RunAsync(
-                () => DbConnectionUnitOfWorkBinding.TryGetAsync(connection),
-                ct =>
-                    BoundConnectionUnitOfWork.BeginAsync(
-                        factory,
-                        connection,
-                        beginCt => _BeginOwnedAsync(connection, isolation, beginCt),
-                        ct
-                    ),
-                operation,
-                NoReplayUnitOfWorkExecutionStrategy.Instance,
-                UnitOfWorkRunner.LoggerFor(factory),
-                cancellationToken
-            );
+            return _Driver.RunAsync(factory, connection, operation, isolation, cancellationToken);
         }
 
         /// <summary>
@@ -212,15 +174,10 @@ public static class UnitOfWorkFactoryPostgreSqlExtensions
             Argument.IsNotNull(dataSource);
             Argument.IsNotNull(operation);
 
-            return _RunPerAttemptConnectionAsync(
+            return _Driver.RunPerAttemptConnectionAsync(
                 factory,
-                dataSource,
-                async (unitOfWork, connection, ct) =>
-                {
-                    await operation(unitOfWork, connection, ct).ConfigureAwait(false);
-
-                    return true;
-                },
+                ct => dataSource.OpenConnectionAsync(ct),
+                operation,
                 isolation,
                 retry,
                 cancellationToken
@@ -257,64 +214,36 @@ public static class UnitOfWorkFactoryPostgreSqlExtensions
             Argument.IsNotNull(dataSource);
             Argument.IsNotNull(operation);
 
-            return _RunPerAttemptConnectionAsync(factory, dataSource, operation, isolation, retry, cancellationToken);
+            return _Driver.RunPerAttemptConnectionAsync(
+                factory,
+                ct => dataSource.OpenConnectionAsync(ct),
+                operation,
+                isolation,
+                retry,
+                cancellationToken
+            );
         }
     }
 
-    private static Task<TResult> _RunPerAttemptConnectionAsync<TResult>(
-        IUnitOfWorkFactory factory,
-        NpgsqlDataSource dataSource,
-        Func<IUnitOfWork, NpgsqlConnection, CancellationToken, Task<TResult>> operation,
-        IsolationLevel isolation,
-        RetryStrategyOptions? retry,
-        CancellationToken cancellationToken
-    )
+    /// <summary>
+    /// Npgsql keeps its completion flag internal and leaves <c>Connection</c> populated after commit, so the only
+    /// public observable is the readiness guard on <see cref="NpgsqlTransaction.IsolationLevel" />, which throws
+    /// once the transaction has committed, rolled back, or been disposed. Evaluated lazily (the factory reads it
+    /// only on an un-completed dispose), so the exception cost never lands on a healthy commit; a driver that stops
+    /// throwing degrades to "no warning", never to a false one.
+    /// </summary>
+    private static bool _IsTransactionCompleted(DbTransaction transaction)
     {
-        return UnitOfWorkRunner.RunPerAttemptConnectionAsync(
-            factory,
-            ct => dataSource.OpenConnectionAsync(ct),
-            (connection, ct) =>
-                BoundConnectionUnitOfWork.BeginAsync(
-                    factory,
-                    connection,
-                    beginCt => _BeginOwnedAsync(connection, isolation, beginCt),
-                    ct
-                ),
-            operation,
-            retry,
-            cancellationToken
-        );
-    }
-
-    private static async ValueTask<IUnitOfWorkResource> _BeginOwnedAsync(
-        NpgsqlConnection connection,
-        IsolationLevel isolation,
-        CancellationToken cancellationToken
-    )
-    {
-        var shouldClose = connection.State == ConnectionState.Closed;
-
-        if (shouldClose)
-        {
-            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        }
-
         try
         {
-            var transaction = await connection
-                .BeginTransactionAsync(isolation, cancellationToken)
-                .ConfigureAwait(false);
+            _ = transaction.IsolationLevel;
 
-            return new PostgreSqlUnitOfWorkResource(connection, transaction, owned: true, closeConnection: shouldClose);
+            return false;
         }
-        catch
+        catch (InvalidOperationException)
         {
-            if (shouldClose)
-            {
-                await connection.CloseAsync().ConfigureAwait(false);
-            }
-
-            throw;
+            // Completed ("no longer usable") or disposed (ObjectDisposedException derives from this type).
+            return true;
         }
     }
 }

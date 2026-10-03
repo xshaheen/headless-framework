@@ -39,6 +39,8 @@ namespace Headless.UnitOfWork;
 [PublicAPI]
 public static class UnitOfWorkFactorySqlServerExtensions
 {
+    private static readonly DbConnectionUnitOfWorkDriver<SqlConnection> _Driver = new();
+
     extension(IUnitOfWorkFactory factory)
     {
         /// <summary>
@@ -61,12 +63,7 @@ public static class UnitOfWorkFactorySqlServerExtensions
             Argument.IsNotNull(factory);
             Argument.IsNotNull(connection);
 
-            return BoundConnectionUnitOfWork.BeginAsync(
-                factory,
-                connection,
-                ct => _BeginOwnedAsync(connection, isolation, ct),
-                cancellationToken
-            );
+            return _Driver.BeginAsync(factory, connection, isolation, cancellationToken);
         }
 
         /// <summary>
@@ -83,11 +80,7 @@ public static class UnitOfWorkFactorySqlServerExtensions
             Argument.IsNotNull(connection);
             Argument.IsNotNull(transaction);
 
-            return BoundConnectionUnitOfWork.Enlist(
-                factory,
-                connection,
-                new SqlServerUnitOfWorkResource(connection, transaction, owned: false)
-            );
+            return _Driver.Enlist(factory, connection, transaction);
         }
 
         /// <summary>
@@ -118,25 +111,7 @@ public static class UnitOfWorkFactorySqlServerExtensions
             Argument.IsNotNull(connection);
             Argument.IsNotNull(operation);
 
-            return UnitOfWorkRunner.RunAsync(
-                () => DbConnectionUnitOfWorkBinding.TryGetAsync(connection),
-                ct =>
-                    BoundConnectionUnitOfWork.BeginAsync(
-                        factory,
-                        connection,
-                        beginCt => _BeginOwnedAsync(connection, isolation, beginCt),
-                        ct
-                    ),
-                async (unitOfWork, ct) =>
-                {
-                    await operation(unitOfWork, ct).ConfigureAwait(false);
-
-                    return true;
-                },
-                NoReplayUnitOfWorkExecutionStrategy.Instance,
-                UnitOfWorkRunner.LoggerFor(factory),
-                cancellationToken
-            );
+            return _Driver.RunAsync(factory, connection, operation, isolation, cancellationToken);
         }
 
         /// <summary>
@@ -164,20 +139,7 @@ public static class UnitOfWorkFactorySqlServerExtensions
             Argument.IsNotNull(connection);
             Argument.IsNotNull(operation);
 
-            return UnitOfWorkRunner.RunAsync(
-                () => DbConnectionUnitOfWorkBinding.TryGetAsync(connection),
-                ct =>
-                    BoundConnectionUnitOfWork.BeginAsync(
-                        factory,
-                        connection,
-                        beginCt => _BeginOwnedAsync(connection, isolation, beginCt),
-                        ct
-                    ),
-                operation,
-                NoReplayUnitOfWorkExecutionStrategy.Instance,
-                UnitOfWorkRunner.LoggerFor(factory),
-                cancellationToken
-            );
+            return _Driver.RunAsync(factory, connection, operation, isolation, cancellationToken);
         }
 
         /// <summary>
@@ -216,15 +178,10 @@ public static class UnitOfWorkFactorySqlServerExtensions
             Argument.IsNotNull(connectionFactory);
             Argument.IsNotNull(operation);
 
-            return _RunPerAttemptConnectionAsync(
+            return _Driver.RunPerAttemptConnectionAsync(
                 factory,
                 connectionFactory,
-                async (unitOfWork, connection, ct) =>
-                {
-                    await operation(unitOfWork, connection, ct).ConfigureAwait(false);
-
-                    return true;
-                },
+                operation,
                 isolation,
                 retry,
                 cancellationToken
@@ -262,7 +219,7 @@ public static class UnitOfWorkFactorySqlServerExtensions
             Argument.IsNotNull(connectionFactory);
             Argument.IsNotNull(operation);
 
-            return _RunPerAttemptConnectionAsync(
+            return _Driver.RunPerAttemptConnectionAsync(
                 factory,
                 connectionFactory,
                 operation,
@@ -270,92 +227,6 @@ public static class UnitOfWorkFactorySqlServerExtensions
                 retry,
                 cancellationToken
             );
-        }
-    }
-
-    private static Task<TResult> _RunPerAttemptConnectionAsync<TResult>(
-        IUnitOfWorkFactory factory,
-        Func<CancellationToken, ValueTask<SqlConnection>> connectionFactory,
-        Func<IUnitOfWork, SqlConnection, CancellationToken, Task<TResult>> operation,
-        IsolationLevel isolation,
-        RetryStrategyOptions? retry,
-        CancellationToken cancellationToken
-    )
-    {
-        return UnitOfWorkRunner.RunPerAttemptConnectionAsync(
-            factory,
-            ct => _OpenAttemptConnectionAsync(connectionFactory, ct),
-            (connection, ct) =>
-                BoundConnectionUnitOfWork.BeginAsync(
-                    factory,
-                    connection,
-                    beginCt => _BeginOwnedAsync(connection, isolation, beginCt),
-                    ct
-                ),
-            operation,
-            retry,
-            cancellationToken
-        );
-    }
-
-    private static async ValueTask<SqlConnection> _OpenAttemptConnectionAsync(
-        Func<CancellationToken, ValueTask<SqlConnection>> connectionFactory,
-        CancellationToken cancellationToken
-    )
-    {
-        var connection =
-            await connectionFactory(cancellationToken).ConfigureAwait(false)
-            ?? throw new InvalidOperationException(
-                "The SqlConnection factory passed to RunAsync returned null. Return a new connection for each attempt."
-            );
-
-        if (connection.State != ConnectionState.Closed)
-        {
-            return connection;
-        }
-
-        try
-        {
-            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch
-        {
-            await connection.DisposeAsync().ConfigureAwait(false);
-
-            throw;
-        }
-
-        return connection;
-    }
-
-    private static async ValueTask<IUnitOfWorkResource> _BeginOwnedAsync(
-        SqlConnection connection,
-        IsolationLevel isolation,
-        CancellationToken cancellationToken
-    )
-    {
-        var shouldClose = connection.State == ConnectionState.Closed;
-
-        if (shouldClose)
-        {
-            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        }
-
-        try
-        {
-            var transaction = (SqlTransaction)
-                await connection.BeginTransactionAsync(isolation, cancellationToken).ConfigureAwait(false);
-
-            return new SqlServerUnitOfWorkResource(connection, transaction, owned: true, closeConnection: shouldClose);
-        }
-        catch
-        {
-            if (shouldClose)
-            {
-                await connection.CloseAsync().ConfigureAwait(false);
-            }
-
-            throw;
         }
     }
 }
