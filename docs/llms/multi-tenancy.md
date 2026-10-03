@@ -1226,7 +1226,7 @@ This package ships no framework write path — read-only `FindByIdentifierAsync`
 
 `Identifier` and `NormalizedIdentifier` are `TenantRecordConstants.IdentifierMaxLength` (253) characters wide, the same ceiling `TenantCatalogOptions.MaxIdentifierLength` accepts, so a whole-host custom-domain identifier fits.
 
-Read paths use `IDbContextFactory<TContext>` and `AsNoTracking()`, matching `Headless.Settings.Storage.EntityFramework`. The store is a singleton, so the factory must be one too: `AddDbContextFactory<TContext>()` and `AddPooledDbContextFactory<TContext>()` default to singleton. A scoped or transient factory would be captured by the store for the life of the host, so `UseEntityFramework<TContext>()` declares it through `RequireSingletonService` and host startup fails with `InvalidServiceLifetimeException` in every environment; a missing factory fails with `MissingRequiredServiceException`.
+Read paths use `IDbContextFactory<TContext>` and `AsNoTracking()`, matching `Headless.Settings.Storage.EntityFramework`. The store is a singleton, so the factory must be one too. Register it with `AddDbContextFactory<TContext>()` or `AddPooledDbContextFactory<TContext>()` for a plain `DbContext`, or `AddHeadlessDbContext<TContext>()` or `AddHeadlessDbContextPool<TContext>()` for a `HeadlessDbContext`; all four register a singleton factory by default. A scoped or transient factory would be captured by the store for the life of the host, so `UseEntityFramework<TContext>()` declares it through `RequireSingletonService` and host startup fails with `InvalidServiceLifetimeException` in every environment; a missing factory fails with `MissingRequiredServiceException`.
 
 ### Install
 
