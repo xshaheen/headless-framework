@@ -370,6 +370,14 @@ internal static partial class LoggerExtensions
     )]
     public static partial void DeliveryAdmittedWhileOpenAfterPause(this ILogger logger, string consumer);
 
+    [LoggerMessage(
+        EventId = 4116,
+        EventName = "ReplayedRequestRunsWithoutCaller",
+        Level = LogLevel.Information,
+        Message = "Request stored as {StorageId} is a replay (generation {Generation}) of a request whose caller no longer waits; it runs as a plain Queue message and sends no reply."
+    )]
+    public static partial void ReplayedRequestRunsWithoutCaller(this ILogger logger, Guid storageId, long generation);
+
     [LoggerMessage(EventId = 42, Level = LogLevel.Warning, Message = "RabbitMQ consumer cancelled. --> {Reason}")]
     public static partial void RabbitMqConsumerCancelled(this ILogger logger, string reason);
 

@@ -2,6 +2,7 @@
 
 using Headless.Testing.Tests;
 using Tests.Capabilities;
+using Tests.RequestReply;
 
 namespace Tests;
 
@@ -11,6 +12,13 @@ public sealed class ProviderConformanceEvidenceTests(AzureServiceBusFixture fixt
     [Fact]
     public Task should_prove_routing_affinity_mapping_or_rejection() =>
         TransportRoutingAffinityConformance.AssertAsync(
+            new AzureServiceBusProviderConformanceDriver(fixture),
+            AbortToken
+        );
+
+    [Fact]
+    public Task should_reject_requests_and_responders_at_startup_on_a_transport_without_request_reply() =>
+        TransportRequestReplyConformance.AssertRejectedAtStartupAsync(
             new AzureServiceBusProviderConformanceDriver(fixture),
             AbortToken
         );
@@ -75,6 +83,11 @@ public sealed class ProviderConformanceEvidenceTests(AzureServiceBusFixture fixt
             _Bind(
                 TransportConformanceScenario.SameNameLaneIsolation,
                 nameof(AzureServiceBusConsumerClientHarnessTests.should_isolate_same_logical_name_between_bus_and_queue)
+            ),
+            new(
+                TransportConformanceScenario.RequestReplyStartupRejection,
+                typeof(ProviderConformanceEvidenceTests),
+                nameof(should_reject_requests_and_responders_at_startup_on_a_transport_without_request_reply)
             ),
         ];
 

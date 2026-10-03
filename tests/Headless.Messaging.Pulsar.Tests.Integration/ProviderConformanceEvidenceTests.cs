@@ -2,6 +2,7 @@
 
 using Headless.Testing.Tests;
 using Tests.Capabilities;
+using Tests.RequestReply;
 
 namespace Tests;
 
@@ -11,6 +12,13 @@ public sealed class ProviderConformanceEvidenceTests(PulsarFixture fixture) : Te
     [Fact]
     public Task should_prove_routing_affinity_mapping_or_rejection() =>
         TransportRoutingAffinityConformance.AssertAsync(new PulsarProviderConformanceDriver(fixture), AbortToken);
+
+    [Fact]
+    public Task should_reject_requests_and_responders_at_startup_on_a_transport_without_request_reply() =>
+        TransportRequestReplyConformance.AssertRejectedAtStartupAsync(
+            new PulsarProviderConformanceDriver(fixture),
+            AbortToken
+        );
 
     [Fact]
     public async Task should_execute_every_supported_manifest_scenario()
@@ -78,6 +86,11 @@ public sealed class ProviderConformanceEvidenceTests(PulsarFixture fixture) : Te
                 nameof(
                     PulsarConsumerClientHarnessTests.should_terminally_acknowledge_malformed_envelope_across_consumer_restart
                 )
+            ),
+            new(
+                TransportConformanceScenario.RequestReplyStartupRejection,
+                typeof(ProviderConformanceEvidenceTests),
+                nameof(should_reject_requests_and_responders_at_startup_on_a_transport_without_request_reply)
             ),
         ];
 

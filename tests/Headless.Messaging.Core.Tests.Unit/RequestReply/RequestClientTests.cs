@@ -1,10 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
+using System.Globalization;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.RequestReply;
+using Headless.Messaging.Transport;
 using Headless.MultiTenancy;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;
@@ -299,7 +301,7 @@ public sealed class RequestClientTests : TestBase
 
     [Theory]
     [InlineData("other.contract", null)]
-    [InlineData(null, "2")]
+    [InlineData(null, "9")]
     public async Task should_fail_with_a_contract_mismatch_when_the_reply_carries_another_response_contract(
         string? name,
         string? version
@@ -330,32 +332,44 @@ public sealed class RequestClientTests : TestBase
 
         // then
         var thrown = await act.Should().ThrowAsync<ResponseContractMismatchException>();
-        thrown.Which.ExpectedMessageName.Should().Be(nameof(PriceQuote));
-        thrown.Which.ExpectedContractVersion.Should().Be("1");
-        thrown.Which.ActualMessageName.Should().Be(name ?? nameof(PriceQuote));
-        thrown.Which.ActualContractVersion.Should().Be(version ?? "1");
+        thrown.Which.ExpectedMessageName.Should().Be(PriceQuoteContract.Name);
+        thrown.Which.ExpectedContractVersion.Should().Be(PriceQuoteContract.Version);
+        thrown.Which.ActualMessageName.Should().Be(name ?? PriceQuoteContract.Name);
+        thrown.Which.ActualContractVersion.Should().Be(version ?? PriceQuoteContract.Version);
     }
 
     [Fact]
     public async Task should_expect_the_response_contract_declared_for_the_response_type()
     {
-        // given
-        await using var provider = await _StartHostAsync(configureServices: services =>
-            services.ConfigureMessaging(m => m.Message<PriceQuote>("pricing.quote", "3"))
+        // given — a reply stamped with the type's conventional name and version, not the declared contract
+        await using var provider = await _StartHostAsync();
+        _responder.OnRequest = request => new ValueTask(
+            Replies.SendOkAsync(
+                provider,
+                request,
+                new PriceQuote(9m),
+                h =>
+                {
+                    h[Headers.MessageName] = nameof(PriceQuote);
+                    h[Headers.ContractVersion] = "1";
+                }
+            )
         );
-        _responder.OnRequest = request => new ValueTask(Replies.SendOkAsync(provider, request, new PriceQuote(9m)));
 
         // when
-        var quote = await _Client(provider)
-            .RequestAsync<PriceQuoteRequest, PriceQuote>(new PriceQuoteRequest("sku-1"), cancellationToken: AbortToken);
+        var act = () =>
+            _Client(provider)
+                .RequestAsync<PriceQuoteRequest, PriceQuote>(
+                    new PriceQuoteRequest("sku-1"),
+                    cancellationToken: AbortToken
+                );
 
-        // then
-        quote.Should().Be(new PriceQuote(9m));
-        provider
-            .GetRequiredService<IMessagePublishRequestFactory>()
-            .ResolveContract(typeof(PriceQuote), MessageLane.Queue)
-            .Should()
-            .Be(("pricing.quote", "3"));
+        // then — the caller holds the reply to the contract the host declared for the response type
+        var thrown = await act.Should().ThrowAsync<ResponseContractMismatchException>();
+        thrown.Which.ExpectedMessageName.Should().Be(PriceQuoteContract.Name);
+        thrown.Which.ExpectedContractVersion.Should().Be(PriceQuoteContract.Version);
+        thrown.Which.ActualMessageName.Should().Be(nameof(PriceQuote));
+        thrown.Which.ActualContractVersion.Should().Be("1");
     }
 
     [Fact]
@@ -656,6 +670,170 @@ public sealed class RequestClientTests : TestBase
         quote.Should().Be(new PriceQuote(2m));
     }
 
+    [Fact]
+    public async Task should_cap_a_nested_request_timeout_at_the_inbound_request_remaining_deadline()
+    {
+        // given — the consumer answers a request that has 3 seconds left and asks for 10
+        await using var provider = await _StartHostAsync();
+        var now = _time.GetUtcNow();
+        provider.GetRequiredService<IConsumeContextAccessor>().Current = _ConsumeContext(
+            unitOfWork: null,
+            _InboundRequestHeaders(now.AddSeconds(3))
+        );
+
+        // when
+        var call = _Client(provider)
+            .RequestAsync<PriceQuoteRequest, PriceQuote>(
+                new PriceQuoteRequest("sku-1"),
+                new RequestOptions { Timeout = TimeSpan.FromSeconds(10) },
+                AbortToken
+            );
+        var sent = await _responder.NextRequestAsync(AbortToken);
+        _time.Advance(TimeSpan.FromSeconds(3));
+
+        // then
+        _SentDeadline(sent).Should().Be(now.AddSeconds(3), "the outbound deadline never passes the inbound one");
+        var thrown = await call.Awaiting(x => x).Should().ThrowAsync<RequestTimeoutException>();
+        thrown.Which.Timeout.Should().Be(TimeSpan.FromSeconds(3));
+    }
+
+    [Fact]
+    public async Task should_cap_the_default_timeout_at_the_inbound_request_remaining_deadline()
+    {
+        // given — no per-call timeout, a 30 second default, and 5 seconds left upstream
+        await using var provider = await _StartHostAsync();
+        var now = _time.GetUtcNow();
+        provider.GetRequiredService<IConsumeContextAccessor>().Current = _ConsumeContext(
+            unitOfWork: null,
+            _InboundRequestHeaders(now.AddSeconds(5))
+        );
+
+        // when
+        var call = _Client(provider)
+            .RequestAsync<PriceQuoteRequest, PriceQuote>(new PriceQuoteRequest("sku-1"), cancellationToken: AbortToken);
+        var sent = await _responder.NextRequestAsync(AbortToken);
+
+        // then
+        _SentDeadline(sent).Should().Be(now.AddSeconds(5));
+        _time.Advance(TimeSpan.FromSeconds(5));
+        (await call.Awaiting(x => x).Should().ThrowAsync<RequestTimeoutException>())
+            .Which.Timeout.Should()
+            .Be(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task should_keep_a_requested_timeout_shorter_than_the_inbound_remaining_deadline()
+    {
+        // given
+        await using var provider = await _StartHostAsync();
+        var now = _time.GetUtcNow();
+        provider.GetRequiredService<IConsumeContextAccessor>().Current = _ConsumeContext(
+            unitOfWork: null,
+            _InboundRequestHeaders(now.AddSeconds(30))
+        );
+
+        // when
+        var call = _Client(provider)
+            .RequestAsync<PriceQuoteRequest, PriceQuote>(
+                new PriceQuoteRequest("sku-1"),
+                new RequestOptions { Timeout = TimeSpan.FromSeconds(2) },
+                AbortToken
+            );
+        var sent = await _responder.NextRequestAsync(AbortToken);
+        _time.Advance(TimeSpan.FromSeconds(2));
+
+        // then
+        _SentDeadline(sent).Should().Be(now.AddSeconds(2));
+        (await call.Awaiting(x => x).Should().ThrowAsync<RequestTimeoutException>())
+            .Which.Timeout.Should()
+            .Be(TimeSpan.FromSeconds(2));
+    }
+
+    [Fact]
+    public async Task should_not_send_a_nested_request_when_the_inbound_deadline_has_passed()
+    {
+        // given — the request being answered expired a second ago, so no downstream work can answer in time
+        await using var provider = await _StartHostAsync();
+        using var measurements = new RequestReplyMeasurements();
+        provider.GetRequiredService<IConsumeContextAccessor>().Current = _ConsumeContext(
+            unitOfWork: null,
+            _InboundRequestHeaders(_time.GetUtcNow().AddSeconds(-1))
+        );
+
+        // when
+        var act = () =>
+            _Client(provider)
+                .RequestAsync<PriceQuoteRequest, PriceQuote>(
+                    new PriceQuoteRequest("sku-1"),
+                    cancellationToken: AbortToken
+                );
+
+        // then
+        await act.Should().ThrowAsync<RequestNotSentException>().WithMessage("*passed its deadline*");
+        _responder.Sent.Should().BeEmpty();
+        _Pending(provider).TrackedCount.Should().Be(0);
+        measurements.OutcomeValues.Should().Equal("not_sent");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("not-a-date")]
+    public async Task should_inherit_nothing_when_the_inbound_deadline_header_is_missing_or_unreadable(
+        string? rawDeadline
+    )
+    {
+        // given
+        await using var provider = await _StartHostAsync();
+        var now = _time.GetUtcNow();
+        provider.GetRequiredService<IConsumeContextAccessor>().Current = _ConsumeContext(
+            unitOfWork: null,
+            _InboundRequestHeaders(deadline: null, rawDeadline)
+        );
+
+        // when
+        var call = _Client(provider)
+            .RequestAsync<PriceQuoteRequest, PriceQuote>(
+                new PriceQuoteRequest("sku-1"),
+                new RequestOptions { Timeout = TimeSpan.FromSeconds(10) },
+                AbortToken
+            );
+        var sent = await _responder.NextRequestAsync(AbortToken);
+
+        // then
+        _SentDeadline(sent).Should().Be(now.AddSeconds(10));
+        _time.Advance(TimeSpan.FromSeconds(10));
+        (await call.Awaiting(x => x).Should().ThrowAsync<RequestTimeoutException>())
+            .Which.Timeout.Should()
+            .Be(TimeSpan.FromSeconds(10));
+    }
+
+    [Fact]
+    public async Task should_inherit_nothing_from_a_bus_message_that_carries_request_headers()
+    {
+        // given — request headers on a Bus message make no request, so there is no deadline to inherit
+        await using var provider = await _StartHostAsync();
+        var now = _time.GetUtcNow();
+        provider.GetRequiredService<IConsumeContextAccessor>().Current = _ConsumeContext(
+            unitOfWork: null,
+            _InboundRequestHeaders(now.AddSeconds(1)),
+            MessageLane.Bus
+        );
+
+        // when
+        var call = _Client(provider)
+            .RequestAsync<PriceQuoteRequest, PriceQuote>(
+                new PriceQuoteRequest("sku-1"),
+                new RequestOptions { Timeout = TimeSpan.FromSeconds(10) },
+                AbortToken
+            );
+        var sent = await _responder.NextRequestAsync(AbortToken);
+
+        // then
+        _SentDeadline(sent).Should().Be(now.AddSeconds(10));
+        _time.Advance(TimeSpan.FromSeconds(10));
+        await call.Awaiting(x => x).Should().ThrowAsync<RequestTimeoutException>();
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]
@@ -670,6 +848,13 @@ public sealed class RequestClientTests : TestBase
 
         // then
         act.Should().Throw<OptionsValidationException>().WithMessage("*RequestReply.DefaultTimeout*");
+    }
+
+    [Fact]
+    public void should_bound_the_default_timeout_by_the_same_limit_as_a_call()
+    {
+        RequestReplyOptions.MaxDefaultTimeout.Should().Be(RequestOptions.MaxTimeout);
+        RequestOptions.MaxTimeout.Should().Be(TimeSpan.FromMinutes(10));
     }
 
     [Fact]
@@ -739,6 +924,7 @@ public sealed class RequestClientTests : TestBase
         services ??= new ServiceCollection();
         services.AddLogging();
         services.AddSingleton<TimeProvider>(_time);
+        services.ConfigureMessaging(m => m.Message<PriceQuote>(PriceQuoteContract.Name, PriceQuoteContract.Version));
         configureServices?.Invoke(services);
 
         var messaging = services.AddHeadlessMessaging(setup =>
@@ -786,19 +972,56 @@ public sealed class RequestClientTests : TestBase
     private static PendingRequests _Pending(IServiceProvider provider) =>
         provider.GetRequiredService<PendingRequests>();
 
-    private static ConsumeContext<PriceQuoteRequest> _ConsumeContext(IUnitOfWork? unitOfWork)
+    private static ConsumeContext<PriceQuoteRequest> _ConsumeContext(
+        IUnitOfWork? unitOfWork,
+        IDictionary<string, string?>? headers = null,
+        MessageLane lane = MessageLane.Queue
+    )
     {
         return new ConsumeContext<PriceQuoteRequest>
         {
-            Lane = MessageLane.Queue,
+            Lane = lane,
             Message = new PriceQuoteRequest("inbound"),
             MessageId = "inbound-1",
             CorrelationId = null,
-            Headers = new MessageHeader(new Dictionary<string, string?>(StringComparer.Ordinal)),
+            Headers = new MessageHeader(headers ?? new Dictionary<string, string?>(StringComparer.Ordinal)),
             Timestamp = DateTimeOffset.UnixEpoch,
             MessageName = "pricing.inbound",
             UnitOfWork = unitOfWork,
         };
+    }
+
+    /// <summary>The headers of a request this host is answering, with its deadline written the way the caller stamps it.</summary>
+    private static Dictionary<string, string?> _InboundRequestHeaders(
+        DateTimeOffset? deadline,
+        string? rawDeadline = null
+    )
+    {
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            [Headers.RequestId] = Guid.NewGuid().ToString("D"),
+            [Headers.ReplyTo] = "headless.reply.upstream-caller",
+        };
+
+        if (deadline is { } instant)
+        {
+            headers[Headers.RequestDeadline] = instant.ToString("O", CultureInfo.InvariantCulture);
+        }
+        else if (rawDeadline is not null)
+        {
+            headers[Headers.RequestDeadline] = rawDeadline;
+        }
+
+        return headers;
+    }
+
+    private static DateTimeOffset _SentDeadline(TransportMessage request)
+    {
+        return DateTimeOffset.Parse(
+            request.Headers[Headers.RequestDeadline]!,
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal
+        );
     }
 
     private sealed class SuppressingMiddleware : IPublishMiddleware<PublishContext<PriceQuoteRequest>>

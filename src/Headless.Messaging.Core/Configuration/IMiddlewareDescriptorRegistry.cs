@@ -27,15 +27,6 @@ internal interface IMiddlewareDescriptorRegistry
     );
 }
 
-internal static class MiddlewareDescriptorRegistryExtensions
-{
-    /// <summary>Whether <typeparamref name="TMiddleware"/> is registered in any direction, scope, or lane.</summary>
-    public static bool HasMiddleware<TMiddleware>(this IMiddlewareDescriptorRegistry registry)
-    {
-        return registry.Descriptors.Any(static descriptor => descriptor.MiddlewareType == typeof(TMiddleware));
-    }
-}
-
 internal sealed class MiddlewareDescriptorRegistry : IMiddlewareDescriptorRegistry
 {
     private readonly Lock _lock = new();

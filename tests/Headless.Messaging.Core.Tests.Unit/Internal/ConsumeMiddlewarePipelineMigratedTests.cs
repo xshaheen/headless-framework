@@ -231,6 +231,51 @@ public sealed class ConsumeMiddlewarePipelineMigratedTests : TestBase
         recorder.InstanceIds.Should().OnlyHaveUniqueItems();
     }
 
+    [Fact]
+    public async Task should_not_run_bus_registered_consume_middleware_on_the_queue_lane()
+    {
+        // given: object-typed middleware registered for the Bus lane only, and no Queue-lane middleware at all
+        var recorder = new MigratedConsumeRecorder();
+        var services = _CreateServices(recorder);
+        new MessagingBuilder(services).AddBusConsumeMiddleware<RecordingBusConsumeMiddleware>();
+        var pipeline = _BuildPipeline(services);
+
+        // when
+        await pipeline.ExecuteAsync(
+            _BuildConsumerContext(lane: MessageLane.Queue),
+            new MigratedConsumeMessage("order-1"),
+            typeof(MigratedConsumeMessage),
+            AbortToken
+        );
+
+        // then
+        recorder.Calls.Should().Equal("dispatcher");
+    }
+
+    [Fact]
+    public async Task should_run_directly_registered_consume_middleware_on_both_lanes_beside_a_registry()
+    {
+        // given: middleware added to DI without the builder stays lane-agnostic, even when a registry exists
+        var recorder = new MigratedConsumeRecorder();
+        var services = _CreateServices(recorder);
+        services.AddScoped<IConsumeMiddleware<ConsumeContext>, RecordingBusConsumeMiddleware>();
+        new MessagingBuilder(services).AddConsumeMiddlewareFor<RecordingTypedConsumeMiddleware, MigratedConsumeMessage>(
+            MessageLane.Bus
+        );
+        var pipeline = _BuildPipeline(services);
+
+        // when
+        await pipeline.ExecuteAsync(
+            _BuildConsumerContext(lane: MessageLane.Queue),
+            new MigratedConsumeMessage("order-1"),
+            typeof(MigratedConsumeMessage),
+            AbortToken
+        );
+
+        // then
+        recorder.Calls.Should().Equal("bus.before", "dispatcher", "bus.after");
+    }
+
     private static ServiceCollection _CreateServices(MigratedConsumeRecorder recorder, bool shouldThrow = false)
     {
         var services = new ServiceCollection();
@@ -254,7 +299,10 @@ public sealed class ConsumeMiddlewarePipelineMigratedTests : TestBase
         );
     }
 
-    private static ConsumerContext _BuildConsumerContext(string? tenantHeader = null)
+    private static ConsumerContext _BuildConsumerContext(
+        string? tenantHeader = null,
+        MessageLane lane = MessageLane.Bus
+    )
     {
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
@@ -269,7 +317,7 @@ public sealed class ConsumeMiddlewarePipelineMigratedTests : TestBase
 
         var descriptor = new ConsumerExecutorDescriptor
         {
-            Lane = MessageLane.Bus,
+            Lane = lane,
             ConsumerType = typeof(ConsumeMiddlewarePipelineMigratedTests),
             MessageType = typeof(MigratedConsumeMessage),
             Dispatch = static (services, _, cancellationToken) =>
@@ -285,7 +333,7 @@ public sealed class ConsumeMiddlewarePipelineMigratedTests : TestBase
                 StorageId = Guid.NewGuid(),
                 Origin = new Message(headers, new MigratedConsumeMessage("stored")),
                 Content = "{}",
-                Lane = MessageLane.Bus,
+                Lane = lane,
                 Added = DateTimeOffset.UtcNow,
             }
         );

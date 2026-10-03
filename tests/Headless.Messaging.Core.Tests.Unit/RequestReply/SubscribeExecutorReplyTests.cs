@@ -42,13 +42,10 @@ public sealed class SubscribeExecutorReplyTests : TestBase
         var (address, reply) = host.Replies.Sent.Should().ContainSingle().Subject;
         address.Should().Be(ResponderExecutorHost.ReplyAddress);
 
-        var (expectedName, expectedVersion) = host
-            .Provider.GetRequiredService<IMessagePublishRequestFactory>()
-            .ResolveContract(typeof(PriceQuote), MessageLane.Queue);
         reply.Headers[Headers.InReplyTo].Should().Be(message.Origin.Headers[Headers.RequestId]);
         reply.Headers[Headers.ReplyStatus].Should().Be(ReplyProtocol.StatusOk);
-        reply.Headers[Headers.MessageName].Should().Be(expectedName);
-        reply.Headers[Headers.ContractVersion].Should().Be(expectedVersion);
+        reply.Headers[Headers.MessageName].Should().Be(PriceQuoteContract.Name);
+        reply.Headers[Headers.ContractVersion].Should().Be(PriceQuoteContract.Version);
         reply.Headers[Headers.TenantId].Should().Be("tenant-a");
         reply.Headers[Headers.CorrelationId].Should().Be("chain-1");
         reply.Headers[Headers.CausationId].Should().Be(message.Origin.Id);
@@ -276,6 +273,88 @@ public sealed class SubscribeExecutorReplyTests : TestBase
     }
 
     [Fact]
+    public async Task should_run_a_plain_queue_consumer_under_the_envelope_tenant_when_the_host_propagates_tenants()
+    {
+        // given — a plain Queue consumer, not a responder, records the tenant it observes
+        var builder = Host.CreateApplicationBuilder();
+        builder.AddHeadlessTenancy(tenancy => tenancy.Messaging(messaging => messaging.PropagateTenant()));
+        await using var host = ResponderExecutorHost.Create(realInvoker: true, services: builder.Services);
+        string? observedTenant = null;
+        var descriptor = ResponderExecutorHost.PlainQueueDescriptor(
+            (services, _, _) =>
+            {
+                observedTenant = services.GetRequiredService<ICurrentTenant>().Id;
+                return ValueTask.CompletedTask;
+            }
+        );
+
+        // when
+        var result = await host.ExecuteAsync(
+            host.Request(TimeSpan.FromSeconds(30), tenantId: "tenant-a", asRequest: false),
+            AbortToken,
+            descriptor
+        );
+
+        // then
+        result.Succeeded.Should().BeTrue();
+        observedTenant.Should().Be("tenant-a");
+        host.Replies.Sent.Should().BeEmpty();
+        host.Provider.GetRequiredService<ICurrentTenant>().Id.Should().BeNull("the tenant scope ends with the attempt");
+    }
+
+    [Fact]
+    public async Task should_run_a_plain_queue_consumer_under_the_envelope_tenant_on_the_transactional_tier()
+    {
+        // given — the attempt scope's services resolve under the envelope tenant, as the inbox runner's DbContext would
+        var builder = Host.CreateApplicationBuilder();
+        builder.AddHeadlessTenancy(tenancy => tenancy.Messaging(messaging => messaging.PropagateTenant()));
+        RecordingReplyTransport? replies = null;
+        FakeInboxTransactionRunner? runner = null;
+        await using var host = ResponderExecutorHost.Create(
+            options => options.RequiredInboxCapability = MessagingInboxCapabilityTier.Transactional,
+            services =>
+                services.AddScoped<IInboxTransactionRunner>(sp =>
+                    runner = new FakeInboxTransactionRunner(
+                        sp.GetRequiredService<IUnitOfWorkFactory>(),
+                        InboxCommit.Commit,
+                        replies!,
+                        sp.GetRequiredService<ICurrentTenant>()
+                    )
+                ),
+            realInvoker: true,
+            services: builder.Services
+        );
+        replies = host.Replies;
+        string? observedTenant = null;
+        var descriptor = ResponderExecutorHost.PlainQueueDescriptor(
+            (services, _, _) =>
+            {
+                observedTenant = services.GetRequiredService<ICurrentTenant>().Id;
+                return ValueTask.CompletedTask;
+            }
+        );
+        var message = host.Request(TimeSpan.FromSeconds(30), tenantId: "tenant-a", asRequest: false);
+        message.InboxKey = new InboxKey(
+            TenantId: "tenant-a",
+            message.Origin.Id,
+            MessageLane.Queue,
+            ResponderExecutorHost.MessageName,
+            "1",
+            QuoteResponder.Identity,
+            Generation: 0
+        );
+
+        // when
+        var result = await host.ExecuteAsync(message, AbortToken, descriptor);
+
+        // then — the attempt scope itself held the tenant before the consume middleware ran, and the consumer saw it too
+        result.Succeeded.Should().BeTrue();
+        runner!.TenantAtStart.Should().Be("tenant-a", "the inbox runner resolves under the envelope tenant");
+        observedTenant.Should().Be("tenant-a");
+        host.Provider.GetRequiredService<ICurrentTenant>().Id.Should().BeNull("the tenant scope ends with the attempt");
+    }
+
+    [Fact]
     public async Task should_fault_a_responder_that_tries_to_publish_a_callback_response()
     {
         // given — the responder answers through the callback slot instead of returning its response
@@ -315,10 +394,17 @@ public sealed class SubscribeExecutorReplyTests : TestBase
     private sealed class FakeInboxTransactionRunner(
         IUnitOfWorkFactory unitOfWorkFactory,
         InboxCommit commit,
-        RecordingReplyTransport replies
+        RecordingReplyTransport replies,
+        ICurrentTenant? currentTenant = null
     ) : IInboxTransactionRunner
     {
         public int RepliesBeforeCommit { get; private set; } = -1;
+
+        /// <summary>
+        /// The tenant the attempt scope held when the runner started, before any consume middleware ran: the
+        /// scope an EF inbox runner's DbContext would resolve under.
+        /// </summary>
+        public string? TenantAtStart { get; private set; }
 
         public async Task ExecuteAsync(
             MediumMessage message,
@@ -326,6 +412,7 @@ public sealed class SubscribeExecutorReplyTests : TestBase
             CancellationToken cancellationToken
         )
         {
+            TenantAtStart = currentTenant?.Id;
             await using var unitOfWork = await unitOfWorkFactory.BeginAsync(cancellationToken);
 
             await handler(unitOfWork, cancellationToken);

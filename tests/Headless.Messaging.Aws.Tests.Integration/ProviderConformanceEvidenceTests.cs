@@ -2,6 +2,7 @@
 
 using Headless.Testing.Tests;
 using Tests.Capabilities;
+using Tests.RequestReply;
 
 namespace Tests;
 
@@ -11,6 +12,13 @@ public sealed class ProviderConformanceEvidenceTests(LocalStackTestFixture fixtu
     [Fact]
     public Task should_prove_routing_affinity_mapping_or_rejection() =>
         TransportRoutingAffinityConformance.AssertAsync(new AwsProviderConformanceDriver(fixture), AbortToken);
+
+    [Fact]
+    public Task should_reject_requests_and_responders_at_startup_on_a_transport_without_request_reply() =>
+        TransportRequestReplyConformance.AssertRejectedAtStartupAsync(
+            new AwsProviderConformanceDriver(fixture),
+            AbortToken
+        );
 
     [Fact]
     public async Task should_execute_every_supported_manifest_scenario()
@@ -73,6 +81,11 @@ public sealed class ProviderConformanceEvidenceTests(LocalStackTestFixture fixtu
                 TransportConformanceScenario.MalformedEnvelopeTerminalSettlement,
                 typeof(MalformedMessageTests),
                 nameof(MalformedMessageTests.should_reject_message_with_invalid_json)
+            ),
+            new(
+                TransportConformanceScenario.RequestReplyStartupRejection,
+                typeof(ProviderConformanceEvidenceTests),
+                nameof(should_reject_requests_and_responders_at_startup_on_a_transport_without_request_reply)
             ),
         ];
 

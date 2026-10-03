@@ -19,6 +19,10 @@ internal sealed class AwsProviderConformanceDriver(LocalStackTestFixture fixture
 
     public override bool SupportsRoutingAffinity => true;
 
+    // The same transport a consuming host uses, so the startup-rejection proof runs against the real provider wiring.
+    public override void ConfigureRequestReplyTransport(Headless.Messaging.Configuration.MessagingSetupBuilder setup) =>
+        ConfigureRoutingAffinityTransport(setup);
+
     public override void ConfigureRoutingAffinityTransport(
         Headless.Messaging.Configuration.MessagingSetupBuilder setup
     ) =>

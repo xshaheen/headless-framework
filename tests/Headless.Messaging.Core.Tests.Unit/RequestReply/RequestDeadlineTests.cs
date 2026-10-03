@@ -6,8 +6,12 @@ using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
+using Headless.Messaging.Retry;
 using Headless.Reliability;
 using Headless.Testing.Tests;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Tests.Helpers;
 
 namespace Tests.RequestReply;
 
@@ -223,6 +227,103 @@ public sealed class RequestDeadlineTests : TestBase
         nextRetry.Should().NotBeNull();
         message.Retries.Should().Be(1);
         host.Replies.Sent.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task should_run_a_replayed_request_as_a_plain_queue_message_without_replying(bool persistedPickup)
+    {
+        // given — an operator forced a child generation from an expired request; the child carries the parent's
+        // envelope verbatim, reply address and deadline included
+        var log = new List<(LogLevel Level, EventId EventId, string Message)>();
+        await using var host = ResponderExecutorHost.Create(configureServices: services =>
+            services.AddLogging(logging => logging.AddProvider(new CapturingLoggerProvider(log)))
+        );
+        host.OnInvoke(() => Task.FromResult(ResponderExecutorHost.Replied(new PriceQuote(7))));
+        var message = host.Request(TimeSpan.FromSeconds(5), generation: 1);
+        var requestId = message.Origin.Headers[Headers.RequestId];
+        host.Clock.Advance(TimeSpan.FromMinutes(10));
+
+        // when
+        var result = persistedPickup
+            ? await host.Executor.ExecuteRetryAsync(
+                message,
+                host.Provider,
+                new RetryExecutionState(),
+                ResponderExecutorHost.ResponderDescriptor(),
+                AbortToken
+            )
+            : await host.ExecuteAsync(message, AbortToken);
+
+        // then — the responder ran for the operator: success written, nobody answered, the envelope is no request
+        result.Succeeded.Should().BeTrue();
+        host.Invoker.ReceivedCalls().Should().ContainSingle();
+        host.StateWrites().Should().ContainSingle().Which.Status.Should().Be(StatusName.Succeeded);
+        host.Replies.Sent.Should().BeEmpty();
+        message.Origin.Headers.Should().NotContainKey(Headers.ReplyTo).And.NotContainKey(Headers.RequestDeadline);
+        message.Origin.Headers[Headers.RequestId].Should().Be(requestId);
+        log.Count(entry => entry.EventId.Id == 4116).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_give_a_replayed_request_the_full_failure_policy_without_a_fault()
+    {
+        // given — the replayed consumer fails transiently under a policy that hands retries to the persisted processor
+        await using var host = ResponderExecutorHost.Create();
+        host.OnInvoke(() => Task.FromException<ConsumerExecutedResult>(new TimeoutException("transient")));
+        var message = host.Request(TimeSpan.FromSeconds(5), generation: 1);
+        host.Clock.Advance(TimeSpan.FromSeconds(6));
+
+        // when
+        await host.ExecuteAsync(
+            message,
+            AbortToken,
+            _Responder(new FailurePolicyBuilder().Delayed(3, TimeSpan.FromSeconds(30), TimeSpan.FromMinutes(15)))
+        );
+
+        // then — a delayed retry is scheduled, as for any Queue message, and no caller is told anything
+        var (status, nextRetry) = host.StateWrites().Should().ContainSingle().Subject;
+        status.Should().Be(StatusName.Failed);
+        nextRetry.Should().NotBeNull();
+        message.Retries.Should().Be(1);
+        host.Replies.Sent.Should().BeEmpty();
+        host.ExhaustedCalls.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_end_a_replayed_request_terminally_without_a_fault_when_its_consumer_is_gone()
+    {
+        // given — the child generation names a consumer this host no longer registers
+        await using var host = ResponderExecutorHost.Create();
+        var message = host.Request(TimeSpan.FromSeconds(30), generation: 1);
+
+        // when
+        var result = await host.Executor.ExecuteAsync(message, host.Provider, descriptor: null, AbortToken);
+
+        // then — terminal, with the exhausted callback a lost consumer always gets, and no fault to anyone
+        result.Succeeded.Should().BeFalse();
+        host.Invoker.ReceivedCalls().Should().BeEmpty();
+        host.StateWrites().Should().ContainSingle().Which.Should().Be((StatusName.Failed, (RetryDelay?)null));
+        host.ExhaustedCalls.Should().Be(1);
+        host.Replies.Sent.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_keep_expiring_the_delivered_generation_of_a_request()
+    {
+        // given — the same expired envelope on generation 0, the delivery itself
+        await using var host = ResponderExecutorHost.Create();
+        var message = host.Request(TimeSpan.FromSeconds(5), generation: 0);
+        host.Clock.Advance(TimeSpan.FromSeconds(6));
+
+        // when
+        var result = await host.ExecuteAsync(message, AbortToken);
+
+        // then — still a request: it expires, and its envelope is untouched
+        result.Succeeded.Should().BeFalse();
+        host.Invoker.ReceivedCalls().Should().BeEmpty();
+        message.Origin.Headers.Should().ContainKey(Headers.ReplyTo).And.ContainKey(Headers.RequestDeadline);
     }
 
     private static ConsumerExecutorDescriptor _Responder(FailurePolicyBuilder policy) =>

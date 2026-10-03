@@ -926,7 +926,7 @@ builder.Services.AddHeadlessMessaging(options =>
 });
 ```
 
-This registers `TenantPropagationPublishMiddleware` (stamps `PublishOptions.TenantId` from ambient `ICurrentTenant.Id` at publish time) and `TenantPropagationConsumeMiddleware` (calls `ICurrentTenant.Change(...)` on the resolved `ConsumeContext<T>.TenantId` for the lifetime of the consume — including both success and exception paths). Caller-set values on `PublishOptions.TenantId` are preserved verbatim; system messages can override propagation by setting `TenantId` explicitly or by publishing with no ambient tenant.
+This registers `TenantPropagationPublishMiddleware` (stamps the tenant option from ambient `ICurrentTenant.Id` at publish time) and `TenantPropagationConsumeMiddleware` (calls `ICurrentTenant.Change(...)` on the resolved `ConsumeContext<T>.TenantId` for the lifetime of the consume — including both success and exception paths) on both messaging lanes. A Bus publish and a Queue enqueue stamp the ambient tenant alike, and a Bus consumer, a Queue consumer, and a request/reply responder all run inside the envelope tenant's scope. Caller-set values on `PublishOptions.TenantId` and `QueueOptions.TenantId` are preserved verbatim; system messages can override propagation by setting `TenantId` explicitly or by publishing with no ambient tenant.
 
 Tenant propagation is composed exclusively through the root tenancy seam — the previous `MessagingBuilder.AddTenantPropagation()` extension has been removed. The seam registration is idempotent and fails fast at startup when propagation is enabled with only the framework's `NullCurrentTenant` fallback registered.
 

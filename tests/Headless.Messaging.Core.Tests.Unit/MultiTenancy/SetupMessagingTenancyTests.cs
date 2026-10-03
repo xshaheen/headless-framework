@@ -55,6 +55,30 @@ public sealed class SetupMessagingTenancyTests : TestBase
         seam.Capabilities.Should().BeEquivalentTo("propagate-tenant");
     }
 
+    [Fact]
+    public void should_register_tenant_propagation_middleware_on_both_lanes()
+    {
+        // given
+        var builder = Host.CreateApplicationBuilder();
+
+        // when
+        builder.AddHeadlessTenancy(tenancy => tenancy.Messaging(messaging => messaging.PropagateTenant()));
+
+        // then: one descriptor per lane for each middleware, all at the framework priority
+        var registry = MessagingBuilder.GetOrAddMiddlewareDescriptorRegistry(builder.Services);
+        var consume = registry
+            .Descriptors.Where(x => x.MiddlewareType == typeof(TenantPropagationConsumeMiddleware))
+            .ToList();
+        var publish = registry
+            .Descriptors.Where(x => x.MiddlewareType == typeof(TenantPropagationPublishMiddleware))
+            .ToList();
+
+        consume.Select(x => x.Lane).Should().BeEquivalentTo([MessageLane.Bus, MessageLane.Queue]);
+        consume.Should().OnlyContain(x => x.Priority == TenantPropagationConsumeMiddleware.Priority);
+        publish.Select(x => x.Lane).Should().BeEquivalentTo([MessageLane.Bus, MessageLane.Queue]);
+        publish.Should().OnlyContain(x => x.Priority == TenantPropagationPublishMiddleware.Priority);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

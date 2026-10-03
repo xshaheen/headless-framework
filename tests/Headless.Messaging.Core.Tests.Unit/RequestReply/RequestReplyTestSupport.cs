@@ -19,6 +19,16 @@ public sealed record PriceQuoteRequest(string Sku);
 public sealed record PriceQuote(decimal Price);
 
 /// <summary>
+/// The contract every request/reply test host declares for <see cref="PriceQuote"/>, so a reply's contract headers are
+/// compared against known literals rather than against whatever the registry resolves.
+/// </summary>
+internal static class PriceQuoteContract
+{
+    public const string Name = "tests.quote";
+    public const string Version = "2";
+}
+
+/// <summary>
 /// The request/reply tests share process-wide meters, so they run one class at a time to keep each class's measurements
 /// its own.
 /// </summary>
@@ -98,12 +108,9 @@ internal static class Replies
         Action<IDictionary<string, string?>>? customize = null
     )
     {
-        var (name, version) = provider
-            .GetRequiredService<IMessagePublishRequestFactory>()
-            .ResolveContract(typeof(PriceQuote), MessageLane.Queue);
         var headers = _Headers(request, "ok");
-        headers[Headers.MessageName] = name;
-        headers[Headers.ContractVersion] = version;
+        headers[Headers.MessageName] = PriceQuoteContract.Name;
+        headers[Headers.ContractVersion] = PriceQuoteContract.Version;
         customize?.Invoke(headers);
 
         var reply = await provider
