@@ -372,6 +372,7 @@
           "Headless.MultiTenancy": "[1.0.0, )",
           "Headless.Security": "[1.0.0, )",
           "Humanizer.Core": "[3.0.10, )",
+          "Humanizer.Core.ar": "[3.0.10, )",
           "Microsoft.AspNetCore.MiddlewareAnalysis": "[10.0.12, )",
           "Microsoft.Extensions.Http.Resilience": "[10.10.0, )",
           "Microsoft.IdentityModel.JsonWebTokens": "[8.22.0, )",
@@ -531,6 +532,15 @@
         "requested": "[3.0.10, )",
         "resolved": "3.0.10",
         "contentHash": "yZIhtw8sYuvsONzQbZxWpR60tMWYHXoo0DL6nyOqSFiU5POjBTSEyWFpTQtJEZuy+oqiYTXKXY/Mjx7KnqIQFw=="
+      },
+      "Humanizer.Core.ar": {
+        "type": "CentralTransitive",
+        "requested": "[3.0.10, )",
+        "resolved": "3.0.10",
+        "contentHash": "LdDeLE9nmlqbl14RinjII0v8APKZKUqJEClILvdLAoUEdv8UhgsHhDX2BHJKZv2aNfCnb19z9otE8Ffaa11Sow==",
+        "dependencies": {
+          "Humanizer.Core": "[3.0.10]"
+        }
       },
       "Microsoft.AspNetCore.MiddlewareAnalysis": {
         "type": "CentralTransitive",

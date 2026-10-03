@@ -366,14 +366,6 @@
           "Humanizer.Core": "[3.0.10]"
         }
       },
-      "Humanizer.Core.ar": {
-        "type": "Transitive",
-        "resolved": "3.0.10",
-        "contentHash": "LdDeLE9nmlqbl14RinjII0v8APKZKUqJEClILvdLAoUEdv8UhgsHhDX2BHJKZv2aNfCnb19z9otE8Ffaa11Sow==",
-        "dependencies": {
-          "Humanizer.Core": "[3.0.10]"
-        }
-      },
       "Humanizer.Core.az": {
         "type": "Transitive",
         "resolved": "3.0.10",
@@ -1723,6 +1715,15 @@
         "requested": "[3.0.10, )",
         "resolved": "3.0.10",
         "contentHash": "yZIhtw8sYuvsONzQbZxWpR60tMWYHXoo0DL6nyOqSFiU5POjBTSEyWFpTQtJEZuy+oqiYTXKXY/Mjx7KnqIQFw=="
+      },
+      "Humanizer.Core.ar": {
+        "type": "CentralTransitive",
+        "requested": "[3.0.10, )",
+        "resolved": "3.0.10",
+        "contentHash": "LdDeLE9nmlqbl14RinjII0v8APKZKUqJEClILvdLAoUEdv8UhgsHhDX2BHJKZv2aNfCnb19z9otE8Ffaa11Sow==",
+        "dependencies": {
+          "Humanizer.Core": "[3.0.10]"
+        }
       },
       "Infobip.Api.Client": {
         "type": "CentralTransitive",
