@@ -16,7 +16,7 @@ namespace Headless.Threading;
 [PublicAPI]
 public static class TransientRetry
 {
-    /// <summary>The number of attempts <see cref="RunAsync{T}" /> makes: the first attempt plus two retries.</summary>
+    /// <summary>The number of attempts <see cref="RunAsync{T}(Func{CancellationToken, ValueTask{T}}, Func{Exception, bool}, TimeProvider, CancellationToken)" /> makes: the first attempt plus two retries.</summary>
     public const int MaxAttempts = 3;
 
     // Retrying at once usually meets the same contending transaction again, so each retry waits a random slice of a
@@ -44,15 +44,52 @@ public static class TransientRetry
     /// <exception cref="OperationCanceledException">
     /// <paramref name="cancellationToken" /> was cancelled before an attempt or during a delay.
     /// </exception>
-    public static async ValueTask<T> RunAsync<T>(
+    public static ValueTask<T> RunAsync<T>(
         Func<CancellationToken, ValueTask<T>> operation,
         Func<Exception, bool> isTransient,
         TimeProvider timeProvider,
         CancellationToken cancellationToken = default
     )
     {
+        return RunAsync(operation, isTransient, MaxAttempts, _GetRetryDelay, timeProvider, cancellationToken);
+    }
+
+    /// <summary>
+    /// Runs <paramref name="operation" />, and when it throws an exception that <paramref name="isTransient" /> accepts,
+    /// waits <paramref name="retryDelay" /> and runs it again, up to <paramref name="maxAttempts" /> attempts in total.
+    /// </summary>
+    /// <param name="operation">
+    /// The work to run. Each call must start from scratch, for example by opening its own connection and transaction.
+    /// </param>
+    /// <param name="isTransient">Decides whether a failure is one a fresh attempt can clear.</param>
+    /// <param name="maxAttempts">The total number of attempts, the first included; <c>1</c> means no retry.</param>
+    /// <param name="retryDelay">
+    /// The delay to wait after the given failed attempt (1-based) before the next one. Use it when the contention the
+    /// retry waits out has a different time scale than a database replay, such as a file another process briefly locks.
+    /// </param>
+    /// <param name="timeProvider">The clock the delay between attempts waits on.</param>
+    /// <param name="cancellationToken">Observed before each attempt and during each delay.</param>
+    /// <returns>The result of the first attempt that succeeds.</returns>
+    /// <remarks>
+    /// A failure that <paramref name="isTransient" /> rejects, or the failure of the last attempt, propagates unchanged.
+    /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="maxAttempts" /> is not positive.</exception>
+    /// <exception cref="OperationCanceledException">
+    /// <paramref name="cancellationToken" /> was cancelled before an attempt or during a delay.
+    /// </exception>
+    public static async ValueTask<T> RunAsync<T>(
+        Func<CancellationToken, ValueTask<T>> operation,
+        Func<Exception, bool> isTransient,
+        int maxAttempts,
+        Func<int, TimeSpan> retryDelay,
+        TimeProvider timeProvider,
+        CancellationToken cancellationToken = default
+    )
+    {
         Argument.IsNotNull(operation);
         Argument.IsNotNull(isTransient);
+        Argument.IsPositive(maxAttempts);
+        Argument.IsNotNull(retryDelay);
         Argument.IsNotNull(timeProvider);
 
         for (var attempt = 1; ; attempt++)
@@ -63,12 +100,12 @@ public static class TransientRetry
             {
                 return await operation(cancellationToken).ConfigureAwait(false);
             }
-            catch (Exception ex) when (attempt < MaxAttempts && isTransient(ex))
+            catch (Exception ex) when (attempt < maxAttempts && isTransient(ex))
             {
                 // Swallowed only to retry; the last attempt's failure is never caught here, so it surfaces as thrown.
             }
 
-            await Task.Delay(_GetRetryDelay(attempt), timeProvider, cancellationToken).ConfigureAwait(false);
+            await Task.Delay(retryDelay(attempt), timeProvider, cancellationToken).ConfigureAwait(false);
         }
     }
 

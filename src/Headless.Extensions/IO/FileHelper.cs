@@ -3,6 +3,7 @@
 using Headless.Checks;
 using Headless.Core;
 using Headless.Primitives;
+using Headless.Threading;
 using File = System.IO.File;
 
 namespace Headless.IO;
@@ -15,7 +16,7 @@ public static class FileHelper
 
     // A file held briefly by another process (an antivirus scan, an indexer) usually frees within a few hundred
     // milliseconds, so retries back off exponentially from 100 ms rather than using a short jittered window.
-    private const int _IoMaxRetryAttempts = 3;
+    private const int _IoMaxAttempts = 4;
     private static readonly TimeSpan _IoRetryBaseDelay = TimeSpan.FromMilliseconds(100);
 
     /// <summary>
@@ -119,26 +120,27 @@ public static class FileHelper
         _EnsureSafePathSegment(uniqueSaveName);
 
         var filePath = Path.Combine(directoryPath, uniqueSaveName);
-        for (var retry = 0; ; retry++)
-        {
-            try
-            {
-                await writeFileAsync((filePath, blobStream), token).ConfigureAwait(false);
+        await TransientRetry
+            .RunAsync(
+                async ct =>
+                {
+                    await writeFileAsync((filePath, blobStream), ct).ConfigureAwait(false);
 
-                return;
-            }
-            catch (IOException) when (retry < _IoMaxRetryAttempts)
-            {
-                // Swallowed only to retry; the last attempt's failure propagates unchanged.
-            }
+                    return true;
+                },
+                static exception => exception is IOException,
+                _IoMaxAttempts,
+                static failedAttempt => _IoRetryBaseDelay * Math.Pow(2, failedAttempt - 1),
+                TimeProvider.System,
+                token
+            )
+            .ConfigureAwait(false);
 
-            var delay = _IoRetryBaseDelay * Math.Pow(2, retry);
-            await Task.Delay(delay, TimeProvider.System, token).ConfigureAwait(false);
-        }
+        return;
 
         static async ValueTask writeFileAsync((string FilePath, Stream BlobStream) state, CancellationToken token)
         {
-            // Reset position so every retry attempt writes the full stream from the start; the retry loop
+            // Reset position so every retry attempt writes the full stream from the start; the retry
             // can re-invoke this delegate after a partial write that advanced the source position.
             if (state.BlobStream.CanSeek && state.BlobStream.Position != 0)
             {
