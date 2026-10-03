@@ -47,10 +47,11 @@ public static class TestImages
 
     /// <summary>
     /// MinIO (S3-compatible object storage) image tag.
-    /// Pinned to a dated release tag rather than the rolling <c>latest</c> so a fresh pull cannot change server behavior.
+    /// Docker Hub removed <c>minio/minio</c>, so this uses Chainguard's build. Its free tier publishes only
+    /// <c>latest</c>, and the digest is what keeps a fresh pull from changing server behavior.
     /// </summary>
     public const string Minio =
-        "minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e";
+        "chainguard/minio:latest@sha256:4cf4831a2bbcf13ddca09c1cbcc9faff716dd3c4247e0babc32864b8ee8e0034";
 
     /// <summary>
     /// SQL Server 2022 image tag (used on x86_64 hosts).
