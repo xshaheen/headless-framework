@@ -25,6 +25,30 @@ public sealed class AzureServiceBusQueueTransportTests : TestBase
         return new AzureServiceBusQueueTransport(NullLogger<AzureServiceBusQueueTransport>.Instance, _Options, pool);
     }
 
+    [Fact]
+    public async Task should_return_failed_result_without_sending_when_sending_after_dispose()
+    {
+        var pool = Substitute.For<IAzureServiceBusClientPool>();
+        var transport = _CreateTransport(pool);
+        await transport.DisposeAsync();
+
+        var result = await transport.SendAsync(
+            new TransportMessage(
+                new Dictionary<string, string?>(StringComparer.Ordinal)
+                {
+                    [Headers.MessageId] = "message-1",
+                    [Headers.MessageName] = "orders",
+                },
+                "payload"u8.ToArray()
+            ),
+            AbortToken
+        );
+
+        result.Succeeded.Should().BeFalse();
+        result.Exception.Should().BeOfType<ObjectDisposedException>();
+        pool.DidNotReceive().GetSender(Arg.Any<string>());
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("order-42")]

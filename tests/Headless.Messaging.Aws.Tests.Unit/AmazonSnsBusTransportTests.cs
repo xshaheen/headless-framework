@@ -27,6 +27,38 @@ public sealed class AmazonSnsBusTransportTests : TestBase
         );
     }
 
+    [Fact]
+    public async Task should_return_failed_result_without_sending_when_sending_after_dispose()
+    {
+        var transport = new AmazonSnsBusTransport(Substitute.For<ILogger<AmazonSnsBusTransport>>(), _CreateOptions());
+        var client = Substitute.For<IAmazonSimpleNotificationService>();
+        _SetSnsClient(
+            transport,
+            client,
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["bus-orders"] = "arn:aws:sns:us-east-1:123456789:bus-orders",
+            }
+        );
+        await transport.DisposeAsync();
+
+        var result = await transport.SendAsync(
+            new TransportMessage(
+                new Dictionary<string, string?>(StringComparer.Ordinal)
+                {
+                    [Headers.MessageId] = "message-1",
+                    [Headers.MessageName] = "orders",
+                },
+                "payload"u8.ToArray()
+            ),
+            AbortToken
+        );
+
+        result.Succeeded.Should().BeFalse();
+        result.Exception.Should().BeOfType<ObjectDisposedException>();
+        await client.DidNotReceive().PublishAsync(Arg.Any<PublishRequest>(), Arg.Any<CancellationToken>());
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("order-42")]

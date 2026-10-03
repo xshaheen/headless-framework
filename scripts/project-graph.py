@@ -23,7 +23,7 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[1]
 PROJECT_ROOTS = ("src", "tests", "demo", "benchmarks", "test-assets")
 
 # A change to one of these reaches every project, so the affected set becomes the whole graph.

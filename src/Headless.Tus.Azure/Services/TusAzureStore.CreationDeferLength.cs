@@ -18,6 +18,10 @@ public sealed partial class TusAzureStore : ITusCreationDeferLengthStore
     /// <param name="cancellationToken">token to cancel the operation</param>
     /// <exception cref="TusStoreException">thrown if the file id is invalid or the file does not exist</exception>
     /// <exception cref="ArgumentOutOfRangeException">thrown if <paramref name="uploadLength"/> is negative</exception>
+    /// <exception cref="Azure.RequestFailedException">
+    /// thrown with status 412 when another request wrote the blob after this one read it; the write
+    /// is rejected rather than overwriting that request's data (see the <c>TusAzureStore</c> remarks)
+    /// </exception>
     public async Task SetUploadLengthAsync(string fileId, long uploadLength, CancellationToken cancellationToken)
     {
         // A negative value would be persisted and then read back as "unknown length" (defer-length),

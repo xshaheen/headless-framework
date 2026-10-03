@@ -24,7 +24,7 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+REPO_ROOT = Path(__file__).resolve().parents[1]
 SOLUTIONS = REPO_ROOT / "docs" / "solutions"
 INDEX = SOLUTIONS / "INDEX.md"
 

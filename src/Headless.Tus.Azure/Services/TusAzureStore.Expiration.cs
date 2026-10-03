@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Azure;
 using Azure.Storage.Blobs.Models;
 using Headless.Tus.Models;
 using Microsoft.Extensions.Logging;
@@ -27,6 +28,10 @@ public sealed partial class TusAzureStore : ITusExpirationStore
     /// -committed partial data still needs its expiration window extended so the client can resume.
     /// </para>
     /// </remarks>
+    /// <exception cref="Azure.RequestFailedException">
+    /// thrown with status 412 when concurrent writers kept changing the blob through every retry of
+    /// the expiration write
+    /// </exception>
     public async Task SetExpirationAsync(string fileId, DateTimeOffset expires, CancellationToken cancellationToken)
     {
         await _EnsureValidFileIdAsync(fileId).ConfigureAwait(false);
@@ -35,18 +40,35 @@ public sealed partial class TusAzureStore : ITusExpirationStore
 
         try
         {
-            var azureFile = await _GetTusFileInfoAsync(blobClient, fileId, CancellationToken.None)
-                .ConfigureAwait(false);
-
-            if (azureFile == null)
+            // The expiration is merged into whatever metadata the blob holds now; it carries no view of
+            // the upload's content. So when the fenced write loses to a concurrent writer, re-reading and
+            // re-applying is safe, whereas failing would turn a PATCH whose data already committed into
+            // an error response.
+            for (var attempt = 1; ; attempt++)
             {
-                _logger.CannotSetExpirationForMissingFile(fileId);
+                var azureFile = await _GetTusFileInfoAsync(blobClient, fileId, CancellationToken.None)
+                    .ConfigureAwait(false);
 
-                return;
+                if (azureFile == null)
+                {
+                    _logger.CannotSetExpirationForMissingFile(fileId);
+
+                    return;
+                }
+
+                azureFile.Metadata.ExpiresAt = expires;
+
+                try
+                {
+                    await _UpdateMetadataAsync(blobClient, azureFile, CancellationToken.None).ConfigureAwait(false);
+
+                    break;
+                }
+                catch (RequestFailedException e) when (e.Status == 412 && attempt < _MaxExpirationWriteAttempts)
+                {
+                    // Lost the race to another writer; retry against the blob's current metadata.
+                }
             }
-
-            azureFile.Metadata.ExpiresAt = expires;
-            await _UpdateMetadataAsync(blobClient, azureFile, CancellationToken.None).ConfigureAwait(false);
 
             _logger.ExpirationSet(fileId, expires);
         }
@@ -116,7 +138,18 @@ public sealed partial class TusAzureStore : ITusExpirationStore
     /// </remarks>
     public async Task<IEnumerable<string>> GetExpiredFilesAsync(CancellationToken cancellationToken)
     {
-        var expiredFiles = new List<string>();
+        var expiredUploads = await _GetExpiredUploadsAsync(cancellationToken).ConfigureAwait(false);
+
+        return expiredUploads.ConvertAll(upload => upload.FileId);
+    }
+
+    /// <summary>
+    /// Enumerates the expired incomplete uploads together with the ETag each blob had when it was
+    /// judged expired, so the reaper can delete only blobs that are still in that state.
+    /// </summary>
+    private async Task<List<(string FileId, ETag ETag)>> _GetExpiredUploadsAsync(CancellationToken cancellationToken)
+    {
+        var expiredFiles = new List<(string FileId, ETag ETag)>();
         var now = _timeProvider.GetUtcNow();
 
         try
@@ -149,9 +182,9 @@ public sealed partial class TusAzureStore : ITusExpirationStore
 
                 var fileId = _ExtractFileIdFromBlobName(blobItem.Name);
 
-                if (!string.IsNullOrEmpty(fileId))
+                if (!string.IsNullOrEmpty(fileId) && blobItem.Properties.ETag is { } etag)
                 {
-                    expiredFiles.Add(fileId);
+                    expiredFiles.Add((fileId, etag));
                 }
             }
         }
@@ -187,25 +220,31 @@ public sealed partial class TusAzureStore : ITusExpirationStore
     /// <para>
     /// This reaper runs <em>outside</em> tusdotnet's middleware and does <strong>not</strong> hold
     /// the per-file <c>ITusFileLock</c> that serializes request-path mutations — it is the one blob
-    /// mutator not synchronized with in-flight writes. The window is narrow: only <em>incomplete</em>
-    /// expired uploads are reaped (see <see cref="GetExpiredFilesAsync"/>), and any in-flight PATCH
-    /// refreshes the sliding expiration, so an actively-resuming upload is not eligible. A paused
-    /// upload whose window lapsed exactly as a resume begins could still be deleted mid-resume, so its
-    /// resuming <c>CommitBlockList</c> would hit a deleted blob. Deployments that must eliminate that
-    /// window should gate uploads and cleanup with <c>Headless.Tus.DistributedLocks</c>.
+    /// mutator not synchronized with in-flight writes. Each delete is therefore conditional on the
+    /// ETag the blob had when it was enumerated as expired: a resume that committed data or
+    /// refreshed the sliding expiration in between changes the ETag, so the delete is skipped (not
+    /// counted, not an error) and the upload is re-evaluated on the next pass. The remaining window is
+    /// a resume that has begun but not yet written anything: it can still be deleted, and its
+    /// commit then fails against the missing blob. Deployments that must eliminate that window should
+    /// gate uploads and cleanup with <c>Headless.Tus.DistributedLocks</c>.
     /// </para>
     /// </remarks>
     public async Task<int> RemoveExpiredFilesAsync(CancellationToken cancellationToken)
     {
-        var expiredFiles = await GetExpiredFilesAsync(cancellationToken).ConfigureAwait(false);
+        var expiredUploads = await _GetExpiredUploadsAsync(cancellationToken).ConfigureAwait(false);
         var removedCount = 0;
 
-        foreach (var fileId in expiredFiles)
+        foreach (var (fileId, etag) in expiredUploads)
         {
             try
             {
-                await DeleteFileAsync(fileId, CancellationToken.None).ConfigureAwait(false);
+                var conditions = new BlobRequestConditions { IfMatch = etag };
+                await _DeleteFileAsync(fileId, conditions, CancellationToken.None).ConfigureAwait(false);
                 removedCount++;
+            }
+            catch (RequestFailedException e) when (e.Status == 412)
+            {
+                _logger.ExpiredFileChangedBeforeRemoval(fileId);
             }
             catch (Exception e)
             {
@@ -227,6 +266,8 @@ public sealed partial class TusAzureStore : ITusExpirationStore
     {
         return uploadLength is null || currentContentLength < uploadLength.Value;
     }
+
+    private const int _MaxExpirationWriteAttempts = 3;
 }
 
 internal static partial class TusAzureStoreExpirationLog
@@ -256,4 +297,11 @@ internal static partial class TusAzureStoreExpirationLog
 
     [LoggerMessage(EventId = 3211, Level = LogLevel.Information, Message = "Removed {RemovedCount} expired files")]
     public static partial void ExpiredFilesRemoved(this ILogger logger, int removedCount);
+
+    [LoggerMessage(
+        EventId = 3252,
+        Level = LogLevel.Information,
+        Message = "Skipped removing expired file {FileId}: it changed after it was found expired"
+    )]
+    public static partial void ExpiredFileChangedBeforeRemoval(this ILogger logger, string fileId);
 }

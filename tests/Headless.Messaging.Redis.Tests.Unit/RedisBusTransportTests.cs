@@ -14,6 +14,20 @@ namespace Tests;
 public sealed class RedisBusTransportTests : TestBase
 {
     [Fact]
+    public async Task should_return_failed_result_without_sending_when_sending_after_dispose()
+    {
+        var streamManager = Substitute.For<IRedisStreamManager>();
+        var transport = _CreateTransport(streamManager);
+        await transport.DisposeAsync();
+
+        var result = await transport.SendAsync(_CreateMessage(), AbortToken);
+
+        result.Succeeded.Should().BeFalse();
+        result.Exception.Should().BeOfType<ObjectDisposedException>();
+        streamManager.ReceivedCalls().Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task should_publish_to_lane_qualified_bus_stream()
     {
         var streamManager = Substitute.For<IRedisStreamManager>();

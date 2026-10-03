@@ -44,6 +44,9 @@ public static class GeneralErrorCodes
     /// <summary>The caller is unauthenticated or otherwise not authorized. Maps to 401/403.</summary>
     public const string NotAuthorized = "g:not_authorized";
 
+    /// <summary>The caller exceeded an HTTP rate limit. Maps to 429.</summary>
+    public const string RateLimitExceeded = "g:rate_limit_exceeded";
+
     /// <summary>The requested feature is temporarily unavailable. Maps to 409.</summary>
     public const string FeatureCurrentlyNotAvailable = "g:feature_currently_not_available";
 

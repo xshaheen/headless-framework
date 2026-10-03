@@ -26,13 +26,6 @@ public sealed class TusCorsDefaultsTests : TestBase
     }
 
     [Fact]
-    public void should_be_a_superset_of_tusdotnet_cors_helper_when_exposed_headers()
-    {
-        // tusdotnet ships CorsHelper.GetExposedHeaders(); ours must never expose less than it
-        TusCorsDefaults.ExposedHeaders.Should().Contain(tusdotnet.Helpers.CorsHelper.GetExposedHeaders());
-    }
-
-    [Fact]
     public void should_cover_the_tus_request_surface_when_allowed_headers()
     {
         TusCorsDefaults

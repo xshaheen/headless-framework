@@ -30,6 +30,21 @@ public sealed class InMemoryQueueTransportTests : TestBase
     }
 
     [Fact]
+    public async Task should_return_failed_result_without_sending_when_sending_after_dispose()
+    {
+        var transport = new InMemoryQueueTransport(
+            new MemoryQueue(Substitute.For<ILogger<MemoryQueue>>()),
+            Substitute.For<ILogger<InMemoryQueueTransport>>()
+        );
+        await transport.DisposeAsync();
+
+        var result = await transport.SendAsync(_CreateTestMessage("msg-1", "jobs"), AbortToken);
+
+        result.Succeeded.Should().BeFalse();
+        result.Exception.Should().BeOfType<ObjectDisposedException>();
+    }
+
+    [Fact]
     public void should_return_in_memory_broker_address()
     {
         // when

@@ -137,10 +137,7 @@ internal sealed partial class HeadlessApiExceptionHandler(
                     break;
 
                 case TooManyRequestsException tooManyRequests:
-                    // Whole seconds, rounded up, and never zero: Retry-After is delta-seconds, and a zero or
-                    // truncated value invites the client to retry before the budget has reopened.
-                    retryAfterSeconds = (int)
-                        Math.Clamp(Math.Ceiling(tooManyRequests.RetryAfter.TotalSeconds), 1, int.MaxValue);
+                    retryAfterSeconds = RetryAfterSeconds.From(tooManyRequests.RetryAfter);
                     problemDetails = problemDetailsCreator.TooManyRequests(
                         retryAfterSeconds.Value,
                         tooManyRequests.Error

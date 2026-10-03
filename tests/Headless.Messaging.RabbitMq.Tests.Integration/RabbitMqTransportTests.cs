@@ -125,6 +125,12 @@ public sealed class RabbitMqTransportTests(RabbitMqFixture fixture) : TransportT
     }
 
     [Fact]
+    public override Task should_return_failed_result_when_sending_after_dispose()
+    {
+        return base.should_return_failed_result_when_sending_after_dispose();
+    }
+
+    [Fact]
     public override Task should_handle_concurrent_sends()
     {
         return base.should_handle_concurrent_sends();

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Azure;
 using Azure.Storage.Blobs.Models;
 
 namespace Headless.Tus.Models;
@@ -14,7 +15,14 @@ internal sealed class TusAzureFile
 
     public long CurrentContentLength { get; init; }
 
-    public required string ETag { get; init; }
+    /// <summary>
+    /// The blob ETag this request last observed: read with the file, then replaced by the ETag each
+    /// successful write returns. Every write sends it as <c>If-Match</c>, so a request whose view of
+    /// the blob is stale (another writer committed in between) is rejected by Azure instead of
+    /// overwriting that writer's block list or metadata, while the request's own sequential writes
+    /// keep matching.
+    /// </summary>
+    public required ETag ETag { get; set; }
 
     public required TusAzureMetadata Metadata { get; init; }
 
@@ -36,7 +44,7 @@ internal sealed class TusAzureFile
             BlobName = blobName,
             CurrentContentLength = properties.ContentLength,
             Metadata = TusAzureMetadata.FromAzure(properties.Metadata),
-            ETag = properties.ETag.ToString(),
+            ETag = properties.ETag,
             HttpHeaders = new BlobHttpHeaders
             {
                 ContentType = properties.ContentType,

@@ -37,6 +37,10 @@ public sealed partial class TusAzureStore : ITusPipelineStore
     /// <exception cref="ArgumentNullException">
     /// thrown if <paramref name="fileId"/> or <paramref name="pipeReader"/> is null
     /// </exception>
+    /// <exception cref="Azure.RequestFailedException">
+    /// thrown with status 412 when another request wrote the blob after this one read it; the write
+    /// is rejected rather than overwriting that request's data (see the <c>TusAzureStore</c> remarks)
+    /// </exception>
     public async Task<long> AppendDataAsync(string fileId, PipeReader pipeReader, CancellationToken cancellationToken)
     {
         Argument.IsNotNull(fileId);
@@ -83,11 +87,11 @@ public sealed partial class TusAzureStore : ITusPipelineStore
 
         ReadResult result = default;
 
-        // Accumulate read bytes into a buffer WE own (TusDiskStore's read/write-buffer design):
-        // once the client disconnects, tusdotnet's guarded reader returns only empty IsCanceled
-        // results (TryRead throws), so any bytes left inside the pipe are unrecoverable — data we
-        // have read must be in our hands to satisfy "store as much of the received data as
-        // possible". With splitting disabled the buffer grows to hold the entire PATCH body.
+        // Accumulate read bytes into a buffer WE own (TusDiskStore's read/write-buffer design): each
+        // read is consumed in full below, so once the client disconnects the guarded reader can only
+        // replay bytes we left unconsumed — none — and data we have read must be in our hands to
+        // satisfy "store as much of the received data as possible". With splitting disabled the
+        // buffer grows to hold the entire PATCH body.
         var accumulationBuffer = ArrayPool<byte>.Shared.Rent(optimalChunkSize);
         var accumulatedCount = 0;
 
