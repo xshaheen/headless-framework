@@ -154,6 +154,58 @@ public sealed class MessagingBuilder(IServiceCollection services)
         );
     }
 
+    /// <summary>Registers publish middleware that intercepts every publish operation on the queue lane.</summary>
+    /// <typeparam name="T">
+    /// The middleware implementation type. Must implement <see cref="IPublishMiddleware{TContext}"/> with a
+    /// context type that derives from <see cref="PublishContext"/>.
+    /// </typeparam>
+    /// <returns>A <see cref="MiddlewareRegistration"/> handle for chaining priority configuration.</returns>
+    /// <remarks>
+    /// A middleware type registered through both this method and <see cref="AddBusPublishMiddleware{T}"/> is resolved
+    /// from one scoped registration and runs on both lanes.
+    /// </remarks>
+    public MiddlewareRegistration AddQueuePublishMiddleware<T>()
+        where T : class
+    {
+        var contextType = _GetMiddlewareContextType(typeof(T), typeof(IPublishMiddleware<>), typeof(PublishContext));
+        var serviceType = typeof(IPublishMiddleware<>).MakeGenericType(contextType);
+
+        return _AddMiddleware<T>(
+            MiddlewareDirection.Publish,
+            MiddlewareScope.Bus,
+            serviceType,
+            contextType,
+            messageType: null,
+            lane: MessageLane.Queue
+        );
+    }
+
+    /// <summary>Registers consume middleware that intercepts every consume operation on the queue lane.</summary>
+    /// <typeparam name="T">
+    /// The middleware implementation type. Must implement <see cref="IConsumeMiddleware{TContext}"/> with a
+    /// context type that derives from <see cref="ConsumeContext"/>.
+    /// </typeparam>
+    /// <returns>A <see cref="MiddlewareRegistration"/> handle for chaining priority configuration.</returns>
+    /// <remarks>
+    /// A middleware type registered through both this method and <see cref="AddBusConsumeMiddleware{T}"/> is resolved
+    /// from one scoped registration and runs on both lanes.
+    /// </remarks>
+    public MiddlewareRegistration AddQueueConsumeMiddleware<T>()
+        where T : class
+    {
+        var contextType = _GetMiddlewareContextType(typeof(T), typeof(IConsumeMiddleware<>), typeof(ConsumeContext));
+        var serviceType = typeof(IConsumeMiddleware<>).MakeGenericType(contextType);
+
+        return _AddMiddleware<T>(
+            MiddlewareDirection.Consume,
+            MiddlewareScope.Bus,
+            serviceType,
+            contextType,
+            messageType: null,
+            lane: MessageLane.Queue
+        );
+    }
+
     /// <summary>Registers publish middleware that intercepts publish operations for a specific message type.</summary>
     /// <typeparam name="TMiddleware">The middleware implementation type.</typeparam>
     /// <typeparam name="TMessage">The message type whose publish pipeline this middleware targets.</typeparam>

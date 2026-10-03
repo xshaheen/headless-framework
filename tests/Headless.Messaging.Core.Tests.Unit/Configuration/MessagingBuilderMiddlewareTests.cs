@@ -72,6 +72,70 @@ public sealed class MessagingBuilderMiddlewareTests : TestBase
     }
 
     [Fact]
+    public void should_register_queue_consume_middleware_with_scoped_lifetime_on_the_queue_lane()
+    {
+        // given
+        var services = new ServiceCollection();
+        var builder = new MessagingBuilder(services);
+
+        // when
+        builder.AddQueueConsumeMiddleware<NoopBusConsumeMiddleware>().WithPriority(-250);
+
+        // then
+        var service = services.Single(x => x.ImplementationType == typeof(NoopBusConsumeMiddleware));
+        service.ServiceType.Should().Be<IConsumeMiddleware<ConsumeContext>>();
+        service.Lifetime.Should().Be(ServiceLifetime.Scoped);
+        var descriptor = _GetRegistry(services)
+            .Descriptors.Single(x => x.MiddlewareType == typeof(NoopBusConsumeMiddleware));
+        descriptor.Lane.Should().Be(MessageLane.Queue);
+        descriptor.Direction.Should().Be(MiddlewareDirection.Consume);
+        descriptor.Scope.Should().Be(MiddlewareScope.Bus);
+        descriptor.Priority.Should().Be(-250);
+    }
+
+    [Fact]
+    public void should_register_queue_publish_middleware_with_scoped_lifetime_on_the_queue_lane()
+    {
+        // given
+        var services = new ServiceCollection();
+        var builder = new MessagingBuilder(services);
+
+        // when
+        builder.AddQueuePublishMiddleware<NoopBusPublishMiddleware>();
+
+        // then
+        var service = services.Single(x => x.ImplementationType == typeof(NoopBusPublishMiddleware));
+        service.ServiceType.Should().Be<IPublishMiddleware<PublishContext>>();
+        service.Lifetime.Should().Be(ServiceLifetime.Scoped);
+        var descriptor = _GetRegistry(services)
+            .Descriptors.Single(x => x.MiddlewareType == typeof(NoopBusPublishMiddleware));
+        descriptor.Lane.Should().Be(MessageLane.Queue);
+        descriptor.Direction.Should().Be(MiddlewareDirection.Publish);
+        descriptor.Priority.Should().Be(0);
+    }
+
+    [Fact]
+    public void should_keep_one_service_registration_for_middleware_registered_on_both_lanes()
+    {
+        // given
+        var services = new ServiceCollection();
+        var builder = new MessagingBuilder(services);
+
+        // when
+        builder.AddBusConsumeMiddleware<NoopBusConsumeMiddleware>();
+        builder.AddQueueConsumeMiddleware<NoopBusConsumeMiddleware>();
+        builder.AddQueueConsumeMiddleware<NoopBusConsumeMiddleware>();
+
+        // then
+        services.Count(x => x.ImplementationType == typeof(NoopBusConsumeMiddleware)).Should().Be(1);
+        _GetRegistry(services)
+            .Descriptors.Where(x => x.MiddlewareType == typeof(NoopBusConsumeMiddleware))
+            .Select(x => x.Lane)
+            .Should()
+            .BeEquivalentTo([MessageLane.Bus, MessageLane.Queue]);
+    }
+
+    [Fact]
     public void should_record_typed_consume_middleware_message_type()
     {
         // given

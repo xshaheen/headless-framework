@@ -1227,7 +1227,7 @@ The collector obtains one fixed provider-clock history cutoff snapshot per invoc
 - `ShutdownTimeout` (default 30 seconds, `> 0`, `<= 5m`) is one end-to-end messaging shutdown bound. Shutdown first quiesces every processor, then concurrently initiates all drains using the remaining portion of one monotonic deadline. Configure the generic host or orchestrator termination grace to exceed this value; an earlier kill intentionally falls back to normal lease-expiry recovery while eventual cleanup remains fault-observed.
 - `SubscriptionEstablishedTimeout` (default 30 seconds, `> 0`, `<= 5m`) bounds each `IOnSubscriptionEstablished` call (see [Every-instance Bus delivery](#every-instance-bus-delivery)).
 - `RequestReply.DefaultTimeout` (default 30 seconds, `> 0`, `<= 10m`) is the request timeout when a call sets no `RequestOptions.Timeout`. `RequestReply.IncludeExceptionDetailsInFaults` (default `false`) lets this host's responders put the exception type and message in fault replies; it applies whether or not the host calls `AddRequestReply`. See [Request/reply](#requestreply).
-- Register middleware through `MessagingBuilder.AddBusPublishMiddleware<T>()`, `AddReceiveMiddleware<T>()`, `AddBusConsumeMiddleware<T>()`, `AddPublishMiddlewareFor<TMiddleware,TMessage>(lane)`, `AddReceiveMiddlewareFor<TMiddleware,TMessage>(lane)`, and `AddConsumeMiddlewareFor<TMiddleware,TMessage>(lane)`. Middleware for one consumer attaches through `Tune(identity, c => c.UseMiddleware<T>())`.
+- Register middleware through `MessagingBuilder.AddBusPublishMiddleware<T>()`, `AddQueuePublishMiddleware<T>()`, `AddReceiveMiddleware<T>()`, `AddBusConsumeMiddleware<T>()`, `AddQueueConsumeMiddleware<T>()`, `AddPublishMiddlewareFor<TMiddleware,TMessage>(lane)`, `AddReceiveMiddlewareFor<TMiddleware,TMessage>(lane)`, and `AddConsumeMiddlewareFor<TMiddleware,TMessage>(lane)`. Middleware for one consumer attaches through `Tune(identity, c => c.UseMiddleware<T>())`.
 - Consumer deployment settings bind from `Headless:Messaging:Consumers:{identity}` after every `Tune` call: `Concurrency` (1 to 255), `InboxRetention` (a `TimeSpan` such as `30.00:00:00`), and `CircuitBreaker:Enabled`, `CircuitBreaker:FailureThreshold`, `CircuitBreaker:OpenDuration`, and `FailurePolicy:ImmediateRetries`, `FailurePolicy:DelayedRetries`, `FailurePolicy:DelayedInitialDelay`, `FailurePolicy:DelayedMaxDelay`. The transient-exception predicate and fail rules are code-only. An unknown identity, an unknown setting, an invalid value, or an inbox retention, circuit breaker, or failure policy on an every-instance consumer fails startup.
 
   ```json
@@ -1640,7 +1640,8 @@ Receive middleware intercepts the raw transport envelope (`ReceiveContext.Header
 
 **Registration scopes:**
 
-- `AddBusPublishMiddleware<T>()` / `AddBusConsumeMiddleware<T>()`: object-typed middleware for every publish or consume.
+- `AddBusPublishMiddleware<T>()` / `AddBusConsumeMiddleware<T>()`: object-typed middleware for every publish or consume on the Bus lane.
+- `AddQueuePublishMiddleware<T>()` / `AddQueueConsumeMiddleware<T>()`: the same for the Queue lane. Register a type through both methods to run it on both lanes; it keeps one scoped service registration. A builder registration is lane-scoped: middleware registered for one lane never runs on the other, whether or not the other lane has middleware of its own. Middleware added straight into DI as `IPublishMiddleware<PublishContext>` or `IConsumeMiddleware<ConsumeContext>` without the builder stays lane-agnostic, and a type the builder registered obeys the builder's lanes everywhere.
 - `AddReceiveMiddleware<T>()`: global receive middleware running on both lanes for every resolved consumer.
 - `AddPublishMiddlewareFor<TMiddleware, TMessage>(lane)`: typed publish middleware for one message type and lane.
 - `AddReceiveMiddlewareFor<TMiddleware, TMessage>(lane)`: typed receive middleware for one message type and lane, for every consumer of that message.
@@ -1674,7 +1675,7 @@ builder.AddHeadlessTenancy(tenancy =>
 );
 ```
 
-The root tenancy seam registers `TenantPropagationPublishMiddleware` (stamps `PublishOptions.TenantId` from ambient `ICurrentTenant.Id`) and `TenantPropagationConsumeMiddleware` (calls `ICurrentTenant.Change(...)` for the lifetime of the consume). Caller-set values on `PublishOptions.TenantId` are preserved verbatim — set it explicitly to override the ambient tenant. See the multi-tenancy doc's [Message Consumers](multi-tenancy.md#message-consumers) section for the trust boundary and the strict-tenancy guard.
+The root tenancy seam registers `TenantPropagationPublishMiddleware` (stamps the tenant option from ambient `ICurrentTenant.Id`) and `TenantPropagationConsumeMiddleware` (calls `ICurrentTenant.Change(...)` for the lifetime of the consume) on both lanes: `IBus.PublishAsync` and `IQueue.EnqueueAsync` stamp the ambient tenant alike, and every Bus and Queue consumer, including a responder, runs inside the envelope tenant's scope on every inbox tier. Caller-set values on `PublishOptions.TenantId` and `QueueOptions.TenantId` are preserved verbatim — set one explicitly to override the ambient tenant. See the multi-tenancy doc's [Message Consumers](multi-tenancy.md#message-consumers) section for the trust boundary and the strict-tenancy guard.
 
 ## Message Ordering Guarantees
 
