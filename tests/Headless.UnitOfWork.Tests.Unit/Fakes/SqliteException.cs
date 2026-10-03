@@ -2,7 +2,6 @@
 
 using System.Data.Common;
 
-#pragma warning disable IDE0130 // The namespace is the point: the classifier recognizes Microsoft.Data.Sqlite by type name.
 namespace Microsoft.Data.Sqlite;
 
 /// <summary>

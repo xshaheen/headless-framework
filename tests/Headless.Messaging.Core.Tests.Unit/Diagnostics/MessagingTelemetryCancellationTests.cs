@@ -34,7 +34,7 @@ public sealed class MessagingTelemetryCancellationTests : TestBase
         // given
         var message = _CreateMessage("orders.placed");
         var transportMessage = _CreateTransportMessage("orders.placed");
-        var serializer = Substitute.For<ISerializer>();
+        var serializer = Substitute.For<IMessageSerializer>();
         serializer
             .SerializeToTransportMessageAsync(message, Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult(transportMessage));
@@ -95,7 +95,7 @@ public sealed class MessagingTelemetryCancellationTests : TestBase
             .Returns(ValueTask.FromResult(true));
 
         var transportMessage = _CreateTransportMessage("test.messageName");
-        var serializer = Substitute.For<ISerializer>();
+        var serializer = Substitute.For<IMessageSerializer>();
         serializer
             .SerializeToTransportMessageAsync(Arg.Any<Message>(), Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult(transportMessage));
@@ -159,7 +159,7 @@ public sealed class MessagingTelemetryCancellationTests : TestBase
             .Returns<ValueTask<bool>>(_ => throw new InvalidOperationException("state store unavailable"));
 
         var transportMessage = _CreateTransportMessage("test.messageName");
-        var serializer = Substitute.For<ISerializer>();
+        var serializer = Substitute.For<IMessageSerializer>();
         serializer
             .SerializeToTransportMessageAsync(Arg.Any<Message>(), Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult(transportMessage));
@@ -208,7 +208,7 @@ public sealed class MessagingTelemetryCancellationTests : TestBase
             .Returns(ValueTask.FromResult(true));
 
         var transportMessage = _CreateTransportMessage("test.messageName");
-        var serializer = Substitute.For<ISerializer>();
+        var serializer = Substitute.For<IMessageSerializer>();
         serializer
             .SerializeToTransportMessageAsync(Arg.Any<Message>(), Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult(transportMessage));
@@ -263,7 +263,7 @@ public sealed class MessagingTelemetryCancellationTests : TestBase
             .Returns(ValueTask.FromResult(true));
 
         var transportMessage = _CreateTransportMessage("test.messageName");
-        var serializer = Substitute.For<ISerializer>();
+        var serializer = Substitute.For<IMessageSerializer>();
         serializer
             .SerializeToTransportMessageAsync(Arg.Any<Message>(), Arg.Any<CancellationToken>())
             .Returns(ValueTask.FromResult(transportMessage));
@@ -310,7 +310,7 @@ public sealed class MessagingTelemetryCancellationTests : TestBase
 
     private static MessageSender _CreateSender(
         IDataStorage storage,
-        ISerializer serializer,
+        IMessageSerializer serializer,
         IBusTransport busTransport,
         MessagingOptions options
     )

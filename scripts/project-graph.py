@@ -9,7 +9,8 @@ library only, so it runs on a bare CI runner and in git hooks without a virtual 
 Commands:
   affected  Print the projects a change affects (changed projects plus their direct dependents)
             and the test projects that cover them.
-  layering  Check package dependency direction under src/ and exit 3 on a violation.
+  layering  Check package dependency direction and public namespace names under src/, and exit 3
+            on a violation.
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
@@ -258,6 +260,69 @@ def layering_violations(projects: dict[str, Project]) -> list[str]:
     return violations
 
 
+# A public namespace groups types by the scenario that uses them, so a segment that names a kind of
+# type makes one scenario need several imports. Namespaces that hold only non-public types are
+# implementation detail and exempt.
+KIND_SEGMENTS = {
+    "Base",
+    "Constants",
+    "Dtos",
+    "Entities",
+    "Enums",
+    "Exceptions",
+    "Extensions",
+    "Helpers",
+    "Interfaces",
+    "Models",
+    "Utilities",
+    "Utils",
+}
+NAMESPACE_BASELINE = REPO_ROOT / "scripts" / "namespace-baseline.txt"
+_NAMESPACE = re.compile(r"^namespace\s+([\w.]+)\s*[;{]", re.MULTILINE)
+_PUBLIC_TYPE = re.compile(
+    r"^\s*public\s+(?:(?:static|sealed|abstract|partial|readonly|ref|unsafe|record)\s+)*"
+    r"(?:class|interface|struct|enum|delegate|record)\b",
+    re.MULTILINE,
+)
+
+
+def public_kind_namespaces() -> set[str]:
+    """Namespaces under src/ that declare a public type and name a kind of type after the family root."""
+    found: set[str] = set()
+    for path in sorted((REPO_ROOT / "src").rglob("*.cs")):
+        if {"obj", "bin"} & set(path.parts):
+            continue
+        text = path.read_text(encoding="utf-8-sig", errors="replace")
+        match = _NAMESPACE.search(text)
+        if not match or not _PUBLIC_TYPE.search(text):
+            continue
+        namespace = match.group(1)
+        # Segments 0 and 1 are "Headless" and the family name, which may legitimately be "Extensions".
+        if namespace.startswith("Headless.") and KIND_SEGMENTS & set(namespace.split(".")[2:]):
+            found.add(namespace)
+    return found
+
+
+def namespace_violations() -> list[str]:
+    """Kind-named public namespaces, ratcheted against a baseline that may only shrink."""
+    baseline = set()
+    if NAMESPACE_BASELINE.exists():
+        for line in NAMESPACE_BASELINE.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if line and not line.startswith("#"):
+                baseline.add(line)
+    found = public_kind_namespaces()
+    violations = [
+        f"{namespace}: a public namespace must not be named after a kind of type ({', '.join(sorted(KIND_SEGMENTS))})"
+        for namespace in sorted(found - baseline)
+    ]
+    violations += [
+        f"{namespace}: no longer exists; remove it from {NAMESPACE_BASELINE.relative_to(REPO_ROOT)}"
+        for namespace in sorted(baseline - found)
+    ]
+    return violations
+
+
 CATEGORIES = {
     "changed": "changed_projects",
     "affected": "affected_projects",
@@ -296,13 +361,13 @@ def main() -> int:
         help="print one category as newline-separated paths instead of the JSON report",
     )
 
-    commands.add_parser("layering", help="check package dependency direction under src/")
+    commands.add_parser("layering", help="check package dependency direction and public namespace names under src/")
 
     args = parser.parse_args()
     projects = load_graph()
 
     if args.command == "layering":
-        violations = layering_violations(projects)
+        violations = layering_violations(projects) + namespace_violations()
         for violation in violations:
             print(violation)
         print(f"[layering] {len(violations)} violation(s) across {sum(p.kind == 'src' for p in projects.values())} src projects", file=sys.stderr)

@@ -4,7 +4,6 @@ using System.ComponentModel;
 using System.Reflection;
 using System.Text.Json.Serialization.Metadata;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Generator.Primitives;
 
 /// <summary>

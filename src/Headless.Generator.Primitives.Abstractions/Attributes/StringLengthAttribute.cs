@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Generator.Primitives;
 
 /// <summary>Validation attribute applied to a string-backed primitive type declaration to assert its value length stays within the configured minimum and maximum bounds.</summary>

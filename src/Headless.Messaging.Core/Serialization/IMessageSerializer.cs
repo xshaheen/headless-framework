@@ -22,7 +22,7 @@ namespace Headless.Messaging.Serialization;
 /// </para>
 /// </remarks>
 [PublicAPI]
-public interface ISerializer
+public interface IMessageSerializer
 {
     /// <summary>
     /// Serializes a <see cref="Message"/> envelope to a JSON string for storage in the outbox.

@@ -2,7 +2,6 @@
 
 using Headless.Checks;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Domain;
 
 /// <summary>A business payload with immutable identity and lineage captured at emission. Treat the payload as immutable after capture.</summary>

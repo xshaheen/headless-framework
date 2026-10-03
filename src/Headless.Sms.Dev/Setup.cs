@@ -4,7 +4,6 @@ using Headless.Checks;
 using Headless.Sms.Dev;
 using Microsoft.Extensions.DependencyInjection;
 
-#pragma warning disable IDE0130 // Registration API lives in the family root namespace, per the namespace policy.
 namespace Headless.Sms;
 
 /// <summary>

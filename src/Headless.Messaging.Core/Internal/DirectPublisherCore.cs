@@ -16,7 +16,7 @@ internal static class DirectPublisherCore
     internal static async Task SendAsync(
         Message message,
         MessageLane lane,
-        ISerializer serializer,
+        IMessageSerializer serializer,
         BrokerAddress brokerAddress,
         Func<TransportMessage, CancellationToken, Task<OperateResult>> sendTransport,
         Func<long> nowMs,

@@ -18,7 +18,7 @@ namespace Headless.Messaging.Storage.InMemory;
 
 internal sealed partial class InMemoryDataStorage(
     IOptions<MessagingOptions> messagingOptions,
-    ISerializer serializer,
+    IMessageSerializer serializer,
     IGuidGenerator guidGenerator,
     TimeProvider timeProvider,
     INodeMembership nodeMembership

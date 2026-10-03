@@ -1275,7 +1275,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
         TimeProvider? timeProvider = null,
         TimeSpan? transportPublishTimeout = null,
         ITransport? busTransport = null,
-        ISerializer? serializer = null,
+        IMessageSerializer? serializer = null,
         Func<IDeliveryCoordinationResolver?>? coordinationResolver = null,
         DeliveryMode defaultDeliveryMode = DeliveryMode.Durable,
         IPublishMiddleware<PublishContext>? middleware = null,
@@ -1471,7 +1471,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
         }
     }
 
-    private sealed class BlockingTransportSerializer : ISerializer
+    private sealed class BlockingTransportSerializer : IMessageSerializer
     {
         private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
 

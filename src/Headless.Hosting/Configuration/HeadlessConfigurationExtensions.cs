@@ -5,7 +5,6 @@ using FluentValidation;
 using Headless.Checks;
 using Headless.Hosting;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.Configuration;
 
 /// <summary><see cref="IConfiguration"/> extension methods.</summary>

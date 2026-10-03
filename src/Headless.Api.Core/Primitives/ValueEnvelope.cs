@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-#pragma warning disable CA2225, IDE0130 // Namespace does not match folder structure
-// ReSharper disable once CheckNamespace
+#pragma warning disable CA2225 // Named From* methods would only duplicate the public constructor the implicit conversion already calls.
 namespace Headless.Primitives;
 
 /// <summary>

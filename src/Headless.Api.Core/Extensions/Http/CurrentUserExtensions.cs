@@ -5,8 +5,6 @@ using Headless.Exceptions;
 using AccountId = Headless.Primitives.AccountId;
 using UserId = Headless.Primitives.UserId;
 
-// ReSharper disable once CheckNamespace
-#pragma warning disable IDE0130 // Extensions on ICurrentUser live in its namespace so they surface without an extra using.
 namespace Headless.Abstractions;
 
 /// <summary>

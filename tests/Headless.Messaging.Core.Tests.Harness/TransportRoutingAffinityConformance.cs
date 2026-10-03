@@ -104,7 +104,7 @@ public static class TransportRoutingAffinityConformance
                     .ContainSingle()
                     .Subject;
                 picked.StorageId.Should().Be(row.StorageId);
-                picked.Origin = provider.GetRequiredService<ISerializer>().Deserialize(picked.Content)!;
+                picked.Origin = provider.GetRequiredService<IMessageSerializer>().Deserialize(picked.Content)!;
                 picked.RoutingAffinityKey.Should().Be("order-42");
                 var result = await provider.GetRequiredService<IMessageSender>().SendAsync(picked);
                 result.Succeeded.Should().BeTrue();

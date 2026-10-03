@@ -114,7 +114,7 @@ internal static class Replies
         customize?.Invoke(headers);
 
         var reply = await provider
-            .GetRequiredService<ISerializer>()
+            .GetRequiredService<IMessageSerializer>()
             .SerializeToTransportMessageAsync(new Message(headers, response));
         await _SendAsync(provider, request, reply);
     }

@@ -3,7 +3,6 @@
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace System.Collections.Generic;
 
 [PublicAPI]

@@ -3,7 +3,6 @@
 using System.Runtime.ExceptionServices;
 using Headless.Exceptions;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace System;
 
 /// <summary>Extensions for re-throwing, unwrapping, and rendering <see cref="Exception"/> instances.</summary>

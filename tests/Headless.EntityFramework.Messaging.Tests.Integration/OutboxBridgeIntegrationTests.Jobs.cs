@@ -224,7 +224,7 @@ public sealed partial class OutboxBridgeIntegrationTests
             StorageId = Guid.NewGuid(),
             Origin = message,
             Lane = MessageLane.Bus,
-            Content = provider.GetRequiredService<ISerializer>().Serialize(message),
+            Content = provider.GetRequiredService<IMessageSerializer>().Serialize(message),
         };
         await provider
             .GetRequiredService<ISubscribeInvoker>()

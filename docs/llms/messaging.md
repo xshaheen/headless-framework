@@ -593,7 +593,7 @@ Declare the flag only when the provider passes the request/reply conformance sce
 
 ### What a transport must not do
 
-- reimplement serialization policy already handled by `ISerializer`
+- reimplement serialization policy already handled by `IMessageSerializer`
 - invent its own retry policy around `OnMessageCallback`
 - commit before Core finishes processing the message
 - hide broker failures by swallowing exceptions and returning success

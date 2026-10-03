@@ -8,7 +8,6 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Metadata;
 using Microsoft.AspNetCore.Mvc;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 #pragma warning disable CA1000 // IEndpointMetadataProvider requires a static member on the returned generic type.
 namespace Headless.Primitives;
 

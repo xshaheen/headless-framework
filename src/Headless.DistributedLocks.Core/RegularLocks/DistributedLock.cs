@@ -11,7 +11,6 @@ using Nito.AsyncEx;
 using Polly;
 using Polly.Retry;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
 
 /// <summary>

@@ -4,7 +4,6 @@ using Headless.Checks;
 using Headless.IO;
 using Headless.Primitives;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.AspNetCore.Http;
 
 [PublicAPI]

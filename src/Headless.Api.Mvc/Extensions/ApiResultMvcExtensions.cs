@@ -3,8 +3,6 @@
 using Headless.Abstractions;
 using Microsoft.AspNetCore.Mvc;
 
-// ReSharper disable once CheckNamespace
-#pragma warning disable IDE0130 // The ApiResult conversion holders ship in Headless.Primitives by policy, beside ApiResult.
 namespace Headless.Primitives;
 
 /// <summary>

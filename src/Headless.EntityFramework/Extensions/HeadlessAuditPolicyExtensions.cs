@@ -5,7 +5,6 @@ using Headless.Checks;
 using Headless.EntityFramework;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.EntityFrameworkCore;
 
 /// <summary>Configures automatic audit capture policy on the Entity Framework model.</summary>

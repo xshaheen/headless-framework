@@ -3,7 +3,6 @@
 using Headless.Checks;
 using Headless.Primitives;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Caching;
 
 /// <summary>Access to shared cache-event surface instances.</summary>

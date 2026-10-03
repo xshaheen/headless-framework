@@ -2,7 +2,6 @@
 
 using System.Data.Common;
 
-#pragma warning disable IDE0130 // The namespace is the point: the classifier recognizes SqlClient by type name.
 namespace Microsoft.Data.SqlClient;
 
 /// <summary>

@@ -2,7 +2,6 @@
 
 using System.Text.Json.Nodes;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.PushNotifications.Firebase;
 
 /// <summary>Web push options of an <see cref="FcmMessage"/>, FCM's <c>webpush</c> block.</summary>

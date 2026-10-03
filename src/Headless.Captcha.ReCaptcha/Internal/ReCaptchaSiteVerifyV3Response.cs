@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Captcha;
 
 /// <summary>The wire shape of a reCAPTCHA v3 siteverify response, mapped onto <see cref="ReCaptchaV3VerifyResult"/>.</summary>

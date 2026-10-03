@@ -3,7 +3,6 @@
 using Headless.Blobs.Internal;
 using Headless.Checks;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Blobs;
 
 /// <summary>

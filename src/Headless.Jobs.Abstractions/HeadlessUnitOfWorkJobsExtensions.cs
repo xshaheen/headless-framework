@@ -6,8 +6,6 @@ using Headless.Jobs.Entities;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-
 namespace Headless.UnitOfWork;
 
 /// <summary>

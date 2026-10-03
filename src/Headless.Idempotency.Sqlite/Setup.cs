@@ -16,7 +16,6 @@ using Extension = Headless.Idempotency.RelationalIdempotencyProviderExtension<
     Headless.Idempotency.Sqlite.SqliteIdempotencyStorageOptionsValidator
 >;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Idempotency;
 
 /// <summary>Chooses SQLite as the idempotency provider.</summary>

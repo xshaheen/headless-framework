@@ -9,7 +9,7 @@ using Headless.UnitOfWork;
 namespace Headless.Messaging.Internal;
 
 internal sealed class MessagePublisher(
-    ISerializer serializer,
+    IMessageSerializer serializer,
     Func<MessageLane, ITransport> transportResolver,
     IMessagePublishRequestFactory publishRequestFactory,
     IPublishMiddlewarePipeline publishPipeline,

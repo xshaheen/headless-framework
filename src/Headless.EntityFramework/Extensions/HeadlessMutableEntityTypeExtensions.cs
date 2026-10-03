@@ -6,7 +6,6 @@ using Headless.EntityFramework.Contexts;
 using Headless.Reflection;
 using Microsoft.EntityFrameworkCore.Metadata;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.EntityFrameworkCore;
 
 [PublicAPI]

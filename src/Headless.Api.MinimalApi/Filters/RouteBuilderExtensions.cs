@@ -5,7 +5,6 @@ using Headless.Api.Concurrency;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Api;
 
 [PublicAPI]

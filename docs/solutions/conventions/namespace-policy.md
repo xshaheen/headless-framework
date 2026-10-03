@@ -1,12 +1,12 @@
 ---
 title: "Namespace policy: root-namespace anchor, shared family roots, three-tier placement"
 date: 2026-09-18
-last_updated: 2026-10-03
+last_updated: 2026-10-04
 module: headless-framework
 problem_type: convention
 component: package_structure
 severity: high
-tags: [namespaces, package-structure, extension-methods, cs0433, internal]
+tags: [namespaces, package-structure, extension-methods, cs0433, internal, ide0130]
 related_components:
   - provider_packages
   - registration_surface
@@ -14,6 +14,7 @@ applies_when:
   - "Choosing the namespace for a new type, extension holder, or Setup class"
   - "Adding a package to an existing feature family"
   - "Adding an extension method on a BCL or third-party type"
+  - "Adding a sub-namespace or reorganizing folders"
 ---
 
 # Namespace policy
@@ -48,6 +49,22 @@ beside the result primitives consumers already import. This is safe only while t
 every package that ships into `Headless.Primitives`. Check for a collision before adding a type to that
 namespace from any package.
 
+## A sub-namespace needs a distinct audience
+
+A family's public types live in its root namespace by default, so a feature's common tasks need one `using`.
+Add a sub-namespace only for a distinct audience or opt-in area: a provider (`Headless.Caching.Redis`),
+`Internal`, extension points for implementers (`Headless.Messaging.Transport`), `Testing`, or `Dashboard`.
+Never name one after a kind of type (`Models`, `Enums`, `Interfaces`, `Entities`, `Exceptions`, `Helpers`,
+`Extensions`, `Constants`, `Dtos`, `Base`, `Utilities`): it groups types by implementation detail instead of
+use, so one scenario needs several imports.
+
+Folders organize files, not namespaces. `.editorconfig` sets `dotnet_style_namespace_match_folder = false`, so a
+file declares the namespace this policy gives it wherever it sits, with no `IDE0130` suppression.
+
+`make check-layering` fails on a public namespace that contains one of those segments after the family root.
+`scripts/namespace-baseline.txt` lists the namespaces that predate the check, and the check also fails on a
+listed namespace that no longer exists, so remove its line in the change that folds the namespace.
+
 ## Three-tier placement
 
 **Tier 1 — types.** Options, records, builders, exceptions, interfaces, and enums always live in the
@@ -62,19 +79,15 @@ the `Setup*` and `Setup*Named` classes and the messaging `*MessageBuilderExtensi
 provider type — options, storage and client implementations, headers, exceptions — stays in the provider's own
 namespace; lambda type inference means an options callback needs no extra `using`.
 
-The `Setup*.cs` file usually sits at the provider package root while declaring the family namespace, so prefix
-its `namespace` with:
-
-```csharp
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-```
+The `Setup*.cs` file usually sits at the provider package root while declaring the family namespace; it needs no
+suppression, because folders do not dictate namespaces.
 
 **Tier 3 — helper extension methods on foreign types.** Extensions that belong in everyday application code —
 on `ILogger`, `HttpContext`, `HttpRequest`, `IFormFile`, `IQueryable`, `DbContext`, `ModelBuilder`,
 `SqlConnection`, `NpgsqlConnection` — live in the **augmented type's** namespace
 (`Microsoft.Extensions.Logging`, `Microsoft.AspNetCore.Http`, `Microsoft.EntityFrameworkCore`,
 `Microsoft.Data.SqlClient`, `Npgsql`). They then surface in IntelliSense next to the type they extend and need
-no discovery `using Headless.<Feature>;`. Mark the foreign namespace with the same `IDE0130` pragma.
+no discovery `using Headless.<Feature>;`.
 
 Holder class names in a foreign namespace must be `Headless`-prefixed and unique across every sibling package
 that shares that namespace — `HeadlessHttpContextExtensions`, or `Headless.EntityFramework`'s

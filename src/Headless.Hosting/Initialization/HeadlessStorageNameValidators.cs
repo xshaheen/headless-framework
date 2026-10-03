@@ -4,7 +4,6 @@ using System.Text;
 using Headless.Constants;
 using Headless.Hosting.Initialization;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace FluentValidation;
 
 /// <summary>FluentValidation rules for table names whose key and index names are derived from them.</summary>

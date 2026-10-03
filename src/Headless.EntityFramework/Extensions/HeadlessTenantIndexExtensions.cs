@@ -3,7 +3,6 @@
 using Headless.EntityFramework;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.EntityFrameworkCore;
 
 /// <summary>Selects individual unique indexes for tenant-scoped uniqueness.</summary>

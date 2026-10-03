@@ -627,7 +627,7 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
             x.FailedMessageExpiredAfter = 3600;
             x.UseStorageLock = true;
         });
-        services.AddSingleton<ISerializer, JsonUtf8Serializer>();
+        services.AddSingleton<IMessageSerializer, JsonUtf8Serializer>();
         services.AddSingleton(TimeProvider.System);
 
         var provider = services.BuildServiceProvider();
@@ -641,7 +641,7 @@ public sealed class PostgreSqlMonitoringTest(PostgreSqlTestFixture fixture) : Te
             messagingOptions,
             TestStorageOptions.For(),
             _tableNames,
-            provider.GetRequiredService<ISerializer>(),
+            provider.GetRequiredService<IMessageSerializer>(),
             new SequentialGuidGenerator(SequentialGuidType.Version7),
             TimeProvider.System,
             new NullNodeMembership(),

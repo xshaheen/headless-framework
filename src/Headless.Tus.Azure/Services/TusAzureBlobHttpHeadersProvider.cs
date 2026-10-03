@@ -3,7 +3,6 @@
 using Azure.Storage.Blobs.Models;
 using Headless.Constants;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Tus;
 
 /// <summary>

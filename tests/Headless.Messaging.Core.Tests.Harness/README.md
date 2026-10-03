@@ -265,7 +265,7 @@ public sealed class PostgreSqlStorageTests(PostgreSqlFixture fixture) : DataStor
         // Return the storage's table-name resolver
     }
 
-    protected override ISerializer GetSerializer()
+    protected override IMessageSerializer GetSerializer()
     {
         // Return the serializer the storage uses
     }

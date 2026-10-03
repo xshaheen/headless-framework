@@ -2,7 +2,6 @@
 
 using System.Text.Json.Nodes;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.PushNotifications.Apns;
 
 /// <summary>

@@ -212,12 +212,12 @@ public sealed class InMemoryDataStorageCoordinationTests : TestBase
         var services = new ServiceCollection();
         services.AddOptions();
         services.Configure<MessagingOptions>(x => x.Version = "v1");
-        services.AddSingleton<ISerializer, JsonUtf8Serializer>();
+        services.AddSingleton<IMessageSerializer, JsonUtf8Serializer>();
         var provider = services.BuildServiceProvider();
 
         return new InMemoryDataStorage(
             provider.GetRequiredService<IOptions<MessagingOptions>>(),
-            provider.GetRequiredService<ISerializer>(),
+            provider.GetRequiredService<IMessageSerializer>(),
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),
             new FakeTimeProvider(DateTimeOffset.UtcNow),
             new NullNodeMembership()

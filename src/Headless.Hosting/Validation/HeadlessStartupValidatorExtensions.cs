@@ -6,7 +6,6 @@ using Headless.Hosting.Validation;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.DependencyInjection;
 
 /// <summary>Registers <see cref="IHeadlessStartupValidator" /> checks that run before any hosted service starts.</summary>

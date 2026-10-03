@@ -474,7 +474,7 @@ public static class TransportRequestReplyConformance
         };
 
         return await caller
-            .Services.GetRequiredService<ISerializer>()
+            .Services.GetRequiredService<IMessageSerializer>()
             .SerializeToTransportMessageAsync(new Message(headers, request), cancellationToken);
     }
 

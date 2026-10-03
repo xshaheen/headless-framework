@@ -3,7 +3,6 @@
 using Headless.Checks;
 using Headless.MultiTenancy;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.EntityFrameworkCore;
 
 /// <summary>Extension methods on <see cref="ModelBuilder"/> for registering the Headless tenant catalog entity.</summary>

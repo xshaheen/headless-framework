@@ -57,7 +57,7 @@ public sealed class ScheduledRevocationTests : TestBase
         var senderServices = new ServiceCollection();
         senderServices.AddLogging();
         senderServices.AddSingleton(storage);
-        senderServices.AddSingleton(provider.GetRequiredService<ISerializer>());
+        senderServices.AddSingleton(provider.GetRequiredService<IMessageSerializer>());
         senderServices.AddSingleton(provider.GetRequiredService<IOptions<MessagingOptions>>());
         senderServices.AddSingleton(TimeProvider.System);
         senderServices.AddSingleton(transport);

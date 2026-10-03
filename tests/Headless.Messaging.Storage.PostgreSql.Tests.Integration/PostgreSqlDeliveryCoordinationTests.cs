@@ -67,7 +67,7 @@ public sealed class PostgreSqlDeliveryCoordinationTests(PostgreSqlTestFixture fi
         services.Configure<PostgreSqlOptions>(x => x.ConnectionString = configuredConnectionString);
         services.Configure<MessagingOptions>(x => x.Version = "v1");
         services.AddTestMessagingSchema();
-        services.AddSingleton<ISerializer, JsonUtf8Serializer>();
+        services.AddSingleton<IMessageSerializer, JsonUtf8Serializer>();
         services.AddSingleton(TimeProvider.System);
 
         await using var provider = services.BuildServiceProvider();
@@ -79,7 +79,7 @@ public sealed class PostgreSqlDeliveryCoordinationTests(PostgreSqlTestFixture fi
             provider.GetRequiredService<IOptions<MessagingOptions>>(),
             TestStorageOptions.For(),
             provider.GetRequiredService<IStorageTableNames>(),
-            provider.GetRequiredService<ISerializer>(),
+            provider.GetRequiredService<IMessageSerializer>(),
             new SequentialGuidGenerator(SequentialGuidType.Version7),
             TimeProvider.System,
             new NullNodeMembership(),

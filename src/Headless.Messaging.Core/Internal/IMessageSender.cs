@@ -46,7 +46,7 @@ internal sealed class MessageSender : IMessageSender
     private readonly IDataStorage _dataStorage;
     private readonly ILogger _logger;
     private readonly MessagingOptions _options;
-    private readonly ISerializer _serializer;
+    private readonly IMessageSerializer _serializer;
     private readonly Lazy<IBusTransport?> _busTransport;
     private readonly Lazy<IQueueTransport?> _queueTransport;
     private readonly TimeProvider _timeProvider;
@@ -60,7 +60,7 @@ internal sealed class MessageSender : IMessageSender
         _serviceProvider = serviceProvider;
         _logger = logger;
         _dataStorage = serviceProvider.GetRequiredService<IDataStorage>();
-        _serializer = serviceProvider.GetRequiredService<ISerializer>();
+        _serializer = serviceProvider.GetRequiredService<IMessageSerializer>();
         _busTransport = new Lazy<IBusTransport?>(serviceProvider.GetService<IBusTransport>);
         _queueTransport = new Lazy<IQueueTransport?>(serviceProvider.GetService<IQueueTransport>);
         _timeProvider = serviceProvider.GetRequiredService<TimeProvider>();

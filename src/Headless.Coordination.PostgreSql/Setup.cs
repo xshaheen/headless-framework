@@ -11,7 +11,6 @@ using Extension = Headless.Coordination.RelationalCoordinationProviderExtension<
     Headless.Coordination.PostgreSql.PostgreSqlCoordinationStorageOptionsValidator
 >;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Coordination;
 
 /// <summary>

@@ -2,7 +2,6 @@
 
 using Headless.Jobs.Enums;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Jobs;
 
 /// <summary>

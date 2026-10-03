@@ -7,7 +7,6 @@ using Headless.Messaging;
 using Microsoft.Extensions.Logging;
 using Polly;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
 
 /// <summary>

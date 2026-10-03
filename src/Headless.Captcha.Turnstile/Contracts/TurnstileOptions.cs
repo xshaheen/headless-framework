@@ -2,7 +2,6 @@
 
 using FluentValidation;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Captcha;
 
 /// <summary>

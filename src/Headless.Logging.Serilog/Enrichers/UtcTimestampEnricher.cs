@@ -4,7 +4,6 @@ using Headless.Checks;
 using Serilog.Core;
 using Serilog.Events;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Logging;
 
 /// <summary>

@@ -25,7 +25,7 @@ public sealed class PostgreSqlDeduplicationTest(PostgreSqlTestFixture fixture) :
         services.Configure<PostgreSqlOptions>(x => x.ConnectionString = fixture.ConnectionString);
         services.Configure<MessagingOptions>(x => x.Version = "v1");
         services.AddTestMessagingSchema();
-        services.AddSingleton<ISerializer, JsonUtf8Serializer>();
+        services.AddSingleton<IMessageSerializer, JsonUtf8Serializer>();
         services.AddSingleton(TimeProvider.System);
         // The storage resolves a keyed IGuidGenerator (SequentialGuidType.Version7) for native uuid PKs.
         services.AddHeadlessGuidGenerator();
