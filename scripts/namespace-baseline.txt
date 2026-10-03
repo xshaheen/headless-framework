@@ -1,0 +1,39 @@
+# Public namespaces named after a kind of type that predate the namespace guard in
+# `make check-layering`. Each one folds into its family root; the guard fails on a namespace that
+# is not listed here and on a listed namespace that no longer exists, so this file only shrinks.
+Headless.Api.Extensions
+Headless.Api.Extensions.Cookies
+Headless.Features.Entities
+Headless.Features.Models
+Headless.Jobs.Base
+Headless.Jobs.Entities
+Headless.Jobs.Entities.BaseEntity
+Headless.Jobs.Enums
+Headless.Jobs.Exceptions
+Headless.Jobs.Interfaces
+Headless.Jobs.Interfaces.Managers
+Headless.Jobs.Models
+Headless.Messaging.Exceptions
+Headless.NetTopologySuite.Constants
+Headless.OpenApi.Nswag.Extensions
+Headless.OpenApi.Nswag.Models
+Headless.OpenApi.Nswag.SchemaProcessors.FluentValidation.Models
+Headless.Payments.Paymob.CashIn.Models
+Headless.Payments.Paymob.CashIn.Models.Auth
+Headless.Payments.Paymob.CashIn.Models.Callback
+Headless.Payments.Paymob.CashIn.Models.Constants
+Headless.Payments.Paymob.CashIn.Models.Intentions
+Headless.Payments.Paymob.CashIn.Models.Merchant
+Headless.Payments.Paymob.CashIn.Models.Orders
+Headless.Payments.Paymob.CashIn.Models.Payment
+Headless.Payments.Paymob.CashIn.Models.Refunds
+Headless.Payments.Paymob.CashIn.Models.Transactions
+Headless.Payments.Paymob.CashOut.Models
+Headless.Payments.Paymob.Services.CashIn.Models
+Headless.Payments.Paymob.Services.CashOut.Models
+Headless.Permissions.Entities
+Headless.Permissions.Models
+Headless.Settings.Entities
+Headless.Settings.Helpers
+Headless.Settings.Models
+Headless.Testing.Helpers
