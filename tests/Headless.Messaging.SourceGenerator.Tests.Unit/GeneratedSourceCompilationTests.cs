@@ -70,6 +70,50 @@ public sealed class GeneratedSourceCompilationTests
     }
 
     [Fact]
+    public void should_compile_the_failure_policy_factory_of_every_competing_consumer()
+    {
+        const string source = """
+            using System.Threading;
+            using System.Threading.Tasks;
+            using Headless.Messaging;
+            using Headless.Reliability;
+
+            namespace Billing;
+
+            public sealed record ChargeCard(string OrderId);
+            public sealed record CardCharged(string OrderId);
+
+            internal sealed class PaymentsPolicy : FailurePolicy
+            {
+                protected override void Configure(FailurePolicyBuilder policy) => policy.Immediate(retries: 2);
+            }
+
+            [QueueConsumer("billing.charge", FailurePolicy = typeof(PaymentsPolicy))]
+            public sealed class Charge : IConsume<ChargeCard>
+            {
+                public ValueTask ConsumeAsync(ConsumeContext<ChargeCard> context, CancellationToken cancellationToken) => default;
+            }
+
+            [BusConsumer("billing.ledger", FailurePolicy = typeof(PaymentsPolicy))]
+            public sealed class Ledger : IConsume<CardCharged>
+            {
+                public ValueTask ConsumeAsync(ConsumeContext<CardCharged> context, CancellationToken cancellationToken) => default;
+            }
+            """;
+
+        var driver = GeneratorTestHelper.Run(source, out var diagnostics);
+
+        diagnostics.Should().NotContain(diagnostic => diagnostic.Severity >= DiagnosticSeverity.Warning);
+        driver
+            .GetRunResult()
+            .GeneratedTrees.Should()
+            .ContainSingle()
+            .Which.ToString()
+            .Should()
+            .Contain("failurePolicy: static () => new global::Billing.PaymentsPolicy()");
+    }
+
+    [Fact]
     public void should_emit_a_module_the_host_adds_and_no_module_initializer()
     {
         const string source = """

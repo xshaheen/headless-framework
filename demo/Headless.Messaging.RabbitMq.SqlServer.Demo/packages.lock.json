@@ -345,6 +345,7 @@
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
+          "Headless.Reliability.Abstractions": "[1.0.0, )",
           "Headless.UnitOfWork.Abstractions": "[1.0.0, )"
         }
       },
@@ -436,6 +437,12 @@
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
           "Headless.Generator.Primitives.Abstractions": "[1.0.0, )"
+        }
+      },
+      "headless.reliability.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )"
         }
       },
       "headless.serializer.abstractions": {

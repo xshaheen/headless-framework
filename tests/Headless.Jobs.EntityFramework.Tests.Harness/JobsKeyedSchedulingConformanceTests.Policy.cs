@@ -17,14 +17,24 @@ public abstract partial class JobsKeyedSchedulingConformanceTests<TFixture>
             var first = Fixture.BuildHost(
                 "policy-a",
                 configureJobs: options =>
-                    JobsKeyedPolicyScenarios.Configure<CoordinatedFacadeRequest>(options, 0, source)
+                    JobsKeyedPolicyScenarios.Configure<CoordinatedFacadeRequest>(
+                        options,
+                        0,
+                        source,
+                        JobsCoordinationFixtureExtensions.CoordinatedFacadeFunctionName
+                    )
             )
         )
         using (
             var second = Fixture.BuildHost(
                 "policy-b",
                 configureJobs: options =>
-                    JobsKeyedPolicyScenarios.Configure<CoordinatedFacadeRequest>(options, 1, source)
+                    JobsKeyedPolicyScenarios.Configure<CoordinatedFacadeRequest>(
+                        options,
+                        1,
+                        source,
+                        JobsCoordinationFixtureExtensions.CoordinatedFacadeFunctionName
+                    )
             )
         )
         {
@@ -41,7 +51,13 @@ public abstract partial class JobsKeyedSchedulingConformanceTests<TFixture>
 
         using var restarted = Fixture.BuildHost(
             "policy-restarted",
-            configureJobs: options => JobsKeyedPolicyScenarios.Configure<CoordinatedFacadeRequest>(options, 0, source)
+            configureJobs: options =>
+                JobsKeyedPolicyScenarios.Configure<CoordinatedFacadeRequest>(
+                    options,
+                    0,
+                    source,
+                    JobsCoordinationFixtureExtensions.CoordinatedFacadeFunctionName
+                )
         );
         var result = await restarted
             .Services.GetRequiredService<IJobScheduler>()

@@ -114,6 +114,33 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
         return accepted;
     }
 
+    public async Task<JobRequeueOutcome> RequeueAsync(Guid timeJobId, CancellationToken cancellationToken = default)
+    {
+        var outcome = await _internalJobManager.RequeueTimeJobAsync(timeJobId, cancellationToken).ConfigureAwait(false);
+        if (outcome == JobRequeueOutcome.Requeued)
+        {
+            _jobsHostScheduler.Restart();
+        }
+
+        return outcome;
+    }
+
+    public async Task<JobRequeueOutcome> RequeueOccurrenceAsync(
+        Guid occurrenceId,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var outcome = await _internalJobManager
+            .RequeueCronJobOccurrenceAsync(occurrenceId, cancellationToken)
+            .ConfigureAwait(false);
+        if (outcome == JobRequeueOutcome.Requeued)
+        {
+            _jobsHostScheduler.Restart();
+        }
+
+        return outcome;
+    }
+
     public Task<Guid> EnqueueAsync<TArgs>(TArgs request, CancellationToken cancellationToken = default) =>
         EnqueueAsync(request, options: null, cancellationToken);
 

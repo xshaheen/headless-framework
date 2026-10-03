@@ -28,6 +28,10 @@ internal enum ConsumerLane
 /// Whether the every-instance class implements <c>IOnSubscriptionEstablished</c>, so the module hands messaging a
 /// generated call of it. Always false for any other consumer, where the hook never runs.
 /// </param>
+/// <param name="FailurePolicyTypeName">
+/// The fully qualified (<c>global::</c>) name of the declared failure policy, which the module constructs through a
+/// generated factory; null when the consumer declares none and the host default applies.
+/// </param>
 internal sealed record ConsumerModel(
     string TypeName,
     string DisplayName,
@@ -37,7 +41,8 @@ internal sealed record ConsumerModel(
     EquatableArray<string> MessageTypeNames,
     HandlerDisposal Disposal,
     bool HasLifecycle,
-    bool HasSubscriptionHook
+    bool HasSubscriptionHook,
+    string? FailurePolicyTypeName
 );
 
 /// <summary>

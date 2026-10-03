@@ -73,6 +73,18 @@ internal static class DiagnosticDescriptors
         customTags: _CustomTags
     );
 
+    public static readonly DiagnosticDescriptor InvalidFailurePolicy = new(
+        "HM005",
+        _Resource("InvalidFailurePolicyTitle"),
+        _Resource("InvalidFailurePolicyMessage"),
+        _Category,
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: _Resource("InvalidFailurePolicyMessage"),
+        helpLinkUri: _HelpLinkBase + "hm005",
+        customTags: _CustomTags
+    );
+
     public static readonly DiagnosticDescriptor SubscriptionHookWithoutEveryInstance = new(
         "HM006",
         _Resource("SubscriptionHookWithoutEveryInstanceTitle"),
@@ -118,6 +130,18 @@ internal static class DiagnosticDescriptors
         isEnabledByDefault: true,
         description: _Resource("MultipleLaneAttributesMessage"),
         helpLinkUri: _HelpLinkBase + "hm009",
+        customTags: _CustomTags
+    );
+
+    public static readonly DiagnosticDescriptor FailurePolicyOnEveryInstance = new(
+        "HM010",
+        _Resource("FailurePolicyOnEveryInstanceTitle"),
+        _Resource("FailurePolicyOnEveryInstanceMessage"),
+        _Category,
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: _Resource("FailurePolicyOnEveryInstanceMessage"),
+        helpLinkUri: _HelpLinkBase + "hm010",
         customTags: _CustomTags
     );
 

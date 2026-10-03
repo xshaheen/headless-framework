@@ -530,7 +530,7 @@ public sealed class JobSchedulerTests : TestBase
             .Where(method => !Attribute.IsDefined(method, typeof(ObsoleteAttribute)))
             .ToArray();
 
-        methods.Should().HaveCount(29);
+        methods.Should().HaveCount(31);
         methods.Count(method => method.ReturnType == typeof(Task<JobScheduleResult>)).Should().Be(9);
         methods
             .Single(method =>
@@ -570,6 +570,18 @@ public sealed class JobSchedulerTests : TestBase
                 .Should()
                 .Equal(typeof(Guid), typeof(CancellationToken));
             control.GetParameters()[^1].HasDefaultValue.Should().BeTrue();
+        }
+
+        foreach (var name in new[] { nameof(IJobScheduler.RequeueAsync), nameof(IJobScheduler.RequeueOccurrenceAsync) })
+        {
+            var requeue = methods.Single(method => string.Equals(method.Name, name, StringComparison.Ordinal));
+            requeue.ReturnType.Should().Be<Task<JobRequeueOutcome>>();
+            requeue
+                .GetParameters()
+                .Select(parameter => parameter.ParameterType)
+                .Should()
+                .Equal(typeof(Guid), typeof(CancellationToken));
+            requeue.GetParameters()[^1].HasDefaultValue.Should().BeTrue();
         }
 
         _AssertOverload(methods, nameof(IJobScheduler.EnqueueAsync), true, typeof(JobOptions));

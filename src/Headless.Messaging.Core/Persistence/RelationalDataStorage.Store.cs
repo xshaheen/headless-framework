@@ -217,8 +217,8 @@ internal sealed partial class RelationalDataStorage
 
     /// <summary>
     /// Stores a received message that failed before it could be dispatched, using a pre-built
-    /// <c>MediumMessage</c>. The row is written directly into the <c>Failed</c> state with the maximum
-    /// retry count so it will not be re-picked up by the normal retry path.
+    /// <c>MediumMessage</c>. The row is written directly into the terminal <c>Failed</c> state with no
+    /// <c>NextRetryAt</c>, which keeps the retry path off it; no consume attempt ran, so it records zero retries.
     /// </summary>
     /// <returns><see langword="true"/> if a new row was inserted or an existing non-terminal row was updated.</returns>
     public async ValueTask<bool> StoreReceivedExceptionMessageAsync(
@@ -236,7 +236,7 @@ internal sealed partial class RelationalDataStorage
             string.IsNullOrEmpty(message.Content) ? _serializer.Serialize(message.Origin) : message.Content,
             message.Lane,
             message.Origin.Id,
-            Retries: Options.RetryPolicy.MaxPersistedRetries,
+            Retries: 0,
             message.InlineAttempts,
             StatusName.Failed,
             exceptionInfo,

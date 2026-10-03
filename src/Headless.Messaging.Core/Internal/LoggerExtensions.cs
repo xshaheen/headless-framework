@@ -930,4 +930,17 @@ internal static partial class LoggerExtensions
         string? messageId,
         string? messageName
     );
+
+    [LoggerMessage(
+        EventId = 111,
+        EventName = "FailurePolicyRuleThrew",
+        Level = LogLevel.Error,
+        Message = "A FailWhen rule of the consumer's failure policy threw while classifying {ExceptionType} for message {StorageId}. The failure is treated as matched and the message fails without further retries."
+    )]
+    public static partial void FailurePolicyRuleThrew(
+        this ILogger logger,
+        Exception ex,
+        Guid storageId,
+        string exceptionType
+    );
 }

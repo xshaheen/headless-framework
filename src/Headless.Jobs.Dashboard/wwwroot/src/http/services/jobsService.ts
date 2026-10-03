@@ -13,6 +13,17 @@ const requestCancel = () => {
     };
 }
 
+const requeue = () => {
+    const baseHttp = useBaseHttpService<object, object>('single');
+
+    const requestAsync = async (id: string) => (await baseHttp.sendAsync("POST", "job/requeue", { paramData: { id } }));
+
+    return {
+        ...baseHttp,
+        requestAsync
+    };
+}
+
 const getRequestData = () => {
     const baseHttp = useBaseHttpService<GetJobDataRequest, GetJobDataResponse>('single');
 
@@ -151,6 +162,7 @@ const getJobStatusesOverall = () => {
 
 export const jobsService = {
     requestCancel,
+    requeue,
     getRequestData,
     getFunctionData,
     getNextPlannedJob,

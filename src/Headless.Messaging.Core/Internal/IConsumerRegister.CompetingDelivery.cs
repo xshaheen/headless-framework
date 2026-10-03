@@ -356,7 +356,9 @@ internal sealed partial class ConsumerRegister
                     }
                 }
 
-                _logger.ConsumerReceivedMessageAfterThreshold(message.Id, _options.RetryPolicy.MaxPersistedRetries);
+                // A poisoned message never reached its consumer, so no attempt ran; the publish-side retry budget says
+                // nothing about it.
+                _logger.ConsumerReceivedMessageAfterThreshold(message.Id, retries: 0);
 
                 if (consumeOutcomeRecorded)
                 {

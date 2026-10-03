@@ -50,6 +50,16 @@ internal static class JobParser
 
         var values = JobAttributeValues.Read(attribute);
         JobValidator.ValidateAttribute(values, classSymbol.Name, attributeLocation, diagnostics);
+        if (values.FailurePolicy is { } failurePolicy)
+        {
+            JobValidator.ValidateFailurePolicy(
+                compilation,
+                failurePolicy,
+                classSymbol.Name,
+                attributeLocation,
+                diagnostics
+            );
+        }
 
         var argsTypeName = argsType?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
         var job =
@@ -70,7 +80,8 @@ internal static class JobParser
                     values.OnMissedRun,
                     values.MissedRunGraceSeconds,
                     values.OnOverlap,
-                    values.ContractVersion
+                    values.ContractVersion,
+                    values.FailurePolicy?.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
                 );
 
         return new(
@@ -109,6 +120,9 @@ internal static class JobParser
 }
 
 /// <summary>The values of one <c>[Job]</c> attribute application, read without interpreting them.</summary>
+/// <remarks>
+/// The policy symbol never leaves the parser: the job model keeps only its name, so incremental caching compares values.
+/// </remarks>
 internal sealed record JobAttributeValues(
     string? Identity,
     string? CronExpression,
@@ -118,7 +132,8 @@ internal sealed record JobAttributeValues(
     int? OnMissedRun,
     int? MissedRunGraceSeconds,
     int? OnOverlap,
-    string ContractVersion
+    string ContractVersion,
+    ITypeSymbol? FailurePolicy
 )
 {
     public static JobAttributeValues Read(AttributeData attribute)
@@ -137,6 +152,7 @@ internal sealed record JobAttributeValues(
         int? onMissedRun = null;
         int? missedRunGraceSeconds = null;
         int? onOverlap = null;
+        ITypeSymbol? failurePolicy = null;
 
         foreach (var named in attribute.NamedArguments)
         {
@@ -167,6 +183,10 @@ internal sealed record JobAttributeValues(
                 case "OnOverlap" when value is int overlapValue:
                     onOverlap = overlapValue;
                     break;
+                // An unresolved type is already a compiler error at the attribute, so it is not reported again.
+                case "FailurePolicy" when value is ITypeSymbol { TypeKind: not TypeKind.Error } policyValue:
+                    failurePolicy = policyValue;
+                    break;
             }
         }
 
@@ -179,7 +199,8 @@ internal sealed record JobAttributeValues(
             onMissedRun,
             missedRunGraceSeconds,
             onOverlap,
-            contractVersion
+            contractVersion,
+            failurePolicy
         );
     }
 }

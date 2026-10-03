@@ -84,4 +84,15 @@ public readonly record struct JobFunctionRegistration
     /// for the scheduler's default zone. Ignored for time jobs.
     /// </summary>
     public string? TimeZoneId { get; init; }
+
+    /// <summary>
+    /// Creates the failure policy the <c>[Job]</c> attribute declares, or <see langword="null"/> when it declares none
+    /// and the host's default policy applies.
+    /// </summary>
+    /// <remarks>
+    /// The generator emits <c>static () =&gt; new global::MyPolicy()</c> so the policy is created without reflection.
+    /// The host calls it once while it builds its job registry and caches the built definition; a factory that returns
+    /// <see langword="null"/> or an invalid policy fails startup. Optional by the additive-only policy above.
+    /// </remarks>
+    public Func<Reliability.FailurePolicy>? FailurePolicy { get; init; }
 }

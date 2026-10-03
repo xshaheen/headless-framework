@@ -820,7 +820,8 @@ internal sealed partial class InMemoryDataStorage(
         var version = messagingOptions.Value.Version;
         var now = timeProvider.GetUtcNow();
         var expiresAt = now.AddSeconds(messagingOptions.Value.FailedMessageExpiredAfter);
-        var retries = messagingOptions.Value.RetryPolicy.MaxPersistedRetries;
+        // A poisoned row is terminal through NextRetryAt = null, not through its retry count; no consume attempt ran.
+        const int retries = 0;
         var indexKey = (version, messageId, consumerIdentity, message.Lane);
 
         // Upsert on (Version, MessageId, ConsumerIdentity) — mirrors the SQL providers' MERGE / ON CONFLICT
@@ -1417,7 +1418,11 @@ internal sealed partial class InMemoryDataStorage(
         _ = MessageLaneCompatibility.ToPersistedValue(lane);
         var now = timeProvider.GetUtcNow();
         var newLease = now.Add(messagingOptions.Value.RetryPolicy.DispatchTimeout);
-        var maxPersistedRetries = messagingOptions.Value.RetryPolicy.MaxPersistedRetries;
+        // Only published rows are capped by the host-wide MaxPersistedRetries. A received row's budget belongs to its
+        // consumer's failure policy, which the executor checks after the claim, as the relational providers do.
+        int? maxPersistedRetries = ReferenceEquals(source, PublishedMessages)
+            ? messagingOptions.Value.RetryPolicy.MaxPersistedRetries
+            : null;
         var retryBatchSize = orphaned is true
             ? messagingOptions.Value.OrphanProbeBatchSize
             : messagingOptions.Value.RetryBatchSize;
@@ -1482,7 +1487,7 @@ internal sealed partial class InMemoryDataStorage(
                     continue;
                 }
 
-                if (candidate.Retries > maxPersistedRetries)
+                if (maxPersistedRetries is { } cap && candidate.Retries > cap)
                 {
                     continue;
                 }

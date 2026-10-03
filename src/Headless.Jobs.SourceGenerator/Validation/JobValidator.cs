@@ -144,4 +144,27 @@ internal static class JobValidator
             );
         }
     }
+
+    /// <summary>
+    /// Checks that the generated factory <c>static () =&gt; new T()</c> compiles and yields a failure policy: the type
+    /// derives from <c>FailurePolicy</c>, is concrete and closed, is visible to generated code, and has a public
+    /// parameterless constructor.
+    /// </summary>
+    public static void ValidateFailurePolicy(
+        Compilation compilation,
+        ITypeSymbol policy,
+        string className,
+        Location attributeLocation,
+        ICollection<DiagnosticInfo> diagnostics
+    )
+    {
+        FailurePolicyType.Validate(
+            compilation,
+            policy,
+            className,
+            attributeLocation,
+            DiagnosticDescriptors.InvalidFailurePolicy,
+            diagnostics
+        );
+    }
 }

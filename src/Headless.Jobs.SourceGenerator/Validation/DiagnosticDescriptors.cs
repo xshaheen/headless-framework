@@ -253,6 +253,18 @@ internal static class DiagnosticDescriptors
         customTags: _CustomTags
     );
 
+    public static readonly DiagnosticDescriptor InvalidFailurePolicy = new(
+        "HF023",
+        _Resource("InvalidFailurePolicyTitle"),
+        _Resource("InvalidFailurePolicyMessage"),
+        _Category,
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: _Resource("InvalidFailurePolicyMessage"),
+        helpLinkUri: _HelpLinkBase + "hf023",
+        customTags: _CustomTags
+    );
+
     private static LocalizableResourceString _Resource(string resourceName) =>
         new(resourceName, _Resources, typeof(DiagnosticDescriptors));
 }

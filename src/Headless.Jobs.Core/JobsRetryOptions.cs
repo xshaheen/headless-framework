@@ -3,44 +3,24 @@
 using FluentValidation;
 using Headless.Jobs.Enums;
 using Headless.Jobs.Exceptions;
-using Polly;
-using Polly.Retry;
 
 namespace Headless.Jobs;
 
-/// <summary>Configures Polly retry execution and Jobs-owned exhaustion notification.</summary>
+/// <summary>Configures the notification a host receives when a job run fails terminally.</summary>
+/// <remarks>
+/// Retry behavior is not configured here. A job's failure policy decides which failures end the run at once and how
+/// long a retry waits when the row stores no interval, and the row's <c>Retries</c> budget decides how many retries
+/// remain. No host-wide setting caps or overrides either.
+/// </remarks>
 [PublicAPI]
 public sealed class JobsRetryOptions
 {
     /// <summary>
-    /// Gets the default retry classification used by <see cref="RetryStrategy"/>: retry any
-    /// exception that is not a cancellation and not a <see cref="TerminateExecutionException"/>.
-    /// Reuse (or compose) this predicate when supplying a custom <see cref="RetryStrategy"/> value
-    /// so replacing the strategy does not silently drop the framework's failure classification.
+    /// Gets or sets the callback invoked once after each owned atomic transition of a run to <c>Failed</c>: the retry
+    /// budget ran out, a fail rule matched, cancellation the executor does not own ended the run, or crash recovery
+    /// found the budget already consumed. It is not invoked when the handler ends its own run with a
+    /// <see cref="TerminateExecutionException"/>, or when another node already wrote the terminal status.
     /// </summary>
-    public static Func<RetryPredicateArguments<object>, ValueTask<bool>> DefaultShouldHandle { get; } =
-        static args =>
-            ValueTask.FromResult(
-                args.Outcome.Exception
-                    is not null
-                        and not OperationCanceledException
-                        and not TerminateExecutionException
-            );
-
-    /// <summary>
-    /// Gets or sets the Polly retry strategy used for classification, delay generation, retry
-    /// observation, and cancellation. Per-row <c>Retries</c> remains the durable retry budget.
-    /// </summary>
-    public RetryStrategyOptions RetryStrategy { get; set; } =
-        new()
-        {
-            MaxRetryAttempts = int.MaxValue,
-            Delay = TimeSpan.FromSeconds(30),
-            BackoffType = DelayBackoffType.Constant,
-            ShouldHandle = DefaultShouldHandle,
-        };
-
-    /// <summary>Gets or sets the callback invoked after an owned atomic transition to Failed.</summary>
     public Func<JobExhaustedContext, CancellationToken, Task>? OnExhausted { get; set; }
 
     /// <summary>Gets or sets the maximum callback duration. Defaults to 30 seconds.</summary>
@@ -51,7 +31,7 @@ public sealed class JobsRetryOptions
 /// <param name="JobId">Stable job identity.</param>
 /// <param name="FunctionName">Registered function or handler identity.</param>
 /// <param name="JobType">The durable job type.</param>
-/// <param name="Exception">The final retryable exception.</param>
+/// <param name="Exception">The exception that ended the run.</param>
 /// <param name="RetryCount">The durable retry count consumed.</param>
 /// <param name="ServiceProvider">The fresh callback scope.</param>
 [PublicAPI]
@@ -68,11 +48,6 @@ internal sealed class JobsRetryOptionsValidator : AbstractValidator<JobsRetryOpt
 {
     public JobsRetryOptionsValidator()
     {
-        RuleFor(x => x.RetryStrategy).NotNull();
-        When(
-            x => x.RetryStrategy is not null,
-            () => RuleFor(x => x.RetryStrategy.MaxRetryAttempts).GreaterThanOrEqualTo(0)
-        );
         RuleFor(x => x.OnExhaustedTimeout).GreaterThan(TimeSpan.Zero).LessThanOrEqualTo(TimeSpan.FromHours(1));
     }
 }

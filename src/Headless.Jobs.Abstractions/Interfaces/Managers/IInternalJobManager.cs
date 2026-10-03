@@ -48,6 +48,15 @@ internal interface IInternalJobManager
     /// <summary>Applies the durable cron resume transition and publishes its accepted definition update.</summary>
     Task<bool> ResumeCronJobAsync(Guid cronJobId, CancellationToken cancellationToken = default);
 
+    /// <summary>Applies the durable time-job requeue transition from <c>Failed</c> to <c>Idle</c>.</summary>
+    Task<JobRequeueOutcome> RequeueTimeJobAsync(Guid jobId, CancellationToken cancellationToken = default);
+
+    /// <summary>Applies the durable cron-occurrence requeue transition from <c>Failed</c> to <c>Idle</c>.</summary>
+    Task<JobRequeueOutcome> RequeueCronJobOccurrenceAsync(
+        Guid occurrenceId,
+        CancellationToken cancellationToken = default
+    );
+
     /// <summary>Reads the durable cancellation flag through the provider's current owner/status fence.</summary>
     Task<bool?> IsTimeJobCancellationRequestedAsync(Guid jobId, CancellationToken cancellationToken = default);
 

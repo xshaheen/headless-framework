@@ -51,7 +51,7 @@ internal sealed class MessageObservationStore(TimeProvider? timeProvider = null)
     /// <summary>Gets all faulted messages recorded so far. Each access allocates a snapshot array.</summary>
     public IReadOnlyCollection<RecordedMessage> Faulted => _faulted.ToArray();
 
-    /// <summary>Gets all exhausted messages recorded so far. Each access allocates a snapshot array.</summary>
+    /// <summary>Gets all messages recorded as failed for good so far. Each access allocates a snapshot array.</summary>
     public IReadOnlyCollection<RecordedMessage> Exhausted => _exhausted.ToArray();
 
     /// <summary>Records a message and signals any waiting tasks that match.</summary>
