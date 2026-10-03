@@ -40,23 +40,3 @@ internal readonly record struct PrimitiveTypeInfo(
     bool UnderlyingImplementsIUtf8SpanFormattable,
     string? XmlDocumentation
 );
-
-/// <summary>
-/// What parsing one primitive declaration produced: the data to emit, when the declaration can be generated,
-/// and the diagnostics
-/// found while reading it. Diagnostics travel beside the model so reporting them never forces source to be re-emitted.
-/// </summary>
-internal sealed record PrimitiveParseResult(PrimitiveTypeInfo? Info, EquatableArray<DiagnosticInfo> Diagnostics);
-
-/// <summary>Info about a parent primitive type in the inheritance chain.</summary>
-[StructLayout(LayoutKind.Auto)]
-internal readonly record struct ParentPrimitiveInfo(
-    string Name,
-    string Namespace,
-    string FriendlyName,
-    bool IsValueType
-);
-
-/// <summary>String length validation info.</summary>
-[StructLayout(LayoutKind.Auto)]
-internal readonly record struct StringLengthInfo(int MinLength, int MaxLength, bool ShouldValidate);

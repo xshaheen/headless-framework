@@ -57,31 +57,3 @@ public sealed record FcmAndroidOptions
     /// <summary>An absolute URL of an image the Android notification shows, overriding <see cref="FcmNotification.Image"/>.</summary>
     public Uri? Image { get; init; }
 }
-
-/// <summary>The Android delivery priority of an FCM message.</summary>
-[PublicAPI]
-public enum FcmAndroidPriority
-{
-    /// <summary>Delivered when the device is not in Doze; may be batched.</summary>
-    Normal = 0,
-
-    /// <summary>
-    /// Delivered immediately, waking a dozing device. Android deprioritizes an app that sends high priority messages
-    /// that show no notification.
-    /// </summary>
-    High = 1,
-}
-
-/// <summary>How an Android notification shows on a locked screen.</summary>
-[PublicAPI]
-public enum FcmAndroidVisibility
-{
-    /// <summary>Shows only a redacted version on a secure lock screen. Android's default.</summary>
-    Private = 0,
-
-    /// <summary>Shows in full on every lock screen.</summary>
-    Public = 1,
-
-    /// <summary>Hidden on a secure lock screen.</summary>
-    Secret = 2,
-}

@@ -5,33 +5,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Headless.Caching;
 
-/// <summary>Kind of pending operation tracked by <see cref="HybridCacheRecoveryQueue"/>.</summary>
-internal enum HybridCacheRecoveryKind
-{
-    SetEntry,
-    Remove,
-    Expire,
-    PublishInvalidation,
-
-    /// <summary>
-    /// A Family-2 tag/clear/remove generation marker bump (logical RemoveByTag/Clear/Flush). Stored under a
-    /// synthetic key; replay re-asserts the marker at its original timestamp (raise-only durable write) and
-    /// re-broadcasts. Exempt from <see cref="HybridCacheRecoveryQueue.OnIncomingInvalidation"/> conflict drops —
-    /// raise-only markers are idempotent and never resurrect stale data.
-    /// </summary>
-    MarkerBump,
-}
-
-/// <summary>Outcome of replaying a queued recovery item.</summary>
-internal enum HybridCacheRecoveryReplayOutcome
-{
-    /// <summary>The pending operation was replayed against the recovered dependency.</summary>
-    Replayed,
-
-    /// <summary>The pending operation no longer applies (e.g. the L1 entry changed) and was dropped.</summary>
-    Obsolete,
-}
-
 /// <summary>
 /// Bounded queue of pending L2/backplane operations used by <see cref="HybridCache"/> auto-recovery (design
 /// reference: FusionCache's AutoRecoveryService, adapted). One pending operation per cache key with kind-aware

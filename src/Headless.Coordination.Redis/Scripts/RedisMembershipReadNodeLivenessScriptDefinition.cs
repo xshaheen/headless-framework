@@ -55,21 +55,3 @@ internal sealed class RedisMembershipReadNodeLivenessScriptDefinition : RedisScr
             """
         ) { }
 }
-
-#pragma warning disable IDE1006 // camelCase mirrors the Lua @param token names
-/// <summary>Parameters for <see cref="RedisMembershipReadNodeLivenessScriptDefinition"/>.</summary>
-[StructLayout(LayoutKind.Auto)]
-internal readonly record struct ReadNodeLivenessParams(
-    RedisKey knownKey,
-    RedisKey genKey,
-    string generationField,
-    string member,
-    long incarnation,
-    long softMs,
-    long hardMs,
-    long pruneMs,
-    string aliveState,
-    string suspectedState,
-    string deadState
-);
-#pragma warning restore IDE1006

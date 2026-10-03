@@ -65,5 +65,3 @@ internal interface IRedisStreamManager
         CancellationToken cancellationToken = default
     );
 }
-
-internal readonly record struct RedisStreamMessages(RedisKey Key, StreamEntry[] Entries);

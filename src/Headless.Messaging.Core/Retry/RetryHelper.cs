@@ -403,13 +403,3 @@ internal static class RetryHelper
         );
     }
 }
-
-/// <summary>
-/// Value returned by the <c>RetryHelper.ResolveNextState</c> overloads describing the persistence state
-/// for a single failed delivery attempt.
-/// </summary>
-internal readonly record struct RetryNextState(
-    bool IsInlineRetryInFlight,
-    RetryDelay? NextRetry,
-    StatusName NextStatus
-);

@@ -3,13 +3,6 @@
 namespace Headless.Abstractions;
 
 /// <summary>
-/// An immutable time-zone display option: a display <see cref="Name"/> (identifier plus UTC offset)
-/// and the <see cref="Value"/> identifier. Being immutable, instances are safe to cache and share.
-/// </summary>
-[PublicAPI]
-public sealed record TimezoneOption(string Name, string Value);
-
-/// <summary>
 /// Provides cross-platform time zone enumeration and identifier conversion between Windows and IANA formats.
 /// Implementations should cache the enumeration lists because resolving a <see cref="TimeZoneInfo"/> per entry
 /// is expensive.

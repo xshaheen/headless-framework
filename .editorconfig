@@ -298,6 +298,18 @@ dotnet_style_namespace_match_folder = false
 dotnet_diagnostic.IDE0130.severity = none
 resharper_check_namespace_highlighting = none
 
+[src/**/*.cs]
+
+# MA0048: File name must match type name. Prefix mode requires every top-level type name to start
+# with its file name, so a file holds one type plus companions named after it (an options
+# validator, a LoggerMessage partial) and partial files keep their `Type.Part.cs` names. A generic
+# type whose plain name is taken uses `Type{T}.cs`. Test and sample files may keep helper types
+# beside the code that uses them, so the rule covers src only.
+dotnet_diagnostic.MA0048.severity = warning
+MA0048.mode = Prefix
+MA0048.only_validate_first_type = false
+MA0048.exclude_file_local_types = true
+
 [{demo,benchmarks,tests}/**/*.cs]
 
 # CA5394: Do not use insecure randomness

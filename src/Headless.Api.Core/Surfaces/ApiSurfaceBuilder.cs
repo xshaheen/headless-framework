@@ -28,11 +28,3 @@ public sealed class ApiSurfaceBuilder(string surfaceName)
             new ApiSurfaceOpenApiDescriptor(OpenApi.DocumentName, OpenApi.Title)
         );
 }
-
-/// <summary>Configures document identity independently of ApiExplorer version groups.</summary>
-[PublicAPI]
-public sealed class ApiSurfaceOpenApiOptions(string surfaceName)
-{
-    public string DocumentName { get; set; } = surfaceName.ToLowerInvariant();
-    public string Title { get; set; } = $"{surfaceName} API";
-}

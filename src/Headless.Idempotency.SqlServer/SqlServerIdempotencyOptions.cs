@@ -16,12 +16,3 @@ public sealed class SqlServerIdempotencyOptions : RelationalIdempotencyOptions;
 
 internal sealed class SqlServerIdempotencyOptionsValidator()
     : RelationalIdempotencyOptionsValidator<SqlServerIdempotencyOptions>("SQL Server");
-
-/// <summary>Checks the shared idempotency schema name against SQL Server's identifier rules.</summary>
-internal sealed class SqlServerIdempotencyStorageOptionsValidator : AbstractValidator<IdempotencyStorageOptions>
-{
-    public SqlServerIdempotencyStorageOptionsValidator()
-    {
-        RuleFor(x => x.Schema).IsValidIdentifierFor(StorageProvider.SqlServer);
-    }
-}

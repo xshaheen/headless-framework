@@ -378,14 +378,6 @@ internal sealed class RedisConsumerClient(
     }
 }
 
-internal readonly record struct RedisConsumerDelivery(string Stream, string Group, string Id, NameValueEntry[] Entries);
-
-/// <summary>
-/// The settlement token of a group-less read. CommitAsync and RejectAsync ignore it: the read left no pending entry to
-/// acknowledge, and an every-instance delivery is never redelivered.
-/// </summary>
-internal readonly record struct RedisEveryInstanceDelivery(string Stream, string Id);
-
 internal static partial class RedisConsumerClientLog
 {
     [LoggerMessage(

@@ -77,9 +77,3 @@ public sealed class TerminateExecutionException : Exception
             );
     }
 }
-
-internal sealed class ExceptionDetailClassForSerialization
-{
-    public required string Message { get; set; }
-    public string? StackTrace { get; set; }
-}

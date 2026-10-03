@@ -24,37 +24,3 @@ public class LocaleAttribute(string locale, string displayName, string? descript
     /// <summary>The optional localized description for the annotated member.</summary>
     public string? Description { get; } = description;
 }
-
-/// <summary>The complete set of localized values for an enum: the default locale plus per-locale entries.</summary>
-/// <typeparam name="T">The enum value type being localized.</typeparam>
-/// <param name="Default">The localization for the default locale.</param>
-/// <param name="Locales">The localizations for each additional locale, keyed by locale.</param>
-[PublicAPI]
-public sealed record AllLocaleValue<T>(EnumLocale<T> Default, KeyEnumLocale<T>[] Locales);
-
-/// <summary>A localized enum value tagged with the locale key it belongs to.</summary>
-/// <typeparam name="T">The enum value type being localized.</typeparam>
-[PublicAPI]
-public sealed record KeyEnumLocale<T>
-{
-    /// <summary>The locale key this localization belongs to.</summary>
-    public required string Key { get; init; }
-
-    /// <summary>The localized enum value for <see cref="Key"/>.</summary>
-    public required EnumLocale<T> Locale { get; init; }
-}
-
-/// <summary>A single localized enum value: its display name, optional description, and underlying value.</summary>
-/// <typeparam name="T">The enum value type being localized.</typeparam>
-[PublicAPI]
-public sealed record EnumLocale<T>
-{
-    /// <summary>The localized display name for the value.</summary>
-    public required string DisplayName { get; init; }
-
-    /// <summary>The optional localized description for the value.</summary>
-    public string? Description { get; init; }
-
-    /// <summary>The underlying enum value being localized.</summary>
-    public required T Value { get; init; }
-}

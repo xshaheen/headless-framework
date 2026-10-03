@@ -477,6 +477,3 @@ public sealed class JobsCatalogBuilder
         }
     }
 }
-
-/// <summary>One job's <c>FailurePolicy</c> configuration section, applied after its policy is otherwise resolved.</summary>
-internal readonly record struct ConfiguredFailurePolicy(string Identity, string Path, FailurePolicyOverrides Overrides);

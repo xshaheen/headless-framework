@@ -50,17 +50,3 @@ public sealed record FcmMessage
     /// </summary>
     public bool DryRun { get; init; }
 }
-
-/// <summary>The notification FCM shows on every platform unless a platform block overrides it.</summary>
-[PublicAPI]
-public sealed record FcmNotification
-{
-    /// <summary>The notification title.</summary>
-    public string? Title { get; init; }
-
-    /// <summary>The notification body text.</summary>
-    public string? Body { get; init; }
-
-    /// <summary>An absolute URL of an image the notification shows.</summary>
-    public Uri? Image { get; init; }
-}

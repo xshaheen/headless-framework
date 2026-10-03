@@ -85,20 +85,3 @@ internal sealed class RedisMembershipReadScriptDefinition : RedisScriptDefinitio
             """
         ) { }
 }
-
-#pragma warning disable IDE1006 // camelCase mirrors the Lua @param token names
-/// <summary>Parameters for <see cref="RedisMembershipReadScriptDefinition"/>.</summary>
-[StructLayout(LayoutKind.Auto)]
-internal readonly record struct ReadParams(
-    RedisKey knownKey,
-    RedisKey liveKey,
-    string genKeyPrefix,
-    string generationFieldPrefix,
-    long softMs,
-    long hardMs,
-    long pruneMs,
-    string aliveState,
-    string suspectedState,
-    string deadState
-);
-#pragma warning restore IDE1006

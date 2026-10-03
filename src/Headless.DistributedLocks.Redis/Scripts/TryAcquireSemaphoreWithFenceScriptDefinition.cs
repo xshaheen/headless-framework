@@ -37,15 +37,3 @@ internal sealed class TryAcquireSemaphoreWithFenceScriptDefinition : RedisScript
             """
         ) { }
 }
-
-#pragma warning disable IDE1006 // camelCase mirrors the Lua @param token names
-/// <summary>Parameters for <see cref="TryAcquireSemaphoreWithFenceScriptDefinition"/>.</summary>
-[StructLayout(LayoutKind.Auto)]
-internal readonly record struct SemaphoreAcquireParams(
-    RedisKey holdersKey,
-    RedisKey fenceKey,
-    string leaseId,
-    int maxCount,
-    long expires
-);
-#pragma warning restore IDE1006

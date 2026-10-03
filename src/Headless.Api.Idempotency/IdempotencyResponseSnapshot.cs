@@ -26,6 +26,3 @@ internal sealed class IdempotencyResponseSnapshot
 
     public byte[] Body { get; init; } = [];
 }
-
-[JsonSerializable(typeof(IdempotencyResponseSnapshot))]
-internal sealed partial class IdempotencyJsonContext : JsonSerializerContext;

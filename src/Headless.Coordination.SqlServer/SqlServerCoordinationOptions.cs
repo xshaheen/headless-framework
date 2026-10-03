@@ -24,12 +24,3 @@ internal sealed class SqlServerCoordinationOptionsValidator
             .WithMessage("A SQL Server connection string is required.");
     }
 }
-
-/// <summary>Checks the shared coordination schema name against SQL Server's identifier rules.</summary>
-internal sealed class SqlServerCoordinationStorageOptionsValidator : AbstractValidator<CoordinationStorageOptions>
-{
-    public SqlServerCoordinationStorageOptionsValidator()
-    {
-        RuleFor(x => x.Schema).IsValidIdentifierFor(StorageProvider.SqlServer);
-    }
-}

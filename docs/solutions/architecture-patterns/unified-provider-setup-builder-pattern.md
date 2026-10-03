@@ -244,7 +244,7 @@ Skip this shape when the feature has exactly one possible backend and zero confi
 | Settings | `src/Headless.Settings.Core/Setup.cs` (`SetupCoreSettings`) | `HeadlessSettingsSetupBuilder.cs` | `ISettingsStorageOptionsExtension` | EF, PostgreSql, SqlServer |
 | Permissions | `src/Headless.Permissions.Core/Setup.cs` | `HeadlessPermissionsSetupBuilder.cs` | `IPermissionsStorageOptionsExtension` | EF, PostgreSql, SqlServer |
 | Features | `src/Headless.Features.Core/Setup.cs` | `HeadlessFeaturesSetupBuilder.cs` | `IFeaturesStorageOptionsExtension` | EF, PostgreSql, SqlServer |
-| Identity | `src/Headless.Identity.Storage.EntityFramework/Setup.cs` | `HeadlessIdentitySetupBuilder.cs` | package-local identity storage extension | EF |
+| Identity | `src/Headless.Identity.Storage.EntityFramework/SetupIdentityEntityFramework.cs` | `HeadlessIdentitySetupBuilder.cs` | package-local identity storage extension | EF |
 | Coordination | `src/Headless.Coordination.Core/Setup.cs` | `HeadlessCoordinationSetupBuilder.cs` | `ICoordinationProviderOptionsExtension` | PostgreSql, SqlServer, Redis |
 | Caching | `src/Headless.Caching.Core/Setup.cs` (`SetupCachingCore`) | `HeadlessCachingSetupBuilder.cs` | `ICacheProviderOptionsExtension` | InMemory, Redis, Hybrid (+ DistributedLocks as cross-cutting) |
 | Captcha | `src/Headless.Captcha.Core/Setup.cs` (`SetupCaptcha`) | `HeadlessCaptchaSetupBuilder.cs` | per-slot deferred actions + `ICaptchaProvider` by-name resolver | ReCaptcha (v2/v3), Turnstile |

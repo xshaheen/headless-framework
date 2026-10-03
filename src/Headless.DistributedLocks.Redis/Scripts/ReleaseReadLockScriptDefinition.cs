@@ -18,9 +18,3 @@ internal sealed class ReleaseReadLockScriptDefinition : RedisScriptDefinition
             """
         ) { }
 }
-
-#pragma warning disable IDE1006 // camelCase mirrors the Lua @param token names
-/// <summary>Parameters for <see cref="ReleaseReadLockScriptDefinition"/>.</summary>
-[StructLayout(LayoutKind.Auto)]
-internal readonly record struct ReaderWriterReaderOnlyParams(RedisKey readerKey, string leaseId, RedisValue expires);
-#pragma warning restore IDE1006

@@ -15,12 +15,3 @@ public sealed class PostgreSqlFencingOptions : RelationalFencingOptions;
 
 internal sealed class PostgreSqlFencingOptionsValidator()
     : RelationalFencingOptionsValidator<PostgreSqlFencingOptions>("PostgreSQL");
-
-/// <summary>Checks the shared fencing schema name against PostgreSQL's identifier rules.</summary>
-internal sealed class PostgreSqlFencingStorageOptionsValidator : AbstractValidator<FencingStorageOptions>
-{
-    public PostgreSqlFencingStorageOptionsValidator()
-    {
-        RuleFor(x => x.Schema).IsValidIdentifierFor(StorageProvider.PostgreSql);
-    }
-}

@@ -46,18 +46,6 @@ internal sealed class RedisEvents
     }
 }
 
-internal static class RedisConnectionExtensions
-{
-    public static void LogEvents(this IConnectionMultiplexer connection, ILogger logger)
-    {
-        Argument.IsNotNull(connection);
-
-        Argument.IsNotNull(logger);
-
-        _ = new RedisEvents(connection, logger);
-    }
-}
-
 internal static partial class RedisEventsLog
 {
     [LoggerMessage(

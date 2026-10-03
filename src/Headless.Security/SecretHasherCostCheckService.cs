@@ -218,26 +218,3 @@ internal sealed class SecretHasherCostCheckService(
         return duration.TotalMilliseconds.ToString("0.##", CultureInfo.InvariantCulture);
     }
 }
-
-internal static partial class SecretHasherLoggerExtensions
-{
-    [LoggerMessage(
-        EventId = 1,
-        EventName = "SecretHasherCostOutOfRange",
-        Level = LogLevel.Warning,
-        Message = "{Problem} Set SecretHasherOptions.CostCheck.Mode to Strict to fail startup instead, or Off to skip the check."
-    )]
-    public static partial void LogSecretHasherCostOutOfRange(this ILogger logger, string problem);
-
-    [LoggerMessage(
-        EventId = 2,
-        EventName = "SecretHasherCostCheckFailed",
-        Level = LogLevel.Warning,
-        Message = "The secret-hasher cost check could not hash with '{AlgorithmId}'; its cost was not measured."
-    )]
-    public static partial void LogSecretHasherCostCheckFailed(
-        this ILogger logger,
-        Exception exception,
-        string algorithmId
-    );
-}

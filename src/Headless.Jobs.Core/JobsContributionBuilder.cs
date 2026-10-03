@@ -57,34 +57,3 @@ public sealed class JobsContributionBuilder
         return this;
     }
 }
-
-/// <summary>One generated module that a contribution or the host asked the host's catalog to register.</summary>
-/// <param name="ModuleType">The generated module type, which identifies the module across contributions.</param>
-/// <param name="Register">Runs the module's generated registration against one host's catalog.</param>
-internal sealed record JobsModuleContribution(Type ModuleType, Action<JobsCatalogBuilder> Register);
-
-/// <summary>One <c>Tune</c> call recorded in the service collection.</summary>
-internal sealed record JobsTuningContribution(JobTuning Tuning);
-
-internal static class JobsContributionRecording
-{
-    public static void AddJobsModuleContribution<TModule>(this IServiceCollection services)
-        where TModule : IJobsModule
-    {
-        services.AddSingleton(new JobsModuleContribution(typeof(TModule), static catalog => TModule.Register(catalog)));
-    }
-
-    public static void AddJobTuning(
-        this IServiceCollection services,
-        string identity,
-        Action<JobTuningBuilder> configure
-    )
-    {
-        Argument.IsNotNullOrWhiteSpace(identity);
-        Argument.IsNotNull(configure);
-
-        var builder = new JobTuningBuilder(identity);
-        configure(builder);
-        services.AddSingleton(new JobsTuningContribution(builder.Build()));
-    }
-}

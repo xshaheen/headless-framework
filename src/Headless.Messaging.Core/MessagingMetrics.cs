@@ -581,36 +581,3 @@ internal static class MessagingMetrics
         }
     }
 }
-
-internal enum InboxMetricKind
-{
-    Duplicate = 0,
-    Attempt = 1,
-    Recovery = 2,
-    Terminal = 3,
-    Replay = 4,
-    Retention = 5,
-    Capability = 6,
-}
-
-internal enum InboxMetricOutcome
-{
-    Winner = 0,
-    InFlightDuplicate = 1,
-    SucceededDuplicate = 2,
-    TerminalFailedDuplicate = 3,
-    Reserved = 4,
-    Succeeded = 5,
-    FailedExhausted = 6,
-    Orphaned = 7,
-    Routable = 8,
-    Held = 9,
-    Released = 10,
-    Purged = 11,
-    Replayed = 12,
-    Expired = 13,
-}
-
-/// <summary>How inbox measurements treat the tenant dimension, resolved once from the host configuration.</summary>
-/// <param name="TenantTagName">The tenant attribute to add to inbox measurements, or <see langword="null"/> to omit it.</param>
-internal sealed record InboxMetricPolicy(string? TenantTagName);

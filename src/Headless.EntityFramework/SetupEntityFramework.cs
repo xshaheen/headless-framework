@@ -410,9 +410,3 @@ public static class SetupEntityFramework
         return options;
     }
 }
-
-/// <summary>Sentinel marker for one-shot tenant-write-guard PostConfigure registration.</summary>
-internal sealed class HeadlessTenantWriteGuardSentinel;
-
-/// <summary>Sentinel marker for one-shot tenant-read-guard PostConfigure registration.</summary>
-internal sealed class HeadlessTenantReadGuardSentinel;

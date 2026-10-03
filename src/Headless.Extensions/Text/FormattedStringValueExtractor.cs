@@ -143,29 +143,3 @@ public static class FormattedStringValueExtractor
         return true;
     }
 }
-
-#region Types
-
-[PublicAPI]
-public sealed class FormattedStringExtractionResult
-{
-    private readonly List<NameValue> _matches = [];
-
-    internal FormattedStringExtractionResult(bool isMatch)
-    {
-        IsMatch = isMatch;
-    }
-
-    /// <summary>Is fully matched.</summary>
-    public bool IsMatch { get; internal set; }
-
-    /// <summary>List of matched dynamic values.</summary>
-    public IReadOnlyList<NameValue> Matches => _matches;
-
-    internal void AddMatch(NameValue match)
-    {
-        _matches.Add(match);
-    }
-}
-
-#endregion
