@@ -227,8 +227,3 @@ public static class SetupCors
         return values.Count == 0 || values.Contains("*", StringComparer.Ordinal);
     }
 }
-
-/// <summary>Marks a policy name registered through <c>AddHeadlessCors</c>, keyed by that name.</summary>
-internal sealed class HeadlessCorsPolicyMarker;
-
-internal sealed class HeadlessCorsPolicyProviderMarker;

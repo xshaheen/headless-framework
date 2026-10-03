@@ -6,12 +6,6 @@ using Headless.Sql;
 namespace Headless.AuditLog;
 
 /// <summary>
-/// Binds an instant as a parameter typed like the <c>CreatedAt</c> column, so a comparison never converts the column
-/// and keeps its index usable.
-/// </summary>
-internal delegate void AuditLogCreatedAtBinder(DbCommand command, string parameter, DateTimeOffset value);
-
-/// <summary>
 /// The audit log table as one provider sees it: its dialect, connection options, resolved names, JSON column type,
 /// and how a <c>CreatedAt</c> value is bound. The schema contribution, writer, and reader share it, so the DDL and the
 /// statements name the same objects.

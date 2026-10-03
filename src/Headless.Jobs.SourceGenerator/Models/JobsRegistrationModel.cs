@@ -10,12 +10,3 @@ internal sealed record JobsRegistrationModel(
     EquatableArray<JobModel> Jobs,
     EquatableArray<MiddlewareRegistrationModel> Middleware
 );
-
-/// <summary>
-/// The combined outcome for one assembly. <see cref="Model"/> is <see langword="null"/> when nothing may be emitted,
-/// such as when job identities or argument types collide.
-/// </summary>
-internal sealed record JobsGenerationResult(JobsRegistrationModel? Model, EquatableArray<DiagnosticInfo> Diagnostics)
-{
-    public static JobsGenerationResult Empty { get; } = new(Model: null, EquatableArray<DiagnosticInfo>.Empty);
-}

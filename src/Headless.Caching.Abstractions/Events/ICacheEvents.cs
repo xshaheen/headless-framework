@@ -90,25 +90,3 @@ public interface ICacheEvents
     /// <summary>Current accepted, processed, dropped, and pending signal counts for the bounded dispatcher.</summary>
     CacheEventDispatchStatistics DispatchStatistics => default;
 }
-
-/// <summary>The low-level memory (L1) tier events of a hybrid cache.</summary>
-[PublicAPI]
-public interface ICacheMemoryEvents
-{
-    /// <summary>The L1 store read hit.</summary>
-    IAsyncEvent<CacheKeyEventArgs> Hit { get; }
-
-    /// <summary>The L1 store read missed.</summary>
-    IAsyncEvent<CacheKeyEventArgs> Miss { get; }
-}
-
-/// <summary>The low-level distributed (L2) tier events of a hybrid cache.</summary>
-[PublicAPI]
-public interface ICacheDistributedEvents
-{
-    /// <summary>The L2 store read hit.</summary>
-    IAsyncEvent<CacheKeyEventArgs> Hit { get; }
-
-    /// <summary>The L2 store read missed.</summary>
-    IAsyncEvent<CacheKeyEventArgs> Miss { get; }
-}

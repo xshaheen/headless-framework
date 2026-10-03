@@ -32,17 +32,3 @@ internal sealed class TryExtendWriteLockScriptDefinition : RedisScriptDefinition
             """
         ) { }
 }
-
-#pragma warning disable IDE1006 // camelCase mirrors the Lua @param token names
-/// <summary>
-/// Parameters shared by the writer-only scripts (<see cref="TryExtendWriteLockScriptDefinition"/>,
-/// <see cref="ReleaseWriteLockScriptDefinition"/>).
-/// </summary>
-[StructLayout(LayoutKind.Auto)]
-internal readonly record struct ReaderWriterWriterOnlyParams(
-    RedisKey writerKey,
-    string leaseId,
-    string waitingId,
-    RedisValue expires
-);
-#pragma warning restore IDE1006

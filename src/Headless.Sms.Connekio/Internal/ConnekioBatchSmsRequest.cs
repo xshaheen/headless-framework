@@ -16,9 +16,3 @@ internal sealed class ConnekioBatchSmsRequest
     [JsonPropertyName("mobile_list")]
     public required List<ConnekioRecipient> MobileList { get; init; }
 }
-
-internal sealed class ConnekioRecipient
-{
-    [JsonPropertyName("msisdn")]
-    public required string Msisdn { get; init; }
-}

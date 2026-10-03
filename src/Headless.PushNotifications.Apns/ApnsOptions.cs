@@ -170,48 +170,6 @@ public sealed class ApnsOptions
     }
 }
 
-/// <summary>
-/// The APNs environment a provider delivers to.
-/// </summary>
-[PublicAPI]
-public enum ApnsEnvironment
-{
-    /// <summary>The production environment, <c>api.push.apple.com</c>, for App Store, TestFlight, and ad hoc builds.</summary>
-    Production = 0,
-
-    /// <summary>The development environment, <c>api.sandbox.push.apple.com</c>, for builds signed with a development profile.</summary>
-    Sandbox = 1,
-}
-
-/// <summary>
-/// The APNs push type, which decides how the device handles the notification.
-/// </summary>
-[PublicAPI]
-public enum ApnsPushType
-{
-    /// <summary>A user-visible notification with an alert.</summary>
-    Alert = 0,
-
-    /// <summary>A VoIP notification delivered to PushKit. It raises the payload limit to 5120 bytes.</summary>
-    Voip = 1,
-}
-
-/// <summary>
-/// The APNs delivery priority. The numeric values are the <c>apns-priority</c> header values.
-/// </summary>
-#pragma warning disable CA1008 // The values are the apns-priority header values, and APNs defines no zero priority.
-[PublicAPI]
-public enum ApnsPriority
-{
-    /// <summary>Prioritize the device's power over all other factors; the notification may be delayed.</summary>
-    PowerPrioritized = 1,
-
-    /// <summary>Deliver based on the device's power considerations.</summary>
-    PowerConsiderate = 5,
-
-    /// <summary>Deliver immediately.</summary>
-    Immediate = 10,
-}
 #pragma warning restore CA1008
 
 /// <summary>

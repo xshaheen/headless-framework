@@ -51,13 +51,3 @@ public sealed class AuditLogQuery : ContinuationPageRequest
     /// <summary>Gets the order entries are returned in. The default is <see cref="AuditLogSortDirection.NewestFirst"/>.</summary>
     public AuditLogSortDirection Direction { get; init; } = AuditLogSortDirection.NewestFirst;
 }
-
-/// <summary>The order in which <see cref="IReadAuditLog{TContext}"/> returns entries.</summary>
-public enum AuditLogSortDirection
-{
-    /// <summary>Most recent entries first: descending creation time, then descending ID.</summary>
-    NewestFirst = 0,
-
-    /// <summary>Oldest entries first: ascending creation time, then ascending ID.</summary>
-    OldestFirst = 1,
-}

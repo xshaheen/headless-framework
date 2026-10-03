@@ -1203,23 +1203,3 @@ public static partial class MessagingDashboardEndpoints
 
     #endregion
 }
-
-internal sealed class WarpResult
-{
-    public int ChildCount => Values.Count;
-
-    public required string ConsumerIdentity { get; set; }
-
-    public required List<SubInfo> Values { get; set; }
-
-    internal sealed class SubInfo
-    {
-        public required string MessageName { get; set; }
-
-        public required string Lane { get; set; }
-
-        public required string ImplName { get; set; }
-
-        public required string MethodEscaped { get; set; }
-    }
-}

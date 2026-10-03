@@ -16,15 +16,3 @@ namespace Headless.EntityFramework.Configurations;
 [PublicAPI]
 public sealed class NormalizeDateTimeValueConverter(ConverterMappingHints? mappingHints = null)
     : ValueConverter<DateTime, DateTime>(x => x.NormalizeToUtc(), x => x.NormalizeToUtc(), mappingHints);
-
-/// <summary>
-/// EF Core value converter that normalizes nullable <see cref="DateTime"/> values to <see cref="DateTimeKind.Utc"/>,
-/// leaving <see langword="null"/> values untouched.
-/// </summary>
-[PublicAPI]
-public sealed class NullableNormalizeDateTimeValueConverter(ConverterMappingHints? mappingHints = null)
-    : ValueConverter<DateTime?, DateTime?>(
-        x => x.HasValue ? x.Value.NormalizeToUtc() : x,
-        x => x.HasValue ? x.Value.NormalizeToUtc() : x,
-        mappingHints
-    );

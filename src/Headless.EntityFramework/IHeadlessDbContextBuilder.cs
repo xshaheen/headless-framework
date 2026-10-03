@@ -15,8 +15,3 @@ public interface IHeadlessDbContextBuilder
     /// <summary>The underlying service collection, for advanced registration.</summary>
     IServiceCollection Services { get; }
 }
-
-internal sealed class HeadlessDbContextBuilder(IServiceCollection services) : IHeadlessDbContextBuilder
-{
-    public IServiceCollection Services { get; } = services;
-}

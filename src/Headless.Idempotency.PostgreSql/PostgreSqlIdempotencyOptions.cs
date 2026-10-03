@@ -16,12 +16,3 @@ public sealed class PostgreSqlIdempotencyOptions : RelationalIdempotencyOptions;
 
 internal sealed class PostgreSqlIdempotencyOptionsValidator()
     : RelationalIdempotencyOptionsValidator<PostgreSqlIdempotencyOptions>("PostgreSQL");
-
-/// <summary>Checks the shared idempotency schema name against PostgreSQL's identifier rules.</summary>
-internal sealed class PostgreSqlIdempotencyStorageOptionsValidator : AbstractValidator<IdempotencyStorageOptions>
-{
-    public PostgreSqlIdempotencyStorageOptionsValidator()
-    {
-        RuleFor(x => x.Schema).IsValidIdentifierFor(StorageProvider.PostgreSql);
-    }
-}

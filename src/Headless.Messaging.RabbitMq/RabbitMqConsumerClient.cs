@@ -699,9 +699,3 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
             .ConfigureAwait(false);
     }
 }
-
-internal enum RabbitMqConsumerLifecycleCheckpoint
-{
-    BeforeStartLock = 0,
-    StartDeferredByPause = 1,
-}

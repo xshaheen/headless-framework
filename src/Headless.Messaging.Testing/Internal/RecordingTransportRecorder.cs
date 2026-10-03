@@ -1,0 +1,138 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using System.Collections.Concurrent;
+using System.Reflection;
+using Headless.Messaging.Serialization;
+using Microsoft.Extensions.Logging;
+
+namespace Headless.Messaging.Testing.Internal;
+
+internal static class RecordingTransportRecorder
+{
+    /// <summary>
+    /// Stamps the store's current reset generation on the outgoing message so the recording consume pipeline can
+    /// recognise a message that a reset has since cleared and neither wait for its Published record nor record it.
+    /// </summary>
+    public static void StampResetGeneration(TransportMessage message, MessageObservationStore store)
+    {
+        message.Headers[RecordingHeaders.ResetGeneration] = store.Generation.ToString(
+            System.Globalization.CultureInfo.InvariantCulture
+        );
+    }
+
+    private static readonly ConcurrentDictionary<string, Type?> _TypeCache = new(StringComparer.Ordinal);
+    private static readonly AsyncLocal<int> _NestedRecordingSuppression = new();
+
+    public static IDisposable SuppressNestedRecording()
+    {
+        _NestedRecordingSuppression.Value++;
+        return new SuppressionScope();
+    }
+
+    public static async Task RecordPublishedAsync(
+        OperateResult result,
+        TransportMessage message,
+        MessageLane lane,
+        MessageObservationStore store,
+        IMessageSerializer serializer,
+        ILogger? logger
+    )
+    {
+        if (_NestedRecordingSuppression.Value > 0)
+        {
+            return;
+        }
+
+        if (!result.Succeeded)
+        {
+            return;
+        }
+
+        var headers = message.Headers;
+        var messageTypeName = headers.TryGetValue(Headers.Type, out var typeName) ? typeName : null;
+
+        object messageObj = message;
+        var messageType = typeof(TransportMessage);
+
+        if (message.Body.Length > 0 && messageTypeName != null)
+        {
+            var resolvedType = _ResolveType(messageTypeName);
+
+            if (resolvedType != null)
+            {
+                try
+                {
+                    // Recording is a must-complete side effect of a successful publish; it has no
+                    // caller token to observe, so deserialization runs uncancellable.
+                    var deserialized = await serializer
+                        .DeserializeAsync(message, resolvedType, CancellationToken.None)
+                        .ConfigureAwait(false);
+
+                    if (deserialized.Value != null)
+                    {
+                        messageObj = deserialized.Value;
+                        messageType = resolvedType;
+                    }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException and not OutOfMemoryException)
+                {
+                    logger?.LogDeserializeObservedPayloadFailed(ex, resolvedType.FullName);
+                }
+            }
+        }
+
+        var recorded = RecordedMessage.FromHeaders(headers, messageObj, messageType, store.GetUtcNow(), lane);
+        store.Record(recorded, MessageObservationType.Published);
+    }
+
+    private static Type? _ResolveType(string typeName)
+    {
+        return _TypeCache.GetOrAdd(
+            typeName,
+            static name =>
+            {
+                var type = Type.GetType(name);
+                if (type != null)
+                {
+                    return type;
+                }
+
+                foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+                {
+                    if (assembly.IsDynamic)
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        foreach (var candidate in assembly.GetExportedTypes())
+                        {
+                            if (
+                                string.Equals(candidate.FullName, name, StringComparison.Ordinal)
+                                || string.Equals(candidate.Name, name, StringComparison.Ordinal)
+                            )
+                            {
+                                return candidate;
+                            }
+                        }
+                    }
+                    catch (ReflectionTypeLoadException)
+                    {
+                        // Some assemblies may fail to load types — skip them
+                    }
+                }
+
+                return null;
+            }
+        );
+    }
+
+    private sealed class SuppressionScope : IDisposable
+    {
+        public void Dispose()
+        {
+            _NestedRecordingSuppression.Value--;
+        }
+    }
+}

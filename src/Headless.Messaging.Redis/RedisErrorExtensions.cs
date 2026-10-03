@@ -24,10 +24,3 @@ internal static class RedisErrorExtensions
         return exception.Message.GetRedisErrorType();
     }
 }
-
-internal enum RedisErrorTypes : byte
-{
-    Unknown = 0,
-    GroupAlreadyExists = 1,
-    NoGroupInfoExists = 2,
-}

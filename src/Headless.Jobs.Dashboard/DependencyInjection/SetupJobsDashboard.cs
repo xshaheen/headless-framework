@@ -118,17 +118,3 @@ public static class SetupJobsDashboard
         return jobsConfiguration;
     }
 }
-
-internal sealed class JobsDashboardStartupFilter<TTimeJob, TCronJob>(DashboardOptionsBuilder config) : IStartupFilter
-    where TTimeJob : TimeJobEntity<TTimeJob>, new()
-    where TCronJob : CronJobEntity, new()
-{
-    public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next)
-    {
-        return app =>
-        {
-            next(app);
-            app.UseDashboardWithEndpoints<TTimeJob, TCronJob>(config);
-        };
-    }
-}

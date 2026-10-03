@@ -8,13 +8,6 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.Internal;
 
-/// <summary>Initializes one additional outbox's schema and names its tables.</summary>
-internal interface IOutboxStorageInitializer : IStorageTableNames
-{
-    /// <summary>Applies the outbox's missing schema steps to its own database.</summary>
-    Task InitializeAsync(CancellationToken cancellationToken = default);
-}
-
 /// <summary>
 /// Applies an additional outbox's schema contribution with a runner of its own. The contribution is not registered
 /// with the host's runner, because the host's runner fails startup on an unreachable database, and an additional

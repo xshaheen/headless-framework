@@ -26,58 +26,6 @@ internal enum DeliveryCoordinationMismatch
     TransactionCompleted = 4,
 }
 
-internal enum InboxCommitProbe
-{
-    Indeterminate = 0,
-    Committed = 1,
-}
-
-internal interface ITransactionalInboxStorage
-{
-    ValueTask<bool> CompleteReceivedInboxAsync(
-        MediumMessage message,
-        DbTransaction transaction,
-        CancellationToken cancellationToken
-    );
-
-    ValueTask<InboxCommitProbe> ProbeReceivedInboxCommitAsync(
-        MediumMessage message,
-        CancellationToken cancellationToken
-    );
-}
-
-internal interface IInboxTransactionRunner
-{
-    /// <summary>
-    /// Runs <paramref name="handler" /> inside one inbox transaction, handing it the unit of work enlisted in that
-    /// transaction so the consumer's context and the callback publish can join it.
-    /// </summary>
-    Task ExecuteAsync(
-        MediumMessage message,
-        Func<IUnitOfWork, CancellationToken, Task> handler,
-        CancellationToken cancellationToken
-    );
-}
-
-internal sealed class StaleInboxAttemptException(Guid storageId)
-    : InvalidOperationException($"Inbox attempt '{storageId}' lost its generation fence before completion.");
-
-internal sealed class UncommittedInboxCommitException(Guid storageId, Exception commitException)
-    : InvalidOperationException(
-        $"The coordinated commit for inbox attempt '{storageId}' was rolled back; persisted lease recovery must reserve the next attempt.",
-        commitException
-    );
-
-internal sealed class IndeterminateInboxCommitException(
-    Guid storageId,
-    Exception commitException,
-    Exception probeException
-)
-    : InvalidOperationException(
-        $"The coordinated commit outcome for inbox attempt '{storageId}' is indeterminate; persisted recovery must resolve it before handler re-entry.",
-        new AggregateException(commitException, probeException)
-    );
-
 internal readonly record struct DeliveryCoordination
 {
     private DeliveryCoordination(

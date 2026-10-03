@@ -52,25 +52,3 @@ public interface ISerializer
     /// <returns>The deserialized value, or <see langword="null"/> when the payload represents a null/absent value.</returns>
     object? Deserialize(in ReadOnlySequence<byte> data, Type type);
 }
-
-/// <summary>
-/// Marker interface for serializers that produce binary (non-text) output, such as MessagePack or Protocol Buffers.
-/// </summary>
-/// <remarks>
-/// <see cref="SerializerExtensions.SerializeToString{T}"/> encodes binary output as Base64 when the serializer
-/// does not implement <see cref="ITextSerializer"/>.
-/// </remarks>
-public interface IBinarySerializer : ISerializer;
-
-/// <summary>
-/// Marker interface for serializers that produce UTF-8 text output, such as JSON or XML.
-/// </summary>
-/// <remarks>
-/// <see cref="SerializerExtensions.SerializeToString{T}"/> returns the raw UTF-8 string for text serializers,
-/// and <see cref="SerializerExtensions.Deserialize{T}(ISerializer, string)"/> decodes the input as UTF-8 bytes
-/// rather than Base64.
-/// </remarks>
-public interface ITextSerializer : ISerializer;
-
-/// <summary>Marker interface for JSON serializers.</summary>
-public interface IJsonSerializer : ITextSerializer;

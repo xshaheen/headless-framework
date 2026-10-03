@@ -82,11 +82,3 @@ public sealed class MessagingRoutingAffinityMapping
         }
     }
 }
-
-/// <summary>A registered logical destination and its immutable native affinity mapping.</summary>
-[PublicAPI]
-public sealed record MessagingRoutingAffinityRoute(
-    MessageLane Lane,
-    string MessageName,
-    MessagingRoutingAffinityMapping Mapping
-);

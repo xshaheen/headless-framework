@@ -1,0 +1,312 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using System.Collections.Concurrent;
+using System.Diagnostics;
+using System.Reflection;
+using Headless.Messaging.Configuration;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using RabbitMQ.Client;
+
+namespace Headless.Messaging.RabbitMq;
+
+/// <summary>Default implementation of <see cref="IConnectionChannelPool"/>.</summary>
+internal sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposable, IAsyncDisposable
+{
+    private const int _DefaultPoolSize = 15;
+    private readonly SemaphoreSlim _connectionLock = new(1, 1);
+
+    private readonly Func<CancellationToken, Task<IConnection>> _connectionActivator;
+    private readonly Func<CancellationToken, Task<IConnection>> _nonRecoveringConnectionActivator;
+    private readonly bool _isPublishConfirms;
+    private readonly ILogger<ConnectionChannelPool> _logger;
+    private readonly ConcurrentQueue<IChannel> _pool;
+    private readonly SemaphoreSlim _poolSemaphore;
+    private IConnection? _connection;
+
+    private int _count;
+    private int _maxSize;
+
+    public ConnectionChannelPool(
+        ILogger<ConnectionChannelPool> logger,
+        IOptions<MessagingOptions> messagingAccessorOptionsAccessor,
+        IOptions<RabbitMqMessagingOptions> optionsAccessor
+    )
+        : this(logger, messagingAccessorOptionsAccessor, optionsAccessor, connectionActivator: null) { }
+
+    internal ConnectionChannelPool(
+        ILogger<ConnectionChannelPool> logger,
+        IOptions<MessagingOptions> messagingAccessorOptionsAccessor,
+        IOptions<RabbitMqMessagingOptions> optionsAccessor,
+        Func<CancellationToken, Task<IConnection>>? connectionActivator
+    )
+    {
+        _logger = logger;
+        _maxSize = _DefaultPoolSize;
+        _pool = new ConcurrentQueue<IChannel>();
+        _poolSemaphore = new SemaphoreSlim(_DefaultPoolSize, _DefaultPoolSize);
+
+        var messagingOptions = messagingAccessorOptionsAccessor.Value;
+        var options = optionsAccessor.Value;
+
+        _connectionActivator = connectionActivator ?? _CreateConnection(options, automaticRecovery: true);
+        _nonRecoveringConnectionActivator = connectionActivator ?? _CreateConnection(options, automaticRecovery: false);
+        _isPublishConfirms = options.PublishConfirms;
+
+        HostAddress = string.Create(CultureInfo.InvariantCulture, $"{options.HostName}:{options.Port}");
+        Exchange = string.Equals("v1", messagingOptions.Version, StringComparison.Ordinal)
+            ? options.ExchangeName
+            : $"{options.ExchangeName}.{messagingOptions.Version}";
+
+        _logger.Configuration(
+            options.HostName,
+            options.Port,
+            options.UserName,
+            options.VirtualHost,
+            options.ExchangeName
+        );
+    }
+
+    Task<IChannel> IConnectionChannelPool.Rent()
+    {
+        return ((IConnectionChannelPool)this).Rent(CancellationToken.None);
+    }
+
+    // Acquires a pool slot from _poolSemaphore on the way in; the matching release happens in
+    // IConnectionChannelPool.Return. The private _CreateChannelAsync helper below deliberately does NOT
+    // touch the semaphore — it exists only for internal channel creation. Renting through the interface
+    // (which is what RabbitMqTransport does) must go through this acquire so that every Rent is balanced
+    // by a single Return release; otherwise Return over-releases and throws SemaphoreFullException once
+    // the initial slot count is exceeded.
+    async Task<IChannel> IConnectionChannelPool.Rent(CancellationToken cancellationToken)
+    {
+        await _poolSemaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+
+        try
+        {
+            return await _CreateChannelAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            _poolSemaphore.Release();
+            throw;
+        }
+    }
+
+    bool IConnectionChannelPool.Return(IChannel connection)
+    {
+        try
+        {
+            return Return(connection);
+        }
+        finally
+        {
+            _poolSemaphore.Release();
+        }
+    }
+
+    public string HostAddress { get; }
+
+    public string Exchange { get; }
+
+    public async Task<IConnection> GetConnectionAsync(CancellationToken cancellationToken = default)
+    {
+        if (_connection is { IsOpen: true })
+        {
+            return _connection;
+        }
+
+        await _connectionLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (_connection is { IsOpen: true })
+            {
+                return _connection;
+            }
+
+            _connection?.Dispose();
+            _connection = await _connectionActivator(cancellationToken).ConfigureAwait(false);
+            return _connection;
+        }
+        finally
+        {
+            _connectionLock.Release();
+        }
+    }
+
+    public Task<IConnection> CreateNonRecoveringConnectionAsync(CancellationToken cancellationToken = default)
+    {
+        return _nonRecoveringConnectionActivator(cancellationToken);
+    }
+
+    public void Dispose()
+    {
+        _maxSize = 0;
+
+        while (_pool.TryDequeue(out var channel))
+        {
+            channel.Dispose();
+        }
+
+        _connection?.Dispose();
+        _poolSemaphore.Dispose();
+        _connectionLock.Dispose();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _maxSize = 0;
+
+        while (_pool.TryDequeue(out var channel))
+        {
+            await channel.DisposeAsync().ConfigureAwait(false);
+        }
+
+        if (_connection != null)
+        {
+            await _connection.DisposeAsync().ConfigureAwait(false);
+        }
+
+        _poolSemaphore.Dispose();
+        _connectionLock.Dispose();
+    }
+
+    private static Func<CancellationToken, Task<IConnection>> _CreateConnection(
+        RabbitMqMessagingOptions options,
+        bool automaticRecovery
+    )
+    {
+        var factory = new ConnectionFactory
+        {
+            UserName = options.UserName,
+            Port = options.Port,
+            Password = options.Password,
+            VirtualHost = options.VirtualHost,
+            ClientProvidedName = Assembly.GetEntryAssembly()?.GetName().Name!.ToLower(CultureInfo.InvariantCulture),
+        };
+
+        if (options.HostName.Contains(',', StringComparison.Ordinal))
+        {
+            options.ConnectionFactoryOptions?.Invoke(factory);
+            _ApplyRecovery(factory, automaticRecovery);
+            var endpoints = AmqpTcpEndpoint.ParseMultiple(options.HostName);
+            foreach (var endpoint in endpoints)
+            {
+                endpoint.Ssl = factory.Ssl;
+            }
+
+            return cancellationToken => factory.CreateConnectionAsync(endpoints, cancellationToken);
+        }
+
+        factory.HostName = options.HostName;
+        options.ConnectionFactoryOptions?.Invoke(factory);
+        _ApplyRecovery(factory, automaticRecovery);
+        return cancellationToken => factory.CreateConnectionAsync(cancellationToken);
+    }
+
+    // Applied after ConnectionFactoryOptions: a caller's recovery settings hold for the shared connection, but a
+    // non-recovering connection must not recover whatever the callback set.
+    private static void _ApplyRecovery(ConnectionFactory factory, bool automaticRecovery)
+    {
+        if (!automaticRecovery)
+        {
+            factory.AutomaticRecoveryEnabled = false;
+            factory.TopologyRecoveryEnabled = false;
+        }
+    }
+
+    private async Task<IChannel> _CreateChannelAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (_pool.TryDequeue(out var model))
+        {
+            Interlocked.Decrement(ref _count);
+
+            Debug.Assert(_count >= 0);
+
+            return model;
+        }
+
+        try
+        {
+            var connection = await GetConnectionAsync(cancellationToken).ConfigureAwait(false);
+            model = await connection
+                .CreateChannelAsync(BuildChannelOptions(_isPublishConfirms), cancellationToken)
+                .ConfigureAwait(false);
+            await _DeclareLaneExchangesAsync(model, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception e)
+        {
+            _logger.ChannelModelCreateFailed(e);
+            throw;
+        }
+
+        return model;
+    }
+
+    private async Task _DeclareLaneExchangesAsync(IChannel channel, CancellationToken cancellationToken)
+    {
+        foreach (var lane in new[] { MessageLane.Bus, MessageLane.Queue })
+        {
+            await channel
+                .ExchangeDeclareAsync(
+                    RabbitMqPhysicalAddress.Exchange(Exchange, lane),
+                    RabbitMqPhysicalAddress.ExchangeType(lane),
+                    durable: true,
+                    autoDelete: false,
+                    arguments: null,
+                    passive: false,
+                    noWait: false,
+                    cancellationToken: cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+    }
+
+    internal static CreateChannelOptions BuildChannelOptions(bool publishConfirms)
+    {
+        return new(
+            publisherConfirmationsEnabled: publishConfirms,
+            publisherConfirmationTrackingEnabled: publishConfirms
+        );
+    }
+
+    public bool Return(IChannel channel)
+    {
+        if (Interlocked.Increment(ref _count) <= _maxSize && channel.IsOpen)
+        {
+            _pool.Enqueue(channel);
+
+            return true;
+        }
+
+        channel.Dispose();
+
+        Interlocked.Decrement(ref _count);
+
+        Debug.Assert(_maxSize == 0 || _pool.Count <= _maxSize);
+
+        return false;
+    }
+}
+
+internal static partial class ConnectionChannelPoolLog
+{
+    [LoggerMessage(
+        EventId = 3005,
+        Level = LogLevel.Debug,
+        Message = "RabbitMQ configuration:'HostName:{OptionsHostName}, Port:{OptionsPort}, UserName:{OptionsUserName}, VirtualHost:{OptionsVirtualHost}, ExchangeName:{OptionsExchangeName}'"
+    )]
+    public static partial void Configuration(
+        this ILogger logger,
+        string optionsHostName,
+        int optionsPort,
+        string? optionsUserName,
+        string? optionsVirtualHost,
+        string optionsExchangeName
+    );
+
+    [LoggerMessage(EventId = 3006, Level = LogLevel.Error, Message = "RabbitMQ channel model create failed!")]
+    public static partial void ChannelModelCreateFailed(this ILogger logger, Exception exception);
+}

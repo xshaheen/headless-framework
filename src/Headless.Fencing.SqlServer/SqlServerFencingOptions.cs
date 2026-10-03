@@ -15,12 +15,3 @@ public sealed class SqlServerFencingOptions : RelationalFencingOptions;
 
 internal sealed class SqlServerFencingOptionsValidator()
     : RelationalFencingOptionsValidator<SqlServerFencingOptions>("SQL Server");
-
-/// <summary>Checks the shared fencing schema name against SQL Server's identifier rules.</summary>
-internal sealed class SqlServerFencingStorageOptionsValidator : AbstractValidator<FencingStorageOptions>
-{
-    public SqlServerFencingStorageOptionsValidator()
-    {
-        RuleFor(x => x.Schema).IsValidIdentifierFor(StorageProvider.SqlServer);
-    }
-}

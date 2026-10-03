@@ -5,24 +5,6 @@ using Headless.Checks;
 
 namespace Headless.Messaging.Registration;
 
-internal interface IMessageProviderConfigBuilder<out TMessage>
-    where TMessage : class
-{
-    void SetMessageProviderConfig(object config);
-}
-
-internal interface IConsumerProviderConfigBuilder
-{
-    void SetConsumerProviderConfig(object config);
-}
-
-internal interface IProviderHeaderContributions
-{
-    IReadOnlyList<ProviderHeaderContribution> HeaderContributions { get; }
-}
-
-internal readonly record struct ProviderHeaderContribution(string HeaderName, Func<object, string?> Selector);
-
 internal sealed class ProviderConfigBag
 {
     private static readonly IReadOnlyDictionary<Type, object> _EmptyConfigs = ReadOnlyDictionary<Type, object>.Empty;

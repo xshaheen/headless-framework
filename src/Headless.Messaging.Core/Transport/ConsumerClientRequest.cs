@@ -4,23 +4,6 @@ using Headless.Checks;
 
 namespace Headless.Messaging.Transport;
 
-/// <summary>How the processes that open one subscription share its messages.</summary>
-[PublicAPI]
-public enum ConsumerSubscriptionKind
-{
-    /// <summary>
-    /// Every process that opens the subscription competes for its messages, so each message reaches one of them. The
-    /// subscription is durable: messages published while no process consumes it wait for the next one.
-    /// </summary>
-    Competing = 0,
-
-    /// <summary>
-    /// Every process receives every message through a subscription of its own, which exists only while the process
-    /// holds it. Delivery is at most once and has no backlog, and the Bus lane is the only lane with this kind.
-    /// </summary>
-    EveryInstance = 1,
-}
-
 /// <summary>What the messaging core asks a transport to create one consumer client for.</summary>
 /// <remarks>
 /// A transport maps a <see cref="ConsumerSubscriptionKind.Competing"/> request to the durable subscription that

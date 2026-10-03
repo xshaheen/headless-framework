@@ -275,23 +275,3 @@ public class MethodMatcherCache(IConsumerServiceSelector selector)
         selector.Invalidate();
     }
 }
-
-/// <summary>
-/// One subscription the host opens: a competing subscription and an every-instance subscription never share clients, even under one
-/// name, because one is broker-durable and shared across processes and the other belongs to this process alone.
-/// </summary>
-internal readonly record struct ConsumerSubscriptionKey(
-    string SubscriptionName,
-    MessageLane Lane,
-    Transport.ConsumerSubscriptionKind Kind = Transport.ConsumerSubscriptionKind.Competing
-);
-
-internal readonly record struct ConsumerIdentityKey(string ConsumerIdentity, MessageLane Lane);
-
-/// <summary>The exact route an inbox row names; string parts compare ordinally, and a missing part matches only another.</summary>
-internal readonly record struct InboxExecutorKey(
-    string? ConsumerIdentity,
-    string? ContractVersion,
-    string MessageName,
-    MessageLane Lane
-);

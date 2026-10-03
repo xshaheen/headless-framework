@@ -2,13 +2,6 @@
 
 namespace Headless.Primitives;
 
-/// <summary>Marker contract for response envelopes that carry a human-readable status message.</summary>
-public interface IMessageEnvelope
-{
-    /// <summary>The human-readable status message descriptor.</summary>
-    MessageDescriptor Message { get; }
-}
-
 /// <summary>
 /// API response envelope that carries a single <see cref="MessageDescriptor"/>.
 /// Serializes as <c>{ "message": { ... } }</c>. Use for operations that produce no resource ID

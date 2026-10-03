@@ -17,17 +17,3 @@ public interface ICouchbaseClusterOptionsProvider
     /// <returns>The Couchbase cluster options.</returns>
     ValueTask<ClusterOptions> GetAsync(string clusterKey, CancellationToken cancellationToken = default);
 }
-
-/// <summary>
-/// A simple <see cref="ICouchbaseClusterOptionsProvider"/> that returns the same
-/// <c>ClusterOptions</c> instance for every cluster key.
-/// </summary>
-[PublicAPI]
-public sealed class CouchbaseClusterOptionsProvider(ClusterOptions options) : ICouchbaseClusterOptionsProvider
-{
-    /// <inheritdoc/>
-    public ValueTask<ClusterOptions> GetAsync(string clusterKey, CancellationToken cancellationToken = default)
-    {
-        return new(options);
-    }
-}

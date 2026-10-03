@@ -7,40 +7,6 @@ using Headless.Reliability;
 namespace Headless.Messaging;
 
 /// <summary>
-/// Runs one attribute-declared consumer for one delivery. The Messaging source generator emits one per consumer class:
-/// it builds the class from the delivery's service scope, switches on the message type of <paramref name="context"/>, and
-/// calls the matching <see cref="IConsume{TMessage}.ConsumeAsync"/> with the typed context. For a request the class
-/// answers, it calls <see cref="IRespond{TRequest, TResponse}.RespondAsync"/> instead and records the returned value on
-/// <paramref name="context"/> as the reply.
-/// </summary>
-/// <param name="services">The service provider of the delivery's scope.</param>
-/// <param name="context">The typed <see cref="ConsumeContext{TMessage}"/> of the delivery.</param>
-/// <param name="cancellationToken">Cancelled when the delivery is abandoned.</param>
-/// <returns>A <see cref="ValueTask"/> that completes when the consumer has handled the message.</returns>
-[EditorBrowsable(EditorBrowsableState.Never)]
-public delegate ValueTask MessageConsumerDispatch(
-    IServiceProvider services,
-    ConsumeContext context,
-    CancellationToken cancellationToken
-);
-
-/// <summary>
-/// Runs <see cref="IOnSubscriptionEstablished.OnSubscriptionEstablishedAsync"/> on one attribute-declared every-instance
-/// consumer. The Messaging source generator emits one per consumer class that implements the hook: it builds the class
-/// the same way its <see cref="MessageConsumerDispatch"/> does, calls the hook, and releases the instance it created.
-/// </summary>
-/// <param name="services">The service provider of the hook's scope.</param>
-/// <param name="context">Which subscription was established.</param>
-/// <param name="cancellationToken">Cancelled when the subscription stops or the hook's time bound expires.</param>
-/// <returns>A <see cref="ValueTask"/> that completes when the consumer has resynchronized.</returns>
-[EditorBrowsable(EditorBrowsableState.Never)]
-public delegate ValueTask SubscriptionEstablishedDispatch(
-    IServiceProvider services,
-    SubscriptionEstablishedContext context,
-    CancellationToken cancellationToken
-);
-
-/// <summary>
 /// Collects one host's generated consumer declarations while its consumer registry is built. Each generated
 /// <see cref="IMessagingModule"/> writes its <see cref="BusConsumerAttribute"/> and <see cref="QueueConsumerAttribute"/>
 /// consumers here, one entry per consumed message or answered request.
@@ -243,29 +209,3 @@ public sealed class MessagingCatalogBuilder
         );
     }
 }
-
-/// <summary>One message handled by one attribute-declared consumer, as a generated module declared it.</summary>
-/// <param name="Source">The module that declared it, for conflict messages.</param>
-/// <param name="ConsumerType">The consumer class.</param>
-/// <param name="MessageType">The consumed message type.</param>
-/// <param name="Lane">The lane the consumer's attribute names.</param>
-/// <param name="Identity">The consumer identity.</param>
-/// <param name="EveryInstance">Whether every process receives every message; always false on the Queue lane.</param>
-/// <param name="Dispatch">The generated dispatch that runs the consumer class.</param>
-/// <param name="OnSubscriptionEstablished">The generated subscription hook of the class, when it has one.</param>
-/// <param name="FailurePolicyFactory">Creates the failure policy the attribute declares, when it declares one.</param>
-/// <param name="ResponseType">
-/// The response type of a responder, or <see langword="null"/> for a consumer that does not answer requests.
-/// </param>
-internal sealed record MessagingConsumerDeclaration(
-    string Source,
-    Type ConsumerType,
-    Type MessageType,
-    MessageLane Lane,
-    string Identity,
-    bool EveryInstance,
-    MessageConsumerDispatch Dispatch,
-    SubscriptionEstablishedDispatch? OnSubscriptionEstablished,
-    Func<FailurePolicy>? FailurePolicyFactory = null,
-    Type? ResponseType = null
-);

@@ -30,38 +30,3 @@ public sealed class ExtraPropertiesValueConverter()
             : JsonSerializer.Deserialize<ExtraProperties>(json, _Options) ?? [];
     }
 }
-
-/// <summary>
-/// EF Core value comparer for <c>ExtraProperties</c> that performs entry-by-entry key and value
-/// equality so EF Core can detect which dictionary instances actually changed and avoid spurious
-/// updates.
-/// </summary>
-[PublicAPI]
-public sealed class ExtraPropertiesValueComparer()
-    : ValueComparer<ExtraProperties>(
-        equalsExpression: (a, b) => _Equal(a, b),
-        hashCodeExpression: dictionary => _HashCode(dictionary),
-        snapshotExpression: d => new ExtraProperties(d)
-    )
-{
-    private static readonly IEqualityComparer<KeyValuePair<string, object?>> _KeyValuePairComparer =
-        ComparerFactory.Create<KeyValuePair<string, object?>>(
-            (p1, p2) => string.Equals(p1.Key, p2.Key, StringComparison.Ordinal) && p1.Value == p2.Value,
-            pair => HashCode.Combine(pair.Key, pair.Value)
-        );
-
-    private static bool _Equal(ExtraProperties? dictionary1, ExtraProperties? dictionary2)
-    {
-        return (dictionary1 is null && dictionary2 is null)
-            || (
-                dictionary1 is not null
-                && dictionary2 is not null
-                && dictionary1.SequenceEqual(dictionary2, _KeyValuePairComparer)
-            );
-    }
-
-    private static int _HashCode(ExtraProperties dictionary)
-    {
-        return dictionary.Aggregate(0, (key, pair) => HashCode.Combine(key, _KeyValuePairComparer.GetHashCode(pair)));
-    }
-}

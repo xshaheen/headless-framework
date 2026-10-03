@@ -4,31 +4,6 @@ using Headless.Checks;
 
 namespace Headless.Messaging.Configuration;
 
-/// <summary>Identifies the messaging subsystem role supplied by a provider contribution.</summary>
-[PublicAPI]
-public enum MessagingProviderRole
-{
-    Transport = 0,
-    Storage = 1,
-    Coordination = 2,
-}
-
-/// <summary>Describes the strongest inbox guarantee a storage provider can enforce.</summary>
-[PublicAPI]
-public enum MessagingInboxCapabilityTier
-{
-    /// <summary>State and duplicate suppression are process-local and do not survive restart.</summary>
-    ProcessLocal = 0,
-
-    /// <summary>Inbox state is durable, but its outcome cannot commit atomically with application state.</summary>
-    DurableDedupeOnly = 1,
-
-    /// <summary>
-    /// Inbox outcome, compatible enlisted application state, and captured outgoing work can commit atomically.
-    /// </summary>
-    Transactional = 2,
-}
-
 /// <summary>
 /// Immutable declaration of the behavior a messaging provider can actually support.
 /// Provider implementations contribute this value during service registration; runtime behavior is never inferred by

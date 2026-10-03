@@ -118,9 +118,3 @@ public static class CouchbaseEventingFunctionsSeeder
 
     #endregion
 }
-
-/// <summary>
-/// Identifies a Couchbase storage location by bucket, scope, and collection name.
-/// </summary>
-[PublicAPI]
-public readonly record struct CouchbaseKeyspace(string Bucket, string Scope, string Collection);

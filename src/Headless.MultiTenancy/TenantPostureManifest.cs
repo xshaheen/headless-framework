@@ -181,39 +181,3 @@ public sealed class TenantPostureManifest
         return [.. first.Concat(second).Distinct(StringComparer.Ordinal)];
     }
 }
-
-/// <summary>Configured tenant posture for a single Headless seam.</summary>
-/// <param name="Seam">The seam name.</param>
-/// <param name="Status">The seam posture status.</param>
-/// <param name="Capabilities">Non-PII capability labels reported by the seam.</param>
-/// <param name="RuntimeMarkers">Non-PII runtime markers reported by the seam.</param>
-[PublicAPI]
-public sealed record TenantSeamPosture(
-    string Seam,
-    TenantPostureStatus Status,
-    IReadOnlyList<string> Capabilities,
-    IReadOnlyList<string> RuntimeMarkers
-);
-
-/// <summary>Common tenant posture status labels, ordered weakest to strongest.</summary>
-/// <remarks>
-/// Declaration order is load-bearing: the ordinal IS the posture precedence
-/// (<c>Configured &lt; Propagating &lt; Guarded &lt; Enforcing</c>), which
-/// <see cref="TenantPostureManifest.RecordSeam"/> relies on so a later contribution can only
-/// strengthen a seam's posture. Keep new members in precedence order.
-/// </remarks>
-[PublicAPI]
-public enum TenantPostureStatus
-{
-    /// <summary>The seam has been configured.</summary>
-    Configured = 0,
-
-    /// <summary>The seam propagates tenant context.</summary>
-    Propagating = 1,
-
-    /// <summary>The seam guards tenant-owned reads or writes; its capability labels name which.</summary>
-    Guarded = 2,
-
-    /// <summary>The seam enforces tenant context.</summary>
-    Enforcing = 3,
-}

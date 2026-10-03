@@ -57,16 +57,3 @@ internal sealed class TryAcquireWriteLockScriptDefinition : RedisScriptDefinitio
             """
         ) { }
 }
-
-#pragma warning disable IDE1006 // camelCase mirrors the Lua @param token names
-/// <summary>Parameters for <see cref="TryAcquireWriteLockScriptDefinition"/>.</summary>
-[StructLayout(LayoutKind.Auto)]
-internal readonly record struct ReaderWriterWriteParams(
-    RedisKey writerKey,
-    RedisKey readerKey,
-    string leaseId,
-    string waitingId,
-    RedisValue expires,
-    RedisValue markerExpires
-);
-#pragma warning restore IDE1006

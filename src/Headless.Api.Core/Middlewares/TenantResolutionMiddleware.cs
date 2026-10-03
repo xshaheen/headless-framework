@@ -148,16 +148,3 @@ internal sealed partial class TenantResolutionMiddleware(
     // ReSharper disable once InconsistentNaming
     private static partial void LogMiddlewareOrderingWarning(ILogger logger);
 }
-
-/// <summary>
-/// Marker feature set on the current HTTP request when <see cref="TenantResolutionMiddleware"/> has
-/// executed for it. Consumed by <c>HeadlessApiExceptionHandler</c> to surface a runtime warning when
-/// a <see cref="MissingTenantContextException"/> is raised on a request that never passed through
-/// <c>UseHeadlessTenancy()</c>.
-/// </summary>
-internal sealed class HeadlessTenancyResolutionApplied
-{
-    public static HeadlessTenancyResolutionApplied Instance { get; } = new();
-
-    private HeadlessTenancyResolutionApplied() { }
-}

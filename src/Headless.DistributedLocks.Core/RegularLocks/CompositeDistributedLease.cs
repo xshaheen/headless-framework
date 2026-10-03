@@ -5,11 +5,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Headless.DistributedLocks;
 
-internal interface ICompositeDistributedLease
-{
-    IReadOnlyList<IDistributedLease> Children { get; }
-}
-
 internal sealed class CompositeDistributedLease : IDistributedLease, ICompositeDistributedLease
 {
     private readonly IDistributedLease[] _children;

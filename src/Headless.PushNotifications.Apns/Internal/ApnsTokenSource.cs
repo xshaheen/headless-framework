@@ -8,14 +8,6 @@ using Headless.Checks;
 
 namespace Headless.PushNotifications.Apns.Internal;
 
-/// <summary>An APNs provider token (ES256 JWT) and the mint generation that identifies it.</summary>
-/// <param name="Value">The signed JWT sent as the <c>authorization: bearer</c> value.</param>
-/// <param name="Generation">
-/// Increases with every mint for one key identity; a caller passes it back to invalidate exactly the token it used.
-/// </param>
-/// <param name="MintedAt">The instant written into the <c>iat</c> claim.</param>
-internal sealed record ApnsProviderToken(string Value, long Generation, DateTimeOffset MintedAt);
-
 /// <summary>
 /// Mints and caches APNs provider tokens, one per <c>(team id, key id)</c> for the whole container.
 /// </summary>

@@ -576,8 +576,6 @@ internal sealed class AmazonSqsConsumerClient(
     #endregion
 }
 
-internal sealed record InflightSqsMessage(string QueueUrl, string ReceiptHandle);
-
 internal static partial class AmazonSqsConsumerClientLog
 {
     [LoggerMessage(

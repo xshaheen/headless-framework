@@ -63,20 +63,6 @@ public sealed class R2BlobStorageOptions
     }
 }
 
-/// <summary>Cloudflare R2 jurisdiction, selecting the geographic S3 endpoint.</summary>
-[PublicAPI]
-public enum R2Jurisdiction
-{
-    /// <summary>Global endpoint: <c>https://{account}.r2.cloudflarestorage.com</c>.</summary>
-    Default = 0,
-
-    /// <summary>European Union endpoint: <c>https://{account}.eu.r2.cloudflarestorage.com</c>.</summary>
-    EuropeanUnion = 1,
-
-    /// <summary>FedRAMP endpoint: <c>https://{account}.fedramp.r2.cloudflarestorage.com</c>.</summary>
-    FedRamp = 2,
-}
-
 internal sealed class R2BlobStorageOptionsValidator : AbstractValidator<R2BlobStorageOptions>
 {
     public R2BlobStorageOptionsValidator()
