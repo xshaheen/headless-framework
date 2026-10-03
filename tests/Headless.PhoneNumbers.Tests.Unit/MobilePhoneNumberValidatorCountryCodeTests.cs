@@ -1,10 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Validators;
+using Headless.PhoneNumbers;
 
-namespace Tests.Validators;
+namespace Tests;
 
-public sealed class MobilePhoneNumberValidatorTests
+public sealed class MobilePhoneNumberValidatorCountryCodeTests
 {
     [Theory]
     [InlineData("1234567890", 1, true)]

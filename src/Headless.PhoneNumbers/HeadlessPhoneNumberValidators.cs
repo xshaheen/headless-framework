@@ -2,8 +2,8 @@
 
 using FluentValidation.Results;
 using Headless.FluentValidation.Resources;
+using Headless.PhoneNumbers;
 using Headless.Primitives;
-using Headless.Validators;
 using PhoneNumbers;
 using DataAnnotationsPhoneAttribute = System.ComponentModel.DataAnnotations.PhoneAttribute;
 

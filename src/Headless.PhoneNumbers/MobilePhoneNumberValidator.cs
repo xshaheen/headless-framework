@@ -2,7 +2,7 @@
 
 using PhoneNumbers;
 
-namespace Headless.Validators;
+namespace Headless.PhoneNumbers;
 
 /// <summary>Validates mobile phone numbers using Google's libphonenumber.</summary>
 [PublicAPI]

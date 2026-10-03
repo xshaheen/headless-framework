@@ -141,6 +141,7 @@ Headless.Permissions.Storage.EntityFramework
 Headless.Permissions.Storage.PostgreSql
 Headless.Permissions.Storage.SqlServer
 Headless.Permissions.Testing
+Headless.PhoneNumbers
 Headless.Primitives
 Headless.PushNotifications.Abstractions
 Headless.PushNotifications.Apns

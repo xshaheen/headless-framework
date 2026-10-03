@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Validators;
+using Headless.PhoneNumbers;
 
-namespace Tests.Validators;
+namespace Tests;
 
 public sealed class MobilePhoneNumberValidatorTests
 {
