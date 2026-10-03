@@ -316,6 +316,13 @@ public static class SetupEntityFramework
             services.TryAddSingleton<ICurrentTenantAccessor>(AsyncLocalCurrentTenantAccessor.Instance);
             // Removes NullCurrentTenant fallback; preserves consumer-supplied ICurrentTenant.
             services.AddOrReplaceFallbackSingleton<ICurrentTenant, NullCurrentTenant, CurrentTenant>();
+            // A context created outside a scope (a factory or pooled lease, a Jobs coordinated write, a storage store)
+            // reads the tenant from the root provider, as the framework's other singletons do. A scoped or transient
+            // ICurrentTenant would be captured there for the host's lifetime, so the host refuses to start instead.
+            services.RequireSingletonService<ICurrentTenant>(
+                requiredBy: "Headless EF Core tenant query filters and write guard",
+                remedy: "Register ICurrentTenant as a singleton. The framework's CurrentTenant reads the ambient tenant from an AsyncLocal; scope a tenant with ICurrentTenant.Change(tenantId), not with a scoped registration."
+            );
             services.TryAddSingleton<ICurrentUser, NullCurrentUser>();
             services.TryAddSingleton<ICorrelationIdProvider, ActivityCorrelationIdProvider>();
             services.ReplaceCompiledQueryCacheKeyGenerator();

@@ -125,7 +125,7 @@ Apps with requirements none of these fit (a richer aggregate, a different persis
 
 ## HTTP Setup
 
-`AddHeadless()` and `AddHeadlessDbContextServices()` register `CurrentTenant` by default, so `ICurrentTenant` behaves correctly once tenant scope is established. The primary HTTP setup path is:
+`AddHeadless()` and `AddHeadlessDbContextServices()` register `CurrentTenant` by default, so `ICurrentTenant` behaves correctly once tenant scope is established. `ICurrentTenant` must be a singleton: `CurrentTenant` reads the ambient tenant from an `AsyncLocal`, and framework singletons (tenant-scoped caches, the permission-grant cache, EF contexts created outside a scope) resolve it from the root provider. Replace it only with another singleton, and scope a tenant with `ICurrentTenant.Change(tenantId)`. `AddHeadlessDbContextServices()` fails host startup with `InvalidServiceLifetimeException` when the registration is scoped or transient. The primary HTTP setup path is:
 
 ```csharp
 builder.AddHeadlessTenancy(tenancy =>
