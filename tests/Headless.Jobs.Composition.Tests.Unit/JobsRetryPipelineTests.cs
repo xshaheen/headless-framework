@@ -131,19 +131,58 @@ public sealed class JobsRetryPipelineTests : TestBase
     }
 
     [Fact]
-    public async Task should_not_retry_cancellation()
+    public async Task should_retry_a_cancellation_the_execution_did_not_request()
     {
-        using var cts = new CancellationTokenSource();
-        await cts.CancelAsync();
+        // The handler's own timeout: the exception carries an already-cancelled token, but not the execution's.
+        using var handlerTimeout = new CancellationTokenSource();
+        await handlerTimeout.CancelAsync();
 
         var run = await _RunToExhaustionAsync<OperationCanceledException>(
             FailurePolicyDefinition.None,
             retries: 3,
             retryIntervals: null,
-            failure: () => new OperationCanceledException(cts.Token)
+            failure: () => new OperationCanceledException(handlerTimeout.Token)
+        );
+
+        run.Attempts.Should().Equal(0, 1, 2, 3);
+        run.RetryCounts.Should().Equal(1, 2, 3);
+    }
+
+    [Fact]
+    public async Task should_not_retry_a_cancellation_a_fail_rule_matches()
+    {
+        var policy = new FailurePolicyBuilder().FailOn<OperationCanceledException>().Build();
+
+        var run = await _RunToExhaustionAsync<TaskCanceledException>(
+            policy,
+            retries: 3,
+            retryIntervals: null,
+            failure: static () => new TaskCanceledException("handler timeout")
         );
 
         run.Attempts.Should().Equal(0);
+        run.RetryCounts.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_not_retry_cancellation_of_the_execution_token()
+    {
+        using var execution = new CancellationTokenSource();
+
+        var run = await _RunToExhaustionAsync<OperationCanceledException>(
+            FailurePolicyDefinition.None,
+            retries: 3,
+            retryIntervals: null,
+            failure: () =>
+            {
+                execution.Cancel();
+                return new OperationCanceledException(execution.Token);
+            },
+            executionToken: execution.Token
+        );
+
+        run.Attempts.Should().Equal(0);
+        run.RetryCounts.Should().BeEmpty();
     }
 
     [Fact]
@@ -180,7 +219,8 @@ public sealed class JobsRetryPipelineTests : TestBase
         int retries,
         int[]? retryIntervals,
         Func<Exception> failure,
-        int retryCount = 0
+        int retryCount = 0,
+        CancellationToken? executionToken = null
     )
         where TException : Exception
     {
@@ -220,7 +260,7 @@ public sealed class JobsRetryPipelineTests : TestBase
                     job.RetryCount = nextRetryCount;
                     return ValueTask.CompletedTask;
                 },
-                AbortToken
+                executionToken ?? AbortToken
             );
 
         await action.Should().ThrowAsync<TException>();

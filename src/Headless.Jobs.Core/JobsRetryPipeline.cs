@@ -83,10 +83,15 @@ internal sealed class JobsRetryPipeline
 
     private ValueTask<bool> _ShouldHandleAsync(RetryPredicateArguments<object> args)
     {
-        // Cancellation belongs to the executor (durable cancel, shutdown, lease loss, or a foreign token), and a
+        // Cancellation of this execution's token belongs to the executor (durable cancel, shutdown, lease loss), and a
         // TerminateExecutionException is the handler choosing its own terminal status; neither is a retryable failure.
+        // A cancellation the handler raised while that token is live (an HttpClient timeout, its own CancelAfter) is
+        // an ordinary failure: the fail rules see it and the budget retries it.
         var exception = args.Outcome.Exception;
-        if (exception is null or OperationCanceledException or TerminateExecutionException)
+        if (
+            exception is null or TerminateExecutionException
+            || (exception is OperationCanceledException && args.Context.CancellationToken.IsCancellationRequested)
+        )
         {
             return ValueTask.FromResult(false);
         }

@@ -9,10 +9,10 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
 #nullable disable
 
-namespace Headless.Jobs.Console.Demo.Migrations;
+namespace Headless.Jobs.Api.Demo.Migrations;
 
 [DbContext(typeof(JobsDbContext))]
-[Migration("20260929100850_InitialJobsOperationalStore")]
+[Migration("20261002222606_InitialJobsOperationalStore")]
 partial class InitialJobsOperationalStore
 {
     /// <inheritdoc />
@@ -305,6 +305,62 @@ partial class InitialJobsOperationalStore
                     .HasDatabaseName("ix_cron_job_occurrences_status_locked_until");
 
                 b.ToTable("cron_job_occurrences", "headless");
+            });
+
+        modelBuilder.Entity("Headless.Jobs.Entities.JobIdempotencyReservationEntity", b =>
+            {
+                b.Property<string>("ScopeKey")
+                    .HasMaxLength(202)
+                    .HasColumnType("character varying(202)")
+                    .HasColumnName("scope_key")
+                    .UseCollation("C");
+
+                b.Property<string>("Function")
+                    .HasMaxLength(200)
+                    .HasColumnType("character varying(200)")
+                    .HasColumnName("function")
+                    .UseCollation("C");
+
+                b.Property<string>("ContractVersion")
+                    .HasMaxLength(100)
+                    .HasColumnType("character varying(100)")
+                    .HasColumnName("contract_version")
+                    .UseCollation("C");
+
+                b.Property<string>("IdempotencyKey")
+                    .HasMaxLength(200)
+                    .HasColumnType("character varying(200)")
+                    .HasColumnName("idempotency_key")
+                    .UseCollation("C");
+
+                b.Property<DateTime>("CreatedAt")
+                    .HasColumnType("timestamp with time zone")
+                    .HasColumnName("created_at");
+
+                b.Property<DateTime>("ExpiresAt")
+                    .HasColumnType("timestamp with time zone")
+                    .HasColumnName("expires_at");
+
+                b.Property<Guid>("JobId")
+                    .HasColumnType("uuid")
+                    .HasColumnName("job_id");
+
+                b.Property<string>("TenantId")
+                    .HasMaxLength(200)
+                    .HasColumnType("character varying(200)")
+                    .HasColumnName("tenant_id");
+
+                b.Property<DateTime>("UpdatedAt")
+                    .HasColumnType("timestamp with time zone")
+                    .HasColumnName("updated_at");
+
+                b.HasKey("ScopeKey", "Function", "ContractVersion", "IdempotencyKey")
+                    .HasName("pk_time_job_idempotency_reservations");
+
+                b.HasIndex("ExpiresAt")
+                    .HasDatabaseName("ix_time_job_idempotency_reservations_expires_at");
+
+                b.ToTable("time_job_idempotency_reservations", "headless");
             });
 
         modelBuilder.Entity("Headless.Jobs.Entities.TimeJobEntity", b =>
