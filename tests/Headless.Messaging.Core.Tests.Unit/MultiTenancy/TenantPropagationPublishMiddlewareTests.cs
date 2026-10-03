@@ -122,6 +122,42 @@ public sealed class TenantPropagationPublishMiddlewareTests : TestBase
         context.Options.MessageId.Should().Be("msg-1");
     }
 
+    [Theory]
+    [InlineData(MessageLane.Bus)]
+    [InlineData(MessageLane.Queue)]
+    public async Task should_keep_an_enlisted_writes_outbox_options_when_stamping_tenant_id(MessageLane lane)
+    {
+        // given — a unit-of-work publish or enqueue carries OutboxOptions, not the lane's autonomous record
+        var currentTenant = new TestCurrentTenant { Id = "acme" };
+        var middleware = new TenantPropagationPublishMiddleware(currentTenant);
+        var options = new OutboxOptions
+        {
+            MessageName = "orders.callback",
+            CorrelationId = "corr-1",
+            CallbackName = "orders.next",
+            Headers = new Dictionary<string, string?>(StringComparer.Ordinal) { ["x-order"] = "42" },
+        };
+        var context = new PublishContext<Payload>(
+            new Payload("hello"),
+            lane,
+            options,
+            defaultDeliveryMode: DeliveryMode.Durable,
+            now: DateTimeOffset.UnixEpoch,
+            cancellationToken: AbortToken
+        );
+
+        // when
+        await middleware.InvokeAsync(context, () => ValueTask.CompletedTask);
+
+        // then — the same record type with only the tenant added
+        var stamped = context.Options.Should().BeOfType<OutboxOptions>().Subject;
+        stamped.TenantId.Should().Be("acme");
+        stamped.MessageName.Should().Be("orders.callback");
+        stamped.CorrelationId.Should().Be("corr-1");
+        stamped.CallbackName.Should().Be("orders.next");
+        stamped.Headers.Should().ContainKey("x-order").WhoseValue.Should().Be("42");
+    }
+
     [Fact]
     public async Task should_skip_stamping_when_ambient_tenant_is_null_or_whitespace()
     {

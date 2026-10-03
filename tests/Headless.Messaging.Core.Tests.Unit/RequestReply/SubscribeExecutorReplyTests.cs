@@ -309,14 +309,18 @@ public sealed class SubscribeExecutorReplyTests : TestBase
         var builder = Host.CreateApplicationBuilder();
         builder.AddHeadlessTenancy(tenancy => tenancy.Messaging(messaging => messaging.PropagateTenant()));
         RecordingReplyTransport? replies = null;
+        FakeInboxTransactionRunner? runner = null;
         await using var host = ResponderExecutorHost.Create(
             options => options.RequiredInboxCapability = MessagingInboxCapabilityTier.Transactional,
             services =>
-                services.AddScoped<IInboxTransactionRunner>(sp => new FakeInboxTransactionRunner(
-                    sp.GetRequiredService<IUnitOfWorkFactory>(),
-                    InboxCommit.Commit,
-                    replies!
-                )),
+                services.AddScoped<IInboxTransactionRunner>(sp =>
+                    runner = new FakeInboxTransactionRunner(
+                        sp.GetRequiredService<IUnitOfWorkFactory>(),
+                        InboxCommit.Commit,
+                        replies!,
+                        sp.GetRequiredService<ICurrentTenant>()
+                    )
+                ),
             realInvoker: true,
             services: builder.Services
         );
@@ -343,8 +347,9 @@ public sealed class SubscribeExecutorReplyTests : TestBase
         // when
         var result = await host.ExecuteAsync(message, AbortToken, descriptor);
 
-        // then
+        // then — the attempt scope itself held the tenant before the consume middleware ran, and the consumer saw it too
         result.Succeeded.Should().BeTrue();
+        runner!.TenantAtStart.Should().Be("tenant-a", "the inbox runner resolves under the envelope tenant");
         observedTenant.Should().Be("tenant-a");
         host.Provider.GetRequiredService<ICurrentTenant>().Id.Should().BeNull("the tenant scope ends with the attempt");
     }
@@ -389,10 +394,17 @@ public sealed class SubscribeExecutorReplyTests : TestBase
     private sealed class FakeInboxTransactionRunner(
         IUnitOfWorkFactory unitOfWorkFactory,
         InboxCommit commit,
-        RecordingReplyTransport replies
+        RecordingReplyTransport replies,
+        ICurrentTenant? currentTenant = null
     ) : IInboxTransactionRunner
     {
         public int RepliesBeforeCommit { get; private set; } = -1;
+
+        /// <summary>
+        /// The tenant the attempt scope held when the runner started, before any consume middleware ran: the
+        /// scope an EF inbox runner's DbContext would resolve under.
+        /// </summary>
+        public string? TenantAtStart { get; private set; }
 
         public async Task ExecuteAsync(
             MediumMessage message,
@@ -400,6 +412,7 @@ public sealed class SubscribeExecutorReplyTests : TestBase
             CancellationToken cancellationToken
         )
         {
+            TenantAtStart = currentTenant?.Id;
             await using var unitOfWork = await unitOfWorkFactory.BeginAsync(cancellationToken);
 
             await handler(unitOfWork, cancellationToken);

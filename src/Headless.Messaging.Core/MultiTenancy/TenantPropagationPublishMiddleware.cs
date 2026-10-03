@@ -32,16 +32,14 @@ public sealed class TenantPropagationPublishMiddleware(
             && _ResolveAmbientTenant(_currentTenant, logger) is { } ambientTenantId
         )
         {
-            // Stamp TenantId on a concrete options record that matches the publish intent so
-            // downstream middleware and the factory receive the correct derived type.
-            MessageOptions stamped = context.Lane switch
-            {
-                MessageLane.Queue => (context.Options as QueueOptions ?? new QueueOptions()) with
-                {
-                    TenantId = ambientTenantId,
-                },
-                _ => (context.Options as PublishOptions ?? new PublishOptions()) with { TenantId = ambientTenantId },
-            };
+            // Stamp the tenant on the record the caller passed: `with` keeps its runtime type (QueueOptions,
+            // PublishOptions, or an enlisted write's OutboxOptions) and every other field, so the factory still sees
+            // the caller's message name, headers, correlation, and callback. Only a publish without options gets the
+            // lane's autonomous record.
+            MessageOptions stamped =
+                context.Options is { } options ? options with { TenantId = ambientTenantId }
+                : context.Lane is MessageLane.Queue ? new QueueOptions { TenantId = ambientTenantId }
+                : new PublishOptions { TenantId = ambientTenantId };
             context.WithOptions(stamped);
         }
 
