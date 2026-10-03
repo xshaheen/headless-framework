@@ -32,7 +32,7 @@ public abstract partial class DataStorageTestsBase : TestBase
     protected virtual Task ApplySchemaAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 
     /// <summary>Gets the serializer for creating message content.</summary>
-    protected abstract ISerializer GetSerializer();
+    protected abstract IMessageSerializer GetSerializer();
 
     /// <summary>Gets the data storage capabilities for conditional test execution.</summary>
     protected virtual DataStorageCapabilities Capabilities => DataStorageCapabilities.Default;

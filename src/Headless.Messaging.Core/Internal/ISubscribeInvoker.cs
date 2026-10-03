@@ -25,7 +25,7 @@ internal interface ISubscribeInvoker
     );
 }
 
-internal sealed class SubscribeInvoker(ISerializer serializer, IConsumeMiddlewarePipeline executionPipeline)
+internal sealed class SubscribeInvoker(IMessageSerializer serializer, IConsumeMiddlewarePipeline executionPipeline)
     : ISubscribeInvoker
 {
     public Task<ConsumerExecutedResult> InvokeAsync(

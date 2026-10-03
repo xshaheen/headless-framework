@@ -24,7 +24,7 @@ namespace Headless.Messaging.RequestReply;
 /// </remarks>
 internal sealed class ResponderReplies(
     IServiceProvider services,
-    ISerializer serializer,
+    IMessageSerializer serializer,
     IMessagePublishRequestFactory contracts,
     TimeProvider timeProvider,
     IOptions<MessagingOptions> options,

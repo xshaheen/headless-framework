@@ -21,7 +21,7 @@ internal sealed class RelationalMonitoringApi(
     RelationalMessagingStorage storage,
     MessagingTables tables,
     IOptions<MessagingOptions> messagingOptions,
-    ISerializer serializer,
+    IMessageSerializer serializer,
     TimeProvider timeProvider
 ) : IMonitoringApi
 {

@@ -50,7 +50,7 @@ internal static class DeliveryMetadata
             : new(RequestedDeliveryMode: null, ResolvedDeliveryMode: DeliveryMode.Durable);
     }
 
-    internal static DeliveryMetadataValues ReadStoredEnvelope(ISerializer serializer, string? content)
+    internal static DeliveryMetadataValues ReadStoredEnvelope(IMessageSerializer serializer, string? content)
     {
         if (string.IsNullOrWhiteSpace(content))
         {

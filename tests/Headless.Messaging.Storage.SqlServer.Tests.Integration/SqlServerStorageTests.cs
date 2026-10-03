@@ -84,7 +84,7 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
 
     private IStorageTableNames? _tableNames;
     private IDataStorage? _storage;
-    private ISerializer? _serializer;
+    private IMessageSerializer? _serializer;
     private IOptions<SqlServerOptions>? _sqlServerOptions;
     private IOptions<MessagingOptions>? _messagingOptions;
 
@@ -119,7 +119,7 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
     }
 
     /// <inheritdoc />
-    protected override ISerializer GetSerializer()
+    protected override IMessageSerializer GetSerializer()
     {
         _EnsureInitialized();
         return _serializer!;
@@ -315,14 +315,14 @@ public sealed partial class SqlServerStorageTests(SqlServerTestFixture fixture) 
             x.FailedMessageExpiredAfter = 3600;
             x.UseStorageLock = true;
         });
-        services.AddSingleton<ISerializer, JsonUtf8Serializer>();
+        services.AddSingleton<IMessageSerializer, JsonUtf8Serializer>();
         services.AddSingleton(TimeProvider.System);
 
         var provider = services.BuildServiceProvider();
 
         _sqlServerOptions = provider.GetRequiredService<IOptions<SqlServerOptions>>();
         _messagingOptions = provider.GetRequiredService<IOptions<MessagingOptions>>();
-        _serializer = provider.GetRequiredService<ISerializer>();
+        _serializer = provider.GetRequiredService<IMessageSerializer>();
 
         _tableNames = TestStorageOptions.TableNames();
 

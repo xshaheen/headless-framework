@@ -82,7 +82,7 @@ public sealed class RecordingInfrastructureTests : TestBase
         // given
         var store = new MessageObservationStore();
         await using var inner = new FakeBusTransport(OperateResult.Success);
-        var serializer = Substitute.For<ISerializer>();
+        var serializer = Substitute.For<IMessageSerializer>();
         await using var transport = new RecordingBusTransport(inner, store, serializer);
 
         // when
@@ -100,7 +100,7 @@ public sealed class RecordingInfrastructureTests : TestBase
         // given
         var store = new MessageObservationStore();
         await using var inner = new FakeBusTransport(OperateResult.Failed(new Exception("broker error")));
-        var serializer = Substitute.For<ISerializer>();
+        var serializer = Substitute.For<IMessageSerializer>();
         await using var transport = new RecordingBusTransport(inner, store, serializer);
 
         // when
@@ -116,7 +116,7 @@ public sealed class RecordingInfrastructureTests : TestBase
         // given
         var store = new MessageObservationStore();
         await using var inner = new FakeBusTransport(OperateResult.Success);
-        var serializer = Substitute.For<ISerializer>();
+        var serializer = Substitute.For<IMessageSerializer>();
         await using var transport = new RecordingBusTransport(inner, store, serializer);
 
         // when
@@ -137,7 +137,7 @@ public sealed class RecordingInfrastructureTests : TestBase
         // given
         var store = new MessageObservationStore();
         await using var inner = new FakeBusTransport(OperateResult.Success);
-        var serializer = Substitute.For<ISerializer>();
+        var serializer = Substitute.For<IMessageSerializer>();
         await using var transport = new RecordingBusTransport(inner, store, serializer);
 
         // when
@@ -156,7 +156,7 @@ public sealed class RecordingInfrastructureTests : TestBase
         // given
         var store = new MessageObservationStore();
         await using var inner = new FakeBusTransport(OperateResult.Success);
-        var serializer = Substitute.For<ISerializer>();
+        var serializer = Substitute.For<IMessageSerializer>();
         await using var transport = new RecordingBusTransport(inner, store, serializer);
 
         // when
@@ -195,7 +195,7 @@ public sealed class RecordingInfrastructureTests : TestBase
         // given
         var store = new MessageObservationStore();
         await using var inner = new FakeBusTransport(OperateResult.Success);
-        var serializer = Substitute.For<ISerializer>();
+        var serializer = Substitute.For<IMessageSerializer>();
         await using var transport = new RecordingBusTransport(inner, store, serializer);
 
         var headers = _BaseHeaders(typeName: "Nonexistent.Type, NonexistentAssembly");
@@ -234,7 +234,7 @@ public sealed class RecordingInfrastructureTests : TestBase
         // given
         var store = new MessageObservationStore();
         await using var inner = new FakeBusTransport(OperateResult.Success);
-        var serializer = Substitute.For<ISerializer>();
+        var serializer = Substitute.For<IMessageSerializer>();
         await using var transport = new RecordingBusTransport(inner, store, serializer);
 
         // when
@@ -250,7 +250,7 @@ public sealed class RecordingInfrastructureTests : TestBase
         // given
         var store = new MessageObservationStore();
         await using var inner = new FakeBusTransport(OperateResult.Success);
-        var serializer = Substitute.For<ISerializer>();
+        var serializer = Substitute.For<IMessageSerializer>();
         await using var transport = new RecordingBusTransport(inner, store, serializer);
 
         var before = DateTimeOffset.UtcNow;
@@ -294,7 +294,7 @@ public sealed class RecordingInfrastructureTests : TestBase
         var store = new MessageObservationStore();
         store.Clear();
         await using var inner = new FakeBusTransport(OperateResult.Success);
-        await using var transport = new RecordingBusTransport(inner, store, Substitute.For<ISerializer>());
+        await using var transport = new RecordingBusTransport(inner, store, Substitute.For<IMessageSerializer>());
         var message = new TransportMessage(_BaseHeaders(), ReadOnlyMemory<byte>.Empty);
 
         // when
@@ -657,10 +657,10 @@ public sealed class RecordingInfrastructureTests : TestBase
     // ─── fakes ───────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Stub <see cref="ISerializer"/> that either returns a fixed <see cref="Message"/> or throws a fixed exception
+    /// Stub <see cref="IMessageSerializer"/> that either returns a fixed <see cref="Message"/> or throws a fixed exception
     /// from <see cref="DeserializeAsync"/>.
     /// </summary>
-    private sealed class FakeSerializer : ISerializer
+    private sealed class FakeSerializer : IMessageSerializer
     {
         private readonly Message? _result;
         private readonly Exception? _exception;

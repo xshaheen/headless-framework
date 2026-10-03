@@ -86,7 +86,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
 
     private IStorageTableNames? _tableNames;
     private IDataStorage? _storage;
-    private ISerializer? _serializer;
+    private IMessageSerializer? _serializer;
     private IOptions<PostgreSqlOptions>? _postgreSqlOptions;
     private IOptions<MessagingOptions>? _messagingOptions;
 
@@ -121,7 +121,7 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
     }
 
     /// <inheritdoc />
-    protected override ISerializer GetSerializer()
+    protected override IMessageSerializer GetSerializer()
     {
         _EnsureInitialized();
         return _serializer!;
@@ -345,14 +345,14 @@ public sealed partial class PostgreSqlStorageTests(PostgreSqlTestFixture fixture
             x.FailedMessageExpiredAfter = 3600;
             x.UseStorageLock = true;
         });
-        services.AddSingleton<ISerializer, JsonUtf8Serializer>();
+        services.AddSingleton<IMessageSerializer, JsonUtf8Serializer>();
         services.AddSingleton(TimeProvider.System);
 
         var provider = services.BuildServiceProvider();
 
         _postgreSqlOptions = provider.GetRequiredService<IOptions<PostgreSqlOptions>>();
         _messagingOptions = provider.GetRequiredService<IOptions<MessagingOptions>>();
-        _serializer = provider.GetRequiredService<ISerializer>();
+        _serializer = provider.GetRequiredService<IMessageSerializer>();
 
         _tableNames = TestStorageOptions.TableNames();
 

@@ -7,7 +7,7 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging.Serialization;
 
-internal sealed class JsonUtf8Serializer(IOptions<MessagingOptions> messagingOptionsAccessor) : ISerializer
+internal sealed class JsonUtf8Serializer(IOptions<MessagingOptions> messagingOptionsAccessor) : IMessageSerializer
 {
     private readonly JsonSerializerOptions _jsonOptions = messagingOptionsAccessor.Value.JsonSerializerOptions;
 

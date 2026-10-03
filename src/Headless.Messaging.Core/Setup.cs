@@ -213,7 +213,7 @@ public static class SetupMessaging
         // Every consuming host can be reached by a request, so every one can answer it, even with a fault only.
         services.TryAddSingleton<ResponderReplies>();
 
-        services.TryAddSingleton<ISerializer, JsonUtf8Serializer>();
+        services.TryAddSingleton<IMessageSerializer, JsonUtf8Serializer>();
 
         // One id per host: every-instance subscriptions name their per-process broker object after it.
         services.TryAddSingleton<MessagingInstanceId>();
@@ -252,7 +252,7 @@ public static class SetupMessaging
                 };
 
             return new MessagePublisher(
-                sp.GetRequiredService<ISerializer>(),
+                sp.GetRequiredService<IMessageSerializer>(),
                 ResolveTransport,
                 sp.GetRequiredService<IMessagePublishRequestFactory>(),
                 sp.GetRequiredService<IPublishMiddlewarePipeline>(),

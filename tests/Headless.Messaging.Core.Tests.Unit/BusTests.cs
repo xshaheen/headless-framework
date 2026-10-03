@@ -780,7 +780,7 @@ public sealed class BusTests : TestBase
     public async Task should_propagate_serializer_exception_on_publish()
     {
         // given
-        var serializer = Substitute.For<ISerializer>();
+        var serializer = Substitute.For<IMessageSerializer>();
         serializer
             .SerializeToTransportMessageAsync(Arg.Any<Message>(), Arg.Any<CancellationToken>())
             .Returns<ValueTask<TransportMessage>>(_ => throw new InvalidOperationException("Serializer failure"));
@@ -802,7 +802,7 @@ public sealed class BusTests : TestBase
     }
 
     private static IBus _CreateBusWithSerializer(
-        ISerializer serializer,
+        IMessageSerializer serializer,
         MessagingOptions options,
         IBusTransport transport,
         string? mappedMessageName = "test.messageName"

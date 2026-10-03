@@ -15,7 +15,11 @@ namespace Headless.Messaging.RequestReply;
 /// It never throws and never waits on a caller: calls complete through continuations that run asynchronously, so a slow
 /// caller cannot stall the listener and the replies queued behind it.
 /// </remarks>
-internal sealed class ReplyDispatcher(PendingRequests pending, ISerializer serializer, ILogger<ReplyDispatcher> logger)
+internal sealed class ReplyDispatcher(
+    PendingRequests pending,
+    IMessageSerializer serializer,
+    ILogger<ReplyDispatcher> logger
+)
 {
     public async ValueTask DispatchAsync(TransportMessage reply, CancellationToken cancellationToken)
     {

@@ -44,7 +44,7 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
             x.UseStorageLock = true;
         });
         services.AddTestMessagingSchema();
-        services.AddSingleton<ISerializer, JsonUtf8Serializer>();
+        services.AddSingleton<IMessageSerializer, JsonUtf8Serializer>();
 
         var provider = services.BuildServiceProvider();
         var tableNames = provider.GetRequiredService<IStorageTableNames>();
@@ -65,7 +65,7 @@ public sealed class SqlServerMonitoringApiTests(SqlServerTestFixture fixture) : 
             provider.GetRequiredService<IOptions<MessagingOptions>>(),
             TestStorageOptions.For(),
             tableNames,
-            provider.GetRequiredService<ISerializer>(),
+            provider.GetRequiredService<IMessageSerializer>(),
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),
             _timeProvider,
             new NullNodeMembership(),

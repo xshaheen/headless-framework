@@ -39,7 +39,7 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
 
     private InMemoryStorageTableNames? _tableNames;
     private InMemoryDataStorage? _storage;
-    private ISerializer? _serializer;
+    private IMessageSerializer? _serializer;
     private FakeTimeProvider? _fakeTimeProvider;
     private IOptions<MessagingOptions>? _messagingOptions;
 
@@ -95,7 +95,7 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
     }
 
     /// <inheritdoc />
-    protected override ISerializer GetSerializer()
+    protected override IMessageSerializer GetSerializer()
     {
         _EnsureInitialized();
         return _serializer!;
@@ -523,13 +523,13 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
             x.RetryPolicy.MaxPersistedRetries = 4;
             x.FailedMessageExpiredAfter = 3600;
         });
-        services.AddSingleton<ISerializer, JsonUtf8Serializer>();
+        services.AddSingleton<IMessageSerializer, JsonUtf8Serializer>();
         services.AddSingleton<TimeProvider>(_fakeTimeProvider);
 
         var provider = services.BuildServiceProvider();
 
         _messagingOptions = provider.GetRequiredService<IOptions<MessagingOptions>>();
-        _serializer = provider.GetRequiredService<ISerializer>();
+        _serializer = provider.GetRequiredService<IMessageSerializer>();
 
         _tableNames = new InMemoryStorageTableNames();
         _storage = new InMemoryDataStorage(
@@ -1956,11 +1956,11 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
             x.RetryPolicy.MaxPersistedRetries = 4;
             x.FailedMessageExpiredAfter = 3600;
         });
-        services.AddSingleton<ISerializer, JsonUtf8Serializer>();
+        services.AddSingleton<IMessageSerializer, JsonUtf8Serializer>();
         services.AddSingleton<TimeProvider>(_fakeTimeProvider);
 
         var provider = services.BuildServiceProvider();
-        _serializer = provider.GetRequiredService<ISerializer>();
+        _serializer = provider.GetRequiredService<IMessageSerializer>();
 
         return new InMemoryDataStorage(
             provider.GetRequiredService<IOptions<MessagingOptions>>(),
