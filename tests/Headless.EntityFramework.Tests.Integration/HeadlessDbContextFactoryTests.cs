@@ -41,9 +41,9 @@ public sealed class HeadlessDbContextFactoryTests(HeadlessDbContextTestFixture f
         ScopeProbe probe;
         await using (var ctx = await factory.CreateDbContextAsync(AbortToken))
         {
-            var scoped = (IHeadlessDbContextScopeOwner)ctx;
-            scoped.OwnedScope.Should().NotBeNull("factory-created contexts carry their own scope");
-            probe = scoped.OwnedScope!.ServiceProvider.GetRequiredService<ScopeProbe>();
+            var services = ((IHeadlessDbContext)ctx).ServiceProvider;
+            services.Should().NotBeSameAs(sp, "factory-created contexts carry their own scope");
+            probe = services.GetRequiredService<ScopeProbe>();
             probe.IsDisposed.Should().BeFalse("scope is alive while the context is alive");
         }
 
@@ -64,7 +64,7 @@ public sealed class HeadlessDbContextFactoryTests(HeadlessDbContextTestFixture f
 
         // then — different instances, different scopes
         a.Should().NotBeSameAs(b);
-        ((IHeadlessDbContextScopeOwner)a).OwnedScope.Should().NotBeSameAs(((IHeadlessDbContextScopeOwner)b).OwnedScope);
+        ((IHeadlessDbContext)a).ServiceProvider.Should().NotBeSameAs(((IHeadlessDbContext)b).ServiceProvider);
     }
 
     [Fact]
@@ -191,8 +191,7 @@ file sealed class FixedGuidGenerator(Guid value) : IGuidGenerator
     }
 }
 
-file sealed class KeyedGuidDbContext(HeadlessDbContextServices services, DbContextOptions<KeyedGuidDbContext> options)
-    : HeadlessDbContext(services, options)
+file sealed class KeyedGuidDbContext(DbContextOptions<KeyedGuidDbContext> options) : HeadlessDbContext(options)
 {
     public DbSet<KeyedGuidEntity> Entities => Set<KeyedGuidEntity>();
 
@@ -235,10 +234,7 @@ file sealed class KeyedGuidEntity : IEntity<Guid>
 /// Minimal HeadlessDbContext used by the factory tests. Exposes the owned scope's service provider
 /// (test-only) so the tests can observe scope disposal without reflection.
 /// </summary>
-public sealed class FactoryTestDbContext(
-    HeadlessDbContextServices services,
-    DbContextOptions<FactoryTestDbContext> options
-) : HeadlessDbContext(services, options)
+public sealed class FactoryTestDbContext(DbContextOptions<FactoryTestDbContext> options) : HeadlessDbContext(options)
 {
     public override string DefaultSchema => "";
 }
@@ -253,11 +249,10 @@ public sealed class ThrowingDbContext : HeadlessDbContext
     public static Action<HeadlessDbContextFactoryTests.ScopeProbe>? OnConstructed { get; set; }
 
     public ThrowingDbContext(
-        HeadlessDbContextServices services,
         DbContextOptions<ThrowingDbContext> options,
         HeadlessDbContextFactoryTests.ScopeProbe probe
     )
-        : base(services, options)
+        : base(options)
     {
         OnConstructed?.Invoke(probe);
 

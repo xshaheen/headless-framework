@@ -32,21 +32,27 @@ public abstract class TransactionalInboxScopeConformanceTests : TestBase
     protected abstract string ReplaceAttemptSql(string receivedTable);
 
     [Theory]
-    [InlineData(false, false, true, null, MessageLane.Bus)]
-    [InlineData(true, false, true, null, MessageLane.Bus)]
-    [InlineData(false, true, true, null, MessageLane.Bus)]
-    [InlineData(true, true, true, null, MessageLane.Bus)]
-    [InlineData(false, false, true, "dispatch-tenant", MessageLane.Bus)]
-    [InlineData(false, true, true, "dispatch-tenant", MessageLane.Bus)]
-    [InlineData(false, false, false, "dispatch-tenant", MessageLane.Bus)]
-    [InlineData(false, false, true, "dispatch-tenant", MessageLane.Queue)]
-    [InlineData(true, true, true, null, MessageLane.Queue)]
-    [InlineData(false, false, false, "dispatch-tenant", MessageLane.Queue)]
+    [InlineData(false, false, true, null, false, MessageLane.Bus)]
+    [InlineData(true, false, true, null, false, MessageLane.Bus)]
+    [InlineData(false, true, true, null, false, MessageLane.Bus)]
+    [InlineData(true, true, true, null, false, MessageLane.Bus)]
+    [InlineData(false, false, true, "dispatch-tenant", false, MessageLane.Bus)]
+    [InlineData(false, true, true, "dispatch-tenant", false, MessageLane.Bus)]
+    [InlineData(false, false, false, "dispatch-tenant", false, MessageLane.Bus)]
+    [InlineData(true, false, true, null, true, MessageLane.Bus)]
+    [InlineData(false, true, true, null, true, MessageLane.Bus)]
+    [InlineData(false, false, true, "dispatch-tenant", true, MessageLane.Bus)]
+    [InlineData(true, true, true, "dispatch-tenant", true, MessageLane.Bus)]
+    [InlineData(false, false, true, "dispatch-tenant", false, MessageLane.Queue)]
+    [InlineData(true, true, true, null, false, MessageLane.Queue)]
+    [InlineData(false, false, false, "dispatch-tenant", false, MessageLane.Queue)]
+    [InlineData(false, false, true, "dispatch-tenant", true, MessageLane.Queue)]
     public async Task should_commit_or_rollback_handler_state_and_outbox_in_the_attempt_scope(
         bool explicitSave,
         bool rejectFence,
         bool propagateTenant,
         string? ambientTenant,
+        bool pooled,
         MessageLane lane
     )
     {
@@ -55,7 +61,16 @@ public abstract class TransactionalInboxScopeConformanceTests : TestBase
         var services = builder.Services;
         services.AddLogging();
         services.AddSingleton(state);
-        services.AddHeadlessDbContext<InboxScopeDbContext>(ConfigureContext);
+
+        if (pooled)
+        {
+            services.AddHeadlessDbContextPool<InboxScopeDbContext>(ConfigureContext);
+        }
+        else
+        {
+            services.AddHeadlessDbContext<InboxScopeDbContext>(ConfigureContext);
+        }
+
         builder.AddHeadlessTenancy(tenancy => tenancy.EntityFramework(ef => ef.GuardTenantWrites()));
         if (propagateTenant)
         {
@@ -170,11 +185,19 @@ public abstract class TransactionalInboxScopeConformanceTests : TestBase
         state.HandlerHadTransaction.Should().BeTrue("the configured context must own the runner's transaction");
         state.MiddlewareHadTransaction.Should().BeTrue();
         state.ContextDisposedBeforeHandlerReturned.Should().BeFalse();
-        state.HandlerContext!.Disposed.Should().BeTrue("the attempt scope must end after commit or rollback");
+        state
+            .HandlerContext!.DisposeCount.Should()
+            .BeGreaterThan(state.DisposeCountAtHandlerEntry, "the attempt scope must end after commit or rollback");
         var expectedTenant = propagateTenant ? "envelope-tenant" : ambientTenant;
-        state.HandlerContext.TenantAtResolution.Should().Be(expectedTenant);
+        if (!pooled)
+        {
+            // A pooled instance is constructed once, not per resolution, so only a per-scope context proves the
+            // attempt's tenant is in place before the scope resolves it.
+            state.HandlerContext.TenantAtResolution.Should().Be(expectedTenant);
+        }
+
         state.HandlerTenant.Should().Be(expectedTenant);
-        state.HandlerContext.TenantsAtSave.Should().NotBeEmpty().And.AllBe(expectedTenant);
+        state.TenantsAtSave.Should().NotBeEmpty().And.AllBe(expectedTenant);
 
         await using var verificationScope = provider.CreateAsyncScope();
         var verificationDb = verificationScope.ServiceProvider.GetRequiredService<InboxScopeDbContext>();
@@ -229,11 +252,13 @@ public abstract class TransactionalInboxScopeConformanceTests : TestBase
         public string? TenantId { get; set; }
     }
 
+    // Pool-safe: it keeps per-attempt observations in the singleton ExecutionState and counts disposals instead of
+    // flagging them, because a pooled instance serves several scopes in one test.
     public sealed class InboxScopeDbContext(
-        HeadlessDbContextServices services,
         DbContextOptions<InboxScopeDbContext> options,
-        ICurrentTenant currentTenant
-    ) : HeadlessDbContext(services, options)
+        ICurrentTenant currentTenant,
+        ExecutionState state
+    ) : HeadlessDbContext(options)
     {
         public DbSet<InboxScopeEffect> Effects => Set<InboxScopeEffect>();
 
@@ -241,9 +266,7 @@ public abstract class TransactionalInboxScopeConformanceTests : TestBase
 
         public string? TenantAtResolution { get; } = currentTenant.Id;
 
-        public List<string?> TenantsAtSave { get; } = [];
-
-        public bool Disposed { get; private set; }
+        public int DisposeCount { get; private set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -253,13 +276,13 @@ public abstract class TransactionalInboxScopeConformanceTests : TestBase
 
         public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
         {
-            TenantsAtSave.Add(TenantId);
+            state.TenantsAtSave.Add(TenantId);
             return base.SaveChangesAsync(cancellationToken);
         }
 
         public override async ValueTask DisposeAsync()
         {
-            Disposed = true;
+            DisposeCount++;
             await base.DisposeAsync();
         }
     }
@@ -274,6 +297,8 @@ public abstract class TransactionalInboxScopeConformanceTests : TestBase
         public bool HandlerHadTransaction { get; set; }
         public bool MiddlewareHadTransaction { get; set; }
         public bool ContextDisposedBeforeHandlerReturned { get; set; }
+        public int DisposeCountAtHandlerEntry { get; set; }
+        public List<string?> TenantsAtSave { get; } = [];
         public int HandlerEntries { get; set; }
         public Func<CancellationToken, Task>? BeforeHandlerReturns { get; set; }
     }
@@ -285,8 +310,9 @@ public abstract class TransactionalInboxScopeConformanceTests : TestBase
         {
             state.MiddlewareContext = db;
             state.MiddlewareHadTransaction = db.Database.CurrentTransaction is not null;
+            var disposeCount = db.DisposeCount;
             await next();
-            state.ContextDisposedBeforeHandlerReturned = db.Disposed;
+            state.ContextDisposedBeforeHandlerReturned = db.DisposeCount != disposeCount;
         }
     }
 
@@ -319,6 +345,7 @@ public abstract class TransactionalInboxScopeConformanceTests : TestBase
         {
             state.HandlerEntries++;
             state.HandlerContext = db;
+            state.DisposeCountAtHandlerEntry = db.DisposeCount;
             state.HandlerTenant = db.TenantId;
             state.HandlerHadTransaction = db.Database.CurrentTransaction is not null;
             await db.Effects.AddAsync(new InboxScopeEffect { Id = context.Message.Id }, cancellationToken);

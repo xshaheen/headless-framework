@@ -1,7 +1,7 @@
 ---
 title: Storage Initializer Lifecycle & Concurrent-Startup Safety
 date: 2026-05-25
-last_updated: 2026-09-27
+last_updated: 2026-10-03
 module: headless-framework
 problem_type: best_practice
 component: background_job
@@ -201,50 +201,29 @@ Racing Headless hosts against each other never exercises a creator outside the l
 
 ### 5. Dispose-path correctness for `HeadlessDbContext`
 
-Once `OwnedScope` is owned by the context, dispose must release it on every path — and never let a secondary scope-dispose exception mask the primary runtime/base exception.
+A context that owns a scope (one the factory created for it, or a private scope it opened on first use) must release it on every dispose path, and a secondary scope-dispose exception must never mask the primary base-dispose exception. A pooled context adds an ordering rule: disposing the base context returns the instance to the pool, where another caller may lease and bind it at once, so the lease state is cleared *before* `base.Dispose()` and only the captured scope is disposed afterwards.
 
 ```csharp
-public override void Dispose()
-{
-    var logger = OwnedScope?.ServiceProvider.GetService<ILogger<HeadlessDbContext>>();
-    try
-    {
-        var disposeTask = _runtime.DisposeAsync();
-        if (!disposeTask.IsCompletedSuccessfully) disposeTask.AsTask().GetAwaiter().GetResult();
-        base.Dispose();
-    }
-    finally
-    {
-        try { OwnedScope?.Dispose(); }
-        catch (Exception scopeEx) { logger?.LogOwnedScopeDisposeFailed(scopeEx); }
-        GC.SuppressFinalize(this);
-    }
-}
-
 public override async ValueTask DisposeAsync()
 {
-    var logger = OwnedScope?.ServiceProvider.GetService<ILogger<HeadlessDbContext>>();
+    // Clears the binding and returns the scope this lease owned, if any, before the instance can be re-leased.
+    var ownedScope = _runtime.Release();
+
     try
     {
-        await _runtime.DisposeAsync().ConfigureAwait(false);
         await base.DisposeAsync().ConfigureAwait(false);
     }
     finally
     {
-        try
-        {
-            // Prefer async — MS DI scopes implement IAsyncDisposable (AsyncServiceScope)
-            // and may hold async-only-disposable scoped services.
-            if (OwnedScope is IAsyncDisposable async) await async.DisposeAsync().ConfigureAwait(false);
-            else OwnedScope?.Dispose();
-        }
-        catch (Exception scopeEx) { logger?.LogOwnedScopeDisposeFailed(scopeEx); }
+        // Resolves the logger first, prefers IAsyncDisposable on the scope, and logs a scope-dispose failure at
+        // Warning (LogOwnedScopeDisposeFailed) instead of throwing it.
+        await HeadlessDbContextRuntime.DisposeScopeAsync(ownedScope, GetType()).ConfigureAwait(false);
         GC.SuppressFinalize(this);
     }
 }
 ```
 
-Three pieces matter: the `try/finally` (so scope disposal runs even if `_runtime.DisposeAsync` or `base.Dispose` throws); the inner `try/catch` around the scope dispose (so a secondary failure surfaces at Warning via `LogOwnedScopeDisposeFailed` without masking the primary exception); and preferring `IAsyncDisposable` on the scope in `DisposeAsync`.
+Three pieces matter: releasing the lease state before the base dispose (so a pooled instance never carries one scope into the next lease); the `try/finally` (so scope disposal runs even if `base.Dispose` throws); and the guarded scope dispose (so a secondary failure surfaces at Warning without masking the primary exception, preferring `IAsyncDisposable` because MS DI scopes may hold async-only-disposable services). The synchronous `Dispose` mirrors it with `DisposeScope`.
 
 ### 6. Provider-mismatch log dedup — once per shape
 

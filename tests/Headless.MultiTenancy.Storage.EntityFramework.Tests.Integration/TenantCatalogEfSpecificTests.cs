@@ -1,8 +1,14 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Caching;
+using Headless.EntityFramework;
 using Headless.MultiTenancy;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
 namespace Tests;
 
@@ -39,6 +45,59 @@ public abstract class TenantCatalogEfSpecificTests<TFixture>(TFixture fixture) :
 
         // then
         await act.Should().ThrowAsync<DbUpdateException>();
+    }
+
+    // An application that keeps the catalog in its own HeadlessDbContext, pooled or per scope: the catalog store's
+    // singleton factory is the one the Headless registration provides.
+    public virtual async Task should_resolve_tenants_through_a_headless_catalog_context(bool pooled)
+    {
+        // given
+        await fixture.ResetAsync(AbortToken);
+
+        await using (var db = new TenantCatalogDbContext(fixture.DbOptions))
+        {
+            db.Add(new TenantRecord("ten_acme", "acme", "Acme"));
+            await db.SaveChangesAsync(AbortToken);
+        }
+
+        var builder = Host.CreateApplicationBuilder();
+        builder.Logging.ClearProviders();
+
+        if (pooled)
+        {
+            builder.Services.AddHeadlessDbContextPool<HeadlessCatalogDbContext>(fixture.ConfigureProvider);
+        }
+        else
+        {
+            builder.Services.AddHeadlessDbContext<HeadlessCatalogDbContext>(fixture.ConfigureProvider);
+        }
+
+        builder.Services.AddHeadlessCaching(caching => caching.UseInMemory());
+        builder.AddHeadlessTenancy(tenancy =>
+            tenancy.Catalog(catalog => catalog.UseEntityFramework<HeadlessCatalogDbContext>())
+        );
+
+        using var host = builder.Build();
+        await host.StartAsync(AbortToken);
+
+        try
+        {
+            var store = host.Services.GetRequiredService<ITenantStore>();
+
+            // when
+            var tenant = await store.FindByIdentifierAsync("acme", AbortToken);
+
+            // then
+            tenant.Should().NotBeNull();
+            tenant!.Id.Should().Be("ten_acme");
+            host.Services.GetRequiredService<IDbContextFactory<HeadlessCatalogDbContext>>()
+                .Should()
+                .Match(factory => (factory is PooledDbContextFactory<HeadlessCatalogDbContext>) == pooled);
+        }
+        finally
+        {
+            await host.StopAsync(AbortToken);
+        }
     }
 
     [Fact]
@@ -167,5 +226,17 @@ public abstract class TenantCatalogEfSpecificTests<TFixture>(TFixture fixture) :
         }
 
         return builder.ToString();
+    }
+
+    private sealed class HeadlessCatalogDbContext(DbContextOptions<HeadlessCatalogDbContext> options)
+        : HeadlessDbContext(options)
+    {
+        public override string? DefaultSchema => null;
+
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            base.OnModelCreating(modelBuilder);
+            modelBuilder.AddHeadlessTenancyCatalog(this);
+        }
     }
 }

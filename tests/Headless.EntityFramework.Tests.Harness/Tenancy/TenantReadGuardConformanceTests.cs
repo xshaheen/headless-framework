@@ -9,10 +9,8 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests.Tenancy;
 
-public sealed class ReadGuardTenantContext(
-    HeadlessDbContextServices services,
-    DbContextOptions<ReadGuardTenantContext> options
-) : HeadlessDbContext(services, options)
+public sealed class ReadGuardTenantContext(DbContextOptions<ReadGuardTenantContext> options)
+    : HeadlessDbContext(options)
 {
     public override string DefaultSchema => "read_guard";
 

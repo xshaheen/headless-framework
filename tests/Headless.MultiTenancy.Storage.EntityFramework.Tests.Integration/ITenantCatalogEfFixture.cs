@@ -16,6 +16,9 @@ public interface ITenantCatalogEfFixture : ITenantCatalogStoreFixture
     /// <summary>EF Core options pointed at this fixture's container database and the shared <c>Tenants</c> table.</summary>
     DbContextOptions<TenantCatalogDbContext> DbOptions { get; }
 
+    /// <summary>Applies this fixture's EF Core provider and connection to a builder for another context type.</summary>
+    void ConfigureProvider(DbContextOptionsBuilder builder);
+
     /// <summary>Clears every row from the <c>Tenants</c> table, creating the schema first if it does not exist yet.</summary>
     Task ResetAsync(CancellationToken cancellationToken);
 

@@ -179,12 +179,22 @@ restore-project: ## Restore one project; preferred for focused project work.
 	$(DOTNET) restore "$(PROJECT)" -p:Configuration="$(CONFIGURATION)" $(RESTORE_ARGS)
 
 .PHONY: hooks
-hooks: ## Point this worktree at the committed native hooks in .githooks.
-	git config --local extensions.worktreeConfig true
-	git config --worktree core.hooksPath .githooks
-	@# The shared setting is the fallback for a worktree created without `make hooks`; pointing it
-	@# at a missing directory made such worktrees run no hooks at all, silently.
-	git config --local core.hooksPath .githooks
+# A repository core.hooksPath replaces the global one, so on a machine whose global hooks already
+# dispatch to .githooks (secret scanning and similar checks live there) the repository override is
+# removed instead; everywhere else this worktree points at .githooks directly, and the shared setting
+# is the fallback for a worktree created without `make hooks`, which would otherwise run no hooks, silently.
+hooks: ## Wire the committed hooks in .githooks: through global hooks that dispatch to them, else directly.
+	@global="$$(git config --global core.hooksPath || true)"; global="$${global/#\~/$$HOME}"; \
+	if [ -n "$$global" ] && grep -qs '\.githooks/' "$$global/pre-commit" "$$global/pre-push"; then \
+		git config --worktree --unset core.hooksPath 2>/dev/null || true; \
+		git config --local --unset core.hooksPath 2>/dev/null || true; \
+		echo "[hooks] global hooks in $$global run .githooks; repository override removed"; \
+	else \
+		git config --local extensions.worktreeConfig true; \
+		git config --worktree core.hooksPath .githooks; \
+		git config --local core.hooksPath .githooks; \
+		echo "[hooks] core.hooksPath set to .githooks for this worktree"; \
+	fi
 
 .PHONY: hook-pre-commit
 hook-pre-commit: ## Git hook: format staged C# files and validate staged docs/solutions frontmatter before commit.

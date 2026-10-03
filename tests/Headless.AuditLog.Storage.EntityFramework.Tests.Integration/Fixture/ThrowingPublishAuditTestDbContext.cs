@@ -15,10 +15,9 @@ namespace Tests.Fixture;
 /// so a retry on the same change tracker doesn't double-insert.
 /// </summary>
 public sealed class ThrowingPublishAuditTestDbContext(
-    HeadlessDbContextServices services,
     DbContextOptions options,
     IOptions<AuditLogStorageOptions> auditLogStorage
-) : AuditTestDbContext(services, options, auditLogStorage)
+) : AuditTestDbContext(options, auditLogStorage)
 {
     public const string PublishFailureMessage = "Simulated publish failure.";
 

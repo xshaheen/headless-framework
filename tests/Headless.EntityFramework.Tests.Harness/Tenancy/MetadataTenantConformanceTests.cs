@@ -280,11 +280,8 @@ public abstract class MetadataTenantConformanceTests<TFixture>(TFixture fixture)
         var options = new DbContextOptionsBuilder<MetadataTenantContext>();
         fixture.ConfigureOptions(options);
         options.LogTo(sql.Add, [RelationalEventId.CommandExecuted]);
-        return new MetadataTenantContext(
-            services.GetRequiredService<HeadlessDbContextServices>(),
-            options.Options,
-            fixture.Placement
-        );
+        options.UseApplicationServiceProvider(services);
+        return new MetadataTenantContext(options.Options, fixture.Placement);
     }
 
     private async Task<Guid> _SeedAsync(string tenant, bool hidden = false, string? code = null)

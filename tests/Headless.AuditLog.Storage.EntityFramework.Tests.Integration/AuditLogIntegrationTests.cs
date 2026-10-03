@@ -220,6 +220,40 @@ public sealed class AuditLogIntegrationTests : TestBase
             .Be(order.Id);
     }
 
+    [Theory]
+    [InlineData(AuditContextRegistration.PlainEfCore)]
+    [InlineData(AuditContextRegistration.Headless)]
+    [InlineData(AuditContextRegistration.HeadlessPooled)]
+    public async Task audit_written_on_save_reads_back_through_the_store_factory(AuditContextRegistration registration)
+    {
+        // given — every supported registration: the scoped context writes the audit row in its save pipeline, and the
+        // singleton read store creates its own context from the registration's factory.
+        var (sp, conn) = await AuditIntegrationFixture.CreateAsync(registration: registration);
+        await using var _ = conn;
+        await using var __ = sp;
+        await using var scope = sp.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AuditTestDbContext>();
+        var order = new Order
+        {
+            Id = Guid.NewGuid(),
+            CustomerName = "Alice",
+            Email = "alice@example.com",
+            Amount = 7m,
+        };
+        db.Orders.Add(order);
+
+        // when
+        await db.SaveChangesAsync(AbortToken);
+        var page = await sp.GetRequiredService<IReadAuditLog<AuditTestDbContext>>()
+            .QueryAsync(new() { EntityType = typeof(Order).FullName, Size = 10 }, cancellationToken: AbortToken);
+
+        // then
+        var entry = page.Items.Should().ContainSingle().Subject;
+        entry.EntityId.Should().Be(order.Id.ToString());
+        entry.UserId.Should().Be(AuditIntegrationFixture.UserId);
+        entry.TenantId.Should().Be(AuditIntegrationFixture.TenantId);
+    }
+
     [Fact]
     public async Task read_audit_log_query_returns_dto_results()
     {

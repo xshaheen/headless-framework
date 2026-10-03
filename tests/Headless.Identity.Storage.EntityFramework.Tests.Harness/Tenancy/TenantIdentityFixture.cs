@@ -29,10 +29,7 @@ public sealed class BoundedIdentityPolicy : ITenantIdentityPolicy
     public static bool CustomLengths => true;
 }
 
-public sealed class TenantIdentityContext<TPolicy>(
-    HeadlessDbContextServices services,
-    DbContextOptions<TenantIdentityContext<TPolicy>> options
-)
+public sealed class TenantIdentityContext<TPolicy>(DbContextOptions<TenantIdentityContext<TPolicy>> options)
     : HeadlessIdentityDbContext<
         TenantIdentityUser,
         TenantIdentityRole,
@@ -43,7 +40,7 @@ public sealed class TenantIdentityContext<TPolicy>(
         IdentityRoleClaim<string>,
         IdentityUserToken<string>,
         IdentityUserPasskey<string>
-    >(services, options)
+    >(options)
     where TPolicy : ITenantIdentityPolicy
 {
     public override string DefaultSchema =>

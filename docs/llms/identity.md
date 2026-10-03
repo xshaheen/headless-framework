@@ -11,14 +11,14 @@ packages: Identity.Storage.EntityFramework
 
 Single package: `Headless.Identity.Storage.EntityFramework`. Provides `HeadlessIdentityDbContext<>` — a base DbContext that layers the framework's EF Core runtime (auditing, soft delete, domain events, multi-tenancy query filters, save-changes pipeline) on top of ASP.NET Core Identity's `IdentityDbContext<>`.
 
-Register with `services.AddHeadlessDbContext<TDbContext, TUser, TRole, TKey, ...>()` from `SetupIdentityEntityFramework`. This is the exact same pattern as `Headless.EntityFramework`'s `AddHeadlessDbContext<TDbContext>()`, extended with Identity-specific type parameters. The underlying service surface wired is identical — `HeadlessDbContextServices`, save pipeline, audit persistence, tenant/user accessors, `IDbContextFactory<TDbContext>`.
+Register with `services.AddHeadlessDbContext<TDbContext, TUser, TRole, TKey, ...>()` (one instance per scope) or `services.AddHeadlessDbContextPool<TDbContext, TUser, TRole, TKey, ...>()` (pooled) from `SetupIdentityEntityFramework`. These are the same patterns as `Headless.EntityFramework`'s `AddHeadlessDbContext<TDbContext>()` and `AddHeadlessDbContextPool<TDbContext>()`, extended with Identity-specific type parameters. The underlying service surface wired is identical — save pipeline, audit persistence, tenant/user accessors, `IDbContextFactory<TDbContext>`, request-scope binding.
 
 ## Agent Rules
 
-- The registration method is `services.AddHeadlessDbContext<TDbContext, TUser, TRole, TKey, TUserClaim, TUserRole, TUserLogin, TRoleClaim, TUserToken>()` (or the 10-type-parameter form that includes `TUserPasskey`). There is **no** `AddHeadlessIdentity(...)` or `UseEntityFramework<...>()` API — those do not exist.
-- Do NOT register via `AddDbContext<TDbContext>()` directly. That bypasses `HeadlessDbContextServices` injection, the save-changes pipeline, DI-registered interceptors, and `IDbContextFactory<TDbContext>` — the context will instantiate without its required constructor argument and throw at resolution time.
+- The registration methods are `services.AddHeadlessDbContext<TDbContext, TUser, TRole, TKey, TUserClaim, TUserRole, TUserLogin, TRoleClaim, TUserToken>()` (or the 10-type-parameter form that includes `TUserPasskey`) and the pooled `services.AddHeadlessDbContextPool<...>()` with the same type-parameter forms. Choose between them as in [ORM registration modes](orm.md#registration-modes-and-scope-binding): pooled for high throughput, per-scope when the context constructor or options callback needs scoped services. There is **no** `AddHeadlessIdentity(...)` or `UseEntityFramework<...>()` API — those do not exist.
+- Do NOT register via `AddDbContext<TDbContext>()` directly. That bypasses the Headless service registration, request-scope binding, DI-registered interceptors, and `IDbContextFactory<TDbContext>`.
 - Inherit from the 9-type-parameter form (`HeadlessIdentityDbContext<TUser, TRole, TKey, TUserClaim, TUserRole, TUserLogin, TRoleClaim, TUserToken, TUserPasskey>`) for .NET 10 passkey-aware stores. The 8-type-parameter form is a convenience that hard-wires `TUserPasskey = IdentityUserPasskey<TKey>`.
-- Your `DbContext` subclass constructor must forward to `base(services, options)` — the `HeadlessDbContextServices` parameter is required and injected by the DI container. EF Core pooling (`AddDbContextPool`) is incompatible with this constructor shape and is explicitly documented as unsupported.
+- Your `DbContext` subclass takes its `DbContextOptions<TDbContext>` and forwards it to `base(options)`; the base has no other constructor parameter. A pooled context declares exactly one public constructor (its options plus, optionally, singleton services) and keeps no per-request state in its own fields.
 - `AddHeadlessDbContext` sets `IdentityOptions.Stores.SchemaVersion = IdentitySchemaVersions.Version3` once, guarded by a sentinel so multiple calls do not repeat it. If a host must target an older schema, add `services.Configure<IdentityOptions>(o => o.Stores.SchemaVersion = IdentitySchemaVersions.Version1)` **after** the `AddHeadlessDbContext` call (later `Configure` delegates win in the standard options pipeline).
 - All ORM conventions from `Headless.EntityFramework` apply: audit columns, soft-delete query filters, domain-event dispatch on `SaveChanges`, multi-tenancy tenant-write guard, and the `DefaultSchema` hook. Override `DefaultSchema` to namespace all Identity tables under a custom schema (e.g., `"identity"`).
 - Register Identity managers and stores separately through `services.AddIdentityCore<TUser>().AddRoles<TRole>().AddEntityFrameworkStores<TDbContext>()`. `AddHeadlessDbContext` registers the context, not `UserManager` or `RoleManager`.
@@ -40,7 +40,7 @@ Register with `services.AddHeadlessDbContext<TDbContext, TUser, TRole, TKey, ...
 - **Soft delete** query filters are applied automatically for entities implementing `IHasDeletedAt`.
 - **Domain events** are dispatched within the save transaction for entities implementing `IDomainEventEmitter`.
 - **Multi-tenancy** query filters and the optional tenant-write guard apply the same way as any other `HeadlessDbContext`.
-- **`IDbContextFactory<TDbContext>`** is registered as singleton so background services can resolve factory-created, scope-owning contexts without a separate `AddDbContextFactory` call.
+- **`IDbContextFactory<TDbContext>`** is registered as singleton by both registrations, so background services can create contexts without a separate `AddDbContextFactory` call. A factory-created context gets its scoped services from a private DI scope, as described in [ORM scope binding](orm.md#registration-modes-and-scope-binding).
 
 ### Type parameter forms
 
@@ -59,9 +59,9 @@ HeadlessIdentityDbContext<TUser, TRole, TKey, TUserClaim, TUserRole, TUserLogin,
 
 Both require `DefaultSchema` to be overridden (abstract member) — return `null` to use the database's default schema, or a string literal to namespace all tables.
 
-### Save pipeline and `HeadlessDbContextServices`
+### Save pipeline and scope binding
 
-The `HeadlessDbContextServices` parameter in the constructor carries the scoped save pipeline (processors, audit persistence, event dispatcher). It is resolved from the DI container and must not be constructed manually. The `AddHeadlessDbContext` extension wires everything needed — calling `services.AddHeadlessDbContextServices()` separately is not required.
+The scoped save pipeline (processors, audit persistence, event dispatcher) is not a constructor argument. The context resolves it lazily from the DI scope bound to the current use: the resolving scope for a context resolved from DI, or a private scope for a context created through a factory. `AddHeadlessDbContext` and `AddHeadlessDbContextPool` wire everything needed — calling `services.AddHeadlessDbContextServices()` separately is not required.
 
 ---
 
@@ -73,10 +73,10 @@ Entity Framework Core integration for ASP.NET Core Identity with framework EF Co
 
 - `HeadlessIdentityDbContext<TUser, TRole, TKey, ...>` — base DbContext that extends `IdentityDbContext<>` with the framework EF Core runtime
 - 8-type-parameter form (passkey hard-wired to `IdentityUserPasskey<TKey>`) and 9-type-parameter form (explicit `TUserPasskey`) for .NET 10 passkey-aware stores
-- `services.AddHeadlessDbContext<TDbContext, TUser, TRole, TKey, ...>()` registration extension — mirrors the plain `AddHeadlessDbContext` API with additional Identity type parameters
+- `services.AddHeadlessDbContext<TDbContext, TUser, TRole, TKey, ...>()` and `services.AddHeadlessDbContextPool<TDbContext, TUser, TRole, TKey, ...>()` registration extensions — mirror the plain `AddHeadlessDbContext` / `AddHeadlessDbContextPool` APIs with additional Identity type parameters; the pooled form takes `Action<DbContextOptionsBuilder>` or `Action<IServiceProvider, DbContextOptionsBuilder>`, `configureHeadlessOptions`, and `poolSize` (default 1024)
 - Full framework save pipeline: audit, soft delete, domain events, multi-tenancy query filters
 - Explicit `ConfigureTenantOwnedIdentity(ModelBuilder)` opt-in for tenant ownership without custom interfaces, tenant-scoped names, and database-enforced same-tenant relationships
-- `IDbContextFactory<TDbContext>` registered automatically (singleton) for factory-created, scope-owning contexts
+- `IDbContextFactory<TDbContext>` registered automatically (singleton) for factory-created contexts
 - `DefaultSchema` abstract member lets each derived context namespace all Identity tables under a custom schema
 - `IdentityOptions.Stores.SchemaVersion` defaulted to `IdentitySchemaVersions.Version3` (passkey table support) — guarded by sentinel so multiple `AddHeadlessDbContext` calls are idempotent
 
@@ -84,9 +84,9 @@ Entity Framework Core integration for ASP.NET Core Identity with framework EF Co
 
 **Identity schema version default.** `AddHeadlessDbContext` configures `IdentityOptions.Stores.SchemaVersion = IdentitySchemaVersions.Version3` exactly once, guarded by `HeadlessIdentityDefaultsSentinel`. Version 3 is the modern Identity model that includes the `AspNetUserPasskeys` table required for WebAuthn/passkey flows. Greenfield applications get this without extra configuration; existing applications that must target version 1 override via `services.Configure<IdentityOptions>(...)` after registration.
 
-**Not poolable.** `HeadlessIdentityDbContext` takes `HeadlessDbContextServices` as a constructor parameter (a scoped DI service). EF Core pooling resolves contexts through a single-`DbContextOptions` constructor and does not support this shape. Do not register with `AddDbContextPool` or `AddPooledDbContextFactory`.
+**Poolable.** `HeadlessIdentityDbContext` takes only its `DbContextOptions` and resolves its scoped collaborators from the bound scope, so `AddHeadlessDbContextPool` can pool it. The pooled options are built once from the root provider, so the options callback must not resolve scoped services; use `AddHeadlessDbContext` when it must.
 
-**`IDbContextFactory<TDbContext>` scope ownership.** The factory registered by `AddHeadlessDbContext` is `HeadlessDbContextFactory<TDbContext>` — it creates a fresh DI scope per call and transfers ownership to the returned context, which disposes the scope alongside itself. This is the same implementation used by `Headless.EntityFramework` so behavior is at parity.
+**`IDbContextFactory<TDbContext>` scope ownership.** The factory registered by `AddHeadlessDbContext` is `HeadlessDbContextFactory<TDbContext>` — it creates a fresh DI scope per call and transfers ownership to the returned context, which disposes the scope alongside itself. The factory registered by `AddHeadlessDbContextPool` is EF's `PooledDbContextFactory<TDbContext>`; a context it creates opens a private DI scope only when it first needs a scoped collaborator and disposes it when the context returns to the pool. Both are the implementations `Headless.EntityFramework` uses, so behavior is at parity.
 
 ### Install
 
@@ -100,7 +100,7 @@ dotnet add package Headless.Identity.Storage.EntityFramework
 
 ```csharp
 // 9-type-parameter form — recommended for .NET 10 passkey-aware stores
-public class AppDbContext(HeadlessDbContextServices services, DbContextOptions<AppDbContext> options)
+public class AppDbContext(DbContextOptions<AppDbContext> options)
     : HeadlessIdentityDbContext<
         AppUser,
         AppRole,
@@ -111,7 +111,7 @@ public class AppDbContext(HeadlessDbContextServices services, DbContextOptions<A
         IdentityRoleClaim<Guid>,
         IdentityUserToken<Guid>,
         IdentityUserPasskey<Guid>
-    >(services, options)
+    >(options)
 {
     // Return null to use the database default schema, or a string to namespace Identity tables.
     public override string? DefaultSchema => "identity";
@@ -143,13 +143,13 @@ builder.Services.AddIdentityCore<AppUser>().AddRoles<AppRole>().AddEntityFramewo
 
 ```csharp
 // Equivalent — TUserPasskey is implicitly IdentityUserPasskey<TKey>
-public class AppDbContext(HeadlessDbContextServices services, DbContextOptions<AppDbContext> options)
+public class AppDbContext(DbContextOptions<AppDbContext> options)
     : HeadlessIdentityDbContext<
         AppUser, AppRole, Guid,
         IdentityUserClaim<Guid>, IdentityUserRole<Guid>,
         IdentityUserLogin<Guid>, IdentityRoleClaim<Guid>,
         IdentityUserToken<Guid>
-    >(services, options)
+    >(options)
 {
     public override string? DefaultSchema => null;
 }
@@ -180,7 +180,7 @@ builder.Services.AddHeadlessDbContext<AppDbContext, /* ... */>(
 builder.Services.Configure<IdentityOptions>(o => o.Stores.SchemaVersion = IdentitySchemaVersions.Version1);
 ```
 
-Service lifetimes default to `ServiceLifetime.Scoped` for both the context and its options. Override via the `contextLifetime` / `optionsLifetime` parameters when needed.
+For `AddHeadlessDbContext`, service lifetimes default to `ServiceLifetime.Scoped` for both the context and its options. Override via the `contextLifetime` / `optionsLifetime` parameters when needed; `contextLifetime` may not be `Singleton`. `AddHeadlessDbContextPool` takes the same options and `configureHeadlessOptions` arguments plus `poolSize` (default 1024) instead of lifetimes.
 
 #### Tenant-owned Identity
 
@@ -247,9 +247,9 @@ Existing interface-owned tenant columns gain tenant concurrency-token metadata e
 
 ### Runtime behavior
 
-- Calls `services.AddHeadlessDbContextServices()` — registers `HeadlessDbContextServices` (scoped), `IHeadlessSaveChangesPipeline`, `IHeadlessAuditPersistence`, `IAmbientDbTransactionAccessor`, `IAuditChangeCapture`, `ITenantWriteGuardBypass`, `TimeProvider` (`TimeProvider.System`), `ICurrentTenantAccessor`, `ICurrentTenant`, `ICurrentUser`, `ICorrelationIdProvider`, and related singletons.
+- Calls `services.AddHeadlessDbContextServices()` — registers `IHeadlessSaveChangesPipeline`, `IHeadlessAuditPersistence`, `IAmbientDbTransactionAccessor`, `IAuditChangeCapture`, `ITenantWriteGuardBypass`, `TimeProvider` (`TimeProvider.System`), `ICurrentTenantAccessor`, `ICurrentTenant`, `ICurrentUser`, `ICorrelationIdProvider`, and related singletons.
 - Identity saves route through the same `Headless.EntityFramework` save pipeline as any other `HeadlessDbContext`; when a unit of work is active on the context (or the scope), buffered work (outbox rows, jobs) enlists automatically — see [Unit of Work](unit-of-work.md). No opt-in adapter is needed.
 - Calls `services.AddDiRegisteredInterceptorsConfiguration<TDbContext>()` — registers `IDbContextOptionsConfiguration<TDbContext>` that attaches DI-registered interceptors to EF Core options.
-- Registers `TDbContext` via `services.AddDbContext<TDbContext>(...)` with the specified lifetimes.
-- Registers `IDbContextFactory<TDbContext>` as `HeadlessDbContextFactory<TDbContext>` (singleton, idempotent via `TryAddSingleton`).
+- `AddHeadlessDbContext` registers `TDbContext` via `services.AddDbContext<TDbContext>(...)` with the specified lifetimes, bound to the resolving scope, and `IDbContextFactory<TDbContext>` as `HeadlessDbContextFactory<TDbContext>` (singleton, idempotent via `TryAddSingleton`).
+- `AddHeadlessDbContextPool` registers EF's pooled `IDbContextFactory<TDbContext>` via `AddPooledDbContextFactory<TDbContext>(...)` and a scoped `TDbContext` leased from that pool and bound to the resolving scope; disposing the scope returns the context to the pool.
 - Configures `IdentityOptions.Stores.SchemaVersion = IdentitySchemaVersions.Version3` once (guarded by `HeadlessIdentityDefaultsSentinel`).

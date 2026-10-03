@@ -13,4 +13,14 @@ public sealed class PostgreSqlApplicationConfigurationTests(PostgreSqlJobsCoordi
     {
         return base.application_message_and_scheduled_job_share_transaction(commit);
     }
+
+    [Theory]
+    [InlineData(false, true)]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    [InlineData(true, false)]
+    public override Task headless_application_context_shares_transaction(bool pooled, bool commit)
+    {
+        return base.headless_application_context_shares_transaction(pooled, commit);
+    }
 }

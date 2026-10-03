@@ -8,10 +8,9 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Tests.Tenancy;
 
 public sealed class MetadataTenantContext(
-    HeadlessDbContextServices services,
     DbContextOptions<MetadataTenantContext> options,
     TenantDataPlacement placement
-) : HeadlessDbContext(services, options)
+) : HeadlessDbContext(options)
 {
     public override string? DefaultSchema => placement.Schema;
 

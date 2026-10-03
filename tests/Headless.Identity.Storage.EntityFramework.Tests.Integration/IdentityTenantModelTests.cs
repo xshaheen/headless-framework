@@ -344,8 +344,8 @@ public sealed class IdentityTenantModelTests : TestBase
         var builder = Host.CreateApplicationBuilder();
         var services = builder.Services;
         services.AddLogging();
-        services.AddScoped<TestCurrentTenant>();
-        services.AddScoped<ICurrentTenant>(provider => provider.GetRequiredService<TestCurrentTenant>());
+        services.AddSingleton<TestCurrentTenant>();
+        services.AddSingleton<ICurrentTenant>(provider => provider.GetRequiredService<TestCurrentTenant>());
         services.AddHeadlessDbContextServices();
         builder.AddHeadlessTenancy(tenancy => tenancy.EntityFramework(ef => ef.GuardTenantWrites()));
         services.Configure<IdentityOptions>(options =>
@@ -369,12 +369,8 @@ public sealed class IdentityTenantModelTests : TestBase
         return services.BuildServiceProvider();
     }
 
-    private sealed class IdentityContext<TPolicy>(
-        HeadlessDbContextServices services,
-        DbContextOptions<IdentityContext<TPolicy>> options
-    )
+    private sealed class IdentityContext<TPolicy>(DbContextOptions<IdentityContext<TPolicy>> options)
         : HeadlessIdentityDbContext<User, Role, string, UserClaim, Membership, Login, RoleClaim, Token, Passkey>(
-            services,
             options
         )
         where TPolicy : IPolicy
