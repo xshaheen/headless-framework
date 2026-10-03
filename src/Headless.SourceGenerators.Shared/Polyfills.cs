@@ -5,6 +5,7 @@ using System.ComponentModel;
 
 namespace System.Runtime.CompilerServices;
 
+#pragma warning disable MA0048 // A topic file: its types are peers with no main type, so the file is named for the topic.
 /// <summary>
 /// Reserved to be used by the compiler for tracking metadata.
 /// This class should not be used by developers in source code.

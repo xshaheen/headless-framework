@@ -2,6 +2,7 @@
 
 namespace Headless.Caching;
 
+#pragma warning disable MA0048 // A topic file: its types are peers with no main type, so the file is named for the topic.
 /// <summary>The cache tier that raised an event. Mirrors the <c>headless.cache.tier</c> metric dimension.</summary>
 [PublicAPI]
 public enum CacheTier

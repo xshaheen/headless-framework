@@ -11,33 +11,6 @@ using Microsoft.AspNetCore.Http;
 
 namespace Headless.Messaging.Dashboard;
 
-internal enum OperatorAuthorityStatus
-{
-    Success,
-    Unauthenticated,
-    PlaceholderActor,
-}
-
-internal sealed record OperatorAuthorityResult(
-    OperatorAuthorityStatus Status,
-    OperatorAuthorizationContext? Authorization
-)
-{
-    [MemberNotNullWhen(true, nameof(Authorization))]
-    public bool IsSuccess => Status == OperatorAuthorityStatus.Success && Authorization is not null;
-
-    public static OperatorAuthorityResult Success(OperatorAuthorizationContext authorization) =>
-        new(OperatorAuthorityStatus.Success, authorization);
-
-    public static OperatorAuthorityResult Unauthenticated() =>
-        new(OperatorAuthorityStatus.Unauthenticated, Authorization: null);
-
-    public static OperatorAuthorityResult PlaceholderActor() =>
-        new(OperatorAuthorityStatus.PlaceholderActor, Authorization: null);
-}
-
-public sealed record OperatorActorRequiredProblem(string Code, string Remedy, string Message);
-
 internal static class DashboardOperatorAuthority
 {
     public const string OperatorActorRequiredCode = "g:operator_actor_required";
@@ -132,3 +105,30 @@ internal static class DashboardOperatorAuthority
             statusCode: StatusCodes.Status403Forbidden
         );
 }
+
+internal enum OperatorAuthorityStatus
+{
+    Success,
+    Unauthenticated,
+    PlaceholderActor,
+}
+
+internal sealed record OperatorAuthorityResult(
+    OperatorAuthorityStatus Status,
+    OperatorAuthorizationContext? Authorization
+)
+{
+    [MemberNotNullWhen(true, nameof(Authorization))]
+    public bool IsSuccess => Status == OperatorAuthorityStatus.Success && Authorization is not null;
+
+    public static OperatorAuthorityResult Success(OperatorAuthorizationContext authorization) =>
+        new(OperatorAuthorityStatus.Success, authorization);
+
+    public static OperatorAuthorityResult Unauthenticated() =>
+        new(OperatorAuthorityStatus.Unauthenticated, Authorization: null);
+
+    public static OperatorAuthorityResult PlaceholderActor() =>
+        new(OperatorAuthorityStatus.PlaceholderActor, Authorization: null);
+}
+
+public sealed record OperatorActorRequiredProblem(string Code, string Remedy, string Message);

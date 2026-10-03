@@ -4,13 +4,6 @@ using Headless.SourceGenerators;
 
 namespace Headless.Messaging.SourceGenerator.Models;
 
-/// <summary>The lane a consumer attribute names.</summary>
-internal enum ConsumerLane
-{
-    Bus,
-    Queue,
-}
-
 /// <summary>Everything the emitter needs about one consumer class, captured as values.</summary>
 /// <param name="TypeName">
 /// The fully qualified (<c>global::</c>) class name, so generated code cannot be captured by the namespace it is emitted
@@ -49,6 +42,13 @@ internal sealed record ConsumerModel(
     bool HasSubscriptionHook,
     string? FailurePolicyTypeName
 );
+
+/// <summary>The lane a consumer attribute names.</summary>
+internal enum ConsumerLane
+{
+    Bus,
+    Queue,
+}
 
 /// <summary>One request a consumer class answers, and the one response type it answers with.</summary>
 /// <param name="RequestTypeName">The fully qualified <c>TRequest</c>.</param>

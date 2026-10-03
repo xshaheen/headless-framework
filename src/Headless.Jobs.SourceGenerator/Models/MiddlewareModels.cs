@@ -4,6 +4,7 @@ using Headless.SourceGenerators;
 
 namespace Headless.Jobs.SourceGenerator.Models;
 
+#pragma warning disable MA0048 // A topic file: its types are peers with no main type, so the file is named for the topic.
 /// <summary>Where a Jobs middleware attribute was applied.</summary>
 internal enum MiddlewarePlacement
 {

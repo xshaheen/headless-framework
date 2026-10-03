@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 
 namespace Headless.Sql;
 
+#pragma warning disable MA0048 // A topic file: its types are peers with no main type, so the file is named for the topic.
 /// <summary>One column of a row key, matched against a parameter.</summary>
 /// <param name="Column">The quoted column.</param>
 /// <param name="Parameter">The parameter name, without its prefix.</param>

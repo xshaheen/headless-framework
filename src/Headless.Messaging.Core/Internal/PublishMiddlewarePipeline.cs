@@ -12,28 +12,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Headless.Messaging.Internal;
 
-internal interface IPublishMiddlewarePipeline
-{
-    Task ExecuteAsync(
-        object? content,
-        Type declaredMessageType,
-        MessageLane lane,
-        MessageOptions? options,
-        DeliveryDecision decision,
-        Func<MessageOptions?, CancellationToken, Task> innerPublish,
-        CancellationToken cancellationToken = default
-    );
-
-    Task ExecuteAsync<T>(
-        T? content,
-        MessageLane lane,
-        MessageOptions? options,
-        DeliveryDecision decision,
-        Func<MessageOptions?, CancellationToken, Task> innerPublish,
-        CancellationToken cancellationToken = default
-    );
-}
-
 internal sealed class PublishMiddlewarePipeline(
     IServiceProvider serviceProvider,
     IMiddlewareDescriptorRegistry? descriptorRegistry = null,
@@ -399,4 +377,26 @@ internal sealed class PublishMiddlewarePipeline(
     );
 
     private sealed record PublishContextType(Type Type);
+}
+
+internal interface IPublishMiddlewarePipeline
+{
+    Task ExecuteAsync(
+        object? content,
+        Type declaredMessageType,
+        MessageLane lane,
+        MessageOptions? options,
+        DeliveryDecision decision,
+        Func<MessageOptions?, CancellationToken, Task> innerPublish,
+        CancellationToken cancellationToken = default
+    );
+
+    Task ExecuteAsync<T>(
+        T? content,
+        MessageLane lane,
+        MessageOptions? options,
+        DeliveryDecision decision,
+        Func<MessageOptions?, CancellationToken, Task> innerPublish,
+        CancellationToken cancellationToken = default
+    );
 }

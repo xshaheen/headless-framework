@@ -11,82 +11,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 namespace Headless.Messaging.Configuration;
 
 /// <summary>
-/// A marker service used internally to verify that the messaging service has been registered on a <see cref="IServiceCollection"/>.
-/// This service is registered when <c>AddHeadlessMessaging()</c> is called during dependency injection setup.
-/// </summary>
-internal sealed class MessagingMarkerService
-{
-    /// <summary>
-    /// Gets or sets the name identifier for the messaging service.
-    /// </summary>
-    public string Name { get; set; }
-
-    /// <summary>
-    /// Gets or sets the version of the messaging assembly.
-    /// </summary>
-    public string Version { get; set; }
-
-    /// <summary>
-    /// Initializes a new instance of the <see cref="MessagingMarkerService"/> class with the specified name.
-    /// Automatically retrieves and stores the messaging assembly version information.
-    /// </summary>
-    /// <param name="name">The name identifier for the messaging service.</param>
-    public MessagingMarkerService(string name)
-    {
-        Name = name;
-
-        try
-        {
-            Version = FileVersionInfo.GetVersionInfo(Assembly.GetExecutingAssembly().Location).ProductVersion!;
-        }
-#pragma warning disable ERP022 // Version is diagnostic; any failure, such as an empty Location in single-file apps, falls back to N/A.
-        catch
-        {
-            Version = "N/A"; // Fallback in case of any error retrieving version info
-        }
-#pragma warning restore ERP022
-    }
-}
-
-/// <summary>
-/// A marker service used internally to verify that a message storage extension (e.g., SQL Server, PostgreSQL, MySQL, MongoDB)
-/// has been registered on a <see cref="IServiceCollection"/>.
-/// </summary>
-/// <remarks>
-/// Initializes a new instance of the <see cref="MessageStorageMarkerService"/> class with the specified storage name.
-/// </remarks>
-/// <param name="name">The name identifier for the storage extension.</param>
-internal sealed class MessageStorageMarkerService(string name)
-{
-    /// <summary>
-    /// Gets or sets the name identifier for the storage extension (e.g., "SqlServer", "PostgreSql", "MySql").
-    /// </summary>
-    public string Name { get; set; } = name;
-}
-
-/// <summary>
-/// A marker service used internally to verify that a message transport extension (e.g., RabbitMQ, Kafka, Azure Service Bus, NATS)
-/// has been registered on a <see cref="IServiceCollection"/>.
-/// </summary>
-/// <remarks>
-/// Initializes a new instance of the <see cref="MessageQueueMarkerService"/> class with the specified message queue name.
-/// </remarks>
-/// <param name="name">The name identifier for the message transport extension.</param>
-internal sealed class MessageQueueMarkerService(string name)
-{
-    /// <summary>
-    /// Gets or sets the name identifier for the message transport extension (e.g., "RabbitMQ", "Kafka", "AzureServiceBus").
-    /// </summary>
-    public string Name { get; set; } = name;
-}
-
-/// <summary>
-/// A marker service registered when the host opts in to sending requests. Bootstrap reads it to reject a transport
-/// without a reply channel before the host reports ready; a host without it opens no reply listener.
-/// </summary>
-internal sealed class RequestReplyMarkerService;
-
-/// <summary>
 /// Provides a fluent API for fine-grained configuration of messaging services within a dependency injection container.
 /// This builder allows registration of middleware and other messaging extensions.
 /// </summary>
@@ -414,3 +338,79 @@ public sealed class MessagingBuilder(IServiceCollection services)
         }
     }
 }
+
+/// <summary>
+/// A marker service used internally to verify that the messaging service has been registered on a <see cref="IServiceCollection"/>.
+/// This service is registered when <c>AddHeadlessMessaging()</c> is called during dependency injection setup.
+/// </summary>
+internal sealed class MessagingMarkerService
+{
+    /// <summary>
+    /// Gets or sets the name identifier for the messaging service.
+    /// </summary>
+    public string Name { get; set; }
+
+    /// <summary>
+    /// Gets or sets the version of the messaging assembly.
+    /// </summary>
+    public string Version { get; set; }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="MessagingMarkerService"/> class with the specified name.
+    /// Automatically retrieves and stores the messaging assembly version information.
+    /// </summary>
+    /// <param name="name">The name identifier for the messaging service.</param>
+    public MessagingMarkerService(string name)
+    {
+        Name = name;
+
+        try
+        {
+            Version = FileVersionInfo.GetVersionInfo(Assembly.GetExecutingAssembly().Location).ProductVersion!;
+        }
+#pragma warning disable ERP022 // Version is diagnostic; any failure, such as an empty Location in single-file apps, falls back to N/A.
+        catch
+        {
+            Version = "N/A"; // Fallback in case of any error retrieving version info
+        }
+#pragma warning restore ERP022
+    }
+}
+
+/// <summary>
+/// A marker service used internally to verify that a message storage extension (e.g., SQL Server, PostgreSQL, MySQL, MongoDB)
+/// has been registered on a <see cref="IServiceCollection"/>.
+/// </summary>
+/// <remarks>
+/// Initializes a new instance of the <see cref="MessageStorageMarkerService"/> class with the specified storage name.
+/// </remarks>
+/// <param name="name">The name identifier for the storage extension.</param>
+internal sealed class MessageStorageMarkerService(string name)
+{
+    /// <summary>
+    /// Gets or sets the name identifier for the storage extension (e.g., "SqlServer", "PostgreSql", "MySql").
+    /// </summary>
+    public string Name { get; set; } = name;
+}
+
+/// <summary>
+/// A marker service used internally to verify that a message transport extension (e.g., RabbitMQ, Kafka, Azure Service Bus, NATS)
+/// has been registered on a <see cref="IServiceCollection"/>.
+/// </summary>
+/// <remarks>
+/// Initializes a new instance of the <see cref="MessageQueueMarkerService"/> class with the specified message queue name.
+/// </remarks>
+/// <param name="name">The name identifier for the message transport extension.</param>
+internal sealed class MessageQueueMarkerService(string name)
+{
+    /// <summary>
+    /// Gets or sets the name identifier for the message transport extension (e.g., "RabbitMQ", "Kafka", "AzureServiceBus").
+    /// </summary>
+    public string Name { get; set; } = name;
+}
+
+/// <summary>
+/// A marker service registered when the host opts in to sending requests. Bootstrap reads it to reject a transport
+/// without a reply channel before the host reports ready; a host without it opens no reply listener.
+/// </summary>
+internal sealed class RequestReplyMarkerService;

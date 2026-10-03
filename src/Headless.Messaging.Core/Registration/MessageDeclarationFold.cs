@@ -4,11 +4,6 @@ using Headless.Messaging.Configuration;
 
 namespace Headless.Messaging.Registration;
 
-/// <summary>One <c>WithMessageNameMapping&lt;T&gt;(name)</c> call: a raw name for the type on both lanes.</summary>
-/// <param name="MessageType">The message type.</param>
-/// <param name="Name">The raw logical message name.</param>
-internal sealed record MessageNameMappingDeclaration(Type MessageType, string Name) : MessageDeclaration(MessageType);
-
 /// <summary>The message declarations of one host, folded into the contracts and names they establish.</summary>
 /// <param name="Contracts">One contract per declared message type, in first-declaration order.</param>
 /// <param name="Routes">The route each contract contributes to each lane.</param>
@@ -81,3 +76,8 @@ internal sealed record MessageDeclarationFold(
         );
     }
 }
+
+/// <summary>One <c>WithMessageNameMapping&lt;T&gt;(name)</c> call: a raw name for the type on both lanes.</summary>
+/// <param name="MessageType">The message type.</param>
+/// <param name="Name">The raw logical message name.</param>
+internal sealed record MessageNameMappingDeclaration(Type MessageType, string Name) : MessageDeclaration(MessageType);

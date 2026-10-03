@@ -13,23 +13,6 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.AuditLog;
 
-/// <summary>How one relational provider stores the audit log, beyond what its dialect already says.</summary>
-/// <param name="Provider">The database whose identifier rules the storage options must satisfy.</param>
-/// <param name="DefaultJsonColumnType">The JSON column type used when none is configured.</param>
-/// <param name="JsonColumnTypes">The JSON column types the provider accepts.</param>
-/// <param name="JsonColumnTypeMessage">The validation message for any other JSON column type.</param>
-/// <param name="CreateCreatedAtBinder">
-/// Builds the <c>CreatedAt</c> binder for the configured column type, or <see langword="null"/> to bind every instant as
-/// the dialect's timestamp.
-/// </param>
-internal sealed record RelationalAuditLogProvider(
-    StorageProvider Provider,
-    AuditLogJsonColumnType DefaultJsonColumnType,
-    IReadOnlyCollection<AuditLogJsonColumnType> JsonColumnTypes,
-    string JsonColumnTypeMessage,
-    Func<AuditLogStorageOptions, AuditLogCreatedAtBinder>? CreateCreatedAtBinder = null
-);
-
 /// <summary>Registers the relational audit log, its store and reader, and a provider's schema contribution.</summary>
 internal static class RelationalAuditLogStorage
 {
@@ -86,3 +69,20 @@ internal static class RelationalAuditLogStorage
         services.TryAddSingleton<ICorrelationIdProvider, ActivityCorrelationIdProvider>();
     }
 }
+
+/// <summary>How one relational provider stores the audit log, beyond what its dialect already says.</summary>
+/// <param name="Provider">The database whose identifier rules the storage options must satisfy.</param>
+/// <param name="DefaultJsonColumnType">The JSON column type used when none is configured.</param>
+/// <param name="JsonColumnTypes">The JSON column types the provider accepts.</param>
+/// <param name="JsonColumnTypeMessage">The validation message for any other JSON column type.</param>
+/// <param name="CreateCreatedAtBinder">
+/// Builds the <c>CreatedAt</c> binder for the configured column type, or <see langword="null"/> to bind every instant as
+/// the dialect's timestamp.
+/// </param>
+internal sealed record RelationalAuditLogProvider(
+    StorageProvider Provider,
+    AuditLogJsonColumnType DefaultJsonColumnType,
+    IReadOnlyCollection<AuditLogJsonColumnType> JsonColumnTypes,
+    string JsonColumnTypeMessage,
+    Func<AuditLogStorageOptions, AuditLogCreatedAtBinder>? CreateCreatedAtBinder = null
+);

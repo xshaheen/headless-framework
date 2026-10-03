@@ -4,28 +4,6 @@ using System.Diagnostics;
 
 namespace Headless.Messaging.Internal;
 
-internal enum DeliveryPath
-{
-    Direct = 0,
-    DurableStandalone = 1,
-    DurableCoordinated = 2,
-}
-
-internal readonly record struct DeliveryDecision(
-    DeliveryMode RequestedMode,
-    DeliveryMode ResolvedMode,
-    DeliveryPath Path,
-    TimeSpan? Delay,
-    DateTimeOffset? PublishAt,
-    DeliveryCoordination Coordination,
-    // The caller's absolute instant, retained separately from PublishAt so the publish context can fence
-    // middleware against changing it. PublishAt is the resolved not-before regardless of which form produced it.
-    DateTimeOffset? ScheduledAt = null
-)
-{
-    internal bool IsTransactional => Path is DeliveryPath.DurableCoordinated;
-}
-
 /// <summary>
 /// Decides the delivery path before any storage or transport effect. <c>requireCoordination</c> is the receiver's
 /// own guarantee, not a caller preference: the outbox surface always requires it and the autonomous surface never
@@ -245,4 +223,26 @@ internal static class DeliveryDecisionResolver
 
         return $"{subject} cannot join the active unit of work ({mismatch}): {detail}. {advice}";
     }
+}
+
+internal enum DeliveryPath
+{
+    Direct = 0,
+    DurableStandalone = 1,
+    DurableCoordinated = 2,
+}
+
+internal readonly record struct DeliveryDecision(
+    DeliveryMode RequestedMode,
+    DeliveryMode ResolvedMode,
+    DeliveryPath Path,
+    TimeSpan? Delay,
+    DateTimeOffset? PublishAt,
+    DeliveryCoordination Coordination,
+    // The caller's absolute instant, retained separately from PublishAt so the publish context can fence
+    // middleware against changing it. PublishAt is the resolved not-before regardless of which form produced it.
+    DateTimeOffset? ScheduledAt = null
+)
+{
+    internal bool IsTransactional => Path is DeliveryPath.DurableCoordinated;
 }

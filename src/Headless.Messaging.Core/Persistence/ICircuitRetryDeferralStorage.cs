@@ -3,12 +3,6 @@
 namespace Headless.Messaging.Persistence;
 
 /// <summary>
-/// Identifies one exact received-retry lease generation and how long until the circuit lets it be claimed again,
-/// a delay the store adds to its own clock.
-/// </summary>
-internal readonly record struct CircuitRetryDeferral(MessageLeaseIdentity Identity, TimeSpan Delay);
-
-/// <summary>
 /// Optional built-in storage capability for atomically deferring a circuit-open received retry
 /// while releasing that exact claimed lease generation.
 /// </summary>
@@ -25,3 +19,9 @@ internal interface ICircuitRetryDeferralStorage
         CancellationToken cancellationToken = default
     );
 }
+
+/// <summary>
+/// Identifies one exact received-retry lease generation and how long until the circuit lets it be claimed again,
+/// a delay the store adds to its own clock.
+/// </summary>
+internal readonly record struct CircuitRetryDeferral(MessageLeaseIdentity Identity, TimeSpan Delay);

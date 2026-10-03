@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore.Storage;
 
 namespace Headless.Jobs.Infrastructure;
 
+#pragma warning disable MA0048 // A topic file: its types are peers with no main type, so the file is named for the topic.
 // Only the columns the native claim strategies actually name in raw SQL belong here. The schedule-position columns
 // are deliberately absent: the advance goes through EF's ExecuteUpdate, not this helper, and resolving a column here
 // costs an EF metadata lookup on every cron claim batch. Add one back when a native-SQL consumer needs it.

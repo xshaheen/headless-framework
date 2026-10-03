@@ -2,6 +2,7 @@
 
 namespace Headless.Messaging.Redis;
 
+#pragma warning disable MA0048 // A topic file: its types are peers with no main type, so the file is named for the topic.
 /// <summary>
 /// Thrown when a Redis stream entry is consumed but does not contain the expected message headers field.
 /// </summary>

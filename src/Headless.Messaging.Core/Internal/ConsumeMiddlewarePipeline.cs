@@ -13,24 +13,6 @@ using Microsoft.Extensions.Logging;
 
 namespace Headless.Messaging.Internal;
 
-internal interface IConsumeMiddlewarePipeline
-{
-    Task<ConsumerExecutedResult> ExecuteInScopeAsync(
-        ConsumerContext context,
-        object messageInstance,
-        Type messageType,
-        IServiceProvider provider,
-        CancellationToken cancellationToken = default
-    );
-
-    Task<ConsumerExecutedResult> ExecuteAsync(
-        ConsumerContext context,
-        object messageInstance,
-        Type messageType,
-        CancellationToken cancellationToken = default
-    );
-}
-
 internal sealed class ConsumeMiddlewarePipeline(
     IServiceProvider serviceProvider,
     IRuntimeConsumerRegistry runtimeRegistry,
@@ -645,5 +627,23 @@ internal sealed class ConsumeMiddlewarePipeline(
         object middleware,
         ConsumeContext context,
         Func<ValueTask> next
+    );
+}
+
+internal interface IConsumeMiddlewarePipeline
+{
+    Task<ConsumerExecutedResult> ExecuteInScopeAsync(
+        ConsumerContext context,
+        object messageInstance,
+        Type messageType,
+        IServiceProvider provider,
+        CancellationToken cancellationToken = default
+    );
+
+    Task<ConsumerExecutedResult> ExecuteAsync(
+        ConsumerContext context,
+        object messageInstance,
+        Type messageType,
+        CancellationToken cancellationToken = default
     );
 }

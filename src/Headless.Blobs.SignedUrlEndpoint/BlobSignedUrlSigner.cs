@@ -9,23 +9,6 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Blobs;
 
-internal enum BlobSignedUrlAccess : byte
-{
-    Download = 1,
-    Upload = 2,
-}
-
-/// <summary>What a verified token grants: one verb on one blob of one store, until an instant.</summary>
-/// <param name="Store">The named store, or <see langword="null"/> for the default (unkeyed) store.</param>
-internal sealed record BlobSignedUrlGrant(
-    BlobSignedUrlAccess Access,
-    string? Store,
-    BlobLocation Location,
-    DateTimeOffset ExpiresAt,
-    string? ContentType,
-    long? MaxLength
-);
-
 /// <summary>Mints and verifies the data-protection tokens carried in signed blob URLs.</summary>
 /// <remarks>
 /// The token authenticates every field, so a URL for one blob, store, or verb cannot be replayed for another. Expiry
@@ -163,3 +146,20 @@ internal sealed class BlobSignedUrlSigner(
         return reader.ReadBoolean() ? reader.ReadString() : null;
     }
 }
+
+internal enum BlobSignedUrlAccess : byte
+{
+    Download = 1,
+    Upload = 2,
+}
+
+/// <summary>What a verified token grants: one verb on one blob of one store, until an instant.</summary>
+/// <param name="Store">The named store, or <see langword="null"/> for the default (unkeyed) store.</param>
+internal sealed record BlobSignedUrlGrant(
+    BlobSignedUrlAccess Access,
+    string? Store,
+    BlobLocation Location,
+    DateTimeOffset ExpiresAt,
+    string? ContentType,
+    long? MaxLength
+);

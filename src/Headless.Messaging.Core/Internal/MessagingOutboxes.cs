@@ -10,161 +10,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Messaging.Internal;
 
-/// <summary>A storage whose database identity can be compared with a unit of work's connection.</summary>
-internal interface IRelationalOutboxStorage
-{
-    /// <summary>
-    /// Builds, but never opens, a connection from this storage's own configuration. It is only read for its
-    /// provider type, data source, and database name.
-    /// </summary>
-    DbConnection CreateIdentityConnection();
-}
-
-/// <summary>
-/// One additional outbox registered through <c>AddOutbox().Use…()</c>. The provider package supplies the factory;
-/// the storage it builds serves only the published rows of its own database.
-/// </summary>
-internal sealed class OutboxStorageRegistration(string name, Func<IServiceProvider, MessagingOutbox> factory)
-{
-    public string Name { get; } = Argument.IsNotNullOrWhiteSpace(name);
-
-    public MessagingOutbox Create(IServiceProvider serviceProvider) => factory(serviceProvider);
-}
-
-/// <summary>An additional outbox storage: published rows and their relay for one database.</summary>
-/// <remarks>
-/// Its schema is initialized apart from the host's startup: an outbox whose database is unreachable at startup
-/// leaves the host running, and the first of the background retry or a unit of work on that database initializes
-/// it. Until then its relay skips it, and a unit of work on its database initializes it before writing.
-/// </remarks>
-internal sealed class MessagingOutbox
-{
-    private readonly Lock _initializationLock = new();
-    private Task? _initialization;
-
-    public MessagingOutbox(string name, IDataStorage storage, IOutboxStorageInitializer initializer)
-    {
-        Argument.IsNotNullOrWhiteSpace(name);
-        Argument.IsNotNull(storage);
-        Argument.IsNotNull(initializer);
-
-        if (
-            storage is not IDeliveryCoordinationResolver coordination
-            || storage is not IRelationalOutboxStorage relational
-        )
-        {
-            throw new MessagingConfigurationException(
-                $"Outbox storage '{name}' must be a relational storage that can join a unit of work."
-            );
-        }
-
-        Name = name;
-        Storage = storage;
-        Initializer = initializer;
-        Coordination = coordination;
-        Relational = relational;
-    }
-
-    public string Name { get; }
-
-    public IDataStorage Storage { get; }
-
-    public IOutboxStorageInitializer Initializer { get; }
-
-    public IDeliveryCoordinationResolver Coordination { get; }
-
-    public IRelationalOutboxStorage Relational { get; }
-
-    /// <summary>Whether this outbox's schema initialization has completed in this process.</summary>
-    public bool IsInitialized
-    {
-        get
-        {
-            lock (_initializationLock)
-            {
-                return _initialization is { IsCompletedSuccessfully: true };
-            }
-        }
-    }
-
-    /// <summary>
-    /// Initializes this outbox's schema unless that already succeeded. Concurrent callers share one attempt; a failed
-    /// attempt is reported to every caller that shared it, and the next call starts a fresh one.
-    /// </summary>
-    public async Task EnsureInitializedAsync(CancellationToken cancellationToken)
-    {
-        while (true)
-        {
-            Task attempt;
-            TaskCompletionSource? owned = null;
-
-            lock (_initializationLock)
-            {
-                if (_initialization is null or { IsFaulted: true } or { IsCanceled: true })
-                {
-                    owned = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-                    _initialization = owned.Task;
-                }
-
-                attempt = _initialization;
-            }
-
-            if (owned is not null)
-            {
-                // Run outside the lock: initialization is database I/O, and IsInitialized readers must not wait on it.
-                try
-                {
-                    await Initializer.InitializeAsync(cancellationToken).ConfigureAwait(false);
-                    owned.SetResult();
-                }
-                catch (OperationCanceledException e)
-                {
-                    owned.SetCanceled(e.CancellationToken);
-                }
-                catch (Exception e)
-                {
-                    owned.SetException(e);
-                }
-            }
-
-            try
-            {
-                await attempt.WaitAsync(cancellationToken).ConfigureAwait(false);
-
-                return;
-            }
-            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-            {
-                // The shared attempt was canceled by the caller that started it, not by this one: start another.
-            }
-        }
-    }
-
-    /// <summary>
-    /// A short stable key for this outbox's database, used to give its relay its own lock resources. Replicas of
-    /// one application derive the same key from the same configuration; two replicas that spell the host
-    /// differently take separate locks, which costs duplicate polling but not correctness, because the per-row
-    /// lease is what fences a published row.
-    /// </summary>
-    public string LockKey
-    {
-        get
-        {
-            if (field is not null)
-            {
-                return field;
-            }
-
-            using var connection = Relational.CreateIdentityConnection();
-            var identity =
-                $"{connection.GetType().FullName}|{connection.DataSource?.Trim().ToLowerInvariant()}|{connection.Database}";
-            var hash = SHA256.HashData(Encoding.UTF8.GetBytes(identity));
-
-            return field = Convert.ToHexStringLower(hash.AsSpan(0, 8));
-        }
-    }
-}
-
 /// <summary>
 /// Every outbox storage of the host: the primary storage, which also owns the inbox, retry state, and the
 /// dashboard, plus the additional outboxes registered through <c>AddOutbox()</c>. A unit of work's publish goes to
@@ -333,6 +178,161 @@ internal sealed class MessagingOutboxes : IDeliveryCoordinationResolver
             {
                 connection.Dispose();
             }
+        }
+    }
+}
+
+/// <summary>A storage whose database identity can be compared with a unit of work's connection.</summary>
+internal interface IRelationalOutboxStorage
+{
+    /// <summary>
+    /// Builds, but never opens, a connection from this storage's own configuration. It is only read for its
+    /// provider type, data source, and database name.
+    /// </summary>
+    DbConnection CreateIdentityConnection();
+}
+
+/// <summary>
+/// One additional outbox registered through <c>AddOutbox().Use…()</c>. The provider package supplies the factory;
+/// the storage it builds serves only the published rows of its own database.
+/// </summary>
+internal sealed class OutboxStorageRegistration(string name, Func<IServiceProvider, MessagingOutbox> factory)
+{
+    public string Name { get; } = Argument.IsNotNullOrWhiteSpace(name);
+
+    public MessagingOutbox Create(IServiceProvider serviceProvider) => factory(serviceProvider);
+}
+
+/// <summary>An additional outbox storage: published rows and their relay for one database.</summary>
+/// <remarks>
+/// Its schema is initialized apart from the host's startup: an outbox whose database is unreachable at startup
+/// leaves the host running, and the first of the background retry or a unit of work on that database initializes
+/// it. Until then its relay skips it, and a unit of work on its database initializes it before writing.
+/// </remarks>
+internal sealed class MessagingOutbox
+{
+    private readonly Lock _initializationLock = new();
+    private Task? _initialization;
+
+    public MessagingOutbox(string name, IDataStorage storage, IOutboxStorageInitializer initializer)
+    {
+        Argument.IsNotNullOrWhiteSpace(name);
+        Argument.IsNotNull(storage);
+        Argument.IsNotNull(initializer);
+
+        if (
+            storage is not IDeliveryCoordinationResolver coordination
+            || storage is not IRelationalOutboxStorage relational
+        )
+        {
+            throw new MessagingConfigurationException(
+                $"Outbox storage '{name}' must be a relational storage that can join a unit of work."
+            );
+        }
+
+        Name = name;
+        Storage = storage;
+        Initializer = initializer;
+        Coordination = coordination;
+        Relational = relational;
+    }
+
+    public string Name { get; }
+
+    public IDataStorage Storage { get; }
+
+    public IOutboxStorageInitializer Initializer { get; }
+
+    public IDeliveryCoordinationResolver Coordination { get; }
+
+    public IRelationalOutboxStorage Relational { get; }
+
+    /// <summary>Whether this outbox's schema initialization has completed in this process.</summary>
+    public bool IsInitialized
+    {
+        get
+        {
+            lock (_initializationLock)
+            {
+                return _initialization is { IsCompletedSuccessfully: true };
+            }
+        }
+    }
+
+    /// <summary>
+    /// Initializes this outbox's schema unless that already succeeded. Concurrent callers share one attempt; a failed
+    /// attempt is reported to every caller that shared it, and the next call starts a fresh one.
+    /// </summary>
+    public async Task EnsureInitializedAsync(CancellationToken cancellationToken)
+    {
+        while (true)
+        {
+            Task attempt;
+            TaskCompletionSource? owned = null;
+
+            lock (_initializationLock)
+            {
+                if (_initialization is null or { IsFaulted: true } or { IsCanceled: true })
+                {
+                    owned = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                    _initialization = owned.Task;
+                }
+
+                attempt = _initialization;
+            }
+
+            if (owned is not null)
+            {
+                // Run outside the lock: initialization is database I/O, and IsInitialized readers must not wait on it.
+                try
+                {
+                    await Initializer.InitializeAsync(cancellationToken).ConfigureAwait(false);
+                    owned.SetResult();
+                }
+                catch (OperationCanceledException e)
+                {
+                    owned.SetCanceled(e.CancellationToken);
+                }
+                catch (Exception e)
+                {
+                    owned.SetException(e);
+                }
+            }
+
+            try
+            {
+                await attempt.WaitAsync(cancellationToken).ConfigureAwait(false);
+
+                return;
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                // The shared attempt was canceled by the caller that started it, not by this one: start another.
+            }
+        }
+    }
+
+    /// <summary>
+    /// A short stable key for this outbox's database, used to give its relay its own lock resources. Replicas of
+    /// one application derive the same key from the same configuration; two replicas that spell the host
+    /// differently take separate locks, which costs duplicate polling but not correctness, because the per-row
+    /// lease is what fences a published row.
+    /// </summary>
+    public string LockKey
+    {
+        get
+        {
+            if (field is not null)
+            {
+                return field;
+            }
+
+            using var connection = Relational.CreateIdentityConnection();
+            var identity =
+                $"{connection.GetType().FullName}|{connection.DataSource?.Trim().ToLowerInvariant()}|{connection.Database}";
+            var hash = SHA256.HashData(Encoding.UTF8.GetBytes(identity));
+
+            return field = Convert.ToHexStringLower(hash.AsSpan(0, 8));
         }
     }
 }

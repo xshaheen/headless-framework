@@ -11,29 +11,6 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Coordination;
 
-/// <summary>What differs between relational providers: the dialect, how a connection is made, and the DDL.</summary>
-/// <param name="Dialect">The provider's dialect.</param>
-/// <param name="CreateConnection">Creates an unopened connection from the bound provider options.</param>
-/// <param name="SchemaContribution">Builds the provider's schema contribution (its DDL, in its dialect).</param>
-internal sealed record RelationalCoordinationProvider<TOptions>(
-    ISqlDialect Dialect,
-    Func<TOptions, DbConnection> CreateConnection,
-    Func<TOptions, CoordinationStorageOptions, SchemaContribution> SchemaContribution
-)
-    where TOptions : RelationalCoordinationOptions;
-
-/// <summary>What the one relational membership store runs against.</summary>
-/// <param name="Dialect">The engine's dialect.</param>
-/// <param name="CreateConnection">Creates an unopened connection to the database that holds the tables.</param>
-/// <param name="CommandTimeoutSeconds">The timeout of every command.</param>
-/// <param name="Tables">The membership tables, named by the dialect in the configured schema.</param>
-internal sealed record RelationalCoordinationStorage(
-    ISqlDialect Dialect,
-    Func<DbConnection> CreateConnection,
-    int CommandTimeoutSeconds,
-    CoordinationTables Tables
-);
-
 /// <summary>
 /// Registers a relational provider: its options and validators, the core membership services over the one relational
 /// store, and the provider's schema contribution.
@@ -121,3 +98,26 @@ internal sealed class RelationalCoordinationProviderExtension<TOptions, TOptions
         );
     }
 }
+
+/// <summary>What differs between relational providers: the dialect, how a connection is made, and the DDL.</summary>
+/// <param name="Dialect">The provider's dialect.</param>
+/// <param name="CreateConnection">Creates an unopened connection from the bound provider options.</param>
+/// <param name="SchemaContribution">Builds the provider's schema contribution (its DDL, in its dialect).</param>
+internal sealed record RelationalCoordinationProvider<TOptions>(
+    ISqlDialect Dialect,
+    Func<TOptions, DbConnection> CreateConnection,
+    Func<TOptions, CoordinationStorageOptions, SchemaContribution> SchemaContribution
+)
+    where TOptions : RelationalCoordinationOptions;
+
+/// <summary>What the one relational membership store runs against.</summary>
+/// <param name="Dialect">The engine's dialect.</param>
+/// <param name="CreateConnection">Creates an unopened connection to the database that holds the tables.</param>
+/// <param name="CommandTimeoutSeconds">The timeout of every command.</param>
+/// <param name="Tables">The membership tables, named by the dialect in the configured schema.</param>
+internal sealed record RelationalCoordinationStorage(
+    ISqlDialect Dialect,
+    Func<DbConnection> CreateConnection,
+    int CommandTimeoutSeconds,
+    CoordinationTables Tables
+);

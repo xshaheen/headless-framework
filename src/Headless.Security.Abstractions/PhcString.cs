@@ -6,12 +6,6 @@ using Headless.Checks;
 
 namespace Headless.Security;
 
-/// <summary>A named parameter of a <see cref="PhcString" />, such as <c>m=19456</c>.</summary>
-/// <param name="Name">The parameter name.</param>
-/// <param name="Value">The parameter value, as written.</param>
-[PublicAPI]
-public readonly record struct PhcParameter(string Name, string Value);
-
 /// <summary>
 /// A parsed <see href="https://github.com/C2SP/C2SP/blob/main/phc-strings.md">PHC string</see> carrying a salt and a
 /// hash: <c>$&lt;id&gt;[$v=&lt;version&gt;][$&lt;name&gt;=&lt;value&gt;(,&lt;name&gt;=&lt;value&gt;)*]$&lt;salt&gt;$&lt;hash&gt;</c>.
@@ -371,3 +365,9 @@ public sealed class PhcString
         return true;
     }
 }
+
+/// <summary>A named parameter of a <see cref="PhcString" />, such as <c>m=19456</c>.</summary>
+/// <param name="Name">The parameter name.</param>
+/// <param name="Value">The parameter value, as written.</param>
+[PublicAPI]
+public readonly record struct PhcParameter(string Name, string Value);

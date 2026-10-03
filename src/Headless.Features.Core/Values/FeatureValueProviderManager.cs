@@ -7,17 +7,6 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.Features.Values;
 
-/// <summary>Provides ordered access to all registered <see cref="IFeatureValueReadProvider"/> instances.</summary>
-/// <remarks>
-/// Providers are returned in priority order (highest priority first), which is the reverse of their
-/// registration order. The default built-in chain is <c>Tenant</c> → <c>Edition</c> → <c>DefaultValue</c>.
-/// </remarks>
-public interface IFeatureValueProviderManager
-{
-    /// <summary>Gets the ordered list of value providers, highest priority first.</summary>
-    IReadOnlyList<IFeatureValueReadProvider> ValueProviders { get; }
-}
-
 /// <summary>
 /// Default implementation of <see cref="IFeatureValueProviderManager"/> that resolves providers from the DI container
 /// on first access and validates that no two providers share the same name.
@@ -67,4 +56,15 @@ public sealed class FeatureValueProviderManager : IFeatureValueProviderManager
             $"Duplicate feature value provider name detected: {multipleProviders.Key}. Providers:{Environment.NewLine}{providersText}"
         );
     }
+}
+
+/// <summary>Provides ordered access to all registered <see cref="IFeatureValueReadProvider"/> instances.</summary>
+/// <remarks>
+/// Providers are returned in priority order (highest priority first), which is the reverse of their
+/// registration order. The default built-in chain is <c>Tenant</c> → <c>Edition</c> → <c>DefaultValue</c>.
+/// </remarks>
+public interface IFeatureValueProviderManager
+{
+    /// <summary>Gets the ordered list of value providers, highest priority first.</summary>
+    IReadOnlyList<IFeatureValueReadProvider> ValueProviders { get; }
 }

@@ -6,25 +6,6 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Headless.MultiTenancy;
 
 /// <summary>
-/// Opt-in typed leaf accessor exposing an app-defined <see cref="TenantInfo"/> subclass view.
-/// The only pipeline surface that carries a type parameter — the store SPI, cache, and outcome types
-/// all stay non-generic per this family's extension-tier design.
-/// </summary>
-/// <typeparam name="T">The app-defined <see cref="TenantInfo"/> subclass.</typeparam>
-[PublicAPI]
-public interface ICurrentTenantInfo<T>
-    where T : TenantInfo
-{
-    /// <summary>Loads the typed view of the ambient tenant's info.</summary>
-    /// <param name="cancellationToken">A token to cancel the operation.</param>
-    /// <returns>
-    /// The ambient tenant's info as <typeparamref name="T"/>, or <see langword="null"/> per the same
-    /// absence rules as <see cref="ICurrentTenantInfo.GetAsync"/>.
-    /// </returns>
-    Task<T?> GetAsync(CancellationToken cancellationToken = default);
-}
-
-/// <summary>
 /// Default <see cref="ICurrentTenantInfo{T}"/>: downcasts when the base accessor already returned
 /// <typeparamref name="T"/> (the fast path — happens when this call's resolution was a cache miss and
 /// the store returned the subtype directly), otherwise invokes the app-supplied projection delegate,
@@ -52,6 +33,25 @@ internal sealed class TypedCurrentTenantInfo<T>(
 
         return await projection(baseInfo, cancellationToken).ConfigureAwait(false);
     }
+}
+
+/// <summary>
+/// Opt-in typed leaf accessor exposing an app-defined <see cref="TenantInfo"/> subclass view.
+/// The only pipeline surface that carries a type parameter — the store SPI, cache, and outcome types
+/// all stay non-generic per this family's extension-tier design.
+/// </summary>
+/// <typeparam name="T">The app-defined <see cref="TenantInfo"/> subclass.</typeparam>
+[PublicAPI]
+public interface ICurrentTenantInfo<T>
+    where T : TenantInfo
+{
+    /// <summary>Loads the typed view of the ambient tenant's info.</summary>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns>
+    /// The ambient tenant's info as <typeparamref name="T"/>, or <see langword="null"/> per the same
+    /// absence rules as <see cref="ICurrentTenantInfo.GetAsync"/>.
+    /// </returns>
+    Task<T?> GetAsync(CancellationToken cancellationToken = default);
 }
 
 /// <summary>Registration entry point for the typed leaf accessor.</summary>

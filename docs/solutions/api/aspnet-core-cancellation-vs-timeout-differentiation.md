@@ -270,6 +270,6 @@ Unit test coverage for `HeadlessApiExceptionHandler`:
 
 - `src/Headless.Api.Core/Middlewares/HeadlessApiExceptionHandler.cs` — handler, OCE arm, `_IsCancellationException`, `case TimeoutException`
 - `src/Headless.Api.Abstractions/IProblemDetailsCreator.cs` — `Normalize` with 408/501 backfill, `RequestTimeout()` / `NotImplemented()` factories
-- `src/Headless.Api.Abstractions/Constants/ProblemDetailTitles.cs` — Types/Titles/Details constants
+- `src/Headless.Api.Abstractions/Constants/HeadlessProblemDetailsConstants.cs` — Types/Titles/Details constants
 - `src/Headless.Api.Core/SetupApiServices.cs` — `AddHeadlessProblemDetails` + `TryAddEnumerable` registration
 - `demo/Headless.Api.Demo/Program.cs` — pipeline-ordering example
