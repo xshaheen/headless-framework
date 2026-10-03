@@ -761,6 +761,312 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         ruleCalls.Should().Be(0, "cancellation with the consume token is never shown to the fail rules");
     }
 
+    [Fact]
+    public async Task should_retry_a_handler_timeout_whose_token_is_cancelled_but_not_the_consume_token()
+    {
+        // given — an HttpClient timeout: the TaskCanceledException carries the client's own, already-cancelled token.
+        using var clientTimeout = new CancellationTokenSource();
+        await clientTimeout.CancelAsync();
+        var storage = Substitute.For<IDataStorage>();
+        var invoker = _AlwaysThrowing(
+            new TaskCanceledException("HttpClient timeout", new TimeoutException(), clientTimeout.Token),
+            out var invocations
+        );
+        var exhausted = new List<FailedInfo>();
+        var executor = _CreateExecutor(invoker, storage, _OptionsCountingExhausted(exhausted.Add));
+        var writes = _CaptureWrites(storage);
+
+        // when
+        var result = await executor.ExecuteAsync(
+            _CreateMediumMessage(),
+            _EmptyScope,
+            _CreateDescriptor(_Policy(immediate: 2, delayed: 0)),
+            AbortToken
+        );
+
+        // then — the policy's two immediate retries run before the row turns terminal.
+        result.Succeeded.Should().BeFalse();
+        invocations().Should().Be(3);
+        writes.Count(_IsTerminal).Should().Be(1);
+        writes[^1].Should().Match<StateWrite>(write => _IsTerminal(write));
+        exhausted.Should().ContainSingle();
+        exhausted[0].Exception.InnerException.Should().BeOfType<TaskCanceledException>();
+    }
+
+    [Fact]
+    public async Task should_retry_a_cancellation_from_a_token_the_handler_owns()
+    {
+        // given — the handler bounds its own work with a CancelAfter source and lets the cancellation escape.
+        var storage = Substitute.For<IDataStorage>();
+        var invoker = Substitute.For<ISubscribeInvoker>();
+        var invocations = 0;
+        invoker
+            .InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>())
+            .Returns(async _ =>
+            {
+                Interlocked.Increment(ref invocations);
+                using var handlerDeadline = new CancellationTokenSource();
+                await handlerDeadline.CancelAsync();
+                handlerDeadline.Token.ThrowIfCancellationRequested();
+                return new ConsumerExecutedResult(null, null, null!, null, null);
+            });
+        var exhausted = 0;
+        var executor = _CreateExecutor(invoker, storage, _OptionsCountingExhausted(() => exhausted++));
+        var writes = _CaptureWrites(storage);
+
+        // when
+        await executor.ExecuteAsync(
+            _CreateMediumMessage(),
+            _EmptyScope,
+            _CreateDescriptor(_Policy(immediate: 2, delayed: 0)),
+            AbortToken
+        );
+
+        // then
+        invocations.Should().Be(3);
+        writes.Count(_IsTerminal).Should().Be(1);
+        exhausted.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_retry_a_handler_cancellation_through_the_transactional_inbox()
+    {
+        // given — the inbox transaction runner hands the handler the attempt token it was given.
+        using var clientTimeout = new CancellationTokenSource();
+        await clientTimeout.CancelAsync();
+        var storage = Substitute.For<IDataStorage>();
+        var invoker = Substitute.For<ISubscribeInvoker>();
+        var invocations = 0;
+        invoker
+            .InvokeInScopeAsync(Arg.Any<ConsumerContext>(), Arg.Any<IServiceProvider>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                Interlocked.Increment(ref invocations);
+                return Task.FromException<ConsumerExecutedResult>(
+                    new TaskCanceledException("HttpClient timeout", null, clientTimeout.Token)
+                );
+            });
+        var executor = _CreateExecutor(invoker, storage, new MessagingOptions());
+        var writes = _CaptureWrites(storage);
+        var message = _CreateMediumMessage();
+        message.InboxKey = new InboxKey(
+            TenantId: null,
+            message.Origin.Id,
+            MessageLane.Bus,
+            "test.messageName",
+            "v1",
+            CancellationExecutorTestConsumer.Identity,
+            Generation: 0
+        );
+        var runner = Substitute.For<IInboxTransactionRunner>();
+        runner
+            .ExecuteAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<Func<IUnitOfWork, CancellationToken, Task>>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(call =>
+                call.ArgAt<Func<IUnitOfWork, CancellationToken, Task>>(1)(
+                    Substitute.For<IUnitOfWork>(),
+                    call.ArgAt<CancellationToken>(2)
+                )
+            );
+        await using var dispatchServices = new ServiceCollection().AddScoped(_ => runner).BuildServiceProvider();
+
+        // when
+        await executor.ExecuteAsync(
+            message,
+            dispatchServices,
+            _CreateDescriptor(_Policy(immediate: 2, delayed: 0)),
+            AbortToken
+        );
+
+        // then
+        invocations.Should().Be(3);
+        writes.Count(_IsTerminal).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_fail_a_handler_cancellation_at_once_when_a_fail_rule_matches_it()
+    {
+        // given — FailOn<OperationCanceledException> restores the terminal behavior, and it matches subtypes.
+        using var clientTimeout = new CancellationTokenSource();
+        await clientTimeout.CancelAsync();
+        var storage = Substitute.For<IDataStorage>();
+        var invoker = _AlwaysThrowing(
+            new TaskCanceledException("HttpClient timeout", null, clientTimeout.Token),
+            out var invocations
+        );
+        var exhausted = new List<FailedInfo>();
+        var executor = _CreateExecutor(invoker, storage, _OptionsCountingExhausted(exhausted.Add));
+        var writes = _CaptureWrites(storage);
+        var message = _CreateMediumMessage();
+        var policy = new FailurePolicyBuilder()
+            .Immediate(2)
+            .Delayed(3, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(10))
+            .FailOn<OperationCanceledException>()
+            .Build();
+
+        // when
+        var result = await executor.ExecuteAsync(message, _EmptyScope, _CreateDescriptor(policy), AbortToken);
+
+        // then
+        result.Succeeded.Should().BeFalse();
+        invocations().Should().Be(1);
+        writes.Should().ContainSingle().Which.Should().Match<StateWrite>(write => _IsTerminal(write));
+        message.Retries.Should().Be(0);
+        exhausted.Should().ContainSingle();
+        exhausted[0].Exception.Should().BeOfType<SubscriberExecutionFailedException>();
+        exhausted[0].Exception.InnerException.Should().BeOfType<TaskCanceledException>();
+    }
+
+    [Fact]
+    public async Task should_retry_a_cancellation_the_inbox_runner_raises_after_the_handler_while_the_consume_token_is_live()
+    {
+        // given — the handler succeeds, then the runner's own commit work (a consumer SaveChanges interceptor calling
+        // out over HTTP) times out and the cancellation escapes the runner unwrapped.
+        using var clientTimeout = new CancellationTokenSource();
+        await clientTimeout.CancelAsync();
+        var storage = Substitute.For<IDataStorage>();
+        var invoker = _SucceedingInScope(out var invocations);
+        var exhausted = new List<FailedInfo>();
+        var executor = _CreateExecutor(invoker, storage, _OptionsCountingExhausted(exhausted.Add));
+        var writes = _CaptureWrites(storage);
+        var message = _CreateTransactionalInboxMessage();
+        await using var dispatchServices = _ServicesWithRunnerFailingAfterHandler(_ => new TaskCanceledException(
+            "interceptor HttpClient timeout",
+            null,
+            clientTimeout.Token
+        ));
+
+        // when
+        var result = await executor.ExecuteAsync(
+            message,
+            dispatchServices,
+            _CreateDescriptor(_Policy(immediate: 2, delayed: 0)),
+            AbortToken
+        );
+
+        // then — the policy's two immediate retries run before the row turns terminal.
+        result.Succeeded.Should().BeFalse();
+        invocations().Should().Be(3);
+        writes.Count(_IsTerminal).Should().Be(1);
+        writes[^1].Should().Match<StateWrite>(write => _IsTerminal(write));
+        exhausted.Should().ContainSingle().Which.Exception.Should().BeOfType<TaskCanceledException>();
+    }
+
+    [Fact]
+    public async Task should_fail_a_runner_cancellation_at_once_when_a_fail_rule_matches_it()
+    {
+        // given
+        using var clientTimeout = new CancellationTokenSource();
+        await clientTimeout.CancelAsync();
+        var storage = Substitute.For<IDataStorage>();
+        var invoker = _SucceedingInScope(out var invocations);
+        var exhausted = new List<FailedInfo>();
+        var executor = _CreateExecutor(invoker, storage, _OptionsCountingExhausted(exhausted.Add));
+        var writes = _CaptureWrites(storage);
+        var message = _CreateTransactionalInboxMessage();
+        await using var dispatchServices = _ServicesWithRunnerFailingAfterHandler(_ => new TaskCanceledException(
+            "interceptor HttpClient timeout",
+            null,
+            clientTimeout.Token
+        ));
+        var policy = new FailurePolicyBuilder().Immediate(2).FailOn<OperationCanceledException>().Build();
+
+        // when
+        await executor.ExecuteAsync(message, dispatchServices, _CreateDescriptor(policy), AbortToken);
+
+        // then
+        invocations().Should().Be(1);
+        writes.Should().ContainSingle().Which.Should().Match<StateWrite>(write => _IsTerminal(write));
+        exhausted.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task should_write_nothing_when_the_consume_token_is_cancelled_during_the_inbox_runner_work()
+    {
+        // given — shutdown fires while the runner commits, and the runner surfaces a linked token's cancellation.
+        using var shutdown = new CancellationTokenSource();
+        var storage = Substitute.For<IDataStorage>();
+        var invoker = _SucceedingInScope(out var invocations);
+        var exhausted = 0;
+        var executor = _CreateExecutor(invoker, storage, _OptionsCountingExhausted(() => exhausted++));
+        var writes = _CaptureWrites(storage);
+        var message = _CreateTransactionalInboxMessage();
+        await using var dispatchServices = _ServicesWithRunnerFailingAfterHandler(token =>
+        {
+            shutdown.Cancel();
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(token);
+            return new OperationCanceledException(linked.Token);
+        });
+
+        // when
+        await executor.ExecuteAsync(
+            message,
+            dispatchServices,
+            _CreateDescriptor(_Policy(immediate: 2, delayed: 0)),
+            shutdown.Token
+        );
+
+        // then
+        invocations().Should().Be(1);
+        writes.Should().BeEmpty();
+        exhausted.Should().Be(0);
+    }
+
+    private static ISubscribeInvoker _SucceedingInScope(out Func<int> invocations)
+    {
+        var count = 0;
+        var invoker = Substitute.For<ISubscribeInvoker>();
+        invoker
+            .InvokeInScopeAsync(Arg.Any<ConsumerContext>(), Arg.Any<IServiceProvider>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                Interlocked.Increment(ref count);
+                return Task.FromResult(new ConsumerExecutedResult(null, null, null!, null, null));
+            });
+        invocations = () => Volatile.Read(ref count);
+        return invoker;
+    }
+
+    private static MediumMessage _CreateTransactionalInboxMessage()
+    {
+        var message = _CreateMediumMessage();
+        message.InboxKey = new InboxKey(
+            TenantId: null,
+            message.Origin.Id,
+            MessageLane.Bus,
+            "test.messageName",
+            "v1",
+            CancellationExecutorTestConsumer.Identity,
+            Generation: 0
+        );
+        return message;
+    }
+
+    // Runs the handler like the EF inbox runners do, then fails the runner's own post-handler work (SaveChanges with
+    // consumer interceptors, completing the inbox row) with the exception the factory builds from the attempt token.
+    private static ServiceProvider _ServicesWithRunnerFailingAfterHandler(
+        Func<CancellationToken, Exception> postHandlerFailure
+    )
+    {
+        var runner = Substitute.For<IInboxTransactionRunner>();
+        runner
+            .ExecuteAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<Func<IUnitOfWork, CancellationToken, Task>>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(async call =>
+            {
+                var token = call.ArgAt<CancellationToken>(2);
+                await call.ArgAt<Func<IUnitOfWork, CancellationToken, Task>>(1)(Substitute.For<IUnitOfWork>(), token);
+                throw postHandlerFailure(token);
+            });
+        return new ServiceCollection().AddScoped(_ => runner).BuildServiceProvider();
+    }
+
     // ─── Crash recovery and budget overrun ──────────────────────────────────────────────────────────
 
     [Fact]

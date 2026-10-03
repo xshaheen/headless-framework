@@ -21,6 +21,7 @@ packages: Reliability.Abstractions
 - Use `ShouldFail(exception, out ruleException)` in a runtime and log a non-null `ruleException`; the short overload hides a broken rule.
 - Persist `GetDelayedRetryBaseDelay` where a schedule is stored, and use `GetDelayedRetryDelay` to wait. Jitter cannot be stored, and the base delay is deterministic.
 - Do not build a parallel retry loop around a definition. Messaging and Jobs execute it.
+- Treat a handler's own cancellation as a failure. Messaging and Jobs retry an `OperationCanceledException` raised while the runtime's token is live, such as an `HttpClient` timeout or a `CancelAfter`, within the policy's budget. Declare `FailOn<OperationCanceledException>()` to end it at once; the rule also matches `TaskCanceledException`. Once the runtime's own token is cancelled (host shutdown, a durable job cancel, lease loss), any `OperationCanceledException` that ends the attempt, whatever token it carries, never reaches the policy, is never retried, and never writes `Failed` or fires `OnExhausted`.
 
 ## Core Concepts
 
@@ -83,6 +84,7 @@ For a job, a scheduling call's `WithRetries` and `WithRetryIntervals` then overr
 | Immediate retries | Back-to-back inside the first dispatch | Back-to-back inside the run |
 | Delayed retries | Persisted with `NextRetryAt` set from the database clock plus the jittered delay; the retry processor picks the row up | In process, under the job's lease, waiting the stored interval |
 | Exceptions that end a failure at once | Fail rules, plus `ArgumentException` (and subtypes), `NotSupportedException`, and `SubscriberNotFoundException` | Fail rules; `TerminateExecutionException` keeps its own meaning and never reaches the policy |
+| Cancellation | After the consume token is cancelled (host shutdown), any cancellation writes nothing, whatever token it carries; one raised while the consume token is live, by the handler or the transactional inbox's commit work, is classified and retried like any other failure | After the run's token is cancelled, any cancellation is the executor's, whatever token it carries: durable cancel writes `Cancelled`, host shutdown and lease loss write nothing; one the handler raises while the token is live is classified and retried like any other failure |
 | Terminal state | `Failed`, with no `NextRetryAt` | `Failed` |
 | Terminal callback | `MessagingOptions.RetryPolicy.OnExhausted` | `JobsRetryOptions.OnExhausted` |
 | Operator recovery | Re-execute from the Messaging dashboard | `IJobScheduler.RequeueAsync` / `RequeueOccurrenceAsync`, or the requeue button on the Jobs dashboard |

@@ -120,6 +120,7 @@ public static class FileHelper
         _EnsureSafePathSegment(uniqueSaveName);
 
         var filePath = Path.Combine(directoryPath, uniqueSaveName);
+
         await TransientRetry
             .RunAsync(
                 async ct =>
