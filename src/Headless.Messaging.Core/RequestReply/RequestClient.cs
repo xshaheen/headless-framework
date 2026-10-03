@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Globalization;
 using Headless.Checks;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
@@ -33,7 +34,8 @@ internal sealed class RequestClient(
         Argument.IsNotNull(request);
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (consumeContextAccessor.Current?.UnitOfWork is not null)
+        var inbound = consumeContextAccessor.Current;
+        if (inbound?.UnitOfWork is not null)
         {
             throw new InvalidOperationException(
                 "A request cannot be sent from inside a transactional inbox unit: waiting for the reply would hold the "
@@ -42,16 +44,20 @@ internal sealed class RequestClient(
             );
         }
 
-        var timeout = options?.Timeout ?? _defaultTimeout;
         var startedAt = timeProvider.GetTimestamp();
         var outcome = MessagingMetrics.RequestOutcomeFailed;
 
         try
         {
+            // One clock read serves both the nested cap and the outbound deadline, so a nested request's deadline never
+            // passes the deadline of the request its consumer is answering.
+            var sentAt = timeProvider.GetUtcNow();
+            var timeout = _ResolveTimeout(options, inbound, sentAt);
             var response = await _RequestAsync<TRequest, TResponse>(
                     request,
                     options,
                     timeout,
+                    sentAt,
                     startedAt,
                     cancellationToken
                 )
@@ -70,17 +76,49 @@ internal sealed class RequestClient(
         }
     }
 
+    /// <summary>
+    /// The call's timeout: the requested or default one, capped by what is left of the deadline of the request the
+    /// current consumer is answering, so downstream work and its retries never outlive the caller waiting upstream.
+    /// </summary>
+    /// <exception cref="RequestNotSentException">The inbound request's deadline has already passed.</exception>
+    private TimeSpan _ResolveTimeout(RequestOptions? options, ConsumeContext? inbound, DateTimeOffset now)
+    {
+        var timeout = options?.Timeout ?? _defaultTimeout;
+
+        // Only a request being answered carries a deadline to inherit; a plain message, a Bus message with request
+        // headers, or a request with an unreadable deadline leaves the timeout as asked.
+        if (
+            inbound is null
+            || !RequestEnvelope.IsRequest(inbound.Lane, inbound.Headers)
+            || RequestEnvelope.GetDeadline(inbound.Headers) is not { } inboundDeadline
+        )
+        {
+            return timeout;
+        }
+
+        var remaining = inboundDeadline - now;
+        if (remaining <= TimeSpan.Zero)
+        {
+            throw new RequestNotSentException(
+                "The request this consumer is answering passed its deadline "
+                    + $"{inboundDeadline.ToString("O", CultureInfo.InvariantCulture)}, so the nested request was not sent."
+            );
+        }
+
+        return remaining < timeout ? remaining : timeout;
+    }
+
     private async Task<TResponse> _RequestAsync<TRequest, TResponse>(
         TRequest request,
         RequestOptions? options,
         TimeSpan timeout,
+        DateTimeOffset sentAt,
         long startedAt,
         CancellationToken cancellationToken
     )
         where TRequest : class
         where TResponse : class
     {
-        var sentAt = timeProvider.GetUtcNow();
         var (expectedName, expectedVersion) = publishRequestFactory.ResolveContract(
             typeof(TResponse),
             MessageLane.Queue
