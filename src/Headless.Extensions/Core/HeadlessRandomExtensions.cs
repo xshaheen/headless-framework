@@ -3,10 +3,10 @@
 using System.Runtime.InteropServices;
 using Headless.Checks;
 
+#pragma warning disable CA5394 // CA5394: Random is an insecure random number generator.
 #pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace System;
 
-#pragma warning disable CA5394 // CA5394: Random is an insecure random number generator.
 /// <summary>
 /// Extension methods on <see cref="Random"/> for picking items from collections and generating values of additional
 /// types. The underlying generator is not cryptographically secure; do not use for security-sensitive purposes.
