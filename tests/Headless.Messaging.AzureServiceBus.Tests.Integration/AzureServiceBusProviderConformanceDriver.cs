@@ -23,6 +23,10 @@ internal sealed class AzureServiceBusProviderConformanceDriver(AzureServiceBusFi
 
     public override bool SupportsEveryInstance => true;
 
+    // The same transport a consuming host uses, so the startup-rejection proof runs against the real provider wiring.
+    public override void ConfigureRequestReplyTransport(Headless.Messaging.Configuration.MessagingSetupBuilder setup) =>
+        ConfigureRoutingAffinityTransport(setup);
+
     public override void ConfigureRoutingAffinityTransport(
         Headless.Messaging.Configuration.MessagingSetupBuilder setup
     ) =>
