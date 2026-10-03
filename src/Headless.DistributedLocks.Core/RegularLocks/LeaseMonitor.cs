@@ -4,7 +4,6 @@ using Headless.Checks;
 using Microsoft.Extensions.Logging;
 using Nito.AsyncEx;
 
-// ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
 
 /// <summary>

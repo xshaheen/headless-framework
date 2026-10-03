@@ -2,7 +2,6 @@
 
 using System.Net;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace System;
 
 /// <summary>Extensions for inspecting <see cref="HttpStatusCode"/> success ranges.</summary>

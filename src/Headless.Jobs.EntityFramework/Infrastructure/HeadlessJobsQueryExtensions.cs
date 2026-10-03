@@ -4,7 +4,6 @@ using Headless.Jobs;
 using Headless.Jobs.Entities;
 using Headless.Jobs.Enums;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.EntityFrameworkCore;
 
 public static class HeadlessJobsQueryExtensions

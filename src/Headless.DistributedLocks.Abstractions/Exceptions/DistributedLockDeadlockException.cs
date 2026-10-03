@@ -2,7 +2,6 @@
 
 using Headless.Checks;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
 
 /// <summary>Exception raised when a distributed-lock backend detects deadlock while acquiring a lock.</summary>

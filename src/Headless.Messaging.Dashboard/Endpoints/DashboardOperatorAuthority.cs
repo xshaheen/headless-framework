@@ -9,7 +9,6 @@ using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Microsoft.AspNetCore.Http;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Messaging.Dashboard;
 
 internal enum OperatorAuthorityStatus

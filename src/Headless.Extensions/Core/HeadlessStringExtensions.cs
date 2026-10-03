@@ -5,7 +5,6 @@ using System.Text.RegularExpressions;
 using Headless.Checks;
 using RegexPatterns = Headless.Constants.RegexPatterns;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace System;
 
 /// <summary>General-purpose extension methods for <see cref="string"/> and character sequences.</summary>

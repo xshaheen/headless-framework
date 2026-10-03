@@ -8,7 +8,6 @@ using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.ValueGeneration;
 using Microsoft.Extensions.DependencyInjection;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.EntityFrameworkCore;
 
 [PublicAPI]

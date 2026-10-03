@@ -6,7 +6,6 @@ using Headless.Messaging.Persistence;
 using Headless.Messaging.Storage.InMemory;
 using Microsoft.Extensions.DependencyInjection;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Messaging;
 
 /// <summary>

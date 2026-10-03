@@ -9,7 +9,6 @@ using Microsoft.Extensions.Logging;
 using Nito.AsyncEx;
 using Polly;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
 
 /// <summary>

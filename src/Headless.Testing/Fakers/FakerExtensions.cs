@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Bogus;
 
 /// <summary>Extensions on <see cref="Faker"/> for generating nullable and tri-state values.</summary>

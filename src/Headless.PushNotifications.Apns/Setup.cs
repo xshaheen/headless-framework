@@ -14,7 +14,6 @@ using Microsoft.Extensions.Options;
 using Polly;
 using Polly.Timeout;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.PushNotifications;
 
 /// <summary>

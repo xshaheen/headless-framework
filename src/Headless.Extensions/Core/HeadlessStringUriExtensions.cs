@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace System;
 
 /// <summary>URL-oriented extension methods for <see cref="string"/>.</summary>

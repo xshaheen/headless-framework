@@ -2,7 +2,6 @@
 
 using System.Diagnostics;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Nito.AsyncEx;
 
 /// <summary>Timeout-aware and exception-swallowing wait helpers for Nito.AsyncEx synchronization primitives.</summary>

@@ -2,7 +2,6 @@
 
 using System.IO.Compression;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace System;
 
 /// <summary>Extension methods for compressing, decompressing, and comparing byte arrays.</summary>

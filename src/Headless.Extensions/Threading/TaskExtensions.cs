@@ -3,7 +3,6 @@
 using System.Runtime.CompilerServices;
 using Headless.Checks;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace System.Threading.Tasks;
 
 /// <summary>Extensions for fire-and-forget execution, exception aggregation, result probing, and cancellation of <see cref="Task"/> instances.</summary>

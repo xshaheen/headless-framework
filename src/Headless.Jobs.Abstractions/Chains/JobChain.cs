@@ -4,7 +4,6 @@ using Headless.Checks;
 using Headless.Jobs.Base;
 using Headless.Jobs.Models;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Jobs;
 
 /// <summary>

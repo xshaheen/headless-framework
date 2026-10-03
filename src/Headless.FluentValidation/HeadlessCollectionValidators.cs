@@ -3,7 +3,6 @@
 using Headless.Checks;
 using Headless.FluentValidation.Resources;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace FluentValidation;
 
 /// <summary>FluentValidation extension rules for <see cref="IEnumerable{T}"/> collection properties.</summary>

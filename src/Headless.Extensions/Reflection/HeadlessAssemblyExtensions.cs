@@ -2,7 +2,6 @@
 
 using Headless.Reflection;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace System.Reflection;
 
 /// <summary>

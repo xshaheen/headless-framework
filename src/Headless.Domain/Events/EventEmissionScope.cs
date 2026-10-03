@@ -2,7 +2,6 @@
 
 using Headless.Checks;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Domain;
 
 /// <summary>Nestable async-flow-local business lineage. Dispose in strict reverse creation order in the owning flow.</summary>

@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace System.Reflection.Emit;
 
 /// <summary>Convenience extensions for emitting common IL sequences with an <see cref="ILGenerator"/>.</summary>

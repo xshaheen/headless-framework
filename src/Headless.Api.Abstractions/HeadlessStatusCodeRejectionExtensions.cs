@@ -3,7 +3,6 @@
 using Headless.Abstractions;
 using Headless.Checks;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.AspNetCore.Http;
 
 [PublicAPI]

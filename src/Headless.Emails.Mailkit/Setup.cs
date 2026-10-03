@@ -9,7 +9,6 @@ using Microsoft.Extensions.ObjectPool;
 using Microsoft.Extensions.Options;
 using SmtpClient = MailKit.Net.Smtp.SmtpClient;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Emails;
 
 /// <summary>

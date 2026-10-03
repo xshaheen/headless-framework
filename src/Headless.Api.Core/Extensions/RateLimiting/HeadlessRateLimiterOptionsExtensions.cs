@@ -4,7 +4,6 @@ using Headless.Api.Middlewares;
 using Headless.Checks;
 using Microsoft.AspNetCore.Http;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.AspNetCore.RateLimiting;
 
 /// <summary>Extension methods for <see cref="RateLimiterOptions"/>.</summary>

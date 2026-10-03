@@ -4,7 +4,6 @@ using Headless.Checks;
 using Headless.UnitOfWork;
 using Headless.UnitOfWork.Internal;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace System.Data.Common;
 
 /// <summary>

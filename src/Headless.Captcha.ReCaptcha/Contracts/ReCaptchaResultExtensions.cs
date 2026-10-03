@@ -2,7 +2,6 @@
 
 using Headless.Checks;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Captcha;
 
 /// <summary>Extensions for reading reCAPTCHA-specific data from an <see cref="IReCaptchaVerifyResult"/>.</summary>

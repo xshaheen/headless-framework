@@ -2,7 +2,6 @@
 
 using Headless.Checks;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace System.Collections.Generic;
 
 /// <summary>Extension methods for adding to and removing from generic collections.</summary>

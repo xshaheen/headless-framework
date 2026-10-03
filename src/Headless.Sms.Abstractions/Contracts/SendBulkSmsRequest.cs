@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Sms;
 
 /// <summary>Describes a single SMS message delivered to many recipients in one provider call.</summary>

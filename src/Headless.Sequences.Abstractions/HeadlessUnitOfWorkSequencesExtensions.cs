@@ -3,8 +3,6 @@
 using Headless.Checks;
 using Headless.Sequences;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-
 namespace Headless.UnitOfWork;
 
 /// <summary>

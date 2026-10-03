@@ -3,7 +3,6 @@
 using Headless.Checks;
 using Headless.Constants;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.Extensions.Hosting;
 
 /// <summary>Extension methods for <see cref="IHostEnvironment"/>.</summary>

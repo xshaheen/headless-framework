@@ -3,7 +3,6 @@
 using Headless.Api.Surfaces;
 using Headless.Checks;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Api.Mvc.Surfaces;
 
 /// <summary>

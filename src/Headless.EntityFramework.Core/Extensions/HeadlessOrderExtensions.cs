@@ -5,7 +5,6 @@ using System.Runtime.CompilerServices;
 using Headless.EntityFramework;
 using Headless.Primitives;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.EntityFrameworkCore;
 
 /// <summary>

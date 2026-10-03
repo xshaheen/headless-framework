@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
-// ReSharper disable once CheckNamespace
 namespace Headless.DistributedLocks;
 
 /// <summary>Per-call configuration for <see cref="IDistributedLock.AcquireAsync"/> / <see cref="IDistributedLock.TryAcquireAsync"/>.</summary>

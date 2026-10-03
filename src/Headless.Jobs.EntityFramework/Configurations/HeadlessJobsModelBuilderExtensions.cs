@@ -6,7 +6,6 @@ using Headless.Jobs.Configurations;
 using Headless.Jobs.Entities;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.EntityFrameworkCore;
 
 /// <summary>Finalizes Jobs constraints for consumer-managed relational models.</summary>

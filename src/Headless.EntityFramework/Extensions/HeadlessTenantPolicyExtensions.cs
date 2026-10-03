@@ -6,7 +6,6 @@ using Headless.EntityFramework;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Microsoft.EntityFrameworkCore;
 
 /// <summary>Declares and reads hierarchy-wide tenant ownership.</summary>

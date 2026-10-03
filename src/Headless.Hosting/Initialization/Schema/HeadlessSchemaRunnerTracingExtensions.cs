@@ -3,7 +3,6 @@
 using Headless.Checks;
 using Headless.Hosting.Initialization.Schema;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace OpenTelemetry.Trace;
 
 /// <summary>

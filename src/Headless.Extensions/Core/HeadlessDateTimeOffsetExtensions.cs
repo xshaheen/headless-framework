@@ -3,7 +3,6 @@
 using System.Runtime.CompilerServices;
 using Headless.Constants;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace System;
 
 [PublicAPI]

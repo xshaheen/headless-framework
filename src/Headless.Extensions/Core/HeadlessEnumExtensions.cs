@@ -9,7 +9,6 @@ using Headless.Checks;
 using Headless.Primitives;
 using Headless.Reflection;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace System;
 
 /// <summary>Extension methods for reading metadata (display names, descriptions, and locales) from enum values.</summary>

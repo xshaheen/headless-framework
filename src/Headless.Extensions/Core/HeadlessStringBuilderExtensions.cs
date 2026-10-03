@@ -2,7 +2,6 @@
 
 using Headless.Checks;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace System.Text;
 
 /// <summary>Extension methods for <see cref="StringBuilder"/>.</summary>

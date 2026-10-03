@@ -2,7 +2,6 @@
 
 using Microsoft.AspNetCore.Razor.TagHelpers;
 
-#pragma warning disable IDE0130 // ReSharper disable once CheckNamespace
 namespace Headless.Captcha;
 
 /// <summary>Shared attribute emission for the v2 <c>g-recaptcha</c> widget (used by the div and element tag helpers).</summary>
