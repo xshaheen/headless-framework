@@ -241,7 +241,8 @@ internal sealed class JobsInitializationHostedService(
                     scopedProvider
                         .GetRequiredService<CronScheduleCache>()
                         .ComputeEvaluationFingerprint(x.Value.TimeZoneId),
-                    functionRegistry.Descriptors[x.Key].ContractVersion
+                    functionRegistry.Descriptors[x.Key].ContractVersion,
+                    functionRegistry.GetFlattenedFailurePolicy(x.Key)
                 )
             )
             .ToArray();
@@ -298,14 +299,16 @@ internal sealed class JobsInitializationHostedService(
     /// <summary>
     /// Resolves one declared function's knobs — attribute value, else the scheduler-wide default — and rejects any
     /// that a hand-written registration could still carry out of range; the source generator already rejects them for
-    /// attributes.
+    /// attributes. The retries come from the job's resolved failure policy, flattened the same way a scheduling call
+    /// stores them.
     /// </summary>
     private static CronSeedDefinition _ToSeed(
         string function,
         JobFunctionRegistration registration,
         SchedulerOptionsBuilder schedulerOptions,
         string evaluationFingerprint,
-        string contractVersion
+        string contractVersion,
+        (int Retries, int[]? RetryIntervals) flattenedFailurePolicy
     )
     {
         var onMissedRun = registration.OnMissedRun ?? schedulerOptions.DefaultMissedRunPolicy;
@@ -350,7 +353,9 @@ internal sealed class JobsInitializationHostedService(
             onOverlap,
             evaluationFingerprint,
             contractVersion,
-            registration.TimeZoneId
+            registration.TimeZoneId,
+            flattenedFailurePolicy.Retries,
+            flattenedFailurePolicy.RetryIntervals
         );
     }
 }

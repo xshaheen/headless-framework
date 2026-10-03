@@ -8,14 +8,46 @@ using Polly.Retry;
 
 namespace Headless.Messaging.Retry;
 
+/// <summary>
+/// Runs one delivery's in-process retry burst and hands each retryable failure to the caller, which persists the
+/// state and decides whether the burst goes on.
+/// </summary>
+/// <remarks>
+/// The publish pipeline is configured by <see cref="RetryPolicyOptions.RetryStrategy"/>: its <c>ShouldHandle</c>
+/// classifies, and its delay settings space the retries. The consume pipeline ignores that strategy. Immediate retries
+/// run back-to-back, and each execution supplies its own classifier, because the classification belongs to the
+/// consumer's failure policy and one pipeline instance serves every consumer.
+/// </remarks>
 internal sealed class MessagingRetryPipeline
 {
     private static readonly TimeSpan _MaxCustomDelay = TimeSpan.FromHours(24);
     private static readonly ResiliencePropertyKey<ExecutionState> _ExecutionKey = new("headless.messaging.retry");
-    private readonly RetryPolicyOptions _policy;
+    private readonly RetryPolicyOptions? _policy;
     private readonly ILogger _logger;
     private readonly ResiliencePipeline<MessagingRetryAttempt> _pipeline;
 
+    /// <summary>Creates the consume pipeline: no delay between attempts, classification supplied per execution.</summary>
+    public MessagingRetryPipeline(TimeProvider timeProvider, ILogger logger)
+    {
+        _logger = logger;
+        var strategy = new RetryStrategyOptions<MessagingRetryAttempt>
+        {
+            // The durable InlineAttempts counter is the dynamic per-message ceiling. The
+            // OnRetry callback cancels this reusable pipeline when the consumer's burst ends.
+            MaxRetryAttempts = int.MaxValue,
+            Delay = TimeSpan.Zero,
+            BackoffType = DelayBackoffType.Constant,
+            UseJitter = false,
+            ShouldHandle = _ShouldHandleAsync,
+            OnRetry = _OnRetryAsync,
+        };
+
+        _pipeline = new ResiliencePipelineBuilder<MessagingRetryAttempt> { TimeProvider = timeProvider }
+            .AddRetry(strategy)
+            .Build();
+    }
+
+    /// <summary>Creates the publish pipeline, classified and spaced by <paramref name="policy"/>'s retry strategy.</summary>
     public MessagingRetryPipeline(RetryPolicyOptions policy, TimeProvider timeProvider, ILogger logger)
     {
         _policy = policy;
@@ -49,7 +81,8 @@ internal sealed class MessagingRetryPipeline
         Func<int, Exception, TimeSpan, bool, CancellationToken, Task<bool>> onRetry,
         Func<int, Exception, CancellationToken, Task> onNonRetryable,
         Guid storageId,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        Func<Exception, bool>? isRetryable = null
     )
     {
         if (cancellationToken.IsCancellationRequested)
@@ -61,7 +94,7 @@ internal sealed class MessagingRetryPipeline
         }
 
         using var pipelineCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        var state = new ExecutionState(onRetry, pipelineCts, storageId);
+        var state = new ExecutionState(onRetry, pipelineCts, storageId, isRetryable);
         var context = ResilienceContextPool.Shared.Get(pipelineCts.Token);
         context.Properties.Set(_ExecutionKey, state);
 
@@ -120,6 +153,17 @@ internal sealed class MessagingRetryPipeline
             return true;
         }
 
+        var state = args.Context.Properties.GetValue(_ExecutionKey, null!);
+        if (state.IsRetryable is { } isRetryable)
+        {
+            return isRetryable(exception);
+        }
+
+        if (_policy is null)
+        {
+            throw new InvalidOperationException("The consume retry pipeline requires a per-execution classifier.");
+        }
+
         try
         {
             return await _policy
@@ -134,7 +178,6 @@ internal sealed class MessagingRetryPipeline
         }
         catch (Exception strategyException)
         {
-            var state = args.Context.Properties.GetValue(_ExecutionKey, null!);
             state.StrategyFailed = true;
             _logger.RetryStrategyThrew(strategyException, state.StorageId, strategyException.GetType().Name);
             return true;
@@ -147,7 +190,7 @@ internal sealed class MessagingRetryPipeline
         TimeSpan? generated;
         try
         {
-            generated = await _policy
+            generated = await _policy!
                 .RetryStrategy.DelayGenerator!(
                     new RetryDelayGeneratorArguments<object>(
                         args.Context,
@@ -173,7 +216,7 @@ internal sealed class MessagingRetryPipeline
         }
 
         var delay = generated.Value < TimeSpan.Zero ? TimeSpan.Zero : generated.Value;
-        var configuredCap = _policy.RetryStrategy.MaxDelay ?? _MaxCustomDelay;
+        var configuredCap = _policy!.RetryStrategy.MaxDelay ?? _MaxCustomDelay;
         var cap = configuredCap < _MaxCustomDelay ? configuredCap : _MaxCustomDelay;
         return delay > cap ? cap : delay;
     }
@@ -193,7 +236,7 @@ internal sealed class MessagingRetryPipeline
             )
             .ConfigureAwait(false);
 
-        if (continueInline && _policy.RetryStrategy.OnRetry is not null)
+        if (continueInline && _policy?.RetryStrategy.OnRetry is not null)
         {
             // Contain observer failures: a throwing user OnRetry must not abort the in-flight
             // inline burst (the row is already persisted as Scheduled with the lease held, so an
@@ -228,9 +271,11 @@ internal sealed class MessagingRetryPipeline
     private sealed class ExecutionState(
         Func<int, Exception, TimeSpan, bool, CancellationToken, Task<bool>> onRetry,
         CancellationTokenSource pipelineCts,
-        Guid storageId
+        Guid storageId,
+        Func<Exception, bool>? isRetryable
     )
     {
+        public Func<Exception, bool>? IsRetryable { get; } = isRetryable;
         public Func<int, Exception, TimeSpan, bool, CancellationToken, Task<bool>> OnRetry { get; } = onRetry;
         public CancellationTokenSource PipelineCts { get; } = pipelineCts;
         public Guid StorageId { get; } = storageId;

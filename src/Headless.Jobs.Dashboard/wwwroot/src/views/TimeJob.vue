@@ -9,6 +9,7 @@ import { ConfirmDialogProps } from '@/components/common/confirm-dialog-props'
 import ChainJobsModal from '@/components/ChainJobsModal.vue'
 import JobNotificationHub, { methodName } from '@/hub/jobNotificationHub'
 import { formatDate } from '@/utilities/dateTimeParser'
+import { canRequeue } from '@/utilities/requeue'
 import { useConnectionStore } from '@/stores/connectionStore'
 import { useTimeZoneStore } from '@/stores/timeZoneStore'
 import PaginationFooter from '@/components/PaginationFooter.vue'
@@ -47,6 +48,7 @@ const getTimeJobsPaginated = timeJobService.getTimeJobsPaginated()
 const deleteTimeJob = timeJobService.deleteTimeJob()
 const deleteTimeJobsBatch = timeJobService.deleteTimeJobsBatch()
 const requestCancelJob = jobsService.requestCancel()
+const requeueTimeJob = jobsService.requeue()
 const getTimeJobsGraphDataRange = timeJobService.getTimeJobsGraphDataRange()
 const getTimeJobsGraphData = timeJobService.getTimeJobsGraphData()
 
@@ -885,6 +887,16 @@ const requestCancel = async (id: string) => {
   await requestCancelJob.requestAsync(id)
 }
 
+const requeue = async (id: string) => {
+  try {
+    await requeueTimeJob.requestAsync(id)
+  } catch {
+    // The HTTP interceptor already shows the refusal reason; the list is reloaded either way so the row reflects
+    // whatever state the server holds now.
+  }
+  await loadPageData()
+}
+
 const onSubmitConfirmDialog = async () => {
   confirmDialog.close()
   await deleteTimeJob.requestAsync(confirmDialog.propData.id)
@@ -1345,6 +1357,23 @@ const canBeForceDeleted = ref<string[]>([])
                       </button>
                     </template>
                     <span>Cancel Operation</span>
+                  </v-tooltip>
+                </div>
+
+                <!-- Requeue Button -->
+                <div v-if="canRequeue(item.status)" class="action-btn-wrapper">
+                  <v-tooltip location="top">
+                    <template v-slot:activator="{ props }">
+                      <button
+                        v-bind="props"
+                        @click="requeue(item.id)"
+                        :disabled="requeueTimeJob.loader.value"
+                        class="modern-action-btn requeue-btn"
+                      >
+                        <v-icon size="16">mdi-restart</v-icon>
+                      </button>
+                    </template>
+                    <span>Requeue Job</span>
                   </v-tooltip>
                 </div>
 
@@ -2124,6 +2153,17 @@ const canBeForceDeleted = ref<string[]>([])
 }
 
 .edit-btn:hover {
+  border-color: rgba(100, 181, 246, 0.5);
+  box-shadow: 0 8px 25px rgba(100, 181, 246, 0.4);
+  background: rgba(100, 181, 246, 0.15);
+}
+
+.requeue-btn {
+  color: #64b5f6;
+  border-color: rgba(100, 181, 246, 0.2);
+}
+
+.requeue-btn:hover {
   border-color: rgba(100, 181, 246, 0.5);
   box-shadow: 0 8px 25px rgba(100, 181, 246, 0.4);
   background: rgba(100, 181, 246, 0.15);

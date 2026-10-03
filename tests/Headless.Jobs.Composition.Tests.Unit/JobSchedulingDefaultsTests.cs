@@ -8,6 +8,7 @@ using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Internal;
 using Headless.Jobs.Models;
+using Headless.Reliability;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Time.Testing;
@@ -102,48 +103,78 @@ public sealed class JobSchedulingDefaultsTests : TestBase
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
-    public async Task field_defaults_apply_to_ordinary_keyed_and_chain_nodes(bool fluent)
+    public async Task failure_policy_defaults_apply_to_ordinary_keyed_and_chain_nodes(bool fluent)
     {
-        var intervals = new[] { 2, 5 };
+        // One immediate retry, then one delayed retry of 2 seconds: stored as 2 retries waiting 0 and 2 seconds.
         var policies = new JobSchedulingPolicies(
-            new JobOptions { Retries = 5, RetryIntervals = intervals },
+            new JobOptions(),
             new() { [typeof(Request)] = new JobOptions { OnNodeDeath = NodeDeathPolicy.MarkFailed } },
-            []
+            [],
+            _Registry(defaultPolicy: policy =>
+                policy.Immediate(1).Delayed(1, TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5))
+            )
         );
-        intervals[0] = 999;
         var (scheduler, time, _) = _CreateScheduler(new FakeTimeProvider(), policies);
-        var call = new JobOptions { Retries = 0, Description = "invocation" };
+        var call = new JobOptions { RetryIntervals = [7], Description = "invocation" };
         TimeJobEntity? ordinary = null;
         time.AddAsync(Arg.Any<TimeJobEntity>(), AbortToken).Returns(info => ordinary = info.Arg<TimeJobEntity>());
         await (
             fluent
                 ? scheduler.EnqueueAsync(
                     new Request(),
-                    options => options.WithRetries(0).WithDescription("invocation"),
+                    options => options.WithRetryIntervals(7).WithDescription("invocation"),
                     AbortToken
                 )
                 : scheduler.EnqueueAsync(new Request(), call, AbortToken)
         );
         ordinary.Should().NotBeNull();
-        ordinary.Retries.Should().Be(0);
-        ordinary.RetryIntervals.Should().Equal(2, 5);
+        ordinary.Retries.Should().Be(2);
+        ordinary.RetryIntervals.Should().Equal(7);
         ordinary.OnNodeDeath.Should().Be(NodeDeathPolicy.MarkFailed);
         ordinary.Description.Should().Be("invocation");
-        ordinary.RetryIntervals![0] = 123;
 
         await scheduler.ScheduleKeyedAsync(new JobKey("invoice"), new Request(), DateTimeOffset.UnixEpoch, AbortToken);
         await time.Received(1)
             .ScheduleKeyedAsync(
                 Arg.Any<JobKey>(),
-                Arg.Is<TimeJobEntity>(job => job.Retries == 5 && job.RetryIntervals![0] == 2),
+                Arg.Is<TimeJobEntity>(job => job.Retries == 2 && job.RetryIntervals!.SequenceEqual(new[] { 0, 2 })),
                 null,
                 AbortToken
             );
         var chain = JobChain.Start(new Request());
         chain.Root.Then<RequestlessJob>();
         await scheduler.EnqueueAsync(chain.Build(), AbortToken);
-        ordinary!.Retries.Should().Be(5);
-        ordinary.Children.Single().Retries.Should().Be(5);
+        ordinary!.Retries.Should().Be(2);
+        ordinary.RetryIntervals.Should().Equal(0, 2);
+        ordinary.RetryIntervals![0] = 123;
+        ordinary.Children.Single().Retries.Should().Be(2);
+        ordinary.Children.Single().RetryIntervals.Should().Equal(0, 2);
+    }
+
+    [Fact]
+    public async Task call_retries_replace_the_flattened_policy_and_keep_only_the_call_intervals()
+    {
+        var policies = new JobSchedulingPolicies(
+            new JobOptions(),
+            [],
+            [],
+            _Registry(defaultPolicy: policy => policy.Immediate(3))
+        );
+        var (scheduler, time, _) = _CreateScheduler(new FakeTimeProvider(), policies);
+        TimeJobEntity? stored = null;
+        time.AddAsync(Arg.Any<TimeJobEntity>(), AbortToken).Returns(info => stored = info.Arg<TimeJobEntity>());
+
+        await scheduler.EnqueueAsync(new Request(), options => options.WithRetries(0), AbortToken);
+        stored!.Retries.Should().Be(0);
+        stored.RetryIntervals.Should().BeNull();
+
+        await scheduler.EnqueueAsync(
+            new Request(),
+            options => options.WithRetries(1).WithRetryIntervals(4),
+            AbortToken
+        );
+        stored.Retries.Should().Be(1);
+        stored.RetryIntervals.Should().Equal(4);
     }
 
     [Fact]
@@ -184,28 +215,35 @@ public sealed class JobSchedulingDefaultsTests : TestBase
     public async Task recurring_facade_preserves_retry_precedence()
     {
         var policies = new JobSchedulingPolicies(
-            new JobOptions
-            {
-                Retries = 4,
-                RetryIntervals = [2, 5],
-                OnNodeDeath = NodeDeathPolicy.Skip,
-            },
-            new() { [typeof(Request)] = new JobOptions { Retries = 6 } },
-            new(StringComparer.Ordinal) { [_Requestless.FunctionName] = new JobOptions { Retries = 8 } }
+            new JobOptions { OnNodeDeath = NodeDeathPolicy.Skip },
+            [],
+            [],
+            _Registry(
+                byFunction: new(StringComparer.Ordinal)
+                {
+                    [_Typed.FunctionName] = policy =>
+                        policy.Delayed(2, TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5)),
+                    [_Requestless.FunctionName] = policy => policy.Immediate(3),
+                }
+            )
         );
         var (scheduler, _, cron) = _CreateScheduler(new FakeTimeProvider(), policies);
         await scheduler.ScheduleRecurringAsync(new Request(), "0 * * * * *", AbortToken);
         await cron.Received(1)
             .AddAsync(
                 Arg.Is<CronJobEntity>(job =>
-                    job.Retries == 6
+                    job.Retries == 2
                     && job.OnNodeDeath == NodeDeathPolicy.Skip
-                    && job.RetryIntervals!.SequenceEqual(new[] { 2, 5 })
+                    && job.RetryIntervals!.SequenceEqual(new[] { 2, 4 })
                 ),
                 AbortToken
             );
         await scheduler.ScheduleRecurringAsync<RequestlessJob>("0 * * * * *", AbortToken);
-        await cron.Received(1).AddAsync(Arg.Is<CronJobEntity>(job => job.Retries == 8), AbortToken);
+        await cron.Received(1)
+            .AddAsync(
+                Arg.Is<CronJobEntity>(job => job.Retries == 3 && job.RetryIntervals!.SequenceEqual(new[] { 0, 0, 0 })),
+                AbortToken
+            );
         await scheduler.ScheduleRecurringAsync(
             new Request(),
             "0 * * * * *",
@@ -233,9 +271,13 @@ public sealed class JobSchedulingDefaultsTests : TestBase
         services.AddHeadlessJobs(options =>
         {
             options
-                .ConfigureDefaults(job => job.WithRetries(3))
-                .ConfigureJob<Request>(job => job.WithRetries(5))
-                .Tune(_Requestless.FunctionName, tune => tune.Options(job => job.WithRetries(8)))
+                .ConfigureDefaults(job => job.WithNodeDeathPolicy(NodeDeathPolicy.Skip))
+                .ConfigureJob<Request>(job => job.WithNodeDeathPolicy(NodeDeathPolicy.MarkFailed))
+                .Tune(
+                    _Requestless.FunctionName,
+                    tune => tune.Options(job => job.WithNodeDeathPolicy(NodeDeathPolicy.Retry))
+                )
+                .DefaultFailurePolicy(policy => policy.Immediate(1))
                 .Should()
                 .BeSameAs(options);
         });
@@ -246,53 +288,55 @@ public sealed class JobSchedulingDefaultsTests : TestBase
     {
         JobOptionsBuilder? retained = null;
         JobsOptionsBuilder<TimeJobEntity, CronJobEntity>? captured = null;
-        var intervals = new[] { 2, 5 };
         var callbackCount = 0;
         await using var provider = _CreateHost(options =>
         {
             captured = options;
-            options.ConfigureDefaults(job => job.WithRetries(99).WithNodeDeathPolicy(NodeDeathPolicy.Skip));
-            options.ConfigureDefaults(job => job.WithRetries(3).WithRetryIntervals(intervals));
-            options.ConfigureJob<Request>(job => job.WithRetries(99).WithNodeDeathPolicy(NodeDeathPolicy.Skip));
+            options.ConfigureDefaults(job => job.WithNodeDeathPolicy(NodeDeathPolicy.Retry));
+            options.ConfigureDefaults(job => job.WithNodeDeathPolicy(NodeDeathPolicy.Skip));
+            options.ConfigureJob<Request>(job => job.WithNodeDeathPolicy(NodeDeathPolicy.Skip));
             options.ConfigureJob<Request>(job =>
             {
                 ++callbackCount;
                 retained = job;
-                job.WithRetries(5);
+                job.WithNodeDeathPolicy(NodeDeathPolicy.MarkFailed);
             });
-            options.Tune(_Requestless.FunctionName, tune => tune.Options(job => job.WithRetries(99)));
-            options.Tune(_Requestless.FunctionName, tune => tune.Options(job => job.WithRetries(8)));
-            retained!.WithRetries(100);
-            intervals[0] = 100;
+            options.DefaultFailurePolicy(policy => policy.Immediate(9));
+            options.DefaultFailurePolicy(policy => policy.Immediate(3));
+            options.Tune(_Requestless.FunctionName, tune => tune.FailurePolicy(policy => policy.Immediate(9)));
+            options.Tune(_Requestless.FunctionName, tune => tune.FailurePolicy(policy => policy.Immediate(2)));
+            retained!.WithNodeDeathPolicy(NodeDeathPolicy.Skip);
         });
         callbackCount.Should().Be(1);
-        captured!.ConfigureDefaults(job => job.WithRetries(100).WithRetryIntervals(100));
-        captured.ConfigureJob<Request>(job => job.WithRetries(100));
-        captured.Tune(_Requestless.FunctionName, tune => tune.Options(job => job.WithRetries(100)));
-        retained!.WithRetryIntervals(100);
+        captured!.ConfigureDefaults(job => job.WithNodeDeathPolicy(NodeDeathPolicy.MarkFailed));
+        captured.ConfigureJob<Request>(job => job.WithNodeDeathPolicy(NodeDeathPolicy.Retry));
+        captured.DefaultFailurePolicy(policy => policy.Immediate(7));
+        retained!.WithNodeDeathPolicy(NodeDeathPolicy.Retry);
 
         var scheduler = provider.GetRequiredService<IJobScheduler>();
         var persistence = provider.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
         var typedId = await scheduler.EnqueueAsync(new Request(), AbortToken);
         var typed = await persistence.GetTimeJobByIdAsync(typedId, AbortToken);
-        typed!.Retries.Should().Be(5);
-        typed.RetryIntervals.Should().Equal(2, 5);
-        typed.OnNodeDeath.Should().Be(NodeDeathPolicy.Retry);
+        typed!.Retries.Should().Be(3);
+        typed.RetryIntervals.Should().Equal(0, 0, 0);
+        typed.OnNodeDeath.Should().Be(NodeDeathPolicy.MarkFailed);
         var requestlessId = await scheduler.EnqueueAsync<RequestlessJob>(AbortToken);
         var requestless = await persistence.GetTimeJobByIdAsync(requestlessId, AbortToken);
-        requestless!.Retries.Should().Be(8);
-        requestless.RetryIntervals.Should().Equal(2, 5);
+        requestless!.Retries.Should().Be(2);
+        requestless.OnNodeDeath.Should().Be(NodeDeathPolicy.Skip);
         var callId = await scheduler.EnqueueAsync(new Request(), job => job.WithRetries(0), AbortToken);
         var call = await persistence.GetTimeJobByIdAsync(callId, AbortToken);
         call!.Retries.Should().Be(0);
 
-        await using var otherProvider = _CreateHost(options => options.ConfigureDefaults(job => job.WithRetries(1)));
+        await using var otherProvider = _CreateHost(options =>
+            options.DefaultFailurePolicy(policy => policy.Immediate(1))
+        );
         var otherId = await otherProvider.GetRequiredService<IJobScheduler>().EnqueueAsync(new Request(), AbortToken);
         var other = await otherProvider
             .GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>()
             .GetTimeJobByIdAsync(otherId, AbortToken);
         other!.Retries.Should().Be(1);
-        other.RetryIntervals.Should().BeNull();
+        other.OnNodeDeath.Should().Be(NodeDeathPolicy.Retry);
     }
 
     [Theory]
@@ -309,11 +353,13 @@ public sealed class JobSchedulingDefaultsTests : TestBase
                 "request" => callback => options.ConfigureJob<Request>(callback),
                 _ => callback => options.Tune(_Requestless.FunctionName, tune => tune.Options(callback)),
             };
-            configure(job => job.WithRetries(7));
+            configure(job => job.WithNodeDeathPolicy(NodeDeathPolicy.Skip));
             Action<JobOptionsBuilder>[] invalid =
             [
                 job => job.WithRetries(-1),
                 job => job.WithRetryIntervals(-1),
+                job => job.WithRetries(1),
+                job => job.WithRetryIntervals(1),
                 job => job.WithNodeDeathPolicy((NodeDeathPolicy)999),
                 job => job.WithCorrelationId("correlation"),
                 job => job.WithCausationId("causation"),
@@ -331,7 +377,7 @@ public sealed class JobSchedulingDefaultsTests : TestBase
             var throwing = () =>
                 configure(job =>
                 {
-                    job.WithRetries(99);
+                    job.WithNodeDeathPolicy(NodeDeathPolicy.MarkFailed);
                     throw failure;
                 });
             throwing.Should().Throw<InvalidOperationException>().Which.Should().BeSameAs(failure);
@@ -352,7 +398,7 @@ public sealed class JobSchedulingDefaultsTests : TestBase
         var stored = await provider
             .GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>()
             .GetTimeJobByIdAsync(id, AbortToken);
-        stored!.Retries.Should().Be(7);
+        stored!.OnNodeDeath.Should().Be(NodeDeathPolicy.Skip);
     }
 
     [Theory]
@@ -366,14 +412,20 @@ public sealed class JobSchedulingDefaultsTests : TestBase
             switch (target)
             {
                 case "unknown-request":
-                    options.ConfigureJob<string>(job => job.WithRetries(1));
+                    options.ConfigureJob<string>(job => job.WithNodeDeathPolicy(NodeDeathPolicy.Skip));
                     break;
                 case "unknown-descriptor":
-                    options.Tune("tests.unknown", tune => tune.Options(job => job.WithRetries(1)));
+                    options.Tune(
+                        "tests.unknown",
+                        tune => tune.Options(job => job.WithNodeDeathPolicy(NodeDeathPolicy.Skip))
+                    );
                     break;
                 default:
-                    options.ConfigureJob<Request>(job => job.WithRetries(1));
-                    options.Tune(_Typed.FunctionName, tune => tune.Options(job => job.WithRetries(2)));
+                    options.ConfigureJob<Request>(job => job.WithNodeDeathPolicy(NodeDeathPolicy.Skip));
+                    options.Tune(
+                        _Typed.FunctionName,
+                        tune => tune.Options(job => job.WithNodeDeathPolicy(NodeDeathPolicy.MarkFailed))
+                    );
                     break;
             }
         });
@@ -400,16 +452,14 @@ public sealed class JobSchedulingDefaultsTests : TestBase
         var services = new ServiceCollection();
         services.AddLogging();
         JobsOptionsBuilder<TimeJobEntity, CronJobEntity>? captured = null;
-        var intervals = new[] { 2 };
         services.AddHeadlessJobs(options =>
         {
             captured = options;
             options
                 .DisableBackgroundServices()
-                .ConfigureDefaults(new JobOptions { Retries = 3, RetryIntervals = intervals });
+                .ConfigureDefaults(new JobOptions { OnNodeDeath = NodeDeathPolicy.Skip });
         });
-        captured!.ConfigureDefaults(new JobOptions { Retries = 99 });
-        intervals[0] = 99;
+        captured!.ConfigureDefaults(new JobOptions { OnNodeDeath = NodeDeathPolicy.MarkFailed });
         services.AddSingleton(
             JobFunctionRegistryBuilder.Build(
                 [
@@ -432,24 +482,29 @@ public sealed class JobSchedulingDefaultsTests : TestBase
         var id = await provider.GetRequiredService<IJobScheduler>().EnqueueAsync(new Request(), AbortToken);
         var persistence = provider.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
         var stored = await persistence.GetTimeJobByIdAsync(id, AbortToken);
-        stored!.Retries.Should().Be(3);
-        stored.RetryIntervals.Should().Equal(2);
+        stored!.OnNodeDeath.Should().Be(NodeDeathPolicy.Skip);
 
         var canonical = new JobFunctionDescriptor(_Requestless.FunctionName, null, "%Cron%", JobPriority.Normal, 0);
         var policies = new JobSchedulingPolicies(
             new JobOptions(),
             [],
-            new(StringComparer.Ordinal) { [canonical.FunctionName] = new JobOptions { Retries = 8 } }
-        );
-        policies
-            .Resolve(
-                new JobFunctionDescriptor(_Requestless.FunctionName, null, "0 * * * * *", JobPriority.Normal, 0),
-                null
+            new(StringComparer.Ordinal)
+            {
+                [canonical.FunctionName] = new JobOptions { OnNodeDeath = NodeDeathPolicy.MarkFailed },
+            },
+            _Registry(
+                byFunction: new(StringComparer.Ordinal) { [canonical.FunctionName] = policy => policy.Immediate(8) }
             )
-            .Retries.Should()
-            .Be(8);
-        var other = new JobSchedulingPolicies(new JobOptions { Retries = 1 }, [], []);
-        other.Resolve(_Typed, null).Retries.Should().Be(1);
+        );
+        var projected = policies.Resolve(
+            new JobFunctionDescriptor(_Requestless.FunctionName, null, "0 * * * * *", JobPriority.Normal, 0),
+            null
+        );
+        projected.Retries.Should().Be(8);
+        projected.OnNodeDeath.Should().Be(NodeDeathPolicy.MarkFailed);
+        var other = new JobSchedulingPolicies(new JobOptions { OnNodeDeath = NodeDeathPolicy.Skip }, [], []);
+        other.Resolve(_Typed, null).OnNodeDeath.Should().Be(NodeDeathPolicy.Skip);
+        other.Resolve(_Typed, null).Retries.Should().Be(0);
     }
 
     [Fact]
@@ -475,6 +530,8 @@ public sealed class JobSchedulingDefaultsTests : TestBase
             {
                 new JobOptions { Retries = -1 },
                 new JobOptions { RetryIntervals = [-1] },
+                new JobOptions { Retries = 1 },
+                new JobOptions { RetryIntervals = [1] },
                 new JobOptions { OnNodeDeath = (NodeDeathPolicy)999 },
                 new JobOptions { TenantId = "tenant" },
                 new JobOptions { CorrelationId = "correlation" },
@@ -529,6 +586,29 @@ public sealed class JobSchedulingDefaultsTests : TestBase
         {
             node.ExecutionTime.Should().Be(instant.UtcDateTime);
             node.ExecutionTime.Value.Kind.Should().Be(DateTimeKind.Utc);
+        }
+    }
+
+    private static JobFunctionRegistry _Registry(
+        Action<FailurePolicyBuilder>? defaultPolicy = null,
+        Dictionary<string, Action<FailurePolicyBuilder>>? byFunction = null
+    )
+    {
+        return JobFunctionRegistryBuilder.Build([], [], []) with
+        {
+            DefaultFailurePolicy = defaultPolicy is null ? FailurePolicyDefinition.None : _Build(defaultPolicy),
+            FailurePolicies = (byFunction ?? []).ToFrozenDictionary(
+                pair => pair.Key,
+                pair => _Build(pair.Value),
+                StringComparer.Ordinal
+            ),
+        };
+
+        static FailurePolicyDefinition _Build(Action<FailurePolicyBuilder> configure)
+        {
+            var builder = new FailurePolicyBuilder();
+            configure(builder);
+            return builder.Build();
         }
     }
 

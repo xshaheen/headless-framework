@@ -18,6 +18,11 @@ public sealed class MessagingIncrementalSourceGeneratorTests
 
         """;
 
+    private const string _PolicyUsing = """
+        using Headless.Reliability;
+
+        """;
+
     [Fact]
     public void should_register_one_consumer_entry_per_implemented_message_with_one_dispatcher()
     {
@@ -464,6 +469,137 @@ public sealed class MessagingIncrementalSourceGeneratorTests
         driver.GetRunResult().GeneratedTrees.Should().BeEmpty();
     }
 
+    [Theory]
+    [InlineData("QueueConsumer(\"billing.charge\", FailurePolicy = typeof(PaymentsPolicy))", "AddQueueConsumer")]
+    [InlineData("BusConsumer(\"billing.charge\", FailurePolicy = typeof(PaymentsPolicy))", "AddBusConsumer")]
+    public void should_register_a_declared_failure_policy_as_a_factory(string attribute, string method)
+    {
+        // given
+        var source =
+            _Usings
+            + _PolicyUsing
+            + $$"""
+                namespace Billing;
+
+                public sealed record ChargeCard(string OrderId);
+
+                public sealed class PaymentsPolicy : FailurePolicy
+                {
+                    protected override void Configure(FailurePolicyBuilder policy) => policy.Immediate(retries: 2);
+                }
+
+                [{{attribute}}]
+                public sealed class Charge : IConsume<ChargeCard>
+                {
+                    public ValueTask ConsumeAsync(ConsumeContext<ChargeCard> context, CancellationToken cancellationToken) => default;
+                }
+                """;
+
+        // when
+        var generated = _GenerateClean(source);
+
+        // then
+        _RegistrationLines(generated)
+            .Should()
+            .ContainSingle()
+            .Which.Should()
+            .StartWith($"catalog.{method}<global::Billing.Charge, global::Billing.ChargeCard>(")
+            .And.EndWith(
+                "dispatch: Dispatch_Billing_Charge, failurePolicy: static () => new global::Billing.PaymentsPolicy());"
+            );
+    }
+
+    [Theory]
+    [InlineData("public sealed class Policy { }", "typeof(Policy)")]
+    [InlineData("public sealed class Policy { }", "typeof(Policy[])")]
+    [InlineData(
+        "public abstract class Policy : FailurePolicy { protected override void Configure(FailurePolicyBuilder policy) { } }",
+        "typeof(Policy)"
+    )]
+    [InlineData(
+        "public sealed class Policy<T> : FailurePolicy { protected override void Configure(FailurePolicyBuilder policy) { } }",
+        "typeof(Policy<>)"
+    )]
+    [InlineData(
+        "public sealed class Policy : FailurePolicy { private Policy() { } protected override void Configure(FailurePolicyBuilder policy) { } }",
+        "typeof(Policy)"
+    )]
+    [InlineData(
+        "public sealed class Policy : FailurePolicy { public Policy(int retries) { } protected override void Configure(FailurePolicyBuilder policy) { } }",
+        "typeof(Policy)"
+    )]
+    [InlineData(
+        "file sealed class Policy : FailurePolicy { protected override void Configure(FailurePolicyBuilder policy) { } }",
+        "typeof(Policy)"
+    )]
+    public void should_fail_a_failure_policy_type_the_generated_factory_cannot_construct(
+        string declaration,
+        string policy
+    )
+    {
+        // given
+        var source =
+            _Usings
+            + _PolicyUsing
+            + $$"""
+                namespace Billing;
+
+                public sealed record ChargeCard(string OrderId);
+
+                {{declaration}}
+
+                [QueueConsumer("billing.charge", FailurePolicy = {{policy}})]
+                public sealed class Charge : IConsume<ChargeCard>
+                {
+                    public ValueTask ConsumeAsync(ConsumeContext<ChargeCard> context, CancellationToken cancellationToken) => default;
+                }
+                """;
+
+        // when
+        var driver = GeneratorTestHelper.Run(source);
+
+        // then
+        var diagnostic = _Single(driver, "HM005");
+        diagnostic.Severity.Should().Be(DiagnosticSeverity.Error);
+        diagnostic.GetMessage(CultureInfo.InvariantCulture).Should().Contain("Billing.").And.Contain("Charge");
+        driver.GetRunResult().GeneratedTrees.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void should_fail_a_failure_policy_on_an_every_instance_consumer()
+    {
+        // given
+        const string source =
+            _Usings
+            + _PolicyUsing
+            + """
+                namespace Billing;
+
+                public sealed record PriceChanged(string Sku);
+
+                public sealed class CachePolicy : FailurePolicy
+                {
+                    protected override void Configure(FailurePolicyBuilder policy) => policy.Immediate(retries: 2);
+                }
+
+                [BusConsumer("billing.price-cache", EveryInstance = true, FailurePolicy = typeof(CachePolicy))]
+                public sealed class PriceCache : IConsume<PriceChanged>
+                {
+                    public ValueTask ConsumeAsync(ConsumeContext<PriceChanged> context, CancellationToken cancellationToken) => default;
+                }
+                """;
+
+        // when
+        var driver = GeneratorTestHelper.Run(source);
+
+        // then
+        var diagnostic = _Single(driver, "HM010");
+        diagnostic.Severity.Should().Be(DiagnosticSeverity.Error);
+        diagnostic.GetMessage(CultureInfo.InvariantCulture).Should().Contain("PriceCache");
+        GeneratorTestHelper.GeneratorDiagnostics(driver).Should().NotContain(x => x.Id == "HM005");
+        driver.GetRunResult().GeneratedTrees.Should().BeEmpty();
+    }
+
     [Fact]
     public void should_emit_nothing_for_an_assembly_without_consumers()
     {
@@ -485,15 +621,13 @@ public sealed class MessagingIncrementalSourceGeneratorTests
 
         descriptorsType.Should().NotBeNull();
 
-        // HM005 validated a failure-policy type; the declaration waits for the shared failure-policy model, and the
-        // ID stays unassigned so no rule ever changes meaning.
         descriptorsType!
             .GetFields(BindingFlags.Public | BindingFlags.Static)
             .Select(field => field.GetValue(null))
             .OfType<DiagnosticDescriptor>()
             .Select(descriptor => descriptor.Id)
             .Should()
-            .BeEquivalentTo(Enumerable.Range(1, 9).Where(number => number != 5).Select(number => $"HM{number:000}"));
+            .BeEquivalentTo(Enumerable.Range(1, 10).Select(number => $"HM{number:000}"));
     }
 
     private static string _GenerateClean(string source)

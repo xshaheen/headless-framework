@@ -146,7 +146,15 @@ internal static class JobsSourceEmitter
             registration.Append(", TimeZoneId = ").Append(HandlerSource.Literal(job.TimeZone));
         }
 
-        registration.Append(_RecoveryKnobs(job)).Append(" });");
+        registration.Append(_RecoveryKnobs(job));
+
+        // A factory, not the Type, so the runtime never constructs the policy through reflection.
+        if (job.FailurePolicyTypeName is { } policyTypeName)
+        {
+            registration.Append(", FailurePolicy = static () => new ").Append(policyTypeName).Append("()");
+        }
+
+        registration.Append(" });");
         writer.AppendLine(registration.ToString());
     }
 

@@ -1322,9 +1322,15 @@ public sealed partial class InMemoryDataStorageTests : DataStorageTestsBase
     }
 
     [Fact]
-    public override Task should_pickup_message_at_max_persisted_retries_and_exclude_above()
+    public override Task should_cap_published_retry_pickup_at_max_persisted_retries_and_leave_received_uncapped()
     {
-        return base.should_pickup_message_at_max_persisted_retries_and_exclude_above();
+        return base.should_cap_published_retry_pickup_at_max_persisted_retries_and_leave_received_uncapped();
+    }
+
+    [Fact]
+    public override Task should_schedule_growing_consume_delayed_retries_from_the_storage_clock()
+    {
+        return base.should_schedule_growing_consume_delayed_retries_from_the_storage_clock();
     }
 
     [Fact]

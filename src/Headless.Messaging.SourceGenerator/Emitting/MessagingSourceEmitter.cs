@@ -80,10 +80,14 @@ internal static class MessagingSourceEmitter
                 var hook = consumer.HasSubscriptionHook
                     ? $", onSubscriptionEstablished: {registration.SubscriptionHookName}"
                     : "";
+                // A factory, not the Type, so the catalog never constructs the policy through reflection.
+                var policy = consumer.FailurePolicyTypeName is { } policyTypeName
+                    ? $", failurePolicy: static () => new {policyTypeName}()"
+                    : "";
                 writer.AppendLine(
                     consumer.Lane == ConsumerLane.Bus
-                        ? $"catalog.AddBusConsumer<{consumer.TypeName}, {message}>({HandlerSource.Literal(consumer.Identity)}, everyInstance: {(consumer.EveryInstance ? "true" : "false")}, dispatch: {registration.DispatcherName}{hook});"
-                        : $"catalog.AddQueueConsumer<{consumer.TypeName}, {message}>({HandlerSource.Literal(consumer.Identity)}, dispatch: {registration.DispatcherName});"
+                        ? $"catalog.AddBusConsumer<{consumer.TypeName}, {message}>({HandlerSource.Literal(consumer.Identity)}, everyInstance: {(consumer.EveryInstance ? "true" : "false")}, dispatch: {registration.DispatcherName}{hook}{policy});"
+                        : $"catalog.AddQueueConsumer<{consumer.TypeName}, {message}>({HandlerSource.Literal(consumer.Identity)}, dispatch: {registration.DispatcherName}{policy});"
                 );
             }
         }

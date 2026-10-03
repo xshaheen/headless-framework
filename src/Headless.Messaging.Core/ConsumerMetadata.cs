@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging.CircuitBreaker;
+using Headless.Reliability;
 
 namespace Headless.Messaging;
 
@@ -73,4 +74,12 @@ public sealed record ConsumerMetadata(
     /// and per-message middleware.
     /// </summary>
     internal IReadOnlyList<Type> Middleware { get; init; } = [];
+
+    /// <summary>
+    /// The failure policy this consumer runs under, resolved when the consumer registry is built: the <c>Tune</c> policy,
+    /// else the declared one, else the host default, with <c>Headless:Messaging:Consumers:{identity}:FailurePolicy</c>
+    /// configuration applied over it. Every entry of one identity shares one instance. <see langword="null"/> for an
+    /// every-instance consumer, which never retries.
+    /// </summary>
+    internal FailurePolicyDefinition? FailurePolicy { get; init; }
 }

@@ -7,6 +7,7 @@ using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
+using Headless.Reliability;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -56,6 +57,8 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
     {
         return new ConsumerExecutorDescriptor
         {
+            // One attempt per dispatch, so each test observes exactly one failure report.
+            FailurePolicy = FailurePolicyDefinition.None,
             Lane = MessageLane.Bus,
             ConsumerType = typeof(CbTestConsumer),
             MessageType = typeof(CbTestMessage),
@@ -108,12 +111,7 @@ public sealed class SubscribeExecutorCircuitBreakerTests : TestBase
 
         var provider = services.BuildServiceProvider();
         var logger = provider.GetRequiredService<ILogger<SubscribeExecutor>>();
-        var options = Options.Create(
-            new MessagingOptions
-            {
-                RetryPolicy = { RetryStrategy = TestRetryStrategies.ZeroDelay(0), MaxPersistedRetries = 0 },
-            }
-        );
+        var options = Options.Create(new MessagingOptions());
         var circuitBreaker = Substitute.For<ICircuitBreakerStateManager>();
 
         var executor = new SubscribeExecutor(

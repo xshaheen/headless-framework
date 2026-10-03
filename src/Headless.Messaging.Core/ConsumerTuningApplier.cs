@@ -2,6 +2,7 @@
 
 using System.Globalization;
 using Headless.Messaging.CircuitBreaker;
+using Headless.Reliability;
 using Microsoft.Extensions.Configuration;
 
 namespace Headless.Messaging;
@@ -10,10 +11,12 @@ namespace Headless.Messaging;
 /// <param name="Tunings">Every <c>Tune</c> call, in registration order.</param>
 /// <param name="ConsumeOnly">Every <c>ConsumeOnly</c> entry.</param>
 /// <param name="Configuration">The host configuration that tunes consumers by identity, if any.</param>
+/// <param name="DefaultFailurePolicy">The failure policy of a competing consumer that neither declares nor tunes one.</param>
 internal sealed record MessagingHostControls(
     IReadOnlyList<ConsumerTuning> Tunings,
     IReadOnlyList<string> ConsumeOnly,
-    IConfiguration? Configuration
+    IConfiguration? Configuration,
+    FailurePolicyDefinition DefaultFailurePolicy
 );
 
 /// <summary>Applies <c>Tune</c> calls and then configuration to the host's consumers, by identity.</summary>
@@ -46,12 +49,22 @@ internal static class ConsumerTuningApplier
                 continue;
             }
 
-            if (_RejectDurableSettingsOnEveryInstance(tuned, tuning.Identity, tuning, errors))
+            if (_RejectDurableSettingsOnEveryInstance(tuned, tuning.Identity, "Tune", tuning, errors))
             {
                 continue;
             }
 
             _Apply(tuned, tuning.Identity, metadata => _Tune(metadata, tuning));
+        }
+
+        // The host default fills in only after every Tune call, so a tuned policy replaces the declared one and an
+        // undeclared, untuned consumer still gets a policy that configuration can then adjust.
+        for (var index = 0; index < tuned.Length; index++)
+        {
+            if (tuned[index] is { EveryInstance: false, FailurePolicy: null })
+            {
+                tuned[index] = tuned[index] with { FailurePolicy = controls.DefaultFailurePolicy };
+            }
         }
 
         if (controls.Configuration is { } configuration)
@@ -83,19 +96,28 @@ internal static class ConsumerTuningApplier
             ProviderConfigs = providerConfigs,
             InboxRetention = tuning.InboxRetention ?? metadata.InboxRetention,
             CircuitBreakerOverride = tuning.CircuitBreaker ?? metadata.CircuitBreakerOverride,
+            FailurePolicy = tuning.FailurePolicy ?? metadata.FailurePolicy,
         };
     }
 
     // An every-instance subscription belongs to one process and delivers at most once, with no inbox and no retry
-    // backlog, so an inbox retention or a circuit breaker on it would silently do nothing.
+    // backlog, so an inbox retention, a circuit breaker, or a failure policy on it would silently do nothing.
     private static bool _RejectDurableSettingsOnEveryInstance(
         ConsumerMetadata[] tuned,
         string identity,
+        string source,
         ConsumerTuning tuning,
-        List<string> errors
+        List<string> errors,
+        bool configuresFailurePolicy = false
     )
     {
-        if (tuning.InboxRetention is null && tuning.CircuitBreaker is null)
+        var setting =
+            tuning.InboxRetention is not null ? "an inbox retention"
+            : tuning.CircuitBreaker is not null ? "a circuit breaker"
+            : tuning.FailurePolicy is not null || configuresFailurePolicy ? "a failure policy"
+            : null;
+
+        if (setting is null)
         {
             return false;
         }
@@ -105,10 +127,9 @@ internal static class ConsumerTuningApplier
             return false;
         }
 
-        var setting = tuning.InboxRetention is not null ? "an inbox retention" : "a circuit breaker";
         errors.Add(
-            $"Tune gives every-instance consumer '{identity}' {setting}. An every-instance subscription belongs to one "
-                + "process and delivers at most once, with no inbox, retry, or circuit breaker."
+            $"{source} gives every-instance consumer '{identity}' {setting}. An every-instance subscription belongs to "
+                + "one process and delivers at most once, with no inbox, retry, or circuit breaker."
         );
 
         return true;
@@ -147,10 +168,69 @@ internal static class ConsumerTuningApplier
                 settings.CircuitBreaker
             );
 
-            if (!_RejectDurableSettingsOnEveryInstance(tuned, consumer.Key, tuning, errors))
+            if (
+                _RejectDurableSettingsOnEveryInstance(
+                    tuned,
+                    consumer.Key,
+                    $"Configuration '{path}'",
+                    tuning,
+                    errors,
+                    configuresFailurePolicy: settings.FailurePolicy is not null
+                )
+            )
             {
-                _Apply(tuned, consumer.Key, metadata => _Tune(metadata, tuning));
+                continue;
             }
+
+            _Apply(tuned, consumer.Key, metadata => _Tune(metadata, tuning));
+
+            if (settings.FailurePolicy is { } overrides)
+            {
+                _ApplyFailurePolicyOverrides(tuned, consumer.Key, $"{path}:FailurePolicy", overrides, errors);
+            }
+        }
+    }
+
+    // One identity can be declared on both the Bus and the Queue lane, each with its own policy, so the overrides are
+    // applied to every entry's own definition. Entries that shared one definition keep sharing the overridden result.
+    // The overrides are the same for every entry, so the first invalid result is reported once for the path.
+    private static void _ApplyFailurePolicyOverrides(
+        ConsumerMetadata[] tuned,
+        string identity,
+        string path,
+        FailurePolicyOverrides overrides,
+        List<string> errors
+    )
+    {
+        var resolvedBySource = new Dictionary<FailurePolicyDefinition, FailurePolicyDefinition>(
+            ReferenceEqualityComparer.Instance
+        );
+
+        for (var index = 0; index < tuned.Length; index++)
+        {
+            var metadata = tuned[index];
+            if (!string.Equals(metadata.ConsumerIdentity, identity, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var source = metadata.FailurePolicy!;
+            if (!resolvedBySource.TryGetValue(source, out var resolved))
+            {
+                try
+                {
+                    resolved = source.With(overrides);
+                }
+                catch (ArgumentException exception)
+                {
+                    errors.Add($"Configuration '{path}' does not describe a valid failure policy: {exception.Message}");
+                    return;
+                }
+
+                resolvedBySource.Add(source, resolved);
+            }
+
+            tuned[index] = metadata with { FailurePolicy = resolved };
         }
     }
 
@@ -159,6 +239,7 @@ internal static class ConsumerTuningApplier
         byte? concurrency = null;
         TimeSpan? inboxRetention = null;
         ConsumerCircuitBreakerOptions? circuitBreaker = null;
+        FailurePolicyOverrides? failurePolicy = null;
 
         foreach (var setting in consumer.GetChildren())
         {
@@ -184,16 +265,28 @@ internal static class ConsumerTuningApplier
             {
                 circuitBreaker = _ReadCircuitBreaker(setting, errors);
             }
+            else if (string.Equals(setting.Key, "FailurePolicy", StringComparison.OrdinalIgnoreCase))
+            {
+                failurePolicy = _ReadFailurePolicy(setting, errors);
+            }
             else
             {
                 errors.Add(
                     $"Configuration '{setting.Path}' is not a consumer setting. The supported settings are "
-                        + "Concurrency, InboxRetention, and CircuitBreaker."
+                        + "Concurrency, InboxRetention, CircuitBreaker, and FailurePolicy."
                 );
             }
         }
 
-        return new ConfiguredSettings(concurrency, inboxRetention, circuitBreaker);
+        return new ConfiguredSettings(concurrency, inboxRetention, circuitBreaker, failurePolicy);
+    }
+
+    // Only the numbers are configurable: fail rules are code, so they always come from the resolved policy.
+    private static FailurePolicyOverrides? _ReadFailurePolicy(IConfigurationSection section, List<string> errors)
+    {
+        var settings = section.GetChildren().Select(setting => (setting.Key, setting.Path, setting.Value));
+
+        return FailurePolicyOverrides.TryParse(settings, errors, out var overrides) ? overrides : null;
     }
 
     private static TimeSpan? _ReadInboxRetention(IConfigurationSection setting, List<string> errors)
@@ -296,9 +389,11 @@ internal static class ConsumerTuningApplier
     private readonly record struct ConfiguredSettings(
         byte? Concurrency,
         TimeSpan? InboxRetention,
-        ConsumerCircuitBreakerOptions? CircuitBreaker
+        ConsumerCircuitBreakerOptions? CircuitBreaker,
+        FailurePolicyOverrides? FailurePolicy
     )
     {
-        public bool IsEmpty => Concurrency is null && InboxRetention is null && CircuitBreaker is null;
+        public bool IsEmpty =>
+            Concurrency is null && InboxRetention is null && CircuitBreaker is null && FailurePolicy is null;
     }
 }

@@ -23,7 +23,9 @@ public enum MessageObservationType
     Faulted = 2,
 
     /// <summary>
-    /// Retry budget was exhausted and the framework invoked <c>RetryPolicy.OnExhausted</c>.
+    /// The message failed for good and the framework invoked <c>RetryPolicy.OnExhausted</c>: the retry budget was
+    /// spent, a fail rule or the built-in permanent set ended it, its payload failed to deserialize, its consumer is no
+    /// longer registered, or it was poisoned on arrival.
     /// Recorded BEFORE the user-supplied callback runs, so a hanging or throwing callback
     /// cannot lose the observation.
     /// </summary>

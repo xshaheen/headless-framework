@@ -19,6 +19,7 @@ using Headless.Jobs.MultiTenancy;
 using Headless.Jobs.Provider;
 using Headless.Jobs.Temps;
 using Headless.MultiTenancy;
+using Headless.Reliability;
 using Headless.UnitOfWork;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -88,10 +89,11 @@ public static class SetupJobs
         optionsBuilder?.Invoke(optionInstance);
         var schedulingPolicies = optionInstance.FreezeSchedulingPolicies();
         var runOnly = optionInstance.FreezeRunOnly();
+        var defaultFailurePolicy = optionInstance.FreezeDefaultFailurePolicy();
         services.AddSingleton(provider =>
         {
             var registry = provider.GetRequiredService<JobFunctionRegistry>();
-            var policies = schedulingPolicies.WithFunctionOptions(registry.OptionsByFunction);
+            var policies = schedulingPolicies.WithRegistry(registry);
             policies.Validate(registry);
             return policies;
         });
@@ -154,7 +156,6 @@ public static class SetupJobs
         var retryOptions = optionInstance.RetryOptions;
         services.Configure<JobsRetryOptions, JobsRetryOptionsValidator>(configured =>
         {
-            configured.RetryStrategy = retryOptions.RetryStrategy;
             configured.OnExhausted = retryOptions.OnExhausted;
             configured.OnExhaustedTimeout = retryOptions.OnExhaustedTimeout;
         });
@@ -273,7 +274,8 @@ public static class SetupJobs
                 provider.GetServices<JobsModuleContribution>(),
                 provider.GetServices<JobsTuningContribution>(),
                 runOnly,
-                provider.GetService<IConfiguration>()
+                provider.GetService<IConfiguration>(),
+                defaultFailurePolicy
             )
         );
         services.TryAddSingleton(provider => provider.GetRequiredService<JobFunctionRegistry>().RunFilter);
@@ -348,7 +350,8 @@ public static class SetupJobs
         IEnumerable<JobsModuleContribution> modules,
         IEnumerable<JobsTuningContribution> tunings,
         IReadOnlyCollection<string> runOnly,
-        IConfiguration? configuration
+        IConfiguration? configuration,
+        FailurePolicyDefinition? defaultFailurePolicy
     )
     {
         var catalog = new JobsCatalogBuilder();
@@ -364,7 +367,7 @@ public static class SetupJobs
 
         _AddTenancyMiddleware(catalog);
 
-        return catalog.Build(tunings.Select(x => x.Tuning), runOnly, configuration);
+        return catalog.Build(tunings.Select(x => x.Tuning), runOnly, configuration, defaultFailurePolicy);
     }
 
     // Every host's catalog carries the framework tenancy middleware pair exactly once.

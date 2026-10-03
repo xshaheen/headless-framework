@@ -5,7 +5,6 @@ using Headless.Jobs.Enums;
 using Headless.Jobs.Interfaces;
 using Headless.Jobs.Interfaces.Managers;
 using Microsoft.Extensions.DependencyInjection;
-using Polly.Retry;
 
 #pragma warning disable REFL017 // Don't use name of wrong member
 namespace Tests;
@@ -56,23 +55,23 @@ public sealed class JobsOptionsBuilderTests
     }
 
     [Fact]
-    public void configure_retries_exposes_direct_polly_options()
+    public void configure_retries_sets_the_exhaustion_notification()
     {
         var builder = new JobsOptionsBuilder<FakeTimeJob, FakeCronJob>(
             new JobsExecutionContext(),
             new SchedulerOptionsBuilder(),
             new ServiceCollection()
         );
-        var strategy = new RetryStrategyOptions
+        Func<JobExhaustedContext, CancellationToken, Task> callback = static (_, _) => Task.CompletedTask;
+
+        builder.ConfigureRetries(options =>
         {
-            MaxRetryAttempts = 7,
-            Delay = TimeSpan.FromSeconds(2),
-            ShouldHandle = static _ => ValueTask.FromResult(true),
-        };
+            options.OnExhausted = callback;
+            options.OnExhaustedTimeout = TimeSpan.FromSeconds(5);
+        });
 
-        builder.ConfigureRetries(options => options.RetryStrategy = strategy);
-
-        builder.RetryOptions.RetryStrategy.Should().BeSameAs(strategy);
+        builder.RetryOptions.OnExhausted.Should().BeSameAs(callback);
+        builder.RetryOptions.OnExhaustedTimeout.Should().Be(TimeSpan.FromSeconds(5));
     }
 
     [Fact]

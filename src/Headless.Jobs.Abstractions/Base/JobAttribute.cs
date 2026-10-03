@@ -54,6 +54,23 @@ public sealed class JobAttribute(string identity) : Attribute
     public string ContractVersion { get; set; } = JobContract.InitialVersion;
 
     /// <summary>
+    /// The <see cref="Reliability.FailurePolicy"/> type that decides how often a failed run of this job retries, how
+    /// long it waits between retries, and which exceptions fail it at once, or <see langword="null"/> to take the
+    /// host's default policy. Without any policy a failed run does not retry.
+    /// </summary>
+    /// <remarks>
+    /// The type must be a non-abstract class with a public parameterless constructor. The source generator emits a
+    /// factory for it, so the runtime never creates the policy by reflection. <c>Tune(...).FailurePolicy(...)</c>
+    /// replaces it on one host, and <c>Headless:Jobs:Jobs:{identity}:FailurePolicy</c> configuration adjusts its retry
+    /// counts and delays. A scheduling call's <c>WithRetries</c> still overrides the stored retry count of that run.
+    /// <para>
+    /// For a job with a <see cref="Cron"/> expression, the policy's retries are written to the cron definition only
+    /// when the definition is created, like <see cref="OnMissedRun"/>.
+    /// </para>
+    /// </remarks>
+    public Type? FailurePolicy { get; set; }
+
+    /// <summary>
     /// Recovery policy applied when this job's cron schedule falls behind. Ignored for jobs without a cron expression.
     /// </summary>
     /// <remarks>

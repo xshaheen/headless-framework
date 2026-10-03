@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging.CircuitBreaker;
+using Headless.Messaging.Configuration;
+using Headless.Reliability;
 
 namespace Headless.Messaging.Messages;
 
@@ -102,4 +104,12 @@ public sealed class ConsumerExecutorDescriptor
 
     /// <summary>Consume middleware types that run for this consumer alone, resolved from the delivery's scope.</summary>
     internal IReadOnlyList<Type> Middleware { get; init; } = [];
+
+    /// <summary>
+    /// The failure policy that decides how a failed delivery to this consumer is retried: the consumer's resolved policy,
+    /// the host default for a competing runtime subscription, and <see cref="FailurePolicyDefinition.None"/> for an
+    /// every-instance consumer, whose deliveries are never retried. A descriptor built without one gets the framework
+    /// default of a competing consumer.
+    /// </summary>
+    internal FailurePolicyDefinition FailurePolicy { get; init; } = MessagingOptions.FrameworkDefaultFailurePolicy;
 }

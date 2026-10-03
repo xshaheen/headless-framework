@@ -90,7 +90,7 @@ public sealed class JobsIncrementalSourceGeneratorTests
             .Should()
             .BeEquivalentTo(
                 Enumerable
-                    .Range(1, 22)
+                    .Range(1, 23)
                     .Where(number => number is not (2 or 6 or 10))
                     .Select(number => $"HF{number:000}")
             );
