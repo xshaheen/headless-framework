@@ -810,7 +810,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
         };
         client.OnLogCallback = _ => { };
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
 
         // when — start listening, pause, publish, verify no delivery
         var listeningTask = client.ListeningAsync(TimeSpan.FromSeconds(1), cts.Token).AsTask();
@@ -819,8 +819,14 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
             await client.WaitUntilReadyAsync(AbortToken);
 
             await client.PauseAsync(AbortToken);
+
+            // Pausing cancels the in-flight pull on the client, but the server keeps that pull open until the cancel
+            // reaches it or the pull's 1-second expiry passes. A publish on another connection can arrive first, and
+            // the server then hands the message to the dead pull, which redelivers it only after AckWait (30 seconds).
+            // Wait out the expiry so no pull is open when the paused message arrives.
+            await Task.Delay(TimeSpan.FromSeconds(1.5), AbortToken);
             await _PublishAsync(subject, "paused-msg"u8.ToArray());
-            await Task.Delay(1000, AbortToken);
+            await Task.Delay(500, AbortToken);
 
             var countWhilePaused = Volatile.Read(ref messageCount);
 
