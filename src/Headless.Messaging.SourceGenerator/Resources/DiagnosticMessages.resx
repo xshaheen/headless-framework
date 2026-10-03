@@ -78,4 +78,10 @@
   <data name="MultipleResponseTypesMessage" xml:space="preserve">
     <value>The consumer class '{0}' responds to '{1}' with more than one response type ({2}); a responder answers a request with exactly one response type</value>
   </data>
+  <data name="ResponseTypeMismatchTitle" xml:space="preserve">
+    <value>Request expects a response type its responder does not answer with</value>
+  </data>
+  <data name="ResponseTypeMismatchMessage" xml:space="preserve">
+    <value>This call expects '{2}' for '{0}', but the responders this project can see answer '{0}' with {1}; the call fails with ResponseContractMismatchException unless '{2}' is registered under the same message contract as the response</value>
+  </data>
 </root>

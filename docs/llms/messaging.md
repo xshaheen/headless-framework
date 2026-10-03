@@ -879,7 +879,7 @@ public sealed record Quote(string Sku, decimal UnitPrice, DateTimeOffset ValidUn
 
 ### Responders
 
-- **Declaration.** A responder is a `[QueueConsumer]` class that implements `IRespond<TRequest, TResponse>`. It is the request's one Queue consumer: a second Queue consumer or responder for the same request fails the build (HM004) or startup. `[BusConsumer]` on a responder is HM010, `IConsume<T>` and `IRespond<T, TResponse>` on one class for the same `T` is HM011, and two response types for one request is HM012.
+- **Declaration.** A responder is a `[QueueConsumer]` class that implements `IRespond<TRequest, TResponse>`. It is the request's one Queue consumer: a second Queue consumer or responder for the same request fails the build (HM004) or startup. `[BusConsumer]` on a responder is HM010, `IConsume<T>` and `IRespond<T, TResponse>` on one class for the same `T` is HM011, and two response types for one request is HM012. A `RequestAsync<TRequest, TResponse>` call whose `TResponse` is not what a responder the project can see answers `TRequest` with is HM013, a warning; a caller that sees no responder, the usual case for another service, is not checked.
 - **Cancellation.** The `RespondAsync` token is canceled when the host stops. It is not tied to the request's deadline or to the caller's cancellation, because work the responder accepted continues after the caller stops waiting.
 - **Never return null.** A `null` result ends the request at once, with no retry, and the caller gets a `null_response` fault.
 - **No callbacks.** In a responder, `SetResponse`, `SetResponseCallbackName`, and `SetResponseDestination` throw `InvalidOperationException`; the return value is the only answer. A `CallbackName` that the request carries on the wire is ignored.
@@ -2382,8 +2382,9 @@ Roslyn incremental source generator that registers `[BusConsumer]` and `[QueueCo
 - **Explicit registration**: the generated file (`MessagingModule.g.cs`) declares `<AssemblyName>.MessagingModule`, and nothing is registered until the module adds it with `AddModule<…MessagingModule>()` on `services.ConfigureMessaging(...)` or on the `AddHeadlessMessaging` setup. There is no module initializer and no runtime assembly scanning. Adding one module more than once registers it once. An assembly that declares no consumer gets no module.
 - **One entry per message**: a consumer class registers one entry for every `IConsume<T>` and every `IRespond<TRequest, TResponse>` it implements, all with the attribute's identity, lane, `EveryInstance` flag, and `Policy` type. A responder entry also carries its response type, which makes it a [request/reply](#requestreply) responder.
 - **Typed dispatch**: each consumer class gets one generated factory and one generated dispatcher. The factory resolves the class from the delivery's scope with `GetService<T>()` and falls back to `ActivatorUtilities.CreateInstance<T>` when the container has no registration for it. The dispatcher builds the class through that factory, runs `IConsumerLifecycle` hooks when the class implements them, calls the `ConsumeAsync` or `RespondAsync` that matches the context's message type (explicit interface implementations included) and records a responder's return value for the reply, and disposes the instance only when the factory constructed it. An every-instance class that implements `IOnSubscriptionEstablished` also gets a generated hook call that builds the class through the same factory in its own scope. Dispatch and the hook use no reflection and no compiled expressions.
-- **Incremental**: declarations are reduced to value models when discovered, so an edit that does not change a consumer declaration reuses every generator step and re-emits nothing.
-- **Build-time checks**: HM001 to HM012 (HM005 is unassigned), listed under [Diagnostics](#messaging-source-generator-diagnostics). `EveryInstance` exists only on `[BusConsumer]`, so writing it on `[QueueConsumer]` is a compiler error rather than a generator rule.
+- **Responder metadata**: for each responder, the generated file also declares `[assembly: ResponderMetadataAttribute(typeof(TRequest), typeof(TResponse))]`. The generator in a referencing project reads it to check that project's `RequestAsync<TRequest, TResponse>` calls against the responder (HM013). The attribute is generated metadata; do not apply it by hand.
+- **Incremental**: declarations are reduced to value models when discovered, so an edit that does not change a consumer declaration reuses every generator step and re-emits nothing. Referenced responder metadata is read only while the project calls `RequestAsync`.
+- **Build-time checks**: HM001 to HM013 (HM005 is unassigned), listed under [Diagnostics](#messaging-source-generator-diagnostics). `EveryInstance` exists only on `[BusConsumer]`, so writing it on `[QueueConsumer]` is a compiler error rather than a generator rule.
 
 ### Startup checks and host controls
 
@@ -2395,7 +2396,7 @@ Roslyn incremental source generator that registers `[BusConsumer]` and `[QueueCo
 
 ### Diagnostics
 
-<a id="messaging-source-generator-diagnostics"></a>Every rule is reported at compile time in category `Headless.Messaging.SourceGenerator`. HM006 is a warning; every other rule is an error. The table below is each rule's help link target.
+<a id="messaging-source-generator-diagnostics"></a>Every rule is reported at compile time in category `Headless.Messaging.SourceGenerator`. HM006 and HM013 are warnings; every other rule is an error. The table below is each rule's help link target.
 
 | Rule | Reported when | Fix |
 | --- | --- | --- |
@@ -2410,6 +2411,7 @@ Roslyn incremental source generator that registers `[BusConsumer]` and `[QueueCo
 | <a id="hm010"></a>HM010 | A class that implements `IRespond<TRequest, TResponse>` carries `[BusConsumer]`. A reply goes to one caller, and only the Queue lane gives a request exactly one consumer. | Put `[QueueConsumer]` on the responder. |
 | <a id="hm011"></a>HM011 | One class implements both `IConsume<T>` and `IRespond<T, TResponse>` for the same `T`. | Implement only `IRespond<T, TResponse>`; a responder that a plain enqueue reaches runs and discards its result. |
 | <a id="hm012"></a>HM012 | One class implements `IRespond<TRequest, TResponse>` for the same request with two or more response types. | Answer each request with one response type; put alternatives in one response contract. |
+| <a id="hm013"></a>HM013 | A `RequestAsync<TRequest, TResponse>` call expects a `TResponse` that no responder visible to the project answers `TRequest` with. A responder is visible when it is declared in the calling project or in a referenced assembly built with this generator. Without the fix, the call fails with `ResponseContractMismatchException`. | Request the responder's response type. When the call deliberately reads the reply into another type registered under the same message contract name and version, suppress the warning at the call with a reason. |
 
 ### Install
 

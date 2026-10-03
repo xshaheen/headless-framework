@@ -2,6 +2,9 @@
 //Messaging readonly auto-generated file.
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
 
+[assembly: global::Headless.Messaging.ResponderMetadataAttribute(typeof(global::Pricing.GetPriceList), typeof(global::Pricing.PriceList))]
+[assembly: global::Headless.Messaging.ResponderMetadataAttribute(typeof(global::Pricing.GetQuote), typeof(global::Pricing.Quote))]
+
 namespace Messaging.SourceGenerator.Tests
 {
     /// <summary>Generated Messaging registration for this assembly. Add it with <c>AddModule&lt;MessagingModule&gt;()</c>.</summary>

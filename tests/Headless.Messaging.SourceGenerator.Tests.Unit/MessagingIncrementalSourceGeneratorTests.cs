@@ -732,7 +732,7 @@ public sealed class MessagingIncrementalSourceGeneratorTests
             .OfType<DiagnosticDescriptor>()
             .Select(descriptor => descriptor.Id)
             .Should()
-            .BeEquivalentTo(Enumerable.Range(1, 12).Where(number => number != 5).Select(number => $"HM{number:000}"));
+            .BeEquivalentTo(Enumerable.Range(1, 13).Where(number => number != 5).Select(number => $"HM{number:000}"));
     }
 
     private static string _GenerateClean(string source)

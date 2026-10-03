@@ -13,3 +13,4 @@ HM009   | Headless.Messaging.SourceGenerator | Error | Consumer class declares b
 HM010   | Headless.Messaging.SourceGenerator | Error | Responder on the Bus lane
 HM011   | Headless.Messaging.SourceGenerator | Error | Consumer and responder for one message
 HM012   | Headless.Messaging.SourceGenerator | Error | One request answered with several response types
+HM013   | Headless.Messaging.SourceGenerator | Warning | Request expects a response type its responder does not answer with

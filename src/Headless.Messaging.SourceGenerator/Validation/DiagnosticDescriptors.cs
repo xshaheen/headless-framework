@@ -157,6 +157,18 @@ internal static class DiagnosticDescriptors
         customTags: _CustomTags
     );
 
+    public static readonly DiagnosticDescriptor ResponseTypeMismatch = new(
+        "HM013",
+        _Resource("ResponseTypeMismatchTitle"),
+        _Resource("ResponseTypeMismatchMessage"),
+        _Category,
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description: _Resource("ResponseTypeMismatchMessage"),
+        helpLinkUri: _HelpLinkBase + "hm013",
+        customTags: _CustomTags
+    );
+
     private static LocalizableResourceString _Resource(string resourceName) =>
         new(resourceName, _Resources, typeof(DiagnosticDescriptors));
 }

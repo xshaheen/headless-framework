@@ -3,8 +3,10 @@
 using System.Text;
 using Headless.Messaging.SourceGenerator.Building;
 using Headless.Messaging.SourceGenerator.Emitting;
+using Headless.Messaging.SourceGenerator.Models;
 using Headless.Messaging.SourceGenerator.Parsing;
 using Headless.Messaging.SourceGenerator.Utilities;
+using Headless.Messaging.SourceGenerator.Validation;
 using Headless.SourceGenerators;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Text;
@@ -33,6 +35,10 @@ public sealed class MessagingIncrementalSourceGenerator : IIncrementalGenerator
         public const string GenerationResult = nameof(GenerationResult);
         public const string RegistrationModel = nameof(RegistrationModel);
         public const string Diagnostics = nameof(Diagnostics);
+        public const string RequestCalls = nameof(RequestCalls);
+        public const string LocalResponders = nameof(LocalResponders);
+        public const string ReferencedResponders = nameof(ReferencedResponders);
+        public const string RequestDiagnostics = nameof(RequestDiagnostics);
     }
 
     /// <summary>Registers the incremental pipeline.</summary>
@@ -92,6 +98,60 @@ public sealed class MessagingIncrementalSourceGenerator : IIncrementalGenerator
 
         context.RegisterDiagnosticsOutput(
             generation.Select(static (result, _) => result.Diagnostics).WithTrackingName(TrackingNames.Diagnostics)
+        );
+
+        _RegisterRequestCallChecks(context, registrationModel);
+    }
+
+    /// <summary>
+    /// Checks every <c>RequestAsync&lt;TRequest, TResponse&gt;</c> call against the responders the project can see: the
+    /// ones this assembly registers and the ones its references publish as generated metadata.
+    /// </summary>
+    /// <remarks>
+    /// Referenced metadata is read from the compilation, which changes on every edit, so it is read only while the
+    /// project calls <c>RequestAsync</c>; the read is equal between edits, so the check after it stays cached.
+    /// </remarks>
+    private static void _RegisterRequestCallChecks(
+        IncrementalGeneratorInitializationContext context,
+        IncrementalValueProvider<MessagingRegistrationModel?> registrationModel
+    )
+    {
+        var requestCalls = context
+            .SyntaxProvider.CreateSyntaxProvider(RequestCallParser.IsCandidate, RequestCallParser.Parse)
+            .WhereNotNull()
+            .WithTrackingName(TrackingNames.RequestCalls)
+            .Collect();
+
+        var localResponders = registrationModel
+            .Select(
+                static (model, _) =>
+                    model is null
+                        ? EquatableArray<ResponderModel>.Empty
+                        : model
+                            .Consumers.SelectMany(registration => registration.Consumer.Responders)
+                            .ToEquatableArray()
+            )
+            .WithTrackingName(TrackingNames.LocalResponders);
+
+        var referencedResponders = requestCalls
+            .Combine(context.CompilationProvider)
+            .Select(
+                static (source, cancellationToken) =>
+                    source.Left.IsEmpty
+                        ? EquatableArray<ResponderModel>.Empty
+                        : RequestCallParser.GetReferencedResponders(source.Right, cancellationToken)
+            )
+            .WithTrackingName(TrackingNames.ReferencedResponders);
+
+        context.RegisterDiagnosticsOutput(
+            requestCalls
+                .Combine(localResponders)
+                .Combine(referencedResponders)
+                .Select(
+                    static (source, _) =>
+                        RequestCallValidator.Validate(source.Left.Left, source.Left.Right, source.Right)
+                )
+                .WithTrackingName(TrackingNames.RequestDiagnostics)
         );
     }
 }

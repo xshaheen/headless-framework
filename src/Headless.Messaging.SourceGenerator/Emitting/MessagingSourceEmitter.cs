@@ -33,6 +33,21 @@ internal static class MessagingSourceEmitter
         writer.AppendLine("//Messaging readonly auto-generated file.");
         writer.AppendLine("#pragma warning disable CS1591 // Missing XML comment for publicly visible type or member");
         writer.NewLine();
+
+        // Publishes each responder's pair so the generator in a referencing project can check its RequestAsync calls.
+        var responders = model.Consumers.SelectMany(registration => registration.Consumer.Responders).ToList();
+        foreach (var responder in responders)
+        {
+            writer.AppendLine(
+                $"[assembly: global::Headless.Messaging.ResponderMetadataAttribute(typeof({responder.RequestTypeName}), typeof({responder.ResponseTypeName}))]"
+            );
+        }
+
+        if (responders.Count > 0)
+        {
+            writer.NewLine();
+        }
+
         writer.AppendLine($"namespace {model.AssemblyName}");
         writer.OpenBracket();
         // Public so a module's entry point can name it in AddModule<T>(); the registration itself is an explicit
