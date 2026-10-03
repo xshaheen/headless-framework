@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.ComponentModel;
 using Headless.Checks;
 using Headless.UnitOfWork;
 
@@ -60,6 +61,18 @@ public record ConsumeContext
 
     internal bool IsResponseSuppressed { get; private set; }
 
+    /// <summary>The value a responder returned for the request's caller; <see langword="null"/> when it returned none.</summary>
+    internal object? Reply { get; private set; }
+
+    /// <summary>The responder's declared response type, which names the reply's contract.</summary>
+    internal Type? ReplyType { get; private set; }
+
+    /// <summary>
+    /// Whether this context belongs to an <see cref="IRespond{TRequest, TResponse}"/> responder, which answers only
+    /// through its return value.
+    /// </summary>
+    internal bool IsResponder { get; set; }
+
     /// <summary>
     /// Replaces the active cancellation token for downstream middleware and the inner consumer invocation.
     /// </summary>
@@ -90,13 +103,14 @@ public record ConsumeContext
     /// <c>CausationId</c> identifies the immediate parent); the framework does not
     /// deduplicate callback deliveries.
     /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when the context is completed, or when the consumer is an <see cref="IRespond{TRequest, TResponse}"/>
+    /// responder.
+    /// </exception>
     public void SetResponse<TResponse>(TResponse value)
         where TResponse : class
     {
-        if (_isCompleted)
-        {
-            throw new InvalidOperationException("ConsumeContext is read-only after the consumer has completed.");
-        }
+        _EnsureCallbackResponseAllowed();
 
         Response = value;
         ResponseType = typeof(TResponse);
@@ -115,12 +129,13 @@ public record ConsumeContext
     /// bounded by the consumer — a self-referential or cyclic chain produces an unbounded callback storm.
     /// </remarks>
     /// <param name="callbackName">The response callback name to attach to the published response.</param>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when the context is completed, or when the consumer is an <see cref="IRespond{TRequest, TResponse}"/>
+    /// responder.
+    /// </exception>
     public void SetResponseCallbackName(string callbackName)
     {
-        if (_isCompleted)
-        {
-            throw new InvalidOperationException("ConsumeContext is read-only after the consumer has completed.");
-        }
+        _EnsureCallbackResponseAllowed();
 
         ResponseCallbackName = Argument.IsNotNullOrWhiteSpace(callbackName);
     }
@@ -150,13 +165,13 @@ public record ConsumeContext
     /// invocation to a different subscriber than the one originally specified by the publisher.
     /// </summary>
     /// <param name="messageName">The replacement callback subscriber message name.</param>
-    /// <exception cref="InvalidOperationException">Thrown when the context is completed.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when the context is completed, or when the consumer is an <see cref="IRespond{TRequest, TResponse}"/>
+    /// responder.
+    /// </exception>
     public void SetResponseDestination(string messageName)
     {
-        if (_isCompleted)
-        {
-            throw new InvalidOperationException("ConsumeContext is read-only after the consumer has completed.");
-        }
+        _EnsureCallbackResponseAllowed();
 
         ResponseDestination = Argument.IsNotNullOrWhiteSpace(messageName);
         IsResponseSuppressed = false;
@@ -177,9 +192,50 @@ public record ConsumeContext
         IsResponseSuppressed = true;
     }
 
+    /// <summary>
+    /// Records the value an <see cref="IRespond{TRequest, TResponse}"/> responder returned, so messaging can reply to the
+    /// request's caller. Generated dispatch calls this; application code does not.
+    /// </summary>
+    /// <remarks>
+    /// The reply is kept apart from the <see cref="SetResponse{TResponse}(TResponse)"/> callback response: a callback is a
+    /// new Bus message nobody awaits, while a reply goes only to the process that sent the request.
+    /// </remarks>
+    /// <typeparam name="TResponse">The responder's declared response type.</typeparam>
+    /// <param name="reply">The value the responder returned. May be <see langword="null"/>, which faults the request.</param>
+    /// <exception cref="InvalidOperationException">Thrown when the context is completed.</exception>
+    [EditorBrowsable(EditorBrowsableState.Never)]
+    public void RecordReply<TResponse>(TResponse? reply)
+        where TResponse : class
+    {
+        if (_isCompleted)
+        {
+            throw new InvalidOperationException("ConsumeContext is read-only after the consumer has completed.");
+        }
+
+        Reply = reply;
+        ReplyType = typeof(TResponse);
+    }
+
     internal void MarkCompleted()
     {
         _isCompleted = true;
+    }
+
+    private void _EnsureCallbackResponseAllowed()
+    {
+        if (_isCompleted)
+        {
+            throw new InvalidOperationException("ConsumeContext is read-only after the consumer has completed.");
+        }
+
+        // A responder's caller awaits exactly one answer, its return value; a callback would be a second, unawaited one.
+        if (IsResponder)
+        {
+            throw new InvalidOperationException(
+                "A responder answers its caller by returning the response from RespondAsync; it cannot publish a "
+                    + "callback response."
+            );
+        }
     }
 
     /// <summary>

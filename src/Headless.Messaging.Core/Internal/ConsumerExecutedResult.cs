@@ -28,4 +28,10 @@ internal sealed class ConsumerExecutedResult(
     /// <c>PublishOptions.CallbackName</c> on the response publish.
     /// </summary>
     public string? ResponseCallbackName { get; init; } = responseCallbackName;
+
+    /// <summary>The value a responder returned for the request's caller.</summary>
+    public object? Reply { get; init; }
+
+    /// <summary>The responder's declared response type, which names the reply's contract.</summary>
+    public Type? ReplyType { get; init; }
 }

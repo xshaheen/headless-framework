@@ -118,6 +118,45 @@ public sealed class GeneratedSourceSnapshotTests
     }
 
     [Fact]
+    public Task should_emit_a_responder_registration_carrying_the_response_type_and_a_dispatcher_that_records_the_reply()
+    {
+        return _VerifyGenerated(
+            """
+            using System;
+            using System.Threading;
+            using System.Threading.Tasks;
+            using Headless.Messaging;
+
+            namespace Pricing;
+
+            public sealed record GetQuote(string Sku);
+            public sealed record Quote(decimal Price);
+            public sealed record RefreshPrices(int Version);
+            public sealed record GetPriceList(string Region);
+            public sealed record PriceList(int Count);
+
+            [QueueConsumer("pricing.get-quote")]
+            public sealed class GetQuoteResponder : IRespond<GetQuote, Quote>
+            {
+                public ValueTask<Quote> RespondAsync(ConsumeContext<GetQuote> context, CancellationToken cancellationToken) =>
+                    new(new Quote(1m));
+            }
+
+            [QueueConsumer("pricing.desk")]
+            public sealed class PricingDesk : IRespond<GetPriceList, PriceList>, IConsume<RefreshPrices>, IConsumerLifecycle, IAsyncDisposable
+            {
+                ValueTask<PriceList> IRespond<GetPriceList, PriceList>.RespondAsync(ConsumeContext<GetPriceList> context, CancellationToken cancellationToken) =>
+                    new(new PriceList(2));
+                public ValueTask ConsumeAsync(ConsumeContext<RefreshPrices> context, CancellationToken cancellationToken) => default;
+                public ValueTask OnStartingAsync(CancellationToken cancellationToken) => default;
+                public ValueTask OnStoppingAsync(CancellationToken cancellationToken) => default;
+                public ValueTask DisposeAsync() => default;
+            }
+            """
+        );
+    }
+
+    [Fact]
     public Task should_emit_a_failure_policy_factory_only_for_a_consumer_that_declares_one()
     {
         return _VerifyGenerated(

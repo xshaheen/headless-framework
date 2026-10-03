@@ -46,6 +46,8 @@ internal interface IMessageCapabilityGate : IMessagingCapabilityModel
     void EnsureOutboxSupported(MessageLane lane, bool scheduled);
 
     void EnsureEveryInstanceSupported(string consumerIdentity);
+
+    void EnsureRequestReplySupported(string? responderIdentity = null);
 }
 
 /// <summary>Composes immutable provider contributions into the runtime capability authority.</summary>
@@ -296,6 +298,35 @@ public sealed class MessagingCapabilityModel : IMessageCapabilityGate
         );
     }
 
+    /// <summary>
+    /// Rejects a host that sends requests or declares a responder when the transport has no reply channel. Runs during
+    /// bootstrap, before the reply listener and any processor start, so a rejected host never reports ready.
+    /// </summary>
+    /// <param name="responderIdentity">
+    /// The identity of the responder to name in the error, or <see langword="null"/> when the host sends requests.
+    /// </param>
+    internal void EnsureRequestReplySupported(string? responderIdentity = null)
+    {
+        var transport = _providersByRole.TryGetValue(MessagingProviderRole.Transport, out var transports)
+            ? transports.SingleOrDefault()
+            : null;
+
+        if (transport is { SupportsRequestReply: true })
+        {
+            return;
+        }
+
+        var provider = transport?.Provider ?? "(none declared)";
+        var subject = responderIdentity is null
+            ? "This host sends requests (AddRequestReply), which"
+            : $"Consumer '{responderIdentity}' responds to requests, which";
+
+        throw new MessagingConfigurationException(
+            $"{subject} transport provider '{provider}' does not support. Request/reply needs a transport that "
+                + "declares a reply channel; select one that supports request/reply, or use a Bus callback instead."
+        );
+    }
+
     /// <summary>Rejects an outbox publish when transport, storage, or scheduling support is absent.</summary>
     internal void EnsureOutboxSupported(MessageLane lane, bool scheduled)
     {
@@ -364,6 +395,12 @@ public sealed class MessagingCapabilityModel : IMessageCapabilityGate
         var supportsEveryInstance =
             busContributions.Length != 0 && busContributions.All(static x => x.SupportsEveryInstance);
 
+        // Requests are Queue messages, so the same rule applies on the Queue lane: every contribution that carries it must
+        // declare the reply channel, and a Bus-only contribution has no say.
+        var queueContributions = contributions.Where(static x => x.Lanes.Contains(MessageLane.Queue)).ToArray();
+        var supportsRequestReply =
+            queueContributions.Length != 0 && queueContributions.All(static x => x.SupportsRequestReply);
+
         var topologyValues = contributions
             .Select(static capability => capability.SupportsIndependentLaneTopology)
             .Distinct()
@@ -381,7 +418,8 @@ public sealed class MessagingCapabilityModel : IMessageCapabilityGate
                 occupiedLanes.ToArray(),
                 topologyValues[0],
                 contributions.SelectMany(static contribution => contribution.RoutingAffinityRoutes).ToArray(),
-                supportsEveryInstance
+                supportsEveryInstance,
+                supportsRequestReply
             )
         );
     }
@@ -442,4 +480,7 @@ public sealed class MessagingCapabilityModel : IMessageCapabilityGate
 
     void IMessageCapabilityGate.EnsureEveryInstanceSupported(string consumerIdentity) =>
         EnsureEveryInstanceSupported(consumerIdentity);
+
+    void IMessageCapabilityGate.EnsureRequestReplySupported(string? responderIdentity) =>
+        EnsureRequestReplySupported(responderIdentity);
 }

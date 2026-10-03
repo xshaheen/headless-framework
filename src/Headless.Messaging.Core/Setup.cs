@@ -11,6 +11,7 @@ using Headless.Messaging.Coordination;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Processor;
 using Headless.Messaging.Registration;
+using Headless.Messaging.RequestReply;
 using Headless.Messaging.Runtime;
 using Headless.Messaging.Serialization;
 using Headless.Messaging.Transactions;
@@ -206,6 +207,12 @@ public static class SetupMessaging
         //Sender
         services.TryAddSingleton<IMessageSender, MessageSender>();
 
+        // Resolved only by a responder host, which bootstrap admits only on a transport that registers IReplyTransport.
+        services.TryAddSingleton<ReplySender>();
+
+        // Every consuming host can be reached by a request, so every one can answer it, even with a fault only.
+        services.TryAddSingleton<ResponderReplies>();
+
         services.TryAddSingleton<ISerializer, JsonUtf8Serializer>();
 
         // One id per host: every-instance subscriptions name their per-process broker object after it.
@@ -398,6 +405,7 @@ public static class SetupMessaging
                     EveryInstance = consumer.EveryInstance,
                     DeclaringModule = consumer.Source,
                     OnSubscriptionEstablished = consumer.OnSubscriptionEstablished,
+                    ResponseType = consumer.ResponseType,
                     FailurePolicyFactory = consumer.FailurePolicyFactory,
                 },
                 contractVersions.GetValueOrDefault(
@@ -448,6 +456,7 @@ public static class SetupMessaging
                     Dispatch = consumer.Dispatch,
                     OnSubscriptionEstablished = consumer.OnSubscriptionEstablished,
                     DeclaringModule = consumer.DeclaringModule,
+                    ResponseType = consumer.ResponseType,
                 };
 
                 var policy = _ResolveDeclaredFailurePolicy(consumer, resolved, declaredPolicies);
@@ -458,6 +467,7 @@ public static class SetupMessaging
                     resolved.ConsumerIdentity,
                     resolved.MessageContractVersion,
                     resolved.EveryInstance,
+                    resolved.ResponseType,
                     policy?.Type
                 );
 
@@ -611,10 +621,13 @@ public static class SetupMessaging
 
     private static string _DescribeSource(string? module) => module ?? "a registration outside any module";
 
+    // The response type is a setting: a redeclaration that answers with another type, or not at all, would change what the
+    // caller receives.
     private readonly record struct ConsumerRegistrationSettings(
         string ConsumerIdentity,
         string MessageContractVersion,
         bool EveryInstance,
+        Type? ResponseType,
         Type? FailurePolicy
     );
 

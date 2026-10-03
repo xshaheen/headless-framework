@@ -25,10 +25,10 @@
     <value>The {0} consumer identity '{1}' is already used by another consumer class in this assembly</value>
   </data>
   <data name="MissingConsumeInterfaceTitle" xml:space="preserve">
-    <value>Consumer class does not implement IConsume&lt;T&gt;</value>
+    <value>Consumer class implements neither IConsume&lt;T&gt; nor IRespond&lt;TRequest, TResponse&gt;</value>
   </data>
   <data name="MissingConsumeInterfaceMessage" xml:space="preserve">
-    <value>The consumer class '{0}' must implement at least one IConsume&lt;T&gt;; the messages a consumer handles are the IConsume&lt;T&gt; interfaces it implements</value>
+    <value>The consumer class '{0}' must implement at least one IConsume&lt;T&gt; or IRespond&lt;TRequest, TResponse&gt;; the messages a consumer handles are the IConsume&lt;T&gt; and IRespond&lt;TRequest, TResponse&gt; interfaces it implements</value>
   </data>
   <data name="DuplicateQueueConsumerTitle" xml:space="preserve">
     <value>Second Queue consumer for one message</value>
@@ -71,5 +71,29 @@
   </data>
   <data name="FailurePolicyOnEveryInstanceMessage" xml:space="preserve">
     <value>The consumer class '{0}' declares a FailurePolicy on a [BusConsumer] with EveryInstance = true; every-instance deliveries are at most once and never stored, so no policy can run for them</value>
+  </data>
+  <data name="ResponderOnBusLaneTitle" xml:space="preserve">
+    <value>Responder on the Bus lane</value>
+  </data>
+  <data name="ResponderOnBusLaneMessage" xml:space="preserve">
+    <value>The consumer class '{0}' implements IRespond&lt;TRequest, TResponse&gt; but carries [BusConsumer]; a reply goes to exactly one caller and a request has exactly one consumer, so a responder must carry [QueueConsumer]</value>
+  </data>
+  <data name="ConsumerAndResponderForOneMessageTitle" xml:space="preserve">
+    <value>Consumer and responder for one message</value>
+  </data>
+  <data name="ConsumerAndResponderForOneMessageMessage" xml:space="preserve">
+    <value>The consumer class '{0}' implements both IConsume&lt;{1}&gt; and IRespond&lt;{1}, TResponse&gt;; a message has one handler, so implement only IRespond&lt;{1}, TResponse&gt; to answer it</value>
+  </data>
+  <data name="MultipleResponseTypesTitle" xml:space="preserve">
+    <value>One request answered with several response types</value>
+  </data>
+  <data name="MultipleResponseTypesMessage" xml:space="preserve">
+    <value>The consumer class '{0}' responds to '{1}' with more than one response type ({2}); a responder answers a request with exactly one response type</value>
+  </data>
+  <data name="ResponseTypeMismatchTitle" xml:space="preserve">
+    <value>Request expects a response type its responder does not answer with</value>
+  </data>
+  <data name="ResponseTypeMismatchMessage" xml:space="preserve">
+    <value>This call expects '{2}' for '{0}', but the responders this project can see answer '{0}' with {1}; the call fails with ResponseContractMismatchException unless '{2}' is registered under the same message contract as the response</value>
   </data>
 </root>

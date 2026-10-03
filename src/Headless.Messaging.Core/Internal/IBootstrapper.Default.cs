@@ -5,7 +5,9 @@ using Headless.Coordination;
 using Headless.DistributedLocks;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Registration;
+using Headless.Messaging.RequestReply;
 using Headless.Messaging.Runtime;
+using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -102,7 +104,14 @@ internal sealed class Bootstrapper(
             // Publish before any processor start can block, so shutdown always reaches every
             // processor. Resolution stays outside the lock: processor factories are third-party code
             // that can block or throw, and every other _bootstrapLock holder would wait behind them.
-            var resolvedProcessors = serviceProvider.GetServices<IProcessingServer>().ToArray();
+            IProcessingServer[] resolvedProcessors = [.. serviceProvider.GetServices<IProcessingServer>()];
+
+            // The reply listener starts first, so a consumer that sends a request while handling its first message
+            // finds a reply channel already open.
+            if (serviceProvider.GetService<ReplyListenerHost>() is { } replyListener)
+            {
+                resolvedProcessors = [replyListener, .. resolvedProcessors];
+            }
 
             lock (_bootstrapLock)
             {
@@ -355,6 +364,7 @@ internal sealed class Bootstrapper(
             );
 
         _CheckMessageNameCollisions();
+        _CheckReplyNamespaceIsFree();
         var capabilities = serviceProvider.GetRequiredService<MessagingCapabilityModel>();
         capabilities.ValidateRoutingAffinityStartup(
             serviceProvider
@@ -384,6 +394,23 @@ internal sealed class Bootstrapper(
         {
             gate.EnsureEveryInstanceSupported(identity);
         }
+
+        // Runs before the reply listener and any processor start, so a host that sends requests or answers them on a
+        // transport without a reply channel fails before it reports ready, instead of timing out every call later.
+        if (serviceProvider.GetService<RequestReplyMarkerService>() is not null)
+        {
+            gate.EnsureRequestReplySupported();
+        }
+
+        foreach (
+            var identity in consumers
+                .Where(static x => x.IsResponder)
+                .Select(static x => x.ConsumerIdentity)
+                .Distinct(StringComparer.Ordinal)
+        )
+        {
+            gate.EnsureRequestReplySupported(identity);
+        }
     }
 
     /// <summary>
@@ -398,22 +425,50 @@ internal sealed class Bootstrapper(
     /// </remarks>
     private HashSet<MessageRouteKey> _GetRegisteredRoutes(MessagingCapabilityModel capabilities)
     {
-        var registry = serviceProvider.GetRequiredService<ConsumerRegistry>();
-        var routes = registry
-            .GetAll()
-            .Select(static consumer => new MessageRouteKey(consumer.MessageType, consumer.MessageName, consumer.Lane))
-            .ToHashSet();
+        var routes = new HashSet<MessageRouteKey>();
 
+        foreach (var (route, needsTransportLane) in _GetAllRoutes())
+        {
+            if (!needsTransportLane || capabilities.Supports(route.Lane, MessagingProviderRole.Transport))
+            {
+                routes.Add(route);
+            }
+        }
+
+        return routes;
+    }
+
+    /// <summary>
+    /// Every route the host names, in order: consumer routes, declared routes, then effective message-name routes.
+    /// <c>NeedsTransportLane</c> marks a route that names a message for both lanes, and so counts only on a lane the
+    /// transport carries.
+    /// </summary>
+    private IEnumerable<(MessageRouteKey Route, bool NeedsTransportLane)> _GetAllRoutes()
+    {
+        var registry = serviceProvider.GetRequiredService<ConsumerRegistry>();
+
+        foreach (var consumer in registry.GetAll())
+        {
+            yield return (new MessageRouteKey(consumer.MessageType, consumer.MessageName, consumer.Lane), false);
+        }
+
+        foreach (var (registration, route) in _GetDeclaredRoutes(registry))
+        {
+            yield return (route, registration.DeclaresMessage);
+        }
+
+        foreach (var route in _GetEffectiveMessageNameRoutes(registry))
+        {
+            yield return (route, true);
+        }
+    }
+
+    private IEnumerable<(MessageRegistration Registration, MessageRouteKey Route)> _GetDeclaredRoutes(
+        ConsumerRegistry registry
+    )
+    {
         foreach (var registration in registry.DeclaredRoutes)
         {
-            if (
-                registration.DeclaresMessage
-                && !capabilities.Supports(registration.Lane, MessagingProviderRole.Transport)
-            )
-            {
-                continue;
-            }
-
             var rawName = registration.MessageName;
             if (
                 rawName is null
@@ -423,7 +478,8 @@ internal sealed class Bootstrapper(
                 rawName = options.Value.Conventions.GetMessageName(registration.MessageType);
             }
 
-            routes.Add(
+            yield return (
+                registration,
                 new MessageRouteKey(
                     registration.MessageType,
                     options.Value.ApplyMessageNamePrefix(rawName),
@@ -431,16 +487,29 @@ internal sealed class Bootstrapper(
                 )
             );
         }
+    }
 
-        foreach (var route in _GetEffectiveMessageNameRoutes(registry))
+    /// <summary>
+    /// Rejects any message name inside the reserved reply namespace, on either lane and whether or not the transport
+    /// carries that lane.
+    /// </summary>
+    /// <remarks>
+    /// A responder writes a reply to whatever address a request names once the address passes the namespace check, so
+    /// a lane destination under <see cref="ReplyAddresses.Prefix"/> could receive forged replies. The check
+    /// runs on the effective names, after <see cref="MessagingOptions.MessageNamePrefix"/>, because a prefix can move an
+    /// otherwise harmless name into the namespace.
+    /// </remarks>
+    private void _CheckReplyNamespaceIsFree()
+    {
+        foreach (var (route, _) in _GetAllRoutes())
         {
-            if (capabilities.Supports(route.Lane, MessagingProviderRole.Transport))
+            if (route.MessageName.StartsWith(ReplyAddresses.Prefix, StringComparison.Ordinal))
             {
-                routes.Add(route);
+                throw new MessagingConfigurationException(
+                    $"Message name '{route.MessageName}' of {route.ContractType.FullName ?? route.ContractType.Name} on lane {route.Lane} is inside the reserved reply namespace '{ReplyAddresses.Prefix}'. Rename the message, or change {nameof(MessagingOptions.MessageNamePrefix)} if it adds the reserved prefix."
+                );
             }
         }
-
-        return routes;
     }
 
     private IEnumerable<MessageRouteKey> _GetEffectiveMessageNameRoutes(ConsumerRegistry registry)

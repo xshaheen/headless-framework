@@ -2,9 +2,11 @@
 
 using Headless.Checks;
 using Headless.Messaging.Registration;
+using Headless.Messaging.RequestReply;
 using Headless.Reliability;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Headless.Messaging.Configuration;
 
@@ -132,6 +134,36 @@ public sealed class MessagingSetupBuilder : IMessagingBuilder
         OutboxBuilders.Add(builder);
 
         return builder;
+    }
+
+    /// <summary>
+    /// Enables this host to send requests with <see cref="IRequestClient"/> and await their replies, for example
+    /// <c>setup.AddRequestReply(requests =&gt; requests.DefaultTimeout = TimeSpan.FromSeconds(10))</c>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// It registers <see cref="IRequestClient"/> and a reply listener that opens when messaging starts, before any
+    /// consumer, and closes when it stops. A host that never calls it registers no client and opens no reply channel;
+    /// a host that only answers requests does not need it.
+    /// </para>
+    /// <para>
+    /// The transport must support request/reply, or messaging fails to start naming the provider. Calling this more than
+    /// once is harmless; each <paramref name="configure"/> applies to the same <see cref="MessagingOptions.RequestReply"/>.
+    /// </para>
+    /// </remarks>
+    /// <param name="configure">Optionally changes the request/reply settings, such as the default timeout.</param>
+    /// <returns>This builder, for chaining.</returns>
+    public MessagingSetupBuilder AddRequestReply(Action<RequestReplyOptions>? configure = null)
+    {
+        configure?.Invoke(Options.RequestReply);
+
+        Services.TryAddSingleton<RequestReplyMarkerService>();
+        Services.TryAddSingleton<PendingRequests>();
+        Services.TryAddSingleton<ReplyDispatcher>();
+        Services.TryAddSingleton<ReplyListenerHost>();
+        Services.TryAddSingleton<IRequestClient, RequestClient>();
+
+        return this;
     }
 
     /// <summary>

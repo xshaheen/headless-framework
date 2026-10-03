@@ -71,6 +71,9 @@ internal sealed record MessageConsumerRegistration(
     /// <summary>The generated subscription hook of an every-instance consumer class, when it has one.</summary>
     public SubscriptionEstablishedDispatch? OnSubscriptionEstablished { get; init; }
 
+    /// <summary>The response type of a responder; <see langword="null"/> for a consumer that does not answer requests.</summary>
+    public Type? ResponseType { get; init; }
+
     /// <summary>Creates the failure policy the consumer's attribute declares, when it declares one.</summary>
     public Func<FailurePolicy>? FailurePolicyFactory { get; init; }
 }

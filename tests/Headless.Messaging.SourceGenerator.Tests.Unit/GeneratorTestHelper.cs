@@ -16,6 +16,7 @@ internal static class GeneratorTestHelper
         GeneratorCompilation.LoadedAssemblyReferences(
             typeof(BusConsumerAttribute).Assembly,
             typeof(Headless.Messaging.Registration.MessagingContributionBuilder).Assembly, // Messaging.Core, which samples call ConfigureMessaging from
+            typeof(IRequestClient).Assembly, // Messaging.Queue.Abstractions, which request samples call
             // The catalog's consumer methods take a failure policy factory, so generated modules compile against it.
             typeof(Headless.Reliability.FailurePolicy).Assembly,
             typeof(ActivatorUtilities).Assembly,
@@ -32,9 +33,25 @@ internal static class GeneratorTestHelper
         string source,
         out ImmutableArray<Diagnostic> compilationDiagnostics,
         out Compilation outputCompilation
+    ) => Run(AssemblyName, source, [], out compilationDiagnostics, out outputCompilation);
+
+    /// <summary>
+    /// Runs the generator over one source file in an assembly named <paramref name="assemblyName"/> that also references
+    /// <paramref name="additionalReferences"/>, such as another generated assembly.
+    /// </summary>
+    public static GeneratorDriver Run(
+        string assemblyName,
+        string source,
+        IReadOnlyCollection<MetadataReference> additionalReferences,
+        out ImmutableArray<Diagnostic> compilationDiagnostics,
+        out Compilation outputCompilation
     )
     {
-        var compilation = CreateCompilation(AssemblyName, [("Messaging.SourceGenerator.Tests.cs", source)]);
+        var compilation = GeneratorCompilation.Create(
+            assemblyName,
+            [(assemblyName + ".cs", source)],
+            _References.Value.AddRange(additionalReferences)
+        );
 
         GeneratorDriver driver = CSharpGeneratorDriver.Create(
             [new MessagingIncrementalSourceGenerator().AsSourceGenerator()],

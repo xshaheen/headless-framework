@@ -76,6 +76,27 @@ public sealed class SetupInMemoryTests : TestBase
     }
 
     [Fact]
+    public async Task should_register_a_reply_transport_and_declare_request_reply_support()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessMessaging(options => options.UseInMemory());
+
+        await using var provider = services.BuildServiceProvider();
+
+        // when
+        var replyTransport = provider.GetService<IReplyTransport>();
+        var transportCapability = provider
+            .GetRequiredService<IMessagingCapabilityModel>()
+            .Providers.Single(capability => capability.Role == MessagingProviderRole.Transport);
+
+        // then
+        replyTransport.Should().BeOfType<InMemoryReplyTransport>();
+        transportCapability.SupportsRequestReply.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task should_register_transport()
     {
         // given

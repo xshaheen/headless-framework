@@ -2,6 +2,7 @@
 
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Registration;
+using Headless.Messaging.RequestReply;
 using Headless.Messaging.Serialization;
 using Headless.UnitOfWork;
 
@@ -40,12 +41,53 @@ internal sealed class MessagePublisher(
     // because the compiler only caches method-group conversions for static methods.
     private readonly Func<long> _nowUnixTimeMilliseconds = () => timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
 
-    internal async Task<PublishReceipt> PublishAsync<T>(
+    internal Task<PublishReceipt> PublishAsync<T>(
         MessageLane lane,
         T? content,
         MessageOptions? options,
         IUnitOfWork? unitOfWork,
         bool requireCoordination,
+        CancellationToken cancellationToken
+    )
+    {
+        return _PublishAsync(lane, content, options, unitOfWork, requireCoordination, request: null, cancellationToken);
+    }
+
+    /// <summary>
+    /// Sends a request on the Queue lane through the normal Queue publish middleware. It is always sent directly, so the
+    /// call's options, the contract's delivery policy, and the host default cannot route it through the outbox. The
+    /// request's protocol headers and message id are stamped by the factory from <paramref name="request"/>, after
+    /// middleware ran, and <see cref="RequestStamp.OnPrepared"/> receives the final envelope's tenant before the
+    /// transport send.
+    /// </summary>
+    /// <returns>
+    /// The receipt of the sent request, or an empty receipt when publish middleware suppressed it.
+    /// </returns>
+    internal Task<PublishReceipt> PublishRequestAsync<T>(
+        T content,
+        QueueOptions options,
+        RequestStamp request,
+        CancellationToken cancellationToken
+    )
+    {
+        return _PublishAsync(
+            MessageLane.Queue,
+            content,
+            options,
+            unitOfWork: null,
+            requireCoordination: false,
+            request,
+            cancellationToken
+        );
+    }
+
+    private async Task<PublishReceipt> _PublishAsync<T>(
+        MessageLane lane,
+        T? content,
+        MessageOptions? options,
+        IUnitOfWork? unitOfWork,
+        bool requireCoordination,
+        RequestStamp? request,
         CancellationToken cancellationToken
     )
     {
@@ -58,8 +100,11 @@ internal sealed class MessagePublisher(
         // Otherwise precedence is per call, then the policy registered for the declared type on this lane, then
         // the host default. The declared type (not the runtime content type) is the key so a callback response
         // that names its MessageType resolves the same policy the registration declared.
-        var requestedMode = requireCoordination
-            ? DeliveryMode.Durable
+        // A request is always Direct: a durable request adds outbox latency and can run the command after its caller
+        // has stopped waiting.
+        var requestedMode =
+            request is not null ? DeliveryMode.Direct
+            : requireCoordination ? DeliveryMode.Durable
             : MessageOptionsDelivery.GetDeliveryMode(options)
                 ?? (
                     _deliveryPolicies.TryGetValue((declaredMessageType, lane), out var typePolicy)
@@ -100,26 +145,40 @@ internal sealed class MessagePublisher(
                 decision,
                 innerPublish: async (middlewareOptions, ct) =>
                 {
-                    var request = decision.PublishAt is { } publishAt
-                        ? publishRequestFactory.Create(
-                            content,
-                            declaredMessageType,
-                            middlewareOptions,
-                            // An absolute schedule has no relative delay.
-                            decision.Delay,
-                            publishAt,
-                            lane
-                        )
+                    var prepared =
+                        request is not null
+                            ? publishRequestFactory.CreateRequest(
+                                content,
+                                declaredMessageType,
+                                middlewareOptions,
+                                request
+                            )
+                        : decision.PublishAt is { } publishAt
+                            ? publishRequestFactory.Create(
+                                content,
+                                declaredMessageType,
+                                middlewareOptions,
+                                // An absolute schedule has no relative delay.
+                                decision.Delay,
+                                publishAt,
+                                lane
+                            )
                         : publishRequestFactory.Create(content, declaredMessageType, middlewareOptions, lane: lane);
 
                     if (decision.Path is DeliveryPath.Direct)
                     {
-                        DeliveryMetadata.Stamp(request.Message.Headers, decision);
+                        DeliveryMetadata.Stamp(prepared.Message.Headers, decision);
+                        if (request is not null)
+                        {
+                            prepared.Message.Headers.TryGetValue(Headers.TenantId, out var tenantId);
+                            request.OnPrepared(tenantId);
+                        }
+
                         var transport = transportResolver(lane);
                         await DirectPublisherCore
                             .SendAsync(
-                                request.Message,
-                                request.Lane,
+                                prepared.Message,
+                                prepared.Lane,
                                 serializer,
                                 transport.BrokerAddress,
                                 transport.SendAsync,
@@ -130,7 +189,7 @@ internal sealed class MessagePublisher(
                                 ct
                             )
                             .ConfigureAwait(false);
-                        receipt = new PublishReceipt(request.Message.Headers[Headers.MessageId], StorageId: null);
+                        receipt = new PublishReceipt(prepared.Message.Headers[Headers.MessageId], StorageId: null);
                         return;
                     }
 
@@ -157,8 +216,8 @@ internal sealed class MessagePublisher(
                         decision.Coordination.UnitOfWork.PreventRetry();
                     }
 
-                    var storageId = await writer.WriteAsync(request, decision, ct).ConfigureAwait(false);
-                    receipt = new PublishReceipt(request.Message.Headers[Headers.MessageId], storageId);
+                    var storageId = await writer.WriteAsync(prepared, decision, ct).ConfigureAwait(false);
+                    receipt = new PublishReceipt(prepared.Message.Headers[Headers.MessageId], storageId);
                 },
                 cancellationToken
             )

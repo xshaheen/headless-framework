@@ -8,6 +8,7 @@ using Headless.Messaging.Diagnostics;
 using Headless.Messaging.Exceptions;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
+using Headless.Messaging.RequestReply;
 using Headless.Messaging.Retry;
 using Headless.Messaging.Runtime;
 using Headless.Messaging.Serialization;
@@ -65,6 +66,8 @@ internal sealed partial class ConsumerRegister(
 
     private readonly IMiddlewareDescriptorRegistry? _middlewareDescriptorRegistry =
         serviceProvider.GetService<IMiddlewareDescriptorRegistry>();
+
+    private ResponderReplies? _responderReplies;
 
     private IConsumerClientFactory _consumerClientFactory = null!;
 #pragma warning disable CA2213 // Disposed through the remaining-budget DisposeAsync(TimeSpan) overload.

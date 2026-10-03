@@ -51,12 +51,13 @@ internal static class ConsumerParser
         var attributeLocation = attribute.ApplicationSyntaxReference is { } syntaxReference
             ? syntaxReference.SyntaxTree.GetLocation(syntaxReference.Span)
             : classIdentifier.GetLocation();
-        var typeName = classSymbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        var typeName = _Name(classSymbol);
 
         ConsumerValidator.ValidateClass(classSymbol, classIdentifier, diagnostics);
 
         var messageTypes = _ResolveMessageTypes(compilation, classSymbol);
-        if (messageTypes.Count == 0)
+        var responders = _ResolveResponders(compilation, classSymbol);
+        if (messageTypes.Count == 0 && responders.Count == 0)
         {
             diagnostics.Add(
                 DiagnosticInfo.Create(
@@ -67,7 +68,12 @@ internal static class ConsumerParser
             );
         }
 
-        foreach (var messageType in messageTypes.Where(type => !GeneratedCodeAccessibility.IsAccessible(type)))
+        _ValidateResponders(lane, classSymbol, messageTypes, responders, attributeLocation, diagnostics);
+
+        var handledTypes = messageTypes
+            .Concat(responders.SelectMany(responder => new[] { responder.Request, responder.Response }))
+            .Distinct<ITypeSymbol>(SymbolEqualityComparer.Default);
+        foreach (var messageType in handledTypes.Where(type => !GeneratedCodeAccessibility.IsAccessible(type)))
         {
             diagnostics.Add(
                 DiagnosticInfo.Create(
@@ -123,10 +129,12 @@ internal static class ConsumerParser
             );
         }
 
-        var messageTypeNames = messageTypes
-            .Select(type => type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat))
-            .Distinct(StringComparer.Ordinal)
-            .OrderBy(name => name, StringComparer.Ordinal)
+        var messageTypeNames = _SortedNames(messageTypes);
+        var responderModels = responders
+            .Select(responder => new ResponderModel(_Name(responder.Request), _Name(responder.Response)))
+            .Distinct()
+            .OrderBy(responder => responder.RequestTypeName, StringComparer.Ordinal)
+            .ThenBy(responder => responder.ResponseTypeName, StringComparer.Ordinal)
             .ToEquatableArray();
 
         var consumer = diagnostics.Exists(diagnostic =>
@@ -140,6 +148,7 @@ internal static class ConsumerParser
                 values.Identity!,
                 everyInstance,
                 messageTypeNames,
+                responderModels,
                 HandlerSymbols.GetDisposal(compilation, classSymbol),
                 HandlerSymbols.Implements(
                     compilation,
@@ -155,7 +164,7 @@ internal static class ConsumerParser
             lane,
             typeName,
             values.Identity,
-            messageTypeNames,
+            _SortedNames(messageTypes.Concat(responders.Select(responder => responder.Request))),
             LocationInfo.From(attributeLocation),
             diagnostics.ToEquatableArray()
         );
@@ -164,19 +173,132 @@ internal static class ConsumerParser
     /// <summary>The <c>T</c> of every <c>IConsume&lt;T&gt;</c> the class implements, directly or through a base type.</summary>
     private static List<ITypeSymbol> _ResolveMessageTypes(Compilation compilation, INamedTypeSymbol classSymbol)
     {
-        var consume = compilation.GetTypeByMetadataName(SourceGeneratorConstants.ConsumeInterfaceMetadataName);
-        if (consume is null)
+        return
+        [
+            .. _ImplementedInterfaces(compilation, classSymbol, SourceGeneratorConstants.ConsumeInterfaceMetadataName)
+                .Select(type => type.TypeArguments[0]),
+        ];
+    }
+
+    /// <summary>
+    /// The request and response of every <c>IRespond&lt;TRequest, TResponse&gt;</c> the class implements, directly or through
+    /// a base type.
+    /// </summary>
+    private static List<(ITypeSymbol Request, ITypeSymbol Response)> _ResolveResponders(
+        Compilation compilation,
+        INamedTypeSymbol classSymbol
+    )
+    {
+        return
+        [
+            .. _ImplementedInterfaces(compilation, classSymbol, SourceGeneratorConstants.RespondInterfaceMetadataName)
+                .Select(type => (type.TypeArguments[0], type.TypeArguments[1])),
+        ];
+    }
+
+    /// <summary>
+    /// Every construction of the generic interface <paramref name="metadataName"/> the class implements, directly or
+    /// through a base type; none when the compilation does not reference the interface.
+    /// </summary>
+    private static IEnumerable<INamedTypeSymbol> _ImplementedInterfaces(
+        Compilation compilation,
+        INamedTypeSymbol classSymbol,
+        string metadataName
+    )
+    {
+        var definition = compilation.GetTypeByMetadataName(metadataName);
+        if (definition is null)
         {
             return [];
         }
 
-        return
-        [
-            .. classSymbol
-                .AllInterfaces.Where(type => SymbolEqualityComparer.Default.Equals(type.OriginalDefinition, consume))
-                .Select(type => type.TypeArguments[0]),
-        ];
+        return classSymbol.AllInterfaces.Where(type =>
+            SymbolEqualityComparer.Default.Equals(type.OriginalDefinition, definition)
+        );
     }
+
+    /// <summary>
+    /// The per-class responder rules: a responder answers one caller, so it is a Queue consumer; a message reaches a class
+    /// either as a consumed message or as a request, never both; and a request has one response type.
+    /// </summary>
+    private static void _ValidateResponders(
+        ConsumerLane lane,
+        INamedTypeSymbol classSymbol,
+        List<ITypeSymbol> messageTypes,
+        List<(ITypeSymbol Request, ITypeSymbol Response)> responders,
+        Location attributeLocation,
+        List<DiagnosticInfo> diagnostics
+    )
+    {
+        if (responders.Count == 0)
+        {
+            return;
+        }
+
+        if (lane == ConsumerLane.Bus)
+        {
+            diagnostics.Add(
+                DiagnosticInfo.Create(DiagnosticDescriptors.ResponderOnBusLane, attributeLocation, classSymbol.Name)
+            );
+        }
+
+        var consumed = new HashSet<string>(messageTypes.Select(_Name), StringComparer.Ordinal);
+        foreach (
+            var request in responders
+                .Select(responder => _Name(responder.Request))
+                .Distinct(StringComparer.Ordinal)
+                .Where(consumed.Contains)
+                .OrderBy(name => name, StringComparer.Ordinal)
+        )
+        {
+            diagnostics.Add(
+                DiagnosticInfo.Create(
+                    DiagnosticDescriptors.ConsumerAndResponderForOneMessage,
+                    attributeLocation,
+                    classSymbol.Name,
+                    _DisplayName(request)
+                )
+            );
+        }
+
+        foreach (
+            var group in responders
+                .GroupBy(responder => _Name(responder.Request), StringComparer.Ordinal)
+                .OrderBy(group => group.Key, StringComparer.Ordinal)
+        )
+        {
+            var responses = group
+                .Select(responder => _Name(responder.Response))
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(name => name, StringComparer.Ordinal)
+                .Select(_DisplayName)
+                .ToList();
+            if (responses.Count > 1)
+            {
+                diagnostics.Add(
+                    DiagnosticInfo.Create(
+                        DiagnosticDescriptors.MultipleResponseTypes,
+                        attributeLocation,
+                        classSymbol.Name,
+                        _DisplayName(group.Key),
+                        string.Join(", ", responses)
+                    )
+                );
+            }
+        }
+    }
+
+    private static string _Name(ITypeSymbol type) => type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+
+    private static string _DisplayName(string fullyQualifiedName) =>
+        fullyQualifiedName.Replace("global::", string.Empty);
+
+    private static EquatableArray<string> _SortedNames(IEnumerable<ITypeSymbol> types) =>
+        types
+            .Select(_Name)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToEquatableArray();
 
     /// <summary>The values of one consumer attribute application, read without interpreting them.</summary>
     /// <remarks>

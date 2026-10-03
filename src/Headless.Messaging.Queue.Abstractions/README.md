@@ -1,10 +1,10 @@
 # Headless.Messaging.Queue.Abstractions
 
-Point-to-point publisher contracts for Headless Messaging.
+Point-to-point publisher and request client contracts for Headless Messaging.
 
 ## Why use this package
 
-Gives application code a compile-time queue surface for work-queue delivery where exactly one competing worker handles each message.
+Gives application code a compile-time queue surface for work-queue delivery where exactly one competing worker handles each message, and a typed client that sends a request on that lane and awaits one reply.
 
 ## Install
 

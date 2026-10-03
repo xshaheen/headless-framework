@@ -27,6 +27,11 @@ public enum TransportConformanceScenario
     SameNameLaneIsolation,
     StartupRejectionBeforeSideEffects,
     MalformedEnvelopeTerminalSettlement,
+    RequestReplyRoundTrip,
+    RequestReplyCallerIsolation,
+    RequestReplyForeignAddressRefusal,
+    RequestReplyCallerCleanup,
+    RequestReplyStartupRejection,
 }
 
 /// <summary>
@@ -184,6 +189,18 @@ public sealed record TransportConformanceProfile(
         return this with { Scenarios = scenarios.ToFrozenDictionary() };
     }
 
+    /// <summary>
+    /// Sets every request/reply cell a provider that declares the capability proves by running the shared suite; the
+    /// startup rejection cell is the opposite case and is set on its own.
+    /// </summary>
+    public TransportConformanceProfile WithRequestReplyScenarios(ConformanceSupport support)
+    {
+        return WithScenario(TransportConformanceScenario.RequestReplyRoundTrip, support)
+            .WithScenario(TransportConformanceScenario.RequestReplyCallerIsolation, support)
+            .WithScenario(TransportConformanceScenario.RequestReplyForeignAddressRefusal, support)
+            .WithScenario(TransportConformanceScenario.RequestReplyCallerCleanup, support);
+    }
+
     public TransportConformanceProfile WithMalformedEnvelopeBound(
         string terminalInvariant,
         int maximumDeliveryCount,
@@ -206,6 +223,8 @@ public sealed record TransportConformanceProfile(
 [PublicAPI]
 public static class TransportConformanceManifest
 {
+    private const string _RequestReplyIssueUrl = "https://github.com/xshaheen/headless-framework/issues/222";
+
     private static readonly TransportConformanceScenario[] _MandatoryBaselineScenarios =
     [
         TransportConformanceScenario.RoutingAffinityMappingOrRejection,
@@ -247,6 +266,11 @@ public static class TransportConformanceManifest
                     TransportConformanceScenario.MalformedEnvelopeTerminalSettlement,
                     ConformanceSupport.Supported
                 )
+                .WithRequestReplyScenarios(ConformanceSupport.Supported)
+                .WithScenario(
+                    TransportConformanceScenario.RequestReplyStartupRejection,
+                    ConformanceSupport.NotApplicable("NATS supports request/reply, so startup accepts it.")
+                )
                 .EnableRealBrokerLeaf(),
             ["RabbitMQ"] = TransportConformanceProfile
                 .CreateDisabled("RabbitMQ")
@@ -276,6 +300,11 @@ public static class TransportConformanceManifest
                 .WithScenario(
                     TransportConformanceScenario.MalformedEnvelopeTerminalSettlement,
                     ConformanceSupport.Supported
+                )
+                .WithRequestReplyScenarios(ConformanceSupport.Supported)
+                .WithScenario(
+                    TransportConformanceScenario.RequestReplyStartupRejection,
+                    ConformanceSupport.NotApplicable("RabbitMQ supports request/reply, so startup accepts it.")
                 )
                 .EnableRealBrokerLeaf(),
             ["AWS/LocalStack"] = TransportConformanceProfile
@@ -310,6 +339,11 @@ public static class TransportConformanceManifest
                 .WithScenario(
                     TransportConformanceScenario.MalformedEnvelopeTerminalSettlement,
                     ConformanceSupport.Supported
+                )
+                .WithRequestReplyScenarios(
+                    ConformanceSupport.NotApplicable(
+                        "Amazon SQS has no .NET temporary-queue client and bills per-process queue churn, so the provider rejects request/reply at startup."
+                    )
                 )
                 .EnableRealBrokerLeaf(),
             ["Kafka"] = TransportConformanceProfile
@@ -364,6 +398,11 @@ public static class TransportConformanceManifest
                 .WithScenario(TransportConformanceScenario.RejectRedelivery, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.ConsumerPauseRecovery, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.BoundedGracefulShutdown, ConformanceSupport.Supported)
+                .WithRequestReplyScenarios(
+                    ConformanceSupport.NotApplicable(
+                        "Kafka cannot address one process short of a partition per instance, so the provider rejects request/reply at startup."
+                    )
+                )
                 .EnableRealBrokerLeaf(),
             ["Pulsar"] = TransportConformanceProfile
                 .CreateDisabled("Pulsar")
@@ -393,6 +432,12 @@ public static class TransportConformanceManifest
                     TransportConformanceScenario.MalformedEnvelopeTerminalSettlement,
                     ConformanceSupport.Supported
                 )
+                .WithRequestReplyScenarios(
+                    ConformanceSupport.Unsupported(
+                        "The Pulsar reply channel is not built yet, so the provider rejects request/reply at startup.",
+                        _RequestReplyIssueUrl
+                    )
+                )
                 .EnableRealBrokerLeaf(),
             ["Azure Service Bus"] = TransportConformanceProfile
                 .CreateDisabled("Azure Service Bus")
@@ -418,6 +463,12 @@ public static class TransportConformanceManifest
                 .WithScenario(TransportConformanceScenario.BusReplicaCompetition, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.QueueOwnership, ConformanceSupport.Supported)
                 .WithScenario(TransportConformanceScenario.SameNameLaneIsolation, ConformanceSupport.Supported)
+                .WithRequestReplyScenarios(
+                    ConformanceSupport.Unsupported(
+                        "The Azure Service Bus reply channel is not built yet, so the provider rejects request/reply at startup.",
+                        _RequestReplyIssueUrl
+                    )
+                )
                 .EnableRealBrokerLeaf(),
             ["InMemory"] = TransportConformanceProfile
                 .CreateDisabled("InMemory")
@@ -448,6 +499,11 @@ public static class TransportConformanceManifest
                     ConformanceSupport.NotApplicable(
                         "InMemory transports TransportMessage instances directly and has no transport envelope to parse."
                     )
+                )
+                .WithRequestReplyScenarios(ConformanceSupport.Supported)
+                .WithScenario(
+                    TransportConformanceScenario.RequestReplyStartupRejection,
+                    ConformanceSupport.NotApplicable("InMemory supports request/reply, so startup accepts it.")
                 ),
             ["Redis"] = TransportConformanceProfile
                 .CreateDisabled("Redis")
@@ -476,6 +532,11 @@ public static class TransportConformanceManifest
                 .WithScenario(
                     TransportConformanceScenario.MalformedEnvelopeTerminalSettlement,
                     ConformanceSupport.Supported
+                )
+                .WithRequestReplyScenarios(ConformanceSupport.Supported)
+                .WithScenario(
+                    TransportConformanceScenario.RequestReplyStartupRejection,
+                    ConformanceSupport.NotApplicable("Redis supports request/reply, so startup accepts it.")
                 )
                 .EnableRealBrokerLeaf(),
         }.ToFrozenDictionary(StringComparer.Ordinal);

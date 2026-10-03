@@ -85,6 +85,55 @@ public sealed class NatsFixture : HeadlessNatsFixture
         }
     }
 
+    /// <summary>
+    /// Creates the stream an operator would provision for hosts that run with stream provisioning disabled: it captures
+    /// every Queue subject under <see cref="OperatorMessageNamePrefix"/>, and keeps acknowledged messages, so a test can
+    /// see what was published to it.
+    /// </summary>
+    public Task EnsureOperatorStreamAsync()
+    {
+        return EnsureStreamAsync(
+            NatsPhysicalAddress.Stream(MessageLane.Queue, OperatorStreamKey),
+            NatsPhysicalAddress.Subject(MessageLane.Queue, $"{OperatorMessageNamePrefix}.>"),
+            StreamConfigRetention.Limits
+        );
+    }
+
+    /// <summary>The logical stream name hosts without stream provisioning map every message name to.</summary>
+    public const string OperatorStreamKey = "operator-rr";
+
+    /// <summary>The message name prefix that puts a host's subjects under the operator stream.</summary>
+    public const string OperatorMessageNamePrefix = "operator";
+
+    /// <summary>
+    /// Returns, per stream on the server, the subjects matching <paramref name="subjectFilter"/> that the stream still
+    /// stores, omitting streams that store none.
+    /// </summary>
+    public async Task<IReadOnlyDictionary<string, IReadOnlyCollection<string>>> ListStoredSubjectsAsync(
+        string subjectFilter,
+        CancellationToken cancellationToken
+    )
+    {
+        var js = new NatsJSContext(await GetConnectionAsync());
+        var stored = new Dictionary<string, IReadOnlyCollection<string>>(StringComparer.Ordinal);
+
+        await foreach (var stream in js.ListStreamsAsync(cancellationToken: cancellationToken))
+        {
+            var info = await js.GetStreamAsync(
+                stream.Info.Config.Name!,
+                new StreamInfoRequest { SubjectsFilter = subjectFilter },
+                cancellationToken
+            );
+
+            if (info.Info.State.Subjects is { Count: > 0 } subjects)
+            {
+                stored[stream.Info.Config.Name!] = [.. subjects.Keys];
+            }
+        }
+
+        return stored;
+    }
+
     public async Task<NatsConnection> GetConnectionAsync()
     {
         if (_connection is not null)

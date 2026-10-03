@@ -19,6 +19,37 @@ internal static class RedisMessage
         ];
     }
 
+    /// <summary>
+    /// Encodes a reply as one pub/sub payload: a JSON object holding the headers and the body, which a stream entry
+    /// would hold as two fields.
+    /// </summary>
+    public static byte[] AsReplyPayload(this TransportMessage reply)
+    {
+        return JsonSerializer.SerializeToUtf8Bytes(
+            new RedisReplyPayload(reply.Headers, reply.Body.ToArray()),
+            _JsonOptions
+        );
+    }
+
+    /// <summary>Decodes a payload written by <see cref="AsReplyPayload"/>.</summary>
+    /// <exception cref="JsonException">The payload is not a reply payload.</exception>
+    public static TransportMessage CreateReply(ReadOnlySpan<byte> payload)
+    {
+        var decoded =
+            JsonSerializer.Deserialize<RedisReplyPayload>(payload, _JsonOptions)
+            ?? throw new JsonException("The Redis reply payload is null.");
+
+        if (decoded.Headers is null)
+        {
+            throw new JsonException("The Redis reply payload has no headers.");
+        }
+
+        return new TransportMessage(
+            new Dictionary<string, string?>(decoded.Headers, StringComparer.Ordinal),
+            decoded.Body
+        );
+    }
+
     public static TransportMessage Create(StreamEntry streamEntry)
     {
         Dictionary<string, string?> headers;
@@ -93,3 +124,5 @@ internal static class RedisMessage
         return JsonSerializer.Serialize(obj, _JsonOptions);
     }
 }
+
+internal sealed record RedisReplyPayload(IDictionary<string, string?>? Headers, byte[]? Body);

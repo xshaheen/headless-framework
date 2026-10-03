@@ -21,6 +21,9 @@ namespace Headless.Messaging;
 /// Redis Streams provide durable, at-least-once Bus and Queue delivery. Lane-qualified stream keys
 /// isolate the same logical contract name, while Bus subscriber groups and Queue replicas use Redis
 /// consumer groups for fan-out and competition.
+/// <para/>
+/// Request/reply is supported on Redis pub/sub: a requesting process receives replies on a literal channel of its own
+/// under the reserved <c>headless.reply.</c> prefix, and a reply creates no key.
 /// </remarks>
 public static class SetupRedisMessaging
 {
@@ -127,7 +130,8 @@ public static class SetupRedisMessaging
                     "Redis",
                     [MessageLane.Bus, MessageLane.Queue],
                     supportsIndependentLaneTopology: true,
-                    supportsEveryInstance: true
+                    supportsEveryInstance: true,
+                    supportsRequestReply: true
                 )
             );
             services.AddSingleton<IRedisStreamManager, RedisStreamManager>();
@@ -135,6 +139,7 @@ public static class SetupRedisMessaging
             services.AddSingleton<RedisBusTransport>();
             services.AddSingleton<IBusTransport>(sp => sp.GetRequiredService<RedisBusTransport>());
             services.AddSingleton<IQueueTransport, RedisTransport>();
+            services.AddSingleton<IReplyTransport, RedisReplyTransport>();
             services.AddSingleton<IRedisConnectionPool, RedisConnectionPool>();
             services.TryAddEnumerable(
                 ServiceDescriptor.Singleton<

@@ -19,8 +19,8 @@ public sealed class ConsumerExecutorDescriptor
     public required Type ConsumerType { get; init; }
 
     /// <summary>
-    /// The method that handles the message, for diagnostics: <c>ConsumeAsync</c> for an attribute-declared consumer, the
-    /// delegate's method for a runtime subscription.
+    /// The method that handles the message, for diagnostics: <c>ConsumeAsync</c> for an attribute-declared consumer,
+    /// <c>RespondAsync</c> for a responder, the delegate's method for a runtime subscription.
     /// </summary>
     public string MethodName { get; init; } = nameof(IConsume<>.ConsumeAsync);
 
@@ -101,6 +101,15 @@ public sealed class ConsumerExecutorDescriptor
     /// the hook; <see langword="null"/> for any other consumer and for a runtime subscription.
     /// </summary>
     internal SubscriptionEstablishedDispatch? OnSubscriptionEstablished { get; init; }
+
+    /// <summary>
+    /// The response type of a consumer that implements <see cref="IRespond{TRequest, TResponse}"/>; <see langword="null"/>
+    /// for a consumer that does not answer requests and for a runtime subscription.
+    /// </summary>
+    internal Type? ResponseType { get; init; }
+
+    /// <summary>Whether this consumer answers requests, so its dispatch records a reply on the delivery's context.</summary>
+    internal bool IsResponder => ResponseType is not null;
 
     /// <summary>Consume middleware types that run for this consumer alone, resolved from the delivery's scope.</summary>
     internal IReadOnlyList<Type> Middleware { get; init; } = [];

@@ -81,6 +81,36 @@ public sealed class ConsumerDeclarationTests : TestBase
             ]);
     }
 
+    [Fact]
+    public void should_declare_a_responder_on_the_queue_lane_with_its_response_type()
+    {
+        // given
+        var catalog = new MessagingCatalogBuilder();
+
+        // when
+        catalog.AddQueueResponder<GetQuoteResponder, GetQuote, Quote>("pricing.get-quote", _NoDispatch);
+
+        // then
+        var declaration = catalog.Consumers.Should().ContainSingle().Subject;
+        declaration.ConsumerType.Should().Be<GetQuoteResponder>();
+        declaration.MessageType.Should().Be<GetQuote>();
+        declaration.ResponseType.Should().Be<Quote>();
+        declaration.Lane.Should().Be(MessageLane.Queue);
+        declaration.Identity.Should().Be("pricing.get-quote");
+        declaration.EveryInstance.Should().BeFalse();
+        declaration.OnSubscriptionEstablished.Should().BeNull();
+    }
+
+    [Fact]
+    public void should_reject_a_responder_without_a_dispatch()
+    {
+        var catalog = new MessagingCatalogBuilder();
+
+        var add = () => catalog.AddQueueResponder<GetQuoteResponder, GetQuote, Quote>("pricing.get-quote", null!);
+
+        add.Should().Throw<ArgumentNullException>();
+    }
+
     [Theory]
     [InlineData(" ")]
     [InlineData("")]
@@ -143,6 +173,16 @@ public sealed class ConsumerDeclarationTests : TestBase
     {
         public ValueTask ConsumeAsync(ConsumeContext<IssueInvoice> context, CancellationToken cancellationToken) =>
             ValueTask.CompletedTask;
+    }
+
+    public sealed record GetQuote(string Sku);
+
+    public sealed record Quote(decimal Price);
+
+    public sealed class GetQuoteResponder : IRespond<GetQuote, Quote>
+    {
+        public ValueTask<Quote> RespondAsync(ConsumeContext<GetQuote> context, CancellationToken cancellationToken) =>
+            ValueTask.FromResult(new Quote(1m));
     }
 
     // Stands in for the module the source generator emits per assembly.

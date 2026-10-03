@@ -312,6 +312,13 @@ public sealed class MessagingOptions
     public RetryProcessorOptions RetryProcessor { get; } = new();
 
     /// <summary>
+    /// Gets the request/reply configuration: the default request timeout and whether fault replies carry exception
+    /// details. It takes effect once the host enables requests with <see cref="MessagingSetupBuilder.AddRequestReply"/>
+    /// or declares a responder.
+    /// </summary>
+    public RequestReplyOptions RequestReply { get; } = new();
+
+    /// <summary>
     /// The failure policy of a competing consumer that neither declares one nor has one tuned: 2 immediate retries, then
     /// 5 delayed retries from 30 seconds capped at 15 minutes, and no fail rules.
     /// </summary>
@@ -370,6 +377,7 @@ public sealed class MessagingOptions
         RetryPolicy.CopyTo(target.RetryPolicy);
         CircuitBreaker.CopyTo(target.CircuitBreaker);
         RetryProcessor.CopyTo(target.RetryProcessor);
+        RequestReply.CopyTo(target.RequestReply);
     }
 
     /// <summary>
@@ -491,6 +499,7 @@ internal sealed class MessagingOptionsValidator : AbstractValidator<MessagingOpt
             .NotNull()
             .WithMessage("RetryPolicy must not be null.")
             .SetValidator(new RetryPolicyOptionsValidator());
+        RuleFor(x => x.RequestReply).SetValidator(new RequestReplyOptionsValidator());
         RuleFor(x => x.TransportPublishTimeout)
             .GreaterThan(TimeSpan.Zero)
             .WithMessage("TransportPublishTimeout must be greater than zero.")

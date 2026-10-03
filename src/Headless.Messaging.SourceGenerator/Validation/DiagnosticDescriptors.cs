@@ -145,6 +145,54 @@ internal static class DiagnosticDescriptors
         customTags: _CustomTags
     );
 
+    public static readonly DiagnosticDescriptor ResponderOnBusLane = new(
+        "HM011",
+        _Resource("ResponderOnBusLaneTitle"),
+        _Resource("ResponderOnBusLaneMessage"),
+        _Category,
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: _Resource("ResponderOnBusLaneMessage"),
+        helpLinkUri: _HelpLinkBase + "hm011",
+        customTags: _CustomTags
+    );
+
+    public static readonly DiagnosticDescriptor ConsumerAndResponderForOneMessage = new(
+        "HM012",
+        _Resource("ConsumerAndResponderForOneMessageTitle"),
+        _Resource("ConsumerAndResponderForOneMessageMessage"),
+        _Category,
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: _Resource("ConsumerAndResponderForOneMessageMessage"),
+        helpLinkUri: _HelpLinkBase + "hm012",
+        customTags: _CustomTags
+    );
+
+    public static readonly DiagnosticDescriptor MultipleResponseTypes = new(
+        "HM013",
+        _Resource("MultipleResponseTypesTitle"),
+        _Resource("MultipleResponseTypesMessage"),
+        _Category,
+        DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: _Resource("MultipleResponseTypesMessage"),
+        helpLinkUri: _HelpLinkBase + "hm013",
+        customTags: _CustomTags
+    );
+
+    public static readonly DiagnosticDescriptor ResponseTypeMismatch = new(
+        "HM014",
+        _Resource("ResponseTypeMismatchTitle"),
+        _Resource("ResponseTypeMismatchMessage"),
+        _Category,
+        DiagnosticSeverity.Warning,
+        isEnabledByDefault: true,
+        description: _Resource("ResponseTypeMismatchMessage"),
+        helpLinkUri: _HelpLinkBase + "hm014",
+        customTags: _CustomTags
+    );
+
     private static LocalizableResourceString _Resource(string resourceName) =>
         new(resourceName, _Resources, typeof(DiagnosticDescriptors));
 }

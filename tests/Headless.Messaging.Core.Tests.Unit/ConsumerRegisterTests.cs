@@ -1169,7 +1169,9 @@ public sealed class ConsumerRegisterTests : TestBase
         Action<MessagingOptions>? configureOptions = null,
         Func<FailedInfo, CancellationToken, Task>? onExhausted = null,
         ICircuitBreakerStateManager? circuitBreaker = null,
-        IReadOnlyDictionary<string, string?>? publisherHeaders = null
+        IReadOnlyDictionary<string, string?>? publisherHeaders = null,
+        Action<IServiceCollection>? configureServices = null,
+        MessageLane lane = MessageLane.Bus
     )
     {
         await using var client = new InboxConsumerClient();
@@ -1200,6 +1202,11 @@ public sealed class ConsumerRegisterTests : TestBase
             setup.UseInMemory();
             setup.UseProcessLocalInMemoryStorage();
             setup.AddConsumer<BootstrapReadyConsumer>();
+            if (lane is MessageLane.Queue)
+            {
+                setup.AddConsumer<PlainQueueConsumer>();
+            }
+
             configureOptions?.Invoke(setup.Options);
             if (onExhausted is not null)
             {
@@ -1227,10 +1234,13 @@ public sealed class ConsumerRegisterTests : TestBase
 
         services.AddSingleton(dispatcher);
         services.AddSingleton<BootstrapReadyConsumer>();
+        services.AddSingleton<PlainQueueConsumer>();
         if (circuitBreaker is not null)
         {
             services.AddSingleton(circuitBreaker);
         }
+
+        configureServices?.Invoke(services);
 
         var provider = services.BuildServiceProvider();
         var register = (ConsumerRegister)provider.GetRequiredService<IConsumerRegister>();
@@ -1252,7 +1262,18 @@ public sealed class ConsumerRegisterTests : TestBase
             provider.GetRequiredService<Headless.Messaging.Persistence.IDataStorage>(),
             out var recorder
         );
-        _AttachInboxProcessor(provider, register, client, dispatcher, serializer, storage);
+        _AttachInboxProcessor(
+            provider,
+            register,
+            client,
+            dispatcher,
+            serializer,
+            storage,
+            // A Queue subscription is keyed by its message name, a Bus subscription by its consumer identity.
+            groupKey: lane is MessageLane.Queue
+                ? new ConsumerSubscriptionKey("ready-messageName", MessageLane.Queue)
+                : null
+        );
 
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
         {
@@ -1434,6 +1455,169 @@ public sealed class ConsumerRegisterTests : TestBase
                 Arg.Any<ConsumerExecutorDescriptor>(),
                 Arg.Any<CancellationToken>()
             );
+    }
+
+    [Fact]
+    public async Task receive_expired_request_commits_and_skips_before_admission()
+    {
+        // given — a request whose caller stopped waiting a second ago on the responder's clock
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 10, 2, 12, 0, 0, TimeSpan.Zero));
+        var replies = new Tests.RequestReply.RecordingReplyTransport();
+        var outcomes = new ConcurrentQueue<string>();
+        using var listener = _ListenToReceiveOutcomes(outcomes);
+        var exhaustedFired = false;
+
+        // when
+        await using var run = await _RunReceiveDeliveryAsync(
+            null,
+            "receive-expired-request",
+            "{}"u8.ToArray(),
+            onExhausted: (_, _) =>
+            {
+                exhaustedFired = true;
+                return Task.CompletedTask;
+            },
+            publisherHeaders: _RequestHeaders(clock.GetUtcNow().AddSeconds(-1)),
+            configureServices: services =>
+            {
+                services.AddSingleton<TimeProvider>(clock);
+                services.AddSingleton<IReplyTransport>(replies);
+            },
+            lane: MessageLane.Queue
+        );
+
+        // then — settled and dropped: no inbox row, no poison row, no handler, no callback, no reply
+        run.Client.CommitCount.Should().Be(1);
+        run.Client.RejectCount.Should().Be(0);
+        run.Storage.Admissions.Should().BeEmpty();
+        run.Storage.ReceivedExceptionRows.Should().BeEmpty();
+        await run
+            .Dispatcher.DidNotReceive()
+            .EnqueueToExecute(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<ConsumerExecutorDescriptor>(),
+                Arg.Any<CancellationToken>()
+            );
+        exhaustedFired.Should().BeFalse();
+        replies.Sent.Should().BeEmpty();
+        outcomes.Should().Contain("expired");
+    }
+
+    [Fact]
+    public async Task receive_request_for_a_plain_consumer_commits_skips_and_faults_with_no_responder()
+    {
+        // given — a live request reaches a consumer that implements IConsume<T>, not IRespond<T, TResponse>
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 10, 2, 12, 0, 0, TimeSpan.Zero));
+        var replies = new Tests.RequestReply.RecordingReplyTransport();
+        var headers = _RequestHeaders(clock.GetUtcNow().AddSeconds(30));
+        headers[Headers.TenantId] = "tenant-a";
+
+        // when
+        await using var run = await _RunReceiveDeliveryAsync(
+            null,
+            "receive-request-plain-consumer",
+            "{}"u8.ToArray(),
+            publisherHeaders: headers,
+            configureServices: services =>
+            {
+                services.AddSingleton<TimeProvider>(clock);
+                services.AddSingleton<IReplyTransport>(replies);
+            },
+            lane: MessageLane.Queue
+        );
+
+        // then — no work ran, and the caller learns so at once instead of timing out
+        run.Client.CommitCount.Should().Be(1);
+        run.Storage.Admissions.Should().BeEmpty();
+        run.Storage.ReceivedExceptionRows.Should().BeEmpty();
+        await run
+            .Dispatcher.DidNotReceive()
+            .EnqueueToExecute(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<ConsumerExecutorDescriptor>(),
+                Arg.Any<CancellationToken>()
+            );
+        var (address, reply) = replies.Sent.Should().ContainSingle().Subject;
+        address.Should().Be(headers[Headers.ReplyTo]);
+        reply.Headers[Headers.InReplyTo].Should().Be(headers[Headers.RequestId]);
+        reply.Headers[Headers.ReplyStatus].Should().Be("fault");
+        reply.Headers[Headers.TenantId].Should().Be("tenant-a");
+        reply.Headers[Headers.MessageId].Should().NotBeNullOrWhiteSpace();
+        System.Text.Encoding.UTF8.GetString(reply.Body.Span).Should().Be("""{"code":"no_responder"}""");
+    }
+
+    [Fact]
+    public async Task receive_bus_message_carrying_request_headers_runs_its_bus_consumer()
+    {
+        // given — a foreign Bus message that happens to carry the request headers, with a deadline already past
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 10, 2, 12, 0, 0, TimeSpan.Zero));
+        var replies = new Tests.RequestReply.RecordingReplyTransport();
+        var outcomes = new ConcurrentQueue<string>();
+        using var listener = _ListenToReceiveOutcomes(outcomes);
+
+        // when
+        await using var run = await _RunReceiveDeliveryAsync(
+            null,
+            "receive-bus-with-request-headers",
+            "{}"u8.ToArray(),
+            publisherHeaders: _RequestHeaders(clock.GetUtcNow().AddSeconds(-1)),
+            configureServices: services =>
+            {
+                services.AddSingleton<TimeProvider>(clock);
+                services.AddSingleton<IReplyTransport>(replies);
+            }
+        );
+
+        // then — requests live on the Queue lane only, so the Bus message is admitted and dispatched as usual
+        run.Client.CommitCount.Should().Be(1);
+        run.Storage.Admissions.Should().ContainSingle();
+        await run
+            .Dispatcher.Received(1)
+            .EnqueueToExecute(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<ConsumerExecutorDescriptor>(),
+                Arg.Any<CancellationToken>()
+            );
+        replies.Sent.Should().BeEmpty();
+        outcomes.Should().NotContain("expired").And.NotContain("skipped");
+    }
+
+    private static Dictionary<string, string?> _RequestHeaders(DateTimeOffset deadline)
+    {
+        return new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            [Headers.RequestId] = Guid.NewGuid().ToString("D"),
+            [Headers.ReplyTo] = "headless.reply.test-caller",
+            [Headers.RequestDeadline] = deadline.ToString("O", System.Globalization.CultureInfo.InvariantCulture),
+        };
+    }
+
+    private static System.Diagnostics.Metrics.MeterListener _ListenToReceiveOutcomes(ConcurrentQueue<string> outcomes)
+    {
+        var listener = new System.Diagnostics.Metrics.MeterListener
+        {
+            InstrumentPublished = (instrument, meterListener) =>
+            {
+                if (string.Equals(instrument.Name, "messaging.receive.outcomes", StringComparison.Ordinal))
+                {
+                    meterListener.EnableMeasurementEvents(instrument);
+                }
+            },
+        };
+        listener.SetMeasurementEventCallback<long>(
+            (_, _, tags, _) =>
+            {
+                foreach (var tag in tags)
+                {
+                    if (string.Equals(tag.Key, "messaging.receive.outcome", StringComparison.Ordinal))
+                    {
+                        outcomes.Enqueue((string)tag.Value!);
+                    }
+                }
+            }
+        );
+        listener.Start();
+        return listener;
     }
 
     [Fact]
@@ -1846,6 +2030,20 @@ public sealed class ConsumerRegisterTests : TestBase
     }
 
     private sealed record BootstrapReadyMessage;
+
+    [QueueConsumer(Identity)]
+    private sealed class PlainQueueConsumer : IConsume<BootstrapReadyMessage>
+    {
+        public const string Identity = "tests.consumer-register.queue";
+
+        public ValueTask ConsumeAsync(
+            ConsumeContext<BootstrapReadyMessage> context,
+            CancellationToken cancellationToken
+        )
+        {
+            return ValueTask.CompletedTask;
+        }
+    }
 
     private sealed class QueueOnlyConsumer : IConsume<QueueOnlyMessage>
     {

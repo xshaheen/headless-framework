@@ -106,6 +106,24 @@ internal sealed class NatsTransport(
         return headers;
     }
 
+    /// <summary>
+    /// Reads received NATS headers into transport headers, keeping the first value of a repeated header.
+    /// </summary>
+    internal static Dictionary<string, string?> ReadHeaders(NatsHeaders? natsHeaders)
+    {
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal);
+
+        if (natsHeaders is { Count: > 0 })
+        {
+            foreach (var (key, values) in natsHeaders)
+            {
+                headers[key] = values.Count > 0 ? values[0] : null;
+            }
+        }
+
+        return headers;
+    }
+
     internal static NatsJSPubOpts CreatePublishOpts(TransportMessage message)
     {
         return new NatsJSPubOpts { MsgId = message.Id };

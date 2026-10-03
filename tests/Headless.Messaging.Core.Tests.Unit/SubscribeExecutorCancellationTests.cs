@@ -7,7 +7,9 @@ using Headless.Messaging.Internal;
 using Headless.Messaging.Messages;
 using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
+using Headless.Messaging.RequestReply;
 using Headless.Messaging.Retry;
+using Headless.Reliability;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -43,10 +45,11 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
         };
     }
 
-    private static ConsumerExecutorDescriptor _CreateDescriptor()
+    private static ConsumerExecutorDescriptor _CreateDescriptor(FailurePolicyDefinition? failurePolicy = null)
     {
         return new ConsumerExecutorDescriptor
         {
+            FailurePolicy = failurePolicy ?? MessagingOptions.FrameworkDefaultFailurePolicy,
             Lane = MessageLane.Bus,
             ConsumerType = typeof(CancellationExecutorTestConsumer),
             MessageType = typeof(CancellationExecutorTestMessage),
@@ -238,6 +241,182 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
                 Arg.Any<RetryDelay?>(),
                 Arg.Any<DateTimeOffset?>(),
                 Arg.Any<int?>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_leave_the_row_untouched_when_the_requester_stops_while_the_consumer_awaits_a_request()
+    {
+        // given — a consumer awaiting its own request without passing a token, so only the requester stopping ends it
+        var storage = Substitute.For<IDataStorage>();
+        var circuitBreaker = Substitute.For<ICircuitBreakerStateManager>();
+        var pending = new PendingRequests();
+        var call = new PendingRequest(
+            "outbound-request",
+            typeof(string),
+            "outbound.response",
+            "1",
+            TimeSpan.FromMinutes(1),
+            TimeProvider.System
+        );
+        pending.TryRegister(call, TimeSpan.FromMinutes(1), CancellationToken.None).Should().BeTrue();
+
+        var awaiting = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var invoker = Substitute.For<ISubscribeInvoker>();
+        invoker
+            .InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>())
+            .Returns<Task<ConsumerExecutedResult>>(async _ =>
+            {
+                awaiting.TrySetResult();
+                await call.Outcome;
+                return new ConsumerExecutedResult(null, null, "message-id", null, null);
+            });
+
+        var callbackInvoked = false;
+        var executor = _CreateExecutor(
+            invoker,
+            storage,
+            _ExhaustingOptions(() => callbackInvoked = true),
+            circuitBreaker
+        );
+        using var dispatch = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        var execution = executor.ExecuteAsync(_CreateMediumMessage(), _EmptyScope, _CreateDescriptor(), dispatch.Token);
+        await awaiting.Task.WaitAsync(AbortToken);
+
+        // when — the host quiesces in bootstrapper order: the dispatcher cancels its token, then the reply listener
+        // fails every pending call before the cancellation callbacks have run
+        var dispatcherQuiesced = dispatch.CancelAsync();
+        pending.Close();
+        await dispatcherQuiesced;
+        await _CompleteAsShutdownAsync(execution);
+
+        // then — host shutdown, not a consumer failure: the row stays for redelivery
+        callbackInvoked.Should().BeFalse();
+        await _AssertNoStateWriteAsync(storage);
+        await circuitBreaker
+            .DidNotReceive()
+            .ReportFailureAsync(Arg.Any<string>(), Arg.Any<Exception>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_leave_the_row_untouched_when_a_request_is_refused_because_the_requester_is_stopping()
+    {
+        // given — the consumer's request is refused because the requester began to stop, during host shutdown
+        var storage = Substitute.For<IDataStorage>();
+        var circuitBreaker = Substitute.For<ICircuitBreakerStateManager>();
+        using var dispatch = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        var invoker = Substitute.For<ISubscribeInvoker>();
+        invoker
+            .InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>())
+            .Returns<Task<ConsumerExecutedResult>>(async _ =>
+            {
+                await dispatch.CancelAsync();
+                throw ReplyListenerHost.Stopping("outbound-request");
+            });
+
+        var callbackInvoked = false;
+        var executor = _CreateExecutor(
+            invoker,
+            storage,
+            _ExhaustingOptions(() => callbackInvoked = true),
+            circuitBreaker
+        );
+
+        // when
+        await _CompleteAsShutdownAsync(
+            executor.ExecuteAsync(_CreateMediumMessage(), _EmptyScope, _CreateDescriptor(), dispatch.Token)
+        );
+
+        // then
+        callbackInvoked.Should().BeFalse();
+        await _AssertNoStateWriteAsync(storage);
+        await circuitBreaker
+            .DidNotReceive()
+            .ReportFailureAsync(Arg.Any<string>(), Arg.Any<Exception>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_record_a_failure_when_a_request_is_not_sent_for_a_reason_other_than_the_requester_stopping()
+    {
+        // given — the host is stopping, but the request failed for its own reason
+        var storage = Substitute.For<IDataStorage>();
+        using var dispatch = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        var invoker = Substitute.For<ISubscribeInvoker>();
+        invoker
+            .InvokeAsync(Arg.Any<ConsumerContext>(), Arg.Any<CancellationToken>())
+            .Returns<Task<ConsumerExecutedResult>>(async _ =>
+            {
+                await dispatch.CancelAsync();
+                throw new RequestNotSentException("Publish middleware suppressed the request, so it was not sent.");
+            });
+
+        var executor = _CreateExecutor(invoker, storage, _ExhaustingOptions(() => { }));
+
+        // when
+        await _CompleteAsShutdownAsync(
+            executor.ExecuteAsync(
+                _CreateMediumMessage(),
+                _EmptyScope,
+                _CreateDescriptor(FailurePolicyDefinition.None),
+                dispatch.Token
+            )
+        );
+
+        // then
+        await storage
+            .Received()
+            .ChangeReceiveRetryStateAsync(
+                Arg.Any<MediumMessage>(),
+                StatusName.Failed,
+                Arg.Any<MessageContentWrite>(),
+                Arg.Any<RetryDelay?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<int>(),
+                Arg.Any<int>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    private static MessagingOptions _ExhaustingOptions(Action onExhausted)
+    {
+        return new MessagingOptions
+        {
+            RetryPolicy =
+            {
+                OnExhausted = (_, _) =>
+                {
+                    onExhausted();
+                    return Task.CompletedTask;
+                },
+            },
+        };
+    }
+
+    // A dispatch whose token the host canceled ends either with a failed result or with OperationCanceledException,
+    // and the dispatcher reads both as shutdown; what matters is what the attempt wrote and reported on the way out.
+    private static async Task _CompleteAsShutdownAsync(Task<OperateResult> execution)
+    {
+        try
+        {
+            var result = await execution.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+            result.Succeeded.Should().BeFalse();
+        }
+        catch (OperationCanceledException) when (!AbortToken.IsCancellationRequested) { }
+    }
+
+    private static async Task _AssertNoStateWriteAsync(IDataStorage storage)
+    {
+        await storage
+            .DidNotReceive()
+            .ChangeReceiveRetryStateAsync(
+                Arg.Any<MediumMessage>(),
+                Arg.Any<StatusName>(),
+                Arg.Any<MessageContentWrite>(),
+                Arg.Any<RetryDelay?>(),
+                Arg.Any<DateTimeOffset?>(),
+                Arg.Any<int>(),
+                Arg.Any<int>(),
                 Arg.Any<CancellationToken>()
             );
     }

@@ -57,6 +57,17 @@ public sealed record ConsumerMetadata(
     /// </summary>
     public bool EveryInstance { get; init; }
 
+    /// <summary>
+    /// The response type of a consumer that implements <see cref="IRespond{TRequest, TResponse}"/>, or
+    /// <see langword="null"/> for a consumer that does not respond to requests.
+    /// </summary>
+    internal Type? ResponseType { get; init; }
+
+    /// <summary>
+    /// Whether this consumer responds to requests. A host with a responder needs a transport with a reply channel.
+    /// </summary>
+    internal bool IsResponder => ResponseType is not null;
+
     /// <summary>The generated dispatch that runs the consumer class.</summary>
     internal MessageConsumerDispatch? Dispatch { get; init; }
 

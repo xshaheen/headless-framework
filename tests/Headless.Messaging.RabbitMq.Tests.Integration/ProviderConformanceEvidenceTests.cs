@@ -82,6 +82,26 @@ public sealed class ProviderConformanceEvidenceTests(RabbitMqFixture fixture) : 
                     RabbitMqConsumerClientConformanceTests.should_terminally_reject_malformed_envelope_across_consumer_restart
                 )
             ),
+            _BindRequestReply(
+                TransportConformanceScenario.RequestReplyRoundTrip,
+                nameof(RabbitMqRequestReplyConformanceTests.should_return_the_typed_response_of_a_request)
+            ),
+            _BindRequestReply(
+                TransportConformanceScenario.RequestReplyCallerIsolation,
+                nameof(RabbitMqRequestReplyConformanceTests.should_give_each_caller_only_its_own_replies)
+            ),
+            _BindRequestReply(
+                TransportConformanceScenario.RequestReplyCallerIsolation,
+                nameof(RabbitMqRequestReplyConformanceTests.should_never_deliver_a_reply_to_a_restarted_caller)
+            ),
+            _BindRequestReply(
+                TransportConformanceScenario.RequestReplyForeignAddressRefusal,
+                nameof(RabbitMqRequestReplyConformanceTests.should_never_write_a_reply_to_a_foreign_reply_address)
+            ),
+            _BindRequestReply(
+                TransportConformanceScenario.RequestReplyCallerCleanup,
+                nameof(RabbitMqRequestReplyConformanceTests.should_leave_no_reply_objects_after_the_caller_stops)
+            ),
         ];
 
         await TransportConformanceTestBindings.ExecuteSupportedScenariosAsync(profile, bindings, _CreateTestClass);
@@ -89,6 +109,11 @@ public sealed class ProviderConformanceEvidenceTests(RabbitMqFixture fixture) : 
 
     private static TransportConformanceTestBinding _Bind(TransportConformanceScenario scenario, string method) =>
         new(scenario, typeof(RabbitMqConsumerClientConformanceTests), method);
+
+    private static TransportConformanceTestBinding _BindRequestReply(
+        TransportConformanceScenario scenario,
+        string method
+    ) => new(scenario, typeof(RabbitMqRequestReplyConformanceTests), method);
 
     private object _CreateTestClass(Type testClass)
     {
@@ -100,6 +125,11 @@ public sealed class ProviderConformanceEvidenceTests(RabbitMqFixture fixture) : 
         if (testClass == typeof(RabbitMqConsumerClientConformanceTests))
         {
             return new RabbitMqConsumerClientConformanceTests(fixture);
+        }
+
+        if (testClass == typeof(RabbitMqRequestReplyConformanceTests))
+        {
+            return new RabbitMqRequestReplyConformanceTests(fixture);
         }
 
         if (testClass == typeof(RabbitMqBrokerFaultTests))

@@ -38,14 +38,37 @@ internal static class RetryHelper
     /// mis-classify host-shutdown cancellations that arrive via a linked source.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// The outer-token <c>IsCancellationRequested</c> guard still distinguishes shutdown OCEs
     /// from unrelated timeout OCEs (e.g. an <c>HttpClient</c> timeout fires its own OCE while the
     /// outer token is NOT cancelled, so this method returns <see langword="false"/> and the
     /// failure flows through the normal retry pipeline).
+    /// </para>
+    /// <para>
+    /// A consumer awaiting a request when its host stops sees the requester's shutdown instead of an OCE: the reply
+    /// listener fails every pending call with <see cref="RequestAbortedException"/>, and refuses a new one with a
+    /// stopping <see cref="RequestNotSentException"/>, as soon as it quiesces, which can be before the dispatch
+    /// token's cancellation callbacks run. Under a cancelled token either one is the same shutdown, wherever it sits
+    /// in the exception chain.
+    /// </para>
     /// </remarks>
     public static bool IsCancellation(Exception ex, CancellationToken cancellationToken)
     {
-        return cancellationToken.IsCancellationRequested && ex is OperationCanceledException;
+        return cancellationToken.IsCancellationRequested
+            && (ex is OperationCanceledException || _IsRequesterShutdown(ex));
+    }
+
+    private static bool _IsRequesterShutdown(Exception ex)
+    {
+        for (Exception? current = ex; current is not null; current = current.InnerException)
+        {
+            if (current is RequestAbortedException or RequestNotSentException { IsRequesterStopping: true })
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>
