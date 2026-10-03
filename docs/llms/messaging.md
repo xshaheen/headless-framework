@@ -523,6 +523,8 @@ public static class SetupMessagesMyBroker
 
 `SendAsync(...)` receives a fully prepared `TransportMessage`. The transport publishes `message.Body` as the broker payload, preserves `message.Headers`, returns `OperateResult.Success` on broker success, returns `OperateResult.Failed(new PublisherSentFailedException(...))` on broker failure, and lets `OperationCanceledException` propagate.
 
+After `DisposeAsync`, `SendAsync` returns `OperateResult.Failed(new ObjectDisposedException(...))` without contacting the broker. It does not throw, so a publisher treats a send on a disposed transport like any other failed send. This holds even when `DisposeAsync` releases nothing because a shared pool owns the connection: disposal still stops that transport instance from sending. The `should_return_failed_result_when_sending_after_dispose` case in `TransportTestsBase` checks it.
+
 `BrokerAddress` feeds diagnostics, OpenTelemetry, and dashboard surfaces. Make it a sanitized operator-facing value, never a raw connection string with credentials.
 
 ### Consuming: `IConsumerClientFactory` and `IConsumerClient`

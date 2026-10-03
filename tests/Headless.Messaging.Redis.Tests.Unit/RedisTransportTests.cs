@@ -35,6 +35,28 @@ public sealed class RedisTransportTests : TestBase
     }
 
     [Fact]
+    public async Task should_return_failed_result_without_sending_when_sending_after_dispose()
+    {
+        await _sut.DisposeAsync();
+
+        var result = await _sut.SendAsync(
+            new TransportMessage(
+                new Dictionary<string, string?>(StringComparer.Ordinal)
+                {
+                    [Headers.MessageId] = "message-1",
+                    [Headers.MessageName] = "orders",
+                },
+                "payload"u8.ToArray()
+            ),
+            AbortToken
+        );
+
+        result.Succeeded.Should().BeFalse();
+        result.Exception.Should().BeOfType<ObjectDisposedException>();
+        _mockStreamManager.ReceivedCalls().Should().BeEmpty();
+    }
+
+    [Fact]
     public void should_return_correct_broker_address()
     {
         // when

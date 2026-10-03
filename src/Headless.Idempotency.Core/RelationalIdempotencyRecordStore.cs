@@ -192,8 +192,10 @@ internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
                 [t.LeaseExpiresAt]
             );
 
-        // No row lock: PostgreSQL's MVCC read never waits, and a SQL Server read at READ COMMITTED takes no lock an
-        // update-intent holder blocks, so a peek never queues behind an admission, fence, or completion.
+        // No row lock and no lock hint. PostgreSQL's MVCC read never waits. SQL Server reads at plain READ COMMITTED:
+        // its shared lock is compatible with the update lock a locked read holds, so a peek never queues behind one,
+        // but with READ_COMMITTED_SNAPSHOT off it waits behind a writer's uncommitted exclusive lock, up to the command
+        // timeout, and an enlisted unit holds that lock until the unit ends.
         _peekSql = _dialect.Render(
             new SqlClockedStatement(
                 $"SELECT {t.Status}, {t.RetentionUntil}, {now} FROM {t.Table} WHERE {t.TenantId} = @TenantId AND {t.Key} = @IdempotencyKey;"
@@ -674,9 +676,11 @@ internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
     }
 
     /// <summary>
-    /// Runs a read that must never wait on a writer. An engine whose autonomous transaction already reads without
-    /// waiting (PostgreSQL's MVCC, SQL Server at READ COMMITTED without a lock hint) runs it as any autonomous call; one
-    /// whose autonomous transaction takes a write lock at begin (SQLite) supplies a transaction that does not.
+    /// Runs a read that takes no lock of its own beyond what its isolation level implies. An engine whose autonomous
+    /// transaction already reads that way runs it as any autonomous call: PostgreSQL's MVCC read never waits, and SQL
+    /// Server at READ COMMITTED without a lock hint never waits behind an update lock, though with
+    /// READ_COMMITTED_SNAPSHOT off it still waits behind an uncommitted writer's exclusive lock. An engine whose
+    /// autonomous transaction takes a write lock at begin (SQLite) supplies a transaction that does not.
     /// </summary>
     private ValueTask<T> _RunReadOnlyAsync<T>(
         string operation,

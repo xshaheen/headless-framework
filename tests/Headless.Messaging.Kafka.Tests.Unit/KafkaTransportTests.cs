@@ -25,6 +25,29 @@ public sealed class KafkaTransportTests : TestBase
         _pool.RentProducer().Returns(_producer);
     }
 
+    [Fact]
+    public async Task should_return_failed_result_without_sending_when_sending_after_dispose()
+    {
+        var transport = new KafkaTransport(_logger, _pool);
+        await transport.DisposeAsync();
+
+        var result = await transport.SendAsync(
+            new TransportMessage(
+                new Dictionary<string, string?>(StringComparer.Ordinal)
+                {
+                    [MessagingHeaders.MessageId] = "message-1",
+                    [MessagingHeaders.MessageName] = "orders",
+                },
+                "payload"u8.ToArray()
+            ),
+            AbortToken
+        );
+
+        result.Succeeded.Should().BeFalse();
+        result.Exception.Should().BeOfType<ObjectDisposedException>();
+        _pool.DidNotReceive().RentProducer();
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("order-42")]

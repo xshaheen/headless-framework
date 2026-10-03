@@ -33,8 +33,10 @@ public static class HeadlessModelConfigurationBuilderExtensions
         b.Properties<MoneyAmount>().HaveConversion<MoneyAmountValueConverter>().HavePrecision(32, 10);
         b.Properties<UserId>().HaveConversion<UserIdValueConverter>();
         b.Properties<AccountId>().HaveConversion<AccountIdValueConverter>();
-        b.Properties<File>().HaveConversion<JsonValueConverter<File>>();
-        b.Properties<Image>().HaveConversion<JsonValueConverter<Image>>();
+        // File and Image carry mutable members (Container, Metadata), so they need a deep comparer for an in-place
+        // change to be saved.
+        b.Properties<File>().HaveConversion<JsonValueConverter<File>, JsonValueComparer<File>>();
+        b.Properties<Image>().HaveConversion<JsonValueConverter<Image>, JsonValueComparer<Image>>();
         b.Properties<Locales>().HaveConversion<LocalesValueConverter, LocalesValueComparer>();
         b.Properties<ExtraProperties>().HaveConversion<ExtraPropertiesValueConverter, ExtraPropertiesValueComparer>();
     }

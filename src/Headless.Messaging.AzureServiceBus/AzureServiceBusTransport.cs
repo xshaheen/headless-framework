@@ -15,6 +15,9 @@ internal sealed class AzureServiceBusTransport(
 {
     private readonly ILogger _logger = logger;
 
+    // Set once DisposeAsync runs: a later send fails instead of reaching the broker.
+    private int _disposed;
+
     /// <summary>
     /// Creates a producer descriptor for the given message. If there's no custom producer configuration for the
     /// message type, one will be created using defaults configured in the AzureServiceBusMessagingOptions (e.g. TopicPath).
@@ -36,6 +39,11 @@ internal sealed class AzureServiceBusTransport(
         CancellationToken cancellationToken = default
     )
     {
+        if (Volatile.Read(ref _disposed) != 0)
+        {
+            return OperateResult.Failed(new ObjectDisposedException(nameof(AzureServiceBusTransport)));
+        }
+
         try
         {
             var producer = CreateProducerForMessage(transportMessage);
@@ -67,6 +75,7 @@ internal sealed class AzureServiceBusTransport(
     // The shared client/sender pool owns connection lifetime and is disposed by the container.
     public ValueTask DisposeAsync()
     {
+        Volatile.Write(ref _disposed, 1);
         return ValueTask.CompletedTask;
     }
 }

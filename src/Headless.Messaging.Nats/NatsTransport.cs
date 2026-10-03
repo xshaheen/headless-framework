@@ -12,10 +12,18 @@ internal sealed class NatsTransport(
     MessageLane lane = MessageLane.Bus
 ) : IBusTransport, IQueueTransport
 {
+    // Set once DisposeAsync runs: a later send fails instead of reaching the broker.
+    private int _disposed;
+
     public BrokerAddress BrokerAddress => new("nats", connectionPool.ServersAddress);
 
     public async Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default)
     {
+        if (Volatile.Read(ref _disposed) != 0)
+        {
+            return OperateResult.Failed(new ObjectDisposedException(nameof(NatsTransport)));
+        }
+
         Configuration.MessagingRoutingAffinityMapping.RejectUnsupported(message, "Nats");
         try
         {
@@ -79,6 +87,7 @@ internal sealed class NatsTransport(
 
     public ValueTask DisposeAsync()
     {
+        Volatile.Write(ref _disposed, 1);
         return ValueTask.CompletedTask;
     }
 

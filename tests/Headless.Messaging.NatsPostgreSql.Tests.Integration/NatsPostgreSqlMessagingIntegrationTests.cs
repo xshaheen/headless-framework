@@ -185,10 +185,7 @@ public sealed class NatsPostgreSqlMessagingIntegrationTests(NatsPostgreSqlFixtur
         var subscriber = ServiceProvider.GetRequiredService<TestSubscriber>();
         subscriber.Clear();
 
-        var monitoringApi = DataStorage.GetMonitoringApi();
-        var publishedBefore = await monitoringApi.GetPublishedSucceededCountAsync(AbortToken);
-        var receivedBefore = await monitoringApi.GetReceivedSucceededCountAsync(AbortToken);
-
+        var publishMessageId = $"direct-{Guid.NewGuid():N}";
         var message = new Fixtures.TestMessage
         {
             Id = Guid.NewGuid().ToString(),
@@ -196,20 +193,69 @@ public sealed class NatsPostgreSqlMessagingIntegrationTests(NatsPostgreSqlFixtur
             Payload = "direct-path",
         };
 
-        var directPublisher = Publisher;
-
-        await directPublisher.PublishAsync(message, new PublishOptions { MessageName = "test-message" }, AbortToken);
+        // The bus defaults to durable delivery, so the direct path has to be requested explicitly.
+        await Publisher.PublishAsync(
+            message,
+            new PublishOptions
+            {
+                MessageName = "test-message",
+                MessageId = publishMessageId,
+                DeliveryMode = DeliveryMode.Direct,
+            },
+            AbortToken
+        );
 
         var received = await subscriber.WaitForMessageAsync(TimeSpan.FromSeconds(10), AbortToken);
         received.Should().BeTrue("bus should still deliver through the NATS transport");
 
-        await Task.Delay(TimeSpan.FromSeconds(2), AbortToken);
+        // Assert on this message's own rows rather than table-wide counts: the readiness probe publishes durably
+        // during setup, and its outbox row may still be completing when the test starts.
+        var monitoringApi = DataStorage.GetMonitoringApi();
+        var receivedRecord = await _WaitForRecordAsync(monitoringApi, MessageType.Subscribe, publishMessageId);
+        var publishedRecords = await _GetRecordsAsync(monitoringApi, MessageType.Publish, publishMessageId);
 
-        var publishedAfter = await monitoringApi.GetPublishedSucceededCountAsync(AbortToken);
-        var receivedAfter = await monitoringApi.GetReceivedSucceededCountAsync(AbortToken);
+        receivedRecord.Should().BeTrue("the consumer side should still persist received records");
+        publishedRecords.Should().BeEmpty("direct publish bypasses durable outbox persistence");
+    }
 
-        publishedAfter.Should().Be(publishedBefore, "direct publish bypasses durable outbox persistence");
-        receivedAfter.Should().BeGreaterThan(receivedBefore, "the consumer side should still persist received records");
+    private static async Task<bool> _WaitForRecordAsync(
+        IMonitoringApi monitoringApi,
+        MessageType messageType,
+        string messageId
+    )
+    {
+        var deadline = DateTimeOffset.UtcNow.AddSeconds(10);
+
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            if ((await _GetRecordsAsync(monitoringApi, messageType, messageId)).Count > 0)
+            {
+                return true;
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(200), AbortToken);
+        }
+
+        return false;
+    }
+
+    private static async Task<IReadOnlyList<MessageView>> _GetRecordsAsync(
+        IMonitoringApi monitoringApi,
+        MessageType messageType,
+        string messageId
+    )
+    {
+        var page = await monitoringApi.GetMessagesAsync(
+            new MessageQuery
+            {
+                MessageType = messageType,
+                CurrentPage = 0,
+                PageSize = 200,
+            },
+            AbortToken
+        );
+
+        return page.Items.Where(item => string.Equals(item.MessageId, messageId, StringComparison.Ordinal)).ToList();
     }
 
     [Fact]

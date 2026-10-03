@@ -35,14 +35,35 @@ public sealed class LocalesValueConverter()
 /// EF Core value comparer for nullable <c>Locales</c> that performs deep structural equality
 /// so EF Core can accurately detect changes and avoid spurious column updates.
 /// </summary>
+/// <remarks>
+/// The snapshot copies every inner dictionary as well as the outer one; a shared inner dictionary would absorb an
+/// in-place edit such as <c>locales["en"]["name"] = value</c> and hide it from change detection.
+/// </remarks>
 [PublicAPI]
 public sealed class LocalesValueComparer()
     : ValueComparer<Locales?>(
         equalsExpression: (t1, t2) => _IsEqual(t1, t2),
-        hashCodeExpression: t => t == null ? 0 : t.GetHashCode(),
-        snapshotExpression: t => t == null ? null : new Locales(t)
+        hashCodeExpression: t => t == null ? 0 : t.Count,
+        snapshotExpression: t => _Snapshot(t)
     )
 {
+    private static Locales? _Snapshot(Locales? locales)
+    {
+        if (locales is null)
+        {
+            return null;
+        }
+
+        var snapshot = new Locales();
+
+        foreach (var (culture, values) in locales)
+        {
+            snapshot[culture] = new Dictionary<string, string>(values, values.Comparer);
+        }
+
+        return snapshot;
+    }
+
     private static bool _IsEqual(Locales? d1, Locales? d2)
     {
         if (d1 is null && d2 is null)
