@@ -6,11 +6,8 @@ using Microsoft.Extensions.Options;
 
 namespace Tests.Fixture;
 
-public class AuditTestDbContext(
-    HeadlessDbContextServices services,
-    DbContextOptions options,
-    IOptions<AuditLogStorageOptions> auditLogStorage
-) : HeadlessDbContext(services, options)
+public class AuditTestDbContext(DbContextOptions options, IOptions<AuditLogStorageOptions> auditLogStorage)
+    : HeadlessDbContext(options)
 {
     public DbSet<Order> Orders => Set<Order>();
 

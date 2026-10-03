@@ -526,10 +526,8 @@ public sealed class HeadlessSaveChangesPipelineUnitOfWorkTests(HeadlessDbContext
         public override IReadOnlyList<object> GetKeys() => [Id];
     }
 
-    public sealed class PipelineTestDbContext(
-        HeadlessDbContextServices services,
-        DbContextOptions<PipelineTestDbContext> options
-    ) : HeadlessDbContext(services, options)
+    public sealed class PipelineTestDbContext(DbContextOptions<PipelineTestDbContext> options)
+        : HeadlessDbContext(options)
     {
         public DbSet<PipelineProbe> Probes => Set<PipelineProbe>();
 

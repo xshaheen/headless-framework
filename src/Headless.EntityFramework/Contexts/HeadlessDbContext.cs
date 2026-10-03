@@ -12,8 +12,8 @@ namespace Headless.EntityFramework;
 /// Capability seam shared by the Headless DbContext bases (<see cref="HeadlessDbContext"/> and the Identity
 /// context) so the runtime, save pipeline, factory, and disposal infrastructure operate against either base
 /// without a common class — the Identity context must derive from <c>IdentityDbContext</c>, so this interface
-/// is the only shared seam. Exposes the tenant/schema the runtime reads and the per-call service scope the
-/// factory hands in. Implemented explicitly by both bases, so it does not widen their public surface; it is
+/// is the only shared seam. Exposes the tenant and schema the runtime reads and the service provider the context's
+/// collaborators resolve from. Implemented explicitly by both bases, so it does not widen their public surface; it is
 /// public so capability-based extensions can target any Headless-managed context.
 /// </summary>
 [PublicAPI]
@@ -32,25 +32,21 @@ public interface IHeadlessDbContext
     string? TenantId { get; }
 
     /// <summary>
-    /// The scoped (request) service provider that resolved this context. Scoped collaborators of the context —
-    /// the tenant guard bypass — must come
-    /// from this scope; EF's <c>ApplicationServiceProvider</c> is the root provider and resolves a different one.
+    /// The service provider the context's scoped collaborators resolve from: the DI scope that resolved the context,
+    /// or, for a context created outside any scope (a factory, or <see langword="new"/>), a private scope opened on first use and
+    /// disposed with the context. EF's <c>ApplicationServiceProvider</c> is the root provider and would hand back a
+    /// different scoped instance, or throw for a scoped registration.
     /// </summary>
     IServiceProvider ServiceProvider { get; }
 }
 
 /// <summary>
-/// Internal lifecycle seam for the service scope a factory-created context owns. Kept off the public
-/// <see cref="IHeadlessDbContext"/> entirely: only <c>HeadlessDbContextFactory</c> (set) and
-/// <c>HeadlessDbContextDisposal</c> (get) touch it, so consumers neither read nor reassign it.
+/// Internal seam to the per-context runtime, implemented explicitly by both Headless context bases so the factory,
+/// the DI registrations, and the query filters reach the lease binding without widening the public surface.
 /// </summary>
-internal interface IHeadlessDbContextScopeOwner
+internal interface IHeadlessDbContextRuntimeOwner
 {
-    /// <summary>
-    /// Optional service scope owned by the context — set by <c>HeadlessDbContextFactory</c> when the context is
-    /// created via <c>IDbContextFactory&lt;TDbContext&gt;</c>, and disposed with the context.
-    /// </summary>
-    IServiceScope? OwnedScope { get; set; }
+    HeadlessDbContextRuntime Runtime { get; }
 }
 
 /// <summary>
@@ -59,58 +55,34 @@ internal interface IHeadlessDbContextScopeOwner
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Not poolable.</b> Do not register subclasses with <c>AddDbContextPool</c> or
-/// <c>AddPooledDbContextFactory</c>. Two independent reasons:
+/// <b>Poolable.</b> Register a subclass with <c>AddHeadlessDbContextPool</c> to pool it, or with
+/// <c>AddHeadlessDbContext</c> to create one per scope. The constructor takes only <see cref="DbContextOptions"/>:
+/// the model, the EF configuration, and the change-tracker handlers belong to the instance, while the scoped
+/// collaborators (save pipeline, audit persistence, entry processors) are resolved lazily from the scope bound to
+/// the current lease and released before a pooled instance returns to the pool.
 /// </para>
-/// <list type="number">
-/// <item>
-/// <description>
-/// The instance holds a private <c>HeadlessDbContextRuntime</c> field that captures the
-/// scoped save pipeline (outbox dispatcher, audit persistence). Pooled instances would
-/// reuse a prior request's unit of work — a captive-dependency correctness bug. EF's own
-/// guidance: avoid pooling when the context maintains private state, since EF only resets
-/// state it is aware of.
-/// </description>
-/// </item>
-/// <item>
-/// <description>
-/// The constructor takes a second non-<see cref="DbContextOptions"/> parameter
-/// (<see cref="HeadlessDbContextServices"/>); the pooling path resolves contexts through a
-/// single-<see cref="DbContextOptions"/> constructor and does not support this shape.
-/// </description>
-/// </item>
-/// </list>
 /// <para>
-/// <c>ICurrentTenant</c> (AsyncLocal-backed) and <c>TimeProvider</c> are not the blocker — only
-/// the save/outbox/audit pipeline is request-bound. Use a plain <see cref="DbContext"/>
-/// with <c>AddDbContextPool</c> for read-heavy hot paths that do not need the Headless
-/// write machinery.
+/// A pooled subclass must declare exactly one public constructor, taking its <c>DbContextOptions</c> and optionally
+/// singleton services, and must not keep per-request state in its own fields: EF resets only the state it knows
+/// about. The ambient tenant is read from <c>ICurrentTenant</c> on every access, so it is never captured.
 /// </para>
 /// </remarks>
 [PublicAPI]
-public abstract class HeadlessDbContext : DbContext, IHeadlessDbContext, IHeadlessDbContextScopeOwner
+public abstract class HeadlessDbContext : DbContext, IHeadlessDbContext, IHeadlessDbContextRuntimeOwner
 {
     private readonly HeadlessDbContextRuntime _runtime;
 
     /// <summary>
-    /// Initializes the context with the Headless infrastructure services and the EF Core options.
+    /// Initializes the context with the EF Core options. The Headless collaborators are resolved from the scope bound
+    /// to the context, not injected here, which is what lets the context be pooled.
     /// </summary>
-    /// <param name="services">
-    /// The Headless EF Core services bundle resolved from DI. Resolved automatically when the context is
-    /// registered with <c>AddHeadlessDbContext</c>.
-    /// </param>
     /// <param name="options">The EF Core options for this context type.</param>
-    protected HeadlessDbContext(HeadlessDbContextServices services, DbContextOptions options)
+    protected HeadlessDbContext(DbContextOptions options)
         : base(options)
     {
-        _runtime = new(this, services);
-        _runtime.Initialize();
+        _runtime = new(this);
+        _runtime.AttachChangeTrackerHandlers();
     }
-
-    // Optional service scope owned by this context — set by HeadlessDbContextFactory (via the
-    // IHeadlessDbContext seam) when the context is created through IDbContextFactory<TDbContext>.
-    // Disposed alongside the context so factory-created contexts don't leak per-call scopes.
-    private IServiceScope? _ownedScope;
 
     /// <summary>
     /// Returns the optional default database schema applied to entities that do not declare their own.
@@ -134,11 +106,7 @@ public abstract class HeadlessDbContext : DbContext, IHeadlessDbContext, IHeadle
 
     IServiceProvider IHeadlessDbContext.ServiceProvider => _runtime.ServiceProvider;
 
-    IServiceScope? IHeadlessDbContextScopeOwner.OwnedScope
-    {
-        get => _ownedScope;
-        set => _ownedScope = value;
-    }
+    HeadlessDbContextRuntime IHeadlessDbContextRuntimeOwner.Runtime => _runtime;
 #pragma warning restore CA1033
 
     /// <summary>
@@ -195,47 +163,50 @@ public abstract class HeadlessDbContext : DbContext, IHeadlessDbContext, IHeadle
     }
 
     /// <summary>
-    /// Disposes the Headless runtime and the base EF Core context, then disposes any owned service
-    /// scope created by <c>IDbContextFactory</c>.
+    /// Releases the scope bound to this context, then disposes the base EF Core context, which returns a pooled
+    /// instance to its pool, then disposes the scope the context owned, if any. A pooled context resolved from a
+    /// scope is returned when the scope ends, so disposing it earlier does nothing.
     /// </summary>
     public override void Dispose()
     {
-        // Drain the runtime (sync today — ValueTask.CompletedTask) then the base context. try/finally
-        // guarantees the owned scope still disposes if either throws. Owned-scope disposal is centralized
-        // in HeadlessDbContextDisposal so it stays identical with the Identity context base.
+        if (_runtime.IsScopeLeased)
+        {
+            return;
+        }
+
+        var ownedScope = _runtime.Release();
+
         try
         {
-            var disposeTask = _runtime.DisposeAsync();
-            if (!disposeTask.IsCompletedSuccessfully)
-            {
-                disposeTask.AsTask().GetAwaiter().GetResult();
-            }
-
             base.Dispose();
         }
         finally
         {
-            this.DisposeOwnedScope();
+            HeadlessDbContextRuntime.DisposeScope(ownedScope, GetType());
             GC.SuppressFinalize(this);
         }
     }
 
     /// <summary>
-    /// Asynchronously disposes the Headless runtime and the base EF Core context, then disposes any
-    /// owned service scope created by <c>IDbContextFactory</c>.
+    /// Asynchronously releases the scope bound to this context, disposes the base EF Core context, which returns a
+    /// pooled instance to its pool, then disposes the scope the context owned, if any.
     /// </summary>
     public override async ValueTask DisposeAsync()
     {
-        // Detach the runtime's ChangeTracker handlers before the base context tears down its services —
-        // avoids EF "still tracking" assertions and handler leaks across repeated resolves.
+        if (_runtime.IsScopeLeased)
+        {
+            return;
+        }
+
+        var ownedScope = _runtime.Release();
+
         try
         {
-            await _runtime.DisposeAsync().ConfigureAwait(false);
             await base.DisposeAsync().ConfigureAwait(false);
         }
         finally
         {
-            await this.DisposeOwnedScopeAsync().ConfigureAwait(false);
+            await HeadlessDbContextRuntime.DisposeScopeAsync(ownedScope, GetType()).ConfigureAwait(false);
             GC.SuppressFinalize(this);
         }
     }

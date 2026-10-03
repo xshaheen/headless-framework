@@ -787,10 +787,8 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
         }
     }
 
-    internal sealed class BridgeTestDbContext(
-        HeadlessDbContextServices services,
-        DbContextOptions<BridgeTestDbContext> options
-    ) : HeadlessDbContext(services, options)
+    internal sealed class BridgeTestDbContext(DbContextOptions<BridgeTestDbContext> options)
+        : HeadlessDbContext(options)
     {
         public DbSet<OrderEntity> Orders => Set<OrderEntity>();
 

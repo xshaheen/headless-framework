@@ -356,8 +356,7 @@ public sealed class HeadlessSaveChangesPipelineSharedConnectionTests : TestBase
         public IReadOnlyList<object> GetKeys() => [Id];
     }
 
-    public sealed class OwnerDbContext(HeadlessDbContextServices services, DbContextOptions<OwnerDbContext> options)
-        : HeadlessDbContext(services, options)
+    public sealed class OwnerDbContext(DbContextOptions<OwnerDbContext> options) : HeadlessDbContext(options)
     {
         public DbSet<OwnerRow> Owners => Set<OwnerRow>();
 
@@ -366,8 +365,7 @@ public sealed class HeadlessSaveChangesPipelineSharedConnectionTests : TestBase
         public override string DefaultSchema => "";
     }
 
-    public sealed class SiblingDbContext(HeadlessDbContextServices services, DbContextOptions<SiblingDbContext> options)
-        : HeadlessDbContext(services, options)
+    public sealed class SiblingDbContext(DbContextOptions<SiblingDbContext> options) : HeadlessDbContext(options)
     {
         public DbSet<SiblingRow> Siblings => Set<SiblingRow>();
 

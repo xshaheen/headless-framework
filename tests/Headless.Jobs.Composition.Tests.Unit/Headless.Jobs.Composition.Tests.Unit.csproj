@@ -16,6 +16,7 @@
     <ProjectReference Include="..\..\src\Headless.Messaging.Bus.Abstractions\Headless.Messaging.Bus.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\Headless.Messaging.Queue.Abstractions\Headless.Messaging.Queue.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\Headless.Jobs.Dashboard\Headless.Jobs.Dashboard.csproj" />
+    <ProjectReference Include="..\..\src\Headless.EntityFramework\Headless.EntityFramework.csproj" />
     <ProjectReference Include="..\..\src\Headless.Jobs.EntityFramework\Headless.Jobs.EntityFramework.csproj" />
     <ProjectReference Include="..\..\src\Headless.Jobs.EntityFramework.PostgreSql\Headless.Jobs.EntityFramework.PostgreSql.csproj" />
     <ProjectReference Include="..\..\src\Headless.Jobs.EntityFramework.SqlServer\Headless.Jobs.EntityFramework.SqlServer.csproj" />

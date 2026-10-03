@@ -283,8 +283,7 @@ public sealed class AuditedBaseStampingTests : TestBase
         }
     }
 
-    private sealed class AuditedDbContext(HeadlessDbContextServices services, DbContextOptions options)
-        : HeadlessDbContext(services, options)
+    private sealed class AuditedDbContext(DbContextOptions options) : HeadlessDbContext(options)
     {
         public DbSet<AuditedNote> Notes => Set<AuditedNote>();
 

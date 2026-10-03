@@ -9,11 +9,9 @@ namespace Tests.Fixtures;
 /// <summary>
 /// Test HeadlessDbContext implementation that captures emitted messages for verification.
 /// </summary>
-public sealed class HarnessDbContext(
-    HeadlessDbContextServices services,
-    RecordingHeadlessMessageDispatcher messageDispatcher,
-    DbContextOptions options
-) : HeadlessDbContext(services, options), IHarnessDbContext
+public sealed class HarnessDbContext(RecordingHeadlessMessageDispatcher messageDispatcher, DbContextOptions options)
+    : HeadlessDbContext(options),
+        IHarnessDbContext
 {
     public DbSet<HarnessTestEntity> TestEntities { get; set; } = null!;
 

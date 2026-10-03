@@ -68,18 +68,28 @@ public abstract class PermissionsTestBase(PermissionsTestFixture fixture) : Test
             setup.UseInMemoryStorage();
         });
 
-        services.AddDbContextFactory<PermissionsTestDbContext>(options =>
-            options.UseNpgsql(Fixture.SqlConnectionString)
-        );
+        AddPermissionsDbContextFactory(services);
 
         services.AddHeadlessPermissions(setup =>
         {
             setup.ConfigureStorage(ConfigurePermissionsStorage);
-            setup.UseEntityFramework<PermissionsTestDbContext>();
+            UsePermissionsEntityFramework(setup);
         });
     }
 
     protected virtual void ConfigurePermissionsStorage(PermissionsStorageOptions options) { }
+
+    protected virtual void AddPermissionsDbContextFactory(IServiceCollection services)
+    {
+        services.AddDbContextFactory<PermissionsTestDbContext>(options =>
+            options.UseNpgsql(Fixture.SqlConnectionString)
+        );
+    }
+
+    protected virtual void UsePermissionsEntityFramework(HeadlessPermissionsSetupBuilder setup)
+    {
+        setup.UseEntityFramework<PermissionsTestDbContext>();
+    }
 
     protected sealed class PermissionsTestDbContext(
         DbContextOptions<PermissionsTestDbContext> options,

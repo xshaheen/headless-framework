@@ -136,7 +136,7 @@ internal static class ServiceBuilder
         // too, or those singletons keep one scoped or transient factory for the life of the host.
         services.RequireSingletonService<IDbContextFactory<TContext>>(
             requiredBy: "Headless Jobs EF persistence",
-            remedy: "Remove the application's IDbContextFactory<TContext> registration so Jobs registers its pooled singleton factory, or register it with AddDbContextFactory<TContext>() or AddPooledDbContextFactory<TContext>() at the default singleton lifetime."
+            remedy: "Remove the application's IDbContextFactory<TContext> registration so Jobs registers its pooled singleton factory, or register it at the default singleton lifetime: AddDbContextFactory<TContext>() or AddPooledDbContextFactory<TContext>() for a plain DbContext, or AddHeadlessDbContext<TContext>() or AddHeadlessDbContextPool<TContext>() for a HeadlessDbContext."
         );
         services.AddHeadlessGuidGenerator();
         // Fail loud at DI-build time when the context cannot back coordinated writes, rather than at first

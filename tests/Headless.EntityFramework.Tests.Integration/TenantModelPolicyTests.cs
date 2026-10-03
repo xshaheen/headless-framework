@@ -35,19 +35,23 @@ public sealed class TenantModelPolicyTests : TestBase
     }
 
     [Fact]
-    public void should_parameterize_tenant_from_each_context_sharing_the_model()
+    public void should_parameterize_the_ambient_tenant_through_a_model_contexts_share()
     {
+        // The tenant is read when the query runs, not baked into the shared model or captured by a context, so each
+        // context's query carries the tenant ambient at that moment.
         using var provider = _CreateProvider<DeclaredPolicy>();
+        var tenant = provider.GetRequiredService<TestCurrentTenant>();
         using var firstScope = provider.CreateScope();
-        firstScope.ServiceProvider.GetRequiredService<TestCurrentTenant>().Id = "tenant-a";
         using var first = firstScope.ServiceProvider.GetRequiredService<PolicyContext<DeclaredPolicy>>();
         using var secondScope = provider.CreateScope();
-        secondScope.ServiceProvider.GetRequiredService<TestCurrentTenant>().Id = "tenant-b";
         using var second = secondScope.ServiceProvider.GetRequiredService<PolicyContext<DeclaredPolicy>>();
 
         second.Model.Should().BeSameAs(first.Model);
+        tenant.Id = "tenant-a";
         first.Set<ExternalRow>().ToQueryString().Should().Contain("tenant-a").And.NotContain("tenant-b");
+        tenant.Id = "tenant-b";
         second.Set<ExternalRow>().ToQueryString().Should().Contain("tenant-b").And.NotContain("tenant-a");
+        first.Set<ExternalRow>().ToQueryString().Should().Contain("tenant-b").And.NotContain("tenant-a");
     }
 
     [Fact]
@@ -171,8 +175,8 @@ public sealed class TenantModelPolicyTests : TestBase
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddScoped<TestCurrentTenant>();
-        services.AddScoped<ICurrentTenant>(provider => provider.GetRequiredService<TestCurrentTenant>());
+        services.AddSingleton<TestCurrentTenant>();
+        services.AddSingleton<ICurrentTenant>(provider => provider.GetRequiredService<TestCurrentTenant>());
         services.AddHeadlessDbContextServices();
         services.AddDbContext<PolicyContext<TPolicy>>(options =>
             options.UseNpgsql("Host=localhost;Database=tenant-model-only").AddHeadlessExtension()
@@ -180,10 +184,8 @@ public sealed class TenantModelPolicyTests : TestBase
         return services.BuildServiceProvider();
     }
 
-    private sealed class PolicyContext<TPolicy>(
-        HeadlessDbContextServices services,
-        DbContextOptions<PolicyContext<TPolicy>> options
-    ) : HeadlessDbContext(services, options)
+    private sealed class PolicyContext<TPolicy>(DbContextOptions<PolicyContext<TPolicy>> options)
+        : HeadlessDbContext(options)
         where TPolicy : IPolicy
     {
         public override string? DefaultSchema => null;

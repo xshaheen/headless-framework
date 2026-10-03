@@ -7,24 +7,15 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Headless.EntityFramework;
 
 /// <summary>
-/// <see cref="IDbContextFactory{TContext}"/> for the Headless DbContext bases (both
-/// <see cref="HeadlessDbContext"/> and the Identity context). Creates a dedicated service scope per call so
-/// the context's scoped dependencies (<see cref="HeadlessDbContextServices"/>, save-changes pipeline, audit
-/// persistence) resolve cleanly, then hands scope ownership to the returned context via
-/// the internal <see cref="IHeadlessDbContextScopeOwner"/> seam — disposing the context disposes the scope.
+/// <see cref="IDbContextFactory{TContext}"/> for a non-pooled Headless context (<see cref="HeadlessDbContext"/> or
+/// the Identity context). Creates a dedicated service scope per call, resolves the context from it so a derived
+/// constructor may take scoped services, and hands scope ownership to the returned context: disposing the context
+/// disposes the scope.
 /// </summary>
 /// <remarks>
-/// <para>
-/// Why not <c>AddPooledDbContextFactory</c>: the Headless contexts are explicitly non-poolable (private
-/// per-request runtime state, non-standard constructor shape). Why not the stock <c>AddDbContextFactory</c>:
-/// it Activator-creates contexts from a singleton <see cref="DbContextOptions{TContext}"/>, which doesn't
-/// compose with the constructor's required scoped <see cref="HeadlessDbContextServices"/> parameter.
-/// </para>
-/// <para>
-/// Registered as singleton from <c>AddHeadlessDbContext&lt;TDbContext&gt;</c>. Consumers resolve
-/// <see cref="IDbContextFactory{TContext}"/> and use the standard EF Core contract: dispose what you
-/// create.
-/// </para>
+/// Registered as a singleton by <c>AddHeadlessDbContext&lt;TDbContext&gt;</c>. A pooled registration
+/// (<c>AddHeadlessDbContextPool</c>) uses EF's <c>PooledDbContextFactory</c> instead: a pooled context's constructor
+/// takes no scoped services, so its lease opens a private scope only when it first needs a scoped collaborator.
 /// </remarks>
 internal sealed class HeadlessDbContextFactory<TDbContext>(IServiceScopeFactory scopeFactory)
     : IDbContextFactory<TDbContext>
@@ -36,7 +27,7 @@ internal sealed class HeadlessDbContextFactory<TDbContext>(IServiceScopeFactory 
 
         try
         {
-            return _AttachScope(scope);
+            return _CreateInScope(scope);
         }
         catch
         {
@@ -59,7 +50,7 @@ internal sealed class HeadlessDbContextFactory<TDbContext>(IServiceScopeFactory 
 
         try
         {
-            return _AttachScope(scope);
+            return _CreateInScope(scope);
         }
         catch
         {
@@ -72,15 +63,13 @@ internal sealed class HeadlessDbContextFactory<TDbContext>(IServiceScopeFactory 
         }
     }
 
-    private static TDbContext _AttachScope(IServiceScope scope)
+    private static TDbContext _CreateInScope(IServiceScope scope)
     {
+        // The Headless registration binds the context to the scope that resolves it; ownership moves on top of that
+        // binding, so it is released first and re-bound as owned.
         var context = scope.ServiceProvider.GetRequiredService<TDbContext>();
 
-        // Hand scope ownership through the internal seam — OwnedScope is not on the public IHeadlessDbContext.
-        // Every Headless context base implements IHeadlessDbContextScopeOwner; a context that implements
-        // IHeadlessDbContext by hand (without deriving from HeadlessDbContext/HeadlessIdentityDbContext) cannot
-        // own a factory scope — fail with an actionable message rather than a bare InvalidCastException.
-        if (context is not IHeadlessDbContextScopeOwner scopeOwner)
+        if (context is not IHeadlessDbContextRuntimeOwner owner)
         {
             throw new InvalidOperationException(
                 $"`{typeof(TDbContext).FullName}` must derive from HeadlessDbContext or HeadlessIdentityDbContext "
@@ -88,7 +77,8 @@ internal sealed class HeadlessDbContextFactory<TDbContext>(IServiceScopeFactory 
             );
         }
 
-        scopeOwner.OwnedScope = scope;
+        owner.Runtime.Release();
+        owner.Runtime.BindOwnedScope(scope);
 
         return context;
     }

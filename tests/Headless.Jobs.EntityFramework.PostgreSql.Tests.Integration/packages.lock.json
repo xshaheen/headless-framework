@@ -796,6 +796,12 @@
           "xunit.v3.runner.common": "[4.0.0]"
         }
       },
+      "headless.auditlog.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Extensions": "[1.0.0, )"
+        }
+      },
       "headless.caching.abstractions": {
         "type": "Project",
         "dependencies": {
@@ -854,8 +860,7 @@
           "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
           "Headless.Serializer.Json": "[1.0.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
-          "Microsoft.Extensions.Logging.Abstractions": "[10.0.12, )",
-          "TimeZoneConverter": "[7.2.0, )"
+          "Microsoft.Extensions.Logging.Abstractions": "[10.0.12, )"
         }
       },
       "headless.distributedlocks.abstractions": {
@@ -870,6 +875,30 @@
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )"
+        }
+      },
+      "headless.domain.localeventbus": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Domain": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )"
+        }
+      },
+      "headless.entityframework": {
+        "type": "Project",
+        "dependencies": {
+          "EFCore.CheckConstraints": "[10.0.0, )",
+          "Headless.AuditLog.Abstractions": "[1.0.0, )",
+          "Headless.Core": "[1.0.0, )",
+          "Headless.Domain": "[1.0.0, )",
+          "Headless.Domain.LocalEventBus": "[1.0.0, )",
+          "Headless.EntityFramework.Core": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )",
+          "Headless.MultiTenancy": "[1.0.0, )",
+          "Headless.UnitOfWork.EntityFramework": "[1.0.0, )",
+          "Microsoft.EntityFrameworkCore": "[10.0.12, )",
+          "Microsoft.EntityFrameworkCore.Relational": "[10.0.12, )",
+          "Microsoft.Extensions.Hosting.Abstractions": "[10.0.12, )"
         }
       },
       "headless.entityframework.core": {
@@ -974,6 +1003,7 @@
           "Bogus": "[35.6.5, )",
           "DeepCloner": "[0.10.4, )",
           "Headless.Coordination.Core": "[1.0.0, )",
+          "Headless.EntityFramework": "[1.0.0, )",
           "Headless.Jobs.Core": "[1.0.0, )",
           "Headless.Jobs.EntityFramework": "[1.0.0, )",
           "Headless.Jobs.Tests.Harness": "[1.0.0, )",
@@ -1209,6 +1239,17 @@
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )"
+        }
+      },
+      "EFCore.CheckConstraints": {
+        "type": "CentralTransitive",
+        "requested": "[10.0.0, )",
+        "resolved": "10.0.0",
+        "contentHash": "O6dAN5TlBvn0NKZ/At9iE3fMBZ89N83nlqnROSuH6W3EIoYIiXohklsIWfTh2iHomPAC9IKGi34D3FpdNbCXxg==",
+        "dependencies": {
+          "Microsoft.EntityFrameworkCore": "[10.0.0, 11.0.0)",
+          "Microsoft.EntityFrameworkCore.Relational": "[10.0.0, 11.0.0)",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.0"
         }
       },
       "FastExpressionCompiler": {
@@ -1592,12 +1633,6 @@
           "Testcontainers": "4.15.0",
           "xunit.v3.extensibility.core": "3.2.2"
         }
-      },
-      "TimeZoneConverter": {
-        "type": "CentralTransitive",
-        "requested": "[7.2.0, )",
-        "resolved": "7.2.0",
-        "contentHash": "4Poqu79dTmacVETqUJ53g3x4U21V/cmWPSlehdsVE4Q00akavvlRq+SRjcg/CmfO9ibOCjRl6TeUV7hkC5RC4w=="
       },
       "xunit.v3.assert": {
         "type": "CentralTransitive",

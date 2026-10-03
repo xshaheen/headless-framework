@@ -12,7 +12,6 @@ namespace Tests.Fixture;
 /// Test HeadlessIdentityDbContext implementation that captures emitted messages for verification.
 /// </summary>
 public sealed class TestIdentityDbContext(
-    HeadlessDbContextServices services,
     RecordingHeadlessMessageDispatcher messageDispatcher,
     DbContextOptions options
 )
@@ -26,7 +25,7 @@ public sealed class TestIdentityDbContext(
         IdentityRoleClaim<string>,
         IdentityUserToken<string>,
         IdentityUserPasskey<string>
-    >(services, options),
+    >(options),
         IHarnessDbContext
 {
     public DbSet<HarnessTestEntity> TestEntities { get; set; } = null!;

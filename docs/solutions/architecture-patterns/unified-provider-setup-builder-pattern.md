@@ -1,7 +1,7 @@
 ---
 title: Unified Provider Setup Builder Pattern
 date: 2026-05-25
-last_updated: 2026-06-21
+last_updated: 2026-10-03
 module: headless-framework
 problem_type: architecture_pattern
 component: service_class
@@ -200,27 +200,12 @@ This replaces the predecessor pattern from PR #327, which used per-context `IMod
 
 ### 7. `IDbContextFactory<TDbContext>` registration alongside `AddHeadlessDbContext`
 
-`HeadlessDbContext` is intentionally non-poolable — it holds private per-request `HeadlessDbContextRuntime` state and uses a non-standard constructor — so `AddDbContextFactory` / `AddPooledDbContextFactory` cannot compose with it. EF readers (`EfReadAuditLog`, every `*EntityStartupValidator`) still need a factory, so `AddHeadlessDbContextServices` registers an internal `HeadlessDbContextFactory<TDbContext>` that wraps the scoped DI lifetime.
+EF readers (`EfReadAuditLog`, every `*EntityStartupValidator`) are singletons and need a singleton `IDbContextFactory<TDbContext>`. Both Headless registrations supply one, so a consumer never adds a second factory call:
 
-```csharp
-internal sealed class HeadlessDbContextFactory<TDbContext>(IServiceScopeFactory scopeFactory)
-    : IDbContextFactory<TDbContext> where TDbContext : HeadlessDbContext
-{
-    public TDbContext CreateDbContext()
-    {
-        var scope = scopeFactory.CreateScope();
-        try
-        {
-            var context = scope.ServiceProvider.GetRequiredService<TDbContext>();
-            context.OwnedScope = scope;
-            return context;
-        }
-        catch { scope.Dispose(); throw; }
-    }
-}
-```
+- `AddHeadlessDbContext<TDbContext>` (one instance per scope) registers an internal `HeadlessDbContextFactory<TDbContext>`. Each call creates a DI scope, resolves the context from it so a derived constructor may take scoped services, and hands the scope to the context, which disposes it with itself. A `catch` disposes the scope if resolution throws, so a failed construction does not leak it. See Doc B (`storage-initializer-lifecycle-correctness.md`) for the matching dispose discipline.
+- `AddHeadlessDbContextPool<TDbContext>` registers EF's `PooledDbContextFactory<TDbContext>`. A context it creates opens a private DI scope only when it first needs a scoped collaborator (the save pipeline, the tenant write-guard bypass) and disposes that scope when the context returns to the pool.
 
-The scope is transferred to the context's `OwnedScope` property and disposed alongside the context. The `catch { scope.Dispose(); throw; }` guards the ctor-throws path so a failed resolution does not leak the scope. See Doc B (`storage-initializer-lifecycle-correctness.md`) for the matching dispose discipline.
+Both work because a `HeadlessDbContext` takes only its `DbContextOptions` and resolves its scoped collaborators lazily from the scope bound to the current use, rather than capturing them at construction. For the same reason a plain `AddDbContextFactory` / `AddPooledDbContextFactory` registration also composes with a `HeadlessDbContext`; the Headless registrations remain preferred because they also bind the request scope and register the Headless services.
 
 ### 8. Raw stores enrolled in the consumer's DbContext transaction
 
@@ -236,7 +221,7 @@ The shared setup types (`HeadlessXxxSetupBuilder`, `XxxStorageOptions`, `AddHead
 - **Exactly-one-provider invariant** is enforced uniformly. The error message lists every available `Use…` call so misconfiguration is recoverable from the exception alone.
 - **Provider ownership prevents central leakage.** Backend-specific names, connection settings, initializers, stores, scripts, and validators stay in the provider package instead of becoming a root-package switch statement.
 - **Raw providers compose with consumer transactions** without taking an EF dependency. The accessor abstraction keeps the contract on BCL types, so audit-package surface stays narrow.
-- **Factory registration removes a footgun.** Without `HeadlessDbContextFactory<TDbContext>`, EF readers consuming `IDbContextFactory<TContext>` fail at first request with a confusing "no service registered"; `AddDbContextFactory` is unsafe to add because it conflicts with `HeadlessDbContext`'s required scoped ctor parameters.
+- **Factory registration removes a footgun.** Without a factory from the context registration, EF readers consuming `IDbContextFactory<TContext>` fail at startup; both `AddHeadlessDbContext` and `AddHeadlessDbContextPool` register one, so the consumer needs no second call.
 - **Startup gates beat compile-time tricks.** The EF model-builder's previous early-return-on-existing-entity guard skipped configuration silently when a consumer's `DbContext` already had the entity via conventions. Removing the guard and asserting full mapping at start via the gate produces an actionable error instead of a runtime mismatch. (session history)
 
 ## When to Apply

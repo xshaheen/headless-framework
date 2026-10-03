@@ -41,6 +41,8 @@ internal sealed class TenantCatalogEfFixtureCore(
         }
     }
 
+    public void ConfigureProvider(DbContextOptionsBuilder builder) => configureProvider(builder, connectionString());
+
     public async Task ResetAsync(CancellationToken cancellationToken)
     {
         await using var db = new TenantCatalogDbContext(DbOptions);

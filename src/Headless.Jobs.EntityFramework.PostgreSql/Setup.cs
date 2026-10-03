@@ -31,7 +31,8 @@ public static class SetupPostgreSqlJobsEntityFramework
         /// </summary>
         /// <remarks>
         /// Register the application context first. The context must expose a public constructor accepting
-        /// only DbContextOptions&lt;TContext&gt;. Select the advanced UseEntityFramework path when coordination
+        /// only DbContextOptions&lt;TContext&gt;; a HeadlessDbContext qualifies, pooled or not. Select the advanced
+        /// UseEntityFramework path when coordination
         /// is already configured separately. This method does not create the application schema.
         /// </remarks>
         public JobsOptionsBuilder<TimeJobEntity, CronJobEntity> UsePostgreSql<TContext>(

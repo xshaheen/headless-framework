@@ -23,35 +23,6 @@ namespace Tests;
 public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
 {
     [Fact]
-    public async Task should_be_idempotent_when_headless_db_context_runtime_initialize()
-    {
-        // given — a DbContext-backed runtime that has already been initialized through the DbContext
-        // constructor. Calling Initialize() again must be a no-op (no double-subscription of the
-        // ChangeTracker handlers, no observable state change).
-        var services = new ServiceCollection();
-        services.AddLogging();
-        services.AddHeadlessDbContextServices();
-        services.AddDbContext<RuntimeTestDbContext>(o =>
-        {
-            o.UseSqlite(new SqliteConnection("Filename=:memory:"));
-            o.AddHeadlessExtension();
-        });
-
-        await using var provider = services.BuildServiceProvider();
-        using var scope = provider.CreateScope();
-        await using var db = scope.ServiceProvider.GetRequiredService<RuntimeTestDbContext>();
-
-        // when — second Initialize() must not throw.
-        var runtimeServices = scope.ServiceProvider.GetRequiredService<HeadlessDbContextServices>();
-        await using var runtime = new HeadlessDbContextRuntime(db, runtimeServices);
-        runtime.Initialize();
-
-        // then
-        var act = runtime.Initialize;
-        act.Should().NotThrow();
-    }
-
-    [Fact]
     public void should_replace_null_current_tenant_fallback_when_add_headless_db_context_services()
     {
         // given
@@ -1015,8 +986,7 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
         public void Dispose() { }
     }
 
-    private sealed class RuntimeTestDbContext(HeadlessDbContextServices services, DbContextOptions options)
-        : HeadlessDbContext(services, options)
+    private sealed class RuntimeTestDbContext(DbContextOptions options) : HeadlessDbContext(options)
     {
         public DbSet<RuntimeEntity> Entities => Set<RuntimeEntity>();
 

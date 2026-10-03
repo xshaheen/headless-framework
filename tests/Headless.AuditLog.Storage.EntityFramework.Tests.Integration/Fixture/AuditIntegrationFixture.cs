@@ -24,10 +24,11 @@ public static class AuditIntegrationFixture
     public static Task<(ServiceProvider Sp, SqliteConnection Conn)> CreateAsync(
         Action<AuditLogOptions>? configure = null,
         Action<IServiceCollection>? configureServices = null,
-        Action<DbContextOptionsBuilder>? configureDbContext = null
+        Action<DbContextOptionsBuilder>? configureDbContext = null,
+        AuditContextRegistration registration = AuditContextRegistration.PlainEfCore
     )
     {
-        return CreateAsync<AuditTestDbContext>(configure, configureServices, configureDbContext);
+        return CreateAsync<AuditTestDbContext>(configure, configureServices, configureDbContext, registration);
     }
 
     /// <summary>
@@ -38,9 +39,10 @@ public static class AuditIntegrationFixture
     public static async Task<(ServiceProvider Sp, SqliteConnection Conn)> CreateAsync<TContext>(
         Action<AuditLogOptions>? configure,
         Action<IServiceCollection>? configureServices,
-        Action<DbContextOptionsBuilder>? configureDbContext = null
+        Action<DbContextOptionsBuilder>? configureDbContext = null,
+        AuditContextRegistration registration = AuditContextRegistration.PlainEfCore
     )
-        where TContext : DbContext
+        where TContext : HeadlessDbContext
     {
         var connection = new SqliteConnection("Data Source=:memory:");
         await connection.OpenAsync();
@@ -62,7 +64,7 @@ public static class AuditIntegrationFixture
         // Keep connection alive with the provider lifetime
         services.AddSingleton(connection);
 
-        services.AddDbContext<TContext>(opts =>
+        void configureOptions(DbContextOptionsBuilder opts)
         {
             opts.UseSqlite(connection).AddHeadlessExtension();
             configureDbContext?.Invoke(opts);
@@ -75,15 +77,24 @@ public static class AuditIntegrationFixture
             ((IDbContextOptionsBuilderInfrastructure)opts).AddOrUpdateExtension(
                 new TestHeadlessServicesOptionsExtension(clock, currentUser, currentTenant)
             );
-        });
-        services.AddDbContextFactory<TContext>(opts =>
+        }
+
+        switch (registration)
         {
-            opts.UseSqlite(connection).AddHeadlessExtension();
-            configureDbContext?.Invoke(opts);
-            ((IDbContextOptionsBuilderInfrastructure)opts).AddOrUpdateExtension(
-                new TestHeadlessServicesOptionsExtension(clock, currentUser, currentTenant)
-            );
-        });
+            case AuditContextRegistration.PlainEfCore:
+                services.AddDbContext<TContext>(configureOptions);
+                services.AddDbContextFactory<TContext>(configureOptions);
+                break;
+            case AuditContextRegistration.Headless:
+                services.AddHeadlessDbContext<TContext>(configureOptions);
+                break;
+            case AuditContextRegistration.HeadlessPooled:
+                services.AddHeadlessDbContextPool<TContext>(configureOptions);
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(registration), registration, message: null);
+        }
+
         services.AddHeadlessAuditLog(setup =>
         {
             if (configure is not null)
@@ -105,4 +116,17 @@ public static class AuditIntegrationFixture
 
         return (sp, connection);
     }
+}
+
+/// <summary>How the fixture registers the audited context.</summary>
+public enum AuditContextRegistration
+{
+    /// <summary>Plain EF Core <c>AddDbContext</c> plus <c>AddDbContextFactory</c>.</summary>
+    PlainEfCore = 0,
+
+    /// <summary><c>AddHeadlessDbContext</c>: one context per scope.</summary>
+    Headless = 1,
+
+    /// <summary><c>AddHeadlessDbContextPool</c>: pooled contexts.</summary>
+    HeadlessPooled = 2,
 }
