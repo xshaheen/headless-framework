@@ -79,7 +79,7 @@ public sealed class ResponderRepliesTests : TestBase
     {
         // given — a serializer that fails on the response body
         var log = new List<(LogLevel Level, EventId EventId, string Message)>();
-        var serializer = Substitute.For<ISerializer>();
+        var serializer = Substitute.For<IMessageSerializer>();
         serializer
             .SerializeToTransportMessageAsync(Arg.Any<Message>(), Arg.Any<CancellationToken>())
             .Returns<TransportMessage>(_ => throw new InvalidOperationException("cannot serialize"));
