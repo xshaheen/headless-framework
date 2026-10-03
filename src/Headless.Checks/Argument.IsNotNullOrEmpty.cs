@@ -12,11 +12,11 @@ public static partial class Argument
     /// or an <see cref="ArgumentException" /> if <paramref name="argument" /> is empty.
     /// </summary>
     /// <param name="argument">The argument to check.</param>
-    /// <param name="message">(Optional) Custom error message.</param>
-    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="argument" /> if the value is neither null nor empty.</returns>
-    /// <exception cref="ArgumentNullException">if <paramref name="argument" /> is null.</exception>
-    /// <exception cref="ArgumentException">if <paramref name="argument" /> is empty.</exception>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="paramName">The name of the parameter being checked. Captured automatically by the compiler.</param>
+    /// <returns><paramref name="argument" /> when the value is neither null nor empty.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="argument" /> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="argument" /> is empty.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static IReadOnlyCollection<T> IsNotNullOrEmpty<T>(

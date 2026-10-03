@@ -14,10 +14,10 @@ public static partial class Argument
     /// </summary>
     /// <param name="argument">The argument to check.</param>
     /// <param name="values">The valid values.</param>
-    /// <param name="message">(Optional) Custom error message</param>
-    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="argument" /> if the value is one of the <paramref name="values"/>.</returns>
-    /// <exception cref="ArgumentException">if <paramref name="argument" /> is not one of the <paramref name="values"/>.</exception>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="paramName">The name of the parameter being checked. Captured automatically by the compiler.</param>
+    /// <returns><paramref name="argument" /> when the value is one of the <paramref name="values"/>.</returns>
+    /// <exception cref="ArgumentException"><paramref name="argument" /> is not one of the <paramref name="values"/>.</exception>
     // Preferred overload so a collection-expression call site — IsOneOf(x, [a, b, c]) — binds here without a cast,
     // instead of being ambiguous with the HashSet/List/IReadOnlyCollection overloads (all collection-expression
     // targets). Explicit-typed callers are unaffected: only one overload is applicable for a concrete collection.

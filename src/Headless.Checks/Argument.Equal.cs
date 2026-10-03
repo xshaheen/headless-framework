@@ -12,10 +12,10 @@ public static partial class Argument
     /// <typeparam name="T">The type of input values to compare.</typeparam>
     /// <param name="argument">The input <typeparamref name="T"/> value to test.</param>
     /// <param name="target">The target <typeparamref name="T"/> value to test for.</param>
-    /// <param name="message">(Optional) Custom error message</param>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
     /// <param name="argumentName">The name of the input parameter being tested.</param>
     /// <param name="targetName">The name of the target parameter being tested.</param>
-    /// <exception cref="ArgumentException">Thrown if <paramref name="argument"/> is not the same instance as <paramref name="target"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="argument"/> is not the same instance as <paramref name="target"/>.</exception>
     /// <returns>The validated <paramref name="argument"/>.</returns>
     /// <remarks>The method is generic to prevent using it with value types.</remarks>
     [DebuggerStepThrough]
@@ -41,10 +41,10 @@ public static partial class Argument
     /// <typeparam name="T">The type of input values to compare.</typeparam>
     /// <param name="argument">The input <typeparamref name="T"/> value to test.</param>
     /// <param name="target">The target <typeparamref name="T"/> value to test for.</param>
-    /// <param name="message">(Optional) Custom error message</param>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
     /// <param name="argumentName">The name of the input parameter being tested.</param>
     /// <param name="targetName">The name of the target parameter being tested.</param>
-    /// <exception cref="ArgumentException">Thrown if <paramref name="argument"/> is the same instance as <paramref name="target"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="argument"/> is the same instance as <paramref name="target"/>.</exception>
     /// <returns>The validated <paramref name="argument"/>.</returns>
     /// <remarks>The method is generic to prevent using it with value types.</remarks>
     [DebuggerStepThrough]

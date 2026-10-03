@@ -8,15 +8,15 @@ namespace Headless.Checks;
 
 public static partial class Argument
 {
-    /// <summary>Throws an <see cref="ArgumentException" /> if <paramref name="argument" /> is not equal to <paramref name="expected"/>.</summary>
+    /// <summary>Throws an <see cref="ArgumentException" /> when <paramref name="argument" /> is not equal to <paramref name="expected"/>.</summary>
     /// <typeparam name="T">The type of values to compare.</typeparam>
     /// <param name="argument">The argument to check.</param>
     /// <param name="expected">The value the argument must be equal to.</param>
-    /// <param name="message">(Optional) Custom error message.</param>
-    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="argument" /> if it is equal to <paramref name="expected"/>.</returns>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="paramName">The name of the parameter being checked. Captured automatically by the compiler.</param>
+    /// <returns><paramref name="argument" /> when it is equal to <paramref name="expected"/>.</returns>
     /// <remarks>Equality is evaluated with <see cref="EqualityComparer{T}.Default"/>. Use the overload taking an <see cref="IEqualityComparer{T}"/> to supply custom semantics (for example case-insensitive strings).</remarks>
-    /// <exception cref="ArgumentException">if <paramref name="argument" /> is not equal to <paramref name="expected"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="argument" /> is not equal to <paramref name="expected"/>.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T IsEqualTo<T>(
@@ -38,8 +38,8 @@ public static partial class Argument
     /// <param name="argument">The argument to check.</param>
     /// <param name="expected">The value the argument must be equal to.</param>
     /// <param name="comparer">The comparer used to evaluate equality.</param>
-    /// <param name="message">(Optional) Custom error message.</param>
-    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="paramName">The name of the parameter being checked. Captured automatically by the compiler.</param>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T IsEqualTo<T>(
@@ -60,15 +60,15 @@ public static partial class Argument
         return argument;
     }
 
-    /// <summary>Throws an <see cref="ArgumentException" /> if <paramref name="argument" /> is equal to <paramref name="other"/>.</summary>
+    /// <summary>Throws an <see cref="ArgumentException" /> when <paramref name="argument" /> is equal to <paramref name="other"/>.</summary>
     /// <typeparam name="T">The type of values to compare.</typeparam>
     /// <param name="argument">The argument to check.</param>
     /// <param name="other">The value the argument must not be equal to.</param>
-    /// <param name="message">(Optional) Custom error message.</param>
-    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="argument" /> if it is not equal to <paramref name="other"/>.</returns>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="paramName">The name of the parameter being checked. Captured automatically by the compiler.</param>
+    /// <returns><paramref name="argument" /> when it is not equal to <paramref name="other"/>.</returns>
     /// <remarks>Equality is evaluated with <see cref="EqualityComparer{T}.Default"/>. Use the overload taking an <see cref="IEqualityComparer{T}"/> to supply custom semantics (for example case-insensitive strings).</remarks>
-    /// <exception cref="ArgumentException">if <paramref name="argument" /> is equal to <paramref name="other"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="argument" /> is equal to <paramref name="other"/>.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T IsNotEqualTo<T>(
@@ -90,8 +90,8 @@ public static partial class Argument
     /// <param name="argument">The argument to check.</param>
     /// <param name="other">The value the argument must not be equal to.</param>
     /// <param name="comparer">The comparer used to evaluate equality.</param>
-    /// <param name="message">(Optional) Custom error message.</param>
-    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="paramName">The name of the parameter being checked. Captured automatically by the compiler.</param>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T IsNotEqualTo<T>(

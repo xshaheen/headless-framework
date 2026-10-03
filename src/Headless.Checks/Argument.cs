@@ -9,9 +9,9 @@ namespace Headless.Checks;
 /// <remarks>
 /// Exception type by check category:
 /// <list type="bullet">
-///   <item><description><see cref="ArgumentNullException"/> — null checks (<c>IsNotNull</c>, <c>IsNotNullOrEmpty</c>, <c>HasNoNulls</c>).</description></item>
-///   <item><description><see cref="ArgumentException"/> — empty / whitespace / format checks (<c>IsNotEmpty</c>, <c>IsNotNullOrWhiteSpace</c>, <c>IsDefault</c>, <c>IsOneOf</c>, <c>Range</c>, <c>HasNoNull*Elements</c>).</description></item>
-///   <item><description><see cref="ArgumentOutOfRangeException"/> — numeric / comparable range checks (<c>IsPositive</c>, <c>IsNegative</c>, <c>IsInclusiveBetween</c>, etc.).</description></item>
+///   <item><description><see cref="ArgumentNullException"/>: null checks (<c>IsNotNull</c>, <c>IsNotNullOrEmpty</c>, <c>HasNoNulls</c>).</description></item>
+///   <item><description><see cref="ArgumentException"/>: empty, whitespace, or format checks (<c>IsNotEmpty</c>, <c>IsNotNullOrWhiteSpace</c>, <c>IsDefault</c>, <c>IsOneOf</c>, <c>Range</c>, <c>HasNoNull*Elements</c>).</description></item>
+///   <item><description><see cref="ArgumentOutOfRangeException"/>: numeric or comparable range checks (<c>IsPositive</c>, <c>IsNegative</c>, <c>IsInclusiveBetween</c>, and related methods).</description></item>
 /// </list>
 /// Use <see cref="Ensure"/> for runtime state assertions that are not about caller arguments.
 /// The auto-captured <c>paramName</c> parameter is the caller's argument expression and becomes the thrown

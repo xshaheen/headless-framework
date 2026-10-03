@@ -9,12 +9,12 @@ namespace Headless.Checks;
 // ReSharper disable PossibleMultipleEnumeration
 public static partial class Argument
 {
-    /// <summary>Throws an <see cref="ArgumentException" /> if <paramref name="argument" /> is empty.</summary>
+    /// <summary>Throws an <see cref="ArgumentException" /> when <paramref name="argument" /> is empty.</summary>
     /// <param name="argument">The argument to check.</param>
-    /// <param name="message">(Optional) Custom error message.</param>
-    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="argument" /> if the value is not empty.</returns>
-    /// <exception cref="ArgumentException">if <paramref name="argument" /> is empty.</exception>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="paramName">The name of the parameter being checked. Captured automatically by the compiler.</param>
+    /// <returns><paramref name="argument" /> when the value is not empty.</returns>
+    /// <exception cref="ArgumentException"><paramref name="argument" /> is empty.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     [OverloadResolutionPriority(1)]
@@ -32,12 +32,12 @@ public static partial class Argument
         return argument;
     }
 
-    /// <summary>Throws an <see cref="ArgumentException" /> if <paramref name="argument" /> is empty.</summary>
+    /// <summary>Throws an <see cref="ArgumentException" /> when <paramref name="argument" /> is empty.</summary>
     /// <param name="argument">The argument to check.</param>
-    /// <param name="message">(Optional) Custom error message.</param>
-    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="argument" /> if the value is not empty.</returns>
-    /// <exception cref="ArgumentException">if <paramref name="argument" /> is empty.</exception>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="paramName">The name of the parameter being checked. Captured automatically by the compiler.</param>
+    /// <returns><paramref name="argument" /> when the value is not empty.</returns>
+    /// <exception cref="ArgumentException"><paramref name="argument" /> is empty.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static Span<T> IsNotEmpty<T>(
@@ -54,12 +54,12 @@ public static partial class Argument
         return argument;
     }
 
-    /// <summary>Throws an <see cref="ArgumentException" /> if <paramref name="argument" /> is empty.</summary>
+    /// <summary>Throws an <see cref="ArgumentException" /> when <paramref name="argument" /> is empty.</summary>
     /// <param name="argument">The argument to check.</param>
-    /// <param name="message">(Optional) Custom error message.</param>
-    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="argument" /> if the value is not empty.</returns>
-    /// <exception cref="ArgumentException">if <paramref name="argument" /> is empty.</exception>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="paramName">The name of the parameter being checked. Captured automatically by the compiler.</param>
+    /// <returns><paramref name="argument" /> when the value is not empty.</returns>
+    /// <exception cref="ArgumentException"><paramref name="argument" /> is empty.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     [return: NotNullIfNotNull(nameof(argument))]
@@ -119,12 +119,12 @@ public static partial class Argument
         return argument;
     }
 
-    /// <summary>Throws an <see cref="ArgumentException" /> if <paramref name="argument" /> is <see cref="Guid.Empty"/>.</summary>
+    /// <summary>Throws an <see cref="ArgumentException" /> when <paramref name="argument" /> is <see cref="Guid.Empty"/>.</summary>
     /// <param name="argument">The argument to check.</param>
-    /// <param name="message">(Optional) Custom error message.</param>
-    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="argument" /> if the value is not <see cref="Guid.Empty"/>.</returns>
-    /// <exception cref="ArgumentException">if <paramref name="argument" /> is <see cref="Guid.Empty"/>.</exception>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="paramName">The name of the parameter being checked. Captured automatically by the compiler.</param>
+    /// <returns><paramref name="argument" /> when the value is not <see cref="Guid.Empty"/>.</returns>
+    /// <exception cref="ArgumentException"><paramref name="argument" /> is <see cref="Guid.Empty"/>.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static Guid IsNotEmpty(
@@ -145,11 +145,11 @@ public static partial class Argument
     /// Throws an <see cref="ArgumentException" /> if <paramref name="argument" /> has a value that is <see cref="Guid.Empty"/>.
     /// </summary>
     /// <param name="argument">The argument to check.</param>
-    /// <param name="message">(Optional) Custom error message.</param>
-    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="argument" /> if the value is null or not <see cref="Guid.Empty"/>.</returns>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="paramName">The name of the parameter being checked. Captured automatically by the compiler.</param>
+    /// <returns><paramref name="argument" /> when the value is null or not <see cref="Guid.Empty"/>.</returns>
     /// <remarks>A <see langword="null"/> value is accepted and returned as-is; only a present <see cref="Guid.Empty"/> value throws.</remarks>
-    /// <exception cref="ArgumentException">if <paramref name="argument" /> has a value that is <see cref="Guid.Empty"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="argument" /> has a value that is <see cref="Guid.Empty"/>.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     [return: NotNullIfNotNull(nameof(argument))]

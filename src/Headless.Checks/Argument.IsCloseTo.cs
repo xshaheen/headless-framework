@@ -17,16 +17,16 @@ public static partial class Argument
     /// <param name="value">The argument to check.</param>
     /// <param name="target">The value to compare against.</param>
     /// <param name="delta">The maximum allowed (inclusive) absolute distance between <paramref name="value"/> and <paramref name="target"/>. Should be non-negative.</param>
-    /// <param name="message">(Optional) Custom error message.</param>
-    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="value" /> if it is within <paramref name="delta"/> of <paramref name="target"/>.</returns>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="paramName">The name of the parameter being checked. Captured automatically by the compiler.</param>
+    /// <returns><paramref name="value" /> when it is within <paramref name="delta"/> of <paramref name="target"/>.</returns>
     /// <remarks>
     /// Use this for floating-point comparisons instead of <see cref="IsEqualTo{T}(T,T,string?,string?)"/> to avoid exact-equality
     /// pitfalls. Non-finite values (<see cref="double.NaN"/>, infinities) are treated as not close. Integer operands whose
     /// true distance exceeds the signed range of <typeparamref name="T"/> are also treated as not close (the wrapped distance
     /// is rejected), so there are no false positives at the extremes.
     /// </remarks>
-    /// <exception cref="ArgumentException">if <paramref name="value" /> is not within <paramref name="delta"/> of <paramref name="target"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="value" /> is not within <paramref name="delta"/> of <paramref name="target"/>.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T IsCloseTo<T>(
@@ -51,11 +51,11 @@ public static partial class Argument
     /// <param name="value">The argument to check.</param>
     /// <param name="target">The value to compare against.</param>
     /// <param name="delta">The (inclusive) absolute distance considered "close". Should be non-negative.</param>
-    /// <param name="message">(Optional) Custom error message.</param>
-    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="value" /> if it is not within <paramref name="delta"/> of <paramref name="target"/>.</returns>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="paramName">The name of the parameter being checked. Captured automatically by the compiler.</param>
+    /// <returns><paramref name="value" /> when it is not within <paramref name="delta"/> of <paramref name="target"/>.</returns>
     /// <remarks>Non-finite values (<see cref="double.NaN"/>, infinities) are treated as not close, so they pass this check.</remarks>
-    /// <exception cref="ArgumentException">if <paramref name="value" /> is within <paramref name="delta"/> of <paramref name="target"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="value" /> is within <paramref name="delta"/> of <paramref name="target"/>.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T IsNotCloseTo<T>(
@@ -78,10 +78,10 @@ public static partial class Argument
     /// <param name="value">The argument to check.</param>
     /// <param name="target">The value to compare against.</param>
     /// <param name="delta">The maximum allowed (inclusive) absolute distance between <paramref name="value"/> and <paramref name="target"/>.</param>
-    /// <param name="message">(Optional) Custom error message.</param>
-    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="value" /> if it is within <paramref name="delta"/> of <paramref name="target"/>.</returns>
-    /// <exception cref="ArgumentException">if <paramref name="value" /> is not within <paramref name="delta"/> of <paramref name="target"/>.</exception>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="paramName">The name of the parameter being checked. Captured automatically by the compiler.</param>
+    /// <returns><paramref name="value" /> when it is within <paramref name="delta"/> of <paramref name="target"/>.</returns>
+    /// <exception cref="ArgumentException"><paramref name="value" /> is not within <paramref name="delta"/> of <paramref name="target"/>.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static int IsCloseTo(
@@ -152,10 +152,10 @@ public static partial class Argument
     /// <param name="value">The argument to check.</param>
     /// <param name="target">The value to compare against.</param>
     /// <param name="delta">The (inclusive) absolute distance considered "close".</param>
-    /// <param name="message">(Optional) Custom error message.</param>
-    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="value" /> if it is not within <paramref name="delta"/> of <paramref name="target"/>.</returns>
-    /// <exception cref="ArgumentException">if <paramref name="value" /> is within <paramref name="delta"/> of <paramref name="target"/>.</exception>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="paramName">The name of the parameter being checked. Captured automatically by the compiler.</param>
+    /// <returns><paramref name="value" /> when it is not within <paramref name="delta"/> of <paramref name="target"/>.</returns>
+    /// <exception cref="ArgumentException"><paramref name="value" /> is within <paramref name="delta"/> of <paramref name="target"/>.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static int IsNotCloseTo(
@@ -224,7 +224,7 @@ public static partial class Argument
     {
         var difference = value >= target ? value - target : target - value;
 
-        // A negative result means the true distance overflowed T's signed range (e.g. int.MaxValue vs int.MinValue),
+        // A negative result means the true distance overflowed T's signed range (for example int.MaxValue vs int.MinValue),
         // so the operands are far apart; reject it instead of treating the wrapped value as a small distance. NaN
         // differences also fail this comparison, so non-finite operands are treated as not close.
         return difference >= T.Zero && difference <= delta;
