@@ -181,7 +181,8 @@ restore-project: ## Restore one project; preferred for focused project work.
 .PHONY: hooks
 # A repository core.hooksPath replaces the global one, so on a machine whose global hooks already
 # dispatch to .githooks (secret scanning and similar checks live there) the repository override is
-# removed instead; everywhere else this worktree points at .githooks directly.
+# removed instead; everywhere else this worktree points at .githooks directly, and the shared setting
+# is the fallback for a worktree created without `make hooks`, which would otherwise run no hooks, silently.
 hooks: ## Wire the committed hooks in .githooks: through global hooks that dispatch to them, else directly.
 	@global="$$(git config --global core.hooksPath || true)"; global="$${global/#\~/$$HOME}"; \
 	if [ -n "$$global" ] && grep -qs '\.githooks/' "$$global/pre-commit" "$$global/pre-push"; then \
@@ -191,6 +192,7 @@ hooks: ## Wire the committed hooks in .githooks: through global hooks that dispa
 	else \
 		git config --local extensions.worktreeConfig true; \
 		git config --worktree core.hooksPath .githooks; \
+		git config --local core.hooksPath .githooks; \
 		echo "[hooks] core.hooksPath set to .githooks for this worktree"; \
 	fi
 
