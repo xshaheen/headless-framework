@@ -376,7 +376,7 @@ internal static partial class CompositeDistributedLeaseLogs
     /// set's resources may still be held until their TTL expires.
     /// </summary>
     [LoggerMessage(
-        EventId = 1,
+        EventId = 33,
         EventName = "CompositeLeaseCleanupFailed",
         Level = LogLevel.Error,
         Message = "Unable to release or dispose every child of composite lock: R={Resource} Id={LeaseId}"
