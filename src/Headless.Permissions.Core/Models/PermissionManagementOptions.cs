@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
-using Humanizer;
 
 namespace Headless.Permissions.Models;
 
@@ -33,28 +32,28 @@ public sealed class PermissionManagementOptions
     public string CrossApplicationsCommonLockKey { get; set; } = "permissions:common_update_lock";
 
     /// <summary>How long the <see cref="CrossApplicationsCommonLockKey"/> distributed lock is held. Default: 10 minutes.</summary>
-    public TimeSpan CrossApplicationsCommonLockExpiration { get; set; } = 10.Minutes();
+    public TimeSpan CrossApplicationsCommonLockExpiration { get; set; } = TimeSpan.FromMinutes(10);
 
     /// <summary>Maximum time to wait when acquiring <see cref="CrossApplicationsCommonLockKey"/>. Default: 5 minutes.</summary>
-    public TimeSpan CrossApplicationsCommonLockAcquireTimeout { get; set; } = 5.Minutes();
+    public TimeSpan CrossApplicationsCommonLockAcquireTimeout { get; set; } = TimeSpan.FromMinutes(5);
 
     /// <summary>How long the per-application save lock is held, preventing concurrent saves from the same app. Default: 10 minutes.</summary>
-    public TimeSpan ApplicationSaveLockExpiration { get; set; } = 10.Minutes();
+    public TimeSpan ApplicationSaveLockExpiration { get; set; } = TimeSpan.FromMinutes(10);
 
     /// <summary>Maximum time to wait when acquiring the per-application save lock. Default: 5 minutes.</summary>
-    public TimeSpan ApplicationSaveLockAcquireTimeout { get; set; } = 5.Minutes();
+    public TimeSpan ApplicationSaveLockAcquireTimeout { get; set; } = TimeSpan.FromMinutes(5);
 
     /// <summary>
     /// How long the SHA-256 hash of the last successfully saved permission set is cached in the distributed cache.
     /// The hash is used to skip no-op saves. Default: 30 days.
     /// </summary>
-    public TimeSpan PermissionsHashCacheExpiration { get; set; } = 30.Days();
+    public TimeSpan PermissionsHashCacheExpiration { get; set; } = TimeSpan.FromDays(30);
 
     /// <summary>
     /// How long the cross-application update stamp is kept in the distributed cache before it must be regenerated.
     /// Default: 30 days.
     /// </summary>
-    public TimeSpan CommonPermissionsUpdatedStampCacheExpiration { get; set; } = 30.Days();
+    public TimeSpan CommonPermissionsUpdatedStampCacheExpiration { get; set; } = TimeSpan.FromDays(30);
 
     /// <summary>
     /// Distributed-cache key for the cross-application update stamp. When this stamp changes, each application
@@ -66,7 +65,7 @@ public sealed class PermissionManagementOptions
     /// How long an application instance may serve definitions from its in-memory cache before re-checking the
     /// distributed stamp. Lower values reduce staleness at the cost of more distributed-cache reads. Default: 30 seconds.
     /// </summary>
-    public TimeSpan DynamicDefinitionsMemoryCacheExpiration { get; set; } = 30.Seconds();
+    public TimeSpan DynamicDefinitionsMemoryCacheExpiration { get; set; } = TimeSpan.FromSeconds(30);
 
     /// <summary>
     /// How long a resolved grant status stays in the distributed grant cache before the next check reloads it from
@@ -74,7 +73,7 @@ public sealed class PermissionManagementOptions
     /// entries immediately, so this bounds staleness only for writes that bypass both; a long-lived consumer that
     /// must observe those calls <see cref="Grants.IPermissionGrantStore.RefreshAsync"/>. Default: 5 hours.
     /// </summary>
-    public TimeSpan GrantCacheExpiration { get; set; } = 5.Hours();
+    public TimeSpan GrantCacheExpiration { get; set; } = TimeSpan.FromHours(5);
 
     /// <summary>
     /// Optional prefix that marks an authorization policy name as a permission name. When set, only policy names

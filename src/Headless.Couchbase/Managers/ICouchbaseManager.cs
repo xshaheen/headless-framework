@@ -9,7 +9,6 @@ using Couchbase.Management.Collections;
 using Couchbase.Management.Query;
 using Headless.Checks;
 using Headless.Couchbase.Clusters;
-using Humanizer;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Polly;
@@ -317,7 +316,7 @@ public sealed class CouchbaseManager : ICouchbaseManager
 
                     await _CreateCollectionAsync(clusterKey, bucket, scope, collectionName, token)
                         .ConfigureAwait(false);
-                    await _timeProvider.Delay(50.Milliseconds(), token).ConfigureAwait(false);
+                    await _timeProvider.Delay(TimeSpan.FromMilliseconds(50), token).ConfigureAwait(false);
                     await _CreatePrimaryIndexOnCollectionAsync(
                             clusterKey,
                             await scope.CollectionAsync(collectionName).ConfigureAwait(false)
@@ -433,7 +432,7 @@ public sealed class CouchbaseManager : ICouchbaseManager
                         var options = CreateQueryIndexOptions
                             .Default.IgnoreIfExists(ignoreIfExists: true)
                             .Deferred(deferred: false)
-                            .Timeout(5.Seconds())
+                            .Timeout(TimeSpan.FromSeconds(5))
                             .CancellationToken(token);
 
                         await collection
@@ -502,7 +501,7 @@ public sealed class CouchbaseManager : ICouchbaseManager
                         var options = CreatePrimaryQueryIndexOptions
                             .Default.IndexName("#primary")
                             .IgnoreIfExists(ignoreIfExists: true)
-                            .Timeout(5.Seconds())
+                            .Timeout(TimeSpan.FromSeconds(5))
                             .Deferred(deferred: false)
                             .CancellationToken(token);
 

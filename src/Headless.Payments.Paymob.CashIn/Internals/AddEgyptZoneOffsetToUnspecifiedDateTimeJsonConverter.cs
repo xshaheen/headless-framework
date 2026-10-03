@@ -1,12 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using TimeZoneConverter;
+using Headless.Constants;
 
 namespace Headless.Payments.Paymob.CashIn.Internals;
 
 internal sealed class AddEgyptZoneOffsetToUnspecifiedDateTimeJsonConverter : JsonConverter<DateTimeOffset>
 {
-    public static readonly TimeZoneInfo EgyptTimeZone = TZConvert.GetTimeZoneInfo("Egypt Standard Time");
+    public static readonly TimeZoneInfo EgyptTimeZone = TimezoneConstants.EgyptTimeZone;
 
     public override DateTimeOffset Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {

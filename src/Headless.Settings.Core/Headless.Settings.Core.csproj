@@ -12,6 +12,9 @@
     <InternalsVisibleTo Include="Headless.Settings.Tests.Unit" />
   </ItemGroup>
   <ItemGroup>
+    <PackageReference Include="Polly.Core" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\Headless.Core\Headless.Core.csproj" />
     <ProjectReference Include="..\Headless.Security.Abstractions\Headless.Security.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Domain\Headless.Domain.csproj" />

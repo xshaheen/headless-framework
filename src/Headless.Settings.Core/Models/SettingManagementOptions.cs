@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
-using Humanizer;
 
 namespace Headless.Settings.Models;
 
@@ -27,25 +26,25 @@ public sealed class SettingManagementOptions
     public string CrossApplicationsCommonLockKey { get; set; } = "settings:common_update_lock";
 
     /// <summary>Gets or sets how long the cross-application common lock is held before it expires. Default: 10 minutes.</summary>
-    public TimeSpan CrossApplicationsCommonLockExpiration { get; set; } = 10.Minutes();
+    public TimeSpan CrossApplicationsCommonLockExpiration { get; set; } = TimeSpan.FromMinutes(10);
 
     /// <summary>Gets or sets how long to wait when attempting to acquire the cross-application common lock. Default: 5 minutes.</summary>
-    public TimeSpan CrossApplicationsCommonLockAcquireTimeout { get; set; } = 5.Minutes();
+    public TimeSpan CrossApplicationsCommonLockAcquireTimeout { get; set; } = TimeSpan.FromMinutes(5);
 
     /// <summary>Gets or sets how long the per-application save lock is held before it expires. Default: 10 minutes.</summary>
-    public TimeSpan ApplicationSaveLockExpiration { get; set; } = 10.Minutes();
+    public TimeSpan ApplicationSaveLockExpiration { get; set; } = TimeSpan.FromMinutes(10);
 
     /// <summary>Gets or sets how long to wait when attempting to acquire the per-application save lock. Default: 5 minutes.</summary>
-    public TimeSpan ApplicationSaveLockAcquireTimeout { get; set; } = 5.Minutes();
+    public TimeSpan ApplicationSaveLockAcquireTimeout { get; set; } = TimeSpan.FromMinutes(5);
 
     /// <summary>Gets or sets the lifetime of cached setting values in the distributed cache. Default: 5 hours.</summary>
-    public TimeSpan ValueCacheExpiration { get; set; } = 5.Hours();
+    public TimeSpan ValueCacheExpiration { get; set; } = TimeSpan.FromHours(5);
 
     /// <summary>Gets or sets the lifetime of the settings hash stamp in the distributed cache, used to detect changes. Default: 30 days.</summary>
-    public TimeSpan SettingsHashCacheExpiration { get; set; } = 30.Days();
+    public TimeSpan SettingsHashCacheExpiration { get; set; } = TimeSpan.FromDays(30);
 
     /// <summary>Gets or sets the lifetime of the common updated-stamp entry in the distributed cache. Default: 30 days.</summary>
-    public TimeSpan CommonSettingsUpdatedStampCacheExpiration { get; set; } = 30.Days();
+    public TimeSpan CommonSettingsUpdatedStampCacheExpiration { get; set; } = TimeSpan.FromDays(30);
 
     /// <summary>
     /// Gets or sets the distributed-cache key for the shared updated stamp.
@@ -58,7 +57,7 @@ public sealed class SettingManagementOptions
     /// Gets or sets how long the local in-memory definition cache is considered fresh before re-checking
     /// the distributed stamp. Default: 30 seconds.
     /// </summary>
-    public TimeSpan DynamicDefinitionsMemoryCacheExpiration { get; set; } = 30.Seconds();
+    public TimeSpan DynamicDefinitionsMemoryCacheExpiration { get; set; } = TimeSpan.FromSeconds(30);
 }
 
 /// <summary>Validator for <see cref="SettingManagementOptions"/>.</summary>

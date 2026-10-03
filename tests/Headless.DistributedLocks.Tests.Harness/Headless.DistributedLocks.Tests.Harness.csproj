@@ -6,6 +6,9 @@
     <IsTestHarnessProject>true</IsTestHarnessProject>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="Humanizer.Core" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.DistributedLocks.Core\Headless.DistributedLocks.Core.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
   </ItemGroup>

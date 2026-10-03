@@ -9,6 +9,42 @@ public static class HeadlessTimeProviderExtensions
 {
     extension(TimeProvider timeProvider)
     {
+        /// <summary>Creates a task that completes after <paramref name="delay"/> elapses on this provider's clock.</summary>
+        /// <param name="delay">The time to wait, or <see cref="Timeout.InfiniteTimeSpan"/> to wait indefinitely.</param>
+        /// <param name="cancellationToken">A token that cancels the wait.</param>
+        /// <returns>A <see cref="Task"/> that completes when the delay elapses.</returns>
+        /// <remarks>
+        /// Delegates to <see cref="Task.Delay(TimeSpan, TimeProvider, CancellationToken)"/>. It restores the call shape
+        /// the <c>Microsoft.Bcl.TimeProvider</c> package offered, which the framework no longer references because the
+        /// BCL already supplies the time provider and the delay.
+        /// </remarks>
+        /// <exception cref="ArgumentOutOfRangeException">
+        /// <paramref name="delay"/> is negative and not <see cref="Timeout.InfiniteTimeSpan"/>, or is longer than the
+        /// maximum supported delay.
+        /// </exception>
+        /// <exception cref="TaskCanceledException"><paramref name="cancellationToken"/> was canceled.</exception>
+        public Task Delay(TimeSpan delay, CancellationToken cancellationToken = default)
+        {
+            return Task.Delay(delay, timeProvider, cancellationToken);
+        }
+
+        /// <summary>
+        /// Creates a <see cref="CancellationTokenSource"/> that cancels after <paramref name="delay"/> elapses on this
+        /// provider's clock.
+        /// </summary>
+        /// <param name="delay">The time before the source cancels, or <see cref="Timeout.InfiniteTimeSpan"/> for never.</param>
+        /// <returns>A new source the caller owns and must dispose.</returns>
+        /// <remarks>Delegates to <see cref="CancellationTokenSource(TimeSpan, TimeProvider)"/>.</remarks>
+        /// <exception cref="ArgumentOutOfRangeException">
+        /// <paramref name="delay"/> is negative and not <see cref="Timeout.InfiniteTimeSpan"/>, or is longer than the
+        /// maximum supported delay.
+        /// </exception>
+        [MustDisposeResource]
+        public CancellationTokenSource CreateCancellationTokenSource(TimeSpan delay)
+        {
+            return new CancellationTokenSource(delay, timeProvider);
+        }
+
         /// <summary>
         /// Waits for the specified <paramref name="delay"/> to elapse, returning normally (rather than throwing)
         /// if the wait is canceled via <paramref name="cancellationToken"/>.

@@ -12,7 +12,7 @@ namespace Headless.UnitOfWork.Internal;
 internal static class PostgreSqlTransientFaults
 {
     // The same values as SqlErrorCodes.PostgreSql in Headless.Extensions, which this package cannot reference
-    // without taking on Polly, Humanizer, MoreLinq, and System.Reactive; keep the two in step by hand.
+    // without taking on Polly, Humanizer, and MoreLinq; keep the two in step by hand.
     private const string _SerializationFailureSqlState = "40001";
     private const string _DeadlockDetectedSqlState = "40P01";
 

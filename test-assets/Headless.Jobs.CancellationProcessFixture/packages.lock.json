@@ -201,16 +201,6 @@
           "Microsoft.Extensions.FileProviders.Physical": "10.0.12"
         }
       },
-      "Microsoft.Extensions.Diagnostics": {
-        "type": "Transitive",
-        "resolved": "10.0.12",
-        "contentHash": "amx0O/R4dReqKlC3T740+CHpX8D8tAIV0f5kAPfFi4XK9jYo9BSepGt9/rWfvvCoSMaZ1+XvnqPp/Vv2fmTdAg==",
-        "dependencies": {
-          "Microsoft.Extensions.Configuration": "10.0.12",
-          "Microsoft.Extensions.Diagnostics.Abstractions": "10.0.12",
-          "Microsoft.Extensions.Options.ConfigurationExtensions": "10.0.12"
-        }
-      },
       "Microsoft.Extensions.Diagnostics.Abstractions": {
         "type": "Transitive",
         "resolved": "10.0.12",
@@ -359,7 +349,8 @@
       "headless.caching.abstractions": {
         "type": "Project",
         "dependencies": {
-          "Headless.Extensions": "[1.0.0, )"
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Primitives": "[1.0.0, )"
         }
       },
       "headless.checks": {
@@ -414,14 +405,13 @@
           "Headless.Serializer.Json": "[1.0.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.12, )",
-          "Snappier": "[1.3.1, )"
+          "TimeZoneConverter": "[7.2.0, )"
         }
       },
       "headless.distributedlocks.abstractions": {
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
-          "Headless.Extensions": "[1.0.0, )",
           "Headless.UnitOfWork.Abstractions": "[1.0.0, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.12, )"
         }
@@ -449,28 +439,19 @@
       "headless.extensions": {
         "type": "Project",
         "dependencies": {
-          "CommunityToolkit.HighPerformance": "[8.4.2, )",
           "Headless.Checks": "[1.0.0, )",
           "Headless.Generator.Primitives.Abstractions": "[1.0.0, )",
           "Headless.Primitives": "[1.0.0, )",
           "Headless.Urls": "[1.0.0, )",
-          "Humanizer.Core": "[3.0.10, )",
-          "Microsoft.Bcl.TimeProvider": "[10.0.12, )",
           "Nito.AsyncEx": "[5.1.2, )",
-          "Nito.Disposables": "[2.5.0, )",
-          "Polly.Core": "[8.7.0, )",
-          "System.Reactive": "[6.1.0, )",
-          "TimeZoneConverter": "[7.2.0, )",
-          "libphonenumber-csharp": "[9.0.39, )",
-          "morelinq": "[4.4.0, )"
+          "Nito.Disposables": "[2.5.0, )"
         }
       },
       "headless.fluentvalidation": {
         "type": "Project",
         "dependencies": {
           "FluentValidation": "[12.1.1, )",
-          "Headless.Extensions": "[1.0.0, )",
-          "libphonenumber-csharp": "[9.0.39, )"
+          "Headless.Extensions": "[1.0.0, )"
         }
       },
       "headless.generator.primitives.abstractions": {
@@ -482,7 +463,7 @@
           "Headless.FluentValidation": "[1.0.0, )",
           "Microsoft.Extensions.Configuration.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
-          "Microsoft.Extensions.Hosting": "[10.0.12, )",
+          "Microsoft.Extensions.Hosting.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.Options.ConfigurationExtensions": "[10.0.12, )",
           "Microsoft.Extensions.Options.DataAnnotations": "[10.0.12, )",
           "OpenTelemetry.Api": "[1.18.0, )"
@@ -556,8 +537,7 @@
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
-          "Headless.Generator.Primitives.Abstractions": "[1.0.0, )",
-          "libphonenumber-csharp": "[9.0.39, )"
+          "Headless.Generator.Primitives.Abstractions": "[1.0.0, )"
         }
       },
       "headless.serializer.abstractions": {
@@ -629,12 +609,6 @@
           "Headless.Checks": "[1.0.0, )"
         }
       },
-      "CommunityToolkit.HighPerformance": {
-        "type": "CentralTransitive",
-        "requested": "[8.4.2, )",
-        "resolved": "8.4.2",
-        "contentHash": "2hmtrrU18x6NL3mbuAqwy0KpnoEEJOuK6sH5RKQfD/jHijn2pqvqBUC7WGy9dgNBL9BDA7eOC0kirsNPMp2f4Q=="
-      },
       "FlexLabs.EntityFrameworkCore.Upsert": {
         "type": "CentralTransitive",
         "requested": "[10.1.0, )",
@@ -649,24 +623,6 @@
         "requested": "[12.1.1, )",
         "resolved": "12.1.1",
         "contentHash": "EPpkIe1yh1a0OXyC100oOA8WMbZvqUu5plwhvYcb7oSELfyUZzfxV48BLhvs3kKo4NwG7MGLNgy1RJiYtT8Dpw=="
-      },
-      "Humanizer.Core": {
-        "type": "CentralTransitive",
-        "requested": "[3.0.10, )",
-        "resolved": "3.0.10",
-        "contentHash": "yZIhtw8sYuvsONzQbZxWpR60tMWYHXoo0DL6nyOqSFiU5POjBTSEyWFpTQtJEZuy+oqiYTXKXY/Mjx7KnqIQFw=="
-      },
-      "libphonenumber-csharp": {
-        "type": "CentralTransitive",
-        "requested": "[9.0.39, )",
-        "resolved": "9.0.39",
-        "contentHash": "NiBrwzjHgtBj1XxTVQrWrxn+XOUmiDRcpqxBG5/DtZn8c2vm29FS9aBaCPG5+hBTDYXEid1r0SAZd7a063oGWg=="
-      },
-      "Microsoft.Bcl.TimeProvider": {
-        "type": "CentralTransitive",
-        "requested": "[10.0.12, )",
-        "resolved": "10.0.12",
-        "contentHash": "YgZ5iXpo16E5nqvIqNiJXzyG8DiBsx3wg4jcwz8zxnxDV798izSzJn/PBg7s+xLU57+myilIxEg2RhQmNCcl0w=="
       },
       "Microsoft.EntityFrameworkCore": {
         "type": "CentralTransitive",
@@ -737,6 +693,17 @@
         "requested": "[10.0.12, )",
         "resolved": "10.0.12",
         "contentHash": "9/qymSh7hVDMGTGwrLz8MRp5zRyXy9adGDOs4HwRdnLil3oZGYuWeZjbmHgCQ9BL1qBroVfgUK3U/nb61617Cw=="
+      },
+      "Microsoft.Extensions.Diagnostics": {
+        "type": "CentralTransitive",
+        "requested": "[10.0.12, )",
+        "resolved": "10.0.12",
+        "contentHash": "amx0O/R4dReqKlC3T740+CHpX8D8tAIV0f5kAPfFi4XK9jYo9BSepGt9/rWfvvCoSMaZ1+XvnqPp/Vv2fmTdAg==",
+        "dependencies": {
+          "Microsoft.Extensions.Configuration": "10.0.12",
+          "Microsoft.Extensions.Diagnostics.Abstractions": "10.0.12",
+          "Microsoft.Extensions.Options.ConfigurationExtensions": "10.0.12"
+        }
       },
       "Microsoft.Extensions.Hosting.Abstractions": {
         "type": "CentralTransitive",
@@ -817,12 +784,6 @@
           "Microsoft.Extensions.Options": "10.0.12"
         }
       },
-      "morelinq": {
-        "type": "CentralTransitive",
-        "requested": "[4.4.0, )",
-        "resolved": "4.4.0",
-        "contentHash": "QX3bsK9oFeUXk8tFsc9NkI6NnCr8Ar/ex027p+ZZ/jdLCdX2RlryDtxUqZW5j45NVwn4E4Z4hzupsoMQd6Yxtg=="
-      },
       "NCrontab.Signed": {
         "type": "CentralTransitive",
         "requested": "[3.4.0, )",
@@ -869,18 +830,6 @@
         "requested": "[8.7.0, )",
         "resolved": "8.7.0",
         "contentHash": "BS2t+nsBer16PIebCEPNBK5fgMisADQyRCd7K+BgkMWpFmSaiYE+rVVNpFhGRqUkJmNSLmw0uCNzHHWfgml28Q=="
-      },
-      "Snappier": {
-        "type": "CentralTransitive",
-        "requested": "[1.3.1, )",
-        "resolved": "1.3.1",
-        "contentHash": "DOdDQiO8YZ5rBtVLY+6CmR1yp9WYoJRgEEktPBrR0tEj9QO2djA/zv0O3DX0OZpEAfosbY8pytQ9tQUogwQsEA=="
-      },
-      "System.Reactive": {
-        "type": "CentralTransitive",
-        "requested": "[6.1.0, )",
-        "resolved": "6.1.0",
-        "contentHash": "M5cCC1ZMkZr9jbSQGTHnVkb5TDN67qWCV7AP8TAHdGkvDlu0puT5NzemESNn9+HkYIDpWpocP68/i+/ame2/2w=="
       },
       "TimeZoneConverter": {
         "type": "CentralTransitive",

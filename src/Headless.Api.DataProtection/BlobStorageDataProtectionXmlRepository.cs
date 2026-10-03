@@ -5,7 +5,6 @@ using System.Xml.Linq;
 using Headless.Blobs;
 using Headless.Checks;
 using Headless.Threading;
-using Humanizer;
 using Microsoft.AspNetCore.DataProtection.Repositories;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -65,7 +64,7 @@ internal sealed class BlobStorageDataProtectionXmlRepository : IXmlRepository
                 MaxRetryAttempts = 4,
                 BackoffType = DelayBackoffType.Exponential,
                 UseJitter = true,
-                Delay = 200.Milliseconds(),
+                Delay = TimeSpan.FromMilliseconds(200),
                 ShouldHandle = new PredicateBuilder().Handle<IOException>().Handle<HttpRequestException>(),
             }
         )

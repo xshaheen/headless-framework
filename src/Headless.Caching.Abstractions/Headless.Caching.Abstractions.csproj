@@ -6,6 +6,7 @@
     <RootNamespace>Headless.Caching</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Headless.Extensions\Headless.Extensions.csproj" />
+    <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
+    <ProjectReference Include="..\Headless.Primitives\Headless.Primitives.csproj" />
   </ItemGroup>
 </Project>

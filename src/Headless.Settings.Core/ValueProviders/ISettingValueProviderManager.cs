@@ -3,7 +3,6 @@
 using Headless.Settings.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
-using MoreLinq;
 
 namespace Headless.Settings.ValueProviders;
 
@@ -54,7 +53,7 @@ public sealed class SettingValueProviderManager : ISettingValueProviderManager
 
         var multipleProviders = providers
             .GroupBy(p => p.Name, StringComparer.Ordinal)
-            .FirstOrDefault(x => x.AtLeast(2));
+            .FirstOrDefault(x => x.Skip(1).Any());
 
         if (multipleProviders is null)
         {
