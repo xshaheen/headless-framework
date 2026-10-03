@@ -232,7 +232,7 @@ public sealed class SqlServerPooledIsolationTests(SqlServerTestFixture fixture) 
 
     private static Task _InsertPublishedAsync(
         SqlConnection connection,
-        ISerializer serializer,
+        IMessageSerializer serializer,
         Guid id,
         StatusName status,
         DateTimeOffset expiresAt

@@ -31,7 +31,7 @@ public sealed class PostgreSqlStorageConnectionTest(PostgreSqlTestFixture fixtur
         services.Configure<PostgreSqlOptions>(x => x.ConnectionString = fixture.ConnectionString);
         services.Configure<MessagingOptions>(x => x.Version = "v1");
         services.AddTestMessagingSchema();
-        services.AddSingleton<ISerializer, JsonUtf8Serializer>();
+        services.AddSingleton<IMessageSerializer, JsonUtf8Serializer>();
 
         var provider = services.BuildServiceProvider();
         var tableNames = provider.GetRequiredService<IStorageTableNames>();
@@ -41,7 +41,7 @@ public sealed class PostgreSqlStorageConnectionTest(PostgreSqlTestFixture fixtur
             provider.GetRequiredService<IOptions<MessagingOptions>>(),
             TestStorageOptions.For(),
             tableNames,
-            provider.GetRequiredService<ISerializer>(),
+            provider.GetRequiredService<IMessageSerializer>(),
             new SequentialGuidGenerator(SequentialGuidType.Version7),
             TimeProvider.System,
             new NullNodeMembership(),

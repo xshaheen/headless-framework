@@ -25,7 +25,7 @@ internal sealed class Bus : IBus
     }
 
     internal Bus(
-        ISerializer serializer,
+        IMessageSerializer serializer,
         IBusTransport transport,
         IMessagePublishRequestFactory publishRequestFactory,
         IPublishMiddlewarePipeline publishPipeline,

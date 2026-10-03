@@ -101,13 +101,13 @@ public sealed class InitialDispatchGraceTests : TestBase
             x.RetryPolicy.InitialDispatchGrace = _InitialDispatchGrace;
             x.RetryPolicy.MaxPersistedRetries = 4;
         });
-        services.AddSingleton<ISerializer, JsonUtf8Serializer>();
+        services.AddSingleton<IMessageSerializer, JsonUtf8Serializer>();
         services.AddSingleton<TimeProvider>(fakeClock);
 
         var provider = services.BuildServiceProvider();
         var storage = new InMemoryDataStorage(
             provider.GetRequiredService<IOptions<MessagingOptions>>(),
-            provider.GetRequiredService<ISerializer>(),
+            provider.GetRequiredService<IMessageSerializer>(),
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),
             fakeClock,
             new NullNodeMembership()

@@ -71,7 +71,7 @@ internal sealed partial class RelationalDataStorage
     private readonly ISqlDialect _dialect;
     private readonly MessagingTables _t;
     private readonly IOptions<MessagingOptions> _messagingOptions;
-    private readonly ISerializer _serializer;
+    private readonly IMessageSerializer _serializer;
     private readonly IGuidGenerator _guidGenerator;
     private readonly TimeProvider _timeProvider;
     private readonly INodeMembership _nodeMembership;
@@ -88,7 +88,7 @@ internal sealed partial class RelationalDataStorage
         IOptions<MessagingOptions> messagingOptions,
         IOptions<MessagingStorageOptions> storageOptions,
         IStorageTableNames tableNames,
-        ISerializer serializer,
+        IMessageSerializer serializer,
         IGuidGenerator guidGenerator,
         TimeProvider timeProvider,
         INodeMembership nodeMembership,
@@ -141,7 +141,7 @@ internal sealed partial class RelationalDataStorage
             services.GetRequiredService<IOptions<MessagingOptions>>(),
             services.GetRequiredService<IOptions<MessagingStorageOptions>>(),
             tableNames,
-            services.GetRequiredService<ISerializer>(),
+            services.GetRequiredService<IMessageSerializer>(),
             services.GetRequiredKeyedService<IGuidGenerator>(guidType),
             services.GetRequiredService<TimeProvider>(),
             services.GetRequiredService<INodeMembership>(),

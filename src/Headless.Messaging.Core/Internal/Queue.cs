@@ -25,7 +25,7 @@ internal sealed class Queue : IQueue
     }
 
     internal Queue(
-        ISerializer serializer,
+        IMessageSerializer serializer,
         IQueueTransport transport,
         IMessagePublishRequestFactory publishRequestFactory,
         IPublishMiddlewarePipeline publishPipeline,

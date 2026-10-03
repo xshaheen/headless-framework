@@ -84,7 +84,7 @@ internal sealed partial class ConsumerRegister(
     private int _pendingTopologyRefresh;
 
     private MethodMatcherCache _selector = null!;
-    private ISerializer _serializer = null!;
+    private IMessageSerializer _serializer = null!;
     private BrokerAddress _serverAddress;
     private CancellationToken _hostStoppingToken;
 #pragma warning disable CA2213 // Disposed under the gate in _TeardownUnderGateAsync after the drain-reacquire.
@@ -121,7 +121,7 @@ internal sealed partial class ConsumerRegister(
 
         _selector = serviceProvider.GetRequiredService<MethodMatcherCache>();
         _dispatcher = serviceProvider.GetRequiredService<IDispatcher>();
-        _serializer = serviceProvider.GetRequiredService<ISerializer>();
+        _serializer = serviceProvider.GetRequiredService<IMessageSerializer>();
         _storage = serviceProvider.GetRequiredService<IDataStorage>();
         _consumerClientFactory = serviceProvider.GetRequiredService<IConsumerClientFactory>();
         _circuitBreakerStateManager = serviceProvider.GetService<ICircuitBreakerStateManager>();

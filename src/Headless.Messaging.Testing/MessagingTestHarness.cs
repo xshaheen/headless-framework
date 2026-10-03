@@ -860,7 +860,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
             services,
             sp =>
             {
-                var serializer = sp.GetRequiredService<ISerializer>();
+                var serializer = sp.GetRequiredService<IMessageSerializer>();
                 var logger = sp.GetService<ILogger<RecordingBusTransport>>();
                 return inner => new RecordingBusTransport(inner, store, serializer, logger);
             }
@@ -873,7 +873,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
             services,
             sp =>
             {
-                var serializer = sp.GetRequiredService<ISerializer>();
+                var serializer = sp.GetRequiredService<IMessageSerializer>();
                 var logger = sp.GetService<ILogger<RecordingQueueTransport>>();
                 return inner => new RecordingQueueTransport(inner, store, serializer, logger);
             }

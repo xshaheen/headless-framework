@@ -36,7 +36,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
             x.FailedMessageExpiredAfter = 3600;
         });
         services.AddTestMessagingSchema();
-        services.AddSingleton<ISerializer, JsonUtf8Serializer>();
+        services.AddSingleton<IMessageSerializer, JsonUtf8Serializer>();
         services.AddSingleton(TimeProvider.System);
 
         var provider = services.BuildServiceProvider();
@@ -47,7 +47,7 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
             provider.GetRequiredService<IOptions<MessagingOptions>>(),
             TestStorageOptions.For(),
             tableNames,
-            provider.GetRequiredService<ISerializer>(),
+            provider.GetRequiredService<IMessageSerializer>(),
             new SequentialGuidGenerator(SequentialGuidType.Version7),
             TimeProvider.System,
             new NullNodeMembership(),

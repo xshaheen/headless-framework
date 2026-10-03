@@ -453,7 +453,7 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
             StorageId = Guid.NewGuid(),
             Origin = message,
             Lane = MessageLane.Bus,
-            Content = provider.GetRequiredService<ISerializer>().Serialize(message),
+            Content = provider.GetRequiredService<IMessageSerializer>().Serialize(message),
         };
         var descriptor = _GetDescriptor<ShipOrderConsumer>(provider);
 
@@ -595,7 +595,7 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
             """SELECT "message_id", "content" FROM headless."messaging_published" WHERE "content" LIKE @marker""";
         command.Parameters.AddWithValue(nameof(marker), $"%{marker}%");
         await using var reader = await command.ExecuteReaderAsync(AbortToken);
-        var serializer = provider.GetRequiredService<ISerializer>();
+        var serializer = provider.GetRequiredService<IMessageSerializer>();
         var rows = new List<(string, Message)>();
         while (await reader.ReadAsync(AbortToken))
         {

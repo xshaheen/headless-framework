@@ -14,7 +14,7 @@ public sealed class MessageTest
 
         services.AddOptions();
         services.AddSingleton<IServiceCollection>(_ => services);
-        services.AddSingleton<ISerializer, JsonUtf8Serializer>();
+        services.AddSingleton<IMessageSerializer, JsonUtf8Serializer>();
         _provider = services.BuildServiceProvider();
     }
 
@@ -34,7 +34,7 @@ public sealed class MessageTest
         );
 
         // when
-        var serializer = _provider.GetRequiredService<ISerializer>();
+        var serializer = _provider.GetRequiredService<IMessageSerializer>();
         var json = serializer.Serialize(givenMessage);
         var deserializedMessage = serializer.Deserialize(json);
 

@@ -39,7 +39,7 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
         });
         services.Configure<MessagingOptions>(x => x.Version = "v1");
         services.AddTestMessagingSchema();
-        services.AddSingleton<ISerializer, JsonUtf8Serializer>();
+        services.AddSingleton<IMessageSerializer, JsonUtf8Serializer>();
 
         var provider = services.BuildServiceProvider();
         var tableNames = provider.GetRequiredService<IStorageTableNames>();
@@ -49,7 +49,7 @@ public sealed class SqlServerDataStorageTests(SqlServerTestFixture fixture) : Te
             provider.GetRequiredService<IOptions<MessagingOptions>>(),
             TestStorageOptions.For(),
             tableNames,
-            provider.GetRequiredService<ISerializer>(),
+            provider.GetRequiredService<IMessageSerializer>(),
             new SequentialGuidGenerator(SequentialGuidType.SqlServer),
             _timeProvider,
             new NullNodeMembership(),

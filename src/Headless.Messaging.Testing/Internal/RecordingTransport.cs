@@ -10,7 +10,7 @@ namespace Headless.Messaging.Testing.Internal;
 internal sealed class RecordingBusTransport(
     IBusTransport inner,
     MessageObservationStore store,
-    ISerializer serializer,
+    IMessageSerializer serializer,
     ILogger<RecordingBusTransport>? logger = null
 ) : IBusTransport
 {
@@ -40,7 +40,7 @@ internal sealed class RecordingBusTransport(
 internal sealed class RecordingQueueTransport(
     IQueueTransport inner,
     MessageObservationStore store,
-    ISerializer serializer,
+    IMessageSerializer serializer,
     ILogger<RecordingQueueTransport>? logger = null
 ) : IQueueTransport
 {
@@ -94,7 +94,7 @@ internal static class RecordingTransportRecorder
         TransportMessage message,
         MessageLane lane,
         MessageObservationStore store,
-        ISerializer serializer,
+        IMessageSerializer serializer,
         ILogger? logger
     )
     {
