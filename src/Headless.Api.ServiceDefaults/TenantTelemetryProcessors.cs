@@ -9,6 +9,7 @@ using OpenTelemetry.Logs;
 
 namespace Headless.Api.ServiceDefaults;
 
+#pragma warning disable MA0048 // A topic file: its types are peers with no main type, so the file is named for the topic.
 /// <summary>
 /// Adds the ambient tenant id to every log record. Reading <see cref="ICurrentTenant"/> at emission, rather than
 /// opening a logging scope where the tenant is set, labels records with the tenant that is actually ambient: a nested

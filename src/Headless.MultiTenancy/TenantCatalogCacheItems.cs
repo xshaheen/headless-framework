@@ -2,6 +2,7 @@
 
 namespace Headless.MultiTenancy;
 
+#pragma warning disable MA0048 // A topic file: its types are peers with no main type, so the file is named for the topic.
 /// <summary>
 /// Cached entry for the catalog service's identifier→id resolution axis. A <see langword="null"/>
 /// <see cref="TenantId"/> is a negative entry: the normalized identifier is known to have no matching
