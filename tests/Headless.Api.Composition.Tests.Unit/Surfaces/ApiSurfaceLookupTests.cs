@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Api;
-using Headless.Api.Surfaces;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;

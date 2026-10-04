@@ -4,7 +4,7 @@ using System.Security.Claims;
 using Headless.Abstractions;
 using Headless.Primitives;
 
-namespace Headless.Api.Abstractions;
+namespace Headless.Api;
 
 internal sealed class HttpCurrentUser(ICurrentPrincipalAccessor accessor) : ICurrentUser
 {

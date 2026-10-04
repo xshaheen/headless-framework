@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Api.ApiExplorer;
+namespace Headless.Api;
 
 /// <summary>
 /// Pre-built Markdown strings for annotating Swagger/OpenAPI operation descriptions with the

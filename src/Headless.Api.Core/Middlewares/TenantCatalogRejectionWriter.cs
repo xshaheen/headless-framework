@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Headless.Api.Middlewares;
+namespace Headless.Api;
 
 /// <summary>
 /// Maps tenant-catalog resolution outcomes to <see cref="ProblemDetails"/> (secure-by-default

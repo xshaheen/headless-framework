@@ -3,7 +3,7 @@
 using System.Collections.Frozen;
 using Headless.Checks;
 
-namespace Headless.Api.Surfaces;
+namespace Headless.Api;
 
 /// <summary>One immutable surface snapshot shared by routing, telemetry, and document generation in a host.</summary>
 [PublicAPI]

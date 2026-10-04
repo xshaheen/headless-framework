@@ -1,12 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Api.Surfaces;
 using Headless.Checks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ApplicationModels;
 
-namespace Headless.Api.Mvc.Surfaces;
+namespace Headless.Api;
 
 /// <summary>Applies surface defaults while preserving controller/action overrides and API version groups.</summary>
 public sealed class ApiSurfaceConvention(ApiSurfaceRegistry registry) : IApplicationModelConvention

@@ -4,7 +4,7 @@ using Headless.Checks;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Api.Identity.TokenProviders;
+namespace Headless.Api.Identity;
 
 /// <summary>
 /// Base TOTP token provider with configurable timestep, variance, and hash algorithm.

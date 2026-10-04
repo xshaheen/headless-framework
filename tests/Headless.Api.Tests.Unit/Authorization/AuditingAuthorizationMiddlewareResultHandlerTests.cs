@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Api.Authorization;
+using Headless.Api;
 using Headless.AuditLog;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Authorization;

@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Api.Cors;
+namespace Headless.Api;
 
 /// <summary>
 /// Consults the <see cref="ICorsOriginSource"/> registered for a policy when the policy's static origins miss. Works

@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Api.MultiTenancy;
+namespace Headless.Api;
 
 /// <summary>
 /// Immutable per-request feature set by <c>TenantCatalogResolutionMiddleware</c> when identifier-based

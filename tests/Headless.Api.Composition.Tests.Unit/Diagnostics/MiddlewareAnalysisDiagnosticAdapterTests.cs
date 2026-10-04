@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Api.Diagnostics;
+using Headless.Api;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 

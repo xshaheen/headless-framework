@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Api.Cors;
 using Headless.Checks;
 using Headless.Constants;
 using Microsoft.AspNetCore.Cors.Infrastructure;

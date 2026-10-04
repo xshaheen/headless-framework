@@ -1,6 +1,6 @@
 using System.Security.Claims;
 using System.Text.Encodings.Web;
-using Headless.Api.Security.Claims;
+using Headless.Api.Security;
 using Headless.Constants;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;

@@ -2,7 +2,7 @@
 
 using System.Security.Claims;
 using System.Text.Encodings.Web;
-using Headless.Api.Identity.Authentication.Basic;
+using Headless.Api.Identity;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;

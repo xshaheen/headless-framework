@@ -3,7 +3,6 @@
 using FluentValidation;
 using Headless.Abstractions;
 using Headless.Api;
-using Headless.Api.Middlewares;
 using Headless.Api.ServiceDefaults;
 using Headless.Constants;
 using Headless.MultiTenancy;

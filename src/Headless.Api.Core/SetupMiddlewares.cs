@@ -2,9 +2,6 @@
 
 using System.ComponentModel;
 using Headless.Abstractions;
-using Headless.Api.Abstractions;
-using Headless.Api.Middlewares;
-using Headless.Api.MultiTenancy;
 using Headless.MultiTenancy;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
@@ -146,7 +143,7 @@ public static class SetupMiddlewares
     /// <summary>
     /// Adds <c>TenantResolutionMiddleware</c> to the pipeline. It reads the configured tenant claim
     /// from the authenticated principal and sets <see cref="Headless.MultiTenancy.ICurrentTenant"/>
-    /// for the duration of the request. Endpoints decorated with <see cref="MultiTenancy.SkipTenantResolutionAttribute"/>
+    /// for the duration of the request. Endpoints decorated with <see cref="SkipTenantResolutionAttribute"/>
     /// are bypassed entirely. Unauthenticated requests are passed through without setting a tenant.
     /// </summary>
     /// <param name="application">The application builder.</param>
@@ -212,7 +209,7 @@ public static class SetupMiddlewares
     /// <c>ITenantIdentifierSource</c>s in registration order and resolves the first found
     /// identifier through the tenant catalog, setting <see cref="Headless.MultiTenancy.ICurrentTenant"/>
     /// on a match or short-circuiting with a fail-closed ProblemDetails response. Endpoints decorated
-    /// with <see cref="MultiTenancy.SkipTenantResolutionAttribute"/> are bypassed entirely.
+    /// with <see cref="SkipTenantResolutionAttribute"/> are bypassed entirely.
     /// </summary>
     /// <param name="application">The application builder.</param>
     /// <returns>The same application builder.</returns>

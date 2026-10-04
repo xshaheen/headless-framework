@@ -2,7 +2,7 @@
 
 using FluentValidation;
 
-namespace Headless.Api.Contracts;
+namespace Headless.Api;
 
 internal sealed class PhoneNumberRequestValidator : AbstractValidator<PhoneNumberRequest>
 {

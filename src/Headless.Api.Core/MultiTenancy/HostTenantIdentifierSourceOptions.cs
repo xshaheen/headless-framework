@@ -2,7 +2,7 @@
 
 using FluentValidation;
 
-namespace Headless.Api.MultiTenancy;
+namespace Headless.Api;
 
 /// <summary>
 /// Options for the host tenant identifier source: the host templates matched against

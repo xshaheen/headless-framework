@@ -4,7 +4,7 @@ using System.Security.Claims;
 using Headless.Abstractions;
 using Microsoft.AspNetCore.Http;
 
-namespace Headless.Api.Security.Claims;
+namespace Headless.Api.Security;
 
 /// <summary>
 /// <see cref="ThreadCurrentPrincipalAccessor"/> that resolves the current principal from

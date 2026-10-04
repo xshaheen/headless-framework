@@ -2,7 +2,7 @@
 
 using System.Globalization;
 using System.Security.Claims;
-using Headless.Api.Authorization;
+using Headless.Api;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.DependencyInjection;

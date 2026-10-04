@@ -1,8 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Security.Claims;
-using Headless.Api.Security.Claims;
-using Headless.Api.Security.Jwt;
+using Headless.Api.Security;
 using Headless.Constants;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Identity;

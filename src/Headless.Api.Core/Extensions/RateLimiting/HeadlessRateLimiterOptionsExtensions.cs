@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Api.Middlewares;
+using Headless.Api;
 using Headless.Checks;
 using Microsoft.AspNetCore.Http;
 

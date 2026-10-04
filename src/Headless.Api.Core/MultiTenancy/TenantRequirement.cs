@@ -3,7 +3,7 @@
 using Headless.MultiTenancy;
 using Microsoft.AspNetCore.Authorization;
 
-namespace Headless.Api.MultiTenancy;
+namespace Headless.Api;
 
 /// <summary>
 /// ASP.NET Core authorization requirement that enforces an ambient resolved tenant.

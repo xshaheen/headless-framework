@@ -6,7 +6,7 @@ using System.Text.RegularExpressions;
 using Headless.Checks;
 using Headless.Constants;
 
-namespace Headless.Api.MultiTenancy;
+namespace Headless.Api;
 
 /// <summary>
 /// A parsed and compiled host template: dot-separated labels where <c>{tenant}</c> names the

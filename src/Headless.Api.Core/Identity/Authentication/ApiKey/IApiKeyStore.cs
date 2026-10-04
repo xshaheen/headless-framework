@@ -2,7 +2,7 @@
 
 using Microsoft.AspNetCore.Identity;
 
-namespace Headless.Api.Identity.Authentication.ApiKey;
+namespace Headless.Api.Identity;
 
 /// <summary>
 /// Resolves a <typeparamref name="TUser"/> from a raw API key string.

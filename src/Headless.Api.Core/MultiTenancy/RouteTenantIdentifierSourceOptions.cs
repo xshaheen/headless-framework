@@ -2,7 +2,7 @@
 
 using FluentValidation;
 
-namespace Headless.Api.MultiTenancy;
+namespace Headless.Api;
 
 /// <summary>
 /// Options for the route tenant identifier source: the name of the route value whose

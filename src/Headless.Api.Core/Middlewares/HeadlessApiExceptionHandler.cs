@@ -16,7 +16,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using JsonOptions = Microsoft.AspNetCore.Http.Json.JsonOptions;
 
-namespace Headless.Api.Middlewares;
+namespace Headless.Api;
 
 /// <summary>
 /// Maps framework-known exceptions to normalized ProblemDetails responses through ASP.NET Core's

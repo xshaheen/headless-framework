@@ -3,7 +3,7 @@
 using Headless.Checks;
 using Microsoft.AspNetCore.Http;
 
-namespace Headless.Api.MultiTenancy;
+namespace Headless.Api;
 
 /// <summary>
 /// Adapts a <c>Func&lt;HttpContext, string?&gt;</c> resolver into an <see cref="ITenantIdentifierSource"/>,
