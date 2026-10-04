@@ -5,7 +5,7 @@ using Meziantou.Extensions.Logging.Xunit.v3;
 using Microsoft.Extensions.Logging;
 using Xunit;
 
-namespace Headless.Testing.Helpers;
+namespace Headless.Testing;
 
 /// <summary>
 /// Miscellaneous test utilities: a shared frozen <see cref="System.Text.Json.JsonSerializerOptions"/> instance,

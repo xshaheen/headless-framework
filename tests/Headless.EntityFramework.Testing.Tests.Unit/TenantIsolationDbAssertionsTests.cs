@@ -3,7 +3,7 @@
 using Headless.EntityFramework;
 using Headless.EntityFramework.Testing;
 using Headless.MultiTenancy;
-using Headless.Testing.Helpers;
+using Headless.Testing;
 using Headless.Testing.Tests;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;

@@ -1,6 +1,6 @@
 using Headless.Permissions;
 using Headless.Primitives;
-using Headless.Testing.Helpers;
+using Headless.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Tests.TestSetup;

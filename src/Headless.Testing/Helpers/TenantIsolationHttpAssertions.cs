@@ -7,7 +7,7 @@ using System.Text.Json.Nodes;
 using AwesomeAssertions;
 using Headless.Checks;
 
-namespace Headless.Testing.Helpers;
+namespace Headless.Testing;
 
 /// <summary>
 /// Asserts the "cross-tenant answers like a missing id" convention: a request for another tenant's resource must be

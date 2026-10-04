@@ -51,7 +51,7 @@ namespace from any package.
 ## A sub-namespace needs a distinct audience
 
 A family's public types live in its root namespace by default, so a feature's common tasks need one `using`.
-Add a sub-namespace only for a distinct audience or opt-in area: a provider (`Headless.Caching.Redis`),
+Add a sub-namespace only for a distinct audience or opt-in area: a provider (`Headless.DistributedLocks.Redis`),
 `Internal`, extension points for implementers (`Headless.Messaging.Transport`), `Testing`, or `Dashboard`.
 Never name one after a kind of type (`Models`, `Enums`, `Interfaces`, `Entities`, `Exceptions`, `Helpers`,
 `Extensions`, `Constants`, `Dtos`, `Base`, `Utilities`): it groups types by implementation detail instead of
