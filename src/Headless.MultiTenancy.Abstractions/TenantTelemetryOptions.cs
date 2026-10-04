@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using FluentValidation;
-
 namespace Headless.MultiTenancy;
 
 /// <summary>
@@ -50,14 +48,4 @@ public sealed class TenantTelemetryOptions
     /// Default: <see cref="DefaultAttributeName"/>.
     /// </summary>
     public string AttributeName { get; set; } = DefaultAttributeName;
-}
-
-internal sealed class TenantTelemetryOptionsValidator : AbstractValidator<TenantTelemetryOptions>
-{
-    public TenantTelemetryOptionsValidator()
-    {
-        RuleFor(x => x.LogAttributeName).NotEmpty().When(x => x.EnrichLogs);
-        // Messaging inbox metrics read AttributeName even when trace enrichment is off.
-        RuleFor(x => x.AttributeName).NotEmpty();
-    }
 }

@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.MultiTenancy;
-
-namespace Headless.Abstractions;
+namespace Headless.MultiTenancy;
 
 /// <summary>AsyncLocal-backed tenant write guard bypass.</summary>
 internal sealed class TenantWriteGuardBypass : ITenantWriteGuardBypass

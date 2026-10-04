@@ -1,9 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Abstractions;
+using Headless.MultiTenancy;
 using Headless.Primitives;
 
-namespace Tests.Abstractions;
+namespace Tests;
 
 public sealed class CurrentTenantTests
 {

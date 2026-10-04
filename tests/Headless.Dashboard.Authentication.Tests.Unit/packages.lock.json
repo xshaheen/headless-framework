@@ -400,8 +400,7 @@
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
-          "Headless.Extensions": "[1.0.0, )",
-          "Headless.MultiTenancy.Abstractions": "[1.0.0, )"
+          "Headless.Extensions": "[1.0.0, )"
         }
       },
       "headless.dashboard.authentication": {
@@ -443,6 +442,7 @@
       "headless.multitenancy.abstractions": {
         "type": "Project",
         "dependencies": {
+          "Headless.Extensions": "[1.0.0, )",
           "Headless.Primitives": "[1.0.0, )"
         }
       },
@@ -466,6 +466,7 @@
           "Bogus": "[35.6.5, )",
           "Headless.Core": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
+          "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
           "Headless.Security.Abstractions": "[1.0.0, )",
           "Meziantou.Extensions.Logging.Xunit.v3": "[3.0.6, )",
           "Microsoft.Extensions.TimeProvider.Testing": "[10.10.0, )",

@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Reflection;
-using Headless.Abstractions;
 using Headless.EntityFramework;
 using Headless.MultiTenancy;
 using Headless.Testing.Tests;

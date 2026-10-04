@@ -242,7 +242,6 @@
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
-          "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.12, )"
         }
@@ -314,12 +313,6 @@
         "type": "Project",
         "dependencies": {
           "Headless.Messaging.Abstractions": "[1.0.0, )"
-        }
-      },
-      "headless.multitenancy.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Primitives": "[1.0.0, )"
         }
       },
       "headless.primitives": {

@@ -1,9 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.MultiTenancy;
 using Headless.Primitives;
 
-namespace Headless.Abstractions;
+namespace Headless.MultiTenancy;
 
 /// <summary>
 /// <see cref="ICurrentTenantAccessor"/> implementation backed by <see cref="AsyncLocal{T}"/>,
