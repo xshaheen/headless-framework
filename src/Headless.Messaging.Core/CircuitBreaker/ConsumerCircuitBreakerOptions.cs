@@ -2,7 +2,7 @@
 
 using FluentValidation;
 
-namespace Headless.Messaging.CircuitBreaker;
+namespace Headless.Messaging;
 
 /// <summary>
 /// Per-consumer overrides for circuit breaker behavior. Any property left <see langword="null"/>

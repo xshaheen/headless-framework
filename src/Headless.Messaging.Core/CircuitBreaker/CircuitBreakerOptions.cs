@@ -2,7 +2,7 @@
 
 using FluentValidation;
 
-namespace Headless.Messaging.CircuitBreaker;
+namespace Headless.Messaging;
 
 /// <summary>
 /// Configuration options for the circuit breaker state manager.

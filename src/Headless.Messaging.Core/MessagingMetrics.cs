@@ -2,9 +2,7 @@
 
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
-using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
-using Headless.Messaging.Monitoring;
 
 namespace Headless.Messaging;
 

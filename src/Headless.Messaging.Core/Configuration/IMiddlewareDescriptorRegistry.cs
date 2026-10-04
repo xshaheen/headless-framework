@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Messaging.Configuration;
+namespace Headless.Messaging;
 
 internal interface IMiddlewareDescriptorRegistry
 {

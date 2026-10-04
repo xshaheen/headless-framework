@@ -1,9 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Security.Claims;
-using Headless.Messaging.Messages;
 
-namespace Headless.Messaging.Monitoring;
+namespace Headless.Messaging;
 
 #pragma warning disable MA0048 // A topic file: its types are peers with no main type, so the file is named for the topic.
 /// <summary>Payload-free filters for retained inbox generations.</summary>

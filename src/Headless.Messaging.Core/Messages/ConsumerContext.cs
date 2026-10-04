@@ -3,7 +3,7 @@
 using Headless.Checks;
 using Headless.UnitOfWork;
 
-namespace Headless.Messaging.Messages;
+namespace Headless.Messaging;
 
 /// <summary>A context for consumers, it used to be provider wrapper of method description and received message.</summary>
 /// <remarks>Create a new instance of  <see cref="ConsumerContext" /> .</remarks>

@@ -33,7 +33,7 @@ internal sealed class InMemoryQueueTransport(MemoryQueue queue, ILogger<InMemory
             return OperateResult.Failed(new ObjectDisposedException(nameof(InMemoryQueueTransport)));
         }
 
-        Configuration.MessagingRoutingAffinityMapping.RejectUnsupported(message, "InMemory");
+        MessagingRoutingAffinityMapping.RejectUnsupported(message, "InMemory");
         var messageName = message.Name;
         var result = await InMemoryTransportCore
             .SendCoreAsync(message, queue.SendQueue, cancellationToken)

@@ -4,7 +4,7 @@ using System.Diagnostics;
 using Headless.Checks;
 using Headless.Messaging.Internal;
 
-namespace Headless.Messaging.Configuration;
+namespace Headless.Messaging;
 
 /// <summary>Composes immutable provider contributions into the runtime capability authority.</summary>
 [PublicAPI]

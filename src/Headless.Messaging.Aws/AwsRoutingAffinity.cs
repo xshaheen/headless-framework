@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Messaging.Configuration;
-
 namespace Headless.Messaging.Aws;
 
 internal static class AwsRoutingAffinity

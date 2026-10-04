@@ -6,7 +6,7 @@ using Headless.Messaging.Internal;
 using Headless.MultiTenancy;
 using Microsoft.Extensions.Logging;
 
-namespace Headless.Messaging.MultiTenancy;
+namespace Headless.Messaging;
 
 /// <summary>Stamps <see cref="MessageOptions.TenantId"/> from the ambient <see cref="ICurrentTenant.Id"/>.</summary>
 [PublicAPI]

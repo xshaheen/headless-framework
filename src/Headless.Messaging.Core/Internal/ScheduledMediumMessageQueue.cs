@@ -2,7 +2,6 @@
 
 using System.Runtime.CompilerServices;
 using Headless.Checks;
-using Headless.Messaging.Messages;
 
 namespace Headless.Messaging.Internal;
 

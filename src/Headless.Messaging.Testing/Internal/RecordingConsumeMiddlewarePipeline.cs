@@ -2,7 +2,6 @@
 
 using System.Globalization;
 using Headless.Messaging.Internal;
-using Headless.Messaging.Messages;
 using MsgHeaders = Headless.Messaging.Headers;
 
 namespace Headless.Messaging.Testing.Internal;

@@ -2,7 +2,6 @@
 
 using System.Data.Common;
 using Headless.Messaging;
-using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Processor;
 using Headless.Messaging.Transport;

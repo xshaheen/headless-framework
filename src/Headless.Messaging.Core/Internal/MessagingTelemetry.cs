@@ -2,7 +2,6 @@
 
 using System.Collections.ObjectModel;
 using System.Diagnostics;
-using Headless.Messaging.Messages;
 using Headless.MultiTenancy;
 using Microsoft.Extensions.Logging;
 using OpenTelemetry;

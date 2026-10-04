@@ -4,7 +4,6 @@ using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
-using Headless.Messaging.Messages;
 using Headless.Testing.Tests;
 using OpenTelemetry;
 using OpenTelemetry.Context.Propagation;

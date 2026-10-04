@@ -2,7 +2,7 @@
 
 using Headless.Reliability;
 
-namespace Headless.Messaging.Registration;
+namespace Headless.Messaging;
 
 /// <summary>
 /// One message route the consumer registry folds when it is built: either the lane half of a

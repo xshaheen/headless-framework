@@ -2,7 +2,7 @@
 
 using FluentValidation;
 
-namespace Headless.Messaging.CircuitBreaker;
+namespace Headless.Messaging;
 
 /// <summary>
 /// Configuration options for the retry processor's adaptive polling and backpressure behavior.

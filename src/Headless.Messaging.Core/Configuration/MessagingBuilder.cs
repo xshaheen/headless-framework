@@ -8,7 +8,7 @@ using Headless.Messaging.Internal;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
-namespace Headless.Messaging.Configuration;
+namespace Headless.Messaging;
 
 /// <summary>
 /// Provides a fluent API for fine-grained configuration of messaging services within a dependency injection container.

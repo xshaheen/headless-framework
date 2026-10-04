@@ -3,7 +3,7 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Headless.Messaging.Dashboard.GatewayProxy;
+namespace Headless.Messaging.Dashboard;
 
 /// <summary>
 /// Endpoint filter that intercepts requests and delegates to the gateway proxy agent

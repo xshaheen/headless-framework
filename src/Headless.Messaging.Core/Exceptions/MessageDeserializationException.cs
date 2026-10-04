@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Messaging.Exceptions;
+namespace Headless.Messaging;
 
 /// <summary>
 /// Thrown when an inbound message payload cannot be deserialized into the consumer's declared

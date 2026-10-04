@@ -3,7 +3,6 @@
 using System.Collections.Concurrent;
 using System.Reflection;
 using Headless.Messaging;
-using Headless.Messaging.Configuration;
 using Headless.Messaging.Testing;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;

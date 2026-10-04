@@ -3,9 +3,6 @@
 using Headless.Abstractions;
 using Headless.Coordination;
 using Headless.Messaging;
-using Headless.Messaging.Configuration;
-using Headless.Messaging.Messages;
-using Headless.Messaging.Serialization;
 using Headless.Messaging.Storage.InMemory;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;

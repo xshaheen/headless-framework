@@ -20,12 +20,10 @@ internal sealed class AwsProviderConformanceDriver(LocalStackTestFixture fixture
     public override bool SupportsRoutingAffinity => true;
 
     // The same transport a consuming host uses, so the startup-rejection proof runs against the real provider wiring.
-    public override void ConfigureRequestReplyTransport(Headless.Messaging.Configuration.MessagingSetupBuilder setup) =>
+    public override void ConfigureRequestReplyTransport(Headless.Messaging.MessagingSetupBuilder setup) =>
         ConfigureRoutingAffinityTransport(setup);
 
-    public override void ConfigureRoutingAffinityTransport(
-        Headless.Messaging.Configuration.MessagingSetupBuilder setup
-    ) =>
+    public override void ConfigureRoutingAffinityTransport(Headless.Messaging.MessagingSetupBuilder setup) =>
         setup.UseAws(options =>
         {
             options.Region = Amazon.RegionEndpoint.USEast1;

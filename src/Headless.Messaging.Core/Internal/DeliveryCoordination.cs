@@ -2,7 +2,6 @@
 
 using System.Data.Common;
 using Headless.Checks;
-using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
 using Headless.UnitOfWork;
 

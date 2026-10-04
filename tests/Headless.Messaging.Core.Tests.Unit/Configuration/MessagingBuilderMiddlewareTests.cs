@@ -2,7 +2,6 @@
 
 using System.Reflection;
 using Headless.Messaging;
-using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;

@@ -2,10 +2,7 @@
 
 using System.Text;
 using Headless.Messaging;
-using Headless.Messaging.Configuration;
-using Headless.Messaging.Exceptions;
 using Headless.Messaging.RequestReply;
-using Headless.Messaging.Serialization;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;

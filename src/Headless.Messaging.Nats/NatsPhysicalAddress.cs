@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Messaging.Runtime;
 using Headless.Messaging.Transport;
 using NATS.Client.JetStream.Models;
 

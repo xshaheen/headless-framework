@@ -2,7 +2,6 @@
 
 using Headless.Messaging;
 using Headless.Messaging.Nats;
-using Headless.Messaging.Registration;
 
 namespace Tests;
 

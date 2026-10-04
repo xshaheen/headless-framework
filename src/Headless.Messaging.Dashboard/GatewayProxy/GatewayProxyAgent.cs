@@ -1,14 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net;
-using Headless.Messaging.Dashboard.NodeDiscovery;
 using Headless.Threading;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Primitives;
 
-namespace Headless.Messaging.Dashboard.GatewayProxy;
+namespace Headless.Messaging.Dashboard;
 
 /// <summary>
 /// Reverse-proxy agent that forwards dashboard API requests to a remote messaging node.

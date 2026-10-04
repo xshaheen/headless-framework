@@ -1,8 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Messaging.Configuration;
-using Headless.Messaging.Serialization;
-
 namespace Headless.Messaging.Internal;
 
 internal sealed class Bus : IBus

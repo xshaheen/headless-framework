@@ -2,7 +2,7 @@
 
 using Headless.Checks;
 
-namespace Headless.Messaging.Messages;
+namespace Headless.Messaging;
 
 /// <summary>
 /// Represents a message in the messaging system, containing metadata headers and the message content value.

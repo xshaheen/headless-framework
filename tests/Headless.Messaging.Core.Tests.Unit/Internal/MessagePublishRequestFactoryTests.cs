@@ -2,7 +2,6 @@
 
 using Headless.Abstractions;
 using Headless.Messaging;
-using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Microsoft.Extensions.Options;
 
@@ -152,15 +151,15 @@ public sealed class MessagePublishRequestFactoryTests
         act.Should().Throw<InvalidOperationException>().WithMessage("*affinity*conflicts*native-key*");
     }
 
-    private sealed class AffinityContributor : Headless.Messaging.Registration.IProviderHeaderContributions
+    private sealed class AffinityContributor : Headless.Messaging.IProviderHeaderContributions
     {
-        public IReadOnlyList<Headless.Messaging.Registration.ProviderHeaderContribution> HeaderContributions { get; } =
+        public IReadOnlyList<Headless.Messaging.ProviderHeaderContribution> HeaderContributions { get; } =
         [new("native-key", static _ => "order-42")];
     }
 
     private static MessagePublishRequestFactory _CreateAffinityFactory(bool withContributor = false)
     {
-        var registration = new Headless.Messaging.Registration.MessageRegistration(
+        var registration = new Headless.Messaging.MessageRegistration(
             typeof(CallbackResponse),
             MessageLane.Bus,
             "orders",

@@ -2,7 +2,6 @@
 
 using Dapper;
 using Headless.Messaging;
-using Headless.Messaging.Configuration;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 

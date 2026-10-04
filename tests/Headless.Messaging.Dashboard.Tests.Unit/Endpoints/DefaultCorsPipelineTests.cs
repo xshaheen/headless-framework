@@ -2,8 +2,6 @@
 
 using Headless.Dashboard.Authentication;
 using Headless.Messaging.Dashboard;
-using Headless.Messaging.Dashboard.GatewayProxy;
-using Headless.Messaging.Dashboard.NodeDiscovery;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.TestHost;

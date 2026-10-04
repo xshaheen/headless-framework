@@ -3,13 +3,11 @@
 using FluentValidation;
 using Headless.Abstractions;
 using Headless.Checks;
-using Headless.Messaging.CircuitBreaker;
-using Headless.Messaging.Registration;
 using Headless.MultiTenancy;
 using Headless.Reliability;
 using Headless.UnitOfWork;
 
-namespace Headless.Messaging.Configuration;
+namespace Headless.Messaging;
 
 /// <summary>
 /// Provides options to customize various aspects of the message processing pipeline. This includes settings for message expiration,

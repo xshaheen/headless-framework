@@ -2,7 +2,7 @@
 
 using Headless.Messaging.Persistence;
 
-namespace Headless.Messaging.Messages;
+namespace Headless.Messaging;
 
 /// <summary>
 /// Storage-level envelope for a persisted outbox/inbox message row: pairs the original

@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Reflection;
-using Headless.Messaging.Configuration;
+using Headless.Messaging;
 using Headless.Testing.Tests;
 
 namespace Tests.Configuration;

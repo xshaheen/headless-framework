@@ -3,10 +3,6 @@
 using BenchmarkDotNet.Attributes;
 using Headless.Abstractions;
 using Headless.Coordination;
-using Headless.Messaging.Configuration;
-using Headless.Messaging.Messages;
-using Headless.Messaging.Monitoring;
-using Headless.Messaging.Serialization;
 using Headless.Messaging.Storage.InMemory;
 using Microsoft.Extensions.Options;
 

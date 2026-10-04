@@ -120,7 +120,6 @@ public sealed class GeneratedSourceCompilationTests
             using System.Threading;
             using System.Threading.Tasks;
             using Headless.Messaging;
-            using Headless.Messaging.Registration;
 
             namespace Demo;
 

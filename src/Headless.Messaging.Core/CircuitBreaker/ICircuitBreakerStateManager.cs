@@ -2,7 +2,7 @@
 
 using System.Runtime.InteropServices;
 
-namespace Headless.Messaging.CircuitBreaker;
+namespace Headless.Messaging;
 
 /// <summary>
 /// Manages per-consumer circuit breaker state, tracking failure rates and coordinating

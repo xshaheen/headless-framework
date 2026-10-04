@@ -2,8 +2,6 @@
 
 using Dapper;
 using Headless.Messaging;
-using Headless.Messaging.Configuration;
-using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;

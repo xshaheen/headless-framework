@@ -3,12 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Frozen;
 using System.Reflection;
 using Headless.Messaging;
-using Headless.Messaging.CircuitBreaker;
-using Headless.Messaging.Configuration;
-using Headless.Messaging.Exceptions;
 using Headless.Messaging.Internal;
-using Headless.Messaging.Messages;
-using Headless.Messaging.Runtime;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -513,7 +508,7 @@ public sealed class ConsumerRegisterTests : TestBase
             }
         );
         var register = (ConsumerRegister)provider.GetRequiredService<IConsumerRegister>();
-        var serializer = provider.GetRequiredService<Headless.Messaging.Serialization.IMessageSerializer>();
+        var serializer = provider.GetRequiredService<Headless.Messaging.IMessageSerializer>();
         _AttachInboxProcessor(provider, register, client, dispatcher, serializer);
 
         var origin = new Message(
@@ -558,7 +553,7 @@ public sealed class ConsumerRegisterTests : TestBase
     {
         await using var client = new InboxConsumerClient();
         var dispatcher = Substitute.For<IDispatcher>();
-        var serializer = Substitute.For<Headless.Messaging.Serialization.IMessageSerializer>();
+        var serializer = Substitute.For<Headless.Messaging.IMessageSerializer>();
         serializer.Serialize(Arg.Any<Message>()).Returns("{}");
 
         await using var provider = _CreateProvider(
@@ -596,7 +591,7 @@ public sealed class ConsumerRegisterTests : TestBase
             .ReceivedCalls()
             .Select(call => call.GetMethodInfo().Name)
             .Should()
-            .NotContain(nameof(Headless.Messaging.Serialization.IMessageSerializer.DeserializeAsync));
+            .NotContain(nameof(Headless.Messaging.IMessageSerializer.DeserializeAsync));
         await dispatcher
             .DidNotReceive()
             .EnqueueToExecute(
@@ -922,7 +917,7 @@ public sealed class ConsumerRegisterTests : TestBase
             )!
             .SetValue(register, mockCircuitBreaker);
         await using var client = new InboxConsumerClient();
-        var serializer = provider.GetRequiredService<Headless.Messaging.Serialization.IMessageSerializer>();
+        var serializer = provider.GetRequiredService<Headless.Messaging.IMessageSerializer>();
         var dispatcher = provider.GetRequiredService<IDispatcher>();
         _AttachInboxProcessor(provider, register, client, dispatcher, serializer);
 
@@ -990,7 +985,7 @@ public sealed class ConsumerRegisterTests : TestBase
                 .GetValue(register)!;
         groupHandles[$"0:{BootstrapReadyConsumer.Identity}"] = handle;
         await using var client = new InboxConsumerClient();
-        var serializer = provider.GetRequiredService<Headless.Messaging.Serialization.IMessageSerializer>();
+        var serializer = provider.GetRequiredService<Headless.Messaging.IMessageSerializer>();
         var dispatcher = provider.GetRequiredService<IDispatcher>();
         _AttachInboxProcessor(provider, register, client, dispatcher, serializer, clientHandle: handle);
 
@@ -1020,7 +1015,7 @@ public sealed class ConsumerRegisterTests : TestBase
         InboxConsumerClient Client,
         IDispatcher Dispatcher,
         RecordingDataStorage Storage,
-        Headless.Messaging.Serialization.IMessageSerializer Serializer,
+        Headless.Messaging.IMessageSerializer Serializer,
         ServiceProvider Provider
     ) : IAsyncDisposable
     {
@@ -1265,7 +1260,7 @@ public sealed class ConsumerRegisterTests : TestBase
                 .SetValue(register, circuitBreaker);
         }
 
-        var serializer = provider.GetRequiredService<Headless.Messaging.Serialization.IMessageSerializer>();
+        var serializer = provider.GetRequiredService<Headless.Messaging.IMessageSerializer>();
         var storage = RecordingDataStorage.For(
             provider.GetRequiredService<Headless.Messaging.Persistence.IDataStorage>(),
             out var recorder
@@ -2144,7 +2139,7 @@ public sealed class ConsumerRegisterTests : TestBase
         ConsumerRegister register,
         IConsumerClient client,
         IDispatcher dispatcher,
-        Headless.Messaging.Serialization.IMessageSerializer serializer,
+        Headless.Messaging.IMessageSerializer serializer,
         Headless.Messaging.Persistence.IDataStorage? storage = null,
         object? clientHandle = null,
         ConsumerSubscriptionKey? groupKey = null

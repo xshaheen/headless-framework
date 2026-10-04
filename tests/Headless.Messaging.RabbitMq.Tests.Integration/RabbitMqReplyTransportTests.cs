@@ -2,7 +2,6 @@
 
 using System.Threading.Channels;
 using Headless.Messaging;
-using Headless.Messaging.Configuration;
 using Headless.Messaging.RabbitMq;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
