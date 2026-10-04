@@ -6,9 +6,9 @@ using Headless.Checks;
 namespace Headless.Caching;
 
 /// <summary>
-/// Routes raw-payload reads/writes through <see cref="IBufferCache"/> when the cache implements it, falling back
-/// to the generic <c>byte[]</c> path on <see cref="ICache"/> otherwise. Lets a consumer take the
-/// zero-intermediate-copy path without re-implementing the feature-detection at every call site.
+/// Routes raw payload read and write operations through <see cref="IBufferCache"/> when the cache implements it,
+/// or falls back to the generic <c>byte[]</c> path on <see cref="ICache"/>. Enables callers to use the
+/// zero-copy path without repeating feature detection at each call site.
 /// </summary>
 [PublicAPI]
 public static class BufferCacheExtensions
@@ -17,7 +17,7 @@ public static class BufferCacheExtensions
     /// Reads the payload for <paramref name="key"/> into <paramref name="destination"/>, using the
     /// <see cref="IBufferCache"/> fast path when the cache supports it and the <c>byte[]</c> path otherwise.
     /// </summary>
-    /// <returns><see langword="true"/> on a hit (payload written); <see langword="false"/> on miss or expiry.</returns>
+    /// <returns><see langword="true"/> when the payload is found and written to <paramref name="destination"/>; otherwise, <see langword="false"/>.</returns>
     public static ValueTask<bool> TryGetToOrFallbackAsync(
         this ICache cache,
         string key,
@@ -35,8 +35,8 @@ public static class BufferCacheExtensions
 
     /// <summary>
     /// Upserts the payload from <paramref name="value"/>, using the <see cref="IBufferCache"/> fast path when the
-    /// cache supports it and the <c>byte[]</c> path otherwise. The sequence is materialized synchronously before
-    /// any await, so callers may hand in pooled buffers valid only for the duration of the call.
+    /// cache supports it or falling back to the <c>byte[]</c> path. The sequence is materialized synchronously before
+    /// any asynchronous wait, which allows callers to supply pooled buffers valid only for the call duration.
     /// </summary>
     public static ValueTask UpsertRawOrFallbackAsync(
         this ICache cache,
@@ -53,11 +53,11 @@ public static class BufferCacheExtensions
             return buffer.UpsertRawAsync(key, value, options, cancellationToken);
         }
 
-        // Fallback: materialize once before delegating — the byte[] path is all the generic ICache offers, and the
-        // sequence may be pooled (valid only for this call), so the copy must happen before the first await.
+        // Materialize once before delegating. The byte[] path is all the generic ICache offers, and the
+        // sequence might be pooled and valid only for this call, so the copy must occur before the first await.
         var bytes = value.ToArray();
 
-        // UpsertEntryAsync reports insert-vs-update via a bool the raw write contract does not surface; drop it.
+        // UpsertEntryAsync reports insert versus update via a boolean that the raw write contract does not surface.
         return _DiscardResultAsync(cache.UpsertEntryAsync(key, bytes, options, cancellationToken));
     }
 

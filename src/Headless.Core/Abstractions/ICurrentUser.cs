@@ -6,64 +6,52 @@ using Headless.Primitives;
 namespace Headless.Abstractions;
 
 /// <summary>
-/// Provides access to the identity and claims of the currently authenticated principal.
-/// Implementations resolve claims from whatever principal is active in the current context
-/// (HTTP request, background job, test harness, etc.).
+/// Provides access to identity and claims for the currently authenticated principal.
 /// </summary>
 public interface ICurrentUser
 {
     /// <summary>
-    /// Gets the raw <see cref="ClaimsPrincipal"/> for the current user, or <see langword="null"/> when
-    /// no authenticated principal is available.
+    /// Gets the underlying <see cref="ClaimsPrincipal"/>, or <see langword="null"/> when no principal is available.
     /// </summary>
     ClaimsPrincipal? Principal { get; }
 
     /// <summary>
-    /// Gets a value indicating whether the current principal carries an authenticated identity
-    /// (<see cref="ClaimsIdentity.IsAuthenticated"/> is <see langword="true"/>). Do not use this as an
-    /// authorization gate on its own.
+    /// Gets a value indicating whether the current principal is authenticated.
     /// </summary>
     bool IsAuthenticated { get; }
 
     /// <summary>
-    /// Gets the strongly-typed user identifier extracted from the current principal's claims,
-    /// or <see langword="null"/> when the claim is absent or the principal is not authenticated.
+    /// Gets the strongly typed user identifier extracted from claims, or <see langword="null"/> when absent.
     /// </summary>
     UserId? UserId { get; }
 
     /// <summary>
-    /// Gets the account type string extracted from the current principal's claims (for example
-    /// <c>"user"</c>, <c>"service"</c>), or <see langword="null"/> when the claim is absent.
+    /// Gets the account type string extracted from claims, or <see langword="null"/> when absent.
     /// </summary>
     string? AccountType { get; }
 
     /// <summary>
-    /// Gets the strongly-typed account identifier extracted from the current principal's claims,
-    /// or <see langword="null"/> when the claim is absent.
+    /// Gets the strongly typed account identifier extracted from claims, or <see langword="null"/> when absent.
     /// </summary>
     AccountId? AccountId { get; }
 
     /// <summary>
-    /// Gets the set of role names assigned to the current principal. Returns an empty set when
-    /// the principal is not authenticated or carries no role claims.
+    /// Gets the set of role names assigned to the current principal.
     /// </summary>
     IReadOnlySet<string> Roles { get; }
 
     /// <summary>
-    /// Returns the first claim of the specified type from the current principal, using ordinal
-    /// comparison, or <see langword="null"/> when no matching claim exists.
+    /// Finds the first claim of the specified type from the current principal using ordinal comparison.
     /// </summary>
     /// <param name="claimType">The claim type to search for.</param>
-    /// <returns>The first matching <see cref="Claim"/>, or <see langword="null"/>.</returns>
+    /// <returns>The first matching <see cref="Claim"/>, or <see langword="null"/> when no match is found.</returns>
     Claim? FindClaim(string claimType)
     {
         return Principal?.Claims.FirstOrDefault(c => string.Equals(c.Type, claimType, StringComparison.Ordinal));
     }
 
     /// <summary>
-    /// Returns all claims of the specified type from the current principal, using ordinal
-    /// comparison. Returns an empty list when the principal is <see langword="null"/> or carries no
-    /// matching claims.
+    /// Finds all claims of the specified type from the current principal using ordinal comparison.
     /// </summary>
     /// <param name="claimType">The claim type to search for.</param>
     /// <returns>A read-only list of all matching <see cref="Claim"/> instances.</returns>
@@ -94,8 +82,7 @@ public interface ICurrentUser
 }
 
 /// <summary>
-/// A no-op <see cref="ICurrentUser"/> implementation that always reports an unauthenticated
-/// user with no claims. Useful as a default registration in anonymous or background contexts.
+/// Implements <see cref="ICurrentUser"/> for unauthenticated contexts with no claims.
 /// </summary>
 public sealed class NullCurrentUser : ICurrentUser
 {
@@ -119,10 +106,7 @@ public sealed class NullCurrentUser : ICurrentUser
 }
 
 /// <summary>
-/// <see cref="ICurrentUser"/> implementation that resolves identity from an explicit
-/// <see cref="ClaimsPrincipal"/> supplied at construction time. Intended for per-request
-/// or per-operation scopes where the principal is known upfront (for example, from
-/// <c>HttpContext.User</c>).
+/// Implements <see cref="ICurrentUser"/> using a supplied <see cref="ClaimsPrincipal"/>.
 /// </summary>
 public sealed class PrincipalCurrentUser(ClaimsPrincipal? principal) : ICurrentUser
 {

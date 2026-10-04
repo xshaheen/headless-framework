@@ -13,22 +13,9 @@ using Microsoft.Extensions.Options;
 namespace Headless.PushNotifications.Apns;
 
 /// <summary>
-/// Apple Push Notification service (APNs) push notification service. Sends one HTTP/2 request per device token,
-/// authenticated with a cached ES256 provider token or with the provider certificate presented during the TLS
-/// handshake, and maps each APNs answer onto an <see cref="ApnsSendResult"/>.
+/// Provides Apple Push Notification service operations over HTTP/2.
+/// Authenticates requests with ES256 provider tokens or TLS certificates.
 /// </summary>
-/// <remarks>
-/// <para>
-/// One instance serves both <see cref="IApnsPushNotificationService"/> and <see cref="IPushNotificationService"/>. The
-/// shared methods convert the request into an alert, background, or VoIP notification, send it through the typed
-/// path, and return each result's <see cref="ApnsSendResult.Response"/>.
-/// </para>
-/// <para>
-/// Per-token outcomes never throw: rejections, transport faults left after retries, and resilience rejections
-/// such as an open circuit all become <see cref="PushNotificationResponseStatus.Failure"/>, so a multicast keeps
-/// every result it already has. Only invalid input and caller cancellation throw.
-/// </para>
-/// </remarks>
 internal sealed class ApnsPushNotificationService(
     IHttpClientFactory httpClientFactory,
     string httpClientName,

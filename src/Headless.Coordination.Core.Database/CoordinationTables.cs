@@ -5,8 +5,7 @@ using Headless.Sql;
 namespace Headless.Coordination;
 
 /// <summary>
-/// The membership tables and columns, named by the dialect: snake_case on PostgreSQL, PascalCase on SQL Server. They
-/// are the names each provider's schema contribution creates and the names the one relational store queries.
+/// Provides table and column names for relational coordination storage, formatted per dialect.
 /// </summary>
 internal sealed class CoordinationTables
 {
@@ -48,13 +47,13 @@ internal sealed class CoordinationTables
 
     public string LivenessTableName { get; }
 
-    /// <summary>The quoted, qualified generation table: one row per node id, never purged.</summary>
+    /// <summary>Gets the quoted, qualified generation table name with one permanent row per node identifier.</summary>
     public string Generation { get; }
 
-    /// <summary>The quoted, qualified descriptor table: one write-once row per incarnation.</summary>
+    /// <summary>Gets the quoted, qualified descriptor table name with one write-once row per incarnation.</summary>
     public string Descriptor { get; }
 
-    /// <summary>The quoted, qualified liveness table: one row per incarnation, pruned after retention.</summary>
+    /// <summary>Gets the quoted, qualified liveness table name with one row per incarnation, pruned after retention expires.</summary>
     public string Liveness { get; }
 
     public string ClusterName { get; }
@@ -81,9 +80,9 @@ internal sealed class CoordinationTables
 
     public string LeftAt { get; }
 
-    /// <summary>The generation row's key.</summary>
+    /// <summary>Gets the key columns for the generation row.</summary>
     public IReadOnlyList<SqlKeyColumn> NodeKey { get; }
 
-    /// <summary>The descriptor and liveness rows' key.</summary>
+    /// <summary>Gets the key columns for descriptor and liveness rows.</summary>
     public IReadOnlyList<SqlKeyColumn> IncarnationKey { get; }
 }

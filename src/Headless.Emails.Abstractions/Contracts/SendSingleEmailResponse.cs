@@ -4,14 +4,11 @@ using Headless.Checks;
 
 namespace Headless.Emails;
 
-/// <summary>The outcome of a single email send attempt.</summary>
+/// <summary>Represents the outcome of an email delivery attempt.</summary>
 /// <remarks>
-/// Delivery problems are reported through this response rather than thrown: every provider-side
-/// rejection or transport fault produces a failed response carrying a human-readable
-/// <see cref="FailureError"/>. Implementations throw only for cancellation
-/// (<see cref="OperationCanceledException"/>) and argument validation (for example a body-less request).
-/// A successful send may carry a provider-assigned <see cref="ProviderMessageId"/> when the backend
-/// returns one.
+/// Delivery failures and transport errors return a response object where <see cref="Success"/> is
+/// <see langword="false"/> and <see cref="FailureError"/> contains details. Methods throw only for
+/// cancellation or invalid arguments.
 /// </remarks>
 [PublicAPI]
 public sealed class SendSingleEmailResponse
@@ -19,35 +16,32 @@ public sealed class SendSingleEmailResponse
     private SendSingleEmailResponse() { }
 
     /// <summary>
-    /// <see langword="true"/> when the provider accepted the message for delivery;
-    /// <see langword="false"/> when it was rejected or a delivery/transport error occurred.
-    /// When <see langword="false"/>, <see cref="FailureError"/> is guaranteed to be non-null.
+    /// Gets a value indicating whether the provider accepted the message for delivery.
     /// </summary>
     [MemberNotNullWhen(false, nameof(FailureError))]
     public bool Success { get; private init; }
 
     /// <summary>
-    /// Provider-assigned identifier for the accepted message when the backend returns one (for example the
-    /// SES message id, the Azure Communication Services operation id, or the SMTP server's final response).
-    /// May be <see langword="null"/> on success when the provider does not expose an id.
+    /// Gets the provider-assigned identifier for an accepted message when available.
     /// </summary>
     public string? ProviderMessageId { get; private init; }
 
     /// <summary>
-    /// A human-readable description of why the send failed.
-    /// Non-null whenever <see cref="Success"/> is <see langword="false"/>.
+    /// Gets a description of why the send attempt failed.
     /// </summary>
     public string? FailureError { get; private init; }
 
-    /// <summary>Creates a response representing a successful send.</summary>
-    /// <param name="providerMessageId">The provider-assigned message id, when available.</param>
+    /// <summary>Creates a response representing a successful delivery attempt.</summary>
+    /// <param name="providerMessageId">The provider-assigned message identifier.</param>
+    /// <returns>A successful <see cref="SendSingleEmailResponse"/> instance.</returns>
     public static SendSingleEmailResponse Succeeded(string? providerMessageId = null)
     {
         return new() { Success = true, ProviderMessageId = providerMessageId };
     }
 
-    /// <summary>Creates a response representing a failed send.</summary>
-    /// <param name="failureError">A human-readable failure reason. Must not be <see langword="null"/> or empty.</param>
+    /// <summary>Creates a response representing a failed delivery attempt.</summary>
+    /// <param name="failureError">The failure reason description.</param>
+    /// <returns>A failed <see cref="SendSingleEmailResponse"/> instance.</returns>
     /// <exception cref="ArgumentException"><paramref name="failureError"/> is <see langword="null"/> or empty.</exception>
     public static SendSingleEmailResponse Failed(string failureError)
     {
@@ -55,11 +49,10 @@ public sealed class SendSingleEmailResponse
     }
 
     /// <summary>
-    /// Creates a failed response from a caught exception, surfacing the provider's raw error message
-    /// (falling back to the exception type name when the message is empty) so the non-empty-message
-    /// guarantee of <see cref="Failed(string)"/> always holds.
+    /// Creates a failed response from a caught exception.
     /// </summary>
-    /// <param name="exception">The caught exception. Must not be <see langword="null"/>.</param>
+    /// <param name="exception">The caught exception.</param>
+    /// <returns>A failed <see cref="SendSingleEmailResponse"/> instance.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="exception"/> is <see langword="null"/>.</exception>
     public static SendSingleEmailResponse FromException(Exception exception)
     {

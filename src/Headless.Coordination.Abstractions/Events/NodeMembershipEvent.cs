@@ -2,7 +2,7 @@
 
 namespace Headless.Coordination;
 
-/// <summary>Base type for best-effort local membership observations derived from authoritative snapshots.</summary>
+/// <summary>Serves as the base record for best-effort local membership observations derived from snapshots.</summary>
 [PublicAPI]
 public abstract record NodeMembershipEvent
 {
@@ -11,11 +11,11 @@ public abstract record NodeMembershipEvent
         Identity = identity;
     }
 
-    /// <summary>The <c>node@incarnation</c> identity the event pertains to.</summary>
+    /// <summary>Gets the node and incarnation identity for this event.</summary>
     public NodeIdentity Identity { get; }
 }
 
-/// <summary>Emitted when a node incarnation successfully registers and is first seen as alive.</summary>
+/// <summary>Emitted when a node incarnation registers and is first observed as alive.</summary>
 [PublicAPI]
 public sealed record NodeJoined : NodeMembershipEvent
 {
@@ -24,7 +24,7 @@ public sealed record NodeJoined : NodeMembershipEvent
 }
 
 /// <summary>
-/// Emitted when a node's last heartbeat age crosses <see cref="CoordinationOptions.SuspicionThreshold"/>
+/// Emitted when the heartbeat age of a node exceeds <see cref="CoordinationOptions.SuspicionThreshold"/>
 /// and the node transitions to <see cref="NodeLivenessState.Suspected"/>.
 /// </summary>
 [PublicAPI]
@@ -35,8 +35,7 @@ public sealed record NodeSuspected : NodeMembershipEvent
 }
 
 /// <summary>
-/// Emitted when a previously suspected node resumes heartbeating and transitions back to
-/// <see cref="NodeLivenessState.Alive"/>.
+/// Emitted when a suspected node resumes heartbeats and transitions back to <see cref="NodeLivenessState.Alive"/>.
 /// </summary>
 [PublicAPI]
 public sealed record NodeRecovered : NodeMembershipEvent
@@ -46,8 +45,8 @@ public sealed record NodeRecovered : NodeMembershipEvent
 }
 
 /// <summary>
-/// Emitted when a node gracefully calls <see cref="INodeMembership.LeaveAsync"/> or is permanently
-/// classified as <see cref="NodeLivenessState.Dead"/> and purged from the store.
+/// Emitted when a node calls <see cref="INodeMembership.LeaveAsync"/> or transitions to
+/// <see cref="NodeLivenessState.Dead"/> and is removed from the store.
 /// </summary>
 [PublicAPI]
 public sealed record NodeLeft : NodeMembershipEvent

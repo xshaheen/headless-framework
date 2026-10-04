@@ -5,18 +5,18 @@ using Headless.Checks;
 namespace Headless.Domain;
 
 /// <summary>
-/// Defines an aggregate root. It's primary key may not be "Id" or it may have a composite primary key
-/// Used also to restrict repositories for example to work only with aggregate roots.
+/// Defines an aggregate root entity.
 /// </summary>
+/// <remarks>
+/// Aggregate roots may have single, composite, or non-default key schemes. Repositories typically constrain operations to aggregate roots.
+/// </remarks>
 [PublicAPI]
 public interface IAggregateRoot : IEntity;
 
-/// <summary>Base class for aggregate roots that may emit domain (in-process) and integration (distributed) events.</summary>
+/// <summary>Provides a base implementation for aggregate roots that emit domain and integration events.</summary>
 /// <remarks>
-/// The event mutators are <see langword="protected"/>: an aggregate raises its own events from its behavior
-/// methods, so callers cannot reach into another aggregate's event buffer. The read/clear members and the
-/// <see cref="IDomainEventEmitter"/> / <see cref="IIntegrationEventEmitter"/> contracts stay accessible to the
-/// infrastructure that collects, dispatches, and clears the buffers during a unit of work.
+/// Event mutation methods are <see langword="protected"/> so aggregates raise events through their own domain methods.
+/// Read and clear members remain accessible to infrastructure that collects, dispatches, and clears buffers during a unit of work.
 /// </remarks>
 [PublicAPI]
 public abstract class AggregateRoot : Entity, IAggregateRoot, IIntegrationEventEmitter, IDomainEventEmitter
@@ -25,7 +25,6 @@ public abstract class AggregateRoot : Entity, IAggregateRoot, IIntegrationEventE
     private EventBuffer? _integrationEvents;
 
     /// <summary>Appends an integration event to the pending outbox for this aggregate.</summary>
-    /// <remarks>Call from the aggregate's own behavior methods to raise integration events.</remarks>
     /// <param name="integrationEvent">The integration event to enqueue.</param>
     protected void AddIntegrationEvent(object integrationEvent)
     {
@@ -39,14 +38,13 @@ public abstract class AggregateRoot : Entity, IAggregateRoot, IIntegrationEventE
     }
 
     /// <summary>Returns the current list of pending integration events.</summary>
-    /// <returns>A read-only snapshot of enqueued integration events; empty when none have been added.</returns>
+    /// <returns>A read-only snapshot of enqueued integration events, or an empty list when none are present.</returns>
     public IReadOnlyList<EventContext<object>> GetIntegrationEvents()
     {
         return _integrationEvents?.Snapshot() ?? [];
     }
 
     /// <summary>Appends a domain event to be dispatched within the current unit of work.</summary>
-    /// <remarks>Call from the aggregate's own behavior methods to raise domain events.</remarks>
     /// <param name="domainEvent">The domain event to enqueue.</param>
     protected void AddDomainEvent(object domainEvent)
     {
@@ -54,7 +52,7 @@ public abstract class AggregateRoot : Entity, IAggregateRoot, IIntegrationEventE
     }
 
     /// <summary>Returns the current list of pending domain events.</summary>
-    /// <returns>A read-only snapshot of enqueued domain events; empty when none have been added.</returns>
+    /// <returns>A read-only snapshot of enqueued domain events, or an empty list when none are present.</returns>
     public IReadOnlyList<EventContext<object>> GetDomainEvents()
     {
         return _domainEvents?.Snapshot() ?? [];
@@ -79,6 +77,9 @@ public abstract class AggregateRoot : Entity, IAggregateRoot, IIntegrationEventE
     }
 
     /// <summary>Preserves an occurrence already captured at its emission boundary.</summary>
+    /// <typeparam name="TPayload">The event payload type.</typeparam>
+    /// <param name="context">The captured event context.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="context"/> is <see langword="null"/>.</exception>
     protected void AddDomainEvent<TPayload>(EventContext<TPayload> context)
         where TPayload : class
     {
@@ -87,6 +88,8 @@ public abstract class AggregateRoot : Entity, IAggregateRoot, IIntegrationEventE
     }
 
     /// <summary>Removes only occurrences included in a successfully saved batch.</summary>
+    /// <param name="occurrences">The list of occurrences to remove from the buffer.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="occurrences"/> is <see langword="null"/>.</exception>
     public void ClearDomainEvents(IReadOnlyList<EventContext<object>> occurrences)
     {
         Argument.IsNotNull(occurrences);
@@ -97,6 +100,9 @@ public abstract class AggregateRoot : Entity, IAggregateRoot, IIntegrationEventE
     void IDomainEventEmitter.AddDomainEvent<TPayload>(EventContext<TPayload> occurrence) => AddDomainEvent(occurrence);
 
     /// <summary>Preserves an occurrence already captured at its emission boundary.</summary>
+    /// <typeparam name="TPayload">The event payload type.</typeparam>
+    /// <param name="context">The captured event context.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="context"/> is <see langword="null"/>.</exception>
     protected void AddIntegrationEvent<TPayload>(EventContext<TPayload> context)
         where TPayload : class
     {
@@ -105,6 +111,8 @@ public abstract class AggregateRoot : Entity, IAggregateRoot, IIntegrationEventE
     }
 
     /// <summary>Removes only occurrences included in a successfully saved batch.</summary>
+    /// <param name="occurrences">The list of occurrences to remove from the buffer.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="occurrences"/> is <see langword="null"/>.</exception>
     public void ClearIntegrationEvents(IReadOnlyList<EventContext<object>> occurrences)
     {
         Argument.IsNotNull(occurrences);

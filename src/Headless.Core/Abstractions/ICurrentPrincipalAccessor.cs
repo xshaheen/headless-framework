@@ -6,47 +6,37 @@ using Headless.Core;
 namespace Headless.Abstractions;
 
 /// <summary>
-/// Low-level accessor for the ambient <see cref="ClaimsPrincipal"/> in the current execution
-/// context. Framework infrastructure uses this to push a principal (for example, from an HTTP
-/// request or a message envelope) before calling into application code. Higher-level code
-/// should prefer <see cref="ICurrentUser"/>.
+/// Exposes access to the ambient <see cref="ClaimsPrincipal"/> in the current execution context.
 /// </summary>
+/// <remarks>
+/// Low-level infrastructure uses this to supply a principal before invoking application code. Higher-level code should use <see cref="ICurrentUser"/>.
+/// </remarks>
 public interface ICurrentPrincipalAccessor
 {
     /// <summary>
-    /// Gets the current <see cref="ClaimsPrincipal"/>, or <see langword="null"/> when no principal has
-    /// been set for the current execution context.
+    /// Gets the current <see cref="ClaimsPrincipal"/>, or <see langword="null"/> when no principal is configured.
     /// </summary>
     ClaimsPrincipal? Principal { get; }
 
     /// <summary>
-    /// Temporarily overrides the ambient principal for the duration of the returned scope.
-    /// The previous principal is restored automatically when the returned <see cref="IDisposable"/>
-    /// is disposed.
+    /// Temporarily overrides the ambient principal for the lifetime of the returned scope.
     /// </summary>
     /// <param name="principal">
-    /// The principal to activate for the current scope, or <see langword="null"/> to remove the override
-    /// and fall back to the implementation's default resolution (for example
-    /// <see cref="Thread.CurrentPrincipal"/>).
+    /// The principal to activate for the current scope, or <see langword="null"/> to clear the override.
     /// </param>
     /// <returns>
-    /// A scope handle that restores the previous principal when disposed.
-    /// Always dispose this value — prefer a <see langword="using"/> declaration.
+    /// A disposable scope handle that restores the previous principal upon disposal.
     /// </returns>
     [MustDisposeResource]
     IDisposable Change(ClaimsPrincipal? principal);
 }
 
 /// <summary>
-/// Base class for <see cref="ICurrentPrincipalAccessor"/> implementations that layer an
-/// <see cref="AsyncLocal{T}"/> override slot on top of an implementation-defined fallback
-/// principal (for example, <see cref="Thread.CurrentPrincipal"/>).
+/// Provides a base implementation for <see cref="ICurrentPrincipalAccessor"/> layering an
+/// <see cref="AsyncLocal{T}"/> override slot over a fallback principal provider.
 /// </summary>
 /// <remarks>
-/// The <see cref="AsyncLocal{T}"/> slot stores only the explicitly overridden principal.
-/// When the slot is empty, <see cref="Principal"/> delegates to <see cref="GetClaimsPrincipal"/>.
-/// <see cref="Change"/> captures and restores the raw slot value — not the resolved principal —
-/// so that disposing a scope re-exposes the fallback rather than permanently shadowing it.
+/// When the async-local slot is empty, <see cref="Principal"/> delegates to <see cref="GetClaimsPrincipal"/>.
 /// </remarks>
 public abstract class CurrentPrincipalAccessor : ICurrentPrincipalAccessor
 {
@@ -56,9 +46,7 @@ public abstract class CurrentPrincipalAccessor : ICurrentPrincipalAccessor
     public ClaimsPrincipal? Principal => _currentPrincipal.Value ?? GetClaimsPrincipal();
 
     /// <summary>
-    /// Returns the fallback principal when no explicit override is active in the current
-    /// async context. Derived classes resolve the principal from their specific source
-    /// (for example, <see cref="Thread.CurrentPrincipal"/> or an HTTP context).
+    /// Resolves the fallback principal when no explicit override is active in the current asynchronous context.
     /// </summary>
     /// <returns>The fallback <see cref="ClaimsPrincipal"/>, or <see langword="null"/>.</returns>
     protected abstract ClaimsPrincipal? GetClaimsPrincipal();
@@ -83,9 +71,7 @@ public abstract class CurrentPrincipalAccessor : ICurrentPrincipalAccessor
 }
 
 /// <summary>
-/// <see cref="CurrentPrincipalAccessor"/> implementation that uses <see cref="Thread.CurrentPrincipal"/>
-/// as the fallback when no async-local override is active. Suitable for non-ASP.NET hosted environments
-/// (console apps, worker services) that rely on the thread-static principal.
+/// Implements <see cref="CurrentPrincipalAccessor"/> using <see cref="Thread.CurrentPrincipal"/> as the fallback source.
 /// </summary>
 public class ThreadCurrentPrincipalAccessor : CurrentPrincipalAccessor
 {

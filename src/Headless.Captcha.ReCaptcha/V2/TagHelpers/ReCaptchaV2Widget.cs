@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Razor.TagHelpers;
 
 namespace Headless.Captcha;
 
-/// <summary>Shared attribute emission for the v2 <c>g-recaptcha</c> widget (used by the div and element tag helpers).</summary>
+/// <summary>Applies reCAPTCHA v2 widget attributes to tag helper output.</summary>
 internal static class ReCaptchaV2Widget
 {
     public static void ApplyAttributes(

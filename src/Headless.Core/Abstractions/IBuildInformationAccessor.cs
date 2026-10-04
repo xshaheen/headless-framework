@@ -5,10 +5,12 @@ using Headless.Reflection;
 namespace Headless.Abstractions;
 
 /// <summary>
-/// Exposes build-time metadata about the running application, such as its title, product name,
-/// version, and source commit. Implementations typically read <see cref="System.Reflection.Assembly"/>
-/// attributes from the entry assembly.
+/// Exposes build-time metadata about the running application, such as title, product name,
+/// version, and source commit.
 /// </summary>
+/// <remarks>
+/// Implementations typically read assembly attributes from the application entry assembly.
+/// </remarks>
 public interface IBuildInformationAccessor
 {
     /// <summary>
@@ -42,18 +44,18 @@ public interface IBuildInformationAccessor
     string? GetVersion();
 
     /// <summary>
-    /// Returns the commit identifier parsed from the informational version (the segment after the last
-    /// <c>+</c> separator), or <see langword="null"/> when unavailable.
+    /// Returns the commit identifier parsed from the informational version metadata, or <see langword="null"/> when unavailable.
     /// </summary>
-    /// <returns>The commit number, or <see langword="null"/>.</returns>
+    /// <returns>The commit identifier, or <see langword="null"/>.</returns>
     string? GetCommitNumber();
 }
 
 /// <summary>
-/// Reads build metadata from <see cref="AssemblyInformation.Entry"/>, which reflects the
-/// process entry assembly's attributes. All members return <see langword="null"/> when there
-/// is no managed entry assembly (for example in some test runners).
+/// Reads build metadata from <see cref="AssemblyInformation.Entry"/>, reflecting attributes of the entry assembly.
 /// </summary>
+/// <remarks>
+/// Members return <see langword="null"/> when no managed entry assembly is available, such as in certain test execution environments.
+/// </remarks>
 public sealed class BuildInformationAccessor : IBuildInformationAccessor
 {
     /// <inheritdoc/>

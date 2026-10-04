@@ -6,24 +6,22 @@ using Headless.UnitOfWork;
 namespace Headless.Sequences;
 
 /// <summary>
-/// The provider seam behind sequences: one atomic upsert-increment per call, either on the provider's own connection
-/// or on a unit of work's transaction.
+/// Defines the low-level database store contract for executing atomic upsert-increment operations.
 /// </summary>
 /// <remarks>
-/// Each operation creates the row with <c>insertValue</c> when the key has none, and otherwise adds <c>delta</c> to
-/// the stored value; it returns the stored value after the write. Policy, mode, and argument checks happen before a
-/// call reaches the store. A provider package registers the implementation; application code never calls it.
+/// Operations insert an initial value when no row exists or add a delta to existing rows,
+/// returning the resulting value. Implementations are registered by provider packages.
 /// </remarks>
 [PublicAPI]
 [EditorBrowsable(EditorBrowsableState.Never)]
 public interface ISequenceStore
 {
-    /// <summary>Increments the counter on the provider's own connection and commits before returning.</summary>
-    /// <param name="key">The counter's key.</param>
-    /// <param name="insertValue">The value stored when the key has no row yet.</param>
-    /// <param name="delta">The amount added to an existing row.</param>
-    /// <param name="cancellationToken">Token used to cancel the database call.</param>
-    /// <returns>The counter's value after the increment.</returns>
+    /// <summary>Increments the counter on a dedicated database connection and commits before returning.</summary>
+    /// <param name="key">The counter key.</param>
+    /// <param name="insertValue">The initial value when creating a row.</param>
+    /// <param name="delta">The increment added to an existing row.</param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns>The counter value after the increment.</returns>
     ValueTask<long> IncrementAsync(
         SequenceKey key,
         long insertValue,
@@ -32,24 +30,23 @@ public interface ISequenceStore
     );
 
     /// <summary>
-    /// Throws when <paramref name="unitOfWork" /> cannot host this provider's write: it has no live transaction, its
-    /// transaction belongs to another provider, it targets a different database than the one configured, or its
-    /// connection is not open.
+    /// Validates that <paramref name="unitOfWork" /> can host this provider writes.
     /// </summary>
     /// <param name="unitOfWork">The active unit of work.</param>
-    /// <exception cref="InvalidOperationException">The unit cannot host the write.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="unitOfWork"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException"><paramref name="unitOfWork"/> cannot host the write.</exception>
     void ValidateEnlistment(IUnitOfWork unitOfWork);
 
     /// <summary>
-    /// Increments the counter on <paramref name="unitOfWork" />'s connection and inside its transaction, without
-    /// committing. The row stays locked until that transaction ends.
+    /// Increments the counter within the <paramref name="unitOfWork" /> transaction without committing.
     /// </summary>
-    /// <param name="unitOfWork">The unit of work, already accepted by <see cref="ValidateEnlistment" />.</param>
-    /// <param name="key">The counter's key.</param>
-    /// <param name="insertValue">The value stored when the key has no row yet.</param>
-    /// <param name="delta">The amount added to an existing row.</param>
-    /// <param name="cancellationToken">Token used to cancel the database command.</param>
-    /// <returns>The counter's value after the increment.</returns>
+    /// <param name="unitOfWork">The active unit of work accepted by <see cref="ValidateEnlistment" />.</param>
+    /// <param name="key">The counter key.</param>
+    /// <param name="insertValue">The initial value when creating a row.</param>
+    /// <param name="delta">The increment added to an existing row.</param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns>The counter value after the increment.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="unitOfWork"/> is <see langword="null"/>.</exception>
     ValueTask<long> IncrementEnlistedAsync(
         IUnitOfWork unitOfWork,
         SequenceKey key,

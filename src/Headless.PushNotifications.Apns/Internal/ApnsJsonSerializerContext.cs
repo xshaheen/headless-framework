@@ -2,20 +2,18 @@
 
 namespace Headless.PushNotifications.Apns.Internal;
 
-// Source-generated so reading the error body stays trim- and AOT-safe.
+// Source-generated context for AOT-compatible JSON serialization.
 [JsonSerializable(typeof(ApnsErrorBody))]
 internal sealed partial class ApnsJsonSerializerContext : JsonSerializerContext;
 
-/// <summary>The JSON body APNs returns with a rejected request.</summary>
-/// <param name="Reason">The APNs error code, such as <c>BadDeviceToken</c>.</param>
-/// <param name="Timestamp">
-/// For HTTP 410, the milliseconds since the Unix epoch at which APNs confirmed the token was no longer valid.
-/// </param>
+/// <summary>Represents the JSON error response body returned by APNs on rejection.</summary>
+/// <param name="Reason">The APNs error reason code.</param>
+/// <param name="Timestamp">The Unix epoch millisecond timestamp indicating when the device token expired.</param>
 internal sealed record ApnsErrorBody(
     [property: JsonPropertyName("reason")] string? Reason,
     [property: JsonPropertyName("timestamp")] long? Timestamp
 )
 {
-    // Not serialized: filled from the Retry-After response header, which a 429 may carry.
+    // Populated from the Retry-After response header when present on 429 responses.
     public TimeSpan? RetryAfter { get; init; }
 }

@@ -4,12 +4,15 @@ using System.Xml;
 
 namespace Headless.Sitemaps;
 
-/// <summary>Sitemap index file builder.</summary>
-/// <remarks>https://developers.google.com/search/docs/advanced/sitemaps/large-sitemaps</remarks>
+/// <summary>Provides methods to write sitemap index files.</summary>
 [PublicAPI]
 public static class SitemapIndexBuilder
 {
-    /// <summary>Write a sitemap index file into the stream.</summary>
+    /// <summary>Writes a sitemap index file into the stream.</summary>
+    /// <param name="sitemapReferences">The collection of sitemap references to include in the index.</param>
+    /// <param name="output">The output stream receiving the XML content.</param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns>A task that completes when the index has been written to the stream.</returns>
     public static async Task WriteToAsync(
         this IEnumerable<SitemapReference> sitemapReferences,
         Stream output,

@@ -3,23 +3,18 @@
 namespace Headless.Domain;
 
 /// <summary>
-/// Base class for DDD value objects. Two instances are equal when all of their equality components
-/// (declared via <c>EqualityComponentsEqual</c> / <c>BuildHashCode</c>) are equal; neither instance needs a
-/// dedicated identity field.
+/// Provides a base class for domain-driven design value objects. Two instances are equal when all equality components are equal.
 /// </summary>
 /// <remarks>
-/// Self-typed (<c>TSelf</c>) so the equality hooks receive the concrete type directly, e.g.
-/// <c>class Money : ValueObject&lt;Money&gt;</c> overrides <c>EqualityComponentsEqual(Money other)</c> with no
-/// cast. Use the non-generic <see cref="IValueObject"/> marker to reference value objects heterogeneously.
+/// Value objects have no persistent identity. Derived classes override equality hooks directly through <typeparamref name="TSelf"/>.
 /// </remarks>
-/// <typeparam name="TSelf">The concrete value-object type.</typeparam>
+/// <typeparam name="TSelf">The concrete value object type.</typeparam>
 [PublicAPI]
 public abstract class ValueObject<TSelf> : EqualityBase<TSelf>, IValueObject
     where TSelf : ValueObject<TSelf>;
 
 /// <summary>
-/// Marker interface for DDD value objects — types whose identity is defined entirely by their attribute values
-/// rather than a persistent key.
+/// Defines a marker interface for domain-driven design value objects whose identity is defined entirely by attribute values.
 /// </summary>
 [PublicAPI]
 public interface IValueObject;

@@ -4,57 +4,51 @@ using System.Net;
 
 namespace Headless.PushNotifications.Apns;
 
-/// <summary>The outcome of one APNs broadcast to a channel.</summary>
+/// <summary>Represents the outcome of an APNs channel broadcast.</summary>
 /// <remarks>
-/// A broadcast reaches every device subscribed to the channel through one request, so there is no per-device result:
-/// APNs accepts or rejects the broadcast as a whole.
+/// A broadcast dispatches to every device subscribed to the target channel.
+/// APNs accepts or rejects the broadcast request in its entirety.
 /// </remarks>
 [PublicAPI]
 public sealed record ApnsBroadcastResult
 {
-    /// <summary>Whether APNs accepted the broadcast (HTTP 200).</summary>
+    /// <summary>Gets a value indicating whether APNs accepted the broadcast.</summary>
     public required bool IsSucceeded { get; init; }
 
     /// <summary>
-    /// The HTTP status APNs answered with, or <see langword="null"/> when no answer arrived: a transport fault, a
-    /// timeout, an open circuit, or an endpoint the provider refused to call.
+    /// Gets the HTTP response status code, or <see langword="null"/> when no response was received.
     /// </summary>
     public HttpStatusCode? StatusCode { get; init; }
 
     /// <summary>
-    /// The APNs error code from the response body, such as <c>BadChannelId</c>; <see langword="null"/> on success or
-    /// when the body carried none.
+    /// Gets the APNs error reason code, or <see langword="null"/> when the response succeeded or provided no reason.
     /// </summary>
     public string? Reason { get; init; }
 
     /// <summary>
-    /// A description of the failure: the reason and status for a rejection, or <c>"&lt;ExceptionType&gt;: &lt;message&gt;"</c>
-    /// when no answer arrived; <see langword="null"/> on success.
+    /// Gets the failure description, or <see langword="null"/> when delivery succeeded.
     /// </summary>
     public string? FailureError { get; init; }
 
     /// <summary>
-    /// The <c>apns-request-id</c> the request carried, which APNs echoes and which identifies the broadcast when it
-    /// reports an error. The caller's <see cref="ApnsNotification.ApnsId"/> when set, otherwise a generated UUID.
+    /// Gets the <c>apns-request-id</c> header value sent with the request.
     /// </summary>
     public required string RequestId { get; init; }
 
     /// <summary>
-    /// The <c>apns-unique-id</c> response header, a server-generated identifier to quote when raising a
-    /// troubleshooting request with Apple; <see langword="null"/> when APNs sent none.
+    /// Gets the <c>apns-unique-id</c> header value returned by APNs, or <see langword="null"/> when not present.
     /// </summary>
     public string? UniqueId { get; init; }
 
-    /// <summary>The kind of failure, or <see langword="null"/> on success.</summary>
+    /// <summary>Gets the categorized failure kind, or <see langword="null"/> when delivery succeeded.</summary>
     public ApnsFailureKind? FailureKind { get; init; }
 
     /// <summary>
-    /// Whether sending the same broadcast again later can succeed. See <see cref="ApnsSendResult.IsRetryable"/> for
-    /// the rules; a broadcast has no device token, so <see cref="ApnsFailureKind.DeviceTokenInvalid"/> never applies.
+    /// Gets a value indicating whether retrying the broadcast request can succeed.
     /// </summary>
     public bool IsRetryable =>
         FailureKind is ApnsFailureKind.ServerError or ApnsFailureKind.Throttled or ApnsFailureKind.Transport;
 
-    /// <summary>How long to wait before retrying, when APNs or Apple's guidance says; otherwise <see langword="null"/>.</summary>
+    /// <summary>Gets the recommended retry delay, or <see langword="null"/> when none is specified.</summary>
     public TimeSpan? RetryAfter { get; init; }
 }

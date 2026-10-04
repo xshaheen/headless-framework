@@ -3,20 +3,20 @@
 namespace Headless.Domain;
 
 /// <summary>
-/// Defines a handler for a specific domain event type. Register implementations with the DI container;
-/// <c>IDomainEventDispatcher</c> resolves and invokes them when the matching event is published.
+/// Defines a handler for a specific domain event type.
 /// </summary>
 /// <remarks>
-/// Apply <c>DomainEventHandlerOrderAttribute</c> to control the invocation order when multiple handlers
+/// Apply <see cref="DomainEventHandlerOrderAttribute"/> to control invocation order when multiple handlers
 /// are registered for the same event type.
 /// </remarks>
-/// <typeparam name="TPayload">The concrete domain event type this handler processes.</typeparam>
+/// <typeparam name="TPayload">The concrete domain event payload type this handler processes.</typeparam>
 [PublicAPI]
 public interface IDomainEventHandler<TPayload>
     where TPayload : class
 {
-    /// <summary>Handler handles the event by implementing this method.</summary>
-    /// <param name="context">Immutable occurrence identity and business lineage.</param>
-    /// <param name="cancellationToken">Abort token</param>
+    /// <summary>Handles the domain event.</summary>
+    /// <param name="context">The event context containing occurrence identity and business lineage.</param>
+    /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
+    /// <returns>A value task representing the asynchronous handling operation.</returns>
     ValueTask HandleAsync(EventContext<TPayload> context, CancellationToken cancellationToken = default);
 }

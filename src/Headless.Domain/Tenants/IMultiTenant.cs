@@ -2,10 +2,10 @@
 
 namespace Headless.Domain;
 
-/// <summary>Marks an entity as belonging to a specific tenant in a multi-tenant system.</summary>
+/// <summary>Defines multi-tenant scoping for an entity.</summary>
 [PublicAPI]
 public interface IMultiTenant
 {
-    /// <summary>ID of the related tenant.</summary>
+    /// <summary>Gets the associated tenant identifier, or <see langword="null"/> for host-level entities.</summary>
     string? TenantId { get; }
 }

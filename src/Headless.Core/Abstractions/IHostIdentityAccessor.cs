@@ -7,57 +7,50 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace Headless.Abstractions;
 
 /// <summary>
-/// Identifies the running process: the application it belongs to and the host it runs on. One vocabulary for
-/// every subsystem that stamps an origin on shared state — cluster membership, change announcements, log
-/// attribution.
+/// Identifies the running application and host instance.
 /// </summary>
 /// <remarks>
-/// <see cref="HostName"/> is stable across restarts of the same host (a Kubernetes pod keeps its name when
-/// its container restarts), so a store can recognise a returning node. There is deliberately no per-start
-/// identity here: Coordination allocates one (<c>NodeIdentity</c>, <c>host@incarnation</c>) from its store on
-/// top of this same host name, and a second, locally minted one would only disagree with it.
+/// <see cref="HostName"/> is stable across process restarts of the same host to facilitate node recognition in clustered environments.
 /// </remarks>
 [PublicAPI]
 public interface IHostIdentityAccessor
 {
     /// <summary>
-    /// Name of the application. Distinguishes the resources of several applications sharing one backing
-    /// store, such as a cache or a definition table.
+    /// Gets the application name.
     /// </summary>
     string ApplicationName { get; }
 
     /// <summary>
-    /// Stable name of the host this process runs on. Resolved in order from <see cref="HostIdentityOptions.HostName"/>,
-    /// the <c>POD_NAMESPACE</c>/<c>POD_NAME</c> environment variables, and the machine name.
+    /// Gets the stable host name for this process.
     /// </summary>
     string HostName { get; }
 }
 
-/// <summary>Overrides for <see cref="IHostIdentityAccessor"/>. Unset members are discovered.</summary>
+/// <summary>Represents configuration overrides for <see cref="IHostIdentityAccessor"/>.</summary>
 [PublicAPI]
 public sealed class HostIdentityOptions
 {
-    /// <summary>Application name to report instead of the entry assembly title.</summary>
+    /// <summary>Gets or sets the application name override.</summary>
     public string? ApplicationName { get; set; }
 
     /// <summary>
-    /// Host name to report instead of the discovered one. Set it when the deployment has a stable identity the
-    /// environment does not expose, such as a StatefulSet ordinal passed through configuration.
+    /// Gets or sets the host name override.
     /// </summary>
     public string? HostName { get; set; }
 }
 
-/// <summary>Default <see cref="IHostIdentityAccessor"/>.</summary>
+/// <summary>Provides the default implementation of <see cref="IHostIdentityAccessor"/>.</summary>
 public sealed class HostIdentityAccessor : IHostIdentityAccessor
 {
     /// <summary>
-    /// Creates the accessor from the entry assembly, the process environment, and the machine name.
+    /// Initializes a new instance of the <see cref="HostIdentityAccessor"/> class using environment discovery.
     /// </summary>
-    /// <param name="options">Explicit overrides; every unset member is discovered.</param>
-    /// <param name="buildInformation">Source of the entry assembly title used as the default application name.</param>
-    /// <param name="guidGenerator">Source of the last-resort generated host name.</param>
-    /// <param name="logger">Receives a warning when no stable host name could be discovered.</param>
-    /// <exception cref="ArgumentException">An option is set to an empty or whitespace value.</exception>
+    /// <param name="options">Configuration options containing explicit overrides.</param>
+    /// <param name="buildInformation">The build information accessor for resolving default application name.</param>
+    /// <param name="guidGenerator">The GUID generator for fallback host naming.</param>
+    /// <param name="logger">The optional logger for warning messages.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="options"/>, <paramref name="buildInformation"/>, or <paramref name="guidGenerator"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><see cref="HostIdentityOptions.ApplicationName"/> or <see cref="HostIdentityOptions.HostName"/> is empty.</exception>
     public HostIdentityAccessor(
         HostIdentityOptions options,
         IBuildInformationAccessor buildInformation,

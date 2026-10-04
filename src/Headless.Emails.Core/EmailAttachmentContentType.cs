@@ -5,9 +5,7 @@ using Headless.Checks;
 namespace Headless.Emails;
 
 /// <summary>
-/// Resolves an attachment's MIME content type from its file name. Shared across email providers whose
-/// transport requires an explicit content type (for example Azure Communication Services), since the
-/// <see cref="EmailRequestAttachment"/> contract carries only the file name and bytes.
+/// Resolves MIME content types for email attachments from file names.
 /// </summary>
 [PublicAPI]
 public static class EmailAttachmentContentType
@@ -16,12 +14,11 @@ public static class EmailAttachmentContentType
     public const string Default = "application/octet-stream";
 
     /// <summary>
-    /// Resolves the MIME content type for <paramref name="fileName"/> from its extension, falling back
-    /// to <see cref="Default"/> (<c>application/octet-stream</c>) when the extension is unknown.
+    /// Resolves the MIME content type for a file name from its extension.
     /// </summary>
-    /// <param name="fileName">The attachment file name (for example <c>invoice.pdf</c>).</param>
-    /// <returns>The resolved MIME content type, never <see langword="null"/> or empty.</returns>
-    /// <exception cref="System.ArgumentException">Thrown when <paramref name="fileName"/> is <see langword="null"/> or empty.</exception>
+    /// <param name="fileName">The attachment file name.</param>
+    /// <returns>The resolved MIME content type, or <see cref="Default"/> when the extension is unrecognized.</returns>
+    /// <exception cref="ArgumentException"><paramref name="fileName"/> is <see langword="null"/> or empty.</exception>
     public static string Resolve(string fileName)
     {
         Argument.IsNotNullOrEmpty(fileName);

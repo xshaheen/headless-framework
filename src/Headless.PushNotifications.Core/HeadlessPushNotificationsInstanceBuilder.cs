@@ -7,9 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Headless.PushNotifications;
 
 /// <summary>
-/// Builder for a single named push-notification service inside <c>AddHeadlessPushNotifications</c>. Provider
-/// packages contribute exactly one provider per instance through <see cref="RegisterProvider"/> (called by each
-/// instance-scoped <c>Use*</c> extension, for example <c>UseApns</c>, <c>UseFirebase</c>, or <c>UseNoop</c>).
+/// Configures a named push notification service instance.
 /// </summary>
 [PublicAPI]
 public sealed class HeadlessPushNotificationsInstanceBuilder
@@ -19,16 +17,16 @@ public sealed class HeadlessPushNotificationsInstanceBuilder
         Name = Argument.IsNotNullOrWhiteSpace(name);
     }
 
-    /// <summary>The service instance name. Used as the keyed-service key and the named-options name.</summary>
+    /// <summary>Gets the service instance name used for service keys and named options.</summary>
     public string Name { get; }
 
     internal Action<IServiceCollection>? Action { get; private set; }
 
-    /// <summary>Captures the provider contribution for this instance. Must be called exactly once.</summary>
-    /// <param name="action">The provider's deferred service registration action.</param>
-    /// <exception cref="ArgumentNullException">Thrown when <paramref name="action"/> is <see langword="null"/>.</exception>
-    /// <exception cref="InvalidOperationException">Thrown when a provider is already registered for this instance.</exception>
-    [EditorBrowsable(EditorBrowsableState.Never)] // provider-package plumbing, not an application-code API
+    /// <summary>Registers the provider delegate for this instance.</summary>
+    /// <param name="action">The delegate that registers services into the service collection.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="action"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException">A provider is already registered for this instance.</exception>
+    [EditorBrowsable(EditorBrowsableState.Never)]
     public void RegisterProvider(Action<IServiceCollection> action)
     {
         Argument.IsNotNull(action);

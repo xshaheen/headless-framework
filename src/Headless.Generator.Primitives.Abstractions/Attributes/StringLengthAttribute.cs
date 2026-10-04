@@ -2,19 +2,19 @@
 
 namespace Headless.Generator.Primitives;
 
-/// <summary>Validation attribute applied to a string-backed primitive type declaration to assert its value length stays within the configured minimum and maximum bounds.</summary>
-/// <param name="minimumLength">The minimum length allowed for the string.</param>
-/// <param name="maximumLength">The maximum length allowed for the string.</param>
-/// <param name="validate">Indicates whether the string length should be validated.</param>
+/// <summary>Validates that a string-backed primitive value length stays within minimum and maximum bounds.</summary>
+/// <param name="minimumLength">The minimum allowed length.</param>
+/// <param name="maximumLength">The maximum allowed length.</param>
+/// <param name="validate">Indicates whether string length validation is enabled.</param>
 [AttributeUsage(AttributeTargets.Class)]
 public sealed class StringLengthAttribute(int minimumLength, int maximumLength, bool validate = true) : Attribute
 {
-    /// <summary>Gets the maximum length allowed for the string.</summary>
+    /// <summary>Gets the maximum allowed length.</summary>
     public int MaximumLength { get; } = maximumLength;
 
-    /// <summary>Gets the minimum length allowed for the string.</summary>
+    /// <summary>Gets the minimum allowed length.</summary>
     public int MinimumLength { get; } = minimumLength;
 
-    /// <summary>Gets a value indicating whether the string length should be validated.</summary>
+    /// <summary>Gets a value indicating whether string length validation is enabled.</summary>
     public bool Validate { get; } = validate;
 }

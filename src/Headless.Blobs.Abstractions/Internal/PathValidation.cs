@@ -78,6 +78,8 @@ public static class PathValidation
     /// Validates a path segment for security issues including path traversal,
     /// absolute paths, and control characters.
     /// </summary>
+    /// <param name="segment">The path segment to validate.</param>
+    /// <param name="paramName">The parameter name.</param>
     public static void ValidatePathSegment(
         string? segment,
         [CallerArgumentExpression(nameof(segment))] string? paramName = null
@@ -91,6 +93,8 @@ public static class PathValidation
     /// <summary>
     /// Validates all segments of a container path for security issues.
     /// </summary>
+    /// <param name="container">The container segments to validate.</param>
+    /// <param name="paramName">The parameter name.</param>
     public static void ValidateContainer(
         string[] container,
         [CallerArgumentExpression(nameof(container))] string? paramName = null

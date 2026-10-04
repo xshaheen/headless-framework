@@ -3,13 +3,12 @@
 namespace Headless.Captcha;
 
 /// <summary>
-/// Supplies the language/locale code the captcha tag helpers render into the client widget or script — reCAPTCHA's
-/// script-URL <c>?hl=</c> parameter and Turnstile's <c>data-language</c> attribute. Register a custom implementation
-/// to override the default (which derives the code from the current UI culture).
+/// Provides the language or locale code rendered by captcha tag helpers into the client widget or script.
 /// </summary>
 [PublicAPI]
 public interface ICaptchaLanguageCodeProvider
 {
-    /// <summary>Gets the language code to render (for example <c>en</c> / <c>en-US</c>, or Turnstile's <c>auto</c>).</summary>
+    /// <summary>Gets the language code to render, such as <c>en</c>, <c>en-US</c>, or Turnstile <c>auto</c>.</summary>
+    /// <returns>The language code to render in the client widget.</returns>
     string GetLanguageCode();
 }

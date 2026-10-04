@@ -57,16 +57,17 @@ internal sealed class SourceCodeBuilder
         }
     }
 
-    /// <summary>The line terminator of every generated line.</summary>
+    /// <summary>The line terminator used across all generated files.</summary>
     public const string PlainNewLine = "\n";
 
-    /// <summary>Represents the length of a new line character sequence.</summary>
+    /// <summary>The length of the newline sequence.</summary>
     public const int NewLineLength = 1;
 
     private const char _NewLineChar = '\n';
 
-    /// <summary>Returns a string that represents the specified number of indentation chars.</summary>
-    /// <param name="count">The number of indentation strings to generate. Default is 1.</param>
+    /// <summary>Generates an indentation string containing the requested indentation levels.</summary>
+    /// <param name="count">The number of indentation levels to generate.</param>
+    /// <returns>The generated indentation string.</returns>
     public static string GetIndentation(int count = 1)
     {
         return count < _CachedIndentations.Length
@@ -74,52 +75,52 @@ internal sealed class SourceCodeBuilder
             : string.Concat(Enumerable.Repeat(_IndentationString, count));
     }
 
-    /// <summary>Gets or sets the length of the current <see cref="System.Text.StringBuilder" /> object.</summary>
-    /// <exception cref="System.ArgumentOutOfRangeException">The value specified for a set operation is less than zero or greater than <see cref="System.Text.StringBuilder.MaxCapacity" />.</exception>
-    /// <returns>The length of this instance.</returns>
+    /// <summary>Gets or sets the current buffer length.</summary>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="value"/> is negative or exceeds the maximum capacity.</exception>
+    /// <returns>The character length of the current buffer.</returns>
     public int Length
     {
         get => _sb.Length;
         set => _sb.Length = value;
     }
 
-    /// <summary>Appends indentation to the current string.</summary>
-    /// <param name="count">The number of indentation levels to append. Default is 1.</param>
+    /// <summary>Appends indentation to the buffer.</summary>
+    /// <param name="count">The number of indentation levels to append.</param>
     public SourceCodeBuilder AppendIndentation(int count = 1)
     {
         return Append(GetIndentation(count));
     }
 
-    /// <summary>Adds the auto-generated comment to the source code, including the generator name.</summary>
-    /// <param name="generatorName">The name of the source code generator.</param>
+    /// <summary>Appends an auto-generated file header with the generator name.</summary>
+    /// <param name="generatorName">The name of the source generator.</param>
     public SourceCodeBuilder AppendSourceHeader(string generatorName)
     {
         return Append(_SourceHeader1).Append(generatorName).AppendLine(_SourceHeader2).NewLine();
     }
 
-    /// <summary>Appends a <c>&lt;inheritdoc/&gt;</c> XML comment.</summary>
+    /// <summary>Appends an <c>&lt;inheritdoc/&gt;</c> XML documentation comment.</summary>
     public SourceCodeBuilder AppendInheritDoc()
     {
         return AppendLine("/// <inheritdoc/>");
     }
 
-    /// <summary>Appends a <c>&lt;inheritdoc/&gt;</c> XML comment with cref.</summary>
-    /// <param name="cref">The cref attribute specifying the member to inherit documentation from.</param>
+    /// <summary>Appends an <c>&lt;inheritdoc cref="..."/&gt;</c> XML documentation comment.</summary>
+    /// <param name="cref">The member reference to inherit documentation from.</param>
     public SourceCodeBuilder AppendInheritDoc(string cref)
     {
         return AppendLine($"/// <inheritdoc cref=\"{cref}\"/>");
     }
 
-    /// <summary>Appends a summary documentation block to the source code.</summary>
-    /// <param name="summary">The summary text to be appended.</param>
+    /// <summary>Appends a summary XML documentation block.</summary>
+    /// <param name="summary">The summary text.</param>
     public SourceCodeBuilder AppendSummary(string summary)
     {
         return AppendSummaryBlock("summary", summary);
     }
 
-    /// <summary>Appends a parameter description to the source code builder.</summary>
-    /// <param name="parameterName">The name of the parameter.</param>
-    /// <param name="parameterDescription">The description of the parameter.</param>
+    /// <summary>Appends a parameter XML documentation comment.</summary>
+    /// <param name="parameterName">The parameter name.</param>
+    /// <param name="parameterDescription">The parameter description.</param>
     public SourceCodeBuilder AppendParamDescription(string parameterName, string parameterDescription)
     {
         Append("/// <param name=\"")
@@ -132,10 +133,10 @@ internal sealed class SourceCodeBuilder
     }
 
     /// <summary>
-    /// Appends an exception description to the source code builder.
+    /// Appends an exception XML documentation comment.
     /// </summary>
-    /// <param name="exceptionName">The name of the exception.</param>
-    /// <param name="exceptionDescription">The description of the exception.</param>
+    /// <param name="exceptionName">The exception type name.</param>
+    /// <param name="exceptionDescription">The condition causing the exception.</param>
     public SourceCodeBuilder AppendExceptionDescription(string exceptionName, string exceptionDescription)
     {
         Append("/// <exception cref=\"")
@@ -148,9 +149,9 @@ internal sealed class SourceCodeBuilder
     }
 
     /// <summary>
-    /// Appends a returns description to the source code builder.
+    /// Appends a returns XML documentation comment.
     /// </summary>
-    /// <param name="description">The description of the return value.</param>
+    /// <param name="description">The return value description.</param>
     public SourceCodeBuilder AppendReturnsDescription(string description)
     {
         Append("/// <returns>").Append(description).AppendLine("</returns>");
@@ -159,10 +160,10 @@ internal sealed class SourceCodeBuilder
     }
 
     /// <summary>
-    /// Appends a summary documentation block to the source code
+    /// Appends an XML documentation tag containing the specified line.
     /// </summary>
-    /// <param name="block">The type of block to append (e.g. "summary", "returns")</param>
-    /// <param name="line">The text line to include in the block</param>
+    /// <param name="block">The XML element tag name.</param>
+    /// <param name="line">The element content.</param>
     public SourceCodeBuilder AppendSummaryBlock(string block, string line)
     {
         Append("/// ").AppendXmlOpenTag(block).Append(line).AppendXmlCloseTag(block).AppendLine("");
@@ -196,27 +197,27 @@ internal sealed class SourceCodeBuilder
         return Append("<").Append(tag).Append(">");
     }
 
-    /// <summary>Appends close XML tag to the source code builder.</summary>
+    /// <summary>Appends a closing XML element tag.</summary>
     public SourceCodeBuilder AppendXmlCloseTag(string tag)
     {
         return Append("</").Append(tag).Append(">");
     }
 
-    /// <summary>Appends a comment line to the source code builder.</summary>
-    /// <param name="commentLine">The comment line to append.</param>
-    /// <param name="ensureIndentation">Optional. Specifies whether to ensure proper indentation with <see cref="_IndentationString"/>. Default is true.</param>
+    /// <summary>Appends a single-line comment.</summary>
+    /// <param name="commentLine">The comment text.</param>
+    /// <param name="ensureIndentation">Whether to enforce indentation.</param>
     public SourceCodeBuilder AppendComment(string commentLine, bool ensureIndentation = true)
     {
         return AppendLine("// " + commentLine, ensureIndentation);
     }
 
     /// <summary>
-    /// Appends a class or record declaration to the source code builder.
+    /// Appends a class or record declaration and opens its body.
     /// </summary>
-    /// <param name="isRecord">True if the class is a record, false otherwise.</param>
-    /// <param name="modifiers">The modifiers for the class.</param>
-    /// <param name="className">The name of the class.</param>
-    /// <param name="inheritance">Optional inheritance for the class.</param>
+    /// <param name="isRecord"><see langword="true"/> when the type is a record; otherwise, <see langword="false"/>.</param>
+    /// <param name="modifiers">The declaration modifiers.</param>
+    /// <param name="className">The type name.</param>
+    /// <param name="inheritance">Optional base class or interfaces.</param>
     public SourceCodeBuilder AppendClass(bool isRecord, string modifiers, string className, string? inheritance = null)
     {
         Append(modifiers)
@@ -227,10 +228,10 @@ internal sealed class SourceCodeBuilder
         return OpenBracket();
     }
 
-    /// <summary>Appends a struct declaration to the source code with the specified modifiers, struct name, and optional inheritance.</summary>
-    /// <param name="modifiers">The modifiers for the struct (e.g., "public", "internal").</param>
-    /// <param name="className">The name of the struct to be appended.</param>
-    /// <param name="inheritance">Optional. The inheritance or base struct for the struct declaration.</param>
+    /// <summary>Appends a struct declaration and opens its body.</summary>
+    /// <param name="modifiers">The declaration modifiers.</param>
+    /// <param name="className">The struct name.</param>
+    /// <param name="inheritance">Optional implemented interfaces.</param>
     public SourceCodeBuilder AppendStruct(string modifiers, string className, string? inheritance)
     {
         Append(modifiers)
@@ -241,13 +242,13 @@ internal sealed class SourceCodeBuilder
         return OpenBracket();
     }
 
-    /// <summary>Appends a namespace declaration to the source code with the specified namespace name.</summary>
+    /// <summary>Appends a file-scoped namespace declaration.</summary>
     public SourceCodeBuilder AppendNamespace(string @namespace)
     {
         return Append("namespace ").Continue(@namespace).ContinueLine(";").NewLine();
     }
 
-    /// <summary>Appends usings by adding using prefix and ';' at the end</summary>
+    /// <summary>Appends using directives for distinct namespace names.</summary>
     public SourceCodeBuilder AppendUsings(IEnumerable<string> usings)
     {
         foreach (var us in usings.Distinct(StringComparer.Ordinal))
@@ -260,17 +261,17 @@ internal sealed class SourceCodeBuilder
         return this;
     }
 
-    /// <summary>Appends the specified string to the source code if a specified condition is met.</summary>
-    /// <param name="condition">A Boolean value indicating whether to append the string.</param>
-    /// <param name="line">The string to append if the condition is met.</param>
+    /// <summary>Appends a formatted string when <paramref name="condition"/> is true.</summary>
+    /// <param name="condition">Condition governing emission.</param>
+    /// <param name="line">The formatted string.</param>
     public SourceCodeBuilder AppendIf(bool condition, FormattableString line)
     {
         return !condition ? this : Append(line.ToString(CultureInfo.InvariantCulture));
     }
 
-    /// <summary>Appends the specified string to the source code if a specified condition is met.</summary>
-    /// <param name="condition">A Boolean value indicating whether to append the string.</param>
-    /// <param name="line">The string to append if the condition is met.</param>
+    /// <summary>Appends a string when <paramref name="condition"/> is true.</summary>
+    /// <param name="condition">Condition governing emission.</param>
+    /// <param name="line">The text to append.</param>
     public SourceCodeBuilder AppendIf(bool condition, string line)
     {
         return !condition ? this : Append(line);

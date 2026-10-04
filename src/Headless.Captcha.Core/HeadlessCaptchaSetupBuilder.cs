@@ -7,19 +7,8 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Headless.Captcha;
 
 /// <summary>
-/// Root builder for <c>AddHeadlessCaptcha</c>. Provider packages contribute deferred service registrations into two
-/// slots — an optional default (at most one, resolvable unkeyed plus under its canonical key) and named instances
-/// (unlimited, unique names, keyed-only). Nothing is registered into <see cref="Services"/> until the setup gates
-/// pass; contributions are queued only, so a throwing setup leaves the collection unchanged.
+/// Configures default and named captcha providers for the application.
 /// </summary>
-/// <remarks>
-/// A default provider is selected by calling a provider's <c>Use{Provider}</c> member directly on this builder
-/// (for example <c>setup.UseTurnstile(...)</c>); a named instance is added with <see cref="AddNamed"/>, whose
-/// nested <see cref="HeadlessCaptchaInstanceBuilder"/> takes exactly one provider (for example
-/// <c>setup.AddNamed("otp", i =&gt; i.UseTurnstile(...))</c>). <see cref="RegisterDefault"/> is the low-level
-/// plumbing each default <c>Use*</c> member builds on; it is hidden from IntelliSense and not intended for
-/// application code.
-/// </remarks>
 [PublicAPI]
 public sealed class HeadlessCaptchaSetupBuilder
 {
@@ -37,25 +26,18 @@ public sealed class HeadlessCaptchaSetupBuilder
     internal List<Action<IServiceCollection>> NamedRegistrations { get; } = [];
 
     /// <summary>
-    /// The names under which verifiers will be resolvable through <see cref="ICaptchaProvider"/> — every named
-    /// instance plus a default provider's canonical key.
+    /// Gets the names under which verifiers are resolvable through <see cref="ICaptchaProvider"/>.
     /// </summary>
     internal IReadOnlyCollection<string> RegisteredNames => _names;
 
     /// <summary>
-    /// Queues the default (unkeyed) verifier contribution, which is also aliased under <paramref name="providerKey"/>.
-    /// At most one default may be registered; register additional providers with the name-taking overloads.
+    /// Registers the default verifier and aliases it under the specified canonical provider key.
     /// </summary>
-    /// <remarks>
-    /// A public extension point for provider packages. <paramref name="providerKey"/> must be a framework-reserved
-    /// key (under the <c>Headless.Captcha:</c> namespace, see <see cref="CaptchaConstants.IsReservedProviderKey"/>)
-    /// so the default's canonical alias cannot collide with a consumer-owned keyed service.
-    /// </remarks>
-    /// <param name="providerKey">The provider's canonical key (one of the <see cref="CaptchaConstants"/> values).</param>
-    /// <param name="action">The provider's deferred service registration action.</param>
-    /// <exception cref="ArgumentException">Thrown when <paramref name="providerKey"/> is not a reserved framework key.</exception>
-    /// <exception cref="InvalidOperationException">Thrown when a default provider is already registered, or the key is taken.</exception>
-    [EditorBrowsable(EditorBrowsableState.Never)] // provider-package plumbing, not an application-code API
+    /// <param name="providerKey">The canonical provider key from <see cref="CaptchaConstants"/>.</param>
+    /// <param name="action">The delegate that registers provider services.</param>
+    /// <exception cref="ArgumentException"><paramref name="providerKey"/> is not a reserved framework key.</exception>
+    /// <exception cref="InvalidOperationException">A default provider is already registered, or the key is already in use.</exception>
+    [EditorBrowsable(EditorBrowsableState.Never)]
     public void RegisterDefault(string providerKey, Action<IServiceCollection> action)
     {
         Argument.IsNotNullOrWhiteSpace(providerKey);
@@ -91,21 +73,17 @@ public sealed class HeadlessCaptchaSetupBuilder
     }
 
     /// <summary>
-    /// Adds an independently-configured named captcha verifier, resolvable through <see cref="ICaptchaProvider"/> by
-    /// <paramref name="name"/> or as a keyed <see cref="ICaptchaVerifier"/>. Named instances never touch the default
-    /// (unkeyed) verifier.
+    /// Adds a named captcha verifier instance.
     /// </summary>
-    /// <param name="name">The verifier instance name. Must be non-empty, unique, and not a reserved framework key.</param>
-    /// <param name="configure">Configuration action that selects exactly one provider for the instance.</param>
-    /// <returns>The builder for chaining.</returns>
+    /// <param name="name">The verifier instance name.</param>
+    /// <param name="configure">A delegate that configures the named provider.</param>
+    /// <returns>The builder instance.</returns>
     /// <exception cref="ArgumentException">
-    /// Thrown when <paramref name="name"/> is <see langword="null"/> or whitespace, or is a reserved framework key
-    /// (under the <c>Headless.Captcha:</c> namespace, see <see cref="CaptchaConstants.IsReservedProviderKey"/>).
+    /// <paramref name="name"/> is empty, contains only white space, or uses a reserved framework key prefix.
     /// </exception>
-    /// <exception cref="ArgumentNullException">Thrown when <paramref name="configure"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
     /// <exception cref="InvalidOperationException">
-    /// Thrown when <paramref name="name"/> is already configured, or when the instance selects zero or more than one
-    /// provider.
+    /// <paramref name="name"/> is already configured, or the configuration delegate does not select exactly one provider.
     /// </exception>
     public HeadlessCaptchaSetupBuilder AddNamed(string name, Action<HeadlessCaptchaInstanceBuilder> configure)
     {

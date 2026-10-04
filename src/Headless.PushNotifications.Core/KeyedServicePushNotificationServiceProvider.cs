@@ -6,8 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Headless.PushNotifications;
 
 /// <summary>
-/// <see cref="IPushNotificationServiceProvider"/> over the container's keyed <see cref="IPushNotificationService"/>
-/// registrations — resolves the named instances added through <c>setup.AddNamed(name, …)</c>.
+/// Resolves named <see cref="IPushNotificationService"/> instances from keyed container registrations.
 /// </summary>
 internal sealed class KeyedServicePushNotificationServiceProvider(
     IServiceProvider serviceProvider,

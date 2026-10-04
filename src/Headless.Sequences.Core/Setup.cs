@@ -16,14 +16,14 @@ public static class SetupSequences
     extension(IServiceCollection services)
     {
         /// <summary>
-        /// Registers <see cref="ISequenceGenerator" />, the gap-free <c>unit.Sequences</c> feature, and the chosen
-        /// provider. Exactly one <c>setup.Use…</c> call (<c>UsePostgreSql</c> or <c>UseSqlServer</c>) is required.
+        /// Registers <see cref="ISequenceGenerator" />, the gap-free <c>unit.Sequences</c> feature, and the selected database provider.
+        /// Exactly one provider registration call (such as <c>UsePostgreSql</c> or <c>UseSqlServer</c>) is required.
         /// </summary>
-        /// <param name="configure">Chooses the provider and configures the numbering policies.</param>
-        /// <returns>The service collection, to allow chaining.</returns>
+        /// <param name="configure">A callback to configure provider options and numbering policies.</param>
+        /// <returns>The service collection to support method chaining.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="configure" /> is <see langword="null" />.</exception>
         /// <exception cref="InvalidOperationException">
-        /// No provider or more than one provider was chosen, or sequences were already registered.
+        /// No provider or multiple providers are registered, or sequences are already registered.
         /// </exception>
         public IServiceCollection AddHeadlessSequences(Action<HeadlessSequencesSetupBuilder> configure)
         {

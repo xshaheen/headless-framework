@@ -6,21 +6,22 @@ using Headless.Checks;
 
 namespace Headless.PushNotifications.Apns.Internal;
 
-/// <summary>Loads the APNs provider certificate from its base64 PKCS#12 text.</summary>
+/// <summary>Loads and validates APNs provider certificates from Base64 PKCS#12 payloads.</summary>
 internal static class ApnsCertificateLoader
 {
     /// <summary>
-    /// The key storage flags for this OS. Linux keeps the key in memory only, so it never reaches disk. Windows needs
-    /// the default flags because SChannel cannot use an ephemeral key for TLS client authentication, so the key
-    /// reaches the user key store. macOS refuses ephemeral keys and imports the key into a temporary keychain.
+    /// Gets platform-specific key storage flags for certificate importing.
     /// </summary>
     internal static X509KeyStorageFlags KeyStorageFlags { get; } =
         OperatingSystem.IsLinux() ? X509KeyStorageFlags.EphemeralKeySet : X509KeyStorageFlags.DefaultKeySet;
 
-    /// <summary>Decodes and loads the certificate. The caller owns and disposes the result.</summary>
-    /// <exception cref="FormatException"><paramref name="base64Pkcs12"/> is not base64.</exception>
+    /// <summary>Decodes and loads a PKCS#12 certificate from Base64 text.</summary>
+    /// <param name="base64Pkcs12">The Base64-encoded PKCS#12 certificate data.</param>
+    /// <param name="password">The password for the certificate file.</param>
+    /// <returns>A loaded <see cref="X509Certificate2"/> instance.</returns>
+    /// <exception cref="FormatException"><paramref name="base64Pkcs12"/> is not valid Base64.</exception>
     /// <exception cref="System.Security.Cryptography.CryptographicException">
-    /// The data is not PKCS#12, or <paramref name="password"/> does not open it.
+    /// The payload is not valid PKCS#12 or <paramref name="password"/> is incorrect.
     /// </exception>
     public static X509Certificate2 Load(string base64Pkcs12, string? password)
     {
@@ -32,17 +33,15 @@ internal static class ApnsCertificateLoader
     }
 
     /// <summary>
-    /// Loads the certificate and checks what APNs needs from it: base64 PKCS#12 text that <paramref name="password"/>
-    /// opens, a private key, and an expiry after <paramref name="now"/>. Shared by the options validator and the
-    /// certificate reload, so both accept exactly the same certificates.
+    /// Loads and validates a certificate for APNs client TLS authentication.
     /// </summary>
+    /// <param name="base64Pkcs12">The Base64-encoded PKCS#12 data.</param>
+    /// <param name="password">The certificate password.</param>
+    /// <param name="now">The current timestamp for expiration verification.</param>
+    /// <param name="errors">A list of validation error descriptions when loading fails.</param>
     /// <returns>
-    /// The certificate, which the caller owns and disposes, or <see langword="null"/> when any check fails.
+    /// The loaded <see cref="X509Certificate2"/> instance when valid; otherwise, <see langword="null"/>.
     /// </returns>
-    /// <remarks>
-    /// The <paramref name="errors"/> messages never contain the certificate text or the password, so they are safe to
-    /// log and to put in a validation failure.
-    /// </remarks>
     public static X509Certificate2? LoadValid(
         string base64Pkcs12,
         string? password,
@@ -58,7 +57,7 @@ internal static class ApnsCertificateLoader
         }
         catch (Exception e) when (e is FormatException or CryptographicException)
         {
-            // FormatException: not base64. CryptographicException: not PKCS#12, or the password does not open it.
+            // Catches invalid Base64 decoding or corrupt PKCS#12 payload and password mismatch.
             errors =
             [
                 "APNs Certificate must be the base64 text of a PKCS#12 (.p12) file that CertificatePassword opens.",
@@ -95,7 +94,9 @@ internal static class ApnsCertificateLoader
         return null;
     }
 
-    /// <summary>The certificate's expiry as a UTC instant; <see cref="X509Certificate2.NotAfter"/> is local time.</summary>
+    /// <summary>Gets the certificate expiration timestamp in UTC.</summary>
+    /// <param name="certificate">The certificate to evaluate.</param>
+    /// <returns>The expiration date and time in UTC.</returns>
     public static DateTimeOffset GetExpiresAt(X509Certificate2 certificate)
     {
         return new DateTimeOffset(certificate.NotAfter.ToUniversalTime(), TimeSpan.Zero);

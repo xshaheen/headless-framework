@@ -5,8 +5,7 @@ using System.Net;
 namespace Headless.PushNotifications.Apns.Internal;
 
 /// <summary>
-/// Maps an APNs HTTP outcome onto an <see cref="ApnsSendResult"/> and its provider-agnostic
-/// <see cref="PushNotificationResponse"/>.
+/// Maps APNs HTTP responses to <see cref="ApnsSendResult"/> and <see cref="PushNotificationResponse"/> models.
 /// </summary>
 internal static class ApnsResponseMapper
 {
@@ -14,7 +13,6 @@ internal static class ApnsResponseMapper
 
     private const string _BadDeviceTokenReason = "BadDeviceToken";
 
-    // Apple: "After 15 minutes, you can retry JSON payloads that receive response status codes that begin with 5XX."
     private static readonly TimeSpan _ServerRetryAfter = TimeSpan.FromMinutes(15);
 
     private static readonly ApnsErrorBody _NoError = new(Reason: null, Timestamp: null);
@@ -23,8 +21,7 @@ internal static class ApnsResponseMapper
     private static readonly long _MaxUnixMilliseconds = DateTimeOffset.MaxValue.ToUnixTimeMilliseconds();
 
     /// <summary>
-    /// Reads the <c>reason</c> and, for HTTP 410, the millisecond <c>timestamp</c> from an APNs error body; each is
-    /// <see langword="null"/> when the body does not carry it.
+    /// Deserializes the error reason and timestamp from an APNs error response payload.
     /// </summary>
     public static ApnsErrorBody ReadError(ReadOnlySpan<byte> body)
     {
@@ -46,8 +43,7 @@ internal static class ApnsResponseMapper
         }
         catch (JsonException)
         {
-            // A proxy or load balancer can answer with HTML or plain text; the HTTP status still describes the
-            // outcome, so the missing reason is not an error of its own.
+            // Non-JSON responses from proxies or gateways default to no error details.
             return _NoError;
         }
     }
@@ -75,8 +71,6 @@ internal static class ApnsResponseMapper
             RetryAfter = failureKind switch
             {
                 ApnsFailureKind.ServerError => _ServerRetryAfter,
-                // A 429 waits only as long as APNs says: Apple's response-header table does not list Retry-After,
-                // so a missing header leaves the delay to the caller.
                 ApnsFailureKind.Throttled when error.RetryAfter is { } retryAfter => retryAfter,
                 _ => null,
             },
@@ -96,14 +90,11 @@ internal static class ApnsResponseMapper
             return PushNotificationResponse.Succeeded(deviceToken, apnsId);
         }
 
-        // Apple defines 410 as a token that is no longer active for the topic, whatever reason accompanies it.
         if (status == HttpStatusCode.Gone)
         {
             return PushNotificationResponse.Unregistered(deviceToken);
         }
 
-        // BadDeviceToken also means "token from the other environment", so reporting it as unregistered is opt-in:
-        // a host pointed at the wrong environment would otherwise discard every valid token it holds.
         if (
             treatBadDeviceTokenAsUnregistered
             && status == HttpStatusCode.BadRequest
@@ -130,8 +121,6 @@ internal static class ApnsResponseMapper
 
     private static DateTimeOffset? _FromUnixMilliseconds(long? milliseconds)
     {
-        // A value outside DateTimeOffset's range would throw and turn a clear 410 into a failure, so it reads as
-        // "no timestamp" instead.
         return milliseconds is { } value && value >= _MinUnixMilliseconds && value <= _MaxUnixMilliseconds
             ? DateTimeOffset.FromUnixTimeMilliseconds(value)
             : null;

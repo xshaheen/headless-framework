@@ -2,7 +2,7 @@
 
 namespace Headless.Generator.Primitives;
 
-/// <summary>Specifies that the attributed class or struct has an underlying primitive type.</summary>
+/// <summary>Identifies the underlying primitive storage type for an attributed class or struct.</summary>
 /// <param name="underlyingPrimitiveType">The underlying primitive type.</param>
 [AttributeUsage(AttributeTargets.Class | AttributeTargets.Struct)]
 public sealed class UnderlyingPrimitiveTypeAttribute(Type underlyingPrimitiveType) : Attribute

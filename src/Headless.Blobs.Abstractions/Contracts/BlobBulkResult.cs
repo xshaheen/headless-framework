@@ -6,15 +6,15 @@ using Headless.Primitives;
 namespace Headless.Blobs;
 
 /// <summary>
-/// Outcome of one entry in a bulk operation, paired with the raw blob identity it refers to so results are correlated by
-/// identity rather than by position.
+/// Outcome of one entry in a bulk operation, paired with the raw blob identity it refers to so results correlate by
+/// identity rather than position.
 /// </summary>
 /// <remarks>
 /// For <see cref="IBlobStorage.BulkUploadAsync"/>: <c>Ok(true)</c> on success, or <c>Fail(ex)</c> on failure. For
-/// <see cref="IBlobStorage.BulkDeleteAsync"/>: <c>Ok(true)</c> when the blob was deleted, <c>Ok(false)</c> when it was
-/// not found, or <c>Fail(ex)</c> on failure. A per-entry failure does not abort the rest of the batch. Invalid per-entry
+/// <see cref="IBlobStorage.BulkDeleteAsync"/>: <c>Ok(true)</c> when the blob was deleted, <c>Ok(false)</c> when not
+/// found, or <c>Fail(ex)</c> on failure. A per-entry failure does not abort the rest of the batch. Invalid per-entry
 /// paths still return their raw <see cref="Container"/> and <see cref="Path"/>; <see cref="Location"/> is populated only
-/// when the input successfully formed a validated <see cref="BlobLocation"/>.
+/// when the input successfully forms a validated <see cref="BlobLocation"/>.
 /// </remarks>
 [PublicAPI]
 public sealed record BlobBulkResult
@@ -29,6 +29,7 @@ public sealed record BlobBulkResult
     /// <param name="container">The raw input container.</param>
     /// <param name="path">The raw input path.</param>
     /// <param name="result">The per-entry outcome.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="container"/> or <paramref name="path"/> is <see langword="null"/>.</exception>
     public BlobBulkResult(string container, string path, Result<bool, Exception> result)
         : this(container, path, location: null, result) { }
 

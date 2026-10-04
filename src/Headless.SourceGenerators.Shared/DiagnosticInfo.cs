@@ -6,12 +6,11 @@ using Microsoft.CodeAnalysis;
 namespace Headless.SourceGenerators;
 
 /// <summary>
-/// A value-equal description of a diagnostic, computed inside a cached pipeline step and turned into a real
-/// <see cref="Diagnostic"/> only when it is reported.
+/// Value-comparable diagnostic model computed in cached pipeline stages and converted to <see cref="Diagnostic"/>
+/// during reporting.
 /// </summary>
 /// <remarks>
-/// Message arguments are captured as invariant strings: a diagnostic's arguments are formatted into text anyway, and
-/// strings keep the record comparable without holding symbols or boxed values.
+/// Message arguments are stored as invariant strings to keep the record comparable without pinning symbol instances.
 /// </remarks>
 internal sealed record DiagnosticInfo(
     DiagnosticDescriptor Descriptor,

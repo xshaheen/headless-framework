@@ -3,89 +3,83 @@
 namespace Headless.PushNotifications;
 
 /// <summary>
-/// Describes a single push notification to deliver via <see cref="IPushNotificationService"/>.
+/// Describes a single push notification to deliver through <see cref="IPushNotificationService"/>.
 /// </summary>
 /// <remarks>
 /// <para>
-/// The same request is used for single-device and multicast sends; only the target client identifiers differ.
-/// New delivery options are added as optional <see langword="init"/> properties so the contract can grow without changing the
-/// method signatures. <see langword="null"/> means "not set" for every optional property.
+/// Single-device and multicast sends share this request type; only target client identifiers differ.
+/// Optional properties default to <see langword="null"/>.
 /// </para>
 /// <para>
-/// A request is one of two kinds, and providers reject any other combination with
-/// <see cref="ArgumentException"/> before contacting the backend:
+/// A request must match one of two configurations:
 /// </para>
 /// <list type="bullet">
 /// <item><description>
-/// A <b>notification</b> has a non-blank <see cref="Title"/> and <see cref="Body"/>, and is shown to the user.
+/// A notification message specifies a non-blank <see cref="Title"/> and <see cref="Body"/>, and displays to the user.
 /// </description></item>
 /// <item><description>
-/// A <b>data-only</b> message has no <see cref="Title"/>, no <see cref="Body"/>, at least one <see cref="Data"/>
-/// entry, and no <see cref="Badge"/> or <see cref="Sound"/>. It wakes the app in the background instead of showing
-/// anything, so the device may throttle or drop it.
+/// A data-only message specifies no <see cref="Title"/>, no <see cref="Body"/>, at least one <see cref="Data"/> entry,
+/// and no <see cref="Badge"/> or <see cref="Sound"/>. It wakes the application in the background.
 /// </description></item>
 /// </list>
 /// </remarks>
 [PublicAPI]
 public sealed record PushNotificationRequest
 {
-    /// <summary>The notification title shown to the user; <see langword="null"/> for a data-only message.</summary>
+    /// <summary>Gets the notification title displayed to the user, or <see langword="null"/> for a data-only message.</summary>
     public string? Title { get; init; }
 
-    /// <summary>The notification body shown to the user; <see langword="null"/> for a data-only message.</summary>
+    /// <summary>Gets the notification body displayed to the user, or <see langword="null"/> for a data-only message.</summary>
     public string? Body { get; init; }
 
     /// <summary>
-    /// Optional custom key/value payload delivered alongside the notification, and the whole payload of a data-only
-    /// message. Keys reserved by the underlying provider may be rejected by the implementation. Defaults to
-    /// <see langword="null"/>.
+    /// Gets the custom key-value payload delivered with the notification, or the complete payload of a data-only
+    /// message. Defaults to <see langword="null"/>.
     /// </summary>
     public IReadOnlyDictionary<string, string>? Data { get; init; }
 
     /// <summary>
-    /// Optional key that groups notifications so a newer one replaces an older undelivered one with the same key
-    /// on the device. Defaults to <see langword="null"/> (no collapsing).
+    /// Gets the identifier used to collapse multiple notifications into the newest message on the device.
+    /// Defaults to <see langword="null"/>.
     /// </summary>
     /// <remarks>
-    /// Each provider maps and limits the key: APNs sends it as the <c>apns-collapse-id</c> header, which Apple
-    /// caps at 64 UTF-8 bytes, and Firebase sends it as the Android collapse key and as the same APNs header
-    /// through its iOS bridge. Providers reject a key over their limit with <see cref="ArgumentException"/>.
+    /// APNs maps this value to the <c>apns-collapse-id</c> header, capped at 64 UTF-8 bytes.
+    /// Firebase maps this value to the Android collapse key and the APNs header.
     /// </remarks>
     public string? CollapseKey { get; init; }
 
     /// <summary>
-    /// Optional app icon badge count; must not be negative. Defaults to <see langword="null"/> (the badge is left
-    /// unchanged).
+    /// Gets the application icon badge count. Defaults to <see langword="null"/>.
     /// </summary>
     /// <remarks>
-    /// <c>0</c> clears the badge on iOS. Android has no way to clear it, so there <c>0</c> is treated as not set.
-    /// Not allowed on a data-only message.
+    /// A value of 0 clears the badge on iOS. This property is not permitted on data-only messages.
     /// </remarks>
     public int? Badge { get; init; }
 
     /// <summary>
-    /// Optional sound to play: the name of a sound file bundled with the app, or <c>"default"</c> for the system
-    /// sound. Defaults to <see langword="null"/> (silent). Not allowed on a data-only message.
+    /// Gets the sound to play on delivery. Defaults to <see langword="null"/>.
     /// </summary>
+    /// <remarks>
+    /// Values specify a bundled sound filename or <c>"default"</c> for the system sound.
+    /// This property is not permitted on data-only messages.
+    /// </remarks>
     public string? Sound { get; init; }
 
     /// <summary>
-    /// Optional delivery priority. Defaults to <see langword="null"/>, which applies the provider's default
-    /// priority.
+    /// Gets the delivery priority. Defaults to <see langword="null"/>, which applies the provider default.
     /// </summary>
     /// <remarks>
-    /// Apple requires priority 5 for a background push, so APNs delivery of a data-only message ignores
-    /// <see cref="PushNotificationPriority.High"/>.
+    /// APNs requires normal priority for background push notifications and ignores <see cref="PushNotificationPriority.High"/>
+    /// for data-only messages.
     /// </remarks>
     public PushNotificationPriority? Priority { get; init; }
 
     /// <summary>
-    /// Optional time the provider keeps the message for a device that is offline; must be between zero and 28 days.
-    /// Defaults to <see langword="null"/>, which leaves the provider's own storage policy in place.
+    /// Gets the storage duration for offline devices, between zero and 28 days.
+    /// Defaults to <see langword="null"/>.
     /// </summary>
     /// <remarks>
-    /// <see cref="TimeSpan.Zero"/> means one delivery attempt with no storage. 28 days is Firebase's maximum Android
-    /// time-to-live, so every provider rejects a longer value with <see cref="ArgumentOutOfRangeException"/>.
+    /// <see cref="TimeSpan.Zero"/> indicates one delivery attempt without storage.
     /// </remarks>
     public TimeSpan? TimeToLive { get; init; }
 }

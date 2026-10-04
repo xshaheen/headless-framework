@@ -2,17 +2,17 @@
 
 namespace Headless.PushNotifications;
 
-/// <summary>Provider-neutral delivery priority of a <see cref="PushNotificationRequest"/>.</summary>
+/// <summary>Specifies the delivery priority of a push notification request.</summary>
 /// <remarks>
-/// APNs sends <see cref="High"/> as <c>apns-priority: 10</c> and <see cref="Normal"/> as <c>apns-priority: 5</c>;
-/// Android sends them as the high and normal message priorities.
+/// APNs maps <see cref="High"/> to <c>apns-priority: 10</c> and <see cref="Normal"/> to <c>apns-priority: 5</c>.
+/// Android maps them to high and normal message priorities.
 /// </remarks>
 [PublicAPI]
 public enum PushNotificationPriority
 {
-    /// <summary>Deliver when power considerations allow; the device may batch or delay the message.</summary>
+    /// <summary>Delivers when power considerations allow. The device can batch or delay the message.</summary>
     Normal = 0,
 
-    /// <summary>Deliver immediately, waking the device if needed.</summary>
+    /// <summary>Delivers immediately, waking the device if needed.</summary>
     High = 1,
 }

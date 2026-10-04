@@ -6,26 +6,28 @@ using Headless.UnitOfWork;
 namespace Headless.Sequences;
 
 /// <summary>
-/// The gap-free numbering surface behind <c>unit.Sequences</c>: every call increments the counter inside the unit's
-/// own transaction, so the unit's rollback returns the number and its commit makes it permanent.
+/// Defines the internal sequence service underlying <c>unit.Sequences</c> that commits counter increments within unit transactions.
 /// </summary>
 /// <remarks>
-/// A singleton registered by <c>AddHeadlessSequences</c>. It holds no unit: the caller's handle arrives per call,
-/// and the call refuses, before any command runs, a unit that is no longer active, carries no relational resource,
-/// carries a completed transaction, or carries a transaction the configured provider cannot write through.
-/// Application code reaches it through <c>unit.Sequences</c> rather than directly.
+/// A singleton registered by <c>AddHeadlessSequences</c>. Instances do not store transaction state.
+/// Instead, the active <see cref="IUnitOfWork"/> is passed with each operation. Operations reject units that
+/// are completed, missing relational resources, or using incompatible providers before issuing database commands.
+/// Application code accesses sequence generation through <c>unit.Sequences</c>.
 /// </remarks>
 [PublicAPI]
 [EditorBrowsable(EditorBrowsableState.Never)]
 public interface IUnitOfWorkSequences : IUnitOfWorkFeature
 {
-    /// <summary>Takes the gap-free counter's next value inside <paramref name="unitOfWork" />'s transaction.</summary>
-    /// <param name="unitOfWork">The unit whose transaction holds the increment.</param>
-    /// <param name="name">The counter name; it must be registered as <see cref="SequenceMode.GapFree" />.</param>
-    /// <param name="partition">Splits the counter; <see langword="null" /> or empty means no partition.</param>
-    /// <param name="cancellationToken">Token used to cancel the database command.</param>
-    /// <returns>The value taken.</returns>
-    /// <exception cref="ArgumentException">The name, partition, or current tenant id is invalid.</exception>
+    /// <summary>Allocates the next value from a gap-free counter within the specified unit transaction.</summary>
+    /// <param name="unitOfWork">The unit whose transaction scopes the counter increment.</param>
+    /// <param name="name">The counter name. Must be registered as <see cref="SequenceMode.GapFree" />.</param>
+    /// <param name="partition">An optional partition key. Pass <see langword="null" /> or an empty string to use no partition.</param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns>The allocated value.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="unitOfWork"/> is <see langword="null"/>, or <paramref name="name"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="name" /> is empty, whitespace, or invalid, or <paramref name="partition" /> or the tenant identifier contains invalid characters or exceeds maximum length.
+    /// </exception>
     /// <exception cref="InvalidOperationException">
     /// The counter is not registered as gap-free, or the unit cannot host the write.
     /// </exception>

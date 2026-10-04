@@ -4,12 +4,12 @@ using Microsoft.CodeAnalysis;
 
 namespace Headless.SourceGenerators;
 
-/// <summary>Whether code a generator emits into the consuming assembly can name a type.</summary>
+/// <summary>Checks whether generated code in the consuming assembly can reference a given type.</summary>
 internal static class GeneratedCodeAccessibility
 {
     /// <summary>
-    /// Whether code emitted into the same assembly can name <paramref name="type"/>: every named type in it, its
-    /// containing types, and its type arguments are public or internal, and none is file-local.
+    /// Determines whether the specified type, its containing types, and its generic type arguments
+    /// are accessible to generated code and not file-local.
     /// </summary>
     public static bool IsAccessible(ITypeSymbol type)
     {

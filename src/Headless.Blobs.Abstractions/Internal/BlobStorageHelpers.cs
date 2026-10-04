@@ -16,9 +16,9 @@ public static class BlobStorageHelpers
     public const string ExtensionMetadataKey = "extension";
 
     /// <summary>
-    /// Reserved object-key suffix used by filesystem-like providers (file system, SFTP) to store a blob's metadata in
+    /// Reserved object-key suffix used by file-system and SFTP providers to store blob metadata in
     /// a companion ("sidecar") file next to its content. Blob keys ending in this suffix are rejected at
-    /// <see cref="BlobLocation"/> construction so user blobs can never collide with a sidecar.
+    /// <see cref="BlobLocation"/> construction so user blobs do not collide with a sidecar.
     /// </summary>
     public const string SidecarSuffix = ".hlmeta";
 
@@ -45,8 +45,7 @@ public static class BlobStorageHelpers
     /// <summary>
     /// Returns a copy of <paramref name="metadata"/> with the framework-internal keys
     /// (<see cref="UploadDateMetadataKey"/>, <see cref="ExtensionMetadataKey"/>) removed, so callers see only the
-    /// metadata they supplied. Returns <see langword="null"/> when nothing user-supplied remains. Providers call this
-    /// on the metadata they return from <c>GetBlobInfoAsync</c> / <c>OpenReadStreamAsync</c> / listing.
+    /// metadata they supplied. Returns <see langword="null"/> when nothing user-supplied remains.
     /// </summary>
     public static IReadOnlyDictionary<string, string>? ToUserMetadata(IReadOnlyDictionary<string, string>? metadata)
     {
@@ -80,15 +79,13 @@ public static class BlobStorageHelpers
     }
 
     /// <summary>
-    /// Builds the effective metadata stored with an upload: a fresh copy of the caller's <paramref name="metadata"/>
-    /// — never mutated, because the caller's dictionary may be shared across a <c>BulkUploadAsync</c> batch — with
-    /// the framework bookkeeping keys (<see cref="UploadDateMetadataKey"/>, <see cref="ExtensionMetadataKey"/>)
-    /// layered on top so they are always present regardless of what the caller supplied.
+    /// Builds the effective metadata stored with an upload: a fresh copy of the caller <paramref name="metadata"/>
+    /// with framework keys (<see cref="UploadDateMetadataKey"/>, <see cref="ExtensionMetadataKey"/>) added.
     /// </summary>
     /// <param name="metadata">The caller-supplied metadata, if any.</param>
     /// <param name="uploadDate">The upload timestamp recorded under <see cref="UploadDateMetadataKey"/>.</param>
     /// <param name="path">The blob path whose extension is recorded under <see cref="ExtensionMetadataKey"/>.</param>
-    /// <returns>A new dictionary holding the caller's entries plus the two framework keys.</returns>
+    /// <returns>A new dictionary holding the caller entries plus the two framework keys.</returns>
     public static Dictionary<string, string> BuildEffectiveMetadata(
         IReadOnlyDictionary<string, string>? metadata,
         DateTimeOffset uploadDate,
@@ -106,13 +103,12 @@ public static class BlobStorageHelpers
     }
 
     /// <summary>
-    /// Recovers a blob's upload timestamp from its stored <paramref name="metadata"/> — the
+    /// Recovers a blob upload timestamp from its stored <paramref name="metadata"/> — the
     /// <see cref="UploadDateMetadataKey"/> value written by <see cref="BuildEffectiveMetadata"/> in round-trip
-    /// (<c>"o"</c>) format — or returns <paramref name="fallback"/> when the key is absent or unparsable. The lookup
-    /// honors the dictionary's own key comparer, so providers whose backend changes key casing pass a
-    /// case-insensitive dictionary.
+    /// (<c>"o"</c>) format — or returns <paramref name="fallback"/> when the key is absent or cannot be parsed. The lookup
+    /// honors the dictionary key comparer.
     /// </summary>
-    /// <param name="metadata">The blob's stored metadata (framework keys intact), if any.</param>
+    /// <param name="metadata">The blob stored metadata (framework keys intact), if any.</param>
     /// <param name="fallback">The provider-specific fallback timestamp.</param>
     /// <returns>The parsed upload date, or <paramref name="fallback"/>.</returns>
     public static DateTimeOffset ParseUploadDate(IReadOnlyDictionary<string, string>? metadata, DateTimeOffset fallback)
@@ -136,9 +132,8 @@ public static class BlobStorageHelpers
     }
 
     /// <summary>
-    /// Returns the index of the item with the ordinal-largest key in <paramref name="items"/> — the eviction
-    /// candidate in the filesystem-like providers' bounded page-window listing scans. The comparison is
-    /// <see cref="string.CompareOrdinal(string, string)"/>, matching the window's sort order.
+    /// Returns the index of the item with the ordinal-largest key in <paramref name="items"/>.
+    /// The comparison is <see cref="string.CompareOrdinal(string, string)"/>, matching the window sort order.
     /// </summary>
     /// <typeparam name="T">The window item type.</typeparam>
     /// <param name="items">The non-empty window.</param>
@@ -163,9 +158,9 @@ public static class BlobStorageHelpers
     }
 
     /// <summary>
-    /// Compiles a glob <paramref name="pattern"/> (<c>*</c> = any run of characters, <c>?</c> = any single character)
-    /// into a predicate that tests whole blob keys. This is the single shared client-side matcher layered over
-    /// <see cref="IBlobStorage.ListAsync"/> — providers no longer own private glob regex.
+    /// Compiles a glob <paramref name="pattern"/> (<c>*</c> matches any character run, <c>?</c> matches a single character)
+    /// into a predicate that tests whole blob keys. This is the shared client-side matcher layered over
+    /// <see cref="IBlobStorage.ListAsync"/>.
     /// </summary>
     /// <param name="pattern">The glob pattern.</param>
     /// <returns>A predicate returning <see langword="true"/> when a key matches <paramref name="pattern"/>.</returns>
@@ -177,13 +172,11 @@ public static class BlobStorageHelpers
     }
 
     /// <summary>
-    /// Compiled glob patterns, keyed by their source pattern. Glob patterns are configuration-shaped — an application
-    /// uses a handful of them — so caching removes a per-call <see cref="Regex"/> construction (parse + node-tree
-    /// build) from every listing scan.
+    /// Compiled glob patterns, keyed by their source pattern.
     /// </summary>
     private static readonly ConcurrentDictionary<string, Regex> _GlobMatchers = new(StringComparer.Ordinal);
 
-    /// <summary>Cap on <see cref="_GlobMatchers"/>, so an application that mints patterns per request cannot grow it without bound.</summary>
+    /// <summary>Cap on <see cref="_GlobMatchers"/>.</summary>
     private const int _MaxCachedGlobMatchers = 512;
 
     private static Regex _CompileAndCacheGlob(string pattern)
@@ -201,9 +194,7 @@ public static class BlobStorageHelpers
     }
 
     /// <summary>
-    /// Returns the literal (wildcard-free) head of a glob <paramref name="pattern"/> — the substring up to the first
-    /// <c>*</c> or <c>?</c>, or the whole pattern when it contains no wildcard. Usable as a server-pushed prefix to
-    /// narrow enumeration before the client-side matcher runs.
+    /// Returns the literal prefix of a glob <paramref name="pattern"/> without wildcards.
     /// </summary>
     /// <param name="pattern">The glob pattern.</param>
     /// <returns>The longest non-wildcard prefix of <paramref name="pattern"/>.</returns>
@@ -215,9 +206,8 @@ public static class BlobStorageHelpers
     }
 
     /// <summary>
-    /// Wraps a provider's native listing cursor (a sorted page's start-after key, a native S3/Azure continuation
-    /// token, or a Redis scan cursor) in the shared opaque token envelope, so every provider's malformed-token
-    /// failure shape is the same clean <see cref="ArgumentException"/> from <see cref="DecodeContinuationToken"/>.
+    /// Wraps a provider listing cursor in the shared token envelope, so every provider
+    /// malformed-token failure produces an <see cref="ArgumentException"/> from <see cref="DecodeContinuationToken"/>.
     /// </summary>
     public static string EncodeContinuationToken(string nativeCursor)
     {
@@ -225,7 +215,7 @@ public static class BlobStorageHelpers
     }
 
     /// <summary>Decodes a continuation token produced by <see cref="EncodeContinuationToken"/>.</summary>
-    /// <exception cref="ArgumentException">The token is not a valid opaque token produced by this provider.</exception>
+    /// <exception cref="ArgumentException">The token is not a valid token produced by this provider.</exception>
     public static string? DecodeContinuationToken(string? token)
     {
         if (string.IsNullOrEmpty(token))
@@ -239,9 +229,8 @@ public static class BlobStorageHelpers
         }
         catch (FormatException e)
         {
-            // A continuation token may round-trip through an untrusted boundary (e.g. a web pagination cursor), so a
-            // malformed/forged token must fail as a clean, catchable contract error rather than leaking the backend's
-            // FormatException unhandled out of ListAsync.
+            // A continuation token may round-trip through an untrusted boundary (such as a web pagination cursor), so a
+            // malformed or forged token must fail as a contract error rather than leaking the FormatException out of ListAsync.
             throw new ArgumentException(
                 "The continuation token is not a valid opaque token produced by this provider.",
                 nameof(token),
@@ -251,14 +240,8 @@ public static class BlobStorageHelpers
     }
 
     /// <summary>
-    /// Runs a per-item bulk operation over <paramref name="items"/> with bounded parallelism, returning one
-    /// <see cref="BlobBulkResult"/> per input indexed to its enumeration position (so <c>results[i]</c> always
-    /// describes <c>items[i]</c> even though the parallel bodies start out of order). For each item it builds the
-    /// validated <see cref="BlobLocation"/> from <paramref name="container"/> + <paramref name="pathSelector"/>, runs
-    /// <paramref name="body"/>, and records <c>Ok(value)</c>; an unaddressable key or any throw other than the
-    /// caller's cancellation — including a backend-internal timeout <see cref="OperationCanceledException"/> that does
-    /// not carry the caller's token — fails that one item (<c>Fail</c>) without aborting the batch. This is the shared
-    /// orchestration for the providers' <c>BulkUpload</c>/<c>BulkDelete</c> per-item paths.
+    /// Runs a bulk operation over <paramref name="items"/> with bounded parallelism, returning one
+    /// <see cref="BlobBulkResult"/> per input item.
     /// </summary>
     public static async ValueTask<IReadOnlyList<BlobBulkResult>> RunBulkAsync<T>(
         string container,
@@ -321,21 +304,13 @@ public static class BlobStorageHelpers
     }
 
     /// <summary>
-    /// Shared control flow for providers whose Move is a non-atomic copy-then-delete (AWS, Azure, file system,
-    /// SFTP; Redis moves atomically server-side and does not use this). The caller resolves both endpoints and
-    /// short-circuits its provider-specific self-move check first — resolved-identifier equality is
-    /// backend-specific (bucket+key, container+key, full path) and is never derived here. The helper owns the
-    /// shared semantics: reject an occupied destination, copy, delete the source, and compensate on a faulted
-    /// source delete:
+    /// Shared control flow for providers whose Move is a copy-then-delete operation (AWS, Azure, file system,
+    /// and SFTP).
     /// <list type="bullet">
-    /// <item><description>The source delete returning <see langword="false"/> (source already absent — a concurrent
-    /// delete raced the move) is a completed move: the destination holds the data, so it is kept and the move
-    /// reports success.</description></item>
-    /// <item><description>The source delete throwing triggers a rollback guarded by re-checking the source: the
-    /// destination copy is rolled back only when the source is confirmed intact; when the source is confirmed gone
-    /// the destination is the sole surviving copy and is kept; when the re-check itself fails, data-safety bias
-    /// skips the rollback (worst case two copies survive, never zero) and the delete exception propagates.
-    /// </description></item>
+    /// <item><description>The source delete returning <see langword="false"/> (source already absent) is a completed move:
+    /// the destination holds the data, so it is kept and the move reports success.</description></item>
+    /// <item><description>A thrown exception from the source delete triggers a rollback guarded by re-checking the source.
+    /// The destination copy is rolled back only when the source is confirmed intact.</description></item>
     /// </list>
     /// </summary>
     /// <param name="destinationExistsAsync">Checks whether the destination blob already exists.</param>

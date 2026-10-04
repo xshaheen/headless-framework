@@ -3,32 +3,28 @@
 namespace Headless.Abstractions;
 
 /// <summary>
-/// Exposes the locale context for the current scope — request, job, or user session. Implementations
-/// derive the locale from sources such as the HTTP request's <c>Accept-Language</c> header, the
-/// authenticated user's profile, or a fixed default. Used by services that format or localize output.
+/// Exposes the locale context for the current execution scope, such as an HTTP request, background job, or user session.
 /// </summary>
 public interface ICurrentLocale
 {
-    /// <summary>Gets the current locale as a neutral language tag (e.g., <c>en</c>, <c>ar</c>).</summary>
+    /// <summary>Gets the current locale as a two-letter language code, such as <c>en</c> or <c>ar</c>.</summary>
     string Language { get; }
 
     /// <summary>
-    /// A combination of language + region + conventions for formatting numbers, dates, currency, etc.
-    /// Code examples: "en-US" (English, United States), "en-GB" (English, United Kingdom), "ar-EG" (Arabic, Egypt).
-    /// or a neutral language tag like "en" (English), "ar" (Arabic) if region is not specified.
+    /// Gets the locale identifier, including regional conventions when specified, such as <c>en-US</c> or <c>ar-EG</c>.
     /// </summary>
     string Locale { get; }
 
-    /// <summary>Controls culture-sensitive operations such as number formatting, date/time formatting, sorting, casing, etc.</summary>
+    /// <summary>Gets the culture info controlling formatting and comparisons.</summary>
     CultureInfo LocaleCulture { get; }
 }
 
 /// <summary>
-/// Immutable locale that always returns <c>en</c> / <c>en-US</c> regardless of the ambient thread
-/// culture. Deterministic and thread-safe — safe for background jobs, singleton scope, and tests.
-/// Falls back to <see cref="CultureInfo.InvariantCulture"/> under globalization-invariant mode
-/// (e.g. trimmed/container images), where <c>en-US</c> cannot be resolved.
+/// Provides an immutable locale that resolves <c>en</c> and <c>en-US</c>.
 /// </summary>
+/// <remarks>
+/// Falls back to <see cref="CultureInfo.InvariantCulture"/> when running under globalization-invariant mode.
+/// </remarks>
 public sealed class DefaultCurrentLocale : ICurrentLocale
 {
     private static readonly CultureInfo _Culture = _ResolveCulture();
@@ -57,9 +53,7 @@ public sealed class DefaultCurrentLocale : ICurrentLocale
 }
 
 /// <summary>
-/// Live locale that reads <see cref="CultureInfo.CurrentCulture"/> on every access, reflecting culture
-/// set by ASP.NET Core request-localization middleware. Do not use in background jobs without an explicit
-/// culture scope, since the ambient culture there is not request-bound.
+/// Provides a live locale that reads <see cref="CultureInfo.CurrentCulture"/> on every access.
 /// </summary>
 public sealed class CurrentCultureCurrentLocale : ICurrentLocale
 {

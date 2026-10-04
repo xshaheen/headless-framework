@@ -3,47 +3,47 @@
 namespace Headless.Sequences;
 
 /// <summary>
-/// Issues numbers from fast-mode counters keyed by the current tenant, the counter name, and an optional partition.
+/// Allocates values from fast-mode counters partitioned by current tenant, counter name, and an optional partition key.
 /// </summary>
 /// <remarks>
-/// A singleton that never joins the caller's transaction: every call commits its increment on its own connection
-/// before it returns. A number is therefore never issued twice, even across processes, but a caller that fails after
-/// taking one leaves a gap. Counters registered as <see cref="SequenceMode.GapFree" /> are refused here; take them
-/// through <c>unit.Sequences</c> on the unit of work that writes the number.
+/// This singleton commits increments on dedicated database connections without joining the caller transaction.
+/// Numbers are unique across processes, but failed operations after allocation leave gaps.
+/// Counters configured as <see cref="SequenceMode.GapFree" /> throw; access them through
+/// <c>unit.Sequences</c> on the writing unit of work.
 /// </remarks>
 [PublicAPI]
 public interface ISequenceGenerator
 {
-    /// <summary>Takes the counter's next value.</summary>
+    /// <summary>Allocates the next value from the counter.</summary>
     /// <param name="name">The counter name, compared ordinally.</param>
     /// <param name="partition">
-    /// Splits the counter, for example by year. A new partition starts a new counter at the policy's start value.
-    /// <see langword="null" /> or empty means no partition.
+    /// An optional partition key, such as a year. A new partition resets the counter to the policy starting value.
+    /// Pass <see langword="null" /> or an empty string to use no partition.
     /// </param>
-    /// <param name="cancellationToken">Token used to cancel the database call.</param>
-    /// <returns>The value taken.</returns>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns>The allocated value.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="name"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">
-    /// The name is blank or too long, the partition is whitespace-only or too long, the current tenant id is
-    /// whitespace-only or too long, or any of them is text some provider would not keep unchanged as a key.
+    /// <paramref name="name" /> is empty, whitespace, or invalid, or <paramref name="partition" /> or the tenant identifier contains invalid characters or exceeds maximum length.
     /// </exception>
-    /// <exception cref="InvalidOperationException">The counter is registered as gap-free.</exception>
+    /// <exception cref="InvalidOperationException">The counter is registered as <see cref="SequenceMode.GapFree"/>.</exception>
     ValueTask<long> NextAsync(string name, string? partition = null, CancellationToken cancellationToken = default);
 
-    /// <summary>Atomically takes <paramref name="count" /> consecutive values from the counter.</summary>
+    /// <summary>Allocates consecutive values from the counter atomically.</summary>
     /// <param name="name">The counter name, compared ordinally.</param>
-    /// <param name="count">How many values to take; at least 1.</param>
+    /// <param name="count">The number of values to allocate. Must be at least 1.</param>
     /// <param name="partition">
-    /// Splits the counter, for example by year. <see langword="null" /> or empty means no partition.
+    /// An optional partition key, such as a year. Pass <see langword="null" /> or an empty string to use no partition.
     /// </param>
-    /// <param name="cancellationToken">Token used to cancel the database call.</param>
-    /// <returns>The values taken, in order.</returns>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns>The allocated range of values in ascending order.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="name"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="count" /> is less than 1.</exception>
     /// <exception cref="ArgumentException">
-    /// The name is blank or too long, the partition is whitespace-only or too long, the current tenant id is
-    /// whitespace-only or too long, or any of them is text some provider would not keep unchanged as a key.
+    /// <paramref name="name" /> is empty, whitespace, or invalid, or <paramref name="partition" /> or the tenant identifier contains invalid characters or exceeds maximum length.
     /// </exception>
-    /// <exception cref="InvalidOperationException">The counter is registered as gap-free.</exception>
-    /// <exception cref="OverflowException">The block would run past <see cref="long.MaxValue" />.</exception>
+    /// <exception cref="InvalidOperationException">The counter is registered as <see cref="SequenceMode.GapFree"/>.</exception>
+    /// <exception cref="OverflowException">The requested range exceeds <see cref="long.MaxValue" />.</exception>
     ValueTask<SequenceRange> ReserveAsync(
         string name,
         int count,

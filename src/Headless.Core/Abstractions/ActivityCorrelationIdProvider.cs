@@ -5,9 +5,11 @@ using System.Diagnostics;
 namespace Headless.Abstractions;
 
 /// <summary>
-/// Reads the correlation ID from <see cref="Activity.Current"/>.
-/// Works automatically for OpenTelemetry users. Returns <see langword="null"/> if no activity is active.
+/// Retrieves the correlation identifier from <see cref="Activity.Current"/>.
 /// </summary>
+/// <remarks>
+/// Integrates with OpenTelemetry tracing activities. Returns <see langword="null"/> when no activity is active.
+/// </remarks>
 public sealed class ActivityCorrelationIdProvider : ICorrelationIdProvider
 {
     /// <inheritdoc />

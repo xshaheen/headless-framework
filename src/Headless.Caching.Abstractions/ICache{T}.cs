@@ -3,41 +3,35 @@
 namespace Headless.Caching;
 
 /// <summary>
-/// Strongly-typed projection of <see cref="ICache"/> that pins the value type to <typeparamref name="T"/>,
-/// eliminating the generic type argument on every call site. The semantics are identical to the corresponding
-/// <see cref="ICache"/> members; see that interface for behavioral details.
+/// Defines a strongly typed projection of <see cref="ICache"/> that pins the value type to <typeparamref name="T"/>.
 /// </summary>
-/// <typeparam name="T">The type of every value stored in and retrieved from this cache projection.</typeparam>
+/// <typeparam name="T">The type of values stored in and retrieved from this cache projection.</typeparam>
 [PublicAPI]
 public interface ICache<T>
 {
     /// <summary>
     /// Gets the default <see cref="CacheEntryOptions"/> configured for this cache instance at registration.
-    /// Used by the option-less <c>GetOrAddAsync</c> extension overloads; when <see langword="null"/>,
-    /// those overloads throw <see cref="InvalidOperationException"/> — defaults are explicit-at-registration,
-    /// never magic.
+    /// Used by overloads that omit options. When <see langword="null"/>, those overloads throw <see cref="InvalidOperationException"/>.
     /// </summary>
     CacheEntryOptions? DefaultEntryOptions { get; }
 
     /// <summary>
-    /// Gets the typed, in-process event surface for the underlying cache instance. The default implementation
-    /// returns the shared <see cref="CacheEvents.NoOp"/> hub.
+    /// Gets the in-process event surface for the underlying cache instance. The default implementation returns <see cref="CacheEvents.NoOp"/>.
     /// </summary>
     ICacheEvents Events => CacheEvents.NoOp;
 
     /// <summary>
-    /// Gets a value from cache, or creates it using the factory if not found.
-    /// Uses keyed locking to prevent cache stampedes (multiple concurrent factory executions for the same key).
+    /// Gets a value from the cache, or creates and stores it using the factory when missing.
+    /// Uses keyed locking to prevent concurrent factory executions for the same key.
     /// </summary>
     /// <param name="key">The cache key.</param>
-    /// <param name="factory">The factory function to create the value if not found in cache. Receives the cancellation token.</param>
+    /// <param name="factory">The factory function to create the value when not found in the cache.</param>
     /// <param name="options">Cache entry options for the cached value.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
     /// <returns>The cached or newly created value wrapped in <see cref="CacheValue{T}"/>.</returns>
     /// <exception cref="ArgumentOutOfRangeException">
-    /// Thrown when <see cref="CacheEntryOptions.Duration"/> is not positive, or when fail-safe is enabled and
-    /// <see cref="CacheEntryOptions.FailSafeMaxDuration"/> or
-    /// <see cref="CacheEntryOptions.FailSafeThrottleDuration"/> is not positive.
+    /// <see cref="CacheEntryOptions.Duration"/> is not positive, or fail-safe is enabled and
+    /// <see cref="CacheEntryOptions.FailSafeMaxDuration"/> or <see cref="CacheEntryOptions.FailSafeThrottleDuration"/> is not positive.
     /// </exception>
     ValueTask<CacheValue<T>> GetOrAddAsync(
         string key,
@@ -47,20 +41,15 @@ public interface ICache<T>
     );
 
     /// <summary>
-    /// Gets a value from cache, or refreshes it using a conditional factory (the HTTP-304 pattern).
-    /// The factory receives a <see cref="CacheFactoryContext{T}"/> carrying the last-known cached value and its
-    /// validators and returns <see cref="CacheFactoryContext{T}.NotModified"/> to extend the existing entry as
-    /// fresh, or <see cref="CacheFactoryContext{T}.Modified(T, string?, DateTime?)"/> to replace it. The factory
-    /// may also replace <see cref="CacheFactoryContext{T}.Options"/> before returning (adaptive caching).
+    /// Gets a value from the cache, or refreshes it using a conditional factory.
     /// </summary>
     /// <param name="key">The cache key.</param>
-    /// <param name="factory">The conditional factory invoked on a miss or refresh. Receives the per-execution context and the cancellation token.</param>
-    /// <param name="options">Cache entry options for the cached value; the factory may replace them via the context.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <param name="factory">The conditional factory invoked on a miss or refresh.</param>
+    /// <param name="options">Cache entry options for the cached value.</param>
+    /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
     /// <returns>The cached, extended, or newly created value wrapped in <see cref="CacheValue{T}"/>.</returns>
     /// <exception cref="ArgumentOutOfRangeException">
-    /// Thrown when the entry options (including an adaptive replacement set by the factory) are invalid, for
-    /// example a non-positive <see cref="CacheEntryOptions.Duration"/>.
+    /// The entry options or an adaptive replacement set by the factory are invalid.
     /// </exception>
     ValueTask<CacheValue<T>> GetOrAddAsync(
         string key,
@@ -71,7 +60,7 @@ public interface ICache<T>
 
     #region Update
 
-    /// <summary>Sets the value for <paramref name="cacheKey"/> with the given <paramref name="expiration"/>. Returns <see langword="true"/> when the write was issued.</summary>
+    /// <summary>Sets the value for <paramref name="cacheKey"/> with the specified <paramref name="expiration"/>.</summary>
     ValueTask<bool> UpsertAsync(
         string cacheKey,
         T? cacheValue,
@@ -80,8 +69,7 @@ public interface ICache<T>
     );
 
     /// <summary>
-    /// Sets a value as a direct write honoring the full <see cref="CacheEntryOptions"/> semantics, including
-    /// <see cref="CacheEntryOptions.Tags"/> for later <see cref="RemoveByTagAsync"/> invalidation.
+    /// Sets a value directly while honoring <see cref="CacheEntryOptions"/> metadata.
     /// </summary>
     ValueTask<bool> UpsertEntryAsync(
         string cacheKey,
@@ -90,14 +78,14 @@ public interface ICache<T>
         CancellationToken cancellationToken = default
     );
 
-    /// <summary>Writes all entries in <paramref name="value"/>. Returns the number of keys successfully written.</summary>
+    /// <summary>Writes all entries in <paramref name="value"/>.</summary>
     ValueTask<int> UpsertAllAsync(
         IDictionary<string, T> value,
         TimeSpan? expiration,
         CancellationToken cancellationToken = default
     );
 
-    /// <summary>Inserts <paramref name="cacheValue"/> only when <paramref name="cacheKey"/> does not already exist. Returns <see langword="true"/> when inserted; <see langword="false"/> when the key already existed.</summary>
+    /// <summary>Inserts <paramref name="cacheValue"/> only when <paramref name="cacheKey"/> does not exist.</summary>
     ValueTask<bool> TryInsertAsync(
         string cacheKey,
         T? cacheValue,
@@ -105,7 +93,7 @@ public interface ICache<T>
         CancellationToken cancellationToken = default
     );
 
-    /// <summary>Replaces the value only when <paramref name="key"/> already exists. Returns <see langword="true"/> when updated; <see langword="false"/> when the key was absent.</summary>
+    /// <summary>Replaces the value only when <paramref name="key"/> exists.</summary>
     ValueTask<bool> TryReplaceAsync(
         string key,
         T? value,
@@ -113,7 +101,7 @@ public interface ICache<T>
         CancellationToken cancellationToken = default
     );
 
-    /// <summary>Atomically replaces the value only when the current stored value equals <paramref name="expected"/> (compare-and-swap). Returns <see langword="true"/> when swapped; <see langword="false"/> otherwise.</summary>
+    /// <summary>Atomically replaces the value only when the current stored value equals <paramref name="expected"/>.</summary>
     ValueTask<bool> TryReplaceIfEqualAsync(
         string key,
         T? expected,
@@ -122,7 +110,7 @@ public interface ICache<T>
         CancellationToken cancellationToken = default
     );
 
-    /// <summary>Adds members to the set stored at <paramref name="key"/>, creating it if absent. Returns the number of members added (duplicates excluded).</summary>
+    /// <summary>Adds members to the set stored at <paramref name="key"/>, creating the set when absent.</summary>
     ValueTask<long> SetAddAsync(
         string key,
         IEnumerable<T> value,
@@ -134,22 +122,22 @@ public interface ICache<T>
 
     #region Get
 
-    /// <summary>Reads many keys in one call. Returns a result per key including misses.</summary>
+    /// <summary>Reads multiple keys in one call and returns a result envelope for each key.</summary>
     ValueTask<IDictionary<string, CacheValue<T>>> GetAllAsync(
         IEnumerable<string> cacheKeys,
         CancellationToken cancellationToken = default
     );
 
-    /// <summary>Reads all fresh entries whose key starts with <paramref name="prefix"/>. Returns only hits.</summary>
+    /// <summary>Reads all fresh entries whose key starts with <paramref name="prefix"/>.</summary>
     ValueTask<IDictionary<string, CacheValue<T>>> GetByPrefixAsync(
         string prefix,
         CancellationToken cancellationToken = default
     );
 
-    /// <summary>Gets the value for <paramref name="cacheKey"/>. Returns <see cref="CacheValue{T}.NoValue"/> on a miss, logical expiry, or tag-invalidation.</summary>
+    /// <summary>Gets the value for <paramref name="cacheKey"/>.</summary>
     ValueTask<CacheValue<T>> GetAsync(string cacheKey, CancellationToken cancellationToken = default);
 
-    /// <summary>Reads a page of members from the set stored at <paramref name="key"/>. Returns <see cref="CacheValue{T}.NoValue"/> (<c>Value</c> is <see langword="null"/>) whenever the requested page has no members — absent key, empty set, all members expired, or page past the last live member; <c>HasValue</c> reflects whether the requested page has members, not whether the key exists. <paramref name="pageIndex"/> is 1-based; pass <see langword="null"/> to return all members.</summary>
+    /// <summary>Reads a page of members from the set stored at <paramref name="key"/>.</summary>
     ValueTask<CacheValue<ICollection<T>>> GetSetAsync(
         string key,
         int? pageIndex = null,
@@ -158,39 +146,35 @@ public interface ICache<T>
     );
 
     /// <summary>
-    /// Re-arms a sliding cache entry's idle window without materializing its value.
+    /// Extends the idle window of a sliding cache entry without materializing its value.
     /// </summary>
-    /// <remarks>
-    /// This is a no-op when the key is absent, when the entry is not sliding, or when the entry is already past
-    /// its absolute physical cap. Implementations apply the same throttling used by value-returning reads.
-    /// </remarks>
     /// <param name="cacheKey">The cache key.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
     ValueTask RefreshAsync(string cacheKey, CancellationToken cancellationToken = default);
 
     #endregion
 
     #region Remove
 
-    /// <summary>Removes <paramref name="cacheKey"/> from the cache. Returns <see langword="true"/> when the key was present; <see langword="false"/> when already absent.</summary>
+    /// <summary>Removes <paramref name="cacheKey"/> from the cache.</summary>
     ValueTask<bool> RemoveAsync(string cacheKey, CancellationToken cancellationToken = default);
 
-    /// <summary>Logically expires the entry, preserving its fail-safe reserve. See <see cref="ICache.ExpireAsync"/>.</summary>
+    /// <summary>Logically expires an entry while preserving its fail-safe reserve.</summary>
     ValueTask<bool> ExpireAsync(string cacheKey, CancellationToken cancellationToken = default);
 
-    /// <summary>Removes <paramref name="cacheKey"/> only when the current stored value equals <paramref name="expected"/> (compare-and-delete).</summary>
+    /// <summary>Removes <paramref name="cacheKey"/> only when the current stored value equals <paramref name="expected"/>.</summary>
     ValueTask<bool> RemoveIfEqualAsync(string cacheKey, T? expected, CancellationToken cancellationToken = default);
 
-    /// <summary>Removes all keys whose name starts with <paramref name="prefix"/>. Returns the number of keys removed.</summary>
+    /// <summary>Removes all keys that start with <paramref name="prefix"/>.</summary>
     ValueTask<int> RemoveByPrefixAsync(string prefix, CancellationToken cancellationToken = default);
 
-    /// <summary>Logically invalidates entries carrying <paramref name="tag"/> in O(1). See <see cref="ICache.RemoveByTagAsync"/>.</summary>
+    /// <summary>Logically invalidates entries carrying <paramref name="tag"/>.</summary>
     ValueTask RemoveByTagAsync(string tag, CancellationToken cancellationToken = default);
 
-    /// <summary>Logically clears the cache in O(1), preserving fail-safe reserves. See <see cref="ICache.ClearAsync"/>.</summary>
+    /// <summary>Logically clears the cache while preserving fail-safe reserves.</summary>
     ValueTask ClearAsync(CancellationToken cancellationToken = default);
 
-    /// <summary>Removes the specified members from the set stored at <paramref name="key"/>. Returns the number of members removed.</summary>
+    /// <summary>Removes the specified members from the set stored at <paramref name="key"/>.</summary>
     ValueTask<long> SetRemoveAsync(
         string key,
         IEnumerable<T> value,
@@ -202,8 +186,7 @@ public interface ICache<T>
     ValueTask<int> RemoveAllAsync(IEnumerable<string> cacheKeys, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Flushes the whole cache, dropping every entry including its fail-safe reserve (reserve-dropping counterpart of
-    /// <see cref="ClearAsync"/>). See <see cref="ICache.FlushAsync"/> for the tier-specific removal mechanism.
+    /// Flushes the cache and removes all entries including fail-safe reserves.
     /// </summary>
     ValueTask FlushAsync(CancellationToken cancellationToken = default);
 
@@ -211,7 +194,7 @@ public interface ICache<T>
 
     #region Management
 
-    /// <summary>Atomically adds <paramref name="amount"/> to the numeric value at <paramref name="key"/>, creating the key if absent. Returns the new value.</summary>
+    /// <summary>Atomically adds <paramref name="amount"/> to the numeric value at <paramref name="key"/>, creating the key if absent.</summary>
     ValueTask<double> IncrementAsync(
         string key,
         double amount,
@@ -219,7 +202,7 @@ public interface ICache<T>
         CancellationToken cancellationToken = default
     );
 
-    /// <summary>Atomically adds <paramref name="amount"/> to the numeric value at <paramref name="key"/>, creating the key if absent. Returns the new value.</summary>
+    /// <summary>Atomically adds <paramref name="amount"/> to the numeric value at <paramref name="key"/>, creating the key if absent.</summary>
     ValueTask<long> IncrementAsync(
         string key,
         long amount,
@@ -227,7 +210,7 @@ public interface ICache<T>
         CancellationToken cancellationToken = default
     );
 
-    /// <summary>Stores <paramref name="value"/> only when it is greater than the current stored value. Returns the difference <c>(new - old)</c> when updated, or <c>0</c> otherwise.</summary>
+    /// <summary>Stores <paramref name="value"/> only when it is greater than the current stored value.</summary>
     ValueTask<double> SetIfHigherAsync(
         string key,
         double value,
@@ -235,7 +218,7 @@ public interface ICache<T>
         CancellationToken cancellationToken = default
     );
 
-    /// <summary>Stores <paramref name="value"/> only when it is greater than the current stored value. Returns the difference <c>(new - old)</c> when updated, or <c>0</c> otherwise.</summary>
+    /// <summary>Stores <paramref name="value"/> only when it is greater than the current stored value.</summary>
     ValueTask<long> SetIfHigherAsync(
         string key,
         long value,
@@ -243,7 +226,7 @@ public interface ICache<T>
         CancellationToken cancellationToken = default
     );
 
-    /// <summary>Stores <paramref name="value"/> only when it is less than the current stored value. Returns the difference <c>(old - new)</c> when updated, or <c>0</c> otherwise.</summary>
+    /// <summary>Stores <paramref name="value"/> only when it is less than the current stored value.</summary>
     ValueTask<double> SetIfLowerAsync(
         string key,
         double value,
@@ -251,7 +234,7 @@ public interface ICache<T>
         CancellationToken cancellationToken = default
     );
 
-    /// <summary>Stores <paramref name="value"/> only when it is less than the current stored value. Returns the difference <c>(old - new)</c> when updated, or <c>0</c> otherwise.</summary>
+    /// <summary>Stores <paramref name="value"/> only when it is less than the current stored value.</summary>
     ValueTask<long> SetIfLowerAsync(
         string key,
         long value,
@@ -259,7 +242,7 @@ public interface ICache<T>
         CancellationToken cancellationToken = default
     );
 
-    /// <summary>Gets all keys by prefix.</summary>
+    /// <summary>Gets all keys that start with <paramref name="prefix"/>.</summary>
     ValueTask<IReadOnlyList<string>> GetAllKeysByPrefixAsync(
         string prefix,
         CancellationToken cancellationToken = default
@@ -278,14 +261,10 @@ public interface ICache<T>
 }
 
 /// <summary>
-/// Concrete strongly-typed cache wrapper that adapts an <see cref="ICache"/> instance to
-/// <see cref="ICache{T}"/> by forwarding every call to the underlying cache with the type parameter
-/// fixed to <typeparamref name="T"/>. Registered by the setup infrastructure as the default
-/// <c>ICache&lt;T&gt;</c> singleton so consumers can inject a typed cache without declaring the
-/// type at the call site.
+/// Adapts an <see cref="ICache"/> instance to <see cref="ICache{T}"/> by forwarding calls with the type parameter fixed to <typeparamref name="T"/>.
 /// </summary>
-/// <typeparam name="T">The type of every value stored and retrieved through this wrapper.</typeparam>
-/// <param name="cache">The underlying untyped cache to delegate all operations to.</param>
+/// <typeparam name="T">The type of values stored and retrieved through this wrapper.</typeparam>
+/// <param name="cache">The underlying cache instance.</param>
 [PublicAPI]
 public sealed class Cache<T>(ICache cache) : ICache<T>
 {

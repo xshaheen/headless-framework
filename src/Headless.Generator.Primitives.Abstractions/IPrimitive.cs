@@ -2,37 +2,37 @@
 
 namespace Headless.Generator.Primitives;
 
-/// <summary>Represents an interface for primitive values.</summary>
+/// <summary>Defines the contract for primitive types.</summary>
 public interface IPrimitive
 {
-    /// <summary>Gets the underlying primitive type of the primitive value.</summary>
-    /// <returns>The underlying primitive type of the primitive value.</returns>
+    /// <summary>Gets the underlying primitive type.</summary>
+    /// <returns>The underlying primitive type.</returns>
     Type GetUnderlyingPrimitiveType();
 }
 
 /// <summary>
-/// Defines a contract for domain-specific values ensuring type safety and constraints.
-/// This interface serves as a foundation for encapsulating and validating domain-specific values.
+/// Defines a contract for domain-specific primitive values ensuring type safety and constraints.
 /// </summary>
-/// <typeparam name="T">The type of the primitive value.</typeparam>
+/// <typeparam name="T">The underlying primitive type.</typeparam>
 public interface IPrimitive<T> : IPrimitive
     where T : IEquatable<T>, IComparable, IComparable<T>
 {
-    /// <summary>Gets the underlying primitive value of the primitive value.</summary>
-    /// <returns>The underlying primitive value of the primitive value.</returns>
+    /// <summary>Gets the underlying primitive value.</summary>
+    /// <returns>The underlying value.</returns>
     T GetUnderlyingPrimitiveValue();
 
     /// <summary>
-    /// Validates the specified value against primitive-specific rules and returns a validation result.
+    /// Validates the value against primitive constraints.
     /// </summary>
-    /// <param name="value">The value to be validated against primitive constraints.</param>
+    /// <param name="value">The value to validate.</param>
+    /// <returns>The validation outcome.</returns>
     static abstract PrimitiveValidationResult Validate(T value);
 
     /// <summary>
-    /// Retrieves a string representation of the specified primitive value.
+    /// Formats the primitive value as a string representation.
     /// </summary>
-    /// <param name="value">The primitive value to be represented as a string.</param>
-    /// <returns>A string representation of the primitive value.</returns>
+    /// <param name="value">The primitive value to format.</param>
+    /// <returns>The formatted string representation.</returns>
     static virtual string ToString(T value)
     {
         return value.ToString() ?? string.Empty;

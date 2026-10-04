@@ -9,25 +9,11 @@ using SmtpClient = MailKit.Net.Smtp.SmtpClient;
 namespace Headless.Emails.Mailkit;
 
 /// <summary>
-/// <see cref="IEmailSender"/> implementation backed by MailKit over SMTP.
+/// Sends email messages through MailKit over SMTP.
 /// </summary>
 /// <remarks>
-/// SMTP clients are pooled via <see cref="ObjectPool{T}"/>. A client is reconnected
-/// automatically if it is found disconnected when retrieved from the pool; disconnected
-/// or faulted clients are discarded rather than returned. The pool size is governed by
-/// <see cref="MailkitSmtpOptions.MaxPoolSize"/>.
-/// <para>
-/// Every send failure is surfaced as a failed <see cref="SendSingleEmailResponse"/> rather than thrown,
-/// per the <see cref="IEmailSender"/> contract: SMTP command/protocol errors
-/// (<see cref="MailKit.Net.Smtp.SmtpCommandException"/>, <see cref="MailKit.Net.Smtp.SmtpProtocolException"/>),
-/// authentication failures (<see cref="MailKit.Security.AuthenticationException"/>), and connect/TLS/transport
-/// faults (for example <see cref="IOException"/>, socket errors, TLS handshake failures, and connect timeouts).
-/// Authentication failures are additionally logged at critical level because they signal a configuration error.
-/// Only the caller's own cancellation (an <see cref="OperationCanceledException"/> whose token is the caller's)
-/// and argument validation propagate; a connect-timeout cancellation is returned as a failure, not thrown. On
-/// success the SMTP server's final response is surfaced as
-/// <see cref="SendSingleEmailResponse.ProviderMessageId"/> (it typically embeds the server's queue id).
-/// </para>
+/// SMTP clients are pooled through <see cref="ObjectPool{T}"/>. Delivery and transport errors
+/// return a failed <see cref="SendSingleEmailResponse"/> rather than throwing exceptions.
 /// </remarks>
 internal sealed class MailkitEmailSender(
     ObjectPool<SmtpClient> pool,
@@ -37,22 +23,13 @@ internal sealed class MailkitEmailSender(
 ) : IEmailSender
 {
     /// <summary>
-    /// Sends a single email via SMTP using a pooled MailKit client.
+    /// Sends an email message over SMTP using a pooled MailKit client.
     /// </summary>
     /// <param name="request">The email message to send.</param>
-    /// <param name="cancellationToken">Token used to cancel the send operation.</param>
-    /// <returns>
-    /// A successful response (carrying the SMTP server's final response as the provider message id) when
-    /// the server accepts the message; a failed response when an SMTP command, protocol, or authentication
-    /// error, or a connect/TLS/transport fault (including a connect timeout), occurs.
-    /// </returns>
-    /// <exception cref="InvalidOperationException">
-    /// Thrown when both <see cref="SendSingleEmailRequest.MessageText"/> and
-    /// <see cref="SendSingleEmailRequest.MessageHtml"/> are <see langword="null"/> or whitespace-only.
-    /// </exception>
-    /// <exception cref="OperationCanceledException">
-    /// Thrown when <paramref name="cancellationToken"/> is cancelled by the caller during the send.
-    /// </exception>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns>A task that represents the asynchronous operation, containing the send outcome response.</returns>
+    /// <exception cref="InvalidOperationException">Both <see cref="SendSingleEmailRequest.MessageText"/> and <see cref="SendSingleEmailRequest.MessageHtml"/> are empty or contain only white space.</exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was canceled.</exception>
     public async ValueTask<SendSingleEmailResponse> SendAsync(
         SendSingleEmailRequest request,
         CancellationToken cancellationToken = default

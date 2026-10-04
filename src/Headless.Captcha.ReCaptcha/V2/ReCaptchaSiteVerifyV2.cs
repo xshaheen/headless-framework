@@ -7,9 +7,7 @@ using Microsoft.Extensions.Options;
 namespace Headless.Captcha;
 
 /// <summary>
-/// <see cref="ICaptchaVerifier"/> over Google's reCAPTCHA v2 <c>recaptcha/api/siteverify</c> endpoint. v2 carries no
-/// provider-only data, so it implements the plain base contract. Registered per slot, so it resolves its named
-/// options and HTTP client by the registration name.
+/// Implements <see cref="ICaptchaVerifier"/> for the Google reCAPTCHA v2 site verification endpoint.
 /// </summary>
 internal sealed class ReCaptchaSiteVerifyV2(
     string name,

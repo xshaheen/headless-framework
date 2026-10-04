@@ -6,8 +6,8 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Headless.Captcha.Internal;
 
 /// <summary>
-/// <see cref="ICaptchaProvider"/> over the container's keyed <see cref="ICaptchaVerifier"/> registrations — resolves
-/// both named instances (added through <c>AddNamed</c>) and a default provider's canonical key.
+/// Implements <see cref="ICaptchaProvider"/> by resolving keyed <see cref="ICaptchaVerifier"/> registrations from the
+/// service provider.
 /// </summary>
 internal sealed class KeyedServiceCaptchaProvider(
     IServiceProvider serviceProvider,

@@ -5,21 +5,15 @@ using Headless.Primitives;
 namespace Headless.Abstractions;
 
 /// <summary>
-/// Resolves locale-aware display metadata for enum values using the current locale from
-/// <see cref="ICurrentLocale"/>. Display names and descriptions are sourced from
-/// <c>[LocaleAttribute]</c> annotations on enum members. Inject this service into components
-/// that need to present enum values to users in the correct language.
+/// Resolves locale-aware display metadata for enum values using <see cref="ICurrentLocale"/>.
 /// </summary>
 public interface IEnumLocaleAccessor
 {
     /// <summary>
     /// Returns locale-aware display metadata for every member of the enum type <typeparamref name="T"/>.
     /// </summary>
-    /// <typeparam name="T">The enum type whose members should be localized.</typeparam>
-    /// <returns>
-    /// An array of <see cref="EnumLocale{T}"/> — one entry per enum member — each containing a
-    /// localized <c>DisplayName</c>, optional <c>Description</c>, and the enum <c>Value</c>.
-    /// </returns>
+    /// <typeparam name="T">The enum type whose members to localize.</typeparam>
+    /// <returns>An array of localized enum metadata entries.</returns>
     [SystemPure, JetBrainsPure, MustUseReturnValue]
     EnumLocale<T>[] GetLocale<T>()
         where T : struct, Enum;
@@ -27,21 +21,16 @@ public interface IEnumLocaleAccessor
     /// <summary>
     /// Returns locale-aware display metadata for a single enum member.
     /// </summary>
-    /// <typeparam name="T">The enum type that contains <paramref name="value"/>.</typeparam>
-    /// <param name="value">The specific enum member to localize.</param>
-    /// <returns>
-    /// An <see cref="EnumLocale{T}"/> containing the localized <c>DisplayName</c>, optional
-    /// <c>Description</c>, and the enum <c>Value</c>.
-    /// </returns>
+    /// <typeparam name="T">The enum type.</typeparam>
+    /// <param name="value">The enum value to localize.</param>
+    /// <returns>The localized enum metadata.</returns>
     [SystemPure, JetBrainsPure, MustUseReturnValue]
     EnumLocale<T> GetLocale<T>(T value)
         where T : struct, Enum;
 }
 
 /// <summary>
-/// Default <see cref="IEnumLocaleAccessor"/> implementation that delegates to the
-/// <c>HeadlessEnumExtensions.GetLocale</c> extension methods using the locale and language
-/// exposed by the injected <see cref="ICurrentLocale"/>.
+/// Implements <see cref="IEnumLocaleAccessor"/> delegating to enum localization extensions using the active <see cref="ICurrentLocale"/>.
 /// </summary>
 public sealed class DefaultEnumLocaleAccessor(ICurrentLocale currentLocale) : IEnumLocaleAccessor
 {

@@ -3,12 +3,12 @@
 namespace Headless.Domain;
 
 /// <summary>
-/// Base class for domain events that carry a reference to the entity that triggered the event.
+/// Provides a base implementation for domain events that carry a reference to the source entity.
 /// </summary>
-/// <typeparam name="TEntity">Type of the entity associated with the event.</typeparam>
+/// <typeparam name="TEntity">The entity type.</typeparam>
 [PublicAPI]
 public abstract class EntityEventData<TEntity>(TEntity entity)
 {
-    /// <summary>Related entity with this event.</summary>
+    /// <summary>Gets the entity associated with this event.</summary>
     public TEntity Entity { get; } = entity;
 }

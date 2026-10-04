@@ -3,23 +3,20 @@
 namespace Headless.Domain;
 
 /// <summary>
-/// Abstract base that implements structural equality for a type by delegating comparison and hashing to
-/// strongly-typed hooks rather than reference identity.
+/// Provides an abstract base that implements structural equality by delegating comparison and hashing to
+/// strongly typed hooks rather than reference identity.
 /// </summary>
 /// <remarks>
-/// Subclasses override <see cref="EqualityComponentsEqual"/> (compare each equality-defining field to the
-/// other instance) and <see cref="BuildHashCode"/> (feed each equality-defining field into the hash). Both
-/// run without boxing value-type components, unlike an <c>IEnumerable&lt;object?&gt;</c> component sequence.
-/// Two instances of the same concrete type are equal when every component compares equal.
+/// Subclasses override <see cref="EqualityComponentsEqual"/> and <see cref="BuildHashCode"/>. Both methods execute
+/// without boxing value-type components. Two instances of the same concrete type are equal when every component compares equal.
 /// </remarks>
-/// <typeparam name="T">The concrete subclass; used to constrain the typed <c>Equals</c> overload.</typeparam>
+/// <typeparam name="T">The concrete subclass type.</typeparam>
 [PublicAPI]
 public abstract class EqualityBase<T> : IEquatable<T>
     where T : EqualityBase<T>
 {
     /// <summary>
-    /// Determines whether this instance is equal to <paramref name="other"/> by comparing their runtime
-    /// types and equality components.
+    /// Determines whether this instance is equal to <paramref name="other"/> by comparing runtime types and equality components.
     /// </summary>
     /// <param name="other">The instance to compare against, or <see langword="null"/>.</param>
     /// <returns><see langword="true"/> if both instances have the same type and equal components; otherwise <see langword="false"/>.</returns>
@@ -38,17 +35,19 @@ public abstract class EqualityBase<T> : IEquatable<T>
         return GetType() == other.GetType() && EqualityComponentsEqual(other);
     }
 
-    /// <summary>Returns <see langword="true"/> when <paramref name="left"/> and <paramref name="right"/> are structurally equal.</summary>
-    /// <param name="left">Left operand.</param>
-    /// <param name="right">Right operand.</param>
+    /// <summary>Determines whether two instances are equal.</summary>
+    /// <param name="left">The left operand, or <see langword="null"/>.</param>
+    /// <param name="right">The right operand, or <see langword="null"/>.</param>
+    /// <returns><see langword="true"/> when <paramref name="left"/> and <paramref name="right"/> are equal; otherwise <see langword="false"/>.</returns>
     public static bool operator ==(EqualityBase<T>? left, EqualityBase<T>? right)
     {
         return left is null ? right is null : left.Equals(right as T);
     }
 
-    /// <summary>Returns <see langword="true"/> when <paramref name="left"/> and <paramref name="right"/> are not structurally equal.</summary>
-    /// <param name="left">Left operand.</param>
-    /// <param name="right">Right operand.</param>
+    /// <summary>Determines whether two instances are not equal.</summary>
+    /// <param name="left">The left operand, or <see langword="null"/>.</param>
+    /// <param name="right">The right operand, or <see langword="null"/>.</param>
+    /// <returns><see langword="true"/> when <paramref name="left"/> and <paramref name="right"/> are not equal; otherwise <see langword="false"/>.</returns>
     public static bool operator !=(EqualityBase<T>? left, EqualityBase<T>? right)
     {
         return !(left == right);
@@ -61,7 +60,7 @@ public abstract class EqualityBase<T> : IEquatable<T>
     }
 
     /// <summary>Computes a hash code from all equality components.</summary>
-    /// <returns>A combined hash code consistent with <c>Equals</c>.</returns>
+    /// <returns>A combined hash code consistent with <see cref="Equals(T)"/>.</returns>
     public sealed override int GetHashCode()
     {
         var hash = new HashCode();
@@ -71,19 +70,16 @@ public abstract class EqualityBase<T> : IEquatable<T>
     }
 
     /// <summary>
-    /// Compares this instance's equality components to <paramref name="other"/>. The caller guarantees
-    /// <paramref name="other"/> is non-null and has the same runtime type as this instance, so implementations
-    /// may cast it to the concrete type and compare fields directly without boxing.
+    /// Compares equality components of this instance to <paramref name="other"/>.
     /// </summary>
     /// <param name="other">The same-typed instance to compare against.</param>
     /// <returns><see langword="true"/> when every equality component is equal; otherwise <see langword="false"/>.</returns>
     protected abstract bool EqualityComponentsEqual(T other);
 
     /// <summary>
-    /// Feeds each equality-defining component into <paramref name="hash"/>. Add the same components, in the
-    /// same set, that <see cref="EqualityComponentsEqual"/> compares, so equal instances hash equally.
+    /// Adds equality-defining components to <paramref name="hash"/>.
     /// </summary>
-    /// <param name="hash">The hash accumulator to add components to.</param>
+    /// <param name="hash">The hash accumulator.</param>
 #pragma warning disable CA1045 // Do not pass types by reference
     protected abstract void BuildHashCode(ref HashCode hash);
 #pragma warning restore CA1045

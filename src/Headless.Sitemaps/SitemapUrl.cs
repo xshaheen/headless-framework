@@ -4,13 +4,13 @@ using Headless.Checks;
 
 namespace Headless.Sitemaps;
 
-/// <summary>Represents sitemap URL node.</summary>
+/// <summary>Represents a sitemap URL node.</summary>
 [PublicAPI]
 public sealed class SitemapUrl
 {
-    /// <summary>Create a sitemap URL.</summary>
+    /// <summary>Initializes a new instance of the <see cref="SitemapUrl"/> class with a single URL location.</summary>
     /// <param name="location">The full URL of the page.</param>
-    /// <param name="options">Optional last-modified, change-frequency, priority, and image metadata.</param>
+    /// <param name="options">Optional metadata including last modified time, change frequency, priority, and images.</param>
     /// <exception cref="ArgumentNullException"><paramref name="location"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException"><see cref="SitemapUrlOptions.Priority"/> is not between 0.0 and 1.0.</exception>
     public SitemapUrl(Uri location, SitemapUrlOptions? options = null)
@@ -30,9 +30,9 @@ public sealed class SitemapUrl
         WriteAlternateLanguageCodes = options?.WriteAlternateLanguageCodes?.ToArray();
     }
 
-    /// <summary>Create a sitemap URL with its localized alternates.</summary>
+    /// <summary>Initializes a new instance of the <see cref="SitemapUrl"/> class with localized alternate locations.</summary>
     /// <param name="alternateLocations">The alternate localized URLs of the page.</param>
-    /// <param name="options">Optional last-modified, change-frequency, priority, image, and language metadata.</param>
+    /// <param name="options">Optional metadata including last modified time, change frequency, priority, images, and language codes.</param>
     /// <exception cref="ArgumentNullException"><paramref name="alternateLocations"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException"><see cref="SitemapUrlOptions.Priority"/> is not between 0.0 and 1.0.</exception>
     public SitemapUrl(IEnumerable<SitemapAlternateUrl> alternateLocations, SitemapUrlOptions? options = null)
@@ -56,21 +56,18 @@ public sealed class SitemapUrl
     public Uri? Location { get; }
 
     /// <summary>
-    /// The priority of that URL relative to other URLs on the site (0.0 to 1.0).
-    /// This allows webmasters to suggest to crawlers which pages are considered more important.
+    /// Gets the priority of this URL relative to other URLs on the site, ranging from 0.0 through 1.0.
     /// </summary>
-    /// <remarks>Currently (2021) Google ignores it.</remarks>
     public float? Priority { get; }
 
-    /// <summary>The date of the last modification of the page.</summary>
+    /// <summary>Gets the date of the page's last modification.</summary>
     public DateTime? LastModified { get; }
 
-    /// <summary>How frequently the page is likely to change.</summary>
-    /// <remarks>Currently (2021) Google ignores it.</remarks>
+    /// <summary>Gets how frequently the page is likely to change.</summary>
     public ChangeFrequency? ChangeFrequency { get; }
 
     /// <summary>
-    /// Encloses all information about a single image. Each &lt;url&gt; tag can contain up to 1,000 image tags.
+    /// Gets the collection of images associated with the URL.
     /// </summary>
     public IEnumerable<SitemapImage>? Images { get; }
 
@@ -78,8 +75,8 @@ public sealed class SitemapUrl
     public IReadOnlyList<SitemapAlternateUrl>? AlternateLocations { get; }
 
     /// <summary>
-    /// Restricts which localized versions get their own &lt;url&gt; entry to the specified language/region codes;
-    /// every emitted entry still references all alternates. <see langword="null"/> means all.
+    /// Gets the language or region codes whose localized versions receive their own URL entry.
+    /// When <see langword="null"/>, all alternates are included.
     /// </summary>
     public string[]? WriteAlternateLanguageCodes { get; }
 }

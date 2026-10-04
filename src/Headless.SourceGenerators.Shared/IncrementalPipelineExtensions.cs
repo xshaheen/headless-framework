@@ -6,13 +6,12 @@ namespace Headless.SourceGenerators;
 
 internal static class IncrementalPipelineExtensions
 {
-    /// <summary>Drops the declarations a transform rejected, so later steps see only real results.</summary>
+    /// <summary>Filters out null values from an incremental provider pipeline.</summary>
     public static IncrementalValuesProvider<T> WhereNotNull<T>(this IncrementalValuesProvider<T?> source)
         where T : class => source.Where(static result => result is not null).Select(static (result, _) => result!);
 
     /// <summary>
-    /// The compilation's assembly name, empty when it has none. Selecting the name keeps later steps cached across
-    /// edits, because the name itself rarely changes while the compilation changes on every keystroke.
+    /// Selects the compilation assembly name to preserve pipeline cache validity across edits.
     /// </summary>
     public static IncrementalValueProvider<string> SelectAssemblyName(
         this IncrementalValueProvider<Compilation> source

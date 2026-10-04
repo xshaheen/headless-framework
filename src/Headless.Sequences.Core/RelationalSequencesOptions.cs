@@ -6,34 +6,32 @@ using Headless.Hosting.Initialization;
 
 namespace Headless.Sequences;
 
-/// <summary>Connection, command, and table options every relational sequence provider shares.</summary>
-/// <param name="defaultTableName">The provider's default table name, in its naming convention.</param>
+/// <summary>Configures common relational database settings for sequence providers.</summary>
+/// <param name="defaultTableName">The default table name for the specific database dialect.</param>
 [PublicAPI]
 public abstract class RelationalSequencesOptions(string defaultTableName)
 {
     /// <summary>
-    /// Gets or sets the connection string of the database that holds the counters. Fast-mode calls open their own
-    /// connections with it, and a gap-free call is accepted only on a unit whose connection reaches the same database.
-    /// Required.
+    /// Gets or sets the database connection string. Fast-mode operations open dedicated connections with this string,
+    /// and gap-free allocations require units of work connected to the same database.
     /// </summary>
     public string ConnectionString { get; set; } = string.Empty;
 
-    /// <summary>Gets or sets the timeout of every command this provider runs. Default: 30 seconds.</summary>
+    /// <summary>Gets or sets the database command timeout. The default is 30 seconds.</summary>
     public TimeSpan CommandTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
     /// <summary>
-    /// Gets or sets the schema that holds the counter table. Default: <see cref="HeadlessStorageDefaults.Schema" />
-    /// (<c>headless</c>), the schema every Headless feature shares.
+    /// Gets or sets the database schema name containing the sequence table.
+    /// The default is <see cref="HeadlessStorageDefaults.Schema" /> (<c>headless</c>).
     /// </summary>
     public string Schema { get; set; } = HeadlessStorageDefaults.Schema;
 
-    /// <summary>Gets or sets the name of the counter table. Default: <c>sequences</c> on PostgreSQL, <c>Sequences</c> on SQL Server.</summary>
+    /// <summary>Gets or sets the name of the sequence table.</summary>
     public string TableName { get; set; } = defaultTableName;
 
     /// <summary>
-    /// Gets or sets whether the schema and table are created at host startup when missing. Default:
-    /// <see langword="true" />. Set it to <see langword="false" /> when a migration tool owns the table; the provider
-    /// never creates it lazily inside a call, because DDL inside a caller's transaction would roll back with it.
+    /// Gets or sets a value indicating whether to create the database schema and table on host startup if missing.
+    /// The default is <see langword="true" />.
     /// </summary>
     public bool InitializeOnStartup { get; set; } = true;
 

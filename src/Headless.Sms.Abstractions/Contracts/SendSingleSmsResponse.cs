@@ -4,49 +4,51 @@ using Headless.Checks;
 
 namespace Headless.Sms;
 
-/// <summary>Describes the outcome of sending a single SMS message.</summary>
+/// <summary>Represents the outcome of sending a single SMS message.</summary>
 /// <remarks>
-/// A successful send may carry a provider-assigned <see cref="ProviderMessageId"/> when the backend
-/// returns one. A failed send always carries a non-null <see cref="FailureError"/> together with a
-/// <see cref="FailureKind"/> that classifies the failure for retry and provider-routing decisions.
+/// A successful send can include a provider-assigned <see cref="ProviderMessageId"/> when returned by the backend.
+/// A failed send includes <see cref="FailureError"/> and a <see cref="FailureKind"/> that classifies the failure
+/// for retry and routing decisions.
 /// </remarks>
 [PublicAPI]
 public sealed class SendSingleSmsResponse
 {
     private SendSingleSmsResponse() { }
 
-    /// <summary>Whether the message was accepted by the provider.</summary>
+    /// <summary>Gets a value indicating whether the provider accepted the message.</summary>
     [MemberNotNullWhen(false, nameof(FailureError))]
     public bool Success { get; private init; }
 
     /// <summary>
-    /// Provider-assigned identifier for the accepted message when the backend returns one (for example the
-    /// Twilio message SID, the AWS SNS message id, or the Infobip bulk id). May be <see langword="null"/> on
-    /// success when the provider does not expose an id.
+    /// Gets the provider-assigned identifier for an accepted message, such as a Twilio message SID, AWS SNS message
+    /// identifier, or Infobip message identifier.
     /// </summary>
     public string? ProviderMessageId { get; private init; }
 
     /// <summary>
-    /// Human-readable failure reason. Non-null whenever <see cref="Success"/> is <see langword="false"/>.
+    /// Gets the failure reason when <see cref="Success"/> is <see langword="false"/>.
     /// </summary>
     public string? FailureError { get; private init; }
 
     /// <summary>
-    /// Classification of the failure for retry/routing decisions. <see cref="SmsFailureKind.None"/> on success.
+    /// Gets the failure classification for retry and routing decisions. Returns <see cref="SmsFailureKind.None"/> on success.
     /// </summary>
     public SmsFailureKind FailureKind { get; private init; }
 
-    /// <summary>Creates a response indicating the message was accepted by the provider.</summary>
-    /// <param name="providerMessageId">The provider-assigned message id, when available.</param>
+    /// <summary>Creates a successful response indicating provider acceptance.</summary>
+    /// <param name="providerMessageId">The provider-assigned message identifier, when available.</param>
+    /// <returns>A new <see cref="SendSingleSmsResponse"/> instance indicating success.</returns>
     public static SendSingleSmsResponse Succeeded(string? providerMessageId = null)
     {
         return new SendSingleSmsResponse { Success = true, ProviderMessageId = providerMessageId };
     }
 
-    /// <summary>Creates a response indicating the provider rejected the message.</summary>
-    /// <param name="failureError">A human-readable failure reason. Must not be <see langword="null"/> or empty.</param>
-    /// <param name="failureKind">The failure classification; defaults to <see cref="SmsFailureKind.Unknown"/>.</param>
-    /// <exception cref="ArgumentException"><paramref name="failureError"/> is <see langword="null"/> or empty.</exception>
+    /// <summary>Creates a response indicating provider rejection.</summary>
+    /// <param name="failureError">The failure reason.</param>
+    /// <param name="failureKind">The failure classification.</param>
+    /// <returns>A new <see cref="SendSingleSmsResponse"/> instance indicating failure.</returns>
+    /// <exception cref="ArgumentException"><paramref name="failureError"/> is empty.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="failureError"/> is <see langword="null"/>.</exception>
     public static SendSingleSmsResponse Failed(string failureError, SmsFailureKind failureKind = SmsFailureKind.Unknown)
     {
         return new SendSingleSmsResponse
@@ -58,15 +60,11 @@ public sealed class SendSingleSmsResponse
     }
 
     /// <summary>
-    /// Creates a failed response from a caught exception with an explicitly classified kind. The failure
-    /// classification is the single responsibility of <c>SmsFailureKinds.FromException</c> (in
-    /// <c>Headless.Sms.Core</c>), which is Polly-aware; providers pass its result here rather than have this
-    /// contract type re-derive a kind. Surfaces the exception message (falling back to the exception type
-    /// name when the message is empty) so the non-empty-message guarantee of <see cref="Failed(string, SmsFailureKind)"/>
-    /// always holds.
+    /// Creates a failed response from an exception with an explicit failure classification.
     /// </summary>
-    /// <param name="exception">The caught exception. Must not be <see langword="null"/>.</param>
-    /// <param name="failureKind">The failure classification derived from the provider's own contract.</param>
+    /// <param name="exception">The caught exception.</param>
+    /// <param name="failureKind">The failure classification derived by the caller.</param>
+    /// <returns>A new <see cref="SendSingleSmsResponse"/> instance indicating failure.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="exception"/> is <see langword="null"/>.</exception>
     public static SendSingleSmsResponse FromException(Exception exception, SmsFailureKind failureKind)
     {
@@ -78,28 +76,26 @@ public sealed class SendSingleSmsResponse
     }
 }
 
-/// <summary>Classifies why an SMS send failed, to inform retry and provider-routing decisions.</summary>
+/// <summary>Specifies categories of SMS transmission failures to guide retry and provider routing decisions.</summary>
 /// <remarks>
-/// New members may be added in minor versions as providers surface finer-grained failure signals. Consumers that
-/// <see langword="switch"/> on this enum must always handle <see cref="Unknown"/> / the <see langword="default"/> case so a newly added
-/// member degrades to "treat as unknown" rather than falling through unhandled.
+/// Callers switching on this enum must handle the default case to accommodate future additions.
 /// </remarks>
 [PublicAPI]
 public enum SmsFailureKind
 {
-    /// <summary>The send succeeded; no failure. This is the default for a successful response.</summary>
+    /// <summary>The send succeeded without error.</summary>
     None = 0,
 
-    /// <summary>The failure cause is unknown or could not be classified.</summary>
+    /// <summary>The failure cause is unknown or unclassified.</summary>
     Unknown = 1,
 
-    /// <summary>A transient transport/network fault (timeout, connection reset). May succeed on retry.</summary>
+    /// <summary>A transient transport or network fault occurred, such as a timeout or connection reset.</summary>
     Transient = 2,
 
-    /// <summary>The provider rejected the request because of rate limiting.</summary>
+    /// <summary>The provider rejected the request due to rate limiting.</summary>
     RateLimited = 3,
 
-    /// <summary>The recipient address was invalid, unreachable, or rejected by the provider.</summary>
+    /// <summary>The recipient address is invalid, unreachable, or rejected by the provider.</summary>
     InvalidRecipient = 4,
 
     /// <summary>Authentication or authorization with the provider failed.</summary>

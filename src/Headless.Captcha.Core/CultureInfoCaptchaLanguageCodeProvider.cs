@@ -3,8 +3,7 @@
 namespace Headless.Captcha;
 
 /// <summary>
-/// Default <see cref="ICaptchaLanguageCodeProvider"/> that derives the language code from the current UI culture
-/// (<see cref="CultureInfo.CurrentUICulture"/>).
+/// Resolves the captcha language code from <see cref="CultureInfo.CurrentUICulture"/>.
 /// </summary>
 [PublicAPI]
 public sealed class CultureInfoCaptchaLanguageCodeProvider : ICaptchaLanguageCodeProvider

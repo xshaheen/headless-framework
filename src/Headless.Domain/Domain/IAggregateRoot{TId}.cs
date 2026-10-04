@@ -3,15 +3,18 @@
 namespace Headless.Domain;
 
 /// <summary>
-/// Defines an aggregate root with a single primary key with "Id" property.
-/// Used also to restrict repositories for example to work only with aggregate roots.
+/// Defines an aggregate root with a strongly typed primary key named <c>Id</c>.
 /// </summary>
-/// <typeparam name="TId">Type of the primary key of the entity</typeparam>
+/// <remarks>
+/// Used to restrict repositories and persistence operations to aggregate roots.
+/// </remarks>
+/// <typeparam name="TId">The primary key type.</typeparam>
 [PublicAPI]
 public interface IAggregateRoot<out TId> : IEntity<TId>, IAggregateRoot
     where TId : IEquatable<TId>; // The 'notnull' constraint is redundant because type parameter 'TId' is constrained by non-nullable type 'IEquatable<TId>'
 
-/// <summary>Base class for aggregate roots with a single primary key.</summary>
+/// <summary>Provides a base implementation for aggregate roots with a single primary key.</summary>
+/// <typeparam name="TId">The primary key type.</typeparam>
 [PublicAPI]
 public abstract class AggregateRoot<TId> : AggregateRoot, IAggregateRoot<TId>
     where TId : IEquatable<TId>
@@ -27,7 +30,7 @@ public abstract class AggregateRoot<TId> : AggregateRoot, IAggregateRoot<TId>
         Id = id;
     }
 
-    /// <summary>Unique identifier for this entity.</summary>
+    /// <summary>Gets the unique identifier for this entity.</summary>
     public required TId Id { get; init; }
 
     /// <inheritdoc/>

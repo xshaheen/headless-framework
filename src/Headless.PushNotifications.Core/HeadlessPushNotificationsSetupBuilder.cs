@@ -7,16 +7,8 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Headless.PushNotifications;
 
 /// <summary>
-/// Root builder for <c>AddHeadlessPushNotifications</c>. Provider packages contribute deferred service
-/// registrations into two slots — an optional default service (at most one, the unkeyed
-/// <see cref="IPushNotificationService"/>) and named instances (unlimited, unique names, resolved as keyed
-/// <see cref="IPushNotificationService"/> services or through <see cref="IPushNotificationServiceProvider"/>).
-/// Nothing is registered into <see cref="Services"/> until the setup gates pass; contributions are queued only.
+/// Configures push notification providers and named instances.
 /// </summary>
-/// <remarks>
-/// Push notifications has no shared, cross-provider feature options, so the builder is provider-selection-only
-/// and carries no <c>Configure</c> overloads. Each provider binds its own options inside its <c>Use*</c> member.
-/// </remarks>
 [PublicAPI]
 public sealed class HeadlessPushNotificationsSetupBuilder
 {
@@ -36,12 +28,11 @@ public sealed class HeadlessPushNotificationsSetupBuilder
     internal List<(string Name, Action<IServiceCollection> Action)> NamedExtensions { get; } = [];
 
     /// <summary>
-    /// Queues the default (unkeyed) push-notification service contribution. Called internally by each default
-    /// <c>Use*</c> extension; not intended for direct use by application code.
+    /// Queues the default push notification provider registration.
     /// </summary>
-    /// <param name="action">The provider's deferred service registration action.</param>
-    /// <exception cref="ArgumentNullException">Thrown when <paramref name="action"/> is <see langword="null"/>.</exception>
-    [EditorBrowsable(EditorBrowsableState.Never)] // provider-package plumbing, not an application-code API
+    /// <param name="action">The delegate that registers services into the service collection.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="action"/> is <see langword="null"/>.</exception>
+    [EditorBrowsable(EditorBrowsableState.Never)]
     public void RegisterDefaultProvider(Action<IServiceCollection> action)
     {
         Argument.IsNotNull(action);
@@ -50,18 +41,15 @@ public sealed class HeadlessPushNotificationsSetupBuilder
     }
 
     /// <summary>
-    /// Adds an independently-configured named push-notification service, resolvable as a keyed
-    /// <see cref="IPushNotificationService"/> service or through <see cref="IPushNotificationServiceProvider"/>.
-    /// Named instances never touch the default (unkeyed) <see cref="IPushNotificationService"/>.
+    /// Adds a named push notification service instance.
     /// </summary>
-    /// <param name="name">The service instance name. Must be non-empty and unique within this call.</param>
-    /// <param name="configure">Configuration action that selects exactly one provider for the instance.</param>
-    /// <returns>The builder for chaining.</returns>
-    /// <exception cref="ArgumentException">Thrown when <paramref name="name"/> is <see langword="null"/> or whitespace.</exception>
-    /// <exception cref="ArgumentNullException">Thrown when <paramref name="configure"/> is <see langword="null"/>.</exception>
+    /// <param name="name">The unique service instance name.</param>
+    /// <param name="configure">A delegate that configures the named provider.</param>
+    /// <returns>The builder instance for chaining.</returns>
+    /// <exception cref="ArgumentException"><paramref name="name"/> is <see langword="null"/>, empty, or whitespace.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
     /// <exception cref="InvalidOperationException">
-    /// Thrown when <paramref name="name"/> is already configured, or when the instance selects zero or more
-    /// than one provider.
+    /// <paramref name="name"/> is already configured, or the configuration delegate does not select exactly one provider.
     /// </exception>
     public HeadlessPushNotificationsSetupBuilder AddNamed(
         string name,

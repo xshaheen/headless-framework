@@ -4,12 +4,12 @@ using Headless.Checks;
 
 namespace Headless.PushNotifications.Apns.Internal;
 
-/// <summary>The APNs request headers a notification decides, computed from its type and the instance options.</summary>
-/// <param name="PushType">The <c>apns-push-type</c> value.</param>
-/// <param name="Topic">The <c>apns-topic</c> value: the bundle identifier plus the push type's suffix.</param>
-/// <param name="Priority">The <c>apns-priority</c> value.</param>
-/// <param name="Expiration">The <c>apns-expiration</c> value in Unix epoch seconds, or <see langword="null"/> to omit it.</param>
-/// <param name="CollapseId">The <c>apns-collapse-id</c> value, or <see langword="null"/> to omit it.</param>
+/// <summary>Represents calculated HTTP/2 request headers for an APNs notification.</summary>
+/// <param name="PushType">The <c>apns-push-type</c> header value.</param>
+/// <param name="Topic">The <c>apns-topic</c> header value.</param>
+/// <param name="Priority">The <c>apns-priority</c> header value.</param>
+/// <param name="Expiration">The <c>apns-expiration</c> header value in Unix epoch seconds, or <see langword="null"/> to omit.</param>
+/// <param name="CollapseId">The <c>apns-collapse-id</c> header value, or <see langword="null"/> to omit.</param>
 internal sealed record ApnsRequestHeaders(
     string PushType,
     string Topic,
@@ -18,14 +18,14 @@ internal sealed record ApnsRequestHeaders(
     string? CollapseId
 )
 {
-    // Apple caps the apns-collapse-id header at 64 bytes.
     private const int _MaxCollapseIdBytes = 64;
 
-    /// <summary>Computes the headers for <paramref name="notification"/> sent through an instance with <paramref name="options"/>.</summary>
+    /// <summary>Calculates request headers for a notification and options configuration.</summary>
+    /// <param name="notification">The notification to inspect.</param>
+    /// <param name="options">The configured APNs options.</param>
+    /// <returns>A calculated <see cref="ApnsRequestHeaders"/> instance.</returns>
     /// <exception cref="ArgumentException">
-    /// The collapse id is blank or exceeds 64 UTF-8 bytes, the priority is not allowed for the push type, the
-    /// instance is configured for VoIP and the push type is not an alert or VoIP push, or a VoIP push is sent through
-    /// an instance that is not configured for VoIP.
+    /// The collapse identifier is invalid, the priority is unsupported for the push type, or VoIP configuration mismatches occur.
     /// </exception>
     public static ApnsRequestHeaders Create(ApnsNotification notification, ApnsOptions options)
     {

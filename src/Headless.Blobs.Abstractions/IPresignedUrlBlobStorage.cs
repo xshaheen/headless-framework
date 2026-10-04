@@ -3,7 +3,7 @@
 namespace Headless.Blobs;
 
 /// <summary>
-/// Optional capability for blob backends that can mint time-limited, pre-authenticated URLs granting direct
+/// Capability for blob backends that generate time-limited, pre-authenticated URLs granting direct
 /// access to a private blob without proxying the bytes through the application.
 /// </summary>
 /// <remarks>
@@ -14,8 +14,7 @@ namespace Headless.Blobs;
 /// the application.
 /// </para>
 /// <para>
-/// Consumers feature-detect the capability with an <see langword="is"/>-cast from the resolved <see cref="IBlobStorage"/>
-/// instead of relying on a runtime failure:
+/// Consumers feature-detect the capability with an <see langword="is"/>-cast from the resolved <see cref="IBlobStorage"/>:
 /// <code>
 /// if (storage is IPresignedUrlBlobStorage presigned)
 /// {
@@ -23,12 +22,9 @@ namespace Headless.Blobs;
 ///     var url = await presigned.GetPresignedDownloadUrlAsync(location, TimeSpan.FromMinutes(15));
 /// }
 /// </code>
-/// The <see langword="is"/>-cast stays honest here because both AWS and Cloudflare R2 (which reuses the AWS storage type)
-/// support signing — unlike <see cref="IBlobContainerManager"/>, which must distinguish providers that share a
-/// storage implementation and is therefore resolved from DI rather than cast from the storage instance.
 /// </para>
 /// <para>
-/// Implementing the interface advertises that the backend <i>can</i> sign URLs; it does not guarantee every
+/// Implementing the interface advertises that the backend can sign URLs; it does not guarantee every
 /// configuration can. A backend whose client was wired without signing credentials may throw
 /// <see cref="InvalidOperationException"/> at call time.
 /// </para>
@@ -47,7 +43,7 @@ public interface IPresignedUrlBlobStorage
     /// </summary>
     /// <param name="location">The blob the URL grants read access to.</param>
     /// <param name="expiry">How long the URL remains valid, measured from now.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>A signed, time-limited URL for downloading the blob.</returns>
     ValueTask<Uri> GetPresignedDownloadUrlAsync(
         BlobLocation location,
@@ -65,7 +61,7 @@ public interface IPresignedUrlBlobStorage
     /// <see cref="SupportedUploadConstraints"/> are enforced; the rest are ignored. An enforced content type must be
     /// sent as the upload's <c>Content-Type</c> header.
     /// </param>
-    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>A signed, time-limited URL for uploading the blob.</returns>
     ValueTask<Uri> GetPresignedUploadUrlAsync(
         BlobLocation location,

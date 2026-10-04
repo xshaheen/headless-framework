@@ -7,8 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Headless.Emails;
 
 /// <summary>
-/// Extension members for selecting the development (file-writing) or no-op email providers as the default
-/// (unkeyed) Headless email sender on <see cref="HeadlessEmailsSetupBuilder"/>.
+/// Registers the development or no-op email providers as the default email sender.
 /// </summary>
 [PublicAPI]
 public static class SetupDevEmail
@@ -16,18 +15,11 @@ public static class SetupDevEmail
     extension(HeadlessEmailsSetupBuilder setup)
     {
         /// <summary>
-        /// Selects <see cref="DevEmailSender"/> as the default email provider, which appends email content to
-        /// a local file instead of sending to real recipients.
+        /// Registers <see cref="DevEmailSender"/> as the default email provider, writing email content to a file.
         /// </summary>
-        /// <param name="filePath">
-        /// Absolute or relative path to the file where outgoing emails are recorded.
-        /// The file is created if it does not exist; existing content is preserved and
-        /// new entries are appended.
-        /// </param>
-        /// <returns>The same builder for chaining.</returns>
-        /// <exception cref="System.ArgumentException">
-        /// Thrown when <paramref name="filePath"/> is <see langword="null"/> or empty.
-        /// </exception>
+        /// <param name="filePath">The file path where outgoing emails are recorded.</param>
+        /// <returns>The builder instance.</returns>
+        /// <exception cref="ArgumentException"><paramref name="filePath"/> is <see langword="null"/> or empty.</exception>
         public HeadlessEmailsSetupBuilder UseDevelopment(string filePath)
         {
             Argument.IsNotNullOrEmpty(filePath);
@@ -40,10 +32,9 @@ public static class SetupDevEmail
         }
 
         /// <summary>
-        /// Selects <see cref="NoopEmailSender"/> as the default email provider, which silently discards every
-        /// email without sending or logging it.
+        /// Registers <see cref="NoopEmailSender"/> as the default email provider, discarding all messages.
         /// </summary>
-        /// <returns>The same builder for chaining.</returns>
+        /// <returns>The builder instance.</returns>
         public HeadlessEmailsSetupBuilder UseNoop()
         {
             setup.RegisterDefaultProvider(static services => services.AddSingleton<IEmailSender, NoopEmailSender>());
@@ -54,8 +45,7 @@ public static class SetupDevEmail
 }
 
 /// <summary>
-/// Extension members for selecting the development (file-writing) or no-op email providers as a named Headless
-/// email sender on <see cref="HeadlessEmailInstanceBuilder"/>.
+/// Registers the development or no-op email providers as a named email sender.
 /// </summary>
 [PublicAPI]
 public static class SetupDevEmailNamed
@@ -63,17 +53,11 @@ public static class SetupDevEmailNamed
     extension(HeadlessEmailInstanceBuilder instance)
     {
         /// <summary>
-        /// Uses <see cref="DevEmailSender"/> for this named instance, appending email content to a local file
-        /// instead of sending to real recipients. The instance resolves as a keyed <see cref="IEmailSender"/>.
+        /// Registers <see cref="DevEmailSender"/> as the provider for this named instance, writing email content to a file.
         /// </summary>
-        /// <param name="filePath">
-        /// Absolute or relative path to the file where outgoing emails are recorded. The file is created if it
-        /// does not exist; existing content is preserved and new entries are appended.
-        /// </param>
-        /// <returns>The instance builder for chaining.</returns>
-        /// <exception cref="System.ArgumentException">
-        /// Thrown when <paramref name="filePath"/> is <see langword="null"/> or empty.
-        /// </exception>
+        /// <param name="filePath">The file path where outgoing emails are recorded.</param>
+        /// <returns>The instance builder instance.</returns>
+        /// <exception cref="ArgumentException"><paramref name="filePath"/> is <see langword="null"/> or empty.</exception>
         public HeadlessEmailInstanceBuilder UseDevelopment(string filePath)
         {
             Argument.IsNotNullOrEmpty(filePath);
@@ -88,10 +72,9 @@ public static class SetupDevEmailNamed
         }
 
         /// <summary>
-        /// Uses <see cref="NoopEmailSender"/> for this named instance, silently discarding every email. The
-        /// instance resolves as a keyed <see cref="IEmailSender"/>.
+        /// Registers <see cref="NoopEmailSender"/> as the provider for this named instance, discarding all messages.
         /// </summary>
-        /// <returns>The instance builder for chaining.</returns>
+        /// <returns>The instance builder instance.</returns>
         public HeadlessEmailInstanceBuilder UseNoop()
         {
             var name = instance.Name;

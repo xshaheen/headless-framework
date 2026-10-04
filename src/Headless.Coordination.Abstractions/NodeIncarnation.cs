@@ -5,23 +5,21 @@ using Headless.Checks;
 namespace Headless.Coordination;
 
 /// <summary>
-/// Store-allocated monotonic generation counter for a node id. A higher value always represents a later
-/// registration of the same node id, enabling stale-owner detection without clock comparison.
+/// Represents a store-allocated monotonic generation counter for a node identifier. A higher value represents
+/// a later registration of the same node identifier, enabling stale-owner detection without clock synchronization.
 /// </summary>
 [PublicAPI]
 public readonly record struct NodeIncarnation : IComparable<NodeIncarnation>
 {
-    /// <summary>Initializes a <see cref="NodeIncarnation"/> with the given generation value.</summary>
-    /// <param name="value">The generation counter. Must be a positive (greater than zero) value.</param>
-    /// <exception cref="ArgumentOutOfRangeException">
-    /// Thrown when <paramref name="value"/> is zero or negative.
-    /// </exception>
+    /// <summary>Initializes a new instance of the <see cref="NodeIncarnation"/> struct.</summary>
+    /// <param name="value">The generation counter.</param>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="value"/> is less than or equal to zero.</exception>
     public NodeIncarnation(long value)
     {
         Value = Argument.IsPositive(value);
     }
 
-    /// <summary>The underlying generation counter.</summary>
+    /// <summary>Gets the underlying generation counter.</summary>
     public long Value { get; }
 
     /// <inheritdoc/>
@@ -36,25 +34,37 @@ public readonly record struct NodeIncarnation : IComparable<NodeIncarnation>
         return Value.ToString(CultureInfo.InvariantCulture);
     }
 
-    /// <summary>Returns <see langword="true"/> if <paramref name="left"/> is an earlier generation than <paramref name="right"/>.</summary>
+    /// <summary>Determines whether <paramref name="left"/> represents an earlier generation than <paramref name="right"/>.</summary>
+    /// <param name="left">The first incarnation to compare.</param>
+    /// <param name="right">The second incarnation to compare.</param>
+    /// <returns><see langword="true"/> if <paramref name="left"/> is earlier than <paramref name="right"/>; otherwise, <see langword="false"/>.</returns>
     public static bool operator <(NodeIncarnation left, NodeIncarnation right)
     {
         return left.CompareTo(right) < 0;
     }
 
-    /// <summary>Returns <see langword="true"/> if <paramref name="left"/> is the same or an earlier generation than <paramref name="right"/>.</summary>
+    /// <summary>Determines whether <paramref name="left"/> represents an earlier or identical generation compared to <paramref name="right"/>.</summary>
+    /// <param name="left">The first incarnation to compare.</param>
+    /// <param name="right">The second incarnation to compare.</param>
+    /// <returns><see langword="true"/> if <paramref name="left"/> is earlier than or equal to <paramref name="right"/>; otherwise, <see langword="false"/>.</returns>
     public static bool operator <=(NodeIncarnation left, NodeIncarnation right)
     {
         return left.CompareTo(right) <= 0;
     }
 
-    /// <summary>Returns <see langword="true"/> if <paramref name="left"/> is a later generation than <paramref name="right"/>.</summary>
+    /// <summary>Determines whether <paramref name="left"/> represents a later generation than <paramref name="right"/>.</summary>
+    /// <param name="left">The first incarnation to compare.</param>
+    /// <param name="right">The second incarnation to compare.</param>
+    /// <returns><see langword="true"/> if <paramref name="left"/> is later than <paramref name="right"/>; otherwise, <see langword="false"/>.</returns>
     public static bool operator >(NodeIncarnation left, NodeIncarnation right)
     {
         return left.CompareTo(right) > 0;
     }
 
-    /// <summary>Returns <see langword="true"/> if <paramref name="left"/> is the same or a later generation than <paramref name="right"/>.</summary>
+    /// <summary>Determines whether <paramref name="left"/> represents a later or identical generation compared to <paramref name="right"/>.</summary>
+    /// <param name="left">The first incarnation to compare.</param>
+    /// <param name="right">The second incarnation to compare.</param>
+    /// <returns><see langword="true"/> if <paramref name="left"/> is later than or equal to <paramref name="right"/>; otherwise, <see langword="false"/>.</returns>
     public static bool operator >=(NodeIncarnation left, NodeIncarnation right)
     {
         return left.CompareTo(right) >= 0;

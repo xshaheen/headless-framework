@@ -5,19 +5,18 @@ using Headless.Primitives;
 
 namespace Headless.Caching;
 
-/// <summary>Access to shared cache-event surface instances.</summary>
+/// <summary>Provides access to shared cache event instances.</summary>
 [PublicAPI]
 public static class CacheEvents
 {
     /// <summary>
-    /// A shared, allocation-free <see cref="ICacheEvents"/> whose events never fire and whose
-    /// <see cref="ICacheEvents.HasSubscribers"/> is always <see langword="false"/>. Backs the default
-    /// <see cref="ICache.Events"/> implementation so caches that do not surface events cost nothing; subscribing to it is
-    /// a silent no-op.
+    /// Gets a shared, allocation-free <see cref="ICacheEvents"/> instance whose events never fire and whose
+    /// <see cref="ICacheEvents.HasSubscribers"/> property is always <see langword="false"/>. Backs the default
+    /// <see cref="ICache.Events"/> implementation so caches that do not surface events incur no overhead.
     /// </summary>
     public static ICacheEvents NoOp { get; } = new NoOpCacheEvents();
 
-    // A no-op IAsyncEvent: AddHandler is a silent no-op returning a shared no-op disposable, nothing is ever invoked.
+    // A no-op IAsyncEvent implementation where AddHandler returns a shared no-op disposable and no callback executes.
     private sealed class NoOpAsyncEvent<TEvent> : IAsyncEvent<TEvent>
         where TEvent : EventArgs
     {

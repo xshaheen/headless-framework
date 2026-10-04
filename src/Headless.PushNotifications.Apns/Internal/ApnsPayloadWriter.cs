@@ -7,33 +7,25 @@ using Headless.Checks;
 
 namespace Headless.PushNotifications.Apns.Internal;
 
-/// <summary>Validates a notification and writes it as the APNs JSON payload.</summary>
-/// <remarks>
-/// Written by hand with <see cref="Utf8JsonWriter"/> rather than a serializer so the output stays AOT-safe and its
-/// exact byte length is known for the payload-size check.
-/// </remarks>
+/// <summary>Validates and writes APNs JSON payloads using <see cref="Utf8JsonWriter"/>.</summary>
 internal static class ApnsPayloadWriter
 {
-    // Apple's documented payload limits: 4 KB for regular notifications and 5 KB for VoIP.
     private const int _MaxAlertPayloadBytes = 4096;
     private const int _MaxVoipPayloadBytes = 5120;
     private const int _MaxBroadcastPayloadBytes = 5120;
 
-    // The payload's own dictionary, where Apple reads alert, badge, and sound; a custom key with this name would
-    // overwrite it.
     private const string _ApsKey = "aps";
 
     /// <summary>
-    /// Validates <paramref name="notification"/> for an instance configured with <paramref name="options"/> and
-    /// returns its UTF-8 JSON payload with the request headers it decides.
+    /// Validates the notification and serializes it to a UTF-8 JSON payload with required APNs headers.
     /// </summary>
-    /// <param name="notification">The notification to send.</param>
-    /// <param name="options">The sending instance's options, which supply the bundle id, push type, and priority.</param>
-    /// <param name="timeProvider">The clock that stamps a Live Activity push with no explicit timestamp.</param>
+    /// <param name="notification">The notification to serialize.</param>
+    /// <param name="options">The APNs options providing topic and delivery settings.</param>
+    /// <param name="timeProvider">The time provider for timestamp calculations.</param>
+    /// <returns>A prepared APNs notification containing payload bytes and headers.</returns>
     /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">
-    /// The notification breaks a rule of its push type, a data key is <c>aps</c>, the collapse id exceeds 64 UTF-8
-    /// bytes, the payload exceeds the push type's size limit, or the instance cannot send the push type.
+    /// The notification violates push type constraints, contains reserved keys, exceeds size limits, or uses unsupported configurations.
     /// </exception>
     public static ApnsPreparedNotification Prepare(
         ApnsNotification notification,
@@ -45,7 +37,6 @@ internal static class ApnsPayloadWriter
         Argument.IsNotNull(options);
         Argument.IsNotNull(timeProvider);
 
-        // Headers first: they refuse a push type the instance cannot send before any payload work.
         var headers = ApnsRequestHeaders.Create(notification, options);
 
         if (notification is ApnsRawNotification raw)
@@ -102,11 +93,13 @@ internal static class ApnsPayloadWriter
     #region Broadcast
 
     /// <summary>
-    /// Validates a Live Activity update or end for a broadcast channel and returns its UTF-8 JSON payload.
+    /// Validates a Live Activity notification for channel broadcast and serializes its UTF-8 JSON payload.
     /// </summary>
+    /// <param name="notification">The Live Activity notification.</param>
+    /// <param name="timeProvider">The time provider for timestamps.</param>
+    /// <returns>The serialized UTF-8 JSON payload bytes.</returns>
     /// <exception cref="ArgumentException">
-    /// The notification starts an activity, carries start-only fields or a collapse id, breaks a Live Activity rule,
-    /// or its payload is over the 5120-byte broadcast limit.
+    /// The notification starts an activity, specifies unsupported broadcast fields, or exceeds the 5120-byte limit.
     /// </exception>
     public static byte[] PrepareBroadcast(ApnsLiveActivityNotification notification, TimeProvider timeProvider)
     {

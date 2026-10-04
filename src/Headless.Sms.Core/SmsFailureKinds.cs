@@ -9,26 +9,18 @@ using Polly.Timeout;
 namespace Headless.Sms;
 
 /// <summary>
-/// The single classifier that maps transport-level signals to a <see cref="SmsFailureKind"/> so providers
-/// classify failures consistently for retry and provider-routing decisions. It is Polly-aware (this package
-/// references Polly; <c>Headless.Sms.Abstractions</c> does not), so it lives here rather than on the
-/// contract type — providers pass its result to <c>SendSingleSmsResponse.FromException(exception, kind)</c>.
-/// Provider-specific signals (typed SDK exceptions, documented response contracts) are classified by each
-/// provider from its own contract — never inferred from generic HTTP semantics, which differ per backend.
+/// Maps transport exceptions and resilience rejections to an <see cref="SmsFailureKind"/>.
 /// </summary>
 [PublicAPI]
 public static class SmsFailureKinds
 {
-    /// <summary>Classifies an exception caught while dispatching an SMS send.</summary>
+    /// <summary>Classifies an exception caught during an SMS send operation.</summary>
     /// <remarks>
-    /// Network/transport faults (<see cref="HttpRequestException"/>, <see cref="IOException"/>,
-    /// <see cref="TimeoutException"/>, <see cref="SocketException"/>) and the standard resilience pipeline's
-    /// rejections (<see cref="TimeoutRejectedException"/>, <see cref="BrokenCircuitException"/>,
-    /// <see cref="RateLimiterRejectedException"/>) are reported as <see cref="SmsFailureKind.Transient"/>
-    /// because a retry may succeed. Everything else (deserialization errors, provider-SDK contract violations,
-    /// programming errors) is <see cref="SmsFailureKind.Unknown"/>, since blindly retrying it is unlikely to help.
+    /// Maps I/O faults, socket exceptions, HTTP request errors, timeouts, and Polly pipeline rejections to
+    /// <see cref="SmsFailureKind.Transient"/>. Maps all other exceptions to <see cref="SmsFailureKind.Unknown"/>.
     /// </remarks>
-    /// <param name="exception">The caught exception. Must not be <see langword="null"/>.</param>
+    /// <param name="exception">The caught exception.</param>
+    /// <returns>The classified <see cref="SmsFailureKind"/>.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="exception"/> is <see langword="null"/>.</exception>
     public static SmsFailureKind FromException(Exception exception)
     {
@@ -37,8 +29,7 @@ public static class SmsFailureKinds
         return exception switch
         {
             HttpRequestException or IOException or TimeoutException or SocketException => SmsFailureKind.Transient,
-            // The standard resilience pipeline surfaces its timeout, open-circuit, and rate-limiter
-            // rejections as Polly-specific exceptions; all are transport faults a retry may clear.
+            // Classify Polly timeout, open-circuit, and rate-limiter rejections as transient faults.
             TimeoutRejectedException or BrokenCircuitException or RateLimiterRejectedException =>
                 SmsFailureKind.Transient,
             _ => SmsFailureKind.Unknown,

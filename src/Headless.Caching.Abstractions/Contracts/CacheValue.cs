@@ -10,24 +10,22 @@ using Headless.Checks;
 namespace Headless.Caching;
 
 /// <summary>
-/// Read result envelope returned by every cache read method. Distinguishes "present and fresh", "present
-/// but stale (served from fail-safe reserve)", and "absent" without requiring the caller to use exceptions or
-/// sentinel values for the absent case.
+/// Represents the result envelope returned by cache read operations. Distinguishes fresh values,
+/// stale values served from fail-safe reserves, and cache misses without allocating exceptions or sentinel values.
 /// </summary>
 /// <typeparam name="T">The type of the cached value.</typeparam>
 /// <remarks>
-/// A value type so the common synchronous read path (<c>ValueTask&lt;CacheValue&lt;T&gt;&gt;</c>) completes
-/// without a heap allocation. <see langword="default"/> is a valid <see cref="NoValue"/> state
-/// (<see cref="HasValue"/> and <see cref="IsStale"/> both <see langword="false"/>), so it never violates the
-/// <c>IsStale ⇒ HasValue</c> invariant the constructor enforces.
+/// This struct allows synchronous reads to complete without heap allocations.
+/// <see langword="default"/> represents a valid <see cref="NoValue"/> state where both
+/// <see cref="HasValue"/> and <see cref="IsStale"/> are <see langword="false"/>.
 /// </remarks>
 [PublicAPI]
 public readonly struct CacheValue<T>
 {
     /// <summary>Initializes a new instance of the <see cref="CacheValue{T}"/> struct.</summary>
-    /// <param name="value">Value.</param>
-    /// <param name="hasValue">If set to <see langword="true"/> has value.</param>
-    /// <param name="isStale">If set to <see langword="true"/>, the value was served from a fail-safe reserve.</param>
+    /// <param name="value">The cached value.</param>
+    /// <param name="hasValue">Indicates whether a cache entry was found.</param>
+    /// <param name="isStale">Indicates whether the value was served from a fail-safe reserve.</param>
     public CacheValue(T? value, bool hasValue, bool isStale = false)
     {
         Argument.IsTrue(!isStale || hasValue, "IsStale requires HasValue.", nameof(isStale));
@@ -37,31 +35,28 @@ public readonly struct CacheValue<T>
         IsStale = isStale;
     }
 
-    /// <summary>Gets the cached value. <see langword="null"/> when <see cref="HasValue"/> is <see langword="false"/>, or when a <see langword="null"/> was explicitly cached.</summary>
+    /// <summary>Gets the cached value. Returns <see langword="null"/> when <see cref="HasValue"/> is <see langword="false"/> or when <see langword="null"/> was stored.</summary>
     /// <remarks>
-    /// Always check <see cref="HasValue"/> before using this property; a <see langword="null"/> value here may
-    /// mean either "absent from cache" or "a <see langword="null"/> was explicitly stored".
+    /// Check <see cref="HasValue"/> before consuming this property because a <see langword="null"/> payload can represent an explicitly cached null value.
     /// </remarks>
     public T? Value { get; }
 
-    /// <summary>Gets whether the cache entry was found (fresh or stale). <see langword="false"/> means absent from cache.</summary>
+    /// <summary>Gets a value indicating whether the cache entry was found. Returns <see langword="false"/> when absent from cache.</summary>
     public bool HasValue { get; }
 
     /// <summary>
-    /// Gets a value indicating whether this value was served from a fail-safe stale reserve.
+    /// Gets a value indicating whether this value was served from a fail-safe reserve.
     /// </summary>
-    /// <value><see langword="true"/> when fail-safe activated; otherwise, <see langword="false"/>.</value>
     public bool IsStale { get; }
 
-    /// <summary>Gets whether <see cref="Value"/> is <see langword="null"/>.</summary>
-    /// <remarks>An entry can be present in cache with a <see langword="null"/> value (explicitly stored null).</remarks>
+    /// <summary>Gets a value indicating whether <see cref="Value"/> is <see langword="null"/>.</summary>
     [MemberNotNullWhen(false, nameof(Value))]
     public bool IsNull => Value is null;
 
-    /// <summary>A hit result carrying a cached <see langword="null"/> value (<see cref="HasValue"/> is <see langword="true"/>, <see cref="Value"/> is <see langword="null"/>).</summary>
+    /// <summary>Represents a hit result containing an explicitly cached <see langword="null"/> value.</summary>
     public static CacheValue<T> Null { get; } = new(default, hasValue: true);
 
-    /// <summary>A miss result (absent from cache). <see cref="HasValue"/> is <see langword="false"/>.</summary>
+    /// <summary>Represents a cache miss.</summary>
     public static CacheValue<T> NoValue { get; } = new(default, hasValue: false);
 
     public override string ToString()

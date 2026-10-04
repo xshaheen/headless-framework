@@ -9,48 +9,39 @@ using Microsoft.Extensions.Http.Resilience;
 namespace Headless.Sms;
 
 /// <summary>
-/// The shared registration path for HTTP-backed SMS providers: options, a per-instance named HttpClient whose
-/// resilience pipeline is derived from the provider's declared <see cref="OutboundEffect"/>, and the default or
-/// keyed sender (plus the bulk-sender forward when the sender supports bulk sends).
+/// Provides shared registration helpers for HTTP-backed SMS providers.
 /// </summary>
-/// <remarks>
-/// Provider packages call this from their <c>Use{Provider}</c> members; it is plumbing, not an application API.
-/// </remarks>
 [PublicAPI]
-[EditorBrowsable(EditorBrowsableState.Never)] // provider-package plumbing, not an application-code API
+[EditorBrowsable(EditorBrowsableState.Never)]
 public static class HttpSmsProviderRegistration
 {
     /// <summary>
-    /// The per-instance client name. It doubles as the resilience-pipeline key, so each named instance gets its own
-    /// client registration and pipeline.
+    /// Gets the per-instance HTTP client name used for client registration and resilience pipeline lookup.
     /// </summary>
-    /// <param name="httpClientName">The provider's base client name, for example <c>Headless:InfobipSms</c>.</param>
-    /// <param name="name">The named instance, or <see langword="null"/> for the default sender.</param>
-    /// <returns>The base name for the default sender; <c>{httpClientName}:{name}</c> for a named instance.</returns>
+    /// <param name="httpClientName">The base HTTP client name of the provider.</param>
+    /// <param name="name">The named instance identifier, or <see langword="null"/> for the default sender.</param>
+    /// <returns>The computed HTTP client name.</returns>
     public static string GetHttpClientName(string httpClientName, string? name)
     {
         return name is null ? httpClientName : $"{httpClientName}:{name}";
     }
 
     /// <summary>
-    /// Registers one HTTP-backed SMS sender. A <see langword="null"/> <paramref name="name"/> registers the default
-    /// (unkeyed) sender; a non-null name registers a keyed sender, named options, and a per-name HttpClient.
+    /// Registers an HTTP-backed SMS sender with options, resilience handlers, and dependency injection services.
     /// </summary>
-    /// <remarks>
-    /// <paramref name="createSender"/> receives the per-instance client name and the options name, so every sender
-    /// reads the options snapshot for its own name (<c>IOptionsMonitor.Get(name)</c>): keyed DI does not cascade the
-    /// key to constructor dependencies, and a keyed sender must not read <c>CurrentValue</c>, which binds the default.
-    /// </remarks>
-    /// <typeparam name="TSender">The provider's sender; a bulk-sender forward is registered when it implements <see cref="IBulkSmsSender"/>.</typeparam>
-    /// <param name="services">The service collection.</param>
-    /// <param name="name">The named instance, or <see langword="null"/> for the default sender.</param>
-    /// <param name="httpClientName">The provider's base client name.</param>
-    /// <param name="configureOptions">Registers and validates the provider options under the given name.</param>
-    /// <param name="createSender">Creates the sender from the provider, the per-instance client name, and the options name.</param>
-    /// <param name="effect">The provider's declared side-effect class, from which the resilience pipeline is derived.</param>
-    /// <param name="configureClient">Optional consumer configuration of the HttpClient.</param>
-    /// <param name="configureResilience">Optional consumer tuning, applied after the derived resilience defaults.</param>
-    /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
+    /// <typeparam name="TSender">The concrete sender type implementing <see cref="ISmsSender"/>.</typeparam>
+    /// <param name="services">The service collection instance.</param>
+    /// <param name="name">The named instance identifier, or <see langword="null"/> for the default sender.</param>
+    /// <param name="httpClientName">The base HTTP client name.</param>
+    /// <param name="configureOptions">A delegate that registers and validates options for the specified name.</param>
+    /// <param name="createSender">A factory delegate that creates the sender instance.</param>
+    /// <param name="effect">The side-effect classification determining resilience policy.</param>
+    /// <param name="configureClient">An optional delegate to configure the underlying HTTP client.</param>
+    /// <param name="configureResilience">An optional delegate to customize resilience settings.</param>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="services"/>, <paramref name="configureOptions"/>, or <paramref name="createSender"/> is <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="ArgumentException"><paramref name="httpClientName"/> is empty.</exception>
     public static void AddHttpSmsProvider<TSender>(
         IServiceCollection services,
         string? name,
@@ -76,8 +67,7 @@ public static class HttpSmsProviderRegistration
             ? services.AddHttpClient(instanceClientName)
             : services.AddHttpClient(instanceClientName, configureClient);
 
-        // The pipeline comes from the provider's declared effect, which also removes any host-wide handler
-        // (such as service defaults) that would otherwise stack as an outer pipeline and retry anyway.
+        // Derive resilience handler from the provider effect and remove host-wide outer wrappers.
         httpClientBuilder.AddEffectResilienceHandler(effect, configureResilience: configureResilience);
 
         var registersBulkForward = typeof(IBulkSmsSender).IsAssignableFrom(typeof(TSender));

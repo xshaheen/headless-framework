@@ -2,7 +2,7 @@
 
 namespace Headless.Captcha;
 
-/// <summary>The wire shape of a reCAPTCHA v3 siteverify response, mapped onto <see cref="ReCaptchaV3VerifyResult"/>.</summary>
+/// <summary>Represents the payload returned by the reCAPTCHA v3 site verification API.</summary>
 internal sealed class ReCaptchaSiteVerifyV3Response
 {
     [JsonPropertyName("success")]
@@ -14,11 +14,11 @@ internal sealed class ReCaptchaSiteVerifyV3Response
     [JsonPropertyName("hostname")]
     public string? HostName { get; init; }
 
-    /// <summary>The risk score (0.0 – 1.0). Verify server-side against a threshold; a high score is not on its own a pass.</summary>
+    /// <summary>Gets the risk score between 0.0 and 1.0.</summary>
     [JsonPropertyName("score")]
     public float? Score { get; init; }
 
-    /// <summary>The action name supplied at execute time. Verify it matches the expected action to prevent cross-action token replay.</summary>
+    /// <summary>Gets the action name specified during client execution.</summary>
     [JsonPropertyName("action")]
     public string? Action { get; init; }
 

@@ -4,20 +4,20 @@ using FluentValidation;
 
 namespace Headless.Captcha;
 
-/// <summary>Configuration for a Google reCAPTCHA provider instance (shared by v2 and v3 registrations).</summary>
+/// <summary>Configures settings for a Google reCAPTCHA provider instance.</summary>
 [PublicAPI]
 public sealed class ReCaptchaOptions
 {
     /// <summary>
-    /// The base URL of the reCAPTCHA API. External endpoints require HTTPS; HTTP is accepted only for loopback
-    /// development and test servers. Defaults to the public Google endpoint.
+    /// Gets or sets the base URL of the reCAPTCHA API. External endpoints require HTTPS; HTTP is accepted only for
+    /// loopback development and test servers. Defaults to the public Google endpoint.
     /// </summary>
     public string VerifyBaseUrl { get; set; } = "https://www.google.com/";
 
-    /// <summary>The reCAPTCHA site key rendered into the client widget/script.</summary>
+    /// <summary>Gets or sets the reCAPTCHA site key rendered into the client widget or script.</summary>
     public required string SiteKey { get; set; }
 
-    /// <summary>The reCAPTCHA secret key used for server-side verification.</summary>
+    /// <summary>Gets or sets the reCAPTCHA secret key used for server-side verification.</summary>
     public required string SiteSecret { get; set; }
 }
 

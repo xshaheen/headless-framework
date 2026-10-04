@@ -20,15 +20,16 @@ public static class SetupBclCache
     extension(HeadlessCachingSetupBuilder setup)
     {
         /// <summary>
-        /// Adds a named Headless cache configured for raw <see cref="byte"/> array values and exposes it as
-        /// <see cref="IDistributedCache"/> for ASP.NET Core integrations such as session state. <see cref="byte"/>
-        /// arrays are the cache's native wire format (stored verbatim, never through a serializer), so the
-        /// <paramref name="configureCache"/> callback only selects the backing provider (for example
-        /// <c>UseRedis</c>).
+        /// Adds a named cache configured for raw byte array values and registers it as
+        /// <see cref="IDistributedCache"/> for ASP.NET Core integrations. Byte arrays represent the native wire format
+        /// and bypass serializers, so <paramref name="configureCache"/> configures the backing provider only.
         /// </summary>
-        /// <param name="setupAction">Configuration for the adapter options.</param>
-        /// <param name="configureCache">Configuration for the named Headless cache provider.</param>
-        /// <returns>The setup builder for chaining.</returns>
+        /// <param name="setupAction">The configuration delegate for adapter options.</param>
+        /// <param name="configureCache">The configuration delegate for the named cache provider.</param>
+        /// <returns>The setup builder for method chaining.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="setupAction"/> or <paramref name="configureCache"/> is <see langword="null"/>.</exception>
+        /// <exception cref="ArgumentException"><see cref="HeadlessDistributedCacheAdapterOptions.CacheName"/> is empty.</exception>
+        /// <exception cref="ArgumentOutOfRangeException"><see cref="HeadlessDistributedCacheAdapterOptions.DefaultAbsoluteExpiration"/> is negative or zero.</exception>
         public HeadlessCachingSetupBuilder UseBclCache(
             Action<HeadlessDistributedCacheAdapterOptions> setupAction,
             Action<HeadlessCacheInstanceBuilder> configureCache

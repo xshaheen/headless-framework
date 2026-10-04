@@ -7,25 +7,26 @@ using Headless.Checks;
 namespace Headless.Blobs;
 
 /// <summary>
-/// Identifies a single blob by its top-level <see cref="Container"/> (the provider root — S3 bucket, Azure container,
-/// SFTP/file-system root, Redis key prefix) and its container-relative <see cref="Path"/> (the object key, which may
+/// Identifies a single blob by its top-level <see cref="Container"/> (the provider root: S3 bucket, Azure container,
+/// file-system root, SFTP root, or Redis key prefix) and its container-relative <see cref="Path"/> (the object key, which may
 /// contain <c>/</c> separators).
 /// </summary>
 /// <remarks>
-/// The value is validated for path security — traversal sequences, absolute paths, control characters, and any segment
-/// ending in the reserved sidecar-metadata suffix — at construction, so every operation that accepts a
+/// The value is validated for path security (traversal sequences, absolute paths, control characters, and any segment
+/// ending in the reserved sidecar-metadata suffix) at construction, so every operation that accepts a
 /// <see cref="BlobLocation"/> is guarded before it reaches a provider. Provider-specific normalization
-/// (bucket/container naming rules, object-key normalization) is applied by the provider when it resolves the location,
-/// not by this type — normalization rules differ per backend.
+/// (bucket or container naming rules, object-key normalization) is applied by the provider when it resolves the location,
+/// not by this type. Normalization rules differ per backend.
 /// </remarks>
 [PublicAPI]
 public readonly record struct BlobLocation
 {
     /// <summary>Creates a location from a container and a container-relative object key.</summary>
-    /// <param name="container">The top-level container (bucket/container/root). Must not be null, empty, or whitespace.</param>
+    /// <param name="container">The top-level container (bucket, container, or root). Must not be null, empty, or whitespace.</param>
     /// <param name="path">The container-relative object key; may contain <c>/</c> separators. Must not be null, empty, or whitespace.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="container"/> or <paramref name="path"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">
-    /// Thrown when <paramref name="container"/> or <paramref name="path"/> is empty/whitespace, contains a
+    /// <paramref name="container"/> or <paramref name="path"/> is empty or whitespace, contains a
     /// path-traversal sequence, is an absolute path, contains control characters, or — for <paramref name="path"/> —
     /// contains a segment that collides with the reserved sidecar-metadata suffix.
     /// </exception>
@@ -47,23 +48,23 @@ public readonly record struct BlobLocation
     }
 
     /// <summary>Creates a location from a container and hierarchical path segments joined with <c>/</c>.</summary>
-    /// <param name="container">The top-level container (bucket/container/root).</param>
+    /// <param name="container">The top-level container (bucket, container, or root).</param>
     /// <param name="segments">Path segments joined with <c>/</c> to form the object key.</param>
     public BlobLocation(string container, params ReadOnlySpan<string> segments)
         : this(container: container, path: string.Join('/', segments)) { }
 
     /// <summary>Creates a location from hierarchical segments where the first segment is the container.</summary>
     /// <param name="segments">
-    /// The top-level container (bucket/container/root) followed by one or more path segments joined with <c>/</c> to
+    /// The top-level container (bucket, container, or root) followed by one or more path segments joined with <c>/</c> to
     /// form the object key.
     /// </param>
     /// <exception cref="ArgumentException">
-    /// Thrown when fewer than two segments are provided, or when the container or the resulting path fails validation.
+    /// Fewer than two segments are provided, or the container or the resulting path fails validation.
     /// </exception>
     /// <remarks>
-    /// Carries <see cref="OverloadResolutionPriorityAttribute"/>, so any all-string argument list binds here first;
-    /// the other constructors produce identical values and remain reachable via named arguments or an explicit
-    /// <c>(container, span)</c> argument pair. The delegation below uses named arguments for the same reason —
+    /// Carries <see cref="OverloadResolutionPriorityAttribute"/>, so any all-string argument list binds here first.
+    /// The other constructors produce identical values and remain reachable through named arguments or an explicit
+    /// <c>(container, span)</c> argument pair. The delegation uses named arguments for the same reason:
     /// a positional <c>this(string, string)</c> initializer would re-resolve to this constructor itself.
     /// </remarks>
     [OverloadResolutionPriority(1)]
@@ -78,7 +79,7 @@ public readonly record struct BlobLocation
             path: string.Join('/', segments[1..])
         ) { }
 
-    /// <summary>The top-level container (bucket/container/root) that holds the blob.</summary>
+    /// <summary>The top-level container (bucket, container, or root) that holds the blob.</summary>
     public string Container { get; }
 
     /// <summary>The container-relative object key; may contain <c>/</c> separators.</summary>

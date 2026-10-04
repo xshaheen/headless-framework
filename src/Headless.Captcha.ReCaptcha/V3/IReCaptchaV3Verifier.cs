@@ -7,19 +7,17 @@ using Microsoft.Extensions.Options;
 namespace Headless.Captcha;
 
 /// <summary>
-/// Verifies Google reCAPTCHA v3 tokens. reCAPTCHA v3 returns a score for each request without user friction; the
-/// typed <see cref="VerifyAsync(CaptchaVerifyRequest,CancellationToken)"/> overload exposes that score on
-/// <see cref="ReCaptchaV3VerifyResult"/>. Resolving the base <see cref="ICaptchaVerifier"/> yields pass/fail only.
+/// Verifies Google reCAPTCHA v3 tokens and provides score-based results.
 /// </summary>
 [PublicAPI]
 public interface IReCaptchaV3Verifier : ICaptchaVerifier
 {
-    /// <summary>Verifies the token, returning the reCAPTCHA v3 result (including the numeric score).</summary>
-    /// <param name="request">The verification request (token + optional remote IP).</param>
+    /// <summary>Verifies the token and returns the reCAPTCHA v3 verification result.</summary>
+    /// <param name="request">The verification request containing the response token and optional remote IP address.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>The reCAPTCHA v3 verification result.</returns>
-    /// <exception cref="HttpRequestException">The siteverify HTTP response was unsuccessful.</exception>
-    /// <exception cref="InvalidOperationException">The siteverify response body could not be deserialized.</exception>
+    /// <exception cref="HttpRequestException">The site verification HTTP response was unsuccessful.</exception>
+    /// <exception cref="InvalidOperationException">The site verification response body cannot be deserialized.</exception>
     new Task<ReCaptchaV3VerifyResult> VerifyAsync(
         CaptchaVerifyRequest request,
         CancellationToken cancellationToken = default
@@ -27,8 +25,7 @@ public interface IReCaptchaV3Verifier : ICaptchaVerifier
 }
 
 /// <summary>
-/// <see cref="IReCaptchaV3Verifier"/> over Google's <c>recaptcha/api/siteverify</c> endpoint. Registered per slot,
-/// so it resolves its named options and HTTP client by the registration name.
+/// Implements <see cref="IReCaptchaV3Verifier"/> for the Google reCAPTCHA v3 site verification endpoint.
 /// </summary>
 internal sealed class ReCaptchaSiteVerifyV3(
     string name,

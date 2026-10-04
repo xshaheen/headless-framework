@@ -4,12 +4,11 @@ using Headless.Checks;
 
 namespace Headless.Sequences;
 
-/// <summary>Text rules every key part (tenant id, name, partition) follows on every provider.</summary>
+/// <summary>Provides validation utilities for portable sequence key components across database providers.</summary>
 internal static class SequenceKeyText
 {
     /// <summary>
-    /// Whether every provider stores, compares, and returns <paramref name="value" /> unchanged, for validators that
-    /// report instead of throw. Call validation uses <see cref="Argument.IsPortableKey" /> directly.
+    /// Checks whether all database providers store, compare, and round-trip <paramref name="value" /> without alteration.
     /// </summary>
     public static bool IsPortable(string? value)
     {

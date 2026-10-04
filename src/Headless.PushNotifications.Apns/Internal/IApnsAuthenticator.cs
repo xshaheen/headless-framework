@@ -6,22 +6,22 @@ using Headless.Checks;
 
 namespace Headless.PushNotifications.Apns.Internal;
 
-/// <summary>How an instance authenticates to APNs, chosen once from its options when the service is built.</summary>
+/// <summary>
+/// Provides authentication credentials for APNs HTTP/2 requests.
+/// </summary>
 internal interface IApnsAuthenticator
 {
-    /// <summary>Refuses, before any request, a push type this authentication mode cannot send.</summary>
-    /// <param name="pushType">The notification's <c>apns-push-type</c> value.</param>
-    /// <param name="paramName">The caller's notification parameter, reported by the exception.</param>
-    /// <exception cref="ArgumentException">The mode cannot send <paramref name="pushType"/>.</exception>
+    /// <summary>Validates that the current authentication strategy supports the specified push type.</summary>
+    /// <param name="pushType">The APNs push type header value.</param>
+    /// <param name="paramName">The parameter name to report in exceptions.</param>
+    /// <exception cref="ArgumentException">The push type is not supported by this authentication mode.</exception>
     void EnsureSupported(string pushType, string paramName);
 
-    /// <summary>Returns the credentials for the next request.</summary>
+    /// <summary>Retrieves credentials for the next request.</summary>
     ValueTask<ApnsCredential> GetCredentialAsync(ApnsOptions options, CancellationToken cancellationToken);
 
     /// <summary>
-    /// Returns the credentials to retry with after APNs rejected <paramref name="rejected"/> as an expired provider
-    /// token, or <see langword="null"/> when the rejection is final: the mode has no token to renew, or no newer
-    /// token could be minted yet.
+    /// Attempts to refresh credentials following an authentication rejection.
     /// </summary>
     ValueTask<ApnsCredential?> RenewExpiredAsync(
         ApnsOptions options,
@@ -30,9 +30,9 @@ internal interface IApnsAuthenticator
     );
 }
 
-/// <summary>The credentials one APNs request carries.</summary>
-/// <param name="BearerToken">The provider token for the <c>authorization</c> header, or <see langword="null"/> to send none.</param>
-/// <param name="Generation">The provider token's mint generation; 0 when there is no token.</param>
+/// <summary>Represents HTTP authentication credentials for an APNs request.</summary>
+/// <param name="BearerToken">The bearer JWT provider token, or <see langword="null"/> when using certificate authentication.</param>
+/// <param name="Generation">The mint generation of the token.</param>
 internal readonly record struct ApnsCredential(string? BearerToken, long Generation)
 {
     public void Apply(HttpRequestMessage message)
@@ -44,7 +44,7 @@ internal readonly record struct ApnsCredential(string? BearerToken, long Generat
     }
 }
 
-/// <summary>Token mode: a cached ES256 provider token in the <c>authorization: bearer</c> header.</summary>
+/// <summary>Provides token-based authentication using bearer JWT tokens.</summary>
 internal sealed class ApnsTokenAuthenticator(ApnsTokenSource tokenSource) : IApnsAuthenticator
 {
     public void EnsureSupported(string pushType, string paramName) { }

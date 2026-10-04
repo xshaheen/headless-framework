@@ -5,17 +5,14 @@ using Headless.Checks;
 namespace Headless.Caching;
 
 /// <summary>
-/// Decorator over <see cref="ICache"/> that prefixes all keys with a dynamic scope,
-/// providing transparent cache isolation for any cache item type.
+/// Decorates an <see cref="ICache"/> instance by prefixing all keys with a dynamic scope prefix.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Safe to register as singleton — the scope provider is invoked on each
-/// operation, so the scope can change between calls (e.g. per-request tenant context).
+/// Safe to register as a singleton because the scope provider is invoked on each operation.
 /// </para>
 /// <para>
-/// The scope provider must return a non-null string. The resulting cache key format
-/// is <c>{scope}:{originalKey}</c>.
+/// The generated cache key format is <c>{scope}:{originalKey}</c>.
 /// </para>
 /// </remarks>
 [PublicAPI]
@@ -25,8 +22,8 @@ public sealed class ScopedCache<T> : ICache<T>
     private readonly Func<string> _scopeProvider;
 
     /// <summary>Initializes a new instance of the <see cref="ScopedCache{T}"/> class.</summary>
-    /// <param name="cache">The underlying cache.</param>
-    /// <param name="scopeProvider">The provider for the scope prefix.</param>
+    /// <param name="cache">The underlying cache instance.</param>
+    /// <param name="scopeProvider">The delegate providing the dynamic scope prefix.</param>
     public ScopedCache(ICache cache, Func<string> scopeProvider)
     {
         Argument.IsNotNull(cache);
@@ -40,10 +37,7 @@ public sealed class ScopedCache<T> : ICache<T>
     public CacheEntryOptions? DefaultEntryOptions => _cache.DefaultEntryOptions;
 
     /// <summary>
-    /// A scoped cache does not expose the underlying cache's event hub: it prefixes keys and the inner cache is a
-    /// shared singleton, so forwarding it would deliver other scopes' (and unscoped callers') events — with prefixed
-    /// keys — to a scoped subscriber. Subscribe on the underlying (unscoped) cache for events. Scope-filtered
-    /// projection is a possible future addition.
+    /// Gets a no-op event hub. Scoped cache instances do not forward underlying singleton cache events to prevent key leakages across scopes.
     /// </summary>
     public ICacheEvents Events => CacheEvents.NoOp;
 

@@ -4,15 +4,10 @@ namespace Headless.Generator.Primitives;
 
 // ReSharper disable once MemberCanBePrivate.Global
 /// <summary>
-/// DomainPrimitive validation result.
+/// Result of validating a domain primitive value.
 /// </summary>
 public readonly struct PrimitiveValidationResult : IEquatable<PrimitiveValidationResult>
 {
-    /// <summary>
-    /// Initializes a new instance of the <see cref="PrimitiveValidationResult"/> struct.
-    /// </summary>
-    /// <param name="isValid">A value indicating whether the validation result is valid.</param>
-    /// <param name="errorMessage">The value associated with the validation result.</param>
     private PrimitiveValidationResult(bool isValid, string? errorMessage)
     {
         IsValid = isValid;
@@ -20,40 +15,39 @@ public readonly struct PrimitiveValidationResult : IEquatable<PrimitiveValidatio
     }
 
     /// <summary>
-    /// Gets a value indicating whether the validation result is valid.
+    /// Gets a value indicating whether the validation succeeded.
     /// </summary>
     [MemberNotNullWhen(false, nameof(ErrorMessage))]
     public bool IsValid { get; }
 
     /// <summary>
-    /// Gets the value associated with the validation result.
+    /// Gets the error message when validation fails, or <see langword="null"/> when validation succeeds.
     /// </summary>
     public string? ErrorMessage { get; }
 
     /// <summary>
-    /// Creates a new instance of the <see cref="PrimitiveValidationResult"/> struct with a valid result.
+    /// Represents a successful validation result.
     /// </summary>
-    /// <returns>A new instance of the <see cref="PrimitiveValidationResult"/> struct with a valid result.</returns>
     public static readonly PrimitiveValidationResult Ok = new(isValid: true, errorMessage: null);
 
     /// <summary>
-    /// Creates a new instance of the <see cref="PrimitiveValidationResult"/> struct with an error result.
+    /// Creates a failed validation result with an error message.
     /// </summary>
-    /// <param name="error">The error message associated with the result.</param>
-    /// <returns>A new instance of the <see cref="PrimitiveValidationResult"/> struct with an error result.</returns>
+    /// <param name="error">The error message.</param>
+    /// <returns>A failed validation result.</returns>
     public static PrimitiveValidationResult Error(string error)
     {
         return new(isValid: false, error);
     }
 
     /// <summary>
-    /// Implicitly converts a string value to a <see cref="PrimitiveValidationResult"/> with an error result.
+    /// Implicitly converts an error string to a failed validation result.
     /// </summary>
-    /// <param name="value">The string value representing the error message.</param>
-    /// <returns>A <see cref="PrimitiveValidationResult"/> with an error result.</returns>
+    /// <param name="value">The error message.</param>
+    /// <returns>A failed validation result.</returns>
     public static implicit operator PrimitiveValidationResult(string value) => Error(value);
 
-    /// <summary>Converts a string value to a <see cref="PrimitiveValidationResult"/> with an error result.</summary>
+    /// <summary>Creates a failed validation result from an error message.</summary>
     public static PrimitiveValidationResult FromString(string value)
     {
         return Error(value);

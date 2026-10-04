@@ -5,110 +5,98 @@ using Headless.Primitives;
 namespace Headless.Caching;
 
 /// <summary>
-/// The typed, in-process event surface of a cache instance, exposed by <see cref="ICache.Events"/>. Each event is an
-/// <see cref="IAsyncEvent{TEvent}"/>; subscribe with <c>cache.Events.Hit.AddHandler(handler)</c> and unsubscribe by
-/// disposing the returned registration.
+/// Defines the in-process event surface of a cache instance exposed through <see cref="ICache.Events"/>.
 /// </summary>
 /// <remarks>
-/// <para>
-/// Handlers may be asynchronous (<c>AddHandler(async (args, ct) =&gt; …)</c>) or synchronous
-/// (<c>AddHandler(args =&gt; …)</c>). They run guarded — an exception from any handler is caught and logged and
-/// never propagates to the cache caller, nor stops the other handlers. Signals accepted by the bounded background
-/// dispatcher preserve FIFO order for the cache instance; producers never wait, and a signal is dropped when the
-/// buffer is full.
-/// </para>
-/// <para>
-/// There is no allocation when an event has no handler. The high-level events fire once per logical operation and carry
-/// the tier of the instance in <see cref="CacheEventArgs.Tier"/>; the low-level per-tier read events of a hybrid cache
-/// live on <see cref="Memory"/> and <see cref="Distributed"/> so they are not conflated with the aggregate outcome.
-/// In-memory evictions fire on <see cref="Eviction"/> of the concrete in-memory cache.
-/// </para>
+/// Handlers can be asynchronous or synchronous. Exceptions thrown by handlers are caught, logged,
+/// and do not propagate to cache callers. Signals accepted by the bounded background dispatcher
+/// preserve first-in-first-out order. When the buffer is full, new signals are dropped.
 /// </remarks>
 [PublicAPI]
 public interface ICacheEvents
 {
-    /// <summary>A value was served (fresh, or a fail-safe stale reserve — see <see cref="CacheHitEventArgs.IsStale"/>).</summary>
+    /// <summary>Occurs when a value is served, whether fresh or from a fail-safe reserve.</summary>
     IAsyncEvent<CacheHitEventArgs> Hit { get; }
 
-    /// <summary>A get-or-add resolved to a miss (the value was computed by the factory).</summary>
+    /// <summary>Occurs when a get-or-add operation resolves to a miss and executes the factory.</summary>
     IAsyncEvent<CacheKeyEventArgs> Miss { get; }
 
-    /// <summary>An entry was written.</summary>
+    /// <summary>Occurs when an entry is written.</summary>
     IAsyncEvent<CacheKeyEventArgs> Set { get; }
 
-    /// <summary>A single entry was removed.</summary>
+    /// <summary>Occurs when a single entry is removed.</summary>
     IAsyncEvent<CacheKeyEventArgs> Remove { get; }
 
-    /// <summary>An in-memory entry was evicted (in-memory tier only).</summary>
+    /// <summary>Occurs when an in-memory entry is evicted from the in-memory tier.</summary>
     IAsyncEvent<CacheEvictionEventArgs> Eviction { get; }
 
-    /// <summary>A factory execution completed successfully.</summary>
+    /// <summary>Occurs when factory execution completes successfully.</summary>
     IAsyncEvent<CacheFactoryEventArgs> FactorySuccess { get; }
 
-    /// <summary>A factory execution threw a non-timeout exception.</summary>
+    /// <summary>Occurs when factory execution throws an exception other than a timeout.</summary>
     IAsyncEvent<CacheFactoryEventArgs> FactoryError { get; }
 
-    /// <summary>A factory execution hit a soft or hard timeout.</summary>
+    /// <summary>Occurs when factory execution exceeds a soft or hard timeout.</summary>
     IAsyncEvent<CacheFactoryEventArgs> FactoryTimeout { get; }
 
-    /// <summary>The fail-safe mechanism served a stale reserve.</summary>
+    /// <summary>Occurs when the fail-safe mechanism serves a stale reserve.</summary>
     IAsyncEvent<CacheFailSafeEventArgs> FailSafeActivation { get; }
 
-    /// <summary>An eager refresh started because a fresh hit passed the eager-refresh threshold.</summary>
+    /// <summary>Occurs when eager refresh starts after a hit passes the eager refresh threshold.</summary>
     IAsyncEvent<CacheRefreshEventArgs> EagerRefresh { get; }
 
-    /// <summary>A background completion of a factory relegated after a soft timeout finished.</summary>
+    /// <summary>Occurs when a detached background factory finishes execution after a soft timeout.</summary>
     IAsyncEvent<CacheRefreshEventArgs> BackgroundRefresh { get; }
 
-    /// <summary>A bulk <c>RemoveAllAsync</c> completed.</summary>
+    /// <summary>Occurs when a bulk removal operation finishes.</summary>
     IAsyncEvent<CacheRemoveAllEventArgs> RemoveAll { get; }
 
-    /// <summary>A prefix-scoped removal completed.</summary>
+    /// <summary>Occurs when a prefix-scoped removal operation finishes.</summary>
     IAsyncEvent<CacheRemoveByPrefixEventArgs> RemoveByPrefix { get; }
 
-    /// <summary>A tag invalidation was issued.</summary>
+    /// <summary>Occurs when a tag invalidation is issued.</summary>
     IAsyncEvent<CacheRemoveByTagEventArgs> RemoveByTag { get; }
 
-    /// <summary>A logical whole-cache clear was issued.</summary>
+    /// <summary>Occurs when a logical cache clear is issued.</summary>
     IAsyncEvent<CacheEventArgs> Clear { get; }
 
-    /// <summary>A whole-cache flush was issued.</summary>
+    /// <summary>Occurs when a cache flush is issued.</summary>
     IAsyncEvent<CacheEventArgs> Flush { get; }
 
-    /// <summary>A hybrid invalidation was published to, or received from, peers (hybrid tier only).</summary>
+    /// <summary>Occurs when a hybrid invalidation is published to or received from peers.</summary>
     IAsyncEvent<CacheInvalidationEventArgs> Invalidation { get; }
 
-    /// <summary>The low-level memory (L1) tier events of a hybrid cache; <see langword="null"/> for single-tier caches.</summary>
+    /// <summary>Gets the memory tier events for a hybrid cache, or <see langword="null"/> for single-tier caches.</summary>
     ICacheMemoryEvents? Memory { get; }
 
-    /// <summary>The low-level distributed (L2) tier events of a hybrid cache; <see langword="null"/> for single-tier caches.</summary>
+    /// <summary>Gets the distributed tier events for a hybrid cache, or <see langword="null"/> for single-tier caches.</summary>
     ICacheDistributedEvents? Distributed { get; }
 
-    /// <summary>Whether any event on this hub (or its sub-hubs) currently has a handler. Used to short-circuit hot paths.</summary>
+    /// <summary>Gets a value indicating whether any event on this hub or child hubs has a registered handler.</summary>
     bool HasSubscribers { get; }
 
-    /// <summary>Current accepted, processed, dropped, and pending signal counts for the bounded dispatcher.</summary>
+    /// <summary>Gets the current accepted, processed, dropped, and pending signal counts for the dispatcher.</summary>
     CacheEventDispatchStatistics DispatchStatistics => default;
 }
 
-/// <summary>The low-level memory (L1) tier events of a hybrid cache.</summary>
+/// <summary>Defines memory tier events for a hybrid cache.</summary>
 [PublicAPI]
 public interface ICacheMemoryEvents
 {
-    /// <summary>The L1 store read hit.</summary>
+    /// <summary>Occurs when an L1 store read finds an entry.</summary>
     IAsyncEvent<CacheKeyEventArgs> Hit { get; }
 
-    /// <summary>The L1 store read missed.</summary>
+    /// <summary>Occurs when an L1 store read does not find an entry.</summary>
     IAsyncEvent<CacheKeyEventArgs> Miss { get; }
 }
 
-/// <summary>The low-level distributed (L2) tier events of a hybrid cache.</summary>
+/// <summary>Defines distributed tier events for a hybrid cache.</summary>
 [PublicAPI]
 public interface ICacheDistributedEvents
 {
-    /// <summary>The L2 store read hit.</summary>
+    /// <summary>Occurs when an L2 store read finds an entry.</summary>
     IAsyncEvent<CacheKeyEventArgs> Hit { get; }
 
-    /// <summary>The L2 store read missed.</summary>
+    /// <summary>Occurs when an L2 store read does not find an entry.</summary>
     IAsyncEvent<CacheKeyEventArgs> Miss { get; }
 }

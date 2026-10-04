@@ -5,26 +5,22 @@ using Headless.Checks;
 namespace Headless.PushNotifications;
 
 /// <summary>
-/// The provider-neutral shape rules of a <see cref="PushNotificationRequest"/>, shared so every provider accepts and
-/// rejects exactly the same requests before applying its own limits.
+/// Provides validation rules for <see cref="PushNotificationRequest"/> instances.
 /// </summary>
 internal static class PushNotificationRequestValidation
 {
     /// <summary>
-    /// The longest <see cref="PushNotificationRequest.TimeToLive"/> any provider accepts: 28 days, Firebase's maximum
-    /// Android time-to-live. The cap also keeps the providers' <c>now + time-to-live</c> expiry arithmetic from
-    /// overflowing.
+    /// Gets the maximum allowed <see cref="PushNotificationRequest.TimeToLive"/> across providers.
     /// </summary>
     internal static readonly TimeSpan MaxTimeToLive = TimeSpan.FromDays(28);
 
     /// <summary>
-    /// Throws unless <paramref name="request"/> is either a notification (non-blank title and body) or a data-only
-    /// message (no title or body, at least one data entry, no badge or sound), with a non-negative badge, a
-    /// time-to-live between zero and 28 days, and a defined priority.
+    /// Validates the structure and property constraints of a push notification request.
     /// </summary>
+    /// <param name="request">The request to validate.</param>
     /// <exception cref="ArgumentNullException"><paramref name="request"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentException">The request matches neither kind, or a field is out of range.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">The time-to-live is negative or longer than 28 days.</exception>
+    /// <exception cref="ArgumentException">The request matches neither notification nor data-only structure, or contains invalid property values.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">The time-to-live is negative or exceeds 28 days.</exception>
     public static void Validate(PushNotificationRequest request)
     {
         Argument.IsNotNull(request);
@@ -53,7 +49,7 @@ internal static class PushNotificationRequestValidation
 
         if (!IsDataOnly(request))
         {
-            // Setting either one makes the request a notification, which the user sees, so both must carry text.
+            // Both fields are required for visible notifications.
             Argument.IsNotNullOrWhiteSpace(request.Title);
             Argument.IsNotNullOrWhiteSpace(request.Body);
 
@@ -68,7 +64,7 @@ internal static class PushNotificationRequestValidation
             );
         }
 
-        // A data-only message shows nothing to the user, so a badge or sound would make it a visible notification.
+        // Data-only messages run in the background and cannot display visual or audible alerts.
         if (request.Badge is not null || request.Sound is not null)
         {
             throw new ArgumentException(
@@ -78,7 +74,9 @@ internal static class PushNotificationRequestValidation
         }
     }
 
-    /// <summary>Whether <paramref name="request"/> has neither a title nor a body.</summary>
+    /// <summary>Determines whether <paramref name="request"/> represents a data-only push notification.</summary>
+    /// <param name="request">The request to evaluate.</param>
+    /// <returns><see langword="true"/> when the request has no title and no body; otherwise, <see langword="false"/>.</returns>
     public static bool IsDataOnly(PushNotificationRequest request)
     {
         return request.Title is null && request.Body is null;

@@ -3,33 +3,30 @@
 namespace Headless.Sms;
 
 /// <summary>
-/// Resolves <see cref="ISmsSender"/> instances registered under a name through the setup builder — for
-/// example <c>setup.AddNamed("otp", i =&gt; i.UseTwilio(…))</c>. The default (unkeyed) sender is resolved
-/// directly as <see cref="ISmsSender"/> and is not exposed through this provider.
+/// Resolves named <see cref="ISmsSender"/> instances registered by the application.
 /// </summary>
 [PublicAPI]
 public interface ISmsSenderProvider
 {
-    /// <summary>Gets the SMS sender registered under <paramref name="name"/>.</summary>
+    /// <summary>Gets the SMS sender registered under the specified name.</summary>
     /// <param name="name">The sender instance name.</param>
     /// <returns>The resolved SMS sender.</returns>
-    /// <exception cref="ArgumentException">Thrown when <paramref name="name"/> is <see langword="null"/>, empty, or whitespace.</exception>
+    /// <exception cref="ArgumentException"><paramref name="name"/> is empty or contains only white space.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="name"/> is <see langword="null"/>.</exception>
     /// <exception cref="InvalidOperationException">
-    /// Thrown when no sender is registered under <paramref name="name"/>; the message points to
-    /// <c>AddNamed</c> and the provider <c>Use*</c> methods.
+    /// No sender is registered under <paramref name="name"/>.
     /// </exception>
     ISmsSender GetSender(string name);
 
-    /// <summary>Gets the SMS sender registered under <paramref name="name"/>, or <see langword="null"/> when none is registered.</summary>
+    /// <summary>Gets the SMS sender registered under the specified name, or <see langword="null"/> when not found.</summary>
     /// <param name="name">The sender instance name.</param>
-    /// <returns>The resolved SMS sender, or <see langword="null"/>.</returns>
-    /// <exception cref="ArgumentException">Thrown when <paramref name="name"/> is <see langword="null"/>, empty, or whitespace.</exception>
+    /// <returns>The resolved SMS sender, or <see langword="null"/> when not found.</returns>
+    /// <exception cref="ArgumentException"><paramref name="name"/> is empty or contains only white space.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="name"/> is <see langword="null"/>.</exception>
     ISmsSender? GetSenderOrNull(string name);
 
     /// <summary>
-    /// Gets the names of all registered named SMS sender instances. Use this to validate an externally-supplied
-    /// name before resolving it, rather than probing <see cref="GetSenderOrNull"/> and handling
-    /// <see langword="null"/>. The default (unnamed) sender is not included.
+    /// Gets the names of all registered named SMS sender instances.
     /// </summary>
     IReadOnlySet<string> RegisteredNames { get; }
 }

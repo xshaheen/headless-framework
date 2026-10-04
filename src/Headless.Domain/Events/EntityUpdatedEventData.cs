@@ -2,7 +2,7 @@
 
 namespace Headless.Domain;
 
-/// <summary>This type of event can be used to notify just after the update of an Entity.</summary>
-/// <typeparam name="TEntity">Entity type</typeparam>
+/// <summary>Carries domain event data raised immediately after an entity is updated.</summary>
+/// <typeparam name="TEntity">The entity type.</typeparam>
 [PublicAPI]
 public sealed class EntityUpdatedEventData<TEntity>(TEntity entity) : EntityEventData<TEntity>(entity);

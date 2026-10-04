@@ -7,7 +7,7 @@ namespace Headless.Blobs;
 /// <see cref="IPresignedUrlBlobStorage.GetPresignedUploadUrlAsync"/>.
 /// </summary>
 /// <remarks>
-/// A backend enforces the constraints it can and ignores the rest, so the same calling code runs on every provider.
+/// A backend enforces the constraints it supports and ignores the rest, so the same calling code runs on every provider.
 /// <see cref="IPresignedUrlBlobStorage.SupportedUploadConstraints"/> reports which ones hold: S3 and Cloudflare R2 sign
 /// <see cref="ContentType"/> into the URL but cannot bound the size of a presigned PUT, Azure SAS enforces neither, and
 /// the signed-URL endpoint in <c>Headless.Blobs.SignedUrlEndpoint</c> enforces both. When a limit matters and the

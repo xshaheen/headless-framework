@@ -2,10 +2,10 @@
 
 namespace Headless.Blobs;
 
-/// <summary>Describes a single blob to be uploaded as part of a <see cref="IBlobStorage.BulkUploadAsync"/> batch.</summary>
+/// <summary>Describes a single blob to upload as part of a <see cref="IBlobStorage.BulkUploadAsync"/> batch.</summary>
 /// <param name="Path">The container-relative object key for the blob.</param>
 /// <param name="Stream">The content to upload.</param>
-/// <param name="Metadata">Optional key/value metadata to store alongside the blob.</param>
+/// <param name="Metadata">Optional key and value metadata to store alongside the blob.</param>
 /// <param name="ContentType">
 /// The media type to record for the blob, or <see langword="null"/> to derive it from the extension of
 /// <paramref name="Path"/>. See <see cref="IBlobStorage.UploadAsync"/>.

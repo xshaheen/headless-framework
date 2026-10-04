@@ -2,6 +2,6 @@
 
 namespace Headless.Generator.Primitives;
 
-/// <summary>Represents an attribute applied to assemblies to indicate that they're part of a Primitives assembly.</summary>
+/// <summary>Identifies an assembly that contains generated primitive types.</summary>
 [AttributeUsage(AttributeTargets.Assembly)]
 public sealed class PrimitiveAssemblyAttribute : Attribute;

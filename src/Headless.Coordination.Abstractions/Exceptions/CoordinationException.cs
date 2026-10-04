@@ -2,7 +2,7 @@
 
 namespace Headless.Coordination;
 
-/// <summary>Base exception for coordination membership failures.</summary>
+/// <summary>Represents errors that occur during coordination membership operations.</summary>
 [PublicAPI]
 public abstract class CoordinationException : Exception
 {

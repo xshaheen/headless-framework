@@ -20,7 +20,7 @@ public static class Slug
     /// <remarks>
     /// The method normalizes the input to NFD before processing so that diacritic marks can be stripped as
     /// non-spacing marks. Replacement pairs in <see cref="SlugOptions.Replacements"/> are applied first (for
-    /// example <c>&amp;</c> becomes <c> and </c>). Characters outside
+    /// example, <c>&amp;</c> becomes <c> and </c>). Characters outside
     /// <see cref="SlugOptions.AllowedRanges"/> are collapsed to a single separator. The result is truncated
     /// to <see cref="SlugOptions.MaximumLength"/> characters, and trailing separators are removed unless
     /// <see cref="SlugOptions.CanEndWithSeparator"/> is <see langword="true"/>.

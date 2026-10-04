@@ -3,10 +3,12 @@
 namespace Headless.Coordination;
 
 /// <summary>
-/// Signal emitted when the local process loses its own membership identity — either because it was
-/// superseded by a higher incarnation, or because the store evicted the heartbeat. Handled before other
-/// events; see <see cref="CoordinationOptions.MembershipLostBehavior"/> for the configured response.
+/// Emitted when the local process loses its own membership identity because another node
+/// superseded the incarnation or the backing store evicted the heartbeat.
 /// </summary>
+/// <remarks>
+/// Handled before other events. See <see cref="CoordinationOptions.MembershipLostBehavior"/> for the configured response.
+/// </remarks>
 [PublicAPI]
 public sealed record LocalMembershipLost : NodeMembershipEvent
 {

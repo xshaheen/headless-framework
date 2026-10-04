@@ -11,21 +11,19 @@ using Microsoft.Extensions.Options;
 namespace Headless.Coordination;
 
 /// <summary>
-/// The relational membership store, written once against <see cref="ISqlDialect" />. Every time comparison runs on
-/// the database clock inside the statement that decides; the application clock never classifies a node.
+/// Provides a SQL-based membership store implementation using <see cref="ISqlDialect"/>.
+/// Evaluates node liveness against the database clock to avoid client clock skew.
 /// </summary>
 /// <remarks>
 /// <para>
-/// The generation row is the incarnation authority. Allocation is one upsert of it; registration and heartbeats first
-/// take its update-intent lock, so neither can interleave with an allocation that supersedes the incarnation they
-/// write for. A heartbeat is then one fenced liveness update whose <c>WHERE</c> carries the whole guard (current
-/// incarnation, not left, beat younger than the dead threshold), and it writes the later of the stored beat and the
-/// clock, so a database clock that steps back never moves a beat backwards.
+/// The generation record serves as the authority for incarnations. Incarnation allocation performs an upsert.
+/// Node registration and heartbeat operations acquire an update lock on the generation record to prevent concurrent
+/// overwrites. Heartbeat operations run a fenced update that validates the current incarnation, active state,
+/// and liveness deadline before advancing the timestamp.
 /// </para>
 /// <para>
-/// Every call runs on its own connection and READ COMMITTED transaction and retries a transient fault raised before
-/// the commit (<see cref="SqlAutonomousTransaction" />). The snapshot read prunes retention-expired rows first, in a transaction of its own whose failure is
-/// logged and left to the next read, so a lost prune never costs the read.
+/// Database operations execute within autonomous transactions with retry handling for transient errors.
+/// Snapshot reads prune expired retention rows in a separate transaction.
 /// </para>
 /// </remarks>
 #pragma warning disable CA2100 // SQL text is rendered once from validated identifiers and dialect statements; values are parameters.

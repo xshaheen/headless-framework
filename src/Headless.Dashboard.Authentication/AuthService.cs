@@ -7,12 +7,12 @@ using Microsoft.Extensions.Logging;
 namespace Headless.Dashboard.Authentication;
 
 /// <summary>
-/// Authentication service supporting 5 modes: None, Basic, ApiKey, Host, Custom.
+/// Authenticates requests using one of five modes: None, Basic, ApiKey, Host, or Custom.
 /// </summary>
 /// <remarks>
-/// The service does not re-validate <paramref name="config"/>: credential completeness is enforced
-/// once, by the FluentValidation validator wired into the options pipeline (validate-on-start) in
-/// <see cref="SetupDashboardAuthentication"/>, which every DI-resolved <see cref="AuthConfig"/> traverses.
+/// The service does not re-validate <paramref name="config"/>. Credential completeness is enforced
+/// by the FluentValidation validator registered in the options pipeline with validation on start in
+/// <see cref="SetupDashboardAuthentication"/>.
 /// </remarks>
 /// <param name="config">The authentication configuration, including mode and credentials.</param>
 /// <param name="logger">The logger used to record authentication errors.</param>

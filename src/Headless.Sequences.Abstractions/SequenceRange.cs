@@ -7,29 +7,28 @@ using Headless.Checks;
 namespace Headless.Sequences;
 
 /// <summary>
-/// A block of consecutive values taken by one <see cref="ISequenceGenerator.ReserveAsync" /> call:
-/// <see cref="First" />, then each following value <see cref="Step" /> apart, <see cref="Count" /> values in all.
+/// Represents a contiguous block of values allocated by <see cref="ISequenceGenerator.ReserveAsync" />.
 /// </summary>
 /// <remarks>
-/// A value rather than a list because a reserved block is always evenly spaced, so three numbers describe it
-/// completely. <see langword="foreach" /> over it uses a struct enumerator and allocates nothing.
+/// A sequence range is evenly spaced and represented by <see cref="First"/>, <see cref="Step"/>, and <see cref="Count"/>.
+/// Enumerating the range uses a struct enumerator that allocates no memory.
 /// </remarks>
 [PublicAPI]
 [StructLayout(LayoutKind.Auto)]
 public readonly record struct SequenceRange : IEnumerable<long>
 {
-    /// <summary>Creates a range.</summary>
+    /// <summary>Initializes a sequence range.</summary>
     /// <param name="first">The first value in the range.</param>
-    /// <param name="count">How many values the range holds; at least 1.</param>
-    /// <param name="step">The distance between two neighbouring values; greater than 0.</param>
+    /// <param name="count">The number of values in the range. Must be at least 1.</param>
+    /// <param name="step">The difference between adjacent values. Must be greater than 0.</param>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="count" /> or <paramref name="step" /> is not positive.</exception>
-    /// <exception cref="OverflowException">The last value would run past <see cref="long.MaxValue" />.</exception>
+    /// <exception cref="OverflowException">The end of the range exceeds <see cref="long.MaxValue" />.</exception>
     public SequenceRange(long first, int count, long step)
     {
         Argument.IsPositive(count);
         Argument.IsPositive(step);
 
-        // Checked once here so Last and the enumerator can use plain arithmetic.
+        // Validates overflow once during construction so Last and enumerators can use unchecked arithmetic.
         _ = checked(first + ((count - 1) * step));
 
         First = first;
@@ -40,24 +39,24 @@ public readonly record struct SequenceRange : IEnumerable<long>
     /// <summary>Gets the first value in the range.</summary>
     public long First { get; }
 
-    /// <summary>Gets how many values the range holds.</summary>
+    /// <summary>Gets the number of values in the range.</summary>
     public int Count { get; }
 
-    /// <summary>Gets the distance between two neighbouring values.</summary>
+    /// <summary>Gets the difference between adjacent values.</summary>
     public long Step { get; }
 
-    /// <summary>Gets the last value in the range, which is also the counter's value after the reservation.</summary>
+    /// <summary>Gets the last value in the range, representing the counter value after allocation.</summary>
     public long Last => First + ((Count - 1) * Step);
 
-    /// <summary>Returns an enumerator over the range's values, in ascending order.</summary>
-    /// <returns>A struct enumerator.</returns>
+    /// <summary>Returns an enumerator that iterates through the sequence values in ascending order.</summary>
+    /// <returns>A non-allocating struct enumerator.</returns>
     public Enumerator GetEnumerator() => new(this);
 
     IEnumerator<long> IEnumerable<long>.GetEnumerator() => GetEnumerator();
 
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
 
-    /// <summary>Enumerates the values of a <see cref="SequenceRange" /> without allocating.</summary>
+    /// <summary>Enumerates values in a <see cref="SequenceRange" /> without allocating heap memory.</summary>
     [StructLayout(LayoutKind.Auto)]
     public struct Enumerator : IEnumerator<long>
     {

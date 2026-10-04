@@ -6,8 +6,8 @@ using Microsoft.CodeAnalysis.Text;
 namespace Headless.SourceGenerators;
 
 /// <summary>
-/// A value-equal source location. A <see cref="Location"/> holds its <see cref="SyntaxTree"/>, so keeping one in a
-/// pipeline model would pin a compilation in memory and make equality depend on tree identity.
+/// Value-comparable source code location for caching in incremental generator pipelines.
+/// Avoids holding references to <see cref="SyntaxTree"/> instances.
 /// </summary>
 internal sealed record LocationInfo(string FilePath, TextSpan TextSpan, LinePositionSpan LineSpan)
 {
@@ -22,8 +22,8 @@ internal sealed record LocationInfo(string FilePath, TextSpan TextSpan, LinePosi
     }
 
     /// <summary>
-    /// Rebuilds the location against <paramref name="tree"/> when the compilation still has it, which keeps
-    /// <c>#pragma</c> suppression and IDE navigation working; otherwise falls back to a file-path location.
+    /// Recreates a <see cref="Location"/> instance using the provided syntax tree when available,
+    /// or falls back to an external file-path location.
     /// </summary>
     public Location ToLocation(SyntaxTree? tree) =>
         tree is null ? Location.Create(FilePath, TextSpan, LineSpan) : Location.Create(tree, TextSpan);
