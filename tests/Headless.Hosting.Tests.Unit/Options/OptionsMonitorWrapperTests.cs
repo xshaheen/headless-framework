@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Hosting.Options;
+using Headless.Hosting;
 
 namespace Tests.Options;
 

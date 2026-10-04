@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Hosting.Initialization;
+namespace Headless.Hosting;
 
 /// <summary>
 /// Defines the contract for a background service that signals when its initialization is complete.

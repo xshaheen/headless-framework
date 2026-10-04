@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.EntityFramework.Configurations;
+using Headless.EntityFramework;
 using Headless.Testing.Tests;
 
 namespace Tests;

@@ -2,7 +2,7 @@
 
 using Microsoft.Extensions.Logging;
 
-namespace Headless.Hosting.Seeders;
+namespace Headless.Hosting;
 
 internal static partial class SeederLoggerExtensions
 {

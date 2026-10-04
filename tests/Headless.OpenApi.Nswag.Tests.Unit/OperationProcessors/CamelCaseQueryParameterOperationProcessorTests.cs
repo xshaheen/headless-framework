@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Reflection;
-using Headless.OpenApi.Nswag.OperationProcessors;
+using Headless.OpenApi.Nswag;
 using Headless.Testing.Tests;
 using NSwag;
 using NSwag.Generation.Processors.Contexts;

@@ -2,8 +2,6 @@
 
 using System.Reflection;
 using Headless.OpenApi.Nswag;
-using Headless.OpenApi.Nswag.Models;
-using Headless.OpenApi.Nswag.OperationProcessors;
 using Headless.Primitives;
 using Headless.Testing.Tests;
 using NSwag;

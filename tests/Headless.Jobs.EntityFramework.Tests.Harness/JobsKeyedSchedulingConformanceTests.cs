@@ -3,7 +3,7 @@
 using System.Data.Common;
 using Headless.Abstractions;
 using Headless.Coordination;
-using Headless.Hosting.Initialization;
+using Headless.Hosting;
 using Headless.Jobs;
 using Headless.Jobs.Infrastructure;
 using Headless.Testing.Tests;

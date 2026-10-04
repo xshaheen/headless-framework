@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Text.Json.Serialization;
-using Headless.EntityFramework.Configurations;
+using Headless.EntityFramework;
 using Headless.Primitives;
 using Headless.Testing.Tests;
 

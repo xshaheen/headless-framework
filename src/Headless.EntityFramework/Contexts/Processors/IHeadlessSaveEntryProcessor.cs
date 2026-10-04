@@ -1,11 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.EntityFramework.Contexts;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 
-namespace Headless.EntityFramework.Contexts.Processors;
+namespace Headless.EntityFramework;
 
 /// <summary>
-/// Stage in the ordered processor chain run by <see cref="Runtime.HeadlessSaveChangesPipeline"/> against every
+/// Stage in the ordered processor chain run by <see cref="HeadlessSaveChangesPipeline"/> against every
 /// tracked entry before <c>SaveChanges</c> dispatches to the database.
 /// </summary>
 /// <remarks>

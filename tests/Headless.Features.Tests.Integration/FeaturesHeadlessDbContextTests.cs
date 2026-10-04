@@ -2,7 +2,7 @@
 
 using Headless.EntityFramework;
 using Headless.Features;
-using Headless.Hosting.Initialization;
+using Headless.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;

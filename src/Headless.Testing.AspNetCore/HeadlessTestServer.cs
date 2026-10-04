@@ -4,7 +4,7 @@ using System.Data.Common;
 using System.Net.Sockets;
 using System.Security.Claims;
 using Headless.Checks;
-using Headless.Hosting.Initialization;
+using Headless.Hosting;
 using Headless.Messaging.Testing;
 using Headless.Testing.DependencyInjection;
 using Microsoft.AspNetCore.Hosting;

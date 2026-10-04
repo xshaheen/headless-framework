@@ -5,7 +5,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.ExceptionServices;
 using Headless.AuditLog;
 using Headless.Domain;
-using Headless.EntityFramework.Contexts.Processors;
+using Headless.EntityFramework.Contexts;
 using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
@@ -13,7 +13,7 @@ using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace Headless.EntityFramework.Contexts.Runtime;
+namespace Headless.EntityFramework;
 
 /// <summary>
 /// Default <see cref="IHeadlessSaveChangesPipeline"/> implementation.

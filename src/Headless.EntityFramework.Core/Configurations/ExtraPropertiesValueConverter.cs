@@ -5,7 +5,7 @@ using Headless.Primitives;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
-namespace Headless.EntityFramework.Configurations;
+namespace Headless.EntityFramework;
 
 /// <summary>
 /// EF Core value converter that serializes <c>ExtraProperties</c> to a JSON string for storage and

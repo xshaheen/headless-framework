@@ -2,7 +2,7 @@
 
 using NJsonSchema.Generation;
 
-namespace Headless.OpenApi.Nswag.SchemaProcessors;
+namespace Headless.OpenApi.Nswag;
 
 /// <summary>
 /// NSwag schema processor that promotes non-nullable object properties to the OpenAPI

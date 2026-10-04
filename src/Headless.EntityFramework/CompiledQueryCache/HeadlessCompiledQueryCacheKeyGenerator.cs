@@ -4,7 +4,7 @@ using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Query;
 
-namespace Headless.EntityFramework.CompiledQueryCache;
+namespace Headless.EntityFramework;
 
 /// <summary>Adds the current tenant id to EF Core compiled query cache keys.</summary>
 [PublicAPI]

@@ -2,7 +2,6 @@
 
 using Headless.Checks;
 using Headless.Constants;
-using Headless.OpenApi.Nswag.Models;
 using Headless.Primitives;
 using Microsoft.AspNetCore.Http;
 using NJsonSchema;
@@ -11,7 +10,7 @@ using NSwag;
 using NSwag.Generation.Processors;
 using NSwag.Generation.Processors.Contexts;
 
-namespace Headless.OpenApi.Nswag.OperationProcessors;
+namespace Headless.OpenApi.Nswag;
 
 /// <summary>
 /// NSwag operation processor that attaches typed <c>ProblemDetails</c> schemas and concrete examples

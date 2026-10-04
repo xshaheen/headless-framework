@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Hosting.Seeders;
+namespace Headless.Hosting;
 
 /// <summary>Defines a unit of work that seeds the data store during startup or deployment.</summary>
 /// <remarks>

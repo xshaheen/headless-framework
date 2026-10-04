@@ -2,7 +2,7 @@
 
 using Headless.Primitives;
 
-namespace Headless.OpenApi.Nswag.Models;
+namespace Headless.OpenApi.Nswag;
 
 /// <summary>
 /// Problem details schema for 404 Entity Not Found responses.

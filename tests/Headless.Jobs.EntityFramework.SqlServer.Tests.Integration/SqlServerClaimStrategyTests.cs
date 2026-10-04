@@ -6,7 +6,7 @@ using System.Globalization;
 using System.Reflection;
 using Headless.Abstractions;
 using Headless.Coordination;
-using Headless.Hosting.Initialization;
+using Headless.Hosting;
 using Headless.Jobs;
 using Headless.Jobs.Infrastructure;
 using Headless.Messaging;

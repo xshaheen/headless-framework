@@ -2,7 +2,6 @@
 
 using FluentValidation;
 using FluentValidation.Validators;
-using Headless.OpenApi.Nswag.SchemaProcessors.FluentValidation.Models;
 using Headless.Text;
 using NJsonSchema;
 

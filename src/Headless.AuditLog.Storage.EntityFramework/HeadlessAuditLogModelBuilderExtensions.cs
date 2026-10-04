@@ -2,7 +2,7 @@
 
 using Headless.AuditLog;
 using Headless.Checks;
-using Headless.Hosting.Initialization;
+using Headless.Hosting;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.Options;
 

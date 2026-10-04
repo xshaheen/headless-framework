@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Hosting.Validation;
+namespace Headless.Hosting;
 
 /// <summary>
 /// A cheap correctness check that must pass before the host starts, such as an EF model that maps a feature's

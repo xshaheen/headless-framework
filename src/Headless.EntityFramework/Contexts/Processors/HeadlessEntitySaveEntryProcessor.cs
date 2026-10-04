@@ -2,6 +2,7 @@
 
 using Headless.Abstractions;
 using Headless.Domain;
+using Headless.EntityFramework.Contexts;
 using Headless.MultiTenancy;
 using Headless.Reflection;
 using Microsoft.EntityFrameworkCore;
@@ -9,7 +10,7 @@ using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.Extensions.Options;
 
-namespace Headless.EntityFramework.Contexts.Processors;
+namespace Headless.EntityFramework;
 
 /// <summary>
 /// Save-entry processor that enforces tenant write isolation and stamps infrastructure fields

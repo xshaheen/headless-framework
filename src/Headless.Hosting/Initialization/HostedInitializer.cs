@@ -2,7 +2,7 @@
 
 using Microsoft.Extensions.Hosting;
 
-namespace Headless.Hosting.Initialization;
+namespace Headless.Hosting;
 
 /// <summary>
 /// Base class for hosted-lifecycle initializers that need <see cref="IHostedLifecycleService"/> +

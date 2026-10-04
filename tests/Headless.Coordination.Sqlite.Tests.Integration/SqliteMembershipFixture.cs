@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Coordination;
-using Headless.Hosting.Initialization;
+using Headless.Hosting;
 using Headless.Sql;
 using Headless.Sql.Sqlite;
 using Microsoft.Data.Sqlite;

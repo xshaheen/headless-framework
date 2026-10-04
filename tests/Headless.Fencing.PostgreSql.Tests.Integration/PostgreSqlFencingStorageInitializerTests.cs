@@ -2,7 +2,7 @@
 
 using Headless.Fencing;
 using Headless.Fencing.PostgreSql;
-using Headless.Hosting.Initialization;
+using Headless.Hosting;
 using Headless.Hosting.Initialization.Schema;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;

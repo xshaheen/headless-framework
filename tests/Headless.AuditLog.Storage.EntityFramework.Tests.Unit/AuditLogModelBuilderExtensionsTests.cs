@@ -2,7 +2,7 @@
 
 using Headless.AuditLog;
 using Headless.EntityFramework;
-using Headless.Hosting.Initialization;
+using Headless.Hosting;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;

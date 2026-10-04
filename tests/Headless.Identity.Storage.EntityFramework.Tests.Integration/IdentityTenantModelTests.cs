@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.EntityFramework;
-using Headless.EntityFramework.Contexts.Runtime;
 using Headless.MultiTenancy;
 using Headless.Testing.Helpers;
 using Headless.Testing.Tests;

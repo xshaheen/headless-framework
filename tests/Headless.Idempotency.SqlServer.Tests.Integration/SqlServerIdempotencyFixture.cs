@@ -2,7 +2,7 @@
 
 using System.Data;
 using System.Data.Common;
-using Headless.Hosting.Initialization;
+using Headless.Hosting;
 using Headless.Idempotency;
 using Headless.Testing.Testcontainers;
 using Headless.UnitOfWork;

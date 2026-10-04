@@ -2,7 +2,7 @@
 
 using FluentValidation;
 using Headless.Constants;
-using Headless.Hosting.Initialization;
+using Headless.Hosting;
 
 namespace Headless.Sequences;
 

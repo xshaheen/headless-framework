@@ -4,7 +4,7 @@ using Headless.Abstractions;
 using Headless.Caching;
 using Headless.Checks;
 using Headless.Features.Resources;
-using Headless.Hosting.Initialization;
+using Headless.Hosting;
 using Headless.Messaging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;

@@ -2,7 +2,6 @@
 
 using System.Reflection;
 using Headless.Abstractions;
-using Headless.OpenApi.Nswag.OperationProcessors;
 using NJsonSchema;
 using NSwag;
 using NSwag.Generation.AspNetCore;

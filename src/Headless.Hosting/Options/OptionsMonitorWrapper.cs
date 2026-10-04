@@ -4,7 +4,7 @@ using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.Options;
 using Nito.Disposables;
 
-namespace Headless.Hosting.Options;
+namespace Headless.Hosting;
 
 /// <summary>An <see cref="IOptionsMonitor{TOptions}"/> that always returns a single fixed value.</summary>
 /// <remarks>
