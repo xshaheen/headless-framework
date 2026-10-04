@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Messaging.AzureServiceBus.Producer;
+namespace Headless.Messaging.AzureServiceBus;
 
 /// <summary>
 /// Describes a custom Azure Service Bus producer that publishes messages to a dedicated topic

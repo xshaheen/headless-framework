@@ -9,7 +9,6 @@ using Headless.Coordination;
 using Headless.Hosting;
 using Headless.Jobs;
 using Headless.Messaging;
-using Headless.Messaging.Configuration;
 using Headless.Messaging.Persistence;
 using Headless.MultiTenancy;
 using Headless.UnitOfWork;

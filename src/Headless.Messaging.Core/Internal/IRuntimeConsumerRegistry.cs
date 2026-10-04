@@ -3,8 +3,6 @@
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using Headless.Checks;
-using Headless.Messaging.Configuration;
-using Headless.Messaging.Messages;
 using Headless.Reliability;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;

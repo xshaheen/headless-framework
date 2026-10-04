@@ -2,7 +2,7 @@
 
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Headless.Messaging.Registration;
+namespace Headless.Messaging;
 
 /// <summary>
 /// Collects one module's Messaging registrations for <c>services.ConfigureMessaging(...)</c>. Every registration is

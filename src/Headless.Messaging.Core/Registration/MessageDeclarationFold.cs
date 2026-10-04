@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Messaging.Configuration;
-
-namespace Headless.Messaging.Registration;
+namespace Headless.Messaging;
 
 /// <summary>The message declarations of one host, folded into the contracts and names they establish.</summary>
 /// <param name="Contracts">One contract per declared message type, in first-declaration order.</param>

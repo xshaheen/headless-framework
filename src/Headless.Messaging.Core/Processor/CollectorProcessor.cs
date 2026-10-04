@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
-using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Persistence;
 using Microsoft.Extensions.DependencyInjection;

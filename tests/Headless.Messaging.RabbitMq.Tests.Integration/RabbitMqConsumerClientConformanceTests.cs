@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging;
-using Headless.Messaging.Configuration;
 using RabbitMQ.Client;
 using Tests.Capabilities;
 using MessagingHeaders = Headless.Messaging.Headers;
@@ -153,7 +152,7 @@ public sealed class RabbitMqConsumerClientConformanceTests(RabbitMqFixture fixtu
 
             // then - the listener fails so the core rebuilds the client with a new queue
             var act = () => listening.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
-            await act.Should().ThrowAsync<Headless.Messaging.Exceptions.BrokerConnectionException>();
+            await act.Should().ThrowAsync<Headless.Messaging.BrokerConnectionException>();
         }
         finally
         {

@@ -7,7 +7,6 @@ using Headless.Domain;
 using Headless.Features;
 using Headless.Hosting;
 using Headless.Messaging;
-using Headless.Messaging.Configuration;
 using Headless.MultiTenancy;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;

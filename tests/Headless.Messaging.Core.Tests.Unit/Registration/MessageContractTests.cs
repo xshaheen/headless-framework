@@ -2,7 +2,6 @@
 
 using Headless.Messaging;
 using Headless.Messaging.Internal;
-using Headless.Messaging.Registration;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Tests.Helpers;
@@ -355,7 +354,7 @@ public sealed class MessageContractTests : TestBase
 
     private static void _AddMessagingHost(
         IServiceCollection services,
-        Action<Headless.Messaging.Configuration.MessagingSetupBuilder>? configure = null
+        Action<Headless.Messaging.MessagingSetupBuilder>? configure = null
     )
     {
         services.AddHeadlessMessaging(setup =>

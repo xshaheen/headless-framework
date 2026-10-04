@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Messaging.Dashboard.NodeDiscovery;
 using k8s;
 using k8s.Models;
 using Microsoft.Extensions.Logging;

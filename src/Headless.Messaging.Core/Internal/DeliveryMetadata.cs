@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Runtime.InteropServices;
-using Headless.Messaging.Serialization;
 
 namespace Headless.Messaging.Internal;
 

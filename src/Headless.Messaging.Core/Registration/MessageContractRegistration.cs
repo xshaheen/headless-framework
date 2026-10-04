@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Messaging.Registration;
+namespace Headless.Messaging;
 
 internal static class MessageContractRegistration
 {

@@ -2,7 +2,7 @@
 
 using Headless.Checks;
 
-namespace Headless.Messaging.Configuration;
+namespace Headless.Messaging;
 
 /// <summary>
 /// Immutable declaration of the behavior a messaging provider can actually support.

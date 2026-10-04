@@ -2,11 +2,8 @@
 
 using Headless.Abstractions;
 using Headless.Messaging;
-using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
-using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
-using Headless.Messaging.Serialization;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;
@@ -583,10 +580,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
             );
     }
 
-    private static Headless.Messaging.Registration.MessageRegistration _Registration(
-        MessageLane lane,
-        DeliveryMode deliveryMode
-    ) =>
+    private static Headless.Messaging.MessageRegistration _Registration(MessageLane lane, DeliveryMode deliveryMode) =>
         new(
             typeof(DeliveryMessage),
             lane,
@@ -1279,7 +1273,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
         Func<IDeliveryCoordinationResolver?>? coordinationResolver = null,
         DeliveryMode defaultDeliveryMode = DeliveryMode.Durable,
         IPublishMiddleware<PublishContext>? middleware = null,
-        IEnumerable<Headless.Messaging.Registration.MessageRegistration>? registrations = null
+        IEnumerable<Headless.Messaging.MessageRegistration>? registrations = null
     )
     {
         timeProvider ??= TimeProvider.System;
@@ -1318,7 +1312,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
             registry,
             new NullCurrentTenant(),
             new MessageMetadataRegistry([
-                new Headless.Messaging.Registration.MessageRegistration(
+                new Headless.Messaging.MessageRegistration(
                     typeof(DeliveryMessage),
                     MessageLane.Bus,
                     "delivery.message",
@@ -1326,7 +1320,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
                     new Dictionary<Type, object>(),
                     []
                 ),
-                new Headless.Messaging.Registration.MessageRegistration(
+                new Headless.Messaging.MessageRegistration(
                     typeof(DeliveryMessage),
                     MessageLane.Queue,
                     "delivery.message",

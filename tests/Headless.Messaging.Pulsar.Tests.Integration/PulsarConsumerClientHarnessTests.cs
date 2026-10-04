@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging;
-using Headless.Messaging.Configuration;
 using Headless.Messaging.Pulsar;
 using Microsoft.Extensions.DependencyInjection;
 using Pulsar.Client.Common;

@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Messaging.CircuitBreaker;
+using Headless.Messaging;
 using Headless.Testing.Tests;
 
 #pragma warning disable MA0015 // Specify the parameter name in ArgumentException

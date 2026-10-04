@@ -1,10 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Messaging.CircuitBreaker;
-using Headless.Messaging.Configuration;
 using Headless.Reliability;
 
-namespace Headless.Messaging.Messages;
+namespace Headless.Messaging;
 
 /// <summary>
 /// Describes one subscribed consumer of one message: what the host's consumer clients subscribe to and how a delivery

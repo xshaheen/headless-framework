@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Messaging.Exceptions;
+namespace Headless.Messaging;
 
 /// <summary>
 /// Wraps the original exception thrown by a subscriber (<see cref="IConsume{TMessage}"/>) so the retry

@@ -6,7 +6,7 @@ using Headless.Messaging.Internal;
 using Headless.MultiTenancy;
 using Microsoft.Extensions.Logging;
 
-namespace Headless.Messaging.MultiTenancy;
+namespace Headless.Messaging;
 
 /// <summary>Restores <see cref="ICurrentTenant"/> from the resolved consume tenant for the inner handler.</summary>
 [PublicAPI]

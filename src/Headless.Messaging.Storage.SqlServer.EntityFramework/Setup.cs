@@ -3,11 +3,8 @@
 using System.Data;
 using System.Runtime.ExceptionServices;
 using Headless.Checks;
-using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
-using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
-using Headless.Messaging.Runtime;
 using Headless.Messaging.Storage.SqlServer;
 using Headless.Messaging.Storage.SqlServer.EntityFramework;
 using Headless.UnitOfWork;

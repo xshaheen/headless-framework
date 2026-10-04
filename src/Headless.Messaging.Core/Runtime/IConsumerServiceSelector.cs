@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Messaging.Messages;
-
-namespace Headless.Messaging.Runtime;
+namespace Headless.Messaging;
 
 /// <summary>
 /// Selects the consumer method(s) that should handle an incoming message. The default implementation

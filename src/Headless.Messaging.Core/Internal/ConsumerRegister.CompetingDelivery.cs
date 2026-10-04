@@ -1,14 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Messaging.CircuitBreaker;
-using Headless.Messaging.Configuration;
-using Headless.Messaging.Diagnostics;
-using Headless.Messaging.Exceptions;
-using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.RequestReply;
 using Headless.Messaging.Retry;
-using Headless.Messaging.Runtime;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;

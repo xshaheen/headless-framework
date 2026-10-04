@@ -2,7 +2,7 @@
 
 using Headless.Checks;
 
-namespace Headless.Messaging.Registration;
+namespace Headless.Messaging;
 
 /// <summary>
 /// The rules a message contract's name and version must meet. Declaration validates eagerly with them, and the messaging

@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Messaging.Monitoring;
+namespace Headless.Messaging;
 
 /// <summary>
 /// A dashboard-facing projection of a single message row from the published or received table.

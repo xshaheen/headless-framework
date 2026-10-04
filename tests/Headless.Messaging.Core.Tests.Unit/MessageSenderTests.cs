@@ -2,13 +2,9 @@
 
 using System.Diagnostics;
 using Headless.Messaging;
-using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
-using Headless.Messaging.Messages;
-using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Retry;
-using Headless.Messaging.Serialization;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;

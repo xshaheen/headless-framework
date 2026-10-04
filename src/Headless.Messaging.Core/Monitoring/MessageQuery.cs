@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Messaging.Messages;
-
-namespace Headless.Messaging.Monitoring;
+namespace Headless.Messaging;
 
 /// <summary>
 /// Filter and pagination parameters passed to <see cref="IMonitoringApi.GetMessagesAsync"/>.
@@ -23,7 +21,7 @@ public class MessageQuery
     /// <summary>Gets or sets an optional content substring filter applied to the serialized message body.</summary>
     public string? Content { get; set; }
 
-    /// <summary>Gets or sets an optional status filter (e.g., <see cref="Monitoring.StatusName.Succeeded"/>, <see cref="Monitoring.StatusName.Failed"/>).</summary>
+    /// <summary>Gets or sets an optional status filter (e.g., <see cref="StatusName.Succeeded"/>, <see cref="StatusName.Failed"/>).</summary>
     public StatusName? StatusName { get; set; }
 
     /// <summary>Gets or sets an optional delivery lane filter.</summary>

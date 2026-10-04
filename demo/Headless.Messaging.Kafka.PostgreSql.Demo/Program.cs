@@ -1,7 +1,6 @@
 using Demo;
 using Demo.Controllers;
 using Headless.Messaging;
-using Headless.Messaging.Configuration;
 using Headless.Messaging.Dashboard;
 using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;

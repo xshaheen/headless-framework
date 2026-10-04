@@ -3,8 +3,6 @@
 using System.Globalization;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
-using Headless.Messaging.Messages;
-using Headless.Messaging.Serialization;
 using Headless.Messaging.Testing;
 using Headless.Messaging.Testing.Internal;
 using Headless.Testing.Tests;

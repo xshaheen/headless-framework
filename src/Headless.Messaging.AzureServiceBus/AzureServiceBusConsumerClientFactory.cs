@@ -3,7 +3,6 @@
 using System.Collections.Concurrent;
 using Azure.Messaging.ServiceBus;
 using Headless.Checks;
-using Headless.Messaging.Exceptions;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;

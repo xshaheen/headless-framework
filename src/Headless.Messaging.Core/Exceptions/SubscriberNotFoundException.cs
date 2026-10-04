@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Messaging.Exceptions;
+namespace Headless.Messaging;
 
 /// <summary>
 /// Thrown when a message is dispatched to a subscriber that has not been registered with the consumer registry.

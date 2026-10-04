@@ -3,8 +3,6 @@
 using System.Data.Common;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
-using Headless.Messaging.Messages;
-using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;

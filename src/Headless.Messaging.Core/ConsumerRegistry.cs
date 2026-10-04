@@ -1,10 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Headless.Messaging.CircuitBreaker;
-using Headless.Messaging.Configuration;
-using Headless.Messaging.Registration;
-using Headless.Messaging.Runtime;
 
 namespace Headless.Messaging;
 

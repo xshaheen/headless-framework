@@ -2,9 +2,7 @@
 
 using System.Collections.Concurrent;
 using Headless.Messaging;
-using Headless.Messaging.Configuration;
 using Headless.Messaging.InMemory;
-using Headless.Messaging.Registration;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;

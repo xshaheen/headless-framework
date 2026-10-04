@@ -1,11 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
-using Headless.Messaging.Configuration;
-using Headless.Messaging.Exceptions;
 using Headless.Messaging.Internal;
-using Headless.Messaging.Messages;
-using Headless.Messaging.Serialization;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;

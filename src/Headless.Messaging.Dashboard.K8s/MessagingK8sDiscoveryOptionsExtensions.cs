@@ -1,9 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Headless.Messaging.Configuration;
-using Headless.Messaging.Dashboard.GatewayProxy;
-using Headless.Messaging.Dashboard.NodeDiscovery;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 

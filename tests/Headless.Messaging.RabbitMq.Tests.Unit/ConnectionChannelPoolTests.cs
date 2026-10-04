@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Messaging.Configuration;
+using Headless.Messaging;
 using Headless.Messaging.RabbitMq;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;

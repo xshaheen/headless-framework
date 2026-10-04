@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging;
-using Headless.Messaging.Registration;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -183,7 +182,7 @@ public sealed class ContributionOrderTests : TestBase
 
     private static void _AddMessagingHost(
         IServiceCollection services,
-        Action<Headless.Messaging.Configuration.MessagingSetupBuilder>? configure = null
+        Action<Headless.Messaging.MessagingSetupBuilder>? configure = null
     )
     {
         services.AddHeadlessMessaging(setup =>

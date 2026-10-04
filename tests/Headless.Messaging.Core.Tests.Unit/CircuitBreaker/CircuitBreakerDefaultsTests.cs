@@ -2,8 +2,7 @@
 
 using System.Net;
 using System.Net.Sockets;
-using Headless.Messaging.CircuitBreaker;
-using Headless.Messaging.Exceptions;
+using Headless.Messaging;
 using Headless.Testing.Tests;
 
 #pragma warning disable MA0015 // Specify the parameter name in ArgumentException

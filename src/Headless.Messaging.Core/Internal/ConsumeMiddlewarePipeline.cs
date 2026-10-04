@@ -5,8 +5,6 @@ using System.Linq.Expressions;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using FastExpressionCompiler;
-using Headless.Messaging.Configuration;
-using Headless.Messaging.Messages;
 using Headless.UnitOfWork;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;

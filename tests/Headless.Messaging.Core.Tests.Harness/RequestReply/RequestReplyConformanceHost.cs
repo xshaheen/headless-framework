@@ -3,8 +3,6 @@
 using System.Collections.Concurrent;
 using System.Diagnostics.Metrics;
 using Headless.Messaging;
-using Headless.Messaging.Configuration;
-using Headless.Messaging.Registration;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit.Sdk;

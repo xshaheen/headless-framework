@@ -2,7 +2,7 @@
 
 using Headless.Hosting;
 using Headless.Hosting.Initialization.Schema;
-using Headless.Messaging.Configuration;
+using Headless.Messaging;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Storage.SqlServer;
 using Headless.Sql.SqlServer;

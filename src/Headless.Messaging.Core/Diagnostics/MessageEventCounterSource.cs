@@ -2,7 +2,7 @@
 
 using System.Diagnostics.Tracing;
 
-namespace Headless.Messaging.Diagnostics;
+namespace Headless.Messaging;
 
 [EventSource(Name = MessageDiagnosticListenerNames.MetricListenerName)]
 public sealed class MessageEventCounterSource : EventSource

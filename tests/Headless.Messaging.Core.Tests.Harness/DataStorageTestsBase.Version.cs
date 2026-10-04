@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging;
-using Headless.Messaging.Messages;
-using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
 
 namespace Tests;
@@ -10,7 +8,7 @@ namespace Tests;
 public abstract partial class DataStorageTestsBase
 {
     /// <summary>
-    /// <see cref="Headless.Messaging.Configuration.MessagingOptions.Version"/> is only validated for length, so it can
+    /// <see cref="Headless.Messaging.MessagingOptions.Version"/> is only validated for length, so it can
     /// carry SQL metacharacters. Every statement must bind it as data: a quote must neither break the write nor
     /// change which rows the version-scoped reads find.
     /// </summary>

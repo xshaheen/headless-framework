@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Messaging.Monitoring;
+namespace Headless.Messaging;
 
 /// <summary>
 /// Aggregate statistics snapshot returned by <see cref="IMonitoringApi.GetStatisticsAsync"/>.

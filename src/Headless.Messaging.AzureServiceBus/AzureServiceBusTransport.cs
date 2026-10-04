@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging.AzureServiceBus.Helpers;
-using Headless.Messaging.AzureServiceBus.Producer;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
