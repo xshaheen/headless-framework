@@ -5,7 +5,7 @@ using Headless.Checks;
 using Headless.Constants;
 using Headless.MultiTenancy;
 
-namespace Headless.Testing.Helpers;
+namespace Headless.Testing;
 
 /// <summary>
 /// Two tenants, A and B, over one <see cref="ICurrentTenant"/>, with disposable scopes that make either tenant

@@ -2,7 +2,7 @@
 
 using NetTopologySuite.Geometries;
 
-namespace Headless.NetTopologySuite.Constants;
+namespace Headless.NetTopologySuite;
 
 /// <summary>
 /// Well-known geospatial constants for WGS84 / SRID 4326: coordinate bounds, shared
