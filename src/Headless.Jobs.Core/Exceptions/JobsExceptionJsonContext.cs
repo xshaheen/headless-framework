@@ -2,7 +2,7 @@
 
 using System.Text.Json.Serialization;
 
-namespace Headless.Jobs.Exceptions;
+namespace Headless.Jobs;
 
 /// <summary>
 /// Source-generated metadata for the exception detail Jobs persists with a failed job, so recording a failure needs

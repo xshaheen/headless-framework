@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Jobs.DashboardDtos;
+namespace Headless.Jobs;
 
 /// <summary>Dashboard projection of a single node's liveness, sourced from the coordination membership substrate.</summary>
 [PublicAPI]

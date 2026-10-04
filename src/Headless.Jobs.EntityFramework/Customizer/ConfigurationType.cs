@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Jobs.Customizer;
+namespace Headless.Jobs;
 
 public enum ConfigurationType
 {

@@ -3,9 +3,6 @@
 using Headless.Dashboard.Authentication;
 using Headless.Jobs;
 using Headless.Jobs.Endpoints;
-using Headless.Jobs.Entities;
-using Headless.Jobs.Interfaces;
-using Headless.Jobs.Interfaces.Managers;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;

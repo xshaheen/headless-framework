@@ -1,5 +1,3 @@
-using Headless.Jobs.Base;
-
 namespace Headless.Jobs.Dashboard.Jwt.Demo;
 
 // Demo jobs. Some intentionally fail to populate the dashboard with failed jobs and exception stack traces.

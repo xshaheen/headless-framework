@@ -3,8 +3,6 @@
 using System.Data;
 using System.Data.Common;
 using Headless.Jobs.BackgroundServices;
-using Headless.Jobs.Entities;
-using Headless.Jobs.Interfaces;
 using Headless.UnitOfWork;
 using Microsoft.Extensions.Logging;
 

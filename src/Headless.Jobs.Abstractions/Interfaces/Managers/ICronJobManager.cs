@@ -1,9 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Jobs.Entities;
-using Headless.Jobs.Models;
-
-namespace Headless.Jobs.Interfaces.Managers;
+namespace Headless.Jobs;
 
 /// <summary>
 /// Application-facing manager for cron job definitions: create, update, and delete a definition plus their
@@ -27,7 +24,7 @@ public interface ICronJobManager<TCronJob>
     /// enlisted caller's unit of work rolls back rather than completing without the job row. (Update/Delete keep
     /// returning <see cref="JobResult{TCronJob}" />; only the Add path throws.)
     /// </remarks>
-    /// <exception cref="Headless.Jobs.Exceptions.JobValidatorException">
+    /// <exception cref="Headless.Jobs.JobValidatorException">
     /// The job failed validation (unknown function or unparseable cron expression).
     /// </exception>
     /// <exception cref="InvalidOperationException">
@@ -45,8 +42,8 @@ public interface ICronJobManager<TCronJob>
     // Batch operations
 
     /// <inheritdoc cref="AddAsync" />
-    /// <exception cref="Headless.Jobs.Exceptions.JobValidatorException">
-    /// One or more jobs failed validation; <see cref="Headless.Jobs.Exceptions.JobValidatorException.Errors" /> lists each.
+    /// <exception cref="Headless.Jobs.JobValidatorException">
+    /// One or more jobs failed validation; <see cref="Headless.Jobs.JobValidatorException.Errors" /> lists each.
     /// </exception>
     Task<List<TCronJob>> AddBatchAsync(List<TCronJob> entities, CancellationToken cancellationToken = default);
 

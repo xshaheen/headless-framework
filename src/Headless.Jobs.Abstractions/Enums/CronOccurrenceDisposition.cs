@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Jobs.Enums;
+namespace Headless.Jobs;
 
 /// <summary>
 /// Why a cron occurrence row left the live lifecycle, expressed as a typed value the occupied-instant rule can read.

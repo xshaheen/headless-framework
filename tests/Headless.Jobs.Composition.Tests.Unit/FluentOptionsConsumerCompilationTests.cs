@@ -2,8 +2,6 @@
 
 using System.Globalization;
 using Headless.Jobs;
-using Headless.Jobs.Entities;
-using Headless.Jobs.Interfaces;
 using Headless.Messaging;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;
@@ -20,8 +18,6 @@ public sealed class FluentOptionsConsumerCompilationTests : TestBase
         using System.Threading;
         using System.Threading.Tasks;
         using Headless.Jobs;
-        using Headless.Jobs.Interfaces;
-        using Headless.Jobs.Models;
         using Headless.Messaging;
         using Headless.UnitOfWork;
         """;
@@ -289,7 +285,7 @@ public sealed class FluentOptionsConsumerCompilationTests : TestBase
                 """
                 JobsOptionsBuilder<TimeJobEntity, CronJobEntity> result = jobs
                     .ConfigureDefaults(p => p.WithRetries(3))
-                    .ConfigureJob<Request>(p => p.WithNodeDeathPolicy(Headless.Jobs.Enums.NodeDeathPolicy.MarkFailed))
+                    .ConfigureJob<Request>(p => p.WithNodeDeathPolicy(Headless.Jobs.NodeDeathPolicy.MarkFailed))
                     .Tune("orders.ship", job => job.Options(p => p.WithRetryIntervals(2, 5)))
                     .ConfigureDefaults(new JobOptions { Retries = 3 })
                     .ConfigureJob<Request>(new JobOptions { Retries = 5 })
@@ -374,9 +370,9 @@ public sealed class FluentOptionsConsumerCompilationTests : TestBase
                 }
             }
 
-            public sealed class CleanupJob : Headless.Jobs.Base.IJob
+            public sealed class CleanupJob : Headless.Jobs.IJob
             {
-                public ValueTask ExecuteAsync(Headless.Jobs.Base.JobContext context, CancellationToken cancellationToken) =>
+                public ValueTask ExecuteAsync(Headless.Jobs.JobContext context, CancellationToken cancellationToken) =>
                     ValueTask.CompletedTask;
             }
             """;
@@ -420,7 +416,7 @@ public sealed class FluentOptionsConsumerCompilationTests : TestBase
             .OriginalDefinition.TypeParameters.Single()
             .ConstraintTypes.Select(type => type.ToDisplayString())
             .Should()
-            .Equal("Headless.Jobs.Base.IJob");
+            .Equal("Headless.Jobs.IJob");
     }
 
     private static string _Assembly(string receiver) =>
@@ -445,9 +441,9 @@ public sealed class FluentOptionsConsumerCompilationTests : TestBase
                 }
             }
 
-            public sealed class CleanupJob : Headless.Jobs.Base.IJob
+            public sealed class CleanupJob : Headless.Jobs.IJob
             {
-                public ValueTask ExecuteAsync(Headless.Jobs.Base.JobContext context, CancellationToken cancellationToken) =>
+                public ValueTask ExecuteAsync(Headless.Jobs.JobContext context, CancellationToken cancellationToken) =>
                     ValueTask.CompletedTask;
             }
             """;
@@ -455,7 +451,7 @@ public sealed class FluentOptionsConsumerCompilationTests : TestBase
     private static string _ConfigurationSource(string statements) =>
         $$"""
             {{_Imports}}
-            using Headless.Jobs.Entities;
+            using Headless.Jobs;
             public sealed record Request;
             public static class Consumer
             {

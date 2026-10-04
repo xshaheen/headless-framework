@@ -1,9 +1,6 @@
 using Headless.Coordination;
 using Headless.Jobs;
 using Headless.Jobs.Api.Demo;
-using Headless.Jobs.DbContextFactory;
-using Headless.Jobs.Interfaces;
-using Headless.Jobs.Models;
 using Microsoft.EntityFrameworkCore;
 
 // Run a local Postgres first:

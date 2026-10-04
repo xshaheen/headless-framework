@@ -2,8 +2,6 @@
 
 using Headless.Hosting.Initialization;
 using Headless.Jobs;
-using Headless.Jobs.Customizer;
-using Headless.Jobs.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;

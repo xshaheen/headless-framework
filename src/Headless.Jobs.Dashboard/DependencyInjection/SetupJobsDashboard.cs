@@ -3,10 +3,7 @@
 using Headless.Coordination;
 using Headless.Dashboard.Authentication;
 using Headless.Jobs.Coordination;
-using Headless.Jobs.Entities;
-using Headless.Jobs.Hubs;
 using Headless.Jobs.Infrastructure.Dashboard;
-using Headless.Jobs.Interfaces;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;

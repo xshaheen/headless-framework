@@ -2,7 +2,6 @@
 
 using Headless.Abstractions;
 using Headless.Jobs;
-using Headless.Jobs.Models;
 using Headless.MultiTenancy;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;

@@ -843,9 +843,7 @@ using (currentTenant.Change(tenantId))
 Cron definitions and occurrences are always system-scope; scheduling a cron definition whose `TenantId` is non-null throws `JobValidatorException`. To run tenant-scoped recurring work, enumerate tenants in application code inside a system-scope cron handler and schedule one tenant-scoped time job per tenant with an **explicit** `JobOptions.TenantId`:
 
 ```csharp
-using Headless.Jobs.Base;
-using Headless.Jobs.Interfaces;
-using Headless.Jobs.Models;
+using Headless.Jobs;
 using Headless.MultiTenancy; // ITenantDirectory — only when a tenant catalog is configured
 
 // A tenant-scoped time job. When it runs, the execute middleware has already restored

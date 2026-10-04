@@ -5,7 +5,7 @@ using Headless.Hosting.Initialization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
-namespace Headless.Jobs.Configurations;
+namespace Headless.Jobs;
 
 /// <summary>
 /// The Jobs table names and the constraint and index names derived from them, in the casing of the database the

@@ -1,11 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Abstractions;
-using Headless.Jobs.Entities;
-using Headless.Jobs.Enums;
-using Headless.Jobs.Interfaces;
-using Headless.Jobs.Interfaces.Managers;
-using Headless.Jobs.Models;
+using Headless.Jobs;
 using Headless.MultiTenancy;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;

@@ -1,10 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Text.Json.Serialization;
-using Headless.Jobs.Entities.BaseEntity;
-using Headless.Jobs.Enums;
 
-namespace Headless.Jobs.Entities;
+namespace Headless.Jobs;
 
 /// <summary>
 /// Concrete self-referential time job entity for applications that do not need a custom entity type.

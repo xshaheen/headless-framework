@@ -2,8 +2,6 @@
 
 using System.Reflection;
 using Headless.Jobs;
-using Headless.Jobs.Enums;
-using Headless.Jobs.Models;
 
 namespace Tests.Chains;
 
@@ -246,9 +244,9 @@ public sealed class JobChainTests
 
     private sealed record NotifyRequest(int Id);
 
-    private sealed class CleanupJob : Headless.Jobs.Base.IJob
+    private sealed class CleanupJob : Headless.Jobs.IJob
     {
-        public ValueTask ExecuteAsync(Headless.Jobs.Base.JobContext context, CancellationToken cancellationToken) =>
+        public ValueTask ExecuteAsync(Headless.Jobs.JobContext context, CancellationToken cancellationToken) =>
             ValueTask.CompletedTask;
     }
 }

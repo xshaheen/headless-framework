@@ -1,9 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Jobs.Base;
-using Headless.Jobs.Models;
-
-namespace Headless.Jobs.Interfaces;
+namespace Headless.Jobs;
 
 /// <summary>
 /// Schedules generated <c>[Job]</c> classes without requiring callers to construct persistence entities or
@@ -343,7 +340,7 @@ public interface IJobScheduler
 
     /// <summary>Enqueues a job that takes no arguments for immediate execution and returns its persisted entity identifier.</summary>
     /// <typeparam name="TJob">The <c>[Job]</c> class to run.</typeparam>
-    /// <exception cref="Exceptions.JobFunctionNotFoundException"><typeparamref name="TJob"/> is not a registered job.</exception>
+    /// <exception cref="JobFunctionNotFoundException"><typeparamref name="TJob"/> is not a registered job.</exception>
     Task<Guid> EnqueueAsync<TJob>(CancellationToken cancellationToken = default)
         where TJob : IJob;
 
@@ -353,7 +350,7 @@ public interface IJobScheduler
 
     /// <summary>Schedules a one-shot run of a job that takes no arguments and returns its persisted entity identifier.</summary>
     /// <typeparam name="TJob">The <c>[Job]</c> class to run.</typeparam>
-    /// <exception cref="Exceptions.JobFunctionNotFoundException"><typeparamref name="TJob"/> is not a registered job.</exception>
+    /// <exception cref="JobFunctionNotFoundException"><typeparamref name="TJob"/> is not a registered job.</exception>
     Task<Guid> ScheduleAsync<TJob>(DateTimeOffset executionTime, CancellationToken cancellationToken = default)
         where TJob : IJob;
 

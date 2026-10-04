@@ -1,10 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Jobs;
-using Headless.Jobs.Base;
-using Headless.Jobs.Entities;
-using Headless.Jobs.Enums;
-using Headless.Jobs.Interfaces;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using GeneratedFixture = Headless.Jobs.GeneratedDiscoveryFixture;

@@ -2,7 +2,6 @@
 
 using System.ComponentModel;
 using Headless.Checks;
-using Headless.Jobs.Enums;
 
 namespace Headless.Jobs;
 

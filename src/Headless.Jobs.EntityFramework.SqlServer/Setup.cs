@@ -3,8 +3,6 @@
 using Headless.Abstractions;
 using Headless.Checks;
 using Headless.Coordination;
-using Headless.Jobs.Customizer;
-using Headless.Jobs.Entities;
 using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;

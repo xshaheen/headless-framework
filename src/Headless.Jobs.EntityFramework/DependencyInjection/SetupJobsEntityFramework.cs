@@ -2,7 +2,6 @@
 
 using FluentValidation;
 using Headless.Checks;
-using Headless.Jobs.Entities;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Jobs;

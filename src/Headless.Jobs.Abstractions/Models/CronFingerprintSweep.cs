@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Jobs.Models;
+namespace Headless.Jobs;
 
 /// <summary>One bounded, keyset-ordered read of cron definitions requiring fingerprint reconciliation.</summary>
 [PublicAPI]

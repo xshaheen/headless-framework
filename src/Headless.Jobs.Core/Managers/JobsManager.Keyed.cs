@@ -1,10 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Headless.Jobs.Entities;
-using Headless.Jobs.Enums;
-using Headless.Jobs.Models;
-using Headless.Jobs.MultiTenancy;
 using Headless.UnitOfWork;
 
 namespace Headless.Jobs.Managers;
@@ -35,7 +31,7 @@ internal sealed partial class JobsManager<TTimeJob, TCronJob>
         _ResolveChainTenants(entity);
         if (!_functionRegistry.Functions.ContainsKey(entity.Function))
         {
-            throw new Exceptions.JobValidatorException($"Cannot find a registered job with identity {entity.Function}");
+            throw new JobValidatorException($"Cannot find a registered job with identity {entity.Function}");
         }
 
         JobIntentFingerprint.Normalize(entity);

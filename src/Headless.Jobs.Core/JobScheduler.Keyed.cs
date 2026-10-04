@@ -1,10 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Headless.Jobs.Base;
-using Headless.Jobs.Entities;
-using Headless.Jobs.Enums;
-using Headless.Jobs.Models;
 using Headless.UnitOfWork;
 
 namespace Headless.Jobs;
@@ -122,7 +118,7 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob>
     )
     {
         Argument.IsNotNull(scope);
-        _ = _descriptorByName(scope.Function) ?? throw new Exceptions.JobFunctionNotFoundException(scope.Function);
+        _ = _descriptorByName(scope.Function) ?? throw new JobFunctionNotFoundException(scope.Function);
         return _timeJobManager.CancelKeyedAsync(scope, key, expectedGeneration, cancellationToken);
     }
 

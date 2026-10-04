@@ -3,10 +3,6 @@
 using System.Collections.Frozen;
 using Headless.Jobs;
 using Headless.Jobs.BackgroundServices;
-using Headless.Jobs.Base;
-using Headless.Jobs.Entities;
-using Headless.Jobs.Enums;
-using Headless.Jobs.Interfaces;
 using Headless.Reliability;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Configuration;
