@@ -1,9 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Hosting.Validation;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Headless.Hosting.DependencyInjection;
+namespace Headless.Hosting;
 
 /// <summary>
 /// Fails the host at startup when a service declared through <c>IServiceCollection.RequireSingletonService&lt;T&gt;(…)</c>

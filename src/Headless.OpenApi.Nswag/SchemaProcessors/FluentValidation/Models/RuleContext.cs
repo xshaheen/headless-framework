@@ -1,10 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation.Validators;
+using Headless.OpenApi.Nswag.SchemaProcessors.FluentValidation;
 using NJsonSchema;
 using NJsonSchema.Generation;
 
-namespace Headless.OpenApi.Nswag.SchemaProcessors.FluentValidation.Models;
+namespace Headless.OpenApi.Nswag;
 
 /// <summary>
 /// Carries the context passed to a <see cref="FluentValidationRule.Apply"/> delegate, giving it access

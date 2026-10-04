@@ -25,7 +25,7 @@ tags: [startup-validation, options-validation, validateonstart, ihostedlifecycle
 > `CommitInterceptorStartupGate<TContext>` (Tier-2 exception at the end of this document).
 
 > **Update (2026-09-25).** Tier-1 gates now share one mechanism: implement `IHeadlessStartupValidator`
-> (`Headless.Hosting.Validation`) and register it with `AddStartupValidator`. One runner executes every validator in
+> (`Headless.Hosting`) and register it with `AddStartupValidator`. One runner executes every validator in
 > `StartingAsync`, runs all of them even after a failure, rethrows a single failure unwrapped, and wraps two or more in
 > a `StartupValidationException`. The EF entity validators, `RequiredServiceStartupValidator`,
 > `HeadlessTenancyStartupValidator`, `HeadlessServiceDefaultsStartupValidator`, and `HybridCacheBestPracticesAdvisor`

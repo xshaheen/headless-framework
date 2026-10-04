@@ -368,7 +368,7 @@ Entity Framework Core storage implementation for feature management.
 
 - `setup.UseEntityFramework<TContext>()` — registers the EF storage provider via the `HeadlessFeaturesSetupBuilder`
 - `modelBuilder.AddHeadlessFeatures(DbContext context)` — applies entity configurations by resolving `FeaturesStorageOptions` from the context's service provider (no constructor injection required) and the naming style from `context.Database.ProviderName`: snake_case on Npgsql, PascalCase on every other provider
-- `modelBuilder.AddHeadlessFeatures(FeaturesStorageOptions options, StorageNamingStyle style)` — overload for when you already hold the options; pass `HeadlessStorageNaming.ForProvider(Database.ProviderName)` (namespace `Headless.Hosting.Initialization`) so the style matches the database
+- `modelBuilder.AddHeadlessFeatures(FeaturesStorageOptions options, StorageNamingStyle style)` — overload for when you already hold the options; pass `HeadlessStorageNaming.ForProvider(Database.ProviderName)` (namespace `Headless.Hosting`) so the style matches the database
 - EF repositories for `IFeatureValueRecordRepository` and `IFeatureDefinitionRecordRepository`
 - `FeatureValueRecord` maps `CreatedAt` / `UpdatedAt` audit columns (via `ConfigureHeadlessConvention`); the Headless audit save-processor stamps them on `SaveChanges`
 - `FeaturesStorageOptions` for schema and table-name configuration (shared with raw-DDL providers)

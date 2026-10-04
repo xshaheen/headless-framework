@@ -3,11 +3,12 @@
 using System.Linq.Expressions;
 using System.Runtime.CompilerServices;
 using Headless.Domain;
+using Headless.EntityFramework.Contexts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Metadata;
 
-namespace Headless.EntityFramework.Contexts.Processors;
+namespace Headless.EntityFramework;
 
 /// <summary>
 /// Terminal save-entry processor that enqueues lifecycle domain events

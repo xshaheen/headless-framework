@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
-using Headless.Hosting.Initialization;
+using Headless.Hosting;
 using Headless.Testing.AspNetCore;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;

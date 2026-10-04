@@ -4,7 +4,7 @@ using System.Reflection;
 using Namotion.Reflection;
 using NJsonSchema.Generation;
 
-namespace Headless.OpenApi.Nswag.SchemaProcessors;
+namespace Headless.OpenApi.Nswag;
 
 /// <summary>
 /// Fixes nullability detection for generic type parameters (e.g., <c>T?</c> in <c>DataEnvelope&lt;T&gt;</c>).

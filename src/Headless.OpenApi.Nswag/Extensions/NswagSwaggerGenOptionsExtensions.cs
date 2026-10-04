@@ -5,7 +5,7 @@ using Headless.Generator.Primitives;
 using Headless.Reflection;
 using NJsonSchema.Generation;
 
-namespace Headless.OpenApi.Nswag.Extensions;
+namespace Headless.OpenApi.Nswag;
 
 /// <summary>
 /// Extension methods on <c>JsonSchemaGeneratorSettings</c> for registering NJsonSchema type mappers

@@ -2,7 +2,7 @@
 
 using Headless.Checks;
 
-namespace Headless.Hosting.DependencyInjection;
+namespace Headless.Hosting;
 
 /// <summary>
 /// Thrown at host startup when one or more services declared through

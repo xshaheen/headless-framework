@@ -1,10 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Hosting.Seeders;
+using Headless.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Headless.EntityFramework.Seeders;
+namespace Headless.EntityFramework;
 
 /// <summary>
 /// An <c>ISeeder</c> that applies pending EF Core migrations for <typeparamref name="TDbContext"/> at

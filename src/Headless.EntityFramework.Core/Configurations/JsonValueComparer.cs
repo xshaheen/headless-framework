@@ -2,7 +2,7 @@
 
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 
-namespace Headless.EntityFramework.Configurations;
+namespace Headless.EntityFramework;
 
 /// <summary>
 /// Value comparer for a property stored as JSON text. Two values are equal when they serialize to the same JSON,

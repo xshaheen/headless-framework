@@ -3,7 +3,7 @@
 using System.Net;
 using System.Text;
 using Headless.Constants;
-using Headless.Hosting.Initialization;
+using Headless.Hosting;
 using Headless.Idempotency;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;

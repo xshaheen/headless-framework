@@ -3,7 +3,7 @@
 using System.Text.Json.Serialization.Metadata;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
-namespace Headless.EntityFramework.Configurations;
+namespace Headless.EntityFramework;
 
 /// <summary>
 /// Value converter that serializes/deserializes a property to/from JSON using reflection-based serialization.

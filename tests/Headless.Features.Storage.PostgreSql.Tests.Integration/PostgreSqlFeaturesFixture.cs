@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Features;
-using Headless.Hosting.Initialization;
+using Headless.Hosting;
 using Headless.Testing.Testcontainers;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;

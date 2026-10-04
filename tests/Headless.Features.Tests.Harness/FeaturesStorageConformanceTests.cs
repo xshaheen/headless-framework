@@ -5,7 +5,7 @@ using System.Data.Common;
 using Headless.Abstractions;
 using Headless.Caching;
 using Headless.Features;
-using Headless.Hosting.Initialization;
+using Headless.Hosting;
 using Headless.Hosting.Initialization.Schema;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
