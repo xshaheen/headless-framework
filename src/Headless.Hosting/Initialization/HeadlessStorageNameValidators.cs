@@ -2,7 +2,7 @@
 
 using System.Text;
 using Headless.Constants;
-using Headless.Hosting.Initialization;
+using Headless.Hosting;
 
 namespace FluentValidation;
 

@@ -3,7 +3,7 @@
 using System.Data;
 using System.Data.Common;
 using Headless.Fencing;
-using Headless.Hosting.Initialization;
+using Headless.Hosting;
 using Headless.Testing.Testcontainers;
 using Headless.UnitOfWork;
 using Microsoft.Data.SqlClient;

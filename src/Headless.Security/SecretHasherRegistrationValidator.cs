@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Hosting.Validation;
+using Headless.Hosting;
 
 namespace Headless.Security;
 

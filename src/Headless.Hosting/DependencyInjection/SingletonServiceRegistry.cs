@@ -2,7 +2,7 @@
 
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Headless.Hosting.DependencyInjection;
+namespace Headless.Hosting;
 
 /// <summary>
 /// Collects <c>RequireSingletonService</c> declarations together with the collection they were declared on. The

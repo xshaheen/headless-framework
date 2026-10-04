@@ -3,7 +3,7 @@
 using System.Runtime.ExceptionServices;
 using Microsoft.Extensions.Hosting;
 
-namespace Headless.Hosting.Validation;
+namespace Headless.Hosting;
 
 /// <summary>Runs every registered <see cref="IHeadlessStartupValidator" /> before any hosted service starts.</summary>
 /// <remarks>

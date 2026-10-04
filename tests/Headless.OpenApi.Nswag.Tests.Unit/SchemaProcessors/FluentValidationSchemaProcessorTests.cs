@@ -4,8 +4,6 @@ using System.Reflection;
 using FluentValidation;
 using FluentValidation.Validators;
 using Headless.OpenApi.Nswag;
-using Headless.OpenApi.Nswag.SchemaProcessors;
-using Headless.OpenApi.Nswag.SchemaProcessors.FluentValidation.Models;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Namotion.Reflection;

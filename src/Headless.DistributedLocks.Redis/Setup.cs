@@ -2,7 +2,7 @@
 
 using Headless.DistributedLocks.Redis;
 using Headless.DistributedLocks.Redis.Scripts;
-using Headless.Hosting.Initialization;
+using Headless.Hosting;
 using Headless.Messaging;
 using Headless.Redis;
 using Microsoft.Extensions.DependencyInjection;

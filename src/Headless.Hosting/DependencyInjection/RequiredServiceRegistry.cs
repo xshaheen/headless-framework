@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Hosting.DependencyInjection;
+namespace Headless.Hosting;
 
 /// <summary>
 /// Accumulates the requirements declared by <c>RequireRegisteredService</c> across every feature that

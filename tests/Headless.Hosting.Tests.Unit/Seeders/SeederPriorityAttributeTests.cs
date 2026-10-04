@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Hosting.Seeders;
+using Headless.Hosting;
 
 namespace Tests.Seeders;
 

@@ -2,7 +2,7 @@
 
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
-namespace Headless.EntityFramework.Configurations;
+namespace Headless.EntityFramework;
 
 /// <summary>
 /// EF Core value converter that normalizes <see cref="DateTime"/> values to <see cref="DateTimeKind.Utc"/> on both

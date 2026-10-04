@@ -88,7 +88,7 @@ builder.Services.AddHeadlessIdempotency(setup => setup.UsePostgreSql());
 builder.Services.AddHeadlessDistributedLocks(setup => setup.UsePostgreSql());
 ```
 
-Every relational feature creates its tables in the `headless` schema (`HeadlessStorageDefaults.Schema` in `Headless.Hosting.Initialization`) unless you configure another one. Each feature prefixes its object names with the feature, for example `fencing_leases` and `idempotency_records` on PostgreSQL or `FencingLeases` and `IdempotencyRecords` on SQL Server, so all features coexist in the one schema.
+Every relational feature creates its tables in the `headless` schema (`HeadlessStorageDefaults.Schema` in `Headless.Hosting`) unless you configure another one. Each feature prefixes its object names with the feature, for example `fencing_leases` and `idempotency_records` on PostgreSQL or `FencingLeases` and `IdempotencyRecords` on SQL Server, so all features coexist in the one schema.
 
 Names follow the database's convention: snake_case on PostgreSQL, PascalCase on SQL Server. A feature whose EF Core mapping takes a `StorageNamingStyle` expects the style of the database it targets; `HeadlessStorageNaming.ForProvider(Database.ProviderName)` (same namespace) returns it, so the mapping produces the same objects as the raw provider.
 

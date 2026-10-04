@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Caching;
-using Headless.Hosting.Initialization;
+using Headless.Hosting;
 using Headless.Security;
 using Headless.Settings;
 using Microsoft.EntityFrameworkCore;

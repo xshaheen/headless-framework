@@ -5,7 +5,4 @@ Headless.Api.Extensions
 Headless.Api.Extensions.Cookies
 Headless.Messaging.Exceptions
 Headless.NetTopologySuite.Constants
-Headless.OpenApi.Nswag.Extensions
-Headless.OpenApi.Nswag.Models
-Headless.OpenApi.Nswag.SchemaProcessors.FluentValidation.Models
 Headless.Testing.Helpers

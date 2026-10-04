@@ -1,8 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
+using Headless.OpenApi.Nswag.SchemaProcessors.FluentValidation;
 
-namespace Headless.OpenApi.Nswag.SchemaProcessors.FluentValidation.Models;
+namespace Headless.OpenApi.Nswag;
 
 /// <summary>
 /// Lightweight wrapper that pairs an <c>IValidationRule</c> with its enumeration position when iterating

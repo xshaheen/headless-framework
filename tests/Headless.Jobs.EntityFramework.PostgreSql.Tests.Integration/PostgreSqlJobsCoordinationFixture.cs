@@ -3,7 +3,7 @@
 using System.Data.Common;
 using System.Globalization;
 using Headless.Coordination;
-using Headless.Hosting.Initialization;
+using Headless.Hosting;
 using Headless.Jobs;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;

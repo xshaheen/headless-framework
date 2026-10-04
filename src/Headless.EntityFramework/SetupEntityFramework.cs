@@ -4,8 +4,6 @@ using Headless.Abstractions;
 using Headless.AuditLog;
 using Headless.Checks;
 using Headless.Domain;
-using Headless.EntityFramework.CompiledQueryCache;
-using Headless.EntityFramework.Contexts.Runtime;
 using Headless.MultiTenancy;
 using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;

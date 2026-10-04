@@ -1,4 +1,4 @@
-using Headless.Hosting.Seeders;
+using Headless.Hosting;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 

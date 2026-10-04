@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net;
-using Headless.Hosting.Options;
+using Headless.Hosting;
 using Headless.Sms;
 using Headless.Sms.Infobip;
 using Headless.Testing.Tests;

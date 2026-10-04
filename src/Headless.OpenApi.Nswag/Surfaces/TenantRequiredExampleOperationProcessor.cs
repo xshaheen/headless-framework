@@ -3,18 +3,17 @@
 using Headless.Api.MultiTenancy;
 using Headless.Checks;
 using Headless.Constants;
-using Headless.OpenApi.Nswag.OperationProcessors;
 using Microsoft.AspNetCore.Authorization;
 using NSwag;
 using NSwag.Generation.AspNetCore;
 using NSwag.Generation.Processors;
 using NSwag.Generation.Processors.Contexts;
 
-namespace Headless.OpenApi.Nswag.Surfaces;
+namespace Headless.OpenApi.Nswag;
 
 /// <summary>
 /// Documents the missing-tenant 403 alongside the standard permission-denied 403, allowing API documentation
-/// and generated SDKs to reflect both shapes permitted by <see cref="Models.ForbiddenProblemDetails"/>.
+/// and generated SDKs to reflect both shapes permitted by <see cref="ForbiddenProblemDetails"/>.
 /// </summary>
 public sealed class TenantRequiredExampleOperationProcessor : IOperationProcessor
 {

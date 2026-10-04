@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Hosting.Validation;
+namespace Headless.Hosting;
 
 /// <summary>
 /// Thrown at host startup when two or more <see cref="IHeadlessStartupValidator" /> instances fail. Each failure is one of

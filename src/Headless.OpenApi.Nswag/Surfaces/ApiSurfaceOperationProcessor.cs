@@ -5,7 +5,7 @@ using NSwag.Generation.AspNetCore;
 using NSwag.Generation.Processors;
 using NSwag.Generation.Processors.Contexts;
 
-namespace Headless.OpenApi.Nswag.Surfaces;
+namespace Headless.OpenApi.Nswag;
 
 internal sealed class ApiSurfaceOperationProcessor(string surfaceName) : IOperationProcessor
 {

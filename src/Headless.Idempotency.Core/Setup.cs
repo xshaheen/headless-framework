@@ -2,7 +2,7 @@
 
 using Headless.Abstractions;
 using Headless.Checks;
-using Headless.Hosting.Initialization;
+using Headless.Hosting;
 using Headless.MultiTenancy;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;

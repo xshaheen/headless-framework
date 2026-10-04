@@ -3,7 +3,7 @@
 using Headless.Serializer;
 using Headless.Serializer.Converters;
 
-namespace Headless.EntityFramework.Configurations;
+namespace Headless.EntityFramework;
 
 /// <summary>
 /// Shared, immutable <see cref="JsonSerializerOptions"/> used by the EF Core value converters in this

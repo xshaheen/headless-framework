@@ -2,7 +2,6 @@
 
 using System.Diagnostics.CodeAnalysis;
 using Headless.Checks;
-using Headless.EntityFramework.Contexts.Runtime;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;

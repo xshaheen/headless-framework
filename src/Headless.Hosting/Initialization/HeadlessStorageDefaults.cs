@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Hosting.Initialization;
+namespace Headless.Hosting;
 
 /// <summary>
 /// Storage defaults shared by every Headless relational feature, so an application that registers one connection

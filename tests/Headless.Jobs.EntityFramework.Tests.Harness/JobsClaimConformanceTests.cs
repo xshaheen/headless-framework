@@ -2,7 +2,7 @@
 
 using System.Collections.Concurrent;
 using System.Data.Common;
-using Headless.Hosting.Initialization;
+using Headless.Hosting;
 using Headless.Jobs;
 using Headless.Jobs.Infrastructure;
 using Headless.Testing.Tests;

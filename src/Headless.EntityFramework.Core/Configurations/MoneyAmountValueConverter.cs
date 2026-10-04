@@ -3,7 +3,7 @@
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using MoneyAmount = Headless.Primitives.MoneyAmount;
 
-namespace Headless.EntityFramework.Configurations;
+namespace Headless.EntityFramework;
 
 /// <summary>EF Core value converter that stores <c>MoneyAmount</c> as its underlying <see cref="decimal"/> value.</summary>
 [PublicAPI]
