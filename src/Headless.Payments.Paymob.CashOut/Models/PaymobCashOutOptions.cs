@@ -2,7 +2,7 @@
 
 using FluentValidation;
 
-namespace Headless.Payments.Paymob.CashOut.Models;
+namespace Headless.Payments.Paymob.CashOut;
 
 /// <summary>
 /// Configuration options for the Paymob CashOut integration.

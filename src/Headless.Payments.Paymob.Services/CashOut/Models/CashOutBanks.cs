@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Payments.Paymob.Services.CashOut.Models;
+namespace Headless.Payments.Paymob.Services.CashOut;
 
 /// <summary>
 /// Represents an Egyptian bank supported by the Paymob CashOut bank-card disbursement channel,

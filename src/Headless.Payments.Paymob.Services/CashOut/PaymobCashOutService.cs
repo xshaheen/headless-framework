@@ -3,9 +3,6 @@
 using System.Net;
 using Headless.Payments.Paymob.CashOut;
 using Headless.Payments.Paymob.CashOut.Internal;
-using Headless.Payments.Paymob.CashOut.Models;
-using Headless.Payments.Paymob.Services.CashOut.Requests;
-using Headless.Payments.Paymob.Services.CashOut.Responses;
 using Headless.Payments.Paymob.Services.Resources;
 using Headless.Primitives;
 using Microsoft.Extensions.Logging;

@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Payments.Paymob.Services.CashOut.Responses;
+namespace Headless.Payments.Paymob.Services.CashOut;
 
 /// <summary>
 /// Indicates the outcome state of a CashOut disbursement.

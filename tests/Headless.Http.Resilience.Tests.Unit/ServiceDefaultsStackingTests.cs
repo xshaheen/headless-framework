@@ -3,7 +3,6 @@
 using System.Net;
 using Headless.Api.ServiceDefaults;
 using Headless.Payments.Paymob.CashOut;
-using Headless.Payments.Paymob.CashOut.Models;
 using Headless.Sms;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Builder;

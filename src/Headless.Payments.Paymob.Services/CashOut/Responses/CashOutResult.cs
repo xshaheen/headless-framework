@@ -2,7 +2,7 @@
 
 using Headless.Primitives;
 
-namespace Headless.Payments.Paymob.Services.CashOut.Responses;
+namespace Headless.Payments.Paymob.Services.CashOut;
 
 /// <summary>
 /// The result of a CashOut disbursement operation, encapsulating either success data or an error

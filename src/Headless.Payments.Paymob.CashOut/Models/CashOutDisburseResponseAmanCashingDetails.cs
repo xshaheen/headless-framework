@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Payments.Paymob.CashOut.Models;
+namespace Headless.Payments.Paymob.CashOut;
 
 /// <summary>
 /// Aman kiosk-specific details returned inside a CashOut disbursement response when the

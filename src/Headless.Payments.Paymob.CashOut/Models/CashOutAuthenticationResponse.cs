@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Payments.Paymob.CashOut.Models;
+namespace Headless.Payments.Paymob.CashOut;
 
 /// <summary>
 /// The OAuth 2.0 token response returned by the Paymob CashOut authentication endpoint.

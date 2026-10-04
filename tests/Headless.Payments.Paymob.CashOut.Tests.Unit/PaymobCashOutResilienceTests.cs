@@ -2,7 +2,6 @@
 
 using System.Net;
 using Headless.Payments.Paymob.CashOut;
-using Headless.Payments.Paymob.CashOut.Models;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;

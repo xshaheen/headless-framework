@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Payments.Paymob.CashIn.Models.Callback;
+namespace Headless.Payments.Paymob.CashIn;
 
 /// <summary>
 /// A normalised view of the card used in a Paymob transaction, extracted from raw callback or

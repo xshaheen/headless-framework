@@ -3,7 +3,6 @@
 using System.Net;
 using AutoFixture;
 using Headless.Payments.Paymob.CashOut;
-using Headless.Payments.Paymob.CashOut.Models;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;

@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Payments.Paymob.CashIn.Models.Merchant;
-
-namespace Headless.Payments.Paymob.CashIn.Models.Auth;
+namespace Headless.Payments.Paymob.CashIn;
 
 /// <summary>
 /// The response from the Paymob authentication endpoint, containing the bearer token used to

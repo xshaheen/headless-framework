@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Payments.Paymob.CashOut.Models;
-
 namespace Headless.Payments.Paymob.CashOut.Internal;
 
 [JsonSourceGenerationOptions(

@@ -2,7 +2,7 @@
 
 using Headless.Checks;
 
-namespace Headless.Payments.Paymob.CashIn.Models.Orders;
+namespace Headless.Payments.Paymob.CashIn;
 
 /// <summary>
 /// Represents the request body for creating a Paymob Accept order. Use the static factory
