@@ -3,7 +3,7 @@
 using System.Data.Common;
 using System.Diagnostics;
 using Headless.Sql;
-using Headless.Testing.Helpers;
+using Headless.Testing;
 using Headless.Testing.Tests;
 
 namespace Tests;

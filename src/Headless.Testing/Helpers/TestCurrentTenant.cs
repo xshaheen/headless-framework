@@ -4,7 +4,7 @@ using Headless.Abstractions;
 using Headless.Core;
 using Headless.MultiTenancy;
 
-namespace Headless.Testing.Helpers;
+namespace Headless.Testing;
 
 /// <summary>
 /// Mutable <see cref="ICurrentTenant"/> implementation for tests. Allows direct assignment of

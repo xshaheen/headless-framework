@@ -3,7 +3,7 @@
 using System.Security.Claims;
 using Headless.Abstractions;
 using Headless.Permissions;
-using Headless.Testing.Helpers;
+using Headless.Testing;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Authorization;
 using NSubstitute.ExceptionExtensions;

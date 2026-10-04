@@ -3,7 +3,7 @@
 using System.Security.Claims;
 using Headless.Abstractions;
 using Headless.Settings;
-using Headless.Testing.Helpers;
+using Headless.Testing;
 using Headless.Testing.Tests;
 
 namespace Tests.ClientVisibility;

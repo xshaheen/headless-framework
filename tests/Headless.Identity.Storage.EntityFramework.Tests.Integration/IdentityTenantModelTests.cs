@@ -2,7 +2,7 @@
 
 using Headless.EntityFramework;
 using Headless.MultiTenancy;
-using Headless.Testing.Helpers;
+using Headless.Testing;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;

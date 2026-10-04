@@ -7,7 +7,7 @@ using Headless.Api.Idempotency;
 using Headless.Constants;
 using Headless.MultiTenancy;
 using Headless.Primitives;
-using Headless.Testing.Helpers;
+using Headless.Testing;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;

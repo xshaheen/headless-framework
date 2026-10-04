@@ -5,7 +5,7 @@ using Headless.Abstractions;
 using AccountId = Headless.Primitives.AccountId;
 using UserId = Headless.Primitives.UserId;
 
-namespace Headless.Testing.Helpers;
+namespace Headless.Testing;
 
 /// <summary>
 /// Mutable <see cref="ICurrentUser"/> implementation for tests. All properties are directly
