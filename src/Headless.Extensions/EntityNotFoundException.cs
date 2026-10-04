@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Exceptions;
+namespace Headless;
 
 /// <summary>An exception thrown when a requested entity cannot be found in the data store.</summary>
 [PublicAPI]

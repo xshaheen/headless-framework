@@ -2,7 +2,7 @@
 
 using System.Xml.Linq;
 using Dapper;
-using Headless.Abstractions;
+using Headless;
 using Headless.Coordination;
 using Headless.Hosting.Initialization.Schema;
 using Headless.Messaging;

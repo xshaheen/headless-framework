@@ -2,7 +2,7 @@
 
 using System.Diagnostics;
 
-namespace Headless.Core;
+namespace Headless;
 
 /// <summary>
 /// Convenience helpers for launching an external process from a file name and arguments, consuming its output either

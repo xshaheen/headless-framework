@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Constants;
-
 namespace Headless.Payments.Paymob.CashIn.Internal;
 
 internal sealed class AddEgyptZoneOffsetToUnspecifiedDateTimeJsonConverter : JsonConverter<DateTimeOffset>

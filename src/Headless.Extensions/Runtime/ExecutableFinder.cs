@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Core;
+namespace Headless;
 
 /// <summary>Resolves the absolute path of an executable by searching the <c>PATH</c> environment variable.</summary>
 [PublicAPI]

@@ -4,7 +4,7 @@ using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using Headless.Checks;
-using Headless.Constants;
+using Headless.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Abstractions;
 using Microsoft.AspNetCore.Routing;

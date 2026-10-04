@@ -31,7 +31,7 @@ namespace Headless.Api;
 /// <paramref name="matchTimeout"/> and <paramref name="maxHostLength"/> are test seams for forcing
 /// the timeout path, which the production guard combination (253-character cap plus the
 /// non-backtracking engine) makes unreachable through <see cref="GetIdentifier"/>; production
-/// construction takes the defaults (<see cref="Headless.Constants.RegexPatterns.MatchTimeout"/> and
+/// construction takes the defaults (<see cref="Headless.RegexPatterns.MatchTimeout"/> and
 /// the DNS limit).
 /// </para>
 /// </remarks>

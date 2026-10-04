@@ -1,9 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
-using Headless.Abstractions;
 using Headless.Checks;
-using Headless.Constants;
 using Headless.DistributedLocks.PostgreSql;
 using Headless.Hosting;
 using Headless.Sql;

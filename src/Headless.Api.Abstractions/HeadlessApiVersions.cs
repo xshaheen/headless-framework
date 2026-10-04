@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Constants;
+namespace Headless.Api;
 
 /// <summary>Well-known API version strings used across Headless API versioning.</summary>
 /// <remarks>

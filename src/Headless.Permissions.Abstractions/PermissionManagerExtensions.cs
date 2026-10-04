@@ -8,7 +8,7 @@ namespace Headless.Permissions;
 /// Convenience helpers over <see cref="IPermissionManager"/>: boolean grant checks and the common
 /// User/Role grant operations. The <c>Set</c>/<c>Grant</c>/<c>Revoke</c> helpers delegate to
 /// <see cref="IPermissionManager.SetAsync(string, string, string, bool, CancellationToken)"/> and therefore
-/// surface its <see cref="Headless.Exceptions.ConflictException"/> for undefined or disabled permissions and
+/// surface its <see cref="Headless.ConflictException"/> for undefined or disabled permissions and
 /// unknown providers.
 /// </summary>
 public static class PermissionManagerExtensions

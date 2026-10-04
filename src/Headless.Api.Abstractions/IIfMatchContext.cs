@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Abstractions;
+namespace Headless.Api;
 
 /// <summary>Provides the strong entity tag supplied through <c>If-Match</c> for the current request.</summary>
 [PublicAPI]

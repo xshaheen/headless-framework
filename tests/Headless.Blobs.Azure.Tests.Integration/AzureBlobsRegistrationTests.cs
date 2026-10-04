@@ -2,9 +2,9 @@
 
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
-using Headless.Abstractions;
 using Headless.Blobs;
 using Headless.Blobs.Azure;
+using Headless.IO;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 

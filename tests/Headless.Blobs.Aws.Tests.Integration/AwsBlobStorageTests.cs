@@ -3,9 +3,9 @@
 using Amazon;
 using Amazon.Runtime;
 using Amazon.S3;
-using Headless.Abstractions;
 using Headless.Blobs;
 using Headless.Blobs.Aws;
+using Headless.IO;
 using Microsoft.Extensions.Options;
 
 namespace Tests;

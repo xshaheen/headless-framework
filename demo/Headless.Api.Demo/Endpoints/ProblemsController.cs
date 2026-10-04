@@ -1,6 +1,6 @@
 using FluentValidation;
+using Headless;
 using Headless.Api;
-using Headless.Exceptions;
 using Headless.Primitives;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;

@@ -1,4 +1,4 @@
-using Headless.Abstractions;
+using Headless;
 using Headless.AuditLog;
 using Headless.Context;
 using Headless.EntityFramework;

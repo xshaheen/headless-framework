@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Text.Json;
-using Headless.Abstractions;
+using Headless.Api;
 using Headless.Testing.Tests;
 
 namespace Tests;

@@ -2,7 +2,7 @@
 
 using System.Data;
 using Dapper;
-using Headless.Abstractions;
+using Headless;
 using Headless.Coordination;
 using Headless.Messaging;
 using Headless.Messaging.Persistence;

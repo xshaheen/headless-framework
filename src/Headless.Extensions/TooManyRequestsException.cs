@@ -2,7 +2,7 @@
 
 using Headless.Primitives;
 
-namespace Headless.Exceptions;
+namespace Headless;
 
 /// <summary>
 /// An exception that signals the caller spent a rate or attempt budget and must wait before trying again. Maps to

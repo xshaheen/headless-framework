@@ -49,7 +49,7 @@ public static class TenantFeatureManagerExtensions
         /// <param name="name">The feature name.</param>
         /// <param name="tenantId">The tenant identifier to grant the feature to.</param>
         /// <exception cref="ArgumentNullException"><paramref name="name"/> is <see langword="null"/>.</exception>
-        /// <exception cref="Headless.Exceptions.ConflictException">The feature is not defined or the Tenant provider is read-only.</exception>
+        /// <exception cref="Headless.ConflictException">The feature is not defined or the Tenant provider is read-only.</exception>
         public Task GrantToTenantAsync(string name, string tenantId)
         {
             return featureManager.GrantAsync(name, FeatureValueProviderNames.Tenant, tenantId);
@@ -59,7 +59,7 @@ public static class TenantFeatureManagerExtensions
         /// <param name="name">The feature name.</param>
         /// <param name="tenantId">The tenant identifier to revoke the feature from.</param>
         /// <exception cref="ArgumentNullException"><paramref name="name"/> is <see langword="null"/>.</exception>
-        /// <exception cref="Headless.Exceptions.ConflictException">The feature is not defined or the Tenant provider is read-only.</exception>
+        /// <exception cref="Headless.ConflictException">The feature is not defined or the Tenant provider is read-only.</exception>
         public Task RevokeFromTenantAsync(string name, string tenantId)
         {
             return featureManager.RevokeAsync(name, FeatureValueProviderNames.Tenant, tenantId);

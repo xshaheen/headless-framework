@@ -2,7 +2,6 @@
 
 using Headless.AuditLog.PostgreSql;
 using Headless.Checks;
-using Headless.Constants;
 using Headless.Sql;
 using Headless.Sql.PostgreSql;
 using Microsoft.Extensions.Configuration;

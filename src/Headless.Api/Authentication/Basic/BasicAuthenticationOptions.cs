@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Constants;
+using Headless.Security;
 using Microsoft.AspNetCore.Authentication;
 
 namespace Headless.Api.Identity;

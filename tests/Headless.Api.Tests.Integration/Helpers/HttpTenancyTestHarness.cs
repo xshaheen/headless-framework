@@ -3,7 +3,7 @@
 using System.Collections.Concurrent;
 using System.Security.Claims;
 using System.Text.Encodings.Web;
-using Headless.Constants;
+using Headless.Security;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Configuration;

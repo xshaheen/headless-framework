@@ -2,7 +2,7 @@
 
 using Nito.Disposables;
 
-namespace Headless.Core;
+namespace Headless;
 
 /// <summary>
 /// A <see cref="TimeProvider"/> whose <see cref="LocalTimeZone"/> can be overridden at runtime via

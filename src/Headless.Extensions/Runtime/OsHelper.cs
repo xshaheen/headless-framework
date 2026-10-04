@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Core;
+namespace Headless;
 
 /// <summary>Helpers for querying the current operating system and platform conventions.</summary>
 [PublicAPI]

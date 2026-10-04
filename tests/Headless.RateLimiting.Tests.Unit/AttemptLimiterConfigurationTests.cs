@@ -56,7 +56,7 @@ public sealed class AttemptLimiterConfigurationTests : TestBase
         rejected.Remaining.Should().Be(0);
         rejected.ResetToken.Should().BeNull();
         act.Should()
-            .ThrowExactly<Headless.Exceptions.TooManyRequestsException>()
+            .ThrowExactly<Headless.TooManyRequestsException>()
             .Which.RetryAfter.Should()
             .Be(TimeSpan.FromSeconds(30));
     }

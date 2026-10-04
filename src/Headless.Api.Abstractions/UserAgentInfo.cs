@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Abstractions;
+namespace Headless.Api;
 
 /// <summary>Everything <see cref="IUserAgentParser"/> could identify from one <c>User-Agent</c> header value.</summary>
 /// <remarks>

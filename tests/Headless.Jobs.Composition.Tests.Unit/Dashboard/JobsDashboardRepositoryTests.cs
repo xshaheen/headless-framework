@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Linq.Expressions;
-using Headless.Abstractions;
+using Headless;
 using Headless.Jobs;
 using Headless.Jobs.Infrastructure.Dashboard;
 using Headless.Testing.Tests;

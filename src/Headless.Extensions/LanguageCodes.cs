@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Constants;
+namespace Headless;
 
 /// <summary>
 /// Two-letter language codes for the languages the framework recognizes. Most values are ISO 639-1

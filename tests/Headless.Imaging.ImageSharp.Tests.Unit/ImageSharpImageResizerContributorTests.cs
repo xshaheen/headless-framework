@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Constants;
+using Headless.Http;
 using Headless.Imaging;
 using Headless.Imaging.ImageSharp;
 using Headless.Testing.Tests;

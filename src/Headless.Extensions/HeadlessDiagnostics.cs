@@ -4,7 +4,7 @@ using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using System.Reflection;
 
-namespace Headless.Constants;
+namespace Headless;
 
 /// <summary>
 /// Factory for Headless framework diagnostic primitives. Each package should call

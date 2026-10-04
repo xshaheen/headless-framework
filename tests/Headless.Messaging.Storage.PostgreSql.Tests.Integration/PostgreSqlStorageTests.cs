@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Dapper;
-using Headless.Abstractions;
+using Headless;
 using Headless.Hosting.Initialization.Schema;
 using Headless.Messaging;
 using Headless.Messaging.Internal;

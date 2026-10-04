@@ -1,9 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Abstractions;
 using Headless.Api;
-using Headless.Constants;
 using Headless.Context;
+using Headless.Http;
 using Headless.MultiTenancy;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Http;

@@ -2,7 +2,6 @@
 
 using Headless.Api;
 using Headless.Checks;
-using Headless.Constants;
 using Microsoft.AspNetCore.Authorization;
 using NSwag;
 using NSwag.Generation.AspNetCore;

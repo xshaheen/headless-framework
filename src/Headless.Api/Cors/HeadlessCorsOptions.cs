@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
-using Headless.Constants;
+using Headless.Http;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Net.Http.Headers;
 

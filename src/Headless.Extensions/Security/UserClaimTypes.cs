@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Constants;
+namespace Headless.Security;
 
 /// <summary>
 /// Framework user/profile claim type names (the <c>snake_case</c> claim keys carried in identity

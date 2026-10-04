@@ -60,7 +60,7 @@ public interface IPermissionManager
     /// (<see langword="false"/>) a permission for a provider target, identified by <paramref name="providerName"/>
     /// (e.g. <c>"User"</c>/<c>"Role"</c>) and <paramref name="providerKey"/> (the user id, role name, etc.).
     /// </summary>
-    /// <exception cref="Headless.Exceptions.ConflictException">
+    /// <exception cref="Headless.ConflictException">
     /// Thrown when the permission is not defined, is disabled, restricts its providers and does not allow
     /// <paramref name="providerName"/>, or when no grant provider with that name is registered.
     /// </exception>
@@ -77,7 +77,7 @@ public interface IPermissionManager
     /// grant/prohibit state to every name. The change is rejected as a whole (no partial application) if any name
     /// fails validation.
     /// </summary>
-    /// <exception cref="Headless.Exceptions.ConflictException">
+    /// <exception cref="Headless.ConflictException">
     /// Thrown when any permission is not defined, is disabled, restricts its providers and does not allow
     /// <paramref name="providerName"/>, or when no grant provider with that name is registered.
     /// </exception>

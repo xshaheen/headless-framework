@@ -3,9 +3,9 @@
 // Registration-shape and options-validation tests for UseS3Compatible. No S3 I/O is performed, so no Docker is
 // required: AmazonS3Client construction is lazy and every request is deferred to calls these tests never make.
 
-using Headless.Abstractions;
 using Headless.Blobs;
 using Headless.Blobs.Aws;
+using Headless.IO;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;

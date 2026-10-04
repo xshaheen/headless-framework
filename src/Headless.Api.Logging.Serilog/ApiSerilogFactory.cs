@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Constants;
+using Headless.Http;
 using Headless.Logging.Enrichers;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Configuration;

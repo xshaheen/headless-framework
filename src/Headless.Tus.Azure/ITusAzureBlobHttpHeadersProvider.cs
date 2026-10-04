@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Azure.Storage.Blobs.Models;
-using Headless.Constants;
+using Headless.Http;
 
 namespace Headless.Tus;
 

@@ -2,7 +2,7 @@
 
 using System.Security.Cryptography;
 using Headless.Checks;
-using Headless.Constants;
+using Headless.Http;
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http;

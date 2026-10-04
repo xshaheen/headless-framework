@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Core;
+namespace Headless;
 
 /// <summary>Helpers for working with strings and their byte representations.</summary>
 [PublicAPI]

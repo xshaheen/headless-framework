@@ -2,7 +2,7 @@
 
 using Headless.Primitives;
 
-namespace Headless.Exceptions;
+namespace Headless;
 
 /// <summary>
 /// An exception that signals a business conflict (for example a uniqueness or invariant violation), carrying one

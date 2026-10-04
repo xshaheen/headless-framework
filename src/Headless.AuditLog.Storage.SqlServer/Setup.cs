@@ -2,7 +2,6 @@
 
 using Headless.AuditLog.SqlServer;
 using Headless.Checks;
-using Headless.Constants;
 using Headless.Sql;
 using Headless.Sql.SqlServer;
 using Microsoft.Extensions.Configuration;

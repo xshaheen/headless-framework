@@ -3,7 +3,6 @@
 using System.Data.Common;
 using System.Globalization;
 using Headless.Checks;
-using Headless.Constants;
 using Headless.Hosting.Initialization.Schema;
 using Npgsql;
 

@@ -2,7 +2,7 @@
 
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
-using Headless.Abstractions;
+using Headless;
 using Headless.Hosting;
 using Headless.Jobs;
 using Headless.Jobs.Instrumentation;

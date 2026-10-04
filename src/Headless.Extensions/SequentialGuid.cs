@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Core;
+namespace Headless;
 
 /// <summary>
 /// Creates GUIDs that stay sequential in SQL Server's <c>uniqueidentifier</c> sort order. For byte-ordered

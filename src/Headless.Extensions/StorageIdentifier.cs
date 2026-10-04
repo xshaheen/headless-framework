@@ -2,7 +2,7 @@
 
 using System.Text.RegularExpressions;
 
-namespace Headless.Constants;
+namespace Headless;
 
 /// <summary>
 /// Database identifier rules (validation pattern and maximum length) for the supported SQL

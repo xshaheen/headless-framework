@@ -3,10 +3,10 @@
 using Azure;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
-using Headless.Abstractions;
 using Headless.Blobs;
 using Headless.Blobs.Azure;
 using Headless.Blobs.Internal;
+using Headless.IO;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 

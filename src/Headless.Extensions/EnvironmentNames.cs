@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Constants;
+namespace Headless;
 
 /// <summary>
 /// Well-known hosting environment names. <see cref="Production"/>, <see cref="Staging"/>, and

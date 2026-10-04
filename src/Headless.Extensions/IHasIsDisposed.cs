@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Core;
+namespace Headless;
 
 /// <summary>Exposes whether an object has already been disposed.</summary>
 public interface IHasIsDisposed

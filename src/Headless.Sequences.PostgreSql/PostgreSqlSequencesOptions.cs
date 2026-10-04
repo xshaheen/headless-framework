@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Constants;
-
 namespace Headless.Sequences.PostgreSql;
 
 /// <summary>Connection, command, and table options for the PostgreSQL sequence provider.</summary>

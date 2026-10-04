@@ -2,7 +2,6 @@
 
 using System.Collections.Concurrent;
 using System.Data.Common;
-using Headless.Abstractions;
 using Headless.Coordination;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Persistence;

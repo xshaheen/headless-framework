@@ -8,8 +8,8 @@
 using Amazon;
 using Amazon.Extensions.NETCore.Setup;
 using Amazon.Runtime;
-using Headless.Abstractions;
 using Headless.Blobs;
+using Headless.IO;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 

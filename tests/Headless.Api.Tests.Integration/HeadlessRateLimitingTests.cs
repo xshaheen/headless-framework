@@ -2,9 +2,9 @@
 
 using System.Net;
 using System.Threading.RateLimiting;
+using Headless;
 using Headless.Api.Resources;
 using Headless.Api.ServiceDefaults;
-using Headless.Constants;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;

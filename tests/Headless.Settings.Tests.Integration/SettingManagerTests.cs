@@ -1,4 +1,4 @@
-using Headless.Exceptions;
+using Headless;
 using Headless.Settings;
 using Headless.Settings.Resources;
 using Microsoft.Extensions.DependencyInjection;

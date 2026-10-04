@@ -3,7 +3,7 @@
 using System.Data;
 using System.Data.Common;
 using System.Linq.Expressions;
-using Headless.Abstractions;
+using Headless;
 using Headless.Jobs;
 using Headless.Jobs.BackgroundServices;
 using Headless.Jobs.Managers;

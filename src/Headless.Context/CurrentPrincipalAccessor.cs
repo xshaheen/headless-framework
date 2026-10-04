@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Security.Claims;
-using Headless.Core;
 
 namespace Headless.Context;
 

@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless;
 using Headless.Context;
-using Headless.Exceptions;
 using Headless.Features;
 using Headless.Features.Resources;
 using Headless.Messaging;

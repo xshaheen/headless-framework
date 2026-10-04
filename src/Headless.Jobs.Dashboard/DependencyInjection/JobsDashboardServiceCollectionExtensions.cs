@@ -2,8 +2,8 @@
 
 using System.Reflection;
 using System.Text.Encodings.Web;
-using Headless.Constants;
 using Headless.Dashboard.Authentication;
+using Headless.Http;
 using Headless.Jobs.Endpoints;
 using Headless.Jobs.Infrastructure;
 using Microsoft.AspNetCore.Builder;

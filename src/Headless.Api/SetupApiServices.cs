@@ -1,8 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.IO.Compression;
-using Headless.Abstractions;
-using Headless.Constants;
+using Headless.Http;
 using Headless.MultiTenancy;
 using Headless.Serializer;
 using Microsoft.AspNetCore.Builder;
@@ -72,9 +71,9 @@ public static class SetupApiServices
         /// <remarks>
         /// The exception handler maps the following exception types to HTTP status codes:
         /// <list type="bullet">
-        /// <item><description><see cref="Headless.Exceptions.UnauthorizedException"/> → 401</description></item>
-        /// <item><description><see cref="Headless.Exceptions.ConflictException"/> → 409</description></item>
-        /// <item><description><see cref="Headless.Exceptions.EntityNotFoundException"/> → 404</description></item>
+        /// <item><description><see cref="Headless.UnauthorizedException"/> → 401</description></item>
+        /// <item><description><see cref="Headless.ConflictException"/> → 409</description></item>
+        /// <item><description><see cref="Headless.EntityNotFoundException"/> → 404</description></item>
         /// <item><description><see cref="Headless.MultiTenancy.CrossTenantWriteException"/> → 409 with <c>g:cross_tenant_write</c></description></item>
         /// <item><description><see cref="Headless.MultiTenancy.MissingTenantContextException"/> → 403 with <c>g:tenant_required</c></description></item>
         /// <item><description><c>FluentValidation.ValidationException</c> → 422</description></item>

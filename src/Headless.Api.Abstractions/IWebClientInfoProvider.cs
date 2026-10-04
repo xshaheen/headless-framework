@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Abstractions;
+namespace Headless.Api;
 
 /// <summary>Provides network and client identity information derived from the current HTTP request.</summary>
 /// <remarks>

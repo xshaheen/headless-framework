@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Headless.Exceptions;
 using Headless.Features.Resources;
 using Headless.Serializer;
 
@@ -115,10 +114,10 @@ public static class FeatureManagerExtensions
                 : JsonSerializer.Deserialize<T>(value.Value, JsonConstants.DefaultInternalJsonOptions);
         }
 
-        /// <summary>Throws <see cref="Headless.Exceptions.ConflictException"/> when the feature with <paramref name="featureName"/> is not enabled.</summary>
+        /// <summary>Throws <see cref="Headless.ConflictException"/> when the feature with <paramref name="featureName"/> is not enabled.</summary>
         /// <param name="featureName">The feature that must be enabled.</param>
         /// <param name="cancellationToken">The abort token.</param>
-        /// <exception cref="Headless.Exceptions.ConflictException">The feature is currently unavailable or disabled.</exception>
+        /// <exception cref="Headless.ConflictException">The feature is currently unavailable or disabled.</exception>
         /// <exception cref="InvalidOperationException">The stored feature value is not a valid boolean string.</exception>
         public async Task EnsureEnabledAsync(string featureName, CancellationToken cancellationToken = default)
         {
@@ -136,7 +135,7 @@ public static class FeatureManagerExtensions
         }
 
         /// <summary>
-        /// Throws <see cref="Headless.Exceptions.ConflictException"/> when the given features do not satisfy
+        /// Throws <see cref="Headless.ConflictException"/> when the given features do not satisfy
         /// the <paramref name="requiresAll"/> policy.
         /// </summary>
         /// <param name="requiresAll">
@@ -145,7 +144,7 @@ public static class FeatureManagerExtensions
         /// </param>
         /// <param name="featureNames">The feature names to evaluate. An empty or <see langword="null"/> array is treated as satisfied (no exception).</param>
         /// <param name="cancellationToken">The abort token.</param>
-        /// <exception cref="Headless.Exceptions.ConflictException">The required feature(s) are currently unavailable or disabled.</exception>
+        /// <exception cref="Headless.ConflictException">The required feature(s) are currently unavailable or disabled.</exception>
         /// <exception cref="InvalidOperationException">A stored feature value is not a valid boolean string.</exception>
         public async Task EnsureEnabledAsync(
             bool requiresAll,
@@ -197,7 +196,7 @@ public static class FeatureManagerExtensions
         /// <param name="providerName">The provider to write the value to.</param>
         /// <param name="providerKey">The provider-specific key (e.g., tenant ID or edition ID).</param>
         /// <exception cref="ArgumentNullException"><paramref name="name"/> or <paramref name="providerName"/> is <see langword="null"/>.</exception>
-        /// <exception cref="Headless.Exceptions.ConflictException">The feature is not defined, the provider is not registered, or the provider is read-only.</exception>
+        /// <exception cref="Headless.ConflictException">The feature is not defined, the provider is not registered, or the provider is read-only.</exception>
         public Task GrantAsync(string name, string providerName, string providerKey)
         {
             return featureManager.SetAsync(name, "true", providerName, providerKey, forceToSet: true);
@@ -208,7 +207,7 @@ public static class FeatureManagerExtensions
         /// <param name="providerName">The provider to write the value to.</param>
         /// <param name="providerKey">The provider-specific key (e.g., tenant ID or edition ID).</param>
         /// <exception cref="ArgumentNullException"><paramref name="name"/> or <paramref name="providerName"/> is <see langword="null"/>.</exception>
-        /// <exception cref="Headless.Exceptions.ConflictException">The feature is not defined, the provider is not registered, or the provider is read-only.</exception>
+        /// <exception cref="Headless.ConflictException">The feature is not defined, the provider is not registered, or the provider is read-only.</exception>
         public Task RevokeAsync(string name, string providerName, string providerKey)
         {
             return featureManager.SetAsync(name, "false", providerName, providerKey, forceToSet: true);

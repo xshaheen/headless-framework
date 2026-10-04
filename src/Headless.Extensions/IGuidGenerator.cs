@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Core;
-
-namespace Headless.Abstractions;
+namespace Headless;
 
 /// <summary>Abstraction over <see cref="Guid"/> creation, allowing the ordering strategy to vary per implementation.</summary>
 public interface IGuidGenerator

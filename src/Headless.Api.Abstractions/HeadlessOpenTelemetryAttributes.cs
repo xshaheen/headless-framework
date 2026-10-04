@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Constants;
+namespace Headless.Api;
 
 /// <summary>
 /// Constants for OpenTelemetry semantic-convention attribute names (stable semconv 1.x).

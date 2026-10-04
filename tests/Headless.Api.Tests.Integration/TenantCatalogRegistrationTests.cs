@@ -1,9 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless;
 using Headless.Api;
 using Headless.Api.ServiceDefaults;
 using Headless.Caching;
-using Headless.Constants;
 using Headless.MultiTenancy;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Builder;
