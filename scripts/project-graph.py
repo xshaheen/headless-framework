@@ -251,11 +251,13 @@ def layering_violations(projects: dict[str, Project]) -> list[str]:
                     violations.append(
                         f"{project.name} -> {name}: an Abstractions package may reference only Abstractions or foundation packages"
                     )
-        if project.name.endswith(".Core"):
-            family = project.name.removesuffix(".Core")
+        # A family's root package (Headless.X beside Headless.X.Abstractions) composes the family; its providers
+        # build on it, so a reference the other way would make every consumer of the root pull a provider in.
+        if project.name + ".Abstractions" in by_name:
+            family = project.name
             for name in sorted(reference_names):
                 if name.startswith(family + ".") and not name.endswith(".Abstractions") and name in by_name:
-                    violations.append(f"{project.name} -> {name}: a Core package must not reference its own family's providers")
+                    violations.append(f"{project.name} -> {name}: a family's root package must not reference its own providers")
     return violations
 
 

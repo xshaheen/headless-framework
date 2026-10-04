@@ -1,7 +1,7 @@
 ---
 title: "Startup Pause Gating and Half-Open Recovery in Messaging Circuit Breakers"
 date: 2026-03-22
-module: Headless.Messaging.Core
+module: Headless.Messaging
 tags: [messaging, circuit-breaker, dotnet, rabbitmq, azure-service-bus, nats, retry-backpressure, options-validation]
 problem_type: logic_error
 component: service_class

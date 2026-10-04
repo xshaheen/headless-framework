@@ -24,7 +24,7 @@ public sealed class MessagingCatalogBuilder
     /// </summary>
     public const int ConsumerIdentityMaxLength = 200;
 
-    private const string _FrameworkSource = "Headless.Messaging.Core";
+    private const string _FrameworkSource = "Headless.Messaging";
 
     private readonly List<MessagingConsumerDeclaration> _consumers = [];
     private string _source = _FrameworkSource;

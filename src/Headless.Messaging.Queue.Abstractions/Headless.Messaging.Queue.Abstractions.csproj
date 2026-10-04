@@ -6,7 +6,7 @@
     <RootNamespace>Headless.Messaging</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <InternalsVisibleTo Include="Headless.Messaging.Core" />
+    <InternalsVisibleTo Include="Headless.Messaging" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Messaging.Abstractions\Headless.Messaging.Abstractions.csproj" />

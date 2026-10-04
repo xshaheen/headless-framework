@@ -13,13 +13,13 @@ public static class HeadlessCorsConstants
 {
     /// <summary>
     /// Name of the default CORS policy, restricted to configured origins, origin templates, and an optional origin
-    /// source. <c>AddHeadlessCors</c> in <c>Headless.Api.Core</c> registers it when called without a policy name.
+    /// source. <c>AddHeadlessCors</c> in <c>Headless.Api</c> registers it when called without a policy name.
     /// </summary>
     public const string RestrictedCors = "_origins";
 
     /// <summary>
     /// Name of the development CORS policy that allows any origin and never allows credentials.
-    /// <c>AddHeadlessAllowAnyCors</c> in <c>Headless.Api.Core</c> registers it; startup fails outside Development
+    /// <c>AddHeadlessAllowAnyCors</c> in <c>Headless.Api</c> registers it; startup fails outside Development
     /// unless the policy confirms <c>AllowAnyOriginOutsideDevelopment</c>.
     /// </summary>
     public const string AllowAnyCors = "_any_origins";

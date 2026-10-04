@@ -21,7 +21,7 @@ Coverage targets:
 
 Each feature ships as one abstraction package plus one package per provider. `Headless.<Feature>.Abstractions` holds the interfaces, and `Headless.<Feature>.<Provider>` implements them. For example, `Headless.Caching.Redis` implements `Headless.Caching.Abstractions`.
 
-Registration follows the same split. The feature's Core package owns `AddHeadless{Feature}(Action<Headless{Feature}SetupBuilder>)` and the provider gates. Each provider package adds `Use{Provider}` members to the builder. Before you add a registration entry point, a provider package, or an options class, read [provider setup and options](docs/solutions/conventions/provider-setup-and-options.md).
+Registration follows the same split. The feature's root package (`Headless.<Feature>`) owns `AddHeadless{Feature}(Action<Headless{Feature}SetupBuilder>)` and the provider gates. Each provider package adds `Use{Provider}` members to the builder. Before you add a registration entry point, a provider package, or an options class, read [provider setup and options](docs/solutions/conventions/provider-setup-and-options.md).
 
 Transactions are explicit. `IUnitOfWorkFactory` is a singleton with no `Current` property. The `IUnitOfWork` handle is the unit's only identity, and the receiver always decides whether to enlist. Before you change how Messaging, Jobs, or a storage provider joins a unit, read [unit-of-work propagation and enlistment](docs/solutions/architecture-patterns/unit-of-work-propagation-and-enlistment-contract.md).
 
@@ -78,7 +78,7 @@ Use the affected and project-scoped targets: `verify-affected`, `build-affected`
 - **CI compiles twice, then runs the unit suite.** The `build` job uses `-p:RunAnalyzers=false`, and the `analyzers` job runs the full analyzer set. Both use `--no-incremental` and treat warnings as errors.
 - **`main` requires only the `CI status` job in `ci.yml`.** A skipped job passes. Add every new CI job to the `needs` list of `CI status`. When you change a trigger on a required workflow, change branch protection in the same change.
 - **CI runs no integration suite.** See [Work in the affected scope](#work-in-the-affected-scope).
-- **Every CI run checks docs and layering.** The `changes` job runs `make docs-check` (solutions frontmatter and `INDEX.md` fail, broken references warn) and `make check-layering` (an Abstractions package references only Abstractions or foundation packages; a Core package never references its own family's providers).
+- **Every CI run checks docs and layering.** The `changes` job runs `make docs-check` (solutions frontmatter and `INDEX.md` fail, broken references warn) and `make check-layering` (an Abstractions package references only Abstractions or foundation packages; a family's root package never references that family's providers).
 - **Some legs run only on a release.** Pack and SBOM, the Africa/Cairo test leg, and the messaging and R2 conformance legs run only for a published release or a `workflow_dispatch` with `release_checks`. Before you tag a change to packaging or time handling, rehearse that path.
 - **Packages publish only from a published GitHub Release.** Release Drafter never publishes.
 
@@ -102,7 +102,7 @@ To add a second provider-integration project for one feature, extract a shared h
 
 ### Follow the existing pattern
 
-Consistency across 150+ packages matters more than a local improvement. Before you add code, find the closest existing example and match it: a sibling provider, another feature's Core package, or a test project of the same kind. Match its file layout, naming, registration shape, options class, and test structure.
+Consistency across 150+ packages matters more than a local improvement. Before you add code, find the closest existing example and match it: a sibling provider, another feature's root package, or a test project of the same kind. Match its file layout, naming, registration shape, options class, and test structure.
 
 - **Invent no new convention in a single place.** If no existing pattern covers the case, ask before you choose one.
 - **If you find a better convention, propose it for the whole repository.** Keep the current change consistent with the existing pattern. Then describe the proposed refactor to the user, or in the PR description: the convention, the reason it is better, and the projects it would change.
@@ -112,7 +112,7 @@ Consistency across 150+ packages matters more than a local improvement. Before y
 Duplicated logic across packages drifts apart. Before you write code, search for an existing implementation in `src/`, not only in the package you are changing.
 
 - **Reuse an existing implementation** instead of copying it.
-- **Move shared logic down.** If two packages need the same code, put it in the lowest package that both already reference: the feature's Abstractions or Core package, or `Headless.Extensions`. Do not copy it into each package.
+- **Move shared logic down.** If two packages need the same code, put it in the lowest package that both already reference: the feature's Abstractions or root package, or `Headless.Extensions`. Do not copy it into each package.
 - **Check `Headless.Extensions` first for general-purpose code.** See [Reuse before you write a utility](#reuse-before-you-write-a-utility).
 
 ### Code rules

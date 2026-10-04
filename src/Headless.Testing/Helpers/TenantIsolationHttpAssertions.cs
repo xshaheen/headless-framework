@@ -32,7 +32,7 @@ public static class TenantIsolationHttpAssertions
     // ProblemDetails members the framework fills per request; they differ between any two responses.
     private static readonly string[] _DefaultIgnoredMembers = ["traceId", "timestamp", "instance"];
 
-    // Codes are literals so this package does not reference Headless.Api.Core or Headless.MultiTenancy.
+    // Codes are literals so this package does not reference Headless.Api or Headless.MultiTenancy.
     private const string _TenantRequiredCode = "g:tenant_required";
     private const string _CrossTenantWriteCode = "g:cross_tenant_write";
     private const string _TenantResolutionFailedCode = "g:tenant_resolution_failed";

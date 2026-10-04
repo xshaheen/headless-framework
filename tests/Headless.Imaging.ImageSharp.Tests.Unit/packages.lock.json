@@ -489,13 +489,7 @@
           "OpenTelemetry.Api": "[1.18.0, )"
         }
       },
-      "headless.imaging.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )"
-        }
-      },
-      "headless.imaging.core": {
+      "headless.imaging": {
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
@@ -504,10 +498,16 @@
           "Microsoft.Extensions.Options": "[10.0.12, )"
         }
       },
+      "headless.imaging.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )"
+        }
+      },
       "headless.imaging.imagesharp": {
         "type": "Project",
         "dependencies": {
-          "Headless.Imaging.Core": "[1.0.0, )",
+          "Headless.Imaging": "[1.0.0, )",
           "SixLabors.ImageSharp": "[3.1.12, 4.0.0)"
         }
       },

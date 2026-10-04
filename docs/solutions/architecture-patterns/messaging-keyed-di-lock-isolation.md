@@ -1,7 +1,7 @@
 ---
 title: "Isolate framework-internal services via keyed DI to prevent app-level shadowing"
 date: 2026-05-19
-module: Headless.Messaging.Core
+module: Headless.Messaging
 component: service_class
 problem_type: architecture_pattern
 severity: medium

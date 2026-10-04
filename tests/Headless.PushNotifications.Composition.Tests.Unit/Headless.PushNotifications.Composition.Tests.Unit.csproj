@@ -9,7 +9,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.PushNotifications.Apns\Headless.PushNotifications.Apns.csproj" />
-    <ProjectReference Include="..\..\src\Headless.PushNotifications.Core\Headless.PushNotifications.Core.csproj" />
+    <ProjectReference Include="..\..\src\Headless.PushNotifications\Headless.PushNotifications.csproj" />
     <ProjectReference Include="..\..\src\Headless.PushNotifications.Dev\Headless.PushNotifications.Dev.csproj" />
     <ProjectReference Include="..\..\src\Headless.PushNotifications.Firebase\Headless.PushNotifications.Firebase.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />

@@ -1,6 +1,6 @@
 ---
 domain: Jobs (Background Jobs)
-packages: Jobs.Abstractions, Jobs.Core, Jobs.Dashboard, Jobs.SourceGenerator, Jobs.EntityFramework, Jobs.EntityFramework.PostgreSql, Jobs.EntityFramework.SqlServer
+packages: Jobs.Abstractions, Jobs, Jobs.Dashboard, Jobs.SourceGenerator, Jobs.EntityFramework, Jobs.EntityFramework.PostgreSql, Jobs.EntityFramework.SqlServer
 ---
 
 # Jobs (Background Jobs)
@@ -9,12 +9,12 @@ packages: Jobs.Abstractions, Jobs.Core, Jobs.Dashboard, Jobs.SourceGenerator, Jo
 
 ## Orientation
 
-Required packages: `Jobs.Core` + `Jobs.EntityFramework` (persistence) + `Jobs.SourceGenerator` (compile-time job registration). Add the PostgreSQL or SQL Server Jobs EF provider package for native atomic claims; otherwise the EF package uses its portable optimistic-CAS fallback.
+Required packages: `Jobs` + `Jobs.EntityFramework` (persistence) + `Jobs.SourceGenerator` (compile-time job registration). Add the PostgreSQL or SQL Server Jobs EF provider package for native atomic claims; otherwise the EF package uses its portable optimistic-CAS fallback.
 
 Optional add-ons:
 - `Jobs.Dashboard` — monitoring UI with authentication (basic, API key, host auth) plus live-cluster node view
-- OpenTelemetry tracing ships inside `Jobs.Core` (see [OpenTelemetry Instrumentation](#opentelemetry-instrumentation)) — there is no separate instrumentation package
-- `Jobs.Abstractions` — interfaces only; pulled in transitively by `Jobs.Core`; install directly only when building a library on top
+- OpenTelemetry tracing ships inside `Jobs` (see [OpenTelemetry Instrumentation](#opentelemetry-instrumentation)) — there is no separate instrumentation package
+- `Jobs.Abstractions` — interfaces only; pulled in transitively by `Jobs`; install directly only when building a library on top
 
 Minimum wiring (in-memory storage, no persistence):
 
@@ -502,7 +502,7 @@ The disposition is persisted explicitly so an owed replacement remains distingui
 
 The recovery *decision* — which instant to materialize at, which existing row to repurpose, which to step past, which
 to retire, and where the resolution window ends — is one storage-agnostic unit, `CronRecoveryPlanner` in
-`Headless.Jobs.Core`, and every provider consumes it. A provider snapshots the window the planner asks for
+`Headless.Jobs`, and every provider consumes it. A provider snapshots the window the planner asks for
 (`GetInspectionWindow`), hands those rows back (`CreatePlan`), and applies the returned `CronRecoveryPlan` as fenced
 writes inside its own transaction or critical section. The planner itself reads nothing, writes nothing, and calls
 back into no storage.
@@ -743,7 +743,7 @@ Contracts, entity types, manager interfaces, and execution primitives for the Jo
 dotnet add package Headless.Jobs.Abstractions
 ```
 
-Pulled in transitively by `Headless.Jobs.Core`. Install directly only when building a library that targets Jobs interfaces without depending on the Core implementation.
+Pulled in transitively by `Headless.Jobs`. Install directly only when building a library that targets Jobs interfaces without depending on the Core implementation.
 
 ### Setup and use
 
@@ -870,7 +870,7 @@ Builders support sequential reuse and copy retry arrays when supplied and on eve
 
 ### Configuration
 
-Configure job services in `Headless.Jobs.Core` via `AddHeadlessJobs(...)`. Configure tenancy only through `AddHeadlessTenancy(tenancy => tenancy.Jobs(...))`. `JobsTenancyOptions` exposes the resulting propagation, required-tenant, and cross-tenant rejection flags with no public setters.
+Configure job services in `Headless.Jobs` via `AddHeadlessJobs(...)`. Configure tenancy only through `AddHeadlessTenancy(tenancy => tenancy.Jobs(...))`. `JobsTenancyOptions` exposes the resulting propagation, required-tenant, and cross-tenant rejection flags with no public setters.
 
 ### Runtime behavior
 
@@ -878,7 +878,7 @@ None.
 
 ---
 
-## Headless.Jobs.Core
+## Headless.Jobs
 
 Core implementation of the Jobs scheduler: in-memory persistence provider, execution task handler, background services, bounded task scheduler, and the `AddHeadlessJobs` DI extension.
 
@@ -947,7 +947,7 @@ Cron expressions use `RecurringJobOptions.TimeZoneId` when present and otherwise
 ### Install
 
 ```bash
-dotnet add package Headless.Jobs.Core
+dotnet add package Headless.Jobs
 ```
 
 ### Setup and use
@@ -1151,7 +1151,7 @@ builder.Services.AddHeadlessJobs(options =>
 
 ### Trimming and native AOT
 
-`Headless.Jobs.Abstractions` and `Headless.Jobs.Core` declare `IsAotCompatible` and build with the trim, AOT, and single-file analyzers enabled. Generated modules construct job classes and call them and their middleware directly, without reflection. A trimmed or native AOT host must still do the following:
+`Headless.Jobs.Abstractions` and `Headless.Jobs` declare `IsAotCompatible` and build with the trim, AOT, and single-file analyzers enabled. Generated modules construct job classes and call them and their middleware directly, without reflection. A trimmed or native AOT host must still do the following:
 
 - Supply JSON metadata for every typed request. Core reads payload metadata through the request options' `TypeInfoResolver`; when an app allows reflection-based serialization (the default outside trimmed and AOT publishing), a missing resolver falls back to reflection. Otherwise, register a `JsonSerializerContext`. Without one, the first enqueue or execution of a typed job throws `NotSupportedException` naming the type.
 
@@ -1358,7 +1358,7 @@ Emits `JobsModule.g.cs` at compile time. The generated file:
 
 ## OpenTelemetry Instrumentation
 
-OpenTelemetry instrumentation for `Headless.Jobs` is built into `Headless.Jobs.Core` — activity tracing for the full job execution lifecycle plus structured logging. (The former `Headless.Jobs.OpenTelemetry` satellite package was folded into `Jobs.Core` per the framework OTel conventions; native emission needs no separate package.) Cross-cutting naming, PII, and registration rules for all Headless instrumentation live in [OpenTelemetry instrumentation conventions](../solutions/conventions/opentelemetry-instrumentation-conventions.md).
+OpenTelemetry instrumentation for `Headless.Jobs` is built into `Headless.Jobs` — activity tracing for the full job execution lifecycle plus structured logging. (The former `Headless.Jobs.OpenTelemetry` satellite package was folded into `Jobs` per the framework OTel conventions; native emission needs no separate package.) Cross-cutting naming, PII, and registration rules for all Headless instrumentation live in [OpenTelemetry instrumentation conventions](../solutions/conventions/opentelemetry-instrumentation-conventions.md).
 
 ### Purpose
 

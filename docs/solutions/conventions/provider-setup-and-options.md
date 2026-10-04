@@ -24,7 +24,7 @@ applies_when:
 Every provider package exposes a single static `Setup{Provider}` class in `Setup.cs` at the package root.
 
 Multi-provider features follow the [unified provider setup builder
-pattern](../architecture-patterns/unified-provider-setup-builder-pattern.md): the feature's Core package owns
+pattern](../architecture-patterns/unified-provider-setup-builder-pattern.md): the feature's root package owns
 the root `AddHeadless{Feature}(Action<Headless{Feature}SetupBuilder>)` entry plus the provider gates, and each
 provider package contributes `Use{Provider}` extension members on that builder.
 
@@ -127,7 +127,7 @@ database provisioned by one reads correctly through the other. `Headless.Hosting
   (`HeadlessStorageNaming.Resolve(configured, style, "FeatureValues")`), a configured name is used verbatim,
   validators check it only when set, and derived key and index names embed it unchanged (`pk_MyValues`).
 - A configured table name is refused when its longest derived PostgreSQL name would pass 63 bytes, since
-  PostgreSQL truncates rather than rejects it. The feature's Core package lists each table's index name parts once
+  PostgreSQL truncates rather than rejects it. The feature's root package lists each table's index name parts once
   (`FeaturesStorageNames`); the EF mapping builds its index names from them, and every provider's options validator
   passes them to `FitsDerivedPostgreSqlNames` (namespace `FluentValidation`, package `Headless.Hosting`). The
   conventional default names must fit too: the permission grants index for host grants ends in `_no_tenant`, because

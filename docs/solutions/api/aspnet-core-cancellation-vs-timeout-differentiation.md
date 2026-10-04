@@ -1,7 +1,7 @@
 ---
 title: "Differentiating Client-Cancellation, Server-Timeout, and Code-Thrown Timeout in a Single ASP.NET Core IExceptionHandler"
 date: 2026-05-07
-module: Headless.Api.Core
+module: Headless.Api
 problem_type: design_pattern
 component: service_class
 severity: medium
@@ -36,7 +36,7 @@ The first row is the OCE path. The second is *also* an OCE underneath, but it ne
 
 ## 1. The OCE arm with `RequestAborted` gate
 
-`src/Headless.Api.Core/Middlewares/HeadlessApiExceptionHandler.cs`:
+`src/Headless.Api/Middlewares/HeadlessApiExceptionHandler.cs`:
 
 ```csharp
 // Cancellation handled first. Only treat OCE as client-cancelled when RequestAborted
@@ -156,7 +156,7 @@ The `??=` is load-bearing: the `IExceptionHandler` factory (`RequestTimeout()`) 
 
 ## 5. DI registration via `TryAddEnumerable`
 
-`src/Headless.Api.Core/SetupApiServices.cs`:
+`src/Headless.Api/SetupApiServices.cs`:
 
 ```csharp
 public static IServiceCollection AddHeadlessProblemDetails(this IServiceCollection services)
@@ -268,8 +268,8 @@ Unit test coverage for `HeadlessApiExceptionHandler`:
 
 # Files Referenced
 
-- `src/Headless.Api.Core/Middlewares/HeadlessApiExceptionHandler.cs` — handler, OCE arm, `_IsCancellationException`, `case TimeoutException`
+- `src/Headless.Api/Middlewares/HeadlessApiExceptionHandler.cs` — handler, OCE arm, `_IsCancellationException`, `case TimeoutException`
 - `src/Headless.Api.Abstractions/IProblemDetailsCreator.cs` — `Normalize` with 408/501 backfill, `RequestTimeout()` / `NotImplemented()` factories
 - `src/Headless.Api.Abstractions/Constants/HeadlessProblemDetailsConstants.cs` — Types/Titles/Details constants
-- `src/Headless.Api.Core/SetupApiServices.cs` — `AddHeadlessProblemDetails` + `TryAddEnumerable` registration
+- `src/Headless.Api/SetupApiServices.cs` — `AddHeadlessProblemDetails` + `TryAddEnumerable` registration
 - `demo/Headless.Api.Demo/Program.cs` — pipeline-ordering example

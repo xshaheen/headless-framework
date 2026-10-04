@@ -1,6 +1,6 @@
 ---
 domain: Captcha
-packages: Captcha.Abstractions, Captcha.Core, Captcha.ReCaptcha, Captcha.Turnstile
+packages: Captcha.Abstractions, Captcha, Captcha.ReCaptcha, Captcha.Turnstile
 ---
 
 # Captcha
@@ -61,7 +61,7 @@ Pick by the verdict shape you need and the privacy/UX trade-off you accept.
 | `Headless.Captcha.ReCaptcha` (v3) | You want an invisible, score-based risk signal you act on yourself (e.g. block below a threshold, step up above it). | You need a hard pass/fail challenge with no policy logic, or you cannot accept Google as a dependency. | A numeric `Score` (0.0–1.0) with no user friction, but you own the threshold policy and the score is reCAPTCHA-only (not portable to other providers). |
 | `Headless.Captcha.Turnstile` | You want a privacy-friendly, mostly invisible challenge with native token re-verification (`idempotency_key`) and optional `cdata`. | You specifically need a numeric risk score for your own policy logic. | Privacy-friendly pass/fail with `idempotency_key` and `cdata`, but no score — the verdict is the policy. |
 
-`Headless.Captcha.Abstractions` is not a provider; it defines `ICaptchaVerifier`, the request/result contracts, and `ICaptchaProvider` (the `AddHeadlessCaptcha` builder and its keyed resolver ship in `Headless.Captcha.Core`, pulled in transitively by every provider package). Reference the abstractions from application code so call sites stay provider-agnostic, and add at least one provider package.
+`Headless.Captcha.Abstractions` is not a provider; it defines `ICaptchaVerifier`, the request/result contracts, and `ICaptchaProvider` (the `AddHeadlessCaptcha` builder and its keyed resolver ship in `Headless.Captcha`, pulled in transitively by every provider package). Reference the abstractions from application code so call sites stay provider-agnostic, and add at least one provider package.
 
 reCAPTCHA v2 and v3 ship in the **same** `Headless.Captcha.ReCaptcha` package — they are two builder entry points (`UseReCaptchaV2` / `UseReCaptchaV3`), two canonical keys, and two sets of tag helpers, sharing one `ReCaptchaOptions` and one options section family. Turnstile ships separately in `Headless.Captcha.Turnstile`.
 
@@ -76,10 +76,10 @@ The provider-agnostic CAPTCHA contracts and the unified registration builder; re
 - `ICaptchaVerifier` - the shared contract: `Task<CaptchaVerifyResult> VerifyAsync(CaptchaVerifyRequest request, CancellationToken cancellationToken = default)`. Throws `HttpRequestException` on an unsuccessful siteverify HTTP response and `InvalidOperationException` when the body cannot be deserialized.
 - `CaptchaVerifyRequest` - the request inputs: `required string Response` (the client widget token) and optional `string? RemoteIp`. Providers with extra inputs extend it (Turnstile's `TurnstileVerifyRequest`).
 - `CaptchaVerifyResult` - the normalized outcome: `bool Success`, `DateTimeOffset? ChallengeTimestamp`, `string? HostName`, `string? Action`, `IReadOnlyList<string>? ErrorCodes`. Strictly pass/fail; provider-only fields live on derived result types.
-- `HeadlessCaptchaSetupBuilder` - the root builder for `AddHeadlessCaptcha`, with two slots (one optional default, unlimited named). A default is selected by a provider's `Use*` member; `AddNamed(name, configure)` adds a named instance through a nested `HeadlessCaptchaInstanceBuilder`. The low-level `RegisterDefault(providerKey, action)` (on the setup builder) and `RegisterProvider(action)` (on the instance builder) hooks are what provider `Use*` extensions build on; both are `[EditorBrowsable(Never)]` plumbing. Ships in `Headless.Captcha.Core`.
-- `ICaptchaProvider` - keyed resolver: `ICaptchaVerifier GetVerifier(string name)` (throws when missing, listing the registered names), `ICaptchaVerifier? GetVerifierOrNull(string name)` (returns `null`), and `IReadOnlySet<string> RegisteredNames` (every named instance plus a default provider's canonical key — use it to validate an externally supplied name before resolving). Resolves both named instances and a default provider's canonical key. The concrete keyed resolver (`KeyedServiceCaptchaProvider`) ships in `Headless.Captcha.Core`.
+- `HeadlessCaptchaSetupBuilder` - the root builder for `AddHeadlessCaptcha`, with two slots (one optional default, unlimited named). A default is selected by a provider's `Use*` member; `AddNamed(name, configure)` adds a named instance through a nested `HeadlessCaptchaInstanceBuilder`. The low-level `RegisterDefault(providerKey, action)` (on the setup builder) and `RegisterProvider(action)` (on the instance builder) hooks are what provider `Use*` extensions build on; both are `[EditorBrowsable(Never)]` plumbing. Ships in `Headless.Captcha`.
+- `ICaptchaProvider` - keyed resolver: `ICaptchaVerifier GetVerifier(string name)` (throws when missing, listing the registered names), `ICaptchaVerifier? GetVerifierOrNull(string name)` (returns `null`), and `IReadOnlySet<string> RegisteredNames` (every named instance plus a default provider's canonical key — use it to validate an externally supplied name before resolving). Resolves both named instances and a default provider's canonical key. The concrete keyed resolver (`KeyedServiceCaptchaProvider`) ships in `Headless.Captcha`.
 - `CaptchaConstants` - the canonical keyed-DI keys: `ReCaptchaV2Provider = "Headless.Captcha:ReCaptchaV2"`, `ReCaptchaV3Provider = "Headless.Captcha:ReCaptchaV3"`, `TurnstileProvider = "Headless.Captcha:Turnstile"`, plus `bool IsReservedProviderKey(string name)` (true for any name under the `Headless.Captcha:` namespace).
-- `IServiceCollection.AddHeadlessCaptcha(Action<HeadlessCaptchaSetupBuilder> configure)` - the single registration entry point (ships in `Headless.Captcha.Core`). Requires at least one provider and rejects a second call on the same service collection.
+- `IServiceCollection.AddHeadlessCaptcha(Action<HeadlessCaptchaSetupBuilder> configure)` - the single registration entry point (ships in `Headless.Captcha`). Requires at least one provider and rejects a second call on the same service collection.
 
 ### Design constraints
 
@@ -137,11 +137,11 @@ None. This is an abstractions package; provider options (`ReCaptchaOptions`, `Tu
 
 ### Runtime behavior
 
-None at registration time. This is a contracts-only package; registration lives in `Headless.Captcha.Core`. There, `AddHeadlessCaptcha` registers an internal singleton marker (used to reject a second call) and `ICaptchaProvider` as a singleton (`KeyedServiceCaptchaProvider`), and provider registrations are contributed by the provider packages' `Use*` extensions. No background services, no file system or network effects.
+None at registration time. This is a contracts-only package; registration lives in `Headless.Captcha`. There, `AddHeadlessCaptcha` registers an internal singleton marker (used to reject a second call) and `ICaptchaProvider` as a singleton (`KeyedServiceCaptchaProvider`), and provider registrations are contributed by the provider packages' `Use*` extensions. No background services, no file system or network effects.
 
 ---
 
-## Headless.Captcha.Core
+## Headless.Captcha
 
 Setup builder, registration gates, and the keyed captcha resolver for the CAPTCHA abstraction.
 
@@ -160,7 +160,7 @@ Setup builder, registration gates, and the keyed captcha resolver for the CAPTCH
 ### Install
 
 ```bash
-dotnet add package Headless.Captcha.Core
+dotnet add package Headless.Captcha
 ```
 
 ### Setup and use

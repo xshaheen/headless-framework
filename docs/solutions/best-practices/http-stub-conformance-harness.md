@@ -1,7 +1,7 @@
 ---
 title: HTTP-Stub Cross-Provider Conformance Harness
 date: 2026-06-21
-module: Headless.Captcha.Core
+module: Headless.Captcha
 problem_type: best_practice
 component: testing_framework
 severity: medium

@@ -1,7 +1,7 @@
 ---
 title: "Inject framework abstractions (IGuidGenerator, IJsonSerializer); use keyed DI for feature-scoped overrides"
 date: 2026-06-07
-module: Headless.Coordination.Core
+module: Headless.Coordination
 problem_type: convention
 component: service_class
 severity: medium
@@ -97,7 +97,7 @@ public sealed class CoordinationOptions
 }
 ```
 
-The default is registered keyed in `_AddCoordinationCore` (`src/Headless.Coordination.Core/Setup.cs`):
+The default is registered keyed in `_AddCoordinationCore` (`src/Headless.Coordination/Setup.cs`):
 
 ```csharp
 // Keyed so consumers can override coordination metadata/endpoint serialization independently of the

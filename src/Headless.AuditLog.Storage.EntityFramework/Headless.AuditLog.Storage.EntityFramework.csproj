@@ -15,7 +15,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.AuditLog.Abstractions\Headless.AuditLog.Abstractions.csproj" />
-    <ProjectReference Include="..\Headless.AuditLog.Core\Headless.AuditLog.Core.csproj" />
+    <ProjectReference Include="..\Headless.AuditLog\Headless.AuditLog.csproj" />
     <ProjectReference Include="..\Headless.EntityFramework\Headless.EntityFramework.csproj" />
   </ItemGroup>
 </Project>

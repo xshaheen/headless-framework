@@ -4,7 +4,7 @@ Google reCAPTCHA v2 (visible checkbox) and v3 (invisible score) verification plu
 
 ## Why use this package
 
-Provides server-side verification for both Google reCAPTCHA v2 and v3 against Google's `recaptcha/api/siteverify` endpoint, exposes v3's numeric risk score through a typed interface, and ships Razor tag helpers that render the client-side script and widget — all composed through the shared captcha builder in `Headless.Captcha.Core`.
+Provides server-side verification for both Google reCAPTCHA v2 and v3 against Google's `recaptcha/api/siteverify` endpoint, exposes v3's numeric risk score through a typed interface, and ships Razor tag helpers that render the client-side script and widget — all composed through the shared captcha builder in `Headless.Captcha`.
 
 ## Install
 

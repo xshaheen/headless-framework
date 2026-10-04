@@ -563,13 +563,7 @@
           "Headless.Generator.Primitives.Abstractions": "[1.0.0, )"
         }
       },
-      "headless.pushnotifications.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )"
-        }
-      },
-      "headless.pushnotifications.core": {
+      "headless.pushnotifications": {
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
@@ -577,12 +571,18 @@
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )"
         }
       },
+      "headless.pushnotifications.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )"
+        }
+      },
       "headless.pushnotifications.firebase": {
         "type": "Project",
         "dependencies": {
           "FirebaseAdmin": "[3.6.0, )",
           "Headless.Hosting": "[1.0.0, )",
-          "Headless.PushNotifications.Core": "[1.0.0, )"
+          "Headless.PushNotifications": "[1.0.0, )"
         }
       },
       "headless.pushnotifications.tests.harness": {

@@ -1558,6 +1558,17 @@
           "Headless.Checks": "[1.0.0, )"
         }
       },
+      "headless.sms": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Http.Resilience": "[1.0.0, )",
+          "Headless.Sms.Abstractions": "[1.0.0, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
+          "Polly.Core": "[8.7.0, )",
+          "Polly.RateLimiting": "[8.7.0, )"
+        }
+      },
       "headless.sms.abstractions": {
         "type": "Project",
         "dependencies": {
@@ -1569,19 +1580,8 @@
         "dependencies": {
           "Headless.Hosting": "[1.0.0, )",
           "Headless.Http.Resilience": "[1.0.0, )",
-          "Headless.Sms.Core": "[1.0.0, )",
+          "Headless.Sms": "[1.0.0, )",
           "Microsoft.Extensions.Http.Resilience": "[10.10.0, )"
-        }
-      },
-      "headless.sms.core": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.Http.Resilience": "[1.0.0, )",
-          "Headless.Sms.Abstractions": "[1.0.0, )",
-          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
-          "Polly.Core": "[8.7.0, )",
-          "Polly.RateLimiting": "[8.7.0, )"
         }
       },
       "headless.sms.tests.harness": {

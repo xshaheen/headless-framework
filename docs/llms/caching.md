@@ -1,6 +1,6 @@
 ---
 domain: Caching
-packages: Caching.Abstractions, Caching.Core, Caching.DistributedLocks, Caching.Hybrid, Caching.InMemory, Caching.Redis, Caching.Bcl, Caching.OutputCache
+packages: Caching.Abstractions, Caching, Caching.DistributedLocks, Caching.Hybrid, Caching.InMemory, Caching.Redis, Caching.Bcl, Caching.OutputCache
 ---
 
 # Caching
@@ -9,7 +9,7 @@ packages: Caching.Abstractions, Caching.Core, Caching.DistributedLocks, Caching.
 
 ## Orientation
 
-Install `Headless.Caching.Abstractions` plus one provider. All registration flows through a single `services.AddHeadlessCaching(setup => ...)` call (entry point in `Headless.Caching.Core`); provider packages contribute `Use*`/`Add*Tier`/`AddNamed` extensions on the setup builder. Code against `ICache` for application cache operations.
+Install `Headless.Caching.Abstractions` plus one provider. All registration flows through a single `services.AddHeadlessCaching(setup => ...)` call (entry point in `Headless.Caching`); provider packages contribute `Use*`/`Add*Tier`/`AddNamed` extensions on the setup builder. Code against `ICache` for application cache operations.
 
 - Single-instance or development: `Headless.Caching.InMemory` with `setup.UseInMemory()`.
 - Multi-instance shared cache: `Headless.Caching.Redis` with `setup.UseRedis(...)`.
@@ -463,7 +463,7 @@ None. This is an abstractions package.
 
 ---
 
-## Headless.Caching.Core
+## Headless.Caching
 
 Shared factory-backed cache orchestration for cache providers.
 
@@ -487,7 +487,7 @@ Shared factory-backed cache orchestration for cache providers.
 
 ### Design constraints
 
-Providers construct the coordinator directly with their `TimeProvider`, logger, and optional `ICacheFactoryLockProvider`; the Core package ships the `AddHeadlessCaching` entry point and the setup builder, not a provider. Provider packages queue deferred `ICacheProviderOptionsExtension` contributions that `AddHeadlessCaching` applies tiers → default → named → cross-cutting only after the per-slot gates pass — exactly one default provider, at most one tier per reserved role, no tier role already claimed by the default provider, unique non-reserved instance names with exactly one provider each, and no repeated `AddHeadlessCaching` call — so a failed setup leaves the service collection unchanged. Store read failures are treated as misses, fail-safe restamp writes are best-effort, and sliding re-arm writes are best-effort so a cached value can still be returned when the backing store is unhealthy. A provider composite can mark a physically-present stale `CacheStoreEntry<T>` with `ServeStaleImmediately` when a lower tier degraded during the read; the coordinator then returns that stale value without running the factory, but only when fail-safe is enabled. Cancellation is classified by token identity: the caller's own cancellation propagates and never activates fail-safe, while an `OperationCanceledException` from an unrelated or downstream token is treated as a failure that activates fail-safe. Sliding expiration is rejected together with fail-safe (one needs value reads to extend the logical deadline while the other needs logical expiration to expose a stale reserve) and together with eager refresh (both re-arm the logical lifetime).
+Providers construct the coordinator directly with their `TimeProvider`, logger, and optional `ICacheFactoryLockProvider`; `Headless.Caching` ships the `AddHeadlessCaching` entry point and the setup builder, not a provider. Provider packages queue deferred `ICacheProviderOptionsExtension` contributions that `AddHeadlessCaching` applies tiers → default → named → cross-cutting only after the per-slot gates pass — exactly one default provider, at most one tier per reserved role, no tier role already claimed by the default provider, unique non-reserved instance names with exactly one provider each, and no repeated `AddHeadlessCaching` call — so a failed setup leaves the service collection unchanged. Store read failures are treated as misses, fail-safe restamp writes are best-effort, and sliding re-arm writes are best-effort so a cached value can still be returned when the backing store is unhealthy. A provider composite can mark a physically-present stale `CacheStoreEntry<T>` with `ServeStaleImmediately` when a lower tier degraded during the read; the coordinator then returns that stale value without running the factory, but only when fail-safe is enabled. Cancellation is classified by token identity: the caller's own cancellation propagates and never activates fail-safe, while an `OperationCanceledException` from an unrelated or downstream token is treated as a failure that activates fail-safe. Sliding expiration is rejected together with fail-safe (one needs value reads to extend the logical deadline while the other needs logical expiration to expose a stale reserve) and together with eager refresh (both re-arm the logical lifetime).
 
 Factory timeout selection is centralized in the coordinator. If fail-safe is enabled, a stale reserve exists, and `FactorySoftTimeout` is finite, the soft timeout governs. Otherwise a finite `FactoryHardTimeout` governs. Otherwise factory execution is unbounded except for caller cancellation. A finite soft timeout also bounds acquisition of the same per-key lock when stale data exists, so waiters and supported same-key re-entrant calls return stale instead of blocking behind an in-flight refresh. When no stale reserve exists, `LockTimeout` (default `Timeout.InfiniteTimeSpan`) bounds that acquisition instead, and a finite value makes the waiter degrade to a miss rather than block.
 
@@ -502,7 +502,7 @@ The coordinator deliberately diverges from FusionCache on background cancellatio
 ### Install
 
 ```bash
-dotnet add package Headless.Caching.Core
+dotnet add package Headless.Caching
 ```
 
 ### Setup and use
@@ -662,11 +662,11 @@ Two-tier cache combining in-memory L1 with remote L2 and cross-instance invalida
 - L2 read soft/hard timeouts and a simple L2 circuit breaker keep slow or failing distributed reads from holding callers.
 - Implements `IBufferCache` — an L1 hit slices straight into the caller's `IBufferWriter<byte>` (single copy on the hot path); an L1 miss falls through to the same wrapped L2 read the generic path uses and seeds L1 (two copies on the cold path, inherent to populating both tiers). Raw upsert stamps both tiers plus the backplane identically to `UpsertEntryAsync`. See [Zero-intermediate-copy buffer path](#zero-intermediate-copy-buffer-path).
 - `cache.Events` event surface (`ICacheEvents`): aggregate get-or-add and direct-op signals on the root hub (`Tier=hybrid`), low-level per-tier L1/L2 reads under `cache.Events.Memory` / `cache.Events.Distributed`, and `Invalidation` events (kind = tag/clear/flush, direction = publish/receive). L1 evictions surface on the composed L1 cache's own `Events.Eviction`, not the hybrid. See [Events](#events).
-- Shared `GetOrAddAsync` fail-safe, factory timeout, eager refresh, conditional refresh, and background completion behavior through `Headless.Caching.Core`.
+- Shared `GetOrAddAsync` fail-safe, factory timeout, eager refresh, conditional refresh, and background completion behavior through `Headless.Caching`.
 
 ### Design constraints
 
-A default hybrid composes role-keyed tiers registered in the same `AddHeadlessCaching` setup: `setup.AddMemoryTier()` registers the L1 (`IInMemoryCache` plus the `CacheConstants.MemoryCacheProvider` role key) and `setup.AddRedisTier(...)` the L2 (`IRemoteCache` plus the `CacheConstants.RemoteCacheProvider` role key) without touching the default unkeyed `ICache`; `setup.UseHybrid()` then becomes the default `ICache`. Prefer the tier recipe for the common one-hybrid host — no instance names to invent, and the role keys stay reachable through `ICacheProvider`; set `LocalCacheName`/`RemoteCacheName` to bind `AddNamed` instances instead when a tier needs an identity of its own (for example a second hybrid, or tiers shared with other named consumers). Incoming invalidations are handled by `HybridCacheInvalidationConsumer` (`IConsume<CacheInvalidationMessage>`), which `UseHybrid` registers unconditionally, so cross-node L1 invalidation is correct by default rather than a silent opt-in. A single consumer serves every hybrid (default and named): it resolves the default hybrid by the `CacheConstants.HybridCacheProvider` role key and named hybrids by `CacheInvalidationMessage.CacheName` through `ICacheProvider`, so a named hybrid receives only the invalidations published for its own cache name. The consumer is declared `[BusConsumer("headless.caching.hybrid.invalidation", EveryInstance = true)]` (the identity is also `HybridCacheInvalidationConsumer.Identity`), and `UseHybrid` contributes the package's generated messaging module through `services.ConfigureMessaging(m => m.AddModule<...>())`, which lives in the messaging abstractions, so `Headless.Caching.Hybrid` does not reference `Headless.Messaging.Core`. `CacheInvalidationMessage` has no declared contract, so its message name comes from the messaging naming conventions; the identity alone names each process's subscription, with no host-level prefix or application id. The contribution is order-independent and inert until messaging starts, so caching and messaging may be registered in either order, a host that never adds messaging pays nothing, and any number of hybrids register the consumer once. Do not register the consumer yourself; tune it by identity instead, for example `services.ConfigureMessaging(m => m.Tune(HybridCacheInvalidationConsumer.Identity, c => c.Concurrency(4)))`.
+A default hybrid composes role-keyed tiers registered in the same `AddHeadlessCaching` setup: `setup.AddMemoryTier()` registers the L1 (`IInMemoryCache` plus the `CacheConstants.MemoryCacheProvider` role key) and `setup.AddRedisTier(...)` the L2 (`IRemoteCache` plus the `CacheConstants.RemoteCacheProvider` role key) without touching the default unkeyed `ICache`; `setup.UseHybrid()` then becomes the default `ICache`. Prefer the tier recipe for the common one-hybrid host — no instance names to invent, and the role keys stay reachable through `ICacheProvider`; set `LocalCacheName`/`RemoteCacheName` to bind `AddNamed` instances instead when a tier needs an identity of its own (for example a second hybrid, or tiers shared with other named consumers). Incoming invalidations are handled by `HybridCacheInvalidationConsumer` (`IConsume<CacheInvalidationMessage>`), which `UseHybrid` registers unconditionally, so cross-node L1 invalidation is correct by default rather than a silent opt-in. A single consumer serves every hybrid (default and named): it resolves the default hybrid by the `CacheConstants.HybridCacheProvider` role key and named hybrids by `CacheInvalidationMessage.CacheName` through `ICacheProvider`, so a named hybrid receives only the invalidations published for its own cache name. The consumer is declared `[BusConsumer("headless.caching.hybrid.invalidation", EveryInstance = true)]` (the identity is also `HybridCacheInvalidationConsumer.Identity`), and `UseHybrid` contributes the package's generated messaging module through `services.ConfigureMessaging(m => m.AddModule<...>())`, which lives in the messaging abstractions, so `Headless.Caching.Hybrid` does not reference `Headless.Messaging`. `CacheInvalidationMessage` has no declared contract, so its message name comes from the messaging naming conventions; the identity alone names each process's subscription, with no host-level prefix or application id. The contribution is order-independent and inert until messaging starts, so caching and messaging may be registered in either order, a host that never adds messaging pays nothing, and any number of hybrids register the consumer once. Do not register the consumer yourself; tune it by identity instead, for example `services.ConfigureMessaging(m => m.Tune(HybridCacheInvalidationConsumer.Identity, c => c.Concurrency(4)))`.
 
 **Every-instance delivery of invalidations.** Each L1 lives in one process, so every process must receive every invalidation. The consumer is an [every-instance Bus consumer](messaging.md#every-instance-bus-delivery): each process opens its own subscription, named from the identity and the host's instance id, and the broker removes it when the process stops. A competing subscription would hand each invalidation to one replica and leave the others serving stale L1 entries.
 
@@ -818,7 +818,7 @@ In-memory cache implementation for single-instance applications.
 - Implements `IBufferCache` — stores framed bytes, slices to the caller's `IBufferWriter<byte>` on read, copies the `ReadOnlySequence<byte>` on write, with the same stamping as the generic path. See [Zero-intermediate-copy buffer path](#zero-intermediate-copy-buffer-path).
 - Optional value cloning for isolation.
 - `cache.Events` event surface (`ICacheEvents`): direct-op `Hit`/`Miss`/`Set`/`Remove` (`Tier=l1`), `Eviction` (with reason `expired`/`capacity`/`removed`/`flushed`, including lazy read-path expiry reaps), and the bulk `RemoveAll`/`RemoveByPrefix`/`RemoveByTag`/`Clear`/`Flush` signals. See [Events](#events).
-- Shared `GetOrAddAsync` fail-safe, factory timeout, eager refresh, conditional refresh, and background completion behavior through `Headless.Caching.Core`.
+- Shared `GetOrAddAsync` fail-safe, factory timeout, eager refresh, conditional refresh, and background completion behavior through `Headless.Caching`.
 
 ### Design constraints
 
@@ -933,7 +933,7 @@ Redis distributed cache implementation for multi-instance applications.
 - Redis Cluster support for all operations, including tagging and clear.
 - Implements `IBufferCache` — `TryGetToAsync` writes the decoded value slice into the caller's `IBufferWriter<byte>` and `UpsertRawAsync` splices a `ReadOnlySequence<byte>` payload into the frame buffer, both reusing the same envelope stamping so expiry/tags/sliding/`CreatedAt` match the generic path; the frame is byte-identical and the read exposes the payload as a slice of the received buffer (one copy). See [Zero-intermediate-copy buffer path](#zero-intermediate-copy-buffer-path).
 - `cache.Events` event surface (`ICacheEvents`): direct-op `Hit`/`Miss`/`Set`/`Remove` (`Tier=l2`) and the bulk `RemoveAll`/`RemoveByPrefix`/`RemoveByTag`/`Clear`/`Flush` signals (Redis server-side evictions are not client-observable, so no `Eviction` event). See [Events](#events).
-- Shared `GetOrAddAsync` fail-safe, factory timeout, eager refresh, conditional refresh, and background completion behavior through `Headless.Caching.Core`.
+- Shared `GetOrAddAsync` fail-safe, factory timeout, eager refresh, conditional refresh, and background completion behavior through `Headless.Caching`.
 
 ### Design constraints
 

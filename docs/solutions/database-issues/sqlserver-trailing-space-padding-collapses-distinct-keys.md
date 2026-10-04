@@ -24,10 +24,10 @@ On SQL Server, `=` and primary-key/unique-index uniqueness pad the shorter strin
 
 ## Symptoms
 
-- Policy lookup is ordinal. `SequencesOptions.Policies` is a `Dictionary<string, SequencePolicy>(StringComparer.Ordinal)` (`src/Headless.Sequences.Core/SequencesOptions.cs:18-19`), and `GetPolicy` does an exact lookup (`:21-23`). So `"invoice"` could be configured as GapFree while `"invoice "` fell back to the Fast default.
+- Policy lookup is ordinal. `SequencesOptions.Policies` is a `Dictionary<string, SequencePolicy>(StringComparer.Ordinal)` (`src/Headless.Sequences/SequencesOptions.cs:18-19`), and `GetPolicy` does an exact lookup (`:21-23`). So `"invoice"` could be configured as GapFree while `"invoice "` fell back to the Fast default.
 - The SQL Server increment is `WHERE tenant_id = @TenantId AND name = @Name AND partition = @Partition` (`src/Headless.Sequences.SqlServer/SqlServerSequenceStore.cs:210-212`), which matches the padded and unpadded name to the same row. A Fast call on `"invoice "` therefore incremented the GapFree counter outside any unit of work, leaving a gap. It also blocked on the `UPDLOCK, HOLDLOCK` row lock held by a gap-free unit on `"invoice"`.
 - Tenant ids that differed only by a trailing space (`"acme"` vs `"acme "`) shared one counter on SQL Server and kept separate counters on PostgreSQL.
-- The `KeyCollation` comment used to say `Latin1_General_100_BIN2` makes names, partitions, and tenant ids "match ordinally (case- and accent-sensitive) ... the same as the PostgreSQL provider". That was false for trailing spaces. The comment has since been corrected to state that `_BIN2` does not stop padding and that refusing padded key parts is what makes matching ordinal. The padding rule is also documented on `SequenceKeyText` (`src/Headless.Sequences.Core/SequenceKeyText.cs:8-13`).
+- The `KeyCollation` comment used to say `Latin1_General_100_BIN2` makes names, partitions, and tenant ids "match ordinally (case- and accent-sensitive) ... the same as the PostgreSQL provider". That was false for trailing spaces. The comment has since been corrected to state that `_BIN2` does not stop padding and that refusing padded key parts is what makes matching ordinal. The padding rule is also documented on `SequenceKeyText` (`src/Headless.Sequences/SequenceKeyText.cs:8-13`).
 
 ## What Didn't Work
 
@@ -39,13 +39,13 @@ On SQL Server, `=` and primary-key/unique-index uniqueness pad the shorter strin
 
 Refuse any key part that starts or ends with whitespace, on every provider, before any statement runs. This keeps every key part ordinal on both databases.
 
-- `SequenceKeyText` (`src/Headless.Sequences.Core/SequenceKeyText.cs:14-17`) implements `HasSurroundingWhitespace` (checks the first and last characters with `char.IsWhiteSpace`) and `EnsureNoSurroundingWhitespace` (`:21-31`), which throws `ArgumentException`.
-- `SequenceRequestResolver.Resolve` is the one resolver both entry points use: `SequenceGenerator` (`src/Headless.Sequences.Core/SequenceGenerator.cs:16,31`) and `UnitOfWorkSequencesFeature` (`src/Headless.Sequences.Core/UnitOfWorkSequencesFeature.cs:27`). It applies the check to the name (`src/Headless.Sequences.Core/SequenceRequestResolver.cs:18`), the partition (`:45`), and the current tenant id (`:78`).
+- `SequenceKeyText` (`src/Headless.Sequences/SequenceKeyText.cs:14-17`) implements `HasSurroundingWhitespace` (checks the first and last characters with `char.IsWhiteSpace`) and `EnsureNoSurroundingWhitespace` (`:21-31`), which throws `ArgumentException`.
+- `SequenceRequestResolver.Resolve` is the one resolver both entry points use: `SequenceGenerator` (`src/Headless.Sequences/SequenceGenerator.cs:16,31`) and `UnitOfWorkSequencesFeature` (`src/Headless.Sequences/UnitOfWorkSequencesFeature.cs:27`). It applies the check to the name (`src/Headless.Sequences/SequenceRequestResolver.cs:18`), the partition (`:45`), and the current tenant id (`:78`).
 - Configuration gets the same check, so a padded policy name cannot sit in the ordinal dictionary unreachable:
-  - `HeadlessSequencesSetupBuilder.Policy` (`src/Headless.Sequences.Core/HeadlessSequencesSetupBuilder.cs:73`)
-  - the options validator's `Policies` key rule (`src/Headless.Sequences.Core/SequencesOptions.cs:41-42`)
+  - `HeadlessSequencesSetupBuilder.Policy` (`src/Headless.Sequences/HeadlessSequencesSetupBuilder.cs:73`)
+  - the options validator's `Policies` key rule (`src/Headless.Sequences/SequencesOptions.cs:41-42`)
 - Tests:
-  - `should_refuse_a_key_part_padded_with_whitespace` (`tests/Headless.Sequences.Core.Tests.Unit/SequenceGeneratorTests.cs:203-222`) covers leading and trailing padding, including a tab, on the name, partition, and tenant id. It asserts that the store received no calls.
+  - `should_refuse_a_key_part_padded_with_whitespace` (`tests/Headless.Sequences.Tests.Unit/SequenceGeneratorTests.cs:203-222`) covers leading and trailing padding, including a tab, on the name, partition, and tenant id. It asserts that the store received no calls.
   - The conformance case `should_reject_invalid_key_parts_before_any_statement` (`tests/Headless.Sequences.Tests.Harness/SequencesConformanceTests.cs:255-299`) runs against both providers. It checks that a padded name, partition, and tenant (`"acme "`) are refused and that no row was written.
 
 ## Why This Works
@@ -65,7 +65,7 @@ The rule also refuses leading whitespace and non-space whitespace, even though S
   - Settings: `CREATE UNIQUE ... ([Name])` and `([Name], [ProviderName], [ProviderKey])` (`src/Headless.Settings.Storage.SqlServer/SqlServerSettingsStorageInitializer.cs:132,145`), plus a `NULL`-filtered sibling index on the remaining columns for the no-provider-key scope (`:152`).
   - Features: unique on `[Name]` and on `([Name], [ProviderName], [ProviderKey])` (`src/Headless.Features.Storage.SqlServer/SqlServerFeaturesStorageInitializer.cs:145,161,177`), plus a `NULL`-filtered sibling index on the remaining columns (`:185`).
   - Permissions: unique on `[Name]` and on `([TenantId], [Name], [ProviderName], [ProviderKey])` (`src/Headless.Permissions.Storage.SqlServer/SqlServerPermissionsStorageInitializer.cs:75,110,146`), plus a `NULL`-filtered sibling index for the host scope (`:156`).
-  - These columns declare no `COLLATE`, so they use the database default collation. Their entity constructors, and the permission grant store's own parameter checks, reject only null, empty, or whitespace-only values, not padded ones. See `src/Headless.Settings.Core/Entities/SettingValueRecord.cs:44-46`, `src/Headless.Features.Core/Entities/FeatureValueRecord.cs:40-42`, `src/Headless.Permissions.Core/Entities/PermissionGrantRecord.cs:92-94`, and `src/Headless.Permissions.Core/Grants/PermissionGrantStore.cs:556-557`.
+  - These columns declare no `COLLATE`, so they use the database default collation. Their entity constructors, and the permission grant store's own parameter checks, reject only null, empty, or whitespace-only values, not padded ones. See `src/Headless.Settings/Entities/SettingValueRecord.cs:44-46`, `src/Headless.Features/Entities/FeatureValueRecord.cs:40-42`, `src/Headless.Permissions/Entities/PermissionGrantRecord.cs:92-94`, and `src/Headless.Permissions/Grants/PermissionGrantStore.cs:556-557`.
   - So a `ProviderKey` or `TenantId` of `"acme "` next to `"acme"` would hit the padded-uniqueness rule on SQL Server. Whether that makes SQL Server and PostgreSQL behave differently depends on the PostgreSQL sibling's column collations and on how upstream callers normalize these values. Neither was checked here.
 
 ## Related

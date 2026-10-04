@@ -12,7 +12,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.Imaging.ImageSharp\Headless.Imaging.ImageSharp.csproj" />
-    <ProjectReference Include="..\..\src\Headless.Imaging.Core\Headless.Imaging.Core.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Imaging\Headless.Imaging.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
   </ItemGroup>
 </Project>

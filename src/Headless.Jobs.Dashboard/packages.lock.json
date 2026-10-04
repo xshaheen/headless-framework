@@ -188,13 +188,7 @@
           "Headless.Primitives": "[1.0.0, )"
         }
       },
-      "headless.coordination.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )"
-        }
-      },
-      "headless.coordination.core": {
+      "headless.coordination": {
         "type": "Project",
         "dependencies": {
           "FluentValidation": "[12.1.1, )",
@@ -205,6 +199,12 @@
           "Headless.Extensions": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Headless.Serializer.Json": "[1.0.0, )"
+        }
+      },
+      "headless.coordination.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )"
         }
       },
       "headless.dashboard.authentication": {
@@ -252,19 +252,11 @@
           "OpenTelemetry.Api": "[1.18.0, )"
         }
       },
-      "headless.jobs.abstractions": {
+      "headless.jobs": {
         "type": "Project",
         "dependencies": {
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.Reliability.Abstractions": "[1.0.0, )",
-          "Headless.UnitOfWork.Abstractions": "[1.0.0, )"
-        }
-      },
-      "headless.jobs.core": {
-        "type": "Project",
-        "dependencies": {
+          "Headless.Coordination": "[1.0.0, )",
           "Headless.Coordination.Abstractions": "[1.0.0, )",
-          "Headless.Coordination.Core": "[1.0.0, )",
           "Headless.DistributedLocks.Abstractions": "[1.0.0, )",
           "Headless.Jobs.Abstractions": "[1.0.0, )",
           "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
@@ -272,6 +264,14 @@
           "NCrontab.Signed": "[3.4.0, )",
           "OpenTelemetry.Api": "[1.18.0, )",
           "Polly.Core": "[8.7.0, )"
+        }
+      },
+      "headless.jobs.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Reliability.Abstractions": "[1.0.0, )",
+          "Headless.UnitOfWork.Abstractions": "[1.0.0, )"
         }
       },
       "headless.multitenancy.abstractions": {

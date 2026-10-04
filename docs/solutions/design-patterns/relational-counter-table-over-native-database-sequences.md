@@ -1,7 +1,7 @@
 ---
 title: "Tenant-scoped counters use a relational table row, not native database SEQUENCE objects"
 date: 2026-09-25
-module: Headless.Sequences.Core
+module: Headless.Sequences
 problem_type: design_pattern
 component: database
 severity: high
@@ -11,7 +11,7 @@ applies_when:
   - "Adding a new Sequences provider or extending ReserveAsync's consecutive-range contract"
   - "Comparing Sequences' storage design against Headless.DistributedLocks fencing tokens, which do use native sequences"
 related_components:
-  - "Headless.Sequences.Core"
+  - "Headless.Sequences"
   - "Headless.Sequences.PostgreSql"
   - "Headless.Sequences.SqlServer"
   - "Headless.DistributedLocks.PostgreSql"
@@ -32,8 +32,8 @@ tags: [sequences, native-sequence, gap-free, tenant-scoped, counters, postgresql
 - **PostgreSQL increment.** One `INSERT … ON CONFLICT (tenant_id, name, partition) DO UPDATE SET value = t.value + @Delta … RETURNING value` (`src/Headless.Sequences.PostgreSql/PostgreSqlSequenceStore.cs:176-191`). When two first calls on a new key race, the loser waits on the winner's unique-index entry and then takes the update branch, so no retry is needed (`:18-20`).
 - **SQL Server increment.** One batch: `UPDATE … WITH (UPDLOCK, HOLDLOCK) … OUTPUT … INTO @allocated`, then `IF NOT EXISTS … INSERT`, then one trailing `SELECT` (`src/Headless.Sequences.SqlServer/SqlServerSequenceStore.cs:203-227`). The batch has no `TRY/CATCH`, because a caught duplicate-key error dooms an `XACT_ABORT ON` caller transaction (`:25-26`).
 - **Fast path.** `IncrementAsync` opens its own `READ COMMITTED` transaction, commits it, and retries only on a deadlock, up to 3 attempts (PG `:31-68`, SQL Server `:38-73`).
-- **Gap-free path.** `UnitOfWorkSequencesFeature.NextAsync` refuses fast-mode names, requires a live `DbTransaction`, validates that the unit runs on the counters' database, and then calls `IncrementEnlistedAsync` on the unit's own connection and transaction (`src/Headless.Sequences.Core/UnitOfWorkSequencesFeature.cs:29-57`). The enlisted call never retries, because a deadlock has already rolled back the caller's transaction (PG `PostgreSqlSequenceStore.cs:104-107`).
-- **Range reserve.** `ReserveAsync(count)` is one increment with `delta = count * step`. On a new row it inserts `start + (count - 1) * step`, and it returns `SequenceRange(last - span, count, step)` (`src/Headless.Sequences.Core/SequenceGenerator.cs:36-42`). The whole block comes from one atomic statement, which is what backs the "Atomically takes `count` consecutive values" contract (`src/Headless.Sequences.Abstractions/ISequenceGenerator.cs:32`).
+- **Gap-free path.** `UnitOfWorkSequencesFeature.NextAsync` refuses fast-mode names, requires a live `DbTransaction`, validates that the unit runs on the counters' database, and then calls `IncrementEnlistedAsync` on the unit's own connection and transaction (`src/Headless.Sequences/UnitOfWorkSequencesFeature.cs:29-57`). The enlisted call never retries, because a deadlock has already rolled back the caller's transaction (PG `PostgreSqlSequenceStore.cs:104-107`).
+- **Range reserve.** `ReserveAsync(count)` is one increment with `delta = count * step`. On a new row it inserts `start + (count - 1) * step`, and it returns `SequenceRange(last - span, count, step)` (`src/Headless.Sequences/SequenceGenerator.cs:36-42`). The whole block comes from one atomic statement, which is what backs the "Atomically takes `count` consecutive values" contract (`src/Headless.Sequences.Abstractions/ISequenceGenerator.cs:32`).
 - **Start and step are policy, not schema.** `SequencePolicy.Start` and `Step` travel as statement parameters (`UnitOfWorkSequencesFeature.cs:56`, `SequenceGenerator.cs:19`), so changing a registration needs no DDL.
 
 **Contrast: where native sequences are right.** Both fencing-token sources use one global native sequence. PostgreSQL uses `SELECT nextval(...)` (`src/Headless.DistributedLocks.PostgreSql/PostgresFencingTokenSource.cs`), over a sequence the schema runner creates from `PostgreSqlDistributedLocksSchemaContribution`. SQL Server uses `SELECT NEXT VALUE FOR …` (`src/Headless.DistributedLocks.SqlServer/SqlServerFencingTokenSource.cs:87`), and its schema contribution creates it with `CREATE SEQUENCE … AS bigint START WITH 1 INCREMENT BY 1 NO CYCLE` (`src/Headless.DistributedLocks.SqlServer/SqlServerDistributedLocksSchemaContribution.cs`). That use has one fixed key, no transactional requirement, and gaps are harmless, because a fencing token only has to increase strictly.

@@ -449,14 +449,7 @@
           "xunit.v3.runner.common": "[4.0.0]"
         }
       },
-      "headless.blobs.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Extensions": "[1.0.0, )",
-          "Headless.Serializer.Json": "[1.0.0, )"
-        }
-      },
-      "headless.blobs.core": {
+      "headless.blobs": {
         "type": "Project",
         "dependencies": {
           "Headless.Blobs.Abstractions": "[1.0.0, )",
@@ -465,11 +458,18 @@
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )"
         }
       },
+      "headless.blobs.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Extensions": "[1.0.0, )",
+          "Headless.Serializer.Json": "[1.0.0, )"
+        }
+      },
       "headless.blobs.sshnet": {
         "type": "Project",
         "dependencies": {
+          "Headless.Blobs": "[1.0.0, )",
           "Headless.Blobs.Abstractions": "[1.0.0, )",
-          "Headless.Blobs.Core": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Headless.Serializer.Json": "[1.0.0, )",
           "SSH.NET": "[2026.0.0, )"

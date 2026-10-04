@@ -10,7 +10,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.UnitOfWork.EntityFramework\Headless.UnitOfWork.EntityFramework.csproj" />
-    <ProjectReference Include="..\Headless.Messaging.Core\Headless.Messaging.Core.csproj" />
+    <ProjectReference Include="..\Headless.Messaging\Headless.Messaging.csproj" />
     <ProjectReference Include="..\Headless.Messaging.Storage.SqlServer\Headless.Messaging.Storage.SqlServer.csproj" />
   </ItemGroup>
 </Project>

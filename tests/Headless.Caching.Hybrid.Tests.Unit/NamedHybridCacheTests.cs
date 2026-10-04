@@ -514,7 +514,7 @@ public sealed class NamedHybridCacheTests : TestBase
     }
 
     // Reserved-name rejection is owned by AddHeadlessCaching's AddNamed gate and is covered by
-    // Headless.Caching.Core.Tests.Unit/CachingSetupBuilderTests.
+    // Headless.Caching.Tests.Unit/CachingSetupBuilderTests.
 
     private sealed record TierNames(string Local, string Remote);
 }

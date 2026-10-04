@@ -16,7 +16,7 @@ execution: code
 - **Means:** Register the existing tenant publish and consume middleware on the Queue lane and delete the request/reply tenant special cases that stood in for it (KD1, KD2); close the lane-scoping leak in both middleware pipelines (KD3); inherit the inbound deadline for a nested request (KD5); run a force-reprocessed request as a plain Queue message (KD7); bound `RequestOptions.Timeout` (KD6); warn when a JetStream stream captures a NATS reply subject (KD8); prove startup rejection in every non-supporting provider leaf (KD9); give the no-responder case its own receive outcome (KD10); close the listed test gaps.
 - **Authority:** GitHub issues #1069 (request/reply hardening follow-ups) and #1072 (propagate tenant on the Queue lane). Repository owner Mahmoud Shaheen (xshaheen) delegated design judgment for this work to the lead; the Key Decisions below are the lead's under that delegation, each with its rejected alternative, and the pull request lists them and every declined item with its reason. Requirements and Key Decisions bind planning; KTDs own mechanism; a unit never overrides an R, a Key Decision, or a KTD.
 - **Stop conditions:** Stop and report if making the tenant middleware run on the Queue lane requires changing the lane semantics of user middleware beyond the leak fix in R4. Stop if a provider leaf's startup-rejection proof needs a change to that provider's capability declaration. Never weaken a test to pass.
-- **Execution profile:** Deep. Cross-cutting in `Headless.Messaging.Core`, `Headless.Messaging.Queue.Abstractions`, `Headless.Messaging.Nats`, the messaging test harness, four provider integration leaves, and `docs/llms`. Eleven units. The affected integration set needs Docker: RabbitMQ, NATS, Redis, the PostgreSQL and SQL Server storage leaves, and the Kafka, AWS, and Pulsar leaves for their new startup-rejection tests. The Azure Service Bus leaf skips without credentials and is reported as not run.
+- **Execution profile:** Deep. Cross-cutting in `Headless.Messaging`, `Headless.Messaging.Queue.Abstractions`, `Headless.Messaging.Nats`, the messaging test harness, four provider integration leaves, and `docs/llms`. Eleven units. The affected integration set needs Docker: RabbitMQ, NATS, Redis, the PostgreSQL and SQL Server storage leaves, and the Kafka, AWS, and Pulsar leaves for their new startup-rejection tests. The Azure Service Bus leaf skips without credentials and is reported as not run.
 - **Tail ownership:** The executor implements and verifies locally per `AGENTS.md`: `make test-affected`, `make test-affected-integration`, `make docs-check`, and `make verify-affected` with its proof bundle in the PR body. The calling pipeline owns review, PR, and CI.
 
 ---
@@ -128,16 +128,16 @@ Considered and not built, with the evidence that would change the call:
 ### Sources
 
 - Issues #1069 and #1072, both pointing at source PR #1077; the request/reply plan `docs/plans/2026-10-02-2015-feat-messaging-queue-request-reply-plan.md`, whose KTD13 introduced the special cases and whose deferred list named Queue-lane propagation.
-- Tenant registration and middleware: `src/Headless.Messaging.Core/SetupMessagingTenancy.cs`, `src/Headless.Messaging.Core/Configuration/MessagingBuilder.cs`, `src/Headless.Messaging.Core/Configuration/IMiddlewareDescriptorRegistry.cs`, `src/Headless.Messaging.Core/MultiTenancy/TenantPropagationPublishMiddleware.cs`, `src/Headless.Messaging.Core/MultiTenancy/TenantPropagationConsumeMiddleware.cs`.
-- Pipelines and the fallback leak: `src/Headless.Messaging.Core/Internal/ConsumeMiddlewarePipeline.cs` (`_ResolveSharedMiddleware`, `_propagatesTenant`), `src/Headless.Messaging.Core/Internal/PublishMiddlewarePipeline.cs` (`_ResolveMiddleware`).
-- Request/reply: `src/Headless.Messaging.Core/RequestReply/` (RequestClient, PendingRequests, ReplyListenerHost, ResponderReplies, RequestEnvelope), `src/Headless.Messaging.Core/Internal/ISubscribeExecutor.cs`, `src/Headless.Messaging.Core/Internal/IConsumerRegister.CompetingDelivery.cs` (`_ResolveUnservableRequestOutcome`, poison path), `src/Headless.Messaging.Core/Internal/MessagePublisher.cs` (`PublishRequestAsync` reads the final tenant after middleware), `src/Headless.Messaging.Queue.Abstractions/RequestOptions.cs`, `src/Headless.Messaging.Core/Configuration/RequestReplyOptions.cs`, `src/Headless.Messaging.Core/MessagingMetrics.cs`.
-- Replay: `src/Headless.Messaging.Core/Persistence/RelationalDataStorage.Operations.cs` (`_CreateReplayChildAsync`), `src/Headless.Messaging.Storage.InMemory/InMemoryDataStorage.InboxOperations.cs` (`_CreateForcedChild`), `src/Headless.Messaging.Core/Persistence/RelationalDataStorage.Pickup.cs` (InboxKey population), `src/Headless.Messaging.Dashboard/Endpoints/MessagingDashboardEndpoints.cs` (`/received/reexecute`).
+- Tenant registration and middleware: `src/Headless.Messaging/SetupMessagingTenancy.cs`, `src/Headless.Messaging/Configuration/MessagingBuilder.cs`, `src/Headless.Messaging/Configuration/IMiddlewareDescriptorRegistry.cs`, `src/Headless.Messaging/MultiTenancy/TenantPropagationPublishMiddleware.cs`, `src/Headless.Messaging/MultiTenancy/TenantPropagationConsumeMiddleware.cs`.
+- Pipelines and the fallback leak: `src/Headless.Messaging/Internal/ConsumeMiddlewarePipeline.cs` (`_ResolveSharedMiddleware`, `_propagatesTenant`), `src/Headless.Messaging/Internal/PublishMiddlewarePipeline.cs` (`_ResolveMiddleware`).
+- Request/reply: `src/Headless.Messaging/RequestReply/` (RequestClient, PendingRequests, ReplyListenerHost, ResponderReplies, RequestEnvelope), `src/Headless.Messaging/Internal/ISubscribeExecutor.cs`, `src/Headless.Messaging/Internal/IConsumerRegister.CompetingDelivery.cs` (`_ResolveUnservableRequestOutcome`, poison path), `src/Headless.Messaging/Internal/MessagePublisher.cs` (`PublishRequestAsync` reads the final tenant after middleware), `src/Headless.Messaging.Queue.Abstractions/RequestOptions.cs`, `src/Headless.Messaging/Configuration/RequestReplyOptions.cs`, `src/Headless.Messaging/MessagingMetrics.cs`.
+- Replay: `src/Headless.Messaging/Persistence/RelationalDataStorage.Operations.cs` (`_CreateReplayChildAsync`), `src/Headless.Messaging.Storage.InMemory/InMemoryDataStorage.InboxOperations.cs` (`_CreateForcedChild`), `src/Headless.Messaging/Persistence/RelationalDataStorage.Pickup.cs` (InboxKey population), `src/Headless.Messaging.Dashboard/Endpoints/MessagingDashboardEndpoints.cs` (`/received/reexecute`).
 - NATS: `src/Headless.Messaging.Nats/NatsReplyListener.cs` (`_MaintainAsync`, `_PublishAddressIfConnected`, `NatsReplyListenerLog`), `src/Headless.Messaging.Nats/NatsConsumerClient.cs` (`new NatsJSContext(connection)`), `tests/Headless.Messaging.Nats.Tests.Integration/NatsFixture.cs` (`EnsureStreamAsync`, `ListStoredSubjectsAsync`).
-- Conformance: `tests/Headless.Messaging.Core.Tests.Harness/RequestReply/TransportRequestReplyConformance.cs`, `tests/Headless.Messaging.Core.Tests.Harness/RequestReply/RequestReplyConformanceHost.cs`, `tests/Headless.Messaging.Core.Tests.Harness/ProviderConformanceDriver.cs`, `tests/Headless.Messaging.Core.Tests.Harness/Capabilities/TransportConformanceManifest.cs`, `tests/Headless.Messaging.Core.Tests.Harness/Capabilities/TransportConformanceTestBinding.cs`, `tests/Headless.Messaging.InMemory.Tests.Unit/InMemoryProviderConformanceTests.cs`, and `ProviderConformanceEvidenceTests.cs` with its driver in the Kafka, AWS, AzureServiceBus, and Pulsar integration test projects.
-- Existing tests to extend or replace: `tests/Headless.Messaging.Core.Tests.Unit/ConsumerRegisterTests.cs` (receive ring and poison path), `tests/Headless.Messaging.Core.Tests.Unit/RequestReply/` (RequestClientTests, SubscribeExecutorReplyTests, RequestDeadlineTests, RequestReplyTestSupport, ResponderTestSupport), `tests/Headless.Messaging.Core.Tests.Unit/MultiTenancy/SetupMessagingTenancyTests.cs`, `tests/Headless.Messaging.Core.Tests.Unit/Configuration/MessagingBuilderMiddlewareTests.cs`, `tests/Headless.Messaging.Core.Tests.Unit/Internal/ConsumeMiddlewarePipelineMigratedTests.cs`, `tests/Headless.Messaging.Core.Tests.Harness/TransactionalInboxScopeConformanceTests.cs`, `tests/Headless.Messaging.Nats.Tests.Integration/NatsReplyTransportTests.cs`.
+- Conformance: `tests/Headless.Messaging.Tests.Harness/RequestReply/TransportRequestReplyConformance.cs`, `tests/Headless.Messaging.Tests.Harness/RequestReply/RequestReplyConformanceHost.cs`, `tests/Headless.Messaging.Tests.Harness/ProviderConformanceDriver.cs`, `tests/Headless.Messaging.Tests.Harness/Capabilities/TransportConformanceManifest.cs`, `tests/Headless.Messaging.Tests.Harness/Capabilities/TransportConformanceTestBinding.cs`, `tests/Headless.Messaging.InMemory.Tests.Unit/InMemoryProviderConformanceTests.cs`, and `ProviderConformanceEvidenceTests.cs` with its driver in the Kafka, AWS, AzureServiceBus, and Pulsar integration test projects.
+- Existing tests to extend or replace: `tests/Headless.Messaging.Tests.Unit/ConsumerRegisterTests.cs` (receive ring and poison path), `tests/Headless.Messaging.Tests.Unit/RequestReply/` (RequestClientTests, SubscribeExecutorReplyTests, RequestDeadlineTests, RequestReplyTestSupport, ResponderTestSupport), `tests/Headless.Messaging.Tests.Unit/MultiTenancy/SetupMessagingTenancyTests.cs`, `tests/Headless.Messaging.Tests.Unit/Configuration/MessagingBuilderMiddlewareTests.cs`, `tests/Headless.Messaging.Tests.Unit/Internal/ConsumeMiddlewarePipelineMigratedTests.cs`, `tests/Headless.Messaging.Tests.Harness/TransactionalInboxScopeConformanceTests.cs`, `tests/Headless.Messaging.Nats.Tests.Integration/NatsReplyTransportTests.cs`.
 - Institutional learnings: `docs/solutions/architecture-patterns/messaging-keyed-di-lock-isolation.md` (lane is part of a registration's identity), `docs/solutions/architecture-patterns/startup-validation-gate-two-tier-mode-and-env-defaults.md` (a check that needs broker I/O warns, never fails startup), `docs/solutions/logic-errors/terminal-state-overwrite-on-redelivery.md` (in-memory pickup returns live references), `docs/solutions/design-patterns/temporal-authority-standard.md` (deadlines on the injected clock, bounded-interval assertions), `docs/solutions/conventions/opentelemetry-instrumentation-conventions.md` (outcomes are values, tenant is never a metric dimension).
 - Docs to update: `docs/llms/messaging.md` (Request/reply: Setup options, Responders tenant scope and no-responder bullet, Sending requests tenant, Deadlines, Retries, Telemetry, Provider support operator rules; Middleware registration scopes; Multi-tenancy), `docs/llms/multi-tenancy.md` (Message Consumers, Automatic Propagation). `tests/Headless.Docs.Examples.Tests.Unit` compiles every plain `csharp` fence in `docs/llms/messaging.md`; `csharp no-compile` is the only opt-out.
-- Test logging helper to move down: `tests/Headless.Messaging.Core.Tests.Unit/Helpers/CapturingLoggerProvider.cs` (records level and event id; three Core unit callers), into `tests/Headless.Messaging.Core.Tests.Harness`, which the Core unit project and the NATS integration leaf both reference.
+- Test logging helper to move down: `tests/Headless.Messaging.Tests.Unit/Helpers/CapturingLoggerProvider.cs` (records level and event id; three Core unit callers), into `tests/Headless.Messaging.Tests.Harness`, which the Core unit project and the NATS integration leaf both reference.
 
 ---
 
@@ -154,7 +154,7 @@ Considered and not built, with the evidence that would change the call:
 - KTD7. **The NATS check runs in `_MaintainAsync` only, after `_PublishAddressIfConnected()`, as a bounded fire-and-forget task.** It creates `new NatsJSContext(connection)` on the listener's pooled connection (the pattern `NatsConsumerClient` uses), enumerates `ListStreamNamesAsync(_subject)` under a `CancellationTokenSource` of a few seconds linked to `_closing.Token`, and logs `NatsReplyListenerLog` EventId 13 (Warning, stream names) or EventId 14 (Debug, check skipped with the exception type). Every exception is caught. The reconnect handler is not touched. Instantiates KD8. Governs R10.
 - KTD8. **Each non-supporting provider leaf gets three edits.** Its driver overrides `ConfigureRequestReplyTransport` with the same `UseX(...)` body its routing-affinity path already uses, reading endpoint values from the leaf fixture; the manifest profile adds `.WithScenario(RequestReplyStartupRejection, Supported)`; the evidence test gains a `[Fact]` that calls `AssertRejectedAtStartupAsync(new XDriver(fixture), AbortToken)` and a self-binding for the scenario. The Azure Service Bus driver reads `fixture.ConnectionString`, which raises the leaf's skip while the request/reply host is being built, inside the transport delegate, exactly as that leaf's routing-affinity test already does. Instantiates KD9. Governs R11.
 - KTD9. **`no_responder` is a `MessagingMetrics.ReceiveOutcomeNoResponder` constant recorded at the pre-ring settlement site.** `IConsumerRegister.CompetingDelivery` maps `UnservableRequest.NoResponder` to it on the counter and the activity tag; `skipped` stays for `ReceiveRingResult.Skipped`. Instantiates KD10. Governs R12.
-- KTD10. **The capturing logger the NATS test needs is the existing Core unit-test helper, moved down into `Headless.Messaging.Core.Tests.Harness`.** `tests/Headless.Messaging.Core.Tests.Unit/Helpers/CapturingLoggerProvider.cs` already records level and event id; the Core unit tests and the NATS integration leaf both reference the messaging harness, so the harness is the lowest package both already reference, per the repository's "move shared logic down" rule. The move extends it to keep the formatted message so a test can assert the stream name, and its three Core callers follow the new namespace. No new public API enters a shipped package; the UnitOfWork harness copy is untouched. Governs R10.
+- KTD10. **The capturing logger the NATS test needs is the existing Core unit-test helper, moved down into `Headless.Messaging.Tests.Harness`.** `tests/Headless.Messaging.Tests.Unit/Helpers/CapturingLoggerProvider.cs` already records level and event id; the Core unit tests and the NATS integration leaf both reference the messaging harness, so the harness is the lowest package both already reference, per the repository's "move shared logic down" rule. The move extends it to keep the formatted message so a test can assert the stream name, and its three Core callers follow the new namespace. No new public API enters a shipped package; the UnitOfWork harness copy is untouched. Governs R10.
 - KTD11. **The literal-contract fix is one helper change.** `RequestReplyTestSupport.Replies.SendOkAsync` resolves the response contract through the production `ResolveContract`; it takes the expected name and version from the test's own `Message<T>("name", "version")` registration instead, and the two `RequestClientTests` that compare against it assert those literals. Governs R13.
 
 ### High-Level Technical Design
@@ -240,16 +240,16 @@ Un-validated bets made in this non-interactive run; each is cheap to revisit in 
 
 | U-ID | Title | Key files | Depends on |
 | --- | --- | --- | --- |
-| U1 | Prove and fix the lane leak in both pipelines | `src/Headless.Messaging.Core/Internal/ConsumeMiddlewarePipeline.cs`, `src/Headless.Messaging.Core/Internal/PublishMiddlewarePipeline.cs` | none |
-| U2 | Queue-lane middleware registration and tenant propagation on both lanes | `src/Headless.Messaging.Core/Configuration/MessagingBuilder.cs`, `src/Headless.Messaging.Core/SetupMessagingTenancy.cs` | U1 |
-| U3 | Delete the request/reply tenant special cases | `src/Headless.Messaging.Core/RequestReply/RequestClient.cs`, `src/Headless.Messaging.Core/Internal/ConsumeMiddlewarePipeline.cs`, `src/Headless.Messaging.Core/Internal/ISubscribeExecutor.cs` | U2 |
-| U4 | Nested request inherits the inbound deadline | `src/Headless.Messaging.Core/RequestReply/RequestClient.cs` | U3 |
-| U5 | Bound `RequestOptions.Timeout` and drop saturation | `src/Headless.Messaging.Queue.Abstractions/RequestOptions.cs`, `src/Headless.Messaging.Core/Configuration/RequestReplyOptions.cs`, `src/Headless.Messaging.Core/RequestReply/PendingRequests.cs` | U4 |
-| U6 | A replayed request runs as a plain Queue message | `src/Headless.Messaging.Core/Internal/ISubscribeExecutor.cs`, `src/Headless.Messaging.Core/Internal/LoggerExtensions.cs` | none |
-| U7 | `no_responder` receive outcome | `src/Headless.Messaging.Core/MessagingMetrics.cs`, `src/Headless.Messaging.Core/Internal/IConsumerRegister.CompetingDelivery.cs` | none |
-| U8 | Close the request/reply unit-test gaps | `tests/Headless.Messaging.Core.Tests.Unit/ConsumerRegisterTests.cs`, new test classes under `tests/Headless.Messaging.Core.Tests.Unit/RequestReply/` and `Transport/` | U7 |
-| U9 | NATS reply-subject capture warning | `src/Headless.Messaging.Nats/NatsReplyListener.cs`, `tests/Headless.Messaging.Core.Tests.Harness/CapturingLoggerProvider.cs` | none |
-| U10 | Startup-rejection proof in the four provider leaves | `tests/Headless.Messaging.Core.Tests.Harness/Capabilities/TransportConformanceManifest.cs`, four drivers and evidence tests | none |
+| U1 | Prove and fix the lane leak in both pipelines | `src/Headless.Messaging/Internal/ConsumeMiddlewarePipeline.cs`, `src/Headless.Messaging/Internal/PublishMiddlewarePipeline.cs` | none |
+| U2 | Queue-lane middleware registration and tenant propagation on both lanes | `src/Headless.Messaging/Configuration/MessagingBuilder.cs`, `src/Headless.Messaging/SetupMessagingTenancy.cs` | U1 |
+| U3 | Delete the request/reply tenant special cases | `src/Headless.Messaging/RequestReply/RequestClient.cs`, `src/Headless.Messaging/Internal/ConsumeMiddlewarePipeline.cs`, `src/Headless.Messaging/Internal/ISubscribeExecutor.cs` | U2 |
+| U4 | Nested request inherits the inbound deadline | `src/Headless.Messaging/RequestReply/RequestClient.cs` | U3 |
+| U5 | Bound `RequestOptions.Timeout` and drop saturation | `src/Headless.Messaging.Queue.Abstractions/RequestOptions.cs`, `src/Headless.Messaging/Configuration/RequestReplyOptions.cs`, `src/Headless.Messaging/RequestReply/PendingRequests.cs` | U4 |
+| U6 | A replayed request runs as a plain Queue message | `src/Headless.Messaging/Internal/ISubscribeExecutor.cs`, `src/Headless.Messaging/Internal/LoggerExtensions.cs` | none |
+| U7 | `no_responder` receive outcome | `src/Headless.Messaging/MessagingMetrics.cs`, `src/Headless.Messaging/Internal/IConsumerRegister.CompetingDelivery.cs` | none |
+| U8 | Close the request/reply unit-test gaps | `tests/Headless.Messaging.Tests.Unit/ConsumerRegisterTests.cs`, new test classes under `tests/Headless.Messaging.Tests.Unit/RequestReply/` and `Transport/` | U7 |
+| U9 | NATS reply-subject capture warning | `src/Headless.Messaging.Nats/NatsReplyListener.cs`, `tests/Headless.Messaging.Tests.Harness/CapturingLoggerProvider.cs` | none |
+| U10 | Startup-rejection proof in the four provider leaves | `tests/Headless.Messaging.Tests.Harness/Capabilities/TransportConformanceManifest.cs`, four drivers and evidence tests | none |
 | U11 | Docs sweep and final verification | `docs/llms/messaging.md`, `docs/llms/multi-tenancy.md`, `docs/llms/testing.md` | U1 to U10 |
 
 ### U1. Prove and fix the lane leak in both pipelines
@@ -258,10 +258,10 @@ Un-validated bets made in this non-interactive run; each is cheap to revisit in 
 - **Requirements:** R4 (KTD2, KD3).
 - **Dependencies:** none.
 - **Files:**
-  - `src/Headless.Messaging.Core/Internal/ConsumeMiddlewarePipeline.cs`
-  - `src/Headless.Messaging.Core/Internal/PublishMiddlewarePipeline.cs`
-  - `tests/Headless.Messaging.Core.Tests.Unit/Internal/ConsumeMiddlewarePipelineMigratedTests.cs`
-  - `tests/Headless.Messaging.Core.Tests.Unit/Internal/PublishMiddlewarePipelineMigratedTests.cs`
+  - `src/Headless.Messaging/Internal/ConsumeMiddlewarePipeline.cs`
+  - `src/Headless.Messaging/Internal/PublishMiddlewarePipeline.cs`
+  - `tests/Headless.Messaging.Tests.Unit/Internal/ConsumeMiddlewarePipelineMigratedTests.cs`
+  - `tests/Headless.Messaging.Tests.Unit/Internal/PublishMiddlewarePipelineMigratedTests.cs`
 - **Approach:**
   1. Write the consume characterization test first: register a recording middleware with `AddBusConsumeMiddleware<T>()`, build the pipeline with the registry, run a consume whose descriptor and medium message carry `Lane = MessageLane.Queue`, and assert the recorder ran. Mirror `_CreateServices`, `_BuildPipeline`, and `_BuildConsumerContext` in the migrated tests file. Do the same for publish with `AddBusPublishMiddleware<T>()` and `pipeline.ExecuteAsync(..., MessageLane.Queue, ...)` using a Queue delivery decision.
   2. Confirm both tests are red in the intended direction (they currently prove the leak), then invert the assertions to the R4 contract.
@@ -284,11 +284,11 @@ Un-validated bets made in this non-interactive run; each is cheap to revisit in 
 - **Requirements:** R1, R2, R5, R16 (KTD1, KD1, KD4).
 - **Dependencies:** U1.
 - **Files:**
-  - `src/Headless.Messaging.Core/Configuration/MessagingBuilder.cs`
-  - `src/Headless.Messaging.Core/SetupMessagingTenancy.cs`
-  - `tests/Headless.Messaging.Core.Tests.Unit/Configuration/MessagingBuilderMiddlewareTests.cs`
-  - `tests/Headless.Messaging.Core.Tests.Unit/MultiTenancy/SetupMessagingTenancyTests.cs`
-  - `tests/Headless.Messaging.Core.Tests.Unit/IntegrationTests/QueueTenantPropagationIntegrationTests.cs` (new)
+  - `src/Headless.Messaging/Configuration/MessagingBuilder.cs`
+  - `src/Headless.Messaging/SetupMessagingTenancy.cs`
+  - `tests/Headless.Messaging.Tests.Unit/Configuration/MessagingBuilderMiddlewareTests.cs`
+  - `tests/Headless.Messaging.Tests.Unit/MultiTenancy/SetupMessagingTenancyTests.cs`
+  - `tests/Headless.Messaging.Tests.Unit/IntegrationTests/QueueTenantPropagationIntegrationTests.cs` (new)
   - `docs/llms/messaging.md` (Middleware registration list and "Registration scopes"; Multi-tenancy section)
   - `docs/llms/multi-tenancy.md` (Message Consumers, Automatic Propagation)
 - **Approach:**
@@ -305,7 +305,7 @@ Un-validated bets made in this non-interactive run; each is cheap to revisit in 
   - Covers AE1. With `PropagateTenant()` and ambient `t1`, `EnqueueAsync` without options sends an envelope with `headless-tenant-id = t1`; explicit `TenantId` wins; without `PropagateTenant()` the header is absent.
   - Covers AE2 (`ProcessLocal` tier). The plain Queue consumer observes `t1` during the consume and the ambient tenant is restored afterwards.
   - The docs compile test passes for any new `messaging.md` fence.
-- **Verification:** New and extended tests pass in `Headless.Messaging.Core.Tests.Unit`; `make docs-check` passes.
+- **Verification:** New and extended tests pass in `Headless.Messaging.Tests.Unit`; `make docs-check` passes.
 
 ### U3. Delete the request/reply tenant special cases
 
@@ -313,14 +313,14 @@ Un-validated bets made in this non-interactive run; each is cheap to revisit in 
 - **Requirements:** R2, R3, R15, R16 (KTD3, KD2).
 - **Dependencies:** U2.
 - **Files:**
-  - `src/Headless.Messaging.Core/RequestReply/RequestClient.cs`
-  - `src/Headless.Messaging.Core/Internal/ConsumeMiddlewarePipeline.cs`
-  - `src/Headless.Messaging.Core/Internal/ISubscribeExecutor.cs`
-  - `src/Headless.Messaging.Core/Configuration/IMiddlewareDescriptorRegistry.cs`
-  - `src/Headless.Messaging.Core/MultiTenancy/TenantPropagationPublishMiddleware.cs`
-  - `tests/Headless.Messaging.Core.Tests.Unit/RequestReply/RequestClientTests.cs`
-  - `tests/Headless.Messaging.Core.Tests.Unit/RequestReply/SubscribeExecutorReplyTests.cs`
-  - `tests/Headless.Messaging.Core.Tests.Harness/TransactionalInboxScopeConformanceTests.cs`
+  - `src/Headless.Messaging/RequestReply/RequestClient.cs`
+  - `src/Headless.Messaging/Internal/ConsumeMiddlewarePipeline.cs`
+  - `src/Headless.Messaging/Internal/ISubscribeExecutor.cs`
+  - `src/Headless.Messaging/Configuration/IMiddlewareDescriptorRegistry.cs`
+  - `src/Headless.Messaging/MultiTenancy/TenantPropagationPublishMiddleware.cs`
+  - `tests/Headless.Messaging.Tests.Unit/RequestReply/RequestClientTests.cs`
+  - `tests/Headless.Messaging.Tests.Unit/RequestReply/SubscribeExecutorReplyTests.cs`
+  - `tests/Headless.Messaging.Tests.Harness/TransactionalInboxScopeConformanceTests.cs`
   - `docs/llms/messaging.md` (Responders "Tenant scope" bullet; Sending requests "Tenant" bullet)
 - **Approach:**
   1. Apply the KTD3 deletion list. `RequestClient` keeps `TimeProvider`, `IConsumeContextAccessor`, and the publish collaborators; `_CreateQueueOptions` stamps only `options?.TenantId`.
@@ -344,8 +344,8 @@ Un-validated bets made in this non-interactive run; each is cheap to revisit in 
 - **Requirements:** R6, R7, R16 (KTD4, KD5).
 - **Dependencies:** U3.
 - **Files:**
-  - `src/Headless.Messaging.Core/RequestReply/RequestClient.cs`
-  - `tests/Headless.Messaging.Core.Tests.Unit/RequestReply/RequestClientTests.cs`
+  - `src/Headless.Messaging/RequestReply/RequestClient.cs`
+  - `tests/Headless.Messaging.Tests.Unit/RequestReply/RequestClientTests.cs`
   - `docs/llms/messaging.md` (Deadlines, timeouts, and clock skew)
 - **Approach:**
   1. Move the timeout computation inside the metric-recording `try`; read `now` once; derive the inbound deadline through `RequestEnvelope.IsRequest` and `RequestEnvelope.GetDeadline` on `consumeContextAccessor.Current` (`Lane`, `Headers`).
@@ -369,13 +369,13 @@ Un-validated bets made in this non-interactive run; each is cheap to revisit in 
 - **Dependencies:** U4.
 - **Files:**
   - `src/Headless.Messaging.Queue.Abstractions/RequestOptions.cs`
-  - `src/Headless.Messaging.Core/Configuration/RequestReplyOptions.cs`
-  - `src/Headless.Messaging.Core/RequestReply/RequestClient.cs`
-  - `src/Headless.Messaging.Core/RequestReply/PendingRequests.cs`
+  - `src/Headless.Messaging/Configuration/RequestReplyOptions.cs`
+  - `src/Headless.Messaging/RequestReply/RequestClient.cs`
+  - `src/Headless.Messaging/RequestReply/PendingRequests.cs`
   - `tests/Headless.Messaging.Abstractions.Tests.Unit/RequestOptionsTests.cs` (new)
-  - `tests/Headless.Messaging.Core.Tests.Unit/RequestReply/RequestClientTests.cs`
-  - `tests/Headless.Messaging.Core.Tests.Unit/RequestReply/PendingRequestsTests.cs`
-  - `docs/llms/messaging.md` (Setup "Options" bullet; Headless.Messaging.Core options list)
+  - `tests/Headless.Messaging.Tests.Unit/RequestReply/RequestClientTests.cs`
+  - `tests/Headless.Messaging.Tests.Unit/RequestReply/PendingRequestsTests.cs`
+  - `docs/llms/messaging.md` (Setup "Options" bullet; Headless.Messaging options list)
 - **Approach:**
   1. Add `public static readonly TimeSpan MaxTimeout` (10 minutes) to `RequestOptions` with an XML summary; the `Timeout` setter passes null through, then `Argument.IsPositive`, then the upper bound through `Headless.Checks`; document `ArgumentOutOfRangeException` for both directions.
   2. `RequestReplyOptions.MaxDefaultTimeout = RequestOptions.MaxTimeout`; the validator message is unchanged in meaning.
@@ -396,10 +396,10 @@ Un-validated bets made in this non-interactive run; each is cheap to revisit in 
 - **Requirements:** R9, R16 (KTD6, KD7).
 - **Dependencies:** none logically; it shares `ISubscribeExecutor.cs` with U3, so in one working tree land it after U3 to keep the executor diff readable.
 - **Files:**
-  - `src/Headless.Messaging.Core/Internal/ISubscribeExecutor.cs`
-  - `src/Headless.Messaging.Core/Internal/LoggerExtensions.cs`
-  - `tests/Headless.Messaging.Core.Tests.Unit/RequestReply/RequestDeadlineTests.cs`
-  - `tests/Headless.Messaging.Core.Tests.Unit/RequestReply/ResponderTestSupport.cs`
+  - `src/Headless.Messaging/Internal/ISubscribeExecutor.cs`
+  - `src/Headless.Messaging/Internal/LoggerExtensions.cs`
+  - `tests/Headless.Messaging.Tests.Unit/RequestReply/RequestDeadlineTests.cs`
+  - `tests/Headless.Messaging.Tests.Unit/RequestReply/ResponderTestSupport.cs`
   - `docs/llms/messaging.md` (Deadlines section; Retries section; the terminal-failure paragraph that mentions re-executing from the dashboard)
 - **Approach:**
   1. First statement of `_ExecuteAsync`: when `message.InboxKey is { Generation: > 0 }` and `RequestEnvelope.IsRequest(message.Lane, message.Origin.Headers)`, remove `Headers.ReplyTo` and `Headers.RequestDeadline` from `message.Origin.Headers` and log the new Information event (storage id, generation).
@@ -422,9 +422,9 @@ Un-validated bets made in this non-interactive run; each is cheap to revisit in 
 - **Requirements:** R12, R16 (KTD9, KD10).
 - **Dependencies:** none.
 - **Files:**
-  - `src/Headless.Messaging.Core/MessagingMetrics.cs`
-  - `src/Headless.Messaging.Core/Internal/IConsumerRegister.CompetingDelivery.cs`
-  - `tests/Headless.Messaging.Core.Tests.Unit/ConsumerRegisterTests.cs`
+  - `src/Headless.Messaging/MessagingMetrics.cs`
+  - `src/Headless.Messaging/Internal/IConsumerRegister.CompetingDelivery.cs`
+  - `tests/Headless.Messaging.Tests.Unit/ConsumerRegisterTests.cs`
   - `docs/llms/messaging.md` (Responders "A request never reaches a plain consumer" bullet; Telemetry table row for `messaging.receive.outcomes`)
 - **Approach:**
   1. Add `ReceiveOutcomeNoResponder = "no_responder"` with a comment beside `ReceiveOutcomeExpired`; update the `ReceiveOutcomeSkipped` comment to its single meaning.
@@ -444,12 +444,12 @@ Un-validated bets made in this non-interactive run; each is cheap to revisit in 
 - **Requirements:** R13 (KTD11).
 - **Dependencies:** U7 (shares `ConsumerRegisterTests`).
 - **Files:**
-  - `tests/Headless.Messaging.Core.Tests.Unit/ConsumerRegisterTests.cs`
-  - `tests/Headless.Messaging.Core.Tests.Unit/Transport/ReplyAddressesTests.cs` (new)
-  - `tests/Headless.Messaging.Core.Tests.Unit/RequestReply/ReplyListenerHostTests.cs` (new)
-  - `tests/Headless.Messaging.Core.Tests.Unit/RequestReply/ResponderRepliesTests.cs` (new)
-  - `tests/Headless.Messaging.Core.Tests.Unit/RequestReply/RequestReplyTestSupport.cs`
-  - `tests/Headless.Messaging.Core.Tests.Unit/RequestReply/RequestClientTests.cs`
+  - `tests/Headless.Messaging.Tests.Unit/ConsumerRegisterTests.cs`
+  - `tests/Headless.Messaging.Tests.Unit/Transport/ReplyAddressesTests.cs` (new)
+  - `tests/Headless.Messaging.Tests.Unit/RequestReply/ReplyListenerHostTests.cs` (new)
+  - `tests/Headless.Messaging.Tests.Unit/RequestReply/ResponderRepliesTests.cs` (new)
+  - `tests/Headless.Messaging.Tests.Unit/RequestReply/RequestReplyTestSupport.cs`
+  - `tests/Headless.Messaging.Tests.Unit/RequestReply/RequestClientTests.cs`
 - **Approach:**
   1. Poison fault branches in `ConsumerRegisterTests`: drive `_RunReceiveDeliveryAsync` on the Queue lane with `_RequestHeaders` and a `RecordingReplyTransport` registered through `configureServices`; one test per branch.
   2. `ReplyAddressesTests`: a theory over `IsInReplyNamespace`.
@@ -475,7 +475,7 @@ Un-validated bets made in this non-interactive run; each is cheap to revisit in 
 - **Dependencies:** none.
 - **Files:**
   - `src/Headless.Messaging.Nats/NatsReplyListener.cs`
-  - `tests/Headless.Messaging.Core.Tests.Harness/CapturingLoggerProvider.cs` (moved from `tests/Headless.Messaging.Core.Tests.Unit/Helpers/CapturingLoggerProvider.cs`)
+  - `tests/Headless.Messaging.Tests.Harness/CapturingLoggerProvider.cs` (moved from `tests/Headless.Messaging.Tests.Unit/Helpers/CapturingLoggerProvider.cs`)
   - the three Core unit test files that use the helper (namespace update only)
   - `tests/Headless.Messaging.Nats.Tests.Integration/NatsReplyTransportTests.cs`
   - `docs/llms/messaging.md` (Provider support, operator rule "NATS streams")
@@ -498,7 +498,7 @@ Un-validated bets made in this non-interactive run; each is cheap to revisit in 
 - **Requirements:** R11 (KTD8, KD9).
 - **Dependencies:** none.
 - **Files:**
-  - `tests/Headless.Messaging.Core.Tests.Harness/Capabilities/TransportConformanceManifest.cs`
+  - `tests/Headless.Messaging.Tests.Harness/Capabilities/TransportConformanceManifest.cs`
   - `tests/Headless.Messaging.Kafka.Tests.Integration/KafkaProviderConformanceDriver.cs` and `ProviderConformanceEvidenceTests.cs`
   - `tests/Headless.Messaging.Aws.Tests.Integration/AwsProviderConformanceDriver.cs` and `ProviderConformanceEvidenceTests.cs`
   - `tests/Headless.Messaging.Pulsar.Tests.Integration/PulsarProviderConformanceDriver.cs` and `ProviderConformanceEvidenceTests.cs`
@@ -534,9 +534,9 @@ Un-validated bets made in this non-interactive run; each is cheap to revisit in 
 
 | Check | Command | Proves | When |
 | --- | --- | --- | --- |
-| Affected build and unit tests | `make test-affected` | Every unit's scenarios in `Headless.Messaging.Core.Tests.Unit`, `Headless.Messaging.Abstractions.Tests.Unit`, `Headless.Messaging.InMemory.Tests.Unit`, `Headless.Docs.Examples.Tests.Unit`, and the provider unit leaves | After each unit, and at the end |
+| Affected build and unit tests | `make test-affected` | Every unit's scenarios in `Headless.Messaging.Tests.Unit`, `Headless.Messaging.Abstractions.Tests.Unit`, `Headless.Messaging.InMemory.Tests.Unit`, `Headless.Docs.Examples.Tests.Unit`, and the provider unit leaves | After each unit, and at the end |
 | Affected integration tests | `make test-affected-integration` (Docker) | RabbitMQ, NATS, and Redis request/reply conformance including tenant round trips; the NATS capture warning; the PostgreSQL and SQL Server storage harness theory on the Queue lane; the Kafka, AWS, and Pulsar startup-rejection tests. Azure Service Bus skips without `HEADLESS_TEST_AZURE_SERVICE_BUS_CONNECTION_STRING` and is reported as not run | After U3, U9, U10, and at the end |
-| Scoped reruns while iterating | `make test-class CLASS='*ConsumerRegisterTests' TEST_PROJECT=tests/Headless.Messaging.Core.Tests.Unit/Headless.Messaging.Core.Tests.Unit.csproj` and siblings | One class without the whole affected set | During a unit |
+| Scoped reruns while iterating | `make test-class CLASS='*ConsumerRegisterTests' TEST_PROJECT=tests/Headless.Messaging.Tests.Unit/Headless.Messaging.Tests.Unit.csproj` and siblings | One class without the whole affected set | During a unit |
 | Docs schema and index | `make docs-check` | `docs/solutions` frontmatter and `INDEX.md` stay valid | End |
 | Analyzer and coverage proof | `make verify-affected` | Builds the affected set, runs its unit tests with coverage, runs analyzers at every severity on the changed projects, writes `artifacts/proof/<run>/summary.md` for the PR body | End; after fixing or inline-suppressing every finding, run again |
 

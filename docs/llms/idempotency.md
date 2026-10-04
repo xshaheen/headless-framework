@@ -1,6 +1,6 @@
 ---
 domain: Idempotency
-packages: Idempotency.Abstractions, Idempotency.Core, Idempotency.InMemory, Idempotency.Caching, Idempotency.PostgreSql, Idempotency.SqlServer, Idempotency.Sqlite
+packages: Idempotency.Abstractions, Idempotency, Idempotency.InMemory, Idempotency.Caching, Idempotency.PostgreSql, Idempotency.SqlServer, Idempotency.Sqlite
 ---
 
 # Idempotency
@@ -156,7 +156,7 @@ Consumer contracts: `IIdempotentOperations`, `IdempotentAdmission`, `Idempotency
 dotnet add package Headless.Idempotency.Abstractions
 ```
 
-Reference it from code that admits, completes, or fences idempotent operations. Registration lives in `Headless.Idempotency.Core` and the provider packages.
+Reference it from code that admits, completes, or fences idempotent operations. Registration lives in `Headless.Idempotency` and the provider packages.
 
 ### Design and runtime behavior
 
@@ -168,14 +168,14 @@ Reference it from code that admits, completes, or fences idempotent operations. 
 
 ---
 
-## Headless.Idempotency.Core
+## Headless.Idempotency
 
 Registration, fingerprint and key resolution, admission orchestration, and the retention purge.
 
 ### Setup
 
 ```bash
-dotnet add package Headless.Idempotency.Core
+dotnet add package Headless.Idempotency
 ```
 
 Applications reach it through a provider package, as shown in [Orientation](#orientation).
@@ -256,7 +256,7 @@ builder.Services.AddHeadlessIdempotency(setup => setup.UseCache());
 ### Design and runtime behavior
 
 - **Autonomous only.** `IIdempotentOperations` and the HTTP middleware work. Every `unit.Idempotency` call is refused with `InvalidOperationException`: that includes enlisted admission, completion, and release, `FenceAsync`, and `SetRecoveryPointAsync` inside a unit. A cache cannot commit or roll back with a unit of work, so use a relational provider (or `UseInMemory` in one process) for those. The autonomous `SetRecoveryPointAsync` works.
-- **One entry per record.** Each key's record is one cache entry holding the whole record as JSON (status, fingerprint and algorithm, generation, lease expiry, result bytes and contract, recovery point, retention). Every change is a compare-and-swap against the exact entry the call read: `TryInsertAsync` for a new record, `TryReplaceIfEqualAsync` otherwise. A call that loses the race re-reads and decides again (see [Headless.Idempotency.Core](#headlessidempotencycore)), so concurrent admissions converge like locked ones: one `Admitted`, the others `InFlight`, `Replay`, or `Conflict`. A write the cache declines while the entry is unchanged (for example an entry over an in-memory cache's size limit) throws `InvalidOperationException` instead of retrying.
+- **One entry per record.** Each key's record is one cache entry holding the whole record as JSON (status, fingerprint and algorithm, generation, lease expiry, result bytes and contract, recovery point, retention). Every change is a compare-and-swap against the exact entry the call read: `TryInsertAsync` for a new record, `TryReplaceIfEqualAsync` otherwise. A call that loses the race re-reads and decides again (see [Headless.Idempotency](#headlessidempotency)), so concurrent admissions converge like locked ones: one `Admitted`, the others `InFlight`, `Replay`, or `Conflict`. A write the cache declines while the entry is unchanged (for example an entry over an in-memory cache's size limit) throws `InvalidOperationException` instead of retrying.
 - **Completion is fenced by generation.** Complete, release, recovery point, and renewal each write only while the entry is pending at the attempt's generation with a live lease, and the swap fails if anything changed since that check. An attempt that lost the key gets `StaleAdmissionException` and writes nothing, so a zombie never overwrites a newer result. There is no lock between the check and the swap, so a slow attempt's write races a takeover through the swap rather than waiting on a row lock.
 - **Application clock.** Lease expiry and retention are instants from the registered `TimeProvider`, stored in the entry. Replicas whose clocks disagree disagree on when a lease expires: a replica running ahead takes over a live attempt early. Keep lease durations well above the expected skew.
 - **Retention is the cache's expiry.** Each entry expires in the cache at the later of its retention and its lease, so a live attempt keeps its record even past retention. `PurgeAsync` deletes nothing and `IdempotencyRetentionService` has nothing to do; set `PurgeInterval = null` to keep it idle.
@@ -294,7 +294,7 @@ The parameterless overloads and the shared `headless` schema are described in [s
 
 ### Design and runtime behavior
 
-- The verbs are the shared relational store's (see [Headless.Idempotency.Core](#headlessidempotencycore)). Record insert-or-lock never raises a unique-violation: `SELECT … FOR NO KEY UPDATE`, then, when no row is found, `INSERT … ON CONFLICT DO NOTHING`, which waits for a concurrent inserter of the same key and inserts nothing when that one committed; the next locking read then finds its row. Catching `23505` inside a unit would otherwise poison the PostgreSQL transaction (`25P02`).
+- The verbs are the shared relational store's (see [Headless.Idempotency](#headlessidempotency)). Record insert-or-lock never raises a unique-violation: `SELECT … FOR NO KEY UPDATE`, then, when no row is found, `INSERT … ON CONFLICT DO NOTHING`, which waits for a concurrent inserter of the same key and inserts nothing when that one committed; the next locking read then finds its row. Catching `23505` inside a unit would otherwise poison the PostgreSQL transaction (`25P02`).
 - Every decision reads `clock_timestamp()` after the row lock, captured once per statement in a `MATERIALIZED` CTE — never `now()`, which is frozen at transaction start and would keep an expired lease looking live inside a long enlisted unit. `nextval()` runs only in a statement after the lock is held.
 - The autonomous path begins an owned unit through `IIdempotencyRecordStore.BeginOwnedUnitAsync` at READ COMMITTED; the enlisted path runs on the unit's own connection and transaction with no retry.
 - Autonomous renewal, peek, and purge retry a transient fault raised before the commit, including a deadlock or serialization failure (`40P01`, `40001`) and anything Npgsql reports as transient. The purge skips locked rows with `FOR UPDATE … SKIP LOCKED`.
@@ -329,7 +329,7 @@ The parameterless overloads and the shared `headless` schema are described in [s
 
 ### Design and runtime behavior
 
-- The verbs are the shared relational store's (see [Headless.Idempotency.Core](#headlessidempotencycore)). Record insert-or-lock never raises a unique-violation: `SELECT … WITH (UPDLOCK, HOLDLOCK, ROWLOCK)` takes a key-range lock when the row is absent, so the `INSERT … WHERE NOT EXISTS` that follows cannot collide, with no `TRY/CATCH` or session `SET` — a caught duplicate key would doom an `XACT_ABORT` caller transaction.
+- The verbs are the shared relational store's (see [Headless.Idempotency](#headlessidempotency)). Record insert-or-lock never raises a unique-violation: `SELECT … WITH (UPDLOCK, HOLDLOCK, ROWLOCK)` takes a key-range lock when the row is absent, so the `INSERT … WHERE NOT EXISTS` that follows cannot collide, with no `TRY/CATCH` or session `SET` — a caught duplicate key would doom an `XACT_ABORT` caller transaction.
 - Peek reads the record with no lock hint, so whether it waits depends on the database. With `READ_COMMITTED_SNAPSHOT` on, it reads the last committed row version and never waits. With it off, READ COMMITTED takes a shared lock on the row, so a peek waits behind any admission, fence, completion, or release that has written the row and not yet committed, up to `CommandTimeout`. An enlisted unit holds that lock until it ends, so turn on read committed snapshot isolation when `WaitAndReplay` polls keys that enlisted units hold.
 - Each deciding statement captures `SYSUTCDATETIME()` into a variable after the locking read, because SQL Server evaluates it when a statement starts, before any lock wait. `NEXT VALUE FOR` runs only in the admission's `UPDATE` assignment, after the lock is held.
 - The autonomous path begins an owned unit through `IIdempotencyRecordStore.BeginOwnedUnitAsync` at READ COMMITTED; the enlisted path runs on the unit's own connection and transaction with no retry.
@@ -366,7 +366,7 @@ Use a database file: the store and the schema runner open their own connections,
 ### Design and runtime behavior
 
 - **Enlisted admission is refused.** `unit.Idempotency.AdmitAsync` throws `NotSupportedException` before it touches the unit. PostgreSQL and SQL Server draw generations from a sequence that ignores transactions; SQLite has no such counter, so a generation drawn in a caller's transaction that then rolls back would be drawn again by the next admission, and a caller still holding the rolled-back admission could complete the new attempt's record. `IIdempotentOperations.AdmitAsync` (and the HTTP middleware) admit in a unit the store begins and commits before returning the generation, so they are safe. The unit can still complete, release, fence, or set a recovery point of an autonomously admitted attempt.
-- The verbs are the shared relational store's (see [Headless.Idempotency.Core](#headlessidempotencycore)). Every transaction begins `IMMEDIATE` and holds the database write lock, which stands in for the row lock: admissions, fences, and completions of every key serialize on the file. A peek runs in a deferred transaction that takes no write lock, so it reads the last committed record without waiting on a writer.
+- The verbs are the shared relational store's (see [Headless.Idempotency](#headlessidempotency)). Every transaction begins `IMMEDIATE` and holds the database write lock, which stands in for the row lock: admissions, fences, and completions of every key serialize on the file. A peek runs in a deferred transaction that takes no write lock, so it reads the last committed record without waiting on a writer.
 - The generation sequence is a one-row table. The admission's `UPDATE` reads one past its value, and triggers on the record table raise it to every generation written, in the same statement. A purge deletes records, never the sequence row, so a key admitted again after its record was purged still gets a higher generation.
 - `SQLITE_BUSY` before the commit (another writer held the database past the connection's `Default Timeout`) is retried in a fresh transaction, like a lock timeout on the other providers. The wait holds a thread-pool thread; see [sql.md § SQLite in the kit](sql.md#sqlite-in-the-kit).
 - The sequence table, record table, index, and triggers are one step the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts) applies at startup, recorded as `Idempotency/1`.

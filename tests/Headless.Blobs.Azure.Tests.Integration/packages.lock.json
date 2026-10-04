@@ -672,6 +672,15 @@
           "xunit.v3.runner.common": "[4.0.0]"
         }
       },
+      "headless.blobs": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Blobs.Abstractions": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )"
+        }
+      },
       "headless.blobs.abstractions": {
         "type": "Project",
         "dependencies": {
@@ -684,19 +693,10 @@
         "dependencies": {
           "Azure.Storage.Blobs": "[12.29.2, )",
           "Azure.Storage.Blobs.Batch": "[12.26.0, )",
+          "Headless.Blobs": "[1.0.0, )",
           "Headless.Blobs.Abstractions": "[1.0.0, )",
-          "Headless.Blobs.Core": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Microsoft.Extensions.Azure": "[1.14.1, )"
-        }
-      },
-      "headless.blobs.core": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Blobs.Abstractions": "[1.0.0, )",
-          "Headless.Extensions": "[1.0.0, )",
-          "Headless.Hosting": "[1.0.0, )",
-          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )"
         }
       },
       "headless.blobs.tests.harness": {

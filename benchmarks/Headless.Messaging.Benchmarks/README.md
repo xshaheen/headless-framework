@@ -1,6 +1,6 @@
 # Headless Messaging Benchmarks
 
-Micro-benchmarks for the per-message **publish/consume dispatch** paths in `Headless.Messaging.Core`. The suite
+Micro-benchmarks for the per-message **publish/consume dispatch** paths in `Headless.Messaging`. The suite
 isolates the residual per-dispatch allocation costs identified by the hot-path performance audit
 (`.context/docs/perf-audit-22-06-2026.md`) so candidate optimizations can be validated against a baseline.
 

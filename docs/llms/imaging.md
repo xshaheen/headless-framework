@@ -1,6 +1,6 @@
 ---
 domain: Imaging
-packages: Imaging.Abstractions, Imaging.Core, Imaging.ImageSharp
+packages: Imaging.Abstractions, Imaging, Imaging.ImageSharp
 ---
 
 # Imaging
@@ -12,7 +12,7 @@ packages: Imaging.Abstractions, Imaging.Core, Imaging.ImageSharp
 Install all three packages for a complete imaging pipeline:
 
 - `Headless.Imaging.Abstractions` — interfaces (`IImageResizer`, `IImageCompressor`) and argument/result types
-- `Headless.Imaging.Core` — orchestration layer, `ImagingOptions`, DI registration via `AddImaging()`
+- `Headless.Imaging` — orchestration layer, `ImagingOptions`, DI registration via `AddImaging()`
 - `Headless.Imaging.ImageSharp` — SixLabors.ImageSharp-backed contributor registered by `AddImageSharpContributors()`
 
 Typical registration:
@@ -59,7 +59,7 @@ Supports JPEG, PNG, WebP, and GIF formats for resize; JPEG, PNG, and WebP for co
 
 ### Contributor pipeline
 
-`Headless.Imaging.Core` does not process images itself. It iterates a registered list of `IImageResizerContributor` / `IImageCompressorContributor` instances in reverse order and returns the first non-`Unsupported` result. A contributor returns `ImageProcessState.Unsupported` to signal that it does not handle the given format; the orchestrator then tries the next contributor. This design allows multiple processing backends to coexist.
+`Headless.Imaging` does not process images itself. It iterates a registered list of `IImageResizerContributor` / `IImageCompressorContributor` instances in reverse order and returns the first non-`Unsupported` result. A contributor returns `ImageProcessState.Unsupported` to signal that it does not handle the given format; the orchestrator then tries the next contributor. This design allows multiple processing backends to coexist.
 
 ### Result model
 
@@ -154,7 +154,7 @@ None.
 
 ---
 
-## Headless.Imaging.Core
+## Headless.Imaging
 
 Orchestration layer that routes image processing calls to registered contributors.
 
@@ -176,7 +176,7 @@ Contributors are enumerated in reverse order of DI registration. This mirrors th
 ### Install
 
 ```bash
-dotnet add package Headless.Imaging.Core
+dotnet add package Headless.Imaging
 ```
 
 ### Setup and use

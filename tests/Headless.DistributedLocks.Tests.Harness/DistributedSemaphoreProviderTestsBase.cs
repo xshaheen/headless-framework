@@ -17,7 +17,7 @@ namespace Tests;
 /// </para>
 /// <para>
 /// The provider hook exists because <c>DistributedSemaphoreProvider</c> is <see langword="internal"/> to
-/// <c>Headless.DistributedLocks.Core</c> and this harness package is deliberately outside its
+/// <c>Headless.DistributedLocks</c> and this harness package is deliberately outside its
 /// <c>InternalsVisibleTo</c> set. Each leaf integration project has internals access and supplies the provider.
 /// </para>
 /// </remarks>

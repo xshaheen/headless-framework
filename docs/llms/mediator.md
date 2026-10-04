@@ -19,9 +19,9 @@ There is exactly one package in this domain. No provider choice is required.
 - **Register `IValidator<T>` implementations separately.** The validation pre-processor picks up every `IValidator<TMessage>` from DI; it does not self-register validators.
 - **Register `ICurrentUser` before calling any logging behavior extension.** All three logging behaviors inject `ICurrentUser` from `Headless.Context.Abstractions`. For background/worker hosts where no real user exists, register `NullCurrentUser`.
 - **Do NOT put authentication or authorization in a pipeline behavior.** Auth belongs at `app.UseAuthentication()` + `app.UseAuthorization()` + endpoint-level `[Authorize]` / `RequireAuthorization()`. A Mediator-side auth check runs after model binding (abusive payloads already deserialized), fires on every internal `Send()` (handler-to-handler composition produces spurious 401/403), and requires `IHttpContextAccessor` (breaks host-agnosticism).
-- **Do NOT put tenancy enforcement in a pipeline behavior.** Use `[RequireTenant]` / `.RequireTenant()` endpoint conventions and `TenantRequirement` authorization policy from `Headless.Api.Core`. For worker/console/consumer paths, set tenant scope explicitly with `currentTenant.Change(tenantId)` around the `mediator.Send()` call.
+- **Do NOT put tenancy enforcement in a pipeline behavior.** Use `[RequireTenant]` / `.RequireTenant()` endpoint conventions and `TenantRequirement` authorization policy from `Headless.Api`. For worker/console/consumer paths, set tenant scope explicitly with `currentTenant.Change(tenantId)` around the `mediator.Send()` call.
 - **Do NOT implement an idempotency pipeline behavior.** The Mediator abstraction only sees the typed response object — it cannot cache the original HTTP status code, response headers, or byte body. It also fires on every internal `Send()` producing false positives on handler composition. Use `Headless.Api.Idempotency` (`services.AddIdempotency()` + `app.UseIdempotency()`) instead. A handler that must fence its own writes against the admission reads `HttpContext.GetIdempotencyContext()` (`IIdempotencyContext`) and calls `unit.Idempotency.FenceAsync(context.Admission)` inside its own unit of work — never as a pipeline behavior.
-- **Do NOT push HTTP response shaping into behaviors.** Filters, exception handlers, problem-details factories, and response compression belong in `Headless.Api.Core` or standard ASP.NET Core middleware.
+- **Do NOT push HTTP response shaping into behaviors.** Filters, exception handlers, problem-details factories, and response compression belong in `Headless.Api` or standard ASP.NET Core middleware.
 - **What does belong in the pipeline:** FluentValidation pre-processors, request/response logging, slow-request alerts, typed response transforms, domain-specific retry policies for transient handler faults, instrumentation hooks — anything that operates purely on `IRequest<TResponse>` without HTTP semantics.
 - **`ServiceLifetime` is `Scoped` by default.** Pass `ServiceLifetime.Transient` or `ServiceLifetime.Singleton` explicitly if a behavior must not share state across the request scope. The same lifetime applies to all behaviors registered by a composite call like `AddMediatorLoggingBehaviors`.
 - **`CriticalRequestLoggingBehavior` logs at `Warning`.** The threshold is hard-coded at 1 second. Do not use it as a general performance monitor — it is an alert for unusually slow handlers. The Warning entry carries only the message/response type names, elapsed time, and user ID; the full request/response payloads are emitted in a separate Debug-level entry (`Mediator:SlowMessagePayload`) so credentials or PII inside commands and responses never reach production logs at Warning.
@@ -73,10 +73,10 @@ The four concerns commonly proposed as pipeline behaviors that this framework re
 | Slow-request alerting | Mediator behavior | Operates on typed message; HTTP-agnostic. |
 | Typed response transforms | Mediator behavior | Operates on typed response; no HTTP semantics. |
 | Authentication/authorization | ASP.NET Core middleware | Pre-bind decision; needs `HttpContext`. |
-| Tenant enforcement | ASP.NET Core authorization (`Headless.Api.Core`) | Pre-bind decision; needs `HttpContext`. |
+| Tenant enforcement | ASP.NET Core authorization (`Headless.Api`) | Pre-bind decision; needs `HttpContext`. |
 | Idempotency replay | ASP.NET Core middleware (`Headless.Api.Idempotency`) | Caches HTTP status/headers/byte body; pre-bind cap enforcement. |
 | Response compression | ASP.NET Core middleware | Post-serializer byte transform. |
-| Problem-details shaping | `Headless.Api.Core` factories + exception handler | HTTP-bound response shape. |
+| Problem-details shaping | `Headless.Api` factories + exception handler | HTTP-bound response shape. |
 
 ---
 

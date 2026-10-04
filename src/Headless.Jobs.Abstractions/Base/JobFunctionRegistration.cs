@@ -6,7 +6,7 @@ namespace Headless.Jobs;
 /// Named registration for a single <c>[Job]</c> class. Carries the per-job scheduling knobs the source
 /// generator emits at build time and the scheduler reads at dispatch time. This type is the ABI between the
 /// generated per-assembly <c>JobsModule</c> in every consuming assembly and the
-/// per-host job registry in <c>Headless.Jobs.Core</c>.
+/// per-host job registry in <c>Headless.Jobs</c>.
 /// </summary>
 /// <remarks>
 /// <para>

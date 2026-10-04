@@ -307,14 +307,7 @@
         "resolved": "18.1.0",
         "contentHash": "5K+9KFg2TdTl7VXv88Qzi/0lqK6JFoNP3lRuImPYGRV7K/QYklDyTrj4+A+KAki1JsQi6qKY+hDyY7d6WRqjrw=="
       },
-      "headless.api.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Context.Abstractions": "[1.0.0, )",
-          "Headless.MultiTenancy.Abstractions": "[1.0.0, )"
-        }
-      },
-      "headless.api.core": {
+      "headless.api": {
         "type": "Project",
         "dependencies": {
           "Asp.Versioning.Abstractions": "[10.2.1, )",
@@ -339,11 +332,18 @@
           "TimeZoneConverter": "[7.2.0, )"
         }
       },
+      "headless.api.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Context.Abstractions": "[1.0.0, )",
+          "Headless.MultiTenancy.Abstractions": "[1.0.0, )"
+        }
+      },
       "headless.api.minimalapi": {
         "type": "Project",
         "dependencies": {
           "Asp.Versioning.Http": "[10.2.3, )",
-          "Headless.Api.Core": "[1.0.0, )"
+          "Headless.Api": "[1.0.0, )"
         }
       },
       "headless.api.mvc": {
@@ -351,7 +351,7 @@
         "dependencies": {
           "Asp.Versioning.Mvc": "[10.2.1, )",
           "Asp.Versioning.Mvc.ApiExplorer": "[10.2.1, )",
-          "Headless.Api.Core": "[1.0.0, )",
+          "Headless.Api": "[1.0.0, )",
           "Mediator.Abstractions": "[3.0.2, )"
         }
       },
@@ -359,7 +359,7 @@
         "type": "Project",
         "dependencies": {
           "FileSignatures": "[7.3.0, )",
-          "Headless.Api.Core": "[1.0.0, )",
+          "Headless.Api": "[1.0.0, )",
           "Headless.Context": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Headless.Security": "[1.0.0, )",
@@ -456,7 +456,7 @@
         "type": "Project",
         "dependencies": {
           "Asp.Versioning.Mvc.ApiExplorer": "[10.2.1, )",
-          "Headless.Api.Core": "[1.0.0, )",
+          "Headless.Api": "[1.0.0, )",
           "NSwag.Annotations": "[14.7.1, )",
           "NSwag.AspNetCore": "[14.7.1, )"
         }

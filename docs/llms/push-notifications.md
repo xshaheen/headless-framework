@@ -1,6 +1,6 @@
 ---
 domain: Push Notifications
-packages: PushNotifications.Abstractions, PushNotifications.Core, PushNotifications.Dev, PushNotifications.Firebase, PushNotifications.Apns
+packages: PushNotifications.Abstractions, PushNotifications, PushNotifications.Dev, PushNotifications.Firebase, PushNotifications.Apns
 ---
 
 # Push Notifications
@@ -37,7 +37,7 @@ builder.Services.AddHeadlessPushNotifications(setup =>
 });
 ```
 
-`Headless.PushNotifications.Core` owns registration (`AddHeadlessPushNotifications`, `HeadlessPushNotificationsSetupBuilder`, `HeadlessPushNotificationsInstanceBuilder`) and the `IPushNotificationServiceProvider` implementation over keyed DI. Providers pull it transitively — you rarely install it directly. `Headless.PushNotifications.Abstractions` holds contracts only (`IPushNotificationService`, `IPushNotificationServiceProvider`, response types).
+`Headless.PushNotifications` owns registration (`AddHeadlessPushNotifications`, `HeadlessPushNotificationsSetupBuilder`, `HeadlessPushNotificationsInstanceBuilder`) and the `IPushNotificationServiceProvider` implementation over keyed DI. Providers pull it transitively — you rarely install it directly. `Headless.PushNotifications.Abstractions` holds contracts only (`IPushNotificationService`, `IPushNotificationServiceProvider`, response types).
 
 Use `IPushNotificationService.SendToDeviceAsync` for single-device delivery and `SendMulticastAsync` for batch sends. Always check `PushNotificationResponse.Status` — three states apply: `Success`, `Failure`, and `Unregistered`.
 
@@ -193,7 +193,7 @@ Defines the unified interface and contract types for push notification services.
   - `SendMulticastAsync(clientTokens, request, ct)` — batch delivery
 - `PushNotificationRequest` — the notification payload: `Title`, `Body`, `Data`, `CollapseKey`, `Badge`, `Sound`, `Priority`, and `TimeToLive`, all optional `init` properties where `null` means "not set". A request is a notification or a data-only message (see [Notification and data-only requests](#notification-and-data-only-requests)); [Shared delivery fields](#shared-delivery-fields) shows how each provider maps the fields. Both send methods take one request; add new delivery options as optional `init` properties rather than new overloads.
   - `CollapseKey` groups notifications so a newer one replaces an older undelivered one with the same key on the device. `null` (the default) disables collapsing. Each provider maps and limits it: APNs sends it as the `apns-collapse-id` header, and Firebase sends it as the Android collapse key and as the same `apns-collapse-id` header through its iOS bridge. Both reject a key over 64 UTF-8 bytes with `ArgumentException`.
-- `IPushNotificationServiceProvider` — resolves named services by name: `GetService(name)` (throws when unregistered) and `GetServiceOrNull(name)` (returns `null`), plus `RegisteredNames` (`IReadOnlySet<string>`) listing the registered named instances (the default is excluded) so an externally supplied name can be validated before resolving. Backed by the container's keyed `IPushNotificationService` registrations; the concrete implementation lives in `Headless.PushNotifications.Core`.
+- `IPushNotificationServiceProvider` — resolves named services by name: `GetService(name)` (throws when unregistered) and `GetServiceOrNull(name)` (returns `null`), plus `RegisteredNames` (`IReadOnlySet<string>`) listing the registered named instances (the default is excluded) so an externally supplied name can be validated before resolving. Backed by the container's keyed `IPushNotificationService` registrations; the concrete implementation lives in `Headless.PushNotifications`.
 - `PushNotificationResponse` — single-device outcome with three states (`Success`, `Failure`, `Unregistered`); factory methods `Succeeded`, `Failed`, `Unregistered`; query methods `IsSucceeded()`, `IsFailed()`, `IsUnregistered()`; properties `ClientIdentifier`, `MessageId?`, `FailureError?`, `Status`
 - `PushNotificationPriority` enum — `High` and `Normal`, the provider-neutral delivery priority of `PushNotificationRequest.Priority`
 - `PushNotificationResponseStatus` enum — `Success`, `Failure`, `Unregistered`
@@ -268,7 +268,7 @@ None. This is an abstractions-only package.
 
 None. This package defines only interfaces and contracts.
 ---
-## Headless.PushNotifications.Core
+## Headless.PushNotifications
 
 Setup builder, registration gates, and the named-service provider for the push-notifications abstraction.
 
@@ -286,7 +286,7 @@ The builder carries no shared, cross-provider feature options — it is provider
 ### Install
 
 ```bash
-dotnet add package Headless.PushNotifications.Core
+dotnet add package Headless.PushNotifications
 ```
 
 ### Setup and use

@@ -9,7 +9,7 @@
     <PackageReference Include="Npgsql" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Headless.AuditLog.Core\Headless.AuditLog.Core.csproj" />
+    <ProjectReference Include="..\Headless.AuditLog\Headless.AuditLog.csproj" />
     <ProjectReference Include="..\Headless.Sql.PostgreSql\Headless.Sql.PostgreSql.csproj" />
   </ItemGroup>
 </Project>

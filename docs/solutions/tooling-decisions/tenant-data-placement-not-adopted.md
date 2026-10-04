@@ -10,7 +10,7 @@ applies_when:
   - Evaluating whether to add per-tenant connection routing to Headless.EntityFramework
   - Reviewing why the tenancy guide states that one shared database is the only supported topology
 tags: [multi-tenancy, data-placement, schema-per-tenant, database-per-tenant, entity-framework, outbox, tooling-decision]
-related_components: [Headless.MultiTenancy, Headless.EntityFramework, Headless.Messaging.Core, Headless.Jobs.Core, Headless.Api.Core]
+related_components: [Headless.MultiTenancy, Headless.EntityFramework, Headless.Messaging, Headless.Jobs, Headless.Api]
 ---
 
 # Tenant data placement — evaluated and not adopted

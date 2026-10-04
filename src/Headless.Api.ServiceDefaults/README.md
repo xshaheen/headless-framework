@@ -1,8 +1,8 @@
 # Headless.Api.ServiceDefaults
 
-The one-line bootstrap for Headless APIs. Combines `Headless.Api.Core` primitives with Aspire-style host conventions: OpenTelemetry, OpenAPI document mapping, service discovery, HttpClient resilience, and startup validation.
+The one-line bootstrap for Headless APIs. Combines `Headless.Api` primitives with Aspire-style host conventions: OpenTelemetry, OpenAPI document mapping, service discovery, HttpClient resilience, and startup validation.
 
-If you want the happy-path API bootstrap, install this package. It transitively pulls in `Headless.Api.Core`.
+If you want the happy-path API bootstrap, install this package. It transitively pulls in `Headless.Api`.
 
 ## Why use this package
 

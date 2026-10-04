@@ -50,7 +50,7 @@ public interface IQueue
     /// <see cref="MessageOptions.Delay"/> or <see cref="MessageOptions.ScheduledAt"/>.
     /// </exception>
     /// <exception cref="Exception">
-    /// Thrown as <c>MessagingConfigurationException</c> (declared in <c>Headless.Messaging.Core</c>) when the
+    /// Thrown as <c>MessagingConfigurationException</c> (declared in <c>Headless.Messaging</c>) when the
     /// target lane has no storage contribution for durable delivery.
     /// </exception>
     Task<PublishReceipt> EnqueueAsync<T>(
@@ -65,7 +65,7 @@ public interface IQueue
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>A receipt for transport acceptance or durable capture, or an empty receipt when middleware suppresses publication. This does not imply consumer completion.</returns>
     /// <exception cref="Exception">
-    /// Thrown as <c>MessagingConfigurationException</c> (declared in <c>Headless.Messaging.Core</c>) when the
+    /// Thrown as <c>MessagingConfigurationException</c> (declared in <c>Headless.Messaging</c>) when the
     /// target lane has no storage contribution for durable delivery.
     /// </exception>
     Task<PublishReceipt> EnqueueAsync<T>(T? contentObj, CancellationToken cancellationToken = default);

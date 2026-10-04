@@ -9,6 +9,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Messaging.Dashboard\Headless.Messaging.Dashboard.csproj" />
-    <ProjectReference Include="..\Headless.Messaging.Core\Headless.Messaging.Core.csproj" />
+    <ProjectReference Include="..\Headless.Messaging\Headless.Messaging.csproj" />
   </ItemGroup>
 </Project>

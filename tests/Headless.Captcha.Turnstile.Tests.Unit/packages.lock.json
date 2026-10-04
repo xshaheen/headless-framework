@@ -442,20 +442,20 @@
           "xunit.v3.runner.common": "[4.0.0]"
         }
       },
-      "headless.captcha.abstractions": {
-        "type": "Project"
-      },
-      "headless.captcha.core": {
+      "headless.captcha": {
         "type": "Project",
         "dependencies": {
           "Headless.Captcha.Abstractions": "[1.0.0, )",
           "Headless.Checks": "[1.0.0, )"
         }
       },
+      "headless.captcha.abstractions": {
+        "type": "Project"
+      },
       "headless.captcha.recaptcha": {
         "type": "Project",
         "dependencies": {
-          "Headless.Captcha.Core": "[1.0.0, )",
+          "Headless.Captcha": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Microsoft.Extensions.Http.Resilience": "[10.10.0, )"
@@ -476,7 +476,7 @@
       "headless.captcha.turnstile": {
         "type": "Project",
         "dependencies": {
-          "Headless.Captcha.Core": "[1.0.0, )",
+          "Headless.Captcha": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Microsoft.Extensions.Http.Resilience": "[10.10.0, )"

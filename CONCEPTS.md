@@ -154,7 +154,7 @@ Use Jobs for keyed, replaceable, tenant-scoped, or transactional business deadli
 
 ### Enlisted outbox
 The publish surface reached from a unit of work as `unit.Outbox` (contract in
-`Headless.Messaging.Abstractions`, implementation in `Headless.Messaging.Core`, resolved from the unit
+`Headless.Messaging.Abstractions`, implementation in `Headless.Messaging`, resolved from the unit
 as a [unit-of-work feature](#unit-local-state)). Every publish through it writes its durable row inside
 that unit's transaction: the row becomes visible when the unit completes and is discarded when it
 rolls back. It refuses rather than degrades — when no configured outbox can join the given unit
@@ -648,7 +648,7 @@ tiers, and staleness bounds.
 
 ### Tenant identifier source
 
-The pre-authentication seam (`ITenantIdentifierSource` in `Headless.Api.Core`) that reads a raw
+The pre-authentication seam (`ITenantIdentifierSource` in `Headless.Api`) that reads a raw
 tenant identifier from an HTTP request — a host label, a route value, or a header value — and hands
 it to the tenant catalog. Sources are consulted in registration order and the first non-blank
 identifier wins; a source may also report an ambiguous request (for example a duplicated header),

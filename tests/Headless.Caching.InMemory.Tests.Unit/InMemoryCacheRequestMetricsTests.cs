@@ -447,7 +447,7 @@ public sealed class InMemoryCacheRequestMetricsTests : TestBase
     }
 
     // Collects long-valued caching measurements (counters) with their tags for the Headless.Caching meter.
-    // Mirrors Headless.Caching.Core.Tests.Unit's CachingDiagnosticsTests.MetricCollector (internal to that
+    // Mirrors Headless.Caching.Tests.Unit's CachingDiagnosticsTests.MetricCollector (internal to that
     // assembly, so this project — which has no InternalsVisibleTo from Core — keeps its own copy).
     private sealed class MetricCollector : IDisposable
     {

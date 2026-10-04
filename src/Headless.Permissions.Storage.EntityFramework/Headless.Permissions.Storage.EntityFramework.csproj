@@ -6,7 +6,7 @@
     <RootNamespace>Headless.Permissions</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Headless.Permissions.Core\Headless.Permissions.Core.csproj" />
+    <ProjectReference Include="..\Headless.Permissions\Headless.Permissions.csproj" />
     <ProjectReference Include="..\Headless.EntityFramework\Headless.EntityFramework.csproj" />
   </ItemGroup>
 </Project>

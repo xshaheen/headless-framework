@@ -483,6 +483,14 @@
           "Polly.Core": "[8.7.0, )"
         }
       },
+      "headless.blobs": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Blobs.Abstractions": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )"
+        }
+      },
       "headless.blobs.abstractions": {
         "type": "Project",
         "dependencies": {
@@ -490,27 +498,19 @@
           "Headless.Serializer.Json": "[1.0.0, )"
         }
       },
-      "headless.blobs.core": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Blobs.Abstractions": "[1.0.0, )",
-          "Headless.Extensions": "[1.0.0, )",
-          "Headless.Hosting": "[1.0.0, )"
-        }
-      },
       "headless.blobs.filesystem": {
         "type": "Project",
         "dependencies": {
+          "Headless.Blobs": "[1.0.0, )",
           "Headless.Blobs.Abstractions": "[1.0.0, )",
-          "Headless.Blobs.Core": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )"
         }
       },
       "headless.blobs.multitenancy": {
         "type": "Project",
         "dependencies": {
+          "Headless.Blobs": "[1.0.0, )",
           "Headless.Blobs.Abstractions": "[1.0.0, )",
-          "Headless.Blobs.Core": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Headless.MultiTenancy.Abstractions": "[1.0.0, )"
         }
@@ -518,8 +518,8 @@
       "headless.blobs.signedurlendpoint": {
         "type": "Project",
         "dependencies": {
+          "Headless.Blobs": "[1.0.0, )",
           "Headless.Blobs.Abstractions": "[1.0.0, )",
-          "Headless.Blobs.Core": "[1.0.0, )",
           "Headless.Checks": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )"
         }

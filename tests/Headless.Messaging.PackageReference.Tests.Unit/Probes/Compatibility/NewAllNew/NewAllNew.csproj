@@ -12,7 +12,7 @@
     <PackageReference Include="Headless.Messaging.Aws" Version="$(MessagingPackageVersion)" />
     <PackageReference Include="Headless.Messaging.AzureServiceBus" Version="$(MessagingPackageVersion)" />
     <PackageReference Include="Headless.Messaging.Bus.Abstractions" Version="$(MessagingPackageVersion)" />
-    <PackageReference Include="Headless.Messaging.Core" Version="$(MessagingPackageVersion)" />
+    <PackageReference Include="Headless.Messaging" Version="$(MessagingPackageVersion)" />
     <PackageReference Include="Headless.Messaging.Dashboard" Version="$(MessagingPackageVersion)" />
     <PackageReference Include="Headless.Messaging.Dashboard.K8s" Version="$(MessagingPackageVersion)" />
     <PackageReference Include="Headless.Messaging.InMemory" Version="$(MessagingPackageVersion)" />

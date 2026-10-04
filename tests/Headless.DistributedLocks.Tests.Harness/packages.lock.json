@@ -389,15 +389,7 @@
           "Headless.Primitives": "[1.0.0, )"
         }
       },
-      "headless.distributedlocks.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.UnitOfWork.Abstractions": "[1.0.0, )",
-          "Microsoft.Extensions.Logging.Abstractions": "[10.0.12, )"
-        }
-      },
-      "headless.distributedlocks.core": {
+      "headless.distributedlocks": {
         "type": "Project",
         "dependencies": {
           "Headless.DistributedLocks.Abstractions": "[1.0.0, )",
@@ -407,6 +399,14 @@
           "Microsoft.Extensions.Telemetry.Abstractions": "[10.10.0, )",
           "OpenTelemetry.Api": "[1.18.0, )",
           "Polly.Core": "[8.7.0, )"
+        }
+      },
+      "headless.distributedlocks.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.UnitOfWork.Abstractions": "[1.0.0, )",
+          "Microsoft.Extensions.Logging.Abstractions": "[10.0.12, )"
         }
       },
       "headless.extensions": {

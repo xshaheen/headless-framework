@@ -60,7 +60,7 @@ public sealed class SendSingleSmsResponse
     /// <summary>
     /// Creates a failed response from a caught exception with an explicitly classified kind. The failure
     /// classification is the single responsibility of <c>SmsFailureKinds.FromException</c> (in
-    /// <c>Headless.Sms.Core</c>), which is Polly-aware; providers pass its result here rather than have this
+    /// <c>Headless.Sms</c>), which is Polly-aware; providers pass its result here rather than have this
     /// contract type re-derive a kind. Surfaces the exception message (falling back to the exception type
     /// name when the message is empty) so the non-empty-message guarantee of <see cref="Failed(string, SmsFailureKind)"/>
     /// always holds.

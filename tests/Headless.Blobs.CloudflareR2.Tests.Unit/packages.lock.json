@@ -449,6 +449,15 @@
           "xunit.v3.runner.common": "[4.0.0]"
         }
       },
+      "headless.blobs": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Blobs.Abstractions": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )"
+        }
+      },
       "headless.blobs.abstractions": {
         "type": "Project",
         "dependencies": {
@@ -461,8 +470,8 @@
         "dependencies": {
           "AWSSDK.Extensions.NETCore.Setup": "[4.0.101.3, )",
           "AWSSDK.S3": "[4.0.103.1, )",
+          "Headless.Blobs": "[1.0.0, )",
           "Headless.Blobs.Abstractions": "[1.0.0, )",
-          "Headless.Blobs.Core": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )"
         }
       },
@@ -470,19 +479,10 @@
         "type": "Project",
         "dependencies": {
           "AWSSDK.S3": "[4.0.103.1, )",
+          "Headless.Blobs": "[1.0.0, )",
           "Headless.Blobs.Abstractions": "[1.0.0, )",
           "Headless.Blobs.Aws": "[1.0.0, )",
-          "Headless.Blobs.Core": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )"
-        }
-      },
-      "headless.blobs.core": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Blobs.Abstractions": "[1.0.0, )",
-          "Headless.Extensions": "[1.0.0, )",
-          "Headless.Hosting": "[1.0.0, )",
-          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )"
         }
       },
       "headless.checks": {

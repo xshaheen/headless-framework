@@ -9,7 +9,7 @@
     <PackageReference Include="xunit.v3.mtp-v2" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Headless.Emails.Core\Headless.Emails.Core.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Emails\Headless.Emails.csproj" />
     <ProjectReference Include="..\..\src\Headless.Emails.Dev\Headless.Emails.Dev.csproj" />
     <ProjectReference Include="..\..\src\Headless.Emails.Azure\Headless.Emails.Azure.csproj" />
     <ProjectReference Include="..\..\src\Headless.Emails.Aws\Headless.Emails.Aws.csproj" />
