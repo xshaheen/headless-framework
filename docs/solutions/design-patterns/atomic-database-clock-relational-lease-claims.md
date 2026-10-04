@@ -171,8 +171,7 @@ locks. First establish that the timestamp participates in cross-node ownership c
 
 The Messaging PostgreSQL and SQL Server stores apply this rule in their atomic retry pickup paths:
 
-- `src/Headless.Messaging.Storage.PostgreSql/PostgreSqlDataStorage.cs`
-- `src/Headless.Messaging.Storage.SqlServer/SqlServerDataStorage.cs`
+- `src/Headless.Messaging/Persistence/RelationalDataStorage.Pickup.cs`, the shared relational store; each provider's SQL comes from its dialect in `src/Headless.Sql.PostgreSql` and `src/Headless.Sql.SqlServer`
 
 The implementation:
 
