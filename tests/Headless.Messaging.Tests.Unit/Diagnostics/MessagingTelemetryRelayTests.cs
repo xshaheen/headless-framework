@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
+using Headless.Testing;
 using Headless.Testing.Tests;
 using OpenTelemetry;
 using OpenTelemetry.Context.Propagation;
@@ -38,8 +39,7 @@ public sealed class MessagingTelemetryRelayTests : TestBase
     public void should_relay_ambient_activity_parent_into_headers_when_metrics_only_publish()
     {
         _UseW3CPropagator();
-        var measurements = new List<string>();
-        using var meterListener = _StartMeterListener(measurements);
+        using var meters = new TelemetryRecorder(MessagingDiagnostics.SourceName, spans: false);
         using var ambientListener = _StartAmbientActivityListener();
         var telemetry = MessagingTelemetry.Default;
 
@@ -67,7 +67,7 @@ public sealed class MessagingTelemetryRelayTests : TestBase
             message.Headers["baggage"].Should().Contain("tenant=t-1");
 
             // Metrics are unaffected by tracing being off.
-            measurements.Should().Contain("messaging.message.size");
+            meters.Measurements.Select(m => m.Instrument).Should().Contain("messaging.message.size");
         }
         finally
         {
@@ -83,7 +83,7 @@ public sealed class MessagingTelemetryRelayTests : TestBase
     public void should_relay_consumed_context_to_outgoing_publish_when_metrics_only()
     {
         _UseW3CPropagator();
-        using var meterListener = _StartMeterListener([]);
+        using var meterListener = new TelemetryRecorder(MessagingDiagnostics.SourceName, spans: false);
         var telemetry = MessagingTelemetry.Default;
 
         var traceId = ActivityTraceId.CreateRandom();
@@ -135,7 +135,7 @@ public sealed class MessagingTelemetryRelayTests : TestBase
     public void should_relay_subscriber_invoke_context_to_outgoing_publish_when_metrics_only()
     {
         _UseW3CPropagator();
-        using var meterListener = _StartMeterListener([]);
+        using var meterListener = new TelemetryRecorder(MessagingDiagnostics.SourceName, spans: false);
         var telemetry = MessagingTelemetry.Default;
 
         var traceId = ActivityTraceId.CreateRandom();
@@ -185,7 +185,7 @@ public sealed class MessagingTelemetryRelayTests : TestBase
     public void should_relay_ambient_parent_into_stored_headers_when_metrics_only_persist()
     {
         _UseW3CPropagator();
-        using var meterListener = _StartMeterListener([]);
+        using var meterListener = new TelemetryRecorder(MessagingDiagnostics.SourceName, spans: false);
         using var ambientListener = _StartAmbientActivityListener();
         var telemetry = MessagingTelemetry.Default;
 
@@ -220,7 +220,7 @@ public sealed class MessagingTelemetryRelayTests : TestBase
     public void should_not_inject_when_no_parent_exists_and_metrics_only_publish()
     {
         _UseW3CPropagator();
-        using var meterListener = _StartMeterListener([]);
+        using var meterListener = new TelemetryRecorder(MessagingDiagnostics.SourceName, spans: false);
         var telemetry = MessagingTelemetry.Default;
 
         try
@@ -324,26 +324,6 @@ public sealed class MessagingTelemetryRelayTests : TestBase
         };
 
         ActivitySource.AddActivityListener(listener);
-
-        return listener;
-    }
-
-    private static MeterListener _StartMeterListener(List<string> captured)
-    {
-        var listener = new MeterListener
-        {
-            InstrumentPublished = (instrument, l) =>
-            {
-                if (string.Equals(instrument.Meter.Name, MessagingDiagnostics.SourceName, StringComparison.Ordinal))
-                {
-                    l.EnableMeasurementEvents(instrument);
-                }
-            },
-        };
-
-        listener.SetMeasurementEventCallback<long>((instrument, _, _, _) => captured.Add(instrument.Name));
-        listener.SetMeasurementEventCallback<double>((instrument, _, _, _) => captured.Add(instrument.Name));
-        listener.Start();
 
         return listener;
     }

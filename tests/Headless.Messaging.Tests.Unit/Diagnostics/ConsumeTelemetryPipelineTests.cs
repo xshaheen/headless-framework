@@ -2,10 +2,10 @@
 
 using System.Collections.Concurrent;
 using System.Diagnostics;
-using System.Diagnostics.Metrics;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Persistence;
+using Headless.Testing;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -101,8 +101,7 @@ public sealed class ConsumeTelemetryPipelineTests : TestBase
 
         var spans = new ConcurrentBag<Activity>();
         using var activityListener = _StartActivityListener(spans);
-        var measurements = new List<string>();
-        using var meterListener = _StartMeterListener(measurements);
+        using var meters = new TelemetryRecorder(MessagingDiagnostics.SourceName, spans: false);
 
         // when
         var result = await executor.ExecuteAsync(message, _EmptyScope, descriptor, AbortToken);
@@ -110,7 +109,7 @@ public sealed class ConsumeTelemetryPipelineTests : TestBase
         // then — produced by the real ExecuteAsync -> _InvokeConsumerMethodAsync call site.
         result.Succeeded.Should().BeTrue();
         spans.Should().Contain(a => string.Equals(a.OperationName, "subscriber.invoke", StringComparison.Ordinal));
-        measurements.Should().Contain("messaging.subscriber.invocations");
+        meters.Measurements.Select(m => m.Instrument).Should().Contain("messaging.subscriber.invocations");
     }
 
     private static MediumMessage _CreateMediumMessage()
@@ -155,25 +154,6 @@ public sealed class ConsumeTelemetryPipelineTests : TestBase
         };
 
         ActivitySource.AddActivityListener(listener);
-
-        return listener;
-    }
-
-    private static MeterListener _StartMeterListener(List<string> captured)
-    {
-        var listener = new MeterListener
-        {
-            InstrumentPublished = (instrument, l) =>
-            {
-                if (string.Equals(instrument.Meter.Name, MessagingDiagnostics.SourceName, StringComparison.Ordinal))
-                {
-                    l.EnableMeasurementEvents(instrument);
-                }
-            },
-        };
-
-        listener.SetMeasurementEventCallback<long>((instrument, _, _, _) => captured.Add(instrument.Name));
-        listener.Start();
 
         return listener;
     }

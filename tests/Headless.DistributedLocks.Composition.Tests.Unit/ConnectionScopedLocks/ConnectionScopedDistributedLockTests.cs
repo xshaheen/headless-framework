@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Diagnostics;
 using Headless;
 using Headless.DistributedLocks;
+using Headless.Testing;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
@@ -182,14 +182,9 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
     [Fact]
     public async Task should_emit_a_lock_acquire_activity_with_the_resource_tag_when_a_lock_is_acquired()
     {
-        // given (listen to the distributed-locks activity source)
-        var activities = new List<Activity>();
-        using var listener = new ActivityListener();
-        listener.ShouldListenTo = source =>
-            string.Equals(source.Name, "Headless.DistributedLocks", StringComparison.Ordinal);
-        listener.Sample = static (ref _) => ActivitySamplingResult.AllData;
-        listener.ActivityStopped = activities.Add;
-        ActivitySource.AddActivityListener(listener);
+        // given (record the distributed-locks activity source; the recorder is safe to fill from the parallel
+        // tests that emit through the same process-wide source)
+        using var telemetry = new TelemetryRecorder("Headless.DistributedLocks", metrics: false);
 
         var provider = _CreateProvider();
         var resource = Faker.Random.AlphaNumeric(12);
@@ -200,8 +195,8 @@ public sealed class ConnectionScopedDistributedLockTests : TestBase
         // then (the connection-scoped provider now emits the same lock.acquire activity as the regular provider).
         // Filter by this test's unique resource tag so activities emitted by test classes running in parallel — the
         // listener is process-wide — cannot pollute the assertion.
-        activities
-            .Should()
+        telemetry
+            .Activities.Should()
             .ContainSingle(a =>
                 a.OperationName == "lock.acquire" && (string?)a.GetTagItem("headless.lock.resource") == resource
             );
