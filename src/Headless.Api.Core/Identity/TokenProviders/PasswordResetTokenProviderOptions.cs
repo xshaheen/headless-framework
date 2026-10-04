@@ -2,7 +2,7 @@
 
 using Microsoft.AspNetCore.Identity;
 
-namespace Headless.Api.Identity.TokenProviders;
+namespace Headless.Api.Identity;
 
 /// <summary>
 /// Options for <see cref="PasswordResetTokenProvider{TUser}"/>.

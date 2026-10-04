@@ -2,7 +2,7 @@
 
 using Microsoft.AspNetCore.Http;
 
-namespace Headless.Api.Cors;
+namespace Headless.Api;
 
 /// <summary>
 /// Decides at request time whether a browser origin missing from a policy's static lists may call the API, such as a

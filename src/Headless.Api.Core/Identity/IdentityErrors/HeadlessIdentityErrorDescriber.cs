@@ -3,7 +3,7 @@
 using Headless.Api.Resources;
 using Microsoft.AspNetCore.Identity;
 
-namespace Headless.Api.Identity.IdentityErrors;
+namespace Headless.Api.Identity;
 
 /// <summary>
 /// <see cref="IdentityErrorDescriber"/> that returns <see cref="ParamsIdentityError"/> instances

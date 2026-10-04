@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Headless.Api.Identity.Authentication.ApiKey;
+namespace Headless.Api.Identity;
 
 /// <summary>Extension methods for registering the API key authentication scheme.</summary>
 [PublicAPI]

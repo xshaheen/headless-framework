@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Api.Identity.TokenProviders;
+namespace Headless.Api.Identity;
 
 /// <summary>
 /// Specifies the HMAC hash algorithm used for TOTP code generation and validation.

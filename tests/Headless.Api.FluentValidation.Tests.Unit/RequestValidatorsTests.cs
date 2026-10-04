@@ -2,7 +2,7 @@
 
 using FluentValidation;
 using FluentValidation.TestHelper;
-using Headless.Api.Contracts;
+using Headless.Api;
 using Headless.Primitives;
 using Headless.Testing.Tests;
 using Headless.Validators;

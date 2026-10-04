@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Api.Diagnostics;
+namespace Headless.Api;
 
 /// <summary>
 /// Well-known diagnostic event names emitted by Kestrel and

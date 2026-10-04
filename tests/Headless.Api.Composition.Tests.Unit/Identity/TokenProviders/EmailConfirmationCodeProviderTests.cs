@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Api.Identity.TokenProviders;
+using Headless.Api.Identity;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Options;

@@ -7,7 +7,6 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using Headless.Abstractions;
 using Headless.Api;
-using Headless.Api.MultiTenancy;
 using Headless.Api.ServiceDefaults;
 using Headless.Caching;
 using Headless.Constants;

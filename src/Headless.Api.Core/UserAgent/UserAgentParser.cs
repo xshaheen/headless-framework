@@ -5,7 +5,7 @@ using Headless.Abstractions;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Api.UserAgent;
+namespace Headless.Api;
 
 /// <summary>
 /// <see cref="IUserAgentParser"/> backed by DeviceDetector.NET, memoizing results in a bounded in-process cache to

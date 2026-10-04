@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Abstractions;
-using Headless.Api.MultiTenancy;
 using Headless.Checks;
 using Headless.MultiTenancy;
 using Microsoft.AspNetCore.Authentication;
@@ -11,7 +10,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Api.Middlewares;
+namespace Headless.Api;
 
 /// <summary>Resolves the current tenant from the authenticated principal for the lifetime of the HTTP request.</summary>
 /// <remarks>

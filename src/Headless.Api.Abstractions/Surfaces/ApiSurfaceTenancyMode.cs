@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Api.Surfaces;
+namespace Headless.Api;
 
 /// <summary>
 /// Selects default tenancy metadata for an API surface. Explicit endpoint metadata takes precedence.

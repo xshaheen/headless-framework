@@ -1,4 +1,4 @@
-using Headless.Api.Identity.TokenProviders;
+using Headless.Api.Identity;
 using Microsoft.Extensions.Time.Testing;
 
 namespace Tests.Identity.TokenProviders;

@@ -4,7 +4,7 @@ using Headless.Constants;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Headless.Api.Extensions.Cookies;
+namespace Headless.Api;
 
 /// <summary>
 /// Extension methods for configuring ASP.NET Core Identity's application cookie for API usage.

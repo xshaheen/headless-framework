@@ -3,7 +3,7 @@
 using FluentValidation;
 using Headless.Validators;
 
-namespace Headless.Api.Contracts;
+namespace Headless.Api;
 
 /// <summary>FluentValidation rule-builder extensions for <see cref="GeoCoordinateRequest"/>.</summary>
 [PublicAPI]

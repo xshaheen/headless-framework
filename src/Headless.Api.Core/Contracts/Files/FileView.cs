@@ -2,7 +2,7 @@
 
 using File = Headless.Primitives.File;
 
-namespace Headless.Api.Contracts;
+namespace Headless.Api;
 
 /// <summary>
 /// API response view for a stored file resource. Maps the domain <see cref="File"/> primitive

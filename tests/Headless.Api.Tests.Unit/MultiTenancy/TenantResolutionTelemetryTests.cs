@@ -3,8 +3,6 @@
 using System.Diagnostics;
 using System.Security.Claims;
 using Headless.Api;
-using Headless.Api.Middlewares;
-using Headless.Api.MultiTenancy;
 using Headless.Constants;
 using Headless.MultiTenancy;
 using Headless.Testing.Helpers;

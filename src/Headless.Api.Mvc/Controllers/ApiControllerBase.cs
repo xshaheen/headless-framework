@@ -9,7 +9,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Headless.Api.Controllers;
+namespace Headless.Api;
 
 /// <summary>
 /// Base class for Headless API controllers. Provides lazy-resolved service accessors, convenience

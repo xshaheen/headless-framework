@@ -3,7 +3,7 @@
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Identity;
 
-namespace Headless.Api.Identity.Authentication.Basic;
+namespace Headless.Api.Identity;
 
 /// <summary>Extension methods for registering the Basic authentication scheme.</summary>
 [PublicAPI]

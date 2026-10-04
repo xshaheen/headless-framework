@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
-namespace Headless.Api.Identity.TokenProviders;
+namespace Headless.Api.Identity;
 
 /// <summary>Extension methods for registering Headless token providers with ASP.NET Core Identity.</summary>
 [PublicAPI]

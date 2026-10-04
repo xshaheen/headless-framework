@@ -3,7 +3,7 @@
 using Headless.Primitives;
 using Microsoft.AspNetCore.Identity;
 
-namespace Headless.Api.Identity.IdentityErrors;
+namespace Headless.Api.Identity;
 
 /// <summary>
 /// An <see cref="IdentityError"/> that carries structured parameters (e.g. <c>MinLength</c>, <c>UniqueChars</c>)

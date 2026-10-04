@@ -6,7 +6,7 @@ using Headless.MultiTenancy;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 
-namespace Headless.Api.MultiTenancy;
+namespace Headless.Api;
 
 internal sealed class TenantRequirementHandler(ICurrentTenant currentTenant) : AuthorizationHandler<TenantRequirement>
 {

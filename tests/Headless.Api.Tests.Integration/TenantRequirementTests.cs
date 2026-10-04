@@ -4,7 +4,6 @@ using System.Net;
 using System.Net.Http.Json;
 using Headless.Abstractions;
 using Headless.Api;
-using Headless.Api.MultiTenancy;
 using Headless.Api.ServiceDefaults;
 using Headless.Constants;
 using Headless.MultiTenancy;

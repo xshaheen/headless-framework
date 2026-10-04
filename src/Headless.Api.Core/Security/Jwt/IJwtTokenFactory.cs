@@ -1,13 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Security.Claims;
-using Headless.Api.Security.Claims;
 using Headless.Checks;
 using Headless.Constants;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 
-namespace Headless.Api.Security.Jwt;
+namespace Headless.Api.Security;
 
 /// <summary>Factory for creating and validating signed (and optionally encrypted) JWT tokens.</summary>
 [PublicAPI]

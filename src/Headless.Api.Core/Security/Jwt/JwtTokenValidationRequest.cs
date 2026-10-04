@@ -2,7 +2,7 @@
 
 using Headless.Checks;
 
-namespace Headless.Api.Security.Jwt;
+namespace Headless.Api.Security;
 
 /// <summary>Specifies the token, keys, and expected claims used to validate a JWT.</summary>
 [PublicAPI]

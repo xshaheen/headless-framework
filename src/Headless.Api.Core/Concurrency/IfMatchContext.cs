@@ -2,7 +2,7 @@
 
 using Headless.Abstractions;
 
-namespace Headless.Api.Concurrency;
+namespace Headless.Api;
 
 internal sealed class IfMatchContext : IIfMatchContext
 {

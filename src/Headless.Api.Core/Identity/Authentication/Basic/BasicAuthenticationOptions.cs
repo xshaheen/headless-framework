@@ -3,7 +3,7 @@
 using Headless.Constants;
 using Microsoft.AspNetCore.Authentication;
 
-namespace Headless.Api.Identity.Authentication.Basic;
+namespace Headless.Api.Identity;
 
 /// <summary>Options for the HTTP Basic authentication scheme.</summary>
 [PublicAPI]

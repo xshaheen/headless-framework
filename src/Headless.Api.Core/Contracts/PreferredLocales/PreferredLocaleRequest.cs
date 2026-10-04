@@ -2,7 +2,7 @@
 
 using Headless.Primitives;
 
-namespace Headless.Api.Contracts;
+namespace Headless.Api;
 
 /// <summary>
 /// API request contract for a locale preference expressed as a BCP-47-style language/region pair.

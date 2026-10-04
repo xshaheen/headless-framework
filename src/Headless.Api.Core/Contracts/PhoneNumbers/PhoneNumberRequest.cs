@@ -2,7 +2,7 @@
 
 using Headless.Primitives;
 
-namespace Headless.Api.Contracts;
+namespace Headless.Api;
 
 /// <summary>
 /// API request contract for a phone number composed of an ITU country dialling code and a local

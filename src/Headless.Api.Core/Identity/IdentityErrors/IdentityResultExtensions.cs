@@ -3,7 +3,7 @@
 using Headless.Primitives;
 using Microsoft.AspNetCore.Identity;
 
-namespace Headless.Api.Identity.IdentityErrors;
+namespace Headless.Api.Identity;
 
 /// <summary>
 /// Extension methods for converting between <see cref="IdentityError"/>/<see cref="IdentityResult"/>

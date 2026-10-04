@@ -8,7 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Microsoft.Net.Http.Headers;
 
-namespace Headless.Api.Concurrency;
+namespace Headless.Api;
 
 internal static class IfMatchRequestValidator
 {

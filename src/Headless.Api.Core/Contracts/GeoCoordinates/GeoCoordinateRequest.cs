@@ -2,7 +2,7 @@
 
 using Headless.Primitives;
 
-namespace Headless.Api.Contracts;
+namespace Headless.Api;
 
 /// <summary>
 /// API request contract for a geographic coordinate pair. Install <c>Headless.Api.FluentValidation</c>

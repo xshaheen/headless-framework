@@ -2,7 +2,7 @@
 
 using Headless.Abstractions;
 
-namespace Headless.Api.Abstractions;
+namespace Headless.Api;
 
 /// <summary>
 /// No-op implementation of <see cref="IWebClientInfoProvider"/> for use in contexts where

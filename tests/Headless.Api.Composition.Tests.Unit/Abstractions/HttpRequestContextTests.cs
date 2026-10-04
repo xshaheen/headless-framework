@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Abstractions;
-using Headless.Api.Abstractions;
+using Headless.Api;
 using Headless.Constants;
 using Headless.MultiTenancy;
 using Headless.Testing.Tests;

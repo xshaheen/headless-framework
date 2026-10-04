@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Api.MultiTenancy;
+namespace Headless.Api;
 
 /// <summary>
 /// Authoritative identifier/claim mapping-integrity check: whenever identifier-based catalog resolution resolved a

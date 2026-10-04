@@ -2,7 +2,7 @@
 
 using System.Diagnostics;
 using Headless.Abstractions;
-using Headless.Api.Abstractions;
+using Headless.Api;
 using Headless.Constants;
 using Headless.Primitives;
 using Headless.Testing.Tests;

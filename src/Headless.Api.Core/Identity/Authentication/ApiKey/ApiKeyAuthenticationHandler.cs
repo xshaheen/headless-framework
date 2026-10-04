@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Api.Identity.Authentication.ApiKey;
+namespace Headless.Api.Identity;
 
 /// <summary>
 /// ASP.NET Core authentication handler for the API key scheme.

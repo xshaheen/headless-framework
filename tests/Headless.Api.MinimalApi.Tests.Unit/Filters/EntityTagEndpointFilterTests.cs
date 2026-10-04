@@ -2,7 +2,6 @@
 
 using Headless.Abstractions;
 using Headless.Api;
-using Headless.Api.Concurrency;
 using Headless.Api.Resources;
 using Headless.Primitives;
 using Headless.Testing.Tests;
