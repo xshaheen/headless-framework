@@ -3,12 +3,16 @@
 using Headless.Checks;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Options;
+using NATS.Client.Core;
 
 namespace Headless.Messaging.Nats;
 
+// connect replaces the client's broker handshake; DI leaves it null, and tests supply one so the connect outcome is
+// deterministic without a broker or a DNS lookup.
 internal sealed class NatsConsumerClientFactory(
     IOptions<NatsMessagingOptions> natsOptions,
-    IServiceProvider serviceProvider
+    IServiceProvider serviceProvider,
+    Func<NatsConnection, Task>? connect = null
 ) : IConsumerClientFactory
 {
     public async Task<IConsumerClient> CreateAsync(
@@ -30,6 +34,7 @@ internal sealed class NatsConsumerClientFactory(
             natsOptions,
             serviceProvider,
             lane: request.Lane,
+            connect: connect,
             kind: request.Kind
         );
         try
