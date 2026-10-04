@@ -3,7 +3,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
-using Headless.Abstractions;
+using Headless;
 using Headless.DistributedLocks;
 using Headless.DistributedLocks.InMemory;
 using Headless.Testing.Tests;

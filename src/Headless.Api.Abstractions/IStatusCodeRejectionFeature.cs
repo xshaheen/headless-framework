@@ -2,7 +2,7 @@
 
 using Microsoft.AspNetCore.Http;
 
-namespace Headless.Abstractions;
+namespace Headless.Api;
 
 /// <summary>
 /// Per-request feature through which the handler that fails a request supplies the rejection response

@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Constants;
-
 namespace Headless.Sequences.Sqlite;
 
 /// <summary>Connection, command, and table options for the SQLite sequence provider.</summary>

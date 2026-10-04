@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
-using Headless.Constants;
 using Headless.UnitOfWork;
 using Headless.UnitOfWork.Internal;
 

@@ -2,7 +2,7 @@
 
 using DotNet.Testcontainers.Containers;
 using DotNet.Testcontainers.Images;
-using Headless.Abstractions;
+using Headless;
 using Headless.Context;
 using Headless.EntityFramework;
 using Headless.MultiTenancy;

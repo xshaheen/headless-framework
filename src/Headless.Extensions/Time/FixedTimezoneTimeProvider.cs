@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Core;
+namespace Headless;
 
 /// <summary>
 /// A <see cref="TimeProvider"/> that reports a fixed <see cref="LocalTimeZone"/> regardless of the host machine's

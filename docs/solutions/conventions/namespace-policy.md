@@ -54,8 +54,10 @@ A family's public types live in its root namespace by default, so a feature's co
 Add a sub-namespace only for a distinct audience or opt-in area: a provider (`Headless.DistributedLocks.Redis`),
 `Internal`, extension points for implementers (`Headless.Messaging.Transport`), `Testing`, or `Dashboard`.
 Never name one after a kind of type (`Models`, `Enums`, `Interfaces`, `Entities`, `Exceptions`, `Helpers`,
-`Extensions`, `Constants`, `Dtos`, `Base`, `Utilities`): it groups types by implementation detail instead of
-use, so one scenario needs several imports.
+`Extensions`, `Constants`, `Dtos`, `Base`, `Utilities`) or a bucket (`Abstractions`, `Core`, `Common`,
+`Contracts`): it groups types by implementation detail instead of use, so one scenario needs several imports.
+The rule covers every segment after `Headless`, the family segment included, so the base library's
+general-purpose types live in the `Headless` root namespace rather than in `Headless.Core` or `Headless.Constants`.
 
 Folders organize files, not namespaces. `.editorconfig` sets `dotnet_style_namespace_match_folder = false`, so a
 file declares the namespace this policy gives it wherever it sits, with no `IDE0130` suppression.

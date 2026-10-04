@@ -22,7 +22,7 @@ public static class AddSerilogExtensions
     /// <summary>
     /// Adds <see cref="SerilogEnrichersMiddleware"/> to the application pipeline. The middleware pushes
     /// <c>UserId</c>, <c>AccountId</c>, and <c>CorrelationId</c> properties from the current
-    /// <see cref="Headless.Abstractions.IRequestContext"/> into the Serilog log context for the duration
+    /// <see cref="Headless.Api.IRequestContext"/> into the Serilog log context for the duration
     /// of each request.
     /// </summary>
     /// <param name="builder">The application builder.</param>

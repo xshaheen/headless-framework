@@ -3,7 +3,6 @@
 using System.Collections.Concurrent;
 using System.Linq.Expressions;
 using System.Runtime.CompilerServices;
-using Headless.Abstractions;
 using Headless.Checks;
 using Headless.Jobs.Internal;
 using Microsoft.Extensions.DependencyInjection;

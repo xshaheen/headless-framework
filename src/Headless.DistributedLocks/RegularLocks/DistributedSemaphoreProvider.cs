@@ -2,7 +2,6 @@
 
 using System.Collections.Concurrent;
 using System.Diagnostics;
-using Headless.Abstractions;
 using Headless.Checks;
 using Headless.Messaging;
 using Microsoft.Extensions.Logging;

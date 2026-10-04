@@ -3,10 +3,10 @@
 using Amazon.Runtime;
 using Amazon.S3;
 using Amazon.S3.Model;
-using Headless.Abstractions;
 using Headless.Blobs;
 using Headless.Blobs.Aws;
 using Headless.Blobs.CloudflareR2;
+using Headless.IO;
 using Microsoft.Extensions.Options;
 
 namespace Tests;

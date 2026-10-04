@@ -2,7 +2,6 @@
 
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
-using Headless.Abstractions;
 using Headless.Checks;
 using Headless.Messaging.RequestReply;
 using Headless.MultiTenancy;

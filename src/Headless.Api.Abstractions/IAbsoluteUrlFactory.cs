@@ -2,7 +2,7 @@
 
 using Microsoft.AspNetCore.Http;
 
-namespace Headless.Abstractions;
+namespace Headless.Api;
 
 /// <summary>
 /// Builds absolute URLs from relative paths using the current HTTP request's scheme, host, and path base.

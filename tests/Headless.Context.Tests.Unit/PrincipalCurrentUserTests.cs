@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Security.Claims;
-using Headless.Constants;
 using Headless.Context;
+using Headless.Security;
 using UserId = Headless.Primitives.UserId;
 
 namespace Tests;

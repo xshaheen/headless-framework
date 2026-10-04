@@ -1,7 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Api.Identity;
-using Headless.Constants;
+using Headless.Http;
+using Headless.Security;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;

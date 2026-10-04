@@ -1,4 +1,4 @@
-using Headless.Abstractions;
+using Headless;
 using Headless.Caching;
 using Headless.Context;
 using Headless.DistributedLocks;

@@ -2,7 +2,7 @@
 
 using Headless.Checks;
 
-namespace Headless.Core;
+namespace Headless;
 
 /// <summary>Helpers for inspecting and temporarily overriding the current thread's culture.</summary>
 [PublicAPI]

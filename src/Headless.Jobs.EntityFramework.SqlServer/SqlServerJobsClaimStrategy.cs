@@ -3,7 +3,6 @@
 using System.Data;
 using System.Data.Common;
 using System.Runtime.CompilerServices;
-using Headless.Abstractions;
 using Headless.Jobs.Infrastructure;
 using Headless.Jobs.Internal;
 using Headless.Sql;

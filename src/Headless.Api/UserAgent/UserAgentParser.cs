@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using DeviceDetectorNET;
-using Headless.Abstractions;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 

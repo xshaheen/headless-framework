@@ -185,7 +185,7 @@ await limiter.ResetAsync(attempt, cancellationToken);
 ### Design and runtime behavior
 
 - `AttemptResult` reports `IsAllowed`, `Count` (attempts charged in the window, including refused ones), `Limit`, `Remaining`, and `RetryAfter`. `RetryAfter` is the time until the window closes, at least one second. A caller needs it only once `Remaining` reaches zero.
-- `ThrowIfRejected(error)` throws `Headless.Exceptions.TooManyRequestsException`. With `Headless.Api` problem details registered, that maps to 429, the `Retry-After` header in whole seconds rounded up, and `retryAfter` plus the optional `error` in the body. Outside HTTP, catch it or read `IsAllowed` instead.
+- `ThrowIfRejected(error)` throws `Headless.TooManyRequestsException`. With `Headless.Api` problem details registered, that maps to 429, the `Retry-After` header in whole seconds rounded up, and `retryAfter` plus the optional `error` in the body. Outside HTTP, catch it or read `IsAllowed` instead.
 - Lowering a quota's `Limit` applies to the running window on the next attempt. Changing its `Window` starts every subject on a fresh counter, because the window length is part of the key.
 - Cache keys have the shape `{KeyPrefix}:v1:{purpose}:{windowSeconds}:{windowNumber}:{fingerprint}`. The fingerprint is a base64url HMAC of the purpose and subject, so the same subject yields unrelated fingerprints under different purposes.
 - A cache failure in `AcquireAsync` or `ResetAsync` propagates.

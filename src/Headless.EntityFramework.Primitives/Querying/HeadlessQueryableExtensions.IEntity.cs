@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless;
 using Headless.Domain;
-using Headless.Exceptions;
 
 namespace Microsoft.EntityFrameworkCore;
 
@@ -17,7 +17,7 @@ public static partial class HeadlessQueryableExtensions
     /// <param name="id">The primary key value to look up.</param>
     /// <param name="cancellationToken">A token to observe while waiting for the task to complete.</param>
     /// <returns>The matching entity.</returns>
-    /// <exception cref="Headless.Exceptions.EntityNotFoundException">No entity with the given key exists.</exception>
+    /// <exception cref="Headless.EntityNotFoundException">No entity with the given key exists.</exception>
     public static async ValueTask<TEntity> FirstByIdAsync<TEntity, TKey>(
         this IQueryable<TEntity> source,
         TKey id,
@@ -36,7 +36,7 @@ public static partial class HeadlessQueryableExtensions
     /// Returns the first entity with the specified <see cref="Guid"/> <paramref name="id"/>, or throws
     /// <c>EntityNotFoundException</c> when no match is found.
     /// </summary>
-    /// <exception cref="Headless.Exceptions.EntityNotFoundException">No entity with the given key exists.</exception>
+    /// <exception cref="Headless.EntityNotFoundException">No entity with the given key exists.</exception>
     public static async ValueTask<TEntity> FirstByIdAsync<TEntity>(
         this IQueryable<TEntity> source,
         Guid id,
@@ -53,7 +53,7 @@ public static partial class HeadlessQueryableExtensions
     /// Returns the first entity with the specified <see cref="int"/> <paramref name="id"/>, or throws
     /// <c>EntityNotFoundException</c> when no match is found.
     /// </summary>
-    /// <exception cref="Headless.Exceptions.EntityNotFoundException">No entity with the given key exists.</exception>
+    /// <exception cref="Headless.EntityNotFoundException">No entity with the given key exists.</exception>
     public static async ValueTask<TEntity> FirstByIdAsync<TEntity>(
         this IQueryable<TEntity> source,
         int id,
@@ -70,7 +70,7 @@ public static partial class HeadlessQueryableExtensions
     /// Returns the first entity with the specified <see cref="long"/> <paramref name="id"/>, or throws
     /// <c>EntityNotFoundException</c> when no match is found.
     /// </summary>
-    /// <exception cref="Headless.Exceptions.EntityNotFoundException">No entity with the given key exists.</exception>
+    /// <exception cref="Headless.EntityNotFoundException">No entity with the given key exists.</exception>
     public static async ValueTask<TEntity> FirstByIdAsync<TEntity>(
         this IQueryable<TEntity> source,
         long id,
@@ -87,7 +87,7 @@ public static partial class HeadlessQueryableExtensions
     /// Returns the first entity with the specified <see cref="string"/> <paramref name="id"/>, or throws
     /// <c>EntityNotFoundException</c> when no match is found.
     /// </summary>
-    /// <exception cref="Headless.Exceptions.EntityNotFoundException">No entity with the given key exists.</exception>
+    /// <exception cref="Headless.EntityNotFoundException">No entity with the given key exists.</exception>
     public static async ValueTask<TEntity> FirstByIdAsync<TEntity>(
         this IQueryable<TEntity> source,
         string id,

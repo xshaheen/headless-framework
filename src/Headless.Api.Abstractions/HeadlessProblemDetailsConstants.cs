@@ -2,7 +2,7 @@
 
 using Headless.Primitives;
 
-namespace Headless.Constants;
+namespace Headless.Api;
 
 /// <summary>
 /// Well-known <c>ProblemDetails</c> constants (RFC 9457) used across Headless API error responses.

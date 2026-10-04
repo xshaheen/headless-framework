@@ -1,4 +1,4 @@
-using Headless.Abstractions;
+using Headless;
 using Headless.Coordination;
 using Headless.Hosting;
 using Headless.Messaging;

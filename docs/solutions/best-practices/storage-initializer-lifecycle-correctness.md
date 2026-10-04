@@ -294,18 +294,18 @@ The same TCS/race/dedup discipline transfers to other startup-time initializers 
 
 | Concern | Source file (branch `xshaheen/refactor-storage-initialization-unification`) |
 | --- | --- |
-| PG initializer + race lock | `src/Headless.AuditLog.Storage.PostgreSql/PostgreSqlAuditLogStorageInitializer.cs` |
-| PG polled session lock around `CREATE INDEX CONCURRENTLY` | `src/Headless.Messaging.Storage.PostgreSql/PostgreSqlStorageInitializer.cs` |
+| PG schema creation + race lock (now the shared runner) | `src/Headless.Hosting/Initialization/Schema/SchemaRunner.cs`, `src/Headless.AuditLog.Storage.PostgreSql/PostgreSqlAuditLogSchemaContribution.cs` |
+| PG polled session lock around `CREATE INDEX CONCURRENTLY` | `src/Headless.Hosting/Initialization/Schema/SchemaRunner.cs`, `src/Headless.Hosting/Initialization/Schema/ISchemaDialect.cs` |
 | Every feature initializing one schema concurrently | `tests/Headless.Storage.SharedSchema.Tests.Integration/` |
 | Schema created by a foreign transaction first | `tests/Headless.Storage.SharedSchema.Tests.Integration/PostgreSqlForeignSchemaCreatorTests.cs` |
 | Schema-wide PostgreSQL lock (single owner) | `src/Headless.Sql.PostgreSql/PostgreSqlSchemaInitLock.cs` |
-| SqlServer initializer + applock | `src/Headless.AuditLog.Storage.SqlServer/SqlServerAuditLogStorageInitializer.cs` |
-| Settings raw PG initializer | `src/Headless.Settings.Storage.PostgreSql/PostgreSqlSettingsStorageInitializer.cs` |
-| Features raw PG initializer | `src/Headless.Features.Storage.PostgreSql/PostgreSqlFeaturesStorageInitializer.cs` |
+| SqlServer schema creation + applock (now the shared runner) | `src/Headless.Hosting/Initialization/Schema/SchemaRunner.cs`, `src/Headless.AuditLog.Storage.SqlServer/SqlServerAuditLogSchemaContribution.cs` |
+| Settings PG schema | `src/Headless.Settings.Storage.PostgreSql/PostgreSqlSettingsSchemaContribution.cs` |
+| Features PG schema | `src/Headless.Features.Storage.PostgreSql/PostgreSqlFeaturesSchemaContribution.cs` |
 | Dispose path | `src/Headless.EntityFramework/Contexts/HeadlessDbContext.cs` |
 | Factory + scope ownership | `src/Headless.EntityFramework/Contexts/HeadlessDbContextFactory.cs` |
 | Ambient transaction abstraction | `src/Headless.AuditLog.Abstractions/IAmbientDbTransactionAccessor.cs` |
-| Provider-mismatch dedup | `src/Headless.AuditLog.Storage.PostgreSql/PostgreSqlAuditLogStore.cs` |
+| Provider-mismatch dedup | `src/Headless.AuditLog/RelationalAuditLogStore.cs` |
 | Field-limit hoist | `src/Headless.AuditLog.Abstractions/AuditLogFieldLimits.cs` |
 | Failure-mode + race tests | `tests/Headless.AuditLog.Storage.PostgreSql.Tests.Integration/PostgreSqlAuditLogFailureModesTests.cs` |
 | Atomicity + provider-mismatch tests | `tests/Headless.AuditLog.Storage.PostgreSql.Tests.Integration/PostgreSqlAuditLogAtomicityTests.cs` |

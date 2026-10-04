@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Abstractions;
+namespace Headless.Api;
 
 /// <summary>Parses client information out of a raw <c>User-Agent</c> header value.</summary>
 /// <remarks>

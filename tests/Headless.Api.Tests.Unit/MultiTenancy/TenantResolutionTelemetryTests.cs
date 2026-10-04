@@ -3,8 +3,8 @@
 using System.Diagnostics;
 using System.Security.Claims;
 using Headless.Api;
-using Headless.Constants;
 using Headless.MultiTenancy;
+using Headless.Security;
 using Headless.Testing;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Http;

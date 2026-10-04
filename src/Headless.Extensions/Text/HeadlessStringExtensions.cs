@@ -3,7 +3,7 @@
 using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using Headless.Checks;
-using RegexPatterns = Headless.Constants.RegexPatterns;
+using RegexPatterns = Headless.RegexPatterns;
 
 namespace System;
 

@@ -27,7 +27,7 @@ public interface ISettingManager
     /// resolving provider.
     /// </returns>
     /// <exception cref="ArgumentNullException"><paramref name="settingName"/> is <see langword="null"/>.</exception>
-    /// <exception cref="Headless.Exceptions.ConflictException">The setting named <paramref name="settingName"/> is not defined.</exception>
+    /// <exception cref="Headless.ConflictException">The setting named <paramref name="settingName"/> is not defined.</exception>
     Task<SettingValue> GetAsync(
         string settingName,
         string? providerName = null,
@@ -113,7 +113,7 @@ public interface ISettingManager
     /// <param name="cancellationToken">The abort token.</param>
     /// <exception cref="ArgumentNullException"><paramref name="settingName"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentNullException"><paramref name="providerName"/> is <see langword="null"/>.</exception>
-    /// <exception cref="Headless.Exceptions.ConflictException">
+    /// <exception cref="Headless.ConflictException">
     /// The setting is not defined, the provider named <paramref name="providerName"/> is not registered, or that
     /// provider is read-only.
     /// </exception>
@@ -151,7 +151,7 @@ public interface ISettingManager
     /// <c>ISettingValueProvider.SetAllAsync</c> writes one value at a time and gives no such guarantee.
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="values"/> or <paramref name="providerName"/> is <see langword="null"/>.</exception>
-    /// <exception cref="Headless.Exceptions.ConflictException">
+    /// <exception cref="Headless.ConflictException">
     /// A setting in <paramref name="values"/> is not defined, the provider named <paramref name="providerName"/>
     /// is not registered, or that provider is read-only.
     /// </exception>

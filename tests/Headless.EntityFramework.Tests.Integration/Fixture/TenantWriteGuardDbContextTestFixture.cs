@@ -1,4 +1,4 @@
-using Headless.Abstractions;
+using Headless;
 using Headless.Context;
 using Headless.EntityFramework;
 using Headless.MultiTenancy;

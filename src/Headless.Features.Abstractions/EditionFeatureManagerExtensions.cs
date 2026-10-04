@@ -49,7 +49,7 @@ public static class EditionFeatureManagerExtensions
         /// <param name="name">The feature name.</param>
         /// <param name="editionId">The edition identifier to grant the feature to.</param>
         /// <exception cref="ArgumentNullException"><paramref name="name"/> is <see langword="null"/>.</exception>
-        /// <exception cref="Headless.Exceptions.ConflictException">The feature is not defined or the Edition provider is read-only.</exception>
+        /// <exception cref="Headless.ConflictException">The feature is not defined or the Edition provider is read-only.</exception>
         public Task GrantToEditionAsync(string name, string editionId)
         {
             return featureManager.GrantAsync(name, FeatureValueProviderNames.Edition, editionId);
@@ -59,7 +59,7 @@ public static class EditionFeatureManagerExtensions
         /// <param name="name">The feature name.</param>
         /// <param name="editionId">The edition identifier to revoke the feature from.</param>
         /// <exception cref="ArgumentNullException"><paramref name="name"/> is <see langword="null"/>.</exception>
-        /// <exception cref="Headless.Exceptions.ConflictException">The feature is not defined or the Edition provider is read-only.</exception>
+        /// <exception cref="Headless.ConflictException">The feature is not defined or the Edition provider is read-only.</exception>
         public Task RevokeFromEditionAsync(string name, string editionId)
         {
             return featureManager.RevokeAsync(name, FeatureValueProviderNames.Edition, editionId);

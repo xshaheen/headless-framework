@@ -2,7 +2,7 @@
 
 using Headless.Primitives;
 
-namespace Headless.Exceptions;
+namespace Headless;
 
 /// <summary>
 /// An exception that signals the current request lacks valid authentication credentials.

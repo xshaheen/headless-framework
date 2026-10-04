@@ -2,8 +2,8 @@
 
 using System.Net;
 using System.Text;
-using Headless.Constants;
 using Headless.Hosting;
+using Headless.Http;
 using Headless.Idempotency;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;

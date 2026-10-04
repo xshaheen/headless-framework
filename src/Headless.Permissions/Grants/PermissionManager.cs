@@ -2,7 +2,6 @@
 
 using Headless.Checks;
 using Headless.Context;
-using Headless.Exceptions;
 using Headless.Messaging;
 using Headless.Permissions.Resources;
 using Microsoft.Extensions.Logging;

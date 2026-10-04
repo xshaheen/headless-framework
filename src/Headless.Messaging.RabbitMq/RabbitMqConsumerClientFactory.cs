@@ -29,6 +29,10 @@ internal sealed class RabbitMqConsumerClientFactory(
         // not as a BrokerConnectionException.
         var config = consumerRegistry?.ResolveConsumerConfig<RabbitMqConsumerConfig>(subscriptionName, lane);
 
+        // An already-cancelled caller must never build a half-connected client: the connect below would only
+        // observe the token after it opened a broker connection.
+        cancellationToken.ThrowIfCancellationRequested();
+
         var client = new RabbitMqConsumerClient(
             subscriptionName,
             concurrency,
@@ -50,13 +54,7 @@ internal sealed class RabbitMqConsumerClientFactory(
         {
             // An every-instance client may already own a connection; release it with the failed client.
             await client.DisposeAsync().ConfigureAwait(false);
-
-            if (e is OperationCanceledException or BrokerConnectionException)
-            {
-                throw;
-            }
-
-            throw new BrokerConnectionException(e);
+            throw BrokerConnectGuard.ConnectFailure(e, cancellationToken);
         }
     }
 }

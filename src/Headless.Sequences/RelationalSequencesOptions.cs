@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
-using Headless.Constants;
 using Headless.Hosting;
 
 namespace Headless.Sequences;

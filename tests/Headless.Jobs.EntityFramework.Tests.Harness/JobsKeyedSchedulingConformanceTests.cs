@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
-using Headless.Abstractions;
+using Headless;
 using Headless.Coordination;
 using Headless.Hosting;
 using Headless.Jobs;

@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Constants;
+namespace Headless.Security;
 
 /// <summary>
 /// Well-known authentication identifiers used across the framework: the default

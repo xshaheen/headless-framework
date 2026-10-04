@@ -42,9 +42,9 @@ internal sealed class AmazonSqsConsumerClientFactory(
             var client = new AmazonSqsConsumerClient(subscriptionName, concurrency, amazonSqsOptions, logger, lane);
             return Task.FromResult<IConsumerClient>(client);
         }
-        catch (Exception e) when (e is not OperationCanceledException)
+        catch (Exception e)
         {
-            throw new BrokerConnectionException(e);
+            throw BrokerConnectGuard.ConnectFailure(e, cancellationToken);
         }
     }
 }

@@ -2,7 +2,7 @@
 
 using System.Security.Claims;
 using Headless.Checks;
-using Headless.Constants;
+using Headless.Security;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 

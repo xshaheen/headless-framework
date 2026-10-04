@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
-using Headless.Constants;
+using Headless.Http;
 using Headless.Imaging.ImageSharp.Internal;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;

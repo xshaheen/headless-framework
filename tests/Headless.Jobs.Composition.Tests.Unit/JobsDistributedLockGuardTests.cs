@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Abstractions;
+using Headless;
 using Headless.DistributedLocks;
 using Headless.DistributedLocks.InMemory;
 using Headless.Jobs;

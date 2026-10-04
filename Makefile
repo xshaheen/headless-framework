@@ -170,13 +170,20 @@ tools: ## Restore repo-pinned .NET tools.
 	$(DOTNET) tool restore
 
 .PHONY: restore
-restore: ## Restore NuGet packages.
-	$(DOTNET) restore "$(SOLUTION)" -p:Configuration="$(CONFIGURATION)" $(RESTORE_ARGS)
+# CI restores in locked mode: a plain restore rewrites a lock file that no longer matches its project's
+# references, so drift would pass CI and surface later on an unrelated change. Local restores still update
+# lock files; commit them with the reference change.
+ifneq ($(CI),)
+RESTORE_LOCK_ARGS ?= --locked-mode
+endif
+
+restore: ## Restore NuGet packages (locked mode when CI is set).
+	$(DOTNET) restore "$(SOLUTION)" -p:Configuration="$(CONFIGURATION)" $(RESTORE_ARGS) $(RESTORE_LOCK_ARGS)
 
 .PHONY: restore-project
 restore-project: ## Restore one project; preferred for focused project work.
 	@test -n "$(PROJECT)" || (echo "PROJECT is required. Example: make restore-project PROJECT=src/Headless.Api/Headless.Api.csproj" && exit 2)
-	$(DOTNET) restore "$(PROJECT)" -p:Configuration="$(CONFIGURATION)" $(RESTORE_ARGS)
+	$(DOTNET) restore "$(PROJECT)" -p:Configuration="$(CONFIGURATION)" $(RESTORE_ARGS) $(RESTORE_LOCK_ARGS)
 
 .PHONY: hooks
 # A repository core.hooksPath replaces the global one, so on a machine whose global hooks already

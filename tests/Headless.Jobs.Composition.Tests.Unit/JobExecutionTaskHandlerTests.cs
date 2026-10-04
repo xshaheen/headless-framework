@@ -2,7 +2,7 @@
 
 using System.Collections.Concurrent;
 using System.Diagnostics;
-using Headless.Abstractions;
+using Headless;
 using Headless.Hosting;
 using Headless.Jobs;
 using Headless.Jobs.Instrumentation;

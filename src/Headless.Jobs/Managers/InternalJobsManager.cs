@@ -2,7 +2,6 @@
 
 using System.Collections.Concurrent;
 using System.Globalization;
-using Headless.Abstractions;
 using Headless.Checks;
 using Headless.Jobs.Instrumentation;
 using Headless.Jobs.Internal;

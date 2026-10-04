@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Constants;
+namespace Headless;
 
 /// <summary>
 /// The relational providers whose identifier rules <see cref="StorageIdentifier" /> publishes. Provider packages

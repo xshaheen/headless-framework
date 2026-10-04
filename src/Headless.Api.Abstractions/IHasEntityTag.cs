@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Abstractions;
+namespace Headless.Api;
 
 /// <summary>Exposes the entity tag for an HTTP response representation.</summary>
 [PublicAPI]

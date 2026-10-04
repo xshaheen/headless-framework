@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Abstractions;
-
 namespace Headless.Api;
 
 /// <summary>Configures entity-tag concurrency validation shared by MVC and Minimal APIs.</summary>

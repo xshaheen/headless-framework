@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using RegexPatterns = Headless.Constants.RegexPatterns;
+using RegexPatterns = Headless.RegexPatterns;
 
 namespace Tests.Constants;
 

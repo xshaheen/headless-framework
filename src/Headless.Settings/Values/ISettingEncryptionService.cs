@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Exceptions;
 using Headless.Security;
 using Headless.Settings.Resources;
 using Microsoft.Extensions.Logging;
@@ -20,7 +19,7 @@ public interface ISettingEncryptionService
     /// <param name="settingDefinition">The setting whose value is being decrypted.</param>
     /// <param name="encryptedValue">The encrypted value to decrypt, or <see langword="null"/> / empty to pass through unchanged.</param>
     /// <returns>The decrypted plain-text value, or the original value when it is <see langword="null"/> or empty.</returns>
-    /// <exception cref="Headless.Exceptions.ConflictException">Decryption of the setting value fails.</exception>
+    /// <exception cref="Headless.ConflictException">Decryption of the setting value fails.</exception>
     string? Decrypt(SettingDefinition settingDefinition, string? encryptedValue);
 }
 
@@ -52,7 +51,7 @@ public sealed class SettingEncryptionService(
     }
 
     /// <inheritdoc/>
-    /// <exception cref="Headless.Exceptions.ConflictException">The underlying decryption fails.</exception>
+    /// <exception cref="Headless.ConflictException">The underlying decryption fails.</exception>
     public string? Decrypt(SettingDefinition settingDefinition, string? encryptedValue)
     {
         if (encryptedValue.IsNullOrEmpty())

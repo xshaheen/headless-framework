@@ -21,7 +21,7 @@ Install individually as needed -- these packages are independent of each other:
 - **Sitemaps** -- XML sitemap generation (`SitemapUrl`, `SitemapIndexBuilder`) with localized URL and image support.
 - **Slugs** -- URL-friendly slug generation (`Slug.Create()`) with Unicode normalization and configurable options.
 
-CAPTCHA verification (Google reCAPTCHA v2/v3, Cloudflare Turnstile) moved out of this domain — see [captcha.md](captcha.md).
+CAPTCHA verification (Google reCAPTCHA v2/v3, Cloudflare Turnstile) is its own domain: see [captcha.md](captcha.md).
 
 ## Agent Rules
 

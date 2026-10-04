@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Constants;
+namespace Headless.Http;
 
 /// <summary>
 /// HTTP header names used by the framework. Includes standard IANA headers (e.g.

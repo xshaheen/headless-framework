@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Constants;
+namespace Headless.Api;
 
 /// <summary>Named CORS policy identifiers used by the Headless framework.</summary>
 /// <remarks>

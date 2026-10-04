@@ -2,7 +2,7 @@
 
 using System.Security.Principal;
 using Headless.Checks;
-using Headless.Constants;
+using Headless.Security;
 using AccountId = Headless.Primitives.AccountId;
 using UserId = Headless.Primitives.UserId;
 

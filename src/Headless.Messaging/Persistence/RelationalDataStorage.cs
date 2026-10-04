@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
-using Headless.Abstractions;
 using Headless.Checks;
 using Headless.Coordination;
 using Headless.Messaging.Internal;

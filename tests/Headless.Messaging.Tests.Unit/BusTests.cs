@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
-using Headless.Abstractions;
+using Headless;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
 using Headless.MultiTenancy;

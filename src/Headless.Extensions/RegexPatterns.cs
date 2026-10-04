@@ -2,7 +2,7 @@
 
 using System.Text.RegularExpressions;
 
-namespace Headless.Constants;
+namespace Headless;
 
 /// <summary>
 /// Shared, source-generated (<see cref="System.Text.RegularExpressions.GeneratedRegexAttribute"/>),

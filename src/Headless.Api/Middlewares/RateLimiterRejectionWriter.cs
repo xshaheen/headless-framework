@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Threading.RateLimiting;
-using Headless.Abstractions;
 using Headless.Api.Resources;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.RateLimiting;

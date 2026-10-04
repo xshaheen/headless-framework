@@ -2,7 +2,6 @@
 
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
-using Headless.Constants;
 
 namespace Headless.Jobs;
 

@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Abstractions;
+using Headless;
 using Headless.Coordination;
 using Headless.Messaging;
 using Headless.Messaging.Storage.InMemory;

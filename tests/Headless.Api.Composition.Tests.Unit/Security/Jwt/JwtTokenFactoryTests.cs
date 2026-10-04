@@ -2,7 +2,7 @@
 
 using System.Security.Claims;
 using Headless.Api.Security;
-using Headless.Constants;
+using Headless.Security;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Options;

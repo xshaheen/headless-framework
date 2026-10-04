@@ -2,7 +2,7 @@
 
 using System.Data;
 using System.Data.Common;
-using Headless.Abstractions;
+using Headless;
 using Headless.Jobs;
 using Headless.Jobs.Infrastructure;
 using Headless.Jobs.Internal;

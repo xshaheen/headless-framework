@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Constants;
+namespace Headless;
 
 /// <summary>
 /// Standard error codes for the supported SQL providers, used to classify a caught database exception (constraint

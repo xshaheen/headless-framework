@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Runtime.ExceptionServices;
-using Headless.Exceptions;
+using Headless;
 
 namespace System;
 

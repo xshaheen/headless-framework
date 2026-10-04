@@ -2,8 +2,8 @@
 
 using FluentValidation;
 using Headless.Checks;
-using Headless.Constants;
 using Headless.MultiTenancy;
+using Headless.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;

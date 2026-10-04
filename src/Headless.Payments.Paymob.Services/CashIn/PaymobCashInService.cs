@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Headless.Exceptions;
 using Headless.Payments.Paymob.CashIn;
 using Headless.Payments.Paymob.Services.Resources;
 using Microsoft.Extensions.Logging;

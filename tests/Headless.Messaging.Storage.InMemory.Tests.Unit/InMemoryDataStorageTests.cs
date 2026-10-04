@@ -2,7 +2,7 @@
 
 using System.Globalization;
 using System.Security.Claims;
-using Headless.Abstractions;
+using Headless;
 using Headless.Messaging;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Storage.InMemory;

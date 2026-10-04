@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Abstractions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Net.Http.Headers;
 

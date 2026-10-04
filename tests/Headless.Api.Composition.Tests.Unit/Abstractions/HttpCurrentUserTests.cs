@@ -2,9 +2,9 @@
 
 using System.Security.Claims;
 using Headless.Api;
-using Headless.Constants;
 using Headless.Context;
 using Headless.Primitives;
+using Headless.Security;
 using Headless.Testing.Tests;
 
 namespace Tests.Abstractions;

@@ -278,6 +278,9 @@ KIND_SEGMENTS = {
     "Utilities",
     "Utils",
 }
+# Bucket names say nothing about the scenario either: "Abstractions" or "Core" as a namespace or folder
+# only means "the shared stuff", so a reader cannot tell what lives there.
+BUCKET_SEGMENTS = {"Abstractions", "Common", "Contracts", "Core", "Misc"}
 NAMESPACE_BASELINE = REPO_ROOT / "scripts" / "namespace-baseline.txt"
 _NAMESPACE = re.compile(r"^namespace\s+([\w.]+)\s*[;{]", re.MULTILINE)
 _PUBLIC_TYPE = re.compile(
@@ -298,8 +301,8 @@ def public_kind_namespaces() -> set[str]:
         if not match or not _PUBLIC_TYPE.search(text):
             continue
         namespace = match.group(1)
-        # Segments 0 and 1 are "Headless" and the family name, which may legitimately be "Extensions".
-        if namespace.startswith("Headless.") and KIND_SEGMENTS & set(namespace.split(".")[2:]):
+        # Segment 0 is "Headless"; every later one, the family name included, must name a scenario.
+        if namespace.startswith("Headless.") and (KIND_SEGMENTS | BUCKET_SEGMENTS) & set(namespace.split(".")[1:]):
             found.add(namespace)
     return found
 
@@ -314,7 +317,7 @@ def namespace_violations() -> list[str]:
                 baseline.add(line)
     found = public_kind_namespaces()
     violations = [
-        f"{namespace}: a public namespace must not be named after a kind of type ({', '.join(sorted(KIND_SEGMENTS))})"
+        f"{namespace}: a public namespace must not be named after a kind of type or a bucket ({', '.join(sorted(KIND_SEGMENTS | BUCKET_SEGMENTS))})"
         for namespace in sorted(found - baseline)
     ]
     violations += [
@@ -327,7 +330,7 @@ def namespace_violations() -> list[str]:
 # Folders do not shape namespaces here, so they exist only to help a reader find code: a folder names the
 # feature or area its files serve. A folder named after a kind of type scatters one feature across several
 # folders, the same failure the kind-named namespace rule prevents.
-KIND_FOLDERS = KIND_SEGMENTS | {"Abstractions", "Common", "Contracts", "Misc"}
+KIND_FOLDERS = KIND_SEGMENTS | BUCKET_SEGMENTS
 MAX_FOLDER_DEPTH = 2
 
 

@@ -2,7 +2,6 @@
 
 using Headless.Checks;
 using Headless.Context;
-using Headless.Exceptions;
 using Headless.Messaging;
 using Headless.Settings.Resources;
 using Microsoft.Extensions.Logging;
@@ -26,7 +25,7 @@ public sealed class SettingManager(
 
     /// <inheritdoc/>
     /// <exception cref="ArgumentNullException"><paramref name="settingName"/> is <see langword="null"/>.</exception>
-    /// <exception cref="Headless.Exceptions.ConflictException">The setting named <paramref name="settingName"/> is not defined.</exception>
+    /// <exception cref="Headless.ConflictException">The setting named <paramref name="settingName"/> is not defined.</exception>
     public Task<SettingValue> GetAsync(
         string settingName,
         string? providerName = null,
@@ -319,7 +318,7 @@ public sealed class SettingManager(
 
     /// <inheritdoc/>
     /// <exception cref="ArgumentNullException"><paramref name="settingName"/> or <paramref name="providerName"/> is <see langword="null"/>.</exception>
-    /// <exception cref="Headless.Exceptions.ConflictException">The setting named <paramref name="settingName"/> is not defined, the provider named <paramref name="providerName"/> is not registered, or the resolved provider does not support write operations.</exception>
+    /// <exception cref="Headless.ConflictException">The setting named <paramref name="settingName"/> is not defined, the provider named <paramref name="providerName"/> is not registered, or the resolved provider does not support write operations.</exception>
     public Task SetAsync(
         string settingName,
         string? value,
@@ -338,7 +337,7 @@ public sealed class SettingManager(
 
     /// <inheritdoc/>
     /// <exception cref="ArgumentNullException"><paramref name="values"/> or <paramref name="providerName"/> is <see langword="null"/>.</exception>
-    /// <exception cref="Headless.Exceptions.ConflictException">A setting in <paramref name="values"/> is not defined, the provider named <paramref name="providerName"/> is not registered, or the resolved provider does not support write operations.</exception>
+    /// <exception cref="Headless.ConflictException">A setting in <paramref name="values"/> is not defined, the provider named <paramref name="providerName"/> is not registered, or the resolved provider does not support write operations.</exception>
     public async Task SetAsync(
         IReadOnlyDictionary<string, string?> values,
         string providerName,

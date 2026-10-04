@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Constants;
+namespace Headless.Security;
 
 /// <summary>
 /// Standard JWT / OpenID Connect claim type names (the short registered claim keys such as

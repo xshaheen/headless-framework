@@ -55,9 +55,9 @@ internal sealed class KafkaConsumerClientFactory(
                 new KafkaConsumerClient(subscriptionName, concurrency, kafkaOptions, serviceProvider, config)
             );
         }
-        catch (Exception e) when (e is not OperationCanceledException)
+        catch (Exception e)
         {
-            throw new BrokerConnectionException(e);
+            throw BrokerConnectGuard.ConnectFailure(e, cancellationToken);
         }
     }
 }

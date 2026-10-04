@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Core;
 using Headless.MultiTenancy;
 
 namespace Headless.Features;

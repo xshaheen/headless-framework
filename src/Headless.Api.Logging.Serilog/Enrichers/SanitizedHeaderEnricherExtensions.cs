@@ -6,7 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Serilog;
 using Serilog.Configuration;
 
-namespace Headless.Logging.Enrichers;
+namespace Headless.Logging;
 
 [PublicAPI]
 public static class SanitizedHeaderEnricherExtensions

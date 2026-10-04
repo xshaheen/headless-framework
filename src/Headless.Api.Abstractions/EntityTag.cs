@@ -5,7 +5,7 @@ using System.Diagnostics.CodeAnalysis;
 using Headless.Checks;
 using Microsoft.Net.Http.Headers;
 
-namespace Headless.Abstractions;
+namespace Headless.Api;
 
 /// <summary>Represents one HTTP entity tag in its canonical quoted form.</summary>
 /// <remarks>

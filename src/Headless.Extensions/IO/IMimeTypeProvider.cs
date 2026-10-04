@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Abstractions;
+namespace Headless.IO;
 
 /// <summary>Looks up MIME types by file name and, conversely, file extensions by MIME type.</summary>
 public interface IMimeTypeProvider

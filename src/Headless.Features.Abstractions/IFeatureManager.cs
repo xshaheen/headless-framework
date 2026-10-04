@@ -36,7 +36,7 @@ public interface IFeatureManager
     /// <param name="cancellationToken">The abort token.</param>
     /// <returns>A <see cref="FeatureValue"/> containing the resolved value and the provider that supplied it.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="name"/> is <see langword="null"/>.</exception>
-    /// <exception cref="Headless.Exceptions.ConflictException">
+    /// <exception cref="Headless.ConflictException">
     /// The feature is not defined, the specified provider is not registered, or the provider is read-only
     /// and <paramref name="fallback"/> is <see langword="false"/>.
     /// </exception>
@@ -70,7 +70,7 @@ public interface IFeatureManager
     /// <param name="cancellationToken">The abort token.</param>
     /// <returns>A read-only list of <see cref="FeatureValue"/> instances — one per registered feature.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="providerName"/> is <see langword="null"/>.</exception>
-    /// <exception cref="Headless.Exceptions.ConflictException">The specified provider is not registered.</exception>
+    /// <exception cref="Headless.ConflictException">The specified provider is not registered.</exception>
     Task<IReadOnlyList<FeatureValue>> GetAllAsync(
         string providerName,
         string? providerKey = null,
@@ -89,7 +89,7 @@ public interface IFeatureManager
     /// </param>
     /// <param name="cancellationToken">The abort token.</param>
     /// <exception cref="ArgumentNullException"><paramref name="name"/> or <paramref name="providerName"/> is <see langword="null"/>.</exception>
-    /// <exception cref="Headless.Exceptions.ConflictException">
+    /// <exception cref="Headless.ConflictException">
     /// The feature is not defined, the specified provider is not registered, or the provider is read-only.
     /// </exception>
     Task SetAsync(
@@ -123,7 +123,7 @@ public interface IFeatureManager
     /// <c>IFeatureValueProvider.SetAllAsync</c> writes one value at a time and gives no such guarantee.
     /// </remarks>
     /// <exception cref="ArgumentNullException"><paramref name="values"/> or <paramref name="providerName"/> is <see langword="null"/>.</exception>
-    /// <exception cref="Headless.Exceptions.ConflictException">
+    /// <exception cref="Headless.ConflictException">
     /// A feature in <paramref name="values"/> is not defined, the specified provider is not registered, or the
     /// provider is read-only.
     /// </exception>
@@ -140,6 +140,6 @@ public interface IFeatureManager
     /// <param name="providerKey">The provider-specific key identifying the scope to clear (e.g., a tenant ID).</param>
     /// <param name="cancellationToken">The abort token.</param>
     /// <exception cref="ArgumentNullException"><paramref name="providerName"/> or <paramref name="providerKey"/> is <see langword="null"/>.</exception>
-    /// <exception cref="Headless.Exceptions.ConflictException">The specified provider is not registered or is read-only.</exception>
+    /// <exception cref="Headless.ConflictException">The specified provider is not registered or is read-only.</exception>
     Task DeleteAsync(string providerName, string providerKey, CancellationToken cancellationToken = default);
 }

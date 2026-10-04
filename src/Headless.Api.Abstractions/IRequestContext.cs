@@ -3,7 +3,7 @@
 using Headless.Context;
 using Headless.MultiTenancy;
 
-namespace Headless.Abstractions;
+namespace Headless.Api;
 
 /// <summary>Provides ambient context about the current request, including identity, tenant, locale, and client metadata.</summary>
 /// <remarks>

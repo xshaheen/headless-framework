@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Constants;
+namespace Headless;
 
 /// <summary>
 /// Commonly used time zones, each exposed as both an IANA time-zone ID string and a resolved

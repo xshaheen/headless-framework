@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
-using Headless.Abstractions;
+using Headless;
 using Headless.Jobs;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;

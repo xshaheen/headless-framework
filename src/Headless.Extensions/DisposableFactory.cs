@@ -3,7 +3,7 @@
 using Headless.Checks;
 using Nito.Disposables;
 
-namespace Headless.Core;
+namespace Headless;
 
 /// <summary>Provides a set of static methods for creating <see cref="IDisposable" /> objects.</summary>
 public static class DisposableFactory

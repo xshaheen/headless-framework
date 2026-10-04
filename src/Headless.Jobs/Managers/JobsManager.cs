@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Runtime.InteropServices;
-using Headless.Abstractions;
 using Headless.Checks;
 using Headless.Jobs.BackgroundServices;
 using Headless.MultiTenancy;

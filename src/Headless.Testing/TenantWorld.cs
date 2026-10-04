@@ -2,8 +2,8 @@
 
 using System.Security.Claims;
 using Headless.Checks;
-using Headless.Constants;
 using Headless.MultiTenancy;
+using Headless.Security;
 
 namespace Headless.Testing;
 

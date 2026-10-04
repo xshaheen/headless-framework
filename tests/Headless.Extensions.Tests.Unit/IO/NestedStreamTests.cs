@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using System.IO.Compression;
 using System.Reflection;
-using Headless.Core;
+using Headless;
 using Headless.IO;
 using Headless.Testing.Tests;
 
