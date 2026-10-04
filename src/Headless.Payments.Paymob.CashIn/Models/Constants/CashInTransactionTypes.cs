@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Payments.Paymob.CashIn.Models.Constants;
+namespace Headless.Payments.Paymob.CashIn;
 
 /// <summary>Paymob Accept transaction-type discriminators as they appear on transaction and callback payloads.</summary>
 [PublicAPI]

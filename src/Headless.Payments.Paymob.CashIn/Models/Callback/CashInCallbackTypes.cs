@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Payments.Paymob.CashIn.Models.Callback;
+namespace Headless.Payments.Paymob.CashIn;
 
 /// <summary>
 /// Well-known values for the <c>type</c> field in a Paymob Accept callback body.

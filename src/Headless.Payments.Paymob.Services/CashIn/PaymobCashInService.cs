@@ -3,12 +3,6 @@
 using Headless.Checks;
 using Headless.Exceptions;
 using Headless.Payments.Paymob.CashIn;
-using Headless.Payments.Paymob.CashIn.Models.Callback;
-using Headless.Payments.Paymob.CashIn.Models.Intentions;
-using Headless.Payments.Paymob.CashIn.Models.Orders;
-using Headless.Payments.Paymob.CashIn.Models.Payment;
-using Headless.Payments.Paymob.Services.CashIn.Requests;
-using Headless.Payments.Paymob.Services.CashIn.Responses;
 using Headless.Payments.Paymob.Services.Resources;
 using Microsoft.Extensions.Logging;
 

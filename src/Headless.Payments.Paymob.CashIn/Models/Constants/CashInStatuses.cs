@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Payments.Paymob.CashIn.Models.Constants;
+namespace Headless.Payments.Paymob.CashIn;
 
 [PublicAPI]
 public static class CashInStatuses

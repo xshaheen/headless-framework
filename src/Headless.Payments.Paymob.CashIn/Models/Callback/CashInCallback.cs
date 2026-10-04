@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Payments.Paymob.CashIn.Models.Callback;
+namespace Headless.Payments.Paymob.CashIn;
 
 /// <summary>
 /// Represents the top-level envelope of a Paymob Accept webhook callback body.

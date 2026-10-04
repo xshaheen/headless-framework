@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Payments.Paymob.Services.CashIn.Responses;
+namespace Headless.Payments.Paymob.Services.CashIn;
 
 /// <summary>
 /// The outcome of a wallet payment initiation via <c>IPaymobCashInService.StartAsync(PaymobWalletCashInRequest)</c>.

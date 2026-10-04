@@ -1,9 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Payments.Paymob.CashIn.Internal;
-using Headless.Payments.Paymob.CashIn.Models.Payment;
 
-namespace Headless.Payments.Paymob.CashIn.Models.Callback;
+namespace Headless.Payments.Paymob.CashIn;
 
 /// <summary>
 /// Represents the full transaction object delivered by Paymob in a callback webhook or returned

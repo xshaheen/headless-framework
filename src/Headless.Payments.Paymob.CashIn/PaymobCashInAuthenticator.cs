@@ -2,8 +2,6 @@
 
 using System.Net.Http.Json;
 using Headless.Payments.Paymob.CashIn.Internal;
-using Headless.Payments.Paymob.CashIn.Models;
-using Headless.Payments.Paymob.CashIn.Models.Auth;
 using Headless.Urls;
 using Microsoft.Extensions.Options;
 

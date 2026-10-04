@@ -2,7 +2,7 @@
 
 using FluentValidation;
 
-namespace Headless.Payments.Paymob.CashIn.Models;
+namespace Headless.Payments.Paymob.CashIn;
 
 /// <summary>
 /// Configuration options for the Paymob Accept (CashIn) integration.

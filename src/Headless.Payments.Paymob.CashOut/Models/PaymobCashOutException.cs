@@ -2,7 +2,7 @@
 
 using System.Net;
 
-namespace Headless.Payments.Paymob.CashOut.Models;
+namespace Headless.Payments.Paymob.CashOut;
 
 /// <summary>
 /// Represents an HTTP error returned by the Paymob CashOut API.
