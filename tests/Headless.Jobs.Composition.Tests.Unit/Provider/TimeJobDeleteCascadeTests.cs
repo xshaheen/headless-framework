@@ -3,6 +3,7 @@
 using System.Data.Common;
 using System.Threading.Channels;
 using Headless.Abstractions;
+using Headless.Hosting;
 using Headless.Jobs;
 using Headless.Jobs.Infrastructure;
 using Headless.Jobs.Provider;

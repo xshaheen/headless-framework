@@ -2,6 +2,7 @@
 
 using Headless.Abstractions;
 using Headless.Caching;
+using Headless.Hosting;
 using Headless.Jobs.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;

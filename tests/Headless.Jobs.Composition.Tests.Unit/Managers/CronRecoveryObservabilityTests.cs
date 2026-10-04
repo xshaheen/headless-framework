@@ -2,6 +2,7 @@
 
 using System.Diagnostics;
 using Headless.Abstractions;
+using Headless.Hosting;
 using Headless.Jobs;
 using Headless.Jobs.Instrumentation;
 using Headless.Jobs.Managers;

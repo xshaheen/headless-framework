@@ -13,7 +13,8 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.AuditLog.Abstractions\Headless.AuditLog.Abstractions.csproj" />
-    <ProjectReference Include="..\Headless.Core\Headless.Core.csproj" />
+    <ProjectReference Include="..\Headless.Context.Abstractions\Headless.Context.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.Context\Headless.Context.csproj" />
     <ProjectReference Include="..\Headless.Domain\Headless.Domain.csproj" />
     <ProjectReference Include="..\Headless.Domain.LocalEventBus\Headless.Domain.LocalEventBus.csproj" />
     <ProjectReference Include="..\Headless.EntityFramework.Core\Headless.EntityFramework.Core.csproj" />

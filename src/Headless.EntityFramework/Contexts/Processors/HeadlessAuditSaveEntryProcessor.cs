@@ -2,7 +2,7 @@
 
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
-using Headless.Abstractions;
+using Headless.Context;
 using Headless.Domain;
 using Headless.EntityFramework.Contexts;
 using Headless.Reflection;

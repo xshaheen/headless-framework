@@ -38,7 +38,6 @@ SCOPED_BUILD_FILES = {"Directory.Build.props", "Directory.Build.targets", "Direc
 # decision: Blobs, Features and Settings abstractions expose its JSON options in their contracts.
 FOUNDATION_PACKAGES = {
     "Headless.Checks",
-    "Headless.Core",
     "Headless.Extensions",
     "Headless.Primitives",
     "Headless.Serializer.Json",
@@ -252,7 +251,7 @@ def layering_violations(projects: dict[str, Project]) -> list[str]:
                     violations.append(
                         f"{project.name} -> {name}: an Abstractions package may reference only Abstractions or foundation packages"
                     )
-        if project.name.endswith(".Core") and project.name != "Headless.Core":
+        if project.name.endswith(".Core"):
             family = project.name.removesuffix(".Core")
             for name in sorted(reference_names):
                 if name.startswith(family + ".") and not name.endswith(".Abstractions") and name in by_name:

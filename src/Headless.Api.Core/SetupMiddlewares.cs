@@ -2,6 +2,7 @@
 
 using System.ComponentModel;
 using Headless.Abstractions;
+using Headless.Context;
 using Headless.MultiTenancy;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;

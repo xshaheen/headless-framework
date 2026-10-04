@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Context;
 using Headless.MultiTenancy;
 
 namespace Headless.Abstractions;

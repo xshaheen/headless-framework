@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
-using Headless.Abstractions;
 using Headless.Checks;
+using Headless.Context;
 using Mediator;
 using Microsoft.Extensions.Logging;
 

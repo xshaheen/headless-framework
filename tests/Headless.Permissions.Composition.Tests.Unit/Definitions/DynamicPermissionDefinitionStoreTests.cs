@@ -2,6 +2,7 @@
 
 using Headless.Abstractions;
 using Headless.Caching;
+using Headless.Context;
 using Headless.DistributedLocks;
 using Headless.Messaging;
 using Headless.Permissions;

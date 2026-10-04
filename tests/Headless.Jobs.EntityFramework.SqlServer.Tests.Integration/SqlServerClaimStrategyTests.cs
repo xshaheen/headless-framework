@@ -4,7 +4,6 @@ using System.Collections.Concurrent;
 using System.Data.Common;
 using System.Globalization;
 using System.Reflection;
-using Headless.Abstractions;
 using Headless.Coordination;
 using Headless.Hosting;
 using Headless.Jobs;

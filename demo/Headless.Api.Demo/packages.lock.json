@@ -310,7 +310,7 @@
       "headless.api.abstractions": {
         "type": "Project",
         "dependencies": {
-          "Headless.Core": "[1.0.0, )",
+          "Headless.Context.Abstractions": "[1.0.0, )",
           "Headless.MultiTenancy.Abstractions": "[1.0.0, )"
         }
       },
@@ -323,7 +323,8 @@
           "FluentValidation.DependencyInjectionExtensions": "[12.1.1, )",
           "Headless.Api.Abstractions": "[1.0.0, )",
           "Headless.AuditLog.Abstractions": "[1.0.0, )",
-          "Headless.Core": "[1.0.0, )",
+          "Headless.Context": "[1.0.0, )",
+          "Headless.Context.Abstractions": "[1.0.0, )",
           "Headless.FluentValidation": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Headless.MultiTenancy": "[1.0.0, )",
@@ -359,6 +360,9 @@
         "dependencies": {
           "FileSignatures": "[7.3.0, )",
           "Headless.Api.Core": "[1.0.0, )",
+          "Headless.Context": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )",
+          "Headless.Security": "[1.0.0, )",
           "Microsoft.AspNetCore.OpenApi": "[10.0.12, )",
           "Microsoft.Extensions.Http.Resilience": "[10.10.0, )",
           "Microsoft.Extensions.ServiceDiscovery": "[10.10.0, )",
@@ -385,11 +389,20 @@
       "headless.checks": {
         "type": "Project"
       },
-      "headless.core": {
+      "headless.context": {
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
-          "Headless.Extensions": "[1.0.0, )"
+          "Headless.Context.Abstractions": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )"
+        }
+      },
+      "headless.context.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Primitives": "[1.0.0, )"
         }
       },
       "headless.extensions": {
@@ -416,6 +429,8 @@
       "headless.hosting": {
         "type": "Project",
         "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
           "Headless.FluentValidation": "[1.0.0, )",
           "OpenTelemetry.Api": "[1.18.0, )"
         }
@@ -442,7 +457,6 @@
         "dependencies": {
           "Asp.Versioning.Mvc.ApiExplorer": "[10.2.1, )",
           "Headless.Api.Core": "[1.0.0, )",
-          "Headless.Core": "[1.0.0, )",
           "NSwag.Annotations": "[14.7.1, )",
           "NSwag.AspNetCore": "[14.7.1, )"
         }

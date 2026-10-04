@@ -13,6 +13,5 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Api.Core\Headless.Api.Core.csproj" />
-    <ProjectReference Include="..\Headless.Core\Headless.Core.csproj" />
   </ItemGroup>
 </Project>

@@ -1,6 +1,6 @@
 # Headless.Api.Abstractions
 
-Defines core interfaces and contracts for HTTP request context, user identity, web client information, ProblemDetails construction, and absolute-URL building in ASP.NET Core applications.
+Defines core interfaces and contracts for HTTP request context, user identity, web client information, ProblemDetails construction, absolute-URL building, time-zone enumeration/conversion (`ITimezoneProvider`), and localized enum display (`IEnumLocaleAccessor`) in ASP.NET Core applications.
 
 ## Why use this package
 

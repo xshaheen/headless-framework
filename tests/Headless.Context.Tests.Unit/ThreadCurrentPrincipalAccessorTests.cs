@@ -1,0 +1,92 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using System.Security.Claims;
+using Headless.Constants;
+using Headless.Context;
+using Tests.Fakers;
+
+namespace Tests;
+
+public sealed class ThreadCurrentPrincipalAccessorTests
+{
+    private static ClaimsPrincipal _FakerClaimsPrincipal()
+    {
+        return new ClaimsPrincipal(
+            new ClaimsIdentity([
+                new Claim(UserClaimTypes.Name, FakerData.GenerateName()),
+                new Claim(UserClaimTypes.Email, FakerData.GenerateEmail()),
+            ])
+        );
+    }
+
+    private readonly ThreadCurrentPrincipalAccessor _accessor = new();
+
+    [Fact]
+    public void should_set_and_restore_principal_when_change()
+    {
+        // given
+        var originalPrincipal = _FakerClaimsPrincipal();
+
+        Thread.CurrentPrincipal = originalPrincipal;
+
+        const string nameValue = "zad-charities";
+        const string emailValue = "zad-charities@tt.net";
+
+        var newPrincipal = new ClaimsPrincipal(
+            new ClaimsIdentity([new Claim(UserClaimTypes.Name, nameValue), new Claim(UserClaimTypes.Email, emailValue)])
+        );
+
+        // when
+        using var _ = _accessor.Change(newPrincipal);
+
+        // then
+        var name = _accessor
+            .Principal?.Claims.First(x => string.Equals(x.Type, UserClaimTypes.Name, StringComparison.Ordinal))
+            .Value;
+        var email = _accessor
+            .Principal?.Claims.First(x => string.Equals(x.Type, UserClaimTypes.Email, StringComparison.Ordinal))
+            .Value;
+
+        name.Should().Be(nameValue);
+        email.Should().Be(emailValue);
+    }
+
+    [Fact]
+    public void should_return_thread_current_principal_when_principal()
+    {
+        // given
+        var expectedPrincipal = _FakerClaimsPrincipal();
+
+        Thread.CurrentPrincipal = expectedPrincipal;
+
+        // then
+        _accessor.Principal.Should().BeSameAs(expectedPrincipal);
+    }
+
+    [Fact]
+    public void should_restore_original_principal_when_change_disposed()
+    {
+        // given
+        const string newName = "zad-charities";
+
+        var originalPrincipal = _FakerClaimsPrincipal();
+
+        Thread.CurrentPrincipal = originalPrincipal;
+
+        var newPrincipal = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Name, newName)]));
+
+        // when
+        var disposable = _accessor.Change(newPrincipal);
+
+        // then
+        _accessor.Principal.Should().NotBeNull();
+        _accessor.Principal.Claims.First().Value.Should().Be(newName);
+
+        // when
+        disposable.Dispose();
+
+        // then
+        var oldName = originalPrincipal.Claims.First().Value;
+        _accessor.Principal.Claims.First().Value.Should().Be(oldName);
+    }
+}

@@ -1,4 +1,4 @@
-using Headless.Abstractions;
+using Headless.Context;
 using Headless.MultiTenancy;
 using Headless.Testing;
 using Microsoft.EntityFrameworkCore.Infrastructure;

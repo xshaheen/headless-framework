@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Abstractions;
 using Headless.AuditLog.Internal;
 using Headless.Checks;
+using Headless.Context;
 using Headless.MultiTenancy;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;

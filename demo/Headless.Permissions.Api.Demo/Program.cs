@@ -1,6 +1,6 @@
 using Demo;
 using Demo.Models;
-using Headless.Abstractions;
+using Headless.Context;
 using Headless.OpenApi.Nswag;
 using Headless.Permissions;
 using Microsoft.AspNetCore.Mvc;

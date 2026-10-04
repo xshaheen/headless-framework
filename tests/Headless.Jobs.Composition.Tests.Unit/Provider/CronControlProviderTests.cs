@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Abstractions;
+using Headless.Hosting;
 using Headless.Jobs;
 using Headless.Jobs.Internal;
 using Headless.Jobs.Provider;

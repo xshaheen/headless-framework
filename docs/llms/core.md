@@ -1,138 +1,31 @@
 ---
 domain: Core
-packages: Core, Checks, Domain, Domain.LocalEventBus
+packages: Checks, Domain, Domain.LocalEventBus
 ---
 
 # Core
 
-> Foundational utilities, DDD building blocks, guard clauses, multi-tenancy, and domain messaging for the Headless framework.
+> Guard clauses, DDD building blocks, and domain messaging for the Headless framework.
 
 ## Orientation
 
-- **`Headless.Extensions`** — the framework's base utility library (result pattern, domain primitives, value objects, collections, IO, threading, reflection helpers, constants, validators). Almost every other `Headless.*` package depends on it. Documented separately — see [extensions.md](extensions.md).
-- **`Headless.Core`** — cross-cutting abstractions: `ICurrentUser`, `ICurrentLocale`, `ICurrentTimeZone`, `ITimezoneProvider`, `ICurrentPrincipalAccessor`, plus utilities (`LogState` structured logging) and `AddHeadlessGuidGenerator()` for keyed GUID strategy registration. The tenant-context surface — both the contracts (`ICurrentTenant`, `ICurrentTenantAccessor`, `ITenantWriteGuardBypass`, `CrossTenantWriteException`, `MissingTenantContextException`) and their default `AsyncLocal`-backed implementations — lives in `Headless.MultiTenancy.Abstractions` under the `Headless.MultiTenancy` namespace. See [multi-tenancy.md](multi-tenancy.md) for the full tenancy surface, including the opt-in tenant catalog.
-- **Security** — string encryption, lookup hashes, and secret hashing (`Headless.Security.Abstractions`, `Headless.Security`, `Headless.Security.Argon2`) are documented separately — see [security.md](security.md).
 - **`Headless.Checks`** — guard clause library with `Argument` (preconditions) and `Ensure` (runtime assertions).
 - **`Headless.Domain`** — DDD abstractions: `Entity`, `AggregateRoot`, `ValueObject`, auditing interfaces, concurrency stamps, and event contracts. Domain (in-process) events use plain payloads through `IDomainEventEmitter`; integration (distributed) events use plain payloads through `IIntegrationEventEmitter`. `AggregateRoot` implements both emitters; integration events are dispatched by the ORM/messaging layer, not from this package (see [orm.md](orm.md)).
 - **`Headless.Domain.LocalEventBus`** — DI-based `IDomainEventDispatcher` for in-process domain event dispatch. Register with `AddHeadlessDomainEventDispatcher()` and implement `IDomainEventHandler<T>`. Namespace: `Headless.Domain`.
+- The ambient-context contracts and services (`ICurrentUser`, `ICurrentLocale`, `ICurrentPrincipalAccessor`, host identity, ...) ship as `Headless.Context.Abstractions` / `Headless.Context`; see [context.md](context.md).
 
 ## Agent Rules
 
 - Use `Headless.Checks` (`Argument.IsNotNull`, `Argument.IsNotNullOrEmpty`, `Argument.IsPositive`, etc.) for argument validation instead of raw `ArgumentNullException` or `ArgumentOutOfRangeException`. Use `Ensure` for internal state assertions.
 - Use `Headless.Domain` base classes for DDD: inherit `Entity<T>` for entities, `AggregateRoot<T>` for aggregate roots, `ValueObject<TSelf>` for value objects. Emit in-process events via `AddDomainEvent()` and distributed events via `AddIntegrationEvent()` on aggregate roots.
-- Use `Headless.Core` for `ICurrentUser` and `ICurrentTenant`. For time, use the BCL `TimeProvider` — the framework has no clock abstraction of its own. `DateTime.Now` / `DateTime.UtcNow` / `DateTimeOffset.Now` / `DateTimeOffset.UtcNow` are banned at compile time by the Headless SDK (`RS0030`).
 - Name framework-owned event timestamps with an `At` suffix (`CreatedAt`, `UpdatedAt`, `DeletedAt`, `PublishedAt`) and use an `On` suffix only for `DateOnly` values (`EffectiveOn`). Avoid `DateCreated`-style prefixes; persisted instants and public timestamp contracts use `DateTimeOffset`. Preserve provider-owned CLR members, JSON fields, and protocol keys exactly as defined by the third party; the framework convention does not rename contracts it does not own.
-- Time semantics belong to whichever authority owns the decision, not to the ambient environment of the running process. Pick by the question the timestamp answers: **"who owns this, and until when?"** (leases, locks, liveness, visibility) → the **store's** clock, inlined into the atomic statement; **"how long has this taken?"** (timeouts, backoff, deadlines) → a **monotonic** clock, `TimeProvider.GetTimestamp()` / `GetElapsedTime()`; **"when should this fire in human terms?"** (cron, calendars) → the **tz database** via an explicit `TimeZoneInfo` (never `TimeZoneInfo.Local`); **"when did this happen?"** (audit, `CreatedAt`, logs) → the injected **`TimeProvider`** (`timeProvider.GetUtcNow()`). Full rationale: [temporal-authority-standard](../solutions/design-patterns/temporal-authority-standard.md).
-- Only that last row is an app-clock concern. Never sample the app clock to compute a lease deadline — pass a duration and let the store apply its own clock.
 - When a value arrives from an external SDK with an untrustworthy `DateTime.Kind` (AWS S3 returns `Unspecified`), normalize with `NormalizeToUtc()` from `Headless.Extensions` before converting to `DateTimeOffset` — `new DateTimeOffset(DateTime)` applies the *host's* offset to an `Unspecified` value.
 - Use `ApiResult<T>` / `ApiResult` from `Headless.Extensions` for service return types instead of throwing exceptions for expected failures. Use `Result<TValue, TError>` when you need custom error types.
 - For local (in-process) domain events, register `AddHeadlessDomainEventDispatcher()` and implement `IDomainEventHandler<T>`. Use `DomainEventHandlerOrderAttribute` to control handler execution order. For integration (distributed) events, emit integration payloads via `AddIntegrationEvent()` on the aggregate; dispatch is handled by the ORM/messaging layer (see [orm.md](orm.md)), not by this package.
 - For strongly-typed IDs, use the primitives from `Headless.Extensions` (`UserId`, `AccountId`) — they have source-generated JSON and TypeConverter support.
 - Auditing interfaces (`ICreateAudit`, `IUpdateAudit`, `IDeleteAudit`, `ISuspendAudit`) are marker interfaces — the ORM layer fills the properties automatically. For an entity that needs all four, inherit `AuditedEntity<TId, …>` or `AuditedAggregateRoot<TId, …>` instead of re-declaring the properties. When implementing the interfaces by hand, give each property a `private` or `protected` setter: the ORM writes non-public setters, but a `private` setter declared on a base class is invisible to it, so a hand-written base class needs `protected`.
-- Register GUID generation through `AddHeadlessGuidGenerator()` only from host/package setup; persisted backends should resolve `SequentialGuidType.Version7` or `SequentialGuidType.SqlServer` by key instead of depending on the unkeyed default. The `IGuidGenerator` / `SequentialGuidType` contracts live in `Headless.Extensions` (see [extensions.md](extensions.md)).
-- Use `Polly.Core`'s `ResiliencePipelineBuilder().AddRetry(...)` for retry logic with exponential backoff and jitter. Build the pipeline once per operation class (e.g. one for transient-Redis-error retries, one for status-check retries) and reuse it. `Polly.Core` has zero transitive dependencies on `net10.0`.
-- Use `LogState` with `HeadlessLoggerExtensions` for structured logging with tags and properties.
 
 ---
-
-## Headless.Core
-
-Core abstractions for building applications with multi-tenancy, user context, and cross-cutting concerns.
-
-### API and behavior
-
-- **Abstractions**:
-    - `ICurrentUser` - Current authenticated user context; `UserId` and `Roles` are exposed only for authenticated principals
-    - `ICorrelationIdProvider` / `ActivityCorrelationIdProvider` - correlation ID for tracing, audit, and structured logging
-    - `ICurrentLocale` - Localization context (language, locale, culture)
-    - `ICurrentTimeZone` - Timezone handling
-    - `ICurrentPrincipalAccessor` - Scoped `ClaimsPrincipal` access with temporary switching
-    - `IPasswordGenerator` - Configurable secure password generation; remaining character pools are required only when filler or extra unique characters are needed
-    - `ICancellationTokenProvider` - Cancellation token access with fallback logic
-    - `ITimezoneProvider` - Windows/IANA timezone conversion and listing; the TimeZoneConverter-backed `TzConvertTimezoneProvider` ships in `Headless.Api.Core` and is registered by its `AddHeadlessTimeService()`
-    - `IHostIdentityAccessor` / `IBuildInformationAccessor` - Process identity and build info. `AddHeadlessHostIdentity()` registers the accessor (`TryAdd`, so feature packages call it too and the host's own call wins); `ApplicationName` defaults to the entry assembly title and `HostName` to `POD_NAMESPACE/POD_NAME`, then the machine name. There is no per-start instance id here on purpose: Coordination allocates the only one (`NodeIdentity`, `host@incarnation`) on top of this host name, so nothing can disagree with it. Coordination's node id, the settings/features/permissions definition-store locks, and the change-announcement origin all read from the accessor, so an override in `HostIdentityOptions` moves every subsystem at once.
-    - `IEnumLocaleAccessor` - Localized enum display values
-
-- **Multi-tenancy types** (both the contracts and their default implementations live in `Headless.MultiTenancy.Abstractions`, namespace `Headless.MultiTenancy` — see [multi-tenancy.md](multi-tenancy.md)):
-    - `CurrentTenant` / `AsyncLocalCurrentTenantAccessor` - default `ICurrentTenant` / `ICurrentTenantAccessor` implementations, `AsyncLocal`-scoped
-    - `NullCurrentTenant` - fallback `ICurrentTenant` registered until a real tenant source (HTTP claim resolution, `AddHeadlessDbContextServices()`, ...) replaces it
-    - `TenantWriteGuardBypass` - default `ITenantWriteGuardBypass` implementation; explicit bypass scope for audited host/admin tenant writes
-    - `CrossTenantWriteException` / `MissingTenantContextException` - tenant write-guard exception types (non-transient, exclude from retry)
-
-- **Utilities**:
-    - `LogState` / `HeadlessLoggerExtensions` - Structured logging with fluent state builder, tags, and scoped properties
-    - `AddHeadlessGuidGenerator()` - registers keyed `IGuidGenerator` strategies for Version7 and SQL Server GUID ordering, plus an unkeyed backend-agnostic default
-
-### Install
-
-```bash
-dotnet add package Headless.Core
-```
-
-### Setup and use
-
-```csharp
-public sealed class OrderService(TimeProvider timeProvider, ICurrentUser user, ICurrentTenant tenant)
-{
-    public Order CreateOrder(CreateOrderRequest request)
-    {
-        return new Order
-        {
-            Id = Guid.NewGuid(),
-            UserId = user.UserId!,
-            TenantId = tenant.Id,
-            // "When did this happen?" — an audit timestamp, so the injected app clock owns it.
-            CreatedAt = timeProvider.GetUtcNow(),
-            Total = new Money(request.Amount, request.Currency),
-        };
-    }
-}
-```
-
-`TimeProvider` is registered as a singleton by the Headless setup extensions (`TryAddSingleton(TimeProvider.System)`), so it is injectable without extra wiring. In tests, swap it for `FakeTimeProvider` — see [testing.md](testing.md).
-
-#### Structured Logging
-
-```csharp
-logger.LogInformation(s => s.Tag("orders").Property("orderId", orderId), "Order {OrderId} created", orderId);
-```
-
-#### Retry and Deferred Execution
-
-For retries and delayed execution, reference the `Polly.Core` package and use it directly — the Headless foundation packages do not bring it in, and it ships zero transitive dependencies on `net10.0`:
-
-```csharp
-using Polly;
-using Polly.Retry;
-
-private static readonly ResiliencePipeline _RetryPipeline = new ResiliencePipelineBuilder()
-    .AddRetry(
-        new RetryStrategyOptions
-        {
-            ShouldHandle = new PredicateBuilder().Handle<HttpRequestException>(),
-            MaxRetryAttempts = 3,
-            BackoffType = DelayBackoffType.Exponential,
-            Delay = TimeSpan.FromMilliseconds(100),
-            MaxDelay = TimeSpan.FromSeconds(1),
-            UseJitter = true,
-        }
-    )
-    .Build();
-
-var result = await _RetryPipeline.ExecuteAsync(
-    async ct => await httpClient.GetAsync(url, ct).ConfigureAwait(false),
-    cancellationToken
-);
-```
-
-### Configuration
-
-No configuration required for the abstractions. Host/package setup can call `AddHeadlessGuidGenerator()` when it needs the framework GUID generator defaults.
-
-### Runtime behavior
-
-- `AddHeadlessGuidGenerator()` registers keyed singleton `IGuidGenerator` strategies for `SequentialGuidType.Version7` and `SequentialGuidType.SqlServer`
-- `AddHeadlessGuidGenerator()` also registers an unkeyed singleton `IGuidGenerator` using `Version7` unless a caller supplies another default strategy
 
 ## Headless.Checks
 

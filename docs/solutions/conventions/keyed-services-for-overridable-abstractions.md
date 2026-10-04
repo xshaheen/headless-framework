@@ -6,7 +6,7 @@ problem_type: convention
 component: service_class
 severity: medium
 related_components:
-  - Headless.Core
+  - Headless.Hosting
   - Headless.Serializer.Abstractions
   - Headless.Extensions
 applies_when:
@@ -23,7 +23,7 @@ tags: [dependency-injection, keyed-services, tryadd, overridable-defaults, from-
 
 The framework exposes shared primitives as injectable abstractions — `IGuidGenerator` over `Guid.NewGuid()`, `IJsonSerializer` over `System.Text.Json.JsonSerializer`. Feature code that reaches for the static primitive bakes in a single behavior (a fixed GUID layout, fixed serializer options) and loses both testability and consumer override. The recurring question when wiring such an abstraction into a new package is *how* to register the default: as a single app-wide service, or as a per-feature instance the consumer can tune in isolation.
 
-Two registration shapes answer this. An **unkeyed** `TryAddSingleton<T>` supplies one global default — fine when a single configuration suffices for the whole app. A **keyed** `TryAddKeyedSingleton<T>(key, factory)` supplies a default scoped to a stable key, letting one feature or backend override the abstraction's configuration without disturbing the app-wide service. The Coordination package (PR #416) added a keyed `IJsonSerializer` so its membership stores serialize metadata/endpoints under their own JSON options, following the precedent already set by `IGuidGenerator` in `Headless.Core`.
+Two registration shapes answer this. An **unkeyed** `TryAddSingleton<T>` supplies one global default — fine when a single configuration suffices for the whole app. A **keyed** `TryAddKeyedSingleton<T>(key, factory)` supplies a default scoped to a stable key, letting one feature or backend override the abstraction's configuration without disturbing the app-wide service. The Coordination package (PR #416) added a keyed `IJsonSerializer` so its membership stores serialize metadata/endpoints under their own JSON options, following the precedent already set by `IGuidGenerator` registration in `Headless.Hosting`.
 
 ## Guidance
 
@@ -60,7 +60,7 @@ Injecting the abstraction is what makes the code testable and swappable at all; 
 
 ## Examples
 
-**`IGuidGenerator` — enum-keyed precedent** (`src/Headless.Core/Abstractions/SetupGuidGenerator.cs`). Persisted backends resolve a layout by enum key; backend-agnostic code uses the unkeyed default. Note the key is a `SequentialGuidType` enum, not a string:
+**`IGuidGenerator` — enum-keyed precedent** (`src/Headless.Hosting/DependencyInjection/SetupGuidGenerator.cs`). Persisted backends resolve a layout by enum key; backend-agnostic code uses the unkeyed default. Note the key is a `SequentialGuidType` enum, not a string:
 
 ```csharp
 public IServiceCollection AddHeadlessGuidGenerator(SequentialGuidType defaultType = SequentialGuidType.Version7)

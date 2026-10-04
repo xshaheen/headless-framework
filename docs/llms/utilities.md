@@ -286,6 +286,8 @@ Core hosting utilities and extensions for ASP.NET Core applications.
 ### API and behavior
 
 - DI extensions: `AddIf`, `AddIfElse`, `AddOrReplace*`, `Unregister<T>`, and decorators (`Decorate`/`TryDecorate` for unkeyed registrations, `TryDecorateKeyed` for one service key) that preserve each registration's lifetime
+- `AddHeadlessGuidGenerator()` — registers keyed `IGuidGenerator` strategies for `SequentialGuidType.Version7` and `SequentialGuidType.SqlServer`, plus an unkeyed backend-agnostic default. The `IGuidGenerator` / `SequentialGuidType` contracts live in `Headless.Extensions` (see [extensions.md](extensions.md))
+- `LogState` / `HeadlessLoggerExtensions` — structured-logging scope builder with fluent property/tag methods and level-gated `Log*` overloads that build the scope inline
 - Startup validators (`IHeadlessStartupValidator`, `AddStartupValidator`) that run before any hosted service starts and report every failure together
 - Required-service declarations (`RequireRegisteredService<T>`) that fail the host at startup instead of at first use
 - Options validation with FluentValidation

@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Security.Claims;
-using Headless.Abstractions;
+using Headless.Context;
 using Headless.Permissions;
 using Headless.Testing;
 using Headless.Testing.Tests;

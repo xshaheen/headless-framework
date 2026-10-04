@@ -1,5 +1,6 @@
 using Headless.Abstractions;
 using Headless.Coordination;
+using Headless.Hosting;
 using Headless.Messaging;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Storage.PostgreSql;

@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Api.Resources;
+using Headless.Context;
 using Headless.Exceptions;
 using AccountId = Headless.Primitives.AccountId;
 using UserId = Headless.Primitives.UserId;

@@ -2,6 +2,7 @@
 
 using Headless.Abstractions;
 using Headless.Api;
+using Headless.Context;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;

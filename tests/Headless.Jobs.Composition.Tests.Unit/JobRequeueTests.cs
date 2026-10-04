@@ -2,7 +2,7 @@
 
 using System.Collections.Concurrent;
 using System.Reflection;
-using Headless.Abstractions;
+using Headless.Hosting;
 using Headless.Jobs;
 using Headless.Jobs.Provider;
 using Headless.Testing.Tests;

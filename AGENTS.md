@@ -50,7 +50,7 @@ Use the affected and project-scoped targets: `verify-affected`, `build-affected`
 - **Set `TEST_PROJECT` to scope a filtered run.** `test-class`, `test-method`, `test-namespace`, `test-trait`, and `test-query` choose which tests run. Without `TEST_PROJECT`, they build all ~430 projects and pass the whole solution to the runner, integration modules included. With it, the filter applies inside that one project:
 
   ```sh
-  make test-class CLASS='*ClockTests' TEST_PROJECT=tests/Headless.Core.Tests.Unit/Headless.Core.Tests.Unit.csproj
+  make test-class CLASS='*CultureHelperTests' TEST_PROJECT=tests/Headless.Extensions.Tests.Unit/Headless.Extensions.Tests.Unit.csproj
   ```
 
   To scope a build, use `make build-project PROJECT=…`.
