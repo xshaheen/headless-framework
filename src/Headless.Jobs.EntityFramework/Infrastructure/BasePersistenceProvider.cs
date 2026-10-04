@@ -62,7 +62,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     // evaluated in-process — EF translates it to the provider's server-time expression, so the comparison and the
     // stamp share one clock inside one statement, with no scalar clock round trip and no read-then-write gap.
     // Scheduling/observational time (ExecutedAt, candidate selection) stays on the injected TimeProvider so it
-    // remains deterministic under FakeTimeProvider. See docs/solutions/design-patterns/temporal-authority-standard.md.
+    // remains deterministic under FakeTimeProvider. That split (ownership on the store clock, observation on the
+    // injected clock) is the framework-wide temporal-authority rule.
     //
     // WHY THE EF-TRANSLATED CLOCK IS SAFE HERE — AND THE INVARIANT THAT MAKES IT SO.
     // EF translates the clock to `now()` on Npgsql and `GETUTCDATE()` on SQL Server. On PostgreSQL `now()` is
@@ -2141,7 +2142,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         // the store instant returned below are both server-clock reads, and PostgreSQL's now() is TRANSACTION-START
         // time: inside a transaction the comparison and the returned instant would both be stale by the transaction's
         // age, so a definition would look due (or not) as of when the transaction opened rather than now. See the
-        // class-level lease-clock note above and docs/solutions/design-patterns/temporal-authority-standard.md.
+        // class-level lease-clock note above.
         //
         // A single UPDATE needs no transaction to be atomic, and the watermark equality in the fence is a value CAS —
         // so a losing racer matches zero rows, returns null, and leaves nothing to roll back. Atomicity with the

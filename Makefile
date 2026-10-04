@@ -204,14 +204,9 @@ hooks: ## Wire the committed hooks in .githooks: through global hooks that dispa
 	fi
 
 .PHONY: hook-pre-commit
-hook-pre-commit: ## Git hook: format staged C# files and validate staged docs/solutions frontmatter before commit.
+hook-pre-commit: ## Git hook: format staged C# files before commit.
 	@staged=(); safe=(); skipped=(); \
 	while IFS= read -r file; do staged+=("$$file"); done < <(git diff --cached --name-only --diff-filter=ACMR -- '*.cs'); \
-	docs=(); while IFS= read -r file; do docs+=("$$file"); done < <(git diff --cached --name-only --diff-filter=ACMR -- 'docs/solutions/*.md' ':!docs/solutions/INDEX.md'); \
-	if [ "$${#docs[@]}" -gt 0 ]; then \
-		$(PYTHON) scripts/docs-check.py --quiet-warnings "$${docs[@]}" || { printf '\033[31m[pre-commit]\033[0m fix the docs/solutions frontmatter above (rules: scripts/docs-check.py).\n'; exit 1; }; \
-		$(PYTHON) scripts/docs-check.py --quiet-warnings >/dev/null 2>&1 || printf '\033[33m[pre-commit]\033[0m docs/solutions/INDEX.md may be stale; run `make docs-index` and stage it.\n'; \
-	fi; \
 	if [ "$${#staged[@]}" -eq 0 ]; then exit 0; fi; \
 	for file in "$${staged[@]}"; do \
 		if git diff --quiet -- "$$file"; then safe+=("$$file"); else skipped+=("$$file"); fi; \
@@ -624,14 +619,6 @@ verify-messaging-package-compatibility: pack ## Verify current Messaging package
 .PHONY: test-package-verifier
 test-package-verifier: ## Run isolated positive and negative package-verifier fixtures.
 	./tests/scripts/verify-packages-tests.sh
-
-.PHONY: docs-check
-docs-check: ## Validate docs/solutions frontmatter (fails) and references (warns), and check INDEX.md is current.
-	@$(PYTHON) scripts/docs-check.py
-
-.PHONY: docs-index
-docs-index: ## Regenerate docs/solutions/INDEX.md from each learning's frontmatter.
-	@$(PYTHON) scripts/docs-check.py --write-index --quiet-warnings
 
 # Benchmarks report evidence; nothing gates on them. BENCH_AREA names a project under benchmarks/
 # (Api.Idempotency, Blobs, Caching, Jobs, Messaging, Serializer). The JSON export is what

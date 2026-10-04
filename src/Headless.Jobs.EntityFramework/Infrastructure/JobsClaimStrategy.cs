@@ -636,7 +636,7 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
     )
     {
         // Claim the root and its non-timed descendants down to MaxChainDepth, frontier by frontier. Two
-        // DB-clock lease invariants govern this (docs/solutions/design-patterns/atomic-database-clock-relational-lease-claims.md):
+        // DB-clock lease invariants govern this:
         //
         //   (1) The root lease-DEADLINE write runs in AUTOCOMMIT with the DB-clock expression — NEVER inside an
         //       explicit transaction, which would freeze PostgreSQL's now() at transaction-open and silently shorten

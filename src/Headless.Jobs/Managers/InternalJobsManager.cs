@@ -261,7 +261,7 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
 
         // The provider already hydrated the tree bounded to MaxChainDepth; recurse the whole thing so a chain
         // deeper than the grandchild level is executed with each descendant's own RunCondition/RetryCount intact
-        // (omitting RetryCount here would reset the retry budget after restart — docs/solutions precedent).
+        // (omitting RetryCount here would reset the retry budget after restart, a regression that shipped once).
         foreach (var child in timeJob.Children)
         {
             context.TimeJobChildren.Add(_BuildQueuedTimeJobChildContext(child));

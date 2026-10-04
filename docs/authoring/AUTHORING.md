@@ -12,7 +12,7 @@ Headless has five documentation surfaces. Each has one job:
 
 Do not mirror reference content between surfaces. The domain guide is the canonical consumer contract. Package READMEs point to it; the index routes to it; the root README explains the framework and catalogs packages.
 
-`CONCEPTS.md` (contributor vocabulary) and `docs/solutions/` (past fixes and decisions) serve people working on this repository, not consumers, and are outside this contract.
+Contributor notes (domain vocabulary, past fixes, and decisions) are kept outside this repository and are outside this contract.
 
 ## Root READMEs
 

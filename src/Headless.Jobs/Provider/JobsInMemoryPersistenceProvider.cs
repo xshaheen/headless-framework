@@ -3336,8 +3336,8 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
 
     // Mirrors EF Core's flat-load + AttachNonTimedDescendantsAsync hydration but uses an in-memory children index.
     // Hydrate the non-timed in-tree subtree down to MaxChainDepth (root = depth 1), carrying the full field
-    // set at every level (dropping RetryCount from any level silently resets the retry budget after restart —
-    // docs/solutions precedent). Timed descendants (ExecutionTime != null) stay excluded — claimed independently.
+    // set at every level (dropping RetryCount from any level silently resets the retry budget after restart, a
+    // regression that shipped once). Timed descendants (ExecutionTime != null) stay excluded — claimed independently.
     private TimeJobEntity _ForQueueTimeJobs(TTimeJob job)
     {
         var root = new TimeJobEntity

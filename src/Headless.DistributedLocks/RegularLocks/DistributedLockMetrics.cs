@@ -10,8 +10,8 @@ namespace Headless.DistributedLocks;
 /// All instruments are registered against <see cref="DistributedLocksDiagnostics.Meter"/>
 /// and use the <c>headless.lock.reason</c> / <c>headless.semaphore.reason</c> dimension to
 /// distinguish contended vs. stalled failure outcomes (see <see cref="DistributedLockFailureReasons"/>).
-/// Framework-owned dimensions are namespaced <c>headless.*</c> per the OTel conventions
-/// (docs/solutions/conventions/opentelemetry-instrumentation-conventions.md).
+/// Framework-owned dimensions are namespaced <c>headless.*</c>, as every Headless subsystem does for attributes
+/// no OpenTelemetry semantic convention defines.
 /// </summary>
 internal static partial class DistributedLockMetrics
 {

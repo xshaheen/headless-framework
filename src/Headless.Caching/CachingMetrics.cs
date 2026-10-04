@@ -7,9 +7,9 @@ namespace Headless.Caching;
 
 /// <summary>
 /// Typed metric instruments for the caching subsystem, registered against
-/// <see cref="CachingDiagnostics.Meter"/>. Framework-owned dimensions are namespaced <c>headless.cache.*</c> per
-/// the OTel conventions (docs/solutions/conventions/opentelemetry-instrumentation-conventions.md); the raw cache
-/// key is never a dimension (cardinality + privacy).
+/// <see cref="CachingDiagnostics.Meter"/>. Framework-owned dimensions are namespaced <c>headless.cache.*</c>, as
+/// every Headless subsystem does for attributes no OpenTelemetry semantic convention defines; the raw cache key is
+/// never a dimension (cardinality + privacy).
 /// </summary>
 /// <remarks>
 /// Instruments are created directly on the <see cref="Meter"/> (rather than through the

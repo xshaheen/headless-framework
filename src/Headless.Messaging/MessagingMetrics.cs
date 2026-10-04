@@ -11,7 +11,7 @@ namespace Headless.Messaging;
 /// <see cref="MessagingDiagnostics.Meter"/>. Instrument names and standard dimensions follow the OpenTelemetry
 /// messaging semantic conventions verbatim (<c>messaging.publish.messages</c>, <c>messaging.consume.duration</c>,
 /// dims <c>messaging.operation</c> / <c>messaging.system</c> / <c>messaging.consumer.group.name</c> /
-/// <c>error.type</c>); see docs/solutions/conventions/opentelemetry-instrumentation-conventions.md.
+/// <c>error.type</c>); framework-owned extras are namespaced <c>headless.messaging.*</c>.
 /// </summary>
 /// <remarks>
 /// Instruments are created directly on the <see cref="Meter"/> (rather than through a source generator) so the

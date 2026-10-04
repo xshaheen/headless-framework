@@ -512,8 +512,9 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// Relational providers must express this as a single atomic statement with the store's clock <i>inside</i> it,
     /// never sampled into a parameter, and must not wrap it in an explicit transaction — PostgreSQL freezes
     /// <c>now()</c> at transaction open, which would make the returned instant stale by the transaction's age. The
-    /// in-memory provider uses its injected <c>TimeProvider</c> as the coherent single-process authority. See
-    /// <c>docs/solutions/design-patterns/temporal-authority-standard.md</c>.
+    /// in-memory provider uses its injected <c>TimeProvider</c> as the coherent single-process authority. This is the
+    /// framework's temporal-authority rule: an instant written by one node and evaluated by another comes from the
+    /// store's clock, never from a host clock.
     /// </para>
     /// This position-only primitive is for initialization and rebase transitions that intentionally produce no
     /// occurrence. Due dispatch must use <see cref="MaterializeCronScheduleOccurrenceAsync"/> so a position can never

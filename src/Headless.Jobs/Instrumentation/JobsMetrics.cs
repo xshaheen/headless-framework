@@ -8,7 +8,7 @@ namespace Headless.Jobs;
 /// <summary>
 /// Metric instruments for the Jobs subsystem, registered against <see cref="JobsDiagnostics.Meter" />. There is no
 /// OpenTelemetry semantic convention for job scheduling, so instrument and attribute names use the bespoke
-/// <c>headless.jobs.*</c> namespace (see docs/solutions/conventions/opentelemetry-instrumentation-conventions.md).
+/// <c>headless.jobs.*</c> namespace, as every Headless subsystem does for names no semantic convention defines.
 /// </summary>
 internal static class JobsMetrics
 {

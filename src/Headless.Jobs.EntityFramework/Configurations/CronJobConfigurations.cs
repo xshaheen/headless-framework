@@ -23,7 +23,7 @@ public class CronJobConfigurations<TCronJob>(string schema, StorageNamingStyle s
     {
         // SQL Server materializes datetime2 with DateTimeKind.Unspecified, so the watermark and projection need the
         // same normalization the occurrence timestamps use — their UTC contract must not depend on the host's Kind
-        // defaults (docs/solutions/design-patterns/temporal-authority-standard.md).
+        // defaults.
         var utcDateTimeConverter = new NormalizeDateTimeValueConverter();
         var nullableUtcDateTimeConverter = new NullableNormalizeDateTimeValueConverter();
 

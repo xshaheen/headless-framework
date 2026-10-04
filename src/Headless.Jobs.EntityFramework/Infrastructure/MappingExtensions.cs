@@ -50,7 +50,7 @@ internal static class MappingExtensions
     // A single node projected flat (no nested children). A recursive .Select projection is not EF-translatable,
     // so deep hydration claims the id-set to depth, reloads these flat rows, and rebuilds the tree by ParentId in
     // memory (AttachNonTimedDescendantsAsync). Carries the full pickup field set — dropping RetryCount (or any field)
-    // from any pickup path silently resets state after restart (docs/solutions precedent).
+    // from any pickup path silently resets state after restart, a regression that shipped once.
     internal static Expression<Func<TTimeJob, TimeJobEntity>> ForFlatTimeJob<TTimeJob>()
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
     {
