@@ -3,7 +3,6 @@
 using Confluent.Kafka;
 using Headless.Messaging;
 using Headless.Messaging.Kafka;
-using Headless.Messaging.Registration;
 
 namespace Tests;
 

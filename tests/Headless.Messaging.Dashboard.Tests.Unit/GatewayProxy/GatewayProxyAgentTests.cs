@@ -3,8 +3,6 @@
 using System.Net;
 using System.Net.Http.Headers;
 using Headless.Messaging.Dashboard;
-using Headless.Messaging.Dashboard.GatewayProxy;
-using Headless.Messaging.Dashboard.NodeDiscovery;
 using Headless.Testing.Tests;
 using Headless.Threading;
 using Microsoft.AspNetCore.Http;

@@ -3,7 +3,6 @@
 using System.Reflection;
 using Headless.Messaging.Dashboard;
 using Headless.Messaging.Dashboard.K8s;
-using Headless.Messaging.Dashboard.NodeDiscovery;
 using Headless.Testing.Tests;
 using k8s.Models;
 

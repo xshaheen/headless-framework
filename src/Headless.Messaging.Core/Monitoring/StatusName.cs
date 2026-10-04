@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Messaging.Monitoring;
+namespace Headless.Messaging;
 
 /// <summary>
 /// The persisted lifecycle status of a stored message. The enum member names are the exact strings

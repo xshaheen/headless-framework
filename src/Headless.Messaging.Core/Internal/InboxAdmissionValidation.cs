@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Messaging.Messages;
-
 namespace Headless.Messaging.Internal;
 
 internal static class InboxAdmissionValidation

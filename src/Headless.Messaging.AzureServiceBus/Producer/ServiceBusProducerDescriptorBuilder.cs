@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Messaging.AzureServiceBus.Producer;
+namespace Headless.Messaging.AzureServiceBus;
 
 /// <summary>
 /// Fluent builder for a custom Azure Service Bus producer descriptor, used with

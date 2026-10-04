@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Messaging.Messages;
+namespace Headless.Messaging;
 
 /// <summary>
 /// Specifies the type of message in the messaging system.

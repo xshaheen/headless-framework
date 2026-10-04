@@ -2,7 +2,6 @@
 
 using System.Data.Common;
 using Headless.Checks;
-using Headless.Messaging.Monitoring;
 using Headless.Sql;
 
 namespace Headless.Messaging.Persistence;

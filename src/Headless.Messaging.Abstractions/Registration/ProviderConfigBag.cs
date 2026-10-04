@@ -3,7 +3,7 @@
 using System.Collections.ObjectModel;
 using Headless.Checks;
 
-namespace Headless.Messaging.Registration;
+namespace Headless.Messaging;
 
 internal sealed class ProviderConfigBag
 {

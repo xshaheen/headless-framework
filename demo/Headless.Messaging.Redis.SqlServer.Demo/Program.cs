@@ -1,6 +1,5 @@
 using Demo.Controllers;
 using Headless.Messaging;
-using Headless.Messaging.Configuration;
 using Headless.Messaging.Dashboard;
 using StackExchange.Redis;
 

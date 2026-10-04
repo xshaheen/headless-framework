@@ -300,7 +300,7 @@ public sealed class PostgreSqlStorageTests(PostgreSqlFixture fixture) : DataStor
 For complete pub-sub cycle tests with DI:
 
 ```csharp
-using Headless.Messaging.Configuration;
+using Headless.Messaging;
 
 namespace Tests;
 

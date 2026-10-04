@@ -1,4 +1,4 @@
-using Headless.Messaging.AzureServiceBus.Producer;
+using Headless.Messaging.AzureServiceBus;
 
 namespace Tests.Producer;
 

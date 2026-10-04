@@ -2,11 +2,8 @@
 
 using Headless.DistributedLocks;
 using Headless.Messaging;
-using Headless.Messaging.CircuitBreaker;
-using Headless.Messaging.Configuration;
 using Headless.Messaging.Coordination;
 using Headless.Messaging.Internal;
-using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Processor;
 using Headless.Messaging.Transport;

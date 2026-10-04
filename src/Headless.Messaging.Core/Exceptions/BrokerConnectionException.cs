@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Messaging.Exceptions;
+namespace Headless.Messaging;
 
 /// <summary>
 /// Represents an error that occurs when the messaging system cannot establish or maintain a connection to the message broker.

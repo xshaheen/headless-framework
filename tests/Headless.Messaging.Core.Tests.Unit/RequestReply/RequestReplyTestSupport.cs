@@ -5,10 +5,7 @@ using System.Diagnostics.Metrics;
 using System.Text;
 using System.Threading.Channels;
 using Headless.Messaging;
-using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
-using Headless.Messaging.Messages;
-using Headless.Messaging.Serialization;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
 

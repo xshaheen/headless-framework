@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Messaging.Messages;
-
-namespace Headless.Messaging.Monitoring;
+namespace Headless.Messaging;
 
 /// <summary>
 /// Selects a bounded page of rows whose persisted lane value is not recognized by this runtime.

@@ -1,11 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Headless.Messaging.Configuration;
-using Headless.Messaging.Messages;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Messaging.Serialization;
+namespace Headless.Messaging;
 
 internal sealed class JsonUtf8Serializer(IOptions<MessagingOptions> messagingOptionsAccessor) : IMessageSerializer
 {

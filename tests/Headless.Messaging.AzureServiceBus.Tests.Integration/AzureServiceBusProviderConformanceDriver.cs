@@ -3,7 +3,7 @@
 using Azure.Messaging.ServiceBus;
 using Azure.Messaging.ServiceBus.Administration;
 using Headless.Messaging;
-using Headless.Messaging.AzureServiceBus.Producer;
+using Headless.Messaging.AzureServiceBus;
 using Tests.Capabilities;
 
 namespace Tests;
@@ -24,12 +24,10 @@ internal sealed class AzureServiceBusProviderConformanceDriver(AzureServiceBusFi
     public override bool SupportsEveryInstance => true;
 
     // The same transport a consuming host uses, so the startup-rejection proof runs against the real provider wiring.
-    public override void ConfigureRequestReplyTransport(Headless.Messaging.Configuration.MessagingSetupBuilder setup) =>
+    public override void ConfigureRequestReplyTransport(Headless.Messaging.MessagingSetupBuilder setup) =>
         ConfigureRoutingAffinityTransport(setup);
 
-    public override void ConfigureRoutingAffinityTransport(
-        Headless.Messaging.Configuration.MessagingSetupBuilder setup
-    ) =>
+    public override void ConfigureRoutingAffinityTransport(Headless.Messaging.MessagingSetupBuilder setup) =>
         setup.UseAzureServiceBus(options =>
         {
             options.ConnectionString = fixture.ConnectionString;

@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Headless.Messaging.Configuration;
 using Headless.Sql;
 using Microsoft.Extensions.Options;
 

@@ -24,7 +24,7 @@ internal sealed class NatsTransport(
             return OperateResult.Failed(new ObjectDisposedException(nameof(NatsTransport)));
         }
 
-        Configuration.MessagingRoutingAffinityMapping.RejectUnsupported(message, "Nats");
+        MessagingRoutingAffinityMapping.RejectUnsupported(message, "Nats");
         try
         {
             cancellationToken.ThrowIfCancellationRequested();

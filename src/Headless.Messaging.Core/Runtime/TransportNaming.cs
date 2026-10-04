@@ -2,7 +2,7 @@
 
 using System.Text.RegularExpressions;
 
-namespace Headless.Messaging.Runtime;
+namespace Headless.Messaging;
 
 /// <summary>
 /// Helpers that translate framework message names into broker-native identifiers. Transports use these

@@ -10,7 +10,7 @@ namespace Headless.Messaging.Storage.PostgreSql;
 /// <summary>
 /// PostgreSQL-specific configuration for the raw ADO.NET messaging storage backend. The schema that
 /// holds the messaging tables is not here: it belongs to the feature, on
-/// <see cref="Headless.Messaging.Configuration.MessagingStorageOptions"/>.
+/// <see cref="Headless.Messaging.MessagingStorageOptions"/>.
 /// </summary>
 [PublicAPI]
 public sealed class PostgreSqlOptions

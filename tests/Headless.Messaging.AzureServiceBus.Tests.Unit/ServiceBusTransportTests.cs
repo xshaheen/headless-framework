@@ -74,7 +74,7 @@ public sealed class ServiceBusTransportTests : TestBase
     {
         var options = new AzureServiceBusMessagingOptions { EnableSessions = false };
         options.CustomProducers.Add(
-            new Headless.Messaging.AzureServiceBus.Producer.ServiceBusProducerDescriptor(
+            new Headless.Messaging.AzureServiceBus.ServiceBusProducerDescriptor(
                 "custom.orders",
                 "custom-topic",
                 createSubscription: false,

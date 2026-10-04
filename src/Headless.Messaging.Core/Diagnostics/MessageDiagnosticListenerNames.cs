@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Messaging.Diagnostics;
+namespace Headless.Messaging;
 
 /// <summary>
 /// Names for the messaging <see cref="System.Diagnostics.Tracing.EventSource"/> real-time rate counters

@@ -2,7 +2,6 @@
 
 using System.Net;
 using Headless.Checks;
-using Headless.Messaging.Configuration;
 using Headless.Messaging.Redis;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Configuration;

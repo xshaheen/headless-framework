@@ -1,6 +1,5 @@
 # Public namespaces named after a kind of type that predate the namespace guard in
 # `make check-layering`. Each one folds into its family root; the guard fails on a namespace that
 # is not listed here and on a listed namespace that no longer exists, so this file only shrinks.
-Headless.Messaging.Exceptions
 Headless.NetTopologySuite.Constants
 Headless.Testing.Helpers

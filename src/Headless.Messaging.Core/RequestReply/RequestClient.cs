@@ -2,7 +2,6 @@
 
 using System.Globalization;
 using Headless.Checks;
-using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Microsoft.Extensions.Options;
 

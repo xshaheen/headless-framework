@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Messaging.CircuitBreaker;
+namespace Headless.Messaging;
 
 /// <summary>
 /// A point-in-time snapshot of a circuit breaker's state for programmatic observation.

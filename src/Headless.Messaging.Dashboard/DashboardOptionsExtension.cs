@@ -2,7 +2,6 @@
 
 using Headless.Checks;
 using Headless.Dashboard.Authentication;
-using Headless.Messaging.Configuration;
 using Headless.Threading;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;

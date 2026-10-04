@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
 
 namespace Headless.Messaging.Storage.InMemory;

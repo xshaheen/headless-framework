@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Messaging.CircuitBreaker;
+namespace Headless.Messaging;
 
 /// <summary>
 /// Observability and operator-control surface for the per-consumer circuit breaker.

@@ -4,7 +4,7 @@ using System.ComponentModel;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 
-namespace Headless.Messaging.Runtime;
+namespace Headless.Messaging;
 
 /// <summary>
 /// Reflection helpers used by the messaging runtime, storage providers, and dashboards to reason about

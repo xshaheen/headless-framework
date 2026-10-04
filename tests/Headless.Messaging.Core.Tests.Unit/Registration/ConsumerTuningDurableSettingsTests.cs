@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging;
-using Headless.Messaging.CircuitBreaker;
-using Headless.Messaging.Runtime;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -179,7 +177,7 @@ public sealed class ConsumerTuningDurableSettingsTests : TestBase
         ];
 
     private static ServiceProvider _BuildProvider(
-        Action<Headless.Messaging.Configuration.MessagingSetupBuilder>? configure = null,
+        Action<Headless.Messaging.MessagingSetupBuilder>? configure = null,
         Action<IServiceCollection>? configureServices = null
     )
     {

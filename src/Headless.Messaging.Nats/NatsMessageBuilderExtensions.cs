@@ -2,7 +2,6 @@
 
 using Headless.Checks;
 using Headless.Messaging.Nats;
-using Headless.Messaging.Registration;
 
 namespace Headless.Messaging;
 

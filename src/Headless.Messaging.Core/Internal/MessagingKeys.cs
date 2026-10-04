@@ -10,7 +10,7 @@ internal static class MessagingKeys
     /// <summary>
     /// Builds the canonical lock resource name for the published-retry pickup loop.
     /// The <paramref name="version"/> is the per-deployment isolation key from
-    /// <see cref="Configuration.MessagingOptions.Version"/> — two services sharing a single
+    /// <see cref="MessagingOptions.Version"/> — two services sharing a single
     /// lock store MUST use distinct versions to avoid colliding on the same resource.
     /// </summary>
     public static string PublishRetryResource(string version, MessageLane lane)
@@ -30,7 +30,7 @@ internal static class MessagingKeys
     /// <summary>
     /// Builds the canonical lock resource name for the received-retry pickup loop.
     /// The <paramref name="version"/> is the per-deployment isolation key from
-    /// <see cref="Configuration.MessagingOptions.Version"/> — two services sharing a single
+    /// <see cref="MessagingOptions.Version"/> — two services sharing a single
     /// lock store MUST use distinct versions to avoid colliding on the same resource.
     /// </summary>
     public static string ReceiveRetryResource(string version, MessageLane lane)

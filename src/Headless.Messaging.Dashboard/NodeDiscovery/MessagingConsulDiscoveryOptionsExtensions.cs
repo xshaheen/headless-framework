@@ -1,13 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Headless.Messaging.Configuration;
-using Headless.Messaging.Dashboard.GatewayProxy;
-using Headless.Messaging.Runtime;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
-namespace Headless.Messaging.Dashboard.NodeDiscovery;
+namespace Headless.Messaging.Dashboard;
 
 public static class MessagingConsulDiscoveryOptionsExtensions
 {

@@ -8,7 +8,6 @@ using Headless.Features;
 using Headless.Fencing;
 using Headless.Idempotency;
 using Headless.Messaging;
-using Headless.Messaging.Configuration;
 using Headless.Permissions;
 using Headless.Sequences;
 using Headless.Settings;

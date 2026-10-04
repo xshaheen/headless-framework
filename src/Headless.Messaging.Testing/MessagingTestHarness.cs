@@ -1,11 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Headless.Messaging.Configuration;
 using Headless.Messaging.InMemory;
 using Headless.Messaging.Internal;
-using Headless.Messaging.Monitoring;
-using Headless.Messaging.Serialization;
 using Headless.Messaging.Storage.InMemory;
 using Headless.Messaging.Testing.Internal;
 using Headless.UnitOfWork;

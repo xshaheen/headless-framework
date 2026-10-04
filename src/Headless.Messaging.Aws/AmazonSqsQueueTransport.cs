@@ -33,7 +33,7 @@ internal sealed class AmazonSqsQueueTransport(
         {
             if (!message.Name.IsAwsFifoName())
             {
-                Configuration.MessagingRoutingAffinityMapping.RejectUnsupported(message, "AWS standard destination");
+                MessagingRoutingAffinityMapping.RejectUnsupported(message, "AWS standard destination");
             }
 
             var affinityKey = AwsRoutingAffinity.Mapping.ResolveKey(message);

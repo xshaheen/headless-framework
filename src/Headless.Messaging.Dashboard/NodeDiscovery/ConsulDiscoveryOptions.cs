@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Messaging.Dashboard.NodeDiscovery;
+namespace Headless.Messaging.Dashboard;
 
 /// <summary>
 /// Configuration for Consul-based node discovery used by the Messaging Dashboard.

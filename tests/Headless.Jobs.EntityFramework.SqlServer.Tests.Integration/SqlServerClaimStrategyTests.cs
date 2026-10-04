@@ -10,7 +10,6 @@ using Headless.Hosting;
 using Headless.Jobs;
 using Headless.Jobs.Infrastructure;
 using Headless.Messaging;
-using Headless.Messaging.Configuration;
 using Headless.Sql;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;

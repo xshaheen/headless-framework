@@ -3,7 +3,7 @@
 using System.Collections.Concurrent;
 using FluentValidation;
 
-namespace Headless.Messaging.CircuitBreaker;
+namespace Headless.Messaging;
 
 /// <summary>
 /// Stores per-consumer circuit breaker overrides set through

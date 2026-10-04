@@ -4,7 +4,7 @@ using Headless.Checks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Primitives;
 
-namespace Headless.Messaging.Dashboard.GatewayProxy;
+namespace Headless.Messaging.Dashboard;
 
 internal sealed class RequestMapper : IRequestMapper
 {

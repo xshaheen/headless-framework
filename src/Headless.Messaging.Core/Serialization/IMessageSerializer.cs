@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Messaging.Messages;
-
-namespace Headless.Messaging.Serialization;
+namespace Headless.Messaging;
 
 /// <summary>
 /// Converts messages between their in-memory representation and their serialized forms

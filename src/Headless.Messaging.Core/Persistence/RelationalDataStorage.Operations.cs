@@ -2,8 +2,6 @@
 
 using System.Data.Common;
 using Headless.Messaging.Internal;
-using Headless.Messaging.Messages;
-using Headless.Messaging.Monitoring;
 using Headless.Primitives;
 using Headless.Sql;
 

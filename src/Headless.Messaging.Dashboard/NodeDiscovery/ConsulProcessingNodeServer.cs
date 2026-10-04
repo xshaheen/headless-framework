@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Messaging.Runtime;
-
-namespace Headless.Messaging.Dashboard.NodeDiscovery;
+namespace Headless.Messaging.Dashboard;
 
 internal sealed class ConsulProcessingNodeServer(INodeDiscoveryProvider discoveryProvider) : IProcessingServer
 {
