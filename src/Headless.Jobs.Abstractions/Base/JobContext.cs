@@ -1,10 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Jobs.Enums;
-using Headless.Jobs.Interfaces;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Headless.Jobs.Base;
+namespace Headless.Jobs;
 
 /// <summary>
 /// Typed job execution context that carries a strongly-typed deserialized request payload alongside the

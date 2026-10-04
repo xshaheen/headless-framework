@@ -1,12 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Headless.Jobs.Base;
-using Headless.Jobs.Entities;
-using Headless.Jobs.Exceptions;
-using Headless.Jobs.Interfaces;
-using Headless.Jobs.Interfaces.Managers;
-using Headless.Jobs.Models;
 using Headless.UnitOfWork;
 
 namespace Headless.Jobs;
@@ -334,7 +328,7 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
             Description = resolved.Description,
             Retries = resolved.Retries ?? 0,
             RetryIntervals = resolved.RetryIntervals,
-            OnNodeDeath = resolved.OnNodeDeath ?? Enums.NodeDeathPolicy.Retry,
+            OnNodeDeath = resolved.OnNodeDeath ?? NodeDeathPolicy.Retry,
             TenantId = resolved.TenantId,
             IsSystemJob = resolved.IsSystemJob,
         };
@@ -376,14 +370,14 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
             TimeZoneId = options?.TimeZoneId,
             Retries = policy.Retries ?? 0,
             RetryIntervals = policy.RetryIntervals,
-            OnNodeDeath = policy.OnNodeDeath ?? Enums.NodeDeathPolicy.Retry,
+            OnNodeDeath = policy.OnNodeDeath ?? NodeDeathPolicy.Retry,
         };
 
         var persisted = await _cronJobManager.AddAsync(entity, cancellationToken).ConfigureAwait(false);
         return persisted.Id;
     }
 
-    private TTimeJob _BuildChainEntity(JobChainNode node, Enums.RunCondition? runCondition)
+    private TTimeJob _BuildChainEntity(JobChainNode node, RunCondition? runCondition)
     {
         var descriptor = _ResolveNodeDescriptor(node);
         var options = _policies.Resolve(descriptor, node.Options);
@@ -410,7 +404,7 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
             Description = options.Description,
             Retries = options.Retries ?? 0,
             RetryIntervals = options.RetryIntervals,
-            OnNodeDeath = options.OnNodeDeath ?? Enums.NodeDeathPolicy.Retry,
+            OnNodeDeath = options.OnNodeDeath ?? NodeDeathPolicy.Retry,
             TenantId = options.TenantId,
             IsSystemJob = options.IsSystemJob,
             RunCondition = runCondition,
@@ -418,12 +412,12 @@ internal sealed partial class JobScheduler<TTimeJob, TCronJob> : IJobScheduler
 
         if (node.OnSuccess is not null)
         {
-            entity.Children.Add(_BuildChainEntity(node.OnSuccess, Enums.RunCondition.OnSuccess));
+            entity.Children.Add(_BuildChainEntity(node.OnSuccess, RunCondition.OnSuccess));
         }
 
         if (node.OnFailure is not null)
         {
-            entity.Children.Add(_BuildChainEntity(node.OnFailure, Enums.RunCondition.OnFailure));
+            entity.Children.Add(_BuildChainEntity(node.OnFailure, RunCondition.OnFailure));
         }
 
         return entity;

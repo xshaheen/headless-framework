@@ -1,5 +1,3 @@
-using Headless.Jobs.Base;
-
 namespace Headless.Jobs.Api.Demo;
 
 public sealed record WebApiHelloRequest(string Message);

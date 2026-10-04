@@ -1,9 +1,5 @@
 using System.Reflection;
 using Headless.Jobs;
-using Headless.Jobs.Entities;
-using Headless.Jobs.Enums;
-using Headless.Jobs.Interfaces;
-using Headless.Jobs.Interfaces.Managers;
 using Microsoft.Extensions.DependencyInjection;
 
 #pragma warning disable REFL017 // Don't use name of wrong member

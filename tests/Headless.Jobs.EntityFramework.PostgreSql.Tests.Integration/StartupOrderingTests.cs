@@ -2,7 +2,6 @@
 
 using Headless.Coordination;
 using Headless.Jobs;
-using Headless.Jobs.DbContextFactory;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 

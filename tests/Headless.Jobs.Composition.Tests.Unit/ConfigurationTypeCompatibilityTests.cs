@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Jobs.Customizer;
+using Headless.Jobs;
 
 namespace Tests;
 

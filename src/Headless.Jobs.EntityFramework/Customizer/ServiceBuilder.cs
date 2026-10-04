@@ -2,17 +2,14 @@
 
 using Headless.Abstractions;
 using Headless.Caching;
-using Headless.Jobs.DbContextFactory;
-using Headless.Jobs.Entities;
 using Headless.Jobs.Infrastructure;
-using Headless.Jobs.Interfaces;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 
-namespace Headless.Jobs.Customizer;
+namespace Headless.Jobs;
 
 internal static class ServiceBuilder
 {

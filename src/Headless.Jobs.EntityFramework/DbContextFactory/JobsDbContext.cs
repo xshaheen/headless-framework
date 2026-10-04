@@ -1,11 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Jobs.Configurations;
-using Headless.Jobs.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 
-namespace Headless.Jobs.DbContextFactory;
+namespace Headless.Jobs;
 
 public class JobsDbContext<TTimeJob, TCronJob> : DbContext
     where TTimeJob : TimeJobEntity<TTimeJob>, new()

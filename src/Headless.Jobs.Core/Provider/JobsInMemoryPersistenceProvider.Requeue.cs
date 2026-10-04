@@ -1,9 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Jobs.Entities;
-using Headless.Jobs.Enums;
-using Headless.Jobs.Models;
-
 namespace Headless.Jobs.Provider;
 
 // Operator requeue for the in-memory provider: a Failed time job or cron occurrence returns to Idle under the same

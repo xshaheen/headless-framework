@@ -2,11 +2,7 @@
 
 using System.Collections.Frozen;
 using Headless.Jobs;
-using Headless.Jobs.Enums;
-using Headless.Jobs.Exceptions;
 using Headless.Jobs.Instrumentation;
-using Headless.Jobs.Interfaces.Managers;
-using Headless.Jobs.Models;
 using Headless.Reliability;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -365,7 +361,7 @@ public sealed class RetryBehaviorTests : TestBase
     [Fact]
     public async Task execute_task_async_uses_a_fresh_scope_and_observes_each_failure()
     {
-        var exceptionHandler = Substitute.For<Headless.Jobs.Interfaces.IJobExceptionHandler>();
+        var exceptionHandler = Substitute.For<Headless.Jobs.IJobExceptionHandler>();
         var options = new JobsRetryOptions();
         var (handler, context, _, attempts) = _SetupRetryTestFixture(
             [],
@@ -578,7 +574,7 @@ public sealed class RetryBehaviorTests : TestBase
         // per-retry path must not stall retry progression until lease loss. A tiny OnExhaustedTimeout cancels the
         // observer's linked token so a cooperative handler short-circuits and the retry proceeds to completion.
         var observerTokenCancelled = false;
-        var exceptionHandler = Substitute.For<Headless.Jobs.Interfaces.IJobExceptionHandler>();
+        var exceptionHandler = Substitute.For<Headless.Jobs.IJobExceptionHandler>();
         exceptionHandler
             .HandleExceptionAsync(
                 Arg.Any<Exception>(),
@@ -771,7 +767,7 @@ public sealed class RetryBehaviorTests : TestBase
         // A handler that links its own timeout to the execution token surfaces the linked token on its
         // cancellation, not the execution token; host shutdown must still leave the row for recovery.
         var exhausted = new List<JobExhaustedContext>();
-        var exceptionHandler = Substitute.For<Headless.Jobs.Interfaces.IJobExceptionHandler>();
+        var exceptionHandler = Substitute.For<Headless.Jobs.IJobExceptionHandler>();
         var (handler, context, manager, _) = _SetupRetryTestFixture(
             [0],
             retries: 3,

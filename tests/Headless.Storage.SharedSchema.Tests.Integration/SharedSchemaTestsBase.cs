@@ -7,7 +7,6 @@ using Headless.DistributedLocks;
 using Headless.Hosting.Initialization;
 using Headless.Hosting.Initialization.Schema;
 using Headless.Jobs;
-using Headless.Jobs.DbContextFactory;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Persistence;

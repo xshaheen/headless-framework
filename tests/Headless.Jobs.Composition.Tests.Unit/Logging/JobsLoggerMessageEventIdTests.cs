@@ -2,7 +2,6 @@
 
 using System.Reflection;
 using Headless.Jobs;
-using Headless.Jobs.Base;
 using Microsoft.Extensions.Logging;
 
 namespace Tests.Logging;

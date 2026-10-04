@@ -1,6 +1,4 @@
-using Headless.Jobs.Base;
-using Headless.Jobs.Enums;
-using Headless.Jobs.Interfaces;
+using Headless.Jobs;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;

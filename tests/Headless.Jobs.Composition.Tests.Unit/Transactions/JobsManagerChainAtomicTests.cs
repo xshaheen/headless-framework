@@ -1,10 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Jobs;
-using Headless.Jobs.Entities;
-using Headless.Jobs.Interfaces;
-using Headless.Jobs.Interfaces.Managers;
-using Headless.Jobs.Models;
 using Headless.UnitOfWork;
 
 namespace Tests.Transactions;
@@ -116,9 +112,9 @@ public sealed partial class JobsManagerCoordinatedRoutingTests
         return (facade, builder.Build());
     }
 
-    private sealed class RoutingJob : Headless.Jobs.Base.IJob
+    private sealed class RoutingJob : Headless.Jobs.IJob
     {
-        public ValueTask ExecuteAsync(Headless.Jobs.Base.JobContext context, CancellationToken cancellationToken) =>
+        public ValueTask ExecuteAsync(Headless.Jobs.JobContext context, CancellationToken cancellationToken) =>
             ValueTask.CompletedTask;
     }
 }

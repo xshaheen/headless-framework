@@ -2,12 +2,6 @@
 
 using System.Reflection;
 using Headless.Jobs;
-using Headless.Jobs.Entities;
-using Headless.Jobs.Enums;
-using Headless.Jobs.Exceptions;
-using Headless.Jobs.Interfaces;
-using Headless.Jobs.Interfaces.Managers;
-using Headless.Jobs.Models;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute.ExceptionExtensions;
@@ -389,9 +383,9 @@ public sealed class JobChainEnqueueTests : TestBase
 
     private sealed record UnknownRequest;
 
-    private abstract class NoopJob : Headless.Jobs.Base.IJob
+    private abstract class NoopJob : Headless.Jobs.IJob
     {
-        public ValueTask ExecuteAsync(Headless.Jobs.Base.JobContext context, CancellationToken cancellationToken) =>
+        public ValueTask ExecuteAsync(Headless.Jobs.JobContext context, CancellationToken cancellationToken) =>
             ValueTask.CompletedTask;
     }
 

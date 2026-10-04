@@ -1,9 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Jobs.Entities;
-using Headless.Jobs.Models;
-
-namespace Headless.Jobs.Interfaces.Managers;
+namespace Headless.Jobs;
 
 /// <summary>
 /// Application-facing manager for one-shot (time) jobs: enqueue, update, and delete a single job plus their
@@ -42,7 +39,7 @@ public interface ITimeJobManager<TTimeJob>
     /// in-band. Any failure throws — so an enlisted caller's unit of work rolls back rather than completing without
     /// the job row. (Update/Delete keep returning <see cref="JobResult{TTimeJob}" />; only the Add path throws.)
     /// </remarks>
-    /// <exception cref="Headless.Jobs.Exceptions.JobValidatorException">The job failed validation (unknown function).</exception>
+    /// <exception cref="Headless.Jobs.JobValidatorException">The job failed validation (unknown function).</exception>
     /// <exception cref="InvalidOperationException">
     /// On the enlisted manager only: the unit carries no live relational resource, its resource is dead or belongs
     /// to another database, or the configured persistence provider cannot write inside it (a mis-wire).
@@ -61,7 +58,7 @@ public interface ITimeJobManager<TTimeJob>
     /// dispatch/restart/notify side effects are armed. The entity's identifier becomes the reserved job ID on
     /// creation.
     /// </remarks>
-    /// <exception cref="Headless.Jobs.Exceptions.JobValidatorException">The job failed validation (unknown function).</exception>
+    /// <exception cref="Headless.Jobs.JobValidatorException">The job failed validation (unknown function).</exception>
     /// <exception cref="ArgumentException">The key is not a valid Jobs name or the TTL is outside 1 second to 30 days.</exception>
     /// <exception cref="InvalidOperationException">
     /// On the enlisted manager only: the unit carries no live relational resource, its resource is dead, belongs to
@@ -84,8 +81,8 @@ public interface ITimeJobManager<TTimeJob>
     // Batch operations
 
     /// <inheritdoc cref="AddAsync" />
-    /// <exception cref="Headless.Jobs.Exceptions.JobValidatorException">
-    /// One or more jobs failed validation; <see cref="Headless.Jobs.Exceptions.JobValidatorException.Errors" /> lists each.
+    /// <exception cref="Headless.Jobs.JobValidatorException">
+    /// One or more jobs failed validation; <see cref="Headless.Jobs.JobValidatorException.Errors" /> lists each.
     /// </exception>
     Task<List<TTimeJob>> AddBatchAsync(List<TTimeJob> entities, CancellationToken cancellationToken = default);
 

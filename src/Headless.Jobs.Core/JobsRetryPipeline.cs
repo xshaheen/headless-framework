@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Jobs.Exceptions;
-using Headless.Jobs.Models;
 using Headless.Reliability;
 using Microsoft.Extensions.Logging;
 using Polly;

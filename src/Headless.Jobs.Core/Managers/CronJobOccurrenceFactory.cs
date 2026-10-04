@@ -2,8 +2,6 @@
 
 using Headless.Abstractions;
 using Headless.Checks;
-using Headless.Jobs.Entities;
-using Headless.Jobs.Enums;
 
 namespace Headless.Jobs.Managers;
 

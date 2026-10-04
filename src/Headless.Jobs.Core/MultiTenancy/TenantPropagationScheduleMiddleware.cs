@@ -2,15 +2,11 @@
 
 using Headless.Abstractions;
 using Headless.Checks;
-using Headless.Jobs.Entities;
-using Headless.Jobs.Entities.BaseEntity;
-using Headless.Jobs.Exceptions;
-using Headless.Jobs.Models;
 using Headless.MultiTenancy;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Jobs.MultiTenancy;
+namespace Headless.Jobs;
 
 /// <summary>
 /// Resolves and validates the tenant on the root scheduling entity before validation and persistence: an explicit

@@ -5,14 +5,7 @@ using Headless.Abstractions;
 using Headless.Coordination;
 using Headless.Hosting.Initialization;
 using Headless.Jobs;
-using Headless.Jobs.Configurations;
-using Headless.Jobs.Customizer;
-using Headless.Jobs.DbContextFactory;
-using Headless.Jobs.Entities;
 using Headless.Jobs.Infrastructure;
-using Headless.Jobs.Interfaces;
-using Headless.Jobs.Interfaces.Managers;
-using Headless.Jobs.Models;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
@@ -94,7 +87,7 @@ public abstract partial class JobsKeyedSchedulingConformanceTests<TFixture>(TFix
         );
         result.Disposition.Should().Be(JobScheduleDisposition.Existing);
         result.Generation.Should().Be(2);
-        result.State.Should().Be(Headless.Jobs.Enums.JobStatus.Cancelled);
+        result.State.Should().Be(Headless.Jobs.JobStatus.Cancelled);
     }
 
     public virtual async Task keyed_constraints_follow_custom_column_mappings()
@@ -179,7 +172,7 @@ public abstract partial class JobsKeyedSchedulingConformanceTests<TFixture>(TFix
             await assertRejectedUpdate(
                 currentId,
                 nameof(TimeJobEntity.RunCondition),
-                Headless.Jobs.Enums.RunCondition.OnSuccess
+                Headless.Jobs.RunCondition.OnSuccess
             );
 
             // A different generation isolates the current-key index from the generation-history index.

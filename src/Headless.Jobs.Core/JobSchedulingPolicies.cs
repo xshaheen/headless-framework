@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Headless.Jobs.Models;
 using Headless.Reliability;
 
 namespace Headless.Jobs;
@@ -100,8 +99,7 @@ internal sealed class JobSchedulingPolicies
         {
             Retries = retries,
             RetryIntervals = retryIntervals,
-            OnNodeDeath =
-                call?.OnNodeDeath ?? function?.OnNodeDeath ?? _defaults.OnNodeDeath ?? Enums.NodeDeathPolicy.Retry,
+            OnNodeDeath = call?.OnNodeDeath ?? function?.OnNodeDeath ?? _defaults.OnNodeDeath ?? NodeDeathPolicy.Retry,
             // The idempotency window is per call by contract: it is never inherited from host/function policy
             // (Snapshot rejects it there), so only the call's own key and TTL survive resolution.
             IdempotencyKey = call?.IdempotencyKey,

@@ -1,9 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Jobs.Entities;
-using Headless.Jobs.Interfaces;
-using Headless.Jobs.Models;
-
 namespace Headless.Jobs.Temps;
 
 internal sealed class NoOpJobsNotificationHubSender : IJobsNotificationHubSender

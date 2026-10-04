@@ -8,7 +8,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Headless.Jobs;
-using Headless.Jobs.Enums;
 using Jobs.SourceGenerator.Tests;
 
 [assembly: global::Headless.Jobs.JobFunctionDescriptorMetadataAttribute("billing.run", "1")]
@@ -46,18 +45,18 @@ namespace Jobs.SourceGenerator.Tests
             catalog.AddRequestTypes(requestTypes);
         }
 
-        private static async Task Invoke_Billing_BillingJob(IServiceProvider serviceProvider, global::Headless.Jobs.Base.JobContext context, CancellationToken cancellationToken)
+        private static async Task Invoke_Billing_BillingJob(IServiceProvider serviceProvider, global::Headless.Jobs.JobContext context, CancellationToken cancellationToken)
         {
             var request = await JobsRequestProvider.GetRequestAsync<global::Billing.Payload>(context, cancellationToken).ConfigureAwait(false);
             var job = ActivatorUtilities.CreateInstance<global::Billing.BillingJob>(serviceProvider);
-            await ((global::Headless.Jobs.Base.IJob<global::Billing.Payload>)job).ExecuteAsync(new global::Headless.Jobs.Base.JobContext<global::Billing.Payload>(context, request), cancellationToken).ConfigureAwait(false);
+            await ((global::Headless.Jobs.IJob<global::Billing.Payload>)job).ExecuteAsync(new global::Headless.Jobs.JobContext<global::Billing.Payload>(context, request), cancellationToken).ConfigureAwait(false);
         }
 
-        private static async Task Invoke_Jobs_SourceGenerator_Tests_RootJob(IServiceProvider serviceProvider, global::Headless.Jobs.Base.JobContext context, CancellationToken cancellationToken)
+        private static async Task Invoke_Jobs_SourceGenerator_Tests_RootJob(IServiceProvider serviceProvider, global::Headless.Jobs.JobContext context, CancellationToken cancellationToken)
         {
             var request = await JobsRequestProvider.GetRequestAsync<global::Jobs.SourceGenerator.Tests.Payload>(context, cancellationToken).ConfigureAwait(false);
             var job = ActivatorUtilities.CreateInstance<global::Jobs.SourceGenerator.Tests.RootJob>(serviceProvider);
-            await ((global::Headless.Jobs.Base.IJob<global::Jobs.SourceGenerator.Tests.Payload>)job).ExecuteAsync(new global::Headless.Jobs.Base.JobContext<global::Jobs.SourceGenerator.Tests.Payload>(context, request), cancellationToken).ConfigureAwait(false);
+            await ((global::Headless.Jobs.IJob<global::Jobs.SourceGenerator.Tests.Payload>)job).ExecuteAsync(new global::Headless.Jobs.JobContext<global::Jobs.SourceGenerator.Tests.Payload>(context, request), cancellationToken).ConfigureAwait(false);
         }
     }
 }

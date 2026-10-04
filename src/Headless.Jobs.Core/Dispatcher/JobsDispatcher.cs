@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Jobs.Interfaces;
 using Headless.Jobs.JobsThreadPool;
-using Headless.Jobs.Models;
 
 namespace Headless.Jobs.Dispatcher;
 

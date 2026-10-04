@@ -3,7 +3,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Reflection;
-using Headless.Jobs.Enums;
+using Headless.Jobs;
 using Headless.Jobs.JobsThreadPool;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;

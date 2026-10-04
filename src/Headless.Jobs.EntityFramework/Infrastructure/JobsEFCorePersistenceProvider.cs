@@ -4,10 +4,6 @@ using System.Linq.Expressions;
 using Headless.Abstractions;
 using Headless.Caching;
 using Headless.Checks;
-using Headless.Jobs.Entities;
-using Headless.Jobs.Enums;
-using Headless.Jobs.Interfaces;
-using Headless.Jobs.Models;
 using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -336,9 +332,9 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                     // Ownership and business lineage are captured at scheduling; ordinary edits cannot replace them.
                     foreach (var entry in context.ChangeTracker.Entries<TTimeJob>())
                     {
-                        entry.Property(nameof(Entities.BaseEntity.BaseJobEntity.TenantId)).IsModified = false;
-                        entry.Property(nameof(Entities.BaseEntity.BaseJobEntity.CorrelationId)).IsModified = false;
-                        entry.Property(nameof(Entities.BaseEntity.BaseJobEntity.CausationId)).IsModified = false;
+                        entry.Property(nameof(BaseJobEntity.TenantId)).IsModified = false;
+                        entry.Property(nameof(BaseJobEntity.CorrelationId)).IsModified = false;
+                        entry.Property(nameof(BaseJobEntity.CausationId)).IsModified = false;
                     }
 
                     return (await context.SaveChangesAsync(ct).ConfigureAwait(false), candidates);
@@ -1104,8 +1100,8 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         // Dashboard forms omit lineage; preserve the original scheduling cause for future occurrences.
         foreach (var entry in dbContext.ChangeTracker.Entries<TCronJob>())
         {
-            entry.Property(nameof(Entities.BaseEntity.BaseJobEntity.CorrelationId)).IsModified = false;
-            entry.Property(nameof(Entities.BaseEntity.BaseJobEntity.CausationId)).IsModified = false;
+            entry.Property(nameof(BaseJobEntity.CorrelationId)).IsModified = false;
+            entry.Property(nameof(BaseJobEntity.CausationId)).IsModified = false;
         }
 
         var result = await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);

@@ -2,11 +2,8 @@
 
 using Headless.Dashboard.Authentication;
 using Headless.Jobs;
-using Headless.Jobs.Entities;
-using Headless.Jobs.Hubs;
 using Headless.Jobs.Infrastructure;
 using Headless.Jobs.Infrastructure.Dashboard;
-using Headless.Jobs.Interfaces;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Cors.Infrastructure;

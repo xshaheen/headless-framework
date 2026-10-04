@@ -1,9 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Jobs.Exceptions;
-using Headless.Jobs.Models;
-
-namespace Headless.Jobs.MultiTenancy;
+namespace Headless.Jobs;
 
 /// <summary>
 /// Shared schedule-time tenant validation rules. Applied by both the root resolution

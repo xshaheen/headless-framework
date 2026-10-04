@@ -11,7 +11,7 @@ public sealed class JobsIncrementalSourceGeneratorTests
     [Fact]
     public void explicit_contract_metadata_is_stable_across_source_reference_order_and_clr_rename()
     {
-        const string usings = "using System.Threading; using System.Threading.Tasks; using Headless.Jobs.Base; ";
+        const string usings = "using System.Threading; using System.Threading.Tasks; using Headless.Jobs; ";
         const string first =
             usings
             + "[Job(\"stable.contract\", ContractVersion = \"schema-v2\")] public sealed class OldName : IJob { public ValueTask ExecuteAsync(JobContext context, CancellationToken cancellationToken) => default; }";
@@ -103,8 +103,7 @@ public sealed class JobsIncrementalSourceGeneratorTests
             """
             using System.Threading;
             using System.Threading.Tasks;
-            using Headless.Jobs.Base;
-            using Headless.Jobs.Enums;
+            using Headless.Jobs;
 
             namespace Demo;
 
@@ -382,7 +381,7 @@ public sealed class JobsIncrementalSourceGeneratorTests
     public void should_report_invalid_descriptor_metadata_before_emission()
     {
         var diagnostics = _Diagnostics(
-            _Job("billing.broken", "Broken", ", Priority = (Headless.Jobs.Enums.JobPriority)999, MaxConcurrency = -1")
+            _Job("billing.broken", "Broken", ", Priority = (Headless.Jobs.JobPriority)999, MaxConcurrency = -1")
         );
 
         diagnostics.Select(diagnostic => diagnostic.Id).Should().BeEquivalentTo("HF012", "HF013");
@@ -397,7 +396,6 @@ public sealed class JobsIncrementalSourceGeneratorTests
             using System.Threading;
             using System.Threading.Tasks;
             using Headless.Jobs;
-            using Headless.Jobs.Base;
 
             [assembly: JobScheduleMiddleware<ScheduleMiddleware>(Function = "missing")]
             [assembly: JobScheduleMiddleware<ScheduleMiddleware>]
@@ -583,7 +581,6 @@ public sealed class JobsIncrementalSourceGeneratorTests
             using System.Threading;
             using System.Threading.Tasks;
             using Headless.Jobs;
-            using Headless.Jobs.Base;
 
             public sealed class ExecuteMiddleware : IJobExecuteMiddleware
             {
@@ -658,7 +655,7 @@ public sealed class JobsIncrementalSourceGeneratorTests
             """
             using System.Threading;
             using System.Threading.Tasks;
-            using Headless.Jobs.Base;
+            using Headless.Jobs;
 
             [Job("producer.run")]
             public sealed class ProducerJob : IJob
@@ -707,7 +704,6 @@ public sealed class JobsIncrementalSourceGeneratorTests
             using System.Threading;
             using System.Threading.Tasks;
             using Headless.Jobs;
-            using Headless.Jobs.Base;
 
             [assembly: JobExecuteMiddleware<ExecuteMiddleware>(Function = "local.run")]
 
@@ -741,7 +737,6 @@ public sealed class JobsIncrementalSourceGeneratorTests
             using System.Threading;
             using System.Threading.Tasks;
             using Headless.Jobs;
-            using Headless.Jobs.Base;
 
             [Job("private.run")]
             [JobExecuteMiddleware<PrivateJob.PrivateMiddleware>]
@@ -850,7 +845,7 @@ public sealed class JobsIncrementalSourceGeneratorTests
     private const string _Usings = """
         using System.Threading;
         using System.Threading.Tasks;
-        using Headless.Jobs.Base;
+        using Headless.Jobs;
 
         namespace Jobs.SourceGenerator.Tests;
 

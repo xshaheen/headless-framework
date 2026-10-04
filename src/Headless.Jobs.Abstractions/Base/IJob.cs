@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Jobs.Base;
+namespace Headless.Jobs;
 
 /// <summary>A job that runs without arguments. Declare it with <see cref="JobAttribute"/> on the class.</summary>
 /// <remarks>

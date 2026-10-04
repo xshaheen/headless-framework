@@ -3,7 +3,6 @@
 using Headless.EntityFramework;
 using Headless.Hosting.Initialization;
 using Headless.Jobs;
-using Headless.Jobs.Entities;
 using Headless.Messaging;
 using Headless.Messaging.Persistence;
 using Headless.Testing.Tests;
