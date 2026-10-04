@@ -2,7 +2,7 @@
 
 using Headless.Checks;
 
-namespace Headless.Features.Models;
+namespace Headless.Features;
 
 /// <summary>Specifies the metadata used to create a feature definition.</summary>
 [PublicAPI]

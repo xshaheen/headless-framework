@@ -2,7 +2,6 @@
 
 using Headless.Hosting.Initialization;
 using Headless.Permissions;
-using Headless.Permissions.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
 

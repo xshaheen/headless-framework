@@ -1,11 +1,6 @@
 using Headless.Exceptions;
 using Headless.Settings;
-using Headless.Settings.Definitions;
-using Headless.Settings.Models;
-using Headless.Settings.Repositories;
 using Headless.Settings.Resources;
-using Headless.Settings.ValueProviders;
-using Headless.Settings.Values;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Tests.TestSetup;
@@ -214,7 +209,7 @@ public sealed class SettingManagerTests(SettingsTestFixture fixture) : SettingsT
         record.Should().NotBeNull();
 
         // when
-        var updatedRecord = new Headless.Settings.Entities.SettingValueRecord(
+        var updatedRecord = new Headless.Settings.SettingValueRecord(
             record!.Id,
             record.Name,
             updatedValue,

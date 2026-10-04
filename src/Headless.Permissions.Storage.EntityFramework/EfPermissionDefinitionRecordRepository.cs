@@ -1,13 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Permissions.Entities;
-using Headless.Permissions.Repositories;
 using Microsoft.EntityFrameworkCore;
 
 namespace Headless.Permissions;
 
 /// <summary>
-/// EF Core implementation of <see cref="Repositories.IPermissionDefinitionRecordRepository"/> that reads and writes
+/// EF Core implementation of <see cref="IPermissionDefinitionRecordRepository"/> that reads and writes
 /// permission definition and group records through <typeparamref name="TContext"/>.
 /// </summary>
 /// <remarks>

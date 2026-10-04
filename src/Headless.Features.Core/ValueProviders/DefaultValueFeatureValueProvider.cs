@@ -1,10 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Core;
-using Headless.Features.Models;
-using Headless.Features.Values;
 
-namespace Headless.Features.ValueProviders;
+namespace Headless.Features;
 
 /// <summary>
 /// Read-only provider that returns a feature's statically defined <see cref="FeatureDefinition.DefaultValue"/>.

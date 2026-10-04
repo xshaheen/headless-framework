@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Permissions;
-using Headless.Permissions.Definitions;
-using Headless.Permissions.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Tests.TestSetup;
 

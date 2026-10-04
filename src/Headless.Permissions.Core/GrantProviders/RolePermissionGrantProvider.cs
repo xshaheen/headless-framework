@@ -3,10 +3,8 @@
 using Headless.Abstractions;
 using Headless.Checks;
 using Headless.MultiTenancy;
-using Headless.Permissions.Grants;
-using Headless.Permissions.Models;
 
-namespace Headless.Permissions.GrantProviders;
+namespace Headless.Permissions;
 
 /// <summary>
 /// Grant provider that resolves permissions via the user's roles. For each role assigned to the current

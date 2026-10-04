@@ -3,11 +3,8 @@
 using Headless.Abstractions;
 using Headless.Caching;
 using Headless.Checks;
-using Headless.Features.Definitions;
-using Headless.Features.Entities;
-using Headless.Features.Repositories;
 
-namespace Headless.Features.Values;
+namespace Headless.Features;
 
 /// <summary>
 /// Cache-backed implementation of <see cref="IFeatureValueStore"/> that reads from cache on first access

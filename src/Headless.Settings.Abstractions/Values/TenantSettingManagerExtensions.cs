@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Settings.Models;
-
-namespace Headless.Settings.Values;
+namespace Headless.Settings;
 
 /// <summary>Extensions on <see cref="ISettingManager"/> that scope queries to the <see cref="SettingValueProviderNames.Tenant"/> provider.</summary>
 [PublicAPI]

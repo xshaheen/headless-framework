@@ -2,10 +2,9 @@
 
 using Headless.Abstractions;
 using Headless.Checks;
-using Headless.Permissions.Grants;
 using Microsoft.AspNetCore.Authorization;
 
-namespace Headless.Permissions.Requirements;
+namespace Headless.Permissions;
 
 /// <summary>
 /// ASP.NET Core authorization requirement that demands multiple named permissions. Handled by

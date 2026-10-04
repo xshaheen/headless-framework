@@ -2,7 +2,7 @@
 
 using Headless.Sql;
 
-namespace Headless.Permissions.Repositories;
+namespace Headless.Permissions;
 
 /// <summary>
 /// The permissions tables' names in one dialect's convention, shared by the relational repositories and each

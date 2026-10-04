@@ -2,7 +2,7 @@
 
 using Headless.Checks;
 
-namespace Headless.Permissions.Models;
+namespace Headless.Permissions;
 
 /// <summary>
 /// An immutable (name, isGranted) pair returned by grant providers. A value of <see langword="true"/> for

@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Permissions.Entities;
-using Headless.Permissions.Models;
+using Headless.Permissions;
 
 namespace Tests.TestSetup;
 

@@ -2,10 +2,9 @@
 
 using Headless.Abstractions;
 using Headless.Core;
-using Headless.Features.Values;
 using Headless.MultiTenancy;
 
-namespace Headless.Features.ValueProviders;
+namespace Headless.Features;
 
 /// <summary>
 /// Feature value provider that resolves values scoped to a tenant: an explicit <c>providerKey</c> when the

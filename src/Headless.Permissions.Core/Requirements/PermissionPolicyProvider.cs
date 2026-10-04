@@ -2,12 +2,10 @@
 
 using System.Collections.Concurrent;
 using Headless.Checks;
-using Headless.Permissions.Definitions;
-using Headless.Permissions.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Permissions.Requirements;
+namespace Headless.Permissions;
 
 /// <summary>
 /// Authorization policy provider that resolves a defined permission name as a policy, so

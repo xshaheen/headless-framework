@@ -1,12 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Runtime.CompilerServices;
-using Headless.Permissions.Definitions;
-using Headless.Permissions.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Permissions.Requirements;
+namespace Headless.Permissions;
 
 /// <summary>Default <see cref="IAuthorizationPolicyCatalog"/>.</summary>
 internal sealed class AuthorizationPolicyCatalog(

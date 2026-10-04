@@ -2,7 +2,7 @@
 
 using Headless.Text;
 
-namespace Headless.Settings.Values;
+namespace Headless.Settings;
 
 /// <summary>Cached representation of a single setting value for a specific provider and key.</summary>
 public sealed class SettingValueCacheItem(string? value)

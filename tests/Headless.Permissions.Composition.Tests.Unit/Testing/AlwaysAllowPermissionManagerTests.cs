@@ -1,8 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Abstractions;
-using Headless.Permissions.Definitions;
-using Headless.Permissions.Models;
+using Headless.Permissions;
 using Headless.Permissions.Testing;
 using Headless.Testing.Tests;
 

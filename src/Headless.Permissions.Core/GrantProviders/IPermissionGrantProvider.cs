@@ -1,9 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Abstractions;
-using Headless.Permissions.Models;
 
-namespace Headless.Permissions.GrantProviders;
+namespace Headless.Permissions;
 
 /// <summary>
 /// Plug-in point for a single grant resolution strategy. The framework ships <see cref="UserPermissionGrantProvider"/>
@@ -14,8 +13,8 @@ public interface IPermissionGrantProvider
 {
     /// <summary>
     /// Unique name that identifies this provider (e.g. <c>"User"</c> or <c>"Role"</c>).
-    /// Used as the <c>providerName</c> argument to <see cref="Grants.IPermissionGrantStore"/> and
-    /// <see cref="Grants.IPermissionManager.SetAsync(string,string,string,bool,CancellationToken)"/>.
+    /// Used as the <c>providerName</c> argument to <see cref="IPermissionGrantStore"/> and
+    /// <see cref="IPermissionManager.SetAsync(string,string,string,bool,CancellationToken)"/>.
     /// Two registered providers must not share the same name.
     /// </summary>
     string Name { get; }

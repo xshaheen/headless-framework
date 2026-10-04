@@ -2,7 +2,6 @@
 
 using Headless.Security;
 using Headless.Settings;
-using Headless.Settings.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;

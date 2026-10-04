@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Features;
-using Headless.Features.Values;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Messaging.Runtime;

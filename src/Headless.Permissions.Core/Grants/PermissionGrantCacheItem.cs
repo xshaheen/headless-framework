@@ -2,7 +2,7 @@
 
 using Headless.Text;
 
-namespace Headless.Permissions.Grants;
+namespace Headless.Permissions;
 
 /// <summary>
 /// Cache value that records the three-state grant status for a single (permission, provider, providerKey) tuple:

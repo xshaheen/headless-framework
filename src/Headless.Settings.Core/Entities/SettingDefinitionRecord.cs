@@ -4,7 +4,7 @@ using Headless.Checks;
 using Headless.Domain;
 using Headless.Primitives;
 
-namespace Headless.Settings.Entities;
+namespace Headless.Settings;
 
 /// <summary>Persistence entity that represents a single setting definition stored in an external data source.</summary>
 public sealed class SettingDefinitionRecord : AggregateRoot<Guid>, IHasExtraProperties

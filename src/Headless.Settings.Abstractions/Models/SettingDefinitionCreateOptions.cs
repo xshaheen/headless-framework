@@ -2,7 +2,7 @@
 
 using Headless.Checks;
 
-namespace Headless.Settings.Models;
+namespace Headless.Settings;
 
 /// <summary>Specifies the metadata used to create a setting definition.</summary>
 [PublicAPI]

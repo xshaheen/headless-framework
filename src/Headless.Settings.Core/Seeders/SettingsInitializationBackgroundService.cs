@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Hosting.Initialization;
-using Headless.Settings.Definitions;
-using Headless.Settings.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -10,7 +8,7 @@ using Microsoft.Extensions.Options;
 using Polly;
 using Polly.Retry;
 
-namespace Headless.Settings.Seeders;
+namespace Headless.Settings;
 
 /// <summary>
 /// Hosted service that seeds static setting definitions to the database and pre-caches dynamic settings

@@ -5,7 +5,7 @@ using Headless.Exceptions;
 using Headless.Features.Resources;
 using Headless.Serializer;
 
-namespace Headless.Features.Values;
+namespace Headless.Features;
 
 /// <summary>General-purpose extension members on <see cref="IFeatureManager"/>.</summary>
 [PublicAPI]

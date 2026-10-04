@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Settings.Entities;
-using Headless.Settings.Repositories;
 using Microsoft.EntityFrameworkCore;
 
 namespace Headless.Settings;
