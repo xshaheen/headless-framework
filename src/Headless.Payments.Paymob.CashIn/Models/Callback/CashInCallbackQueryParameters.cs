@@ -2,7 +2,7 @@
 
 using Headless.Payments.Paymob.CashIn.Internal;
 
-namespace Headless.Payments.Paymob.CashIn.Models.Callback;
+namespace Headless.Payments.Paymob.CashIn;
 
 /// <summary>
 /// Represents the flat query-string parameters Paymob appends to the merchant's callback URL

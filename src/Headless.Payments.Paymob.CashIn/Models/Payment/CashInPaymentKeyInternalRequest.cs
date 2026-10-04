@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Payments.Paymob.CashIn.Models.Payment;
+namespace Headless.Payments.Paymob.CashIn;
 
 internal sealed class CashInPaymentKeyInternalRequest(
     CashInPaymentKeyRequest request,

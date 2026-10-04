@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Payments.Paymob.CashIn.Models.Intentions;
+namespace Headless.Payments.Paymob.CashIn;
 
 /// <summary>Request payload for the Paymob Intention API (<c>IPaymobCashInBroker.CreateIntentionAsync</c>).</summary>
 [PublicAPI]

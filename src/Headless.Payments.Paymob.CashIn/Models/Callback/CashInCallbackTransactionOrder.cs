@@ -1,9 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Payments.Paymob.CashIn.Internal;
-using Headless.Payments.Paymob.CashIn.Models.Orders;
 
-namespace Headless.Payments.Paymob.CashIn.Models.Callback;
+namespace Headless.Payments.Paymob.CashIn;
 
 [PublicAPI]
 public sealed class CashInCallbackTransactionOrder

@@ -2,7 +2,7 @@
 
 using Headless.Payments.Paymob.CashIn.Internal;
 
-namespace Headless.Payments.Paymob.CashIn.Models.Payment;
+namespace Headless.Payments.Paymob.CashIn;
 
 [PublicAPI]
 public sealed class CashInWalletData
