@@ -7,7 +7,7 @@ using Microsoft.EntityFrameworkCore.ChangeTracking;
 namespace Headless.EntityFramework;
 
 /// <summary>
-/// Audit-capture and persistence surface used by <see cref="Contexts.Runtime.HeadlessSaveChangesPipeline"/>.
+/// Audit-capture and persistence surface used by <see cref="HeadlessSaveChangesPipeline"/>.
 /// </summary>
 /// <remarks>
 /// Framework-internal: exposed as an interface only to allow DI replacement in tests and to keep

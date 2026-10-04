@@ -2,7 +2,7 @@
 
 using Headless.Blobs;
 using Headless.Blobs.SshNet;
-using Headless.Hosting.Options;
+using Headless.Hosting;
 using Headless.Serializer;
 using Microsoft.Extensions.Logging;
 

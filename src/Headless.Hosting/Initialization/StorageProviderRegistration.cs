@@ -2,7 +2,7 @@
 
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Headless.Hosting.Initialization;
+namespace Headless.Hosting;
 
 /// <summary>
 /// Shared helpers for the storage-provider registration pattern used by

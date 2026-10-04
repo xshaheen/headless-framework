@@ -2,7 +2,7 @@
 
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Headless.Hosting.DependencyInjection;
+namespace Headless.Hosting;
 
 /// <summary>A service declared through <c>RequireSingletonService</c> whose effective registration is not a singleton.</summary>
 /// <param name="Requirement">The declared requirement.</param>

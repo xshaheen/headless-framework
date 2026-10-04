@@ -2,7 +2,7 @@
 
 using Headless.Primitives;
 
-namespace Headless.EntityFramework.Configurations;
+namespace Headless.EntityFramework;
 
 [JsonSourceGenerationOptions(GenerationMode = JsonSourceGenerationMode.Metadata)]
 [JsonSerializable(typeof(Locales))]

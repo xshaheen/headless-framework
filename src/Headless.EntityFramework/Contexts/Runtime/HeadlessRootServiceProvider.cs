@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.EntityFramework.Contexts.Runtime;
+using Headless.EntityFramework.Contexts;
+
+namespace Headless.EntityFramework;
 
 /// <summary>
 /// Captures the root service provider, so the runtime can tell whether the application provider on a context's

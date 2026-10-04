@@ -2,7 +2,7 @@
 
 using Headless.Checks;
 using Headless.Domain;
-using Headless.EntityFramework.Configurations;
+using Headless.EntityFramework;
 using Headless.Primitives;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 

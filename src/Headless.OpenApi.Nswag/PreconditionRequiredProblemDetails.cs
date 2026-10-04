@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.OpenApi.Nswag.Models;
 using Headless.Primitives;
 
 namespace Headless.OpenApi.Nswag;

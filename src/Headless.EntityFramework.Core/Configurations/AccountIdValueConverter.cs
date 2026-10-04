@@ -3,7 +3,7 @@
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using AccountId = Headless.Primitives.AccountId;
 
-namespace Headless.EntityFramework.Configurations;
+namespace Headless.EntityFramework;
 
 /// <summary>EF Core value converter that stores <c>AccountId</c> as its underlying <see cref="string"/> value.</summary>
 public sealed class AccountIdValueConverter : ValueConverter<AccountId, string>

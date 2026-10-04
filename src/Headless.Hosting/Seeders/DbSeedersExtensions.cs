@@ -8,7 +8,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
-namespace Headless.Hosting.Seeders;
+namespace Headless.Hosting;
 
 [PublicAPI]
 public static class DbSeedersExtensions

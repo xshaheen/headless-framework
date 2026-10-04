@@ -2,7 +2,7 @@
 
 using NJsonSchema;
 
-namespace Headless.OpenApi.Nswag.SchemaProcessors;
+namespace Headless.OpenApi.Nswag;
 
 /// <summary>
 /// Extension methods on NJsonSchema's <c>JsonSchema</c> for OpenAPI nullable-to-required normalization.

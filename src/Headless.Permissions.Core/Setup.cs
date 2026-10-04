@@ -3,7 +3,7 @@
 using Headless.Abstractions;
 using Headless.Caching;
 using Headless.Checks;
-using Headless.Hosting.Initialization;
+using Headless.Hosting;
 using Headless.Messaging;
 using Headless.MultiTenancy;
 using Headless.Permissions.Resources;

@@ -5,7 +5,7 @@ using Headless.Caching;
 using Headless.DistributedLocks;
 using Headless.Domain;
 using Headless.Features;
-using Headless.Hosting.Initialization;
+using Headless.Hosting;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.MultiTenancy;

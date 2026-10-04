@@ -1,8 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation.Validators;
+using Headless.OpenApi.Nswag.SchemaProcessors.FluentValidation;
 
-namespace Headless.OpenApi.Nswag.SchemaProcessors.FluentValidation.Models;
+namespace Headless.OpenApi.Nswag;
 
 /// <summary>
 /// Pairs a property validator with the shape of the rule that declared it.

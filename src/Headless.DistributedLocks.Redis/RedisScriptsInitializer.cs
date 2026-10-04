@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Headless.Hosting.Initialization;
+using Headless.Hosting;
 using Headless.Redis;
 
 namespace Headless.DistributedLocks.Redis;

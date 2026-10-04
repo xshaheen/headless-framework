@@ -84,7 +84,7 @@ every Headless feature in an application.
 ### Default schema
 
 The feature's storage options default `Schema` to `HeadlessStorageDefaults.Schema` (`"headless"`, in
-`Headless.Hosting.Initialization`). Do not declare a per-feature `DefaultSchema` constant. The feature owns the
+`Headless.Hosting`). Do not declare a per-feature `DefaultSchema` constant. The feature owns the
 setting on its storage options (`ConfigureStorage(o => o.Schema = ...)`), so overriding one feature's schema never
 moves another's. A feature with no storage options type, such as Sequences, puts `Schema` on each provider's
 options with the same default.
@@ -110,7 +110,7 @@ sequence; its PostgreSQL counterpart stays `headless_distributed_locks_fence`, o
 #### One naming source for raw SQL and EF Core
 
 A feature that ships both a raw provider and an EF Core mapping derives every name from the same place, so a
-database provisioned by one reads correctly through the other. `Headless.Hosting.Initialization` owns it:
+database provisioned by one reads correctly through the other. `Headless.Hosting` owns it:
 
 - `StorageNamingStyle` is `PascalCase` or `SnakeCase`. A raw provider hardcodes its database's style;
   `HeadlessStorageNaming.ForProvider(DbContext.Database.ProviderName)` returns `SnakeCase` for Npgsql and

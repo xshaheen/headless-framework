@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Hosting.Seeders;
+namespace Headless.Hosting;
 
 /// <summary>
 /// Specifies the execution priority for an <see cref="ISeeder"/> implementation.

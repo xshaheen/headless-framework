@@ -5,7 +5,7 @@ using Headless.Primitives;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
-namespace Headless.EntityFramework.Configurations;
+namespace Headless.EntityFramework;
 
 [PublicAPI]
 public static class MoneyConfiguration

@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.EntityFramework;
-using Headless.Hosting.Initialization;
+using Headless.Hosting;
 using Headless.MultiTenancy;
 using Headless.Permissions;
 using Microsoft.EntityFrameworkCore;

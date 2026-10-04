@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Api.Idempotency;
-using Headless.Hosting.DependencyInjection;
+using Headless.Hosting;
 using Headless.Idempotency;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Configuration;

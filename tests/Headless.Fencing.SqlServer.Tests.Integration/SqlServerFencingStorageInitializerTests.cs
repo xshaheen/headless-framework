@@ -2,7 +2,7 @@
 
 using Headless.Fencing;
 using Headless.Fencing.SqlServer;
-using Headless.Hosting.Initialization;
+using Headless.Hosting;
 using Headless.Hosting.Initialization.Schema;
 using Headless.Testing.Tests;
 using Microsoft.Data.SqlClient;

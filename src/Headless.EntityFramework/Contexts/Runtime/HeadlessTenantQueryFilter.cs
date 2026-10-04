@@ -2,12 +2,13 @@
 
 using System.Linq.Expressions;
 using System.Reflection;
+using Headless.EntityFramework.Contexts;
 using Headless.MultiTenancy;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
-namespace Headless.EntityFramework.Contexts.Runtime;
+namespace Headless.EntityFramework;
 
 /// <summary>
 /// The single source of the tenant value that tenant query filters compare against. Filters call it through

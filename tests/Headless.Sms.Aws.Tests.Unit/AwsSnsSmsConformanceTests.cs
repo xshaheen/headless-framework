@@ -3,7 +3,7 @@
 using System.Net;
 using Amazon.SimpleNotificationService;
 using Amazon.SimpleNotificationService.Model;
-using Headless.Hosting.Options;
+using Headless.Hosting;
 using Headless.Sms;
 using Headless.Sms.Aws;
 using Microsoft.Extensions.Logging.Abstractions;

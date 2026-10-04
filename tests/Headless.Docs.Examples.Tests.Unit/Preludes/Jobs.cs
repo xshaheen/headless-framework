@@ -7,7 +7,7 @@
 
 global using Headless.Caching;
 global using Headless.Coordination;
-global using Headless.Hosting.Initialization;
+global using Headless.Hosting;
 global using Headless.Jobs;
 global using Headless.MultiTenancy;
 global using Headless.UnitOfWork;

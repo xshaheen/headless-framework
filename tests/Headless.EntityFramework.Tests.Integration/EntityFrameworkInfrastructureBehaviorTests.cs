@@ -2,8 +2,7 @@
 
 using System.Linq.Expressions;
 using Headless.EntityFramework;
-using Headless.EntityFramework.Seeders;
-using Headless.Hosting.Seeders;
+using Headless.Hosting;
 using Headless.MultiTenancy;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;

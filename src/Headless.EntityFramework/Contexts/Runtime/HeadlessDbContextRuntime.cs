@@ -3,7 +3,7 @@
 using System.Reflection;
 using Headless.Domain;
 using Headless.EntityFramework.ChangeTrackers;
-using Headless.EntityFramework.Configurations;
+using Headless.EntityFramework.Contexts;
 using Headless.MultiTenancy;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
@@ -15,7 +15,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace Headless.EntityFramework.Contexts.Runtime;
+namespace Headless.EntityFramework;
 
 /// <summary>
 /// Per-<see cref="DbContext"/> runtime that wires the navigation-change tracker and the tenant stamp, runs

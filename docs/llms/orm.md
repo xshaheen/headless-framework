@@ -186,7 +186,7 @@ dotnet add package Headless.EntityFramework.Core
 ### Setup and use
 
 ```csharp
-using Headless.EntityFramework.Configurations;
+using Headless.EntityFramework;
 using Microsoft.EntityFrameworkCore;
 
 public sealed class ScheduledWork
