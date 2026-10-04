@@ -39,7 +39,7 @@ The solution has ~430 projects. A full build takes a long time, and the integrat
 2. The projects whose behavior depends on the code you changed. For example, a change to `Headless.Caching.Abstractions` affects every `Headless.Caching.*` provider.
 3. The unit and integration test projects of the projects in 1 and 2.
 
-`make affected` prints that set, computed from the `ProjectReference` graph (`scripts/project-graph.py`) against `@{upstream}` (else `origin/main`), uncommitted and untracked files included. A change to a build-wide file (`global.json`, `Directory.*.props`, `.editorconfig`, `eng/analyzers/`) selects every project below it.
+`make affected` prints that set, computed from the `ProjectReference` graph (`scripts/project-graph.py`) against `@{upstream}` (else `origin/main`), uncommitted and untracked files included. A change to a build-wide file (`global.json`, `Directory.*.props`, `.editorconfig`, `eng/DashboardSpa.targets`) selects every project below it.
 
 Use the affected and project-scoped targets: `verify-affected`, `build-affected`, `test-affected`, `test-affected-integration`, `quality-analyzers-affected`, `build-project`, and `test-project`. Run a solution-wide target (`build`, `rebuild`, `test`, `test-unit`, `test-integration`, `coverage`, `quality-analyzers`) only when the user asks for it, or when the change touches shared build files such as `Directory.Build.props`, `Directory.Packages.props`, or `eng/`.
 

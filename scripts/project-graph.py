@@ -30,7 +30,7 @@ PROJECT_ROOTS = ("src", "tests", "demo", "benchmarks", "test-assets")
 
 # A change to one of these reaches every project, so the affected set becomes the whole graph.
 GLOBAL_FILES = {"global.json", "dotnet-tools.json", "nuget.config"}
-GLOBAL_PREFIXES = ("eng/analyzers/", "eng/DashboardSpa.targets")
+GLOBAL_PREFIXES = ("eng/DashboardSpa.targets",)
 # A change to one of these reaches every project in and under its directory.
 SCOPED_BUILD_FILES = {"Directory.Build.props", "Directory.Build.targets", "Directory.Packages.props", ".editorconfig"}
 
@@ -281,7 +281,7 @@ KIND_SEGMENTS = {
 # Bucket names say nothing about the scenario either: "Abstractions" or "Core" as a namespace or folder
 # only means "the shared stuff", so a reader cannot tell what lives there.
 BUCKET_SEGMENTS = {"Abstractions", "Common", "Contracts", "Core", "Misc"}
-NAMESPACE_BASELINE = REPO_ROOT / "scripts" / "namespace-baseline.txt"
+NAMESPACE_BASELINE = REPO_ROOT / "eng" / "namespace-baseline.txt"
 _NAMESPACE = re.compile(r"^namespace\s+([\w.]+)\s*[;{]", re.MULTILINE)
 _PUBLIC_TYPE = re.compile(
     r"^\s*public\s+(?:(?:static|sealed|abstract|partial|readonly|ref|unsafe|record)\s+)*"

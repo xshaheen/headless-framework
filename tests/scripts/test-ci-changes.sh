@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
 scratch=$(mktemp -d)
 trap 'rm -rf "$scratch"' EXIT
 git init -q "$scratch"
@@ -16,7 +16,7 @@ base=$(git rev-parse HEAD)
 assert_checks() {
   local label="$1" event="$2" from="$3" to="$4" expected actual
   expected=$(printf 'dotnet=%s\ndashboards=%s\ntus=%s\n' "$5" "$6" "$7")
-  actual=$(GITHUB_EVENT_NAME="$event" BASE_SHA="$from" HEAD_SHA="$to" bash "$script_dir/ci-changes.sh")
+  actual=$(GITHUB_EVENT_NAME="$event" BASE_SHA="$from" HEAD_SHA="$to" bash "$repo_root/scripts/ci-changes.sh")
   if [[ "$actual" != "$expected" ]]; then
     printf 'FAIL: %s\nExpected:\n%s\nActual:\n%s\n' "$label" "$expected" "$actual" >&2
     exit 1

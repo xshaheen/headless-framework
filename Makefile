@@ -522,7 +522,7 @@ test-query: ## Run tests matching QUERY (MTP --filter-query). Solution-wide unle
 # The affected set comes from the ProjectReference graph (scripts/project-graph.py), not from
 # directory names: changed projects plus their direct dependents, and every unit- or integration-test
 # project that is in that set or references a member of it directly. A change to a build-wide file
-# (global.json, Directory.*.props, .editorconfig, eng/analyzers) selects every project below it.
+# (global.json, Directory.*.props, .editorconfig, eng/DashboardSpa.targets) selects every project below it.
 # All selected projects build in one invocation of a generated solution filter, all test modules run
 # to completion (one failure no longer hides the rest), and the results land in a proof bundle.
 .PHONY: affected
