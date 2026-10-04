@@ -11,7 +11,7 @@ public static class SitemapConstants
     /// <summary>Gets the date format string used in sitemaps.</summary>
     public const string SitemapDateFormat = "yyyy-MM-dd";
 
-    /// <summary>Gets the maximum number of URLs allowed in a single sitemap file.</summary>
+    /// <summary>Max URLs in a single sitemap file, according to Google.</summary>
     public const int MaxSitemapUrls = 50_000;
 
     internal static readonly XmlWriterSettings WriterSettings = new()

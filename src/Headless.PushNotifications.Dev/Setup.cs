@@ -6,7 +6,8 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Headless.PushNotifications;
 
 /// <summary>
-/// Provides extension methods for registering the development push notification provider on <see cref="HeadlessPushNotificationsSetupBuilder"/>.
+/// Extension members for selecting the no-op (development/testing) push-notification provider as the default
+/// (unkeyed) service on <see cref="HeadlessPushNotificationsSetupBuilder"/>.
 /// </summary>
 [PublicAPI]
 public static class SetupNoopPushNotifications
@@ -14,9 +15,10 @@ public static class SetupNoopPushNotifications
     extension(HeadlessPushNotificationsSetupBuilder setup)
     {
         /// <summary>
-        /// Registers the development push notification provider as the default service.
+        /// Selects the no-op provider, which sends nothing and always reports success. Intended for
+        /// development and testing only.
         /// </summary>
-        /// <returns>The builder instance for chaining.</returns>
+        /// <returns>The same builder for chaining.</returns>
         public HeadlessPushNotificationsSetupBuilder UseNoop()
         {
             setup.RegisterDefaultProvider(static services =>
@@ -29,7 +31,9 @@ public static class SetupNoopPushNotifications
 }
 
 /// <summary>
-/// Provides extension methods for registering the development push notification provider on <see cref="HeadlessPushNotificationsInstanceBuilder"/>.
+/// Extension members for selecting the no-op (development/testing) push-notification provider for a named
+/// instance on <see cref="HeadlessPushNotificationsInstanceBuilder"/>. The instance resolves as a keyed
+/// <see cref="IPushNotificationService"/> or through <see cref="IPushNotificationServiceProvider"/>.
 /// </summary>
 [PublicAPI]
 public static class SetupNoopPushNotificationsNamed
@@ -37,7 +41,8 @@ public static class SetupNoopPushNotificationsNamed
     extension(HeadlessPushNotificationsInstanceBuilder instance)
     {
         /// <summary>
-        /// Registers the development push notification provider for this named instance.
+        /// Uses the no-op provider for this named instance, sending nothing and always reporting success.
+        /// Intended for development and testing only.
         /// </summary>
         /// <returns>The instance builder for chaining.</returns>
         public HeadlessPushNotificationsInstanceBuilder UseNoop()

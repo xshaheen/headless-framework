@@ -86,7 +86,8 @@ internal sealed class DevSmsSender(string filePath) : ISmsSender, IBulkSmsSender
 
         sb.AppendLine(_Separator);
 
-        // Serialize file appends across concurrent operations.
+        // The sender is registered as a singleton and shares one file across concurrent callers;
+        // serialize the appends so they do not interleave.
         await _writeLock.WaitAsync(cancellationToken).ConfigureAwait(false);
 
         try

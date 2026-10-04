@@ -7,7 +7,10 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Headless.PushNotifications;
 
 /// <summary>
-/// Configures a named push notification service instance.
+/// Builder for a single named push-notification service inside <c>AddHeadlessPushNotifications</c>.
+/// Provider packages contribute exactly one provider per instance through <see cref="RegisterProvider"/>
+/// (called by each instance-scoped <c>Use*</c> extension, for example <c>UseApns</c>, <c>UseFirebase</c>,
+/// or <c>UseNoop</c>).
 /// </summary>
 [PublicAPI]
 public sealed class HeadlessPushNotificationsInstanceBuilder
@@ -17,16 +20,16 @@ public sealed class HeadlessPushNotificationsInstanceBuilder
         Name = Argument.IsNotNullOrWhiteSpace(name);
     }
 
-    /// <summary>Gets the service instance name used for service keys and named options.</summary>
+    /// <summary>The service instance name. Used as the keyed-service key and the named-options name.</summary>
     public string Name { get; }
 
     internal Action<IServiceCollection>? Action { get; private set; }
 
-    /// <summary>Registers the provider delegate for this instance.</summary>
-    /// <param name="action">The delegate that registers services into the service collection.</param>
+    /// <summary>Captures the provider contribution for this instance. Must be called exactly once.</summary>
+    /// <param name="action">The provider's deferred service registration action.</param>
     /// <exception cref="ArgumentNullException"><paramref name="action"/> is <see langword="null"/>.</exception>
     /// <exception cref="InvalidOperationException">A provider is already registered for this instance.</exception>
-    [EditorBrowsable(EditorBrowsableState.Never)]
+    [EditorBrowsable(EditorBrowsableState.Never)] // provider-package plumbing, not an application-code API
     public void RegisterProvider(Action<IServiceCollection> action)
     {
         Argument.IsNotNull(action);

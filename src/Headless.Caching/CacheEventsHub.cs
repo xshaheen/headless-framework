@@ -7,10 +7,14 @@ using Microsoft.Extensions.Logging;
 namespace Headless.Caching;
 
 /// <summary>
-/// Implements <see cref="ICacheEvents"/> to manage and dispatch cache events.
+/// The concrete <see cref="ICacheEvents"/> implementation owned by a cache provider. Providers construct one hub, return
+/// it from <see cref="ICache.Events"/>, and fire events through the <c>On…</c> methods (called by the provider and by the
+/// shared <c>FactoryCacheCoordinator</c>).
 /// </summary>
 /// <remarks>
-/// Captures handler snapshots and allocates event arguments only when handlers are registered.
+/// Each <c>On…</c> method captures the event's current handler snapshot first and constructs the
+/// <see cref="EventArgs"/> only when that snapshot is non-empty, so an unsubscribed event allocates nothing. Handler
+/// snapshots are accepted into one bounded, non-blocking FIFO shared by the root and tier sub-hubs.
 /// </remarks>
 [PublicAPI]
 [EditorBrowsable(EditorBrowsableState.Never)]
@@ -38,12 +42,12 @@ public sealed class CacheEventsHub : ICacheEvents, IDisposable, IAsyncDisposable
     private readonly AsyncEvent<CacheEventArgs> _flush = new();
     private readonly AsyncEvent<CacheInvalidationEventArgs> _invalidation = new();
 
-    /// <summary>Initializes a new instance of the <see cref="CacheEventsHub"/> class.</summary>
-    /// <param name="cacheName">The cache instance name.</param>
-    /// <param name="tier">The tier of the owning cache.</param>
-    /// <param name="config">The handler execution configuration, or <see langword="null"/> to use default settings.</param>
-    /// <param name="logger">The logger for suppressed handler exceptions, or <see langword="null"/>.</param>
-    /// <param name="withTierSubHubs"><see langword="true"/> to expose L1 and L2 sub-hubs; otherwise, <see langword="false"/>.</param>
+    /// <summary>Creates a hub for a cache instance.</summary>
+    /// <param name="cacheName">The instance name surfaced on <see cref="CacheEventArgs.CacheName"/>.</param>
+    /// <param name="tier">The tier of the owning cache, surfaced on <see cref="CacheEventArgs.Tier"/>.</param>
+    /// <param name="config">Handler-execution configuration; defaults are used when <see langword="null"/>.</param>
+    /// <param name="logger">Logger for guarded-handler exceptions.</param>
+    /// <param name="withTierSubHubs">When <see langword="true"/> (hybrid), exposes the L1/L2 <see cref="ICacheEvents.Memory"/> and <see cref="ICacheEvents.Distributed"/> sub-hubs.</param>
     public CacheEventsHub(
         string cacheName,
         CacheTier tier,

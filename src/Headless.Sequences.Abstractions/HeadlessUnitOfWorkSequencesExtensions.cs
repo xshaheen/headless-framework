@@ -18,11 +18,12 @@ public static class HeadlessUnitOfWorkSequencesExtensions
     extension(IUnitOfWork unitOfWork)
     {
         /// <summary>
-        /// Gets the gap-free sequence coordinator bound to this unit of work.
+        /// Gets the gap-free sequences bound to this handle: a number taken through them is written inside
+        /// this unit's transaction, and the unit's rollback returns it.
         /// </summary>
         /// <remarks>
-        /// Allocates a binding on first access and caches it within unit state.
-        /// Accessing this property after completing or rolling back the unit throws.
+        /// Free to read at each call site: the binding is created once per unit, on the first read, and kept
+        /// as unit-local state. Reading it on a unit that already completed or rolled back throws.
         /// </remarks>
         /// <exception cref="ArgumentNullException"><paramref name="unitOfWork"/> is <see langword="null"/>.</exception>
         /// <exception cref="InvalidOperationException">

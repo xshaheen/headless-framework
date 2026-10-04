@@ -86,7 +86,7 @@ public static class SetupBclCache
 
             // The adapter owns the IDistributedCache slot. TryAdd defers to a consumer-registered
             // IDistributedCache if one already exists; consumers wanting the Headless adapter must not also
-            // register a competing IDistributedCache (e.g. AddStackExchangeRedisCache).
+            // register a competing IDistributedCache (for example AddStackExchangeRedisCache).
             services.TryAddSingleton<IDistributedCache>(provider =>
             {
                 var options = provider.GetRequiredService<IOptions<HeadlessDistributedCacheAdapterOptions>>();

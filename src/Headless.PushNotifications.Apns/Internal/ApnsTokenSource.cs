@@ -9,26 +9,41 @@ using Headless.Checks;
 namespace Headless.PushNotifications.Apns.Internal;
 
 /// <summary>
-/// Mints and caches ES256 APNs provider tokens per team and key identifier.
+/// Mints and caches APNs provider tokens, one per <c>(team id, key id)</c> for the whole container.
 /// </summary>
+/// <remarks>
+/// <para>
+/// Apple rejects a key whose tokens change more than once every 20 minutes with
+/// <c>TooManyProviderTokenUpdates</c>. Clients that share a key and refresh independently (a default and a
+/// named instance, or production and sandbox) trigger that, so every option set with the same key identity
+/// shares one cached token here.
+/// </para>
+/// <para>
+/// Reads are lock-free against an immutable token holder; minting runs under a per-key gate so concurrent
+/// callers on a cold or expired cache mint once.
+/// </para>
+/// </remarks>
 internal sealed class ApnsTokenSource(TimeProvider timeProvider) : IDisposable
 {
+    // Apple accepts a token for an hour. Refreshing at 50 minutes keeps a margin for clock drift and in-flight
+    // requests, and matches the cadence other APNs clients use.
     private static readonly TimeSpan _RefreshAge = TimeSpan.FromMinutes(50);
+
+    // Apple allows one token update per key every 20 minutes. Re-minting a younger token on rejection would
+    // turn a persistent rejection, such as a host clock far ahead, into TooManyProviderTokenUpdates on every
+    // send.
     private static readonly TimeSpan _MinimumRemintAge = TimeSpan.FromMinutes(20);
 
     private readonly ConcurrentDictionary<(string TeamId, string KeyId), KeyEntry> _entries = new();
     private readonly Lock _entriesLock = new();
     private volatile bool _disposed;
 
-    /// <summary>Retrieves an active provider token, minting a new token when expired or missing.</summary>
-    /// <param name="options">The APNs options containing credentials.</param>
-    /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
-    /// <returns>A valid <see cref="ApnsProviderToken"/> instance.</returns>
+    /// <summary>Returns the current token for the options' key identity, minting one when none is fresh.</summary>
     /// <exception cref="ArgumentException">
-    /// The options do not configure token authentication properties.
+    /// The options lack a team id, key id, or private key, so they do not configure token mode.
     /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// An existing entry for the team and key ID uses a different private key.
+    /// Another option set already uses the same team id and key id with a different private key.
     /// </exception>
     public ValueTask<ApnsProviderToken> GetTokenAsync(ApnsOptions options, CancellationToken cancellationToken)
     {
@@ -46,17 +61,18 @@ internal sealed class ApnsTokenSource(TimeProvider timeProvider) : IDisposable
     }
 
     /// <summary>
-    /// Invalidates an expired token generation and returns a refreshed token.
+    /// Reports that APNs rejected the token of <paramref name="generation"/> as expired and returns the token
+    /// to retry with.
     /// </summary>
-    /// <param name="options">The APNs options containing credentials.</param>
-    /// <param name="generation">The token generation that failed authentication.</param>
-    /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
-    /// <returns>A refreshed <see cref="ApnsProviderToken"/> instance.</returns>
+    /// <remarks>
+    /// Only the first caller for a generation re-mints; later callers get the newer token. A token younger
+    /// than 20 minutes is kept, because Apple would reject a faster update.
+    /// </remarks>
     /// <exception cref="ArgumentException">
-    /// The options do not configure token authentication properties.
+    /// The options lack a team id, key id, or private key, so they do not configure token mode.
     /// </exception>
     /// <exception cref="InvalidOperationException">
-    /// An existing entry for the team and key ID uses a different private key.
+    /// Another option set already uses the same team id and key id with a different private key.
     /// </exception>
     public ValueTask<ApnsProviderToken> InvalidateAsync(
         ApnsOptions options,

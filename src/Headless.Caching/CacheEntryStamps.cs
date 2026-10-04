@@ -5,12 +5,15 @@ using Headless.Checks;
 namespace Headless.Caching;
 
 /// <summary>
-/// Represents expiration stamps computed from <see cref="CacheEntryOptions"/> for an entry write operation.
+/// Expiration stamps computed from <see cref="CacheEntryOptions"/> for a fresh entry write. This is the single
+/// home of the stamp math (fail-safe extends physical retention, eager threshold stamps the eager point, sliding
+/// clamps the logical lifetime) so the factory coordinator and the providers' direct
+/// <c>UpsertAsync(key, value, options)</c> writes always agree.
 /// </summary>
 /// <param name="LogicalExpiresAt">The timestamp after which normal reads treat the entry as stale (UTC).</param>
 /// <param name="PhysicalExpiresAt">The timestamp after which the entry is no longer retained (UTC).</param>
-/// <param name="EagerRefreshAt">The optional timestamp after which a fresh read can trigger an eager background refresh (UTC).</param>
-/// <param name="CreatedAt">The timestamp at which the value was created (UTC).</param>
+/// <param name="EagerRefreshAt">The optional timestamp after which a fresh read may trigger an eager background refresh (UTC).</param>
+/// <param name="CreatedAt">The timestamp at which a fresh value write is created (its birth time, UTC). A re-stamp preserves the source entry's original value instead of using this one.</param>
 [PublicAPI]
 public readonly record struct CacheEntryStamps(
     DateTime LogicalExpiresAt,
@@ -19,19 +22,23 @@ public readonly record struct CacheEntryStamps(
     DateTime CreatedAt
 )
 {
-    /// <summary>Computes write stamps for <paramref name="options"/> at <paramref name="now"/>.</summary>
+    /// <summary>Computes the fresh-write stamps for <paramref name="options"/> at <paramref name="now"/>.</summary>
     /// <param name="options">The validated cache entry options.</param>
     /// <param name="now">The current UTC timestamp.</param>
-    /// <returns>A new <see cref="CacheEntryStamps"/> instance with computed expiration stamps.</returns>
     public static CacheEntryStamps Compute(CacheEntryOptions options, DateTime now)
     {
-        // A non-positive Duration indicates immediate expiration. Stamp at current time so reads treat it as a miss.
+        // A non-positive Duration means the entry is already expired on write (for example a BCL absolute
+        // expiration in the past): stamp it at `now` so every read treats it as a miss and the provider set paths
+        // evict it. Jitter/sliding/eager/fail-safe would re-arm a lifetime the entry never has, so they do not apply.
         if (options.Duration <= TimeSpan.Zero)
         {
             return new CacheEntryStamps(now, now, EagerRefreshAt: null, CreatedAt: now);
         }
 
-        // Anti-stampede jitter: spread mass-expiry by extending Duration by a random interval.
+        // Anti-stampede jitter: spread mass-expiry by extending Duration by a random [0, JitterMaxDuration). The
+        // jittered span MUST be the single Duration source for every derived stamp below (logical, physical, eager)
+        // or the physical >= logical invariant breaks for a non-fail-safe entry. When JitterMaxDuration is Zero the
+        // jitter is Zero, so effectiveDuration == options.Duration and behavior is unchanged.
         var effectiveDuration =
             options.JitterMaxDuration > TimeSpan.Zero
                 ? options.Duration + TimeSpan.FromTicks(_GetRandomTicks(options.JitterMaxDuration))
@@ -59,16 +66,18 @@ public readonly record struct CacheEntryStamps(
     }
 
     /// <summary>
-    /// Validates <paramref name="options"/> using common caching rules before performing an entry write.
+    /// Validates <paramref name="options"/> with the rules shared by every factory-backed cache operation and
+    /// the options-based direct upsert. Throws before anything is written.
     /// </summary>
     /// <param name="options">The cache entry options to validate.</param>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="options"/> contains an invalid duration, threshold, or timeout.</exception>
-    /// <exception cref="ArgumentException"><paramref name="options"/> contains invalid tags or conflicting settings.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="options"/> contains an invalid optional field value (timeout, threshold, sliding window) or a contradicting timeout ordering.</exception>
+    /// <exception cref="ArgumentException"><paramref name="options"/> combines unsupported settings (sliding with fail-safe or eager refresh, or fail-safe with a finite soft timeout but an infinite background ceiling) or carries invalid tags.</exception>
     public static void ValidateOptions(CacheEntryOptions options)
     {
         // Duration is intentionally unconstrained in sign: a non-positive value is a valid "expire immediately"
         // request (Compute stamps it at `now`). The optional-field checks below still reject genuinely
-        // contradictory configurations (e.g. sub-millisecond sliding, sliding + fail-safe) regardless of sign.
+        // contradictory configurations (for example sub-millisecond sliding, or sliding combined with fail-safe)
+        // regardless of sign.
         Argument.IsPositiveOrZero(options.JitterMaxDuration);
 
         if (options.SlidingExpiration is { } configuredSlidingExpiration)
@@ -137,12 +146,14 @@ public readonly record struct CacheEntryStamps(
     }
 
     /// <summary>
-    /// Validates an invalidation tag collection.
+    /// Validates an invalidation-tag collection: each tag non-empty, and both the count and each tag's UTF-8 byte
+    /// length within the u16 limits the provider envelopes encode. Also applied to factory-mutated
+    /// <see cref="CacheFactoryContext{T}.Tags"/> at write time, which bypasses options validation.
     /// </summary>
-    /// <param name="tags">The tags to validate, or <see langword="null"/> when untagged.</param>
+    /// <param name="tags">The tags to validate; <see langword="null"/> is valid (untagged).</param>
     /// <param name="paramName">The parameter name reported on validation failure.</param>
-    /// <exception cref="ArgumentException"><paramref name="tags"/> contains an empty tag or exceeds length limits.</exception>
-    /// <exception cref="ArgumentOutOfRangeException"><paramref name="tags"/> count exceeds the maximum limit.</exception>
+    /// <exception cref="ArgumentException"><paramref name="tags"/> contains an empty tag.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="tags"/> count or a tag's UTF-8 byte length exceeds the unsigned 16-bit envelope limit.</exception>
     public static void ValidateTags(IReadOnlyCollection<string>? tags, string paramName = "tags")
     {
         if (tags is null)

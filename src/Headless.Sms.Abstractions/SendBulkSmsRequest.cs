@@ -12,8 +12,9 @@ namespace Headless.Sms;
 public sealed class SendBulkSmsRequest
 {
     /// <summary>
-    /// Gets the caller-supplied correlation identifier for the batch. Providers that accept a client message identifier
-    /// forward it and derive per-recipient identifiers where required. Other providers ignore this value.
+    /// Gets the caller-supplied correlation identifier for the batch. Providers that accept a client message
+    /// identifier forward it (deriving per-recipient identifiers where the API requires them); others ignore
+    /// it. May be <see langword="null"/>.
     /// </summary>
     public string? MessageId { get; init; }
 

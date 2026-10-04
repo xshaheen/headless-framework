@@ -9,7 +9,10 @@ using Microsoft.Extensions.Options;
 namespace Headless.PushNotifications.Apns.Internal;
 
 /// <summary>
-/// Manages the lifetime and dynamic reloading of an APNs provider certificate for TLS authentication.
+/// Owns one certificate-mode instance's provider certificate for the primary handler and the expiry check.
+/// It loads the certificate once, then reloads it whenever the instance's <see cref="ApnsOptions.Certificate"/>
+/// or <see cref="ApnsOptions.CertificatePassword"/> changes, so a renewed certificate takes effect without a
+/// restart. Registered per instance, so the container disposes it.
 /// </summary>
 internal sealed class ApnsCertificateHolder : IDisposable
 {
@@ -21,20 +24,17 @@ internal sealed class ApnsCertificateHolder : IDisposable
     private readonly IDisposable? _subscription;
     private volatile X509Certificate2 _current;
 
-    // Retains replaced certificate until subsequent swap or disposal to allow in-flight TLS handshakes to complete.
+    // The certificate the last swap replaced. A TLS handshake that read it just before the swap may still be
+    // using it, so it is disposed only on the next swap or with the holder, never at the swap that replaced it.
     private X509Certificate2? _previous;
 
-    // Tracks previously loaded options to avoid redundant reloads on unrelated configuration changes.
+    // The certificate fields last seen, loaded or rejected, so a change to any other option never reloads.
     private string? _certificateText;
     private string? _certificatePassword;
     private bool _disposed;
 
-    /// <summary>Initializes a new instance of the <see cref="ApnsCertificateHolder"/> class and registers option monitors.</summary>
-    /// <param name="optionsMonitor">The options monitor for APNs configuration.</param>
-    /// <param name="name">The options instance name.</param>
-    /// <param name="timeProvider">The time provider for certificate validation.</param>
-    /// <param name="logger">The logger instance.</param>
-    /// <exception cref="InvalidOperationException">The configured options do not specify certificate credentials.</exception>
+    /// <summary>Loads the certificate the instance's options configure and starts observing their changes.</summary>
+    /// <exception cref="InvalidOperationException">The options do not select certificate mode.</exception>
     public ApnsCertificateHolder(
         IOptionsMonitor<ApnsOptions> optionsMonitor,
         string? name,
@@ -59,11 +59,12 @@ internal sealed class ApnsCertificateHolder : IDisposable
         _logger = logger;
         _certificateText = options.Certificate;
         _certificatePassword = options.CertificatePassword;
+        // The options validator has already checked this certificate when the monitor built the options.
         _current = ApnsCertificateLoader.Load(options.Certificate!, options.CertificatePassword);
         _subscription = optionsMonitor.OnChange(_OnOptionsChanged);
     }
 
-    /// <summary>Gets the current active certificate presented during TLS handshakes.</summary>
+    /// <summary>The certificate a new TLS connection presents; replaced when a renewed certificate loads.</summary>
     public X509Certificate2 Certificate => _current;
 
     public void Dispose()
@@ -83,7 +84,7 @@ internal sealed class ApnsCertificateHolder : IDisposable
         _current.Dispose();
     }
 
-    /// <summary>Registers the holder in the service collection for instance <paramref name="name"/>.</summary>
+    /// <summary>Registers the holder for the instance <paramref name="name"/>; <see langword="null"/> is the default instance.</summary>
     internal static void Register(IServiceCollection services, string? name)
     {
         if (name is null)
@@ -96,7 +97,7 @@ internal sealed class ApnsCertificateHolder : IDisposable
         services.AddKeyedSingleton(name, (serviceProvider, _) => _Create(serviceProvider, name));
     }
 
-    /// <summary>Resolves the certificate holder for instance <paramref name="name"/>.</summary>
+    /// <summary>Resolves the holder for the instance <paramref name="name"/>, loading the certificate on first use.</summary>
     internal static ApnsCertificateHolder Get(IServiceProvider serviceProvider, string? name)
     {
         return name is null

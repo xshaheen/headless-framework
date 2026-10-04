@@ -3,9 +3,10 @@
 namespace Headless.Blobs;
 
 /// <summary>
-/// Capability for blob backends that manage the lifecycle of a top-level container (S3 bucket, Azure
-/// container, file-system root directory, or SFTP root directory). Container management is excluded from the data-plane
-/// <see cref="IBlobStorage"/> contract because runtime container creation is a management concern that not every provider supports.
+/// Optional capability for blob backends that can manage the lifecycle of a top-level container (S3 bucket, Azure
+/// container, file-system root directory, SFTP root directory). Container management is kept off the data-plane
+/// <see cref="IBlobStorage"/> contract because runtime container/bucket creation is a management concern — and an
+/// anti-pattern on some backends — that not every provider supports.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -36,9 +37,10 @@ namespace Headless.Blobs;
 public interface IBlobContainerManager
 {
     /// <summary>Ensures the top-level container exists, creating it if necessary. Idempotent.</summary>
-    /// <param name="container">The top-level container (bucket, container, or root) to create.</param>
+    /// <param name="container">The top-level container (bucket/container/root) to create.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
-    /// <exception cref="ArgumentException"><paramref name="container"/> is null, empty, or fails path-security validation.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="container"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="container"/> is empty or whitespace, or fails path-security validation.</exception>
     ValueTask EnsureContainerAsync(string container, CancellationToken cancellationToken = default);
 
     /// <summary>Determines whether the top-level container exists.</summary>

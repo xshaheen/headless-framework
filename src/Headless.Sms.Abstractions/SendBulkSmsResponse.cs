@@ -4,11 +4,12 @@ using Headless.Checks;
 
 namespace Headless.Sms;
 
-/// <summary>Represents the outcome of a bulk SMS send containing results in request order.</summary>
+/// <summary>Represents the outcome of a bulk send: one <see cref="SmsRecipientResult"/> per recipient, in request order.</summary>
 /// <remarks>
-/// Providers that return per-recipient detail, such as Infobip, populate each result individually. Providers that
-/// report a single status for the entire batch use <see cref="FromAggregate"/> to apply that outcome to each recipient.
-/// In that case, <see cref="AllSucceeded"/> reflects batch status, but per-recipient entries are identical.
+/// Providers that return per-recipient detail (for example Infobip) populate each result individually.
+/// Providers whose API reports a single status for the whole batch use <see cref="FromAggregate"/> to apply
+/// that one outcome to every recipient — in that case <see cref="AllSucceeded"/> reflects the batch status,
+/// but the per-recipient breakdown is identical for all entries.
 /// </remarks>
 [PublicAPI]
 public sealed class SendBulkSmsResponse
@@ -23,7 +24,8 @@ public sealed class SendBulkSmsResponse
     public IReadOnlyList<SmsRecipientResult> Results { get; }
 
     /// <summary>
-    /// Gets the provider-assigned identifier for the batch, when returned by the backend.
+    /// Gets the provider-assigned identifier for the batch when the backend returns one (for example the
+    /// Infobip bulk id). May be <see langword="null"/> when the provider does not expose one.
     /// </summary>
     public string? ProviderBatchId { get; }
 
@@ -51,10 +53,11 @@ public sealed class SendBulkSmsResponse
     }
 
     /// <summary>
-    /// Creates a response that applies one aggregate outcome to every recipient.
+    /// Creates a response that applies one aggregate <paramref name="outcome"/> to every recipient. Used by
+    /// providers whose API reports a single status for the whole batch rather than per-recipient detail.
     /// </summary>
-    /// <param name="destinations">The recipients to which the outcome applies.</param>
-    /// <param name="outcome">The outcome to apply to each recipient.</param>
+    /// <param name="destinations">The recipients the outcome applies to.</param>
+    /// <param name="outcome">The single outcome to mirror onto every recipient.</param>
     /// <param name="providerBatchId">The provider-assigned batch identifier, when available.</param>
     /// <returns>A new <see cref="SendBulkSmsResponse"/> instance.</returns>
     /// <exception cref="ArgumentNullException">

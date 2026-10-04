@@ -6,8 +6,16 @@ using System.Diagnostics.Metrics;
 namespace Headless.PushNotifications.Apns.Internal;
 
 /// <summary>
-/// Defines metric instruments for APNs push notification and broadcast telemetry.
+/// Metric instruments for the APNs provider, registered against <see cref="ApnsDiagnostics.Meter"/>.
+/// Instrument and attribute names are bespoke <c>headless.apns.*</c> per the repository's OpenTelemetry
+/// conventions, because no semantic convention covers push delivery.
 /// </summary>
+/// <remarks>
+/// Instruments are created directly on the <see cref="Meter"/> (rather than through a source generator) so
+/// the hot path can read each instrument's <c>Enabled</c> flag and short-circuit before building a
+/// <see cref="TagList"/> when no listener is attached. The device token is never a tag: it is a stable device
+/// identifier.
+/// </remarks>
 internal static class ApnsMetrics
 {
     internal const string SendsName = "headless.apns.sends";
@@ -46,7 +54,7 @@ internal static class ApnsMetrics
         description: "APNs channel broadcasts, by outcome, failure kind, reason, and environment."
     );
 
-    /// <summary>Records metric measurements for an APNs broadcast operation.</summary>
+    /// <summary>Counts one finished broadcast with its outcome tags.</summary>
     internal static void RecordBroadcast(ApnsBroadcastResult result, ApnsEnvironment environment)
     {
         if (!_Broadcasts.Enabled)
@@ -69,11 +77,11 @@ internal static class ApnsMetrics
         _Broadcasts.Add(1, tags);
     }
 
-    /// <summary>Gets a value indicating whether any APNs metric instrument is enabled.</summary>
+    /// <summary>Whether any APNs instrument currently has a subscribed listener.</summary>
     internal static bool AnyEnabled =>
         _Sends.Enabled || _SendDuration.Enabled || _ProviderTokensMinted.Enabled || _CertificateReloads.Enabled;
 
-    /// <summary>Records metric counts for an individual device notification send.</summary>
+    /// <summary>Counts one finished send with its outcome tags.</summary>
     internal static void RecordSend(ApnsSendResult result, string pushType, ApnsEnvironment environment)
     {
         if (!_Sends.Enabled)
@@ -97,7 +105,7 @@ internal static class ApnsMetrics
         _Sends.Add(1, tags);
     }
 
-    /// <summary>Records latency for an APNs send operation.</summary>
+    /// <summary>Records how long one send took.</summary>
     internal static void RecordSendDuration(TimeSpan duration, string pushType, ApnsEnvironment environment)
     {
         if (!_SendDuration.Enabled)
@@ -115,7 +123,7 @@ internal static class ApnsMetrics
         );
     }
 
-    /// <summary>Records a counter increment for a generated provider token.</summary>
+    /// <summary>Counts one minted provider token.</summary>
     internal static void RecordProviderTokenMinted()
     {
         if (!_ProviderTokensMinted.Enabled)
@@ -126,7 +134,7 @@ internal static class ApnsMetrics
         _ProviderTokensMinted.Add(1);
     }
 
-    /// <summary>Records a counter increment for a provider certificate reload attempt.</summary>
+    /// <summary>Counts one certificate reload, by whether the renewed certificate was accepted.</summary>
     internal static void RecordCertificateReload(bool accepted)
     {
         if (!_CertificateReloads.Enabled)
@@ -148,7 +156,8 @@ internal static class ApnsMetrics
     }
 
     /// <summary>
-    /// Converts an <see cref="ApnsFailureKind"/> value to its telemetry tag representation in lower snake case.
+    /// The <see cref="ApnsFailureKind"/> tag value shared by metrics and spans, in lower snake case to match
+    /// the repository's telemetry tag style.
     /// </summary>
     internal static string ToTagValue(ApnsFailureKind kind)
     {

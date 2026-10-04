@@ -4,7 +4,10 @@ using System.Xml;
 
 namespace Headless.Sitemaps;
 
-/// <summary>Provides methods to write sitemap index files.</summary>
+/// <summary>
+/// Sitemap index file builder.
+/// </summary>
+/// <remarks>https://developers.google.com/search/docs/advanced/sitemaps/large-sitemaps</remarks>
 [PublicAPI]
 public static class SitemapIndexBuilder
 {

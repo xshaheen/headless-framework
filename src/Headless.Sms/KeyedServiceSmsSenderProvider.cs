@@ -6,8 +6,8 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Headless.Sms;
 
 /// <summary>
-/// Implements <see cref="ISmsSenderProvider"/> by resolving keyed <see cref="ISmsSender"/> registrations from the
-/// service provider.
+/// Implements <see cref="ISmsSenderProvider"/> over the container's keyed <see cref="ISmsSender"/>
+/// registrations: it resolves the named instances added through <c>setup.AddNamed(name, …)</c>.
 /// </summary>
 internal sealed class KeyedServiceSmsSenderProvider(
     IServiceProvider serviceProvider,

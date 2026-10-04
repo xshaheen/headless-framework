@@ -7,15 +7,23 @@ namespace Headless.Emails;
 
 /// <summary>
 /// Converts <see cref="SendSingleEmailRequest"/> instances to MimeKit <see cref="MimeMessage"/> objects.
+/// Internal to the email providers (MailKit and AWS SES); application code does not call this directly.
 /// </summary>
 internal static class EmailToMimeMessageConverter
 {
     /// <summary>
-    /// Converts an email request into a MimeKit message.
+    /// Converts an email request into a MimeKit <see cref="MimeMessage"/>, including headers, body parts,
+    /// and attachments.
     /// </summary>
     /// <param name="request">The email request to convert.</param>
-    /// <param name="cancellationToken">A token to cancel the operation.</param>
-    /// <returns>A task that represents the asynchronous operation, containing the constructed <see cref="MimeMessage"/>.</returns>
+    /// <param name="cancellationToken">A token to cancel the asynchronous attachment loading.</param>
+    /// <returns>
+    /// A fully populated <see cref="MimeMessage"/>. The caller is responsible for disposing it.
+    /// </returns>
+    /// <remarks>
+    /// Attachments are streamed asynchronously from their backing memory. When construction throws, the
+    /// partially built <see cref="MimeMessage"/> is disposed before the exception propagates.
+    /// </remarks>
     public static async Task<MimeMessage> ConvertToMimeMessageAsync(
         this SendSingleEmailRequest request,
         CancellationToken cancellationToken = default
@@ -100,7 +108,10 @@ internal static class EmailToMimeMessageConverter
     }
 
     /// <summary>
-    /// Wraps array-backed memory in a stream without copying, or copies non-array memory to a stream.
+    /// Exposes an attachment's bytes as a stream for MimeKit to read. When the memory is array-backed (the
+    /// normal case) the array is wrapped read-only rather than copied: MimeKit copies the content into its
+    /// own buffer while building the MIME part, so an extra per-attachment, per-send copy of the whole
+    /// payload buys nothing.
     /// </summary>
     private static MemoryStream _OpenAttachmentStream(ReadOnlyMemory<byte> file)
     {
@@ -109,6 +120,7 @@ internal static class EmailToMimeMessageConverter
             return new MemoryStream(segment.Array, segment.Offset, segment.Count, writable: false);
         }
 
+        // Not array-backed (native or otherwise unmanaged memory): there is no array to wrap, so copy.
         var copy = new MemoryStream(file.Length);
         copy.Write(file.Span);
         copy.Position = 0;
@@ -117,10 +129,13 @@ internal static class EmailToMimeMessageConverter
     }
 
     /// <summary>
-    /// Maps an email request address to a MimeKit mailbox address.
+    /// Maps an email request address to a MimeKit <see cref="MailboxAddress"/>.
     /// </summary>
     /// <param name="address">The email request address to map.</param>
-    /// <returns>A mapped <see cref="MailboxAddress"/> instance.</returns>
+    /// <returns>
+    /// A <see cref="MailboxAddress"/> whose display name falls back to the bare email address when
+    /// <see cref="EmailRequestAddress.DisplayName"/> is <see langword="null"/>.
+    /// </returns>
     public static MailboxAddress MapToMailboxAddress(this EmailRequestAddress address)
     {
         return new MailboxAddress(address.DisplayName ?? address.EmailAddress, address.EmailAddress);

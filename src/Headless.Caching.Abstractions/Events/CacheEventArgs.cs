@@ -3,32 +3,33 @@
 namespace Headless.Caching;
 
 /// <summary>
-/// Provides base event arguments for cache events. Contains the cache instance identity without a key,
-/// allowing cache-wide operations to share the same base as keyed events.
+/// Base arguments for every cache event. Carries the cache-instance identity but no key, so cache-wide operations
+/// (clear, flush, tag/prefix removal, hybrid invalidation) can share the same base as keyed events.
 /// </summary>
 /// <remarks>
-/// Key-bearing events derive from <see cref="CacheKeyEventArgs"/>. Keys represent the caller-facing
-/// keys accepted and returned by <see cref="ICache"/>, with internal key prefixes removed.
+/// The key-bearing events derive from <see cref="CacheKeyEventArgs"/>. All keys are the caller-facing
+/// keys the <see cref="ICache"/> API accepts and returns: the provider's internal <c>KeyPrefix</c> is stripped before the
+/// args are constructed.
 /// </remarks>
 [PublicAPI]
 public class CacheEventArgs(string cacheName, CacheTier tier) : EventArgs
 {
-    /// <summary>Gets the registered cache instance name, or <c>"default"</c> for the unkeyed default cache.</summary>
+    /// <summary>The registered cache-instance name (or <c>"default"</c> for the unkeyed default cache).</summary>
     public string CacheName { get; } = cacheName;
 
-    /// <summary>Gets the tier of the cache instance that raised the event.</summary>
+    /// <summary>The tier of the cache instance that raised the event.</summary>
     public CacheTier Tier { get; } = tier;
 }
 
-/// <summary>Provides base event arguments for events that concern a single cache entry.</summary>
+/// <summary>Base arguments for events that concern a single cache entry, carrying its caller-facing key.</summary>
 [PublicAPI]
 public class CacheKeyEventArgs(string cacheName, CacheTier tier, string key) : CacheEventArgs(cacheName, tier)
 {
-    /// <summary>Gets the caller-facing cache key that the event concerns.</summary>
+    /// <summary>The caller-facing cache key the event concerns (never the internally-prefixed store key).</summary>
     public string Key { get; } = key;
 }
 
-/// <summary>Provides event arguments for a cache hit, indicating whether the hit served fresh or stale data.</summary>
+/// <summary>Arguments for a cache hit, with a flag distinguishing a fresh hit from a fail-safe stale serve.</summary>
 [PublicAPI]
 public sealed class CacheHitEventArgs(string cacheName, CacheTier tier, string key, bool isStale)
     : CacheKeyEventArgs(cacheName, tier, key)

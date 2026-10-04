@@ -11,13 +11,15 @@ namespace Headless.Sms;
 public sealed class SendSingleSmsRequest
 {
     /// <summary>
-    /// Gets the caller-supplied correlation identifier for the message. Providers that accept a client message identifier
-    /// forward it to the upstream API. Other providers ignore this value.
+    /// Gets the caller-supplied correlation identifier for the message. When provided, providers that accept
+    /// a client message identifier (for example VictoryLink's <c>SMSID</c> or Infobip's per-message id)
+    /// forward it to the upstream API; others ignore it. May be <see langword="null"/>.
     /// </summary>
     public string? MessageId { get; init; }
 
     /// <summary>
-    /// Gets the recipient destination containing a dial code and local subscriber number.
+    /// Gets the single recipient: a dial code (<see cref="SmsRequestDestination.Code"/>) and a local
+    /// subscriber number (<see cref="SmsRequestDestination.Number"/>).
     /// </summary>
     public required SmsRequestDestination Destination { get; init; }
 
@@ -37,15 +39,17 @@ public sealed class SendSingleSmsRequest
 [PublicAPI]
 public sealed record SmsRequestDestination(int Code, string Number)
 {
-    /// <summary>Returns the E.164 number format without a leading plus sign.</summary>
+    /// <summary>Returns the E.164-style number without a leading plus sign, for example <c>201234567890</c>.</summary>
     /// <returns>The formatted phone number string.</returns>
     public override string ToString()
     {
         return ToString(hasPlusPrefix: false);
     }
 
-    /// <summary>Returns the formatted number with an optional leading plus sign.</summary>
-    /// <param name="hasPlusPrefix"><see langword="true"/> to prepend a plus sign; otherwise, <see langword="false"/>.</param>
+    /// <summary>Returns the number formatted as <c>{Code}{Number}</c> or <c>+{Code}{Number}</c>.</summary>
+    /// <param name="hasPlusPrefix">
+    /// When <see langword="true"/>, prepends a plus sign to produce an E.164 number.
+    /// </param>
     /// <returns>The formatted phone number string.</returns>
     public string ToString(bool hasPlusPrefix)
     {

@@ -7,6 +7,11 @@ namespace Headless.Emails.Dev;
 /// <summary>
 /// Writes email content to a file instead of delivering messages to an external service.
 /// </summary>
+/// <remarks>
+/// Each send appends a human-readable representation of the message (headers, subject, body, attachment
+/// names) to the configured file, separated by a dashed line. The file is created when missing and existing
+/// content is preserved. No email is ever sent to real recipients.
+/// </remarks>
 internal sealed class DevEmailSender(string filePath) : IEmailSender, IDisposable
 {
     private const string _Separator = "--------------------";
@@ -21,9 +26,14 @@ internal sealed class DevEmailSender(string filePath) : IEmailSender, IDisposabl
     /// </summary>
     /// <param name="request">The email message to record.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
-    /// <returns>A successful <see cref="SendSingleEmailResponse"/> after writing to the file.</returns>
-    /// <exception cref="InvalidOperationException">The request has neither an HTML nor a text body.</exception>
-    /// <exception cref="IOException">The file cannot be written.</exception>
+    /// <returns>A successful <see cref="SendSingleEmailResponse"/> once the entry is written.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// The request has neither an HTML nor a text body (the same guard as the real providers).
+    /// </exception>
+    /// <exception cref="OperationCanceledException">The operation was canceled.</exception>
+    /// <exception cref="System.IO.IOException">
+    /// The file cannot be written, for example because of insufficient permissions or a full disk.
+    /// </exception>
     public async ValueTask<SendSingleEmailResponse> SendAsync(
         SendSingleEmailRequest request,
         CancellationToken cancellationToken = default

@@ -18,7 +18,9 @@ public sealed class BatchPushNotificationResponse
     public required int FailureCount { get; init; }
 
     /// <summary>
-    /// Gets the outcome for each requested client identifier.
+    /// Gets one outcome per requested client identifier. Inspect these to act on individual results, for
+    /// example to delete identifiers whose <see cref="PushNotificationResponse.Status"/> is
+    /// <see cref="PushNotificationResponseStatus.Unregistered"/>.
     /// </summary>
     public required IReadOnlyList<PushNotificationResponse> Responses { get; init; }
 }

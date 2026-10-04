@@ -15,13 +15,22 @@ public static class SetupEmailsCore
     extension(IServiceCollection services)
     {
         /// <summary>
-        /// Registers email senders and providers with the dependency injection container.
+        /// Registers Headless email senders from a single setup builder. Provider packages contribute the
+        /// default (unkeyed) sender through the <c>Use*</c> extensions on <see cref="HeadlessEmailsSetupBuilder"/>
+        /// (for example <c>UseAzure</c>, <c>UseAwsSes</c>, <c>UseMailkit</c>, <c>UseDevelopment</c>,
+        /// <c>UseNoop</c>) and named senders through <c>setup.AddNamed(name, i =&gt; i.Use*(…))</c>. A default
+        /// sender is optional (at most one); named senders are optional and unbounded. Contributions are
+        /// queued and do not run until the setup gates pass, so a setup that fails a gate leaves the service
+        /// collection unchanged. Provider <c>Use*</c> members also validate their inputs synchronously
+        /// before queuing.
         /// </summary>
-        /// <param name="configure">A delegate that configures email providers.</param>
+        /// <param name="configure">A delegate that selects the default sender and any named senders.</param>
         /// <returns>The service collection instance.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
         /// <exception cref="InvalidOperationException">
-        /// Multiple default providers are registered, a named instance has invalid provider configuration, a name is reused, or email services are already registered on the collection.
+        /// The delegate registers more than one default provider, configures a named instance with zero or
+        /// multiple providers, reuses a name, or <c>AddHeadlessEmails</c> was already called on the same
+        /// <see cref="IServiceCollection"/>.
         /// </exception>
         public IServiceCollection AddHeadlessEmails(Action<HeadlessEmailsSetupBuilder> configure)
         {

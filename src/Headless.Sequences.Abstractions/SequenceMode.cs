@@ -2,23 +2,25 @@
 
 namespace Headless.Sequences;
 
-/// <summary>Specifies how a counter allocates numbers. Each counter name declares one mode.</summary>
+/// <summary>Specifies how a counter hands out its numbers. Each counter name declares exactly one mode.</summary>
 /// <remarks>
-/// A counter cannot use both modes. Allocations in fast mode that roll back leave gaps in a gap-free
-/// counter. Fast calls made while the caller transaction holds the counter row lock result in a deadlock.
+/// A counter is never used from both entry points: a fast caller that rolls back leaves a gap in a gap-free
+/// counter, and a fast call made while the caller's own unit holds the counter's row lock waits on itself.
 /// </remarks>
 [PublicAPI]
 public enum SequenceMode
 {
     /// <summary>
-    /// Allocates numbers through <see cref="ISequenceGenerator" />, each in a dedicated transaction. Numbers
-    /// are never reused, but operations that fail after reserving a number create gaps.
+    /// Numbers come from the injected <see cref="ISequenceGenerator" />, each in its own short transaction.
+    /// A number is never handed out twice, but one taken by a caller that later fails is not returned,
+    /// so gaps are possible.
     /// </summary>
     Fast = 0,
 
     /// <summary>
-    /// Allocates numbers through <c>unit.Sequences</c> inside the active unit-of-work transaction. A rollback
-    /// returns the number to prevent gaps, and concurrent writers queue until the active transaction finishes.
+    /// Numbers come from <c>unit.Sequences</c>, inside the caller's unit-of-work transaction. A unit that
+    /// rolls back returns its number, so the sequence has no gaps, and every writer of the counter waits
+    /// for the one before it to commit or roll back.
     /// </summary>
     GapFree = 1,
 }

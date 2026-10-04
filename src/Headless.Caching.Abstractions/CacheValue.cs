@@ -10,14 +10,16 @@ using Headless.Checks;
 namespace Headless.Caching;
 
 /// <summary>
-/// Represents the result envelope returned by cache read operations. Distinguishes fresh values,
-/// stale values served from fail-safe reserves, and cache misses without allocating exceptions or sentinel values.
+/// Represents the result envelope returned by cache read operations. Distinguishes "present and fresh",
+/// "present but stale (served from a fail-safe reserve)", and "absent" without requiring the caller to use
+/// exceptions or sentinel values for the absent case.
 /// </summary>
 /// <typeparam name="T">The type of the cached value.</typeparam>
 /// <remarks>
-/// This struct allows synchronous reads to complete without heap allocations.
-/// <see langword="default"/> represents a valid <see cref="NoValue"/> state where both
-/// <see cref="HasValue"/> and <see cref="IsStale"/> are <see langword="false"/>.
+/// A value type so the common synchronous read path (<c>ValueTask&lt;CacheValue&lt;T&gt;&gt;</c>) completes
+/// without a heap allocation. <see langword="default"/> is a valid <see cref="NoValue"/> state (both
+/// <see cref="HasValue"/> and <see cref="IsStale"/> <see langword="false"/>), so it never violates the
+/// <c>IsStale implies HasValue</c> invariant the constructor enforces.
 /// </remarks>
 [PublicAPI]
 public readonly struct CacheValue<T>
@@ -26,6 +28,10 @@ public readonly struct CacheValue<T>
     /// <param name="value">The cached value.</param>
     /// <param name="hasValue">Indicates whether a cache entry was found.</param>
     /// <param name="isStale">Indicates whether the value was served from a fail-safe reserve.</param>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="isStale"/> is <see langword="true"/> while <paramref name="hasValue"/> is
+    /// <see langword="false"/>: a stale serve requires a value to serve.
+    /// </exception>
     public CacheValue(T? value, bool hasValue, bool isStale = false)
     {
         Argument.IsTrue(!isStale || hasValue, "IsStale requires HasValue.", nameof(isStale));
@@ -45,18 +51,20 @@ public readonly struct CacheValue<T>
     public bool HasValue { get; }
 
     /// <summary>
-    /// Gets a value indicating whether this value was served from a fail-safe reserve.
+    /// Gets a value indicating whether this value was served from a fail-safe stale reserve.
+    /// <see langword="true"/> only when fail-safe activated; a stale serve always implies <see cref="HasValue"/>.
     /// </summary>
     public bool IsStale { get; }
 
-    /// <summary>Gets a value indicating whether <see cref="Value"/> is <see langword="null"/>.</summary>
+    /// <summary>Gets whether <see cref="Value"/> is <see langword="null"/>.</summary>
+    /// <remarks>An entry can be present in cache with a <see langword="null"/> value (explicitly stored null).</remarks>
     [MemberNotNullWhen(false, nameof(Value))]
     public bool IsNull => Value is null;
 
-    /// <summary>Represents a hit result containing an explicitly cached <see langword="null"/> value.</summary>
+    /// <summary>A hit result carrying a cached <see langword="null"/> value (<see cref="HasValue"/> is <see langword="true"/>, <see cref="Value"/> is <see langword="null"/>).</summary>
     public static CacheValue<T> Null { get; } = new(default, hasValue: true);
 
-    /// <summary>Represents a cache miss.</summary>
+    /// <summary>A miss result (absent from cache). <see cref="HasValue"/> is <see langword="false"/>.</summary>
     public static CacheValue<T> NoValue { get; } = new(default, hasValue: false);
 
     public override string ToString()

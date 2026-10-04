@@ -7,90 +7,153 @@ using System.Text.Json.Serialization.Metadata;
 namespace Headless.Generator.Primitives;
 
 /// <summary>
-/// Retrieves internal JSON converters for primitive underlying data types.
+/// Provides a set of static methods for retrieving JSON converters for various data types.
 /// </summary>
-/// <remarks>Internal generator-emitted plumbing. Kept public for generated code execution.</remarks>
+/// <remarks>
+/// This type is generator-output plumbing; it must stay public for emitted code but is not intended
+/// for direct use.
+/// </remarks>
 [EditorBrowsable(EditorBrowsableState.Never)]
 public static class JsonInternalConverters
 {
-    /// <summary>Gets a JSON converter for <see cref="Guid"/> values.</summary>
+    /// <summary>
+    /// Gets a <see cref="JsonConverter{T}"/> instance that converts <see cref="Guid"/> values.
+    /// </summary>
+    /// <remarks>This API is for use by the output of the System.Text.Json source generator and should not be called directly.</remarks>
     [field: MaybeNull, AllowNull]
     public static JsonConverter<Guid> GuidConverter => field ??= GetInternalConverter<Guid>();
 
-    /// <summary>Gets a JSON converter for nullable <see cref="string"/> values.</summary>
+    /// <summary>
+    /// Gets a <see cref="JsonConverter{T}"/> instance that converts <see cref="string"/> values.
+    /// </summary>
+    /// <remarks>This API is for use by the output of the System.Text.Json source generator and should not be called directly.</remarks>
     [field: MaybeNull, AllowNull]
     public static JsonConverter<string?> StringConverter => field ??= GetInternalConverter<string?>();
 
-    /// <summary>Gets a JSON converter for <see cref="bool"/> values.</summary>
+    /// <summary>
+    /// Gets a <see cref="JsonConverter{T}"/> instance that converts <see cref="bool"/> values.
+    /// </summary>
+    /// <remarks>This API is for use by the output of the System.Text.Json source generator and should not be called directly.</remarks>
     [field: MaybeNull, AllowNull]
     public static JsonConverter<bool> BooleanConverter => field ??= GetInternalConverter<bool>();
 
-    /// <summary>Gets a JSON converter for <see cref="byte"/> values.</summary>
+    /// <summary>
+    /// Gets a <see cref="JsonConverter{T}"/> instance that converts <see cref="byte"/> values.
+    /// </summary>
+    /// <remarks>This API is for use by the output of the System.Text.Json source generator and should not be called directly.</remarks>
     [field: MaybeNull, AllowNull]
     public static JsonConverter<byte> ByteConverter => field ??= GetInternalConverter<byte>();
 
-    /// <summary>Gets a JSON converter for <see cref="char"/> values.</summary>
+    /// <summary>
+    /// Gets a <see cref="JsonConverter{T}"/> instance that converts <see cref="char"/> values.
+    /// </summary>
+    /// <remarks>This API is for use by the output of the System.Text.Json source generator and should not be called directly.</remarks>
     [field: MaybeNull, AllowNull]
     public static JsonConverter<char> CharConverter => field ??= GetInternalConverter<char>();
 
-    /// <summary>Gets a JSON converter for <see cref="TimeSpan"/> values.</summary>
+    /// <summary>
+    /// Gets a <see cref="JsonConverter{T}"/> instance that converts <see cref="TimeSpan"/> values.
+    /// </summary>
+    /// <remarks>This API is for use by the output of the System.Text.Json source generator and should not be called directly.</remarks>
     [field: MaybeNull, AllowNull]
     public static JsonConverter<TimeSpan> TimeSpanConverter => field ??= GetInternalConverter<TimeSpan>();
 
-    /// <summary>Gets a JSON converter for <see cref="DateTime"/> values.</summary>
+    /// <summary>
+    /// Gets a <see cref="JsonConverter{T}"/> instance that converts <see cref="DateTime"/> values.
+    /// </summary>
+    /// <remarks>This API is for use by the output of the System.Text.Json source generator and should not be called directly.</remarks>
     [field: MaybeNull, AllowNull]
     public static JsonConverter<DateTime> DateTimeConverter => field ??= GetInternalConverter<DateTime>();
 
-    /// <summary>Gets a JSON converter for <see cref="DateTimeOffset"/> values.</summary>
+    /// <summary>
+    /// Gets a <see cref="JsonConverter{T}"/> instance that converts <see cref="DateTimeOffset"/> values.
+    /// </summary>
+    /// <remarks>This API is for use by the output of the System.Text.Json source generator and should not be called directly.</remarks>
     [field: MaybeNull, AllowNull]
     public static JsonConverter<DateTimeOffset> DateTimeOffsetConverter =>
         field ??= GetInternalConverter<DateTimeOffset>();
 
-    /// <summary>Gets a JSON converter for <see cref="DateOnly"/> values.</summary>
+    /// <summary>
+    /// Gets a <see cref="JsonConverter{T}"/> instance that converts <see cref="DateOnly"/> values.
+    /// </summary>
+    /// <remarks>This API is for use by the output of the System.Text.Json source generator and should not be called directly.</remarks>
     [field: MaybeNull, AllowNull]
     public static JsonConverter<DateOnly> DateOnlyConverter => field ??= GetInternalConverter<DateOnly>();
 
-    /// <summary>Gets a JSON converter for <see cref="TimeOnly"/> values.</summary>
+    /// <summary>
+    /// Gets a <see cref="JsonConverter{T}"/> instance that converts <see cref="TimeOnly"/> values.
+    /// </summary>
+    /// <remarks>This API is for use by the output of the System.Text.Json source generator and should not be called directly.</remarks>
     [field: MaybeNull, AllowNull]
     public static JsonConverter<TimeOnly> TimeOnlyConverter => field ??= GetInternalConverter<TimeOnly>();
 
-    /// <summary>Gets a JSON converter for <see cref="float"/> values.</summary>
+    /// <summary>
+    /// Gets a <see cref="JsonConverter{T}"/> instance that converts <see cref="float"/> values.
+    /// </summary>
+    /// <remarks>This API is for use by the output of the System.Text.Json source generator and should not be called directly.</remarks>
     [field: MaybeNull, AllowNull]
     public static JsonConverter<float> FloatConverter => field ??= GetInternalConverter<float>();
 
-    /// <summary>Gets a JSON converter for <see cref="decimal"/> values.</summary>
+    /// <summary>
+    /// Gets a <see cref="JsonConverter{T}"/> instance that converts <see cref="decimal"/> values.
+    /// </summary>
+    /// <remarks>This API is for use by the output of the System.Text.Json source generator and should not be called directly.</remarks>
     [field: MaybeNull, AllowNull]
     public static JsonConverter<decimal> DecimalConverter => field ??= GetInternalConverter<decimal>();
 
-    /// <summary>Gets a JSON converter for <see cref="double"/> values.</summary>
+    /// <summary>
+    /// Gets a <see cref="JsonConverter{T}"/> instance that converts <see cref="double"/> values.
+    /// </summary>
+    /// <remarks>This API is for use by the output of the System.Text.Json source generator and should not be called directly.</remarks>
     [field: MaybeNull, AllowNull]
     public static JsonConverter<double> DoubleConverter => field ??= GetInternalConverter<double>();
 
-    /// <summary>Gets a JSON converter for <see cref="short"/> values.</summary>
+    /// <summary>
+    /// Gets a <see cref="JsonConverter{T}"/> instance that converts <see cref="short"/> values.
+    /// </summary>
+    /// <remarks>This API is for use by the output of the System.Text.Json source generator and should not be called directly.</remarks>
     [field: MaybeNull, AllowNull]
     public static JsonConverter<short> Int16Converter => field ??= GetInternalConverter<short>();
 
-    /// <summary>Gets a JSON converter for <see cref="int"/> values.</summary>
+    /// <summary>
+    /// Gets a <see cref="JsonConverter{T}"/> instance that converts <see cref="int"/> values.
+    /// </summary>
+    /// <remarks>This API is for use by the output of the System.Text.Json source generator and should not be called directly.</remarks>
     [field: MaybeNull, AllowNull]
     public static JsonConverter<int> Int32Converter => field ??= GetInternalConverter<int>();
 
-    /// <summary>Gets a JSON converter for <see cref="long"/> values.</summary>
+    /// <summary>
+    /// Gets a <see cref="JsonConverter{T}"/> instance that converts <see cref="long"/> values.
+    /// </summary>
+    /// <remarks>This API is for use by the output of the System.Text.Json source generator and should not be called directly.</remarks>
     [field: MaybeNull, AllowNull]
     public static JsonConverter<long> Int64Converter => field ??= GetInternalConverter<long>();
 
-    /// <summary>Gets a JSON converter for <see cref="sbyte"/> values.</summary>
+    /// <summary>
+    /// Gets a <see cref="JsonConverter{T}"/> instance that converts <see cref="sbyte"/> values.
+    /// </summary>
+    /// <remarks>This API is for use by the output of the System.Text.Json source generator and should not be called directly.</remarks>
     [field: MaybeNull, AllowNull]
     public static JsonConverter<sbyte> SByteConverter => field ??= GetInternalConverter<sbyte>();
 
-    /// <summary>Gets a JSON converter for <see cref="ushort"/> values.</summary>
+    /// <summary>
+    /// Gets a <see cref="JsonConverter{T}"/> instance that converts <see cref="ushort"/> values.
+    /// </summary>
+    /// <remarks>This API is for use by the output of the System.Text.Json source generator and should not be called directly.</remarks>
     [field: MaybeNull, AllowNull]
     public static JsonConverter<ushort> UInt16Converter => field ??= GetInternalConverter<ushort>();
 
-    /// <summary>Gets a JSON converter for <see cref="uint"/> values.</summary>
+    /// <summary>
+    /// Gets a <see cref="JsonConverter{T}"/> instance that converts <see cref="uint"/> values.
+    /// </summary>
+    /// <remarks>This API is for use by the output of the System.Text.Json source generator and should not be called directly.</remarks>
     [field: MaybeNull, AllowNull]
     public static JsonConverter<uint> UInt32Converter => field ??= GetInternalConverter<uint>();
 
-    /// <summary>Gets a JSON converter for <see cref="ulong"/> values.</summary>
+    /// <summary>
+    /// Gets a <see cref="JsonConverter{T}"/> instance that converts <see cref="ulong"/> values.
+    /// </summary>
+    /// <remarks>This API is for use by the output of the System.Text.Json source generator and should not be called directly.</remarks>
     [field: MaybeNull, AllowNull]
     public static JsonConverter<ulong> UInt64Converter => field ??= JsonMetadataServices.UInt64Converter;
 

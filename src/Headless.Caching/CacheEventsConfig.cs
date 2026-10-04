@@ -6,24 +6,26 @@ using Microsoft.Extensions.Logging;
 namespace Headless.Caching;
 
 /// <summary>
-/// Provides configuration for caching event dispatcher execution.
+/// Caching-wide event-handler execution configuration resolved by every cache provider from DI. Registered once by
+/// <c>AddHeadlessCaching</c> from the setup builder; providers thread it into their <see cref="CacheEventsHub"/>.
+/// Must-be-public plumbing (DI resolves it into provider constructors); not intended for direct use.
 /// </summary>
 [PublicAPI]
 [EditorBrowsable(EditorBrowsableState.Never)]
 public sealed class CacheEventsConfig
 {
     /// <summary>
-    /// Gets the maximum number of signals buffered behind the active handler. Defaults to 2,048.
-    /// Producers do not wait; signals are dropped when the queue is full.
+    /// Maximum signals buffered behind the active handler. Default 2,048. Producers never wait; a signal is dropped
+    /// when this bounded FIFO is full.
     /// </summary>
     public int BufferCapacity { get; init; } = 2_048;
 
     /// <summary>
-    /// Gets how long cache disposal waits for accepted signals to drain before canceling the dispatcher.
-    /// Defaults to two seconds.
+    /// How long cache disposal waits for accepted signals to drain before canceling the dispatcher. Default two
+    /// seconds. Handlers should observe their cancellation token.
     /// </summary>
     public TimeSpan ShutdownDrainTimeout { get; init; } = TimeSpan.FromSeconds(2);
 
-    /// <summary>Gets the log level used when a cache event handler throws an exception. Defaults to <see cref="LogLevel.Warning"/>.</summary>
+    /// <summary>The log level used to record an exception thrown by a cache-event handler. Default <see cref="LogLevel.Warning"/>.</summary>
     public LogLevel HandlerErrorLogLevel { get; init; } = LogLevel.Warning;
 }

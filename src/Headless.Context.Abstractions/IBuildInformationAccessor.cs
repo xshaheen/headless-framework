@@ -3,11 +3,12 @@
 namespace Headless.Context;
 
 /// <summary>
-/// Exposes build-time metadata about the running application, such as title, product name,
+/// Exposes build-time metadata about the running application, such as its title, product name,
 /// version, and source commit.
 /// </summary>
 /// <remarks>
-/// Implementations typically read assembly attributes from the application entry assembly.
+/// Implementations typically read <see cref="System.Reflection.Assembly"/> attributes from the
+/// application entry assembly.
 /// </remarks>
 public interface IBuildInformationAccessor
 {
@@ -42,7 +43,8 @@ public interface IBuildInformationAccessor
     string? GetVersion();
 
     /// <summary>
-    /// Returns the commit identifier parsed from the informational version metadata, or <see langword="null"/> when unavailable.
+    /// Returns the commit identifier parsed from the informational version (the segment after the last
+    /// <c>+</c> separator), or <see langword="null"/> when unavailable.
     /// </summary>
     /// <returns>The commit identifier, or <see langword="null"/>.</returns>
     string? GetCommitNumber();

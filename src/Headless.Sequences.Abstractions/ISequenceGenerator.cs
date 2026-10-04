@@ -3,25 +3,25 @@
 namespace Headless.Sequences;
 
 /// <summary>
-/// Allocates values from fast-mode counters partitioned by current tenant, counter name, and an optional partition key.
+/// Issues numbers from fast-mode counters keyed by the current tenant, the counter name, and an optional partition.
 /// </summary>
 /// <remarks>
-/// This singleton commits increments on dedicated database connections without joining the caller transaction.
-/// Numbers are unique across processes, but failed operations after allocation leave gaps.
-/// Counters configured as <see cref="SequenceMode.GapFree" /> throw; access them through
-/// <c>unit.Sequences</c> on the writing unit of work.
+/// A singleton that never joins the caller's transaction: every call commits its increment on its own connection
+/// before it returns. A number is therefore never issued twice, even across processes, but a caller that fails
+/// after taking one leaves a gap. Counters registered as <see cref="SequenceMode.GapFree" /> are refused here;
+/// take them through <c>unit.Sequences</c> on the unit of work that writes the number.
 /// </remarks>
 [PublicAPI]
 public interface ISequenceGenerator
 {
-    /// <summary>Allocates the next value from the counter.</summary>
+    /// <summary>Takes the counter's next value.</summary>
     /// <param name="name">The counter name, compared ordinally.</param>
     /// <param name="partition">
-    /// An optional partition key, such as a year. A new partition resets the counter to the policy starting value.
-    /// Pass <see langword="null" /> or an empty string to use no partition.
+    /// Splits the counter, for example by year. A new partition starts a new counter at the policy's start
+    /// value. <see langword="null" /> or empty means no partition.
     /// </param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
-    /// <returns>The allocated value.</returns>
+    /// <returns>The value taken.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="name"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">
     /// <paramref name="name" /> is empty, whitespace, or invalid, or <paramref name="partition" /> or the tenant identifier contains invalid characters or exceeds maximum length.
@@ -29,14 +29,14 @@ public interface ISequenceGenerator
     /// <exception cref="InvalidOperationException">The counter is registered as <see cref="SequenceMode.GapFree"/>.</exception>
     ValueTask<long> NextAsync(string name, string? partition = null, CancellationToken cancellationToken = default);
 
-    /// <summary>Allocates consecutive values from the counter atomically.</summary>
+    /// <summary>Atomically takes <paramref name="count" /> consecutive values from the counter.</summary>
     /// <param name="name">The counter name, compared ordinally.</param>
-    /// <param name="count">The number of values to allocate. Must be at least 1.</param>
+    /// <param name="count">How many values to take; at least 1.</param>
     /// <param name="partition">
-    /// An optional partition key, such as a year. Pass <see langword="null" /> or an empty string to use no partition.
+    /// Splits the counter, for example by year. <see langword="null" /> or empty means no partition.
     /// </param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
-    /// <returns>The allocated range of values in ascending order.</returns>
+    /// <returns>The values taken, in order.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="name"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="count" /> is less than 1.</exception>
     /// <exception cref="ArgumentException">

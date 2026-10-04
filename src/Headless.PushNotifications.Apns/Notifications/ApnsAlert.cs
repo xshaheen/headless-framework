@@ -3,42 +3,52 @@
 namespace Headless.PushNotifications.Apns;
 
 /// <summary>
-/// Represents the user-facing alert dictionary of an APNs notification.
+/// The visible content of a notification, written as the <c>aps.alert</c> dictionary.
 /// </summary>
+/// <remarks>
+/// <para>
+/// Each text can be a literal or a localization key the app resolves from its <c>Localizable.strings</c>,
+/// with optional format arguments. Set the literal or the key for a text, not both; arguments need their key.
+/// </para>
+/// <para>
+/// A Live Activity alert shows only a title and a body, so its alert may not set <see cref="Subtitle"/>,
+/// <see cref="SubtitleLocKey"/>, <see cref="SubtitleLocArgs"/>, or <see cref="LaunchImage"/>.
+/// </para>
+/// </remarks>
 [PublicAPI]
 public sealed record ApnsAlert
 {
-    /// <summary>Gets the notification title.</summary>
+    /// <summary>The title, written as <c>title</c>.</summary>
     public string? Title { get; init; }
 
-    /// <summary>Gets the notification subtitle.</summary>
+    /// <summary>The subtitle, written as <c>subtitle</c>.</summary>
     public string? Subtitle { get; init; }
 
-    /// <summary>Gets the notification body text.</summary>
+    /// <summary>The body text, written as <c>body</c>.</summary>
     public string? Body { get; init; }
 
-    /// <summary>Gets the localization key for the title.</summary>
+    /// <summary>The localization key for the title, written as <c>title-loc-key</c> in place of <see cref="Title"/>.</summary>
     public string? TitleLocKey { get; init; }
 
-    /// <summary>Gets format argument values for the localized title string.</summary>
+    /// <summary>The format arguments for <see cref="TitleLocKey"/>, written as <c>title-loc-args</c>.</summary>
     public IReadOnlyList<string>? TitleLocArgs { get; init; }
 
     /// <summary>
-    /// Gets the localization key for the subtitle.
+    /// The localization key for the subtitle, written as <c>subtitle-loc-key</c> in place of <see cref="Subtitle"/>.
     /// </summary>
     public string? SubtitleLocKey { get; init; }
 
-    /// <summary>Gets format argument values for the localized subtitle string.</summary>
+    /// <summary>The format arguments for <see cref="SubtitleLocKey"/>, written as <c>subtitle-loc-args</c>.</summary>
     public IReadOnlyList<string>? SubtitleLocArgs { get; init; }
 
-    /// <summary>Gets the localization key for the body text.</summary>
+    /// <summary>The localization key for the body, written as <c>loc-key</c> in place of <see cref="Body"/>.</summary>
     public string? LocKey { get; init; }
 
-    /// <summary>Gets format argument values for the localized body text.</summary>
+    /// <summary>The format arguments for <see cref="LocKey"/>, written as <c>loc-args</c>.</summary>
     public IReadOnlyList<string>? LocArgs { get; init; }
 
     /// <summary>
-    /// Gets the launch image filename displayed when launching from the notification.
+    /// The image file the app shows while launching from the notification, written as <c>launch-image</c>.
     /// </summary>
     public string? LaunchImage { get; init; }
 }

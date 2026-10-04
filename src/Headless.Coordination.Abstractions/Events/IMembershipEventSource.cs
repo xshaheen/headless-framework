@@ -18,9 +18,10 @@ public interface IMembershipEventSource
     /// <returns>An asynchronous stream of membership events.</returns>
     /// <remarks>
     /// Yields <see cref="NodeJoined"/>, <see cref="NodeSuspected"/>, <see cref="NodeRecovered"/>, <see cref="NodeLeft"/>,
-    /// and <see cref="LocalMembershipLost"/> events. The no-op implementation emits no events and blocks until cancelled.
-    /// Dispose the returned async enumerator or cancel <paramref name="cancellationToken"/> to release the subscription.
-    /// Abandoning the enumerator without disposal retains the underlying buffer until the next publish cycle prunes it.
+    /// and the local-only <see cref="LocalMembershipLost"/>. The no-op implementation emits no events and blocks
+    /// until cancelled. Consumers must dispose the returned async enumerator, or cancel
+    /// <paramref name="cancellationToken"/>, to release the subscription. Abandoning the enumerator without
+    /// disposal leaks the underlying buffer until the next publish prunes it.
     /// </remarks>
     IAsyncEnumerable<NodeMembershipEvent> WatchAsync(CancellationToken cancellationToken = default);
 }

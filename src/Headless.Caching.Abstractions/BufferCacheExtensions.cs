@@ -17,7 +17,8 @@ public static class BufferCacheExtensions
     /// Reads the payload for <paramref name="key"/> into <paramref name="destination"/>, using the
     /// <see cref="IBufferCache"/> fast path when the cache supports it and the <c>byte[]</c> path otherwise.
     /// </summary>
-    /// <returns><see langword="true"/> when the payload is found and written to <paramref name="destination"/>; otherwise, <see langword="false"/>.</returns>
+    /// <returns><see langword="true"/> on a hit (payload written); <see langword="false"/> on miss or expiry.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="cache"/> or <paramref name="destination"/> is <see langword="null"/>.</exception>
     public static ValueTask<bool> TryGetToOrFallbackAsync(
         this ICache cache,
         string key,
@@ -35,9 +36,13 @@ public static class BufferCacheExtensions
 
     /// <summary>
     /// Upserts the payload from <paramref name="value"/>, using the <see cref="IBufferCache"/> fast path when the
-    /// cache supports it or falling back to the <c>byte[]</c> path. The sequence is materialized synchronously before
-    /// any asynchronous wait, which allows callers to supply pooled buffers valid only for the call duration.
+    /// cache supports it and the <c>byte[]</c> path otherwise. The sequence is materialized synchronously before
+    /// any await, so callers may hand in pooled buffers valid only for the duration of the call.
     /// </summary>
+    /// <exception cref="ArgumentNullException"><paramref name="cache"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">
+    /// The cache supports the buffer path and <see cref="CacheEntryOptions.Tags"/> exceeds the supported tag count/length limits.
+    /// </exception>
     public static ValueTask UpsertRawOrFallbackAsync(
         this ICache cache,
         string key,

@@ -7,8 +7,17 @@ using Microsoft.Extensions.Options;
 namespace Headless.PushNotifications.Apns.Internal;
 
 /// <summary>
-/// Monitors APNs provider certificate expiration on host startup and recurring daily intervals.
+/// Checks a certificate-mode instance's provider certificate at host start and then once a day. At start, an
+/// expired certificate fails the start and one that expires within 30 days logs a warning. Each later check
+/// reads the current, possibly renewed, certificate: within 30 days of expiry it logs a warning, and once
+/// expired it logs an error without stopping the host. A token-mode instance is skipped without loading
+/// anything.
 /// </summary>
+/// <remarks>
+/// Apple provider certificates last one year and are renewed by hand, so the warning gives operators time to
+/// renew before every push starts failing the TLS handshake. The daily check matters because a host can run
+/// for longer than the 30-day window.
+/// </remarks>
 internal sealed class ApnsCertificateExpiryCheck(
     IOptionsMonitor<ApnsOptions> optionsMonitor,
     string? name,
@@ -17,7 +26,7 @@ internal sealed class ApnsCertificateExpiryCheck(
     ILogger<ApnsCertificateExpiryCheck> logger
 ) : IHostedService, IDisposable
 {
-    /// <summary>Gets the interval between certificate expiration checks.</summary>
+    /// <summary>How often the certificate is checked again after host start.</summary>
     internal static readonly TimeSpan RecheckPeriod = TimeSpan.FromDays(1);
 
     private static readonly TimeSpan _WarningWindow = TimeSpan.FromDays(30);
@@ -25,10 +34,11 @@ internal sealed class ApnsCertificateExpiryCheck(
     private readonly string _instance = name ?? "default";
     private ITimer? _timer;
 
-    /// <summary>Starts monitoring and validates the certificate expiration status.</summary>
-    /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
-    /// <returns>A completed task when initialization succeeds.</returns>
-    /// <exception cref="InvalidOperationException">The APNs certificate has expired.</exception>
+    /// <summary>
+    /// Fails when the certificate has expired, warns when it expires within 30 days, and starts the daily
+    /// check.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">The instance's certificate has expired.</exception>
     public Task StartAsync(CancellationToken cancellationToken)
     {
         if (!optionsMonitor.Get(name).UsesCertificate)

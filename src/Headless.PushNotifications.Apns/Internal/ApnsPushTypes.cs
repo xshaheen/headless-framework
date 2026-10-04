@@ -2,7 +2,10 @@
 
 namespace Headless.PushNotifications.Apns.Internal;
 
-/// <summary>Defines <c>apns-push-type</c> header constant values.</summary>
+/// <summary>
+/// The <c>apns-push-type</c> header values, shared by header computation, payload limits, and auth-mode
+/// checks.
+/// </summary>
 internal static class ApnsPushTypes
 {
     public const string Alert = "alert";

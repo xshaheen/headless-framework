@@ -8,7 +8,9 @@ namespace Headless.Sequences;
 internal static class SequenceKeyText
 {
     /// <summary>
-    /// Checks whether all database providers store, compare, and round-trip <paramref name="value" /> without alteration.
+    /// Whether every provider stores, compares, and returns <paramref name="value" /> unchanged, for
+    /// validators that report instead of throw. Call validation uses <see cref="Argument.IsPortableKey" />
+    /// directly.
     /// </summary>
     public static bool IsPortable(string? value)
     {

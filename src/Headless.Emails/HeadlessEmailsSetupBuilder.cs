@@ -7,8 +7,16 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Headless.Emails;
 
 /// <summary>
-/// Configures default and named email senders for the application.
+/// Configures the default and named email senders for <c>AddHeadlessEmails</c>. Provider packages contribute
+/// deferred service registrations into two slots: an optional default sender (at most one, the unkeyed
+/// <see cref="IEmailSender"/>) and named instances (unlimited, unique names, resolved as keyed
+/// <see cref="IEmailSender"/> services or through <see cref="IEmailSenderProvider"/>). Nothing is registered
+/// into <see cref="Services"/> until the setup gates pass; contributions are queued only.
 /// </summary>
+/// <remarks>
+/// Emails has no shared, cross-provider feature options, so the builder is provider-selection-only and
+/// carries no <c>Configure</c> overloads. Each provider binds its own options inside its <c>Use*</c> member.
+/// </remarks>
 [PublicAPI]
 public sealed class HeadlessEmailsSetupBuilder
 {
@@ -28,11 +36,12 @@ public sealed class HeadlessEmailsSetupBuilder
     internal List<(string Name, Action<IServiceCollection> Action)> NamedExtensions { get; } = [];
 
     /// <summary>
-    /// Registers the default email sender.
+    /// Queues the default (unkeyed) email sender contribution. Each default <c>Use*</c> extension calls this
+    /// internally; it is not intended for direct use by application code.
     /// </summary>
     /// <param name="action">The delegate that registers provider services.</param>
     /// <exception cref="ArgumentNullException"><paramref name="action"/> is <see langword="null"/>.</exception>
-    [EditorBrowsable(EditorBrowsableState.Never)]
+    [EditorBrowsable(EditorBrowsableState.Never)] // provider-package plumbing, not an application-code API
     public void RegisterDefaultProvider(Action<IServiceCollection> action)
     {
         Argument.IsNotNull(action);
@@ -41,15 +50,19 @@ public sealed class HeadlessEmailsSetupBuilder
     }
 
     /// <summary>
-    /// Adds a named email sender instance.
+    /// Adds an independently configured named email sender, resolvable as a keyed <see cref="IEmailSender"/>
+    /// service or through <see cref="IEmailSenderProvider"/>. Named instances never touch the default
+    /// (unkeyed) <see cref="IEmailSender"/>.
     /// </summary>
-    /// <param name="name">The sender instance name.</param>
-    /// <param name="configure">A delegate that configures the named provider.</param>
+    /// <param name="name">The sender instance name. Must be non-empty and unique within this setup.</param>
+    /// <param name="configure">A delegate that selects exactly one provider for the instance.</param>
     /// <returns>The builder instance.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="name"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException"><paramref name="name"/> is empty or contains only white space.</exception>
     /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
     /// <exception cref="InvalidOperationException">
-    /// <paramref name="name"/> is already configured, or the configuration delegate does not select exactly one provider.
+    /// <paramref name="name"/> is already configured, or the configuration delegate selects zero or more
+    /// than one provider.
     /// </exception>
     public HeadlessEmailsSetupBuilder AddNamed(string name, Action<HeadlessEmailInstanceBuilder> configure)
     {

@@ -30,7 +30,10 @@ public readonly record struct CacheStoreEntry<T>(
     public DateTime? LastModifiedAt { get; init; }
 
     /// <summary>
-    /// Gets the optional UTC timestamp at which this value was first created.
+    /// Gets the optional UTC timestamp at which this entry's value was first created (its birth time). A re-stamp
+    /// (a conditional <c>NotModified</c> extension or a fail-safe throttle restamp) preserves the original
+    /// <see cref="CreatedAt"/>; only a genuine new value write sets it afresh. <see langword="null"/> for legacy
+    /// or unframed entries written before the timestamp existed.
     /// </summary>
     public DateTime? CreatedAt { get; init; }
 
@@ -38,16 +41,22 @@ public readonly record struct CacheStoreEntry<T>(
     public IReadOnlyCollection<string>? Tags { get; init; }
 
     /// <summary>
-    /// Gets an opaque stamp identifying the exact physical entry snapshot that was read.
+    /// Gets an opaque store-owned stamp identifying the exact physical entry snapshot that was read.
     /// </summary>
     /// <remarks>
     /// The coordinator copies this stamp to <see cref="CacheStoreEntryWrite{T}.ExpectedConcurrencyStamp"/> for
-    /// writes derived from an existing entry to guard against concurrent writes.
+    /// factory writes derived from an existing physical entry, so a late factory cannot resurrect a removed
+    /// entry or clobber a concurrent writer. The value is provider-specific and must only be treated as an
+    /// equality token; its collision-resistance is likewise provider-specific: the Redis provider stamps only the
+    /// fixed frame header, so two same-key writes that share identical options within a single millisecond can
+    /// produce equal stamps (a narrow window accepted for performance; set <c>JitterMaxDuration &gt; 0</c> to avoid
+    /// it — see issue #583).
     /// </remarks>
     public string? ConcurrencyStamp { get; init; }
 
     /// <summary>
-    /// Gets a value indicating whether the store requests serving this stale entry without executing the factory.
+    /// Gets whether the store is asking the coordinator to serve this physically-present stale entry without
+    /// running the factory because a lower tier degraded during the read.
     /// </summary>
     public bool ServeStaleImmediately { get; init; }
 
@@ -65,15 +74,15 @@ public readonly record struct CacheStoreEntry<T>(
         );
 }
 
-/// <summary>Provides expiration predicates over <see cref="CacheStoreEntry{T}"/>.</summary>
+/// <summary>Shared expiration predicates over <see cref="CacheStoreEntry{T}"/> used by Core and providers.</summary>
 [PublicAPI]
 public static class CacheStoreEntryExtensions
 {
-    /// <summary>Determines whether the entry is present and logically fresh.</summary>
+    /// <summary>Returns whether the entry is present and not past its logical (stale) expiration.</summary>
     /// <typeparam name="T">The cached value type.</typeparam>
     /// <param name="entry">The entry snapshot to evaluate.</param>
-    /// <param name="now">The current UTC timestamp.</param>
-    /// <returns><see langword="true"/> when the entry is physically present and not logically expired; otherwise, <see langword="false"/>.</returns>
+    /// <param name="now">The current UTC timestamp (from <see cref="TimeProvider.GetUtcNow"/>); expirations are UTC.</param>
+    /// <returns><see langword="true"/> when the entry is physically present and not logically expired.</returns>
     public static bool IsFresh<T>(this CacheStoreEntry<T> entry, DateTime now)
     {
         if (!entry.IsPhysicallyPresent(now))
@@ -84,11 +93,11 @@ public static class CacheStoreEntryExtensions
         return !entry.LogicalExpiresAt.HasValue || entry.LogicalExpiresAt.Value > now;
     }
 
-    /// <summary>Determines whether the entry is physically retained in the store.</summary>
+    /// <summary>Returns whether the entry is present and not past its physical (retention) expiration.</summary>
     /// <typeparam name="T">The cached value type.</typeparam>
     /// <param name="entry">The entry snapshot to evaluate.</param>
-    /// <param name="now">The current UTC timestamp.</param>
-    /// <returns><see langword="true"/> when the entry is found and not physically expired; otherwise, <see langword="false"/>.</returns>
+    /// <param name="now">The current UTC timestamp (from <see cref="TimeProvider.GetUtcNow"/>); expirations are UTC.</param>
+    /// <returns><see langword="true"/> when the entry is found and not physically expired.</returns>
     public static bool IsPhysicallyPresent<T>(this CacheStoreEntry<T> entry, DateTime now)
     {
         return entry.Found && (!entry.PhysicalExpiresAt.HasValue || entry.PhysicalExpiresAt.Value > now);

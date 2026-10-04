@@ -6,17 +6,20 @@ namespace Headless.Coordination;
 
 /// <summary>Represents a stable node identifier within a coordination cluster.</summary>
 /// <remarks>
-/// Node identifier stability determines incarnation behavior. Prefer Kubernetes pod name and namespace for
-/// Deployments, and pod names for StatefulSets. Set configured identifiers explicitly only when uniqueness
-/// is externally guaranteed. Generated process identifiers make each process restart a new node, growing the
-/// incarnation keyspace over time.
+/// Node identifier stability determines incarnation behavior. Prefer Kubernetes pod name plus namespace for
+/// Deployments, StatefulSet pod names for stable ordinal workloads, and explicitly configured identifiers only
+/// when uniqueness is externally guaranteed. Generated process identifiers are appropriate for local development,
+/// but they make each start a brand-new node. The store never purges a node identifier's generation counter,
+/// because purging it would let a returning node reuse an incarnation, so every distinct identifier leaves a
+/// permanent entry and high-cardinality or generated identifiers grow the generation keyspace without bound.
 /// </remarks>
 [PublicAPI]
 public readonly record struct NodeId
 {
     /// <summary>
-    /// Gets the maximum node identifier length in characters. Membership stores key rows by cluster name
-    /// and node identifier. The combined length fits within the 900-byte clustered index limit of SQL Server.
+    /// Gets the maximum node identifier length in characters. Every membership store keys rows by the cluster
+    /// name and the node identifier together, and SQL Server caps a clustered key at 900 bytes: two bytes per
+    /// character for both, plus the incarnation, must fit.
     /// </summary>
     public const int MaxLength = 256;
 

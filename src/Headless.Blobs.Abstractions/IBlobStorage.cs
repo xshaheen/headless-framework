@@ -204,20 +204,24 @@ public interface IBlobStorage : IAsyncDisposable
 
     #region List
 
-    /// <summary>Returns one page of blobs matching <paramref name="query"/>, plus a continuation token.</summary>
+    /// <summary>Returns one page of blobs matching <paramref name="query"/>, plus an opaque continuation token.</summary>
     /// <param name="query">The container, optional prefix, page size, and continuation token describing the page to fetch.</param>
     /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>
-    /// A <see cref="BlobPage"/> carrying the page blobs and a continuation token. A <see langword="null"/> token marks
+    /// A <see cref="BlobPage"/> carrying the page's blobs and a continuation token. A <see langword="null"/> token marks
     /// the last page; otherwise round-trip the token into a new <see cref="BlobQuery"/> to fetch the next page. The
-    /// token is opaque and provider-specific. Callers must not parse it. Prefer the <c>GetBlobsAsync</c> streaming
+    /// token is opaque and provider-specific, and callers must not parse it. Prefer the <c>GetBlobsAsync</c> streaming
     /// extension over manual paging for full enumeration. Item ordering is provider-specific: AWS, Azure, FileSystem,
-    /// and SSH return keys in lexicographic order, while Redis scan-based listing is unordered and may surface a key
-    /// twice across pages during a concurrent rehash. Do not rely on ordering in provider-agnostic code.
+    /// and SSH return keys in lexicographic order, while Redis's scan-based listing is unordered and may surface a key
+    /// twice across pages during a concurrent rehash; do not rely on ordering in provider-agnostic code.
     /// </returns>
     /// <exception cref="ArgumentException">
-    /// The <see cref="BlobQuery.ContinuationToken"/> is malformed. Every provider wraps its native cursor in a shared envelope, so a forged or corrupted
-    /// token fails uniformly with this contract error rather than leaking a backend SDK exception.
+    /// The <see cref="BlobQuery.ContinuationToken"/> is malformed: not an opaque token produced by a provider's
+    /// <see cref="ListAsync"/>. Every provider wraps its native cursor in a shared envelope, so a forged or corrupted
+    /// token (a common risk when the token round-trips through a web pagination boundary) fails uniformly with this
+    /// catchable contract error rather than leaking a backend SDK exception. Residual limitation: a syntactically valid
+    /// token produced by a different provider or store is indistinguishable from a real one, so the result is
+    /// backend-defined (typically an empty page or a backend error).
     /// </exception>
     ValueTask<BlobPage> ListAsync(BlobQuery query, CancellationToken cancellationToken = default);
 

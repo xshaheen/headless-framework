@@ -4,7 +4,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Headless.PushNotifications.Apns.Internal;
 
-// Masks raw device tokens in log output to prevent exposing stable hardware identifiers.
+// Every device-token message takes a masked token: the raw token is a stable device identifier.
 internal static partial class ApnsLoggerExtensions
 {
     [LoggerMessage(
@@ -70,6 +70,7 @@ internal static partial class ApnsLoggerExtensions
     )]
     public static partial void LogCertificateExpired(this ILogger logger, string instance, DateTimeOffset expiresAt);
 
+    // The reason comes from the certificate checks, whose messages never contain the certificate or its password.
     [LoggerMessage(
         EventId = 7,
         EventName = "ApnsCertificateReloadFailed",
@@ -94,6 +95,8 @@ internal static partial class ApnsLoggerExtensions
     )]
     public static partial void LogCertificateCheckFailed(this ILogger logger, Exception exception, string instance);
 
+    // A rejection whose reason names the instance's key or token configuration: no send succeeds until the
+    // operator fixes it, so it is an error, not a per-token warning.
     [LoggerMessage(
         EventId = 10,
         EventName = "ApnsTokenConfigurationError",

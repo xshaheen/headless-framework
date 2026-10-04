@@ -28,8 +28,7 @@ public sealed class SlugOptions
     /// <summary>
     /// Gets the separator between words in the slug. The default is <c>"-"</c>.
     /// </summary>
-    /// <exception cref="ArgumentException"><paramref name="value"/> is empty.</exception>
-    /// <exception cref="ArgumentNullException"><paramref name="value"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="value"/> is <see langword="null"/> or empty.</exception>
     public string Separator
     {
         get;

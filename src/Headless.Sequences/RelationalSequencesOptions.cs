@@ -11,8 +11,8 @@ namespace Headless.Sequences;
 public abstract class RelationalSequencesOptions(string defaultTableName)
 {
     /// <summary>
-    /// Gets or sets the database connection string. Fast-mode operations open dedicated connections with this string,
-    /// and gap-free allocations require units of work connected to the same database.
+    /// Gets or sets the database connection string. Fast-mode operations open dedicated connections with it,
+    /// and a gap-free allocation is accepted only on a unit whose connection reaches the same database. Required.
     /// </summary>
     public string ConnectionString { get; set; } = string.Empty;
 
@@ -20,17 +20,22 @@ public abstract class RelationalSequencesOptions(string defaultTableName)
     public TimeSpan CommandTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
     /// <summary>
-    /// Gets or sets the database schema name containing the sequence table.
-    /// The default is <see cref="HeadlessStorageDefaults.Schema" /> (<c>headless</c>).
+    /// Gets or sets the schema that holds the counter table. The default is
+    /// <see cref="HeadlessStorageDefaults.Schema" /> (<c>headless</c>), the schema every Headless feature shares.
     /// </summary>
     public string Schema { get; set; } = HeadlessStorageDefaults.Schema;
 
-    /// <summary>Gets or sets the name of the sequence table.</summary>
+    /// <summary>
+    /// Gets or sets the name of the counter table. The default is <c>sequences</c> on PostgreSQL,
+    /// <c>Sequences</c> on SQL Server.
+    /// </summary>
     public string TableName { get; set; } = defaultTableName;
 
     /// <summary>
-    /// Gets or sets a value indicating whether to create the database schema and table on host startup if missing.
-    /// The default is <see langword="true" />.
+    /// Gets or sets whether the schema and table are created at host startup when missing. The default is
+    /// <see langword="true" />. Set it to <see langword="false" /> when a migration tool owns the table.
+    /// The provider never creates the table lazily inside a call, because DDL inside a caller's transaction
+    /// would roll back with it.
     /// </summary>
     public bool InitializeOnStartup { get; set; } = true;
 

@@ -12,7 +12,7 @@ using SmtpClient = MailKit.Net.Smtp.SmtpClient;
 namespace Headless.Emails;
 
 /// <summary>
-/// Registers MailKit SMTP as the default email provider on <see cref="HeadlessEmailsSetupBuilder"/>.
+/// Registers MailKit SMTP as the default (unkeyed) email provider on <see cref="HeadlessEmailsSetupBuilder"/>.
 /// </summary>
 [PublicAPI]
 public static class SetupMailkit
@@ -20,9 +20,10 @@ public static class SetupMailkit
     extension(HeadlessEmailsSetupBuilder setup)
     {
         /// <summary>
-        /// Registers MailKit SMTP as the default email provider, binding options from configuration.
+        /// Registers MailKit SMTP as the default email provider, binding <see cref="MailkitSmtpOptions"/> from
+        /// the supplied configuration section.
         /// </summary>
-        /// <param name="config">The configuration section.</param>
+        /// <param name="config">The configuration section that maps to <see cref="MailkitSmtpOptions"/> properties.</param>
         /// <returns>The builder instance.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="config"/> is <see langword="null"/>.</exception>
         public HeadlessEmailsSetupBuilder UseMailkit(IConfiguration config)
@@ -41,9 +42,10 @@ public static class SetupMailkit
         }
 
         /// <summary>
-        /// Registers MailKit SMTP as the default email provider, configuring options through a delegate.
+        /// Registers MailKit SMTP as the default email provider, configuring <see cref="MailkitSmtpOptions"/>
+        /// through a delegate.
         /// </summary>
-        /// <param name="configure">A delegate that configures options.</param>
+        /// <param name="configure">A delegate that populates the options.</param>
         /// <returns>The builder instance.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
         public HeadlessEmailsSetupBuilder UseMailkit(Action<MailkitSmtpOptions> configure)
@@ -62,9 +64,10 @@ public static class SetupMailkit
         }
 
         /// <summary>
-        /// Registers MailKit SMTP as the default email provider, configuring options with access to service providers.
+        /// Registers MailKit SMTP as the default email provider, configuring <see cref="MailkitSmtpOptions"/>
+        /// through a delegate that also receives the <see cref="IServiceProvider"/>.
         /// </summary>
-        /// <param name="configure">A delegate that configures options using resolved services.</param>
+        /// <param name="configure">A delegate that populates the options using dependency-injection-resolved services.</param>
         /// <returns>The builder instance.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
         public HeadlessEmailsSetupBuilder UseMailkit(Action<MailkitSmtpOptions, IServiceProvider> configure)
@@ -84,7 +87,12 @@ public static class SetupMailkit
     }
 
     /// <summary>
-    /// Registers the MailKit email sender.
+    /// Registers the MailKit email sender. A <see langword="null"/> <paramref name="name"/> registers the
+    /// default (unkeyed) pool, policy, and sender; a non-null name registers a keyed pool, policy, and sender
+    /// plus named options. Every factory reads the options snapshot for its own name
+    /// (<c>IOptionsMonitor.Get(name)</c>) so keyed SMTP settings never bleed across instances: keyed
+    /// dependency injection does not cascade the key to constructor dependencies, and a keyed sender or
+    /// policy must not read <c>CurrentValue</c>, which binds the default options.
     /// </summary>
     internal static void AddEmailsCore(
         IServiceCollection services,
@@ -160,9 +168,11 @@ public static class SetupMailkitNamed
     extension(HeadlessEmailInstanceBuilder instance)
     {
         /// <summary>
-        /// Registers MailKit SMTP for this named instance, binding options from configuration.
+        /// Registers MailKit SMTP for this named instance, binding <see cref="MailkitSmtpOptions"/> from the
+        /// supplied configuration section. The instance owns its own keyed SMTP client pool, pool policy, and
+        /// named options; it never shares them with the default sender or other named instances.
         /// </summary>
-        /// <param name="config">The configuration section.</param>
+        /// <param name="config">The configuration section that maps to <see cref="MailkitSmtpOptions"/> properties.</param>
         /// <returns>The instance builder instance.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="config"/> is <see langword="null"/>.</exception>
         public HeadlessEmailInstanceBuilder UseMailkit(IConfiguration config)
@@ -183,9 +193,10 @@ public static class SetupMailkitNamed
         }
 
         /// <summary>
-        /// Registers MailKit SMTP for this named instance, configuring options through a delegate.
+        /// Registers MailKit SMTP for this named instance, configuring <see cref="MailkitSmtpOptions"/> through
+        /// a delegate.
         /// </summary>
-        /// <param name="configure">A delegate that configures options.</param>
+        /// <param name="configure">A delegate that populates the options.</param>
         /// <returns>The instance builder instance.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
         public HeadlessEmailInstanceBuilder UseMailkit(Action<MailkitSmtpOptions> configure)
@@ -206,9 +217,10 @@ public static class SetupMailkitNamed
         }
 
         /// <summary>
-        /// Registers MailKit SMTP for this named instance, configuring options with access to service providers.
+        /// Registers MailKit SMTP for this named instance, configuring <see cref="MailkitSmtpOptions"/> through
+        /// a delegate that also receives the <see cref="IServiceProvider"/>.
         /// </summary>
-        /// <param name="configure">A delegate that configures options using resolved services.</param>
+        /// <param name="configure">A delegate that populates the options using dependency-injection-resolved services.</param>
         /// <returns>The instance builder instance.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
         public HeadlessEmailInstanceBuilder UseMailkit(Action<MailkitSmtpOptions, IServiceProvider> configure)

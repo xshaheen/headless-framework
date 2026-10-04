@@ -6,7 +6,8 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Headless.Sequences;
 
 /// <summary>
-/// Configures sequence policies and registers database providers during <c>AddHeadlessSequences</c> setup.
+/// Configures sequences during <c>AddHeadlessSequences(setup =&gt; …)</c>: the numbering policies, and exactly
+/// one provider chosen through a <c>Use…</c> call such as <c>UsePostgreSql</c> or <c>UseSqlServer</c>.
 /// </summary>
 [PublicAPI]
 public sealed class HeadlessSequencesSetupBuilder
@@ -18,14 +19,16 @@ public sealed class HeadlessSequencesSetupBuilder
 
     internal IServiceCollection Services { get; }
 
+    // Composed in call order rather than last-write-wins, so setup split across several calls keeps every part.
     internal Action<SequencesOptions>? OptionsConfigurator { get; private set; }
 
     internal IList<ISequencesProviderOptionsExtension> Extensions { get; } = [];
 
     /// <summary>
-    /// Configures <see cref="SequencesOptions" /> callbacks.
+    /// Configures <see cref="SequencesOptions" />. Repeated calls run in call order against the same instance,
+    /// so a later call overrides an earlier one.
     /// </summary>
-    /// <param name="configure">A callback to configure the options.</param>
+    /// <param name="configure">A callback that mutates the options.</param>
     /// <returns>This builder to support method chaining.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="configure" /> is <see langword="null" />.</exception>
     public HeadlessSequencesSetupBuilder ConfigureOptions(Action<SequencesOptions> configure)
@@ -44,8 +47,8 @@ public sealed class HeadlessSequencesSetupBuilder
         return this;
     }
 
-    /// <summary>Sets the default policy for counter names without explicit policies.</summary>
-    /// <param name="policy">The default sequence policy.</param>
+    /// <summary>Sets the policy of every counter name that has no policy of its own.</summary>
+    /// <param name="policy">The default policy.</param>
     /// <returns>This builder to support method chaining.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="policy" /> is <see langword="null" />.</exception>
     public HeadlessSequencesSetupBuilder DefaultPolicy(SequencePolicy policy)
@@ -55,12 +58,15 @@ public sealed class HeadlessSequencesSetupBuilder
         return ConfigureOptions(options => options.DefaultPolicy = policy);
     }
 
-    /// <summary>Configures the policy for a specific counter name.</summary>
+    /// <summary>Sets the policy of one counter name, replacing any earlier policy for that name.</summary>
     /// <param name="name">The counter name, compared ordinally.</param>
-    /// <param name="policy">The sequence policy.</param>
+    /// <param name="policy">The policy.</param>
     /// <returns>This builder to support method chaining.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="name" /> is <see langword="null" />, or <paramref name="policy" /> is <see langword="null" />.</exception>
-    /// <exception cref="ArgumentException"><paramref name="name" /> is empty, whitespace, exceeds maximum length, or contains non-portable characters.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="name" /> is empty, whitespace, longer than <see cref="SequenceFieldLimits.NameMaxLength" />
+    /// characters, or text some provider would not keep unchanged as a key.
+    /// </exception>
     public HeadlessSequencesSetupBuilder Policy(string name, SequencePolicy policy)
     {
         Argument.IsNotNullOrWhiteSpace(name);
@@ -72,7 +78,8 @@ public sealed class HeadlessSequencesSetupBuilder
     }
 
     /// <summary>
-    /// Registers a provider extension to add services when setup completes.
+    /// Registers a provider extension whose services are added when setup completes. Called by provider
+    /// packages' <c>Use…</c> members rather than by application code.
     /// </summary>
     /// <param name="extension">The provider extension.</param>
     /// <exception cref="ArgumentNullException"><paramref name="extension" /> is <see langword="null" />.</exception>

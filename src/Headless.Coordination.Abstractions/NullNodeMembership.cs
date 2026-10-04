@@ -11,7 +11,8 @@ namespace Headless.Coordination;
 /// All liveness queries return empty collections or <see langword="false"/>.
 /// <see cref="INodeMembership.HeartbeatAsync"/> returns <see langword="false"/>.
 /// <see cref="IMembershipEventSource.WatchAsync"/> emits no events and blocks until cancelled.
-/// <see cref="INodeMembership.LocalMembershipLostToken"/> is never cancelled.
+/// <see cref="INodeMembership.LocalMembershipLostToken"/> is never cancelled. This implementation serves as
+/// a safe fallback when coordination is optional.
 /// </remarks>
 [PublicAPI]
 public sealed class NullNodeMembership : INodeMembership
@@ -21,7 +22,9 @@ public sealed class NullNodeMembership : INodeMembership
     /// <inheritdoc/>
     public NodeIdentity? Identity { get; private set; }
 
-    /// <summary>Gets a cancellation token that is never cancelled.</summary>
+    /// <summary>
+    /// Always <see cref="CancellationToken.None"/>; this implementation never loses membership.
+    /// </summary>
     public CancellationToken LocalMembershipLostToken => CancellationToken.None;
 
     /// <summary>

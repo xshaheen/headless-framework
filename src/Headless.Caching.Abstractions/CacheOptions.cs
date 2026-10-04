@@ -3,28 +3,31 @@
 namespace Headless.Caching;
 
 /// <summary>
-/// Defines base options shared by cache providers. Provider-specific options extend this class.
+/// Base options shared by every cache provider (for example <c>InMemoryCacheOptions</c>, <c>RedisCacheOptions</c>,
+/// <c>HybridCacheOptions</c>). Provider-specific options extend this class.
 /// </summary>
 [PublicAPI]
 public class CacheOptions
 {
     /// <summary>
-    /// Gets or sets the string prepended to every cache key before sending it to the backing store.
-    /// Provides namespace isolation from other consumers sharing the same store.
-    /// Defaults to an empty string.
+    /// Gets or sets the string prepended to every cache key before it is sent to the backing store,
+    /// providing a simple namespace to isolate this instance's keys from other consumers of the same store.
+    /// Defaults to an empty string (no prefix).
     /// </summary>
     public string KeyPrefix { get; set; } = "";
 
     /// <summary>
-    /// Gets or sets the registered cache instance name surfaced on the <c>headless.cache.name</c> telemetry dimension.
-    /// Set at registration for named instances, or <see langword="null"/> for the unkeyed default instance.
-    /// This property contains instrumentation metadata only and does not change cache behavior.
+    /// The registered cache-instance name surfaced on the <c>headless.cache.name</c> telemetry dimension. Set at
+    /// registration for named instances; <see langword="null"/> for the unkeyed default (which reports as
+    /// <c>"default"</c>). Instrumentation metadata only: it does not affect cache behavior.
     /// </summary>
     public string? CacheName { get; set; }
 
     /// <summary>
-    /// Gets or sets the default <see cref="CacheEntryOptions"/> for entries created through overloads that omit options.
-    /// When <see langword="null"/>, those overloads throw <see cref="InvalidOperationException"/>.
+    /// Default <see cref="CacheEntryOptions"/> for entries created through the option-less
+    /// <c>GetOrAddAsync</c> extension overloads. Exposed by the cache instance as
+    /// <see cref="ICache.DefaultEntryOptions"/>. When <see langword="null"/> (the default) those overloads
+    /// throw <see cref="InvalidOperationException"/>: set this explicitly at registration to opt in.
     /// </summary>
     public CacheEntryOptions? DefaultEntryOptions { get; set; }
 }

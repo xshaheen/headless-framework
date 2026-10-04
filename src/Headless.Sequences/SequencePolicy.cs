@@ -2,10 +2,10 @@
 
 namespace Headless.Sequences;
 
-/// <summary>Defines configuration policy for a counter name, specifying start value, step increment, and allocation mode.</summary>
+/// <summary>Defines how one counter name numbers: its start value, its step, and the entry point that serves it.</summary>
 /// <remarks>
-/// <see cref="Start" /> applies only when a counter row is initially created.
-/// Updates to <see cref="Step" /> take effect on subsequent allocations.
+/// <see cref="Start" /> is read only when a key's row is created, so changing it never moves an existing counter.
+/// A changed <see cref="Step" /> applies from the next call, and the existing counter then mixes both steps.
 /// </remarks>
 [PublicAPI]
 public sealed record SequencePolicy
@@ -13,11 +13,11 @@ public sealed record SequencePolicy
     /// <summary>Gets the initial value allocated by a new counter. The default is 1.</summary>
     public long Start { get; init; } = 1;
 
-    /// <summary>Gets the step interval between consecutive values. Must be greater than 0. The default is 1.</summary>
+    /// <summary>Gets the distance between two consecutive values; greater than 0. The default is 1.</summary>
     public long Step { get; init; } = 1;
 
     /// <summary>
-    /// Gets the allocation mode for the counter: <see cref="SequenceMode.Fast" /> through
+    /// Gets the entry point that serves the counter: <see cref="SequenceMode.Fast" /> through
     /// <see cref="ISequenceGenerator" />, or <see cref="SequenceMode.GapFree" /> through <c>unit.Sequences</c>.
     /// The default is <see cref="SequenceMode.Fast" />.
     /// </summary>

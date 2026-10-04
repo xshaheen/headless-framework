@@ -47,13 +47,13 @@ internal sealed class CoordinationTables
 
     public string LivenessTableName { get; }
 
-    /// <summary>Gets the quoted, qualified generation table name with one permanent row per node identifier.</summary>
+    /// <summary>Gets the quoted, qualified generation table: one row per node identifier, never purged.</summary>
     public string Generation { get; }
 
-    /// <summary>Gets the quoted, qualified descriptor table name with one write-once row per incarnation.</summary>
+    /// <summary>Gets the quoted, qualified descriptor table: one write-once row per incarnation.</summary>
     public string Descriptor { get; }
 
-    /// <summary>Gets the quoted, qualified liveness table name with one row per incarnation, pruned after retention expires.</summary>
+    /// <summary>Gets the quoted, qualified liveness table: one row per incarnation, pruned after retention.</summary>
     public string Liveness { get; }
 
     public string ClusterName { get; }

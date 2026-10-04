@@ -66,14 +66,17 @@ public static class BlobLocationResolver
     }
 
     /// <summary>
-    /// Resolves a raw top-level <paramref name="container"/> name to its backend form for container lifecycle
+    /// Resolves a raw top-level <paramref name="container"/> name to its backend form for container-lifecycle
     /// operations (<see cref="IBlobContainerManager"/>), which address a container without a
-    /// <see cref="BlobLocation"/>. Runs the same validation and normalization sequence as
-    /// <see cref="Resolve"/>.
+    /// <see cref="BlobLocation"/>. Runs the same validate → normalize → re-validate sequence in both directions as
+    /// <see cref="Resolve"/>: provider normalizers are lossy, so the normalized result is re-checked to keep a
+    /// container from resolving to the storage root or a traversal segment.
     /// </summary>
     /// <param name="container">The raw container name.</param>
-    /// <param name="normalizer">The provider naming normalizer.</param>
+    /// <param name="normalizer">The provider's naming normalizer.</param>
     /// <returns>The normalized backend container name.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="container"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="container"/> is empty or whitespace, fails path-security validation, or normalizes to an empty value, <c>.</c>, or <c>..</c> (the storage root or a traversal segment).</exception>
     public static string ResolveContainer(string container, IBlobNamingNormalizer normalizer)
     {
         Argument.IsNotNullOrWhiteSpace(container);
@@ -151,7 +154,11 @@ public static class BlobLocationResolver
     }
 
     /// <summary>
-    /// Re-applies path-security validation to the normalized container and key or prefix.
+    /// Re-applies path-security validation to the <em>normalized</em> container and key/prefix. Provider normalizers
+    /// are lossy, so an input that passed construction-time validation can normalize into a traversal sequence
+    /// (<c>.*.</c> → <c>..</c>) or the reserved sidecar suffix (<c>x.hlmet:a</c> → <c>x.hlmeta</c>). Validating here,
+    /// in the single seam every provider routes through, keeps the path-handling guarantee true regardless of the
+    /// normalizer.
     /// </summary>
     private static void _ValidateResolved(string container, string? keyOrPrefix)
     {

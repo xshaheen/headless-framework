@@ -5,15 +5,19 @@ using System.ComponentModel;
 namespace Headless.Caching;
 
 /// <summary>
-/// Provides configuration settings for caching telemetry and instrumentation.
+/// Caching-wide instrumentation configuration resolved by every cache provider from DI. Registered once by
+/// <c>AddHeadlessCaching</c> from <c>HeadlessCachingSetupBuilder.IncludeKeyInTraces</c>; providers thread
+/// it into the <c>FactoryCacheCoordinator</c> and their own span emission. Must-be-public plumbing (DI
+/// resolves it into provider constructors); not intended for direct use.
 /// </summary>
 [PublicAPI]
 [EditorBrowsable(EditorBrowsableState.Never)]
 public sealed class CacheInstrumentationConfig
 {
     /// <summary>
-    /// Gets a value indicating whether spans can include raw cache keys in the <c>headless.cache.key</c> attribute.
-    /// Defaults to <see langword="false"/> to avoid emitting identifiers to trace backends.
+    /// Whether spans may carry the raw cache key on the <c>headless.cache.key</c> attribute. Default
+    /// <see langword="false"/>: cache keys routinely carry tenant/user identifiers and PII cannot be un-leaked
+    /// from a trace backend. The key is never a metric dimension regardless of this flag.
     /// </summary>
     public bool IncludeKeyInTraces { get; init; }
 }

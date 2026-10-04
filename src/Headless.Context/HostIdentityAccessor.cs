@@ -10,14 +10,15 @@ namespace Headless.Context;
 public sealed class HostIdentityAccessor : IHostIdentityAccessor
 {
     /// <summary>
-    /// Initializes a new instance of the <see cref="HostIdentityAccessor"/> class using environment discovery.
+    /// Initializes a new instance of the <see cref="HostIdentityAccessor"/> class from the entry assembly,
+    /// the process environment, and the machine name.
     /// </summary>
-    /// <param name="options">Configuration options containing explicit overrides.</param>
-    /// <param name="buildInformation">The build information accessor for resolving default application name.</param>
-    /// <param name="guidGenerator">The GUID generator for fallback host naming.</param>
-    /// <param name="logger">The optional logger for warning messages.</param>
+    /// <param name="options">Explicit overrides; every unset member is discovered.</param>
+    /// <param name="buildInformation">Source of the entry assembly title used as the default application name.</param>
+    /// <param name="guidGenerator">Source of the last-resort generated host name.</param>
+    /// <param name="logger">Receives a warning when no stable host name could be discovered.</param>
     /// <exception cref="ArgumentNullException"><paramref name="options"/>, <paramref name="buildInformation"/>, or <paramref name="guidGenerator"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentException"><see cref="HostIdentityOptions.ApplicationName"/> or <see cref="HostIdentityOptions.HostName"/> is empty.</exception>
+    /// <exception cref="ArgumentException"><see cref="HostIdentityOptions.ApplicationName"/> or <see cref="HostIdentityOptions.HostName"/> is empty or white space.</exception>
     public HostIdentityAccessor(
         HostIdentityOptions options,
         IBuildInformationAccessor buildInformation,

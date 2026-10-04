@@ -56,18 +56,24 @@ public sealed class SitemapUrl
     public Uri? Location { get; }
 
     /// <summary>
-    /// Gets the priority of this URL relative to other URLs on the site, ranging from 0.0 through 1.0.
+    /// Gets the priority of that URL relative to other URLs on the site, from 0.0 through 1.0.
+    /// This allows webmasters to suggest to crawlers which pages are considered more important.
     /// </summary>
+    /// <remarks>Currently (2021) Google ignores it.</remarks>
     public float? Priority { get; }
 
-    /// <summary>Gets the date of the page's last modification.</summary>
+    /// <summary>Gets the date of the last modification of the page.</summary>
     public DateTime? LastModified { get; }
 
-    /// <summary>Gets how frequently the page is likely to change.</summary>
+    /// <summary>
+    /// Gets how frequently the page is likely to change.
+    /// </summary>
+    /// <remarks>Currently (2021) Google ignores it.</remarks>
     public ChangeFrequency? ChangeFrequency { get; }
 
     /// <summary>
-    /// Gets the collection of images associated with the URL.
+    /// Gets the collection of images associated with the URL. Each <c>&lt;url&gt;</c> entry can
+    /// contain up to 1,000 image tags.
     /// </summary>
     public IEnumerable<SitemapImage>? Images { get; }
 
@@ -75,8 +81,9 @@ public sealed class SitemapUrl
     public IReadOnlyList<SitemapAlternateUrl>? AlternateLocations { get; }
 
     /// <summary>
-    /// Gets the language or region codes whose localized versions receive their own URL entry.
-    /// When <see langword="null"/>, all alternates are included.
+    /// Restricts which localized versions get their own <c>&lt;url&gt;</c> entry to the specified
+    /// language/region codes; every emitted entry still references all alternates.
+    /// <see langword="null"/> means all.
     /// </summary>
     public string[]? WriteAlternateLanguageCodes { get; }
 }
