@@ -4,6 +4,7 @@ using System.Text.Json.Nodes;
 
 namespace Headless.PushNotifications.Firebase;
 
+#pragma warning disable MA0048 // A topic file: its types are peers with no main type, so the file is named for the topic.
 /// <summary>Web push options of an <see cref="FcmMessage"/>, FCM's <c>webpush</c> block.</summary>
 [PublicAPI]
 public sealed record FcmWebpushOptions

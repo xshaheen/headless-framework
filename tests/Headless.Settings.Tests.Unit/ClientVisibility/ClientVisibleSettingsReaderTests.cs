@@ -2,10 +2,7 @@
 
 using System.Security.Claims;
 using Headless.Abstractions;
-using Headless.Settings.ClientVisibility;
-using Headless.Settings.Definitions;
-using Headless.Settings.Models;
-using Headless.Settings.Values;
+using Headless.Settings;
 using Headless.Testing.Helpers;
 using Headless.Testing.Tests;
 

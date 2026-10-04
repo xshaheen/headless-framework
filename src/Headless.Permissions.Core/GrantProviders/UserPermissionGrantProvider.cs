@@ -2,10 +2,8 @@
 
 using Headless.Abstractions;
 using Headless.MultiTenancy;
-using Headless.Permissions.Grants;
-using Headless.Permissions.Models;
 
-namespace Headless.Permissions.GrantProviders;
+namespace Headless.Permissions;
 
 /// <summary>
 /// Grant provider that resolves permissions directly against the authenticated user's id.

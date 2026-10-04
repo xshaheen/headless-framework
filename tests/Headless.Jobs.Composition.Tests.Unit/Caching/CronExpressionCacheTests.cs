@@ -3,13 +3,8 @@
 using Headless.Abstractions;
 using Headless.Caching;
 using Headless.Jobs;
-using Headless.Jobs.DbContextFactory;
-using Headless.Jobs.Entities;
-using Headless.Jobs.Enums;
 using Headless.Jobs.Infrastructure;
-using Headless.Jobs.Interfaces;
 using Headless.Jobs.Internal;
-using Headless.Jobs.Models;
 using Headless.Testing.Tests;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;

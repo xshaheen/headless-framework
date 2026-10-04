@@ -2,11 +2,6 @@
 
 using System.Diagnostics.CodeAnalysis;
 using Headless.Checks;
-using Headless.Jobs.Entities;
-using Headless.Jobs.Enums;
-using Headless.Jobs.Interfaces;
-using Headless.Jobs.Interfaces.Managers;
-using Headless.Jobs.Models;
 using Headless.Reliability;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -537,7 +532,7 @@ public sealed class SchedulerOptionsBuilder
     public int MaxConcurrency { get; set; } = Environment.ProcessorCount;
 
     /// <summary>
-    /// Maximum number of dedicated threads used by <see cref="Enums.JobPriority.LongRunning"/> jobs. When not set,
+    /// Maximum number of dedicated threads used by <see cref="JobPriority.LongRunning"/> jobs. When not set,
     /// defaults to the smaller of <see cref="MaxConcurrency"/> and four.
     /// </summary>
     public int MaxLongRunningConcurrency

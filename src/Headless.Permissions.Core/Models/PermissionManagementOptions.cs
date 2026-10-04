@@ -2,7 +2,7 @@
 
 using FluentValidation;
 
-namespace Headless.Permissions.Models;
+namespace Headless.Permissions;
 
 /// <summary>
 /// Options that control the permission management subsystem: whether static definitions are synced to the
@@ -13,13 +13,13 @@ public sealed class PermissionManagementOptions
 {
     /// <summary>
     /// When <see langword="true"/> (the default), the application persists its static permission definitions to
-    /// the database on startup via <see cref="Definitions.IDynamicPermissionDefinitionStore.SaveAsync"/> so other
+    /// the database on startup via <see cref="IDynamicPermissionDefinitionStore.SaveAsync"/> so other
     /// instances can read them through the dynamic store.
     /// </summary>
     public bool SaveStaticPermissionsToDatabase { get; set; } = true;
 
     /// <summary>
-    /// When <see langword="false"/> (the default), all <see cref="Definitions.IDynamicPermissionDefinitionStore"/>
+    /// When <see langword="false"/> (the default), all <see cref="IDynamicPermissionDefinitionStore"/>
     /// read operations return empty/null without hitting the database. Set to <see langword="true"/> to enable
     /// DB-backed dynamic permissions.
     /// </summary>
@@ -69,9 +69,9 @@ public sealed class PermissionManagementOptions
 
     /// <summary>
     /// How long a resolved grant status stays in the distributed grant cache before the next check reloads it from
-    /// the store. Writes through <see cref="Grants.IPermissionManager"/> and the grant repository evict the affected
+    /// the store. Writes through <see cref="IPermissionManager"/> and the grant repository evict the affected
     /// entries immediately, so this bounds staleness only for writes that bypass both; a long-lived consumer that
-    /// must observe those calls <see cref="Grants.IPermissionGrantStore.RefreshAsync"/>. Default: 5 hours.
+    /// must observe those calls <see cref="IPermissionGrantStore.RefreshAsync"/>. Default: 5 hours.
     /// </summary>
     public TimeSpan GrantCacheExpiration { get; set; } = TimeSpan.FromHours(5);
 

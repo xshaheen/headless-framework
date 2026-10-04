@@ -3,7 +3,6 @@
 using Headless.Checks;
 using Headless.Constants;
 using Headless.Features.PostgreSql;
-using Headless.Features.Repositories;
 using Headless.Sql;
 using Headless.Sql.PostgreSql;
 using Microsoft.Extensions.Configuration;

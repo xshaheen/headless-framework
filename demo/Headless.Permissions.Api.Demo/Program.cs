@@ -3,9 +3,6 @@ using Demo.Models;
 using Headless.Abstractions;
 using Headless.OpenApi.Nswag;
 using Headless.Permissions;
-using Headless.Permissions.Definitions;
-using Headless.Permissions.Grants;
-using Headless.Permissions.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 

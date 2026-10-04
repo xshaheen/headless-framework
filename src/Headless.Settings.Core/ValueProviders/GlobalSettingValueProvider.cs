@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Settings.Values;
-
-namespace Headless.Settings.ValueProviders;
+namespace Headless.Settings;
 
 /// <summary>Provides setting values from the global store; no provider key is required or used.</summary>
 public sealed class GlobalSettingValueProvider(ISettingValueStore store) : StoreSettingValueProvider(store)

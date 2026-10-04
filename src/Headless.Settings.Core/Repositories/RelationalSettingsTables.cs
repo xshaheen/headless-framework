@@ -2,7 +2,7 @@
 
 using Headless.Sql;
 
-namespace Headless.Settings.Repositories;
+namespace Headless.Settings;
 
 /// <summary>
 /// The settings tables' names in one dialect's convention, shared by the relational repositories and each provider's

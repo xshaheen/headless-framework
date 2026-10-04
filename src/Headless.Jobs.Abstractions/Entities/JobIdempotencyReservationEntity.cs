@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Jobs.Entities;
+namespace Headless.Jobs;
 
 /// <summary>
 /// Durable idempotency reservation for a one-shot enqueue. Its lifecycle is deliberately independent of the

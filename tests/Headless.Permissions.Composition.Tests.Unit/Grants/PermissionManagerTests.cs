@@ -3,12 +3,7 @@
 using Headless.Abstractions;
 using Headless.Exceptions;
 using Headless.Messaging;
-using Headless.Permissions.Definitions;
-using Headless.Permissions.Entities;
-using Headless.Permissions.GrantProviders;
-using Headless.Permissions.Grants;
-using Headless.Permissions.Models;
-using Headless.Permissions.Repositories;
+using Headless.Permissions;
 using Headless.Permissions.Resources;
 using Headless.Primitives;
 using Headless.Testing.Tests;

@@ -2,13 +2,13 @@
 
 using FluentValidation;
 
-namespace Headless.Settings.Models;
+namespace Headless.Settings;
 
 /// <summary>Options controlling the runtime behaviour of the settings management system.</summary>
 public sealed class SettingManagementOptions
 {
     /// <summary>
-    /// Gets or sets whether <see cref="Headless.Settings.Definitions.IDynamicSettingDefinitionStore"/> is active and should serve definitions
+    /// Gets or sets whether <see cref="Headless.Settings.IDynamicSettingDefinitionStore"/> is active and should serve definitions
     /// from the database. Default: <see langword="false"/>.
     /// </summary>
     public bool IsDynamicSettingStoreEnabled { get; set; }

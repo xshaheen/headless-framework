@@ -1,9 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Headless.Jobs.Entities;
-using Headless.Jobs.Interfaces.Managers;
-using Headless.Jobs.Models;
 using Headless.UnitOfWork;
 
 namespace Headless.Jobs.Managers;

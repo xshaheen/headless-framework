@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Permissions.Definitions;
-using Headless.Permissions.Models;
-using Headless.Permissions.Requirements;
+using Headless.Permissions;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.Options;

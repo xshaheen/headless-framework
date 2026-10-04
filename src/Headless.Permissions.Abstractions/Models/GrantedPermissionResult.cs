@@ -2,7 +2,7 @@
 
 using Headless.Checks;
 
-namespace Headless.Permissions.Models;
+namespace Headless.Permissions;
 
 /// <summary>The outcome of resolving a single permission for a principal.</summary>
 public sealed class GrantedPermissionResult(string name, bool isGranted)

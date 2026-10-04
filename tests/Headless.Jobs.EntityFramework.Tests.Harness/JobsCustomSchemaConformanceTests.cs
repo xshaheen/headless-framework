@@ -2,8 +2,6 @@
 
 using Headless.Hosting.Initialization;
 using Headless.Jobs;
-using Headless.Jobs.Interfaces;
-using Headless.Jobs.Models;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;

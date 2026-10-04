@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Jobs.DashboardDtos;
+namespace Headless.Jobs;
 
 /// <summary>
 /// Per-day summary of cron occurrence outcomes, used to populate the dashboard execution graph.

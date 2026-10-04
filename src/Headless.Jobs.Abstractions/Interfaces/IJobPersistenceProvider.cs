@@ -1,10 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Linq.Expressions;
-using Headless.Jobs.Entities;
-using Headless.Jobs.Models;
 
-namespace Headless.Jobs.Interfaces;
+namespace Headless.Jobs;
 
 /// <summary>
 /// Operational-store SPI for the Jobs scheduler: the durable persistence contract a backend provider (for
@@ -580,7 +578,7 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// </para>
     /// <para>
     /// Bounded-prefix selection is part of the contract, not a provider detail. When
-    /// <see cref="CronRecoveryRequest.Policy"/> is <see cref="Enums.MissedRunPolicy.Coalesce"/>,
+    /// <see cref="CronRecoveryRequest.Policy"/> is <see cref="MissedRunPolicy.Coalesce"/>,
     /// <see cref="CronRecoveryRequest.EvaluationSaturated"/> is <see langword="true"/>, and the coalesce walk over
     /// <see cref="CronRecoveryRequest.MissedInstantsUtc"/> produces no run because every examined instant is already
     /// accounted for, the provider MUST persist <see cref="CronRecoveryRequest.BoundedProgressThroughUtc"/> and

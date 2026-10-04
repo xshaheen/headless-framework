@@ -1,9 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Runtime.InteropServices;
-using Headless.Jobs.Enums;
 
-namespace Headless.Jobs.DashboardDtos;
+namespace Headless.Jobs;
 
 /// <summary>
 /// Per-status execution count for a single dashboard graph day: the number of executions that carry

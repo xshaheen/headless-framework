@@ -3,12 +3,8 @@
 using System.Diagnostics;
 using Headless.Abstractions;
 using Headless.Jobs;
-using Headless.Jobs.Entities;
-using Headless.Jobs.Enums;
 using Headless.Jobs.Instrumentation;
-using Headless.Jobs.Interfaces;
 using Headless.Jobs.Managers;
-using Headless.Jobs.Models;
 using Headless.Jobs.Provider;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;

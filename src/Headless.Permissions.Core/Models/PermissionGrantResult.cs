@@ -2,7 +2,7 @@
 
 using Headless.Checks;
 
-namespace Headless.Permissions.Models;
+namespace Headless.Permissions;
 
 /// <summary>
 /// The resolved grant decision for a single permission, produced by the permission evaluation pipeline.

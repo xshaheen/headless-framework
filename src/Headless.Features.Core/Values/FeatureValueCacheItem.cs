@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Features.Values;
+namespace Headless.Features;
 
 /// <summary>Cache entry that holds the raw string value of a feature for a specific provider/key combination.</summary>
 public sealed class FeatureValueCacheItem(string? value)

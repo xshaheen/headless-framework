@@ -1,9 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Jobs.Entities;
-using Headless.Jobs.Enums;
-using Headless.Jobs.Models;
-
 namespace Headless.Jobs.Managers;
 
 internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>

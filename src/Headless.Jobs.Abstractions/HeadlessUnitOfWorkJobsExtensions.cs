@@ -2,9 +2,6 @@
 
 using Headless.Checks;
 using Headless.Jobs;
-using Headless.Jobs.Entities;
-using Headless.Jobs.Interfaces;
-using Headless.Jobs.Interfaces.Managers;
 
 namespace Headless.UnitOfWork;
 

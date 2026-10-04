@@ -1,10 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Collections;
-using Headless.Permissions.Definitions;
-using Headless.Permissions.GrantProviders;
 
-namespace Headless.Permissions.Models;
+namespace Headless.Permissions;
 
 /// <summary>
 /// Registrar for the provider types that participate in permission definition and grant evaluation, and for
@@ -27,14 +25,14 @@ public sealed class PermissionManagementProvidersOptions
 
     /// <summary>
     /// Names of permission groups that have been removed from code and should be deleted from the database on the
-    /// next <see cref="Definitions.IDynamicPermissionDefinitionStore.SaveAsync"/> call. All permissions belonging
+    /// next <see cref="IDynamicPermissionDefinitionStore.SaveAsync"/> call. All permissions belonging
     /// to a listed group are also deleted.
     /// </summary>
     public HashSet<string> DeletedPermissionGroups { get; } = [];
 
     /// <summary>
     /// Names of individual permissions that have been removed from code and should be deleted from the database on
-    /// the next <see cref="Definitions.IDynamicPermissionDefinitionStore.SaveAsync"/> call.
+    /// the next <see cref="IDynamicPermissionDefinitionStore.SaveAsync"/> call.
     /// </summary>
     public HashSet<string> DeletedPermissions { get; } = [];
 }

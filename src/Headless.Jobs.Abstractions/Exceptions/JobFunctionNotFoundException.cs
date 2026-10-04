@@ -2,7 +2,7 @@
 
 using Headless.Checks;
 
-namespace Headless.Jobs.Exceptions;
+namespace Headless.Jobs;
 
 /// <summary>Thrown when a scheduling request cannot be mapped to generated <c>[Job]</c> metadata.</summary>
 [PublicAPI]

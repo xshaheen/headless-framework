@@ -2,7 +2,7 @@
 
 using Headless.Checks;
 
-namespace Headless.Permissions.Models;
+namespace Headless.Permissions;
 
 /// <summary>
 /// Concrete implementation of <see cref="IPermissionDefinitionContext"/> used during the definition phase

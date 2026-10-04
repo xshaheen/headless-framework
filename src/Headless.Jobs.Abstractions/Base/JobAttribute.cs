@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Jobs.Enums;
-
-namespace Headless.Jobs.Base;
+namespace Headless.Jobs;
 
 /// <summary>
 /// Declares a job class that the Jobs source generator registers in the assembly's generated <c>JobsModule</c>.

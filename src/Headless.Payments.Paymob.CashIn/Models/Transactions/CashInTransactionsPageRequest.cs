@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Payments.Paymob.CashIn.Models.Constants;
-
-namespace Headless.Payments.Paymob.CashIn.Models.Transactions;
+namespace Headless.Payments.Paymob.CashIn;
 
 [PublicAPI]
 public sealed class CashInTransactionsPageRequest

@@ -14,7 +14,7 @@ public sealed class FailurePolicyEmissionTests
     private const string _Prelude = """
         using System.Threading;
         using System.Threading.Tasks;
-        using Headless.Jobs.Base;
+        using Headless.Jobs;
         using Headless.Reliability;
 
         namespace Billing;

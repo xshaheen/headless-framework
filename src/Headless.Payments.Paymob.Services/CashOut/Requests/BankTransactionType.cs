@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Payments.Paymob.Services.CashOut.Requests;
+namespace Headless.Payments.Paymob.Services.CashOut;
 
 /// <summary>
 /// Identifies the mechanism by which funds are credited to a bank account in a CashOut disbursement.

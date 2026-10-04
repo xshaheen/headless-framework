@@ -2,7 +2,7 @@
 
 using System.Reflection;
 using Headless.Dashboard.Authentication;
-using Headless.Jobs.Hubs;
+using Headless.Jobs;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Connections.Features;

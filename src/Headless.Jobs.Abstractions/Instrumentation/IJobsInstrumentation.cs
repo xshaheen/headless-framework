@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
-using Headless.Jobs.Enums;
-using Headless.Jobs.Models;
 
 namespace Headless.Jobs.Instrumentation;
 

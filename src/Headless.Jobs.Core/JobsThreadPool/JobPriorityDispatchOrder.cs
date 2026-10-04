@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Jobs.Enums;
-
 namespace Headless.Jobs.JobsThreadPool;
 
 /// <summary>

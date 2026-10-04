@@ -2,10 +2,9 @@
 
 using System.Data;
 using System.Data.Common;
-using Headless.Settings.Entities;
 using Headless.Sql;
 
-namespace Headless.Settings.Repositories;
+namespace Headless.Settings;
 
 /// <summary>
 /// The relational <see cref="ISettingValueRecordRepository"/>, written once over <see cref="ISqlDialect"/>. Batched

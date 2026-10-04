@@ -1,11 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Settings.Models;
-using Headless.Settings.Values;
+namespace Headless.Settings;
 
-namespace Headless.Settings.ValueProviders;
-
-/// <summary>Provides setting values from the default value defined on the <see cref="Models.SettingDefinition"/>. This is a read-only, lowest-priority provider used as the final fallback.</summary>
+/// <summary>Provides setting values from the default value defined on the <see cref="SettingDefinition"/>. This is a read-only, lowest-priority provider used as the final fallback.</summary>
 public sealed class DefaultValueSettingValueProvider : ISettingValueReadProvider
 {
     /// <summary>The canonical provider name registered in <see cref="SettingValueProviderNames"/>.</summary>

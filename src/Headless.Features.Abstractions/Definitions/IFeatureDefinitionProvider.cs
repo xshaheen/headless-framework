@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Features.Models;
-
-namespace Headless.Features.Definitions;
+namespace Headless.Features;
 
 /// <summary>Contributes feature definitions to the feature system during startup.</summary>
 /// <remarks>

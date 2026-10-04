@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Jobs.Interfaces;
+namespace Headless.Jobs;
 
 /// <summary>
 /// Controls the Jobs background scheduler loop. Inject this interface when the application needs to

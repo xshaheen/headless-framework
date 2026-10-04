@@ -2,9 +2,7 @@
 
 using System.Collections.Concurrent;
 using System.Text.Json;
-using Headless.Jobs.Entities;
-using Headless.Jobs.Hubs;
-using Headless.Jobs.Models;
+using Headless.Jobs;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging;

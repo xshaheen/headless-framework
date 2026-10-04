@@ -33,7 +33,6 @@ public sealed class IncrementalCachingTests : TestBase
         using System.Threading;
         using System.Threading.Tasks;
         using Headless.Jobs;
-        using Headless.Jobs.Base;
 
         [assembly: JobExecuteMiddleware<Demo.AuditMiddleware>(Function = "producer.run")]
         [assembly: JobScheduleMiddleware<Demo.TraceMiddleware>]
@@ -69,7 +68,7 @@ public sealed class IncrementalCachingTests : TestBase
     private const string _ProducerSource = """
         using System.Threading;
         using System.Threading.Tasks;
-        using Headless.Jobs.Base;
+        using Headless.Jobs;
 
         namespace Upstream;
 

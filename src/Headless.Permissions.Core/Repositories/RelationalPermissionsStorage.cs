@@ -9,7 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Permissions.Repositories;
+namespace Headless.Permissions;
 
 /// <summary>Registers the relational repositories and a provider's schema contribution over one dialect.</summary>
 internal static class RelationalPermissionsStorage

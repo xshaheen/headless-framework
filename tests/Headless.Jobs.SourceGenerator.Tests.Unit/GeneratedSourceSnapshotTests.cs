@@ -18,7 +18,7 @@ public sealed class GeneratedSourceSnapshotTests
             using System;
             using System.Threading;
             using System.Threading.Tasks;
-            using Headless.Jobs.Base;
+            using Headless.Jobs;
             using Microsoft.Extensions.DependencyInjection;
 
             namespace Demo.Shapes;
@@ -72,7 +72,7 @@ public sealed class GeneratedSourceSnapshotTests
             """
             using System.Threading;
             using System.Threading.Tasks;
-            using Headless.Jobs.Base;
+            using Headless.Jobs;
 
             namespace Jobs.SourceGenerator.Tests
             {
@@ -108,8 +108,7 @@ public sealed class GeneratedSourceSnapshotTests
             """
             using System.Threading;
             using System.Threading.Tasks;
-            using Headless.Jobs.Base;
-            using Headless.Jobs.Enums;
+            using Headless.Jobs;
 
             namespace Demo.Knobs;
 
@@ -146,7 +145,7 @@ public sealed class GeneratedSourceSnapshotTests
             """
             using System.Threading;
             using System.Threading.Tasks;
-            using Headless.Jobs.Base;
+            using Headless.Jobs;
 
             namespace Snapshot.Producer;
 
@@ -165,7 +164,6 @@ public sealed class GeneratedSourceSnapshotTests
             using System.Threading;
             using System.Threading.Tasks;
             using Headless.Jobs;
-            using Headless.Jobs.Base;
 
             [assembly: JobScheduleMiddleware<Demo.Middleware.GlobalSchedule>(Priority = 5)]
             [assembly: JobExecuteMiddleware<Demo.Middleware.GlobalExecute>]
@@ -206,7 +204,7 @@ public sealed class GeneratedSourceSnapshotTests
             """
             using System.Threading;
             using System.Threading.Tasks;
-            using Headless.Jobs.Base;
+            using Headless.Jobs;
 
             [Job("global.run")]
             public sealed class GlobalJob : IJob
@@ -243,7 +241,7 @@ public sealed class GeneratedSourceSnapshotTests
             """
             using System.Threading;
             using System.Threading.Tasks;
-            using Headless.Jobs.Base;
+            using Headless.Jobs;
 
             namespace Demo;
 
@@ -255,7 +253,7 @@ public sealed class GeneratedSourceSnapshotTests
 
             public static class Host
             {
-                public static void Configure(Headless.Jobs.JobsOptionsBuilder<Headless.Jobs.Entities.TimeJobEntity, Headless.Jobs.Entities.CronJobEntity> jobs) =>
+                public static void Configure(Headless.Jobs.JobsOptionsBuilder<Headless.Jobs.TimeJobEntity, Headless.Jobs.CronJobEntity> jobs) =>
                     jobs.AddModule<global::Jobs.SourceGenerator.Tests.JobsModule>();
             }
             """,

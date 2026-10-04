@@ -1,9 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Jobs.Entities.BaseEntity;
-using Headless.Jobs.Enums;
-
-namespace Headless.Jobs.Entities;
+namespace Headless.Jobs;
 
 /// <summary>
 /// Persistent definition row for a recurring cron job. One <c>CronJobEntity</c> exists per registered

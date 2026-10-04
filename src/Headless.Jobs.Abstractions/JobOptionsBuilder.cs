@@ -1,8 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Jobs.Enums;
-using Headless.Jobs.Models;
-
 namespace Headless.Jobs;
 
 /// <summary>Authors options for ordinary one-shot jobs without resolving inherited policies.</summary>

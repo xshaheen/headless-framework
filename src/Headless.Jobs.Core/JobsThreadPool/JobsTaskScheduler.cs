@@ -2,7 +2,6 @@
 
 using System.Collections.Concurrent;
 using Headless.Checks;
-using Headless.Jobs.Enums;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 

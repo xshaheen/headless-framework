@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Jobs.Enums;
-
-namespace Headless.Jobs.Interfaces;
+namespace Headless.Jobs;
 
 /// <summary>
 /// Optional hook for custom error handling logic when a job function throws or is cancelled. Register

@@ -5,13 +5,10 @@ using Headless.Abstractions;
 using Headless.Caching;
 using Headless.DistributedLocks;
 using Headless.Serializer.Modifiers;
-using Headless.Settings.Entities;
-using Headless.Settings.Models;
-using Headless.Settings.Repositories;
 using Microsoft.Extensions.Options;
 using Nito.AsyncEx;
 
-namespace Headless.Settings.Definitions;
+namespace Headless.Settings;
 
 /// <summary>
 /// Default implementation of <see cref="IDynamicSettingDefinitionStore"/> that synchronises setting

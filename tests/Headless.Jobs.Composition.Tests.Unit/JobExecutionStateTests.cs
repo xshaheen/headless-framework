@@ -1,6 +1,4 @@
 using Headless.Jobs;
-using Headless.Jobs.Enums;
-using Headless.Jobs.Models;
 
 namespace Tests;
 

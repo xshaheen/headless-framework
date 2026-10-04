@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Settings.Entities;
-
-namespace Headless.Settings.Repositories;
+namespace Headless.Settings;
 
 /// <summary>Persistence contract for <see cref="SettingValueRecord"/> aggregates.</summary>
 public interface ISettingValueRecordRepository

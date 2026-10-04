@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Jobs.Exceptions;
+namespace Headless.Jobs;
 
 /// <summary>
 /// Thrown when one or more jobs fail pre-persistence validation: unknown function names, unparseable

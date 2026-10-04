@@ -1,14 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Payments.Paymob.CashIn.Models.Auth;
-using Headless.Payments.Paymob.CashIn.Models.Callback;
-using Headless.Payments.Paymob.CashIn.Models.Intentions;
-using Headless.Payments.Paymob.CashIn.Models.Merchant;
-using Headless.Payments.Paymob.CashIn.Models.Orders;
-using Headless.Payments.Paymob.CashIn.Models.Payment;
-using Headless.Payments.Paymob.CashIn.Models.Refunds;
-using Headless.Payments.Paymob.CashIn.Models.Transactions;
-
 namespace Headless.Payments.Paymob.CashIn.Internal;
 
 [JsonSourceGenerationOptions(

@@ -2,7 +2,6 @@
 
 using System.Security.Cryptography;
 using Headless.Checks;
-using Headless.Payments.Paymob.CashIn.Models.Callback;
 
 namespace Headless.Payments.Paymob.CashIn;
 

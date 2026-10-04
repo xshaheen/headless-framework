@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Features.Models;
-
-namespace Headless.Features.Values;
+namespace Headless.Features;
 
 /// <summary>Extension methods on <see cref="IFeatureManager"/> for the default-value provider.</summary>
 [PublicAPI]

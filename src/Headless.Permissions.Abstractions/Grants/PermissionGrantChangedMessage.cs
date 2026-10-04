@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Permissions.Grants;
+namespace Headless.Permissions;
 
 /// <summary>
 /// Message published over <c>IBus</c> by <c>PermissionManager</c> after a write, so peer instances holding a

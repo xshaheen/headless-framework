@@ -5,7 +5,6 @@ using System.Globalization;
 using Headless.Coordination;
 using Headless.Hosting.Initialization;
 using Headless.Jobs;
-using Headless.Jobs.Entities;
 using Headless.Messaging;
 using Headless.Messaging.Configuration;
 using Headless.Testing.Testcontainers;

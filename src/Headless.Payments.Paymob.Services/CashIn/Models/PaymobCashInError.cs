@@ -1,8 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Payments.Paymob.CashIn.Models.Callback;
+using Headless.Payments.Paymob.CashIn;
 
-namespace Headless.Payments.Paymob.Services.CashIn.Models;
+namespace Headless.Payments.Paymob.Services.CashIn;
 
 /// <summary>
 /// Categorises the failure reason of a Paymob card transaction received via callback.

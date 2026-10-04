@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Jobs.Base;
-
 namespace Headless.Jobs;
 
 /// <summary>

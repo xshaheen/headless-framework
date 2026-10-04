@@ -2,7 +2,7 @@
 
 using FluentValidation;
 
-namespace Headless.Features.Models;
+namespace Headless.Features;
 
 /// <summary>Configuration options for the feature management system.</summary>
 /// <remarks>

@@ -2,7 +2,7 @@
 
 using Headless.Payments.Paymob.CashIn.Internal;
 
-namespace Headless.Payments.Paymob.CashIn.Models.Orders;
+namespace Headless.Payments.Paymob.CashIn;
 
 [PublicAPI]
 public sealed class CashInOrder

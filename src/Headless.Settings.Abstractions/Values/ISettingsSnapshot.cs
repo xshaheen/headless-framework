@@ -2,7 +2,7 @@
 
 using System.Diagnostics.CodeAnalysis;
 
-namespace Headless.Settings.Values;
+namespace Headless.Settings;
 
 /// <summary>
 /// A typed value bound from a fixed set of Global settings, held in memory and kept current as those settings change.

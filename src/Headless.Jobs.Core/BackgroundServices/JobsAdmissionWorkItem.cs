@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Jobs.Interfaces.Managers;
-using Headless.Jobs.Models;
 using Microsoft.Extensions.Logging;
 
 namespace Headless.Jobs.BackgroundServices;

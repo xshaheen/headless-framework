@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Payments.Paymob.Services.CashIn.Responses;
+namespace Headless.Payments.Paymob.Services.CashIn;
 
 /// <summary>
 /// The outcome of a saved-card token charge via <c>IPaymobCashInService.StartAsync(PaymobCardSavedTokenCashInRequest)</c>.

@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Jobs.Enums;
-
-namespace Headless.Jobs.Exceptions;
+namespace Headless.Jobs;
 
 /// <summary>
 /// Thrown from a job function body to set the job's terminal status explicitly rather than letting the

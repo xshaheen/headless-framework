@@ -4,12 +4,12 @@ using Headless.Checks;
 using Headless.Domain;
 using Headless.Primitives;
 
-namespace Headless.Permissions.Entities;
+namespace Headless.Permissions;
 
 /// <summary>
-/// Aggregate root representing the DB-persisted snapshot of a <see cref="Models.PermissionGroupDefinition"/>.
-/// Serialized by <see cref="Definitions.IPermissionDefinitionSerializer"/> and stored by
-/// <see cref="Repositories.IPermissionDefinitionRecordRepository"/>. All string length constraints are
+/// Aggregate root representing the DB-persisted snapshot of a <see cref="PermissionGroupDefinition"/>.
+/// Serialized by <see cref="IPermissionDefinitionSerializer"/> and stored by
+/// <see cref="IPermissionDefinitionRecordRepository"/>. All string length constraints are
 /// defined in <see cref="PermissionGroupDefinitionRecordConstants"/>.
 /// </summary>
 public sealed class PermissionGroupDefinitionRecord : AggregateRoot<Guid>, IHasExtraProperties

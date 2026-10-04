@@ -1,10 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Permissions.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Permissions.Definitions;
+namespace Headless.Permissions;
 
 /// <summary>
 /// Default implementation of <see cref="IStaticPermissionDefinitionStore"/>. Definitions are built once on

@@ -4,18 +4,15 @@ using Headless.Abstractions;
 using Headless.Checks;
 using Headless.Exceptions;
 using Headless.Messaging;
-using Headless.Permissions.Definitions;
-using Headless.Permissions.Models;
-using Headless.Permissions.Repositories;
 using Headless.Permissions.Resources;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace Headless.Permissions.Grants;
+namespace Headless.Permissions;
 
 /// <summary>
 /// Default <see cref="IPermissionManager"/> implementation. Delegates resolution to the registered
-/// <see cref="GrantProviders.IPermissionGrantProvider"/> chain using AWS IAM-style rules: an explicit <c>Prohibited</c>
+/// <see cref="IPermissionGrantProvider"/> chain using AWS IAM-style rules: an explicit <c>Prohibited</c>
 /// from any provider overrides all grants; the default is deny.
 /// </summary>
 public sealed class PermissionManager(

@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Jobs.Entities;
-
-namespace Headless.Jobs.Models;
+namespace Headless.Jobs;
 
 /// <summary>Definition edit plus its optimistic schedule fence and optional replacement occurrence.</summary>
 /// <typeparam name="TCronJob">The application's concrete cron job entity type.</typeparam>

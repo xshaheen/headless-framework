@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Jobs.Enums;
+namespace Headless.Jobs;
 
 /// <summary>
 /// Controls when the Jobs scheduler begins processing jobs after the host starts.

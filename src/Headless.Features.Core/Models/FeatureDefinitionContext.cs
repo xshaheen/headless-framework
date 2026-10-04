@@ -2,10 +2,10 @@
 
 using Headless.Checks;
 
-namespace Headless.Features.Models;
+namespace Headless.Features;
 
 /// <summary>
-/// Default <see cref="IFeatureDefinitionContext"/> implementation used by <see cref="Headless.Features.Definitions.IFeatureDefinitionProvider"/> instances
+/// Default <see cref="IFeatureDefinitionContext"/> implementation used by <see cref="Headless.Features.IFeatureDefinitionProvider"/> instances
 /// to register feature groups and their features during application startup.
 /// </summary>
 public sealed class FeatureDefinitionContext : IFeatureDefinitionContext

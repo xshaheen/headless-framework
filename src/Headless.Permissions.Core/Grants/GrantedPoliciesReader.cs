@@ -5,7 +5,7 @@ using Headless.Checks;
 using Headless.MultiTenancy;
 using Microsoft.AspNetCore.Authorization;
 
-namespace Headless.Permissions.Grants;
+namespace Headless.Permissions;
 
 /// <summary>Default <see cref="IGrantedPoliciesReader"/>.</summary>
 internal sealed class GrantedPoliciesReader(
@@ -72,7 +72,7 @@ public interface IGrantedPoliciesReader
     /// <param name="context">The principal and tenant to resolve the grants for.</param>
     /// <param name="policyNames">
     /// The named policies to evaluate through <see cref="IAuthorizationService"/>. The application chooses which
-    /// policies the client sees; <see cref="Requirements.IAuthorizationPolicyCatalog"/> can supply the full list.
+    /// policies the client sees; <see cref="IAuthorizationPolicyCatalog"/> can supply the full list.
     /// Every defined permission is always checked.
     /// </param>
     /// <param name="cancellationToken">The abort token.</param>

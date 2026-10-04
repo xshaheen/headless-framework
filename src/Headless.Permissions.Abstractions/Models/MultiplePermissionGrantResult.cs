@@ -2,7 +2,7 @@
 
 using Headless.Checks;
 
-namespace Headless.Permissions.Models;
+namespace Headless.Permissions;
 
 /// <summary>
 /// Maps each requested permission name to whether it is granted. Keys are compared ordinally. Used by the batch

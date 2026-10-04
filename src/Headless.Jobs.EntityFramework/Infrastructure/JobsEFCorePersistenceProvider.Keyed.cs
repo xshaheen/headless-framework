@@ -2,10 +2,6 @@
 
 using System.Runtime.ExceptionServices;
 using Headless.Checks;
-using Headless.Jobs.Configurations;
-using Headless.Jobs.Entities;
-using Headless.Jobs.Enums;
-using Headless.Jobs.Models;
 using Microsoft.EntityFrameworkCore;
 
 namespace Headless.Jobs.Infrastructure;

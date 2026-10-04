@@ -3,8 +3,6 @@
 using System.ComponentModel;
 using System.Globalization;
 using Headless.Checks;
-using Headless.Jobs.Enums;
-using Headless.Jobs.Models;
 using Headless.Reliability;
 using Microsoft.Extensions.Configuration;
 

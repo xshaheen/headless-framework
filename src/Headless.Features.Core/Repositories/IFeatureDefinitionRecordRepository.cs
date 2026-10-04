@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Features.Entities;
-
-namespace Headless.Features.Repositories;
+namespace Headless.Features;
 
 /// <summary>Persistence contract for reading and writing feature group and feature definition records.</summary>
 public interface IFeatureDefinitionRecordRepository

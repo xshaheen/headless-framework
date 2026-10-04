@@ -2,9 +2,8 @@
 
 using System.Linq.Expressions;
 using System.Reflection;
-using Headless.Jobs.Enums;
 
-namespace Headless.Jobs.Models;
+namespace Headless.Jobs;
 
 /// <summary>
 /// Mutable per-execution state carrier for a single job row (a time job or a cron occurrence). This is the SPI

@@ -2,7 +2,7 @@
 
 using Headless.Checks;
 
-namespace Headless.Permissions.Models;
+namespace Headless.Permissions;
 
 /// <summary>
 /// Maps each requested permission name to its <see cref="PermissionGrantResult"/>. Keys are compared ordinally.

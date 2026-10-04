@@ -1,11 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Jobs.DbContextFactory;
-using Headless.Jobs.Entities;
-using Headless.Jobs.Enums;
+using Headless.Jobs;
 using Headless.Jobs.Infrastructure;
-using Headless.Jobs.Interfaces;
-using Headless.Jobs.Models;
 using Headless.Sql;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;

@@ -1,12 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Settings.Values;
+namespace Headless.Settings;
 
 /// <summary>Well-known provider name constants used to address specific setting value providers.</summary>
 [PublicAPI]
 public static class SettingValueProviderNames
 {
-    /// <summary>Provider that supplies the static default value declared on the <see cref="Headless.Settings.Models.SettingDefinition"/>.</summary>
+    /// <summary>Provider that supplies the static default value declared on the <see cref="Headless.Settings.SettingDefinition"/>.</summary>
     public const string DefaultValue = "DefaultValue";
 
     /// <summary>Provider that reads values from the application's <c>IConfiguration</c> (e.g. appsettings.json, env vars).</summary>

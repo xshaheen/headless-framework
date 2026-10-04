@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Jobs.Models;
-
-namespace Headless.Jobs.Interfaces;
+namespace Headless.Jobs;
 
 /// <summary>
 /// Internal contract for submitting acquired job contexts to the Jobs thread pool for execution.
