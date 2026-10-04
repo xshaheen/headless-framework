@@ -1,6 +1,6 @@
 ---
 domain: Fencing
-packages: Fencing.Abstractions, Fencing.Core, Fencing.InMemory, Fencing.PostgreSql, Fencing.SqlServer, Fencing.Sqlite
+packages: Fencing.Abstractions, Fencing, Fencing.InMemory, Fencing.PostgreSql, Fencing.SqlServer, Fencing.Sqlite
 ---
 
 # Fencing
@@ -220,7 +220,7 @@ Consumer contracts: `IFencedLeases`, `FencedLease`, the grant/renewal/settlement
 dotnet add package Headless.Fencing.Abstractions
 ```
 
-Reference it from code that grants, renews, or fences leases. Registration lives in `Headless.Fencing.Core` and the provider packages.
+Reference it from code that grants, renews, or fences leases. Registration lives in `Headless.Fencing` and the provider packages.
 
 ### Design and runtime behavior
 
@@ -232,14 +232,14 @@ Reference it from code that grants, renews, or fences leases. Registration lives
 
 ---
 
-## Headless.Fencing.Core
+## Headless.Fencing
 
 Registration, key resolution, and the provider seam.
 
 ### Setup
 
 ```bash
-dotnet add package Headless.Fencing.Core
+dotnet add package Headless.Fencing
 ```
 
 Applications reach it through a provider package; call `AddHeadlessFencing` as shown in [Orientation](#orientation).
@@ -326,7 +326,7 @@ The lease row stores progress as `progress bytea` plus `progress_contract varcha
 
 ### Design and runtime behavior
 
-- The verbs are the shared relational store's (see [Headless.Fencing.Core](#headlessfencingcore)). A first grant of a key inserts with `INSERT … ON CONFLICT DO NOTHING`; when it loses a race to another transaction's insert, it rereads the committed row and decides again.
+- The verbs are the shared relational store's (see [Headless.Fencing](#headlessfencing)). A first grant of a key inserts with `INSERT … ON CONFLICT DO NOTHING`; when it loses a race to another transaction's insert, it rereads the committed row and decides again.
 - Sweep claims and purge batches use `FOR UPDATE … SKIP LOCKED`, so a lease another sweeper is already claiming is simply skipped, not waited on.
 - The autonomous path opens its own connection at READ COMMITTED and retries a transient fault raised before the commit (a deadlock or serialization failure, `40P01`, `40001`, or anything Npgsql reports as transient) up to 3 attempts with a jittered delay between them, never a fault from the commit; the enlisted path runs on the unit's own connection and transaction with no retry.
 - The table and sequence are one schema step (`Fencing/1`) the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts) applies at startup, under one advisory lock per database shared with every other Headless feature.
@@ -364,7 +364,7 @@ The lease row stores progress as `Progress varbinary(max)` plus `ProgressContrac
 
 ### Design and runtime behavior
 
-- The verbs are the shared relational store's (see [Headless.Fencing.Core](#headlessfencingcore)). The locking read's `HOLDLOCK` takes a key-range lock when the row is absent, so two first grants of one key serialize and the insert never collides; no batch uses `TRY/CATCH` or a session `SET`, so nothing leaks into or dooms a caller's `XACT_ABORT ON` transaction.
+- The verbs are the shared relational store's (see [Headless.Fencing](#headlessfencing)). The locking read's `HOLDLOCK` takes a key-range lock when the row is absent, so two first grants of one key serialize and the insert never collides; no batch uses `TRY/CATCH` or a session `SET`, so nothing leaks into or dooms a caller's `XACT_ABORT ON` transaction.
 - Sweep claims and purge batches use `UPDLOCK, READPAST, ROWLOCK, READCOMMITTEDLOCK`: `READPAST` is refused under read committed snapshot isolation unless the read also takes locks, and the hint is the default without it, so the same statement works either way.
 - The autonomous path opens its own connection at READ COMMITTED and retries a transient fault raised before the commit (a deadlock or snapshot update conflict, 1205, 3960, a lock timeout, 1222, or a connection fault EF Core's SQL Server retry set covers) up to 3 attempts with a jittered delay between them, never a fault from the commit; the enlisted path runs on the unit's own connection and transaction with no retry.
 - The table and sequence are one schema step (`Fencing/1`) the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts) applies at startup, under one `sp_getapplock` per database shared with every other Headless feature.
@@ -399,7 +399,7 @@ Use a database file: the store and the schema runner open their own connections.
 ### Design and runtime behavior
 
 - **Enlisted grant is refused.** `unit.Leases.GrantAsync` throws `NotSupportedException` before it touches the unit, including the unit an expired-lease sweep passes to its handler: a handler that grants and then throws would roll the generation back for the next grant to draw again. PostgreSQL and SQL Server draw generations from a sequence that ignores transactions; SQLite has no such counter, so a generation drawn in a caller's transaction that then rolls back would be drawn again by the next grant, and two holders could carry the same fencing token. `IFencedLeases.GrantAsync` grants in a transaction it commits before returning the lease, so it is safe. The unit can still renew, settle, release, or fence a lease granted that way.
-- The verbs are the shared relational store's (see [Headless.Fencing.Core](#headlessfencingcore)). Every transaction begins `IMMEDIATE` and holds the database write lock in place of the row lock, so grants, fences, and settlements of every key serialize on the file, and a sweep never meets a lease another transaction holds.
+- The verbs are the shared relational store's (see [Headless.Fencing](#headlessfencing)). Every transaction begins `IMMEDIATE` and holds the database write lock in place of the row lock, so grants, fences, and settlements of every key serialize on the file, and a sweep never meets a lease another transaction holds.
 - The generation sequence is a one-row table. A grant reads one past its value, and triggers on the lease table raise it to every generation written, in the same statement. A purge deletes leases, never the sequence row, so a lease granted again after its row was purged still gets a higher generation.
 - `SQLITE_BUSY` before the commit is retried in a fresh transaction, like a lock timeout on the other providers. The wait holds a thread-pool thread; see [sql.md § SQLite in the kit](sql.md#sqlite-in-the-kit).
 - The sequence table, lease table, indexes, and triggers are one schema step (`Fencing/1`) the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts) applies at startup.

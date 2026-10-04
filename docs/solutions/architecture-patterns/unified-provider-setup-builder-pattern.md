@@ -35,7 +35,7 @@ The pattern is therefore broader than storage. The root feature package owns the
 
 Use C# 14 extension members on `IServiceCollection` for the root entry and on `HeadlessXxxSetupBuilder` for provider entries. Public surface is one static `Setup{Feature}` class per package; the shared private helper is named `_Add{Feature}Core`, `_Add{Feature}ProviderCore`, or `_Add{Feature}StorageCore` depending on the domain language.
 
-Root entry, `src/Headless.Settings.Core/Setup.cs`:
+Root entry, `src/Headless.Settings/Setup.cs`:
 
 ```csharp
 public static class SetupCoreSettings
@@ -127,7 +127,7 @@ public static class SetupAuditLogPostgreSql
         public void AddServices(IServiceCollection services)
         {
             services.Configure<PostgreSqlAuditLogOptions, PostgreSqlAuditLogOptionsValidator>(configure);
-            // The store, writer, reader, and audit log are written once in Headless.AuditLog.Core over ISqlDialect;
+            // The store, writer, reader, and audit log are written once in Headless.AuditLog over ISqlDialect;
             // the provider supplies its dialect, column-type rules, and schema contribution.
             RelationalAuditLogStorage.AddServices<PostgreSqlAuditLogOptions>(
                 services,
@@ -171,26 +171,26 @@ services.AddHeadlessCoordination(setup =>
 });
 ```
 
-`src/Headless.Coordination.Core/Setup.cs` owns `AddHeadlessCoordination` and the exactly-one-provider gate. `src/Headless.Coordination.Core/HeadlessCoordinationSetupBuilder.cs` owns shared `CoordinationOptions` configuration and `RegisterExtension(ICoordinationProviderOptionsExtension)`. Provider packages then contribute only provider-specific setup:
+`src/Headless.Coordination/Setup.cs` owns `AddHeadlessCoordination` and the exactly-one-provider gate. `src/Headless.Coordination/HeadlessCoordinationSetupBuilder.cs` owns shared `CoordinationOptions` configuration and `RegisterExtension(ICoordinationProviderOptionsExtension)`. Provider packages then contribute only provider-specific setup:
 
 - `src/Headless.Coordination.PostgreSql/Setup.cs` exposes `SetupPostgresCoordination.UsePostgreSql(...)`
 - `src/Headless.Coordination.SqlServer/Setup.cs` exposes `SetupSqlServerCoordination.UseSqlServer(...)`
 - `src/Headless.Coordination.Redis/Setup.cs` exposes `SetupRedisCoordination.UseRedis(...)`
 
-The root setup rejects zero providers, multiple providers in one callback, and repeated `AddHeadlessCoordination` calls on the same `IServiceCollection`. The repeated-registration guard matters because multiple calls can otherwise look valid locally while producing an ambiguous service collection globally. The focused regression suite is `tests/Headless.Coordination.Core.Tests.Unit/CoordinationSetupBuilderTests.cs`.
+The root setup rejects zero providers, multiple providers in one callback, and repeated `AddHeadlessCoordination` calls on the same `IServiceCollection`. The repeated-registration guard matters because multiple calls can otherwise look valid locally while producing an ambiguous service collection globally. The focused regression suite is `tests/Headless.Coordination.Tests.Unit/CoordinationSetupBuilderTests.cs`.
 
 ### 5. Caching adapts the invariant to per-slot exactly-one
 
-Caching (`AddHeadlessCaching`, `src/Headless.Caching.Core/Setup.cs`) follows the same grammar but cannot use the global exactly-one-provider gate: one host legitimately composes several cache instances — a default cache, the memory/remote tiers of a default hybrid, any number of named instances, and cross-cutting extensions such as the distributed factory lock. `HeadlessCachingSetupBuilder` therefore keeps four contribution lists with a **per-slot** exactly-one invariant instead:
+Caching (`AddHeadlessCaching`, `src/Headless.Caching/Setup.cs`) follows the same grammar but cannot use the global exactly-one-provider gate: one host legitimately composes several cache instances — a default cache, the memory/remote tiers of a default hybrid, any number of named instances, and cross-cutting extensions such as the distributed factory lock. `HeadlessCachingSetupBuilder` therefore keeps four contribution lists with a **per-slot** exactly-one invariant instead:
 
 - **Default slot** — exactly one `Use{InMemory,Redis,Hybrid}`; zero or multiple throws, listing the available `Use*` calls.
 - **Tier slots** — at most one provider per reserved role key (`memory`, `remote`); a tier role already claimed by the default provider (e.g. `UseRedis` + `AddRedisTier`, both claiming `remote`) throws.
 - **Named slot** — unlimited `AddNamed(name, i => i.Use…(...))` instances; names must be unique, non-empty, and not a reserved role key, and each instance must select exactly one provider. `HeadlessCacheInstanceBuilder` is one shared type, not per-provider.
 - **Cross-cutting slot** — unlimited extensions applied after all providers (`UseDistributedFactoryLock` from `Headless.Caching.DistributedLocks`).
 
-Application order is tiers → default → named → cross-cutting, all deferred until the gates pass so a throwing setup leaves the service collection unchanged, and the repeated-`AddHeadlessCaching` sentinel matches coordination. The deviation pays for a real failure mode the global gate cannot express: the predecessor per-provider `Add*Cache(isDefault:)` extensions let two `isDefault: true` registrations silently race for the default `ICache` (first-wins `TryAddSingleton` plus role-key aliasing); the per-slot gate turns that into a hard registration-time error. The focused regression suite is `tests/Headless.Caching.Core.Tests.Unit/CachingSetupBuilderTests.cs`.
+Application order is tiers → default → named → cross-cutting, all deferred until the gates pass so a throwing setup leaves the service collection unchanged, and the repeated-`AddHeadlessCaching` sentinel matches coordination. The deviation pays for a real failure mode the global gate cannot express: the predecessor per-provider `Add*Cache(isDefault:)` extensions let two `isDefault: true` registrations silently race for the default `ICache` (first-wins `TryAddSingleton` plus role-key aliasing); the per-slot gate turns that into a hard registration-time error. The focused regression suite is `tests/Headless.Caching.Tests.Unit/CachingSetupBuilderTests.cs`.
 
-**Captcha is the second per-slot instance** (`AddHeadlessCaptcha`, `src/Headless.Captcha.Core/Setup.cs`) and adds two wrinkles Caching does not have. It keeps a **default slot** — at most one `UseTurnstile` / `UseReCaptchaV2` / `UseReCaptchaV3`, resolving unkeyed *and* aliased under its canonical `CaptchaConstants` key — plus an unlimited **named slot** (`Use{Provider}("name", …)`, keyed-only); both are deferred behind an "at least one provider" gate and the repeated-`AddHeadlessCaptcha` sentinel. The wrinkles: (1) **provider sub-interfaces** — the base `ICaptchaVerifier` stays strictly pass/fail, while `IReCaptchaV3Verifier` (Score) and `ITurnstileVerifier` (CData) carry provider-only data on derived result types, so a consumer that needs vendor data injects the concrete interface rather than leaking it onto the shared contract; and (2) a **public by-name resolver**, `ICaptchaProvider.GetVerifier(name)` over `GetKeyedService<ICaptchaVerifier>(name)`, shipped as package surface (Caching's `KeyedServiceCacheProvider` is the same mechanism, kept internal). Per-provider internal singletons — the named `HttpClient` and the language-code provider — are keyed by the slot name so reCAPTCHA and Turnstile cannot collide on a first-wins `TryAdd` (the shadowing trap in the linked keyed-DI doc). Conformance is verified by an HTTP-stub harness rather than Testcontainers (the providers' happy path needs a human-solved token); see the linked harness doc. The focused suites are `tests/Headless.Captcha.{Turnstile,ReCaptcha}.Tests.Unit` over the shared `tests/Headless.Captcha.Tests.Harness`.
+**Captcha is the second per-slot instance** (`AddHeadlessCaptcha`, `src/Headless.Captcha/Setup.cs`) and adds two wrinkles Caching does not have. It keeps a **default slot** — at most one `UseTurnstile` / `UseReCaptchaV2` / `UseReCaptchaV3`, resolving unkeyed *and* aliased under its canonical `CaptchaConstants` key — plus an unlimited **named slot** (`Use{Provider}("name", …)`, keyed-only); both are deferred behind an "at least one provider" gate and the repeated-`AddHeadlessCaptcha` sentinel. The wrinkles: (1) **provider sub-interfaces** — the base `ICaptchaVerifier` stays strictly pass/fail, while `IReCaptchaV3Verifier` (Score) and `ITurnstileVerifier` (CData) carry provider-only data on derived result types, so a consumer that needs vendor data injects the concrete interface rather than leaking it onto the shared contract; and (2) a **public by-name resolver**, `ICaptchaProvider.GetVerifier(name)` over `GetKeyedService<ICaptchaVerifier>(name)`, shipped as package surface (Caching's `KeyedServiceCacheProvider` is the same mechanism, kept internal). Per-provider internal singletons — the named `HttpClient` and the language-code provider — are keyed by the slot name so reCAPTCHA and Turnstile cannot collide on a first-wins `TryAdd` (the shadowing trap in the linked keyed-DI doc). Conformance is verified by an HTTP-stub harness rather than Testcontainers (the providers' happy path needs a human-solved token); see the linked harness doc. The focused suites are `tests/Headless.Captcha.{Turnstile,ReCaptcha}.Tests.Unit` over the shared `tests/Headless.Captcha.Tests.Harness`.
 
 ### 6. Shared `HeadlessDbContext` + `*EntityStartupValidator<TContext>`
 
@@ -240,15 +240,15 @@ Skip this shape when the feature has exactly one possible backend and zero confi
 
 | Feature | Root setup | Builder | Provider extension interface | Provider packages |
 | --- | --- | --- | --- | --- |
-| AuditLog | `src/Headless.AuditLog.Core/Setup.cs` | `HeadlessAuditLogSetupBuilder.cs` | `IAuditLogStorageOptionsExtension` | EF, PostgreSql, SqlServer |
-| Settings | `src/Headless.Settings.Core/Setup.cs` (`SetupCoreSettings`) | `HeadlessSettingsSetupBuilder.cs` | `ISettingsStorageOptionsExtension` | EF, PostgreSql, SqlServer |
-| Permissions | `src/Headless.Permissions.Core/Setup.cs` | `HeadlessPermissionsSetupBuilder.cs` | `IPermissionsStorageOptionsExtension` | EF, PostgreSql, SqlServer |
-| Features | `src/Headless.Features.Core/Setup.cs` | `HeadlessFeaturesSetupBuilder.cs` | `IFeaturesStorageOptionsExtension` | EF, PostgreSql, SqlServer |
+| AuditLog | `src/Headless.AuditLog/Setup.cs` | `HeadlessAuditLogSetupBuilder.cs` | `IAuditLogStorageOptionsExtension` | EF, PostgreSql, SqlServer |
+| Settings | `src/Headless.Settings/Setup.cs` (`SetupCoreSettings`) | `HeadlessSettingsSetupBuilder.cs` | `ISettingsStorageOptionsExtension` | EF, PostgreSql, SqlServer |
+| Permissions | `src/Headless.Permissions/Setup.cs` | `HeadlessPermissionsSetupBuilder.cs` | `IPermissionsStorageOptionsExtension` | EF, PostgreSql, SqlServer |
+| Features | `src/Headless.Features/Setup.cs` | `HeadlessFeaturesSetupBuilder.cs` | `IFeaturesStorageOptionsExtension` | EF, PostgreSql, SqlServer |
 | Identity | `src/Headless.Identity.Storage.EntityFramework/Setup.cs` | `HeadlessIdentitySetupBuilder.cs` | package-local identity storage extension | EF |
-| Coordination | `src/Headless.Coordination.Core/Setup.cs` | `HeadlessCoordinationSetupBuilder.cs` | `ICoordinationProviderOptionsExtension` | PostgreSql, SqlServer, Redis |
-| Caching | `src/Headless.Caching.Core/Setup.cs` (`SetupCachingCore`) | `HeadlessCachingSetupBuilder.cs` | `ICacheProviderOptionsExtension` | InMemory, Redis, Hybrid (+ DistributedLocks as cross-cutting) |
-| Captcha | `src/Headless.Captcha.Core/Setup.cs` (`SetupCaptcha`) | `HeadlessCaptchaSetupBuilder.cs` | per-slot deferred actions + `ICaptchaProvider` by-name resolver | ReCaptcha (v2/v3), Turnstile |
-| Blobs | `src/Headless.Blobs.Core/Setup.cs` (`SetupBlobsCore`) | `HeadlessBlobsSetupBuilder.cs` | per-slot deferred actions + `IBlobStorageProvider` by-name resolver | Aws, Azure, CloudflareR2, FileSystem, Redis, SshNet |
+| Coordination | `src/Headless.Coordination/Setup.cs` | `HeadlessCoordinationSetupBuilder.cs` | `ICoordinationProviderOptionsExtension` | PostgreSql, SqlServer, Redis |
+| Caching | `src/Headless.Caching/Setup.cs` (`SetupCachingCore`) | `HeadlessCachingSetupBuilder.cs` | `ICacheProviderOptionsExtension` | InMemory, Redis, Hybrid (+ DistributedLocks as cross-cutting) |
+| Captcha | `src/Headless.Captcha/Setup.cs` (`SetupCaptcha`) | `HeadlessCaptchaSetupBuilder.cs` | per-slot deferred actions + `ICaptchaProvider` by-name resolver | ReCaptcha (v2/v3), Turnstile |
+| Blobs | `src/Headless.Blobs/Setup.cs` (`SetupBlobsCore`) | `HeadlessBlobsSetupBuilder.cs` | per-slot deferred actions + `IBlobStorageProvider` by-name resolver | Aws, Azure, CloudflareR2, FileSystem, Redis, SshNet |
 
 Consumer call site, audit-log:
 

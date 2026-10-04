@@ -327,15 +327,7 @@
           "Microsoft.Extensions.Hosting.Abstractions": "[10.0.12, )"
         }
       },
-      "headless.permissions.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.Context.Abstractions": "[1.0.0, )",
-          "Headless.Extensions": "[1.0.0, )"
-        }
-      },
-      "headless.permissions.core": {
+      "headless.permissions": {
         "type": "Project",
         "dependencies": {
           "Headless.Caching.Abstractions": "[1.0.0, )",
@@ -353,6 +345,14 @@
           "Headless.Sql.Abstractions": "[1.0.0, )",
           "Microsoft.AspNetCore.Authorization": "[10.0.12, )",
           "Polly.Core": "[8.7.0, )"
+        }
+      },
+      "headless.permissions.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Context.Abstractions": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )"
         }
       },
       "headless.primitives": {

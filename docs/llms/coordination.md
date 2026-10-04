@@ -1,6 +1,6 @@
 ---
 domain: Coordination
-packages: Coordination.Abstractions, Coordination.Core, Coordination.Core.Database, Coordination.PostgreSql, Coordination.Redis, Coordination.SqlServer, Coordination.Sqlite
+packages: Coordination.Abstractions, Coordination, Coordination.Database, Coordination.PostgreSql, Coordination.Redis, Coordination.SqlServer, Coordination.Sqlite
 ---
 
 # Coordination
@@ -110,7 +110,7 @@ None.
 
 ---
 
-## Headless.Coordination.Core
+## Headless.Coordination
 
 ### API and behavior
 
@@ -127,12 +127,12 @@ Self-heartbeat rejection is a local fencing failure. A heartbeat write is deadli
 
 An incarnation is terminal once it leaves, reaches `DeadThreshold`, or its retained liveness entry is pruned. PostgreSQL, SQL Server, and Redis reject later heartbeats for that same incarnation; recovery requires allocating and registering a higher incarnation, so a delayed process cannot resurrect its old ownership identity.
 
-Core also hosts the shared dead-owner recovery bridge — a generic `BackgroundService` parameterized by an `IDeadOwnerReclaimer` that reclaims dead-incarnation resources on `NodeLeft` events plus a periodic `Dead`-only snapshot reconcile (idempotent dedup, `CancellationToken.None` writes). It is internal infrastructure consumed by registering a closed generic from the owning assembly (Jobs, Messaging) via `InternalsVisibleTo`; each closed type yields a distinct hosted service and logger category. Coordination.Core does not register it — the consuming feature does.
+Core also hosts the shared dead-owner recovery bridge — a generic `BackgroundService` parameterized by an `IDeadOwnerReclaimer` that reclaims dead-incarnation resources on `NodeLeft` events plus a periodic `Dead`-only snapshot reconcile (idempotent dedup, `CancellationToken.None` writes). It is internal infrastructure consumed by registering a closed generic from the owning assembly (Jobs, Messaging) via `InternalsVisibleTo`; each closed type yields a distinct hosted service and logger category. Coordination does not register it — the consuming feature does.
 
 ### Install
 
 ```bash
-dotnet add package Headless.Coordination.Core
+dotnet add package Headless.Coordination
 ```
 
 ### Setup and use
@@ -170,7 +170,7 @@ Registers `TimeProvider.System`, framework GUID generator defaults, `IHostIdenti
 
 ---
 
-## Headless.Coordination.Core.Database
+## Headless.Coordination.Database
 
 ### API and behavior
 
@@ -190,7 +190,7 @@ Table and column names come from the dialect, so PostgreSQL keeps snake_case and
 ### Install
 
 ```bash
-dotnet add package Headless.Coordination.Core.Database
+dotnet add package Headless.Coordination.Database
 ```
 
 ### Setup and use
@@ -211,7 +211,7 @@ None.
 
 ### API and behavior
 
-- Runs the shared relational store from `Headless.Coordination.Core.Database` over the PostgreSQL dialect.
+- Runs the shared relational store from `Headless.Coordination.Database` over the PostgreSQL dialect.
 - Heartbeat guard rejects stale, impossible, dead, gracefully left, and pruned incarnations.
 - Liveness classification uses `clock_timestamp()`.
 - The membership tables are one schema step (`Coordination/1`) applied by the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts).
@@ -320,7 +320,7 @@ Registers the core membership services, Redis membership store, keyed Lua script
 
 ### API and behavior
 
-- Runs the shared relational store from `Headless.Coordination.Core.Database` over the SQL Server dialect.
+- Runs the shared relational store from `Headless.Coordination.Database` over the SQL Server dialect.
 - Heartbeat guard rejects stale, impossible, dead, gracefully left, and pruned incarnations.
 - Liveness classification uses `SYSUTCDATETIME()`. Every instant is stored as `datetimeoffset(7)`.
 - The membership tables are one schema step (`Coordination/1`) applied by the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts).
@@ -371,7 +371,7 @@ Registers the core membership services, the SQL Server membership store, and the
 
 ### API and behavior
 
-- Runs the shared relational store from `Headless.Coordination.Core.Database` over the SQLite dialect.
+- Runs the shared relational store from `Headless.Coordination.Database` over the SQLite dialect.
 - Heartbeat guard rejects stale, impossible, dead, gracefully left, and pruned incarnations, as on the other relational providers.
 - Liveness classification uses SQLite's `'now'`: the clock of the host that runs the statement, at millisecond resolution. Every instant is stored as fixed-width UTC text.
 - The membership tables are one schema step (`Coordination/1`) applied by the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts).

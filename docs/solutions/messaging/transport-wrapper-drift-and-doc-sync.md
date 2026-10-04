@@ -1,7 +1,7 @@
 ---
 title: "Transport wrapper drift: keep adapters, display surfaces, and generated docs aligned"
 date: 2026-03-25
-module: Headless.Messaging.Core
+module: Headless.Messaging
 tags: [messaging, nats, kafka, pulsar, documentation, credentials, wrappers]
 problem_type: integration_issue
 component: service_class

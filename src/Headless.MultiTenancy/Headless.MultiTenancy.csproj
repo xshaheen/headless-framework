@@ -16,7 +16,7 @@
     <ProjectReference Include="..\Headless.MultiTenancy.Abstractions\Headless.MultiTenancy.Abstractions.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <InternalsVisibleTo Include="Headless.Messaging.Core.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.Messaging.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.MultiTenancy.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.EntityFramework.Tests.Integration" />
   </ItemGroup>

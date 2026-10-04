@@ -15,7 +15,7 @@ internal static class GeneratorTestHelper
     private static readonly Lazy<ImmutableArray<MetadataReference>> _References = new(() =>
         GeneratorCompilation.LoadedAssemblyReferences(
             typeof(BusConsumerAttribute).Assembly,
-            typeof(Headless.Messaging.MessagingContributionBuilder).Assembly, // Messaging.Core, which samples call ConfigureMessaging from
+            typeof(Headless.Messaging.MessagingContributionBuilder).Assembly, // Messaging, which samples call ConfigureMessaging from
             typeof(IRequestClient).Assembly, // Messaging.Queue.Abstractions, which request samples call
             // The catalog's consumer methods take a failure policy factory, so generated modules compile against it.
             typeof(Headless.Reliability.FailurePolicy).Assembly,

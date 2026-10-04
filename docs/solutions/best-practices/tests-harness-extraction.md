@@ -54,7 +54,7 @@ projects.
 - [Headless.Blobs.Tests.Harness](../../../tests/Headless.Blobs.Tests.Harness) — blob-backend conformance (S3, Azure, FS, SSH, Redis)
 - [Headless.DistributedLocks.Tests.Harness](../../../tests/Headless.DistributedLocks.Tests.Harness) — lock-provider conformance
 - [Headless.EntityFramework.Tests.Harness](../../../tests/Headless.EntityFramework.Tests.Harness) — `HeadlessDbContext` runtime and EF Core base behavior
-- [Headless.Messaging.Core.Tests.Harness](../../../tests/Headless.Messaging.Core.Tests.Harness) — messaging dispatch and outbox
+- [Headless.Messaging.Tests.Harness](../../../tests/Headless.Messaging.Tests.Harness) — messaging dispatch and outbox
 - [Headless.Jobs.EntityFramework.Tests.Harness](../../../tests/Headless.Jobs.EntityFramework.Tests.Harness) — Jobs and Coordination conformance across the EF database providers (PostgreSQL, SqlServer). This one uses an interface plus extensions (`IJobsCoordinationFixture`) instead of an abstract fixture base.
 - [Headless.Settings.Tests.Harness](../../../tests/Headless.Settings.Tests.Harness) and [Headless.Features.Tests.Harness](../../../tests/Headless.Features.Tests.Harness) — raw-ADO storage conformance (PostgreSQL, SqlServer). Also interface plus extensions (`ISettingsStorageFixture`, `IFeaturesStorageFixture`), because each leaf fixture already derives from its provider's Testcontainers fixture.
 

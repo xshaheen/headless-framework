@@ -584,14 +584,7 @@
         "resolved": "18.1.0",
         "contentHash": "5K+9KFg2TdTl7VXv88Qzi/0lqK6JFoNP3lRuImPYGRV7K/QYklDyTrj4+A+KAki1JsQi6qKY+hDyY7d6WRqjrw=="
       },
-      "headless.api.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Context.Abstractions": "[1.0.0, )",
-          "Headless.MultiTenancy.Abstractions": "[1.0.0, )"
-        }
-      },
-      "headless.api.core": {
+      "headless.api": {
         "type": "Project",
         "dependencies": {
           "Asp.Versioning.Abstractions": "[10.2.1, )",
@@ -616,11 +609,18 @@
           "TimeZoneConverter": "[7.2.0, )"
         }
       },
+      "headless.api.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Context.Abstractions": "[1.0.0, )",
+          "Headless.MultiTenancy.Abstractions": "[1.0.0, )"
+        }
+      },
       "headless.api.fluentvalidation": {
         "type": "Project",
         "dependencies": {
           "FileSignatures": "[7.3.0, )",
-          "Headless.Api.Core": "[1.0.0, )",
+          "Headless.Api": "[1.0.0, )",
           "Headless.FluentValidation": "[1.0.0, )",
           "Headless.PhoneNumbers": "[1.0.0, )"
         }

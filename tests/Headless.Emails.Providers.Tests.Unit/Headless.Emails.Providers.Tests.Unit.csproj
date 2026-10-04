@@ -9,7 +9,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.Emails.Abstractions\Headless.Emails.Abstractions.csproj" />
-    <ProjectReference Include="..\..\src\Headless.Emails.Core\Headless.Emails.Core.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Emails\Headless.Emails.csproj" />
     <ProjectReference Include="..\..\src\Headless.Emails.Aws\Headless.Emails.Aws.csproj" />
     <ProjectReference Include="..\..\src\Headless.Emails.Mailkit\Headless.Emails.Mailkit.csproj" />
     <ProjectReference Include="..\..\src\Headless.Emails.Dev\Headless.Emails.Dev.csproj" />

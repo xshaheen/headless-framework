@@ -307,7 +307,7 @@
           "Headless.Hosting": "[1.0.0, )"
         }
       },
-      "headless.entityframework.core": {
+      "headless.entityframework.primitives": {
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",

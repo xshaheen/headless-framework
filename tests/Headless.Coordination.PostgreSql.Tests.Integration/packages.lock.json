@@ -641,13 +641,7 @@
           "Headless.Primitives": "[1.0.0, )"
         }
       },
-      "headless.coordination.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )"
-        }
-      },
-      "headless.coordination.core": {
+      "headless.coordination": {
         "type": "Project",
         "dependencies": {
           "FluentValidation": "[12.1.1, )",
@@ -663,19 +657,25 @@
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.12, )"
         }
       },
-      "headless.coordination.core.database": {
+      "headless.coordination.abstractions": {
         "type": "Project",
         "dependencies": {
-          "Headless.Coordination.Core": "[1.0.0, )",
+          "Headless.Checks": "[1.0.0, )"
+        }
+      },
+      "headless.coordination.database": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Coordination": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
-          "Headless.Sql.Abstractions": "[1.0.0, )",
-          "Headless.Sql.Core": "[1.0.0, )"
+          "Headless.Sql": "[1.0.0, )",
+          "Headless.Sql.Abstractions": "[1.0.0, )"
         }
       },
       "headless.coordination.postgresql": {
         "type": "Project",
         "dependencies": {
-          "Headless.Coordination.Core.Database": "[1.0.0, )",
+          "Headless.Coordination.Database": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Headless.Sql.PostgreSql": "[1.0.0, )",
@@ -689,7 +689,7 @@
           "AwesomeAssertions.Json": "[9.0.0, )",
           "Bogus": "[35.6.5, )",
           "DeepCloner": "[0.10.4, )",
-          "Headless.Coordination.Core": "[1.0.0, )",
+          "Headless.Coordination": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Headless.Testing": "[1.0.0, )",
           "Headless.Testing.Testcontainers": "[1.0.0, )",
@@ -763,10 +763,7 @@
           "Headless.Serializer.Abstractions": "[1.0.0, )"
         }
       },
-      "headless.sql.abstractions": {
-        "type": "Project"
-      },
-      "headless.sql.core": {
+      "headless.sql": {
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
@@ -777,14 +774,17 @@
           "OpenTelemetry.Api": "[1.18.0, )"
         }
       },
+      "headless.sql.abstractions": {
+        "type": "Project"
+      },
       "headless.sql.postgresql": {
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
+          "Headless.Sql": "[1.0.0, )",
           "Headless.Sql.Abstractions": "[1.0.0, )",
-          "Headless.Sql.Core": "[1.0.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.12, )",
           "Npgsql": "[10.0.3, )"

@@ -8,7 +8,7 @@ body:
     attributes:
       label: Package or domain
       description: Which package are you using?
-      placeholder: Headless.Api / Headless.Settings.Core
+      placeholder: Headless.Api / Headless.Settings
     validations:
       required: true
   - type: textarea

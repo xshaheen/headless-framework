@@ -1,6 +1,6 @@
 ---
 domain: Permissions
-packages: Permissions.Abstractions, Permissions.Core, Permissions.Storage.EntityFramework, Permissions.Storage.PostgreSql, Permissions.Storage.SqlServer, Permissions.Testing
+packages: Permissions.Abstractions, Permissions, Permissions.Storage.EntityFramework, Permissions.Storage.PostgreSql, Permissions.Storage.SqlServer, Permissions.Testing
 ---
 
 # Permissions
@@ -9,7 +9,7 @@ packages: Permissions.Abstractions, Permissions.Core, Permissions.Storage.Entity
 
 ## Orientation
 
-Install `Headless.Permissions.Abstractions` to depend on interfaces only (domain/application layers). Install `Headless.Permissions.Core` plus exactly one storage provider for the full runtime.
+Install `Headless.Permissions.Abstractions` to depend on interfaces only (domain/application layers). Install `Headless.Permissions` plus exactly one storage provider for the full runtime.
 
 Typical setup:
 
@@ -44,7 +44,7 @@ Provider packages:
 - Batch writes via `SetAsync(IReadOnlyCollection<string>, ...)` are all-or-nothing — a single invalid name rejects the entire batch.
 - A batch grant converts existing `Prohibited` records to grants and inserts records for names that have none, exactly like the single-name path; names that are already granted are left untouched.
 - `PermissionDefinition.Providers` restricts which grant providers can read/write that permission. An empty list allows all providers.
-- For integration tests, reference `Headless.Permissions.Testing` and call `services.AddAlwaysAllowAuthorization()` to replace both `IPermissionManager` and `IAuthorizationService` with always-allow stubs. This lives in a separate test-only package so the production `Headless.Permissions.Core` surface never ships an authorization bypass.
+- For integration tests, reference `Headless.Permissions.Testing` and call `services.AddAlwaysAllowAuthorization()` to replace both `IPermissionManager` and `IAuthorizationService` with always-allow stubs. This lives in a separate test-only package so the production `Headless.Permissions` surface never ships an authorization bypass.
 - Grant caching is tenant-scoped: the cache key includes the current tenant id. A permission check for tenant A does not serve a cached result for tenant B.
 
 ## Core Concepts
@@ -258,7 +258,7 @@ None.
 
 ---
 
-## Headless.Permissions.Core
+## Headless.Permissions
 
 Core implementation of permission management with grant resolution, caching, background initialization, and ASP.NET Core authorization integration.
 
@@ -305,7 +305,7 @@ The always-allow test doubles (`AlwaysAllowPermissionManager` / `AlwaysAllowAuth
 ### Install
 
 ```bash
-dotnet add package Headless.Permissions.Core
+dotnet add package Headless.Permissions
 ```
 
 ### Setup and use
@@ -654,7 +654,7 @@ Configure schema and table names through `PermissionsStorageOptions` via `setup.
 ### Runtime behavior
 
 - Registers the permissions schema contribution; the one schema runner applies it at startup
-- Registers the shared relational repositories from `Headless.Permissions.Core`, over the PostgreSQL dialect, as `IPermissionGrantRepository` and `IPermissionDefinitionRecordRepository` (singletons)
+- Registers the shared relational repositories from `Headless.Permissions`, over the PostgreSQL dialect, as `IPermissionGrantRepository` and `IPermissionDefinitionRecordRepository` (singletons)
 
 ---
 
@@ -722,7 +722,7 @@ Configure schema and table names through `PermissionsStorageOptions` via `setup.
 ### Runtime behavior
 
 - Registers the permissions schema contribution; the one schema runner applies it at startup
-- Registers the shared relational repositories from `Headless.Permissions.Core`, over the SQL Server dialect, as `IPermissionGrantRepository` and `IPermissionDefinitionRecordRepository` (singletons)
+- Registers the shared relational repositories from `Headless.Permissions`, over the SQL Server dialect, as `IPermissionGrantRepository` and `IPermissionDefinitionRecordRepository` (singletons)
 
 ---
 

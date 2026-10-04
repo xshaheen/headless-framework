@@ -171,7 +171,7 @@ This is the one case where a *local* time is the correct domain — a human said
 09:00 in a named zone, not an instant. The instant must be **derived** from the wall-clock intent, and the
 derivation has two edge cases that a naive `ConvertTimeToUtc` gets wrong.
 
-`src/Headless.Jobs.Core/CronScheduleCache.cs` is the reference implementation. Both DST transitions are
+`src/Headless.Jobs/Scheduling/CronScheduleCache.cs` is the reference implementation. Both DST transitions are
 handled deliberately:
 
 **Spring-forward gap** (a local time that does not exist). `02:30` in a one-hour gap is invalid.

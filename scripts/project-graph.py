@@ -251,11 +251,13 @@ def layering_violations(projects: dict[str, Project]) -> list[str]:
                     violations.append(
                         f"{project.name} -> {name}: an Abstractions package may reference only Abstractions or foundation packages"
                     )
-        if project.name.endswith(".Core"):
-            family = project.name.removesuffix(".Core")
+        # A family's root package (Headless.X beside Headless.X.Abstractions) composes the family; its providers
+        # build on it, so a reference the other way would make every consumer of the root pull a provider in.
+        if project.name + ".Abstractions" in by_name:
+            family = project.name
             for name in sorted(reference_names):
                 if name.startswith(family + ".") and not name.endswith(".Abstractions") and name in by_name:
-                    violations.append(f"{project.name} -> {name}: a Core package must not reference its own family's providers")
+                    violations.append(f"{project.name} -> {name}: a family's root package must not reference its own providers")
     return violations
 
 
@@ -322,6 +324,38 @@ def namespace_violations() -> list[str]:
     return violations
 
 
+# Folders do not shape namespaces here, so they exist only to help a reader find code: a folder names the
+# feature or area its files serve. A folder named after a kind of type scatters one feature across several
+# folders, the same failure the kind-named namespace rule prevents.
+KIND_FOLDERS = KIND_SEGMENTS | {"Abstractions", "Common", "Contracts", "Misc"}
+MAX_FOLDER_DEPTH = 2
+
+
+def folder_violations() -> list[str]:
+    """Source folders under src/<package>/ that are named after a kind of type or nest too deep."""
+    kind: set[str] = set()
+    deep: set[str] = set()
+    for path in sorted((REPO_ROOT / "src").rglob("*.cs")):
+        relative = path.relative_to(REPO_ROOT / "src")
+        folders = relative.parts[1:-1]
+        if {"obj", "bin"} & set(folders):
+            continue
+        for depth, folder in enumerate(folders, start=1):
+            if folder in KIND_FOLDERS:
+                kind.add("src/" + "/".join(relative.parts[: depth + 1]))
+        if len(folders) > MAX_FOLDER_DEPTH:
+            deep.add("src/" + "/".join(relative.parts[:-1]))
+    violations = [
+        f"{folder}: a source folder must name a feature or area, not a kind of type ({', '.join(sorted(KIND_FOLDERS))})"
+        for folder in sorted(kind)
+    ]
+    violations += [
+        f"{folder}: source folders may nest at most {MAX_FOLDER_DEPTH} levels below the package root"
+        for folder in sorted(deep)
+    ]
+    return violations
+
+
 CATEGORIES = {
     "changed": "changed_projects",
     "affected": "affected_projects",
@@ -366,7 +400,7 @@ def main() -> int:
     projects = load_graph()
 
     if args.command == "layering":
-        violations = layering_violations(projects) + namespace_violations()
+        violations = layering_violations(projects) + namespace_violations() + folder_violations()
         for violation in violations:
             print(violation)
         print(f"[layering] {len(violations)} violation(s) across {sum(p.kind == 'src' for p in projects.values())} src projects", file=sys.stderr)

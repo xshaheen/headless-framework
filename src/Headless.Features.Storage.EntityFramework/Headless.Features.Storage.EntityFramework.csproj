@@ -6,7 +6,7 @@
     <RootNamespace>Headless.Features</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Headless.Features.Core\Headless.Features.Core.csproj" />
+    <ProjectReference Include="..\Headless.Features\Headless.Features.csproj" />
     <ProjectReference Include="..\Headless.EntityFramework\Headless.EntityFramework.csproj" />
   </ItemGroup>
 </Project>

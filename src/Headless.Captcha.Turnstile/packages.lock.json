@@ -228,15 +228,15 @@
         "resolved": "10.0.12",
         "contentHash": "jDix4bBMYnpZdSPcnY+KDV6ik3SRMzpMKby/bZl/XUwIiflwRNAFZ0oOl61R/pSaveIJ8t1gs2BUlrGsPs/bcg=="
       },
-      "headless.captcha.abstractions": {
-        "type": "Project"
-      },
-      "headless.captcha.core": {
+      "headless.captcha": {
         "type": "Project",
         "dependencies": {
           "Headless.Captcha.Abstractions": "[1.0.0, )",
           "Headless.Checks": "[1.0.0, )"
         }
+      },
+      "headless.captcha.abstractions": {
+        "type": "Project"
       },
       "headless.checks": {
         "type": "Project"

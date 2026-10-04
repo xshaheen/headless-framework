@@ -253,19 +253,19 @@
           "OpenTelemetry.Api": "[1.18.0, )"
         }
       },
-      "headless.imaging.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )"
-        }
-      },
-      "headless.imaging.core": {
+      "headless.imaging": {
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Headless.Imaging.Abstractions": "[1.0.0, )",
           "Microsoft.Extensions.Options": "[10.0.12, )"
+        }
+      },
+      "headless.imaging.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )"
         }
       },
       "headless.primitives": {

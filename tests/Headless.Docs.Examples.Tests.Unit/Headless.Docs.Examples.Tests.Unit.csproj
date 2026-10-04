@@ -14,18 +14,18 @@
     <PackageReference Include="xunit.v3.mtp-v2" />
   </ItemGroup>
   <ItemGroup Label="Packages the documented examples call">
-    <ProjectReference Include="..\..\src\Headless.Api.Core\Headless.Api.Core.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Api\Headless.Api.csproj" />
     <ProjectReference Include="..\..\src\Headless.Caching.Redis\Headless.Caching.Redis.csproj" />
     <ProjectReference Include="..\..\src\Headless.Coordination.PostgreSql\Headless.Coordination.PostgreSql.csproj" />
     <ProjectReference Include="..\..\src\Headless.Coordination.SqlServer\Headless.Coordination.SqlServer.csproj" />
-    <ProjectReference Include="..\..\src\Headless.Jobs.Core\Headless.Jobs.Core.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Jobs\Headless.Jobs.csproj" />
     <ProjectReference Include="..\..\src\Headless.Jobs.Dashboard\Headless.Jobs.Dashboard.csproj" />
     <ProjectReference Include="..\..\src\Headless.Jobs.EntityFramework\Headless.Jobs.EntityFramework.csproj" />
     <ProjectReference Include="..\..\src\Headless.Jobs.EntityFramework.PostgreSql\Headless.Jobs.EntityFramework.PostgreSql.csproj" />
     <ProjectReference Include="..\..\src\Headless.Jobs.EntityFramework.SqlServer\Headless.Jobs.EntityFramework.SqlServer.csproj" />
     <ProjectReference Include="..\..\src\Headless.Messaging.Aws\Headless.Messaging.Aws.csproj" />
     <ProjectReference Include="..\..\src\Headless.Messaging.AzureServiceBus\Headless.Messaging.AzureServiceBus.csproj" />
-    <ProjectReference Include="..\..\src\Headless.Messaging.Core\Headless.Messaging.Core.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Messaging\Headless.Messaging.csproj" />
     <ProjectReference Include="..\..\src\Headless.Messaging.Dashboard\Headless.Messaging.Dashboard.csproj" />
     <ProjectReference Include="..\..\src\Headless.Messaging.Dashboard.K8s\Headless.Messaging.Dashboard.K8s.csproj" />
     <ProjectReference Include="..\..\src\Headless.Messaging.InMemory\Headless.Messaging.InMemory.csproj" />

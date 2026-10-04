@@ -10,7 +10,7 @@
     <PackageReference Include="xunit.v3.assert" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Headless.Fencing.Core\Headless.Fencing.Core.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Fencing\Headless.Fencing.csproj" />
     <ProjectReference Include="..\..\src\Headless.Fencing.InMemory\Headless.Fencing.InMemory.csproj" />
     <ProjectReference Include="..\..\src\Headless.Hosting\Headless.Hosting.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />

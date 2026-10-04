@@ -9,7 +9,7 @@
     <PackageReference Include="Microsoft.Data.SqlClient" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Headless.Coordination.Core.Database\Headless.Coordination.Core.Database.csproj" />
+    <ProjectReference Include="..\Headless.Coordination.Database\Headless.Coordination.Database.csproj" />
     <ProjectReference Include="..\Headless.Extensions\Headless.Extensions.csproj" />
     <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
     <ProjectReference Include="..\Headless.Sql.SqlServer\Headless.Sql.SqlServer.csproj" />

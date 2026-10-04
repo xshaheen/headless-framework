@@ -506,14 +506,7 @@
           "OpenTelemetry.Api": "[1.18.0, )"
         }
       },
-      "headless.idempotency.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.UnitOfWork.Abstractions": "[1.0.0, )"
-        }
-      },
-      "headless.idempotency.core": {
+      "headless.idempotency": {
         "type": "Project",
         "dependencies": {
           "FluentValidation": "[12.1.1, )",
@@ -521,8 +514,8 @@
           "Headless.Hosting": "[1.0.0, )",
           "Headless.Idempotency.Abstractions": "[1.0.0, )",
           "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
+          "Headless.Sql": "[1.0.0, )",
           "Headless.Sql.Abstractions": "[1.0.0, )",
-          "Headless.Sql.Core": "[1.0.0, )",
           "Headless.UnitOfWork": "[1.0.0, )",
           "Headless.UnitOfWork.Abstractions": "[1.0.0, )",
           "Microsoft.Extensions.Configuration.Abstractions": "[10.0.12, )",
@@ -530,12 +523,19 @@
           "Microsoft.Extensions.Options": "[10.0.12, )"
         }
       },
+      "headless.idempotency.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.UnitOfWork.Abstractions": "[1.0.0, )"
+        }
+      },
       "headless.idempotency.inmemory": {
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
-          "Headless.Idempotency.Core": "[1.0.0, )",
+          "Headless.Idempotency": "[1.0.0, )",
           "Headless.UnitOfWork": "[1.0.0, )"
         }
       },
@@ -561,10 +561,7 @@
           "Headless.Checks": "[1.0.0, )"
         }
       },
-      "headless.sql.abstractions": {
-        "type": "Project"
-      },
-      "headless.sql.core": {
+      "headless.sql": {
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
@@ -574,6 +571,9 @@
           "Nito.AsyncEx": "[5.1.2, )",
           "OpenTelemetry.Api": "[1.18.0, )"
         }
+      },
+      "headless.sql.abstractions": {
+        "type": "Project"
       },
       "headless.testing": {
         "type": "Project",

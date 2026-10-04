@@ -231,13 +231,7 @@
       "headless.checks": {
         "type": "Project"
       },
-      "headless.emails.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )"
-        }
-      },
-      "headless.emails.core": {
+      "headless.emails": {
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
@@ -245,6 +239,12 @@
           "Headless.Extensions": "[1.0.0, )",
           "MailKit": "[4.17.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )"
+        }
+      },
+      "headless.emails.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )"
         }
       },
       "headless.extensions": {

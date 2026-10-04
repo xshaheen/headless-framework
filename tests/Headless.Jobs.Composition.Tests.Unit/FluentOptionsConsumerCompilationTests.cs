@@ -213,7 +213,7 @@ public sealed class FluentOptionsConsumerCompilationTests : TestBase
             _AssertMember(
                 method,
                 "JobsOptionsBuilder",
-                "Headless.Jobs.Core",
+                "Headless.Jobs",
                 verb.Split('<')[0],
                 verb.Contains('<', StringComparison.Ordinal)
             );
@@ -242,8 +242,7 @@ public sealed class FluentOptionsConsumerCompilationTests : TestBase
                 .Distinct(StringComparer.Ordinal)
                 .Should()
                 .BeEquivalentTo("options", "configure");
-            info.CandidateSymbols.Should()
-                .OnlyContain(symbol => symbol.ContainingAssembly.Name == "Headless.Jobs.Core");
+            info.CandidateSymbols.Should().OnlyContain(symbol => symbol.ContainingAssembly.Name == "Headless.Jobs");
         }
     }
 

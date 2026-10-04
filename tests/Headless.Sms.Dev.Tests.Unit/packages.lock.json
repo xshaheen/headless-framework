@@ -1538,13 +1538,7 @@
           "Headless.Checks": "[1.0.0, )"
         }
       },
-      "headless.sms.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )"
-        }
-      },
-      "headless.sms.core": {
+      "headless.sms": {
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
@@ -1555,11 +1549,17 @@
           "Polly.RateLimiting": "[8.7.0, )"
         }
       },
+      "headless.sms.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )"
+        }
+      },
       "headless.sms.dev": {
         "type": "Project",
         "dependencies": {
           "Headless.Hosting": "[1.0.0, )",
-          "Headless.Sms.Core": "[1.0.0, )"
+          "Headless.Sms": "[1.0.0, )"
         }
       },
       "headless.sms.tests.harness": {

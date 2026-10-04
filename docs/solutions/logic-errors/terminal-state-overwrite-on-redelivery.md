@@ -1,7 +1,7 @@
 ---
 title: "Retry pipeline overwrites terminal message state on redelivery"
 date: 2026-05-16
-module: Headless.Messaging.Core
+module: Headless.Messaging
 problem_type: logic_error
 component: background_job
 severity: high
@@ -52,7 +52,7 @@ Follow-up hardening extended the same affected-row contract to poisoned-on-arriv
 
 ### 1. Storage-layer terminal-row guard
 
-The SQL Server and PostgreSQL storages have since merged into one shared relational storage: the received-message upsert now lives in [RelationalDataStorage.Store.cs](../../../src/Headless.Messaging.Core/Persistence/RelationalDataStorage.Store.cs) and the state writes in [RelationalDataStorage.States.cs](../../../src/Headless.Messaging.Core/Persistence/RelationalDataStorage.States.cs). The snippets below show the guard as it first landed in the per-provider files.
+The SQL Server and PostgreSQL storages have since merged into one shared relational storage: the received-message upsert now lives in [RelationalDataStorage.Store.cs](../../../src/Headless.Messaging/Persistence/RelationalDataStorage.Store.cs) and the state writes in [RelationalDataStorage.States.cs](../../../src/Headless.Messaging/Persistence/RelationalDataStorage.States.cs). The snippets below show the guard as it first landed in the per-provider files.
 
 SQL Server (originally `SqlServerDataStorage.cs`) — the `_StoreReceivedMessage` MERGE adds a `WHEN MATCHED AND NOT (...)` predicate so the `UPDATE` branch is skipped for terminal rows; the `INSERT` branch is unaffected:
 
@@ -66,7 +66,7 @@ WHEN NOT MATCHED THEN
     INSERT (...);
 ```
 
-PostgreSQL (originally `PostgreSqlDataStorage.cs`) — the `ON CONFLICT DO UPDATE` is gated by a matching `WHERE NOT (...)` clause. The same narrow shape is applied to every `ChangePublishStateAsync` / `ChangeReceiveStateAsync` `UPDATE` statement, now in [RelationalDataStorage.States.cs](../../../src/Headless.Messaging.Core/Persistence/RelationalDataStorage.States.cs).
+PostgreSQL (originally `PostgreSqlDataStorage.cs`) — the `ON CONFLICT DO UPDATE` is gated by a matching `WHERE NOT (...)` clause. The same narrow shape is applied to every `ChangePublishStateAsync` / `ChangeReceiveStateAsync` `UPDATE` statement, now in [RelationalDataStorage.States.cs](../../../src/Headless.Messaging/Persistence/RelationalDataStorage.States.cs).
 
 InMemory ([InMemoryDataStorage.cs:135-213, 253-327](../../../src/Headless.Messaging.Storage.InMemory/InMemoryDataStorage.cs)) — `ChangePublishStateAsync` and `ChangeReceiveStateAsync` short-circuit and return `false` when the existing row is `Succeeded`/`Failed` with `NextRetryAt is null`. `StoreReceivedExceptionMessageAsync` was rewritten as a single locked upsert keyed on (Version, MessageId, Group); the lookup-then-insert/update path is wrapped in `_receivedExceptionUpsertLock` so concurrent redeliveries cannot both decide "not found" and race.
 
@@ -76,7 +76,7 @@ InMemory ([InMemoryDataStorage.cs:135-213, 253-327](../../../src/Headless.Messag
 
 ### 3. Caller-side respect for `affected == false`
 
-The key behavioral change is treating storage's `false` return as authoritative. Previously the same branch ended with `return decision;` regardless of the storage signal. Now ([IMessageSender.cs:209-219](../../../src/Headless.Messaging.Core/Internal/IMessageSender.cs), [ISubscribeExecutor.cs:251-263](../../../src/Headless.Messaging.Core/Internal/ISubscribeExecutor.cs)):
+The key behavioral change is treating storage's `false` return as authoritative. Previously the same branch ended with `return decision;` regardless of the storage signal. Now ([IMessageSender.cs:209-219](../../../src/Headless.Messaging/Internal/IMessageSender.cs), [ISubscribeExecutor.cs:251-263](../../../src/Headless.Messaging/Internal/ISubscribeExecutor.cs)):
 
 ```csharp
 else if (!affected)
@@ -91,9 +91,9 @@ else if (!affected)
 
 Returning `RetryDecision.Stop` is load-bearing — when storage rejects the write, the row is already terminal, so the caller must not behave as though the new decision is in force. The log line moves inside the branch and only fires for `Exhausted` decisions (the only outcome that *would* have invoked the callback).
 
-On the publish-success path ([IMessageSender.cs:131-146](../../../src/Headless.Messaging.Core/Internal/IMessageSender.cs)) the same signal is logged via `PublishSucceededButStorageTerminal`; the broker accepted the publish but storage refused the state write — at-least-once delivery is preserved.
+On the publish-success path ([IMessageSender.cs:131-146](../../../src/Headless.Messaging/Internal/IMessageSender.cs)) the same signal is logged via `PublishSucceededButStorageTerminal`; the broker accepted the publish but storage refused the state write — at-least-once delivery is preserved.
 
-`Dispatcher.EnqueueToScheduler` ([Dispatcher.cs:91-115](../../../src/Headless.Messaging.Core/Processor/Dispatcher.cs)) captures the storage return and early-exits the scheduler enqueue:
+`Dispatcher.EnqueueToScheduler` ([Dispatcher.cs:91-115](../../../src/Headless.Messaging/Processor/Dispatcher.cs)) captures the storage return and early-exits the scheduler enqueue:
 
 ```csharp
 var changed = await _storage.ChangePublishStateAsync(message, statusName, transaction).ConfigureAwait(false);
@@ -103,15 +103,15 @@ if (!changed)
 }
 ```
 
-The circuit breaker report in `ISubscribeExecutor._SetFailedState` ([ISubscribeExecutor.cs:270-276](../../../src/Headless.Messaging.Core/Internal/ISubscribeExecutor.cs)) is also gated on `affected`, so a rejected redelivery doesn't count toward the breaker threshold.
+The circuit breaker report in `ISubscribeExecutor._SetFailedState` ([ISubscribeExecutor.cs:270-276](../../../src/Headless.Messaging/Internal/ISubscribeExecutor.cs)) is also gated on `affected`, so a rejected redelivery doesn't count toward the breaker threshold.
 
 ### 4. Terminal writes use `CancellationToken.None`
 
-`ISubscribeExecutor._SetFailedState` ([ISubscribeExecutor.cs:231-245](../../../src/Headless.Messaging.Core/Internal/ISubscribeExecutor.cs)) and `IMessageSender._SetFailedState` ([IMessageSender.cs:194-201](../../../src/Headless.Messaging.Core/Internal/IMessageSender.cs)) both pass `CancellationToken.None` to the terminal `ChangeXxxStateAsync` write so the dispatch/shutdown token can't tear it down. The `RetryHelper.IsCancellation` guard above each call short-circuits genuine host-shutdown OCEs before we get here — and it does so by *identity* comparison: `IsCancellation` compares `oce.CancellationToken` against the specific dispatch/shutdown token, so an `OperationCanceledException` from an unrelated timeout CTS does **not** short-circuit and is correctly classified as a failure. Once `_SetFailedState` has classified the failure as non-cancellation and resolved an `Exhausted` decision, the row must land in `Failed/NULL` and `OnExhausted` must fire, even if shutdown races the write.
+`ISubscribeExecutor._SetFailedState` ([ISubscribeExecutor.cs:231-245](../../../src/Headless.Messaging/Internal/ISubscribeExecutor.cs)) and `IMessageSender._SetFailedState` ([IMessageSender.cs:194-201](../../../src/Headless.Messaging/Internal/IMessageSender.cs)) both pass `CancellationToken.None` to the terminal `ChangeXxxStateAsync` write so the dispatch/shutdown token can't tear it down. The `RetryHelper.IsCancellation` guard above each call short-circuits genuine host-shutdown OCEs before we get here — and it does so by *identity* comparison: `IsCancellation` compares `oce.CancellationToken` against the specific dispatch/shutdown token, so an `OperationCanceledException` from an unrelated timeout CTS does **not** short-circuit and is correctly classified as a failure. Once `_SetFailedState` has classified the failure as non-cancellation and resolved an `Exhausted` decision, the row must land in `Failed/NULL` and `OnExhausted` must fire, even if shutdown races the write.
 
 ### 5. Parallel sibling envelope parity
 
-`Dispatcher._SendMessageDirectlyAsync` ([Dispatcher.cs:435-454](../../../src/Headless.Messaging.Core/Processor/Dispatcher.cs)) wraps its body in `try/catch` so transport / scope-factory exceptions log via `TransportSendError` instead of unwinding to `EnqueueToPublish` (whose outer catch only handles OCEs). This matches the long-existing envelope on `_SendMessageAsync` ([Dispatcher.cs:418-433](../../../src/Headless.Messaging.Core/Processor/Dispatcher.cs)).
+`Dispatcher._SendMessageDirectlyAsync` ([Dispatcher.cs:435-454](../../../src/Headless.Messaging/Processor/Dispatcher.cs)) wraps its body in `try/catch` so transport / scope-factory exceptions log via `TransportSendError` instead of unwinding to `EnqueueToPublish` (whose outer catch only handles OCEs). This matches the long-existing envelope on `_SendMessageAsync` ([Dispatcher.cs:418-433](../../../src/Headless.Messaging/Processor/Dispatcher.cs)).
 
 ## Why This Works
 
@@ -122,16 +122,16 @@ Storage is the sole arbiter of terminal state, and a row in `(Succeeded | Failed
 - **Storage `bool` returns are contracts, not hints.** Any caller of `ChangePublishStateAsync` / `ChangeReceiveStateAsync` / similar conditional UPDATEs must respect the `false` return. The pattern recurs in parallel sibling paths — `IMessageSender._SetFailedState`, `ISubscribeExecutor._SetFailedState`, `Dispatcher.EnqueueToScheduler` all made the same mistake. When adding a new caller, search the existing call sites and copy the early-exit shape. These methods return `ValueTask<bool>` — capture the result in a local before re-using; awaiting the same `ValueTask` twice is undefined behavior.
 - **Terminal-state writes use `CancellationToken.None` after the `IsCancellation` short-circuit** — never the dispatch token. The pattern is: classify cancellation once at the top of the method, then commit. `IMessageSender.cs:161-201` and `ISubscribeExecutor.cs:195-245` are the canonical templates.
 - **Terminal-row predicates must include the "scheduled retry" axis.** A guard of the shape `WHERE StatusName NOT IN ('Succeeded','Failed')` is almost always wrong if the same provider also persists in-flight retries as `Failed/NextRetryAt IS NOT NULL`. The correct predicate is `WHERE NOT (StatusName IN ('Succeeded','Failed') AND NextRetryAt IS NULL)`. *(session history)*
-- **Provider parity for the terminal-row guard.** InMemory, PostgreSQL, and SQL Server must all reject the same upsert against `(Succeeded | Failed, NextRetryAt IS NULL)`. Add cross-provider tests in `tests/Headless.Messaging.Core.Tests.Harness/DataStorageTestsBase.cs` so a new provider can't ship without honoring the contract.
+- **Provider parity for the terminal-row guard.** InMemory, PostgreSQL, and SQL Server must all reject the same upsert against `(Succeeded | Failed, NextRetryAt IS NULL)`. Add cross-provider tests in `tests/Headless.Messaging.Tests.Harness/DataStorageTestsBase.cs` so a new provider can't ship without honoring the contract.
 - **InMemory pickup APIs must return snapshots, not live references.** Callers will mutate the returned `MediumMessage` before the storage write that storage may then reject. `_ToSnapshot` ([InMemoryDataStorage.cs:451-468](../../../src/Headless.Messaging.Storage.InMemory/InMemoryDataStorage.cs)) is the model; clone `Origin.Headers` explicitly. SQL providers get this for free; InMemory must opt in.
 - **InMemory mutations are not atomic.** `ChangeXxxStateAsync` and `StoreReceivedExceptionMessageAsync` lock on the per-row `MemoryMessage` object around check+write. A dictionary-wide lock would serialize unrelated messages; a missing lock loses to concurrent redelivery. Use the message object itself as the lock target — this is safe *because* `MemoryMessage` is `internal sealed`; external code cannot acquire a reference, so the well-known "don't lock on a publicly-typed object" rule doesn't apply. Note that `ConcurrentDictionary` operations are individually atomic, but compound *check-then-act* on dictionary values is not — which is what fails here. *(session history)*
 - **Parallel sibling code paths share their exception envelopes.** When `_SendMessageAsync` and `_SendMessageDirectlyAsync` both feed the same outer boundary (the channel-reader loop), both must use the same try/catch shape. When adding a new sibling, diff against the existing one before merging.
 - **Test the rejection signal end-to-end.** The test cluster lives at:
-  - `tests/Headless.Messaging.Core.Tests.Unit/DispatcherTests.cs` — exercises `EnqueueToScheduler` early-exit when storage returns `false`.
-  - `tests/Headless.Messaging.Core.Tests.Unit/MessageSenderTests.cs` — exercises publish-path `_SetFailedState` with `affected == false`.
-  - `tests/Headless.Messaging.Core.Tests.Unit/SubscribeExecutorRetryTests.cs` — exercises consume-path `_SetFailedState`, OnExhausted-skip log, and circuit-breaker non-report.
-  - `tests/Headless.Messaging.Core.Tests.Unit/Retry/RetryHelperTests.cs` — covers `ResolveNextState`, `IsCancellation` token equality, OnExhausted timeout-CTS, and strategy-throw paths.
-  - `tests/Headless.Messaging.Core.Tests.Unit/Configuration/MessagingOptionsCopyToTests.cs` — guards deep `CopyTo` of nested retry options so test harnesses don't share mutable state.
+  - `tests/Headless.Messaging.Tests.Unit/DispatcherTests.cs` — exercises `EnqueueToScheduler` early-exit when storage returns `false`.
+  - `tests/Headless.Messaging.Tests.Unit/MessageSenderTests.cs` — exercises publish-path `_SetFailedState` with `affected == false`.
+  - `tests/Headless.Messaging.Tests.Unit/SubscribeExecutorRetryTests.cs` — exercises consume-path `_SetFailedState`, OnExhausted-skip log, and circuit-breaker non-report.
+  - `tests/Headless.Messaging.Tests.Unit/Retry/RetryHelperTests.cs` — covers `ResolveNextState`, `IsCancellation` token equality, OnExhausted timeout-CTS, and strategy-throw paths.
+  - `tests/Headless.Messaging.Tests.Unit/Configuration/MessagingOptionsCopyToTests.cs` — guards deep `CopyTo` of nested retry options so test harnesses don't share mutable state.
 - **When mocking storage in tests, match the current arity exactly.** During the `ValueTask<bool>` migration, NSubstitute `Received()` assertions that still used the pre-migration 2-arg shape matched zero calls, the tests passed green, and the actual behavior was unverified. Audit `Received(...)` and `When(...)` call sites whenever the storage interface gains a parameter. *(session history)*
 
 ## Addendum (2026-10-02): every terminal consume failure fires OnExhausted

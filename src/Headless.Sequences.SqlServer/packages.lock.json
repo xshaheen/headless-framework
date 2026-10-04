@@ -382,14 +382,7 @@
           "Headless.Generator.Primitives.Abstractions": "[1.0.0, )"
         }
       },
-      "headless.sequences.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.UnitOfWork.Abstractions": "[1.0.0, )"
-        }
-      },
-      "headless.sequences.core": {
+      "headless.sequences": {
         "type": "Project",
         "dependencies": {
           "FluentValidation": "[12.1.1, )",
@@ -397,18 +390,22 @@
           "Headless.Hosting": "[1.0.0, )",
           "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
           "Headless.Sequences.Abstractions": "[1.0.0, )",
+          "Headless.Sql": "[1.0.0, )",
           "Headless.Sql.Abstractions": "[1.0.0, )",
-          "Headless.Sql.Core": "[1.0.0, )",
           "Headless.UnitOfWork": "[1.0.0, )",
           "Headless.UnitOfWork.Abstractions": "[1.0.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.Options": "[10.0.12, )"
         }
       },
-      "headless.sql.abstractions": {
-        "type": "Project"
+      "headless.sequences.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.UnitOfWork.Abstractions": "[1.0.0, )"
+        }
       },
-      "headless.sql.core": {
+      "headless.sql": {
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
@@ -419,14 +416,17 @@
           "OpenTelemetry.Api": "[1.18.0, )"
         }
       },
+      "headless.sql.abstractions": {
+        "type": "Project"
+      },
       "headless.sql.sqlserver": {
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
+          "Headless.Sql": "[1.0.0, )",
           "Headless.Sql.Abstractions": "[1.0.0, )",
-          "Headless.Sql.Core": "[1.0.0, )",
           "Microsoft.Data.SqlClient": "[7.0.2, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.12, )"

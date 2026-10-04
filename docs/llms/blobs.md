@@ -1,6 +1,6 @@
 ---
 domain: Blob Storage
-packages: Blobs.Abstractions, Blobs.Core, Blobs.MultiTenancy, Blobs.Aws, Blobs.Azure, Blobs.CloudflareR2, Blobs.FileSystem, Blobs.Redis, Blobs.SshNet, Blobs.SignedUrlEndpoint
+packages: Blobs.Abstractions, Blobs, Blobs.MultiTenancy, Blobs.Aws, Blobs.Azure, Blobs.CloudflareR2, Blobs.FileSystem, Blobs.Redis, Blobs.SshNet, Blobs.SignedUrlEndpoint
 ---
 
 # Blob Storage
@@ -9,7 +9,7 @@ packages: Blobs.Abstractions, Blobs.Core, Blobs.MultiTenancy, Blobs.Aws, Blobs.A
 
 ## Orientation
 
-Install `Headless.Blobs.Abstractions`, `Headless.Blobs.Core`, and one or more provider packages. Register every store through a single `AddHeadlessBlobs(...)` call: pick a default with `Use{Provider}(...)` and add named stores with `AddNamed(name, i => i.Use{Provider}(...))`. Code against `IBlobStorage` — never reference concrete provider types in application code.
+Install `Headless.Blobs.Abstractions`, `Headless.Blobs`, and one or more provider packages. Register every store through a single `AddHeadlessBlobs(...)` call: pick a default with `Use{Provider}(...)` and add named stores with `AddNamed(name, i => i.Use{Provider}(...))`. Code against `IBlobStorage` — never reference concrete provider types in application code.
 
 Provider selection guide:
 - **Development/testing**: `Headless.Blobs.FileSystem` — no external dependencies, stores files on disk.
@@ -25,7 +25,7 @@ The default store registers as a plain (unkeyed) `IBlobStorage` singleton; named
 ## Agent Rules
 
 - Always depend on `IBlobStorage` from `Headless.Blobs.Abstractions` — never reference `AwsBlobStorage`, `AzureBlobStorage`, or other concrete types in service code.
-- Register all stores through `AddHeadlessBlobs(...)` from `Headless.Blobs.Core`. Choose a default with `Use{Provider}(...)` and add named stores with `AddNamed(name, i => i.Use{Provider}(...))`. Use `UseFileSystem` for local development and testing; `UseAws`, `UseAzure`, or `UseCloudflareR2` for production. For MinIO or another self-hosted S3-compatible server, use `UseS3Compatible` from `Headless.Blobs.Aws` rather than hand-tuning `UseAws` with `AWSOptions`.
+- Register all stores through `AddHeadlessBlobs(...)` from `Headless.Blobs`. Choose a default with `Use{Provider}(...)` and add named stores with `AddNamed(name, i => i.Use{Provider}(...))`. Use `UseFileSystem` for local development and testing; `UseAws`, `UseAzure`, or `UseCloudflareR2` for production. For MinIO or another self-hosted S3-compatible server, use `UseS3Compatible` from `Headless.Blobs.Aws` rather than hand-tuning `UseAws` with `AWSOptions`.
 - Address every blob with `BlobLocation(container, path)`. The constructor validates path security (traversal, control characters, absolute paths, and any path segment ending in the reserved sidecar suffix) once, so pass the value through — do not pre-normalize. The `params ReadOnlySpan<string>` convenience constructor joins segments with `/`: `new BlobLocation("uploads", "images", fileName)` is the key `images/<fileName>` in container `uploads`. A segments-only overload treats the first element as the container: `new BlobLocation(["uploads", "images", fileName])` is the same location (requires at least two segments). `Move`/`Copy` take a source and a destination `BlobLocation`.
 - Normalization is two-tier and applied by the **provider's** resolve step, not by you: `BlobLocation.Container` is the backend bucket/container/root (strict backend rules — lowercase, length, allowed characters) and `BlobLocation.Path` is the lenient object key (validated, not rewritten). The value type validates security; the provider's `IBlobNamingNormalizer` applies backend naming when it resolves the location.
 - `UploadAsync` does **not** create a missing top-level container — that is an error. Provision the container first via `IBlobContainerManager.EnsureContainerAsync` or out-of-band (IaC). Filesystem-like providers (FileSystem, SFTP) still create the intermediate path directories inherent to writing a blob.
@@ -270,7 +270,7 @@ None. This is an abstractions package.
 
 ---
 
-## Headless.Blobs.Core
+## Headless.Blobs
 
 Unified setup builder for composing one or more named blob stores in a single DI container.
 
@@ -294,7 +294,7 @@ Unified setup builder for composing one or more named blob stores in a single DI
 ### Install
 
 ```bash
-dotnet add package Headless.Blobs.Core
+dotnet add package Headless.Blobs
 ```
 
 Add at least one provider package (`Headless.Blobs.Aws`, `Headless.Blobs.Azure`, `Headless.Blobs.CloudflareR2`, `Headless.Blobs.FileSystem`, `Headless.Blobs.Redis`, or `Headless.Blobs.SshNet`).

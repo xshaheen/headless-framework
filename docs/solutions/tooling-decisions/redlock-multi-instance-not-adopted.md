@@ -10,7 +10,7 @@ applies_when:
   - A consumer requests "stronger" lock safety guarantees and proposes RedLock
   - Reviewing whether to extend Headless.DistributedLocks.Redis to support multiple databases
 tags: [distributed-locks, redlock, redis, consistency, consensus, tooling-decision, safety]
-related_components: [Headless.DistributedLocks.Redis, Headless.DistributedLocks.Core]
+related_components: [Headless.DistributedLocks.Redis, Headless.DistributedLocks]
 ---
 
 # RedLock multi-instance algorithm — explicitly not adopted in Headless.DistributedLocks

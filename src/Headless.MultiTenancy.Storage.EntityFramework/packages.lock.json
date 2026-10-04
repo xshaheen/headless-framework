@@ -275,7 +275,7 @@
           "Headless.Context.Abstractions": "[1.0.0, )",
           "Headless.Domain": "[1.0.0, )",
           "Headless.Domain.LocalEventBus": "[1.0.0, )",
-          "Headless.EntityFramework.Core": "[1.0.0, )",
+          "Headless.EntityFramework.Primitives": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
           "Headless.UnitOfWork.EntityFramework": "[1.0.0, )",
@@ -284,7 +284,7 @@
           "Microsoft.Extensions.Hosting.Abstractions": "[10.0.12, )"
         }
       },
-      "headless.entityframework.core": {
+      "headless.entityframework.primitives": {
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",

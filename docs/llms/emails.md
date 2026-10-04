@@ -1,6 +1,6 @@
 ---
 domain: Email
-packages: Emails.Abstractions, Emails.Core, Emails.Aws, Emails.Azure, Emails.Dev, Emails.Mailkit
+packages: Emails.Abstractions, Emails, Emails.Aws, Emails.Azure, Emails.Dev, Emails.Mailkit
 ---
 
 # Email
@@ -16,7 +16,7 @@ Install `Headless.Emails.Abstractions` + one provider. Register with `AddHeadles
 - **AWS production**: `Headless.Emails.Aws` — sends via AWS SES v2. Call `UseAwsSes(awsOptions)`.
 - **SMTP (any server)**: `Headless.Emails.Mailkit` — sends via SMTP using MailKit with connection pooling. Supports SSL/TLS, authentication, and works with Gmail, Outlook, SendGrid, on-premises servers. Call `UseMailkit(...)`.
 
-`Headless.Emails.Core` owns the setup builder (`AddHeadlessEmails`, `HeadlessEmailsSetupBuilder`, `HeadlessEmailInstanceBuilder`) and the `IEmailSenderProvider` implementation, plus internal MimeKit conversion (`ConvertToMimeMessageAsync()`) and attachment content-type derivation (`EmailAttachmentContentType.Resolve()`). Providers pull it transitively — you rarely install it directly.
+`Headless.Emails` owns the setup builder (`AddHeadlessEmails`, `HeadlessEmailsSetupBuilder`, `HeadlessEmailInstanceBuilder`) and the `IEmailSenderProvider` implementation, plus internal MimeKit conversion (`ConvertToMimeMessageAsync()`) and attachment content-type derivation (`EmailAttachmentContentType.Resolve()`). Providers pull it transitively — you rarely install it directly.
 
 Send emails via `IEmailSender.SendAsync(SendSingleEmailRequest)` which returns `SendSingleEmailResponse` with `Success`, an optional `ProviderMessageId` (the backend's message id on success), and `FailureError` (non-null on failure). Every provider/transport failure is reported through the response — only `OperationCanceledException` and argument validation propagate.
 
@@ -37,7 +37,7 @@ Register additional **named** senders alongside an optional default: `setup.AddN
 - `MailkitEmailSender` uses an `ObjectPool<SmtpClient>` — SMTP connections are pooled and reused. Authentication happens on reconnect, bounded by `Timeout` (which otherwise governs only read/write). Every send failure is returned as a failed `SendSingleEmailResponse`: SMTP command/protocol errors, a credential rejection (`AuthenticationException`, additionally logged at critical level as a config error), and connect/TLS/transport faults (`IOException`, socket errors, TLS handshake failures, connect timeouts). Only the caller's own cancellation propagates — a connect-timeout cancellation (caller token not cancelled) is returned as a failure, not thrown. The connection is discarded rather than returned to the pool on failure, and the next send re-authenticates. On success the SMTP server's final response is surfaced as `ProviderMessageId`.
 - All providers register the default `IEmailSender` as an unkeyed singleton; named senders (and their backend clients and options) register as keyed singletons under the instance name.
 - `DevEmailSender` appends to a file with separators — it writes `MessageText` preferring it over `MessageHtml` for readability.
-- `Emails.Core` provides the builder and shared utilities consumed by providers — it is not used directly in application code (except the `AddHeadlessEmails` entry point, which is the provider-agnostic registration call).
+- `Emails` provides the builder and shared utilities consumed by providers — it is not used directly in application code (except the `AddHeadlessEmails` entry point, which is the provider-agnostic registration call).
 
 ## Core Concepts
 
@@ -67,11 +67,11 @@ The `[MemberNotNullWhen(false, nameof(FailureError))]` attribute enables null-sa
 
 ### Provider wiring (unified setup builder)
 
-Email uses the framework's unified provider setup-builder grammar. `AddHeadlessEmails(Action<HeadlessEmailsSetupBuilder>)` (in `Headless.Emails.Core`) is the single registration entry point. Inside the delegate, each provider package contributes a `Use*` extension member on `HeadlessEmailsSetupBuilder` that queues a deferred `Action<IServiceCollection>` via `RegisterDefaultProvider`; the core gate then allows **at most one default provider** and runs the queued wiring — the default action first (when configured), then each named instance's action. Contributions are queued and not run until the gate passes, so a setup that fails a gate leaves the service collection unchanged (provider `Use*` members also validate their inputs synchronously before queuing).
+Email uses the framework's unified provider setup-builder grammar. `AddHeadlessEmails(Action<HeadlessEmailsSetupBuilder>)` (in `Headless.Emails`) is the single registration entry point. Inside the delegate, each provider package contributes a `Use*` extension member on `HeadlessEmailsSetupBuilder` that queues a deferred `Action<IServiceCollection>` via `RegisterDefaultProvider`; the core gate then allows **at most one default provider** and runs the queued wiring — the default action first (when configured), then each named instance's action. Contributions are queued and not run until the gate passes, so a setup that fails a gate leaves the service collection unchanged (provider `Use*` members also validate their inputs synchronously before queuing).
 
 Multiple default providers in one delegate, or a repeated `AddHeadlessEmails` on the same `IServiceCollection`, throw `InvalidOperationException` at registration time. The default is optional: with zero defaults the unkeyed `IEmailSender` is not registered and the host resolves senders by name only (a named-only host); named senders are additive and unbounded.
 
-Since the attachment contract (`EmailRequestAttachment`) carries only a name and bytes, providers whose transport needs an explicit MIME type derive it from the file name via `EmailAttachmentContentType.Resolve()` (MimeKit lookup, `application/octet-stream` fallback). The `Emails.Core` conversion utilities (`ConvertToMimeMessageAsync()`) remain an internal detail shared by Aws and Mailkit; consumers never call them directly.
+Since the attachment contract (`EmailRequestAttachment`) carries only a name and bytes, providers whose transport needs an explicit MIME type derive it from the file name via `EmailAttachmentContentType.Resolve()` (MimeKit lookup, `application/octet-stream` fallback). The `Emails` conversion utilities (`ConvertToMimeMessageAsync()`) remain an internal detail shared by Aws and Mailkit; consumers never call them directly.
 
 ### Named senders
 
@@ -161,7 +161,7 @@ None.
 
 ---
 
-## Headless.Emails.Core
+## Headless.Emails
 
 Setup builder, MimeKit integration, and shared utilities for email implementations.
 
@@ -182,7 +182,7 @@ The builder carries no shared, cross-provider feature options — it is provider
 ### Install
 
 ```bash
-dotnet add package Headless.Emails.Core
+dotnet add package Headless.Emails
 ```
 
 ### Setup and use

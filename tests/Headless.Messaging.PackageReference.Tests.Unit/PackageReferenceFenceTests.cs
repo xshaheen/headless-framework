@@ -13,7 +13,10 @@ public sealed class PackageReferenceFenceTests : TestBase
     {
         var root = _FindRepositoryRoot();
         var expected = File.ReadAllLines(Path.Combine(root, "eng", "expected-packages.txt"))
-            .Where(package => package.StartsWith("Headless.Messaging.", StringComparison.Ordinal))
+            .Where(package =>
+                package.Equals("Headless.Messaging", StringComparison.Ordinal)
+                || package.StartsWith("Headless.Messaging.", StringComparison.Ordinal)
+            )
             .Order(StringComparer.Ordinal)
             .ToArray();
         var references = _ReadPackageReferences("NewAllNew", "NewAllNew.csproj");

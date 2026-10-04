@@ -2,7 +2,7 @@
 title: "ProblemDetails error codes use the g:lower_snake_case shape"
 date: 2026-09-18
 last_updated: 2026-09-18
-module: Headless.Api.Core
+module: Headless.Api
 problem_type: convention
 component: api_contract
 severity: medium

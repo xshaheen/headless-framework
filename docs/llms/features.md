@@ -1,6 +1,6 @@
 ---
 domain: Feature Management
-packages: Features.Abstractions, Features.Core, Features.Storage.EntityFramework, Features.Storage.PostgreSql, Features.Storage.SqlServer
+packages: Features.Abstractions, Features, Features.Storage.EntityFramework, Features.Storage.PostgreSql, Features.Storage.SqlServer
 ---
 
 # Feature Management
@@ -9,10 +9,10 @@ packages: Features.Abstractions, Features.Core, Features.Storage.EntityFramework
 
 ## Orientation
 
-Install `Headless.Features.Abstractions` plus `Headless.Features.Core` and exactly one storage provider:
+Install `Headless.Features.Abstractions` plus `Headless.Features` and exactly one storage provider:
 
 - `Headless.Features.Abstractions` — interfaces (`IFeatureManager`, `IFeatureDefinitionProvider`, `IFeatureDefinitionManager`)
-- `Headless.Features.Core` — full implementation with caching, value providers, and background initialization
+- `Headless.Features` — full implementation with caching, value providers, and background initialization
 - `Headless.Features.Storage.EntityFramework` — EF Core persistence using the consumer's `DbContext`
 - `Headless.Features.Storage.PostgreSql` — raw ADO.NET persistence for PostgreSQL (no EF dependency)
 - `Headless.Features.Storage.SqlServer` — raw ADO.NET persistence for SQL Server (no EF dependency)
@@ -232,7 +232,7 @@ None.
 
 ---
 
-## Headless.Features.Core
+## Headless.Features
 
 Core implementation of feature management with caching, value providers, and definition management.
 
@@ -266,7 +266,7 @@ Core implementation of feature management with caching, value providers, and def
 ### Install
 
 ```bash
-dotnet add package Headless.Features.Core
+dotnet add package Headless.Features
 ```
 
 ### Setup and use
@@ -497,7 +497,7 @@ Configure schema and table names through `FeaturesStorageOptions` via `setup.Con
 ### Runtime behavior
 
 - Registers the features schema contribution; the one schema runner applies it at startup
-- Registers the shared relational repositories from `Headless.Features.Core`, over the PostgreSQL dialect, as `IFeatureValueRecordRepository` and `IFeatureDefinitionRecordRepository` (singletons)
+- Registers the shared relational repositories from `Headless.Features`, over the PostgreSQL dialect, as `IFeatureValueRecordRepository` and `IFeatureDefinitionRecordRepository` (singletons)
 
 ---
 
@@ -568,4 +568,4 @@ Configure schema and table names through `FeaturesStorageOptions` via `setup.Con
 ### Runtime behavior
 
 - Registers the features schema contribution; the one schema runner applies it at startup
-- Registers the shared relational repositories from `Headless.Features.Core`, over the SQL Server dialect, as `IFeatureValueRecordRepository` and `IFeatureDefinitionRecordRepository` (singletons)
+- Registers the shared relational repositories from `Headless.Features`, over the SQL Server dialect, as `IFeatureValueRecordRepository` and `IFeatureDefinitionRecordRepository` (singletons)

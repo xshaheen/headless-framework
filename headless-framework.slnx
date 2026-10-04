@@ -16,7 +16,7 @@
         <Project Path="src\Headless.Api.Logging.Serilog\Headless.Api.Logging.Serilog.csproj" />
         <Project Path="src\Headless.Api.MinimalApi\Headless.Api.MinimalApi.csproj" />
         <Project Path="src\Headless.Api.Mvc\Headless.Api.Mvc.csproj" />
-        <Project Path="src\Headless.Api.Core\Headless.Api.Core.csproj" />
+        <Project Path="src\Headless.Api\Headless.Api.csproj" />
         <Project Path="src\Headless.Api.Idempotency\Headless.Api.Idempotency.csproj" />
         <Project Path="src\Headless.Api.ServiceDefaults\Headless.Api.ServiceDefaults.csproj" />
     </Folder>
@@ -37,13 +37,13 @@
     </Folder>
     <Folder Name="/AuditLog/">
         <Project Path="src\Headless.AuditLog.Abstractions\Headless.AuditLog.Abstractions.csproj" />
-        <Project Path="src\Headless.AuditLog.Core\Headless.AuditLog.Core.csproj" />
+        <Project Path="src\Headless.AuditLog\Headless.AuditLog.csproj" />
         <Project Path="src\Headless.AuditLog.Storage.EntityFramework\Headless.AuditLog.Storage.EntityFramework.csproj" />
         <Project Path="src\Headless.AuditLog.Storage.PostgreSql\Headless.AuditLog.Storage.PostgreSql.csproj" />
         <Project Path="src\Headless.AuditLog.Storage.SqlServer\Headless.AuditLog.Storage.SqlServer.csproj" />
     </Folder>
     <Folder Name="/AuditLog/Tests/">
-        <Project Path="tests\Headless.AuditLog.Core.Tests.Unit\Headless.AuditLog.Core.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.AuditLog.Tests.Unit\Headless.AuditLog.Tests.Unit.csproj" />
         <Project Path="tests\Headless.AuditLog.Storage.EntityFramework.Tests.Integration\Headless.AuditLog.Storage.EntityFramework.Tests.Integration.csproj" />
         <Project Path="tests\Headless.AuditLog.Storage.EntityFramework.Tests.Unit\Headless.AuditLog.Storage.EntityFramework.Tests.Unit.csproj" />
         <Project Path="tests\Headless.AuditLog.Storage.PostgreSql.Tests.Integration\Headless.AuditLog.Storage.PostgreSql.Tests.Integration.csproj" />
@@ -64,7 +64,7 @@
         <Project Path="src\Headless.Blobs.Aws\Headless.Blobs.Aws.csproj" />
         <Project Path="src\Headless.Blobs.Azure\Headless.Blobs.Azure.csproj" />
         <Project Path="src\Headless.Blobs.CloudflareR2\Headless.Blobs.CloudflareR2.csproj" />
-        <Project Path="src\Headless.Blobs.Core\Headless.Blobs.Core.csproj" />
+        <Project Path="src\Headless.Blobs\Headless.Blobs.csproj" />
         <Project Path="src\Headless.Blobs.FileSystem\Headless.Blobs.FileSystem.csproj" />
         <Project Path="src\Headless.Blobs.MultiTenancy\Headless.Blobs.MultiTenancy.csproj" />
         <Project Path="src\Headless.Blobs.Redis\Headless.Blobs.Redis.csproj" />
@@ -80,8 +80,8 @@
         <Project Path="tests\Headless.Blobs.Azure.Tests.Unit\Headless.Blobs.Azure.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Blobs.CloudflareR2.Tests.Integration\Headless.Blobs.CloudflareR2.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Blobs.CloudflareR2.Tests.Unit\Headless.Blobs.CloudflareR2.Tests.Unit.csproj" />
-        <Project Path="tests\Headless.Blobs.Core.Tests.Integration\Headless.Blobs.Core.Tests.Integration.csproj" />
-        <Project Path="tests\Headless.Blobs.Core.Tests.Unit\Headless.Blobs.Core.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Blobs.Tests.Integration\Headless.Blobs.Tests.Integration.csproj" />
+        <Project Path="tests\Headless.Blobs.Tests.Unit\Headless.Blobs.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Blobs.FileSystem.Tests.Integration\Headless.Blobs.FileSystem.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Blobs.FileSystem.Tests.Unit\Headless.Blobs.FileSystem.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Blobs.MultiTenancy.Tests.Unit\Headless.Blobs.MultiTenancy.Tests.Unit.csproj" />
@@ -95,7 +95,7 @@
     <Folder Name="/Caching/">
         <Project Path="src\Headless.Caching.Abstractions\Headless.Caching.Abstractions.csproj" />
         <Project Path="src\Headless.Caching.Bcl\Headless.Caching.Bcl.csproj" />
-        <Project Path="src\Headless.Caching.Core\Headless.Caching.Core.csproj" />
+        <Project Path="src\Headless.Caching\Headless.Caching.csproj" />
         <Project Path="src\Headless.Caching.DistributedLocks\Headless.Caching.DistributedLocks.csproj" />
         <Project Path="src\Headless.Caching.InMemory\Headless.Caching.InMemory.csproj" />
         <Project Path="src\Headless.Caching.Redis\Headless.Caching.Redis.csproj" />
@@ -104,8 +104,8 @@
     </Folder>
     <Folder Name="/Coordination/">
         <Project Path="src\Headless.Coordination.Abstractions\Headless.Coordination.Abstractions.csproj" />
-        <Project Path="src\Headless.Coordination.Core\Headless.Coordination.Core.csproj" />
-        <Project Path="src\Headless.Coordination.Core.Database\Headless.Coordination.Core.Database.csproj" />
+        <Project Path="src\Headless.Coordination\Headless.Coordination.csproj" />
+        <Project Path="src\Headless.Coordination.Database\Headless.Coordination.Database.csproj" />
         <Project Path="src\Headless.Coordination.PostgreSql\Headless.Coordination.PostgreSql.csproj" />
         <Project Path="src\Headless.Coordination.Redis\Headless.Coordination.Redis.csproj" />
         <Project Path="src\Headless.Coordination.SqlServer\Headless.Coordination.SqlServer.csproj" />
@@ -126,7 +126,7 @@
         <Project Path="tests\Headless.Caching.Bcl.Tests.Integration\Headless.Caching.Bcl.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Caching.Bcl.Tests.Unit\Headless.Caching.Bcl.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Caching.Benchmarks.Tests.Unit\Headless.Caching.Benchmarks.Tests.Unit.csproj" />
-        <Project Path="tests\Headless.Caching.Core.Tests.Unit\Headless.Caching.Core.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Caching.Tests.Unit\Headless.Caching.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Caching.DistributedLocks.Tests.Unit\Headless.Caching.DistributedLocks.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Caching.Hybrid.Tests.Harness\Headless.Caching.Hybrid.Tests.Harness.csproj" />
         <Project Path="tests\Headless.Caching.InMemory.Tests.Unit\Headless.Caching.InMemory.Tests.Unit.csproj" />
@@ -137,7 +137,7 @@
     </Folder>
     <Folder Name="/Captcha/">
         <Project Path="src/Headless.Captcha.Abstractions/Headless.Captcha.Abstractions.csproj" />
-        <Project Path="src/Headless.Captcha.Core/Headless.Captcha.Core.csproj" />
+        <Project Path="src/Headless.Captcha/Headless.Captcha.csproj" />
         <Project Path="src/Headless.Captcha.ReCaptcha/Headless.Captcha.ReCaptcha.csproj" />
         <Project Path="src/Headless.Captcha.Turnstile/Headless.Captcha.Turnstile.csproj" />
     </Folder>
@@ -150,7 +150,7 @@
     <Folder Name="/Database/">
         <Project Path="src\Headless.Redis\Headless.Redis.csproj" />
         <Project Path="src\Headless.Sql.Abstractions\Headless.Sql.Abstractions.csproj" />
-        <Project Path="src\Headless.Sql.Core\Headless.Sql.Core.csproj" />
+        <Project Path="src\Headless.Sql\Headless.Sql.csproj" />
         <Project Path="src\Headless.Sql.PostgreSql\Headless.Sql.PostgreSql.csproj" />
         <Project Path="src\Headless.Sql.Sqlite\Headless.Sql.Sqlite.csproj" />
         <Project Path="src\Headless.Sql.SqlServer\Headless.Sql.SqlServer.csproj" />
@@ -158,7 +158,7 @@
     <Folder Name="/Database/Tests/">
         <Project Path="tests\Headless.Redis.Tests.Integration\Headless.Redis.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Redis.Tests.Unit\Headless.Redis.Tests.Unit.csproj" />
-        <Project Path="tests\Headless.Sql.Core.Tests.Unit\Headless.Sql.Core.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Sql.Tests.Unit\Headless.Sql.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Sql.PostgreSql.Tests.Integration\Headless.Sql.PostgreSql.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Sql.Providers.Tests.Unit\Headless.Sql.Providers.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Sql.Sqlite.Tests.Integration\Headless.Sql.Sqlite.Tests.Integration.csproj" />
@@ -172,16 +172,16 @@
     </Folder>
     <Folder Name="/DistributedLocks/">
         <Project Path="src\Headless.DistributedLocks.Abstractions\Headless.DistributedLocks.Abstractions.csproj" />
-        <Project Path="src\Headless.DistributedLocks.Core\Headless.DistributedLocks.Core.csproj" />
+        <Project Path="src\Headless.DistributedLocks\Headless.DistributedLocks.csproj" />
         <Project Path="src\Headless.DistributedLocks.InMemory\Headless.DistributedLocks.InMemory.csproj" />
-        <Project Path="src\Headless.DistributedLocks.Core.Database\Headless.DistributedLocks.Core.Database.csproj" />
+        <Project Path="src\Headless.DistributedLocks.Database\Headless.DistributedLocks.Database.csproj" />
         <Project Path="src\Headless.DistributedLocks.PostgreSql\Headless.DistributedLocks.PostgreSql.csproj" />
         <Project Path="src\Headless.DistributedLocks.Redis\Headless.DistributedLocks.Redis.csproj" />
         <Project Path="src\Headless.DistributedLocks.SqlServer\Headless.DistributedLocks.SqlServer.csproj" />
     </Folder>
     <Folder Name="/DistributedLocks/Tests/">
         <Project Path="tests\Headless.DistributedLocks.Composition.Tests.Unit\Headless.DistributedLocks.Composition.Tests.Unit.csproj" />
-        <Project Path="tests\Headless.DistributedLocks.Core.Database.Tests.Unit\Headless.DistributedLocks.Core.Database.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.DistributedLocks.Database.Tests.Unit\Headless.DistributedLocks.Database.Tests.Unit.csproj" />
         <Project Path="tests\Headless.DistributedLocks.InMemory.Tests.Integration\Headless.DistributedLocks.InMemory.Tests.Integration.csproj" />
         <Project Path="tests\Headless.DistributedLocks.PostgreSql.Tests.Integration\Headless.DistributedLocks.PostgreSql.Tests.Integration.csproj" />
         <Project Path="tests\Headless.DistributedLocks.Redis.Tests.Integration\Headless.DistributedLocks.Redis.Tests.Integration.csproj" />
@@ -192,7 +192,7 @@
         <Project Path="src\Headless.Emails.Abstractions\Headless.Emails.Abstractions.csproj" />
         <Project Path="src\Headless.Emails.Aws\Headless.Emails.Aws.csproj" />
         <Project Path="src\Headless.Emails.Azure\Headless.Emails.Azure.csproj" />
-        <Project Path="src\Headless.Emails.Core\Headless.Emails.Core.csproj" />
+        <Project Path="src\Headless.Emails\Headless.Emails.csproj" />
         <Project Path="src\Headless.Emails.Dev\Headless.Emails.Dev.csproj" />
         <Project Path="src\Headless.Emails.Mailkit\Headless.Emails.Mailkit.csproj" />
     </Folder>
@@ -205,7 +205,7 @@
     </Folder>
     <Folder Name="/Features/">
         <Project Path="src\Headless.Features.Abstractions\Headless.Features.Abstractions.csproj" />
-        <Project Path="src\Headless.Features.Core\Headless.Features.Core.csproj" />
+        <Project Path="src\Headless.Features\Headless.Features.csproj" />
         <Project Path="src\Headless.Features.Storage.EntityFramework\Headless.Features.Storage.EntityFramework.csproj" />
         <Project Path="src\Headless.Features.Storage.PostgreSql\Headless.Features.Storage.PostgreSql.csproj" />
         <Project Path="src\Headless.Features.Storage.SqlServer\Headless.Features.Storage.SqlServer.csproj" />
@@ -219,14 +219,14 @@
     </Folder>
     <Folder Name="/Fencing/">
         <Project Path="src\Headless.Fencing.Abstractions\Headless.Fencing.Abstractions.csproj" />
-        <Project Path="src\Headless.Fencing.Core\Headless.Fencing.Core.csproj" />
+        <Project Path="src\Headless.Fencing\Headless.Fencing.csproj" />
         <Project Path="src\Headless.Fencing.InMemory\Headless.Fencing.InMemory.csproj" />
         <Project Path="src\Headless.Fencing.PostgreSql\Headless.Fencing.PostgreSql.csproj" />
         <Project Path="src\Headless.Fencing.SqlServer\Headless.Fencing.SqlServer.csproj" />
         <Project Path="src\Headless.Fencing.Sqlite\Headless.Fencing.Sqlite.csproj" />
     </Folder>
     <Folder Name="/Fencing/Tests/">
-        <Project Path="tests\Headless.Fencing.Core.Tests.Unit\Headless.Fencing.Core.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Fencing.Tests.Unit\Headless.Fencing.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Fencing.InMemory.Tests.Unit\Headless.Fencing.InMemory.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Fencing.PostgreSql.Tests.Integration\Headless.Fencing.PostgreSql.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Fencing.SqlServer.Tests.Integration\Headless.Fencing.SqlServer.Tests.Integration.csproj" />
@@ -252,7 +252,7 @@
     <Folder Name="/Idempotency/">
         <Project Path="src\Headless.Idempotency.Abstractions\Headless.Idempotency.Abstractions.csproj" />
         <Project Path="src\Headless.Idempotency.Caching\Headless.Idempotency.Caching.csproj" />
-        <Project Path="src\Headless.Idempotency.Core\Headless.Idempotency.Core.csproj" />
+        <Project Path="src\Headless.Idempotency\Headless.Idempotency.csproj" />
         <Project Path="src\Headless.Idempotency.InMemory\Headless.Idempotency.InMemory.csproj" />
         <Project Path="src\Headless.Idempotency.PostgreSql\Headless.Idempotency.PostgreSql.csproj" />
         <Project Path="src\Headless.Idempotency.SqlServer\Headless.Idempotency.SqlServer.csproj" />
@@ -261,7 +261,7 @@
     <Folder Name="/Idempotency/Tests/">
         <Project Path="tests\Headless.Idempotency.Caching.Tests.Integration\Headless.Idempotency.Caching.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Idempotency.Caching.Tests.Unit\Headless.Idempotency.Caching.Tests.Unit.csproj" />
-        <Project Path="tests\Headless.Idempotency.Core.Tests.Unit\Headless.Idempotency.Core.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Idempotency.Tests.Unit\Headless.Idempotency.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Idempotency.InMemory.Tests.Unit\Headless.Idempotency.InMemory.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Idempotency.PostgreSql.Tests.Integration\Headless.Idempotency.PostgreSql.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Idempotency.SqlServer.Tests.Integration\Headless.Idempotency.SqlServer.Tests.Integration.csproj" />
@@ -270,12 +270,12 @@
     </Folder>
     <Folder Name="/Imaging/">
         <Project Path="src\Headless.Imaging.Abstractions\Headless.Imaging.Abstractions.csproj" />
-        <Project Path="src\Headless.Imaging.Core\Headless.Imaging.Core.csproj" />
+        <Project Path="src\Headless.Imaging\Headless.Imaging.csproj" />
         <Project Path="src\Headless.Imaging.ImageSharp\Headless.Imaging.ImageSharp.csproj" />
     </Folder>
     <Folder Name="/Coordination/Tests/">
         <Project Path="tests\Headless.Coordination.Abstractions.Tests.Unit\Headless.Coordination.Abstractions.Tests.Unit.csproj" />
-        <Project Path="tests\Headless.Coordination.Core.Tests.Unit\Headless.Coordination.Core.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Coordination.Tests.Unit\Headless.Coordination.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Coordination.PostgreSql.Tests.Integration\Headless.Coordination.PostgreSql.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Coordination.Redis.Tests.Integration\Headless.Coordination.Redis.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Coordination.SqlServer.Tests.Integration\Headless.Coordination.SqlServer.Tests.Integration.csproj" />
@@ -290,7 +290,7 @@
     </Folder>
     <Folder Name="/Jobs/">
         <Project Path="src/Headless.Jobs.Abstractions/Headless.Jobs.Abstractions.csproj" />
-        <Project Path="src/Headless.Jobs.Core/Headless.Jobs.Core.csproj" />
+        <Project Path="src/Headless.Jobs/Headless.Jobs.csproj" />
         <Project Path="src/Headless.Jobs.Dashboard/Headless.Jobs.Dashboard.csproj" />
         <Project Path="src/Headless.Jobs.EntityFramework/Headless.Jobs.EntityFramework.csproj" />
         <Project Path="src/Headless.Jobs.EntityFramework.PostgreSql/Headless.Jobs.EntityFramework.PostgreSql.csproj" />
@@ -370,7 +370,7 @@
         <Project Path="src/Headless.Messaging.Aws/Headless.Messaging.Aws.csproj" />
         <Project Path="src/Headless.Messaging.AzureServiceBus/Headless.Messaging.AzureServiceBus.csproj" />
         <Project Path="src/Headless.Messaging.Bus.Abstractions/Headless.Messaging.Bus.Abstractions.csproj" />
-        <Project Path="src/Headless.Messaging.Core/Headless.Messaging.Core.csproj" />
+        <Project Path="src/Headless.Messaging/Headless.Messaging.csproj" />
         <Project Path="src/Headless.Messaging.Dashboard.K8s/Headless.Messaging.Dashboard.K8s.csproj" />
         <Project Path="src/Headless.Messaging.Dashboard/Headless.Messaging.Dashboard.csproj" />
         <Project Path="src/Headless.Messaging.InMemory/Headless.Messaging.InMemory.csproj" />
@@ -424,8 +424,8 @@
         <Project Path="tests/Headless.Messaging.Storage.SqlServer.Tests.Unit/Headless.Messaging.Storage.SqlServer.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.Storage.SqlServer.EntityFramework.Tests.Unit/Headless.Messaging.Storage.SqlServer.EntityFramework.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.AzureServiceBus.Tests.Unit/Headless.Messaging.AzureServiceBus.Tests.Unit.csproj" />
-        <Project Path="tests/Headless.Messaging.Core.Tests.Harness/Headless.Messaging.Core.Tests.Harness.csproj" />
-        <Project Path="tests/Headless.Messaging.Core.Tests.Unit/Headless.Messaging.Core.Tests.Unit.csproj" />
+        <Project Path="tests/Headless.Messaging.Tests.Harness/Headless.Messaging.Tests.Harness.csproj" />
+        <Project Path="tests/Headless.Messaging.Tests.Unit/Headless.Messaging.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Messaging.SourceGenerator.Tests.Unit/Headless.Messaging.SourceGenerator.Tests.Unit.csproj" />
         <Project Path="test-assets/Headless.Messaging.GeneratedModuleFixture/Headless.Messaging.GeneratedModuleFixture.csproj" />
         <Project Path="tests/Headless.Messaging.Storage.PostgreSql.Tests.Integration/Headless.Messaging.Storage.PostgreSql.Tests.Integration.csproj" />
@@ -453,7 +453,7 @@
     </Folder>
     <Folder Name="/Orms/">
         <Project Path="src\Headless.Couchbase\Headless.Couchbase.csproj" />
-        <Project Path="src\Headless.EntityFramework.Core\Headless.EntityFramework.Core.csproj" />
+        <Project Path="src\Headless.EntityFramework.Primitives\Headless.EntityFramework.Primitives.csproj" />
         <Project Path="src\Headless.EntityFramework\Headless.EntityFramework.csproj" />
         <Project Path="src\Headless.EntityFramework.Messaging\Headless.EntityFramework.Messaging.csproj" />
         <Project Path="src\Headless.EntityFramework.Testing\Headless.EntityFramework.Testing.csproj" />
@@ -461,7 +461,7 @@
     <Folder Name="/Orms/Tests/">
         <Project Path="demo\Headless.EntityFramework.Migrations.Startup\Headless.EntityFramework.Migrations.Startup.csproj" />
         <Project Path="tests\Headless.Couchbase.Tests.Unit\Headless.Couchbase.Tests.Unit.csproj" />
-        <Project Path="tests\Headless.EntityFramework.Core.Tests.Unit\Headless.EntityFramework.Core.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.EntityFramework.Primitives.Tests.Unit\Headless.EntityFramework.Primitives.Tests.Unit.csproj" />
         <Project Path="tests\Headless.EntityFramework.Messaging.Tests.Integration\Headless.EntityFramework.Messaging.Tests.Integration.csproj" />
         <Project Path="tests\Headless.EntityFramework.Messaging.Tests.Unit\Headless.EntityFramework.Messaging.Tests.Unit.csproj" />
         <Project Path="tests\Headless.EntityFramework.Tests.Harness\Headless.EntityFramework.Tests.Harness.csproj" />
@@ -480,7 +480,7 @@
     </Folder>
     <Folder Name="/Permissions/">
         <Project Path="src\Headless.Permissions.Abstractions\Headless.Permissions.Abstractions.csproj" />
-        <Project Path="src\Headless.Permissions.Core\Headless.Permissions.Core.csproj" />
+        <Project Path="src\Headless.Permissions\Headless.Permissions.csproj" />
         <Project Path="src\Headless.Permissions.Storage.EntityFramework\Headless.Permissions.Storage.EntityFramework.csproj" />
         <Project Path="src\Headless.Permissions.Storage.PostgreSql\Headless.Permissions.Storage.PostgreSql.csproj" />
         <Project Path="src\Headless.Permissions.Storage.SqlServer\Headless.Permissions.Storage.SqlServer.csproj" />
@@ -498,7 +498,7 @@
     <Folder Name="/PushNotifications/">
         <Project Path="src\Headless.PushNotifications.Abstractions\Headless.PushNotifications.Abstractions.csproj" />
         <Project Path="src\Headless.PushNotifications.Apns\Headless.PushNotifications.Apns.csproj" />
-        <Project Path="src\Headless.PushNotifications.Core\Headless.PushNotifications.Core.csproj" />
+        <Project Path="src\Headless.PushNotifications\Headless.PushNotifications.csproj" />
         <Project Path="src\Headless.PushNotifications.Dev\Headless.PushNotifications.Dev.csproj" />
         <Project Path="src\Headless.PushNotifications.Firebase\Headless.PushNotifications.Firebase.csproj" />
     </Folder>
@@ -533,13 +533,13 @@
     </Folder>
     <Folder Name="/Sequences/">
         <Project Path="src\Headless.Sequences.Abstractions\Headless.Sequences.Abstractions.csproj" />
-        <Project Path="src\Headless.Sequences.Core\Headless.Sequences.Core.csproj" />
+        <Project Path="src\Headless.Sequences\Headless.Sequences.csproj" />
         <Project Path="src\Headless.Sequences.PostgreSql\Headless.Sequences.PostgreSql.csproj" />
         <Project Path="src\Headless.Sequences.SqlServer\Headless.Sequences.SqlServer.csproj" />
         <Project Path="src\Headless.Sequences.Sqlite\Headless.Sequences.Sqlite.csproj" />
     </Folder>
     <Folder Name="/Sequences/Tests/">
-        <Project Path="tests\Headless.Sequences.Core.Tests.Unit\Headless.Sequences.Core.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Sequences.Tests.Unit\Headless.Sequences.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Sequences.PostgreSql.Tests.Integration\Headless.Sequences.PostgreSql.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Sequences.SqlServer.Tests.Integration\Headless.Sequences.SqlServer.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Sequences.Sqlite.Tests.Integration\Headless.Sequences.Sqlite.Tests.Integration.csproj" />
@@ -556,7 +556,7 @@
     </Folder>
     <Folder Name="/Settings/">
         <Project Path="src\Headless.Settings.Abstractions\Headless.Settings.Abstractions.csproj" />
-        <Project Path="src\Headless.Settings.Core\Headless.Settings.Core.csproj" />
+        <Project Path="src\Headless.Settings\Headless.Settings.csproj" />
         <Project Path="src\Headless.Settings.Storage.EntityFramework\Headless.Settings.Storage.EntityFramework.csproj" />
         <Project Path="src\Headless.Settings.Storage.PostgreSql\Headless.Settings.Storage.PostgreSql.csproj" />
         <Project Path="src\Headless.Settings.Storage.SqlServer\Headless.Settings.Storage.SqlServer.csproj" />
@@ -573,7 +573,7 @@
         <Project Path="src\Headless.Sms.Aws\Headless.Sms.Aws.csproj" />
         <Project Path="src\Headless.Sms.Cequens\Headless.Sms.Cequens.csproj" />
         <Project Path="src\Headless.Sms.Connekio\Headless.Sms.Connekio.csproj" />
-        <Project Path="src\Headless.Sms.Core\Headless.Sms.Core.csproj" />
+        <Project Path="src\Headless.Sms\Headless.Sms.csproj" />
         <Project Path="src\Headless.Sms.Dev\Headless.Sms.Dev.csproj" />
         <Project Path="src\Headless.Sms.Infobip\Headless.Sms.Infobip.csproj" />
         <Project Path="src\Headless.Sms.Twilio\Headless.Sms.Twilio.csproj" />

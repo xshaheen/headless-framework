@@ -11,12 +11,12 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.MultiTenancy\Headless.MultiTenancy.csproj" />
-    <ProjectReference Include="..\..\src\Headless.Coordination.Core\Headless.Coordination.Core.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Coordination\Headless.Coordination.csproj" />
     <ProjectReference Include="..\..\src\Headless.EntityFramework\Headless.EntityFramework.csproj" />
-    <ProjectReference Include="..\..\src\Headless.Jobs.Core\Headless.Jobs.Core.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Jobs\Headless.Jobs.csproj" />
     <ProjectReference Include="..\..\src\Headless.Jobs.EntityFramework\Headless.Jobs.EntityFramework.csproj" />
     <ProjectReference Include="..\..\src\Headless.Messaging.Bus.Abstractions\Headless.Messaging.Bus.Abstractions.csproj" />
-    <ProjectReference Include="..\..\src\Headless.Messaging.Core\Headless.Messaging.Core.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Messaging\Headless.Messaging.csproj" />
     <ProjectReference Include="..\..\src\Headless.Messaging.InMemory\Headless.Messaging.InMemory.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing.Testcontainers\Headless.Testing.Testcontainers.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />

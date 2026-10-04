@@ -13,7 +13,7 @@
       OutputItemType="Analyzer"
       ReferenceOutputAssembly="false"
     />
-    <ProjectReference Include="..\..\src\Headless.Jobs.Core\Headless.Jobs.Core.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Jobs\Headless.Jobs.csproj" />
     <ProjectReference Include="..\..\src\Headless.Jobs.Dashboard\Headless.Jobs.Dashboard.csproj" />
   </ItemGroup>
 </Project>

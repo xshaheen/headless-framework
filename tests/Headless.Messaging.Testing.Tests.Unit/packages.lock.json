@@ -465,13 +465,7 @@
           "Headless.Primitives": "[1.0.0, )"
         }
       },
-      "headless.coordination.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )"
-        }
-      },
-      "headless.coordination.core": {
+      "headless.coordination": {
         "type": "Project",
         "dependencies": {
           "FluentValidation": "[12.1.1, )",
@@ -485,6 +479,12 @@
           "Microsoft.Extensions.Configuration.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.Hosting.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.12, )"
+        }
+      },
+      "headless.coordination.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )"
         }
       },
       "headless.distributedlocks.abstractions": {
@@ -530,6 +530,28 @@
           "OpenTelemetry.Api": "[1.18.0, )"
         }
       },
+      "headless.messaging": {
+        "type": "Project",
+        "dependencies": {
+          "FastExpressionCompiler": "[5.4.1, )",
+          "Headless.Coordination": "[1.0.0, )",
+          "Headless.Coordination.Abstractions": "[1.0.0, )",
+          "Headless.DistributedLocks.Abstractions": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )",
+          "Headless.Messaging.Abstractions": "[1.0.0, )",
+          "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
+          "Headless.Messaging.Queue.Abstractions": "[1.0.0, )",
+          "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
+          "Headless.Sql": "[1.0.0, )",
+          "Headless.Sql.Abstractions": "[1.0.0, )",
+          "Headless.UnitOfWork": "[1.0.0, )",
+          "Microsoft.Extensions.Diagnostics": "[10.0.12, )",
+          "Microsoft.Extensions.Options": "[10.0.12, )",
+          "OpenTelemetry.Api": "[1.18.0, )",
+          "Polly.Core": "[8.7.0, )"
+        }
+      },
       "headless.messaging.abstractions": {
         "type": "Project",
         "dependencies": {
@@ -545,33 +567,11 @@
           "Headless.Messaging.Abstractions": "[1.0.0, )"
         }
       },
-      "headless.messaging.core": {
-        "type": "Project",
-        "dependencies": {
-          "FastExpressionCompiler": "[5.4.1, )",
-          "Headless.Coordination.Abstractions": "[1.0.0, )",
-          "Headless.Coordination.Core": "[1.0.0, )",
-          "Headless.DistributedLocks.Abstractions": "[1.0.0, )",
-          "Headless.Extensions": "[1.0.0, )",
-          "Headless.Hosting": "[1.0.0, )",
-          "Headless.Messaging.Abstractions": "[1.0.0, )",
-          "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
-          "Headless.Messaging.Queue.Abstractions": "[1.0.0, )",
-          "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
-          "Headless.Sql.Abstractions": "[1.0.0, )",
-          "Headless.Sql.Core": "[1.0.0, )",
-          "Headless.UnitOfWork": "[1.0.0, )",
-          "Microsoft.Extensions.Diagnostics": "[10.0.12, )",
-          "Microsoft.Extensions.Options": "[10.0.12, )",
-          "OpenTelemetry.Api": "[1.18.0, )",
-          "Polly.Core": "[8.7.0, )"
-        }
-      },
       "headless.messaging.inmemory": {
         "type": "Project",
         "dependencies": {
+          "Headless.Messaging": "[1.0.0, )",
           "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
-          "Headless.Messaging.Core": "[1.0.0, )",
           "Headless.Messaging.Queue.Abstractions": "[1.0.0, )"
         }
       },
@@ -584,13 +584,13 @@
       "headless.messaging.storage.inmemory": {
         "type": "Project",
         "dependencies": {
-          "Headless.Messaging.Core": "[1.0.0, )"
+          "Headless.Messaging": "[1.0.0, )"
         }
       },
       "headless.messaging.testing": {
         "type": "Project",
         "dependencies": {
-          "Headless.Messaging.Core": "[1.0.0, )",
+          "Headless.Messaging": "[1.0.0, )",
           "Headless.Messaging.InMemory": "[1.0.0, )",
           "Headless.Messaging.Storage.InMemory": "[1.0.0, )",
           "Microsoft.Extensions.DependencyInjection": "[10.0.12, )",
@@ -635,10 +635,7 @@
           "Headless.Serializer.Abstractions": "[1.0.0, )"
         }
       },
-      "headless.sql.abstractions": {
-        "type": "Project"
-      },
-      "headless.sql.core": {
+      "headless.sql": {
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
@@ -648,6 +645,9 @@
           "Nito.AsyncEx": "[5.1.2, )",
           "OpenTelemetry.Api": "[1.18.0, )"
         }
+      },
+      "headless.sql.abstractions": {
+        "type": "Project"
       },
       "headless.testing": {
         "type": "Project",

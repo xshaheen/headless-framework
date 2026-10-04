@@ -7,7 +7,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Blobs.Abstractions\Headless.Blobs.Abstractions.csproj" />
-    <ProjectReference Include="..\Headless.Blobs.Core\Headless.Blobs.Core.csproj" />
+    <ProjectReference Include="..\Headless.Blobs\Headless.Blobs.csproj" />
     <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
     <ProjectReference Include="..\Headless.MultiTenancy.Abstractions\Headless.MultiTenancy.Abstractions.csproj" />
   </ItemGroup>

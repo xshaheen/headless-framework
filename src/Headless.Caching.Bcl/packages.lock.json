@@ -224,14 +224,7 @@
         "resolved": "10.0.12",
         "contentHash": "jDix4bBMYnpZdSPcnY+KDV6ik3SRMzpMKby/bZl/XUwIiflwRNAFZ0oOl61R/pSaveIJ8t1gs2BUlrGsPs/bcg=="
       },
-      "headless.caching.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.Primitives": "[1.0.0, )"
-        }
-      },
-      "headless.caching.core": {
+      "headless.caching": {
         "type": "Project",
         "dependencies": {
           "Headless.Caching.Abstractions": "[1.0.0, )",
@@ -240,6 +233,13 @@
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.12, )",
           "OpenTelemetry.Api": "[1.18.0, )"
+        }
+      },
+      "headless.caching.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Primitives": "[1.0.0, )"
         }
       },
       "headless.checks": {

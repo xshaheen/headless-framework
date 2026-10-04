@@ -6,7 +6,7 @@ All public contracts and options use the `Headless.Security` namespace.
 
 ## Why use this package
 
-Allows downstream packages and application layers to depend on encryption and hashing abstractions without referencing a concrete implementation. `Headless.Settings.Core` depends on `IStringEncryptionService` from this package; consuming code can swap the implementation independently.
+Allows downstream packages and application layers to depend on encryption and hashing abstractions without referencing a concrete implementation. `Headless.Settings` depends on `IStringEncryptionService` from this package; consuming code can swap the implementation independently.
 
 ## Install
 

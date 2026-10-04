@@ -1,7 +1,7 @@
 ---
 title: "Thread Safety and Resilience Patterns in .NET Messaging Circuit Breakers"
 date: 2026-03-21
-module: Headless.Messaging.Core
+module: Headless.Messaging
 problem_type: runtime_error
 component: service_class
 severity: high
@@ -339,12 +339,12 @@ _logger.LogError(ex,
 ## Files Affected
 
 ```
-src/Headless.Messaging.Core/CircuitBreaker/CircuitBreakerStateManager.cs  (11 fixes)
-src/Headless.Messaging.Core/CircuitBreaker/ICircuitBreakerStateManager.cs
-src/Headless.Messaging.Core/CircuitBreaker/CircuitBreakerMetrics.cs
-src/Headless.Messaging.Core/Internal/IConsumerRegister.cs
-src/Headless.Messaging.Core/Messages/Message.cs
-src/Headless.Messaging.Core/Setup.cs
+src/Headless.Messaging/CircuitBreaker/CircuitBreakerStateManager.cs  (11 fixes)
+src/Headless.Messaging/CircuitBreaker/ICircuitBreakerStateManager.cs
+src/Headless.Messaging/CircuitBreaker/CircuitBreakerMetrics.cs
+src/Headless.Messaging/Internal/IConsumerRegister.cs
+src/Headless.Messaging/Messages/Message.cs
+src/Headless.Messaging/Setup.cs
 src/Headless.Messaging.RabbitMq/RabbitMqConsumerClient.cs
 src/Headless.Messaging.Nats/NatsConsumerClient.cs
 src/Headless.Messaging.InMemory/InMemoryConsumerClient.cs
@@ -352,7 +352,7 @@ src/Headless.Messaging.Pulsar/PulsarConsumerClient.cs
 src/Headless.Messaging.Aws/AmazonSqsConsumerClient.cs
 src/Headless.Messaging.Redis/RedisConsumerClient.cs
 docs/llms/messaging.md
-tests/Headless.Messaging.Core.Tests.Unit/CircuitBreaker/CircuitBreakerStateManagerTests.cs
+tests/Headless.Messaging.Tests.Unit/CircuitBreaker/CircuitBreakerStateManagerTests.cs
 ```
 
 ---

@@ -1,7 +1,7 @@
 ---
 title: Named-instance registration with keyed services and named options
 date: 2026-06-20
-module: Headless.Blobs.Core
+module: Headless.Blobs
 problem_type: architecture_pattern
 component: service_class
 severity: medium
@@ -16,7 +16,7 @@ tags: [blobs, keyed-services, named-options, dependency-injection, setup-builder
 
 ## Context
 
-The framework's abstraction-plus-provider features historically registered a single service instance (`AddSingleton<IService, Engine>()`) plus shared singletons for the provider's client, options, and normalizer. That shape allows exactly one instance per container — a second `Add…` call silently shadows the first. When a feature must support **multiple named instances in one container** (e.g. blob stores `images`→R2, `docs`→Azure, plus two R2 buckets), every shared singleton becomes a contention point. `Headless.Blobs.Core` (the `AddHeadlessBlobs` builder) solved this by mirroring `Headless.Caching.Core`. This documents the reusable wiring so the next feature that needs named instances does not rediscover the gotchas.
+The framework's abstraction-plus-provider features historically registered a single service instance (`AddSingleton<IService, Engine>()`) plus shared singletons for the provider's client, options, and normalizer. That shape allows exactly one instance per container — a second `Add…` call silently shadows the first. When a feature must support **multiple named instances in one container** (e.g. blob stores `images`→R2, `docs`→Azure, plus two R2 buckets), every shared singleton becomes a contention point. `Headless.Blobs` (the `AddHeadlessBlobs` builder) solved this by mirroring `Headless.Caching`. This documents the reusable wiring so the next feature that needs named instances does not rediscover the gotchas.
 
 ## Guidance
 
@@ -102,4 +102,4 @@ Engine-shape gotchas encountered across the six blob providers:
 
 - [unified-provider-setup-builder-pattern.md](unified-provider-setup-builder-pattern.md) — the per-slot builder contract (default/named/cross-cutting slots, deferred registration, called-once marker, overload trio).
 - [keyed-services-for-overridable-abstractions.md](../conventions/keyed-services-for-overridable-abstractions.md) — `TryAddKeyedSingleton` defaults vs consumer `AddKeyedSingleton`, key-visibility discipline.
-- Reference implementation: `src/Headless.Blobs.Core/` (`HeadlessBlobsSetupBuilder`, `Setup.cs`, `KeyedServiceBlobStorageProvider`) and `src/Headless.Caching.Core/` (the original of this shape).
+- Reference implementation: `src/Headless.Blobs/` (`HeadlessBlobsSetupBuilder`, `Setup.cs`, `KeyedServiceBlobStorageProvider`) and `src/Headless.Caching/` (the original of this shape).

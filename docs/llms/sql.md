@@ -1,6 +1,6 @@
 ---
 domain: SQL
-packages: Sql.Abstractions, Sql.Core, Sql.PostgreSql, Sql.SqlServer, Sql.Sqlite
+packages: Sql.Abstractions, Sql, Sql.PostgreSql, Sql.SqlServer, Sql.Sqlite
 ---
 
 # SQL
@@ -9,7 +9,7 @@ packages: Sql.Abstractions, Sql.Core, Sql.PostgreSql, Sql.SqlServer, Sql.Sqlite
 
 ## Orientation
 
-Install `Headless.Sql.Abstractions` plus one provider package. Add `Headless.Sql.Core` when you need the default scoped `ISqlCurrentConnection` implementation:
+Install `Headless.Sql.Abstractions` plus one provider package. Add `Headless.Sql` when you need the default scoped `ISqlCurrentConnection` implementation:
 
 - `Headless.Sql.PostgreSql` — wraps Npgsql; returns `NpgsqlConnection`
 - `Headless.Sql.SqlServer` — wraps `Microsoft.Data.SqlClient`; returns `SqlConnection`
@@ -32,7 +32,7 @@ Inject `ISqlConnectionFactory` and call `CreateNewConnectionAsync()` to get an a
 - Do **not** construct connections directly (`new NpgsqlConnection(cs)` / `new SqlConnection(cs)`). Always go through the factory so the connection string is centralized and the factory can be swapped in tests.
 - Connections returned by `CreateNewConnectionAsync()` are **already open** — calling `OpenAsync()` on them again throws an `InvalidOperationException`.
 - Always dispose connections with `await using` — they are `IAsyncDisposable`. Holding an open connection unnecessarily may exhaust the connection pool.
-- `ISqlCurrentConnection` defines an ambient, lazy-open connection for unit-of-work patterns. `Headless.Sql.Core` provides `DefaultSqlCurrentConnection`; the provider `Add{Provider}Sql` extensions register it as scoped for you.
+- `ISqlCurrentConnection` defines an ambient, lazy-open connection for unit-of-work patterns. `Headless.Sql` provides `DefaultSqlCurrentConnection`; the provider `Add{Provider}Sql` extensions register it as scoped for you.
 - `IConnectionStringChecker` is for health checks and startup validation; `Add{Provider}Sql` registers the provider implementation, or register it yourself and inject `IConnectionStringChecker`. Note: `SqliteConnectionStringChecker` always returns `DatabaseExists = true` when connected (SQLite creates the file on open).
 - For in-process integration tests, call `AddSqliteSql("Data Source=:memory:")` — it needs no external server.
 - To give every Headless storage feature the same database, register the connection once with `AddPostgreSqlSql` or `AddSqlServerSql` and call the feature's parameterless `UsePostgreSql()` or `UseSqlServer()`. Do not repeat the connection string per feature. See [Shared connection and schema for storage features](#shared-connection-and-schema-for-storage-features).
@@ -66,7 +66,7 @@ public interface ISqlCurrentConnection : IAsyncDisposable
 }
 ```
 
-`Headless.Sql.Core` provides `DefaultSqlCurrentConnection`, which lazily opens one connection per instance, protects concurrent callers with an `AsyncLock`, and re-opens if the connection drops. Register it as **scoped** — one instance per request/scope — so it is disposed at the end of each unit of work.
+`Headless.Sql` provides `DefaultSqlCurrentConnection`, which lazily opens one connection per instance, protects concurrent callers with an `AsyncLock`, and re-opens if the connection drops. Register it as **scoped** — one instance per request/scope — so it is disposed at the end of each unit of work.
 
 ### Connection string checker
 
@@ -182,7 +182,7 @@ A relational store is written once against `ISqlDialect` (`Headless.Sql`), with 
 - **Tokens.** Fragments use `SqlDialectTokens.Now` (`{now}`) for the database clock, never the application clock, and `SqlDialectTokens.Stored` (`{stored}`) for the stored row in an upsert's `Set` and `Guard`. PostgreSQL reads `clock_timestamp()` once per statement, never `now()`. A locked read, fenced transition, claim, and batch lock read the clock after their rows are locked; `SqlUpsert` and `SqlInsertIfAbsent` may read it before waiting on a concurrent writer of the same key, so decide a lease or a due time with a locked read and a fenced transition, not with an upsert guard that compares against `{now}`.
 - **Partial keys.** `SqlLockedRead` and `SqlInsertIfAbsent` take an optional `KeyPredicate`: the filter of the partial unique index the key belongs to, written with the same literals as the index, so PostgreSQL infers the index as the conflict target and SQL Server matches its filtered index.
 - **Expressions.** `BooleanLiteral` (`TRUE`/`FALSE` or `1`/`0`; a literal, so a filtered index stays usable), `NewGuid` (a random identifier per row), `ShiftBySeconds` (an instant plus an integer column of seconds), `Limit` (the clause after `ORDER BY` that keeps a page), `LikeIgnoringCase` (`ILIKE` on PostgreSQL, `LIKE` under the column's collation on SQL Server; the escape character is a backslash), and `ReadWithoutWaiting` (a table reference for a dashboard read that never waits on a locked row: PostgreSQL returns the row as last committed, SQL Server skips it).
-- **Results.** `SqlFencedCommand.ExecuteAsync` and `SqlUpsertCommand.ExecuteAsync` (`Headless.Sql.Core`) return `SqlFenced<TRow, TAccepted>` and `SqlUpserted<T>`, whose written values are reachable only through `Match`, so a store cannot use a result without handling the refusal.
+- **Results.** `SqlFencedCommand.ExecuteAsync` and `SqlUpsertCommand.ExecuteAsync` (`Headless.Sql`) return `SqlFenced<TRow, TAccepted>` and `SqlUpserted<T>`, whose written values are reachable only through `Match`, so a store cannot use a result without handling the refusal.
 - **Lists.** `InList(expression, parameter, elementType)` with `AddListParameter` binds a whole list as one parameter: `= ANY(@p)` over an array on PostgreSQL, `OPENJSON` with a typed `WITH` clause on SQL Server. No table type has to exist, and an empty list matches nothing. Binary and JSON lists are refused. `InTuples` with `CreateTupleListParameters` matches a list of rows as whole tuples (`unnest` over one array per column on PostgreSQL, `OPENJSON` with positional columns and `EXISTS` on SQL Server), so pairs such as (id, expected version) are never matched across rows.
 - **Parameters.** `AddParameter` types each value by `SqlColumnType` (`KeyText`, `Text`, `Int16`, `Int32`, `Int64`, `Timestamp`, `Binary`, `FixedBinary`, `Guid`, `Boolean`, `Json`); text is sized to its column so the comparison keeps the column's collation; for a value a store looks rows up by, `SqlColumnType.LookupText(maxLength, value)` (or its list overload) binds unsized when the value is longer than the column, because a sized SQL Server parameter would truncate it and match the rows that store its prefix; and `FixedBinary(n)` binds SQL Server `binary(n)` so a seek on a fixed-length key column keeps its index. `AddDuration` and `ShiftByDuration` add a `TimeSpan` to an instant without the SQL Server `DATEADD` int overflow.
 - **Errors.** `Classify` maps a driver exception to `SqlErrorKind`: `UniqueViolation`, `Deadlock`, `SerializationConflict`, `DuplicateObject`, `LockTimeout`, and `TransactionAborted` for a statement that ran on a transaction an earlier error ended or doomed (PostgreSQL `25P02`, SQL Server `3930`, and on SQLite the driver's `InvalidOperationException` for a transaction SQLite rolled back). That transaction is lost; roll the unit back rather than retrying inside it.
@@ -292,7 +292,7 @@ public sealed class OrderRepository(ISqlConnectionFactory connectionFactory)
 }
 ```
 
-Add `Headless.Sql.Core` when you need the default scoped `ISqlCurrentConnection` implementation.
+Add `Headless.Sql` when you need the default scoped `ISqlCurrentConnection` implementation.
 
 ### Configuration
 
@@ -304,7 +304,7 @@ None. This is an abstractions package — it registers no services.
 
 ---
 
-## Headless.Sql.Core
+## Headless.Sql
 
 Default implementation package for provider-agnostic SQL helpers.
 
@@ -319,7 +319,7 @@ Default implementation package for provider-agnostic SQL helpers.
 ### Install
 
 ```bash
-dotnet add package Headless.Sql.Core
+dotnet add package Headless.Sql
 ```
 
 ### Setup and use

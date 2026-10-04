@@ -412,7 +412,7 @@ services.AddStartupValidator<OrdersModelValidator>();
 
 #### Required Services
 
-The abstraction-plus-provider split lets a package register cleanly against a contract whose only implementation ships in a *provider* package the host must choose — `Headless.Settings.Core` consumes `ICache<SettingValueCacheItem>` while referencing only `Headless.Caching.Abstractions`, for example. Without a declared prerequisite such a host starts green and throws on the first request that touches the feature.
+The abstraction-plus-provider split lets a package register cleanly against a contract whose only implementation ships in a *provider* package the host must choose — `Headless.Settings` consumes `ICache<SettingValueCacheItem>` while referencing only `Headless.Caching.Abstractions`, for example. Without a declared prerequisite such a host starts green and throws on the first request that touches the feature.
 
 ```csharp
 services.RequireRegisteredService<ICache<SettingValueCacheItem>>(
@@ -425,7 +425,7 @@ services.RequireRegisteredService<ICache<SettingValueCacheItem>>(
 - **Probed, never resolved.** It asks `IServiceProviderIsService` rather than resolving the contract, so validation never constructs the service under test (a Redis-backed cache would reach into its connection options and turn a provider misconfiguration into an opaque failure from the guard). MS.DI's probe answers a *constructed* generic from an *open*-generic registration, so `ICache<Foo>` reports present when only `typeof(ICache<>)` was registered — which is exactly how the caching providers register. A container that does not expose the probe falls back to a null-returning resolve.
 - **Aggregated.** Requirements from every feature in the host are collected and reported in one `MissingRequiredServiceException` (`Headless.Hosting`), each line naming its `requiredBy` and `remedy`. A host missing one shared provider sees every affected feature at once instead of one failure per restart. Identical declarations collapse to a single line, and the startup check itself is registered once no matter how many features declare requirements.
 
-`Headless.MultiTenancy`, `Headless.Settings.Core`, `Headless.Permissions.Core`, `Headless.Features.Core`, and `Headless.Api.Idempotency` all use this to require a caching provider.
+`Headless.MultiTenancy`, `Headless.Settings`, `Headless.Permissions`, `Headless.Features`, and `Headless.Api.Idempotency` all use this to require a caching provider.
 
 `RequireSingletonService<T>(requiredBy, remedy)` (and the `Type` overload) goes one step further for a service that a feature's *singleton* injects but the application registers:
 

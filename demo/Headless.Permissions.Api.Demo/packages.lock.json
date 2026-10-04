@@ -315,14 +315,7 @@
         "resolved": "18.1.0",
         "contentHash": "5K+9KFg2TdTl7VXv88Qzi/0lqK6JFoNP3lRuImPYGRV7K/QYklDyTrj4+A+KAki1JsQi6qKY+hDyY7d6WRqjrw=="
       },
-      "headless.api.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Context.Abstractions": "[1.0.0, )",
-          "Headless.MultiTenancy.Abstractions": "[1.0.0, )"
-        }
-      },
-      "headless.api.core": {
+      "headless.api": {
         "type": "Project",
         "dependencies": {
           "Asp.Versioning.Abstractions": "[10.2.1, )",
@@ -345,6 +338,13 @@
           "Microsoft.IdentityModel.JsonWebTokens": "[8.22.0, )",
           "NetEscapades.AspNetCore.SecurityHeaders": "[1.3.1, )",
           "TimeZoneConverter": "[7.2.0, )"
+        }
+      },
+      "headless.api.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Context.Abstractions": "[1.0.0, )",
+          "Headless.MultiTenancy.Abstractions": "[1.0.0, )"
         }
       },
       "headless.auditlog.abstractions": {
@@ -408,7 +408,7 @@
           "Headless.Context.Abstractions": "[1.0.0, )",
           "Headless.Domain": "[1.0.0, )",
           "Headless.Domain.LocalEventBus": "[1.0.0, )",
-          "Headless.EntityFramework.Core": "[1.0.0, )",
+          "Headless.EntityFramework.Primitives": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
           "Headless.UnitOfWork.EntityFramework": "[1.0.0, )",
@@ -416,7 +416,7 @@
           "Microsoft.EntityFrameworkCore.Relational": "[10.0.12, )"
         }
       },
-      "headless.entityframework.core": {
+      "headless.entityframework.primitives": {
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
@@ -494,20 +494,12 @@
         "type": "Project",
         "dependencies": {
           "Asp.Versioning.Mvc.ApiExplorer": "[10.2.1, )",
-          "Headless.Api.Core": "[1.0.0, )",
+          "Headless.Api": "[1.0.0, )",
           "NSwag.Annotations": "[14.7.1, )",
           "NSwag.AspNetCore": "[14.7.1, )"
         }
       },
-      "headless.permissions.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.Context.Abstractions": "[1.0.0, )",
-          "Headless.Extensions": "[1.0.0, )"
-        }
-      },
-      "headless.permissions.core": {
+      "headless.permissions": {
         "type": "Project",
         "dependencies": {
           "Headless.Caching.Abstractions": "[1.0.0, )",
@@ -526,11 +518,19 @@
           "Polly.Core": "[8.7.0, )"
         }
       },
+      "headless.permissions.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Context.Abstractions": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )"
+        }
+      },
       "headless.permissions.storage.entityframework": {
         "type": "Project",
         "dependencies": {
           "Headless.EntityFramework": "[1.0.0, )",
-          "Headless.Permissions.Core": "[1.0.0, )"
+          "Headless.Permissions": "[1.0.0, )"
         }
       },
       "headless.primitives": {

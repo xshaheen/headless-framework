@@ -478,6 +478,16 @@
           "Headless.Primitives": "[1.0.0, )"
         }
       },
+      "headless.emails": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Emails.Abstractions": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
+          "MailKit": "[4.17.0, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )"
+        }
+      },
       "headless.emails.abstractions": {
         "type": "Project",
         "dependencies": {
@@ -489,32 +499,22 @@
         "dependencies": {
           "AWSSDK.Extensions.NETCore.Setup": "[4.0.101.3, )",
           "AWSSDK.SimpleEmailV2": "[4.0.104.2, )",
-          "Headless.Emails.Core": "[1.0.0, )",
+          "Headless.Emails": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )"
-        }
-      },
-      "headless.emails.core": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.Emails.Abstractions": "[1.0.0, )",
-          "Headless.Extensions": "[1.0.0, )",
-          "MailKit": "[4.17.0, )",
-          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )"
         }
       },
       "headless.emails.dev": {
         "type": "Project",
         "dependencies": {
+          "Headless.Emails": "[1.0.0, )",
           "Headless.Emails.Abstractions": "[1.0.0, )",
-          "Headless.Emails.Core": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )"
         }
       },
       "headless.emails.mailkit": {
         "type": "Project",
         "dependencies": {
-          "Headless.Emails.Core": "[1.0.0, )",
+          "Headless.Emails": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Microsoft.Extensions.ObjectPool": "[10.0.12, )"
         }

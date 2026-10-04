@@ -42,7 +42,7 @@ into it. Outside that, family packages share their feature root freely.
 
 `DataEnvelope<T>`, `CollectionEnvelope<T>`, `ValueEnvelope<T>`, `IdEnvelope`, `IdMessageEnvelope`,
 `MessageEnvelope`, `OperationDescriptor`, `OperationsDataEnvelope<T>`, and `OperationsCollectionEnvelope<T>` in
-`Headless.Api.Core`, plus the `ApiResult` conversion holders in `Headless.Api.Mvc` and
+`Headless.Api`, plus the `ApiResult` conversion holders in `Headless.Api.Mvc` and
 `Headless.Api.MinimalApi`, deliberately ship into the `Headless.Primitives` namespace, so envelopes surface
 beside the result primitives consumers already import. This is safe only while type names stay unique across
 every package that ships into `Headless.Primitives`. Check for a collision before adding a type to that

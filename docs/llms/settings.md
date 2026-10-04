@@ -1,6 +1,6 @@
 ---
 domain: Settings
-packages: Settings.Abstractions, Settings.Core, Settings.Storage.EntityFramework, Settings.Storage.PostgreSql, Settings.Storage.SqlServer
+packages: Settings.Abstractions, Settings, Settings.Storage.EntityFramework, Settings.Storage.PostgreSql, Settings.Storage.SqlServer
 ---
 
 # Settings
@@ -12,7 +12,7 @@ packages: Settings.Abstractions, Settings.Core, Settings.Storage.EntityFramework
 Install three packages: an abstractions package, the core implementation, and exactly one storage provider:
 
 - `Headless.Settings.Abstractions` — interfaces (`ISettingManager`, `ISettingDefinitionProvider`, `SettingDefinition`)
-- `Headless.Settings.Core` — full implementation with hierarchical providers, caching, encryption, background init
+- `Headless.Settings` — full implementation with hierarchical providers, caching, encryption, background init
 - one storage provider: `Headless.Settings.Storage.EntityFramework`, `Headless.Settings.Storage.PostgreSql`, or `Headless.Settings.Storage.SqlServer`
 
 Minimal wiring:
@@ -33,7 +33,7 @@ Define settings via `ISettingDefinitionProvider.Define()`. Read via `ISettingMan
 ## Agent Rules
 
 - Use this for **runtime-changeable settings**, not for static configuration. For static config, use `IOptions<T>` / `IConfiguration`.
-- Always install all three packages together. `Headless.Settings.Abstractions` alone gives nothing runnable; `Headless.Settings.Core` requires a storage backend.
+- Always install all three packages together. `Headless.Settings.Abstractions` alone gives nothing runnable; `Headless.Settings` requires a storage backend.
 - `ISettingManager` is the primary entry point. Call `GetAsync(name)` to read; `SetAsync(name, value, providerName, providerKey)` to write. `GetAsync` returns a never-`null` `SettingValue(Name, Value, Provider)`: on a miss both `Value` and `Provider` are `null`; on a hit `Provider` (a `SettingValueProvider(Name, Key)`) identifies the resolving provider and its per-provider key. It still throws `ConflictException` when the setting is undefined.
 - To write several settings at once, call `SetAsync(values, providerName, providerKey)` with an `IReadOnlyDictionary<string, string?>` keyed by setting name; a `null` value clears that setting. It checks every name, the provider, and its writability before writing anything, so an undefined name or a read-only provider rejects the whole batch with `ConflictException` and changes nothing. The built-in stores (EF, PostgreSQL, SQL Server) then write the batch in one transaction, so a failed write leaves every value as it was, and a successful one publishes a single `SettingChangedMessage` listing every name. An empty dictionary writes and announces nothing. The single-name `SetAsync` is the one-entry case of this call. Clearing a value removes only the row stored under the exact provider key the provider resolves, not that setting under every key of the provider. Atomicity holds per provider: when several registered providers share `providerName`, each writes the batch in its own transaction. The store-backed providers open their own connection and transaction, so the write does not join a unit of work the caller has open, and rolling that unit back does not undo it. When a concurrent writer inserts or deletes one of the batch's rows between the store's read and its save, the store reads again and retries (up to three attempts); the last writer's value wins.
 - Provider names are constants on `SettingValueProviderNames`: `DefaultValue`, `Configuration`, `Global`, `Tenant`, `User`. Note: the default-value constant is `DefaultValue`, not `Default`.
@@ -180,7 +180,7 @@ Defines the provider-agnostic interfaces for dynamic application settings manage
 - `SettingValue` — immutable record `SettingValue(string Name, string? Value, SettingValueProvider? Provider = null)` returned by `GetAsync` and `GetAllAsync`; `Provider` attributes the resolving value provider (or `null` on a miss)
 - `SettingValueProvider` — immutable record `SettingValueProvider(string Name, string? Key)` identifying the provider name and its per-provider key
 - `ISettingDefinitionContext` — context passed to `ISettingDefinitionProvider.Define()`; exposes the factory `Add(SettingDefinitionCreateOptions options)` (creates, registers, and returns the definition), plus `GetOrDefault(name)` and `GetAll()`
-- `ISettingsSnapshot<T>` — a typed value bound from Global settings, held in memory: `GetAsync` (waits for the first load), `TryGetCurrent` (synchronous; `false` until the first load), `Revision` (moves only when a value changed), and `OnChange(listener)`. Registered with `AddSettingsSnapshot<T>` from `Headless.Settings.Core`; see [Settings snapshot](#settings-snapshot)
+- `ISettingsSnapshot<T>` — a typed value bound from Global settings, held in memory: `GetAsync` (waits for the first load), `TryGetCurrent` (synchronous; `false` until the first load), `Revision` (moves only when a value changed), and `OnChange(listener)`. Registered with `AddSettingsSnapshot<T>` from `Headless.Settings`; see [Settings snapshot](#settings-snapshot)
 - `SettingValueProviderNames` — constants `DefaultValue`, `Configuration`, `Global`, `Tenant`, `User` for targeting built-in providers
 - General extension members on `ISettingManager`: `IsTrueAsync`, `IsFalseAsync`, `GetAsync<T>` (deserializes JSON), `SetAsync<T>` (serializes to JSON)
 - Scoped extension members: `GetForTenantAsync` / `SetForTenantAsync` / `GetAllForTenantAsync` (and `*ForCurrentTenant*` variants), equivalent `*ForUser*` / `*ForCurrentUser*` set, `GetGlobalAsync` / `SetGlobalAsync` / `GetAllGlobalAsync`, `GetDefaultAsync` / `GetAllDefaultAsync`, `GetInConfigurationAsync` / `GetAllInConfigurationAsync`. The `GetAll*` helpers return `IReadOnlyList<SettingValue>`
@@ -257,7 +257,7 @@ None.
 
 ---
 
-## Headless.Settings.Core
+## Headless.Settings
 
 Core implementation of dynamic settings management with hierarchical value providers, caching, encryption, and background initialization.
 
@@ -295,7 +295,7 @@ Encrypted settings (`isEncrypted: true`) are decrypted only when the resolving p
 ### Install
 
 ```bash
-dotnet add package Headless.Settings.Core
+dotnet add package Headless.Settings
 ```
 
 ### Setup and use
@@ -618,7 +618,7 @@ Configure schema and table names through `SettingsStorageOptions` via `setup.Con
 ### Runtime behavior
 
 - Registers the settings schema contribution; the one schema runner applies it at startup
-- Registers the shared relational repositories from `Headless.Settings.Core`, over the PostgreSQL dialect, as `ISettingValueRecordRepository` and `ISettingDefinitionRecordRepository` (singletons)
+- Registers the shared relational repositories from `Headless.Settings`, over the PostgreSQL dialect, as `ISettingValueRecordRepository` and `ISettingDefinitionRecordRepository` (singletons)
 
 ---
 
@@ -694,4 +694,4 @@ Configure schema and table names through `SettingsStorageOptions` via `setup.Con
 ### Runtime behavior
 
 - Registers the settings schema contribution; the one schema runner applies it at startup
-- Registers the shared relational repositories from `Headless.Settings.Core`, over the SQL Server dialect, as `ISettingValueRecordRepository` and `ISettingDefinitionRecordRepository` (singletons)
+- Registers the shared relational repositories from `Headless.Settings`, over the SQL Server dialect, as `ISettingValueRecordRepository` and `ISettingDefinitionRecordRepository` (singletons)

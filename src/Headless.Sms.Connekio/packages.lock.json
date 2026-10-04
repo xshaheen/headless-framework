@@ -374,13 +374,7 @@
           "Headless.Generator.Primitives.Abstractions": "[1.0.0, )"
         }
       },
-      "headless.sms.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )"
-        }
-      },
-      "headless.sms.core": {
+      "headless.sms": {
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
@@ -389,6 +383,12 @@
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
           "Polly.Core": "[8.7.0, )",
           "Polly.RateLimiting": "[8.7.0, )"
+        }
+      },
+      "headless.sms.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )"
         }
       },
       "headless.urls": {

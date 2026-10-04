@@ -55,7 +55,7 @@ Replicas read their own clocks. Right at a window boundary, a replica whose cloc
 
 ## HTTP Edge Limits
 
-Edge limits shed load per caller before a request reaches its handler. They use the limiters in `Microsoft.AspNetCore.RateLimiting` and the framework pieces in `Headless.Api.Core` and `Headless.Api.ServiceDefaults`, with no extra package.
+Edge limits shed load per caller before a request reaches its handler. They use the limiters in `Microsoft.AspNetCore.RateLimiting` and the framework pieces in `Headless.Api` and `Headless.Api.ServiceDefaults`, with no extra package.
 
 A global limiter that gives each API surface its own limit, partitioned by account and falling back to the client IP:
 
