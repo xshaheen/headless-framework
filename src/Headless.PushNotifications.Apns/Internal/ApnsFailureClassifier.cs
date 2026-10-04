@@ -6,14 +6,14 @@ using System.Net;
 namespace Headless.PushNotifications.Apns.Internal;
 
 /// <summary>
-/// Maps an APNs HTTP status and <c>reason</c> onto an <see cref="ApnsFailureKind"/>, following the retry guidance
-/// in Apple's "Handling notification responses from APNs".
+/// Maps an APNs HTTP status and <c>reason</c> onto an <see cref="ApnsFailureKind"/>, following the retry
+/// guidance in Apple's "Handling notification responses from APNs".
 /// </summary>
 internal static class ApnsFailureClassifier
 {
     /// <summary>
-    /// The reasons whose classification is not a plain status-class default. Every reason in Apple's response error
-    /// string table appears exactly once; an unknown reason falls back to its status class.
+    /// The reasons whose classification is not a plain status-class default. Every reason in Apple's response
+    /// error string table appears exactly once; an unknown reason falls back to its status class.
     /// </summary>
     private static readonly FrozenDictionary<string, ApnsFailureKind> _ReasonKinds = _BuildReasonKinds();
 
@@ -21,9 +21,9 @@ internal static class ApnsFailureClassifier
     {
         var kinds = new Dictionary<string, ApnsFailureKind>(StringComparer.Ordinal)
         {
-            // 400 Bad request. Apple: "Most notifications with the status code 4XX can be retried after you fix the
-            // error noted in the reason field" — so a 4xx the caller fixes is a payload/configuration problem, not
-            // an unchanged-request retry.
+            // 400 Bad request. Apple: "Most notifications with the status code 4XX can be retried after you fix
+            // the error noted in the reason field" — so a 4xx the caller fixes is a payload/configuration
+            // problem, not an unchanged-request retry.
             ["BadCollapseId"] = ApnsFailureKind.Payload,
             // "The specified device token is invalid. Verify that the request contains a valid token and that the
             // token matches the environment." Also named in Apple's never-retry list.
@@ -32,8 +32,8 @@ internal static class ApnsFailureClassifier
             ["BadMessageId"] = ApnsFailureKind.Payload,
             ["BadPriority"] = ApnsFailureKind.Payload,
             ["BadTopic"] = ApnsFailureKind.Configuration,
-            // "The device token doesn't match the specified topic." Apple names it in the never-retry list, and the
-            // topic comes from the instance's configuration.
+            // "The device token doesn't match the specified topic." Apple names it in the never-retry list, and
+            // the topic comes from the instance's configuration.
             ["DeviceTokenNotForTopic"] = ApnsFailureKind.Configuration,
             ["DuplicateHeaders"] = ApnsFailureKind.Payload,
             // "Idle timeout." The connection idled out, not the request: the same push can go out again.
@@ -49,18 +49,18 @@ internal static class ApnsFailureClassifier
             ["BadCertificate"] = ApnsFailureKind.Configuration,
             // "The client certificate doesn't match the environment."
             ["BadCertificateEnvironment"] = ApnsFailureKind.Configuration,
-            // "The provider token is stale and a new token should be generated." The service already re-minted and
-            // retried once before a result reaches the caller, so a result carrying it stayed stale.
+            // "The provider token is stale and a new token should be generated." The service already re-minted
+            // and retried once before a result reaches the caller, so a result carrying it stayed stale.
             ["ExpiredProviderToken"] = ApnsFailureKind.Authentication,
             // "The specified action is not allowed."
             ["Forbidden"] = ApnsFailureKind.Configuration,
             // "The provider token is not valid, or the token signature can't be verified."
             ["InvalidProviderToken"] = ApnsFailureKind.Authentication,
-            // "No provider certificate was used to connect to APNs, and the authorization header is missing or no
-            // provider token is specified."
+            // "No provider certificate was used to connect to APNs, and the authorization header is missing or
+            // no provider token is specified."
             ["MissingProviderToken"] = ApnsFailureKind.Authentication,
-            // "The key ID in the provider token isn't related to the key ID of the token used in the first push of
-            // this connection."
+            // "The key ID in the provider token isn't related to the key ID of the token used in the first push
+            // of this connection."
             ["UnrelatedKeyIdInToken"] = ApnsFailureKind.Authentication,
             // "The key ID in the provider token doesn't match the environment."
             ["BadEnvironmentKeyIdInToken"] = ApnsFailureKind.Authentication,
@@ -76,8 +76,8 @@ internal static class ApnsFailureClassifier
             ["PayloadTooLarge"] = ApnsFailureKind.Payload,
             // 429 "Too many requests were made consecutively to the same device token." — throttling.
             ["TooManyRequests"] = ApnsFailureKind.Throttled,
-            // 429 "The provider's authentication token is being updated too often. Update the authentication token
-            // no more than once every 20 minutes." — a token-lifecycle problem, not device throttling.
+            // 429 "The provider's authentication token is being updated too often. Update the authentication
+            // token no more than once every 20 minutes." — a token-lifecycle problem, not device throttling.
             ["TooManyProviderTokenUpdates"] = ApnsFailureKind.Authentication,
             // 500/503 are left to the status class: both are ServerError.
         };
@@ -86,8 +86,8 @@ internal static class ApnsFailureClassifier
     }
 
     /// <summary>
-    /// The configuration-level authentication problems that get their own error event: the key or token identity is
-    /// wrong, so no send succeeds until the operator fixes the configuration.
+    /// The configuration-level authentication problems that get their own error event: the key or token
+    /// identity is wrong, so no send succeeds until the operator fixes the configuration.
     /// </summary>
     public static bool IsTokenConfigurationProblem(string? reason)
     {
@@ -95,8 +95,8 @@ internal static class ApnsFailureClassifier
     }
 
     /// <summary>
-    /// Classifies a rejection by its reason first and its status class second, so a reason Apple adds later still
-    /// lands in a usable kind.
+    /// Classifies a rejection by its reason first and its status class second, so a reason Apple adds later
+    /// still lands in a usable kind.
     /// </summary>
     public static ApnsFailureKind? Classify(HttpStatusCode? status, string? reason)
     {

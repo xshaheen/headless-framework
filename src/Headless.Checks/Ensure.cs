@@ -15,11 +15,11 @@ namespace Headless.Checks;
 [PublicAPI]
 public static class Ensure
 {
-    /// <summary>Throws an <see cref="InvalidOperationException"/> if <paramref name="condition"/> is <see langword="false"/>.</summary>
+    /// <summary>Throws an <see cref="InvalidOperationException"/> when <paramref name="condition"/> is <see langword="false"/>.</summary>
     /// <param name="condition">The condition that must hold.</param>
-    /// <param name="message">(Optional) Custom error message.</param>
-    /// <param name="expression">The captured text of <paramref name="condition"/> (auto generated, no need to pass it).</param>
-    /// <exception cref="InvalidOperationException">if <paramref name="condition"/> is <see langword="false"/>.</exception>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="expression">The source text of <paramref name="condition"/>. Captured automatically by the compiler.</param>
+    /// <exception cref="InvalidOperationException"><paramref name="condition"/> is <see langword="false"/>.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void True(
@@ -34,11 +34,11 @@ public static class Ensure
         }
     }
 
-    /// <summary>Throws an <see cref="InvalidOperationException"/> if <paramref name="condition"/> is <see langword="true"/>.</summary>
+    /// <summary>Throws an <see cref="InvalidOperationException"/> when <paramref name="condition"/> is <see langword="true"/>.</summary>
     /// <param name="condition">The condition that must not hold.</param>
-    /// <param name="message">(Optional) Custom error message.</param>
-    /// <param name="expression">The captured text of <paramref name="condition"/> (auto generated, no need to pass it).</param>
-    /// <exception cref="InvalidOperationException">if <paramref name="condition"/> is <see langword="true"/>.</exception>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="expression">The source text of <paramref name="condition"/>. Captured automatically by the compiler.</param>
+    /// <exception cref="InvalidOperationException"><paramref name="condition"/> is <see langword="true"/>.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void False(
@@ -54,15 +54,15 @@ public static class Ensure
     }
 
     /// <summary>
-    /// Throws an <see cref="InvalidOperationException"/> if <paramref name="value"/> is null. Use this for runtime state
-    /// (fields, lazily-initialized members) that must be present; use <see cref="Argument.IsNotNull{T}(T,string?,string?)"/>
+    /// Throws an <see cref="InvalidOperationException"/> when <paramref name="value"/> is <see langword="null"/>. Use this for runtime state
+    /// (fields, lazily initialized members) that must be present; use <see cref="Argument.IsNotNull{T}(T,string?,string?)"/>
     /// for caller arguments.
     /// </summary>
-    /// <param name="value">The value that must not be null.</param>
-    /// <param name="message">(Optional) Custom error message.</param>
-    /// <param name="expression">The captured text of <paramref name="value"/> (auto generated, no need to pass it).</param>
-    /// <returns><paramref name="value"/> if it is not null.</returns>
-    /// <exception cref="InvalidOperationException">if <paramref name="value"/> is null.</exception>
+    /// <param name="value">The value that must not be <see langword="null"/>.</param>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="expression">The source text of <paramref name="value"/>. Captured automatically by the compiler.</param>
+    /// <returns>The non-null <paramref name="value"/>.</returns>
+    /// <exception cref="InvalidOperationException"><paramref name="value"/> is <see langword="null"/>.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     [return: SystemNotNull]
@@ -98,12 +98,12 @@ public static class Ensure
         return value.Value;
     }
 
-    /// <summary>Throws an <see cref="ObjectDisposedException"/> if <paramref name="disposed"/> is <see langword="true"/>.</summary>
+    /// <summary>Throws an <see cref="ObjectDisposedException"/> when <paramref name="disposed"/> is <see langword="true"/>.</summary>
     /// <param name="disposed">Whether the object has already been disposed.</param>
     /// <param name="disposedValue">The disposed instance; its runtime type name is used as the object name in the exception.</param>
-    /// <param name="message">(Optional) Custom error message.</param>
-    /// <param name="expression">The captured text of <paramref name="disposed"/> (auto generated, no need to pass it); used as the object name when <paramref name="disposedValue"/> is null.</param>
-    /// <exception cref="ObjectDisposedException">if <paramref name="disposed"/> is <see langword="true"/>.</exception>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="expression">The source text of <paramref name="disposed"/>. Captured automatically by the compiler and used as the object name when <paramref name="disposedValue"/> is <see langword="null"/>.</param>
+    /// <exception cref="ObjectDisposedException"><paramref name="disposed"/> is <see langword="true"/>.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void NotDisposed(

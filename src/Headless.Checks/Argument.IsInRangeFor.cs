@@ -14,10 +14,10 @@ public static partial class Argument
     /// </summary>
     /// <param name="index">The index to check.</param>
     /// <param name="count">The number of items the index addresses into.</param>
-    /// <param name="message">(Optional) Custom error message.</param>
-    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="index" /> if it is a valid index.</returns>
-    /// <exception cref="ArgumentOutOfRangeException">if <paramref name="index" /> is negative or not less than <paramref name="count"/>.</exception>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="paramName">The name of the parameter being checked. Captured automatically by the compiler.</param>
+    /// <returns><paramref name="index" /> when it is a valid index.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="index" /> is negative or not less than <paramref name="count"/>.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static int IsInRangeFor(
@@ -36,11 +36,11 @@ public static partial class Argument
     /// </summary>
     /// <param name="index">The index to check.</param>
     /// <param name="collection">The collection the index addresses into.</param>
-    /// <param name="message">(Optional) Custom error message.</param>
-    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="index" /> if it is a valid index into <paramref name="collection"/>.</returns>
-    /// <exception cref="ArgumentNullException">if <paramref name="collection" /> is null.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">if <paramref name="index" /> is not a valid index into <paramref name="collection"/>.</exception>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="paramName">The name of the parameter being checked. Captured automatically by the compiler.</param>
+    /// <returns><paramref name="index" /> when it is a valid index into <paramref name="collection"/>.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="collection" /> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="index" /> is not a valid index into <paramref name="collection"/>.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static int IsInRangeFor<T>(
@@ -63,10 +63,10 @@ public static partial class Argument
     /// </summary>
     /// <param name="index">The index to check.</param>
     /// <param name="span">The span the index addresses into.</param>
-    /// <param name="message">(Optional) Custom error message.</param>
-    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="index" /> if it is a valid index into <paramref name="span"/>.</returns>
-    /// <exception cref="ArgumentOutOfRangeException">if <paramref name="index" /> is not a valid index into <paramref name="span"/>.</exception>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="paramName">The name of the parameter being checked. Captured automatically by the compiler.</param>
+    /// <returns><paramref name="index" /> when it is a valid index into <paramref name="span"/>.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="index" /> is not a valid index into <paramref name="span"/>.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static int IsInRangeFor<T>(

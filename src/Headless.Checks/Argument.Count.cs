@@ -15,11 +15,11 @@ public static partial class Argument
     /// </summary>
     /// <param name="argument">The argument to check.</param>
     /// <param name="count">The required number of items.</param>
-    /// <param name="message">(Optional) Custom error message.</param>
-    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="argument" /> if it contains exactly <paramref name="count"/> items.</returns>
-    /// <exception cref="ArgumentNullException">if <paramref name="argument" /> is null.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">if <paramref name="argument" /> does not contain exactly <paramref name="count"/> items.</exception>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="paramName">The name of the parameter being checked. Captured automatically by the compiler.</param>
+    /// <returns><paramref name="argument" /> when it contains exactly <paramref name="count"/> items.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="argument" /> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="argument" /> does not contain exactly <paramref name="count"/> items.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     [OverloadResolutionPriority(1)]
@@ -69,11 +69,11 @@ public static partial class Argument
     /// </summary>
     /// <param name="argument">The argument to check.</param>
     /// <param name="minCount">The minimum number of items (inclusive).</param>
-    /// <param name="message">(Optional) Custom error message.</param>
-    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="argument" /> if it contains at least <paramref name="minCount"/> items.</returns>
-    /// <exception cref="ArgumentNullException">if <paramref name="argument" /> is null.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">if <paramref name="argument" /> contains fewer than <paramref name="minCount"/> items.</exception>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="paramName">The name of the parameter being checked. Captured automatically by the compiler.</param>
+    /// <returns><paramref name="argument" /> when it contains at least <paramref name="minCount"/> items.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="argument" /> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="argument" /> contains fewer than <paramref name="minCount"/> items.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     [OverloadResolutionPriority(1)]
@@ -123,11 +123,11 @@ public static partial class Argument
     /// </summary>
     /// <param name="argument">The argument to check.</param>
     /// <param name="maxCount">The maximum number of items (inclusive).</param>
-    /// <param name="message">(Optional) Custom error message.</param>
-    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="argument" /> if it contains at most <paramref name="maxCount"/> items.</returns>
-    /// <exception cref="ArgumentNullException">if <paramref name="argument" /> is null.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">if <paramref name="argument" /> contains more than <paramref name="maxCount"/> items.</exception>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="paramName">The name of the parameter being checked. Captured automatically by the compiler.</param>
+    /// <returns><paramref name="argument" /> when it contains at most <paramref name="maxCount"/> items.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="argument" /> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="argument" /> contains more than <paramref name="maxCount"/> items.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     [OverloadResolutionPriority(1)]
@@ -179,12 +179,12 @@ public static partial class Argument
     /// <param name="argument">The argument to check.</param>
     /// <param name="minCount">The minimum number of items (inclusive).</param>
     /// <param name="maxCount">The maximum number of items (inclusive).</param>
-    /// <param name="message">(Optional) Custom error message.</param>
-    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="argument" /> if its item count is within range.</returns>
-    /// <exception cref="ArgumentNullException">if <paramref name="argument" /> is null.</exception>
-    /// <exception cref="ArgumentException">if <paramref name="minCount"/> is greater than <paramref name="maxCount"/>.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">if the item count of <paramref name="argument" /> is out of range.</exception>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="paramName">The name of the parameter being checked. Captured automatically by the compiler.</param>
+    /// <returns><paramref name="argument" /> when its item count is within range.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="argument" /> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="minCount"/> is greater than <paramref name="maxCount"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">The item count of <paramref name="argument" /> is out of range.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     [OverloadResolutionPriority(1)]

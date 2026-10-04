@@ -5,17 +5,15 @@ using Microsoft.CodeAnalysis;
 namespace Headless.SourceGenerators;
 
 /// <summary>
-/// The rule a <c>FailurePolicy</c> type named on a handler attribute must meet, shared by every generator that emits a
-/// policy factory so Messaging and Jobs accept and reject the same types.
+/// Validation rules for failure policy types specified on handler declarations.
 /// </summary>
 internal static class FailurePolicyType
 {
     public const string MetadataName = "Headless.Reliability.FailurePolicy";
 
     /// <summary>
-    /// Whether the generated factory <c>static () =&gt; new T()</c> compiles and yields a failure policy: the type
-    /// derives from <c>FailurePolicy</c>, is concrete and closed, is visible to generated code, and has a public
-    /// parameterless constructor.
+    /// Determines whether the specified policy type derives from the failure policy base class,
+    /// is non-abstract, is accessible to generated code, and exposes a public parameterless constructor.
     /// </summary>
     public static bool IsValid(Compilation compilation, ITypeSymbol policy)
     {

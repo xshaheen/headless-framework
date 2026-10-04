@@ -5,58 +5,56 @@ using FluentValidation;
 namespace Headless.Dashboard.Authentication;
 
 /// <summary>
-/// Authentication configuration for dashboards.
+/// Configures authentication for dashboards.
 /// </summary>
 /// <remarks>
 /// Credential completeness for the selected <see cref="Mode"/> is enforced by the internal
-/// FluentValidation validator wired into the options pipeline (validate-on-start) by every
-/// <c>AddDashboardAuthentication</c> overload — there is no imperative validation entry point.
+/// FluentValidation validator registered in the options pipeline with validation on start by every
+/// <c>AddDashboardAuthentication</c> overload.
 /// </remarks>
 [PublicAPI]
 public sealed class AuthConfig
 {
     /// <summary>
-    /// Authentication mode.
+    /// Gets or sets the authentication mode.
     /// </summary>
     public AuthMode Mode { get; set; } = AuthMode.None;
 
     /// <summary>
-    /// Basic authentication credentials (Base64 encoded username:password).
+    /// Gets or sets basic authentication credentials as a Base64-encoded username and password pair.
     /// </summary>
     public string? BasicCredentials { get; set; }
 
     /// <summary>
-    /// API key for authentication (sent as Bearer token).
+    /// Gets or sets the API key used for bearer token authentication.
     /// </summary>
     public string? ApiKey { get; set; }
 
     /// <summary>
-    /// Custom authentication function. Receives the authorization header value and
-    /// an <see cref="IServiceProvider"/> for safe resolution of scoped services.
+    /// Gets or sets a custom validation delegate. Receives the authorization header value and
+    /// an <see cref="IServiceProvider"/> to resolve scoped services.
     /// </summary>
     public Func<string, IServiceProvider, bool>? CustomValidator { get; set; }
 
     /// <summary>
-    /// Session timeout in minutes (default: 60 minutes).
+    /// Gets or sets the session timeout in minutes. The default is 60 minutes.
     /// </summary>
     public int SessionTimeoutMinutes { get; set; } = 60;
 
     /// <summary>
-    /// Authorization policy name for Host mode (default: null uses the default policy).
+    /// Gets or sets the authorization policy name for host mode. When <see langword="null"/>, the default policy is used.
     /// </summary>
     public string? HostAuthorizationPolicy { get; set; }
 
     /// <summary>
-    /// Whether authentication is enabled.
+    /// Gets a value indicating whether authentication is enabled.
     /// </summary>
     public bool IsEnabled => Mode != AuthMode.None;
 }
 
 /// <summary>
-/// FluentValidation validator for <see cref="AuthConfig"/>. Enforces that the credential required by
-/// the selected <see cref="AuthMode"/> is present. Wired into the options pipeline (with validation on
-/// start) by <see cref="SetupDashboardAuthentication"/> — the single validation point every
-/// <see cref="AuthConfig"/> construction path traverses.
+/// Validates <see cref="AuthConfig"/> instances by verifying that credentials required by the selected
+/// <see cref="AuthMode"/> are present. Registered with startup validation by <see cref="SetupDashboardAuthentication"/>.
 /// </summary>
 internal sealed class AuthConfigValidator : AbstractValidator<AuthConfig>
 {

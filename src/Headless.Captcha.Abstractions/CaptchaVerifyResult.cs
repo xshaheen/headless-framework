@@ -3,31 +3,28 @@
 namespace Headless.Captcha;
 
 /// <summary>
-/// The normalized verification outcome shared by every provider. Stays strictly pass/fail plus the fields all
-/// providers return; provider-only fields live on derived result types (<c>ReCaptchaV3VerifyResult.Score</c>,
-/// <c>TurnstileVerifyResult.CData</c>). A consumer that reads provider-only data is, by definition, writing
-/// provider-specific code and should resolve the provider's concrete verifier/result.
+/// Represents the normalized verification outcome shared across providers. Contains common pass or fail state and
+/// shared fields.
 /// </summary>
 /// <remarks>
-/// The companion fields below are intentionally left as plain nullables with no <c>MemberNotNullWhen</c> flow
-/// promise: vendors do not contractually guarantee <see cref="HostName"/>/<see cref="ChallengeTimestamp"/> on
-/// success, nor <see cref="ErrorCodes"/> on failure, so the base type must not over-promise across providers.
+/// Properties remain nullable because providers do not guarantee <see cref="HostName"/> or
+/// <see cref="ChallengeTimestamp"/> on success, nor <see cref="ErrorCodes"/> on failure.
 /// </remarks>
 [PublicAPI]
 public class CaptchaVerifyResult
 {
-    /// <summary>Whether the token was a valid CAPTCHA response for this site.</summary>
+    /// <summary>Gets a value indicating whether the token is a valid CAPTCHA response for this site.</summary>
     public bool Success { get; init; }
 
-    /// <summary>The timestamp of the challenge load, when the provider returns one.</summary>
+    /// <summary>Gets the timestamp when the challenge loaded, when returned by the provider.</summary>
     public DateTimeOffset? ChallengeTimestamp { get; init; }
 
-    /// <summary>The hostname of the site where the challenge was solved, when the provider returns one.</summary>
+    /// <summary>Gets the hostname of the site where the challenge was solved, when returned by the provider.</summary>
     public string? HostName { get; init; }
 
-    /// <summary>The action name associated with the request, when the provider returns one.</summary>
+    /// <summary>Gets the action name associated with the request, when returned by the provider.</summary>
     public string? Action { get; init; }
 
-    /// <summary>The provider error codes, when the provider returns them (typically on failure).</summary>
+    /// <summary>Gets provider error codes, when returned by the provider.</summary>
     public IReadOnlyList<string>? ErrorCodes { get; init; }
 }

@@ -7,7 +7,7 @@ namespace Headless.Caching;
 /// registers its cache under the matching role key (<c>UseInMemory</c> → <see cref="MemoryCacheProvider"/>,
 /// <c>UseRedis</c> → <see cref="RemoteCacheProvider"/>, <c>UseHybrid</c> → <see cref="HybridCacheProvider"/>).
 /// The keys are namespaced under <c>Headless.Caching:</c> so they cannot collide with consumer-owned keyed
-/// services on the global keyed-service namespace. Named cache instances must not use a reserved name —
+/// services on the global keyed-service namespace. Named cache instances must not use a reserved name:
 /// <c>setup.AddNamed(…)</c> rejects them with <see cref="ArgumentException"/>.
 /// </summary>
 [PublicAPI]

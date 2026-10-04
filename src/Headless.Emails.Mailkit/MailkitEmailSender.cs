@@ -9,24 +9,24 @@ using SmtpClient = MailKit.Net.Smtp.SmtpClient;
 namespace Headless.Emails.Mailkit;
 
 /// <summary>
-/// <see cref="IEmailSender"/> implementation backed by MailKit over SMTP.
+/// Sends email messages through MailKit over SMTP.
 /// </summary>
 /// <remarks>
-/// SMTP clients are pooled via <see cref="ObjectPool{T}"/>. A client is reconnected
-/// automatically if it is found disconnected when retrieved from the pool; disconnected
-/// or faulted clients are discarded rather than returned. The pool size is governed by
-/// <see cref="MailkitSmtpOptions.MaxPoolSize"/>.
+/// SMTP clients are pooled through <see cref="ObjectPool{T}"/>. A client found disconnected when retrieved
+/// from the pool is reconnected automatically; disconnected, faulted, or connected-but-unauthenticated
+/// clients are discarded rather than returned, so a pooled connection is never reused in a state that would
+/// skip authentication. The pool size is governed by <see cref="MailkitSmtpOptions.MaxPoolSize"/>.
 /// <para>
-/// Every send failure is surfaced as a failed <see cref="SendSingleEmailResponse"/> rather than thrown,
-/// per the <see cref="IEmailSender"/> contract: SMTP command/protocol errors
+/// Every send failure is surfaced as a failed <see cref="SendSingleEmailResponse"/> rather than thrown, per
+/// the <see cref="IEmailSender"/> contract: SMTP command and protocol errors
 /// (<see cref="MailKit.Net.Smtp.SmtpCommandException"/>, <see cref="MailKit.Net.Smtp.SmtpProtocolException"/>),
-/// authentication failures (<see cref="MailKit.Security.AuthenticationException"/>), and connect/TLS/transport
-/// faults (for example <see cref="IOException"/>, socket errors, TLS handshake failures, and connect timeouts).
-/// Authentication failures are additionally logged at critical level because they signal a configuration error.
-/// Only the caller's own cancellation (an <see cref="OperationCanceledException"/> whose token is the caller's)
-/// and argument validation propagate; a connect-timeout cancellation is returned as a failure, not thrown. On
-/// success the SMTP server's final response is surfaced as
-/// <see cref="SendSingleEmailResponse.ProviderMessageId"/> (it typically embeds the server's queue id).
+/// authentication failures (<see cref="AuthenticationException"/>), and connect, TLS, and transport faults
+/// (for example <see cref="IOException"/>, socket errors, TLS handshake failures, and connect timeouts).
+/// Authentication failures are additionally logged at critical level because they signal a configuration
+/// error. Only the caller's own cancellation (an <see cref="OperationCanceledException"/> raised while the
+/// caller's token is canceled) and argument validation propagate; a connect-timeout cancellation is returned
+/// as a failure, not thrown. On success the SMTP server's final response is surfaced as
+/// <see cref="SendSingleEmailResponse.ProviderMessageId"/>, and it typically embeds the server's queue id.
 /// </para>
 /// </remarks>
 internal sealed class MailkitEmailSender(
@@ -37,21 +37,21 @@ internal sealed class MailkitEmailSender(
 ) : IEmailSender
 {
     /// <summary>
-    /// Sends a single email via SMTP using a pooled MailKit client.
+    /// Sends an email message over SMTP using a pooled MailKit client.
     /// </summary>
     /// <param name="request">The email message to send.</param>
-    /// <param name="cancellationToken">Token used to cancel the send operation.</param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>
-    /// A successful response (carrying the SMTP server's final response as the provider message id) when
-    /// the server accepts the message; a failed response when an SMTP command, protocol, or authentication
-    /// error, or a connect/TLS/transport fault (including a connect timeout), occurs.
+    /// A successful response carrying the SMTP server's final response as the provider message identifier
+    /// when the server accepts the message; a failed response when an SMTP command, protocol, or
+    /// authentication error, or a connect, TLS, or transport fault (including a connect timeout) occurs.
     /// </returns>
     /// <exception cref="InvalidOperationException">
-    /// Thrown when both <see cref="SendSingleEmailRequest.MessageText"/> and
-    /// <see cref="SendSingleEmailRequest.MessageHtml"/> are <see langword="null"/> or whitespace-only.
+    /// Both <see cref="SendSingleEmailRequest.MessageText"/> and <see cref="SendSingleEmailRequest.MessageHtml"/>
+    /// are <see langword="null"/>, empty, or contain only white space.
     /// </exception>
     /// <exception cref="OperationCanceledException">
-    /// Thrown when <paramref name="cancellationToken"/> is cancelled by the caller during the send.
+    /// The operation was canceled through <paramref name="cancellationToken"/>.
     /// </exception>
     public async ValueTask<SendSingleEmailResponse> SendAsync(
         SendSingleEmailRequest request,

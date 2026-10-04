@@ -4,7 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Sequences;
 
-/// <summary>Setup-time hook through which a sequence provider package registers its services.</summary>
+/// <summary>Defines the setup-time hook through which a sequence provider package registers its services.</summary>
 /// <remarks>
 /// A provider's <c>Use…</c> member registers one instance with
 /// <see cref="HeadlessSequencesSetupBuilder.RegisterExtension" />; <c>AddHeadlessSequences</c> calls
@@ -13,7 +13,7 @@ namespace Headless.Sequences;
 [PublicAPI]
 public interface ISequencesProviderOptionsExtension
 {
-    /// <summary>Registers the provider's store, options, and storage initializer.</summary>
+    /// <summary>Registers the provider store, options, and initialization services.</summary>
     /// <param name="services">The application service collection.</param>
     void AddServices(IServiceCollection services);
 }

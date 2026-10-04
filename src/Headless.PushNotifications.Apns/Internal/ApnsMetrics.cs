@@ -6,19 +6,18 @@ using System.Diagnostics.Metrics;
 namespace Headless.PushNotifications.Apns.Internal;
 
 /// <summary>
-/// Metric instruments for the APNs provider, registered against <see cref="ApnsDiagnostics.Meter"/>. Instrument and
-/// attribute names are bespoke <c>headless.apns.*</c> per the repository's OpenTelemetry conventions, because no
-/// semantic convention covers push delivery.
+/// Metric instruments for the APNs provider, registered against <see cref="ApnsDiagnostics.Meter"/>.
+/// Instrument and attribute names are bespoke <c>headless.apns.*</c> per the repository's OpenTelemetry
+/// conventions, because no semantic convention covers push delivery.
 /// </summary>
 /// <remarks>
-/// Instruments are created directly on the <see cref="Meter"/> (rather than through a source generator) so the hot
-/// path can read each instrument's <c>Enabled</c> flag and short-circuit before building a <see cref="TagList"/>
-/// when no listener is attached. The device token is never a tag: it is a stable device identifier.
+/// Instruments are created directly on the <see cref="Meter"/> (rather than through a source generator) so
+/// the hot path can read each instrument's <c>Enabled</c> flag and short-circuit before building a
+/// <see cref="TagList"/> when no listener is attached. The device token is never a tag: it is a stable device
+/// identifier.
 /// </remarks>
 internal static class ApnsMetrics
 {
-    // --- Instrument names ----------------------------------------------------------------------------------------
-
     internal const string SendsName = "headless.apns.sends";
     internal const string SendDurationName = "headless.apns.send.duration";
     internal const string ProviderTokensMintedName = "headless.apns.provider_tokens.minted";
@@ -157,8 +156,8 @@ internal static class ApnsMetrics
     }
 
     /// <summary>
-    /// The <see cref="ApnsFailureKind"/> tag value shared by metrics and spans, in lower snake case to match the
-    /// repository's telemetry tag style.
+    /// The <see cref="ApnsFailureKind"/> tag value shared by metrics and spans, in lower snake case to match
+    /// the repository's telemetry tag style.
     /// </summary>
     internal static string ToTagValue(ApnsFailureKind kind)
     {

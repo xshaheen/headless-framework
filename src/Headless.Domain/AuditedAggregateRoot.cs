@@ -5,13 +5,12 @@ using System.Diagnostics.CodeAnalysis;
 namespace Headless.Domain;
 
 /// <summary>
-/// Base class for aggregate roots with a single primary key that carry create, update, suspend, and soft-delete audit fields.
+/// Provides a base implementation for aggregate roots with a single primary key that carry creation, update, suspension, and soft-delete audit fields.
 /// </summary>
 /// <remarks>
-/// Setters are <see langword="protected"/> so only the aggregate's own behavior and the persistence layer, which
-/// writes non-public setters through reflection, can change the audit state.
+/// Setters are <see langword="protected"/> so only aggregate domain methods and the persistence layer can mutate audit state.
 /// </remarks>
-/// <typeparam name="TId">Type of the primary key of the entity.</typeparam>
+/// <typeparam name="TId">The primary key type.</typeparam>
 [PublicAPI]
 public abstract class AuditedAggregateRoot<TId>
     : AggregateRoot<TId>,
@@ -56,10 +55,10 @@ public abstract class AuditedAggregateRoot<TId>
 }
 
 /// <summary>
-/// Base class for audited aggregate roots that also record the identifier of the account behind each audit transition.
+/// Provides a base implementation for audited aggregate roots that also record the account identifier for audit transitions.
 /// </summary>
-/// <typeparam name="TId">Type of the primary key of the entity.</typeparam>
-/// <typeparam name="TAccountId">Type of the account identifier.</typeparam>
+/// <typeparam name="TId">The primary key type.</typeparam>
+/// <typeparam name="TAccountId">The account identifier type.</typeparam>
 [PublicAPI]
 public abstract class AuditedAggregateRoot<TId, TAccountId>
     : AuditedAggregateRoot<TId>,
@@ -98,12 +97,12 @@ public abstract class AuditedAggregateRoot<TId, TAccountId>
 }
 
 /// <summary>
-/// Base class for audited aggregate roots that also carry a navigation link to the account behind each audit transition,
-/// and expose the suspend and soft-delete transitions.
+/// Provides a base implementation for audited aggregate roots that record account navigation references
+/// and expose suspension and soft-delete transitions.
 /// </summary>
-/// <typeparam name="TId">Type of the primary key of the entity.</typeparam>
-/// <typeparam name="TAccountId">Type of the account identifier.</typeparam>
-/// <typeparam name="TAccount">Type of the account entity.</typeparam>
+/// <typeparam name="TId">The primary key type.</typeparam>
+/// <typeparam name="TAccountId">The account identifier type.</typeparam>
+/// <typeparam name="TAccount">The account entity type.</typeparam>
 [PublicAPI]
 public abstract class AuditedAggregateRoot<TId, TAccountId, TAccount>
     : AuditedAggregateRoot<TId, TAccountId>,

@@ -2,40 +2,26 @@
 
 namespace Headless.Generator.Primitives;
 
-/// <summary>
-/// Attribute used to specify supported mathematical operations for numeric types.
-/// If not provided, default values will be used for operations.
-/// </summary>
+/// <summary>Specifies supported mathematical operations for generated numeric primitive types.</summary>
 /// <remarks>
-/// This attribute defines supported mathematical operations for numeric types,
-/// with constraints excluding <see cref="byte"/>, <see cref="sbyte"/>, <see cref="ushort"/>, and <see cref="short"/> types for the type parameter T.
-/// Its usage, particularly the constraint, depends on the IPrimitive.
+/// Constrains supported operators for numeric primitives. Types such as <see cref="byte"/>,
+/// <see cref="sbyte"/>, <see cref="ushort"/>, and <see cref="short"/> are excluded from these operators.
 /// </remarks>
 [AttributeUsage(AttributeTargets.Class | AttributeTargets.Struct)]
 public sealed class SupportedOperationsAttribute : Attribute
 {
-    /// <summary>
-    /// Indicates whether addition operators should be generated.
-    /// </summary>
+    /// <summary>Gets or sets a value indicating whether addition operators should be generated.</summary>
     public bool Addition { get; set; }
 
-    /// <summary>
-    /// Indicates whether subtraction operators should be generated.
-    /// </summary>
+    /// <summary>Gets or sets a value indicating whether subtraction operators should be generated.</summary>
     public bool Subtraction { get; set; }
 
-    /// <summary>
-    /// Indicates whether multiplication operators should be generated.
-    /// </summary>
+    /// <summary>Gets or sets a value indicating whether multiplication operators should be generated.</summary>
     public bool Multiplication { get; set; }
 
-    /// <summary>
-    /// Indicates whether division operators should be generated.
-    /// </summary>
+    /// <summary>Gets or sets a value indicating whether division operators should be generated.</summary>
     public bool Division { get; set; }
 
-    /// <summary>
-    /// Indicates whether modulus operators should be generated.
-    /// </summary>
+    /// <summary>Gets or sets a value indicating whether modulus operators should be generated.</summary>
     public bool Modulus { get; set; }
 }

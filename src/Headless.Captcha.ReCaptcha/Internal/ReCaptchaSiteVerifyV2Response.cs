@@ -2,7 +2,7 @@
 
 namespace Headless.Captcha;
 
-/// <summary>The wire shape of a reCAPTCHA v2 siteverify response, mapped onto <see cref="CaptchaVerifyResult"/>.</summary>
+/// <summary>Represents the payload returned by the reCAPTCHA v2 site verification API.</summary>
 internal sealed class ReCaptchaSiteVerifyV2Response
 {
     [JsonPropertyName("success")]

@@ -7,7 +7,7 @@ namespace Headless.Context;
 /// <summary>
 /// Base class for <see cref="ICurrentPrincipalAccessor"/> implementations that layer an
 /// <see cref="AsyncLocal{T}"/> override slot on top of an implementation-defined fallback
-/// principal (for example, <see cref="Thread.CurrentPrincipal"/>).
+/// principal, such as <see cref="Thread.CurrentPrincipal"/>.
 /// </summary>
 /// <remarks>
 /// The <see cref="AsyncLocal{T}"/> slot stores only the explicitly overridden principal.
@@ -24,8 +24,8 @@ public abstract class CurrentPrincipalAccessor : ICurrentPrincipalAccessor
 
     /// <summary>
     /// Returns the fallback principal when no explicit override is active in the current
-    /// async context. Derived classes resolve the principal from their specific source
-    /// (for example, <see cref="Thread.CurrentPrincipal"/> or an HTTP context).
+    /// async context. Derived classes resolve the principal from their specific source,
+    /// such as <see cref="Thread.CurrentPrincipal"/> or an HTTP context.
     /// </summary>
     /// <returns>The fallback <see cref="ClaimsPrincipal"/>, or <see langword="null"/>.</returns>
     protected abstract ClaimsPrincipal? GetClaimsPrincipal();
@@ -51,9 +51,12 @@ public abstract class CurrentPrincipalAccessor : ICurrentPrincipalAccessor
 
 /// <summary>
 /// <see cref="CurrentPrincipalAccessor"/> implementation that uses <see cref="Thread.CurrentPrincipal"/>
-/// as the fallback when no async-local override is active. Suitable for non-ASP.NET hosted environments
-/// (console apps, worker services) that rely on the thread-static principal.
+/// as the fallback when no async-local override is active.
 /// </summary>
+/// <remarks>
+/// Suitable for non-ASP.NET hosted environments, such as console apps and worker services,
+/// that rely on the thread-static principal.
+/// </remarks>
 public class ThreadCurrentPrincipalAccessor : CurrentPrincipalAccessor
 {
     /// <inheritdoc/>

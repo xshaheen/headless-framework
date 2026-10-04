@@ -4,17 +4,17 @@ using System.Diagnostics.CodeAnalysis;
 
 namespace Headless.Domain;
 
-/// <summary>Defines an entity with a single primary key with "ID" property.</summary>
-/// <typeparam name="TId">Type of the primary key of the entity</typeparam>
+/// <summary>Defines an entity with a strongly typed primary key named <c>Id</c>.</summary>
+/// <typeparam name="TId">The primary key type.</typeparam>
 [PublicAPI]
 public interface IEntity<out TId> : IEntity
     where TId : IEquatable<TId> // The 'notnull' constraint is redundant because type parameter 'TId' is constrained by non-nullable type 'IEquatable<TId>'
 {
-    /// <summary>Unique identifier for this entity.</summary>
+    /// <summary>Gets the unique identifier for this entity.</summary>
     TId Id { get; }
 }
 
-/// <summary>Base class for entities with a single primary key.</summary>
+/// <summary>Provides a base implementation for entities with a single primary key.</summary>
 [PublicAPI]
 public abstract class Entity<TId> : Entity, IEntity<TId>
     where TId : IEquatable<TId> // The 'notnull' constraint is redundant because type parameter 'TId' is constrained by non-nullable type 'IEquatable<TId>'
@@ -30,7 +30,7 @@ public abstract class Entity<TId> : Entity, IEntity<TId>
         Id = id;
     }
 
-    /// <summary>Unique identifier for this entity.</summary>
+    /// <summary>Gets the unique identifier for this entity.</summary>
     public required TId Id { get; init; }
 
     /// <inheritdoc/>

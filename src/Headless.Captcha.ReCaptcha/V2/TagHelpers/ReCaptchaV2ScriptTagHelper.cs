@@ -7,9 +7,7 @@ using Microsoft.Extensions.Options;
 namespace Headless.Captcha;
 
 /// <summary>
-/// Razor tag helper that renders the reCAPTCHA v2 API script tag. Use as
-/// <c>&lt;recaptcha-script-v2 /&gt;</c> in Razor views, typically in the page head or just before the
-/// closing <c>&lt;/body&gt;</c>.
+/// Renders the reCAPTCHA v2 API <c>&lt;script&gt;</c> tag.
 /// </summary>
 [PublicAPI]
 [HtmlTargetElement("recaptcha-script-v2", TagStructure = TagStructure.WithoutEndTag)]
@@ -18,34 +16,34 @@ public sealed class ReCaptchaV2ScriptTagHelper(
     ICaptchaLanguageCodeProvider languageCodeProvider
 ) : TagHelper
 {
-    /// <summary>When <see langword="true"/> (the default), renders the script tag as <c>&lt;script async&gt;</c>.</summary>
+    /// <summary>Gets or sets a value indicating whether to add the <c>async</c> attribute to the script tag.</summary>
     public bool ScriptAsync { get; set; } = true;
 
-    /// <summary>When <see langword="true"/> (the default), adds the <c>defer</c> attribute to the rendered script tag.</summary>
+    /// <summary>Gets or sets a value indicating whether to add the <c>defer</c> attribute to the script tag.</summary>
     public bool ScriptDefer { get; set; } = true;
 
     /// <summary>
-    /// Maps to the <c>onload</c> query parameter. The name of a JavaScript function called once the
-    /// reCAPTCHA API is ready.
+    /// Gets or sets the name of the JavaScript function called when the reCAPTCHA API loads, mapped to the
+    /// <c>onload</c> query parameter.
     /// </summary>
     public string? Onload { get; set; }
 
     /// <summary>
-    /// Maps to the <c>render</c> query parameter. Set to <see langword="explicit"/> to disable automatic widget
-    /// rendering, or to a site key to render a specific widget on load.
+    /// Gets or sets the rendering mode or site key, mapped to the <c>render</c> query parameter.
     /// </summary>
     public string? Render { get; set; }
 
     /// <summary>
-    /// When <see langword="true"/>, injects an inline <c>&lt;style&gt;</c> that hides the reCAPTCHA badge
-    /// (<c>.grecaptcha-badge { visibility: hidden; }</c>). Per Google policy, hiding the badge requires
-    /// displaying the reCAPTCHA branding in the page text.
+    /// Gets or sets a value indicating whether to inject inline CSS to hide the reCAPTCHA badge.
     /// </summary>
     public bool HideBadge { get; set; }
 
     private readonly ReCaptchaOptions _options = optionsAccessor.Get(CaptchaConstants.ReCaptchaV2Provider);
 
     /// <summary>Renders the reCAPTCHA v2 script tag with language and optional query parameters.</summary>
+    /// <param name="context">Contains information associated with the current HTML tag.</param>
+    /// <param name="output">A stateful HTML element used to generate an HTML tag.</param>
+    /// <exception cref="InvalidOperationException">The reCAPTCHA v2 site key is not configured.</exception>
     public override void Process(TagHelperContext context, TagHelperOutput output)
     {
         /*

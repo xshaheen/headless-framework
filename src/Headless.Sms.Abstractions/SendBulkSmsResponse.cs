@@ -4,7 +4,7 @@ using Headless.Checks;
 
 namespace Headless.Sms;
 
-/// <summary>The outcome of a bulk send: one <see cref="SmsRecipientResult"/> per recipient, in request order.</summary>
+/// <summary>Represents the outcome of a bulk send: one <see cref="SmsRecipientResult"/> per recipient, in request order.</summary>
 /// <remarks>
 /// Providers that return per-recipient detail (for example Infobip) populate each result individually.
 /// Providers whose API reports a single status for the whole batch use <see cref="FromAggregate"/> to apply
@@ -20,24 +20,25 @@ public sealed class SendBulkSmsResponse
         ProviderBatchId = providerBatchId;
     }
 
-    /// <summary>Per-recipient outcomes, in the order recipients were supplied in the request.</summary>
+    /// <summary>Gets per-recipient outcomes in request order.</summary>
     public IReadOnlyList<SmsRecipientResult> Results { get; }
 
     /// <summary>
-    /// Provider-assigned identifier for the batch when the backend returns one (for example the Infobip
-    /// bulk id). May be <see langword="null"/> when the provider does not expose one.
+    /// Gets the provider-assigned identifier for the batch when the backend returns one (for example the
+    /// Infobip bulk id). May be <see langword="null"/> when the provider does not expose one.
     /// </summary>
     public string? ProviderBatchId { get; }
 
-    /// <summary>Whether every recipient was accepted by the provider.</summary>
+    /// <summary>Gets a value indicating whether the provider accepted every recipient.</summary>
     public bool AllSucceeded => Results.All(static r => r.Result.Success);
 
-    /// <summary>Whether at least one recipient was accepted by the provider.</summary>
+    /// <summary>Gets a value indicating whether the provider accepted at least one recipient.</summary>
     public bool AnySucceeded => Results.Any(static r => r.Result.Success);
 
-    /// <summary>Creates a response from explicit per-recipient results.</summary>
-    /// <param name="results">One result per recipient. Must not be <see langword="null"/> or empty.</param>
-    /// <param name="providerBatchId">The provider-assigned batch id, when available.</param>
+    /// <summary>Creates a bulk send response from explicit per-recipient results.</summary>
+    /// <param name="results">One result per recipient.</param>
+    /// <param name="providerBatchId">The provider-assigned batch identifier, when available.</param>
+    /// <returns>A new <see cref="SendBulkSmsResponse"/> instance.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="results"/> is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException"><paramref name="results"/> is empty.</exception>
     public static SendBulkSmsResponse FromResults(
@@ -55,12 +56,13 @@ public sealed class SendBulkSmsResponse
     /// Creates a response that applies one aggregate <paramref name="outcome"/> to every recipient. Used by
     /// providers whose API reports a single status for the whole batch rather than per-recipient detail.
     /// </summary>
-    /// <param name="destinations">
-    /// The recipients the outcome applies to. Must not be <see langword="null"/> or empty.
-    /// </param>
-    /// <param name="outcome">The single outcome to mirror onto every recipient. Must not be <see langword="null"/>.</param>
-    /// <param name="providerBatchId">The provider-assigned batch id, when available.</param>
-    /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
+    /// <param name="destinations">The recipients the outcome applies to.</param>
+    /// <param name="outcome">The single outcome to mirror onto every recipient.</param>
+    /// <param name="providerBatchId">The provider-assigned batch identifier, when available.</param>
+    /// <returns>A new <see cref="SendBulkSmsResponse"/> instance.</returns>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="destinations"/> or <paramref name="outcome"/> is <see langword="null"/>.
+    /// </exception>
     /// <exception cref="ArgumentException"><paramref name="destinations"/> is empty.</exception>
     public static SendBulkSmsResponse FromAggregate(
         IEnumerable<SmsRequestDestination> destinations,
@@ -78,8 +80,8 @@ public sealed class SendBulkSmsResponse
     }
 }
 
-/// <summary>The outcome for one recipient within a <see cref="SendBulkSmsResponse"/>.</summary>
-/// <param name="Destination">The recipient this outcome belongs to.</param>
-/// <param name="Result">The single-send outcome for this recipient.</param>
+/// <summary>Represents the send outcome for one recipient within a bulk send.</summary>
+/// <param name="Destination">The recipient associated with the outcome.</param>
+/// <param name="Result">The single-send outcome for the recipient.</param>
 [PublicAPI]
 public sealed record SmsRecipientResult(SmsRequestDestination Destination, SendSingleSmsResponse Result);

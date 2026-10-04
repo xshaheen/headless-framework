@@ -2,31 +2,31 @@
 
 namespace Headless.Sms;
 
-/// <summary>Describes a single SMS message delivered to many recipients in one provider call.</summary>
+/// <summary>Represents a single SMS message sent to multiple recipients in one provider call.</summary>
 /// <remarks>
-/// Used with <see cref="IBulkSmsSender"/>. The same <see cref="Text"/> is sent to every entry in
-/// <see cref="Destinations"/>. The outcome is a <see cref="SendBulkSmsResponse"/> with one result per
-/// recipient; providers whose API cannot report per-recipient outcomes apply the same aggregate result to
-/// every recipient.
+/// Used with <see cref="IBulkSmsSender"/>. The provider sends <see cref="Text"/> to each entry in
+/// <see cref="Destinations"/>. The operation returns a <see cref="SendBulkSmsResponse"/> containing one result per
+/// recipient. Providers that cannot report per-recipient outcomes apply the aggregate result to every recipient.
 /// </remarks>
 [PublicAPI]
 public sealed class SendBulkSmsRequest
 {
     /// <summary>
-    /// Caller-supplied correlation id for the batch. Providers that accept a client message id forward it
-    /// (deriving per-recipient ids where required); others ignore it. May be <see langword="null"/>.
+    /// Gets the caller-supplied correlation identifier for the batch. Providers that accept a client message
+    /// identifier forward it (deriving per-recipient identifiers where the API requires them); others ignore
+    /// it. May be <see langword="null"/>.
     /// </summary>
     public string? MessageId { get; init; }
 
-    /// <summary>The recipients. Must contain at least one destination.</summary>
+    /// <summary>Gets the recipients for the message. Must contain at least one destination.</summary>
     public required IReadOnlyList<SmsRequestDestination> Destinations { get; init; }
 
-    /// <summary>The plain-text body of the SMS message.</summary>
+    /// <summary>Gets the plain-text body of the SMS message.</summary>
     public required string Text { get; init; }
 
     /// <summary>
-    /// Optional provider-specific or application-specific metadata. Providers may read well-known keys from
-    /// this dictionary; unrecognized keys are ignored.
+    /// Gets optional provider-specific or application-specific metadata. Providers can read well-known keys from this
+    /// dictionary. Providers ignore unrecognized keys.
     /// </summary>
     public IDictionary<string, object>? Properties { get; init; }
 }

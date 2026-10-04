@@ -2,19 +2,19 @@
 
 namespace Headless.Slugs;
 
-/// <summary>Controls whether and how alphabetic characters in a slug are case-folded.</summary>
+/// <summary>Specifies how alphabetic characters in a slug are case-folded.</summary>
 /// <remarks>
-/// The backing values are part of the public contract and must remain stable across versions; assign new members
-/// explicit values rather than reordering existing ones.
+/// The backing values are part of the public contract and must remain stable across versions. Assign new members
+/// explicit values rather than reordering existing members.
 /// </remarks>
 public enum CasingTransformation
 {
-    /// <summary>Leaves the original casing of each character unchanged.</summary>
+    /// <summary>Preserves the original casing of each character.</summary>
     PreserveCase = 0,
 
-    /// <summary>Folds every character to lower case. Uses the invariant culture unless <c>Culture</c> is set on <c>SlugOptions</c>.</summary>
+    /// <summary>Converts each character to lowercase. Uses invariant culture unless <see cref="SlugOptions.Culture"/> is set.</summary>
     ToLowerCase = 1,
 
-    /// <summary>Folds every character to upper case. Uses the invariant culture unless <c>Culture</c> is set on <c>SlugOptions</c>.</summary>
+    /// <summary>Converts each character to uppercase. Uses invariant culture unless <see cref="SlugOptions.Culture"/> is set.</summary>
     ToUpperCase = 2,
 }

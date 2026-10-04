@@ -5,9 +5,8 @@ using System.Collections;
 namespace Headless.SourceGenerators;
 
 /// <summary>
-/// An immutable array with value equality, so incremental pipeline models that carry collections still compare by
-/// content. <see cref="System.Collections.Immutable.ImmutableArray{T}"/> compares by reference, which would defeat
-/// step caching on every run.
+/// Immutable array with value-equality semantics for incremental generator pipeline models.
+/// Prevents cache invalidation caused by reference comparisons in standard immutable collections.
 /// </summary>
 internal readonly struct EquatableArray<T> : IEquatable<EquatableArray<T>>, IReadOnlyList<T>
     where T : IEquatable<T>

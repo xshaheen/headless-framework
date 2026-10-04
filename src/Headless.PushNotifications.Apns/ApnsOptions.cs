@@ -9,34 +9,35 @@ using Headless.PushNotifications.Apns.Internal;
 namespace Headless.PushNotifications.Apns;
 
 /// <summary>
-/// Apple Push Notification service (APNs) configuration options.
+/// Represents configuration options for the Apple Push Notification service (APNs).
 /// </summary>
 /// <remarks>
-/// An instance authenticates in exactly one of two modes: token mode, with <see cref="KeyId"/>, <see cref="TeamId"/>,
-/// and <see cref="PrivateKey"/> (a <c>.p8</c> signing key), or certificate mode, with <see cref="Certificate"/> and
-/// <see cref="CertificatePassword"/> (a <c>.p12</c> provider certificate). Configuring neither or both fails startup
-/// validation.
+/// An instance authenticates in exactly one of two modes: token mode, with <see cref="KeyId"/>,
+/// <see cref="TeamId"/>, and <see cref="PrivateKey"/> (a <c>.p8</c> signing key), or certificate mode, with
+/// <see cref="Certificate"/> and <see cref="CertificatePassword"/> (a <c>.p12</c> provider certificate).
+/// Configuring neither or both fails startup validation.
 /// </remarks>
 [PublicAPI]
 public sealed class ApnsOptions
 {
     /// <summary>
-    /// Token mode: the 10-character identifier of the APNs signing key, shown next to the key in the Apple Developer
-    /// account.
+    /// Gets or sets the 10-character APNs signing key identifier used in token authentication mode, shown next
+    /// to the key in the Apple Developer account.
     /// </summary>
     public string? KeyId { get; set; }
 
     /// <summary>
-    /// Token mode: the 10-character Apple Developer team identifier that owns the signing key.
+    /// Gets or sets the 10-character Apple Developer team identifier that owns the signing key, used in token
+    /// authentication mode.
     /// </summary>
     public string? TeamId { get; set; }
 
     /// <summary>
-    /// Token mode: the PEM text of the APNs signing key (the content of the <c>AuthKey_*.p8</c> file), a P-256 EC
-    /// private key.
+    /// Gets or sets the PEM text of the APNs signing key (the content of the <c>AuthKey_*.p8</c> file), a P-256
+    /// EC private key, used in token authentication mode.
     /// </summary>
     /// <remarks>
-    /// Contains sensitive private key data. Do not log or serialize. Option sets that share
+    /// Contains sensitive private key data; do not log or serialize it. Option sets that share
     /// <see cref="TeamId"/> and <see cref="KeyId"/> must carry the same key text, because they share one cached
     /// provider token.
     /// </remarks>
@@ -44,32 +45,33 @@ public sealed class ApnsOptions
     public string? PrivateKey { get; set; }
 
     /// <summary>
-    /// Certificate mode: the base64 text of the APNs provider certificate exported as a PKCS#12 (<c>.p12</c>) file,
-    /// including its private key.
+    /// Gets or sets the base64 text of the APNs provider certificate exported as a PKCS#12 (<c>.p12</c>) file,
+    /// including its private key, used in certificate authentication mode.
     /// </summary>
     /// <remarks>
-    /// Contains sensitive private key data. Do not log or serialize. The certificate is presented during the TLS
-    /// handshake instead of a provider token, and it cannot send <c>location</c>, <c>fileprovider</c>,
+    /// Contains sensitive private key data; do not log or serialize it. The certificate is presented during the
+    /// TLS handshake instead of a provider token, and it cannot send <c>location</c>, <c>fileprovider</c>,
     /// <c>liveactivity</c>, <c>widgets</c>, or <c>controls</c> pushes. Apple certificates last one year; the host
     /// fails to start once the certificate has expired, and logs a warning at startup and in a daily check when it
-    /// expires within 30 days. When bound configuration reloads with a renewed certificate, new connections present
-    /// it without a restart.
+    /// expires within 30 days. When bound configuration reloads with a renewed certificate, new connections
+    /// present it without a restart.
     /// </remarks>
     [JsonIgnore]
     public string? Certificate { get; set; }
 
-    /// <summary>Certificate mode: the password that opens <see cref="Certificate"/>, if it has one.</summary>
-    /// <remarks>Sensitive. Do not log or serialize.</remarks>
+    /// <summary>Gets or sets the password that opens <see cref="Certificate"/>, when it has one.</summary>
+    /// <remarks>Contains sensitive data; do not log or serialize it.</remarks>
     [JsonIgnore]
     public string? CertificatePassword { get; set; }
 
     /// <summary>
-    /// The app's bundle identifier, sent as the <c>apns-topic</c> header. VoIP pushes append <c>.voip</c> to it.
+    /// Gets or sets the application bundle identifier, sent as the <c>apns-topic</c> header. VoIP pushes append
+    /// <c>.voip</c> to it.
     /// </summary>
     public required string BundleId { get; set; }
 
     /// <summary>
-    /// The APNs environment to deliver to. Default: <see cref="ApnsEnvironment.Production"/>.
+    /// Gets or sets the target APNs environment. Defaults to <see cref="ApnsEnvironment.Production"/>.
     /// </summary>
     /// <remarks>
     /// A device token belongs to the environment the app was built for. Sending it to the other environment is
@@ -78,17 +80,18 @@ public sealed class ApnsOptions
     public ApnsEnvironment Environment { get; set; } = ApnsEnvironment.Production;
 
     /// <summary>
-    /// The push type sent as the <c>apns-push-type</c> header. Default: <see cref="ApnsPushType.Alert"/>.
+    /// Gets or sets the default push type sent as the <c>apns-push-type</c> header. Defaults to <see cref="ApnsPushType.Alert"/>.
     /// </summary>
     public ApnsPushType PushType { get; set; } = ApnsPushType.Alert;
 
     /// <summary>
-    /// The delivery priority sent as the <c>apns-priority</c> header. Default: <see cref="ApnsPriority.Immediate"/>.
+    /// Gets or sets the default delivery priority sent as the <c>apns-priority</c> header. Defaults to <see cref="ApnsPriority.Immediate"/>.
     /// </summary>
     public ApnsPriority Priority { get; set; } = ApnsPriority.Immediate;
 
     /// <summary>
-    /// Whether a <c>BadDeviceToken</c> rejection reports the token as unregistered. Default: <see langword="false"/>.
+    /// Gets or sets a value indicating whether a <c>BadDeviceToken</c> rejection is treated as unregistered.
+    /// Defaults to <see langword="false"/>.
     /// </summary>
     /// <remarks>
     /// Apple returns <c>BadDeviceToken</c> both for a malformed token and for a token sent to the wrong
@@ -98,12 +101,14 @@ public sealed class ApnsOptions
     public bool TreatBadDeviceTokenAsUnregistered { get; set; }
 
     /// <summary>
-    /// The maximum number of requests a multicast send has in flight at once. Default: 100. Valid range: 1-1000.
+    /// Gets or sets the maximum number of requests a multicast send has in flight at once. Defaults to 100.
+    /// Valid range: 1-1000.
     /// </summary>
     public int MaxConcurrency { get; set; } = 100;
 
     /// <summary>
-    /// Whether to deliver through port 2197 instead of 443. Default: <see langword="false"/>.
+    /// Gets or sets a value indicating whether requests connect through port 2197 instead of port 443.
+    /// Defaults to <see langword="false"/>.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -119,48 +124,48 @@ public sealed class ApnsOptions
     public bool UseAlternativePort { get; set; }
 
     /// <summary>
-    /// An optional proxy the underlying HTTP handler routes APNs requests through, such as a corporate egress
-    /// proxy. Default: <see langword="null"/>, which connects directly.
+    /// Gets or sets the optional web proxy the underlying HTTP handler routes APNs requests through, such as a
+    /// corporate egress proxy. Defaults to <see langword="null"/>, which connects directly.
     /// </summary>
     /// <remarks>
     /// Applied to the primary handler, so it covers every connection the pool opens, including HTTP/2 and TLS
-    /// ones. Not serializable: configuration cannot express a live <see cref="IWebProxy"/> instance, so set it from
-    /// code through <c>UseApns(options => …)</c>. Use <see cref="WebProxy"/> for an HTTP proxy; a SOCKS proxy needs
-    /// a SOCKS-capable <see cref="IWebProxy"/> implementation.
+    /// ones. Not serializable: configuration cannot express a live <see cref="IWebProxy"/> instance, so set it
+    /// from code through <c>UseApns(options => …)</c>. Use <see cref="WebProxy"/> for an HTTP proxy; a SOCKS
+    /// proxy needs a SOCKS-capable <see cref="IWebProxy"/> implementation.
     /// </remarks>
     [JsonIgnore]
     public IWebProxy? Proxy { get; set; }
 
     /// <summary>
-    /// The maximum number of simultaneous TCP connections one instance opens to APNs. Default: 4. Valid range:
-    /// 1-1000.
+    /// Gets or sets the maximum number of simultaneous TCP connections one instance opens to APNs. Defaults
+    /// to 4. Valid range: 1-1000.
     /// </summary>
     /// <remarks>
     /// <para>
     /// APNs starts each token-authenticated connection with a single stream until it has seen a valid provider
     /// token, and a cold multicast under the default <see cref="MaxConcurrency"/> of 100 against such a server
     /// opens a double-digit number of connections — measured between 7 and 30 across runs on this repository's
-    /// one-stream test double — because the runtime injects a new connection for every request still waiting once
-    /// the open ones advertise their single-stream limit. Unbounded growth spends file descriptors and TLS
+    /// one-stream test double — because the runtime injects a new connection for every request still waiting
+    /// once the open ones advertise their single-stream limit. Unbounded growth spends file descriptors and TLS
     /// handshakes on requests that a few warm connections would carry once APNs raises the stream limit.
     /// </para>
     /// <para>
-    /// The default of 4 follows the sizing advice of the mature APNs clients: pushy (Java) recommends "one or two
-    /// connections per thread, not to exceed more than two connections per server", and APNs serves each
+    /// The default of 4 follows the sizing advice of the mature APNs clients: pushy (Java) recommends "one or
+    /// two connections per thread, not to exceed more than two connections per server", and APNs serves each
     /// environment from several servers behind one host name. Raise it when you saturate CPU or bandwidth before
     /// connection capacity, and lower it to shrink the process's footprint; the bound trades peak cold-start
     /// throughput for a predictable connection count.
     /// </para>
     /// <para>
     /// Implemented with a <see cref="SocketsHttpHandler.ConnectCallback"/> permit, so a request waits for a free
-    /// permit — an idle connection's free stream or a closed connection's slot — instead of dialing. The runtime's
-    /// own <c>MaxConnectionsPerServer</c> cannot provide this bound: it is enforced only for HTTP/1.1, while APNs
-    /// speaks HTTP/2.
+    /// permit — an idle connection's free stream or a closed connection's slot — instead of dialing. The
+    /// runtime's own <c>MaxConnectionsPerServer</c> cannot provide this bound: it is enforced only for
+    /// HTTP/1.1, while APNs speaks HTTP/2.
     /// </para>
     /// </remarks>
     public int MaxConnections { get; set; } = 4;
 
-    /// <summary>Whether these options select certificate mode rather than token mode.</summary>
+    /// <summary>Determines whether these options configure certificate authentication mode.</summary>
     internal bool UsesCertificate => !string.IsNullOrWhiteSpace(Certificate);
 
     /// <inheritdoc />
@@ -171,20 +176,25 @@ public sealed class ApnsOptions
 }
 
 /// <summary>
-/// The APNs environment a provider delivers to.
+/// Specifies the target APNs server environment.
 /// </summary>
 [PublicAPI]
 public enum ApnsEnvironment
 {
-    /// <summary>The production environment, <c>api.push.apple.com</c>, for App Store, TestFlight, and ad hoc builds.</summary>
+    /// <summary>
+    /// The production environment, <c>api.push.apple.com</c>, for App Store, TestFlight, and ad hoc builds.
+    /// </summary>
     Production = 0,
 
-    /// <summary>The development environment, <c>api.sandbox.push.apple.com</c>, for builds signed with a development profile.</summary>
+    /// <summary>
+    /// The development environment, <c>api.sandbox.push.apple.com</c>, for builds signed with a development
+    /// profile.
+    /// </summary>
     Sandbox = 1,
 }
 
 /// <summary>
-/// The APNs push type, which decides how the device handles the notification.
+/// Specifies the notification push type for APNs processing.
 /// </summary>
 [PublicAPI]
 public enum ApnsPushType
@@ -197,26 +207,25 @@ public enum ApnsPushType
 }
 
 /// <summary>
-/// The APNs delivery priority. The numeric values are the <c>apns-priority</c> header values.
+/// Specifies the APNs delivery priority mapped to the <c>apns-priority</c> header.
 /// </summary>
 #pragma warning disable CA1008 // The values are the apns-priority header values, and APNs defines no zero priority.
 [PublicAPI]
 public enum ApnsPriority
 {
-    /// <summary>Prioritize the device's power over all other factors; the notification may be delayed.</summary>
+    /// <summary>Prioritizes device battery power. Notifications can be delayed.</summary>
     PowerPrioritized = 1,
 
-    /// <summary>Deliver based on the device's power considerations.</summary>
+    /// <summary>Delivers based on device power considerations.</summary>
     PowerConsiderate = 5,
 
-    /// <summary>Deliver immediately.</summary>
+    /// <summary>Delivers immediately.</summary>
     Immediate = 10,
 }
 #pragma warning restore CA1008
 
 /// <summary>
-/// FluentValidation validator for <see cref="ApnsOptions"/>. Wired up and executed at startup by the
-/// <c>UseApns</c> setup methods.
+/// Validates <see cref="ApnsOptions"/> instances.
 /// </summary>
 internal sealed class ApnsOptionsValidator : AbstractValidator<ApnsOptions>
 {
@@ -266,8 +275,8 @@ internal sealed class ApnsOptionsValidator : AbstractValidator<ApnsOptions>
             }
         );
 
-        // One custom rule loads the certificate once for every check. Failures carry no attempted value, so neither
-        // the certificate nor the password can reach OptionsValidationException.
+        // One custom rule loads the certificate once for every check. Failures carry no attempted value, so
+        // neither the certificate nor the password can reach OptionsValidationException.
         RuleFor(x => x.Certificate).Custom(_ValidateCertificate).When(x => _UsesCertificate(x) && !_UsesToken(x));
 
         RuleFor(x => x.BundleId).NotEmpty().WithMessage("APNs BundleId must be provided.");

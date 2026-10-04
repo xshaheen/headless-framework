@@ -8,10 +8,10 @@ namespace Headless.Checks;
 
 public static partial class Argument
 {
-    /// <summary>Throws an <see cref="ArgumentException" /> if <paramref name="stream" /> does not support reading.</summary>
+    /// <summary>Throws an <see cref="ArgumentException" /> when <paramref name="stream" /> does not support reading.</summary>
     /// <param name="stream">The argument <see cref="Stream"/> instance to check.</param>
-    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <exception cref="ArgumentException">Thrown if <paramref name="stream"/> doesn't support reading.</exception>
+    /// <param name="paramName">The name of the parameter being checked. Captured automatically by the compiler.</param>
+    /// <exception cref="ArgumentException"><paramref name="stream"/> doesn't support reading.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void CanRead(Stream stream, [CallerArgumentExpression(nameof(stream))] string? paramName = null)
@@ -22,10 +22,10 @@ public static partial class Argument
         }
     }
 
-    /// <summary>Throws an <see cref="ArgumentException" /> if <paramref name="stream" /> does not support writing.</summary>
+    /// <summary>Throws an <see cref="ArgumentException" /> when <paramref name="stream" /> does not support writing.</summary>
     /// <param name="stream">The argument <see cref="Stream"/> instance to check.</param>
-    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <exception cref="ArgumentException">Thrown if <paramref name="stream"/> doesn't support writing.</exception>
+    /// <param name="paramName">The name of the parameter being checked. Captured automatically by the compiler.</param>
+    /// <exception cref="ArgumentException"><paramref name="stream"/> doesn't support writing.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void CanWrite(Stream stream, [CallerArgumentExpression(nameof(stream))] string? paramName = null)
@@ -36,10 +36,10 @@ public static partial class Argument
         }
     }
 
-    /// <summary>Throws an <see cref="ArgumentException" /> if <paramref name="stream" /> does not support seeking.</summary>
+    /// <summary>Throws an <see cref="ArgumentException" /> when <paramref name="stream" /> does not support seeking.</summary>
     /// <param name="stream">The argument <see cref="Stream"/> instance to check.</param>
-    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <exception cref="ArgumentException">Thrown if <paramref name="stream"/> doesn't support seeking.</exception>
+    /// <param name="paramName">The name of the parameter being checked. Captured automatically by the compiler.</param>
+    /// <exception cref="ArgumentException"><paramref name="stream"/> doesn't support seeking.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void CanSeek(Stream stream, [CallerArgumentExpression(nameof(stream))] string? paramName = null)
@@ -50,10 +50,10 @@ public static partial class Argument
         }
     }
 
-    /// <summary>Throws an <see cref="ArgumentException" /> if <paramref name="stream" /> is not at the starting position.</summary>
+    /// <summary>Throws an <see cref="ArgumentException" /> when <paramref name="stream" /> is not at the starting position.</summary>
     /// <param name="stream">The argument <see cref="Stream"/> instance to check.</param>
-    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <exception cref="ArgumentException">Thrown if <paramref name="stream"/> is not at the starting position.</exception>
+    /// <param name="paramName">The name of the parameter being checked. Captured automatically by the compiler.</param>
+    /// <exception cref="ArgumentException"><paramref name="stream"/> is not at the starting position.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void IsAtStartPosition(
@@ -67,13 +67,13 @@ public static partial class Argument
         }
     }
 
-    /// <summary>Throws an <see cref="ArgumentException" /> if the file at <paramref name="path" /> does not exist.</summary>
+    /// <summary>Throws an <see cref="ArgumentException" /> when the file at <paramref name="path" /> does not exist.</summary>
     /// <param name="path">The file path to check.</param>
-    /// <param name="message">(Optional) Custom error message.</param>
-    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="path" /> if the file exists.</returns>
-    /// <exception cref="ArgumentNullException">Thrown if <paramref name="path"/> is null.</exception>
-    /// <exception cref="ArgumentException">Thrown if <paramref name="path"/> is empty or the file does not exist.</exception>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="paramName">The name of the parameter being checked. Captured automatically by the compiler.</param>
+    /// <returns><paramref name="path" /> when the file exists.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="path"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="path"/> is empty or the file does not exist.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static string FileExists(
@@ -92,13 +92,13 @@ public static partial class Argument
         return path;
     }
 
-    /// <summary>Throws an <see cref="ArgumentException" /> if the directory at <paramref name="path" /> does not exist.</summary>
+    /// <summary>Throws an <see cref="ArgumentException" /> when the directory at <paramref name="path" /> does not exist.</summary>
     /// <param name="path">The directory path to check.</param>
-    /// <param name="message">(Optional) Custom error message.</param>
-    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="path" /> if the directory exists.</returns>
-    /// <exception cref="ArgumentNullException">Thrown if <paramref name="path"/> is null.</exception>
-    /// <exception cref="ArgumentException">Thrown if <paramref name="path"/> is empty or the directory does not exist.</exception>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="paramName">The name of the parameter being checked. Captured automatically by the compiler.</param>
+    /// <returns><paramref name="path" /> when the directory exists.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="path"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="path"/> is empty or the directory does not exist.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static string DirectoryExists(

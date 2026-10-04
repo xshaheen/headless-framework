@@ -3,20 +3,23 @@
 namespace Headless.SourceGenerators;
 
 /// <summary>
-/// The <c>owner.name</c> identity rule every Headless handler declaration shares, checked at build time so a malformed
-/// identity never reaches a broker name, a persisted job row, or a host filter.
+/// Enforces handler identity syntax (<c>owner.name</c>) during compilation.
 /// </summary>
 /// <remarks>
-/// The owner is the text before the first <c>.</c> and names the owning module or service; host filters such as
-/// <c>billing.*</c> match on it. Segments are never empty, so <c>.a</c>, <c>a.</c>, and <c>a..b</c> are rejected. The
-/// storage rules for persisted identities apply as well: at most <see cref="MaxLength"/> UTF-16 code units, no
-/// surrounding whitespace, no control characters, and no unpaired surrogates.
+/// The owner segment identifies the owning service or module for host routing and filters.
+/// Identities cannot exceed <see cref="MaxLength"/> characters and must not contain control characters
+/// or unpaired surrogates.
 /// </remarks>
 internal static class HandlerIdentity
 {
-    /// <summary>The longest identity a handler may declare, in UTF-16 code units.</summary>
+    /// <summary>Maximum allowed length for a handler identity in characters.</summary>
     public const int MaxLength = 200;
 
+    /// <summary>
+    /// Validates whether the specified identity adheres to the <c>owner.name</c> format.
+    /// </summary>
+    /// <param name="identity">The identity string to validate.</param>
+    /// <returns><see langword="true"/> if the identity is valid; otherwise, <see langword="false"/>.</returns>
     public static bool IsValid(string? identity)
     {
         if (

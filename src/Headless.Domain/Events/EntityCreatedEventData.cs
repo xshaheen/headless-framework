@@ -2,7 +2,7 @@
 
 namespace Headless.Domain;
 
-/// <summary>This type of event can be used to notify just after the creation of an Entity.</summary>
-/// <typeparam name="TEntity">Entity type</typeparam>
+/// <summary>Carries domain event data raised immediately after an entity is created.</summary>
+/// <typeparam name="TEntity">The entity type.</typeparam>
 [PublicAPI]
 public sealed class EntityCreatedEventData<TEntity>(TEntity entity) : EntityEventData<TEntity>(entity);

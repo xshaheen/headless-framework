@@ -10,9 +10,10 @@ namespace Headless.PushNotifications.Apns.Internal;
 internal static class ApnsCertificateLoader
 {
     /// <summary>
-    /// The key storage flags for this OS. Linux keeps the key in memory only, so it never reaches disk. Windows needs
-    /// the default flags because SChannel cannot use an ephemeral key for TLS client authentication, so the key
-    /// reaches the user key store. macOS refuses ephemeral keys and imports the key into a temporary keychain.
+    /// The key storage flags for this OS. Linux keeps the key in memory only, so it never reaches disk.
+    /// Windows needs the default flags because SChannel cannot use an ephemeral key for TLS client
+    /// authentication, so the key reaches the user key store. macOS refuses ephemeral keys and imports the key
+    /// into a temporary keychain.
     /// </summary>
     internal static X509KeyStorageFlags KeyStorageFlags { get; } =
         OperatingSystem.IsLinux() ? X509KeyStorageFlags.EphemeralKeySet : X509KeyStorageFlags.DefaultKeySet;
@@ -32,16 +33,16 @@ internal static class ApnsCertificateLoader
     }
 
     /// <summary>
-    /// Loads the certificate and checks what APNs needs from it: base64 PKCS#12 text that <paramref name="password"/>
-    /// opens, a private key, and an expiry after <paramref name="now"/>. Shared by the options validator and the
-    /// certificate reload, so both accept exactly the same certificates.
+    /// Loads the certificate and checks what APNs needs from it: base64 PKCS#12 text that
+    /// <paramref name="password"/> opens, a private key, and an expiry after <paramref name="now"/>. Shared
+    /// by the options validator and the certificate reload, so both accept exactly the same certificates.
     /// </summary>
     /// <returns>
     /// The certificate, which the caller owns and disposes, or <see langword="null"/> when any check fails.
     /// </returns>
     /// <remarks>
-    /// The <paramref name="errors"/> messages never contain the certificate text or the password, so they are safe to
-    /// log and to put in a validation failure.
+    /// The <paramref name="errors"/> messages never contain the certificate text or the password, so they are
+    /// safe to log and to put in a validation failure.
     /// </remarks>
     public static X509Certificate2? LoadValid(
         string base64Pkcs12,

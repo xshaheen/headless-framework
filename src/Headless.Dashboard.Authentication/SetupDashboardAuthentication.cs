@@ -8,7 +8,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 namespace Headless.Dashboard.Authentication;
 
 /// <summary>
-/// Registration extensions for dashboard authentication (<see cref="AuthConfig"/> + <see cref="IAuthService"/>).
+/// Provides extension methods for registering dashboard authentication services.
 /// </summary>
 [PublicAPI]
 public static class SetupDashboardAuthentication
@@ -16,10 +16,10 @@ public static class SetupDashboardAuthentication
     extension(IServiceCollection services)
     {
         /// <summary>
-        /// Binds <see cref="AuthConfig"/> from <paramref name="configuration"/> (validated on start via
-        /// <c>AuthConfigValidator</c>) and registers the scoped <see cref="IAuthService"/>.
+        /// Binds <see cref="AuthConfig"/> from <paramref name="configuration"/> with startup validation
+        /// and registers the scoped <see cref="IAuthService"/>.
         /// </summary>
-        /// <param name="configuration">Configuration section to bind into <see cref="AuthConfig"/>.</param>
+        /// <param name="configuration">The configuration section to bind into <see cref="AuthConfig"/>.</param>
         /// <returns>The same <paramref name="services"/> collection for chaining.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="configuration"/> is <see langword="null"/>.</exception>
         public IServiceCollection AddDashboardAuthentication(IConfiguration configuration)
@@ -32,10 +32,9 @@ public static class SetupDashboardAuthentication
         }
 
         /// <summary>
-        /// Configures <see cref="AuthConfig"/> via <paramref name="setupAction"/> (validated on start via
-        /// <c>AuthConfigValidator</c>) and registers the scoped <see cref="IAuthService"/>.
+        /// Configures <see cref="AuthConfig"/> with startup validation and registers the scoped <see cref="IAuthService"/>.
         /// </summary>
-        /// <param name="setupAction">Delegate that configures <see cref="AuthConfig"/>.</param>
+        /// <param name="setupAction">The delegate that configures <see cref="AuthConfig"/>.</param>
         /// <returns>The same <paramref name="services"/> collection for chaining.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="setupAction"/> is <see langword="null"/>.</exception>
         public IServiceCollection AddDashboardAuthentication(Action<AuthConfig> setupAction)
@@ -48,11 +47,10 @@ public static class SetupDashboardAuthentication
         }
 
         /// <summary>
-        /// Configures <see cref="AuthConfig"/> via a delegate that also receives the
-        /// <see cref="IServiceProvider"/> (validated on start via <c>AuthConfigValidator</c>) and registers
+        /// Configures <see cref="AuthConfig"/> using the service provider with startup validation and registers
         /// the scoped <see cref="IAuthService"/>.
         /// </summary>
-        /// <param name="setupAction">Delegate that configures <see cref="AuthConfig"/> with access to the DI container.</param>
+        /// <param name="setupAction">The delegate that configures <see cref="AuthConfig"/> using the service provider.</param>
         /// <returns>The same <paramref name="services"/> collection for chaining.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="setupAction"/> is <see langword="null"/>.</exception>
         public IServiceCollection AddDashboardAuthentication(Action<AuthConfig, IServiceProvider> setupAction)

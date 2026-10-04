@@ -19,7 +19,7 @@ public static class SetupSequences
         /// provider. Exactly one <c>setup.Use…</c> call (<c>UsePostgreSql</c> or <c>UseSqlServer</c>) is required.
         /// </summary>
         /// <param name="configure">Chooses the provider and configures the numbering policies.</param>
-        /// <returns>The service collection, to allow chaining.</returns>
+        /// <returns>The service collection to support method chaining.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="configure" /> is <see langword="null" />.</exception>
         /// <exception cref="InvalidOperationException">
         /// No provider or more than one provider was chosen, or sequences were already registered.

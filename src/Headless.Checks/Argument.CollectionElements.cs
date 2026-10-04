@@ -8,13 +8,13 @@ namespace Headless.Checks;
 
 public static partial class Argument
 {
-    /// <summary>Throws an <see cref="ArgumentException" /> if <paramref name="argument" /> has any null element.</summary>
+    /// <summary>Throws an <see cref="ArgumentException" /> when <paramref name="argument" /> has any null element.</summary>
     /// <param name="argument">The argument to check.</param>
-    /// <param name="message">(Optional) Custom error message.</param>
-    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="argument" /> if the argument has no null element.</returns>
-    /// <exception cref="ArgumentNullException">if <paramref name="argument" /> is null.</exception>
-    /// <exception cref="ArgumentException">if <paramref name="argument" /> has any null element.</exception>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="paramName">The name of the parameter being checked. Captured automatically by the compiler.</param>
+    /// <returns><paramref name="argument" /> when the argument has no null element.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="argument" /> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="argument" /> has any null element.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static IReadOnlyCollection<T> HasNoNulls<T>(
@@ -34,13 +34,13 @@ public static partial class Argument
         return argument!;
     }
 
-    /// <summary>Throws an <see cref="ArgumentException" /> if <paramref name="argument" /> has any null or empty element.</summary>
+    /// <summary>Throws an <see cref="ArgumentException" /> when <paramref name="argument" /> has any null or empty element.</summary>
     /// <param name="argument">The argument to check.</param>
-    /// <param name="message">(Optional) Custom error message.</param>
-    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="argument" /> if the argument has no null or empty element.</returns>
-    /// <exception cref="ArgumentNullException">if <paramref name="argument" /> is null.</exception>
-    /// <exception cref="ArgumentException">if <paramref name="argument" /> has any null or empty element.</exception>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="paramName">The name of the parameter being checked. Captured automatically by the compiler.</param>
+    /// <returns><paramref name="argument" /> when the argument has no null or empty element.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="argument" /> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="argument" /> has any null or empty element.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static IReadOnlyCollection<string> HasNoNullOrEmptyElements(
@@ -59,13 +59,13 @@ public static partial class Argument
         return argument!;
     }
 
-    /// <summary>Throws an <see cref="ArgumentException" /> if <paramref name="argument" /> has any null or white space element.</summary>
+    /// <summary>Throws an <see cref="ArgumentException" /> when <paramref name="argument" /> has any null or white space element.</summary>
     /// <param name="argument">The argument to check.</param>
-    /// <param name="message">(Optional) Custom error message.</param>
-    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="argument" /> if the argument has no null or white space element.</returns>
-    /// <exception cref="ArgumentNullException">if <paramref name="argument" /> is null.</exception>
-    /// <exception cref="ArgumentException">if <paramref name="argument" /> has any null or white space element.</exception>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="paramName">The name of the parameter being checked. Captured automatically by the compiler.</param>
+    /// <returns><paramref name="argument" /> when the argument has no null or white space element.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="argument" /> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="argument" /> has any null or white space element.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static IReadOnlyCollection<string> HasNoNullOrWhiteSpaceElements(

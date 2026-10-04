@@ -3,11 +3,11 @@
 namespace Headless.PushNotifications;
 
 /// <summary>
-/// Provider-agnostic contract for sending push notifications to client devices.
+/// Defines operations for sending push notifications to client devices across push notification providers.
 /// </summary>
 /// <remarks>
-/// Implementations target a specific backend (for example Firebase Cloud Messaging). Per-client delivery
-/// problems are reported through the returned response rather than thrown, so callers should inspect
+/// Implementations target a specific backend, for example Firebase Cloud Messaging. Per-client delivery
+/// problems are returned in the response rather than thrown, so callers should inspect
 /// <see cref="PushNotificationResponse.Status"/> to react to failures and, in particular, to detect client
 /// identifiers that are no longer registered and should be removed from their store.
 /// </remarks>
@@ -15,11 +15,11 @@ namespace Headless.PushNotifications;
 public interface IPushNotificationService
 {
     /// <summary>
-    /// Sends a single notification to one device identified by its provider-issued client identifier.
+    /// Sends a push notification to a single device.
     /// </summary>
-    /// <param name="clientIdentifier">The device identifier issued by the push provider.</param>
-    /// <param name="request">The notification to deliver (title, body, and optional data payload).</param>
-    /// <param name="cancellationToken">Token to cancel the send operation.</param>
+    /// <param name="clientIdentifier">The device identifier issued by the push notification provider.</param>
+    /// <param name="request">The notification request to deliver.</param>
+    /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
     /// <returns>
     /// A response describing the outcome for <paramref name="clientIdentifier"/>: delivered (with a provider
     /// message id), failed (with an error description), or unregistered when the identifier is no longer valid.
@@ -31,11 +31,11 @@ public interface IPushNotificationService
     );
 
     /// <summary>
-    /// Sends the same notification to many devices in a single call.
+    /// Sends a push notification to multiple devices.
     /// </summary>
     /// <param name="clientIdentifiers">The provider-issued device identifiers to deliver to.</param>
-    /// <param name="request">The notification to deliver (title, body, and optional data payload).</param>
-    /// <param name="cancellationToken">Token to cancel the send operation.</param>
+    /// <param name="request">The notification request to deliver.</param>
+    /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
     /// <returns>
     /// An aggregate response carrying one outcome for every entry in <paramref name="clientIdentifiers"/>
     /// plus overall success and failure counts.

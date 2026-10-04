@@ -5,26 +5,29 @@ using Headless.Checks;
 namespace Headless.PushNotifications;
 
 /// <summary>
-/// The provider-neutral shape rules of a <see cref="PushNotificationRequest"/>, shared so every provider accepts and
-/// rejects exactly the same requests before applying its own limits.
+/// Provides the provider-neutral shape rules of a <see cref="PushNotificationRequest"/>, shared so every
+/// provider accepts and rejects exactly the same requests before applying its own limits.
 /// </summary>
 internal static class PushNotificationRequestValidation
 {
     /// <summary>
-    /// The longest <see cref="PushNotificationRequest.TimeToLive"/> any provider accepts: 28 days, Firebase's maximum
-    /// Android time-to-live. The cap also keeps the providers' <c>now + time-to-live</c> expiry arithmetic from
-    /// overflowing.
+    /// Gets the maximum allowed <see cref="PushNotificationRequest.TimeToLive"/> across providers: 28 days,
+    /// Firebase's maximum Android time-to-live. The cap also keeps the providers' <c>now + time-to-live</c>
+    /// expiry arithmetic from overflowing.
     /// </summary>
     internal static readonly TimeSpan MaxTimeToLive = TimeSpan.FromDays(28);
 
     /// <summary>
-    /// Throws unless <paramref name="request"/> is either a notification (non-blank title and body) or a data-only
-    /// message (no title or body, at least one data entry, no badge or sound), with a non-negative badge, a
-    /// time-to-live between zero and 28 days, and a defined priority.
+    /// Validates the structure and property constraints of a push notification request.
     /// </summary>
+    /// <param name="request">The request to validate.</param>
     /// <exception cref="ArgumentNullException"><paramref name="request"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentException">The request matches neither kind, or a field is out of range.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">The time-to-live is negative or longer than 28 days.</exception>
+    /// <exception cref="ArgumentException">
+    /// The request matches neither notification nor data-only structure, or a field is out of range.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// The badge is negative, or the time-to-live is negative or exceeds 28 days.
+    /// </exception>
     public static void Validate(PushNotificationRequest request)
     {
         Argument.IsNotNull(request);
@@ -78,7 +81,9 @@ internal static class PushNotificationRequestValidation
         }
     }
 
-    /// <summary>Whether <paramref name="request"/> has neither a title nor a body.</summary>
+    /// <summary>Determines whether <paramref name="request"/> represents a data-only push notification.</summary>
+    /// <param name="request">The request to evaluate.</param>
+    /// <returns><see langword="true"/> when the request has no title and no body; otherwise, <see langword="false"/>.</returns>
     public static bool IsDataOnly(PushNotificationRequest request)
     {
         return request.Title is null && request.Body is null;

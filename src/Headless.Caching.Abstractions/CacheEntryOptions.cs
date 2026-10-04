@@ -33,17 +33,18 @@ public readonly record struct CacheEntryOptions
     }
 
     /// <summary>
-    /// Gets the cache entry duration. A positive value sets the entry's lifetime; a non-positive value (zero or
-    /// negative — for example a BCL absolute expiration already in the past) is treated as "expire immediately":
+    /// Gets the cache entry duration. A positive value sets the entry's lifetime. A non-positive value (zero or
+    /// negative, for example a BCL absolute expiration already in the past) is treated as "expire immediately":
     /// the write becomes an immediate eviction across every provider rather than throwing.
     /// </summary>
     public TimeSpan Duration { get; init; }
 
     /// <summary>
     /// Gets the optional idle window for sliding expiration. When set, value-returning reads push the logical
-    /// expiration to <c>min(now + SlidingExpiration, createdAt + Duration)</c>; values greater than or equal to
-    /// <see cref="Duration"/> therefore behave like a fixed duration. Sliding expiration and fail-safe are not
-    /// supported together in this version and are rejected by the factory coordinator.
+    /// expiration to the earlier of <c>now + <see cref="SlidingExpiration"/></c> and
+    /// <c>createdAt + <see cref="Duration"/></c>; values greater than or equal to <see cref="Duration"/> therefore
+    /// behave like a fixed duration. Sliding expiration and fail-safe are not supported together in this version
+    /// and are rejected by the factory coordinator.
     /// </summary>
     public TimeSpan? SlidingExpiration { get; init; }
 
@@ -51,44 +52,43 @@ public readonly record struct CacheEntryOptions
     /// Gets the maximum random duration added to <see cref="Duration"/> on each write to desynchronize the expiry
     /// of entries created together (anti-stampede): without it, a batch of entries written in the same burst all
     /// expire at the same instant and trigger a synchronized factory stampede on the next read wave. The actual
-    /// offset is sampled uniformly in <c>[0, JitterMaxDuration)</c> per write and is applied to the entry's
-    /// logical, physical, and eager spans alike, so it never breaks the <c>physical &gt;= logical</c> invariant the
-    /// engine relies on. Defaults to <see cref="TimeSpan.Zero"/> (no jitter). Must be zero or positive.
+    /// offset is sampled uniformly in <c>[0, <see cref="JitterMaxDuration"/>)</c> per write and is applied to the
+    /// entry's logical, physical, and eager spans alike, so it never breaks the <c>physical &gt;= logical</c>
+    /// invariant the engine relies on. Defaults to <see cref="TimeSpan.Zero"/> (no jitter). Must be zero or positive.
     /// </summary>
     public TimeSpan JitterMaxDuration { get; init; }
 
     /// <summary>
     /// Gets the optional eager-refresh point as a fraction of <see cref="Duration"/>, exclusive between 0 and 1.
-    /// When set, a fresh `GetOrAddAsync` hit past <c>createdAt + Duration × threshold</c> returns the cached value
-    /// immediately and starts a non-blocking background refresh, deduplicated per key. Eager refresh and sliding
-    /// expiration are not supported together and are rejected by the factory coordinator.
+    /// When set, a fresh <c>GetOrAddAsync</c> hit past <c>createdAt + Duration × threshold</c> returns the cached
+    /// value immediately and starts a non-blocking background refresh, deduplicated per key. Eager refresh and
+    /// sliding expiration are not supported together and are rejected by the factory coordinator.
     /// </summary>
     /// <exception cref="ArgumentOutOfRangeException">
-    /// Thrown at the start of a factory-backed operation when the value is set and is not strictly greater than
-    /// <c>0</c> or not strictly less than <c>1</c> — i.e. when it equals <c>0</c>, equals <c>1</c>, or falls
-    /// outside the open interval <c>(0, 1)</c>.
+    /// Thrown at the start of a factory-backed operation when the value is set and does not lie strictly within
+    /// the open interval <c>(0, 1)</c>: it equals <c>0</c>, equals <c>1</c>, or falls outside it.
     /// </exception>
     public float? EagerRefreshThreshold { get; init; }
 
     /// <summary>
-    /// Gets a value indicating whether factory-backed cache operations can serve the physically-retained
+    /// Gets a value indicating whether factory-backed cache operations can serve the physically retained
     /// stale value when the factory fails.
     /// </summary>
     public bool IsFailSafeEnabled { get; init; }
 
     /// <summary>
     /// Gets the maximum duration from entry creation for which a stale value can be served when fail-safe
-    /// activates. The coordinator applies <c>max(Duration, FailSafeMaxDuration)</c> so physical retention
-    /// never ends before logical freshness.
+    /// activates. The coordinator applies <c>max(<see cref="Duration"/>, <see cref="FailSafeMaxDuration"/>)</c> so
+    /// physical retention never ends before logical freshness.
     /// </summary>
     public TimeSpan FailSafeMaxDuration { get; init; } = DefaultFailSafeMaxDuration;
 
     /// <summary>
-    /// Gets the throttle window applied after fail-safe activates. The coordinator re-stamps the stale
+    /// Gets the throttle window applied after fail-safe activates. The coordinator restamps the stale
     /// reserve with a fresh logical lifetime of this duration, clamped to the entry's remaining physical
-    /// lifetime (<c>min(now + FailSafeThrottleDuration, physicalExpiresAt)</c>). Within that window reads
-    /// are served the last-known-good value as fresh, so the failing factory is not re-invoked until the
-    /// window lapses. The clamp ensures the throttle never extends physical retention.
+    /// lifetime (the earlier of <c>now + <see cref="FailSafeThrottleDuration"/></c> and the physical expiry), so
+    /// the throttle never extends physical retention. Within that window reads are served the last-known-good
+    /// value as fresh, so the failing factory is not re-invoked until the window lapses.
     /// </summary>
     public TimeSpan FailSafeThrottleDuration { get; init; } = DefaultFailSafeThrottleDuration;
 
@@ -109,7 +109,7 @@ public readonly record struct CacheEntryOptions
     /// <see cref="Timeout.InfiniteTimeSpan"/> (no ceiling): a detached factory runs to completion, matching
     /// the behavior of comparable caches. Provide a finite, positive value to bound how long a detached
     /// factory may hold the per-key lock; when the ceiling fires, the coordinator cancels the internal token,
-    /// releases the lock, and best-effort re-stamps the stale reserve. Must be finite when
+    /// releases the lock, and makes a best-effort restamp of the stale reserve. Must be finite when
     /// <see cref="IsFailSafeEnabled"/> is set together with a finite <see cref="FactorySoftTimeout"/>: that is
     /// the only combination that detaches the factory, so an infinite ceiling would let a hung factory hold the
     /// per-key lock indefinitely. Validation rejects that combination.
@@ -120,7 +120,7 @@ public readonly record struct CacheEntryOptions
     /// Gets how long a factory-backed read waits to acquire the per-key factory lock when no stale reserve is
     /// available to serve. Defaults to <see cref="Timeout.InfiniteTimeSpan"/> (wait until the in-flight factory
     /// releases the lock, matching the behavior of comparable caches). Provide a finite, positive value so a caller
-    /// that cannot acquire the lock in time degrades to a miss (<c>CacheValue&lt;T&gt;.NoValue</c>) instead of
+    /// that cannot acquire the lock in time degrades to a miss (<see cref="CacheValue{T}.NoValue"/>) instead of
     /// blocking, bounding tail latency when an in-flight factory is slow and no fail-safe reserve exists. When a
     /// stale reserve does exist and <see cref="FactorySoftTimeout"/> is finite, that soft timeout governs the wait
     /// instead and the caller is served the stale value on elapse.
@@ -132,7 +132,7 @@ public readonly record struct CacheEntryOptions
     /// that, across nodes sharing the same store, only one node runs the factory for the key while the others
     /// coordinate through the lock and re-check the shared store (multi-node stampede protection). Off by default
     /// and adds zero cost when disabled. Opt-in per entry; requires a registered
-    /// <c>ICacheFactoryLockProvider</c> — enabling it without one fails the factory-backed read with an
+    /// <c>ICacheFactoryLockProvider</c>. Enabling it without one fails the factory-backed read with an
     /// <see cref="InvalidOperationException"/> naming the adapter package (<c>Headless.Caching.DistributedLocks</c>)
     /// rather than silently degrading to single-node behavior.
     /// </summary>
@@ -151,7 +151,7 @@ public readonly record struct CacheEntryOptions
     /// <summary>
     /// Gets a value indicating whether the value must not be written to the L1 (memory) tier. Hybrid-relevant:
     /// single-tier providers (the in-memory cache has only L1, Redis only L2) ignore it. When set on a
-    /// factory-backed read, the freshly-produced value is fanned to L2 only; L1 stays untouched (useful for a
+    /// factory-backed read, the freshly produced value is fanned to L2 only; L1 stays untouched (useful for a
     /// large value that should not occupy process memory). Defaults to <see langword="false"/>.
     /// </summary>
     public bool SkipMemoryCacheWrite { get; init; }
@@ -159,7 +159,7 @@ public readonly record struct CacheEntryOptions
     /// <summary>
     /// Gets a value indicating whether the value must not be written to the L2 (distributed) tier. Hybrid-relevant:
     /// single-tier providers (the in-memory cache has only L1, Redis only L2) ignore it. When set on a
-    /// factory-backed read, the freshly-produced value is written to L1 only; the L2 mirror and its peer
+    /// factory-backed read, the freshly produced value is written to L1 only; the L2 mirror and its peer
     /// invalidation publish are skipped (useful for a node-local value that should not be shared). Defaults to
     /// <see langword="false"/>.
     /// </summary>
@@ -177,7 +177,7 @@ public readonly record struct CacheEntryOptions
     /// This is the coarse both-tier form. <see cref="SkipMemoryCacheRead"/> and <see cref="SkipDistributedCacheRead"/>
     /// are the granular per-tier form: setting both of them is equivalent to <see cref="SkipCacheRead"/> (no tier is
     /// read, so the factory always runs with no reserve to fall back to). When <see cref="SkipCacheRead"/> is set it
-    /// wins outright — the coordinator issues no store read at all, so the two per-tier flags have no additional
+    /// wins outright: the coordinator issues no store read at all, so the two per-tier flags have no additional
     /// effect.
     /// </remarks>
     public bool SkipCacheRead { get; init; }
@@ -186,8 +186,8 @@ public readonly record struct CacheEntryOptions
     /// Gets a value indicating whether the L1 (memory) tier must not be read on a factory-backed
     /// <c>GetOrAddAsync</c>, so the read is served from (or refreshed against) the L2 (distributed) tier instead.
     /// This is the granular, per-tier counterpart to <see cref="SkipCacheRead"/> (which skips both reads) and
-    /// mirrors FusionCache's <c>SkipMemoryCacheRead</c>. Hybrid-relevant: single-tier providers (the in-memory cache
-    /// has only L1, Redis only L2) ignore it — there is only one tier, so nothing is skipped. Unlike
+    /// mirrors FusionCache's <c>SkipMemoryCacheRead</c>. Hybrid-relevant: single-tier providers (the in-memory
+    /// cache has only L1, Redis only L2) ignore it because there is only one tier, so nothing is skipped. Unlike
     /// <see cref="SkipCacheRead"/>, a value read from L2 is still honored, so an existing L2 reserve remains
     /// available for fail-safe. Setting this together with <see cref="SkipDistributedCacheRead"/> reads neither tier
     /// and is equivalent to <see cref="SkipCacheRead"/>. Defaults to <see langword="false"/>.
@@ -196,13 +196,14 @@ public readonly record struct CacheEntryOptions
 
     /// <summary>
     /// Gets a value indicating whether the L2 (distributed) tier must not be read on a factory-backed
-    /// <c>GetOrAddAsync</c>, so the read is served from the L1 (memory) tier when present and otherwise falls through
-    /// to the factory without an L2 round-trip. This is the granular, per-tier counterpart to
-    /// <see cref="SkipCacheRead"/> (which skips both reads) and mirrors FusionCache's <c>SkipDistributedCacheRead</c>.
-    /// Hybrid-relevant: single-tier providers (the in-memory cache has only L1, Redis only L2) ignore it — there is
-    /// only one tier, so nothing is skipped. A value or reserve found in L1 is still honored (including for
-    /// fail-safe). Setting this together with <see cref="SkipMemoryCacheRead"/> reads neither tier and is equivalent
-    /// to <see cref="SkipCacheRead"/>. Defaults to <see langword="false"/>.
+    /// <c>GetOrAddAsync</c>, so the read is served from the L1 (memory) tier when present and otherwise falls
+    /// through to the factory without an L2 round-trip. This is the granular, per-tier counterpart to
+    /// <see cref="SkipCacheRead"/> (which skips both reads) and mirrors FusionCache's
+    /// <c>SkipDistributedCacheRead</c>. Hybrid-relevant: single-tier providers (the in-memory cache has only L1,
+    /// Redis only L2) ignore it because there is only one tier, so nothing is skipped. A value or reserve found
+    /// in L1 is still honored (including for fail-safe). Setting this together with
+    /// <see cref="SkipMemoryCacheRead"/> reads neither tier and is equivalent to <see cref="SkipCacheRead"/>.
+    /// Defaults to <see langword="false"/>.
     /// </summary>
     public bool SkipDistributedCacheRead { get; init; }
 

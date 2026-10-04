@@ -9,8 +9,8 @@ namespace Headless.PushNotifications.Apns.Internal;
 
 /// <summary>Validates a notification and writes it as the APNs JSON payload.</summary>
 /// <remarks>
-/// Written by hand with <see cref="Utf8JsonWriter"/> rather than a serializer so the output stays AOT-safe and its
-/// exact byte length is known for the payload-size check.
+/// Written by hand with <see cref="Utf8JsonWriter"/> rather than a serializer so the output stays AOT-safe
+/// and its exact byte length is known for the payload-size check.
 /// </remarks>
 internal static class ApnsPayloadWriter
 {
@@ -24,16 +24,19 @@ internal static class ApnsPayloadWriter
     private const string _ApsKey = "aps";
 
     /// <summary>
-    /// Validates <paramref name="notification"/> for an instance configured with <paramref name="options"/> and
-    /// returns its UTF-8 JSON payload with the request headers it decides.
+    /// Validates <paramref name="notification"/> for an instance configured with <paramref name="options"/>
+    /// and returns its UTF-8 JSON payload with the request headers it decides.
     /// </summary>
     /// <param name="notification">The notification to send.</param>
-    /// <param name="options">The sending instance's options, which supply the bundle id, push type, and priority.</param>
+    /// <param name="options">
+    /// The sending instance's options, which supply the bundle id, push type, and priority.
+    /// </param>
     /// <param name="timeProvider">The clock that stamps a Live Activity push with no explicit timestamp.</param>
     /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
     /// <exception cref="ArgumentException">
-    /// The notification breaks a rule of its push type, a data key is <c>aps</c>, the collapse id exceeds 64 UTF-8
-    /// bytes, the payload exceeds the push type's size limit, or the instance cannot send the push type.
+    /// The notification breaks a rule of its push type, a data key is <c>aps</c>, the collapse id exceeds
+    /// 64 UTF-8 bytes, the payload exceeds the push type's size limit, or the instance cannot send the push
+    /// type.
     /// </exception>
     public static ApnsPreparedNotification Prepare(
         ApnsNotification notification,
@@ -105,8 +108,8 @@ internal static class ApnsPayloadWriter
     /// Validates a Live Activity update or end for a broadcast channel and returns its UTF-8 JSON payload.
     /// </summary>
     /// <exception cref="ArgumentException">
-    /// The notification starts an activity, carries start-only fields or a collapse id, breaks a Live Activity rule,
-    /// or its payload is over the 5120-byte broadcast limit.
+    /// The notification starts an activity, carries start-only fields or a collapse id, breaks a Live
+    /// Activity rule, or its payload is over the 5120-byte broadcast limit.
     /// </exception>
     public static byte[] PrepareBroadcast(ApnsLiveActivityNotification notification, TimeProvider timeProvider)
     {

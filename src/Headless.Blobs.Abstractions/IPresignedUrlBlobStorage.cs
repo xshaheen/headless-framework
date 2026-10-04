@@ -24,7 +24,7 @@ namespace Headless.Blobs;
 /// }
 /// </code>
 /// The <see langword="is"/>-cast stays honest here because both AWS and Cloudflare R2 (which reuses the AWS storage type)
-/// support signing — unlike <see cref="IBlobContainerManager"/>, which must distinguish providers that share a
+/// support signing, unlike <see cref="IBlobContainerManager"/>, which must distinguish providers that share a
 /// storage implementation and is therefore resolved from DI rather than cast from the storage instance.
 /// </para>
 /// <para>
@@ -47,7 +47,7 @@ public interface IPresignedUrlBlobStorage
     /// </summary>
     /// <param name="location">The blob the URL grants read access to.</param>
     /// <param name="expiry">How long the URL remains valid, measured from now.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>A signed, time-limited URL for downloading the blob.</returns>
     ValueTask<Uri> GetPresignedDownloadUrlAsync(
         BlobLocation location,
@@ -65,7 +65,7 @@ public interface IPresignedUrlBlobStorage
     /// <see cref="SupportedUploadConstraints"/> are enforced; the rest are ignored. An enforced content type must be
     /// sent as the upload's <c>Content-Type</c> header.
     /// </param>
-    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>A signed, time-limited URL for uploading the blob.</returns>
     ValueTask<Uri> GetPresignedUploadUrlAsync(
         BlobLocation location,

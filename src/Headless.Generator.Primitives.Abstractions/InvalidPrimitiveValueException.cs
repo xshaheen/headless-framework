@@ -5,22 +5,14 @@ using System.ComponentModel;
 namespace Headless.Generator.Primitives;
 
 /// <summary>
-/// Represents an exception thrown when a value does not conform to the constraints or rules
-/// defined within a specific domain context.
+/// Thrown when a primitive value violates domain constraints or validation rules.
 /// </summary>
-/// <remarks>
-/// Initializes a new instance of the <see cref="InvalidPrimitiveValueException"/> class with a specific error message.
-/// </remarks>
-/// <param name="message">The error message that describes the reason for the exception.</param>
-/// <param name="instance">actual instance of primitive</param>
+/// <param name="message">The reason for the validation failure.</param>
+/// <param name="instance">The invalid primitive instance.</param>
 [method: EditorBrowsable(EditorBrowsableState.Never)]
 public sealed class InvalidPrimitiveValueException(string message, IPrimitive instance)
     : Exception(_GenerateErrorMessage(message, instance))
 {
-    /// <summary>Generates the error message for the <see cref="InvalidPrimitiveValueException"/>.</summary>
-    /// <param name="message">The error message that describes the reason for the exception.</param>
-    /// <param name="value">The actual value of the primitive.</param>
-    /// <returns>The generated error message.</returns>
     private static string _GenerateErrorMessage(string message, IPrimitive value)
     {
         var type = value.GetType();

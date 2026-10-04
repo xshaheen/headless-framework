@@ -14,8 +14,9 @@ namespace Headless.PushNotifications;
 /// Nothing is registered into <see cref="Services"/> until the setup gates pass; contributions are queued only.
 /// </summary>
 /// <remarks>
-/// Push notifications has no shared, cross-provider feature options, so the builder is provider-selection-only
-/// and carries no <c>Configure</c> overloads. Each provider binds its own options inside its <c>Use*</c> member.
+/// Push notifications has no shared, cross-provider feature options, so the builder is
+/// provider-selection-only and carries no <c>Configure</c> overloads. Each provider binds its own options
+/// inside its <c>Use*</c> member.
 /// </remarks>
 [PublicAPI]
 public sealed class HeadlessPushNotificationsSetupBuilder
@@ -40,7 +41,7 @@ public sealed class HeadlessPushNotificationsSetupBuilder
     /// <c>Use*</c> extension; not intended for direct use by application code.
     /// </summary>
     /// <param name="action">The provider's deferred service registration action.</param>
-    /// <exception cref="ArgumentNullException">Thrown when <paramref name="action"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="action"/> is <see langword="null"/>.</exception>
     [EditorBrowsable(EditorBrowsableState.Never)] // provider-package plumbing, not an application-code API
     public void RegisterDefaultProvider(Action<IServiceCollection> action)
     {
@@ -57,11 +58,11 @@ public sealed class HeadlessPushNotificationsSetupBuilder
     /// <param name="name">The service instance name. Must be non-empty and unique within this call.</param>
     /// <param name="configure">Configuration action that selects exactly one provider for the instance.</param>
     /// <returns>The builder for chaining.</returns>
-    /// <exception cref="ArgumentException">Thrown when <paramref name="name"/> is <see langword="null"/> or whitespace.</exception>
-    /// <exception cref="ArgumentNullException">Thrown when <paramref name="configure"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="name"/> is <see langword="null"/> or whitespace.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
     /// <exception cref="InvalidOperationException">
-    /// Thrown when <paramref name="name"/> is already configured, or when the instance selects zero or more
-    /// than one provider.
+    /// <paramref name="name"/> is already configured, or when the instance selects zero or more than one
+    /// provider.
     /// </exception>
     public HeadlessPushNotificationsSetupBuilder AddNamed(
         string name,

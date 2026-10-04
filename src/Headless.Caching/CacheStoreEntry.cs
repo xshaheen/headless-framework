@@ -2,14 +2,14 @@
 
 namespace Headless.Caching;
 
-/// <summary>Provider entry snapshot used by the factory cache coordinator.</summary>
+/// <summary>Represents a cache store entry snapshot used by the factory cache coordinator.</summary>
 /// <typeparam name="T">The cached value type.</typeparam>
-/// <param name="Found">Whether the store contains an entry.</param>
-/// <param name="IsNull">Whether the stored value is the cache null sentinel.</param>
+/// <param name="Found">Indicates whether the store contains an entry.</param>
+/// <param name="IsNull">Indicates whether the stored value represents a cached null value.</param>
 /// <param name="Value">The cached value.</param>
-/// <param name="LogicalExpiresAt">The timestamp after which normal reads treat the entry as stale.</param>
-/// <param name="PhysicalExpiresAt">The timestamp after which the entry is no longer retained.</param>
-/// <param name="SlidingExpiration">The optional idle window used to re-arm logical expiration on value reads.</param>
+/// <param name="LogicalExpiresAt">The timestamp after which normal reads treat the entry as stale (UTC).</param>
+/// <param name="PhysicalExpiresAt">The timestamp after which the entry is no longer retained (UTC).</param>
+/// <param name="SlidingExpiration">The optional idle window used to extend logical expiration on value reads.</param>
 [PublicAPI]
 public readonly record struct CacheStoreEntry<T>(
     bool Found,
@@ -20,20 +20,20 @@ public readonly record struct CacheStoreEntry<T>(
     TimeSpan? SlidingExpiration
 )
 {
-    /// <summary>Gets the optional timestamp after which a fresh read may trigger an eager background refresh.</summary>
+    /// <summary>Gets the optional timestamp after which a fresh read can trigger an eager background refresh (UTC).</summary>
     public DateTime? EagerRefreshAt { get; init; }
 
-    /// <summary>Gets the optional opaque entity tag the factory associated with the cached value.</summary>
+    /// <summary>Gets the optional opaque entity tag associated with the cached value.</summary>
     public string? ETag { get; init; }
 
-    /// <summary>Gets the optional timestamp at which the cached value was last modified at its origin.</summary>
+    /// <summary>Gets the optional origin timestamp at which the cached value was last modified.</summary>
     public DateTime? LastModifiedAt { get; init; }
 
     /// <summary>
     /// Gets the optional UTC timestamp at which this entry's value was first created (its birth time). A re-stamp
     /// (a conditional <c>NotModified</c> extension or a fail-safe throttle restamp) preserves the original
     /// <see cref="CreatedAt"/>; only a genuine new value write sets it afresh. <see langword="null"/> for legacy
-    /// or unframed entries written before the timestamp existed. No read-time verdict consumes it yet.
+    /// or unframed entries written before the timestamp existed.
     /// </summary>
     public DateTime? CreatedAt { get; init; }
 
@@ -47,7 +47,7 @@ public readonly record struct CacheStoreEntry<T>(
     /// The coordinator copies this stamp to <see cref="CacheStoreEntryWrite{T}.ExpectedConcurrencyStamp"/> for
     /// factory writes derived from an existing physical entry, so a late factory cannot resurrect a removed
     /// entry or clobber a concurrent writer. The value is provider-specific and must only be treated as an
-    /// equality token; its collision-resistance is likewise provider-specific — the Redis provider stamps only the
+    /// equality token; its collision-resistance is likewise provider-specific: the Redis provider stamps only the
     /// fixed frame header, so two same-key writes that share identical options within a single millisecond can
     /// produce equal stamps (a narrow window accepted for performance; set <c>JitterMaxDuration &gt; 0</c> to avoid
     /// it — see issue #583).

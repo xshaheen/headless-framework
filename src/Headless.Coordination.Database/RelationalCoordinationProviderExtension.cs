@@ -12,8 +12,7 @@ using Microsoft.Extensions.Options;
 namespace Headless.Coordination;
 
 /// <summary>
-/// Registers a relational provider: its options and validators, the core membership services over the one relational
-/// store, and the provider's schema contribution.
+/// Registers relational provider options, validators, core membership services, and schema contributions.
 /// </summary>
 internal sealed class RelationalCoordinationProviderExtension<TOptions, TOptionsValidator, TStorageValidator>
     : ICoordinationProviderOptionsExtension
@@ -99,10 +98,10 @@ internal sealed class RelationalCoordinationProviderExtension<TOptions, TOptions
     }
 }
 
-/// <summary>What differs between relational providers: the dialect, how a connection is made, and the DDL.</summary>
-/// <param name="Dialect">The provider's dialect.</param>
-/// <param name="CreateConnection">Creates an unopened connection from the bound provider options.</param>
-/// <param name="SchemaContribution">Builds the provider's schema contribution (its DDL, in its dialect).</param>
+/// <summary>Encapsulates provider-specific relational configurations: dialect, connection creation, and schema DDL.</summary>
+/// <param name="Dialect">The provider SQL dialect.</param>
+/// <param name="CreateConnection">Creates an unopened connection from provider options.</param>
+/// <param name="SchemaContribution">Builds the schema contribution in the provider dialect.</param>
 internal sealed record RelationalCoordinationProvider<TOptions>(
     ISqlDialect Dialect,
     Func<TOptions, DbConnection> CreateConnection,
@@ -110,11 +109,11 @@ internal sealed record RelationalCoordinationProvider<TOptions>(
 )
     where TOptions : RelationalCoordinationOptions;
 
-/// <summary>What the one relational membership store runs against.</summary>
-/// <param name="Dialect">The engine's dialect.</param>
-/// <param name="CreateConnection">Creates an unopened connection to the database that holds the tables.</param>
-/// <param name="CommandTimeoutSeconds">The timeout of every command.</param>
-/// <param name="Tables">The membership tables, named by the dialect in the configured schema.</param>
+/// <summary>Encapsulates runtime resources for the relational membership store.</summary>
+/// <param name="Dialect">The SQL dialect.</param>
+/// <param name="CreateConnection">Creates an unopened connection to the database.</param>
+/// <param name="CommandTimeoutSeconds">The execution timeout for database commands in seconds.</param>
+/// <param name="Tables">The membership table and column names formatted for the schema.</param>
 internal sealed record RelationalCoordinationStorage(
     ISqlDialect Dialect,
     Func<DbConnection> CreateConnection,

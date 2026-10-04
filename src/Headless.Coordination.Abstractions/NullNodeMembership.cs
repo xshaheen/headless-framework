@@ -5,13 +5,14 @@ using System.Runtime.CompilerServices;
 namespace Headless.Coordination;
 
 /// <summary>
-/// No-op <see cref="INodeMembership"/> implementation used when no coordination provider is registered.
+/// Provides a no-op <see cref="INodeMembership"/> implementation when no coordination provider is registered.
 /// </summary>
 /// <remarks>
-/// All liveness queries return empty or <see langword="false"/>; <see cref="INodeMembership.HeartbeatAsync"/>
-/// always returns <see langword="false"/>; <see cref="IMembershipEventSource.WatchAsync"/> never emits
-/// events and blocks until the cancellation token is cancelled. <see cref="INodeMembership.LocalMembershipLostToken"/>
-/// is never cancelled. This implementation is useful as a safe fallback when coordination is optional.
+/// All liveness queries return empty collections or <see langword="false"/>.
+/// <see cref="INodeMembership.HeartbeatAsync"/> returns <see langword="false"/>.
+/// <see cref="IMembershipEventSource.WatchAsync"/> emits no events and blocks until cancelled.
+/// <see cref="INodeMembership.LocalMembershipLostToken"/> is never cancelled. This implementation serves as
+/// a safe fallback when coordination is optional.
 /// </remarks>
 [PublicAPI]
 public sealed class NullNodeMembership : INodeMembership
@@ -21,16 +22,17 @@ public sealed class NullNodeMembership : INodeMembership
     /// <inheritdoc/>
     public NodeIdentity? Identity { get; private set; }
 
-    /// <summary>Always <see cref="CancellationToken.None"/>; this implementation never loses membership.</summary>
+    /// <summary>
+    /// Always <see cref="CancellationToken.None"/>; this implementation never loses membership.
+    /// </summary>
     public CancellationToken LocalMembershipLostToken => CancellationToken.None;
 
     /// <summary>
-    /// Sets <see cref="Identity"/> to a fixed sentinel value and returns it. Idempotent — repeated calls
-    /// return the same identity.
+    /// Sets <see cref="Identity"/> to a fixed sentinel value and returns it. Repeated calls return the same identity.
     /// </summary>
-    /// <exception cref="OperationCanceledException">
-    /// Thrown when <paramref name="cancellationToken"/> is already cancelled before the call.
-    /// </exception>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns>The sentinel node identity.</returns>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled.</exception>
     public ValueTask<NodeIdentity> RegisterAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -39,10 +41,10 @@ public sealed class NullNodeMembership : INodeMembership
         return ValueTask.FromResult(Identity.Value);
     }
 
-    /// <summary>Always returns <see langword="false"/>; no backing store to heartbeat.</summary>
-    /// <exception cref="OperationCanceledException">
-    /// Thrown when <paramref name="cancellationToken"/> is already cancelled before the call.
-    /// </exception>
+    /// <summary>Returns <see langword="false"/> because no backing store is present.</summary>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns><see langword="false"/>.</returns>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled.</exception>
     public ValueTask<bool> HeartbeatAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -51,9 +53,9 @@ public sealed class NullNodeMembership : INodeMembership
     }
 
     /// <summary>Clears <see cref="Identity"/>.</summary>
-    /// <exception cref="OperationCanceledException">
-    /// Thrown when <paramref name="cancellationToken"/> is already cancelled before the call.
-    /// </exception>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns>A value task that represents the asynchronous operation.</returns>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled.</exception>
     public ValueTask LeaveAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -62,10 +64,11 @@ public sealed class NullNodeMembership : INodeMembership
         return ValueTask.CompletedTask;
     }
 
-    /// <summary>Always returns <see langword="false"/>; no nodes are tracked.</summary>
-    /// <exception cref="OperationCanceledException">
-    /// Thrown when <paramref name="cancellationToken"/> is already cancelled before the call.
-    /// </exception>
+    /// <summary>Returns <see langword="false"/> because no nodes are tracked.</summary>
+    /// <param name="identity">The node identity to check.</param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns><see langword="false"/>.</returns>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled.</exception>
     public ValueTask<bool> IsAliveAsync(NodeIdentity identity, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -73,10 +76,10 @@ public sealed class NullNodeMembership : INodeMembership
         return ValueTask.FromResult(false);
     }
 
-    /// <summary>Always returns an empty list; no nodes are tracked.</summary>
-    /// <exception cref="OperationCanceledException">
-    /// Thrown when <paramref name="cancellationToken"/> is already cancelled before the call.
-    /// </exception>
+    /// <summary>Returns an empty list because no nodes are tracked.</summary>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns>An empty list of live identities.</returns>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled.</exception>
     public ValueTask<IReadOnlyList<NodeIdentity>> GetLiveNodesAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -84,10 +87,10 @@ public sealed class NullNodeMembership : INodeMembership
         return ValueTask.FromResult<IReadOnlyList<NodeIdentity>>([]);
     }
 
-    /// <summary>Always returns an empty list; no nodes are tracked.</summary>
-    /// <exception cref="OperationCanceledException">
-    /// Thrown when <paramref name="cancellationToken"/> is already cancelled before the call.
-    /// </exception>
+    /// <summary>Returns an empty list because no nodes are tracked.</summary>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns>An empty list of liveness snapshots.</returns>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled.</exception>
     public ValueTask<IReadOnlyList<NodeLivenessSnapshot>> GetLivenessSnapshotAsync(
         CancellationToken cancellationToken = default
     )
@@ -97,6 +100,7 @@ public sealed class NullNodeMembership : INodeMembership
         return ValueTask.FromResult<IReadOnlyList<NodeLivenessSnapshot>>([]);
     }
 
+    /// <inheritdoc/>
     public async IAsyncEnumerable<NodeMembershipEvent> WatchAsync(
         [EnumeratorCancellation] CancellationToken cancellationToken = default
     )

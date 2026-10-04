@@ -9,12 +9,12 @@ namespace Headless.Checks;
 
 public static partial class Argument
 {
-    /// <summary>Throws an <see cref="ArgumentOutOfRangeException" /> if <paramref name="argument" /> is not zero.</summary>
+    /// <summary>Throws an <see cref="ArgumentOutOfRangeException" /> when <paramref name="argument" /> is not zero.</summary>
     /// <param name="argument">The argument to check.</param>
-    /// <param name="message">(Optional) Custom error message.</param>
-    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="argument" /> if the argument is zero.</returns>
-    /// <exception cref="ArgumentOutOfRangeException">if <paramref name="argument" /> is not zero.</exception>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="paramName">The name of the parameter being checked. Captured automatically by the compiler.</param>
+    /// <returns><paramref name="argument" /> when the argument is zero.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="argument" /> is not zero.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T IsZero<T>(
@@ -94,12 +94,12 @@ public static partial class Argument
         return argument;
     }
 
-    /// <summary>Throws an <see cref="ArgumentOutOfRangeException" /> if <paramref name="argument" /> is zero.</summary>
+    /// <summary>Throws an <see cref="ArgumentOutOfRangeException" /> when <paramref name="argument" /> is zero.</summary>
     /// <param name="argument">The argument to check.</param>
-    /// <param name="message">(Optional) Custom error message.</param>
-    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="argument" /> if the argument is not zero.</returns>
-    /// <exception cref="ArgumentOutOfRangeException">if <paramref name="argument" /> is zero.</exception>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="paramName">The name of the parameter being checked. Captured automatically by the compiler.</param>
+    /// <returns><paramref name="argument" /> when the argument is not zero.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="argument" /> is zero.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T IsNotZero<T>(

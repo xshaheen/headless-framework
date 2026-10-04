@@ -13,7 +13,7 @@ public sealed class BlobInfo
     public required string BlobKey { get; init; }
 
     /// <summary>
-    /// UTC timestamp when the blob was first uploaded. Providers that do not track creation time (for example
+    /// UTC timestamp when the blob was first uploaded. Providers that do not track creation time (such as
     /// SFTP and the S3 list API) fall back to the last-modified time or <see cref="DateTimeOffset.MinValue"/>.
     /// </summary>
     public required DateTimeOffset Created { get; init; }
@@ -25,8 +25,8 @@ public sealed class BlobInfo
     public required long Size { get; init; }
 
     /// <summary>
-    /// Provider-supplied metadata key/value pairs, or <see langword="null"/> when the provider does not return
-    /// metadata (for example SFTP and the S3 list API, which omit per-object metadata from enumeration responses).
+    /// Provider-supplied metadata key and value pairs, or <see langword="null"/> when the provider does not return
+    /// metadata (such as SFTP and the S3 list API, which omit per-object metadata from enumeration responses).
     /// </summary>
     public IReadOnlyDictionary<string, string>? Metadata { get; init; }
 }

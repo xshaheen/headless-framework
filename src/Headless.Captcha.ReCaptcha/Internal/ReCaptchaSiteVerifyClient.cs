@@ -6,10 +6,7 @@ using Microsoft.Extensions.Logging;
 namespace Headless.Captcha;
 
 /// <summary>
-/// Shared HTTP transport for the v2/v3 siteverify call. Owns the form build, POST, HTTP error handling, and
-/// deserialization (including the documented <see cref="JsonException"/> → <see cref="InvalidOperationException"/>
-/// and null-body contract). Each verifier supplies its own source-generated <see cref="JsonTypeInfo{T}"/> and maps
-/// the returned wire object to its result type.
+/// Provides HTTP client operations for reCAPTCHA site verification requests.
 /// </summary>
 internal static class ReCaptchaSiteVerifyClient
 {

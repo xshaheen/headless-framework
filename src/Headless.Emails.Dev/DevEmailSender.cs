@@ -5,13 +5,12 @@ using Headless.Checks;
 namespace Headless.Emails.Dev;
 
 /// <summary>
-/// Development-time <see cref="IEmailSender"/> that writes email content to a file instead of
-/// delivering it to a real SMTP or API endpoint.
+/// Writes email content to a file instead of delivering messages to an external service.
 /// </summary>
 /// <remarks>
-/// Each call appends a human-readable representation of the message (headers, subject, body,
-/// attachment names) to the file at <paramref name="filePath"/>, separated by a dashed line.
-/// No email is ever sent to real recipients.
+/// Each send appends a human-readable representation of the message (headers, subject, body, attachment
+/// names) to the configured file, separated by a dashed line. The file is created when missing and existing
+/// content is preserved. No email is ever sent to real recipients.
 /// </remarks>
 internal sealed class DevEmailSender(string filePath) : IEmailSender, IDisposable
 {
@@ -23,16 +22,17 @@ internal sealed class DevEmailSender(string filePath) : IEmailSender, IDisposabl
     private readonly SemaphoreSlim _writeLock = new(1, 1);
 
     /// <summary>
-    /// Appends a text representation of the email to the configured file.
+    /// Appends the email content to the configured file.
     /// </summary>
     /// <param name="request">The email message to record.</param>
-    /// <param name="cancellationToken">Token used to cancel the file-write operation.</param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
     /// <returns>A successful <see cref="SendSingleEmailResponse"/> once the entry is written.</returns>
     /// <exception cref="InvalidOperationException">
-    /// Thrown when the request has neither an HTML nor a text body (same guard as the real providers).
+    /// The request has neither an HTML nor a text body (the same guard as the real providers).
     /// </exception>
+    /// <exception cref="OperationCanceledException">The operation was canceled.</exception>
     /// <exception cref="System.IO.IOException">
-    /// Propagated if the file cannot be written (for example insufficient permissions or a full disk).
+    /// The file cannot be written, for example because of insufficient permissions or a full disk.
     /// </exception>
     public async ValueTask<SendSingleEmailResponse> SendAsync(
         SendSingleEmailRequest request,
@@ -90,7 +90,7 @@ internal sealed class DevEmailSender(string filePath) : IEmailSender, IDisposabl
         return SendSingleEmailResponse.Succeeded();
     }
 
-    /// <summary>Releases the write-serialization lock.</summary>
+    /// <summary>Releases resources used by the write lock.</summary>
     public void Dispose()
     {
         _writeLock.Dispose();

@@ -17,12 +17,12 @@ public static class BlobStorageExtensions
     extension(IBlobStorage storage)
     {
         /// <summary>
-        /// Streams every blob matched by <paramref name="query"/> as an asynchronous sequence, transparently fetching
-        /// each page from <see cref="IBlobStorage.ListAsync"/> and following the opaque continuation token until it is
+        /// Streams every blob matched by <paramref name="query"/> as an asynchronous sequence, fetching
+        /// each page from <see cref="IBlobStorage.ListAsync"/> and following the continuation token until it is
         /// <see langword="null"/>.
         /// </summary>
-        /// <param name="query">The container plus optional prefix and page size to enumerate.</param>
-        /// <param name="cancellationToken">Cancellation token.</param>
+        /// <param name="query">The container, optional prefix, and page size to enumerate.</param>
+        /// <param name="cancellationToken">A token to cancel the operation.</param>
         /// <returns>An async sequence of <see cref="BlobInfo"/> records spanning all pages.</returns>
         public async IAsyncEnumerable<BlobInfo> GetBlobsAsync(
             BlobQuery query,
@@ -56,17 +56,17 @@ public static class BlobStorageExtensions
         }
 
         /// <summary>
-        /// Streams the blobs matched by <paramref name="query"/> whose keys also match the client-side glob
-        /// <paramref name="globPattern"/> (<c>*</c> and <c>?</c> wildcards) via the shared matcher.
+        /// Streams the blobs matched by <paramref name="query"/> whose keys also match the glob
+        /// <paramref name="globPattern"/> (<c>*</c> and <c>?</c> wildcards) through the shared matcher.
         /// </summary>
-        /// <param name="query">The container plus optional prefix and page size to enumerate.</param>
+        /// <param name="query">The container, optional prefix, and page size to enumerate.</param>
         /// <param name="globPattern">A glob pattern matched against each blob's <see cref="BlobInfo.BlobKey"/>.</param>
-        /// <param name="cancellationToken">Cancellation token.</param>
+        /// <param name="cancellationToken">A token to cancel the operation.</param>
         /// <returns>An async sequence of matching <see cref="BlobInfo"/> records.</returns>
         /// <remarks>
-        /// When <see cref="BlobQuery.Prefix"/> and the glob's literal prefix are mutually exclusive (neither is a
+        /// When <see cref="BlobQuery.Prefix"/> and the literal prefix of the glob are mutually exclusive (neither is a
         /// prefix of the other), no key can satisfy both, so this yields an empty sequence. That is an empty match,
-        /// not an error — compare the two prefixes yourself first if you need to distinguish the cases.
+        /// not an error. Compare the two prefixes before calling if you must distinguish the cases.
         /// </remarks>
         public async IAsyncEnumerable<BlobInfo> GetBlobsAsync(
             BlobQuery query,
@@ -93,16 +93,16 @@ public static class BlobStorageExtensions
 
         /// <summary>
         /// Materializes the blobs matched by <paramref name="query"/> into a list, streaming pages until exhausted or
-        /// <paramref name="limit"/> is reached.
+        /// reaching <paramref name="limit"/>.
         /// </summary>
-        /// <param name="query">The container plus optional prefix and page size to enumerate.</param>
+        /// <param name="query">The container, optional prefix, and page size to enumerate.</param>
         /// <param name="limit">
         /// Maximum total number of blobs to return. When <see langword="null"/> (the default), every matching blob is
-        /// materialized with no cap. Must be positive when specified.
+        /// materialized with no limit. Must be positive when specified.
         /// </param>
-        /// <param name="cancellationToken">Cancellation token.</param>
+        /// <param name="cancellationToken">A token to cancel the operation.</param>
         /// <returns>A materialized list of matching <see cref="BlobInfo"/> records.</returns>
-        /// <exception cref="ArgumentOutOfRangeException"><paramref name="limit"/> is specified and is not positive.</exception>
+        /// <exception cref="ArgumentOutOfRangeException"><paramref name="limit"/> is not positive.</exception>
         public async Task<IReadOnlyList<BlobInfo>> GetBlobsListAsync(
             BlobQuery query,
             int? limit = null,
@@ -127,11 +127,11 @@ public static class BlobStorageExtensions
         }
 
         /// <summary>
-        /// Uploads a UTF-8 string as the blob's content with no metadata.
+        /// Uploads a UTF-8 string as the blob content with no metadata.
         /// </summary>
         /// <param name="location">The blob to write.</param>
         /// <param name="contents">Text content to upload. A <see langword="null"/> value uploads an empty blob.</param>
-        /// <param name="cancellationToken">Cancellation token.</param>
+        /// <param name="cancellationToken">A token to cancel the operation.</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public ValueTask UploadContentAsync(
             BlobLocation location,
@@ -143,12 +143,12 @@ public static class BlobStorageExtensions
         }
 
         /// <summary>
-        /// Uploads a UTF-8 string as the blob's content, optionally storing metadata alongside it.
+        /// Uploads a UTF-8 string as the blob content, optionally storing metadata alongside it.
         /// </summary>
         /// <param name="location">The blob to write.</param>
         /// <param name="contents">Text content to upload. A <see langword="null"/> value uploads an empty blob.</param>
-        /// <param name="metadata">Optional metadata key/value pairs (non-null values).</param>
-        /// <param name="cancellationToken">Cancellation token.</param>
+        /// <param name="metadata">Optional metadata key and value pairs.</param>
+        /// <param name="cancellationToken">A token to cancel the operation.</param>
         public async ValueTask UploadContentAsync(
             BlobLocation location,
             string? contents,
@@ -171,8 +171,8 @@ public static class BlobStorageExtensions
         /// <typeparam name="T">The type of the object to serialize.</typeparam>
         /// <param name="location">The blob to write.</param>
         /// <param name="contents">The object to serialize. A <see langword="null"/> value uploads an empty blob.</param>
-        /// <param name="cancellationToken">Cancellation token.</param>
-        /// <remarks>Not AOT/trim compatible. In AOT scenarios prefer the overload that accepts a source-generated <see cref="JsonTypeInfo{T}"/>.</remarks>
+        /// <param name="cancellationToken">A token to cancel the operation.</param>
+        /// <remarks>In AOT scenarios, prefer the overload that accepts a source-generated <see cref="JsonTypeInfo{T}"/>.</remarks>
         [RequiresUnreferencedCode(
             "Uses JSON serialization which might require types that cannot be statically analyzed."
         )]
@@ -212,8 +212,8 @@ public static class BlobStorageExtensions
         /// <param name="location">The blob to write.</param>
         /// <param name="contents">The object to serialize. A <see langword="null"/> value uploads an empty blob.</param>
         /// <param name="options">Serializer options to apply.</param>
-        /// <param name="cancellationToken">Cancellation token.</param>
-        /// <remarks>Not AOT/trim compatible. In AOT scenarios prefer the overload that accepts a source-generated <see cref="JsonTypeInfo{T}"/>.</remarks>
+        /// <param name="cancellationToken">A token to cancel the operation.</param>
+        /// <remarks>In AOT scenarios, prefer the overload that accepts a source-generated <see cref="JsonTypeInfo{T}"/>.</remarks>
         [RequiresUnreferencedCode(
             "Uses JSON serialization which might require types that cannot be statically analyzed."
         )]
@@ -248,13 +248,12 @@ public static class BlobStorageExtensions
 
         /// <summary>
         /// Serializes <paramref name="contents"/> to JSON using source-generated type metadata and uploads the result.
-        /// AOT and trimming compatible.
         /// </summary>
         /// <typeparam name="T">The type of the object to serialize.</typeparam>
         /// <param name="location">The blob to write.</param>
         /// <param name="contents">The object to serialize. A <see langword="null"/> value uploads an empty blob.</param>
         /// <param name="jsonTypeInfo">Source-generated type metadata for <typeparamref name="T"/>.</param>
-        /// <param name="cancellationToken">Cancellation token.</param>
+        /// <param name="cancellationToken">A token to cancel the operation.</param>
         public async ValueTask UploadContentAsync<T>(
             BlobLocation location,
             T? contents,
@@ -278,10 +277,10 @@ public static class BlobStorageExtensions
         }
 
         /// <summary>
-        /// Downloads the blob's content as a UTF-8 string, or returns <see langword="null"/> if the blob does not exist.
+        /// Downloads the blob content as a UTF-8 string, or returns <see langword="null"/> if the blob does not exist.
         /// </summary>
         /// <param name="location">The blob to read.</param>
-        /// <param name="cancellationToken">Cancellation token.</param>
+        /// <param name="cancellationToken">A token to cancel the operation.</param>
         /// <returns>The decoded text content, or <see langword="null"/> when the blob is not found.</returns>
         public async ValueTask<string?> GetBlobContentAsync(
             BlobLocation location,
@@ -306,10 +305,10 @@ public static class BlobStorageExtensions
         /// </summary>
         /// <typeparam name="T">The type to deserialize to.</typeparam>
         /// <param name="location">The blob to read.</param>
-        /// <param name="options">Optional serializer options. Defaults to the framework's internal options when <see langword="null"/>.</param>
-        /// <param name="cancellationToken">Cancellation token.</param>
+        /// <param name="options">Optional serializer options. Defaults to the framework internal options when <see langword="null"/>.</param>
+        /// <param name="cancellationToken">A token to cancel the operation.</param>
         /// <returns>The deserialized value, or <see langword="default"/> when the blob is not found.</returns>
-        /// <remarks>Not AOT/trim compatible. In AOT scenarios prefer the overload that accepts a source-generated <see cref="JsonTypeInfo{T}"/>.</remarks>
+        /// <remarks>In AOT scenarios, prefer the overload that accepts a source-generated <see cref="JsonTypeInfo{T}"/>.</remarks>
         [RequiresUnreferencedCode(
             "Uses JSON serialization which might require types that cannot be statically analyzed."
         )]
@@ -338,12 +337,12 @@ public static class BlobStorageExtensions
 
         /// <summary>
         /// Downloads the blob and deserializes its JSON content to <typeparamref name="T"/> using source-generated
-        /// type metadata. AOT and trimming compatible.
+        /// type metadata.
         /// </summary>
         /// <typeparam name="T">The type to deserialize to.</typeparam>
         /// <param name="location">The blob to read.</param>
         /// <param name="jsonTypeInfo">Source-generated type metadata for <typeparamref name="T"/>.</param>
-        /// <param name="cancellationToken">Cancellation token.</param>
+        /// <param name="cancellationToken">A token to cancel the operation.</param>
         /// <returns>The deserialized value, or <see langword="default"/> when the blob is not found.</returns>
         public async ValueTask<T?> GetBlobContentAsync<T>(
             BlobLocation location,

@@ -5,24 +5,24 @@ using Headless.Checks;
 namespace Headless.Blobs.Internal;
 
 /// <summary>
-/// The single seam every provider uses to turn a validated <see cref="BlobLocation"/> / <see cref="BlobQuery"/> into a
-/// backend address (container + key/prefix). Routing every operational method through this helper is what makes the
-/// path-handling bug class (un-normalized buckets, traversal-via-raw-key) structurally impossible.
+/// The single seam every provider uses to turn a validated <see cref="BlobLocation"/> or <see cref="BlobQuery"/> into a
+/// backend address (container plus key or prefix). Routing every operational method through this helper prevents
+/// path-handling defects such as un-normalized buckets or traversal sequences.
 /// </summary>
 /// <remarks>
 /// The two-tier naming model is applied here: the top-level container is normalized strictly through
 /// <see cref="IBlobNamingNormalizer.NormalizeContainerName"/>, while each <c>/</c>-delimited key segment is normalized
 /// leniently through <see cref="IBlobNamingNormalizer.NormalizeBlobName"/>. Construction-time validation alone is not
 /// sufficient: provider normalizers are lossy (they strip characters such as <c>*</c>, <c>:</c>, <c>|</c>), so an input
-/// that passed <see cref="BlobLocation"/> / <see cref="BlobQuery"/> validation can normalize <em>into</em> a dangerous
-/// form (<c>.*.</c> → <c>..</c>, <c>x.hlmet:a</c> → <c>x.hlmeta</c>, or a non-empty prefix → empty). Path security is
-/// therefore re-validated on the normalized result, in this one seam, so the guarantee holds for every provider.
+/// that passed <see cref="BlobLocation"/> or <see cref="BlobQuery"/> validation can normalize into a dangerous
+/// form (<c>.*.</c> to <c>..</c>, <c>x.hlmet:a</c> to <c>x.hlmeta</c>, or a non-empty prefix to empty). Path security is
+/// therefore re-validated on the normalized result in this seam so the guarantee holds for every provider.
 /// </remarks>
 public static class BlobLocationResolver
 {
     /// <summary>Resolves a validated <paramref name="location"/> to its backend <c>(container, key)</c> pair.</summary>
     /// <param name="location">The validated blob location.</param>
-    /// <param name="normalizer">The provider's naming normalizer.</param>
+    /// <param name="normalizer">The provider naming normalizer.</param>
     /// <returns>The backend container name (strict) and object key (lenient, per segment).</returns>
     public static (string Container, string Key) Resolve(BlobLocation location, IBlobNamingNormalizer normalizer)
     {
@@ -35,8 +35,8 @@ public static class BlobLocationResolver
     }
 
     /// <summary>Resolves a validated <paramref name="query"/> to its backend <c>(container, prefix)</c> pair.</summary>
-    /// <param name="query">The validated listing/delete query.</param>
-    /// <param name="normalizer">The provider's naming normalizer.</param>
+    /// <param name="query">The validated listing or delete query.</param>
+    /// <param name="normalizer">The provider naming normalizer.</param>
     /// <returns>The backend container name (strict) and normalized prefix, or a <see langword="null"/> prefix when none was supplied.</returns>
     public static (string Container, string? Prefix) ResolveQuery(BlobQuery query, IBlobNamingNormalizer normalizer)
     {
@@ -75,6 +75,8 @@ public static class BlobLocationResolver
     /// <param name="container">The raw container name.</param>
     /// <param name="normalizer">The provider's naming normalizer.</param>
     /// <returns>The normalized backend container name.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="container"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="container"/> is empty or whitespace, fails path-security validation, or normalizes to an empty value, <c>.</c>, or <c>..</c> (the storage root or a traversal segment).</exception>
     public static string ResolveContainer(string container, IBlobNamingNormalizer normalizer)
     {
         Argument.IsNotNullOrWhiteSpace(container);
@@ -154,8 +156,8 @@ public static class BlobLocationResolver
     /// <summary>
     /// Re-applies path-security validation to the <em>normalized</em> container and key/prefix. Provider normalizers
     /// are lossy, so an input that passed construction-time validation can normalize into a traversal sequence
-    /// (<c>.*.</c> → <c>..</c>) or the reserved sidecar suffix (<c>x.hlmet:a</c> → <c>x.hlmeta</c>). Validating here —
-    /// in the single seam every provider routes through — keeps the path-handling guarantee true regardless of the
+    /// (<c>.*.</c> → <c>..</c>) or the reserved sidecar suffix (<c>x.hlmet:a</c> → <c>x.hlmeta</c>). Validating here,
+    /// in the single seam every provider routes through, keeps the path-handling guarantee true regardless of the
     /// normalizer.
     /// </summary>
     private static void _ValidateResolved(string container, string? keyOrPrefix)

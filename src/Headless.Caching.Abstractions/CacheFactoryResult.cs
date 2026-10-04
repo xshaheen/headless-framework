@@ -3,7 +3,7 @@
 namespace Headless.Caching;
 
 /// <summary>
-/// Outcome of a conditional cache factory execution (the HTTP-304 pattern). Create instances through
+/// Represents the outcome of a conditional cache factory execution. Create instances through
 /// <see cref="CacheFactoryContext{T}.NotModified"/> or
 /// <see cref="CacheFactoryContext{T}.Modified(T, string?, DateTime?)"/> rather than constructing them directly.
 /// </summary>
@@ -12,8 +12,8 @@ namespace Headless.Caching;
 public readonly record struct CacheFactoryResult<T>
 {
     /// <summary>
-    /// Gets whether the origin reported the cached value as still current. When <see langword="true"/>, the
-    /// existing cached value is re-stamped as fresh and <see cref="Value"/> is ignored.
+    /// Gets a value indicating whether the origin reported the cached value as still current. When <see langword="true"/>, the
+    /// existing cached value is restamped as fresh and <see cref="Value"/> is ignored.
     /// </summary>
     public bool IsNotModified { get; init; }
 
@@ -23,6 +23,6 @@ public readonly record struct CacheFactoryResult<T>
     /// <summary>Gets the optional opaque entity tag describing the produced value.</summary>
     public string? ETag { get; init; }
 
-    /// <summary>Gets the optional timestamp at which the produced value was last modified at its origin.</summary>
+    /// <summary>Gets the optional origin timestamp at which the produced value was last modified.</summary>
     public DateTime? LastModifiedAt { get; init; }
 }

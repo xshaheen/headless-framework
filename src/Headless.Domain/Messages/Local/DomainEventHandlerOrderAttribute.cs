@@ -3,15 +3,15 @@
 namespace Headless.Domain;
 
 /// <summary>
-/// Specifies the relative execution order of a <c>IDomainEventHandler&lt;TEvent&gt;</c> implementation
+/// Specifies the relative execution order of an <see cref="IDomainEventHandler{TPayload}"/> implementation
 /// when multiple handlers are registered for the same event type.
 /// </summary>
-/// <param name="order">Desired execution position; handlers with lower values run earlier.</param>
-/// <remarks>Handlers are invoked in ascending <c>Order</c> value. Handlers without this attribute are unordered.</remarks>
+/// <param name="order">The relative execution position. Lower values execute earlier.</param>
+/// <remarks>Handlers are invoked in ascending order. Handlers without this attribute execute with default order zero.</remarks>
 [PublicAPI]
 [AttributeUsage(AttributeTargets.Class)]
 public sealed class DomainEventHandlerOrderAttribute(int order) : Attribute
 {
-    /// <summary>Relative execution order. Handlers with lower values execute first.</summary>
+    /// <summary>Gets the relative execution order value. Handlers with lower values execute first.</summary>
     public int Order { get; } = order;
 }

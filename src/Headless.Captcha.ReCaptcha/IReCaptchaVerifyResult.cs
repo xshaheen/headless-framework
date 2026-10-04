@@ -3,9 +3,7 @@
 namespace Headless.Captcha;
 
 /// <summary>
-/// Marker interface that identifies a verification result produced by a reCAPTCHA provider (v2 or v3). Scopes
-/// <see cref="ReCaptchaResultExtensions.ToReCaptchaErrors"/> to reCAPTCHA results only so the extension does not
-/// appear — with meaningless semantics — on unrelated types such as <c>TurnstileVerifyResult</c>.
+/// Defines a marker interface for verification results produced by reCAPTCHA v2 or v3 providers.
 /// </summary>
 [PublicAPI]
 public interface IReCaptchaVerifyResult;

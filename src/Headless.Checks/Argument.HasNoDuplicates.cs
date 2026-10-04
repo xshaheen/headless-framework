@@ -9,14 +9,14 @@ namespace Headless.Checks;
 // ReSharper disable PossibleMultipleEnumeration
 public static partial class Argument
 {
-    /// <summary>Throws an <see cref="ArgumentException" /> if <paramref name="argument" /> contains duplicate items.</summary>
+    /// <summary>Throws an <see cref="ArgumentException" /> when <paramref name="argument" /> contains duplicate items.</summary>
     /// <param name="argument">The argument to check.</param>
-    /// <param name="message">(Optional) Custom error message.</param>
-    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="argument" /> if it contains no duplicate items.</returns>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="paramName">The name of the parameter being checked. Captured automatically by the compiler.</param>
+    /// <returns><paramref name="argument" /> when it contains no duplicate items.</returns>
     /// <remarks>Equality is evaluated with <see cref="EqualityComparer{T}.Default"/>. The sequence is enumerated once; pass a materialized or replayable sequence.</remarks>
-    /// <exception cref="ArgumentNullException">if <paramref name="argument" /> is null.</exception>
-    /// <exception cref="ArgumentException">if <paramref name="argument" /> contains duplicate items.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="argument" /> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="argument" /> contains duplicate items.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static IEnumerable<T> HasNoDuplicates<T>(
@@ -28,15 +28,15 @@ public static partial class Argument
         return HasNoDuplicates(argument, comparer: null, message, paramName);
     }
 
-    /// <summary>Throws an <see cref="ArgumentException" /> if <paramref name="argument" /> contains duplicate items.</summary>
+    /// <summary>Throws an <see cref="ArgumentException" /> when <paramref name="argument" /> contains duplicate items.</summary>
     /// <param name="argument">The argument to check.</param>
     /// <param name="comparer">The comparer used to detect duplicates, or <see langword="null"/> for <see cref="EqualityComparer{T}.Default"/>.</param>
-    /// <param name="message">(Optional) Custom error message.</param>
-    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="argument" /> if it contains no duplicate items.</returns>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="paramName">The name of the parameter being checked. Captured automatically by the compiler.</param>
+    /// <returns><paramref name="argument" /> when it contains no duplicate items.</returns>
     /// <remarks>The sequence is enumerated once; pass a materialized or replayable sequence.</remarks>
-    /// <exception cref="ArgumentNullException">if <paramref name="argument" /> is null.</exception>
-    /// <exception cref="ArgumentException">if <paramref name="argument" /> contains duplicate items.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="argument" /> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="argument" /> contains duplicate items.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static IEnumerable<T> HasNoDuplicates<T>(

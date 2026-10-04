@@ -3,7 +3,7 @@
 namespace Headless.Domain;
 
 /// <summary>
-/// Exposes the in-process domain-event queue of a domain object, allowing infrastructure layers to collect
+/// Exposes the in-process domain event queue of a domain object, allowing infrastructure layers to collect
 /// and dispatch pending domain events within the active unit of work.
 /// </summary>
 [PublicAPI]
@@ -11,10 +11,7 @@ public interface IDomainEventEmitter
 {
     /// <summary>Appends a domain event to be dispatched within the current unit of work.</summary>
     /// <remarks>
-    /// This is the infrastructure enqueue contract. Domain code raises events through an aggregate's own
-    /// behavior methods (the base <c>AggregateRoot.AddDomainEvent</c> is <see langword="protected"/>); this
-    /// member stays public so infrastructure that cannot derive from the aggregate — for example the EF Core
-    /// save pipeline injecting lifecycle events — can enqueue across assemblies.
+    /// Intended for infrastructure enqueue operations across assemblies when deriving from an aggregate is not feasible.
     /// </remarks>
     /// <param name="domainEvent">The domain event to enqueue.</param>
     void AddDomainEvent(object domainEvent);
@@ -23,13 +20,16 @@ public interface IDomainEventEmitter
     void ClearDomainEvents();
 
     /// <summary>Returns the current list of pending domain events.</summary>
-    /// <returns>A read-only snapshot of enqueued domain events; empty when none have been added.</returns>
+    /// <returns>A read-only snapshot of enqueued domain events, or an empty list when none are present.</returns>
     IReadOnlyList<EventContext<object>> GetDomainEvents();
 
     /// <summary>Preserves an occurrence already captured by infrastructure.</summary>
+    /// <typeparam name="TPayload">The event payload type.</typeparam>
+    /// <param name="context">The event context to append.</param>
     void AddDomainEvent<TPayload>(EventContext<TPayload> context)
         where TPayload : class;
 
-    /// <summary>Removes only the captured batch; occurrences appended later stay pending.</summary>
+    /// <summary>Removes only occurrences included in the captured batch, leaving later occurrences pending.</summary>
+    /// <param name="occurrences">The list of event occurrences to remove.</param>
     void ClearDomainEvents(IReadOnlyList<EventContext<object>> occurrences);
 }

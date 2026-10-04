@@ -2,32 +2,32 @@
 
 namespace Headless.Domain;
 
-/// <summary>Marks an entity with last-update audit fields.</summary>
+/// <summary>Defines last-update audit fields for an entity.</summary>
 [PublicAPI]
 public interface IUpdateAudit
 {
-    /// <summary>Timestamp when this entity was last updated.</summary>
-    /// <remarks>(auto)</remarks>
+    /// <summary>Gets the timestamp when this entity was last updated.</summary>
+    /// <remarks>Populated automatically by persistence infrastructure.</remarks>
     DateTimeOffset? UpdatedAt { get; }
 }
 
-/// <summary>Extends <c>IUpdateAudit</c> with the identifier of the account that last updated the entity.</summary>
-/// <typeparam name="TAccountId">Type of the account identifier.</typeparam>
+/// <summary>Defines last-update audit fields that include the modifying account identifier.</summary>
+/// <typeparam name="TAccountId">The account identifier type.</typeparam>
 [PublicAPI]
 public interface IUpdateAudit<out TAccountId> : IUpdateAudit
 {
-    /// <summary>ID of the account who last updated this entity.</summary>
-    /// <remarks>(auto)</remarks>
+    /// <summary>Gets the identifier of the account that last updated this entity.</summary>
+    /// <remarks>Populated automatically by persistence infrastructure.</remarks>
     TAccountId? UpdatedById { get; }
 }
 
-/// <summary>Extends <c>IUpdateAudit&lt;TAccountId&gt;</c> with a navigation link to the account that last updated the entity.</summary>
-/// <typeparam name="TAccountId">Type of the account identifier.</typeparam>
-/// <typeparam name="TAccount">Type of the account entity.</typeparam>
+/// <summary>Defines last-update audit fields that include a navigation reference to the modifying account.</summary>
+/// <typeparam name="TAccountId">The account identifier type.</typeparam>
+/// <typeparam name="TAccount">The account entity type.</typeparam>
 [PublicAPI]
 public interface IUpdateAudit<out TAccountId, out TAccount> : IUpdateAudit<TAccountId>
 {
-    /// <summary>Navigation link to the account who last updated this entity.</summary>
-    /// <remarks>(auto)</remarks>
+    /// <summary>Gets the navigation reference to the account that last updated this entity.</summary>
+    /// <remarks>Populated automatically by persistence infrastructure.</remarks>
     TAccount? UpdatedBy { get; }
 }

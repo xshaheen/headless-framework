@@ -4,15 +4,14 @@ namespace Headless.Caching;
 
 /// <summary>
 /// Per-execution context handed to a conditional cache factory. The factory coordinator creates one instance per
-/// factory execution, exposing the last-known cached value and its validators (<see cref="ETag"/>,
+/// factory execution, exposing the last-known cached value and its validators (<see cref="ETag"/> and
 /// <see cref="LastModifiedAt"/>) so the factory can perform a conditional refresh: ask the origin "has this
 /// changed since?" and return <see cref="NotModified"/> to extend the existing entry without re-transferring the
 /// value, or <see cref="Modified(T, string?, DateTime?)"/> to replace it.
 /// </summary>
 /// <typeparam name="T">The cached value type.</typeparam>
-/// <remarks>Initializes a new instance of the <see cref="CacheFactoryContext{T}"/> class.</remarks>
 /// <param name="staleValue">
-/// The last-known-good cached value, or <see cref="CacheValue{T}.NoValue"/> when no physically-retained entry
+/// The last-known-good cached value, or <see cref="CacheValue{T}.NoValue"/> when no physically retained entry
 /// exists. Contexts are normally created by the factory cache coordinator, one per factory execution.
 /// </param>
 [PublicAPI]
@@ -23,7 +22,7 @@ public sealed class CacheFactoryContext<T>(CacheValue<T> staleValue)
 
     /// <summary>
     /// Gets whether a last-known-good value exists for <see cref="Key"/>. This is <see langword="true"/> even when
-    /// the entry is logically expired, as long as it is still physically retained (e.g. a fail-safe reserve).
+    /// the entry is logically expired, as long as it is still physically retained (for example a fail-safe reserve).
     /// </summary>
     public bool HasStaleValue => StaleValue.HasValue;
 
@@ -42,10 +41,10 @@ public sealed class CacheFactoryContext<T>(CacheValue<T> staleValue)
 
     /// <summary>
     /// Gets or sets the entry options applied when the factory result is written (adaptive caching). The factory
-    /// may replace these before returning — for example shortening <see cref="CacheEntryOptions.Duration"/> for a
+    /// may replace these before returning, for example shortening <see cref="CacheEntryOptions.Duration"/> for a
     /// value it knows changes soon. The replacement is re-validated before the write; an invalid adaptive mutation
-    /// (e.g. a non-positive duration) throws <see cref="ArgumentOutOfRangeException"/> after the factory has run
-    /// and nothing is written. The factory-timeout family (<see cref="CacheEntryOptions.FactorySoftTimeout"/>,
+    /// (for example a non-positive duration) throws <see cref="ArgumentOutOfRangeException"/> after the factory has
+    /// run and nothing is written. The factory-timeout family (<see cref="CacheEntryOptions.FactorySoftTimeout"/>,
     /// <see cref="CacheEntryOptions.FactoryHardTimeout"/>, <see cref="CacheEntryOptions.LockTimeout"/>) is
     /// consumed before the factory runs, so adaptive changes to those fields have no effect on the current call.
     /// </summary>
@@ -60,10 +59,12 @@ public sealed class CacheFactoryContext<T>(CacheValue<T> staleValue)
     public IReadOnlyCollection<string>? Tags { get; set; }
 
     /// <summary>
-    /// Reports that the origin value is unchanged: the existing cached value is re-stamped as fresh with the
+    /// Reports that the origin value is unchanged: the existing cached value is restamped as fresh with the
     /// current <see cref="Options"/>, preserving its value and validators.
     /// </summary>
-    /// <exception cref="InvalidOperationException">No cached value exists to extend (<see cref="HasStaleValue"/> is <see langword="false"/>).</exception>
+    /// <exception cref="InvalidOperationException">
+    /// No cached value exists to extend (<see cref="HasStaleValue"/> is <see langword="false"/>).
+    /// </exception>
     public CacheFactoryResult<T> NotModified()
     {
         if (!HasStaleValue)
@@ -77,7 +78,7 @@ public sealed class CacheFactoryContext<T>(CacheValue<T> staleValue)
         return new CacheFactoryResult<T> { IsNotModified = true };
     }
 
-    /// <summary>Reports a new value (optionally with fresh validators) that replaces the cached entry.</summary>
+    /// <summary>Reports a new value that replaces the cached entry, optionally supplying fresh validators.</summary>
     /// <param name="value">The new value to cache.</param>
     /// <param name="eTag">The optional opaque entity tag describing the new value.</param>
     /// <param name="lastModifiedAt">The optional origin last-modified timestamp of the new value.</param>

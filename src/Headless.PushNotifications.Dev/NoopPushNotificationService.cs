@@ -4,8 +4,8 @@ namespace Headless.PushNotifications.Dev;
 
 /// <summary>
 /// No-op <see cref="IPushNotificationService"/> for local development and testing. It sends nothing and
-/// always reports success, returning a freshly generated GUID as the message id for every client identifier. It never
-/// validates input or throws (so it stays inert for any caller); do not use in production.
+/// always reports success, returning a freshly generated GUID as the message id for every client identifier.
+/// It never validates input or throws, so it stays inert for any caller. Do not use it in production.
 /// </summary>
 internal sealed class NoopPushNotificationService : IPushNotificationService
 {

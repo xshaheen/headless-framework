@@ -9,13 +9,13 @@ namespace Headless.Checks;
 
 public static partial class Argument
 {
-    /// <summary>Throws an <see cref="ArgumentException" /> if <paramref name="argument"/> is NaN.</summary>
+    /// <summary>Throws an <see cref="ArgumentException" /> when <paramref name="argument"/> is NaN.</summary>
     /// <typeparam name="T">An IEEE 754 floating-point type (for example <see cref="float"/>, <see cref="double"/>, or <see cref="Half"/>).</typeparam>
     /// <param name="argument">The argument to check.</param>
-    /// <param name="message">(Optional) Custom error message</param>
-    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="argument" /> if the value is not NaN.</returns>
-    /// <exception cref="ArgumentException">if <paramref name="argument" /> is NaN.</exception>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="paramName">The name of the parameter being checked. Captured automatically by the compiler.</param>
+    /// <returns><paramref name="argument" /> when the value is not NaN.</returns>
+    /// <exception cref="ArgumentException"><paramref name="argument" /> is NaN.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T IsNotNaN<T>(
@@ -33,13 +33,13 @@ public static partial class Argument
         return argument;
     }
 
-    /// <summary>Throws an <see cref="ArgumentException" /> if <paramref name="argument"/> is not NaN.</summary>
+    /// <summary>Throws an <see cref="ArgumentException" /> when <paramref name="argument"/> is not NaN.</summary>
     /// <typeparam name="T">An IEEE 754 floating-point type (for example <see cref="float"/>, <see cref="double"/>, or <see cref="Half"/>).</typeparam>
     /// <param name="argument">The argument to check.</param>
-    /// <param name="message">(Optional) Custom error message</param>
-    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="argument" /> if the value is NaN.</returns>
-    /// <exception cref="ArgumentException">if <paramref name="argument" /> is not NaN.</exception>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="paramName">The name of the parameter being checked. Captured automatically by the compiler.</param>
+    /// <returns><paramref name="argument" /> when the value is NaN.</returns>
+    /// <exception cref="ArgumentException"><paramref name="argument" /> is not NaN.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T IsNaN<T>(

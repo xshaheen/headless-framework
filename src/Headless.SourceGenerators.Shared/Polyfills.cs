@@ -7,8 +7,7 @@ namespace System.Runtime.CompilerServices;
 
 #pragma warning disable MA0048 // A topic file: its types are peers with no main type, so the file is named for the topic.
 /// <summary>
-/// Reserved to be used by the compiler for tracking metadata.
-/// This class should not be used by developers in source code.
+/// Reserved for compiler use when tracking init-only setter metadata.
 /// </summary>
 [EditorBrowsable(EditorBrowsableState.Never)]
 internal static class IsExternalInit;
@@ -25,7 +24,7 @@ internal static class IsExternalInit;
 internal sealed class RequiredMemberAttribute : Attribute;
 
 /// <summary>
-/// Indicates that a feature is required by the compiler.
+/// Indicates that a language feature is required by the compiler.
 /// </summary>
 [AttributeUsage(AttributeTargets.All, AllowMultiple = true, Inherited = false)]
 [EditorBrowsable(EditorBrowsableState.Never)]

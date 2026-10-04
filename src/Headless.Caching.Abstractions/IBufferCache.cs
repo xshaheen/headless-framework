@@ -17,11 +17,11 @@ public interface IBufferCache
     /// <summary>
     /// Reads the payload for <paramref name="key"/> directly into <paramref name="destination"/> without
     /// materializing a standalone <see cref="byte"/> array, honoring the same logical-expiry and tag-invalidation
-    /// semantics as <see cref="ICache.GetAsync{T}"/>. Nothing is written on a miss.
+    /// semantics as <see cref="ICache.GetAsync{T}(string, CancellationToken)"/>. Nothing is written on a miss.
     /// </summary>
     /// <param name="key">The cache key.</param>
     /// <param name="destination">The buffer writer the payload is written into (for example a <c>PipeWriter</c>).</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
     /// <returns><see langword="true"/> on a hit (payload written); <see langword="false"/> on miss or expiry.</returns>
     ValueTask<bool> TryGetToAsync(
         string key,
@@ -31,14 +31,15 @@ public interface IBufferCache
 
     /// <summary>
     /// Upserts the payload from <paramref name="value"/> without materializing a standalone <see cref="byte"/>
-    /// array, stamping the entry with the full <see cref="CacheEntryOptions"/> semantics (CreatedAt, tags,
-    /// fail-safe, sliding) exactly like <see cref="ICache.UpsertEntryAsync{T}"/>. The sequence is consumed before
-    /// the first await, so callers may hand in pooled buffers valid only for the duration of the call.
+    /// array, stamping the entry with the full <see cref="ICache.UpsertEntryAsync{T}"/> semantics (CreatedAt, tags,
+    /// fail-safe, sliding).
+    /// The sequence is consumed before the first await, so callers may hand in pooled buffers valid only for
+    /// the duration of the call.
     /// </summary>
     /// <param name="key">The cache key.</param>
     /// <param name="value">The raw payload to persist.</param>
     /// <param name="options">The cache entry options applied to the written entry.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
     /// <exception cref="ArgumentException">Thrown when <see cref="CacheEntryOptions.Tags"/> exceeds the supported tag count/length limits.</exception>
     ValueTask UpsertRawAsync(
         string key,

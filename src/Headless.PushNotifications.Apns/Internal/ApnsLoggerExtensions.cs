@@ -95,8 +95,8 @@ internal static partial class ApnsLoggerExtensions
     )]
     public static partial void LogCertificateCheckFailed(this ILogger logger, Exception exception, string instance);
 
-    // A rejection whose reason names the instance's key or token configuration: no send succeeds until the operator
-    // fixes it, so it is an error, not a per-token warning.
+    // A rejection whose reason names the instance's key or token configuration: no send succeeds until the
+    // operator fixes it, so it is an error, not a per-token warning.
     [LoggerMessage(
         EventId = 10,
         EventName = "ApnsTokenConfigurationError",

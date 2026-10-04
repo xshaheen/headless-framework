@@ -23,8 +23,8 @@ internal static class ApnsResponseMapper
     private static readonly long _MaxUnixMilliseconds = DateTimeOffset.MaxValue.ToUnixTimeMilliseconds();
 
     /// <summary>
-    /// Reads the <c>reason</c> and, for HTTP 410, the millisecond <c>timestamp</c> from an APNs error body; each is
-    /// <see langword="null"/> when the body does not carry it.
+    /// Reads the <c>reason</c> and, for HTTP 410, the millisecond <c>timestamp</c> from an APNs error body;
+    /// each is <see langword="null"/> when the body does not carry it.
     /// </summary>
     public static ApnsErrorBody ReadError(ReadOnlySpan<byte> body)
     {
@@ -102,8 +102,8 @@ internal static class ApnsResponseMapper
             return PushNotificationResponse.Unregistered(deviceToken);
         }
 
-        // BadDeviceToken also means "token from the other environment", so reporting it as unregistered is opt-in:
-        // a host pointed at the wrong environment would otherwise discard every valid token it holds.
+        // BadDeviceToken also means "token from the other environment", so reporting it as unregistered is
+        // opt-in: a host pointed at the wrong environment would otherwise discard every valid token it holds.
         if (
             treatBadDeviceTokenAsUnregistered
             && status == HttpStatusCode.BadRequest
@@ -130,8 +130,8 @@ internal static class ApnsResponseMapper
 
     private static DateTimeOffset? _FromUnixMilliseconds(long? milliseconds)
     {
-        // A value outside DateTimeOffset's range would throw and turn a clear 410 into a failure, so it reads as
-        // "no timestamp" instead.
+        // A value outside DateTimeOffset's range would throw and turn a clear 410 into a failure, so it reads
+        // as "no timestamp" instead.
         return milliseconds is { } value && value >= _MinUnixMilliseconds && value <= _MaxUnixMilliseconds
             ? DateTimeOffset.FromUnixTimeMilliseconds(value)
             : null;

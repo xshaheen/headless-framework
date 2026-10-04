@@ -8,7 +8,7 @@ namespace Headless.Caching;
 /// </summary>
 /// <remarks>
 /// The key-bearing events derive from <see cref="CacheKeyEventArgs"/>. All keys are the caller-facing
-/// keys the <c>ICache</c> API accepts and returns — the provider's internal <c>KeyPrefix</c> is stripped before the
+/// keys the <see cref="ICache"/> API accepts and returns: the provider's internal <c>KeyPrefix</c> is stripped before the
 /// args are constructed.
 /// </remarks>
 [PublicAPI]
@@ -34,38 +34,38 @@ public class CacheKeyEventArgs(string cacheName, CacheTier tier, string key) : C
 public sealed class CacheHitEventArgs(string cacheName, CacheTier tier, string key, bool isStale)
     : CacheKeyEventArgs(cacheName, tier, key)
 {
-    /// <summary>Whether the served value was a fail-safe stale reserve rather than a fresh entry.</summary>
+    /// <summary>Gets a value indicating whether the served value was a fail-safe stale reserve rather than a fresh entry.</summary>
     public bool IsStale { get; } = isStale;
 }
 
-/// <summary>Arguments for an in-memory eviction, carrying the reason the entry left the tier.</summary>
+/// <summary>Provides event arguments for an in-memory eviction, including the eviction reason.</summary>
 [PublicAPI]
 public sealed class CacheEvictionEventArgs(string cacheName, CacheTier tier, string key, CacheEvictionReason reason)
     : CacheKeyEventArgs(cacheName, tier, key)
 {
-    /// <summary>Why the entry was evicted.</summary>
+    /// <summary>Gets the reason why the entry was evicted.</summary>
     public CacheEvictionReason Reason { get; } = reason;
 }
 
-/// <summary>Arguments for a factory execution outcome (success, error, or timeout).</summary>
+/// <summary>Provides event arguments for factory execution outcomes.</summary>
 [PublicAPI]
 public sealed class CacheFactoryEventArgs(string cacheName, CacheTier tier, string key, CacheFactoryOutcome outcome)
     : CacheKeyEventArgs(cacheName, tier, key)
 {
-    /// <summary>The factory's outcome.</summary>
+    /// <summary>Gets the outcome of the factory execution.</summary>
     public CacheFactoryOutcome Outcome { get; } = outcome;
 }
 
-/// <summary>Arguments for a fail-safe stale-serving activation.</summary>
+/// <summary>Provides event arguments for fail-safe stale-serving activation.</summary>
 [PublicAPI]
 public sealed class CacheFailSafeEventArgs(string cacheName, CacheTier tier, string key, CacheFailSafeTrigger trigger)
     : CacheKeyEventArgs(cacheName, tier, key)
 {
-    /// <summary>What triggered the activation.</summary>
+    /// <summary>Gets the condition that triggered fail-safe activation.</summary>
     public CacheFailSafeTrigger Trigger { get; } = trigger;
 }
 
-/// <summary>Arguments for an eager or background refresh, carrying its kind and outcome.</summary>
+/// <summary>Provides event arguments for an eager or background refresh, including kind and outcome.</summary>
 [PublicAPI]
 public sealed class CacheRefreshEventArgs(
     string cacheName,
@@ -75,44 +75,44 @@ public sealed class CacheRefreshEventArgs(
     CacheFactoryOutcome outcome
 ) : CacheKeyEventArgs(cacheName, tier, key)
 {
-    /// <summary>Whether the refresh was eager or a background completion.</summary>
+    /// <summary>Gets a value indicating whether the refresh was eager or a background completion.</summary>
     public CacheRefreshKind Kind { get; } = kind;
 
-    /// <summary>The refresh factory's outcome.</summary>
+    /// <summary>Gets the outcome of the refresh factory execution.</summary>
     public CacheFactoryOutcome Outcome { get; } = outcome;
 }
 
-/// <summary>Arguments for a prefix-scoped removal, carrying the prefix and the number of entries removed.</summary>
+/// <summary>Provides event arguments for prefix-scoped removals, including the prefix and removed count.</summary>
 [PublicAPI]
 public sealed class CacheRemoveByPrefixEventArgs(string cacheName, CacheTier tier, string prefix, int removedCount)
     : CacheEventArgs(cacheName, tier)
 {
-    /// <summary>The key prefix the removal targeted (caller-facing).</summary>
+    /// <summary>Gets the key prefix targeted by the removal operation.</summary>
     public string Prefix { get; } = prefix;
 
-    /// <summary>The number of entries removed.</summary>
+    /// <summary>Gets the number of entries removed.</summary>
     public int RemovedCount { get; } = removedCount;
 }
 
-/// <summary>Arguments for a tag invalidation, carrying the tag. Tag invalidation is an O(1) marker bump that knows no keys.</summary>
+/// <summary>Provides event arguments for tag invalidation operations.</summary>
 [PublicAPI]
 public sealed class CacheRemoveByTagEventArgs(string cacheName, CacheTier tier, string tag)
     : CacheEventArgs(cacheName, tier)
 {
-    /// <summary>The invalidation tag.</summary>
+    /// <summary>Gets the invalidation tag.</summary>
     public string Tag { get; } = tag;
 }
 
-/// <summary>Arguments for a bulk <c>RemoveAllAsync</c>, carrying the number of entries removed.</summary>
+/// <summary>Provides event arguments for bulk removal operations, including the count of removed entries.</summary>
 [PublicAPI]
 public sealed class CacheRemoveAllEventArgs(string cacheName, CacheTier tier, int removedCount)
     : CacheEventArgs(cacheName, tier)
 {
-    /// <summary>The number of entries removed.</summary>
+    /// <summary>Gets the number of entries removed.</summary>
     public int RemovedCount { get; } = removedCount;
 }
 
-/// <summary>Arguments for a hybrid invalidation propagation, carrying its kind, direction, and (for tag kind) the tag.</summary>
+/// <summary>Provides event arguments for hybrid invalidation propagation.</summary>
 [PublicAPI]
 public sealed class CacheInvalidationEventArgs(
     string cacheName,
@@ -122,12 +122,12 @@ public sealed class CacheInvalidationEventArgs(
     string? tag = null
 ) : CacheEventArgs(cacheName, tier)
 {
-    /// <summary>The invalidation kind.</summary>
+    /// <summary>Gets the invalidation kind.</summary>
     public CacheInvalidationKind Kind { get; } = kind;
 
-    /// <summary>Whether this instance published or received the invalidation.</summary>
+    /// <summary>Gets a value indicating whether this instance published or received the invalidation.</summary>
     public CacheInvalidationDirection Direction { get; } = direction;
 
-    /// <summary>The tag for a <see cref="CacheInvalidationKind.Tag"/> invalidation; <see langword="null"/> for clear/flush.</summary>
+    /// <summary>Gets the tag for tag invalidations, or <see langword="null"/> for clear or flush operations.</summary>
     public string? Tag { get; } = tag;
 }

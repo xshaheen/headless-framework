@@ -3,49 +3,48 @@
 namespace Headless.Emails;
 
 /// <summary>
-/// Describes a single email message to be sent via <see cref="IEmailSender"/>.
+/// Describes a single email message sent through <see cref="IEmailSender"/>.
 /// </summary>
 /// <remarks>
-/// At least one of <see cref="MessageHtml"/> or <see cref="MessageText"/> must be set.
-/// All providers call <see cref="EnsureHasBody"/> before sending and throw
-/// <see cref="InvalidOperationException"/> when both are <see langword="null"/> or whitespace-only,
-/// so the behavior is identical across backends.
+/// At least one of <see cref="MessageHtml"/> or <see cref="MessageText"/> must be set. All providers call
+/// <see cref="EnsureHasBody"/> before sending and throw <see cref="InvalidOperationException"/> when both are
+/// <see langword="null"/> or white space, so a body-less request is rejected identically regardless of backend.
 /// </remarks>
 [PublicAPI]
 public sealed record SendSingleEmailRequest
 {
-    /// <summary>The sender address shown in the email "From" header.</summary>
+    /// <summary>Gets the sender address displayed in the email From header.</summary>
     public required EmailRequestAddress From { get; init; }
 
-    /// <summary>The recipients of the email message.</summary>
+    /// <summary>Gets the recipients of the email message.</summary>
     public required EmailRequestDestination Destination { get; init; }
 
-    /// <summary>The subject line of the email.</summary>
+    /// <summary>Gets the subject line of the email.</summary>
     public required string Subject { get; init; }
 
     /// <summary>
-    /// The HTML body of the email. When both <see cref="MessageHtml"/> and
-    /// <see cref="MessageText"/> are provided, clients that support HTML will prefer this.
+    /// Gets the HTML body of the email. When both <see cref="MessageHtml"/> and <see cref="MessageText"/> are
+    /// provided, clients that support HTML prefer this body.
     /// </summary>
     public string? MessageHtml { get; init; }
 
     /// <summary>
-    /// The plain-text body of the email, used as a fallback when the recipient's client
-    /// does not render HTML.
+    /// Gets the plain-text body of the email, used as a fallback when the recipient's client does not
+    /// render HTML.
     /// </summary>
     public string? MessageText { get; init; }
 
-    /// <summary>The attachments to include in the email. Defaults to an empty list.</summary>
+    /// <summary>Gets the attachments to include in the email. Defaults to an empty list.</summary>
     public IReadOnlyList<EmailRequestAttachment> Attachments { get; init; } = [];
 
     /// <summary>
-    /// Validates that at least one of <see cref="MessageHtml"/> or <see cref="MessageText"/>
-    /// carries content. All providers invoke this before sending so a body-less request is
-    /// rejected identically regardless of backend.
+    /// Validates that at least one of <see cref="MessageHtml"/> or <see cref="MessageText"/> contains content.
+    /// All providers invoke this before sending, so a body-less request is rejected identically regardless
+    /// of backend.
     /// </summary>
     /// <exception cref="InvalidOperationException">
-    /// Thrown when both <see cref="MessageHtml"/> and <see cref="MessageText"/> are
-    /// <see langword="null"/> or whitespace-only.
+    /// Both <see cref="MessageHtml"/> and <see cref="MessageText"/> are <see langword="null"/>, empty, or
+    /// contain only white space.
     /// </exception>
     public void EnsureHasBody()
     {
@@ -57,35 +56,38 @@ public sealed record SendSingleEmailRequest
 }
 
 /// <summary>
-/// An email address optionally paired with a display name.
+/// Represents an email address and an optional display name.
 /// </summary>
-/// <param name="EmailAddress">The RFC 5321 email address (e.g. <c>user@example.com</c>).</param>
+/// <param name="EmailAddress">The RFC 5321 email address, for example <c>user@example.com</c>.</param>
 /// <param name="DisplayName">
-/// The human-readable name shown alongside the address (e.g. <c>Alice</c>).
-/// When <see langword="null"/>, only the bare address is used.
+/// The display name shown alongside the address, for example <c>Alice</c>. When <see langword="null"/>,
+/// only the bare address is used.
 /// </param>
 [PublicAPI]
 public sealed record EmailRequestAddress(string EmailAddress, string? DisplayName = null)
 {
     /// <summary>
-    /// Implicitly converts a plain email address string to an <see cref="EmailRequestAddress"/>
-    /// with no display name.
+    /// Implicitly converts an email address string to an <see cref="EmailRequestAddress"/> with no
+    /// display name.
     /// </summary>
+    /// <param name="operand">The email address string.</param>
     public static implicit operator EmailRequestAddress(string operand) => new(operand);
 
     /// <summary>
-    /// Converts a plain email address string to an <see cref="EmailRequestAddress"/>
-    /// with no display name.
+    /// Converts an email address string to an <see cref="EmailRequestAddress"/> with no display name.
     /// </summary>
+    /// <param name="operand">The email address string.</param>
+    /// <returns>A new <see cref="EmailRequestAddress"/> instance.</returns>
     public static EmailRequestAddress FromString(string operand)
     {
         return operand;
     }
 
     /// <summary>
-    /// Returns <c>"DisplayName &lt;EmailAddress&gt;"</c> when a display name is set;
+    /// Formats the address as <c>"DisplayName &lt;EmailAddress&gt;"</c> when a display name is set;
     /// otherwise returns the bare <see cref="EmailAddress"/>.
     /// </summary>
+    /// <returns>The formatted address string.</returns>
     public override string ToString()
     {
         return DisplayName is null ? EmailAddress : $"{DisplayName} <{EmailAddress}>";
@@ -93,36 +95,37 @@ public sealed record EmailRequestAddress(string EmailAddress, string? DisplayNam
 }
 
 /// <summary>
-/// The set of recipient addresses for an outgoing email.
+/// Represents recipient addresses for an outgoing email.
 /// </summary>
 [PublicAPI]
 public sealed record EmailRequestDestination
 {
-    /// <summary>The primary recipients (To line).</summary>
+    /// <summary>Gets the primary recipient addresses (To line).</summary>
     public required IReadOnlyList<EmailRequestAddress> ToAddresses { get; init; }
 
-    /// <summary>Blind-carbon-copy recipients. Defaults to an empty list.</summary>
+    /// <summary>Gets the blind carbon copy recipient addresses. Defaults to an empty list.</summary>
     public IReadOnlyList<EmailRequestAddress> BccAddresses { get; init; } = [];
 
-    /// <summary>Carbon-copy recipients. Defaults to an empty list.</summary>
+    /// <summary>Gets the carbon copy recipient addresses. Defaults to an empty list.</summary>
     public IReadOnlyList<EmailRequestAddress> CcAddresses { get; init; } = [];
 }
 
 /// <summary>
-/// A binary file attachment to include in an outgoing email.
+/// Represents a binary file attachment in an outgoing email.
 /// </summary>
 [PublicAPI]
 public sealed record EmailRequestAttachment
 {
-    /// <summary>The file name shown to the recipient (e.g. <c>invoice.pdf</c>).</summary>
+    /// <summary>Gets the file name displayed to the recipient, for example <c>invoice.pdf</c>.</summary>
     public required string Name { get; init; }
 
-    /// <summary>The raw file bytes to attach.</summary>
+    /// <summary>Gets the raw file content bytes.</summary>
     public required ReadOnlyMemory<byte> File { get; init; }
 
     /// <summary>
-    /// The MIME content type (e.g. <c>application/pdf</c>). When <see langword="null"/>,
-    /// the type is inferred from the <see cref="Name"/> extension.
+    /// Gets the MIME content type of the attachment, for example <c>application/pdf</c>. When
+    /// <see langword="null"/>, providers that require an explicit content type infer it from the
+    /// <see cref="Name"/> extension.
     /// </summary>
     public string? ContentType { get; init; }
 }

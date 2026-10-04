@@ -13,13 +13,10 @@ public static class SetupCaptcha
     extension(IServiceCollection services)
     {
         /// <summary>
-        /// Registers Headless captcha from a single setup builder. Provider packages contribute through
-        /// <c>Use*</c> extensions on <see cref="HeadlessCaptchaSetupBuilder"/>; at least one provider is required.
-        /// All contributions are deferred until the setup gates pass, so a failed setup leaves the service
-        /// collection unchanged.
+        /// Registers captcha services and providers with the dependency injection container.
         /// </summary>
-        /// <param name="configure">The setup action selecting the providers.</param>
-        /// <returns>The service collection for chaining.</returns>
+        /// <param name="configure">A delegate that configures captcha providers.</param>
+        /// <returns>The service collection instance.</returns>
         public IServiceCollection AddHeadlessCaptcha(Action<HeadlessCaptchaSetupBuilder> configure)
         {
             Argument.IsNotNull(configure);
@@ -49,8 +46,7 @@ public static class SetupCaptcha
             );
         }
 
-        // Snapshot the finalized name set so ICaptchaProvider can enumerate registered names and produce an
-        // actionable error listing them. Covers a default's canonical key plus every named instance.
+        // Snapshot registered names so ICaptchaProvider can enumerate available verifiers.
         var registeredNames = setup.RegisteredNames.ToFrozenSet(StringComparer.Ordinal);
 
         services.AddSingleton(new CaptchaProviderRegistration());

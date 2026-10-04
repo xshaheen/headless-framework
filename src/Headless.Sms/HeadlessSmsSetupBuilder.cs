@@ -7,11 +7,11 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Headless.Sms;
 
 /// <summary>
-/// Root builder for <c>AddHeadlessSms</c>. Provider packages contribute deferred service registrations into
-/// two slots — an optional default sender (at most one, the unkeyed <see cref="ISmsSender"/>) and named
-/// instances (unlimited, unique names, resolved as keyed <see cref="ISmsSender"/> services or through
-/// <see cref="ISmsSenderProvider"/>). Nothing is registered into <see cref="Services"/> until the setup
-/// gates pass; contributions are queued only.
+/// Configures the default and named SMS senders for <c>AddHeadlessSms</c>. Provider packages contribute
+/// deferred service registrations into two slots: an optional default sender (at most one, the unkeyed
+/// <see cref="ISmsSender"/>) and named instances (unlimited, unique names, resolved as keyed
+/// <see cref="ISmsSender"/> services or through <see cref="ISmsSenderProvider"/>). Nothing is registered
+/// into <see cref="Services"/> until the setup gates pass; contributions are queued only.
 /// </summary>
 /// <remarks>
 /// SMS has no shared, cross-provider feature options, so the builder is provider-selection-only and carries
@@ -36,11 +36,11 @@ public sealed class HeadlessSmsSetupBuilder
     internal List<(string Name, Action<IServiceCollection> Action)> NamedExtensions { get; } = [];
 
     /// <summary>
-    /// Queues the default (unkeyed) SMS sender contribution. Called internally by each default <c>Use*</c>
-    /// extension; not intended for direct use by application code.
+    /// Queues the default (unkeyed) SMS sender contribution. Each default <c>Use*</c> extension calls this
+    /// internally; it is not intended for direct use by application code.
     /// </summary>
-    /// <param name="action">The provider's deferred service registration action.</param>
-    /// <exception cref="ArgumentNullException">Thrown when <paramref name="action"/> is <see langword="null"/>.</exception>
+    /// <param name="action">The delegate that registers provider services.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="action"/> is <see langword="null"/>.</exception>
     [EditorBrowsable(EditorBrowsableState.Never)] // provider-package plumbing, not an application-code API
     public void RegisterDefaultProvider(Action<IServiceCollection> action)
     {
@@ -50,17 +50,19 @@ public sealed class HeadlessSmsSetupBuilder
     }
 
     /// <summary>
-    /// Adds an independently-configured named SMS sender, resolvable as a keyed <see cref="ISmsSender"/>
+    /// Adds an independently configured named SMS sender, resolvable as a keyed <see cref="ISmsSender"/>
     /// service or through <see cref="ISmsSenderProvider"/>. Named instances never touch the default
     /// (unkeyed) <see cref="ISmsSender"/>.
     /// </summary>
-    /// <param name="name">The sender instance name. Must be non-empty and unique within this call.</param>
-    /// <param name="configure">Configuration action that selects exactly one provider for the instance.</param>
-    /// <returns>The builder for chaining.</returns>
-    /// <exception cref="ArgumentException">Thrown when <paramref name="name"/> is <see langword="null"/> or whitespace.</exception>
-    /// <exception cref="ArgumentNullException">Thrown when <paramref name="configure"/> is <see langword="null"/>.</exception>
+    /// <param name="name">The sender instance name. Must be non-empty and unique within this setup.</param>
+    /// <param name="configure">A delegate that selects exactly one provider for the instance.</param>
+    /// <returns>The builder instance.</returns>
+    /// <exception cref="ArgumentNullException">
+    /// <paramref name="name"/> or <paramref name="configure"/> is <see langword="null"/>.
+    /// </exception>
+    /// <exception cref="ArgumentException"><paramref name="name"/> is empty or contains only white space.</exception>
     /// <exception cref="InvalidOperationException">
-    /// Thrown when <paramref name="name"/> is already configured, or when the instance selects zero or more
+    /// <paramref name="name"/> is already configured, or the configuration delegate selects zero or more
     /// than one provider.
     /// </exception>
     public HeadlessSmsSetupBuilder AddNamed(string name, Action<HeadlessSmsInstanceBuilder> configure)

@@ -4,13 +4,15 @@ using Headless.Checks;
 
 namespace Headless.Captcha;
 
-/// <summary>Extensions for reading reCAPTCHA-specific data from an <see cref="IReCaptchaVerifyResult"/>.</summary>
+/// <summary>Provides extension methods for reading reCAPTCHA data from an <see cref="IReCaptchaVerifyResult"/>.</summary>
 [PublicAPI]
 public static class ReCaptchaResultExtensions
 {
-    /// <summary>Parses the result's raw <see cref="CaptchaVerifyResult.ErrorCodes"/> into the reCAPTCHA error enum.</summary>
+    /// <summary>Parses <see cref="CaptchaVerifyResult.ErrorCodes"/> from the result into <see cref="ReCaptchaError"/> values.</summary>
     /// <param name="result">The verification result.</param>
-    /// <returns>The parsed errors, or an empty list when the verification succeeded.</returns>
+    /// <returns>A read-only list of parsed error values, or an empty list when verification succeeded.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="result"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException"><paramref name="result"/> does not inherit from <see cref="CaptchaVerifyResult"/>.</exception>
     public static IReadOnlyList<ReCaptchaError> ToReCaptchaErrors(this IReCaptchaVerifyResult result)
     {
         Argument.IsNotNull(result);

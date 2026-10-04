@@ -11,9 +11,9 @@ public static partial class Argument
     /// <summary>Asserts that the input value is <see langword="default"/>.</summary>
     /// <typeparam name="T">The type of <see langword="struct"/> value type being tested.</typeparam>
     /// <param name="argument">The input value to test.</param>
-    /// <param name="message">(Optional) Custom error message.</param>
-    /// <param name="paramName">The name of the input parameter being tested.</param>
-    /// <exception cref="ArgumentException">Thrown if <paramref name="argument"/> is not <see langword="default"/>.</exception>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="paramName">The name of the parameter being checked. Captured automatically by the compiler.</param>
+    /// <exception cref="ArgumentException"><paramref name="argument"/> is not <see langword="default"/>.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void IsDefault<T>(
@@ -29,12 +29,12 @@ public static partial class Argument
         }
     }
 
-    /// <summary>Throws an <see cref="ArgumentException" /> if <paramref name="argument" /> is default(T).</summary>
+    /// <summary>Throws an <see cref="ArgumentException" /> when <paramref name="argument" /> is default(T).</summary>
     /// <param name="argument">The argument to check.</param>
-    /// <param name="message">(Optional) Custom error message.</param>
-    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="argument" /> if the value is not default for that type.</returns>
-    /// <exception cref="ArgumentException">if <paramref name="argument" /> is default for that type.</exception>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="paramName">The name of the parameter being checked. Captured automatically by the compiler.</param>
+    /// <returns><paramref name="argument" /> when the value is not default for that type.</returns>
+    /// <exception cref="ArgumentException"><paramref name="argument" /> is default for that type.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T IsNotDefault<T>(
@@ -52,13 +52,13 @@ public static partial class Argument
         return argument;
     }
 
-    /// <summary>Throws an <see cref="ArgumentException" /> if <paramref name="argument" /> has a value that is default(T).</summary>
+    /// <summary>Throws an <see cref="ArgumentException" /> when <paramref name="argument" /> has a value that is default(T).</summary>
     /// <param name="argument">The argument to check.</param>
-    /// <param name="message">(Optional) Custom error message.</param>
-    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="argument" /> if the value is null or not default for that type.</returns>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="paramName">The name of the parameter being checked. Captured automatically by the compiler.</param>
+    /// <returns><paramref name="argument" /> when the value is null or not default for that type.</returns>
     /// <remarks>A <see langword="null"/> value is accepted and returned as-is; only a present <c>default(T)</c> value throws. Use <see cref="IsNotNullOrDefault{T}"/> to also reject null.</remarks>
-    /// <exception cref="ArgumentException">if <paramref name="argument" /> has a value that is default for that type.</exception>
+    /// <exception cref="ArgumentException"><paramref name="argument" /> has a value that is default for that type.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T? IsNotDefault<T>(

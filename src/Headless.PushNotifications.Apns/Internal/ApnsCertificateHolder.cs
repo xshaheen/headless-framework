@@ -9,10 +9,10 @@ using Microsoft.Extensions.Options;
 namespace Headless.PushNotifications.Apns.Internal;
 
 /// <summary>
-/// Owns one certificate-mode instance's provider certificate for the primary handler and the expiry check. It loads
-/// the certificate once, then reloads it whenever the instance's <see cref="ApnsOptions.Certificate"/> or
-/// <see cref="ApnsOptions.CertificatePassword"/> changes, so a renewed certificate takes effect without a restart.
-/// Registered per instance, so the container disposes it.
+/// Owns one certificate-mode instance's provider certificate for the primary handler and the expiry check.
+/// It loads the certificate once, then reloads it whenever the instance's <see cref="ApnsOptions.Certificate"/>
+/// or <see cref="ApnsOptions.CertificatePassword"/> changes, so a renewed certificate takes effect without a
+/// restart. Registered per instance, so the container disposes it.
 /// </summary>
 internal sealed class ApnsCertificateHolder : IDisposable
 {
@@ -24,8 +24,8 @@ internal sealed class ApnsCertificateHolder : IDisposable
     private readonly IDisposable? _subscription;
     private volatile X509Certificate2 _current;
 
-    // The certificate the last swap replaced. A TLS handshake that read it just before the swap may still be using
-    // it, so it is disposed only on the next swap or with the holder, never at the swap that replaced it.
+    // The certificate the last swap replaced. A TLS handshake that read it just before the swap may still be
+    // using it, so it is disposed only on the next swap or with the holder, never at the swap that replaced it.
     private X509Certificate2? _previous;
 
     // The certificate fields last seen, loaded or rejected, so a change to any other option never reloads.

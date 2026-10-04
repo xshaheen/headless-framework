@@ -21,11 +21,14 @@ internal sealed record ApnsRequestHeaders(
     // Apple caps the apns-collapse-id header at 64 bytes.
     private const int _MaxCollapseIdBytes = 64;
 
-    /// <summary>Computes the headers for <paramref name="notification"/> sent through an instance with <paramref name="options"/>.</summary>
+    /// <summary>
+    /// Computes the headers for <paramref name="notification"/> sent through an instance with
+    /// <paramref name="options"/>.
+    /// </summary>
     /// <exception cref="ArgumentException">
     /// The collapse id is blank or exceeds 64 UTF-8 bytes, the priority is not allowed for the push type, the
-    /// instance is configured for VoIP and the push type is not an alert or VoIP push, or a VoIP push is sent through
-    /// an instance that is not configured for VoIP.
+    /// instance is configured for VoIP and the push type is not an alert or VoIP push, or a VoIP push is sent
+    /// through an instance that is not configured for VoIP.
     /// </exception>
     public static ApnsRequestHeaders Create(ApnsNotification notification, ApnsOptions options)
     {

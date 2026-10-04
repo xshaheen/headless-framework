@@ -7,8 +7,7 @@ using Microsoft.Extensions.Options;
 namespace Headless.Captcha;
 
 /// <summary>
-/// Razor tag helper that renders the reCAPTCHA v3 API script tag with the site key pre-embedded. Use as
-/// <c>&lt;recaptcha-script-v3 /&gt;</c> in Razor views, typically in the page head.
+/// Renders the reCAPTCHA v3 API <c>&lt;script&gt;</c> tag with the configured site key.
 /// </summary>
 [PublicAPI]
 [HtmlTargetElement("recaptcha-script-v3", TagStructure = TagStructure.WithoutEndTag)]
@@ -20,13 +19,14 @@ public sealed class ReCaptchaV3ScriptTagHelper(
     private readonly ReCaptchaOptions _options = optionsAccessor.Get(CaptchaConstants.ReCaptchaV3Provider);
 
     /// <summary>
-    /// When <see langword="true"/>, injects an inline <c>&lt;style&gt;</c> that hides the reCAPTCHA badge
-    /// (<c>.grecaptcha-badge { visibility: hidden; }</c>). Per Google policy, hiding the badge requires
-    /// displaying the reCAPTCHA branding in the page text.
+    /// Gets or sets a value indicating whether to inject inline CSS to hide the reCAPTCHA badge.
     /// </summary>
     public bool HideBadge { get; set; }
 
-    /// <summary>Renders the reCAPTCHA v3 script tag with the site key and language query parameters.</summary>
+    /// <summary>Renders the reCAPTCHA v3 script tag with site key and language query parameters.</summary>
+    /// <param name="context">Contains information associated with the current HTML tag.</param>
+    /// <param name="output">A stateful HTML element used to generate an HTML tag.</param>
+    /// <exception cref="InvalidOperationException">The reCAPTCHA v3 site key is not configured.</exception>
     public override void Process(TagHelperContext context, TagHelperOutput output)
     {
         /*

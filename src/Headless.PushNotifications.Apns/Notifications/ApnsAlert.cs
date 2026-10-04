@@ -7,8 +7,8 @@ namespace Headless.PushNotifications.Apns;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Each text can be a literal or a localization key the app resolves from its <c>Localizable.strings</c>, with
-/// optional format arguments. Set the literal or the key for a text, not both; arguments need their key.
+/// Each text can be a literal or a localization key the app resolves from its <c>Localizable.strings</c>,
+/// with optional format arguments. Set the literal or the key for a text, not both; arguments need their key.
 /// </para>
 /// <para>
 /// A Live Activity alert shows only a title and a body, so its alert may not set <see cref="Subtitle"/>,

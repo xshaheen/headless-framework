@@ -2,23 +2,25 @@
 
 namespace Headless.Sitemaps;
 
-/// <summary>Represent a node that references a sub-sitemap.</summary>
+/// <summary>Represents a node that references a sub-sitemap file in a sitemap index.</summary>
 [PublicAPI]
 public sealed record SitemapReference
 {
     /// <summary>
-    /// Identifies the location of the Sitemap.
-    /// This location can be a Sitemap, an Atom file, RSS file or a simple text file.
+    /// Identifies the location of the sitemap. This location can be a sitemap, an Atom file,
+    /// an RSS file, or a simple text file.
     /// </summary>
     public required Uri Location { get; init; }
 
     /// <summary>
-    /// Identifies the time that the corresponding Sitemap file was modified.
-    /// It does not correspond to the time that any of the pages listed in that Sitemap were changed.
-    /// By providing the last modification timestamp, you enable search engine crawlers to
-    /// retrieve only a subset of the Sitemaps in the index that is a crawler may only retrieve
-    /// Sitemaps that were modified since a certain date. This incremental Sitemap fetching
-    /// mechanism allows for the rapid discovery of new URLs on large sites.
+    /// Identifies the time that the corresponding sitemap file was modified. It does not correspond
+    /// to the time that any of the pages listed in that sitemap were changed.
     /// </summary>
+    /// <remarks>
+    /// By providing the last modification timestamp, you enable search engine crawlers to retrieve
+    /// only a subset of the sitemaps in the index — a crawler may only retrieve sitemaps that were
+    /// modified since a certain date. This incremental sitemap fetching mechanism allows for the
+    /// rapid discovery of new URLs on large sites.
+    /// </remarks>
     public DateTime? LastModified { get; init; }
 }

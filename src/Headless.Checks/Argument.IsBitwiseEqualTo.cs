@@ -16,16 +16,16 @@ public static partial class Argument
     /// <typeparam name="T">An unmanaged type.</typeparam>
     /// <param name="value">The argument to check.</param>
     /// <param name="target">The value to compare against.</param>
-    /// <param name="message">(Optional) Custom error message.</param>
-    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="value" /> if it is bitwise-equal to <paramref name="target"/>.</returns>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="paramName">The name of the parameter being checked. Captured automatically by the compiler.</param>
+    /// <returns><paramref name="value" /> when it is bitwise-equal to <paramref name="target"/>.</returns>
     /// <remarks>
     /// Compares the underlying bytes rather than calling <see cref="object.Equals(object?)"/>. This distinguishes values
     /// that compare equal but differ in representation (for example <c>+0.0</c> vs <c>-0.0</c>) and treats two
     /// identically-encoded <see cref="double.NaN"/> payloads as equal. Use <see cref="IsEqualTo{T}(T,T,string?,string?)"/>
     /// for value equality instead.
     /// </remarks>
-    /// <exception cref="ArgumentException">if <paramref name="value" /> is not bitwise-equal to <paramref name="target"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="value" /> is not bitwise-equal to <paramref name="target"/>.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T IsBitwiseEqualTo<T>(

@@ -9,25 +9,26 @@ namespace Headless.PushNotifications.Apns.Internal;
 
 /// <summary>
 /// Bounds how many simultaneous TCP connections one APNs instance opens, through a
-/// <see cref="SocketsHttpHandler.ConnectCallback"/> permit. The runtime's <c>MaxConnectionsPerServer</c> cannot
-/// provide the bound: it is enforced only for HTTP/1.1, while APNs speaks HTTP/2.
+/// <see cref="SocketsHttpHandler.ConnectCallback"/> permit. The runtime's <c>MaxConnectionsPerServer</c>
+/// cannot provide the bound: it is enforced only for HTTP/1.1, while APNs speaks HTTP/2.
 /// </summary>
 /// <remarks>
 /// <para>
-/// A dial takes a permit from a per-instance <see cref="SemaphoreSlim"/> and returns the connected stream wrapped in
-/// an <see cref="ActionableStream"/> whose one-shot dispose action releases the permit. Once acquired, the permit is
-/// held until the wrapper takes ownership — the pool disposes the stream when the connection ends — or the dial
-/// faults, which releases it before the exception escapes. Both paths release it exactly once.
+/// A dial takes a permit from a per-instance <see cref="SemaphoreSlim"/> and returns the connected stream
+/// wrapped in an <see cref="ActionableStream"/> whose one-shot dispose action releases the permit. Once
+/// acquired, the permit is held until the wrapper takes ownership — the pool disposes the stream when the
+/// connection ends — or the dial faults, which releases it before the exception escapes. Both paths release it
+/// exactly once.
 /// </para>
 /// <para>
 /// <see cref="SocketsHttpHandler.ConnectCallback"/> exceptions are swallowed by the connection pool's HTTP/2
-/// injection path, so a permit stranded by an exception would permanently shrink the pool: a faulting dial must
-/// release its own permit before the exception escapes.
+/// injection path, so a permit stranded by an exception would permanently shrink the pool: a faulting dial
+/// must release its own permit before the exception escapes.
 /// </para>
 /// <para>
-/// One limiter per named or default APNs instance, because the semaphore is the instance's connection budget. Its
-/// lifetime is the primary handler's: the callback is the only path that can reach the semaphore, so once the
-/// handler is disposed no dial can wait on it again.
+/// One limiter per named or default APNs instance, because the semaphore is the instance's connection budget.
+/// Its lifetime is the primary handler's: the callback is the only path that can reach the semaphore, so once
+/// the handler is disposed no dial can wait on it again.
 /// </para>
 /// </remarks>
 internal sealed class ApnsConnectionLimiter(int maxConnections) : IDisposable

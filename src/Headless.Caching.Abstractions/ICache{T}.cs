@@ -14,7 +14,7 @@ public interface ICache<T>
     /// <summary>
     /// Gets the default <see cref="CacheEntryOptions"/> configured for this cache instance at registration.
     /// Used by the option-less <c>GetOrAddAsync</c> extension overloads; when <see langword="null"/>,
-    /// those overloads throw <see cref="InvalidOperationException"/> — defaults are explicit-at-registration,
+    /// those overloads throw <see cref="InvalidOperationException"/>: defaults are explicit-at-registration,
     /// never magic.
     /// </summary>
     CacheEntryOptions? DefaultEntryOptions { get; }
@@ -32,7 +32,7 @@ public interface ICache<T>
     /// <param name="key">The cache key.</param>
     /// <param name="factory">The factory function to create the value if not found in cache. Receives the cancellation token.</param>
     /// <param name="options">Cache entry options for the cached value.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
     /// <returns>The cached or newly created value wrapped in <see cref="CacheValue{T}"/>.</returns>
     /// <exception cref="ArgumentOutOfRangeException">
     /// Thrown when <see cref="CacheEntryOptions.Duration"/> is not positive, or when fail-safe is enabled and
@@ -52,11 +52,12 @@ public interface ICache<T>
     /// validators and returns <see cref="CacheFactoryContext{T}.NotModified"/> to extend the existing entry as
     /// fresh, or <see cref="CacheFactoryContext{T}.Modified(T, string?, DateTime?)"/> to replace it. The factory
     /// may also replace <see cref="CacheFactoryContext{T}.Options"/> before returning (adaptive caching).
+    /// See <see cref="ICache"/> for the full behavioral contract of these operations.
     /// </summary>
     /// <param name="key">The cache key.</param>
     /// <param name="factory">The conditional factory invoked on a miss or refresh. Receives the per-execution context and the cancellation token.</param>
     /// <param name="options">Cache entry options for the cached value; the factory may replace them via the context.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
     /// <returns>The cached, extended, or newly created value wrapped in <see cref="CacheValue{T}"/>.</returns>
     /// <exception cref="ArgumentOutOfRangeException">
     /// Thrown when the entry options (including an adaptive replacement set by the factory) are invalid, for
@@ -82,6 +83,7 @@ public interface ICache<T>
     /// <summary>
     /// Sets a value as a direct write honoring the full <see cref="CacheEntryOptions"/> semantics, including
     /// <see cref="CacheEntryOptions.Tags"/> for later <see cref="RemoveByTagAsync"/> invalidation.
+    /// See <see cref="ICache"/> for the full behavioral contract.
     /// </summary>
     ValueTask<bool> UpsertEntryAsync(
         string cacheKey,
@@ -146,10 +148,16 @@ public interface ICache<T>
         CancellationToken cancellationToken = default
     );
 
-    /// <summary>Gets the value for <paramref name="cacheKey"/>. Returns <see cref="CacheValue{T}.NoValue"/> on a miss, logical expiry, or tag-invalidation.</summary>
+    /// <summary>Gets the value for <paramref name="cacheKey"/>. Returns <see cref="CacheValue{T}.NoValue"/> on a miss, logical expiry, or tag invalidation.</summary>
     ValueTask<CacheValue<T>> GetAsync(string cacheKey, CancellationToken cancellationToken = default);
 
-    /// <summary>Reads a page of members from the set stored at <paramref name="key"/>. Returns <see cref="CacheValue{T}.NoValue"/> (<c>Value</c> is <see langword="null"/>) whenever the requested page has no members — absent key, empty set, all members expired, or page past the last live member; <c>HasValue</c> reflects whether the requested page has members, not whether the key exists. <paramref name="pageIndex"/> is 1-based; pass <see langword="null"/> to return all members.</summary>
+    /// <summary>
+    /// Reads a page of members from the set stored at <paramref name="key"/>. Returns <see cref="CacheValue{T}.NoValue"/>
+    /// (<c>Value</c> is <see langword="null"/>) whenever the requested page has no members: absent key, empty set,
+    /// all members expired, or page past the last live member; <see cref="CacheValue{T}.HasValue"/> reflects whether
+    /// the requested page has members, not whether the key exists. <paramref name="pageIndex"/> is 1-based; pass
+    /// <see langword="null"/> to return all members.
+    /// </summary>
     ValueTask<CacheValue<ICollection<T>>> GetSetAsync(
         string key,
         int? pageIndex = null,
@@ -158,14 +166,11 @@ public interface ICache<T>
     );
 
     /// <summary>
-    /// Re-arms a sliding cache entry's idle window without materializing its value.
+    /// Re-arms a sliding cache entry's idle window without materializing its value. A no-op when the key is
+    /// absent, the entry is not sliding, or the entry is already past its absolute physical cap.
     /// </summary>
-    /// <remarks>
-    /// This is a no-op when the key is absent, when the entry is not sliding, or when the entry is already past
-    /// its absolute physical cap. Implementations apply the same throttling used by value-returning reads.
-    /// </remarks>
     /// <param name="cacheKey">The cache key.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <param name="cancellationToken">A token to monitor for cancellation requests.</param>
     ValueTask RefreshAsync(string cacheKey, CancellationToken cancellationToken = default);
 
     #endregion
@@ -175,7 +180,7 @@ public interface ICache<T>
     /// <summary>Removes <paramref name="cacheKey"/> from the cache. Returns <see langword="true"/> when the key was present; <see langword="false"/> when already absent.</summary>
     ValueTask<bool> RemoveAsync(string cacheKey, CancellationToken cancellationToken = default);
 
-    /// <summary>Logically expires the entry, preserving its fail-safe reserve. See <see cref="ICache.ExpireAsync"/>.</summary>
+    /// <summary>Logically expires the entry, preserving its fail-safe reserve. See <see cref="ICache.ExpireAsync(string, CancellationToken)"/>.</summary>
     ValueTask<bool> ExpireAsync(string cacheKey, CancellationToken cancellationToken = default);
 
     /// <summary>Removes <paramref name="cacheKey"/> only when the current stored value equals <paramref name="expected"/> (compare-and-delete).</summary>
@@ -184,10 +189,10 @@ public interface ICache<T>
     /// <summary>Removes all keys whose name starts with <paramref name="prefix"/>. Returns the number of keys removed.</summary>
     ValueTask<int> RemoveByPrefixAsync(string prefix, CancellationToken cancellationToken = default);
 
-    /// <summary>Logically invalidates entries carrying <paramref name="tag"/> in O(1). See <see cref="ICache.RemoveByTagAsync"/>.</summary>
+    /// <summary>Logically invalidates entries carrying <paramref name="tag"/> in O(1). See <see cref="ICache.RemoveByTagAsync(string, CancellationToken)"/>.</summary>
     ValueTask RemoveByTagAsync(string tag, CancellationToken cancellationToken = default);
 
-    /// <summary>Logically clears the cache in O(1), preserving fail-safe reserves. See <see cref="ICache.ClearAsync"/>.</summary>
+    /// <summary>Logically clears the cache in O(1), preserving fail-safe reserves. See <see cref="ICache.ClearAsync(CancellationToken)"/>.</summary>
     ValueTask ClearAsync(CancellationToken cancellationToken = default);
 
     /// <summary>Removes the specified members from the set stored at <paramref name="key"/>. Returns the number of members removed.</summary>
@@ -198,12 +203,13 @@ public interface ICache<T>
         CancellationToken cancellationToken = default
     );
 
-    /// <summary>Removes all cached items for the specified cache keys.</summary>
+    /// <summary>Removes all cached items for the specified cache keys. Returns the number removed.</summary>
     ValueTask<int> RemoveAllAsync(IEnumerable<string> cacheKeys, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Flushes the whole cache, dropping every entry including its fail-safe reserve (reserve-dropping counterpart of
-    /// <see cref="ClearAsync"/>). See <see cref="ICache.FlushAsync"/> for the tier-specific removal mechanism.
+    /// Flushes the whole cache, dropping every entry including its fail-safe reserve (the reserve-dropping
+    /// counterpart of <see cref="ClearAsync"/>). See <see cref="ICache.FlushAsync(CancellationToken)"/> for the
+    /// tier-specific removal mechanism.
     /// </summary>
     ValueTask FlushAsync(CancellationToken cancellationToken = default);
 
@@ -259,19 +265,19 @@ public interface ICache<T>
         CancellationToken cancellationToken = default
     );
 
-    /// <summary>Gets all keys by prefix.</summary>
+    /// <summary>Gets all keys by prefix, including expired ones.</summary>
     ValueTask<IReadOnlyList<string>> GetAllKeysByPrefixAsync(
         string prefix,
         CancellationToken cancellationToken = default
     );
 
-    /// <summary>Gets the count of cached items, optionally filtered by key prefix.</summary>
+    /// <summary>Gets the count of cached items, optionally filtered by key prefix. Approximate on distributed stores.</summary>
     ValueTask<long> GetCountAsync(string prefix = "", CancellationToken cancellationToken = default);
 
-    /// <summary>Checks if the key exists in the cache.</summary>
+    /// <summary>Checks if the key exists in the cache and is not logically expired or tag-invalidated.</summary>
     ValueTask<bool> ExistsAsync(string key, CancellationToken cancellationToken = default);
 
-    /// <summary>Gets the remaining expiration of the specified cache key.</summary>
+    /// <summary>Gets the remaining logical expiration of the specified cache key, or <see langword="null"/> when absent, expired, or written without one.</summary>
     ValueTask<TimeSpan?> GetExpirationAsync(string key, CancellationToken cancellationToken = default);
 
     #endregion

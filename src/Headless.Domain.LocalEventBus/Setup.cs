@@ -5,17 +5,19 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Headless.Domain;
 
-/// <summary>Registration entry point for the <c>Headless.Domain.LocalEventBus</c> package.</summary>
+/// <summary>Provides registration methods for the domain event dispatcher.</summary>
 [PublicAPI]
 public static class SetupDomainEventDispatcher
 {
     /// <summary>
-    /// Registers the in-process <see cref="IDomainEventDispatcher"/> backed by DI-resolved
-    /// <see cref="IDomainEventHandler{TEvent}"/> handlers. Registered as scoped so handlers share the
-    /// caller's scope (and its <c>DbContext</c>) when dispatched within a unit of work.
+    /// Registers the in-process <see cref="IDomainEventDispatcher"/> backed by resolved
+    /// <see cref="IDomainEventHandler{TEvent}"/> handlers.
     /// </summary>
+    /// <remarks>
+    /// Registered as scoped so handlers share the caller scope and its database context when dispatched within a unit of work.
+    /// </remarks>
     /// <param name="services">The service collection to register into.</param>
-    /// <returns><paramref name="services"/> for chaining.</returns>
+    /// <returns>The <paramref name="services"/> instance for chaining.</returns>
     public static IServiceCollection AddHeadlessDomainEventDispatcher(this IServiceCollection services)
     {
         services.TryAddScoped<IDomainEventDispatcher, ServiceProviderDomainEventDispatcher>();

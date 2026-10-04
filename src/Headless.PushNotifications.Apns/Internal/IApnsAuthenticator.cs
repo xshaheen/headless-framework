@@ -6,7 +6,9 @@ using Headless.Checks;
 
 namespace Headless.PushNotifications.Apns.Internal;
 
-/// <summary>How an instance authenticates to APNs, chosen once from its options when the service is built.</summary>
+/// <summary>
+/// How an instance authenticates to APNs, chosen once from its options when the service is built.
+/// </summary>
 internal interface IApnsAuthenticator
 {
     /// <summary>Refuses, before any request, a push type this authentication mode cannot send.</summary>
@@ -19,9 +21,9 @@ internal interface IApnsAuthenticator
     ValueTask<ApnsCredential> GetCredentialAsync(ApnsOptions options, CancellationToken cancellationToken);
 
     /// <summary>
-    /// Returns the credentials to retry with after APNs rejected <paramref name="rejected"/> as an expired provider
-    /// token, or <see langword="null"/> when the rejection is final: the mode has no token to renew, or no newer
-    /// token could be minted yet.
+    /// Returns the credentials to retry with after APNs rejected <paramref name="rejected"/> as an expired
+    /// provider token, or <see langword="null"/> when the rejection is final: the mode has no token to renew,
+    /// or no newer token could be minted yet.
     /// </summary>
     ValueTask<ApnsCredential?> RenewExpiredAsync(
         ApnsOptions options,
@@ -31,7 +33,9 @@ internal interface IApnsAuthenticator
 }
 
 /// <summary>The credentials one APNs request carries.</summary>
-/// <param name="BearerToken">The provider token for the <c>authorization</c> header, or <see langword="null"/> to send none.</param>
+/// <param name="BearerToken">
+/// The provider token for the <c>authorization</c> header, or <see langword="null"/> to send none.
+/// </param>
 /// <param name="Generation">The provider token's mint generation; 0 when there is no token.</param>
 internal readonly record struct ApnsCredential(string? BearerToken, long Generation)
 {

@@ -2,18 +2,21 @@
 
 namespace Headless.Domain;
 
-/// <summary>Defines an entity. It's primary key may not be "ID" or it may have a composite primary key.</summary>
+/// <summary>Defines an entity.</summary>
+/// <remarks>The entity primary key may be non-standard or composite.</remarks>
 [PublicAPI]
 public interface IEntity
 {
-    /// <summary>Returns an array of ordered keys for this entity.</summary>
+    /// <summary>Returns an ordered list of keys for this entity.</summary>
+    /// <returns>A read-only list of keys.</returns>
     IReadOnlyList<object> GetKeys();
 
-    /// <summary>Returns a colon-delimited composite key string built from <c>GetKeys()</c>.</summary>
+    /// <summary>Returns a colon-delimited composite key string built from <see cref="GetKeys"/>.</summary>
+    /// <returns>The combined key string.</returns>
     string GetKey() => string.Join(':', GetKeys());
 }
 
-/// <summary>Base class for entities that compare equality by their ordered keys.</summary>
+/// <summary>Provides a base implementation for entities that compare equality by ordered keys.</summary>
 [PublicAPI]
 public abstract class Entity : EqualityBase<Entity>, IEntity
 {

@@ -7,13 +7,11 @@ namespace Headless.SourceGenerators;
 internal static class DiagnosticReporting
 {
     /// <summary>
-    /// Reports pipeline-computed diagnostics against the current compilation's syntax trees.
+    /// Registers source output that reports diagnostics mapped to current compilation syntax trees.
     /// </summary>
     /// <remarks>
-    /// This output combines with the compilation so each location resolves to a real tree, which is what lets
-    /// <c>#pragma</c> suppress a generator warning. It therefore re-executes on every run; that is cheap because the
-    /// diagnostics themselves come from cached steps, and it is kept separate from source output so re-reporting never
-    /// forces source to be re-emitted.
+    /// Resolves diagnostic locations to compilation trees so <c>#pragma</c> warning suppressions take effect.
+    /// Executed independently of generated source emission to prevent unnecessary source regeneration.
     /// </remarks>
     public static void RegisterDiagnosticsOutput(
         this IncrementalGeneratorInitializationContext context,

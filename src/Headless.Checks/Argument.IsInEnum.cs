@@ -9,12 +9,12 @@ namespace Headless.Checks;
 
 public static partial class Argument
 {
-    /// <summary>Throws an <see cref="InvalidEnumArgumentException" /> if <paramref name="argument"/> is not a valid enum value.</summary>
+    /// <summary>Throws an <see cref="InvalidEnumArgumentException" /> when <paramref name="argument"/> is not a valid enum value.</summary>
     /// <typeparam name="T">The enum type to validate against.</typeparam>
     /// <param name="argument">The argument to check.</param>
-    /// <param name="message">(Optional) Custom error message</param>
-    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="argument" /> if the value is not out of range.</returns>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="paramName">The name of the parameter being checked. Captured automatically by the compiler.</param>
+    /// <returns><paramref name="argument" /> when the value is not out of range.</returns>
     /// <remarks>For <see cref="FlagsAttribute"/> enums, any combination of defined flag bits is accepted even when the combined value is not itself a named member.</remarks>
     /// <exception cref="InvalidEnumArgumentException"><paramref name="argument" /> if the value is out of range.</exception>
     [DebuggerStepThrough]

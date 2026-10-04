@@ -5,19 +5,25 @@ using System.Xml;
 
 namespace Headless.Sitemaps;
 
-/// <summary>Sitemap file builder</summary>
+/// <summary>
+/// Sitemap file builder.
+/// </summary>
 /// <remarks>https://developers.google.com/search/docs/advanced/sitemaps/build-sitemap</remarks>
 [PublicAPI]
 public static class SitemapUrls
 {
     /// <summary>
     /// Generate one or more sitemap files, splitting into separate files when the URL count exceeds
-    /// <see cref="SitemapConstants.MaxSitemapUrls"/>. Each returned stream is rewound to its start
-    /// (<see cref="Stream.Position"/> is <c>0</c>) and is owned by the caller, who must dispose it.
+    /// <see cref="SitemapConstants.MaxSitemapUrls"/>.
     /// </summary>
+    /// <param name="sitemapUrls">The collection of sitemap URLs to write.</param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns>A read-only list of generated sitemap streams.</returns>
     /// <remarks>
-    /// This eagerly buffers every shard in memory. For very large sites prefer <see cref="WriteEachAsync"/>,
-    /// which yields shards lazily so the caller can flush and dispose each one before the next is built.
+    /// Each returned stream is rewound to its start (<see cref="Stream.Position"/> is <c>0</c>) and is
+    /// owned by the caller, who must dispose it. This eagerly buffers every shard in memory.
+    /// For very large sites, prefer <see cref="WriteEachAsync"/>, which yields shards lazily so the
+    /// caller can flush and dispose each one before the next is built.
     /// </remarks>
     public static async Task<IReadOnlyList<Stream>> WriteAsync(
         this IReadOnlyCollection<SitemapUrl> sitemapUrls,
@@ -36,9 +42,15 @@ public static class SitemapUrls
 
     /// <summary>
     /// Lazily generate sitemap files, splitting into separate files when the URL count exceeds
-    /// <see cref="SitemapConstants.MaxSitemapUrls"/>. Each yielded stream is rewound to its start
-    /// (<see cref="Stream.Position"/> is <c>0</c>); the caller owns it and should dispose it before requesting the next.
+    /// <see cref="SitemapConstants.MaxSitemapUrls"/>.
     /// </summary>
+    /// <param name="sitemapUrls">The collection of sitemap URLs to write.</param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns>An asynchronous sequence of generated sitemap streams.</returns>
+    /// <remarks>
+    /// Each yielded stream is rewound to its start (<see cref="Stream.Position"/> is <c>0</c>); the
+    /// caller owns it and should dispose it before requesting the next.
+    /// </remarks>
     public static async IAsyncEnumerable<MemoryStream> WriteEachAsync(
         this IReadOnlyCollection<SitemapUrl> sitemapUrls,
         [EnumeratorCancellation] CancellationToken cancellationToken = default
@@ -59,7 +71,11 @@ public static class SitemapUrls
         }
     }
 
-    /// <summary>Write a sitemap file into the stream.</summary>
+    /// <summary>Writes a sitemap file into the stream.</summary>
+    /// <param name="sitemapUrls">The collection of sitemap URLs to write.</param>
+    /// <param name="output">The output stream receiving the XML content.</param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns>A task that completes when the sitemap has been written to the stream.</returns>
     public static async Task WriteToAsync(
         this IReadOnlyCollection<SitemapUrl> sitemapUrls,
         Stream output,

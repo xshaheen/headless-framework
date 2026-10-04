@@ -6,8 +6,7 @@ using Microsoft.Extensions.Options;
 namespace Headless.Captcha;
 
 /// <summary>
-/// Razor tag helper that renders a <c>&lt;div&gt;</c> element pre-configured with all reCAPTCHA v2 widget
-/// attributes. Use as <c>&lt;recaptcha-div-v2 /&gt;</c> in Razor views.
+/// Renders a <c>&lt;div&gt;</c> element configured with reCAPTCHA v2 widget attributes.
 /// </summary>
 [PublicAPI]
 [HtmlTargetElement("recaptcha-div-v2", TagStructure = TagStructure.WithoutEndTag)]
@@ -15,28 +14,31 @@ public sealed class ReCaptchaV2DivTagHelper(IOptionsSnapshot<ReCaptchaOptions> o
 {
     private readonly ReCaptchaOptions _options = optionsAccessor.Get(CaptchaConstants.ReCaptchaV2Provider);
 
-    /// <summary>Maps to <c>data-badge</c>. Controls the badge position for invisible reCAPTCHA (<c>bottomright</c>, <c>bottomleft</c>, or <c>inline</c>).</summary>
+    /// <summary>Gets or sets the badge position for invisible reCAPTCHA, mapped to <c>data-badge</c>.</summary>
     public string? Badge { get; set; }
 
-    /// <summary>Maps to <c>data-theme</c>. The color scheme of the widget (<c>light</c> or <c>dark</c>).</summary>
+    /// <summary>Gets or sets the color scheme of the widget, mapped to <c>data-theme</c>.</summary>
     public string? Theme { get; set; }
 
-    /// <summary>Maps to <c>data-size</c>. The size of the widget (<c>normal</c>, <c>compact</c>, or <c>invisible</c>).</summary>
+    /// <summary>Gets or sets the size of the widget, mapped to <c>data-size</c>.</summary>
     public string? Size { get; set; }
 
-    /// <summary>Maps to <c>data-tabindex</c>. The tab index of the widget.</summary>
+    /// <summary>Gets or sets the tab index of the widget, mapped to <c>data-tabindex</c>.</summary>
     public string? TabIndex { get; set; }
 
-    /// <summary>Maps to <c>data-callback</c>. Name of the JavaScript callback invoked when the user submits a successful response.</summary>
+    /// <summary>Gets or sets the JavaScript callback function invoked when a user submits a successful response, mapped to <c>data-callback</c>.</summary>
     public string? Callback { get; set; }
 
-    /// <summary>Maps to <c>data-expired-callback</c>. Name of the JavaScript callback invoked when the reCAPTCHA response expires.</summary>
+    /// <summary>Gets or sets the JavaScript callback function invoked when the response expires, mapped to <c>data-expired-callback</c>.</summary>
     public string? ExpiredCallback { get; set; }
 
-    /// <summary>Maps to <c>data-error-callback</c>. Name of the JavaScript callback invoked when reCAPTCHA encounters an error.</summary>
+    /// <summary>Gets or sets the JavaScript callback function invoked when reCAPTCHA encounters an error, mapped to <c>data-error-callback</c>.</summary>
     public string? ErrorCallback { get; set; }
 
     /// <summary>Renders the reCAPTCHA v2 widget container element with the configured data attributes.</summary>
+    /// <param name="context">Contains information associated with the current HTML tag.</param>
+    /// <param name="output">A stateful HTML element used to generate an HTML tag.</param>
+    /// <exception cref="InvalidOperationException">The reCAPTCHA v2 site key is not configured.</exception>
     public override void Process(TagHelperContext context, TagHelperOutput output)
     {
         /*

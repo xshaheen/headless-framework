@@ -3,33 +3,33 @@
 namespace Headless.Dashboard.Authentication;
 
 /// <summary>
-/// Authentication modes supported by dashboards.
+/// Specifies authentication modes supported by dashboards.
 /// </summary>
 [PublicAPI]
 public enum AuthMode
 {
     /// <summary>
-    /// No authentication - public dashboard.
+    /// Disables authentication for a public dashboard.
     /// </summary>
     None = 0,
 
     /// <summary>
-    /// Basic authentication with username/password.
+    /// Uses basic authentication with a username and password.
     /// </summary>
     Basic = 1,
 
     /// <summary>
-    /// API key authentication (sent as Bearer token).
+    /// Uses API key authentication passed as a bearer token.
     /// </summary>
     ApiKey = 2,
 
     /// <summary>
-    /// Use host application's authentication.
+    /// Uses authentication from the host application.
     /// </summary>
     Host = 3,
 
     /// <summary>
-    /// Custom authentication function.
+    /// Uses a custom authentication delegate.
     /// </summary>
     Custom = 4,
 }

@@ -2,7 +2,7 @@
 
 namespace Headless.Caching;
 
-/// <summary>Write descriptor passed to <see cref="IFactoryCacheStore.SetEntryAsync{T}"/>.</summary>
+/// <summary>Represents a write descriptor passed to <see cref="IFactoryCacheStore.SetEntryAsync{T}"/>.</summary>
 /// <typeparam name="T">The cached value type.</typeparam>
 [PublicAPI]
 public readonly record struct CacheStoreEntryWrite<T>
@@ -10,25 +10,25 @@ public readonly record struct CacheStoreEntryWrite<T>
     /// <summary>Gets the cached value.</summary>
     public required T? Value { get; init; }
 
-    /// <summary>Gets whether the stored value is the cache null sentinel.</summary>
+    /// <summary>Gets a value indicating whether the stored value represents a cached null sentinel.</summary>
     public required bool IsNull { get; init; }
 
     /// <summary>Gets the logical expiration timestamp (UTC).</summary>
     public required DateTime LogicalExpiresAt { get; init; }
 
-    /// <summary>Gets the physical (retention) expiration timestamp (UTC).</summary>
+    /// <summary>Gets the physical retention expiration timestamp (UTC).</summary>
     public required DateTime PhysicalExpiresAt { get; init; }
 
-    /// <summary>Gets the optional idle window used to re-arm logical expiration.</summary>
+    /// <summary>Gets the optional idle window used to extend logical expiration.</summary>
     public TimeSpan? SlidingExpiration { get; init; }
 
-    /// <summary>Gets the optional timestamp after which a fresh read may trigger an eager background refresh.</summary>
+    /// <summary>Gets the optional timestamp after which a fresh read can trigger an eager background refresh (UTC).</summary>
     public DateTime? EagerRefreshAt { get; init; }
 
-    /// <summary>Gets the optional opaque entity tag the factory associated with the cached value.</summary>
+    /// <summary>Gets the optional opaque entity tag associated with the cached value.</summary>
     public string? ETag { get; init; }
 
-    /// <summary>Gets the optional timestamp at which the cached value was last modified at its origin.</summary>
+    /// <summary>Gets the optional origin timestamp at which the cached value was last modified.</summary>
     public DateTime? LastModifiedAt { get; init; }
 
     /// <summary>
@@ -36,8 +36,7 @@ public readonly record struct CacheStoreEntryWrite<T>
     /// value write sets it to "now"; a re-stamp (<see cref="IsRestamp"/>) carries the source entry's original
     /// <see cref="CreatedAt"/> forward so the birth time survives <c>NotModified</c> extensions and fail-safe
     /// throttle restamps. Declared as an initializer-only nullable property (not <see langword="required"/>) so existing
-    /// construction sites that do not set it stay valid and persist <see langword="null"/>. No read-time verdict
-    /// consumes it yet.
+    /// construction sites that do not set it stay valid and persist <see langword="null"/>.
     /// </summary>
     public DateTime? CreatedAt { get; init; }
 

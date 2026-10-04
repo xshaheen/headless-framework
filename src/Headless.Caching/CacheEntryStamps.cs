@@ -27,9 +27,9 @@ public readonly record struct CacheEntryStamps(
     /// <param name="now">The current UTC timestamp.</param>
     public static CacheEntryStamps Compute(CacheEntryOptions options, DateTime now)
     {
-        // A non-positive Duration means the entry is already expired on write (e.g. a BCL absolute expiration in
-        // the past): stamp it at `now` so every read treats it as a miss and the provider set paths evict it.
-        // Jitter/sliding/eager/fail-safe would re-arm a lifetime the entry never has, so they do not apply.
+        // A non-positive Duration means the entry is already expired on write (for example a BCL absolute
+        // expiration in the past): stamp it at `now` so every read treats it as a miss and the provider set paths
+        // evict it. Jitter/sliding/eager/fail-safe would re-arm a lifetime the entry never has, so they do not apply.
         if (options.Duration <= TimeSpan.Zero)
         {
             return new CacheEntryStamps(now, now, EagerRefreshAt: null, CreatedAt: now);
@@ -70,11 +70,14 @@ public readonly record struct CacheEntryStamps(
     /// the options-based direct upsert. Throws before anything is written.
     /// </summary>
     /// <param name="options">The cache entry options to validate.</param>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="options"/> contains an invalid optional field value (timeout, threshold, sliding window) or a contradicting timeout ordering.</exception>
+    /// <exception cref="ArgumentException"><paramref name="options"/> combines unsupported settings (sliding with fail-safe or eager refresh, or fail-safe with a finite soft timeout but an infinite background ceiling) or carries invalid tags.</exception>
     public static void ValidateOptions(CacheEntryOptions options)
     {
         // Duration is intentionally unconstrained in sign: a non-positive value is a valid "expire immediately"
         // request (Compute stamps it at `now`). The optional-field checks below still reject genuinely
-        // contradictory configurations (e.g. sub-millisecond sliding, sliding + fail-safe) regardless of sign.
+        // contradictory configurations (for example sub-millisecond sliding, or sliding combined with fail-safe)
+        // regardless of sign.
         Argument.IsPositiveOrZero(options.JitterMaxDuration);
 
         if (options.SlidingExpiration is { } configuredSlidingExpiration)
@@ -149,6 +152,8 @@ public readonly record struct CacheEntryStamps(
     /// </summary>
     /// <param name="tags">The tags to validate; <see langword="null"/> is valid (untagged).</param>
     /// <param name="paramName">The parameter name reported on validation failure.</param>
+    /// <exception cref="ArgumentException"><paramref name="tags"/> contains an empty tag.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="tags"/> count or a tag's UTF-8 byte length exceeds the unsigned 16-bit envelope limit.</exception>
     public static void ValidateTags(IReadOnlyCollection<string>? tags, string paramName = "tags")
     {
         if (tags is null)

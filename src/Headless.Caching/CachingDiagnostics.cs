@@ -18,18 +18,18 @@ namespace Headless.Caching;
 /// name (or <see cref="DefaultCacheName"/> for the unkeyed default). Each provider reads its name from
 /// <see cref="CacheOptions.CacheName"/> (set at registration for named instances; <see langword="null"/> for the
 /// default) and passes it to the coordinator it constructs. The raw cache <em>key</em> is never a metric
-/// dimension and appears on spans only when <see cref="CacheInstrumentationConfig.IncludeKeyInTraces"/> is enabled
+/// dimension and appears on spans only when <c>CacheInstrumentationConfig.IncludeKeyInTraces</c> is enabled
 /// (default off).
 /// </para>
 /// <para>
 /// <b>Counting model.</b> The <see cref="FactoryCacheCoordinator"/> owns the get-or-add outcome, factory,
 /// fail-safe, and refresh signals for every provider. Its store reads go through
-/// <see cref="IFactoryCacheStore.TryGetEntryAsync{T}"/>, which single-tier providers do <em>not</em> instrument
+/// <c>IFactoryCacheStore.TryGetEntryAsync&lt;T&gt;</c>, which single-tier providers do <em>not</em> instrument
 /// (that would double-count the coordinator's reads). Direct <see cref="ICache"/> operations are metered at each
 /// provider (tier <c>l1</c>/<c>l2</c>): reads record <c>headless.cache.requests</c> (<c>get</c>/<c>get_all</c>/
-/// <c>exists</c>, hit/miss outcome), removes and upserts record the write counter, evictions the eviction counter —
+/// <c>exists</c>, hit/miss outcome), removes and upserts record the write counter, evictions the eviction counter,
 /// so cache-aside usage shows read volume and hit rate without the coordinator. The hybrid cache instruments its
-/// own per-tier store layer deliberately for the factory path — that is the source of the
+/// own per-tier store layer deliberately for the factory path: that is the source of the
 /// <c>headless.cache.tier</c> attribution; its direct reads probe the composed L1 provider's public surface, so
 /// those probes are attributed to the L1 instance's own cache name.
 /// </para>
@@ -37,7 +37,7 @@ namespace Headless.Caching;
 [PublicAPI]
 public static class CachingDiagnostics
 {
-    /// <summary>The full activity-source / meter name used by the caching subsystem (<c>Headless.Caching</c>).</summary>
+    /// <summary>The full activity-source and meter name used by the caching subsystem (<c>Headless.Caching</c>).</summary>
     public const string SourceName = HeadlessDiagnostics.Prefix + "Caching";
 
     /// <summary>The <c>headless.cache.name</c> value used for the unkeyed default cache instance.</summary>

@@ -7,25 +7,22 @@ namespace Headless.Emails;
 
 /// <summary>
 /// Converts <see cref="SendSingleEmailRequest"/> instances to MimeKit <see cref="MimeMessage"/> objects.
+/// Internal to the email providers (MailKit and AWS SES); application code does not call this directly.
 /// </summary>
-/// <remarks>
-/// Internal to the Emails providers (Aws, Mailkit) — application code does not call this directly.
-/// </remarks>
 internal static class EmailToMimeMessageConverter
 {
     /// <summary>
-    /// Converts a <see cref="SendSingleEmailRequest"/> into a MimeKit <see cref="MimeMessage"/>,
-    /// including headers, body parts, and attachments.
+    /// Converts an email request into a MimeKit <see cref="MimeMessage"/>, including headers, body parts,
+    /// and attachments.
     /// </summary>
     /// <param name="request">The email request to convert.</param>
-    /// <param name="cancellationToken">Token used to cancel async attachment loading.</param>
+    /// <param name="cancellationToken">A token to cancel the asynchronous attachment loading.</param>
     /// <returns>
-    /// A fully-populated <see cref="MimeMessage"/>. The caller is responsible for disposing it.
+    /// A fully populated <see cref="MimeMessage"/>. The caller is responsible for disposing it.
     /// </returns>
     /// <remarks>
-    /// Attachments are streamed asynchronously from their backing memory. If an exception is thrown
-    /// during construction the partially-built <see cref="MimeMessage"/> is disposed before
-    /// the exception propagates.
+    /// Attachments are streamed asynchronously from their backing memory. When construction throws, the
+    /// partially built <see cref="MimeMessage"/> is disposed before the exception propagates.
     /// </remarks>
     public static async Task<MimeMessage> ConvertToMimeMessageAsync(
         this SendSingleEmailRequest request,
@@ -111,9 +108,10 @@ internal static class EmailToMimeMessageConverter
     }
 
     /// <summary>
-    /// Exposes an attachment's bytes as a stream for MimeKit to read. When the memory is array-backed (the normal
-    /// case) the array is wrapped read-only rather than copied — MimeKit copies the content into its own buffer while
-    /// building the MIME part, so an extra per-attachment, per-send copy of the whole payload buys nothing.
+    /// Exposes an attachment's bytes as a stream for MimeKit to read. When the memory is array-backed (the
+    /// normal case) the array is wrapped read-only rather than copied: MimeKit copies the content into its
+    /// own buffer while building the MIME part, so an extra per-attachment, per-send copy of the whole
+    /// payload buys nothing.
     /// </summary>
     private static MemoryStream _OpenAttachmentStream(ReadOnlyMemory<byte> file)
     {
@@ -122,7 +120,7 @@ internal static class EmailToMimeMessageConverter
             return new MemoryStream(segment.Array, segment.Offset, segment.Count, writable: false);
         }
 
-        // Not array-backed (native or otherwise unmanaged memory) — there is no array to wrap, so copy.
+        // Not array-backed (native or otherwise unmanaged memory): there is no array to wrap, so copy.
         var copy = new MemoryStream(file.Length);
         copy.Write(file.Span);
         copy.Position = 0;
@@ -131,12 +129,12 @@ internal static class EmailToMimeMessageConverter
     }
 
     /// <summary>
-    /// Maps an <see cref="EmailRequestAddress"/> to a MimeKit <see cref="MailboxAddress"/>.
+    /// Maps an email request address to a MimeKit <see cref="MailboxAddress"/>.
     /// </summary>
-    /// <param name="address">The address to map.</param>
+    /// <param name="address">The email request address to map.</param>
     /// <returns>
-    /// A <see cref="MailboxAddress"/> whose display name falls back to the bare email address
-    /// when <see cref="EmailRequestAddress.DisplayName"/> is <see langword="null"/>.
+    /// A <see cref="MailboxAddress"/> whose display name falls back to the bare email address when
+    /// <see cref="EmailRequestAddress.DisplayName"/> is <see langword="null"/>.
     /// </returns>
     public static MailboxAddress MapToMailboxAddress(this EmailRequestAddress address)
     {

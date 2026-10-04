@@ -6,17 +6,19 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Headless.Context;
 
-/// <summary>Default <see cref="IHostIdentityAccessor"/>.</summary>
+/// <summary>Provides the default implementation of <see cref="IHostIdentityAccessor"/>.</summary>
 public sealed class HostIdentityAccessor : IHostIdentityAccessor
 {
     /// <summary>
-    /// Creates the accessor from the entry assembly, the process environment, and the machine name.
+    /// Initializes a new instance of the <see cref="HostIdentityAccessor"/> class from the entry assembly,
+    /// the process environment, and the machine name.
     /// </summary>
     /// <param name="options">Explicit overrides; every unset member is discovered.</param>
     /// <param name="buildInformation">Source of the entry assembly title used as the default application name.</param>
     /// <param name="guidGenerator">Source of the last-resort generated host name.</param>
     /// <param name="logger">Receives a warning when no stable host name could be discovered.</param>
-    /// <exception cref="ArgumentException">An option is set to an empty or whitespace value.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="options"/>, <paramref name="buildInformation"/>, or <paramref name="guidGenerator"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><see cref="HostIdentityOptions.ApplicationName"/> or <see cref="HostIdentityOptions.HostName"/> is empty or white space.</exception>
     public HostIdentityAccessor(
         HostIdentityOptions options,
         IBuildInformationAccessor buildInformation,

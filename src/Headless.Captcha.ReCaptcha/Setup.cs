@@ -11,9 +11,7 @@ using Microsoft.Extensions.Options;
 namespace Headless.Captcha;
 
 /// <summary>
-/// Extension members for selecting Google reCAPTCHA (v2 or v3) as the default (unkeyed) captcha verifier on
-/// <see cref="HeadlessCaptchaSetupBuilder"/>. Named instances are configured through <see cref="SetupReCaptchaNamed"/>
-/// (<c>setup.AddNamed("name", i =&gt; i.UseReCaptchaV3(...))</c>).
+/// Provides extension methods for configuring Google reCAPTCHA v2 and v3 on <see cref="HeadlessCaptchaSetupBuilder"/>.
 /// </summary>
 [PublicAPI]
 public static class SetupReCaptcha
@@ -22,9 +20,9 @@ public static class SetupReCaptcha
     {
         #region UseReCaptchaV3
 
-        /// <summary>Uses reCAPTCHA v3 as the default verifier, binding <see cref="ReCaptchaOptions"/> from configuration.</summary>
-        /// <param name="configuration">The configuration section to bind (for example <c>Headless:Captcha:ReCaptchaV3</c>).</param>
-        /// <returns>The setup builder for chaining.</returns>
+        /// <summary>Registers reCAPTCHA v3 as the default verifier by binding options from configuration.</summary>
+        /// <param name="configuration">The configuration section containing reCAPTCHA options.</param>
+        /// <returns>The setup builder instance.</returns>
         public HeadlessCaptchaSetupBuilder UseReCaptchaV3(IConfiguration configuration)
         {
             Argument.IsNotNull(configuration);
@@ -44,12 +42,9 @@ public static class SetupReCaptcha
             return setup;
         }
 
-        /// <summary>
-        /// Uses Google reCAPTCHA v3 as the default (unkeyed) <see cref="ICaptchaVerifier"/> / <see cref="IReCaptchaV3Verifier"/>,
-        /// also aliased under <see cref="CaptchaConstants.ReCaptchaV3Provider"/>. Binds the options from the supplied action.
-        /// </summary>
-        /// <param name="setupAction">Configuration action for <see cref="ReCaptchaOptions"/>.</param>
-        /// <returns>The setup builder for chaining.</returns>
+        /// <summary>Registers reCAPTCHA v3 as the default verifier using an options configuration action.</summary>
+        /// <param name="setupAction">The delegate used to configure reCAPTCHA options.</param>
+        /// <returns>The setup builder instance.</returns>
         public HeadlessCaptchaSetupBuilder UseReCaptchaV3(Action<ReCaptchaOptions> setupAction)
         {
             Argument.IsNotNull(setupAction);
@@ -69,9 +64,9 @@ public static class SetupReCaptcha
             return setup;
         }
 
-        /// <summary>Uses reCAPTCHA v3 as the default verifier with service provider-aware configuration.</summary>
-        /// <param name="setupAction">Configuration action with access to the service provider.</param>
-        /// <returns>The setup builder for chaining.</returns>
+        /// <summary>Registers reCAPTCHA v3 as the default verifier using a service provider-aware options configuration action.</summary>
+        /// <param name="setupAction">The delegate used to configure reCAPTCHA options with the service provider.</param>
+        /// <returns>The setup builder instance.</returns>
         public HeadlessCaptchaSetupBuilder UseReCaptchaV3(Action<ReCaptchaOptions, IServiceProvider> setupAction)
         {
             Argument.IsNotNull(setupAction);
@@ -95,9 +90,9 @@ public static class SetupReCaptcha
 
         #region UseReCaptchaV2
 
-        /// <summary>Uses reCAPTCHA v2 as the default verifier, binding <see cref="ReCaptchaOptions"/> from configuration.</summary>
-        /// <param name="configuration">The configuration section to bind (for example <c>Headless:Captcha:ReCaptchaV2</c>).</param>
-        /// <returns>The setup builder for chaining.</returns>
+        /// <summary>Registers reCAPTCHA v2 as the default verifier by binding options from configuration.</summary>
+        /// <param name="configuration">The configuration section containing reCAPTCHA options.</param>
+        /// <returns>The setup builder instance.</returns>
         public HeadlessCaptchaSetupBuilder UseReCaptchaV2(IConfiguration configuration)
         {
             Argument.IsNotNull(configuration);
@@ -117,12 +112,9 @@ public static class SetupReCaptcha
             return setup;
         }
 
-        /// <summary>
-        /// Uses Google reCAPTCHA v2 as the default (unkeyed) <see cref="ICaptchaVerifier"/>, also aliased under
-        /// <see cref="CaptchaConstants.ReCaptchaV2Provider"/>. Binds the options from the supplied action.
-        /// </summary>
-        /// <param name="setupAction">Configuration action for <see cref="ReCaptchaOptions"/>.</param>
-        /// <returns>The setup builder for chaining.</returns>
+        /// <summary>Registers reCAPTCHA v2 as the default verifier using an options configuration action.</summary>
+        /// <param name="setupAction">The delegate used to configure reCAPTCHA options.</param>
+        /// <returns>The setup builder instance.</returns>
         public HeadlessCaptchaSetupBuilder UseReCaptchaV2(Action<ReCaptchaOptions> setupAction)
         {
             Argument.IsNotNull(setupAction);
@@ -142,9 +134,9 @@ public static class SetupReCaptcha
             return setup;
         }
 
-        /// <summary>Uses reCAPTCHA v2 as the default verifier with service provider-aware configuration.</summary>
-        /// <param name="setupAction">Configuration action with access to the service provider.</param>
-        /// <returns>The setup builder for chaining.</returns>
+        /// <summary>Registers reCAPTCHA v2 as the default verifier using a service provider-aware options configuration action.</summary>
+        /// <param name="setupAction">The delegate used to configure reCAPTCHA options with the service provider.</param>
+        /// <returns>The setup builder instance.</returns>
         public HeadlessCaptchaSetupBuilder UseReCaptchaV2(Action<ReCaptchaOptions, IServiceProvider> setupAction)
         {
             Argument.IsNotNull(setupAction);
@@ -246,10 +238,8 @@ public static class SetupReCaptcha
 }
 
 /// <summary>
-/// Extension members for selecting Google reCAPTCHA (v2 or v3) for a named captcha instance on
-/// <see cref="HeadlessCaptchaInstanceBuilder"/>. The instance owns its own named options and HTTP client, resolves as
-/// a keyed <see cref="ICaptchaVerifier"/> (v3 also as a keyed <see cref="IReCaptchaV3Verifier"/>) or through
-/// <see cref="ICaptchaProvider"/>, and never touches the default verifier.
+/// Provides extension methods for configuring Google reCAPTCHA v2 and v3 for a named captcha instance on
+/// <see cref="HeadlessCaptchaInstanceBuilder"/>.
 /// </summary>
 [PublicAPI]
 public static class SetupReCaptchaNamed
@@ -258,9 +248,9 @@ public static class SetupReCaptchaNamed
     {
         #region UseReCaptchaV3
 
-        /// <summary>Uses reCAPTCHA v3 for this named instance, binding <see cref="ReCaptchaOptions"/> from configuration.</summary>
-        /// <param name="configuration">The configuration section to bind.</param>
-        /// <returns>The instance builder for chaining.</returns>
+        /// <summary>Registers reCAPTCHA v3 for this named instance by binding options from configuration.</summary>
+        /// <param name="configuration">The configuration section containing reCAPTCHA options.</param>
+        /// <returns>The instance builder instance.</returns>
         public HeadlessCaptchaInstanceBuilder UseReCaptchaV3(IConfiguration configuration)
         {
             Argument.IsNotNull(configuration);
@@ -276,9 +266,9 @@ public static class SetupReCaptchaNamed
             return instance;
         }
 
-        /// <summary>Uses reCAPTCHA v3 for this named instance, configuring <see cref="ReCaptchaOptions"/> via a delegate.</summary>
-        /// <param name="setupAction">Configuration action for <see cref="ReCaptchaOptions"/>.</param>
-        /// <returns>The instance builder for chaining.</returns>
+        /// <summary>Registers reCAPTCHA v3 for this named instance using an options configuration action.</summary>
+        /// <param name="setupAction">The delegate used to configure reCAPTCHA options.</param>
+        /// <returns>The instance builder instance.</returns>
         public HeadlessCaptchaInstanceBuilder UseReCaptchaV3(Action<ReCaptchaOptions> setupAction)
         {
             Argument.IsNotNull(setupAction);
@@ -294,9 +284,9 @@ public static class SetupReCaptchaNamed
             return instance;
         }
 
-        /// <summary>Uses reCAPTCHA v3 for this named instance with service provider-aware configuration.</summary>
-        /// <param name="setupAction">Configuration action with access to the service provider.</param>
-        /// <returns>The instance builder for chaining.</returns>
+        /// <summary>Registers reCAPTCHA v3 for this named instance using a service provider-aware options configuration action.</summary>
+        /// <param name="setupAction">The delegate used to configure reCAPTCHA options with the service provider.</param>
+        /// <returns>The instance builder instance.</returns>
         public HeadlessCaptchaInstanceBuilder UseReCaptchaV3(Action<ReCaptchaOptions, IServiceProvider> setupAction)
         {
             Argument.IsNotNull(setupAction);
@@ -316,9 +306,9 @@ public static class SetupReCaptchaNamed
 
         #region UseReCaptchaV2
 
-        /// <summary>Uses reCAPTCHA v2 for this named instance, binding <see cref="ReCaptchaOptions"/> from configuration.</summary>
-        /// <param name="configuration">The configuration section to bind.</param>
-        /// <returns>The instance builder for chaining.</returns>
+        /// <summary>Registers reCAPTCHA v2 for this named instance by binding options from configuration.</summary>
+        /// <param name="configuration">The configuration section containing reCAPTCHA options.</param>
+        /// <returns>The instance builder instance.</returns>
         public HeadlessCaptchaInstanceBuilder UseReCaptchaV2(IConfiguration configuration)
         {
             Argument.IsNotNull(configuration);
@@ -334,9 +324,9 @@ public static class SetupReCaptchaNamed
             return instance;
         }
 
-        /// <summary>Uses reCAPTCHA v2 for this named instance, configuring <see cref="ReCaptchaOptions"/> via a delegate.</summary>
-        /// <param name="setupAction">Configuration action for <see cref="ReCaptchaOptions"/>.</param>
-        /// <returns>The instance builder for chaining.</returns>
+        /// <summary>Registers reCAPTCHA v2 for this named instance using an options configuration action.</summary>
+        /// <param name="setupAction">The delegate used to configure reCAPTCHA options.</param>
+        /// <returns>The instance builder instance.</returns>
         public HeadlessCaptchaInstanceBuilder UseReCaptchaV2(Action<ReCaptchaOptions> setupAction)
         {
             Argument.IsNotNull(setupAction);
@@ -352,9 +342,9 @@ public static class SetupReCaptchaNamed
             return instance;
         }
 
-        /// <summary>Uses reCAPTCHA v2 for this named instance with service provider-aware configuration.</summary>
-        /// <param name="setupAction">Configuration action with access to the service provider.</param>
-        /// <returns>The instance builder for chaining.</returns>
+        /// <summary>Registers reCAPTCHA v2 for this named instance using a service provider-aware options configuration action.</summary>
+        /// <param name="setupAction">The delegate used to configure reCAPTCHA options with the service provider.</param>
+        /// <returns>The instance builder instance.</returns>
         public HeadlessCaptchaInstanceBuilder UseReCaptchaV2(Action<ReCaptchaOptions, IServiceProvider> setupAction)
         {
             Argument.IsNotNull(setupAction);

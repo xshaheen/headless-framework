@@ -3,16 +3,15 @@
 namespace Headless.Captcha;
 
 /// <summary>
-/// The inputs every CAPTCHA provider accepts when verifying a token: the required client response token and an
-/// optional remote IP. Providers that accept extra inputs (for example Turnstile's <c>idempotency_key</c>) expose
-/// them on a derived request type.
+/// Represents common inputs accepted when verifying a token across providers: a required client response token and an
+/// optional remote IP address.
 /// </summary>
 [PublicAPI]
 public class CaptchaVerifyRequest
 {
-    /// <summary>Required. The response token produced by the provider's client-side widget.</summary>
+    /// <summary>The response token produced by the client widget.</summary>
     public required string Response { get; init; }
 
-    /// <summary>Optional. The end user's IP address.</summary>
+    /// <summary>The IP address of the end user.</summary>
     public string? RemoteIp { get; init; }
 }

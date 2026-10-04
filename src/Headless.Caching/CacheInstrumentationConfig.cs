@@ -6,8 +6,8 @@ namespace Headless.Caching;
 
 /// <summary>
 /// Caching-wide instrumentation configuration resolved by every cache provider from DI. Registered once by
-/// <c>AddHeadlessCaching</c> from <see cref="HeadlessCachingSetupBuilder.IncludeKeyInTraces"/>; providers thread
-/// it into the <see cref="FactoryCacheCoordinator"/> and their own span emission. Must-be-public plumbing (DI
+/// <c>AddHeadlessCaching</c> from <c>HeadlessCachingSetupBuilder.IncludeKeyInTraces</c>; providers thread
+/// it into the <c>FactoryCacheCoordinator</c> and their own span emission. Must-be-public plumbing (DI
 /// resolves it into provider constructors); not intended for direct use.
 /// </summary>
 [PublicAPI]

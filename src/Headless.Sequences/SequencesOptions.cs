@@ -4,17 +4,17 @@ using FluentValidation;
 
 namespace Headless.Sequences;
 
-/// <summary>The numbering policy of every counter: one per registered name, and a default for the rest.</summary>
+/// <summary>Configures sequence policies, specifying policies per counter name and a fallback default policy.</summary>
 [PublicAPI]
 public sealed class SequencesOptions
 {
     /// <summary>
-    /// Gets or sets the policy of every name without its own entry in <see cref="Policies" />. Default: fast mode,
-    /// start 1, step 1.
+    /// Gets or sets the fallback policy for counters not explicitly registered in <see cref="Policies" />.
+    /// The default is fast mode with start 1 and step 1.
     /// </summary>
     public SequencePolicy DefaultPolicy { get; set; } = new();
 
-    /// <summary>Gets the per-name policies, keyed by counter name and compared ordinally.</summary>
+    /// <summary>Gets the per-name policies, keyed by counter name with ordinal comparison.</summary>
     public IDictionary<string, SequencePolicy> Policies { get; } =
         new Dictionary<string, SequencePolicy>(StringComparer.Ordinal);
 

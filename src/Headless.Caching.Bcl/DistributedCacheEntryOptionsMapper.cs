@@ -41,8 +41,8 @@ internal static class DistributedCacheEntryOptionsMapper
 
         if (options.AbsoluteExpiration is { } absolute)
         {
-            // A past absolute timestamp yields a non-positive duration; pass it through so the engine expires the
-            // entry immediately (matching Microsoft's RedisCache) instead of throwing.
+            // A past absolute timestamp produces a non-positive duration. Pass it through so the engine expires the
+            // entry immediately rather than throwing an exception.
             return absolute - timeProvider.GetUtcNow();
         }
 

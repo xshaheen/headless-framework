@@ -14,11 +14,11 @@ public static partial class Argument
     /// </summary>
     /// <param name="argument">The argument to check.</param>
     /// <param name="length">The required length.</param>
-    /// <param name="message">(Optional) Custom error message.</param>
-    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="argument" /> if its length is exactly <paramref name="length"/>.</returns>
-    /// <exception cref="ArgumentNullException">if <paramref name="argument" /> is null.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">if the length of <paramref name="argument" /> is not <paramref name="length"/>.</exception>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="paramName">The name of the parameter being checked. Captured automatically by the compiler.</param>
+    /// <returns><paramref name="argument" /> when its length is exactly <paramref name="length"/>.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="argument" /> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">The length of <paramref name="argument" /> is not <paramref name="length"/>.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static string HasLength(
@@ -45,11 +45,11 @@ public static partial class Argument
     /// </summary>
     /// <param name="argument">The argument to check.</param>
     /// <param name="minLength">The minimum allowed length (inclusive).</param>
-    /// <param name="message">(Optional) Custom error message.</param>
-    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="argument" /> if its length is at least <paramref name="minLength"/>.</returns>
-    /// <exception cref="ArgumentNullException">if <paramref name="argument" /> is null.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">if the length of <paramref name="argument" /> is less than <paramref name="minLength"/>.</exception>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="paramName">The name of the parameter being checked. Captured automatically by the compiler.</param>
+    /// <returns><paramref name="argument" /> when its length is at least <paramref name="minLength"/>.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="argument" /> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">The length of <paramref name="argument" /> is less than <paramref name="minLength"/>.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static string HasMinLength(
@@ -76,11 +76,11 @@ public static partial class Argument
     /// </summary>
     /// <param name="argument">The argument to check.</param>
     /// <param name="maxLength">The maximum allowed length (inclusive).</param>
-    /// <param name="message">(Optional) Custom error message.</param>
-    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="argument" /> if its length is at most <paramref name="maxLength"/>.</returns>
-    /// <exception cref="ArgumentNullException">if <paramref name="argument" /> is null.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">if the length of <paramref name="argument" /> is greater than <paramref name="maxLength"/>.</exception>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="paramName">The name of the parameter being checked. Captured automatically by the compiler.</param>
+    /// <returns><paramref name="argument" /> when its length is at most <paramref name="maxLength"/>.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="argument" /> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">The length of <paramref name="argument" /> is greater than <paramref name="maxLength"/>.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static string HasMaxLength(
@@ -109,12 +109,12 @@ public static partial class Argument
     /// <param name="argument">The argument to check.</param>
     /// <param name="minLength">The minimum allowed length (inclusive).</param>
     /// <param name="maxLength">The maximum allowed length (inclusive).</param>
-    /// <param name="message">(Optional) Custom error message.</param>
-    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="argument" /> if its length is within range.</returns>
-    /// <exception cref="ArgumentNullException">if <paramref name="argument" /> is null.</exception>
-    /// <exception cref="ArgumentException">if <paramref name="minLength"/> is greater than <paramref name="maxLength"/>.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">if the length of <paramref name="argument" /> is out of range.</exception>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="paramName">The name of the parameter being checked. Captured automatically by the compiler.</param>
+    /// <returns><paramref name="argument" /> when its length is within range.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="argument" /> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="minLength"/> is greater than <paramref name="maxLength"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">The length of <paramref name="argument" /> is out of range.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static string HasLengthBetween(
@@ -143,11 +143,11 @@ public static partial class Argument
     /// </summary>
     /// <param name="argument">The argument to check.</param>
     /// <param name="length">The exclusive lower bound for the length.</param>
-    /// <param name="message">(Optional) Custom error message.</param>
-    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="argument" /> if its length is greater than <paramref name="length"/>.</returns>
-    /// <exception cref="ArgumentNullException">if <paramref name="argument" /> is null.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">if the length of <paramref name="argument" /> is not greater than <paramref name="length"/>.</exception>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="paramName">The name of the parameter being checked. Captured automatically by the compiler.</param>
+    /// <returns><paramref name="argument" /> when its length is greater than <paramref name="length"/>.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="argument" /> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">The length of <paramref name="argument" /> is not greater than <paramref name="length"/>.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static string HasLengthGreaterThan(
@@ -174,11 +174,11 @@ public static partial class Argument
     /// </summary>
     /// <param name="argument">The argument to check.</param>
     /// <param name="length">The exclusive upper bound for the length.</param>
-    /// <param name="message">(Optional) Custom error message.</param>
-    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="argument" /> if its length is less than <paramref name="length"/>.</returns>
-    /// <exception cref="ArgumentNullException">if <paramref name="argument" /> is null.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">if the length of <paramref name="argument" /> is not less than <paramref name="length"/>.</exception>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="paramName">The name of the parameter being checked. Captured automatically by the compiler.</param>
+    /// <returns><paramref name="argument" /> when its length is less than <paramref name="length"/>.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="argument" /> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">The length of <paramref name="argument" /> is not less than <paramref name="length"/>.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static string HasLengthLessThan(
@@ -205,11 +205,11 @@ public static partial class Argument
     /// </summary>
     /// <param name="argument">The argument to check.</param>
     /// <param name="length">The length the argument must not have.</param>
-    /// <param name="message">(Optional) Custom error message.</param>
-    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="argument" /> if its length is not <paramref name="length"/>.</returns>
-    /// <exception cref="ArgumentNullException">if <paramref name="argument" /> is null.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">if the length of <paramref name="argument" /> is <paramref name="length"/>.</exception>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="paramName">The name of the parameter being checked. Captured automatically by the compiler.</param>
+    /// <returns><paramref name="argument" /> when its length is not <paramref name="length"/>.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="argument" /> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">The length of <paramref name="argument" /> is <paramref name="length"/>.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static string HasLengthNotEqualTo(

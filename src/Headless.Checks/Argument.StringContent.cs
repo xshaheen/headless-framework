@@ -15,11 +15,11 @@ public static partial class Argument
     /// <param name="argument">The argument to check.</param>
     /// <param name="prefix">The prefix the argument must start with.</param>
     /// <param name="comparison">The string comparison rule to use. Defaults to <see cref="StringComparison.Ordinal"/>.</param>
-    /// <param name="message">(Optional) Custom error message.</param>
-    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="argument" /> if it starts with <paramref name="prefix"/>.</returns>
-    /// <exception cref="ArgumentNullException">if <paramref name="argument" /> or <paramref name="prefix"/> is null.</exception>
-    /// <exception cref="ArgumentException">if <paramref name="argument" /> does not start with <paramref name="prefix"/>.</exception>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="paramName">The name of the parameter being checked. Captured automatically by the compiler.</param>
+    /// <returns><paramref name="argument" /> when it starts with <paramref name="prefix"/>.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="argument" /> or <paramref name="prefix"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="argument" /> does not start with <paramref name="prefix"/>.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static string StartsWith(
@@ -49,11 +49,11 @@ public static partial class Argument
     /// <param name="argument">The argument to check.</param>
     /// <param name="suffix">The suffix the argument must end with.</param>
     /// <param name="comparison">The string comparison rule to use. Defaults to <see cref="StringComparison.Ordinal"/>.</param>
-    /// <param name="message">(Optional) Custom error message.</param>
-    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="argument" /> if it ends with <paramref name="suffix"/>.</returns>
-    /// <exception cref="ArgumentNullException">if <paramref name="argument" /> or <paramref name="suffix"/> is null.</exception>
-    /// <exception cref="ArgumentException">if <paramref name="argument" /> does not end with <paramref name="suffix"/>.</exception>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="paramName">The name of the parameter being checked. Captured automatically by the compiler.</param>
+    /// <returns><paramref name="argument" /> when it ends with <paramref name="suffix"/>.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="argument" /> or <paramref name="suffix"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="argument" /> does not end with <paramref name="suffix"/>.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static string EndsWith(
@@ -83,11 +83,11 @@ public static partial class Argument
     /// <param name="argument">The argument to check.</param>
     /// <param name="substring">The substring the argument must contain.</param>
     /// <param name="comparison">The string comparison rule to use. Defaults to <see cref="StringComparison.Ordinal"/>.</param>
-    /// <param name="message">(Optional) Custom error message.</param>
-    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="argument" /> if it contains <paramref name="substring"/>.</returns>
-    /// <exception cref="ArgumentNullException">if <paramref name="argument" /> or <paramref name="substring"/> is null.</exception>
-    /// <exception cref="ArgumentException">if <paramref name="argument" /> does not contain <paramref name="substring"/>.</exception>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="paramName">The name of the parameter being checked. Captured automatically by the compiler.</param>
+    /// <returns><paramref name="argument" /> when it contains <paramref name="substring"/>.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="argument" /> or <paramref name="substring"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="argument" /> does not contain <paramref name="substring"/>.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static string Contains(
@@ -121,10 +121,10 @@ public static partial class Argument
     /// <c>"acme"</c> and <c>"acme "</c> are one key on one provider and two on another.
     /// </remarks>
     /// <param name="argument">The argument to check.</param>
-    /// <param name="message">(Optional) Custom error message.</param>
-    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="argument" /> if it neither starts nor ends with white space.</returns>
-    /// <exception cref="ArgumentException">if <paramref name="argument" /> starts or ends with white space.</exception>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="paramName">The name of the parameter being checked. Captured automatically by the compiler.</param>
+    /// <returns><paramref name="argument" /> when it neither starts nor ends with white space.</returns>
+    /// <exception cref="ArgumentException"><paramref name="argument" /> starts or ends with white space.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     [return: NotNullIfNotNull(nameof(argument))]
@@ -166,10 +166,10 @@ public static partial class Argument
     /// compare ordinally on every provider with a binary or <c>"C"</c> key collation, so they stay distinct keys.
     /// </remarks>
     /// <param name="argument">The argument to check.</param>
-    /// <param name="message">(Optional) Custom error message.</param>
-    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="argument" /> if every provider keeps it unchanged.</returns>
-    /// <exception cref="ArgumentException">if <paramref name="argument" /> is not portable key text.</exception>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="paramName">The name of the parameter being checked. Captured automatically by the compiler.</param>
+    /// <returns><paramref name="argument" /> when every provider keeps it unchanged.</returns>
+    /// <exception cref="ArgumentException"><paramref name="argument" /> is not portable key text.</exception>
     [DebuggerStepThrough]
     [return: NotNullIfNotNull(nameof(argument))]
     public static string? IsPortableKey(

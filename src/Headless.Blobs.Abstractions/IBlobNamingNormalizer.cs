@@ -26,7 +26,7 @@ public interface IBlobNamingNormalizer
 }
 
 /// <summary>
-/// Cross-platform naming normalizer that strips characters invalid on any OS file system.
+/// Cross-platform naming normalizer that strips characters invalid on operating system file systems.
 /// Used as the default normalizer for file-system, Redis, and SFTP backends.
 /// </summary>
 public sealed class CrossOsNamingNormalizer : IBlobNamingNormalizer
@@ -46,7 +46,7 @@ public sealed class CrossOsNamingNormalizer : IBlobNamingNormalizer
     private static string _Normalize(string fileName)
     {
         // A filename cannot contain any of the following characters: \ / : * ? " < > |
-        // In order to support the directory included in the blob name, remove / and \
+        // To support directory separators in blob names, remove / and \
 
         var sb = new StringBuilder();
 

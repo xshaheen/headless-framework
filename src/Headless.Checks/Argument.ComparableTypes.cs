@@ -9,13 +9,13 @@ namespace Headless.Checks;
 // ReSharper disable PossibleMultipleEnumeration
 public static partial class Argument
 {
-    /// <summary>Throws an <see cref="ArgumentOutOfRangeException" /> if <paramref name="argument" /> is not less than or equal to <paramref name="expected"/>.</summary>
+    /// <summary>Throws an <see cref="ArgumentOutOfRangeException" /> when <paramref name="argument" /> is not less than or equal to <paramref name="expected"/>.</summary>
     /// <param name="argument">The argument to check.</param>
     /// <param name="expected">The value to compare with.</param>
-    /// <param name="message">(Optional) Custom error message.</param>
-    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="argument" /> if the argument is less than or equal to <paramref name="expected"/>.</returns>
-    /// <exception cref="ArgumentOutOfRangeException">if <paramref name="argument" /> is not less than or equal to <paramref name="expected"/>.</exception>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="paramName">The name of the parameter being checked. Captured automatically by the compiler.</param>
+    /// <returns><paramref name="argument" /> when the argument is less than or equal to <paramref name="expected"/>.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="argument" /> is not less than or equal to <paramref name="expected"/>.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T IsLessThanOrEqualTo<T>(
@@ -34,13 +34,13 @@ public static partial class Argument
         return argument;
     }
 
-    /// <summary>Throws an <see cref="ArgumentOutOfRangeException" /> if <paramref name="argument" /> is not greater than or equal to <paramref name="expected"/>.</summary>
+    /// <summary>Throws an <see cref="ArgumentOutOfRangeException" /> when <paramref name="argument" /> is not greater than or equal to <paramref name="expected"/>.</summary>
     /// <param name="argument">The argument to check.</param>
     /// <param name="expected">The value to compare with.</param>
-    /// <param name="message">(Optional) Custom error message.</param>
-    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="argument" /> if the argument is greater than or equal to <paramref name="expected"/>.</returns>
-    /// <exception cref="ArgumentOutOfRangeException">if <paramref name="argument" /> is not greater than or equal to <paramref name="expected"/>.</exception>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="paramName">The name of the parameter being checked. Captured automatically by the compiler.</param>
+    /// <returns><paramref name="argument" /> when the argument is greater than or equal to <paramref name="expected"/>.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="argument" /> is not greater than or equal to <paramref name="expected"/>.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T IsGreaterThanOrEqualTo<T>(
@@ -59,13 +59,13 @@ public static partial class Argument
         return argument;
     }
 
-    /// <summary>Throws an <see cref="ArgumentOutOfRangeException" /> if <paramref name="argument" /> is not less than <paramref name="expected"/>.</summary>
+    /// <summary>Throws an <see cref="ArgumentOutOfRangeException" /> when <paramref name="argument" /> is not less than <paramref name="expected"/>.</summary>
     /// <param name="argument">The argument to check.</param>
     /// <param name="expected">The value to compare with.</param>
-    /// <param name="message">(Optional) Custom error message.</param>
-    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="argument" /> if the argument is less than <paramref name="expected"/>.</returns>
-    /// <exception cref="ArgumentOutOfRangeException">if <paramref name="argument" /> is not less than <paramref name="expected"/>.</exception>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="paramName">The name of the parameter being checked. Captured automatically by the compiler.</param>
+    /// <returns><paramref name="argument" /> when the argument is less than <paramref name="expected"/>.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="argument" /> is not less than <paramref name="expected"/>.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T IsLessThan<T>(
@@ -84,13 +84,13 @@ public static partial class Argument
         return argument;
     }
 
-    /// <summary>Throws an <see cref="ArgumentOutOfRangeException" /> if <paramref name="argument" /> is not greater than <paramref name="expected"/>.</summary>
+    /// <summary>Throws an <see cref="ArgumentOutOfRangeException" /> when <paramref name="argument" /> is not greater than <paramref name="expected"/>.</summary>
     /// <param name="argument">The argument to check.</param>
     /// <param name="expected">The value to compare with.</param>
-    /// <param name="message">(Optional) Custom error message.</param>
-    /// <param name="paramName">Parameter name (auto generated no need to pass it).</param>
-    /// <returns><paramref name="argument" /> if the argument is greater than <paramref name="expected"/>.</returns>
-    /// <exception cref="ArgumentOutOfRangeException">if <paramref name="argument" /> is not greater than <paramref name="expected"/>.</exception>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="paramName">The name of the parameter being checked. Captured automatically by the compiler.</param>
+    /// <returns><paramref name="argument" /> when the argument is greater than <paramref name="expected"/>.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="argument" /> is not greater than <paramref name="expected"/>.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T IsGreaterThan<T>(
@@ -114,10 +114,10 @@ public static partial class Argument
     /// </summary>
     /// <param name="minimumValue">The minimum value of the range.</param>
     /// <param name="maximumValue">The maximum value of the range.</param>
-    /// <param name="message">(Optional) Custom error message.</param>
-    /// <param name="minimumValueParamName">Parameter name for <paramref name="minimumValue"/> (auto generated).</param>
-    /// <param name="maximumValueParamName">Parameter name for <paramref name="maximumValue"/> (auto generated).</param>
-    /// <exception cref="ArgumentException">if the <paramref name="minimumValue"/> is greater than <paramref name="maximumValue"/>.</exception>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="minimumValueParamName">The name of the parameter for <paramref name="minimumValue"/>. Captured automatically by the compiler.</param>
+    /// <param name="maximumValueParamName">The name of the parameter for <paramref name="maximumValue"/>. Captured automatically by the compiler.</param>
+    /// <exception cref="ArgumentException"><paramref name="minimumValue"/> is greater than <paramref name="maximumValue"/>.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void Range<T>(
@@ -142,13 +142,13 @@ public static partial class Argument
     /// <param name="argument">The argument to check.</param>
     /// <param name="minimumValue">The minimum valid value of the range.</param>
     /// <param name="maximumValue">The maximum valid value of the range.</param>
-    /// <param name="message">(Optional) Custom error message.</param>
-    /// <param name="argumentParamName">Parameter name for <paramref name="argument"/> (auto generated).</param>
-    /// <param name="minimumValueParamName">Parameter name for <paramref name="minimumValue"/> (auto generated).</param>
-    /// <param name="maximumValueParamName">Parameter name for <paramref name="maximumValue"/> (auto generated).</param>
-    /// <returns><paramref name="argument" /> if the value is in range.</returns>
-    /// <exception cref="ArgumentException">if <paramref name="minimumValue"/> is greater than <paramref name="maximumValue"/>.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">if <paramref name="argument" /> is out of range.</exception>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="argumentParamName">The name of the parameter for <paramref name="argument"/>. Captured automatically by the compiler.</param>
+    /// <param name="minimumValueParamName">The name of the parameter for <paramref name="minimumValue"/>. Captured automatically by the compiler.</param>
+    /// <param name="maximumValueParamName">The name of the parameter for <paramref name="maximumValue"/>. Captured automatically by the compiler.</param>
+    /// <returns><paramref name="argument" /> when the value is in range.</returns>
+    /// <exception cref="ArgumentException"><paramref name="minimumValue"/> is greater than <paramref name="maximumValue"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="argument" /> is out of range.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T IsInclusiveBetween<T>(
@@ -179,13 +179,13 @@ public static partial class Argument
     /// <param name="argument">The argument to check.</param>
     /// <param name="minimumValue">The minimum valid value of the range.</param>
     /// <param name="maximumValue">The maximum valid value of the range.</param>
-    /// <param name="message">(Optional) Custom error message.</param>
-    /// <param name="argumentParamName">Parameter name for <paramref name="argument"/> (auto generated).</param>
-    /// <param name="minimumValueParamName">Parameter name for <paramref name="minimumValue"/> (auto generated).</param>
-    /// <param name="maximumValueParamName">Parameter name for <paramref name="maximumValue"/> (auto generated).</param>
-    /// <returns><paramref name="argument" /> if the value is in range.</returns>
-    /// <exception cref="ArgumentException">if <paramref name="minimumValue"/> is greater than <paramref name="maximumValue"/>.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">if <paramref name="argument" /> is out of range.</exception>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="argumentParamName">The name of the parameter for <paramref name="argument"/>. Captured automatically by the compiler.</param>
+    /// <param name="minimumValueParamName">The name of the parameter for <paramref name="minimumValue"/>. Captured automatically by the compiler.</param>
+    /// <param name="maximumValueParamName">The name of the parameter for <paramref name="maximumValue"/>. Captured automatically by the compiler.</param>
+    /// <returns><paramref name="argument" /> when the value is in range.</returns>
+    /// <exception cref="ArgumentException"><paramref name="minimumValue"/> is greater than <paramref name="maximumValue"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="argument" /> is out of range.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T IsExclusiveBetween<T>(
@@ -216,13 +216,13 @@ public static partial class Argument
     /// <param name="argument">The argument to check.</param>
     /// <param name="minimumValue">The minimum valid value of the range.</param>
     /// <param name="maximumValue">The maximum valid value of the range.</param>
-    /// <param name="message">(Optional) Custom error message.</param>
-    /// <param name="argumentParamName">Parameter name for <paramref name="argument"/> (auto generated).</param>
-    /// <param name="minimumValueParamName">Parameter name for <paramref name="minimumValue"/> (auto generated).</param>
-    /// <param name="maximumValueParamName">Parameter name for <paramref name="maximumValue"/> (auto generated).</param>
-    /// <returns><paramref name="argument" /> if the value is in range.</returns>
-    /// <exception cref="ArgumentException">if <paramref name="minimumValue"/> is greater than <paramref name="maximumValue"/>.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">if <paramref name="argument" /> is out of range.</exception>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="argumentParamName">The name of the parameter for <paramref name="argument"/>. Captured automatically by the compiler.</param>
+    /// <param name="minimumValueParamName">The name of the parameter for <paramref name="minimumValue"/>. Captured automatically by the compiler.</param>
+    /// <param name="maximumValueParamName">The name of the parameter for <paramref name="maximumValue"/>. Captured automatically by the compiler.</param>
+    /// <returns><paramref name="argument" /> when the value is in range.</returns>
+    /// <exception cref="ArgumentException"><paramref name="minimumValue"/> is greater than <paramref name="maximumValue"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="argument" /> is out of range.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T IsLeftOpenedBetween<T>(
@@ -253,13 +253,13 @@ public static partial class Argument
     /// <param name="argument">The argument to check.</param>
     /// <param name="minimumValue">The minimum valid value of the range.</param>
     /// <param name="maximumValue">The maximum valid value of the range.</param>
-    /// <param name="message">(Optional) Custom error message.</param>
-    /// <param name="argumentParamName">Parameter name for <paramref name="argument"/> (auto generated).</param>
-    /// <param name="minimumValueParamName">Parameter name for <paramref name="minimumValue"/> (auto generated).</param>
-    /// <param name="maximumValueParamName">Parameter name for <paramref name="maximumValue"/> (auto generated).</param>
-    /// <returns><paramref name="argument" /> if the value is in range.</returns>
-    /// <exception cref="ArgumentException">if <paramref name="minimumValue"/> is greater than <paramref name="maximumValue"/>.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">if <paramref name="argument" /> is out of range.</exception>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="argumentParamName">The name of the parameter for <paramref name="argument"/>. Captured automatically by the compiler.</param>
+    /// <param name="minimumValueParamName">The name of the parameter for <paramref name="minimumValue"/>. Captured automatically by the compiler.</param>
+    /// <param name="maximumValueParamName">The name of the parameter for <paramref name="maximumValue"/>. Captured automatically by the compiler.</param>
+    /// <returns><paramref name="argument" /> when the value is in range.</returns>
+    /// <exception cref="ArgumentException"><paramref name="minimumValue"/> is greater than <paramref name="maximumValue"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="argument" /> is out of range.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T IsRightOpenedBetween<T>(
@@ -290,13 +290,13 @@ public static partial class Argument
     /// <param name="argument">The argument to check.</param>
     /// <param name="minimumValue">The minimum valid value of the range.</param>
     /// <param name="maximumValue">The maximum valid value of the range.</param>
-    /// <param name="message">(Optional) Custom error message.</param>
-    /// <param name="argumentParamName">Parameter name for <paramref name="argument"/> (auto generated).</param>
-    /// <param name="minimumValueParamName">Parameter name for <paramref name="minimumValue"/> (auto generated).</param>
-    /// <param name="maximumValueParamName">Parameter name for <paramref name="maximumValue"/> (auto generated).</param>
-    /// <returns><paramref name="argument" /> if every item is within range.</returns>
-    /// <exception cref="ArgumentException">if <paramref name="minimumValue"/> is greater than <paramref name="maximumValue"/>.</exception>
-    /// <exception cref="ArgumentOutOfRangeException">if any item in <paramref name="argument" /> is out of range.</exception>
+    /// <param name="message">A custom error message, or <see langword="null"/> to use the default error message.</param>
+    /// <param name="argumentParamName">The name of the parameter for <paramref name="argument"/>. Captured automatically by the compiler.</param>
+    /// <param name="minimumValueParamName">The name of the parameter for <paramref name="minimumValue"/>. Captured automatically by the compiler.</param>
+    /// <param name="maximumValueParamName">The name of the parameter for <paramref name="maximumValue"/>. Captured automatically by the compiler.</param>
+    /// <returns><paramref name="argument" /> when every item is within range.</returns>
+    /// <exception cref="ArgumentException"><paramref name="minimumValue"/> is greater than <paramref name="maximumValue"/>.</exception>
+    /// <exception cref="ArgumentOutOfRangeException">Any item in <paramref name="argument" /> is out of range.</exception>
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static IEnumerable<T> HaveAllItemsInRange<T>(

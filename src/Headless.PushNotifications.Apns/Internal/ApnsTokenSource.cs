@@ -14,13 +14,13 @@ namespace Headless.PushNotifications.Apns.Internal;
 /// <remarks>
 /// <para>
 /// Apple rejects a key whose tokens change more than once every 20 minutes with
-/// <c>TooManyProviderTokenUpdates</c>. Clients that share a key and refresh independently (a default and a named
-/// instance, or production and sandbox) trigger that, so every option set with the same key identity shares one
-/// cached token here.
+/// <c>TooManyProviderTokenUpdates</c>. Clients that share a key and refresh independently (a default and a
+/// named instance, or production and sandbox) trigger that, so every option set with the same key identity
+/// shares one cached token here.
 /// </para>
 /// <para>
-/// Reads are lock-free against an immutable token holder; minting runs under a per-key gate so concurrent callers
-/// on a cold or expired cache mint once.
+/// Reads are lock-free against an immutable token holder; minting runs under a per-key gate so concurrent
+/// callers on a cold or expired cache mint once.
 /// </para>
 /// </remarks>
 internal sealed class ApnsTokenSource(TimeProvider timeProvider) : IDisposable
@@ -29,8 +29,9 @@ internal sealed class ApnsTokenSource(TimeProvider timeProvider) : IDisposable
     // requests, and matches the cadence other APNs clients use.
     private static readonly TimeSpan _RefreshAge = TimeSpan.FromMinutes(50);
 
-    // Apple allows one token update per key every 20 minutes. Re-minting a younger token on rejection would turn
-    // a persistent rejection, such as a host clock far ahead, into TooManyProviderTokenUpdates on every send.
+    // Apple allows one token update per key every 20 minutes. Re-minting a younger token on rejection would
+    // turn a persistent rejection, such as a host clock far ahead, into TooManyProviderTokenUpdates on every
+    // send.
     private static readonly TimeSpan _MinimumRemintAge = TimeSpan.FromMinutes(20);
 
     private readonly ConcurrentDictionary<(string TeamId, string KeyId), KeyEntry> _entries = new();
@@ -60,12 +61,12 @@ internal sealed class ApnsTokenSource(TimeProvider timeProvider) : IDisposable
     }
 
     /// <summary>
-    /// Reports that APNs rejected the token of <paramref name="generation"/> as expired and returns the token to
-    /// retry with.
+    /// Reports that APNs rejected the token of <paramref name="generation"/> as expired and returns the token
+    /// to retry with.
     /// </summary>
     /// <remarks>
-    /// Only the first caller for a generation re-mints; later callers get the newer token. A token younger than
-    /// 20 minutes is kept, because Apple would reject a faster update.
+    /// Only the first caller for a generation re-mints; later callers get the newer token. A token younger
+    /// than 20 minutes is kept, because Apple would reject a faster update.
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// The options lack a team id, key id, or private key, so they do not configure token mode.

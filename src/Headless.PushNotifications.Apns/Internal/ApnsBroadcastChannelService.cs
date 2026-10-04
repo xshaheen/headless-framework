@@ -11,8 +11,8 @@ using Microsoft.Extensions.Options;
 namespace Headless.PushNotifications.Apns.Internal;
 
 /// <summary>
-/// Calls APNs' channel-management endpoint with the instance's credentials, following Apple's "Sending channel
-/// management requests to APNs".
+/// Calls APNs' channel-management endpoint with the instance's credentials, following Apple's "Sending
+/// channel management requests to APNs".
 /// </summary>
 internal sealed class ApnsBroadcastChannelService(
     IHttpClientFactory httpClientFactory,

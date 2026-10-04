@@ -6,8 +6,8 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Headless.Emails;
 
 /// <summary>
-/// <see cref="IEmailSenderProvider"/> over the container's keyed <see cref="IEmailSender"/> registrations —
-/// resolves the named instances added through <c>setup.AddNamed(name, …)</c>.
+/// Implements <see cref="IEmailSenderProvider"/> over the container's keyed <see cref="IEmailSender"/>
+/// registrations: it resolves the named instances added through <c>setup.AddNamed(name, …)</c>.
 /// </summary>
 internal sealed class KeyedServiceEmailSenderProvider(
     IServiceProvider serviceProvider,

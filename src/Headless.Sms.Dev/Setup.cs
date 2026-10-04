@@ -7,20 +7,25 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Headless.Sms;
 
 /// <summary>
-/// Extension members for selecting the development (file-writing) or no-op SMS providers as the default
-/// (unkeyed) sender on <see cref="HeadlessSmsSetupBuilder"/>.
+/// Registers the development (file-writing) or no-op SMS providers as the default (unkeyed) sender on
+/// <see cref="HeadlessSmsSetupBuilder"/>.
 /// </summary>
 [PublicAPI]
 public static class SetupDevSms
 {
     extension(HeadlessSmsSetupBuilder setup)
     {
-        /// <summary>Selects the development sender, which appends each message to <paramref name="filePath"/>.</summary>
-        /// <remarks>No real SMS is sent. Messages are written to the file in plaintext for local inspection.</remarks>
-        /// <param name="filePath">Absolute or relative path to the file where outgoing messages are appended.</param>
-        /// <returns>The same builder for chaining.</returns>
+        /// <summary>
+        /// Registers the development SMS sender, which appends each message to <paramref name="filePath"/>.
+        /// </summary>
+        /// <remarks>No real SMS is sent. Messages are written to the file as plain text for local inspection.</remarks>
+        /// <param name="filePath">
+        /// The absolute or relative path to the file where outgoing messages are appended. The file is
+        /// created when it does not exist; existing content is preserved and new entries are appended.
+        /// </param>
+        /// <returns>The builder instance.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="filePath"/> is <see langword="null"/>.</exception>
-        /// <exception cref="ArgumentException"><paramref name="filePath"/> is an empty string.</exception>
+        /// <exception cref="ArgumentException"><paramref name="filePath"/> is empty.</exception>
         public HeadlessSmsSetupBuilder UseDevelopment(string filePath)
         {
             Argument.IsNotNullOrEmpty(filePath);
@@ -34,9 +39,14 @@ public static class SetupDevSms
             return setup;
         }
 
-        /// <summary>Selects the no-op sender, which discards every message and always reports success.</summary>
-        /// <remarks>No real SMS is sent and no file is written. Useful in test environments where SMS delivery is irrelevant.</remarks>
-        /// <returns>The same builder for chaining.</returns>
+        /// <summary>
+        /// Registers the no-op SMS sender, which discards every message and always reports success.
+        /// </summary>
+        /// <remarks>
+        /// No real SMS is sent and no file is written. Useful in test environments where SMS delivery
+        /// is irrelevant.
+        /// </remarks>
+        /// <returns>The builder instance.</returns>
         public HeadlessSmsSetupBuilder UseNoop()
         {
             setup.RegisterDefaultProvider(static services =>
@@ -51,22 +61,27 @@ public static class SetupDevSms
 }
 
 /// <summary>
-/// Extension members for selecting the development (file-writing) or no-op SMS providers for a named
-/// instance on <see cref="HeadlessSmsInstanceBuilder"/>. The instance resolves as a keyed
-/// <see cref="ISmsSender"/> (and keyed <see cref="IBulkSmsSender"/>) or through
-/// <see cref="ISmsSenderProvider"/>.
+/// Registers the development (file-writing) or no-op SMS providers for a named instance on
+/// <see cref="HeadlessSmsInstanceBuilder"/>. The instance resolves as a keyed <see cref="ISmsSender"/> (and
+/// keyed <see cref="IBulkSmsSender"/>) or through <see cref="ISmsSenderProvider"/>.
 /// </summary>
 [PublicAPI]
 public static class SetupDevSmsNamed
 {
     extension(HeadlessSmsInstanceBuilder instance)
     {
-        /// <summary>Uses the development sender for this named instance, appending each message to <paramref name="filePath"/>.</summary>
-        /// <remarks>No real SMS is sent. Messages are written to the file in plaintext for local inspection.</remarks>
-        /// <param name="filePath">Absolute or relative path to the file where outgoing messages are appended.</param>
-        /// <returns>The instance builder for chaining.</returns>
+        /// <summary>
+        /// Uses the development sender for this named instance, appending each message to
+        /// <paramref name="filePath"/>.
+        /// </summary>
+        /// <remarks>No real SMS is sent. Messages are written to the file as plain text for local inspection.</remarks>
+        /// <param name="filePath">
+        /// The absolute or relative path to the file where outgoing messages are appended. The file is
+        /// created when it does not exist; existing content is preserved and new entries are appended.
+        /// </param>
+        /// <returns>The instance builder instance.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="filePath"/> is <see langword="null"/>.</exception>
-        /// <exception cref="ArgumentException"><paramref name="filePath"/> is an empty string.</exception>
+        /// <exception cref="ArgumentException"><paramref name="filePath"/> is empty.</exception>
         public HeadlessSmsInstanceBuilder UseDevelopment(string filePath)
         {
             Argument.IsNotNullOrEmpty(filePath);
@@ -85,9 +100,14 @@ public static class SetupDevSmsNamed
             return instance;
         }
 
-        /// <summary>Uses the no-op sender for this named instance, discarding every message and always reporting success.</summary>
-        /// <remarks>No real SMS is sent and no file is written. Useful in test environments where SMS delivery is irrelevant.</remarks>
-        /// <returns>The instance builder for chaining.</returns>
+        /// <summary>
+        /// Uses the no-op sender for this named instance, discarding every message and always reporting success.
+        /// </summary>
+        /// <remarks>
+        /// No real SMS is sent and no file is written. Useful in test environments where SMS delivery
+        /// is irrelevant.
+        /// </remarks>
+        /// <returns>The instance builder instance.</returns>
         public HeadlessSmsInstanceBuilder UseNoop()
         {
             var name = instance.Name;

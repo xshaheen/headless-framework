@@ -9,7 +9,7 @@ namespace Headless.Caching;
 /// <summary>
 /// The concrete <see cref="ICacheEvents"/> implementation owned by a cache provider. Providers construct one hub, return
 /// it from <see cref="ICache.Events"/>, and fire events through the <c>On…</c> methods (called by the provider and by the
-/// shared <see cref="FactoryCacheCoordinator"/>).
+/// shared <c>FactoryCacheCoordinator</c>).
 /// </summary>
 /// <remarks>
 /// Each <c>On…</c> method captures the event's current handler snapshot first and constructs the
@@ -47,7 +47,7 @@ public sealed class CacheEventsHub : ICacheEvents, IDisposable, IAsyncDisposable
     /// <param name="tier">The tier of the owning cache, surfaced on <see cref="CacheEventArgs.Tier"/>.</param>
     /// <param name="config">Handler-execution configuration; defaults are used when <see langword="null"/>.</param>
     /// <param name="logger">Logger for guarded-handler exceptions.</param>
-    /// <param name="withTierSubHubs">When <see langword="true"/> (hybrid), exposes the L1/L2 <see cref="Memory"/> and <see cref="Distributed"/> sub-hubs.</param>
+    /// <param name="withTierSubHubs">When <see langword="true"/> (hybrid), exposes the L1/L2 <see cref="ICacheEvents.Memory"/> and <see cref="ICacheEvents.Distributed"/> sub-hubs.</param>
     public CacheEventsHub(
         string cacheName,
         CacheTier tier,

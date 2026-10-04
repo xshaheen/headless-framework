@@ -14,21 +14,21 @@ public sealed class SlugOptions
     public const string DefaultSeparator = "-";
 
     /// <summary>
-    /// Maximum number of characters in the produced slug. Characters beyond this limit are dropped.
-    /// A value of <c>0</c> or less disables truncation. Default is <see cref="DefaultMaximumLength"/>.
+    /// Gets the maximum number of characters in the produced slug. Characters beyond this limit are dropped.
+    /// A value of 0 or less disables truncation. The default is <see cref="DefaultMaximumLength"/>.
     /// </summary>
     public int MaximumLength { get; init; } = DefaultMaximumLength;
 
     /// <summary>
-    /// Determines whether alphabetic characters are case-folded. Default is
+    /// Gets a value indicating whether alphabetic characters are case-folded. The default is
     /// <see cref="CasingTransformation.ToLowerCase"/>.
     /// </summary>
     public CasingTransformation CasingTransformation { get; init; } = CasingTransformation.ToLowerCase;
 
     /// <summary>
-    /// The separator between words in the slug. Default is "-".
+    /// Gets the separator between words in the slug. The default is <c>"-"</c>.
     /// </summary>
-    /// <exception cref="ArgumentException">Thrown when value is null or empty.</exception>
+    /// <exception cref="ArgumentException"><paramref name="value"/> is <see langword="null"/> or empty.</exception>
     public string Separator
     {
         get;
@@ -39,20 +39,20 @@ public sealed class SlugOptions
     } = DefaultSeparator;
 
     /// <summary>
-    /// The culture used when <see cref="CasingTransformation"/> is <see cref="CasingTransformation.ToLowerCase"/>
-    /// or <see cref="CasingTransformation.ToUpperCase"/>. When <see langword="null"/> (the default), invariant
+    /// Gets the culture used when <see cref="CasingTransformation"/> is <see cref="CasingTransformation.ToLowerCase"/>
+    /// or <see cref="CasingTransformation.ToUpperCase"/>. When <see langword="null"/>, invariant
     /// casing is applied.
     /// </summary>
     public CultureInfo? Culture { get; init; }
 
     /// <summary>
-    /// When <see langword="true"/>, the slug may end with the <see cref="Separator"/>. When
-    /// <see langword="false"/> (the default), trailing separators are stripped from the result.
+    /// Gets a value indicating whether the slug may end with <see cref="Separator"/>. When
+    /// <see langword="false"/>, trailing separators are stripped from the result.
     /// </summary>
     public bool CanEndWithSeparator { get; init; }
 
     /// <summary>
-    /// Unicode ranges allowed in slugs.
+    /// Gets the Unicode ranges allowed in slugs.
     /// </summary>
     /// <remarks>
     /// Default ranges:
@@ -82,10 +82,10 @@ public sealed class SlugOptions
     }.ToFrozenDictionary(StringComparer.Ordinal);
 
     /// <summary>
-    /// Verbatim string substitutions applied before slug processing. Each key is replaced with its
-    /// corresponding value using ordinal comparison. Accepts any <see cref="IReadOnlyDictionary{TKey,TValue}"/>;
-    /// the assigned dictionary is frozen internally (ordinal key comparison) for lookup performance.
-    /// Defaults to a small set of common symbol expansions:
+    /// Gets verbatim string substitutions applied before slug processing. Each key is replaced with its
+    /// corresponding value using ordinal comparison. Accepts any <see cref="IReadOnlyDictionary{TKey,TValue}"/>.
+    /// The assigned dictionary is frozen internally using ordinal key comparison for lookup performance.
+    /// Defaults to common symbol expansions:
     /// <c>&amp;</c> to <c> and </c>, <c>+</c> to <c> plus </c>, <c>.</c> to <c> dot </c>, and
     /// <c>%</c> to <c> percent </c>.
     /// </summary>
@@ -96,11 +96,11 @@ public sealed class SlugOptions
     } = _DefaultReplacements;
 
     /// <summary>
-    /// Returns <see langword="true"/> when <paramref name="character"/> falls within at least one of the
+    /// Determines whether <paramref name="character"/> falls within at least one of the
     /// <see cref="AllowedRanges"/>. When <see cref="AllowedRanges"/> is empty, all characters are allowed.
     /// </summary>
     /// <param name="character">The Unicode scalar value to test.</param>
-    /// <returns><see langword="true"/> if the character is allowed in the slug; otherwise <see langword="false"/>.</returns>
+    /// <returns><see langword="true"/> if the character is allowed in the slug; otherwise, <see langword="false"/>.</returns>
     public bool IsAllowed(Rune character)
     {
         if (AllowedRanges.Count == 0)

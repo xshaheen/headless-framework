@@ -8,8 +8,7 @@ using Microsoft.Extensions.Logging;
 namespace Headless.Dashboard.Authentication;
 
 /// <summary>
-/// Authentication middleware that only protects API endpoints.
-/// Static files, negotiate, and auth endpoints are excluded.
+/// Authenticates requests to API endpoints, bypassing static files, negotiate, and auth endpoints.
 /// </summary>
 /// <remarks>Initializes a new instance of <see cref="AuthMiddleware"/>.</remarks>
 /// <param name="next">The next middleware delegate in the ASP.NET Core pipeline.</param>
@@ -24,14 +23,14 @@ public sealed class AuthMiddleware(RequestDelegate next, ILogger<AuthMiddleware>
     public const string AuthenticatedKey = "auth.authenticated";
 
     /// <summary>
-    /// Processes the request, enforcing authentication on <c>/api/</c> endpoints while passing
-    /// through static files, SignalR negotiate, and auth endpoints without challenge.
+    /// Processes the request, enforcing authentication on <c>/api/</c> endpoints while allowing
+    /// static files, SignalR negotiate, and auth endpoints without challenge.
     /// </summary>
     /// <remarks>
     /// On success, sets <see cref="UsernameKey"/> and <see cref="AuthenticatedKey"/> in
     /// <see cref="HttpContext.Items"/> for downstream middleware. On failure, writes a
     /// <c>401 Unauthorized</c> response and logs the sanitized request path at Warning level.
-    /// The query string is never logged to avoid leaking tokens passed via <c>access_token</c>.
+    /// The query string is not logged to prevent leaking tokens passed through <c>access_token</c>.
     /// </remarks>
     /// <param name="context">The current HTTP context.</param>
     /// <returns>A task that completes when the request has been handled.</returns>

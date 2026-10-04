@@ -4,26 +4,25 @@ using FluentValidation;
 
 namespace Headless.Coordination;
 
-/// <summary>Connection and command options every relational coordination provider shares.</summary>
+/// <summary>Defines connection and command options shared across relational coordination providers.</summary>
 /// <remarks>
-/// The schema that holds the membership tables is shared by every relational provider and configured through
-/// <see cref="CoordinationStorageOptions" />.
+/// The schema holding membership tables is configured through <see cref="CoordinationStorageOptions"/>.
 /// </remarks>
 [PublicAPI]
 public abstract class RelationalCoordinationOptions
 {
-    /// <summary>Gets or sets the connection string of the database that holds the membership tables.</summary>
+    /// <summary>Gets or sets the connection string of the database holding the membership tables.</summary>
     public string ConnectionString { get; set; } = string.Empty;
 
     /// <summary>
-    /// Gets or sets the timeout of every command the provider runs. Must be positive and at most 10 minutes. Default:
-    /// 30 seconds.
+    /// Gets or sets the execution timeout for commands run by the provider. Must be positive and at most 10 minutes.
+    /// Defaults to 30 seconds.
     /// </summary>
     public TimeSpan CommandTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
     /// <summary>
-    /// Gets or sets whether the schema runner creates the schema and membership tables at host startup when missing.
-    /// Default: <see langword="true" />. Set it to <see langword="false" /> when a migration tool owns them.
+    /// Gets or sets a value indicating whether the schema runner creates missing tables at startup.
+    /// Defaults to <see langword="true"/>. Set to <see langword="false"/> when an external tool manages migrations.
     /// </summary>
     public bool InitializeOnStartup { get; set; } = true;
 

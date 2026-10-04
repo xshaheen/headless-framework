@@ -2,11 +2,11 @@
 
 namespace Headless.Coordination;
 
-/// <summary>Incarnation-qualified node identity in the canonical <c>node@incarnation</c> form.</summary>
+/// <summary>Represents an incarnation-qualified node identity in the canonical <c>node@incarnation</c> format.</summary>
 /// <remarks>
-/// The <c>node@incarnation</c> string (for example <c>pod-a@3</c>) is used as the ownership stamp on all
-/// coordinated resources. Because the incarnation is monotonically increasing, a higher value always
-/// supersedes a lower one for the same node id, making stale-owner detection straightforward.
+/// The <c>node@incarnation</c> format (such as <c>pod-a@3</c>) serves as the ownership stamp across
+/// coordinated resources. The monotonically increasing incarnation allows higher values to supersede lower values
+/// for the same node identifier, supporting stale-owner detection.
 /// </remarks>
 [PublicAPI]
 public readonly record struct NodeIdentity(NodeId NodeId, NodeIncarnation Incarnation)
@@ -14,13 +14,11 @@ public readonly record struct NodeIdentity(NodeId NodeId, NodeIncarnation Incarn
     private const char _Separator = '@';
 
     /// <summary>
-    /// Parses a <c>node@incarnation</c> string into a <see cref="NodeIdentity"/>.
+    /// Parses a string formatted as <c>node@incarnation</c> into a <see cref="NodeIdentity"/>.
     /// </summary>
-    /// <param name="value">The string to parse, for example <c>pod-a@3</c>.</param>
+    /// <param name="value">The string to parse, such as <c>pod-a@3</c>.</param>
     /// <returns>The parsed <see cref="NodeIdentity"/>.</returns>
-    /// <exception cref="FormatException">
-    /// Thrown when <paramref name="value"/> does not conform to the <c>node@incarnation</c> format.
-    /// </exception>
+    /// <exception cref="FormatException"><paramref name="value"/> does not conform to the <c>node@incarnation</c> format.</exception>
     public static NodeIdentity Parse(string value)
     {
         return TryParse(value, out var identity)
@@ -29,15 +27,14 @@ public readonly record struct NodeIdentity(NodeId NodeId, NodeIncarnation Incarn
     }
 
     /// <summary>
-    /// Attempts to parse a <c>node@incarnation</c> string into a <see cref="NodeIdentity"/>.
+    /// Attempts to parse a string formatted as <c>node@incarnation</c> into a <see cref="NodeIdentity"/>.
     /// </summary>
     /// <param name="value">The string to parse.</param>
     /// <param name="identity">
-    /// When this method returns <see langword="true"/>, the parsed identity; otherwise the default value.
+    /// When this method returns <see langword="true"/>, contains the parsed identity; otherwise, the default value.
     /// </param>
     /// <returns>
-    /// <see langword="true"/> if parsing succeeded; <see langword="false"/> if <paramref name="value"/> is
-    /// null, empty, or does not conform to the expected format.
+    /// <see langword="true"/> if parsing succeeded; otherwise, <see langword="false"/>.
     /// </returns>
     public static bool TryParse(string? value, out NodeIdentity identity)
     {
@@ -75,7 +72,7 @@ public readonly record struct NodeIdentity(NodeId NodeId, NodeIncarnation Incarn
         }
     }
 
-    /// <summary>Returns the <c>node@incarnation</c> string representation of this identity.</summary>
+    /// <summary>Returns the string representation of this identity formatted as <c>node@incarnation</c>.</summary>
     public override string ToString()
     {
         return string.Create(CultureInfo.InvariantCulture, $"{NodeId}{_Separator}{Incarnation.Value}");

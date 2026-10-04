@@ -8,9 +8,9 @@ using System.Xml;
 namespace Headless.Generator.Primitives;
 
 /// <summary>
-/// Provides extension methods for XmlReader and XmlWriter to simplify reading and writing of certain data types.
+/// Provides extension methods for <see cref="XmlReader"/> to simplify parsing element content.
 /// </summary>
-/// <remarks>This type is generator-output plumbing; it must stay public for emitted code but is not intended for direct use.</remarks>
+/// <remarks>Internal generator-emitted plumbing. Kept public for generated code execution.</remarks>
 [EditorBrowsable(EditorBrowsableState.Never)]
 public static class XmlReaderExtensions
 {
@@ -18,8 +18,8 @@ public static class XmlReaderExtensions
     /// Reads the text content of the current element and parses it as <typeparamref name="T"/>
     /// using the invariant culture.
     /// </summary>
-    /// <typeparam name="T">The target type, which must implement <c>IParsable&lt;T&gt;</c>.</typeparam>
-    /// <param name="reader">The XmlReader positioned on the element whose content is to be read.</param>
+    /// <typeparam name="T">The target type that implements <see cref="IParsable{T}"/>.</typeparam>
+    /// <param name="reader">The XML reader positioned on the target element.</param>
     /// <returns>The parsed value of type <typeparamref name="T"/>.</returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static T ReadElementContentAs<T>(this XmlReader reader)
