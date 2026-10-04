@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Payments.Paymob.CashIn;
-using Headless.Payments.Paymob.CashIn.Models.Payment;
 using WireMock.RequestBuilders;
 using WireMock.ResponseBuilders;
 

@@ -2,7 +2,7 @@
 
 using Headless.Checks;
 
-namespace Headless.Payments.Paymob.CashIn.Models.Payment;
+namespace Headless.Payments.Paymob.CashIn;
 
 /// <summary>Represents the customer billing data sent with a Paymob CashIn payment request.</summary>
 [PublicAPI]

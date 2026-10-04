@@ -4,7 +4,6 @@ using System.Net;
 using System.Text.Encodings.Web;
 using AutoFixture;
 using Headless.Payments.Paymob.CashOut;
-using Headless.Payments.Paymob.CashOut.Models;
 using Headless.Testing.Tests;
 using WireMock.RequestBuilders;
 using WireMock.ResponseBuilders;

@@ -2,7 +2,7 @@
 
 using Headless.Checks;
 
-namespace Headless.Payments.Paymob.CashIn.Models.Payment;
+namespace Headless.Payments.Paymob.CashIn;
 
 public sealed class CashInPaymentKeyRequest
 {

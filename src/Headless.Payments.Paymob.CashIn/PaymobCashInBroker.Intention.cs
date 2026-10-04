@@ -1,9 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Payments.Paymob.CashIn.Models.Callback;
-using Headless.Payments.Paymob.CashIn.Models.Intentions;
-using Headless.Payments.Paymob.CashIn.Models.Refunds;
-
 namespace Headless.Payments.Paymob.CashIn;
 
 internal partial class PaymobCashInBroker

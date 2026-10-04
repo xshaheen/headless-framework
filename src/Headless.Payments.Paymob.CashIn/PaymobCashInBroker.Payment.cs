@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Headless.Payments.Paymob.CashIn.Models.Payment;
 using Headless.Urls;
 
 namespace Headless.Payments.Paymob.CashIn;

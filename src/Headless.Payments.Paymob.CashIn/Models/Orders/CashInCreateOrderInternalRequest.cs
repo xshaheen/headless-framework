@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Payments.Paymob.CashIn.Models.Orders;
+namespace Headless.Payments.Paymob.CashIn;
 
 [PublicAPI]
 internal sealed class CashInCreateOrderInternalRequest(string authToken, CashInCreateOrderRequest request)

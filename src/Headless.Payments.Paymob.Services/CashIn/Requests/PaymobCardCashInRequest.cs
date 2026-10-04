@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Payments.Paymob.Services.CashIn.Requests;
+namespace Headless.Payments.Paymob.Services.CashIn;
 
 /// <summary>
 /// Parameters for initiating a card payment via the Paymob Accept hosted iframe.

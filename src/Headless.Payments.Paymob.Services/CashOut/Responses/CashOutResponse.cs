@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Payments.Paymob.Services.CashOut.Responses;
+namespace Headless.Payments.Paymob.Services.CashOut;
 
 /// <summary>
 /// The outcome of a successful CashOut disbursement for wallet and bank-account channels.

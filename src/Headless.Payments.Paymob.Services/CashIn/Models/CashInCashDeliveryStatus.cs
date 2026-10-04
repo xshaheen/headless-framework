@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Payments.Paymob.Services.CashIn.Models;
+namespace Headless.Payments.Paymob.Services.CashIn;
 
 /// <summary>
 /// The webhook envelope for a Paymob cash-collection delivery status update.

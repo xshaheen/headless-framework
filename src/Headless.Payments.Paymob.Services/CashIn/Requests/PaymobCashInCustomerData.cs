@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Payments.Paymob.Services.CashIn.Requests;
+namespace Headless.Payments.Paymob.Services.CashIn;
 
 /// <summary>
 /// Customer contact and identity data required by Paymob for payment-key and billing-data submission.

@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Payments.Paymob.CashOut.Models;
+namespace Headless.Payments.Paymob.CashOut;
 
 /// <summary>
 /// The request body for the Paymob CashOut transaction inquiry endpoint.

@@ -2,7 +2,7 @@
 
 using System.Net;
 
-namespace Headless.Payments.Paymob.CashIn.Models;
+namespace Headless.Payments.Paymob.CashIn;
 
 /// <summary>
 /// Represents an HTTP error returned by the Paymob Accept (CashIn) API.

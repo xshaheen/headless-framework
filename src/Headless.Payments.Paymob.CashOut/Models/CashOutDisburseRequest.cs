@@ -2,7 +2,7 @@
 
 using Headless.Checks;
 
-namespace Headless.Payments.Paymob.CashOut.Models;
+namespace Headless.Payments.Paymob.CashOut;
 
 /// <summary>
 /// Represents a disbursement request to the Paymob CashOut API.

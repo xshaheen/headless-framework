@@ -2,7 +2,7 @@
 
 using Headless.Payments.Paymob.CashIn.Internal;
 
-namespace Headless.Payments.Paymob.CashIn.Models.Callback;
+namespace Headless.Payments.Paymob.CashIn;
 
 /// <summary>
 /// Represents a saved-card token issued by Paymob after a successful card payment when the
