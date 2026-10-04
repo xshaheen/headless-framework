@@ -125,15 +125,8 @@
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
-          "Headless.Generator.Primitives.Abstractions": "[1.0.0, )",
-          "libphonenumber-csharp": "[9.0.39, )"
+          "Headless.Generator.Primitives.Abstractions": "[1.0.0, )"
         }
-      },
-      "libphonenumber-csharp": {
-        "type": "CentralTransitive",
-        "requested": "[9.0.39, )",
-        "resolved": "9.0.39",
-        "contentHash": "NiBrwzjHgtBj1XxTVQrWrxn+XOUmiDRcpqxBG5/DtZn8c2vm29FS9aBaCPG5+hBTDYXEid1r0SAZd7a063oGWg=="
       }
     }
   }
