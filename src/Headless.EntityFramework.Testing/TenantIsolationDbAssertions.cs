@@ -4,7 +4,7 @@ using System.Linq.Expressions;
 using AwesomeAssertions;
 using Headless.Checks;
 using Headless.MultiTenancy;
-using Headless.Testing.Helpers;
+using Headless.Testing;
 using Microsoft.EntityFrameworkCore;
 
 namespace Headless.EntityFramework.Testing;

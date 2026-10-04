@@ -2,7 +2,7 @@
 
 using System.Diagnostics;
 
-namespace Headless.Testing.Helpers;
+namespace Headless.Testing;
 
 /// <summary>
 /// Starts a fully recorded <see cref="System.Diagnostics.Activity"/> on a private <see cref="ActivitySource"/> and

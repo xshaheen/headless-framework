@@ -3,7 +3,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
-using Headless.Testing.Helpers;
+using Headless.Testing;
 using Headless.Testing.Tests;
 
 namespace Tests.Helpers;

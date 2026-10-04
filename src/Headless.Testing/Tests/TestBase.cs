@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Bogus;
-using Headless.Testing.Helpers;
 using Microsoft.Extensions.Logging;
 using Xunit;
 

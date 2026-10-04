@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.NetTopologySuite;
-using Headless.NetTopologySuite.Constants;
 using NetTopologySuite.Geometries;
 
 namespace Tests.GeoExtensions;

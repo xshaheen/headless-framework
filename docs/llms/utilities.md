@@ -494,7 +494,7 @@ dotnet add package Headless.NetTopologySuite
 ### Setup and use
 
 ```csharp
-using Headless.NetTopologySuite.Constants;
+using Headless.NetTopologySuite;
 using NetTopologySuite.Geometries;
 
 var factory = new GeometryFactory(GeoConstants.HighPrecision, GeoConstants.GoogleMapsSrid);
