@@ -35,6 +35,10 @@ internal sealed class PulsarConsumerClientFactory : IConsumerClientFactory
     {
         Argument.IsNotNull(request);
 
+        // An already-cancelled caller must never reach the broker: the client rent below would only observe the
+        // token after it started building the Pulsar client.
+        cancellationToken.ThrowIfCancellationRequested();
+
         try
         {
             // Creating the client touches no broker object: the subscription, every-instance or competing, is opened by
@@ -42,9 +46,9 @@ internal sealed class PulsarConsumerClientFactory : IConsumerClientFactory
             var client = await _connection.RentClientAsync(cancellationToken).ConfigureAwait(false);
             return new PulsarConsumerClient(_pulsarOptions, client, request);
         }
-        catch (Exception e) when (e is not OperationCanceledException)
+        catch (Exception e)
         {
-            throw new BrokerConnectionException(e);
+            throw BrokerConnectGuard.ConnectFailure(e, cancellationToken);
         }
     }
 }

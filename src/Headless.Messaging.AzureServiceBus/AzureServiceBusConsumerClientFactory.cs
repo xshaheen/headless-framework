@@ -79,6 +79,10 @@ internal sealed class AzureServiceBusConsumerClientFactory(
             _everyInstanceSubscriptions.TryAdd(subscriptionName, 0);
         }
 
+        // An already-cancelled caller must never build a half-connected client: the connect below would only
+        // observe the token after creating processors and provisioning topology.
+        cancellationToken.ThrowIfCancellationRequested();
+
         AzureServiceBusConsumerClient? client = null;
 
         try
@@ -98,23 +102,14 @@ internal sealed class AzureServiceBusConsumerClientFactory(
 
             return client;
         }
-        catch (OperationCanceledException)
+        catch (Exception e)
         {
             if (client is not null)
             {
                 await client.DisposeAsync().ConfigureAwait(false);
             }
 
-            throw;
-        }
-        catch (Exception e) when (e is not OperationCanceledException)
-        {
-            if (client is not null)
-            {
-                await client.DisposeAsync().ConfigureAwait(false);
-            }
-
-            throw new BrokerConnectionException(e);
+            throw BrokerConnectGuard.ConnectFailure(e, cancellationToken);
         }
     }
 
