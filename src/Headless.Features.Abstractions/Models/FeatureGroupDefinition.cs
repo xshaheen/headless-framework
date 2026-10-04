@@ -3,7 +3,7 @@
 using Headless.Checks;
 using Headless.Primitives;
 
-namespace Headless.Features.Models;
+namespace Headless.Features;
 
 /// <summary>Describes a logical group that organizes one or more related <see cref="FeatureDefinition"/> instances.</summary>
 [PublicAPI]

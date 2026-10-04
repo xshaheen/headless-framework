@@ -2,7 +2,7 @@
 
 using Headless.Domain;
 
-namespace Headless.Permissions.Entities;
+namespace Headless.Permissions;
 
 /// <summary>Column-length constraints for <see cref="PermissionGrantRecord"/> enforced at both the entity
 /// constructor and the database schema level.</summary>

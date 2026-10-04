@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Settings.ValueProviders;
-using Headless.Settings.Values;
+using Headless.Settings;
 
 namespace Tests.Fakes;
 

@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Settings.Values;
+namespace Headless.Settings;
 
 /// <summary>
 /// Message published over <c>IBus</c> by <c>SettingManager</c> after a write, so peer instances holding a

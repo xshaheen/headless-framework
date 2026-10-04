@@ -3,7 +3,7 @@
 using Headless.Checks;
 using Headless.Domain;
 
-namespace Headless.Settings.Entities;
+namespace Headless.Settings;
 
 /// <summary>Persistence entity that stores a setting value for a specific provider and optional provider key.</summary>
 /// <remarks>

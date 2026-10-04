@@ -4,12 +4,12 @@ using Headless.Checks;
 using Headless.Domain;
 using Headless.Primitives;
 
-namespace Headless.Permissions.Entities;
+namespace Headless.Permissions;
 
 /// <summary>
-/// Aggregate root representing the DB-persisted snapshot of a single <see cref="Models.PermissionDefinition"/>.
-/// Serialized by <see cref="Definitions.IPermissionDefinitionSerializer"/> and stored by
-/// <see cref="Repositories.IPermissionDefinitionRecordRepository"/>. All string length constraints are
+/// Aggregate root representing the DB-persisted snapshot of a single <see cref="PermissionDefinition"/>.
+/// Serialized by <see cref="IPermissionDefinitionSerializer"/> and stored by
+/// <see cref="IPermissionDefinitionRecordRepository"/>. All string length constraints are
 /// defined in <see cref="PermissionDefinitionRecordConstants"/>.
 /// </summary>
 public sealed class PermissionDefinitionRecord : AggregateRoot<Guid>, IHasExtraProperties
@@ -32,7 +32,7 @@ public sealed class PermissionDefinitionRecord : AggregateRoot<Guid>, IHasExtraP
     /// <summary>
     /// Comma-separated list of grant-provider names that are allowed to manage this permission, or
     /// <see langword="null"/> when there are no restrictions (all providers may manage it).
-    /// Serialized/deserialized by <see cref="Definitions.IPermissionDefinitionSerializer"/>.
+    /// Serialized/deserialized by <see cref="IPermissionDefinitionSerializer"/>.
     /// </summary>
     public required string? Providers { get; set; }
 

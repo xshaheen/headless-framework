@@ -1,10 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Settings.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Settings.Definitions;
+namespace Headless.Settings;
 
 /// <summary>
 /// Default implementation of <see cref="IStaticSettingDefinitionStore"/>. Builds the definition

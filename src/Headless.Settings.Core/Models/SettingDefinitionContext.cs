@@ -2,7 +2,7 @@
 
 using Headless.Checks;
 
-namespace Headless.Settings.Models;
+namespace Headless.Settings;
 
 /// <summary>Default implementation of <see cref="ISettingDefinitionContext"/> backed by an in-memory dictionary.</summary>
 public sealed class SettingDefinitionContext(Dictionary<string, SettingDefinition> settings) : ISettingDefinitionContext

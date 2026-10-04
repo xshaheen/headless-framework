@@ -5,11 +5,10 @@ using System.Data.Common;
 using System.Globalization;
 using System.Text;
 using Headless.MultiTenancy;
-using Headless.Permissions.Entities;
 using Headless.Sql;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Headless.Permissions.Repositories;
+namespace Headless.Permissions;
 
 /// <summary>
 /// The relational <see cref="IPermissionGrantRepository"/>, written once over <see cref="ISqlDialect"/>. Reads and

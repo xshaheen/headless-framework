@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Permissions.Models;
-
-namespace Headless.Permissions.Definitions;
+namespace Headless.Permissions;
 
 /// <summary>
 /// Contributes permission groups and permissions to the framework's static definition set. Implement this

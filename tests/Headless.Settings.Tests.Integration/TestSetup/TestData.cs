@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Settings.Entities;
-using Headless.Settings.Models;
+using Headless.Settings;
 
 namespace Tests.TestSetup;
 

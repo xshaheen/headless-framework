@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Settings.Models;
-
-namespace Headless.Settings.Values;
+namespace Headless.Settings;
 
 /// <summary>Reads and writes setting values across one or more value providers.</summary>
 public interface ISettingManager

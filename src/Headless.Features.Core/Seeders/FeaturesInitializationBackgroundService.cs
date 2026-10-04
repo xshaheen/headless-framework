@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Features.Definitions;
-using Headless.Features.Models;
 using Headless.Hosting.Initialization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -10,7 +8,7 @@ using Microsoft.Extensions.Options;
 using Polly;
 using Polly.Retry;
 
-namespace Headless.Features.Seeders;
+namespace Headless.Features;
 
 /// <summary>
 /// Hosted service that seeds static feature definitions into the database and pre-caches dynamic

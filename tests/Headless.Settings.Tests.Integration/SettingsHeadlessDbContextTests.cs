@@ -3,8 +3,6 @@
 using Headless.EntityFramework;
 using Headless.Hosting.Initialization;
 using Headless.Settings;
-using Headless.Settings.Entities;
-using Headless.Settings.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;

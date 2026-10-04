@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Permissions.Events;
+namespace Headless.Permissions;
 
 /// <summary>
 /// Integration message published via <c>IBus</c> whenever the dynamic permission definition store saves

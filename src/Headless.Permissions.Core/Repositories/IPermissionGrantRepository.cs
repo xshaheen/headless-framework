@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Permissions.Entities;
-
-namespace Headless.Permissions.Repositories;
+namespace Headless.Permissions;
 
 /// <summary>
 /// Storage contract for persisting and querying permission grant records. Implemented by the EF Core /

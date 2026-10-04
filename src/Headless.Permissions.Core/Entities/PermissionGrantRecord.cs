@@ -3,7 +3,7 @@
 using Headless.Checks;
 using Headless.Domain;
 
-namespace Headless.Permissions.Entities;
+namespace Headless.Permissions;
 
 /// <summary>
 /// Aggregate root representing a persisted permission grant (or explicit denial) for a single principal.

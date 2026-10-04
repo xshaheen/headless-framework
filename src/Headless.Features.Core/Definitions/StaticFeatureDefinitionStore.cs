@@ -1,10 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Features.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Features.Definitions;
+namespace Headless.Features;
 
 /// <summary>
 /// <see cref="IStaticFeatureDefinitionStore"/> implementation that builds its catalog once (lazily, thread-safely)

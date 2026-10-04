@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Features.Entities;
-using Headless.Features.Repositories;
+using Headless.Features;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;

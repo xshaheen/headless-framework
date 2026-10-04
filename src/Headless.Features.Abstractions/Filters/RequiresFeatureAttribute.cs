@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Features.Filters;
+namespace Headless.Features;
 
 /// <summary>
 /// Declares that the decorated class or method is available only when the specified feature(s) are enabled.

@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Headless.Permissions.Models;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -45,7 +44,7 @@ public sealed class HeadlessPermissionsSetupBuilder
     }
 
     /// <summary>
-    /// Skips registering <see cref="Requirements.PermissionPolicyProvider"/>, so a defined permission name no
+    /// Skips registering <see cref="PermissionPolicyProvider"/>, so a defined permission name no
     /// longer resolves as an authorization policy by itself; the host's own or ASP.NET Core's default
     /// <see cref="Microsoft.AspNetCore.Authorization.IAuthorizationPolicyProvider"/> stays in place. Use it on hosts
     /// that own policy resolution or want every policy registered explicitly.

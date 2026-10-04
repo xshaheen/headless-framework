@@ -1,9 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Globalization;
-using Headless.Settings.Definitions;
-using Headless.Settings.Models;
-using Headless.Settings.Values;
+using Headless.Settings;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 using Tests.Fakes;

@@ -3,15 +3,12 @@
 using Headless.Abstractions;
 using Headless.Checks;
 using Headless.Exceptions;
-using Headless.Features.Definitions;
-using Headless.Features.Models;
 using Headless.Features.Resources;
-using Headless.Features.ValueProviders;
 using Headless.Messaging;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace Headless.Features.Values;
+namespace Headless.Features;
 
 /// <summary>Default implementation of <see cref="IFeatureManager"/> that walks the registered provider chain to resolve and mutate feature values.</summary>
 public sealed class FeatureManager(

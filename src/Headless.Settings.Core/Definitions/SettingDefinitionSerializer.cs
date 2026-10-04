@@ -3,10 +3,8 @@
 using Headless.Abstractions;
 using Headless.Core;
 using Headless.Primitives;
-using Headless.Settings.Entities;
-using Headless.Settings.Models;
 
-namespace Headless.Settings.Definitions;
+namespace Headless.Settings;
 
 /// <summary>Default implementation of <see cref="ISettingDefinitionSerializer"/>.</summary>
 public sealed class SettingDefinitionSerializer(IGuidGenerator guidGenerator) : ISettingDefinitionSerializer

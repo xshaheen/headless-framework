@@ -2,8 +2,6 @@
 
 using Headless.EntityFramework;
 using Headless.Features;
-using Headless.Features.Entities;
-using Headless.Features.Repositories;
 using Headless.Hosting.Initialization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;

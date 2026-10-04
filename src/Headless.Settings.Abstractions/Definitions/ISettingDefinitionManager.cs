@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Settings.Models;
-
-namespace Headless.Settings.Definitions;
+namespace Headless.Settings;
 
 /// <summary>
 /// Retrieves setting definitions from the static store and falls back

@@ -1,9 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Headless.Permissions.Models;
 
-namespace Headless.Permissions.Definitions;
+namespace Headless.Permissions;
 
 /// <summary>
 /// Default implementation of <see cref="IPermissionDefinitionManager"/> that merges the

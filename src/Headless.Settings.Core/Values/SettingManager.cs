@@ -4,15 +4,11 @@ using Headless.Abstractions;
 using Headless.Checks;
 using Headless.Exceptions;
 using Headless.Messaging;
-using Headless.Settings.Definitions;
-using Headless.Settings.Helpers;
-using Headless.Settings.Models;
 using Headless.Settings.Resources;
-using Headless.Settings.ValueProviders;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace Headless.Settings.Values;
+namespace Headless.Settings;
 
 /// <summary>Core implementation of <see cref="ISettingManager"/> that resolves, encrypts, and persists setting values across the registered provider stack.</summary>
 public sealed class SettingManager(

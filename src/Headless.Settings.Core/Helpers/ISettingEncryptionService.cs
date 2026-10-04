@@ -2,11 +2,10 @@
 
 using Headless.Exceptions;
 using Headless.Security;
-using Headless.Settings.Models;
 using Headless.Settings.Resources;
 using Microsoft.Extensions.Logging;
 
-namespace Headless.Settings.Helpers;
+namespace Headless.Settings;
 
 /// <summary>Encrypts and decrypts setting values for settings that have <c>IsEncrypted</c> set to <see langword="true"/>.</summary>
 public interface ISettingEncryptionService

@@ -3,12 +3,8 @@
 using Headless.Abstractions;
 using Headless.Checks;
 using Headless.MultiTenancy;
-using Headless.Permissions.Definitions;
-using Headless.Permissions.Entities;
-using Headless.Permissions.GrantProviders;
-using Headless.Permissions.Repositories;
 
-namespace Headless.Permissions.Seeders;
+namespace Headless.Permissions;
 
 public sealed class GrantPermissionsSeedHelper(
     IPermissionDefinitionManager permissionDefinitionManager,

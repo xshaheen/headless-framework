@@ -4,7 +4,7 @@ using Headless.Checks;
 using Headless.Domain;
 using Headless.Primitives;
 
-namespace Headless.Features.Entities;
+namespace Headless.Features;
 
 /// <summary>Persistence record for a single feature definition stored in the dynamic feature definition store.</summary>
 public sealed class FeatureDefinitionRecord : AggregateRoot<Guid>, IHasExtraProperties

@@ -5,15 +5,11 @@ using Headless.Abstractions;
 using Headless.Caching;
 using Headless.DistributedLocks;
 using Headless.Messaging;
-using Headless.Permissions.Entities;
-using Headless.Permissions.Events;
-using Headless.Permissions.Models;
-using Headless.Permissions.Repositories;
 using Headless.Serializer.Modifiers;
 using Microsoft.Extensions.Options;
 using Nito.AsyncEx;
 
-namespace Headless.Permissions.Definitions;
+namespace Headless.Permissions;
 
 /// <summary>
 /// Default implementation of <see cref="IDynamicPermissionDefinitionStore"/> that reads permission definitions

@@ -1,7 +1,4 @@
 using Headless.Settings;
-using Headless.Settings.Definitions;
-using Headless.Settings.Models;
-using Headless.Settings.Repositories;
 using Microsoft.Extensions.DependencyInjection;
 using Tests.TestSetup;
 
