@@ -1,8 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Features;
-using Headless.Hosting.DependencyInjection;
-using Headless.Hosting.Validation;
+using Headless.Hosting;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;

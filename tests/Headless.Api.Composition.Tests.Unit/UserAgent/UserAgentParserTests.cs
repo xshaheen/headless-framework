@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Abstractions;
-using Headless.Api.UserAgent;
+using Headless.Api;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Options;
 

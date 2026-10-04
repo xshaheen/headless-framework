@@ -244,18 +244,6 @@
       "headless.checks": {
         "type": "Project"
       },
-      "headless.core": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.Extensions": "[1.0.0, )",
-          "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
-          "Headless.Serializer.Json": "[1.0.0, )",
-          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
-          "Microsoft.Extensions.Logging.Abstractions": "[10.0.12, )",
-          "TimeZoneConverter": "[7.2.0, )"
-        }
-      },
       "headless.extensions": {
         "type": "Project",
         "dependencies": {
@@ -280,6 +268,8 @@
       "headless.hosting": {
         "type": "Project",
         "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
           "Headless.FluentValidation": "[1.0.0, )",
           "Microsoft.Extensions.Configuration.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
@@ -289,24 +279,16 @@
           "OpenTelemetry.Api": "[1.18.0, )"
         }
       },
-      "headless.idempotency.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.UnitOfWork.Abstractions": "[1.0.0, )"
-        }
-      },
-      "headless.idempotency.core": {
+      "headless.idempotency": {
         "type": "Project",
         "dependencies": {
           "FluentValidation": "[12.1.1, )",
           "Headless.Checks": "[1.0.0, )",
-          "Headless.Core": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Headless.Idempotency.Abstractions": "[1.0.0, )",
           "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
+          "Headless.Sql": "[1.0.0, )",
           "Headless.Sql.Abstractions": "[1.0.0, )",
-          "Headless.Sql.Core": "[1.0.0, )",
           "Headless.UnitOfWork": "[1.0.0, )",
           "Headless.UnitOfWork.Abstractions": "[1.0.0, )",
           "Microsoft.Extensions.Configuration.Abstractions": "[10.0.12, )",
@@ -314,10 +296,20 @@
           "Microsoft.Extensions.Options": "[10.0.12, )"
         }
       },
+      "headless.idempotency.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.UnitOfWork.Abstractions": "[1.0.0, )"
+        }
+      },
       "headless.multitenancy.abstractions": {
         "type": "Project",
         "dependencies": {
-          "Headless.Primitives": "[1.0.0, )"
+          "Headless.Extensions": "[1.0.0, )",
+          "Headless.Primitives": "[1.0.0, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
+          "Microsoft.Extensions.Hosting.Abstractions": "[10.0.12, )"
         }
       },
       "headless.primitives": {
@@ -327,20 +319,7 @@
           "Headless.Generator.Primitives.Abstractions": "[1.0.0, )"
         }
       },
-      "headless.serializer.abstractions": {
-        "type": "Project"
-      },
-      "headless.serializer.json": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.Serializer.Abstractions": "[1.0.0, )"
-        }
-      },
-      "headless.sql.abstractions": {
-        "type": "Project"
-      },
-      "headless.sql.core": {
+      "headless.sql": {
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
@@ -351,13 +330,16 @@
           "OpenTelemetry.Api": "[1.18.0, )"
         }
       },
+      "headless.sql.abstractions": {
+        "type": "Project"
+      },
       "headless.sql.sqlite": {
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
+          "Headless.Sql": "[1.0.0, )",
           "Headless.Sql.Abstractions": "[1.0.0, )",
-          "Headless.Sql.Core": "[1.0.0, )",
           "Microsoft.Data.Sqlite": "[10.0.12, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.12, )"
@@ -528,12 +510,6 @@
         "dependencies": {
           "SQLitePCLRaw.core": "3.0.5"
         }
-      },
-      "TimeZoneConverter": {
-        "type": "CentralTransitive",
-        "requested": "[7.2.0, )",
-        "resolved": "7.2.0",
-        "contentHash": "4Poqu79dTmacVETqUJ53g3x4U21V/cmWPSlehdsVE4Q00akavvlRq+SRjcg/CmfO9ibOCjRl6TeUV7hkC5RC4w=="
       }
     }
   }

@@ -1,6 +1,6 @@
 ---
 domain: Audit Log
-packages: AuditLog.Abstractions, AuditLog.Core, AuditLog.Storage.EntityFramework, AuditLog.Storage.PostgreSql, AuditLog.Storage.SqlServer
+packages: AuditLog.Abstractions, AuditLog, AuditLog.Storage.EntityFramework, AuditLog.Storage.PostgreSql, AuditLog.Storage.SqlServer
 ---
 
 # Audit Log
@@ -9,17 +9,17 @@ packages: AuditLog.Abstractions, AuditLog.Core, AuditLog.Storage.EntityFramework
 
 ## Orientation
 
-Install `Headless.AuditLog.Core` plus exactly one storage provider:
+Install `Headless.AuditLog` plus exactly one storage provider:
 
 | Package | Use when |
 |---|---|
 | `Headless.AuditLog.Abstractions` | Contract package pulled by Core and providers; reference directly only when you need contracts without DI setup. |
-| `Headless.AuditLog.Core` | DI setup, options validation, storage options, setup builders, and the exactly-one-provider registration pipeline. |
+| `Headless.AuditLog` | DI setup, options validation, storage options, setup builders, and the exactly-one-provider registration pipeline. |
 | `Headless.AuditLog.Storage.EntityFramework` | You already use EF Core and want audit rows to commit atomically in the same `SaveChanges` transaction. |
 | `Headless.AuditLog.Storage.PostgreSql` | You want zero EF dependency and are on PostgreSQL. |
 | `Headless.AuditLog.Storage.SqlServer` | You want zero EF dependency and are on SQL Server. |
 
-Code against `IAuditLog<TContext>`, `IAuditLogWriter<TContext>`, and `IReadAuditLog<TContext>` — never reference provider types directly. To audit authorization denials in an API, call `services.AddHeadlessAuthorizationDenialAudit<TContext>()` from `Headless.Api.Core`.
+Code against `IAuditLog<TContext>`, `IAuditLogWriter<TContext>`, and `IReadAuditLog<TContext>` — never reference provider types directly. To audit authorization denials in an API, call `services.AddHeadlessAuthorizationDenialAudit<TContext>()` from `Headless.Api`.
 
 ## Agent Rules
 
@@ -121,7 +121,7 @@ do
 
 ### Authorization denial entries
 
-`services.AddHeadlessAuthorizationDenialAudit<TContext>()` in `Headless.Api.Core` wraps the registered `IAuthorizationMiddlewareResultHandler` and writes one entry through `IAuditLogWriter<TContext>` each time the authorization middleware challenges or forbids a request. Register the audit log storage too; the writer comes from it.
+`services.AddHeadlessAuthorizationDenialAudit<TContext>()` in `Headless.Api` wraps the registered `IAuthorizationMiddlewareResultHandler` and writes one entry through `IAuditLogWriter<TContext>` each time the authorization middleware challenges or forbids a request. Register the audit log storage too; the writer comes from it.
 
 | Field | Value |
 |---|---|
@@ -237,7 +237,7 @@ None. This is an abstractions package and registers no services.
 
 ---
 
-## Headless.AuditLog.Core
+## Headless.AuditLog
 
 DI setup package for `Headless.AuditLog`: options validation, setup builders, and the exactly-one-storage-provider registration pipeline.
 
@@ -255,7 +255,7 @@ DI setup package for `Headless.AuditLog`: options validation, setup builders, an
 ### Install
 
 ```bash
-dotnet add package Headless.AuditLog.Core
+dotnet add package Headless.AuditLog
 ```
 
 ### Setup and use
@@ -457,7 +457,7 @@ Raw PostgreSQL storage provider for audit rows. No Entity Framework dependency �
 
 ### API and behavior
 
-- No EF Core dependency — depends only on `Npgsql`, `Headless.AuditLog.Abstractions`, and `Headless.AuditLog.Core`.
+- No EF Core dependency — depends only on `Npgsql`, `Headless.AuditLog.Abstractions`, and `Headless.AuditLog`.
 - `IAuditLogStore` — enrolls in the consumer's ambient Npgsql transaction when available; falls back to its own connection otherwise.
 - `IAuditLog<TContext>` and `IAuditLogWriter<TContext>` — explicit event logging; both write over the provider's own connection.
 - `IReadAuditLog<TContext>` — parameterized keyset queries over `(created_at, id)`.
@@ -544,8 +544,8 @@ setup.UsePostgreSql((options, sp) =>
 ### Runtime behavior
 
 - Registers the audit-log schema contribution; the one schema runner creates the table and indexes at startup.
-- Registers the shared relational writer from `Headless.AuditLog.Core`, over the PostgreSQL dialect, as singleton.
-- Registers `IAuditLogStore` as scoped, and `IAuditLog<TContext>`, `IAuditLogWriter<TContext>`, and `IReadAuditLog<TContext>` as singletons, all from `Headless.AuditLog.Core`.
+- Registers the shared relational writer from `Headless.AuditLog`, over the PostgreSQL dialect, as singleton.
+- Registers `IAuditLogStore` as scoped, and `IAuditLog<TContext>`, `IAuditLogWriter<TContext>`, and `IReadAuditLog<TContext>` as singletons, all from `Headless.AuditLog`.
 - Registers `IJsonSerializer`, `TimeProvider` (`TimeProvider.System`), `ICurrentTenant`, `ICurrentUser`, `ICorrelationIdProvider` as singletons if not already registered.
 
 ---
@@ -556,7 +556,7 @@ Raw SQL Server storage provider for audit rows. No Entity Framework dependency �
 
 ### API and behavior
 
-- No EF Core dependency — depends only on `Microsoft.Data.SqlClient`, `Headless.AuditLog.Abstractions`, and `Headless.AuditLog.Core`.
+- No EF Core dependency — depends only on `Microsoft.Data.SqlClient`, `Headless.AuditLog.Abstractions`, and `Headless.AuditLog`.
 - `IAuditLogStore` — enrolls in the consumer's ambient `SqlTransaction` when available; falls back to its own connection otherwise.
 - `IAuditLog<TContext>` and `IAuditLogWriter<TContext>` — explicit event logging; both write over the provider's own connection.
 - `IReadAuditLog<TContext>` — parameterized keyset queries over `(CreatedAt, Id)`, limited with `OFFSET 0 ROWS FETCH NEXT @Limit ROWS ONLY`. The writer and reader bind timestamps typed like the `CreatedAt` column (`datetimeoffset` by default, `datetime2` when `CreatedAtColumnType` says so), so stored values, range bounds, and continuation positions keep full precision and the column is never converted in a comparison.
@@ -645,6 +645,6 @@ setup.UseSqlServer((options, sp) =>
 ### Runtime behavior
 
 - Registers the audit-log schema contribution; the one schema runner creates the table and indexes at startup.
-- Registers the shared relational writer from `Headless.AuditLog.Core`, over the SQL Server dialect, as singleton.
-- Registers `IAuditLogStore` as scoped, and `IAuditLog<TContext>`, `IAuditLogWriter<TContext>`, and `IReadAuditLog<TContext>` as singletons, all from `Headless.AuditLog.Core`.
+- Registers the shared relational writer from `Headless.AuditLog`, over the SQL Server dialect, as singleton.
+- Registers `IAuditLogStore` as scoped, and `IAuditLog<TContext>`, `IAuditLogWriter<TContext>`, and `IReadAuditLog<TContext>` as singletons, all from `Headless.AuditLog`.
 - Registers `IJsonSerializer`, `TimeProvider` (`TimeProvider.System`), `ICurrentTenant`, `ICurrentUser`, `ICorrelationIdProvider` as singletons if not already registered.

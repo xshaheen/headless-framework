@@ -1,0 +1,23 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Description>Core services, options, and setup primitives for Headless blob storage packages.</Description>
+    <PackageTags>headless;blobs;dotnet</PackageTags>
+    <RootNamespace>Headless.Blobs</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Blobs.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.Blobs.Aws" />
+    <InternalsVisibleTo Include="Headless.Blobs.Azure" />
+    <InternalsVisibleTo Include="Headless.Blobs.CloudflareR2" />
+    <InternalsVisibleTo Include="Headless.Blobs.FileSystem" />
+    <InternalsVisibleTo Include="Headless.Blobs.Redis" />
+    <InternalsVisibleTo Include="Headless.Blobs.SshNet" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Blobs.Abstractions\Headless.Blobs.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.Extensions\Headless.Extensions.csproj" />
+    <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,8 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Reflection;
-using Headless.Abstractions;
-using Headless.OpenApi.Nswag.OperationProcessors;
+using Headless.Api;
 using NJsonSchema;
 using NSwag;
 using NSwag.Generation.AspNetCore;

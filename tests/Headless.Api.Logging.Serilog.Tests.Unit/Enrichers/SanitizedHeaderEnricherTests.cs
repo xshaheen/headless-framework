@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Logging.Enrichers;
+using Headless.Logging;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Http;
 using Serilog.Core;

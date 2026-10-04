@@ -9,6 +9,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.Messaging.AzureServiceBus\Headless.Messaging.AzureServiceBus.csproj" />
-    <ProjectReference Include="..\Headless.Messaging.Core.Tests.Harness\Headless.Messaging.Core.Tests.Harness.csproj" />
+    <ProjectReference Include="..\Headless.Messaging.Tests.Harness\Headless.Messaging.Tests.Harness.csproj" />
   </ItemGroup>
 </Project>

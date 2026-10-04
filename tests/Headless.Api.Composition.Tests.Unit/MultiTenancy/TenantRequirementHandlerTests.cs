@@ -1,9 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Security.Claims;
-using Headless.Abstractions;
-using Headless.Api.MultiTenancy;
-using Headless.Testing.Helpers;
+using Headless.Api;
+using Headless.Testing;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 

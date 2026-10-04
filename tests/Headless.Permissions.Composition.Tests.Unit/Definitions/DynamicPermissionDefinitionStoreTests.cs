@@ -1,14 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Abstractions;
+using Headless;
 using Headless.Caching;
+using Headless.Context;
 using Headless.DistributedLocks;
 using Headless.Messaging;
-using Headless.Permissions.Definitions;
-using Headless.Permissions.Entities;
-using Headless.Permissions.Events;
-using Headless.Permissions.Models;
-using Headless.Permissions.Repositories;
+using Headless.Permissions;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;

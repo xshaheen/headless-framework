@@ -584,14 +584,7 @@
         "resolved": "18.1.0",
         "contentHash": "5K+9KFg2TdTl7VXv88Qzi/0lqK6JFoNP3lRuImPYGRV7K/QYklDyTrj4+A+KAki1JsQi6qKY+hDyY7d6WRqjrw=="
       },
-      "headless.api.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Core": "[1.0.0, )",
-          "Headless.MultiTenancy.Abstractions": "[1.0.0, )"
-        }
-      },
-      "headless.api.core": {
+      "headless.api": {
         "type": "Project",
         "dependencies": {
           "Asp.Versioning.Abstractions": "[10.2.1, )",
@@ -600,7 +593,8 @@
           "FluentValidation.DependencyInjectionExtensions": "[12.1.1, )",
           "Headless.Api.Abstractions": "[1.0.0, )",
           "Headless.AuditLog.Abstractions": "[1.0.0, )",
-          "Headless.Core": "[1.0.0, )",
+          "Headless.Context": "[1.0.0, )",
+          "Headless.Context.Abstractions": "[1.0.0, )",
           "Headless.FluentValidation": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Headless.MultiTenancy": "[1.0.0, )",
@@ -613,6 +607,13 @@
           "Microsoft.IdentityModel.JsonWebTokens": "[8.22.0, )",
           "NetEscapades.AspNetCore.SecurityHeaders": "[1.3.1, )",
           "TimeZoneConverter": "[7.2.0, )"
+        }
+      },
+      "headless.api.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Context.Abstractions": "[1.0.0, )",
+          "Headless.MultiTenancy.Abstractions": "[1.0.0, )"
         }
       },
       "headless.auditlog.abstractions": {
@@ -631,14 +632,22 @@
       "headless.checks": {
         "type": "Project"
       },
-      "headless.core": {
+      "headless.context": {
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
+          "Headless.Context.Abstractions": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
-          "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.12, )"
+        }
+      },
+      "headless.context.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Primitives": "[1.0.0, )"
         }
       },
       "headless.extensions": {
@@ -665,6 +674,8 @@
       "headless.hosting": {
         "type": "Project",
         "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
           "Headless.FluentValidation": "[1.0.0, )",
           "Microsoft.Extensions.Configuration.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
@@ -689,7 +700,10 @@
       "headless.multitenancy.abstractions": {
         "type": "Project",
         "dependencies": {
-          "Headless.Primitives": "[1.0.0, )"
+          "Headless.Extensions": "[1.0.0, )",
+          "Headless.Primitives": "[1.0.0, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
+          "Microsoft.Extensions.Hosting.Abstractions": "[10.0.12, )"
         }
       },
       "headless.primitives": {
@@ -729,8 +743,9 @@
         "dependencies": {
           "AwesomeAssertions": "[9.6.0, )",
           "Bogus": "[35.6.5, )",
-          "Headless.Core": "[1.0.0, )",
+          "Headless.Context.Abstractions": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
+          "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
           "Headless.Security.Abstractions": "[1.0.0, )",
           "Meziantou.Extensions.Logging.Xunit.v3": "[3.0.6, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",

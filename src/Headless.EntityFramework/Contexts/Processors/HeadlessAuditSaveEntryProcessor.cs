@@ -2,15 +2,16 @@
 
 using System.Collections.Concurrent;
 using System.Runtime.CompilerServices;
-using Headless.Abstractions;
+using Headless.Context;
 using Headless.Domain;
+using Headless.EntityFramework.Contexts;
 using Headless.Reflection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using AccountId = Headless.Primitives.AccountId;
 using UserId = Headless.Primitives.UserId;
 
-namespace Headless.EntityFramework.Contexts.Processors;
+namespace Headless.EntityFramework;
 
 /// <summary>
 /// Save-entry processor that stamps audit timestamps and actor identifiers on entities that implement

@@ -1,6 +1,6 @@
 ---
 domain: Feature Management
-packages: Features.Abstractions, Features.Core, Features.Storage.EntityFramework, Features.Storage.PostgreSql, Features.Storage.SqlServer
+packages: Features.Abstractions, Features, Features.Storage.EntityFramework, Features.Storage.PostgreSql, Features.Storage.SqlServer
 ---
 
 # Feature Management
@@ -9,10 +9,10 @@ packages: Features.Abstractions, Features.Core, Features.Storage.EntityFramework
 
 ## Orientation
 
-Install `Headless.Features.Abstractions` plus `Headless.Features.Core` and exactly one storage provider:
+Install `Headless.Features.Abstractions` plus `Headless.Features` and exactly one storage provider:
 
 - `Headless.Features.Abstractions` — interfaces (`IFeatureManager`, `IFeatureDefinitionProvider`, `IFeatureDefinitionManager`)
-- `Headless.Features.Core` — full implementation with caching, value providers, and background initialization
+- `Headless.Features` — full implementation with caching, value providers, and background initialization
 - `Headless.Features.Storage.EntityFramework` — EF Core persistence using the consumer's `DbContext`
 - `Headless.Features.Storage.PostgreSql` — raw ADO.NET persistence for PostgreSQL (no EF dependency)
 - `Headless.Features.Storage.SqlServer` — raw ADO.NET persistence for SQL Server (no EF dependency)
@@ -232,7 +232,7 @@ None.
 
 ---
 
-## Headless.Features.Core
+## Headless.Features
 
 Core implementation of feature management with caching, value providers, and definition management.
 
@@ -250,7 +250,7 @@ Core implementation of feature management with caching, value providers, and def
 - `HeadlessFeaturesSetupBuilder` — fluent builder returned to `AddHeadlessFeatures`; exposes `ConfigureManagement`, `ConfigureStorage`, and `RegisterExtension`
 - `services.AddFeatureDefinitionProvider<T>()` — registers a custom `IFeatureDefinitionProvider`
 - `services.AddFeatureValueProvider<T>()` — registers a custom `IFeatureValueReadProvider` (idempotent by type)
-- `IClientVisibleFeaturesReader` (`Headless.Features.ClientVisibility`) — `GetAsync(PrincipalContext, …)` returns the effective value of every feature whose definition is `IsVisibleToClients`, keyed by name, for example to include in the configuration an application returns to its front end. Headless ships no endpoint; see the client-config recipe in `docs/llms/permissions.md`
+- `IClientVisibleFeaturesReader` (`Headless.Features`) — `GetAsync(PrincipalContext, …)` returns the effective value of every feature whose definition is `IsVisibleToClients`, keyed by name, for example to include in the configuration an application returns to its front end. Headless ships no endpoint; see the client-config recipe in `docs/llms/permissions.md`
 
 ### Design constraints
 
@@ -266,7 +266,7 @@ Core implementation of feature management with caching, value providers, and def
 ### Install
 
 ```bash
-dotnet add package Headless.Features.Core
+dotnet add package Headless.Features
 ```
 
 ### Setup and use
@@ -368,7 +368,7 @@ Entity Framework Core storage implementation for feature management.
 
 - `setup.UseEntityFramework<TContext>()` — registers the EF storage provider via the `HeadlessFeaturesSetupBuilder`
 - `modelBuilder.AddHeadlessFeatures(DbContext context)` — applies entity configurations by resolving `FeaturesStorageOptions` from the context's service provider (no constructor injection required) and the naming style from `context.Database.ProviderName`: snake_case on Npgsql, PascalCase on every other provider
-- `modelBuilder.AddHeadlessFeatures(FeaturesStorageOptions options, StorageNamingStyle style)` — overload for when you already hold the options; pass `HeadlessStorageNaming.ForProvider(Database.ProviderName)` (namespace `Headless.Hosting.Initialization`) so the style matches the database
+- `modelBuilder.AddHeadlessFeatures(FeaturesStorageOptions options, StorageNamingStyle style)` — overload for when you already hold the options; pass `HeadlessStorageNaming.ForProvider(Database.ProviderName)` (namespace `Headless.Hosting`) so the style matches the database
 - EF repositories for `IFeatureValueRecordRepository` and `IFeatureDefinitionRecordRepository`
 - `FeatureValueRecord` maps `CreatedAt` / `UpdatedAt` audit columns (via `ConfigureHeadlessConvention`); the Headless audit save-processor stamps them on `SaveChanges`
 - `FeaturesStorageOptions` for schema and table-name configuration (shared with raw-DDL providers)
@@ -497,7 +497,7 @@ Configure schema and table names through `FeaturesStorageOptions` via `setup.Con
 ### Runtime behavior
 
 - Registers the features schema contribution; the one schema runner applies it at startup
-- Registers the shared relational repositories from `Headless.Features.Core`, over the PostgreSQL dialect, as `IFeatureValueRecordRepository` and `IFeatureDefinitionRecordRepository` (singletons)
+- Registers the shared relational repositories from `Headless.Features`, over the PostgreSQL dialect, as `IFeatureValueRecordRepository` and `IFeatureDefinitionRecordRepository` (singletons)
 
 ---
 
@@ -568,4 +568,4 @@ Configure schema and table names through `FeaturesStorageOptions` via `setup.Con
 ### Runtime behavior
 
 - Registers the features schema contribution; the one schema runner applies it at startup
-- Registers the shared relational repositories from `Headless.Features.Core`, over the SQL Server dialect, as `IFeatureValueRecordRepository` and `IFeatureDefinitionRecordRepository` (singletons)
+- Registers the shared relational repositories from `Headless.Features`, over the SQL Server dialect, as `IFeatureValueRecordRepository` and `IFeatureDefinitionRecordRepository` (singletons)

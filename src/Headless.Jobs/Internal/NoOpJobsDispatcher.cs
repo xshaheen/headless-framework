@@ -1,0 +1,18 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+namespace Headless.Jobs.Temps;
+
+/// <summary>
+/// No-operation implementation of IJobsDispatcher.
+/// Used when background services are disabled (queue-only mode).
+/// </summary>
+internal sealed class NoOpJobsDispatcher : IJobsDispatcher
+{
+    public bool IsEnabled => false;
+
+    public Task DispatchAsync(JobExecutionState[] contexts, CancellationToken cancellationToken = default)
+    {
+        // No-op: dispatcher not available in queue-only mode
+        return Task.CompletedTask;
+    }
+}

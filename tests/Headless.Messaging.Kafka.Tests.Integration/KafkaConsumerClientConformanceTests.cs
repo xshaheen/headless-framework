@@ -2,7 +2,6 @@
 
 using Confluent.Kafka;
 using Headless.Messaging;
-using Headless.Messaging.Configuration;
 
 namespace Tests;
 

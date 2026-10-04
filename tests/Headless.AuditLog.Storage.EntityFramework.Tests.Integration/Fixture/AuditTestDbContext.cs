@@ -1,6 +1,6 @@
 using Headless.AuditLog;
 using Headless.EntityFramework;
-using Headless.Hosting.Initialization;
+using Headless.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 

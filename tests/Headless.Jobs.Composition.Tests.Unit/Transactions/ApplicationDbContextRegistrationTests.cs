@@ -2,8 +2,6 @@
 
 using Headless.EntityFramework;
 using Headless.Jobs;
-using Headless.Jobs.Customizer;
-using Headless.Jobs.Entities;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
 

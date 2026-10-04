@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Api.Filters;
+namespace Headless.Api;
 
 internal sealed class HeadlessProblemDetailsResultFilter(IOptions<ProblemDetailsOptions> options)
     : IAlwaysRunResultFilter

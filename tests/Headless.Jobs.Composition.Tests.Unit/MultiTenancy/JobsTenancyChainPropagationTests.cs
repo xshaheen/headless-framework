@@ -1,14 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Abstractions;
+using Headless;
 using Headless.Jobs;
 using Headless.Jobs.BackgroundServices;
-using Headless.Jobs.Entities;
-using Headless.Jobs.Exceptions;
-using Headless.Jobs.Interfaces;
-using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Managers;
-using Headless.Jobs.Models;
 using Headless.MultiTenancy;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;
@@ -381,7 +376,7 @@ public sealed class JobsTenancyChainPropagationTests : TestBase
                     new JobFunctionRegistration
                     {
                         CronExpression = "",
-                        Priority = Headless.Jobs.Enums.JobPriority.Normal,
+                        Priority = Headless.Jobs.JobPriority.Normal,
                         Delegate = (_, _, _) => Task.CompletedTask,
                         MaxConcurrency = 0,
                     }

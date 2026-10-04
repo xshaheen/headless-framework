@@ -37,7 +37,7 @@ internal sealed class RabbitMqTransport : IBusTransport, IQueueTransport
             return OperateResult.Failed(new ObjectDisposedException(nameof(RabbitMqTransport)));
         }
 
-        Configuration.MessagingRoutingAffinityMapping.RejectUnsupported(message, "RabbitMq");
+        MessagingRoutingAffinityMapping.RejectUnsupported(message, "RabbitMq");
         cancellationToken.ThrowIfCancellationRequested();
         RabbitMqValidation.ValidateMessageName(message.Name);
         var routingKey = RabbitMqPhysicalAddress.RoutingKey(_lane, message.Name);

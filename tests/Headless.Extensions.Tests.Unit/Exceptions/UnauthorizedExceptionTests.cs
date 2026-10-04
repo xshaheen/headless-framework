@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Exceptions;
+using Headless;
 using Headless.Primitives;
 
 namespace Tests.Exceptions;

@@ -3,16 +3,8 @@
 using System.Diagnostics;
 using Headless.Coordination;
 using Headless.Jobs;
-using Headless.Jobs.DbContextFactory;
-using Headless.Jobs.Entities;
-using Headless.Jobs.Enums;
-using Headless.Jobs.Interfaces;
-using Headless.Jobs.Models;
 using Headless.Messaging;
-using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
-using Headless.Messaging.Messages;
-using Headless.Messaging.Serialization;
 using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -287,9 +279,9 @@ public sealed partial class OutboxBridgeIntegrationTests
         }
     }
 
-    private sealed class DeadlineJob : Headless.Jobs.Base.IJob
+    private sealed class DeadlineJob : Headless.Jobs.IJob
     {
-        public ValueTask ExecuteAsync(Headless.Jobs.Base.JobContext context, CancellationToken cancellationToken) =>
+        public ValueTask ExecuteAsync(Headless.Jobs.JobContext context, CancellationToken cancellationToken) =>
             ValueTask.CompletedTask;
     }
 

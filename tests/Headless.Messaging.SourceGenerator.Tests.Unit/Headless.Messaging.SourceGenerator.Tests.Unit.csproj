@@ -14,7 +14,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.Messaging.Abstractions\Headless.Messaging.Abstractions.csproj" />
-    <ProjectReference Include="..\..\src\Headless.Messaging.Core\Headless.Messaging.Core.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Messaging\Headless.Messaging.csproj" />
     <ProjectReference Include="..\..\src\Headless.Messaging.SourceGenerator\Headless.Messaging.SourceGenerator.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
     <ProjectReference Include="..\Headless.SourceGenerators.Tests.Harness\Headless.SourceGenerators.Tests.Harness.csproj" />

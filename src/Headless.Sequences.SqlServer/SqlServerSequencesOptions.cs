@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Constants;
-
 namespace Headless.Sequences.SqlServer;
 
 /// <summary>Connection, command, and table options for the SQL Server sequence provider.</summary>

@@ -672,6 +672,15 @@
           "xunit.v3.runner.common": "[4.0.0]"
         }
       },
+      "headless.blobs": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Blobs.Abstractions": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )"
+        }
+      },
       "headless.blobs.abstractions": {
         "type": "Project",
         "dependencies": {
@@ -684,20 +693,10 @@
         "dependencies": {
           "Azure.Storage.Blobs": "[12.29.2, )",
           "Azure.Storage.Blobs.Batch": "[12.26.0, )",
+          "Headless.Blobs": "[1.0.0, )",
           "Headless.Blobs.Abstractions": "[1.0.0, )",
-          "Headless.Blobs.Core": "[1.0.0, )",
-          "Headless.Core": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Microsoft.Extensions.Azure": "[1.14.1, )"
-        }
-      },
-      "headless.blobs.core": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Blobs.Abstractions": "[1.0.0, )",
-          "Headless.Extensions": "[1.0.0, )",
-          "Headless.Hosting": "[1.0.0, )",
-          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )"
         }
       },
       "headless.blobs.tests.harness": {
@@ -716,16 +715,11 @@
       "headless.checks": {
         "type": "Project"
       },
-      "headless.core": {
+      "headless.context.abstractions": {
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
-          "Headless.Extensions": "[1.0.0, )",
-          "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
-          "Headless.Serializer.Json": "[1.0.0, )",
-          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
-          "Microsoft.Extensions.Logging.Abstractions": "[10.0.12, )",
-          "TimeZoneConverter": "[7.2.0, )"
+          "Headless.Primitives": "[1.0.0, )"
         }
       },
       "headless.extensions": {
@@ -752,6 +746,8 @@
       "headless.hosting": {
         "type": "Project",
         "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
           "Headless.FluentValidation": "[1.0.0, )",
           "Microsoft.Extensions.Configuration.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
@@ -764,7 +760,10 @@
       "headless.multitenancy.abstractions": {
         "type": "Project",
         "dependencies": {
-          "Headless.Primitives": "[1.0.0, )"
+          "Headless.Extensions": "[1.0.0, )",
+          "Headless.Primitives": "[1.0.0, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
+          "Microsoft.Extensions.Hosting.Abstractions": "[10.0.12, )"
         }
       },
       "headless.primitives": {
@@ -795,8 +794,9 @@
         "dependencies": {
           "AwesomeAssertions": "[9.6.0, )",
           "Bogus": "[35.6.5, )",
-          "Headless.Core": "[1.0.0, )",
+          "Headless.Context.Abstractions": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
+          "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
           "Headless.Security.Abstractions": "[1.0.0, )",
           "Meziantou.Extensions.Logging.Xunit.v3": "[3.0.6, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
@@ -1178,12 +1178,6 @@
           "Testcontainers": "4.15.0",
           "xunit.v3.extensibility.core": "3.2.2"
         }
-      },
-      "TimeZoneConverter": {
-        "type": "CentralTransitive",
-        "requested": "[7.2.0, )",
-        "resolved": "7.2.0",
-        "contentHash": "4Poqu79dTmacVETqUJ53g3x4U21V/cmWPSlehdsVE4Q00akavvlRq+SRjcg/CmfO9ibOCjRl6TeUV7hkC5RC4w=="
       },
       "xunit.v3.assert": {
         "type": "CentralTransitive",

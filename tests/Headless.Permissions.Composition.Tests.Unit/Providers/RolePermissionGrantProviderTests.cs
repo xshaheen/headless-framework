@@ -1,10 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Abstractions;
+using Headless.Context;
 using Headless.MultiTenancy;
-using Headless.Permissions.GrantProviders;
-using Headless.Permissions.Grants;
-using Headless.Permissions.Models;
+using Headless.Permissions;
 using Headless.Testing.Tests;
 
 namespace Tests.Providers;

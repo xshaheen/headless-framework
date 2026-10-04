@@ -1,12 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Abstractions;
+using Headless.Context;
 using Headless.Coordination;
-using Headless.Jobs.Base;
-using Headless.Jobs.DbContextFactory;
-using Headless.Jobs.Entities;
-using Headless.Jobs.Enums;
-using Headless.Jobs.Interfaces;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;

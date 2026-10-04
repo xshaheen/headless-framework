@@ -2,7 +2,7 @@
 
 using System.Diagnostics;
 using Headless.Hosting.Initialization.Schema;
-using Headless.Testing.Helpers;
+using Headless.Testing;
 using Headless.Testing.Tests;
 
 namespace Tests.Initialization;

@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Jobs.Configurations;
+namespace Headless.Jobs;
 
 // The ordinal collation every durable Jobs identity column is stored under: function names, contract versions,
 // keyed-scheduling keys, and idempotency keys. Binary comparison is required because a case-insensitive database

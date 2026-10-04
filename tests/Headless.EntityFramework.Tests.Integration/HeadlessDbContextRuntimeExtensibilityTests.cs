@@ -1,12 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
-using Headless.Abstractions;
 using Headless.AuditLog;
 using Headless.Domain;
 using Headless.EntityFramework;
-using Headless.EntityFramework.Contexts.Processors;
-using Headless.EntityFramework.Contexts.Runtime;
 using Headless.MultiTenancy;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;

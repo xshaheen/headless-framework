@@ -1,12 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Security.Claims;
-using Headless.Abstractions;
-using Headless.Features.ClientVisibility;
-using Headless.Features.Definitions;
-using Headless.Features.Models;
-using Headless.Features.Values;
-using Headless.Testing.Helpers;
+using Headless.Context;
+using Headless.Features;
+using Headless.Testing;
 using Headless.Testing.Tests;
 
 namespace Tests.ClientVisibility;

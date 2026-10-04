@@ -8,7 +8,7 @@
     <InternalsVisibleTo Include="Headless.Imaging.ImageSharp.Tests.Unit" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Headless.Imaging.Core\Headless.Imaging.Core.csproj" />
+    <ProjectReference Include="..\Headless.Imaging\Headless.Imaging.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="SixLabors.ImageSharp" />

@@ -1,14 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Hosting.Initialization;
+using Headless.Hosting;
 using Headless.Jobs;
-using Headless.Jobs.Base;
-using Headless.Jobs.Configurations;
-using Headless.Jobs.Entities;
-using Headless.Jobs.Enums;
-using Headless.Jobs.Interfaces;
-using Headless.Jobs.Interfaces.Managers;
-using Headless.Jobs.Models;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -420,9 +413,9 @@ public sealed class KeyedJobSchedulingTests : TestBase
         results.Should().OnlyContain(result => result.Generation == 1);
     }
 
-    private sealed class DeadlineJob : Headless.Jobs.Base.IJob
+    private sealed class DeadlineJob : Headless.Jobs.IJob
     {
-        public ValueTask ExecuteAsync(Headless.Jobs.Base.JobContext context, CancellationToken cancellationToken) =>
+        public ValueTask ExecuteAsync(Headless.Jobs.JobContext context, CancellationToken cancellationToken) =>
             ValueTask.CompletedTask;
     }
 }

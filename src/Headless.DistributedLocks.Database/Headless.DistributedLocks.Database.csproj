@@ -1,0 +1,24 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Description>Database-backed core primitives shared by Headless distributed locks providers.</Description>
+    <PackageTags>headless;distributed-locks;database;dotnet</PackageTags>
+    <RootNamespace>Headless.DistributedLocks</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Headless.DistributedLocks.PostgreSql" />
+    <InternalsVisibleTo Include="Headless.DistributedLocks.SqlServer" />
+    <InternalsVisibleTo Include="Headless.DistributedLocks.Database.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.DistributedLocks.Composition.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.DistributedLocks.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.DistributedLocks.Composition.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.DistributedLocks.PostgreSql.Tests.Integration" />
+    <InternalsVisibleTo Include="Headless.DistributedLocks.SqlServer.Tests.Integration" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Nito.AsyncEx" />
+    <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
+    <ProjectReference Include="..\Headless.DistributedLocks.Abstractions\Headless.DistributedLocks.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.DistributedLocks\Headless.DistributedLocks.csproj" />
+  </ItemGroup>
+</Project>

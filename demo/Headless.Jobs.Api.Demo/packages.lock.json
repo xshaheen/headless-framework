@@ -296,51 +296,58 @@
       "headless.checks": {
         "type": "Project"
       },
+      "headless.context": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Context.Abstractions": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )"
+        }
+      },
+      "headless.context.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Primitives": "[1.0.0, )"
+        }
+      },
+      "headless.coordination": {
+        "type": "Project",
+        "dependencies": {
+          "FluentValidation": "[12.1.1, )",
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Context": "[1.0.0, )",
+          "Headless.Context.Abstractions": "[1.0.0, )",
+          "Headless.Coordination.Abstractions": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )",
+          "Headless.Serializer.Json": "[1.0.0, )"
+        }
+      },
       "headless.coordination.abstractions": {
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )"
         }
       },
-      "headless.coordination.core": {
+      "headless.coordination.database": {
         "type": "Project",
         "dependencies": {
-          "FluentValidation": "[12.1.1, )",
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.Coordination.Abstractions": "[1.0.0, )",
-          "Headless.Core": "[1.0.0, )",
-          "Headless.Extensions": "[1.0.0, )",
+          "Headless.Coordination": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
-          "Headless.Serializer.Json": "[1.0.0, )"
-        }
-      },
-      "headless.coordination.core.database": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Coordination.Core": "[1.0.0, )",
-          "Headless.Hosting": "[1.0.0, )",
-          "Headless.Sql.Abstractions": "[1.0.0, )",
-          "Headless.Sql.Core": "[1.0.0, )"
+          "Headless.Sql": "[1.0.0, )",
+          "Headless.Sql.Abstractions": "[1.0.0, )"
         }
       },
       "headless.coordination.postgresql": {
         "type": "Project",
         "dependencies": {
-          "Headless.Coordination.Core.Database": "[1.0.0, )",
+          "Headless.Coordination.Database": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Headless.Sql.PostgreSql": "[1.0.0, )",
           "Npgsql": "[10.0.3, )"
-        }
-      },
-      "headless.core": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.Extensions": "[1.0.0, )",
-          "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
-          "Headless.Serializer.Json": "[1.0.0, )",
-          "TimeZoneConverter": "[7.2.0, )"
         }
       },
       "headless.dashboard.authentication": {
@@ -364,7 +371,7 @@
           "Headless.Checks": "[1.0.0, )"
         }
       },
-      "headless.entityframework.core": {
+      "headless.entityframework.primitives": {
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
@@ -401,8 +408,24 @@
       "headless.hosting": {
         "type": "Project",
         "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
           "Headless.FluentValidation": "[1.0.0, )",
           "OpenTelemetry.Api": "[1.18.0, )"
+        }
+      },
+      "headless.jobs": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Coordination": "[1.0.0, )",
+          "Headless.Coordination.Abstractions": "[1.0.0, )",
+          "Headless.DistributedLocks.Abstractions": "[1.0.0, )",
+          "Headless.Jobs.Abstractions": "[1.0.0, )",
+          "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
+          "Headless.UnitOfWork": "[1.0.0, )",
+          "NCrontab.Signed": "[3.4.0, )",
+          "OpenTelemetry.Api": "[1.18.0, )",
+          "Polly.Core": "[8.7.0, )"
         }
       },
       "headless.jobs.abstractions": {
@@ -413,28 +436,14 @@
           "Headless.UnitOfWork.Abstractions": "[1.0.0, )"
         }
       },
-      "headless.jobs.core": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Coordination.Abstractions": "[1.0.0, )",
-          "Headless.Coordination.Core": "[1.0.0, )",
-          "Headless.DistributedLocks.Abstractions": "[1.0.0, )",
-          "Headless.Jobs.Abstractions": "[1.0.0, )",
-          "Headless.MultiTenancy": "[1.0.0, )",
-          "Headless.UnitOfWork": "[1.0.0, )",
-          "NCrontab.Signed": "[3.4.0, )",
-          "OpenTelemetry.Api": "[1.18.0, )",
-          "Polly.Core": "[8.7.0, )"
-        }
-      },
       "headless.jobs.dashboard": {
         "type": "Project",
         "dependencies": {
           "Headless.Coordination.Abstractions": "[1.0.0, )",
           "Headless.Dashboard.Authentication": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
-          "Headless.Jobs.Abstractions": "[1.0.0, )",
-          "Headless.Jobs.Core": "[1.0.0, )"
+          "Headless.Jobs": "[1.0.0, )",
+          "Headless.Jobs.Abstractions": "[1.0.0, )"
         }
       },
       "headless.jobs.entityframework": {
@@ -442,28 +451,20 @@
         "dependencies": {
           "FlexLabs.EntityFrameworkCore.Upsert": "[10.1.0, )",
           "Headless.Caching.Abstractions": "[1.0.0, )",
-          "Headless.EntityFramework.Core": "[1.0.0, )",
-          "Headless.Extensions": "[1.0.0, )",
-          "Headless.Jobs.Abstractions": "[1.0.0, )",
-          "Headless.Jobs.Core": "[1.0.0, )",
-          "Headless.Sql.Core": "[1.0.0, )",
-          "Microsoft.EntityFrameworkCore.Relational": "[10.0.12, )",
-          "Polly.Core": "[8.7.0, )"
-        }
-      },
-      "headless.multitenancy": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Caching.Abstractions": "[1.0.0, )",
-          "Headless.Checks": "[1.0.0, )",
+          "Headless.EntityFramework.Primitives": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
-          "Headless.MultiTenancy.Abstractions": "[1.0.0, )"
+          "Headless.Jobs": "[1.0.0, )",
+          "Headless.Jobs.Abstractions": "[1.0.0, )",
+          "Headless.Sql": "[1.0.0, )",
+          "Microsoft.EntityFrameworkCore.Relational": "[10.0.12, )",
+          "Polly.Core": "[8.7.0, )"
         }
       },
       "headless.multitenancy.abstractions": {
         "type": "Project",
         "dependencies": {
+          "Headless.Extensions": "[1.0.0, )",
           "Headless.Primitives": "[1.0.0, )"
         }
       },
@@ -490,10 +491,7 @@
           "Headless.Serializer.Abstractions": "[1.0.0, )"
         }
       },
-      "headless.sql.abstractions": {
-        "type": "Project"
-      },
-      "headless.sql.core": {
+      "headless.sql": {
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
@@ -504,14 +502,17 @@
           "OpenTelemetry.Api": "[1.18.0, )"
         }
       },
+      "headless.sql.abstractions": {
+        "type": "Project"
+      },
       "headless.sql.postgresql": {
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
+          "Headless.Sql": "[1.0.0, )",
           "Headless.Sql.Abstractions": "[1.0.0, )",
-          "Headless.Sql.Core": "[1.0.0, )",
           "Npgsql": "[10.0.3, )"
         }
       },
@@ -649,12 +650,6 @@
         "requested": "[8.7.0, )",
         "resolved": "8.7.0",
         "contentHash": "BS2t+nsBer16PIebCEPNBK5fgMisADQyRCd7K+BgkMWpFmSaiYE+rVVNpFhGRqUkJmNSLmw0uCNzHHWfgml28Q=="
-      },
-      "TimeZoneConverter": {
-        "type": "CentralTransitive",
-        "requested": "[7.2.0, )",
-        "resolved": "7.2.0",
-        "contentHash": "4Poqu79dTmacVETqUJ53g3x4U21V/cmWPSlehdsVE4Q00akavvlRq+SRjcg/CmfO9ibOCjRl6TeUV7hkC5RC4w=="
       }
     }
   }

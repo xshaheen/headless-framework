@@ -1,0 +1,595 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using FluentValidation;
+using Headless.Checks;
+using Headless.MultiTenancy;
+using Headless.Reliability;
+using Headless.UnitOfWork;
+
+namespace Headless.Messaging;
+
+/// <summary>
+/// Provides options to customize various aspects of the message processing pipeline. This includes settings for message expiration,
+/// retry mechanisms, concurrency management, and serialization, among others. This class allows fine-tuning
+/// messaging behavior to better align with specific application requirements, such as adjusting threading models for
+/// subscriber message processing, setting message expiry times, and customizing serialization settings.
+/// </summary>
+/// <remarks>
+/// <see cref="MessagingOptions"/> is a pure runtime configuration bag — it is registered through the
+/// standard <c>IOptions&lt;T&gt;</c> pipeline. Setup-time state (the service collection, consumer registry,
+/// circuit-breaker registry, options-extension list) lives on <see cref="MessagingSetupBuilder"/> so it
+/// cannot leak into the runtime instance. The <c>CopyTo</c> below must propagate every public mutable
+/// property; a reflection-based test guards against drift.
+/// </remarks>
+[PublicAPI]
+public sealed class MessagingOptions
+{
+    internal MessagingConventions Conventions { get; set; } = new();
+
+    /// <summary>
+    /// Gets or sets an optional prefix to be prepended to all message names.
+    /// </summary>
+    public string? MessageNamePrefix { get; set; }
+
+    /// <summary>
+    /// Gets or sets the version identifier for messages, used to isolate data between different instances or deployments.
+    /// This allows multiple instances to coexist without message conflicts. Maximum length is 20 characters.
+    /// Default is "v1".
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <see cref="Version"/> also acts as the cross-process isolation key for the messaging
+    /// distributed-lock resources. The two retry-pickup loops acquire locks named
+    /// <c>messaging.publish-retry-{Version}</c> and <c>messaging.receive-retry-{Version}</c>
+    /// (see <see cref="Headless.Messaging.Internal.MessagingKeys.PublishRetryResource(string, MessageLane)"/> and
+    /// <see cref="Headless.Messaging.Internal.MessagingKeys.ReceiveRetryResource"/>).
+    /// </para>
+    /// <para>
+    /// If two distinct messaging services share a single lock store (for example, two apps pointed
+    /// at the same Redis), they MUST set distinct <see cref="Version"/> values — otherwise their
+    /// retry processors will fight over the same lock resource and starve each other. The default
+    /// <c>"v1"</c> is only safe for a single-service deployment.
+    /// </para>
+    /// <para>
+    /// See also <c>docs/llms/messaging.md</c> for the deployment guidance.
+    /// </para>
+    /// </remarks>
+    public string Version { get; set; } = "v1";
+
+    /// <summary>
+    /// Gets or sets the time interval (in seconds) after which successfully processed messages are automatically deleted.
+    /// This helps manage storage by removing old successfully delivered messages.
+    /// Default is 86,400 seconds (24 hours).
+    /// </summary>
+    public int SucceedMessageExpiredAfter { get; set; } = 24 * 3600;
+
+    /// <summary>
+    /// Gets or sets the time interval (in seconds) after which failed messages are automatically deleted.
+    /// This allows cleanup of old failed messages that exceed the retry threshold.
+    /// Default is 1,296,000 seconds (15 days).
+    /// </summary>
+    public int FailedMessageExpiredAfter { get; set; } = 15 * 24 * 3600;
+
+    /// <summary>Minimum lifetime of cleanup receipts from their immutable creation time. Defaults to seven days.</summary>
+    /// <remarks>Must be positive. Audit references extend residence; replay does not reset age. Changes apply to existing history.</remarks>
+    public TimeSpan InboxCleanupReceiptRetention { get; set; } = TimeSpan.FromDays(7);
+
+    /// <summary>Minimum lifetime of cleanup audit evidence from immutable creation time. Defaults to seven days.</summary>
+    /// <remarks>Must be positive. Changes apply to existing history. Deletion removes evidence without releasing generation holds.</remarks>
+    public TimeSpan InboxCleanupAuditRetention { get; set; } = TimeSpan.FromDays(7);
+
+    /// <summary>Minimum lifetime of operator receipts. Surviving audit references extend this lifetime. Defaults to thirty days.</summary>
+    /// <remarks>Any positive duration is valid. Age uses immutable creation time, including existing history. After physical deletion, an operation ID can be evaluated as a new request.</remarks>
+    public TimeSpan InboxOperatorReceiptRetention { get; set; } = TimeSpan.FromDays(30);
+
+    /// <summary>Minimum lifetime of operator audit evidence from immutable creation time. Defaults to ninety days.</summary>
+    /// <remarks>Must be positive. Changes apply to existing history. Holds do not pin evidence; deleting evidence does not release holds.</remarks>
+    public TimeSpan InboxOperatorAuditRetention { get; set; } = TimeSpan.FromDays(90);
+
+    /// <summary>
+    /// Gets or sets the number of concurrent consumer threads for message consumption from the transport.
+    /// Higher values increase parallelism but consume more resources; lower values reduce resource usage but may lower throughput.
+    /// Default is 1.
+    /// </summary>
+    public int ConsumerThreadCount { get; set; } = 1;
+
+    /// <summary>
+    /// Gets or sets a value indicating whether to enable parallel execution of subscriber methods using an in-memory queue.
+    /// When enabled, received messages are buffered in memory and processed concurrently by multiple worker threads.
+    /// Use <see cref="SubscriberParallelExecuteThreadCount"/> to configure the number of parallel threads.
+    /// Default is false.
+    /// </summary>
+    public bool EnableSubscriberParallelExecute { get; set; }
+
+    /// <summary>
+    /// Gets or sets the number of parallel worker threads for subscriber message execution when <see cref="EnableSubscriberParallelExecute"/> is enabled.
+    /// This controls the degree of parallelism when processing subscriber handlers.
+    /// Default is the number of logical processors (<see cref="Environment.ProcessorCount"/>).
+    /// </summary>
+    public int SubscriberParallelExecuteThreadCount { get; set; } = Environment.ProcessorCount;
+
+    /// <summary>
+    /// Gets or sets a multiplier factor for determining the in-memory buffer capacity when <see cref="EnableSubscriberParallelExecute"/> is enabled.
+    /// The actual buffer capacity is calculated as: <c>SubscriberParallelExecuteThreadCount × SubscriberParallelExecuteBufferFactor</c>.
+    /// This controls how many messages can be queued before blocking new incoming messages.
+    /// Default is 1.
+    /// </summary>
+    public int SubscriberParallelExecuteBufferFactor { get; set; } = 1;
+
+    /// <summary>
+    /// Gets or sets a value indicating whether to enable parallel execution of publish operations using the .NET thread pool.
+    /// When enabled, message publishing tasks are dispatched to the thread pool for concurrent execution, improving throughput for high-volume publishing scenarios.
+    /// Default is false.
+    /// </summary>
+    public bool EnablePublishParallelSend { get; set; }
+
+    /// <summary>
+    /// Gets or sets the batch size for parallel message sending when <see cref="EnablePublishParallelSend"/> is enabled.
+    /// When null, the batch size is automatically calculated using a logarithmic formula based on channel capacity.
+    /// The automatic calculation uses: Math.Min(500, Math.Max(10, (int)Math.Log2(channelSize) * 10)).
+    /// Use this property to override the automatic calculation for custom tuning.
+    /// Valid range: 1-500. Values outside this range will be clamped.
+    /// Default is null (auto-calculate).
+    /// </summary>
+    public int? PublishBatchSize { get; set; }
+
+    /// <summary>
+    /// Gets or sets the interval (in seconds) at which the cleanup processor removes expired messages from the message storage.
+    /// The processor runs periodically to clean up messages that have exceeded their expiration times.
+    /// Default is 300 seconds (5 minutes).
+    /// </summary>
+    public int CollectorCleaningInterval { get; set; } = 300;
+
+    /// <summary>
+    /// Gets or sets the maximum number of delayed or failed messages to fetch in a single scheduler cycle.
+    /// Larger batches improve throughput but consume more memory; smaller batches reduce memory usage but may lower throughput.
+    /// Default is 1,000.
+    /// </summary>
+    public int SchedulerBatchSize { get; set; } = 1000;
+
+    /// <summary>
+    /// Gets or sets the maximum number of messages leased in a single retry-pickup batch.
+    /// Larger batches process more per cycle but increase memory and lock contention; smaller batches
+    /// reduce contention but may lower retry throughput. Default is 200.
+    /// </summary>
+    public int RetryBatchSize { get; set; } = 200;
+
+    /// <summary>Delay before probing a missing inbox registration again. Defaults to five minutes.</summary>
+    /// <remarks>Must be positive. Deferral releases the exact attempt without consuming failure retries. This delay is not a recovery deadline.</remarks>
+    public TimeSpan OrphanProbeInterval { get; set; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>Maximum known orphans claimed per lane per retry cycle, independently of the ordinary retry batch. Defaults to 10.</summary>
+    /// <remarks>Valid values are 1 through 100,000. Known orphans are excluded from ordinary retry pickup.</remarks>
+    public int OrphanProbeBatchSize { get; set; } = 10;
+
+    /// <summary>
+    /// Gets or sets the JSON serialization options used for message content serialization and deserialization.
+    /// Customize this to control JSON formatting, naming policies, converters, and other serialization behavior.
+    /// </summary>
+    public JsonSerializerOptions JsonSerializerOptions { get; } = new();
+
+    /// <summary>
+    /// Gets or sets a value indicating whether to use distributed storage locking when retrying failed messages.
+    /// When enabled, retry processors coordinate pickup through a messaging-keyed distributed lock,
+    /// reducing duplicate retry-pickup work across replicas. Message delivery remains at-least-once and
+    /// consumers must stay idempotent.
+    /// Default is false.
+    /// </summary>
+    public bool UseStorageLock { get; set; }
+
+    /// <summary>
+    /// Gets a value indicating whether publish calls require a resolved tenant identifier.
+    /// When <see langword="true"/>, the publish wrapper rejects calls where neither
+    /// <see cref="MessageOptions.TenantId"/> nor the ambient <c>ICurrentTenant.Id</c> resolves a
+    /// tenant, throwing <see cref="MissingTenantContextException"/>. Sibling of the EF write guard
+    /// (#234) and the HTTP authorization requirement for cross-layer tenant safety.
+    /// </summary>
+    /// <remarks>
+    /// Enabled through <c>HeadlessTenancyBuilder.Messaging(m => m.RequireTenantOnPublish())</c>.
+    /// Defaults to <see langword="false"/>. Background workers and
+    /// <c>IHostedService</c> callers without an ambient request scope must wrap publishes in
+    /// <c>using (currentTenant.Change(tenantId))</c> or set <see cref="MessageOptions.TenantId"/>
+    /// explicitly when this flag is enabled.
+    /// </remarks>
+    public bool TenantContextRequired { get; internal set; }
+
+    /// <summary>
+    /// Gets or sets the maximum time the framework waits for a transport publish before treating it as a failed attempt.
+    /// Default is 10 seconds.
+    /// </summary>
+    /// <remarks>
+    /// The timeout is linked with host shutdown. Some broker clients do not fully honor cancellation
+    /// while publishing; this timeout is the framework-level bound for cooperative transports.
+    /// </remarks>
+    public TimeSpan TransportPublishTimeout { get; set; } = TimeSpan.FromSeconds(10);
+
+    /// <summary>
+    /// Gets or sets the ADO.NET command timeout applied by SQL-backed messaging storage providers.
+    /// Default is 30 seconds.
+    /// </summary>
+    /// <remarks>
+    /// Terminal state writes intentionally use <see cref="CancellationToken.None"/> after cancellation
+    /// classification so shutdown cannot orphan a final state transition. This timeout is the wall-clock
+    /// safety net for those commands.
+    /// </remarks>
+    public TimeSpan CommandTimeout { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// Gets or sets the maximum end-to-end time messaging shutdown waits for background loops and
+    /// in-flight handlers to observe cancellation. Default is 30 seconds.
+    /// </summary>
+    /// <remarks>
+    /// One monotonic deadline first closes broker and retry pickup, then drains locally accepted work,
+    /// concurrent consumer-client disposal, provider-specific in-flight handlers, and dispatcher loops.
+    /// When the deadline expires, remaining cleanup continues fault-observed in the background so host
+    /// shutdown can proceed. Configure the outer host or orchestrator termination grace above this value;
+    /// an earlier process kill intentionally falls back to normal lease-expiry recovery.
+    /// </remarks>
+    public TimeSpan ShutdownTimeout { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// Gets or sets how long one <see cref="IOnSubscriptionEstablished"/> hook may run before the framework stops
+    /// waiting for it. Default is 30 seconds.
+    /// </summary>
+    /// <remarks>
+    /// Host startup waits for the hooks of every every-instance subscription, so a hook that never returns would
+    /// otherwise hold startup forever. When the bound expires the hook's token is canceled, the expiry is logged, and
+    /// startup and later establishments continue without it.
+    /// </remarks>
+    public TimeSpan SubscriptionEstablishedTimeout { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// Gets or sets the cadence of the dead-owner recovery reconcile backstop. Default is 1 minute.
+    /// </summary>
+    /// <remarks>
+    /// The dead-owner recovery bridge reclaims orphaned outbox/inbox rows on two triggers: a low-latency
+    /// <c>NodeLeft</c> membership-watch path and this periodic liveness-snapshot reconcile. The reconcile is
+    /// the authoritative backstop that catches any death missed while the watch loop was not subscribed; the
+    /// watch path is best-effort acceleration. This cadence does not bound correctness — the per-row
+    /// <c>LockedUntil</c> lease floor recovers any row independently — so it can safely run longer than the
+    /// retry-poll interval. Mirrors <c>SchedulerOptionsBuilder.DeadNodeReconcileInterval</c> on the Jobs side.
+    /// </remarks>
+    public TimeSpan DeadNodeReconcileInterval { get; set; } = TimeSpan.FromMinutes(1);
+
+    /// <summary>
+    /// Gets or sets the inbox guarantee required for durable consumers. Defaults to
+    /// <see cref="MessagingInboxCapabilityTier.Transactional"/>; selecting a weaker tier is an explicit opt-down.
+    /// </summary>
+    public MessagingInboxCapabilityTier RequiredInboxCapability { get; set; } =
+        MessagingInboxCapabilityTier.Transactional;
+
+    /// <summary>
+    /// Gets or sets the delivery mode inherited by publications without a per-call override. Defaults to
+    /// <see cref="DeliveryMode.Durable"/>: every default publish is stored before dispatch and the relay
+    /// dispatches it. Select <see cref="DeliveryMode.Direct"/> to make fire-and-forget the host default.
+    /// </summary>
+    public DeliveryMode DefaultDeliveryMode { get; set; } = DeliveryMode.Durable;
+
+    /// <summary>
+    /// Gets or sets an optional bound on the received body bytes persisted in a poison-on-arrival
+    /// row's <c>data:</c> URI, measured before base64 encoding. <see langword="null"/> stores the
+    /// whole body unconditionally (legacy behavior). Default is 1 MB.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// At or below the cap the whole body is stored. Past the cap a prefix is stored with a
+    /// <c>truncated</c> marker in the data URI media type; beyond four times the cap the body is
+    /// omitted entirely and only the headers are persisted.
+    /// </para>
+    /// <para>
+    /// Poison rows are built from the received envelope, whose size an external producer controls -
+    /// a size-triggered reject must not amplify an oversized delivery into storage. Truncation is
+    /// lossy by design; replay such rows from the broker, not from storage.
+    /// </para>
+    /// </remarks>
+    public int? MaxPoisonEnvelopeBytes { get; set; } = 1024 * 1024;
+
+    /// <summary>
+    /// Gets the global circuit breaker configuration that applies to every consumer.
+    /// Individual consumers may override specific properties via
+    /// <see cref="ConsumerTuningBuilder.CircuitBreaker"/>.
+    /// </summary>
+    public CircuitBreakerOptions CircuitBreaker { get; } = new();
+
+    /// <summary>
+    /// Gets retry policy configuration for inline and persisted retries. Mutate the returned
+    /// instance's properties; the property itself is get-only and cannot be replaced.
+    /// </summary>
+    /// <remarks>
+    /// The non-null guarantee is enforced by <c>MessagingOptionsValidator</c> via
+    /// <c>ValidateOnStart()</c>; the property never observes a null value at runtime for callers
+    /// going through the standard <c>IOptions&lt;T&gt;</c> pipeline.
+    /// </remarks>
+    public RetryPolicyOptions RetryPolicy { get; } = new();
+
+    /// <summary>
+    /// Gets the retry processor configuration that controls adaptive polling and backpressure behavior
+    /// when the circuit breaker is engaged.
+    /// </summary>
+    public RetryProcessorOptions RetryProcessor { get; } = new();
+
+    /// <summary>
+    /// Gets the request/reply configuration: the default request timeout and whether fault replies carry exception
+    /// details. It takes effect once the host enables requests with <see cref="MessagingSetupBuilder.AddRequestReply"/>
+    /// or declares a responder.
+    /// </summary>
+    public RequestReplyOptions RequestReply { get; } = new();
+
+    /// <summary>
+    /// The failure policy of a competing consumer that neither declares one nor has one tuned: 2 immediate retries, then
+    /// 5 delayed retries from 30 seconds capped at 15 minutes, and no fail rules.
+    /// </summary>
+    internal static FailurePolicyDefinition FrameworkDefaultFailurePolicy { get; } =
+        new FailurePolicyBuilder().Immediate(2).Delayed(5, TimeSpan.FromSeconds(30), TimeSpan.FromMinutes(15)).Build();
+
+    /// <summary>
+    /// The host's default consumer failure policy, set through <see cref="MessagingSetupBuilder.DefaultFailurePolicy{TPolicy}"/>
+    /// or <see cref="MessagingSetupBuilder.DefaultFailurePolicy(Action{FailurePolicyBuilder})"/>. A competing consumer
+    /// without a declared or tuned policy, and every competing runtime subscription, uses it.
+    /// </summary>
+    internal FailurePolicyDefinition DefaultFailurePolicy { get; set; } = FrameworkDefaultFailurePolicy;
+
+    /// <summary>
+    /// Copies all public and internal-settable runtime properties of this instance to <paramref name="target"/>.
+    /// Also copies nested options via their own <c>CopyTo</c> methods and replicates collection state.
+    /// </summary>
+    /// <remarks>
+    /// MAINTENANCE NOTE: any new public mutable property added to <see cref="MessagingOptions"/> must be
+    /// added here. The reflection-based drift test in <c>MessagingOptionsCopyToTests</c> will fail otherwise.
+    /// </remarks>
+    internal void CopyTo(MessagingOptions target)
+    {
+        target.MessageNamePrefix = MessageNamePrefix;
+        target.Version = Version;
+        target.Conventions = Conventions;
+        target.SucceedMessageExpiredAfter = SucceedMessageExpiredAfter;
+        target.FailedMessageExpiredAfter = FailedMessageExpiredAfter;
+        target.InboxCleanupReceiptRetention = InboxCleanupReceiptRetention;
+        target.InboxCleanupAuditRetention = InboxCleanupAuditRetention;
+        target.InboxOperatorReceiptRetention = InboxOperatorReceiptRetention;
+        target.InboxOperatorAuditRetention = InboxOperatorAuditRetention;
+        target.ConsumerThreadCount = ConsumerThreadCount;
+        target.EnableSubscriberParallelExecute = EnableSubscriberParallelExecute;
+        target.SubscriberParallelExecuteThreadCount = SubscriberParallelExecuteThreadCount;
+        target.SubscriberParallelExecuteBufferFactor = SubscriberParallelExecuteBufferFactor;
+        target.EnablePublishParallelSend = EnablePublishParallelSend;
+        target.PublishBatchSize = PublishBatchSize;
+        target.CollectorCleaningInterval = CollectorCleaningInterval;
+        target.SchedulerBatchSize = SchedulerBatchSize;
+        target.RetryBatchSize = RetryBatchSize;
+        target.OrphanProbeInterval = OrphanProbeInterval;
+        target.OrphanProbeBatchSize = OrphanProbeBatchSize;
+        target.UseStorageLock = UseStorageLock;
+        target.TenantContextRequired = TenantContextRequired;
+        target.TransportPublishTimeout = TransportPublishTimeout;
+        target.CommandTimeout = CommandTimeout;
+        target.ShutdownTimeout = ShutdownTimeout;
+        target.SubscriptionEstablishedTimeout = SubscriptionEstablishedTimeout;
+        target.DeadNodeReconcileInterval = DeadNodeReconcileInterval;
+        target.RequiredInboxCapability = RequiredInboxCapability;
+        target.DefaultDeliveryMode = DefaultDeliveryMode;
+        target.MaxPoisonEnvelopeBytes = MaxPoisonEnvelopeBytes;
+        target.DefaultFailurePolicy = DefaultFailurePolicy;
+        _CopyJsonSerializerOptions(JsonSerializerOptions, target.JsonSerializerOptions);
+        RetryPolicy.CopyTo(target.RetryPolicy);
+        CircuitBreaker.CopyTo(target.CircuitBreaker);
+        RetryProcessor.CopyTo(target.RetryProcessor);
+        RequestReply.CopyTo(target.RequestReply);
+    }
+
+    /// <summary>
+    /// Copies the mutable fields of <paramref name="source"/> onto <paramref name="target"/>.
+    /// Required because <see cref="JsonSerializerOptions"/> is a get-only property — we can't
+    /// swap the reference, so we copy the user-configured fields onto the DI-resolved instance.
+    /// </summary>
+    private static void _CopyJsonSerializerOptions(JsonSerializerOptions source, JsonSerializerOptions target)
+    {
+        target.AllowOutOfOrderMetadataProperties = source.AllowOutOfOrderMetadataProperties;
+        target.AllowTrailingCommas = source.AllowTrailingCommas;
+        target.DefaultBufferSize = source.DefaultBufferSize;
+        target.DefaultIgnoreCondition = source.DefaultIgnoreCondition;
+        target.DictionaryKeyPolicy = source.DictionaryKeyPolicy;
+        target.Encoder = source.Encoder;
+        target.IgnoreReadOnlyFields = source.IgnoreReadOnlyFields;
+        target.IgnoreReadOnlyProperties = source.IgnoreReadOnlyProperties;
+        target.IncludeFields = source.IncludeFields;
+        target.MaxDepth = source.MaxDepth;
+        target.NumberHandling = source.NumberHandling;
+        target.PreferredObjectCreationHandling = source.PreferredObjectCreationHandling;
+        target.PropertyNameCaseInsensitive = source.PropertyNameCaseInsensitive;
+        target.PropertyNamingPolicy = source.PropertyNamingPolicy;
+        target.ReadCommentHandling = source.ReadCommentHandling;
+        target.ReferenceHandler = source.ReferenceHandler;
+        target.RespectNullableAnnotations = source.RespectNullableAnnotations;
+        target.RespectRequiredConstructorParameters = source.RespectRequiredConstructorParameters;
+        target.TypeInfoResolver = source.TypeInfoResolver;
+        target.UnknownTypeHandling = source.UnknownTypeHandling;
+        target.UnmappedMemberHandling = source.UnmappedMemberHandling;
+        target.WriteIndented = source.WriteIndented;
+
+        foreach (var converter in source.Converters)
+        {
+            target.Converters.Add(converter);
+        }
+
+        foreach (var modifier in source.TypeInfoResolverChain)
+        {
+            if (!ReferenceEquals(modifier, source.TypeInfoResolver))
+            {
+                target.TypeInfoResolverChain.Add(modifier);
+            }
+        }
+    }
+
+    internal string ApplyMessageNamePrefix(string messageName)
+    {
+        Argument.IsNotNullOrWhiteSpace(messageName);
+
+        return string.IsNullOrWhiteSpace(MessageNamePrefix) ? messageName : $"{MessageNamePrefix}.{messageName}";
+    }
+
+    internal static void ValidateMessageName(string messageName) =>
+        MessageContractRules.ValidateMessageName(messageName);
+
+    internal static string ValidateContractVersion(string contractVersion) =>
+        MessageContractRules.ValidateContractVersion(contractVersion);
+
+    internal ConsumerMetadata CreateConsumerMetadata(
+        Type consumerType,
+        Type messageType,
+        string? mappedMessageName,
+        string consumerIdentity,
+        string messageContractVersion,
+        MessageLane lane
+    )
+    {
+        if (string.IsNullOrWhiteSpace(consumerIdentity))
+        {
+            throw new MessagingConfigurationException(
+                $"Durable consumer {consumerType.FullName ?? consumerType.Name} requires an explicit stable consumer identity."
+            );
+        }
+
+        if (consumerIdentity.Length > ConsumerMetadata.ConsumerIdentityMaxLength)
+        {
+            throw new MessagingConfigurationException(
+                $"Durable consumer {consumerType.FullName ?? consumerType.Name} requires a consumer identity of at most {ConsumerMetadata.ConsumerIdentityMaxLength} characters."
+            );
+        }
+
+        string validatedMessageContractVersion;
+        try
+        {
+            validatedMessageContractVersion = ValidateContractVersion(messageContractVersion);
+        }
+        catch (ArgumentException exception)
+        {
+            throw new MessagingConfigurationException(
+                $"Durable consumer {consumerType.FullName ?? consumerType.Name} requires a valid message contract version.",
+                exception
+            );
+        }
+
+        var resolvedMessageName = mappedMessageName ?? Conventions.GetMessageName(messageType);
+
+        return new ConsumerMetadata(
+            messageType,
+            consumerType,
+            ApplyMessageNamePrefix(resolvedMessageName),
+            Concurrency: 1,
+            lane,
+            consumerIdentity,
+            validatedMessageContractVersion
+        );
+    }
+}
+
+internal sealed class MessagingOptionsValidator : AbstractValidator<MessagingOptions>
+{
+    public MessagingOptionsValidator(IMiddlewareDescriptorRegistry? middlewareDescriptorRegistry = null)
+    {
+        RuleFor(x => x.InboxCleanupReceiptRetention).GreaterThan(TimeSpan.Zero);
+        RuleFor(x => x.InboxCleanupAuditRetention).GreaterThan(TimeSpan.Zero);
+        RuleFor(x => x.InboxOperatorReceiptRetention).GreaterThan(TimeSpan.Zero);
+        RuleFor(x => x.InboxOperatorAuditRetention).GreaterThan(TimeSpan.Zero);
+        RuleFor(x => x.RetryPolicy)
+            .NotNull()
+            .WithMessage("RetryPolicy must not be null.")
+            .SetValidator(new RetryPolicyOptionsValidator());
+        RuleFor(x => x.RequestReply).SetValidator(new RequestReplyOptionsValidator());
+        RuleFor(x => x.TransportPublishTimeout)
+            .GreaterThan(TimeSpan.Zero)
+            .WithMessage("TransportPublishTimeout must be greater than zero.")
+            .LessThanOrEqualTo(TimeSpan.FromMinutes(5))
+            .WithMessage("TransportPublishTimeout must not exceed 5 minutes.");
+        RuleFor(x => x.CommandTimeout)
+            .GreaterThan(TimeSpan.Zero)
+            .WithMessage("CommandTimeout must be greater than zero.")
+            .LessThanOrEqualTo(TimeSpan.FromMinutes(5))
+            .WithMessage("CommandTimeout must not exceed 5 minutes.");
+        RuleFor(x => x.ShutdownTimeout)
+            .GreaterThan(TimeSpan.Zero)
+            .WithMessage("ShutdownTimeout must be greater than zero.")
+            .LessThanOrEqualTo(TimeSpan.FromMinutes(5))
+            .WithMessage("ShutdownTimeout must not exceed 5 minutes.");
+        RuleFor(x => x.SubscriptionEstablishedTimeout)
+            .GreaterThan(TimeSpan.Zero)
+            .WithMessage("SubscriptionEstablishedTimeout must be greater than zero.")
+            .LessThanOrEqualTo(TimeSpan.FromMinutes(5))
+            .WithMessage("SubscriptionEstablishedTimeout must not exceed 5 minutes.");
+        // No upper bound: the reconcile is a backstop cadence, not a correctness deadline (the per-row
+        // LockedUntil floor recovers rows independently), so a long interval is a legitimate choice.
+        RuleFor(x => x.DeadNodeReconcileInterval)
+            .GreaterThan(TimeSpan.Zero)
+            .WithMessage("DeadNodeReconcileInterval must be greater than zero.");
+        RuleFor(x => x.DefaultDeliveryMode).IsInEnum();
+        RuleFor(x => x.RequiredInboxCapability)
+            .IsInEnum()
+            .WithMessage("RequiredInboxCapability must be a defined inbox capability tier.");
+        // #2 — Version is persisted as a literal into a VARCHAR(20)/nvarchar(20) column by the SQL
+        // storage providers; reject >20 chars at startup instead of failing every outbox insert at runtime.
+        RuleFor(x => x.Version)
+            .NotEmpty()
+            .WithMessage("Version must not be empty.")
+            .MaximumLength(20)
+            .WithMessage("Version must not exceed 20 characters (it is stored in a VARCHAR(20) column).");
+        RuleFor(x => x.ConsumerThreadCount)
+            .InclusiveBetween(1, 1024)
+            .WithMessage("ConsumerThreadCount must be between 1 and 1024.");
+        RuleFor(x => x.SubscriberParallelExecuteThreadCount)
+            .InclusiveBetween(1, 1024)
+            .WithMessage("SubscriberParallelExecuteThreadCount must be between 1 and 1024.");
+        RuleFor(x => x.SubscriberParallelExecuteBufferFactor)
+            .InclusiveBetween(1, 1024)
+            .WithMessage("SubscriberParallelExecuteBufferFactor must be between 1 and 1024.");
+        RuleFor(x => x)
+            .Must(options =>
+                (long)options.SubscriberParallelExecuteThreadCount * options.SubscriberParallelExecuteBufferFactor
+                <= 100_000
+            )
+            .WithName(nameof(MessagingOptions.SubscriberParallelExecuteBufferFactor))
+            .WithMessage("Subscriber parallel buffer capacity must not exceed 100,000.");
+        RuleFor(x => x.SchedulerBatchSize)
+            .InclusiveBetween(1, 100_000)
+            .WithMessage("SchedulerBatchSize must be between 1 and 100,000.");
+        RuleFor(x => x.RetryBatchSize)
+            .InclusiveBetween(1, 100_000)
+            .WithMessage("RetryBatchSize must be between 1 and 100,000.");
+        RuleFor(x => x).Custom((_, _) => _ValidateMiddlewareDescriptors(middlewareDescriptorRegistry));
+        RuleFor(x => x.OrphanProbeInterval).GreaterThan(TimeSpan.Zero);
+        RuleFor(x => x.OrphanProbeBatchSize).InclusiveBetween(1, 100_000);
+        RuleFor(x => x.MaxPoisonEnvelopeBytes)
+            .GreaterThan(0)
+            .When(x => x.MaxPoisonEnvelopeBytes.HasValue)
+            .WithMessage("MaxPoisonEnvelopeBytes must be greater than zero when set.");
+    }
+
+    private static void _ValidateMiddlewareDescriptors(IMiddlewareDescriptorRegistry? registry)
+    {
+        if (registry is null)
+        {
+            return;
+        }
+
+        foreach (var descriptor in registry.Descriptors)
+        {
+            if (descriptor.Scope != MiddlewareScope.Bus || !_IsTypedContext(descriptor.ContextType))
+            {
+                continue;
+            }
+
+            throw new MessagingConfigurationException(
+                $"Middleware `{descriptor.MiddlewareType.FullName}` is registered at bus scope but declares typed context `{descriptor.ContextType.FullName}`. Typed middleware must use AddConsumeMiddlewareFor<...>(lane) or AddPublishMiddlewareFor<...>(lane)."
+            );
+        }
+    }
+
+    private static bool _IsTypedContext(Type contextType)
+    {
+        return contextType.IsGenericType
+            && (
+                contextType.GetGenericTypeDefinition() == typeof(ConsumeContext<>)
+                || contextType.GetGenericTypeDefinition() == typeof(PublishContext<>)
+            );
+    }
+}

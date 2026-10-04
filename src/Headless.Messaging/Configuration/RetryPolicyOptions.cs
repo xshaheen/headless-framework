@@ -1,0 +1,259 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using FluentValidation;
+using Headless.Messaging.Retry;
+using Polly;
+using Polly.Retry;
+
+namespace Headless.Messaging;
+
+/// <summary>
+/// Configures publish retries, the dispatch lease and grace shared by publishing and consuming, and the
+/// <see cref="OnExhausted"/> callback.
+/// </summary>
+/// <remarks>
+/// <para>
+/// <see cref="RetryStrategy"/> and <see cref="MaxPersistedRetries"/> govern publishing only. A failed publish is
+/// attempted at most <c>(RetryStrategy.MaxRetryAttempts + 1) × (MaxPersistedRetries + 1)</c> times: inline retries
+/// burst on each persisted pickup. To disable publish retry, set both to 0.
+/// </para>
+/// <para>
+/// Consuming follows each consumer's resolved failure policy instead (<c>Headless.Reliability.FailurePolicy</c>,
+/// declared on the consumer attribute, tuned, or the host default set through
+/// <c>MessagingSetupBuilder.DefaultFailurePolicy</c>). A failing message is attempted at most
+/// <c>1 + ImmediateRetries + DelayedRetries</c> times: the immediate retries run back-to-back in the first dispatch,
+/// and each delayed retry is one later pickup scheduled with the policy's exponential backoff.
+/// </para>
+/// </remarks>
+[PublicAPI]
+public sealed class RetryPolicyOptions
+{
+    /// <summary>
+    /// Gets the default retry classification used by <see cref="RetryStrategy"/>: retry any
+    /// exception that is not a cancellation and not classified permanent by
+    /// <see cref="RetryExceptionClassifier"/>. Reuse (or compose) this predicate when supplying a
+    /// custom <see cref="RetryStrategy"/> value so replacing the strategy does not silently drop
+    /// the framework's failure classification.
+    /// </summary>
+    public static Func<RetryPredicateArguments<object>, ValueTask<bool>> DefaultShouldHandle { get; } =
+        static args =>
+            ValueTask.FromResult(
+                args.Outcome.Exception is { } exception
+                    && exception is not OperationCanceledException
+                    && !RetryExceptionClassifier.IsPermanent(exception)
+            );
+
+    /// <summary>
+    /// Gets or sets the Polly retry strategy used for bounded inline publish attempts. It does not affect consuming,
+    /// whose retries and classification come from each consumer's failure policy.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>RetryStrategy.MaxRetryAttempts</c> excludes the original execution; its
+    /// default value here is 2, so each publish pickup reserves at most three observable attempts.
+    /// </para>
+    /// <para>
+    /// <c>RetryStrategy.ShouldHandle</c> is required and defaults to
+    /// <see cref="DefaultShouldHandle"/>, which excludes permanent Messaging failures and
+    /// cancellation. The pipeline is built once from this configuration and reused; mutating the
+    /// options after service-provider construction does not reconfigure a running pipeline.
+    /// </para>
+    /// </remarks>
+    public RetryStrategyOptions RetryStrategy { get; set; } =
+        new()
+        {
+            MaxRetryAttempts = 2,
+            Delay = TimeSpan.FromSeconds(1),
+            BackoffType = DelayBackoffType.Exponential,
+            UseJitter = true,
+            MaxDelay = TimeSpan.FromMinutes(5),
+            ShouldHandle = DefaultShouldHandle,
+        };
+
+    /// <summary>
+    /// Gets or sets the maximum number of persisted-retry pickups the retry processor will
+    /// attempt for a failed publish. Default is 15. It does not cap consume retries, which a consumer's failure policy
+    /// bounds through its delayed retries.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Persisted publish pickups burst inline retries on each pickup. Total observable publish attempts =
+    /// <c>(RetryStrategy.MaxRetryAttempts + 1) × (MaxPersistedRetries + 1)</c>; with defaults this is
+    /// <c>(2 + 1) × (15 + 1) = 48</c> attempts before <see cref="OnExhausted"/> fires.
+    /// </para>
+    /// <para>
+    /// Set to 0 to disable persisted publish retry (failure becomes terminal after the inline budget is consumed).
+    /// </para>
+    /// </remarks>
+    public int MaxPersistedRetries { get; set; } = 15;
+
+    /// <summary>
+    /// Gets or sets the delay applied to <c>NextRetryAt</c> when a message is first stored.
+    /// Default is 30 seconds.
+    /// </summary>
+    /// <remarks>
+    /// On initial store the message's <c>NextRetryAt</c> is set to <c>UtcNow + InitialDispatchGrace</c>.
+    /// The persisted retry processor will not pick the row up until that timestamp elapses,
+    /// which gives the normal dispatch + inline-retry path room to complete first. After that grace
+    /// window the processor treats the row as crash-recovery work (a never-dispatched or
+    /// dispatch-crashed message) and picks it up.
+    /// Lower this for faster crash-recovery; raise it to reduce storage scan pressure during
+    /// burst publishes.
+    /// </remarks>
+    public TimeSpan InitialDispatchGrace { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// Gets or sets how long a persisted retry row is leased while a publish or consume attempt is active.
+    /// Default is 5 minutes.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// While <c>LockedUntil</c> is in the future, the persisted retry processor excludes the row.
+    /// Handlers that run longer than this lease remain at-least-once and may be re-dispatched.
+    /// </para>
+    /// <para>
+    /// <b>Rolling-restart retry gap:</b> graceful shutdown releases only the exact lease generations
+    /// of locally completed attempts or work abandoned before execution. A handler still running at
+    /// the shutdown deadline, or a process that crashes, keeps its lease until <c>LockedUntil</c>
+    /// expires. Startup warns when this value exceeds <see cref="InitialDispatchGrace"/> by more than
+    /// two minutes. Measure the longest valid handler duration before aligning the values; shortening
+    /// the lease below valid execution time increases overlapping at-least-once delivery.
+    /// </para>
+    /// </remarks>
+    public TimeSpan DispatchTimeout { get; set; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>
+    /// Gets or sets the upper bound on how long the framework will await the
+    /// <see cref="OnExhausted"/> callback before logging a timeout and continuing.
+    /// Default is 30 seconds.
+    /// </summary>
+    /// <remarks>
+    /// A callback that does not return within this window is observed via <c>Task.WaitAsync</c>
+    /// and a <c>OnExhaustedTimedOut</c> log event is emitted. The orphaned callback continues
+    /// running in the background but the dispatch loop is no longer blocked by it. Keep callbacks
+    /// short and honor the supplied <see cref="CancellationToken"/> to avoid leaking resources.
+    /// </remarks>
+    public TimeSpan OnExhaustedTimeout { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// Returns <see langword="true"/> when more inline publish attempts remain within the policy
+    /// budget. Pass the count of inline retries already completed on this pickup; the helper is
+    /// the single source of truth so the publish call sites in the Polly inline pipeline and the retry helper
+    /// cannot drift.
+    /// </summary>
+    /// <remarks>
+    /// Semantics: <c>HasMoreInlineAttempts(0)</c> with <c>RetryStrategy.MaxRetryAttempts=0</c> returns
+    /// <see langword="false"/> (the initial attempt is the only attempt — no inline retries
+    /// configured); <c>HasMoreInlineAttempts(0)</c> with <c>RetryStrategy.MaxRetryAttempts=3</c> returns
+    /// <see langword="true"/> (three inline retries still available).
+    /// </remarks>
+    internal bool HasMoreInlineAttempts(int attemptsCompleted)
+    {
+        return attemptsCompleted < RetryStrategy.MaxRetryAttempts;
+    }
+
+    /// <summary>
+    /// Copies all properties of this instance to <paramref name="target"/>.
+    /// </summary>
+    internal void CopyTo(RetryPolicyOptions target)
+    {
+        target.RetryStrategy = RetryStrategy;
+        target.MaxPersistedRetries = MaxPersistedRetries;
+        target.InitialDispatchGrace = InitialDispatchGrace;
+        target.DispatchTimeout = DispatchTimeout;
+        target.OnExhausted = OnExhausted;
+        target.OnExhaustedTimeout = OnExhaustedTimeout;
+    }
+
+    /// <summary>
+    /// Gets or sets the callback invoked once for each message that fails for good.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// On publish it fires when the retry budget
+    /// <c>(RetryStrategy.MaxRetryAttempts + 1) × (MaxPersistedRetries + 1)</c> is consumed; a permanent failure there
+    /// short-circuits the budget and does not invoke this callback.
+    /// </para>
+    /// <para>
+    /// On consume it fires for every terminal failure: the consumer's failure policy budget is spent, one of its fail
+    /// rules matches, the failure is in the built-in permanent set (for example an argument validation error), the
+    /// payload fails to deserialize at execution, the stored message's consumer is no longer registered, or the message
+    /// is poisoned on arrival. It fires only when this node's terminal write wins: a node that finds the row already
+    /// terminal skips it. A host-shutdown cancellation is not a failure and never invokes it.
+    /// </para>
+    /// <para>
+    /// The callback runs inside the live dispatch scope carried by <see cref="FailedInfo.ServiceProvider"/> and is
+    /// awaited before the dispatch scope is disposed.
+    /// </para>
+    /// <para>
+    /// Delivery is <b>at-least-once</b>: under broker redelivery, partial failures, or crash-recover
+    /// this callback MAY fire more than once for the same message. The handler MUST be idempotent
+    /// — use <c>Message.Id</c> as the dedupe key. The framework makes best-effort to skip
+    /// re-firing when storage proves the row is already in a terminal state, but does not
+    /// guarantee single-fire under all broker semantics.
+    /// </para>
+    /// <para>
+    /// The supplied <see cref="CancellationToken"/> reflects host shutdown — handle it to fail
+    /// fast on stop. Throwing from the callback is caught and logged; it does not crash the
+    /// dispatch loop.
+    /// </para>
+    /// <para>
+    /// Scope nuance: for poisoned-on-arrival messages (failed to deserialize or no subscriber
+    /// registered) no consume execution ever runs, so the framework creates a fresh DI scope for
+    /// the callback instead of reusing a dispatch scope. <see cref="FailedInfo.ServiceProvider"/>
+    /// is still valid for the duration of the callback in both paths, but services resolved on
+    /// the bypass path will be fresh instances unrelated to any (never-happened) consume.
+    /// </para>
+    /// <para>
+    /// On host crash between the terminal storage write and the callback completion, OnExhausted
+    /// may NOT fire for that message — handlers must tolerate at-most-once delivery in addition to
+    /// the documented at-least-once contract above.
+    /// </para>
+    /// <para>
+    /// <b>Resource lifetime:</b> the supplied <see cref="CancellationToken"/> is the framework's
+    /// signal that the dispatch scope is winding down (timeout via <see cref="OnExhaustedTimeout"/>
+    /// or host shutdown). Callbacks MUST observe the token and unwind promptly; do NOT capture or
+    /// retain <see cref="FailedInfo.ServiceProvider"/> beyond the awaited window because the
+    /// dispatch scope is disposed once this method returns or the timeout fires (whichever comes
+    /// first). An orphaned callback that touches scope-bound services after timeout will race
+    /// scope disposal and may observe <see cref="ObjectDisposedException"/>.
+    /// </para>
+    /// </remarks>
+    public Func<FailedInfo, CancellationToken, Task>? OnExhausted { get; set; }
+}
+
+internal sealed class RetryPolicyOptionsValidator : AbstractValidator<RetryPolicyOptions>
+{
+    public RetryPolicyOptionsValidator()
+    {
+        // Caps intentionally well above any realistic production budget
+        RuleFor(x => x.RetryStrategy).NotNull().WithMessage("RetryStrategy must not be null.");
+        When(
+            x => x.RetryStrategy is not null,
+            () =>
+                RuleFor(x => x.RetryStrategy.MaxRetryAttempts)
+                    .GreaterThanOrEqualTo(0)
+                    .LessThanOrEqualTo(100)
+                    .WithMessage("RetryStrategy.MaxRetryAttempts must be in the range [0, 100].")
+        );
+        RuleFor(x => x.MaxPersistedRetries)
+            .GreaterThanOrEqualTo(0)
+            .LessThanOrEqualTo(1_000)
+            .WithMessage("MaxPersistedRetries must be in the range [0, 1000].");
+        RuleFor(x => x.InitialDispatchGrace)
+            .GreaterThan(TimeSpan.Zero)
+            .WithMessage("InitialDispatchGrace must be greater than zero.")
+            .LessThanOrEqualTo(TimeSpan.FromHours(1))
+            .WithMessage("InitialDispatchGrace must not exceed 1 hour.");
+        RuleFor(x => x.DispatchTimeout)
+            .GreaterThan(TimeSpan.Zero)
+            .WithMessage("DispatchTimeout must be greater than zero.")
+            .LessThanOrEqualTo(TimeSpan.FromHours(1))
+            .WithMessage("DispatchTimeout must not exceed 1 hour.");
+        RuleFor(x => x.OnExhaustedTimeout)
+            .GreaterThan(TimeSpan.Zero)
+            .WithMessage("OnExhaustedTimeout must be greater than zero.")
+            .LessThanOrEqualTo(TimeSpan.FromHours(1))
+            .WithMessage("OnExhaustedTimeout must not exceed 1 hour.");
+    }
+}

@@ -1,10 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Security.Claims;
-using Headless.Abstractions;
-using Headless.Permissions.Grants;
-using Headless.Permissions.Models;
-using Headless.Testing.Helpers;
+using Headless.Context;
+using Headless.Permissions;
+using Headless.Testing;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Authorization;
 using NSubstitute.ExceptionExtensions;

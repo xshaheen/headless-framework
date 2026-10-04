@@ -2,12 +2,11 @@
 
 using System.Xml.Linq;
 using Dapper;
-using Headless.Abstractions;
+using Headless;
 using Headless.Coordination;
 using Headless.Hosting.Initialization.Schema;
-using Headless.Messaging.Configuration;
+using Headless.Messaging;
 using Headless.Messaging.Persistence;
-using Headless.Messaging.Serialization;
 using Headless.Messaging.Storage.SqlServer;
 using Headless.Testing.Tests;
 using Microsoft.Data.SqlClient;

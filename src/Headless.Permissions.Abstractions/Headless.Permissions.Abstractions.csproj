@@ -6,10 +6,12 @@
     <RootNamespace>Headless.Permissions</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Headless.Core\Headless.Core.csproj" />
+    <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
+    <ProjectReference Include="..\Headless.Context.Abstractions\Headless.Context.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.Extensions\Headless.Extensions.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <InternalsVisibleTo Include="Headless.Permissions.Core" />
+    <InternalsVisibleTo Include="Headless.Permissions" />
     <InternalsVisibleTo Include="Headless.Permissions.Composition.Tests.Unit" />
   </ItemGroup>
 </Project>

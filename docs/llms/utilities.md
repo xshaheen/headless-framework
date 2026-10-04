@@ -21,7 +21,7 @@ Install individually as needed -- these packages are independent of each other:
 - **Sitemaps** -- XML sitemap generation (`SitemapUrl`, `SitemapIndexBuilder`) with localized URL and image support.
 - **Slugs** -- URL-friendly slug generation (`Slug.Create()`) with Unicode normalization and configurable options.
 
-CAPTCHA verification (Google reCAPTCHA v2/v3, Cloudflare Turnstile) moved out of this domain — see [captcha.md](captcha.md).
+CAPTCHA verification (Google reCAPTCHA v2/v3, Cloudflare Turnstile) is its own domain: see [captcha.md](captcha.md).
 
 ## Agent Rules
 
@@ -286,6 +286,8 @@ Core hosting utilities and extensions for ASP.NET Core applications.
 ### API and behavior
 
 - DI extensions: `AddIf`, `AddIfElse`, `AddOrReplace*`, `Unregister<T>`, and decorators (`Decorate`/`TryDecorate` for unkeyed registrations, `TryDecorateKeyed` for one service key) that preserve each registration's lifetime
+- `AddHeadlessGuidGenerator()` — registers keyed `IGuidGenerator` strategies for `SequentialGuidType.Version7` and `SequentialGuidType.SqlServer`, plus an unkeyed backend-agnostic default. The `IGuidGenerator` / `SequentialGuidType` contracts live in `Headless.Extensions` (see [extensions.md](extensions.md))
+- `LogState` / `HeadlessLoggerExtensions` — structured-logging scope builder with fluent property/tag methods and level-gated `Log*` overloads that build the scope inline
 - Startup validators (`IHeadlessStartupValidator`, `AddStartupValidator`) that run before any hosted service starts and report every failure together
 - Required-service declarations (`RequireRegisteredService<T>`) that fail the host at startup instead of at first use
 - Options validation with FluentValidation
@@ -383,7 +385,7 @@ A decorator that returns a different instance owns disposing the inner one, beca
 
 #### Startup Validators
 
-A package that must refuse to start on a misconfiguration implements `IHeadlessStartupValidator` (`Headless.Hosting.Validation`) and registers it; it does not write its own hosted service.
+A package that must refuse to start on a misconfiguration implements `IHeadlessStartupValidator` (`Headless.Hosting`) and registers it; it does not write its own hosted service.
 
 ```csharp
 internal sealed class OrdersModelValidator(IDbContextFactory<AppDbContext> factory) : IHeadlessStartupValidator
@@ -410,7 +412,7 @@ services.AddStartupValidator<OrdersModelValidator>();
 
 #### Required Services
 
-The abstraction-plus-provider split lets a package register cleanly against a contract whose only implementation ships in a *provider* package the host must choose — `Headless.Settings.Core` consumes `ICache<SettingValueCacheItem>` while referencing only `Headless.Caching.Abstractions`, for example. Without a declared prerequisite such a host starts green and throws on the first request that touches the feature.
+The abstraction-plus-provider split lets a package register cleanly against a contract whose only implementation ships in a *provider* package the host must choose — `Headless.Settings` consumes `ICache<SettingValueCacheItem>` while referencing only `Headless.Caching.Abstractions`, for example. Without a declared prerequisite such a host starts green and throws on the first request that touches the feature.
 
 ```csharp
 services.RequireRegisteredService<ICache<SettingValueCacheItem>>(
@@ -421,9 +423,9 @@ services.RequireRegisteredService<ICache<SettingValueCacheItem>>(
 
 - **Checked at startup, not at declaration.** The requirement is usually satisfied by a sibling `Add…` call that has not run yet, so inspecting the collection at declaration time would reject valid registration orders. The check is an `IHeadlessStartupValidator`, so it runs ahead of every hosted service's `StartAsync`, so a broken host never lets background workers or consumers start under an assumption the container cannot honour.
 - **Probed, never resolved.** It asks `IServiceProviderIsService` rather than resolving the contract, so validation never constructs the service under test (a Redis-backed cache would reach into its connection options and turn a provider misconfiguration into an opaque failure from the guard). MS.DI's probe answers a *constructed* generic from an *open*-generic registration, so `ICache<Foo>` reports present when only `typeof(ICache<>)` was registered — which is exactly how the caching providers register. A container that does not expose the probe falls back to a null-returning resolve.
-- **Aggregated.** Requirements from every feature in the host are collected and reported in one `MissingRequiredServiceException` (`Headless.Hosting.DependencyInjection`), each line naming its `requiredBy` and `remedy`. A host missing one shared provider sees every affected feature at once instead of one failure per restart. Identical declarations collapse to a single line, and the startup check itself is registered once no matter how many features declare requirements.
+- **Aggregated.** Requirements from every feature in the host are collected and reported in one `MissingRequiredServiceException` (`Headless.Hosting`), each line naming its `requiredBy` and `remedy`. A host missing one shared provider sees every affected feature at once instead of one failure per restart. Identical declarations collapse to a single line, and the startup check itself is registered once no matter how many features declare requirements.
 
-`Headless.MultiTenancy`, `Headless.Settings.Core`, `Headless.Permissions.Core`, `Headless.Features.Core`, and `Headless.Api.Idempotency` all use this to require a caching provider.
+`Headless.MultiTenancy`, `Headless.Settings`, `Headless.Permissions`, `Headless.Features`, and `Headless.Api.Idempotency` all use this to require a caching provider.
 
 `RequireSingletonService<T>(requiredBy, remedy)` (and the `Type` overload) goes one step further for a service that a feature's *singleton* injects but the application registers:
 
@@ -435,7 +437,7 @@ services.RequireSingletonService(
 );
 ```
 
-- **Refuses a captive dependency in every environment.** A scoped or transient registration would be captured by the singleton for the life of the host. Scope validation catches the scoped case only while it is on (the development default) and never catches the transient one, so the check reads the lifetime from the service collection instead and throws `InvalidServiceLifetimeException` (`Headless.Hosting.DependencyInjection`) listing every violation.
+- **Refuses a captive dependency in every environment.** A scoped or transient registration would be captured by the singleton for the life of the host. Scope validation catches the scoped case only while it is on (the development default) and never catches the transient one, so the check reads the lifetime from the service collection instead and throws `InvalidServiceLifetimeException` (`Headless.Hosting`) listing every violation.
 - **Judges the registration the container resolves.** The last unkeyed registration of the closed type wins; with none, the last unkeyed open-generic registration of its definition decides. Keyed registrations are ignored. Registrations added after the declaration are seen, and the service is never resolved.
 - **Also requires the registration.** It declares `RequireRegisteredService` for the same type, so a missing registration still fails with `MissingRequiredServiceException`.
 
@@ -494,7 +496,7 @@ dotnet add package Headless.NetTopologySuite
 ### Setup and use
 
 ```csharp
-using Headless.NetTopologySuite.Constants;
+using Headless.NetTopologySuite;
 using NetTopologySuite.Geometries;
 
 var factory = new GeometryFactory(GeoConstants.HighPrecision, GeoConstants.GoogleMapsSrid);

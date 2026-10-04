@@ -7,17 +7,8 @@
 
 global using Headless.Caching;
 global using Headless.Coordination;
-global using Headless.Hosting.Initialization;
+global using Headless.Hosting;
 global using Headless.Jobs;
-global using Headless.Jobs.Base;
-global using Headless.Jobs.Configurations;
-global using Headless.Jobs.DbContextFactory;
-global using Headless.Jobs.Entities;
-global using Headless.Jobs.Enums;
-global using Headless.Jobs.Exceptions;
-global using Headless.Jobs.Interfaces;
-global using Headless.Jobs.Interfaces.Managers;
-global using Headless.Jobs.Models;
 global using Headless.MultiTenancy;
 global using Headless.UnitOfWork;
 

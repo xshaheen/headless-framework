@@ -1,10 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Security.Claims;
-using Headless.Abstractions;
-using Headless.Api.Abstractions;
-using Headless.Constants;
+using Headless.Api;
+using Headless.Context;
 using Headless.Primitives;
+using Headless.Security;
 using Headless.Testing.Tests;
 
 namespace Tests.Abstractions;

@@ -2,12 +2,13 @@
 
 using System.Linq.Expressions;
 using Headless.Domain;
+using Headless.EntityFramework.Contexts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Microsoft.EntityFrameworkCore.Metadata.Conventions;
 
-namespace Headless.EntityFramework.Contexts.Runtime;
+namespace Headless.EntityFramework;
 
 internal sealed class HeadlessTenantModelConvention(DbContext db) : IModelFinalizingConvention
 {

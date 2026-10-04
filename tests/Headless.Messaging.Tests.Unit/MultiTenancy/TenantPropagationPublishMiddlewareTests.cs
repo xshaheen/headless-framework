@@ -1,0 +1,249 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using Headless.Messaging;
+using Headless.Testing;
+using Headless.Testing.Tests;
+
+namespace Tests.MultiTenancy;
+
+public sealed class TenantPropagationPublishMiddlewareTests : TestBase
+{
+    [Theory]
+    [InlineData(MessageLane.Bus)]
+    [InlineData(MessageLane.Queue)]
+    public async Task should_preserve_captured_system_scope_without_replacing_it_with_ambient_tenant(MessageLane lane)
+    {
+        var tenant = new TestCurrentTenant { Id = "unrelated-tenant" };
+        var middleware = new TenantPropagationPublishMiddleware(tenant);
+        MessageOptions options =
+            lane == MessageLane.Bus
+                ? new PublishOptions { SuppressAmbientBusinessContext = true }
+                : new QueueOptions { SuppressAmbientBusinessContext = true };
+        var context = new PublishContext<Payload>(
+            new Payload("captured"),
+            lane,
+            options,
+            defaultDeliveryMode: DeliveryMode.Durable,
+            now: DateTimeOffset.UnixEpoch,
+            cancellationToken: AbortToken
+        );
+        var nextCalled = false;
+
+        await middleware.InvokeAsync(
+            context,
+            () =>
+            {
+                nextCalled = true;
+                context.Options!.TenantId.Should().BeNull();
+                return ValueTask.CompletedTask;
+            }
+        );
+
+        nextCalled.Should().BeTrue();
+        context.Options.Should().BeSameAs(options);
+        tenant.Id.Should().Be("unrelated-tenant");
+    }
+
+    [Fact]
+    public async Task should_stamp_tenant_id_from_ambient_before_next()
+    {
+        // given
+        var currentTenant = new TestCurrentTenant { Id = "acme" };
+        var middleware = new TenantPropagationPublishMiddleware(currentTenant);
+        var context = new PublishContext<Payload>(
+            new Payload("hello"),
+            MessageLane.Bus,
+            options: null,
+            defaultDeliveryMode: DeliveryMode.Durable,
+            now: DateTimeOffset.UnixEpoch,
+            cancellationToken: AbortToken
+        );
+        string? observedDuringNext = null;
+
+        // when
+        await middleware.InvokeAsync(
+            context,
+            () =>
+            {
+                observedDuringNext = context.Options?.TenantId;
+                return ValueTask.CompletedTask;
+            }
+        );
+
+        // then
+        observedDuringNext.Should().Be("acme");
+        context.Options!.TenantId.Should().Be("acme");
+    }
+
+    [Fact]
+    public async Task should_preserve_caller_set_tenant_id_when_ambient_is_also_set()
+    {
+        // given
+        var currentTenant = new TestCurrentTenant { Id = "acme" };
+        var middleware = new TenantPropagationPublishMiddleware(currentTenant);
+        var context = new PublishContext<Payload>(
+            new Payload("hello"),
+            MessageLane.Bus,
+            new PublishOptions { TenantId = "system" },
+            defaultDeliveryMode: DeliveryMode.Durable,
+            now: DateTimeOffset.UnixEpoch,
+            cancellationToken: AbortToken
+        );
+
+        // when
+        await middleware.InvokeAsync(context, () => ValueTask.CompletedTask);
+
+        // then
+        context.Options!.TenantId.Should().Be("system");
+    }
+
+    [Fact]
+    public async Task should_preserve_other_options_fields_when_stamping_tenant_id()
+    {
+        // given
+        var currentTenant = new TestCurrentTenant { Id = "acme" };
+        var middleware = new TenantPropagationPublishMiddleware(currentTenant);
+        var context = new PublishContext<Payload>(
+            new Payload("hello"),
+            MessageLane.Bus,
+            new PublishOptions { CorrelationId = "corr-1", MessageId = "msg-1" },
+            defaultDeliveryMode: DeliveryMode.Durable,
+            now: DateTimeOffset.UnixEpoch,
+            cancellationToken: AbortToken
+        );
+
+        // when
+        await middleware.InvokeAsync(context, () => ValueTask.CompletedTask);
+
+        // then
+        context.Options!.TenantId.Should().Be("acme");
+        context.Options.CorrelationId.Should().Be("corr-1");
+        context.Options.MessageId.Should().Be("msg-1");
+    }
+
+    [Theory]
+    [InlineData(MessageLane.Bus)]
+    [InlineData(MessageLane.Queue)]
+    public async Task should_keep_an_enlisted_writes_outbox_options_when_stamping_tenant_id(MessageLane lane)
+    {
+        // given — a unit-of-work publish or enqueue carries OutboxOptions, not the lane's autonomous record
+        var currentTenant = new TestCurrentTenant { Id = "acme" };
+        var middleware = new TenantPropagationPublishMiddleware(currentTenant);
+        var options = new OutboxOptions
+        {
+            MessageName = "orders.callback",
+            CorrelationId = "corr-1",
+            CallbackName = "orders.next",
+            Headers = new Dictionary<string, string?>(StringComparer.Ordinal) { ["x-order"] = "42" },
+        };
+        var context = new PublishContext<Payload>(
+            new Payload("hello"),
+            lane,
+            options,
+            defaultDeliveryMode: DeliveryMode.Durable,
+            now: DateTimeOffset.UnixEpoch,
+            cancellationToken: AbortToken
+        );
+
+        // when
+        await middleware.InvokeAsync(context, () => ValueTask.CompletedTask);
+
+        // then — the same record type with only the tenant added
+        var stamped = context.Options.Should().BeOfType<OutboxOptions>().Subject;
+        stamped.TenantId.Should().Be("acme");
+        stamped.MessageName.Should().Be("orders.callback");
+        stamped.CorrelationId.Should().Be("corr-1");
+        stamped.CallbackName.Should().Be("orders.next");
+        stamped.Headers.Should().ContainKey("x-order").WhoseValue.Should().Be("42");
+    }
+
+    [Fact]
+    public async Task should_skip_stamping_when_ambient_tenant_is_null_or_whitespace()
+    {
+        // given
+        var currentTenant = new TestCurrentTenant();
+        var middleware = new TenantPropagationPublishMiddleware(currentTenant);
+        var nullContext = new PublishContext<Payload>(
+            new Payload("hello"),
+            MessageLane.Bus,
+            options: null,
+            defaultDeliveryMode: DeliveryMode.Durable,
+            now: DateTimeOffset.UnixEpoch,
+            cancellationToken: AbortToken
+        );
+        var whitespaceContext = new PublishContext<Payload>(
+            new Payload("hello"),
+            MessageLane.Bus,
+            options: null,
+            defaultDeliveryMode: DeliveryMode.Durable,
+            now: DateTimeOffset.UnixEpoch,
+            cancellationToken: AbortToken
+        );
+
+        // when
+        await middleware.InvokeAsync(nullContext, () => ValueTask.CompletedTask);
+        currentTenant.Id = "   ";
+        await middleware.InvokeAsync(whitespaceContext, () => ValueTask.CompletedTask);
+
+        // then
+        nullContext.Options.Should().BeNull();
+        whitespaceContext.Options.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_skip_stamping_when_ambient_tenant_exceeds_max_length()
+    {
+        // given
+        var currentTenant = new TestCurrentTenant { Id = new string('x', MessageOptions.TenantIdMaxLength + 1) };
+        var middleware = new TenantPropagationPublishMiddleware(currentTenant);
+        var context = new PublishContext<Payload>(
+            new Payload("hello"),
+            MessageLane.Bus,
+            options: null,
+            defaultDeliveryMode: DeliveryMode.Durable,
+            now: DateTimeOffset.UnixEpoch,
+            cancellationToken: AbortToken
+        );
+
+        // when
+        await middleware.InvokeAsync(context, () => ValueTask.CompletedTask);
+
+        // then
+        context.Options.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_stamp_when_ambient_tenant_is_exactly_max_length()
+    {
+        // given
+        var exactlyMax = new string('x', MessageOptions.TenantIdMaxLength);
+        var currentTenant = new TestCurrentTenant { Id = exactlyMax };
+        var middleware = new TenantPropagationPublishMiddleware(currentTenant);
+        var context = new PublishContext<Payload>(
+            new Payload("hello"),
+            MessageLane.Bus,
+            options: null,
+            defaultDeliveryMode: DeliveryMode.Durable,
+            now: DateTimeOffset.UnixEpoch,
+            cancellationToken: AbortToken
+        );
+
+        // when
+        await middleware.InvokeAsync(context, () => ValueTask.CompletedTask);
+
+        // then
+        context.Options!.TenantId.Should().Be(exactlyMax);
+    }
+
+    [Fact]
+    public void should_throw_argument_null_exception_when_constructed_with_null_tenant()
+    {
+        // when
+        var act = () => new TenantPropagationPublishMiddleware(currentTenant: null!);
+
+        // then
+        act.Should().Throw<ArgumentNullException>();
+    }
+
+    private sealed record Payload(string Value);
+}

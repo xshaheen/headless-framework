@@ -1,13 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Abstractions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
-namespace Headless.Api.Filters;
+namespace Headless.Api;
 
 /// <summary>
 /// Action filter that restricts an endpoint to a specific host environment. When the current

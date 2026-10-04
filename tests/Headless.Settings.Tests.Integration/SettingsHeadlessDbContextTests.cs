@@ -1,10 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.EntityFramework;
-using Headless.Hosting.Initialization;
+using Headless.Hosting;
 using Headless.Settings;
-using Headless.Settings.Entities;
-using Headless.Settings.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;

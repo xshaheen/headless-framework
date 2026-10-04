@@ -1,0 +1,49 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Description>Core services, options, and setup primitives for Headless API packages.</Description>
+    <PackageTags>headless;api;dotnet</PackageTags>
+    <RootNamespace>Headless.Api</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Api.ServiceDefaults" />
+    <InternalsVisibleTo Include="Headless.OpenApi.Nswag" />
+    <InternalsVisibleTo Include="Headless.Api.Mvc" />
+    <InternalsVisibleTo Include="Headless.Api.Idempotency" />
+    <InternalsVisibleTo Include="Headless.Api.MinimalApi" />
+    <InternalsVisibleTo Include="Headless.Api.Composition.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.Api.Tests.Integration" />
+    <InternalsVisibleTo Include="Headless.Api.Mvc.Tests.Unit" />
+    <InternalsVisibleTo Include="Headless.Api.Idempotency.Tests.Integration" />
+    <InternalsVisibleTo Include="Headless.Api.Tests.Unit" />
+  </ItemGroup>
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Asp.Versioning.Abstractions" />
+    <PackageReference Include="Asp.Versioning.Http" />
+    <PackageReference Include="DeviceDetector.NET" />
+    <PackageReference Include="FluentValidation.DependencyInjectionExtensions" />
+    <PackageReference Include="Humanizer.Core" />
+    <!-- The identity throttling messages ship in Arabic (Messages.ar.resx), so the durations Humanizer formats into them need its Arabic resources too. -->
+    <PackageReference Include="Humanizer.Core.ar" />
+    <PackageReference Include="Microsoft.AspNetCore.MiddlewareAnalysis" />
+    <PackageReference Include="Microsoft.Extensions.Http.Resilience" />
+    <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" />
+    <PackageReference Include="NetEscapades.AspNetCore.SecurityHeaders" />
+    <PackageReference Include="TimeZoneConverter" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Api.Abstractions\Headless.Api.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.AuditLog.Abstractions\Headless.AuditLog.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.Context.Abstractions\Headless.Context.Abstractions.csproj" />
+    <ProjectReference Include="..\Headless.Context\Headless.Context.csproj" />
+    <ProjectReference Include="..\Headless.MultiTenancy\Headless.MultiTenancy.csproj" />
+    <ProjectReference Include="..\Headless.Security\Headless.Security.csproj" />
+    <ProjectReference Include="..\Headless.Serializer.Json\Headless.Serializer.Json.csproj" />
+    <ProjectReference Include="..\Headless.FluentValidation\Headless.FluentValidation.csproj" />
+    <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
+  </ItemGroup>
+  <ItemGroup Label="Resources">
+    <EmbeddedResource Update="Resources\Messages.resx" />
+  </ItemGroup>
+</Project>

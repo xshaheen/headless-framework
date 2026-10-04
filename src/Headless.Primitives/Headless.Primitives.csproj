@@ -6,7 +6,7 @@
     <RootNamespace>Headless.Primitives</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <InternalsVisibleTo Include="Headless.Caching.Core" />
+    <InternalsVisibleTo Include="Headless.Caching" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />

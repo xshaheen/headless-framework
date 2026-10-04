@@ -1,0 +1,1666 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using System.Runtime.InteropServices;
+using Headless.Checks;
+using Headless.Jobs.BackgroundServices;
+using Headless.MultiTenancy;
+using Headless.UnitOfWork;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+
+namespace Headless.Jobs.Managers;
+
+// Singleton core: stateless with respect to unit-of-work coordination. It takes IUnitOfWork? as an explicit
+// argument on every Add/keyed-schedule path; the JobsManagerFacade in front of it passes the unit it was bound
+// with (null for the autonomous receiver). Update/Delete never touched coordination and keep their original
+// signatures.
+internal partial class JobsManager<TTimeJob, TCronJob>(
+    IJobPersistenceProvider<TTimeJob, TCronJob> persistenceProvider,
+    IJobsHostScheduler jobsHostScheduler,
+    TimeProvider timeProvider,
+    IGuidGenerator guidGenerator,
+    IJobsNotificationHubSender notificationHubSender,
+    JobsExecutionContext executionContext,
+    IJobsDispatcher dispatcher,
+    CronScheduleCache cronScheduleCache,
+    JobsPostCommitSignalService postCommitSignals,
+    JobFunctionRegistry functionRegistry,
+    ILogger<JobsManager<TTimeJob, TCronJob>> logger,
+    IServiceScopeFactory? serviceScopeFactory = null,
+    ICurrentTenant? currentTenant = null,
+    IOptions<JobsTenancyOptions>? tenancyOptions = null
+)
+    where TTimeJob : TimeJobEntity<TTimeJob>, new()
+    where TCronJob : CronJobEntity, new()
+{
+    private readonly IJobsHostScheduler _jobsHostScheduler = Argument.IsNotNull(jobsHostScheduler);
+    private readonly IJobsDispatcher _dispatcher = Argument.IsNotNull(dispatcher);
+    private readonly JobsExecutionContext _executionContext = Argument.IsNotNull(executionContext);
+    private readonly CronScheduleCache _cronScheduleCache = Argument.IsNotNull(cronScheduleCache);
+    private readonly JobFunctionRegistry _functionRegistry = Argument.IsNotNull(functionRegistry);
+    private readonly JobsPostCommitSignalService _postCommitSignals = Argument.IsNotNull(postCommitSignals);
+    private readonly ILogger<JobsManager<TTimeJob, TCronJob>> _logger = Argument.IsNotNull(logger);
+
+    // Read at chain-walk time for the ambient tenant used by the descendant escalation rule. Null in the unit
+    // path (no DI registration) and in standalone hosts with no tenancy, where it is treated as no ambient tenant.
+    private readonly ICurrentTenant? _currentTenant = currentTenant;
+    private readonly bool _rejectCrossTenant = tenancyOptions?.Value.RejectCrossTenantEnqueue ?? false;
+
+    // Add is the transaction-enlisting op: it returns the persisted entity and THROWS on any failure — validation
+    // (JobValidatorException), a dead/completed enlisted unit of work or a mis-wired provider (InvalidOperationException),
+    // and persistence faults all propagate. On the enlisted path a propagated failure is the point: it lets the
+    // caller's unit of work roll back rather than complete without the job row. Update/Delete are plain CRUD, never
+    // touch coordination, and keep returning JobResult. Called only by JobsManagerFacade.
+    internal Task<TCronJob> AddCronJobAsync(
+        TCronJob entity,
+        IUnitOfWork? unitOfWork,
+        CancellationToken cancellationToken
+    )
+    {
+        return _AddCronJobAsync(entity, unitOfWork, cancellationToken);
+    }
+
+    // See the throw-on-failure note on AddCronJobAsync above — the same applies to the time-job Add path.
+    internal Task<TTimeJob> AddTimeJobAsync(
+        TTimeJob entity,
+        IUnitOfWork? unitOfWork,
+        CancellationToken cancellationToken
+    )
+    {
+        JobIntentFingerprint.RejectOrdinaryMutation(entity);
+        return _AddTimeJobAsync(entity, unitOfWork, cancellationToken);
+    }
+
+    // Called only by JobsManagerFacade, which passes the unit it was bound with (null for the autonomous receiver).
+    internal Task<TTimeJob> AddIdempotentTimeJobAsync(
+        TTimeJob entity,
+        string idempotencyKey,
+        TimeSpan idempotencyTtl,
+        IUnitOfWork? unitOfWork,
+        CancellationToken cancellationToken
+    )
+    {
+        JobIntentFingerprint.RejectOrdinaryMutation(entity);
+        return _AddIdempotentTimeJobAsync(entity, idempotencyKey, idempotencyTtl, unitOfWork, cancellationToken);
+    }
+
+    internal Task<JobResult<TCronJob>> UpdateCronJobAsync(TCronJob cronJob, CancellationToken cancellationToken)
+    {
+        return _UpdateCronJobAsync(cronJob, cancellationToken);
+    }
+
+    internal Task<JobResult<TTimeJob>> UpdateTimeJobAsync(TTimeJob timeJob, CancellationToken cancellationToken)
+    {
+        return _UpdateTimeJobAsync(timeJob, cancellationToken);
+    }
+
+    internal Task<JobResult<TCronJob>> DeleteCronJobAsync(Guid id, CancellationToken cancellationToken)
+    {
+        return _DeleteCronJobAsync(id, cancellationToken);
+    }
+
+    internal Task<JobResult<TTimeJob>> DeleteTimeJobAsync(Guid id, CancellationToken cancellationToken)
+    {
+        return _DeleteTimeJobAsync(id, cancellationToken);
+    }
+
+    internal Task<List<TTimeJob>> AddTimeJobsBatchAsync(
+        List<TTimeJob> entities,
+        IUnitOfWork? unitOfWork,
+        CancellationToken cancellationToken
+    )
+    {
+        foreach (var entity in entities)
+        {
+            JobIntentFingerprint.RejectOrdinaryMutation(entity);
+        }
+
+        return _AddTimeJobsBatchAsync(entities, unitOfWork, cancellationToken);
+    }
+
+    internal Task<JobResult<List<TTimeJob>>> UpdateTimeJobsBatchAsync(
+        List<TTimeJob> timeJobs,
+        CancellationToken cancellationToken
+    )
+    {
+        return _UpdateTimeJobsBatchAsync(timeJobs, cancellationToken);
+    }
+
+    internal Task<JobResult<TTimeJob>> DeleteTimeJobsBatchAsync(List<Guid> ids, CancellationToken cancellationToken)
+    {
+        return _DeleteTimeJobsBatchAsync(ids, cancellationToken);
+    }
+
+    internal Task<List<TCronJob>> AddCronJobsBatchAsync(
+        List<TCronJob> entities,
+        IUnitOfWork? unitOfWork,
+        CancellationToken cancellationToken
+    )
+    {
+        return _AddCronJobsBatchAsync(entities, unitOfWork, cancellationToken);
+    }
+
+    internal Task<JobResult<List<TCronJob>>> UpdateCronJobsBatchAsync(
+        List<TCronJob> cronJobs,
+        CancellationToken cancellationToken
+    )
+    {
+        return _UpdateCronJobsBatchAsync(cronJobs, cancellationToken);
+    }
+
+    internal Task<JobResult<TCronJob>> DeleteCronJobsBatchAsync(List<Guid> ids, CancellationToken cancellationToken)
+    {
+        return _DeleteCronJobsBatchAsync(ids, cancellationToken);
+    }
+
+    private Task<TTimeJob> _AddTimeJobAsync(
+        TTimeJob entity,
+        IUnitOfWork? unitOfWork,
+        CancellationToken cancellationToken
+    ) => _AddTimeJobCoreAsync(entity, unitOfWork, idempotency: null, cancellationToken);
+
+    private Task<TTimeJob> _AddIdempotentTimeJobAsync(
+        TTimeJob entity,
+        string idempotencyKey,
+        TimeSpan idempotencyTtl,
+        IUnitOfWork? unitOfWork,
+        CancellationToken cancellationToken
+    )
+    {
+        // Same bounded-string and TTL rules as every other durable Jobs identity; validated here (not only at
+        // option resolution) because the manager is a public surface that receives both values directly.
+        JobContract.ValidateName(idempotencyKey);
+        JobContract.ValidateIdempotencyTtl(idempotencyTtl);
+        return _AddTimeJobCoreAsync(entity, unitOfWork, (idempotencyKey, idempotencyTtl), cancellationToken);
+    }
+
+    private async Task<TTimeJob> _AddTimeJobCoreAsync(
+        TTimeJob entity,
+        IUnitOfWork? unitOfWork,
+        (string Key, TimeSpan Ttl)? idempotency,
+        CancellationToken cancellationToken
+    )
+    {
+        // The idempotent branch is savepoint-wrapped like keyed scheduling, so a savepoint-incapable transaction must
+        // fail at capture, synchronously and before pipeline work, rather than after the schedule pipeline has run
+        // and the unit of work is already retry-prevented.
+        var coordinated = _TryCaptureCoordinatedContext(
+            unitOfWork,
+            entity.Function,
+            requireSavepoints: idempotency is not null
+        );
+        var now = timeProvider.GetUtcNow();
+        _StampTimeJobTree(entity, now, assignIds: true);
+
+        // Mirror the batch path: on any pre-persistence failure, restore captured tenant mutations so a retried
+        // entity is not treated as explicitly tenanted with a stale captured value.
+        var tenantSnapshot = _SnapshotTreeTenants([entity]);
+        var persisted = false;
+
+        try
+        {
+            await _RunSchedulePipelineAsync(entity, cancellationToken).ConfigureAwait(false);
+            _StampTimeJobTree(entity, now, assignIds: false);
+            _ResolveChainTenants(entity);
+
+            if (_functionRegistry.Functions.All(x => !string.Equals(x.Key, entity.Function, StringComparison.Ordinal)))
+            {
+                throw new JobValidatorException($"Cannot find a registered job with identity {entity.Function}");
+            }
+
+            _EnsureValidRetries(entity);
+
+            entity.ExecutionTime =
+                entity.ExecutionTime == null
+                    ? timeProvider.GetUtcNow().UtcDateTime
+                    : _ConvertToUtcIfNeeded(entity.ExecutionTime.Value);
+            _NormalizeDescendantExecutionTimes(entity);
+
+            var executionTime = entity.ExecutionTime.Value;
+
+            // The idempotent branch runs after the schedule pipeline and tenant resolution (the reservation
+            // identity needs the final tenant scope) but before any write: a hit must not insert a row, arm
+            // dispatch/restart/notify side effects, or emit a second set of enqueue effects.
+            if (idempotency is { } window)
+            {
+                JobIdempotencyEnqueueResult result;
+                if (coordinated is { } writeContext)
+                {
+                    _PrepareCoordinatedWrite(writeContext);
+                    result = await writeContext
+                        .Writer.WriteIdempotentTimeJobAsync(
+                            entity,
+                            window.Key,
+                            window.Ttl,
+                            writeContext.Relational,
+                            cancellationToken
+                        )
+                        .ConfigureAwait(false);
+                }
+                else
+                {
+                    result = await persistenceProvider
+                        .AddIdempotentTimeJobAsync(entity, window.Key, window.Ttl, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+
+                if (!result.Created)
+                {
+                    // Dedup hit: the reservation owns the first caller's job. Surface its ID through the returned
+                    // entity and arm nothing — the creator's side effects already cover this key. Treat the call
+                    // as persisted so the restore-finally does not scramble the observed entity's tenants.
+                    _logger.IdempotentEnqueueHit(entity.Function, result.JobId);
+                    entity.Id = result.JobId;
+                    persisted = true;
+                    return entity;
+                }
+
+                persisted = true;
+
+                if (coordinated is { } creatorContext)
+                {
+                    // The worker re-reads the clock when it runs the signal: the commit can land much later than
+                    // the enqueue (same rationale as the plain path below).
+                    _SignalOnCommit(creatorContext.UnitOfWork, new TimeJobCommittedSignal(this, entity, executionTime));
+                    return entity;
+                }
+
+                await _RunTimeJobSideEffectsAsync(entity, now, executionTime, cancellationToken).ConfigureAwait(false);
+                return entity;
+            }
+
+            if (coordinated is { } context)
+            {
+                _PrepareCoordinatedWrite(context);
+                // Write the row inside the caller's transaction; defer dispatch/scheduler/notify to commit. A
+                // returned entity means the row was enlisted into the transaction (it commits with it), not that the
+                // deferred dispatch ran — a post-commit dispatch failure is recovered by the scheduler's polling sweep.
+                await context
+                    .Writer.WriteTimeJobsAsync([entity], context.Relational, cancellationToken)
+                    .ConfigureAwait(false);
+
+                persisted = true;
+
+                // The worker re-reads the clock when it runs the signal: the commit can land much later than the
+                // enqueue, and using the enqueue-time `now` could push a job that was within the immediate-dispatch
+                // window into the scheduler/poll-sweep path. (Direct path below stays in-band, so its `now` is
+                // already current.)
+                _SignalOnCommit(context.UnitOfWork, new TimeJobCommittedSignal(this, entity, executionTime));
+
+                return entity;
+            }
+
+            // Direct path (no coordinator / non-relational scope): persist then run side effects in-band.
+            await persistenceProvider
+                .AddTimeJobsAsync([entity], cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+
+            persisted = true;
+
+            await _RunTimeJobSideEffectsAsync(entity, now, executionTime, cancellationToken).ConfigureAwait(false);
+
+            return entity;
+        }
+        finally
+        {
+            if (!persisted)
+            {
+                _RestoreTreeTenants(tenantSnapshot);
+            }
+        }
+    }
+
+    // Side effects for a single time-job enqueue: immediate dispatch (when due) or scheduler restart, then notify.
+    // Runs in-band on the direct path and deferred via OnCommit on the coordinated path. On the coordinated path the
+    // row is already committed when this runs, so AcquireImmediateTimeJobsAsync (its own connection) observes it.
+    private async Task _RunTimeJobSideEffectsAsync(
+        TTimeJob entity,
+        DateTimeOffset now,
+        DateTime executionTime,
+        CancellationToken cancellationToken
+    )
+    {
+        // Only try to dispatch immediately if dispatcher is enabled (background services running)
+        if (_dispatcher.IsEnabled && executionTime <= now.UtcDateTime.AddSeconds(1))
+        {
+            // Acquire and mark InProgress in one provider call
+            var acquired = await persistenceProvider
+                .AcquireImmediateTimeJobsAsync([entity.Id], cancellationToken)
+                .ConfigureAwait(false);
+
+            if (acquired.Length > 0)
+            {
+                var contexts = _BuildImmediateContextsFromNonGeneric(acquired);
+                _CacheFunctionReferences(contexts.AsSpan());
+                await _dispatcher.DispatchAsync(contexts, cancellationToken).ConfigureAwait(false);
+            }
+        }
+        else
+        {
+            _jobsHostScheduler.RestartIfNeeded(executionTime);
+        }
+
+        await notificationHubSender.AddTimeJobNotifyAsync(entity.Id).ConfigureAwait(false);
+    }
+
+    private async Task<TCronJob> _AddCronJobAsync(
+        TCronJob entity,
+        IUnitOfWork? unitOfWork,
+        CancellationToken cancellationToken
+    )
+    {
+        var coordinated = _TryCaptureCoordinatedContext(unitOfWork, entity.Function, requireSavepoints: false);
+        var now = timeProvider.GetUtcNow();
+        _StampJob(entity, now, assignId: true);
+
+        await _RunSchedulePipelineAsync(entity, cancellationToken).ConfigureAwait(false);
+        _StampJob(entity, now, assignId: false);
+
+        if (_functionRegistry.Functions.All(x => !string.Equals(x.Key, entity.Function, StringComparison.Ordinal)))
+        {
+            throw new JobValidatorException($"Cannot find a registered job with identity {entity.Function}");
+        }
+
+        _EnsureValidRecoverySettings(entity);
+        _EnsureValidRetries(entity.Retries, entity.Function);
+
+        // Rejects an expression that can never fire. Deliberately NOT retained: the position this definition is
+        // persisted with, and the wake armed from it, both come back from the store-anchored seed below (#817). A
+        // node-clock projection kept alive alongside the persisted one is a second source of truth that disagrees with
+        // the row under clock skew.
+        _EnsureCronExpressionHasFutureOccurrence(entity, now.UtcDateTime);
+
+        entity.FingerprintFailureCount = 0;
+        entity.FingerprintRetryAfterUtc = null;
+
+        if (coordinated is { } context)
+        {
+            _PrepareCoordinatedWrite(context);
+            var coordinatedSeed = await context
+                .Writer.WriteCronJobsAsync([entity], _SeedCronSchedulePosition, context.Relational, cancellationToken)
+                .ConfigureAwait(false);
+
+            // Cron has no immediate-dispatch branch: cache invalidation runs on commit, scheduler-restart + notify go
+            // to the worker. The signal carries the PERSISTED projection, not a pre-persistence guess.
+            _SignalCronOnCommit(
+                context.UnitOfWork,
+                context.Writer,
+                new CronJobsCommittedSignal(this, [entity], coordinatedSeed.EarliestNextDueUtc, entity.Id.ToString())
+            );
+
+            return entity;
+        }
+
+        var seed = await persistenceProvider
+            .InsertCronJobsAsync([entity], _SeedCronSchedulePosition, cancellationToken)
+            .ConfigureAwait(false);
+
+        _jobsHostScheduler.RestartIfNeeded(seed.EarliestNextDueUtc);
+
+        await notificationHubSender.AddCronJobNotifyAsync(entity).ConfigureAwait(false);
+
+        return entity;
+    }
+
+    /// <summary>
+    /// Derives a definition's initial schedule position from the anchor the STORE read inside the inserting
+    /// transaction, so the tick window between creation and the first scheduler poll belongs to the definition's
+    /// missed-run policy rather than being silently dropped (#817).
+    /// </summary>
+    /// <remarks>
+    /// Identical to the position a first scheduler encounter would install
+    /// (<c>InternalJobsManager._InitializeSchedulePositionAsync</c>) — same watermark rule, same projection, same
+    /// fingerprint — only anchored at creation instead of at first sight.
+    /// </remarks>
+    private CronSchedulePositionSeed _SeedCronSchedulePosition(CronJobEntity definition, DateTime storeUtcNow)
+    {
+        var nextOccurrence = _cronScheduleCache.GetNextOccurrenceOrDefault(
+            definition.Expression,
+            storeUtcNow,
+            definition.TimeZoneId
+        );
+
+        return new CronSchedulePositionSeed
+        {
+            ReconciledThroughUtc = storeUtcNow,
+            // DateTime.MaxValue is the "no further occurrence" projection the advance path already uses; validation
+            // above rejects an expression that has none at creation time.
+            NextDueUtc = nextOccurrence ?? DateTime.MaxValue,
+            EvaluationFingerprint = _cronScheduleCache.ComputeEvaluationFingerprint(definition.TimeZoneId),
+        };
+    }
+
+    private void _EnsureCronExpressionHasFutureOccurrence(CronJobEntity entity, DateTime validationAnchorUtc)
+    {
+        DateTime? nextOccurrence;
+
+        try
+        {
+            nextOccurrence = _cronScheduleCache.GetNextOccurrenceOrDefault(
+                entity.Expression,
+                validationAnchorUtc,
+                entity.TimeZoneId
+            );
+        }
+        catch (ArgumentException exception)
+        {
+            throw new JobValidatorException(exception.Message);
+        }
+
+        if (nextOccurrence is null)
+        {
+            throw new JobValidatorException(
+                $"Cron expression '{entity.Expression}' is invalid or has no future occurrence"
+            );
+        }
+    }
+
+    private async Task<JobResult<TTimeJob>> _UpdateTimeJobAsync(TTimeJob timeJob, CancellationToken cancellationToken)
+    {
+        if (timeJob is null)
+        {
+            return new JobResult<TTimeJob>(new JobValidatorException("Job must not be null!"));
+        }
+
+        if (timeJob.ExecutionTime == null)
+        {
+            return new JobResult<TTimeJob>(new JobValidatorException("Job ExecutionTime must not be null!"));
+        }
+
+        timeJob.UpdatedAt = timeProvider.GetUtcNow();
+        timeJob.ExecutionTime = _ConvertToUtcIfNeeded(timeJob.ExecutionTime.Value);
+
+        try
+        {
+            // New chain descendants attached through UpdateAsync bypass the Add path's tenant resolution/validation, so
+            // resolve them against the stored root tenant before persisting. No children → no read, hot path unchanged.
+            if (timeJob.Children.Count > 0)
+            {
+                await _ResolveUpdatedChainTenantsAsync(timeJob, cancellationToken).ConfigureAwait(false);
+            }
+
+            var affectedRows = await persistenceProvider
+                .UpdateTimeJobsAsync([timeJob], cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+
+            if (_executionContext.Functions.Any(x => x.JobId == timeJob.Id))
+            {
+                _jobsHostScheduler.Restart();
+            }
+            else
+            {
+                _jobsHostScheduler.RestartIfNeeded(timeJob.ExecutionTime);
+            }
+
+            return new JobResult<TTimeJob>(timeJob, affectedRows);
+        }
+        catch (Exception e)
+        {
+            return new JobResult<TTimeJob>(e);
+        }
+    }
+
+    private async Task<JobResult<TCronJob>> _UpdateCronJobAsync(
+        TCronJob? cronJob,
+        CancellationToken cancellationToken = default
+    )
+    {
+        if (cronJob is null)
+        {
+            return new JobResult<TCronJob>(new ArgumentNullException(nameof(cronJob), "Cron job must not be null!"));
+        }
+
+        if (_functionRegistry.Functions.All(x => !string.Equals(x.Key, cronJob.Function, StringComparison.Ordinal)))
+        {
+            return new JobResult<TCronJob>(
+                new JobValidatorException($"Cannot find a registered job with identity {cronJob.Function}")
+            );
+        }
+
+        // Cron stays system scope on the update path too: updates bypass the schedule middleware, and letting a
+        // tenant through here would produce provider-divergent rows.
+        if (cronJob.TenantId is not null)
+        {
+            return new JobResult<TCronJob>(new JobValidatorException(JobTenantValidation.CronSystemScopeMessage));
+        }
+
+        try
+        {
+            _EnsureValidRecoverySettings(cronJob);
+        }
+        catch (JobValidatorException exception)
+        {
+            return new JobResult<TCronJob>(exception);
+        }
+
+        var now = timeProvider.GetUtcNow();
+        var nowUtc = now.UtcDateTime;
+        DateTime? nextOccurrence;
+        try
+        {
+            nextOccurrence = _cronScheduleCache.GetNextOccurrenceOrDefault(
+                cronJob.Expression,
+                nowUtc,
+                cronJob.TimeZoneId
+            );
+        }
+        catch (ArgumentException exception)
+        {
+            return new JobResult<TCronJob>(new JobValidatorException(exception.Message));
+        }
+
+        if (nextOccurrence is null)
+        {
+            return new JobResult<TCronJob>(
+                new JobValidatorException(
+                    $"Cron expression '{cronJob.Expression}' is invalid or has no future occurrence"
+                )
+            );
+        }
+
+        cronJob.EvaluationFingerprint = _cronScheduleCache.ComputeEvaluationFingerprint(cronJob.TimeZoneId);
+        cronJob.FingerprintFailureCount = 0;
+        cronJob.FingerprintRetryAfterUtc = null;
+
+        try
+        {
+            var current = await persistenceProvider
+                .GetCronJobByIdAsync(cronJob.Id, cancellationToken)
+                .ConfigureAwait(false);
+            if (current is null)
+            {
+                return new JobResult<TCronJob>(cronJob, affectedRows: 0);
+            }
+
+            var scheduleChanged =
+                !string.Equals(current.Expression, cronJob.Expression, StringComparison.Ordinal)
+                || !string.Equals(current.TimeZoneId, cronJob.TimeZoneId, StringComparison.Ordinal);
+            Func<DateTime, CronJobOccurrenceEntity<TCronJob>?>? nextOccurrenceFactory = null;
+
+            if (scheduleChanged && !current.IsPaused)
+            {
+                nextOccurrenceFactory = CronJobOccurrenceFactory.CreateStoreAnchored(
+                    cronJob,
+                    _cronScheduleCache,
+                    now,
+                    guidGenerator
+                );
+            }
+
+            var updated = await persistenceProvider
+                .UpdateCronJobsAtomicallyAsync(
+                    [new CronJobAtomicUpdate<TCronJob>(cronJob, current.ScheduleRevision, nextOccurrenceFactory)],
+                    now,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            if (updated is null)
+            {
+                return new JobResult<TCronJob>(cronJob, affectedRows: 0);
+            }
+
+            cronJob = updated[0];
+            if (scheduleChanged)
+            {
+                _jobsHostScheduler.Restart();
+            }
+
+            await _NotifyCronJobUpdatedAsync(cronJob).ConfigureAwait(false);
+
+            return new JobResult<TCronJob>(cronJob, affectedRows: 1);
+        }
+        catch (Exception e)
+        {
+            return new JobResult<TCronJob>(e);
+        }
+    }
+
+    private async Task<JobResult<TCronJob>> _DeleteCronJobAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        var affectedRows = await persistenceProvider
+            .RemoveCronJobsAsync([id], cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+
+        if (affectedRows > 0 && _executionContext.Functions.Any(x => x.ParentId == id))
+        {
+            _jobsHostScheduler.Restart();
+        }
+
+        return new JobResult<TCronJob>(affectedRows);
+    }
+
+    private async Task<JobResult<TTimeJob>> _DeleteTimeJobAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        int affectedRows;
+        try
+        {
+            affectedRows = await persistenceProvider
+                .RemoveTimeJobsAsync([id], cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception e)
+        {
+            return new JobResult<TTimeJob>(e);
+        }
+
+        if (affectedRows > 0 && _executionContext.Functions.Any(x => x.JobId == id))
+        {
+            _jobsHostScheduler.Restart();
+        }
+
+        return new JobResult<TTimeJob>(affectedRows);
+    }
+
+    private async Task _RunSchedulePipelineAsync(BaseJobEntity entity, CancellationToken cancellationToken)
+    {
+        if (!_functionRegistry.Descriptors.TryGetValue(entity.Function, out var descriptor))
+        {
+            throw new JobValidatorException($"Cannot find a registered job with identity {entity.Function}");
+        }
+
+        var completed = false;
+        Task terminal(CancellationToken _)
+        {
+            completed = true;
+            return Task.CompletedTask;
+        }
+
+        if (serviceScopeFactory is null)
+        {
+            await _functionRegistry
+                .Middleware.DispatchScheduleAsync(
+                    new(descriptor, entity, EmptyServiceProvider.Instance),
+                    terminal,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+        else
+        {
+            await using var scope = serviceScopeFactory.CreateAsyncScope();
+            await _functionRegistry
+                .Middleware.DispatchScheduleAsync(
+                    new(descriptor, entity, scope.ServiceProvider),
+                    terminal,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+
+        if (!completed)
+        {
+            throw new JobValidatorException(
+                $"Job scheduling middleware did not invoke the terminal delegate for {entity.Function}"
+            );
+        }
+    }
+
+    private sealed class EmptyServiceProvider : IServiceProvider
+    {
+        public static readonly EmptyServiceProvider Instance = new();
+
+        public object? GetService(Type serviceType) => null;
+    }
+
+    private DateTime _ConvertToUtcIfNeeded(DateTime dateTime)
+    {
+        // Kind=Unspecified is reinterpreted through the scheduler timezone (UTC by default).
+        return dateTime.Kind switch
+        {
+            DateTimeKind.Utc => dateTime,
+            DateTimeKind.Local => dateTime.ToUniversalTime(),
+            DateTimeKind.Unspecified => _ConvertUnspecifiedToUtc(dateTime),
+            _ => dateTime,
+        };
+    }
+
+    // Chain descendants carry caller-supplied execution times that bypass the root's normalization: without this
+    // walk a Kind=Unspecified child persisted through the EF value converter's assume-UTC path while the root was
+    // reinterpreted through the scheduler timezone — the same input on two nodes of one chain could land on two
+    // different instants.
+    private void _NormalizeDescendantExecutionTimes(TTimeJob entity)
+    {
+        foreach (var child in entity.Children)
+        {
+            if (child.ExecutionTime is { } executionTime)
+            {
+                child.ExecutionTime = _ConvertToUtcIfNeeded(executionTime);
+            }
+
+            _NormalizeDescendantExecutionTimes(child);
+        }
+    }
+
+    // Negative Retries produced a self-contradictory outcome: no retry ever ran, yet the exhausted callback
+    // fired announcing an exhausted budget. Reject at enqueue where the mistake is written.
+    private static void _EnsureValidRetries(int retries, string function)
+    {
+        if (retries < 0)
+        {
+            throw new JobValidatorException(
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Retries must be >= 0 for function '{function}' but was {retries}."
+                )
+            );
+        }
+    }
+
+    private static void _EnsureValidRecoverySettings(CronJobEntity cronJob)
+    {
+        var errors = new List<string>();
+
+        if (cronJob.OnMissedRun is not MissedRunPolicy.Coalesce and not MissedRunPolicy.Skip)
+        {
+            errors.Add(
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Missed-run policy value '{(int)cronJob.OnMissedRun}' is not defined for function '{cronJob.Function}'."
+                )
+            );
+        }
+
+        if (cronJob.OnOverlap is not CronOverlapPolicy.Allow and not CronOverlapPolicy.Skip)
+        {
+            errors.Add(
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Overlap policy value '{(int)cronJob.OnOverlap}' is not defined for function '{cronJob.Function}'."
+                )
+            );
+        }
+
+        if (cronJob.MissedRunGraceSeconds <= 0)
+        {
+            errors.Add(
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Missed-run grace must be greater than zero seconds for function '{cronJob.Function}' but was {cronJob.MissedRunGraceSeconds}."
+                )
+            );
+        }
+
+        if (errors.Count != 0)
+        {
+            throw new JobValidatorException(errors);
+        }
+    }
+
+    private static JobValidatorException _AggregateValidationErrors(IEnumerable<Exception> errors)
+    {
+        var messages = errors
+            .SelectMany(error => error is JobValidatorException validation ? validation.Errors : [error.Message])
+            .ToArray();
+
+        return new JobValidatorException(messages);
+    }
+
+    private static void _EnsureValidRetries(TTimeJob root)
+    {
+        var errors = new List<string>();
+        var pending = new Stack<TTimeJob>();
+        pending.Push(root);
+
+        while (pending.TryPop(out var job))
+        {
+            if (job.Retries < 0)
+            {
+                errors.Add(
+                    string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"Retries must be >= 0 for function '{job.Function}' but was {job.Retries}."
+                    )
+                );
+            }
+
+            foreach (var child in job.Children.Reverse())
+            {
+                pending.Push(child);
+            }
+        }
+
+        if (errors.Count != 0)
+        {
+            throw new JobValidatorException(errors);
+        }
+    }
+
+    private DateTime _ConvertUnspecifiedToUtc(DateTime dateTime)
+    {
+        try
+        {
+            return TimeZoneInfo.ConvertTimeToUtc(dateTime, _cronScheduleCache.TimeZoneInfo);
+        }
+        catch (ArgumentException exception)
+        {
+            // A local time inside a spring-forward gap does not exist in the scheduler timezone; surface the
+            // documented validation exception instead of a raw ArgumentException from the public enqueue API.
+            throw new JobValidatorException(
+                $"Execution time {dateTime:O} (Kind=Unspecified) does not exist in scheduler timezone "
+                    + $"'{_cronScheduleCache.TimeZoneInfo.Id}': {exception.Message}"
+            );
+        }
+    }
+
+    // Batch operations implementation
+    private void _CacheFunctionReferences(Span<JobExecutionState> functions)
+    {
+        for (var i = 0; i < functions.Length; i++)
+        {
+            ref var context = ref functions[i];
+            if (_functionRegistry.Functions.TryGetValue(context.FunctionName, out var tickerItem))
+            {
+                context.CachedDelegate = tickerItem.Delegate;
+                context.CachedPriority = tickerItem.Priority;
+                context.CachedMaxConcurrency = tickerItem.MaxConcurrency;
+            }
+
+            if (context.TimeJobChildren is { Count: > 0 })
+            {
+                var childrenSpan = CollectionsMarshal.AsSpan(context.TimeJobChildren);
+                _CacheFunctionReferences(childrenSpan);
+            }
+        }
+    }
+
+    private JobExecutionState[] _BuildImmediateContextsFromNonGeneric(IEnumerable<TimeJobEntity> jobs)
+    {
+        return [.. jobs.Select(_BuildContextFromNonGeneric)];
+    }
+
+    private JobExecutionState _BuildContextFromNonGeneric(TimeJobEntity job)
+    {
+        var context = new JobExecutionState
+        {
+            FunctionName = job.Function,
+            ContractVersion = job.ContractVersion,
+            CorrelationId = job.CorrelationId,
+            CausationId = job.CausationId,
+            JobId = job.Id,
+            Type = JobType.TimeJob,
+            Retries = job.Retries,
+            RetryCount = job.RetryCount,
+            RetryIntervals = job.RetryIntervals,
+            TenantId = job.TenantId,
+            ParentId = job.ParentId,
+            ExecutionTime = job.ExecutionTime ?? timeProvider.GetUtcNow().UtcDateTime,
+            RunCondition = job.RunCondition ?? RunCondition.OnAnyCompletedStatus,
+        };
+
+        context.TimeJobChildren.AddRange(job.Children.Select(_BuildContextFromNonGeneric));
+
+        return context;
+    }
+
+    private async Task<List<TTimeJob>> _AddTimeJobsBatchAsync(
+        List<TTimeJob>? entities,
+        IUnitOfWork? unitOfWork,
+        CancellationToken cancellationToken = default
+    )
+    {
+        if (entities == null || entities.Count == 0)
+        {
+            return entities ?? [];
+        }
+
+        var coordinated = _TryCaptureCoordinatedContext(
+            unitOfWork,
+            $"time-job batch ({entities.Count})",
+            requireSavepoints: false
+        );
+        var jobFunctionsHashSet = new HashSet<string>(_functionRegistry.Functions.Keys, StringComparer.Ordinal);
+        var immediateTickers = new List<Guid>();
+        var now = timeProvider.GetUtcNow();
+        var nowUtc = now.UtcDateTime;
+        DateTime earliestForNonImmediate = default;
+        List<string>? errors = null;
+
+        // Capture every node's TenantId BEFORE the schedule pipeline captures ambient / the chain walk inherits onto
+        // descendants. The batch is all-or-nothing: if it ultimately writes nothing (aggregated validation failure or
+        // a persistence fault), restore the caller's originals so a retry under a different ambient tenant does not
+        // treat a stale captured value as an explicit one.
+        var tenantSnapshot = _SnapshotTreeTenants(entities);
+        var persisted = false;
+        try
+        {
+            foreach (var entity in entities)
+            {
+                _StampTimeJobTree(entity, now, assignIds: true);
+
+                if (!jobFunctionsHashSet.Contains(entity.Function))
+                {
+                    // Aggregate every invalid entity and throw once after the loop so the caller sees them all; the
+                    // batch is all-or-nothing, so a single invalid entity writes nothing.
+                    (errors ??= []).Add($"Cannot find a registered job with identity {entity.Function}");
+                    continue;
+                }
+
+                try
+                {
+                    await _RunSchedulePipelineAsync(entity, cancellationToken).ConfigureAwait(false);
+                    _StampTimeJobTree(entity, now, assignIds: false);
+                    _ResolveChainTenants(entity);
+                }
+                catch (JobValidatorException ex)
+                {
+                    // Aggregate tenant-validation failures alongside the unknown-function errors so a batch that mixes
+                    // both surfaces every failure at once, honoring JobValidatorException's documented batch contract.
+                    errors ??= [];
+                    if (ex.Errors.Count > 0)
+                    {
+                        errors.AddRange(ex.Errors);
+                    }
+                    else
+                    {
+                        errors.Add(ex.Message);
+                    }
+
+                    continue;
+                }
+
+                try
+                {
+                    _EnsureValidRetries(entity);
+                }
+                catch (JobValidatorException ex)
+                {
+                    (errors ??= []).AddRange(ex.Errors.Count > 0 ? ex.Errors : [ex.Message]);
+                    continue;
+                }
+
+                entity.ExecutionTime ??= nowUtc;
+                entity.ExecutionTime = _ConvertToUtcIfNeeded(entity.ExecutionTime.Value);
+                _NormalizeDescendantExecutionTimes(entity);
+
+                if (entity.ExecutionTime.Value <= nowUtc.AddSeconds(1))
+                {
+                    immediateTickers.Add(entity.Id);
+                }
+                else if (earliestForNonImmediate == default || entity.ExecutionTime <= earliestForNonImmediate)
+                {
+                    earliestForNonImmediate = entity.ExecutionTime.Value;
+                }
+            }
+
+            if (errors is not null)
+            {
+                throw new JobValidatorException(errors);
+            }
+
+            if (coordinated is { } context)
+            {
+                _PrepareCoordinatedWrite(context);
+                // Route every entity through the seam in insertion order; defer the batch side effects once.
+                await context
+                    .Writer.WriteTimeJobsAsync([.. entities], context.Relational, cancellationToken)
+                    .ConfigureAwait(false);
+
+                // The rows are enlisted in the caller's transaction; the captured tenants are now durable-intent (a
+                // rollback discards the whole row, tenant and all), so keep them.
+                persisted = true;
+
+                // The worker re-splits immediate vs. later against its own clock, so the signal carries every id
+                // with its due time rather than the enqueue-time split computed above for the direct path.
+                _SignalOnCommit(
+                    context.UnitOfWork,
+                    new TimeJobsBatchCommittedSignal(
+                        this,
+                        [.. entities.Select(static x => new CommittedTimeJob(x.Id, x.ExecutionTime!.Value))]
+                    )
+                );
+
+                return entities;
+            }
+
+            await persistenceProvider
+                .AddTimeJobsAsync([.. entities], cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+            persisted = true;
+
+            await _RunTimeJobsBatchSideEffectsAsync(immediateTickers, earliestForNonImmediate, cancellationToken)
+                .ConfigureAwait(false);
+
+            return entities;
+        }
+        finally
+        {
+            if (!persisted)
+            {
+                _RestoreTreeTenants(tenantSnapshot);
+            }
+        }
+    }
+
+    // Batch time-job side effects: notify-batch first (preserve the existing notify-before-dispatch ordering), then
+    // immediate dispatch for due jobs, then scheduler restart for the earliest non-immediate job.
+    private async Task _RunTimeJobsBatchSideEffectsAsync(
+        List<Guid> immediateTickers,
+        DateTime earliestForNonImmediate,
+        CancellationToken cancellationToken
+    )
+    {
+        await notificationHubSender.AddTimeJobsBatchNotifyAsync().ConfigureAwait(false);
+
+        // Only try to dispatch immediately if dispatcher is enabled (background services running)
+        if (_dispatcher.IsEnabled && immediateTickers.Count > 0)
+        {
+            var acquired = await persistenceProvider
+                .AcquireImmediateTimeJobsAsync([.. immediateTickers], cancellationToken)
+                .ConfigureAwait(false);
+
+            if (acquired.Length > 0)
+            {
+                var contexts = _BuildImmediateContextsFromNonGeneric(acquired);
+                _CacheFunctionReferences(contexts.AsSpan());
+                await _dispatcher.DispatchAsync(contexts, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        if (earliestForNonImmediate != default)
+        {
+            _jobsHostScheduler.RestartIfNeeded(earliestForNonImmediate);
+        }
+    }
+
+    private async Task<List<TCronJob>> _AddCronJobsBatchAsync(
+        List<TCronJob> entities,
+        IUnitOfWork? unitOfWork,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var coordinated = _TryCaptureCoordinatedContext(
+            unitOfWork,
+            $"cron-job batch ({entities.Count})",
+            requireSavepoints: false
+        );
+        var validEntities = new List<TCronJob>();
+        List<string>? errors = null;
+        var now = timeProvider.GetUtcNow();
+
+        foreach (var entity in entities)
+        {
+            _StampJob(entity, now, assignId: true);
+
+            if (_functionRegistry.Functions.All(x => !string.Equals(x.Key, entity.Function, StringComparison.Ordinal)))
+            {
+                (errors ??= []).Add($"Cannot find a registered job with identity {entity.Function}");
+                continue;
+            }
+
+            await _RunSchedulePipelineAsync(entity, cancellationToken).ConfigureAwait(false);
+            _StampJob(entity, now, assignId: false);
+
+            var entityIsInvalid = false;
+            try
+            {
+                _EnsureValidRecoverySettings(entity);
+            }
+            catch (JobValidatorException ex)
+            {
+                (errors ??= []).AddRange(ex.Errors.Count > 0 ? ex.Errors : [ex.Message]);
+                entityIsInvalid = true;
+            }
+
+            try
+            {
+                _EnsureValidRetries(entity.Retries, entity.Function);
+            }
+            catch (JobValidatorException ex)
+            {
+                (errors ??= []).AddRange(ex.Errors.Count > 0 ? ex.Errors : [ex.Message]);
+                entityIsInvalid = true;
+            }
+
+            if (entityIsInvalid)
+            {
+                continue;
+            }
+
+            // Validation only — the persisted projection comes from the store-anchored seed below, exactly as on the
+            // single-add path.
+            try
+            {
+                _EnsureCronExpressionHasFutureOccurrence(entity, now.UtcDateTime);
+            }
+            catch (JobValidatorException exception)
+            {
+                (errors ??= []).AddRange(exception.Errors.Count > 0 ? exception.Errors : [exception.Message]);
+                continue;
+            }
+
+            entity.FingerprintFailureCount = 0;
+            entity.FingerprintRetryAfterUtc = null;
+            validEntities.Add(entity);
+        }
+
+        // Batch is all-or-nothing: any invalid entity aggregates here and throws, writing nothing.
+        if (errors is not null)
+        {
+            throw new JobValidatorException(errors);
+        }
+
+        if (coordinated is { } context)
+        {
+            _PrepareCoordinatedWrite(context);
+            var coordinatedSeed = await context
+                .Writer.WriteCronJobsAsync(
+                    [.. validEntities],
+                    _SeedCronSchedulePosition,
+                    context.Relational,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            _SignalCronOnCommit(
+                context.UnitOfWork,
+                context.Writer,
+                new CronJobsCommittedSignal(
+                    this,
+                    [.. validEntities],
+                    coordinatedSeed.EarliestNextDueUtc,
+                    $"cron batch ({validEntities.Count})"
+                )
+            );
+
+            return validEntities;
+        }
+
+        var seed = await persistenceProvider
+            .InsertCronJobsAsync([.. validEntities], _SeedCronSchedulePosition, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (validEntities.Count != 0)
+        {
+            // Restart for the earliest position the STORE persisted, never a locally recomputed one.
+            _jobsHostScheduler.RestartIfNeeded(seed.EarliestNextDueUtc);
+
+            // Send notifications for all
+            foreach (var entity in validEntities)
+            {
+                await notificationHubSender.AddCronJobNotifyAsync(entity).ConfigureAwait(false);
+            }
+        }
+
+        return validEntities;
+    }
+
+    private void _StampTimeJobTree(TTimeJob root, DateTimeOffset now, bool assignIds)
+    {
+        var pending = new Stack<(TTimeJob Job, Guid? ParentId)>();
+        var visited = new HashSet<TTimeJob>(ReferenceEqualityComparer.Instance);
+        pending.Push((root, null));
+
+        while (pending.TryPop(out var current))
+        {
+            if (!visited.Add(current.Job))
+            {
+                throw new JobValidatorException("A time-job chain cannot contain cycles or reuse one child instance.");
+            }
+
+            _StampJob(current.Job, now, assignIds);
+            current.Job.ParentId = current.ParentId;
+
+            if (current.ParentId is not null)
+            {
+                current.Job.CorrelationId = root.CorrelationId;
+                current.Job.CausationId = current.ParentId.Value.ToString("D");
+            }
+
+            foreach (var child in current.Job.Children.Reverse())
+            {
+                pending.Push((child, current.Job.Id));
+            }
+        }
+    }
+
+    private void _StampJob(BaseJobEntity entity, DateTimeOffset now, bool assignId)
+    {
+        if (assignId)
+        {
+            entity.Id = guidGenerator.Create();
+        }
+
+        entity.CreatedAt = now;
+        entity.UpdatedAt = now;
+        JobContract.ValidateName(entity.Function);
+        JobContract.ValidateVersion(entity.ContractVersion);
+        var parent = JobCausalContext.Current;
+        entity.CorrelationId ??=
+            parent?.CorrelationId
+            ?? parent?.Id.ToString("D")
+            ?? (entity is CronJobEntity ? null : entity.Id.ToString("D"));
+        entity.CausationId ??= parent?.Id.ToString("D");
+    }
+
+    // Propagate the middleware-resolved root tenant onto chain descendants before persistence. The schedule
+    // middleware only sees the BaseJobEntity root; the typed Children live on TimeJobEntity<TTicker> and are unreachable
+    // from there, so the resolution rules are re-applied per descendant here: an unset non-system descendant inherits
+    // the root's resolved tenant, a pre-set explicit value wins (validated for blank/length), and a descendant marked
+    // IsSystemJob follows the same escalation rule as the root. Without this, chain descendants would persist a null
+    // tenant and run system scope — a silent security divergence.
+    private void _ResolveChainTenants(TTimeJob root)
+    {
+        if (root.Children.Count == 0)
+        {
+            return;
+        }
+
+        var ambientTenantId = _currentTenant?.Id;
+        var rootTenantId = root.TenantId;
+
+        var pending = new Stack<TTimeJob>();
+        foreach (var child in root.Children)
+        {
+            pending.Push(child);
+        }
+
+        while (pending.TryPop(out var node))
+        {
+            _ResolveDescendantTenant(node, rootTenantId, ambientTenantId);
+
+            foreach (var child in node.Children)
+            {
+                pending.Push(child);
+            }
+        }
+    }
+
+    private void _ResolveDescendantTenant(TTimeJob node, string? rootTenantId, string? ambientTenantId)
+    {
+        if (node.IsSystemJob)
+        {
+            JobTenantValidation.ValidateSystemJob(node.TenantId, !string.IsNullOrWhiteSpace(ambientTenantId));
+
+            node.TenantId = null;
+            _logger.ChainDescendantSystemScope(node.Function);
+
+            return;
+        }
+
+        if (node.TenantId is { } explicitTenant)
+        {
+            JobTenantValidation.ValidateExplicitTenantId(explicitTenant);
+
+            // Same lateral guard as the root resolution: reject only when the seam opted in, warn otherwise.
+            if (JobTenantValidation.CheckCrossTenant(explicitTenant, ambientTenantId, _rejectCrossTenant))
+            {
+                _logger.ChainDescendantCrossTenant(node.Function);
+            }
+
+            return;
+        }
+
+        node.TenantId = rootTenantId;
+    }
+
+    // Capture the TenantId of every node across a batch of chains so a failed all-or-nothing batch can restore the
+    // caller's original values (see _AddTimeJobsBatchAsync). Snapshots ONLY tenants — ids/timestamps stamped by the
+    // pipeline are irrelevant to a retry's tenant resolution.
+    private static List<(TTimeJob Node, string? TenantId)> _SnapshotTreeTenants(List<TTimeJob> roots)
+    {
+        var snapshot = new List<(TTimeJob, string?)>();
+        // Reference-equality visited set: this walk runs before _StampTimeJobTree's cycle validation, so a cyclic or
+        // reused-node graph must not loop here — the stamping walk rejects it right after with JobValidatorException.
+        var visited = new HashSet<TTimeJob>(ReferenceEqualityComparer.Instance);
+        var pending = new Stack<TTimeJob>();
+        foreach (var root in roots)
+        {
+            pending.Push(root);
+        }
+
+        while (pending.TryPop(out var node))
+        {
+            if (!visited.Add(node))
+            {
+                continue;
+            }
+
+            snapshot.Add((node, node.TenantId));
+
+            foreach (var child in node.Children)
+            {
+                pending.Push(child);
+            }
+        }
+
+        return snapshot;
+    }
+
+    private static void _RestoreTreeTenants(List<(TTimeJob Node, string? TenantId)> snapshot)
+    {
+        foreach (var (node, tenantId) in snapshot)
+        {
+            node.TenantId = tenantId;
+        }
+    }
+
+    // Resolve chain-descendant tenants for an update. New descendants appended via UpdateAsync/UpdateBatchAsync bypass
+    // the schedule-time resolution the Add path runs, so re-apply it here against the STORED root tenant (immutable
+    // after schedule): temporarily point the in-memory root at the stored value, run the same per-node walk the Add
+    // path uses (inherit onto unset non-system descendants, validate explicit values, apply the system-job rules per
+    // node), then restore the caller's root value — the provider preserves the stored root regardless of it. Existing
+    // rows keep their stored tenant (provider-preserved); only brand-new descendants take the resolved value.
+    private async Task _ResolveUpdatedChainTenantsAsync(TTimeJob timeJob, CancellationToken cancellationToken)
+    {
+        var stored = await persistenceProvider.GetTimeJobByIdAsync(timeJob.Id, cancellationToken).ConfigureAwait(false);
+        var callerRootTenant = timeJob.TenantId;
+        timeJob.TenantId = stored?.TenantId;
+        try
+        {
+            _ResolveChainTenants(timeJob);
+        }
+        finally
+        {
+            timeJob.TenantId = callerRootTenant;
+        }
+    }
+
+    private async Task<JobResult<List<TTimeJob>>> _UpdateTimeJobsBatchAsync(
+        List<TTimeJob> timeJobs,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var validTickers = new List<TTimeJob>();
+        var errors = new List<Exception>();
+        var needsRestart = false;
+
+        foreach (var timeJob in timeJobs)
+        {
+            if (timeJob is null)
+            {
+                errors.Add(new JobValidatorException("Job must not be null!"));
+                continue;
+            }
+
+            if (timeJob.ExecutionTime == null)
+            {
+                errors.Add(new JobValidatorException("Job ExecutionTime must not be null!"));
+                continue;
+            }
+
+            timeJob.UpdatedAt = timeProvider.GetUtcNow();
+            timeJob.ExecutionTime = _ConvertToUtcIfNeeded(timeJob.ExecutionTime.Value);
+
+            // New chain descendants attached through UpdateBatchAsync bypass the Add path's tenant resolution, so
+            // resolve them against the stored root tenant; aggregate a validation failure like the other batch errors.
+            if (timeJob.Children.Count > 0)
+            {
+                try
+                {
+                    await _ResolveUpdatedChainTenantsAsync(timeJob, cancellationToken).ConfigureAwait(false);
+                }
+                catch (JobValidatorException ex)
+                {
+                    errors.Add(ex);
+                    continue;
+                }
+            }
+
+            if (_executionContext.Functions.Any(x => x.JobId == timeJob.Id))
+            {
+                needsRestart = true;
+            }
+
+            validTickers.Add(timeJob);
+        }
+
+        if (errors.Count != 0)
+        {
+            return new JobResult<List<TTimeJob>>(errors[0]);
+        }
+
+        try
+        {
+            var affectedRows = await persistenceProvider
+                .UpdateTimeJobsAsync([.. validTickers], cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+
+            if (needsRestart)
+            {
+                _jobsHostScheduler.Restart();
+            }
+            else if (validTickers.Count != 0)
+            {
+                var earliestExecution = validTickers.Min(t => t.ExecutionTime);
+                _jobsHostScheduler.RestartIfNeeded(earliestExecution);
+            }
+
+            return new JobResult<List<TTimeJob>>(validTickers, affectedRows);
+        }
+        catch (Exception e)
+        {
+            return new JobResult<List<TTimeJob>>(e);
+        }
+    }
+
+    private async Task<JobResult<List<TCronJob>>> _UpdateCronJobsBatchAsync(
+        List<TCronJob> cronJobs,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var errors = new List<Exception>();
+        var candidates = new List<(TCronJob Definition, DateTime NextOccurrence)>();
+        var updates = new List<CronJobAtomicUpdate<TCronJob>>();
+        var needsRestart = false;
+        var now = timeProvider.GetUtcNow();
+        var nowUtc = now.UtcDateTime;
+
+        foreach (var cronJob in cronJobs)
+        {
+            if (cronJob is null)
+            {
+                errors.Add(new ArgumentNullException(nameof(cronJobs), "Cron job must not be null!"));
+                continue;
+            }
+
+            if (_functionRegistry.Functions.All(x => !string.Equals(x.Key, cronJob.Function, StringComparison.Ordinal)))
+            {
+                errors.Add(new JobValidatorException($"Cannot find a registered job with identity {cronJob.Function}"));
+                continue;
+            }
+
+            // Cron stays system scope on the batch update path too; see _UpdateCronJobAsync.
+            if (cronJob.TenantId is not null)
+            {
+                errors.Add(new JobValidatorException(JobTenantValidation.CronSystemScopeMessage));
+                continue;
+            }
+
+            try
+            {
+                _EnsureValidRecoverySettings(cronJob);
+            }
+            catch (JobValidatorException exception)
+            {
+                errors.Add(exception);
+                continue;
+            }
+
+            DateTime? nextOccurrence;
+            try
+            {
+                nextOccurrence = _cronScheduleCache.GetNextOccurrenceOrDefault(
+                    cronJob.Expression,
+                    nowUtc,
+                    cronJob.TimeZoneId
+                );
+            }
+            catch (ArgumentException exception)
+            {
+                errors.Add(new JobValidatorException(exception.Message));
+                continue;
+            }
+
+            if (nextOccurrence is null)
+            {
+                errors.Add(
+                    new JobValidatorException(
+                        $"Cron expression '{cronJob.Expression}' is invalid or has no future occurrence"
+                    )
+                );
+                continue;
+            }
+
+            cronJob.EvaluationFingerprint = _cronScheduleCache.ComputeEvaluationFingerprint(cronJob.TimeZoneId);
+            cronJob.FingerprintFailureCount = 0;
+            cronJob.FingerprintRetryAfterUtc = null;
+
+            candidates.Add((cronJob, nextOccurrence.Value));
+        }
+
+        if (errors.Count != 0)
+        {
+            return new JobResult<List<TCronJob>>(_AggregateValidationErrors(errors));
+        }
+
+        var definitionIds = candidates.Select(x => x.Definition.Id).Distinct().ToArray();
+        var currentById = (
+            await persistenceProvider
+                .GetCronJobsAsync(x => definitionIds.Contains(x.Id), cancellationToken)
+                .ConfigureAwait(false)
+        ).ToDictionary(x => x.Id);
+        foreach (var (cronJob, _) in candidates)
+        {
+            if (!currentById.TryGetValue(cronJob.Id, out var current))
+            {
+                errors.Add(new JobValidatorException($"Cannot find cron job with id {cronJob.Id}"));
+                continue;
+            }
+
+            var scheduleChanged =
+                !string.Equals(current.Expression, cronJob.Expression, StringComparison.Ordinal)
+                || !string.Equals(current.TimeZoneId, cronJob.TimeZoneId, StringComparison.Ordinal);
+            Func<DateTime, CronJobOccurrenceEntity<TCronJob>?>? nextOccurrenceFactory = null;
+
+            if (scheduleChanged && !current.IsPaused)
+            {
+                nextOccurrenceFactory = CronJobOccurrenceFactory.CreateStoreAnchored(
+                    cronJob,
+                    _cronScheduleCache,
+                    now,
+                    guidGenerator
+                );
+            }
+
+            updates.Add(new CronJobAtomicUpdate<TCronJob>(cronJob, current.ScheduleRevision, nextOccurrenceFactory));
+            needsRestart |= scheduleChanged;
+        }
+
+        if (errors.Count != 0)
+        {
+            return new JobResult<List<TCronJob>>(_AggregateValidationErrors(errors));
+        }
+
+        try
+        {
+            var updated = await persistenceProvider
+                .UpdateCronJobsAtomicallyAsync([.. updates], now, cancellationToken)
+                .ConfigureAwait(false);
+            if (updated is null)
+            {
+                return new JobResult<List<TCronJob>>(
+                    new InvalidOperationException("Cron definitions changed while the batch update was being applied.")
+                );
+            }
+
+            if (needsRestart)
+            {
+                _jobsHostScheduler.Restart();
+            }
+
+            foreach (var cronJob in updated)
+            {
+                await _NotifyCronJobUpdatedAsync(cronJob).ConfigureAwait(false);
+            }
+
+            return new JobResult<List<TCronJob>>([.. updated], updated.Length);
+        }
+        catch (Exception e)
+        {
+            return new JobResult<List<TCronJob>>(e);
+        }
+    }
+
+    private async Task _NotifyCronJobUpdatedAsync(TCronJob cronJob)
+    {
+        try
+        {
+            await notificationHubSender.UpdateCronJobNotifyAsync(cronJob).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            _logger.LogCronControlNotificationFailed(exception, cronJob.Id, "update");
+        }
+    }
+
+    private async Task<JobResult<TTimeJob>> _DeleteTimeJobsBatchAsync(
+        List<Guid> ids,
+        CancellationToken cancellationToken = default
+    )
+    {
+        int affectedRows;
+        try
+        {
+            affectedRows = await persistenceProvider
+                .RemoveTimeJobsAsync([.. ids], cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception e)
+        {
+            return new JobResult<TTimeJob>(e);
+        }
+
+        if (affectedRows > 0 && _executionContext.Functions.Any(x => ids.Contains(x.JobId)))
+        {
+            _jobsHostScheduler.Restart();
+        }
+
+        return new JobResult<TTimeJob>(affectedRows);
+    }
+
+    private async Task<JobResult<TCronJob>> _DeleteCronJobsBatchAsync(
+        List<Guid> ids,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var affectedRows = await persistenceProvider
+            .RemoveCronJobsAsync([.. ids], cancellationToken: cancellationToken)
+            .ConfigureAwait(false);
+
+        if (affectedRows > 0 && _executionContext.Functions.Any(x => ids.Contains(x.ParentId ?? Guid.Empty)))
+        {
+            _jobsHostScheduler.Restart();
+        }
+
+        return new JobResult<TCronJob>(affectedRows);
+    }
+}
+
+internal static partial class JobsManagerTenancyLog
+{
+    [LoggerMessage(
+        EventId = 3235,
+        EventName = "IdempotentEnqueueHit",
+        Level = LogLevel.Debug,
+        Message = "Idempotent enqueue for function '{Function}' observed a live reservation and returned the reserved job {JobId}; no row was inserted."
+    )]
+    public static partial void IdempotentEnqueueHit(this ILogger logger, string function, Guid jobId);
+
+    [LoggerMessage(
+        EventId = 3223,
+        EventName = "JobChainDescendantSystemScope",
+        Level = LogLevel.Debug,
+        Message = "Chain descendant job for function '{Function}' resolved to system scope (tenantless)."
+    )]
+    public static partial void ChainDescendantSystemScope(this ILogger logger, string function);
+
+    [LoggerMessage(
+        EventId = 3224,
+        EventName = "JobChainDescendantCrossTenant",
+        Level = LogLevel.Warning,
+        Message = "A chain descendant for function '{Function}' carries an explicit tenant that differs from the present ambient tenant. Explicit wins by design; enable RejectCrossTenantEnqueue() on the Jobs tenancy seam to reject the lateral path."
+    )]
+    public static partial void ChainDescendantCrossTenant(this ILogger logger, string function);
+}

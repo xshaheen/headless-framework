@@ -1,7 +1,7 @@
 ---
 title: "Fail-safe caching: centralized coordinator, two-timestamp envelope, and the cancellation-identity pitfall"
 date: 2026-06-05
-module: Headless.Caching.Core
+module: Headless.Caching
 problem_type: architecture_pattern
 component: service_class
 severity: medium

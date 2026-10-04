@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Text.Json;
-using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;

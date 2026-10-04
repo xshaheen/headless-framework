@@ -2,10 +2,7 @@
 
 #pragma warning disable IDE0062 // Local functions can be made static - closures needed for capturing test state
 
-using Headless.Abstractions;
-using Headless.Api.Middlewares;
-using Headless.Api.MultiTenancy;
-using Headless.Constants;
+using Headless.Api;
 using Headless.Primitives;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Http;

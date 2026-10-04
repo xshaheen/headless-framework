@@ -3,11 +3,9 @@
 using System.Diagnostics;
 using System.Security.Claims;
 using Headless.Api;
-using Headless.Api.Middlewares;
-using Headless.Api.MultiTenancy;
-using Headless.Constants;
 using Headless.MultiTenancy;
-using Headless.Testing.Helpers;
+using Headless.Security;
+using Headless.Testing;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;

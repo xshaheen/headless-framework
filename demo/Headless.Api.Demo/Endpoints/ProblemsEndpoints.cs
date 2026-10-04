@@ -1,6 +1,6 @@
 using FluentValidation;
-using Headless.Abstractions;
-using Headless.Exceptions;
+using Headless;
+using Headless.Api;
 using Headless.Primitives;
 
 namespace Demo.Endpoints;

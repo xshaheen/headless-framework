@@ -1,4 +1,4 @@
-using Headless.Constants;
+using Headless.Http;
 using Headless.Media.Indexing;
 
 namespace Tests;

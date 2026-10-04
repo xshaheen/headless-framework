@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Headless.Messaging.Exceptions;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -43,9 +42,9 @@ internal sealed class AmazonSqsConsumerClientFactory(
             var client = new AmazonSqsConsumerClient(subscriptionName, concurrency, amazonSqsOptions, logger, lane);
             return Task.FromResult<IConsumerClient>(client);
         }
-        catch (Exception e) when (e is not OperationCanceledException)
+        catch (Exception e)
         {
-            throw new BrokerConnectionException(e);
+            throw BrokerConnectGuard.ConnectFailure(e, cancellationToken);
         }
     }
 }

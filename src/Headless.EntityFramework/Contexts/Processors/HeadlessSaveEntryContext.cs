@@ -2,9 +2,10 @@
 
 using System.Runtime.ExceptionServices;
 using Headless.Domain;
+using Headless.EntityFramework.Contexts;
 using Microsoft.EntityFrameworkCore;
 
-namespace Headless.EntityFramework.Contexts.Processors;
+namespace Headless.EntityFramework;
 
 /// <summary>
 /// Per-<c>SaveChanges</c> scratchpad threaded through the processor chain. Holds the active

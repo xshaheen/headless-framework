@@ -789,14 +789,7 @@
           "Headless.Extensions": "[1.0.0, )"
         }
       },
-      "headless.caching.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.Primitives": "[1.0.0, )"
-        }
-      },
-      "headless.caching.core": {
+      "headless.caching": {
         "type": "Project",
         "dependencies": {
           "Headless.Caching.Abstractions": "[1.0.0, )",
@@ -807,25 +800,40 @@
           "OpenTelemetry.Api": "[1.18.0, )"
         }
       },
+      "headless.caching.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Primitives": "[1.0.0, )"
+        }
+      },
       "headless.caching.inmemory": {
         "type": "Project",
         "dependencies": {
+          "Headless.Caching": "[1.0.0, )",
           "Headless.Caching.Abstractions": "[1.0.0, )",
-          "Headless.Caching.Core": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )"
         }
       },
       "headless.checks": {
         "type": "Project"
       },
-      "headless.core": {
+      "headless.context": {
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
+          "Headless.Context.Abstractions": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
-          "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.12, )"
+        }
+      },
+      "headless.context.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Primitives": "[1.0.0, )"
         }
       },
       "headless.distributedlocks.abstractions": {
@@ -854,19 +862,20 @@
         "dependencies": {
           "EFCore.CheckConstraints": "[10.0.0, )",
           "Headless.AuditLog.Abstractions": "[1.0.0, )",
-          "Headless.Core": "[1.0.0, )",
+          "Headless.Context": "[1.0.0, )",
+          "Headless.Context.Abstractions": "[1.0.0, )",
           "Headless.Domain": "[1.0.0, )",
           "Headless.Domain.LocalEventBus": "[1.0.0, )",
-          "Headless.EntityFramework.Core": "[1.0.0, )",
+          "Headless.EntityFramework.Primitives": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
-          "Headless.MultiTenancy": "[1.0.0, )",
+          "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
           "Headless.UnitOfWork.EntityFramework": "[1.0.0, )",
           "Microsoft.EntityFrameworkCore": "[10.0.12, )",
           "Microsoft.EntityFrameworkCore.Relational": "[10.0.12, )",
           "Microsoft.Extensions.Hosting.Abstractions": "[10.0.12, )"
         }
       },
-      "headless.entityframework.core": {
+      "headless.entityframework.primitives": {
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
@@ -904,6 +913,8 @@
       "headless.hosting": {
         "type": "Project",
         "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
           "Headless.FluentValidation": "[1.0.0, )",
           "Microsoft.Extensions.Configuration.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
@@ -928,40 +939,28 @@
           "Headless.Messaging.Abstractions": "[1.0.0, )"
         }
       },
-      "headless.multitenancy": {
+      "headless.multitenancy.abstractions": {
         "type": "Project",
         "dependencies": {
-          "Headless.Caching.Abstractions": "[1.0.0, )",
-          "Headless.Checks": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
-          "Headless.Hosting": "[1.0.0, )",
-          "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
+          "Headless.Primitives": "[1.0.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.Hosting.Abstractions": "[10.0.12, )"
         }
       },
-      "headless.multitenancy.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Primitives": "[1.0.0, )"
-        }
-      },
-      "headless.permissions.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Core": "[1.0.0, )"
-        }
-      },
-      "headless.permissions.core": {
+      "headless.permissions": {
         "type": "Project",
         "dependencies": {
           "Headless.Caching.Abstractions": "[1.0.0, )",
+          "Headless.Context": "[1.0.0, )",
+          "Headless.Context.Abstractions": "[1.0.0, )",
           "Headless.DistributedLocks.Abstractions": "[1.0.0, )",
           "Headless.Domain": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Headless.Messaging.Abstractions": "[1.0.0, )",
           "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
+          "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
           "Headless.Permissions.Abstractions": "[1.0.0, )",
           "Headless.Serializer.Json": "[1.0.0, )",
           "Headless.Sql.Abstractions": "[1.0.0, )",
@@ -969,17 +968,25 @@
           "Polly.Core": "[8.7.0, )"
         }
       },
+      "headless.permissions.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Context.Abstractions": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )"
+        }
+      },
       "headless.permissions.storage.entityframework": {
         "type": "Project",
         "dependencies": {
           "Headless.EntityFramework": "[1.0.0, )",
-          "Headless.Permissions.Core": "[1.0.0, )"
+          "Headless.Permissions": "[1.0.0, )"
         }
       },
       "headless.permissions.storage.postgresql": {
         "type": "Project",
         "dependencies": {
-          "Headless.Permissions.Core": "[1.0.0, )",
+          "Headless.Permissions": "[1.0.0, )",
           "Headless.Sql.PostgreSql": "[1.0.0, )",
           "Npgsql": "[10.0.3, )"
         }
@@ -1013,10 +1020,7 @@
           "Headless.Serializer.Abstractions": "[1.0.0, )"
         }
       },
-      "headless.sql.abstractions": {
-        "type": "Project"
-      },
-      "headless.sql.core": {
+      "headless.sql": {
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
@@ -1027,14 +1031,17 @@
           "OpenTelemetry.Api": "[1.18.0, )"
         }
       },
+      "headless.sql.abstractions": {
+        "type": "Project"
+      },
       "headless.sql.postgresql": {
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
+          "Headless.Sql": "[1.0.0, )",
           "Headless.Sql.Abstractions": "[1.0.0, )",
-          "Headless.Sql.Core": "[1.0.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.12, )",
           "Npgsql": "[10.0.3, )"
@@ -1045,8 +1052,9 @@
         "dependencies": {
           "AwesomeAssertions": "[9.6.0, )",
           "Bogus": "[35.6.5, )",
-          "Headless.Core": "[1.0.0, )",
+          "Headless.Context.Abstractions": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
+          "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
           "Headless.Security.Abstractions": "[1.0.0, )",
           "Meziantou.Extensions.Logging.Xunit.v3": "[3.0.6, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",

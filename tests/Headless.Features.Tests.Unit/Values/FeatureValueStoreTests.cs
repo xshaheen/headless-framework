@@ -1,12 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Abstractions;
+using Headless;
 using Headless.Caching;
-using Headless.Features.Definitions;
-using Headless.Features.Entities;
-using Headless.Features.Models;
-using Headless.Features.Repositories;
-using Headless.Features.Values;
+using Headless.Features;
 using Headless.Testing.Tests;
 using NSubstitute.ExceptionExtensions;
 

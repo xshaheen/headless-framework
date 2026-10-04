@@ -1,6 +1,3 @@
-using Headless.Jobs.Base;
-using Headless.Jobs.Interfaces;
-using Headless.Jobs.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 

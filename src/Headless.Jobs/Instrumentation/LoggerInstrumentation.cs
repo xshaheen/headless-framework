@@ -1,0 +1,173 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using System.Diagnostics;
+using Headless.MultiTenancy;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+
+namespace Headless.Jobs.Instrumentation;
+
+/// <summary>
+/// Default implementation of <c>IJobsInstrumentation</c>: logs every job lifecycle event and, when a
+/// listener is attached to <see cref="JobsDiagnostics.SourceName"/>, also emits it as an
+/// <see cref="Activity"/> span. <see cref="JobsDiagnostics.Start"/> returns <see langword="null"/> with no
+/// listener, so OTel-free hosts keep byte-identical logging behavior at the cost of a listener-presence
+/// check per event.
+/// </summary>
+internal sealed class LoggerInstrumentation(
+    ILogger<LoggerInstrumentation> logger,
+    IJobsOwnerIdentity ownerIdentity,
+    IOptions<TenantTelemetryOptions>? tenantTelemetryOptions = null
+) : JobsBaseLoggerInstrumentation(logger, ownerIdentity), IJobsInstrumentation
+{
+    private readonly TenantTelemetryOptions _tenantTelemetry =
+        tenantTelemetryOptions?.Value ?? new TenantTelemetryOptions();
+
+    public override Activity? StartJobActivity(string activityName, JobExecutionState context)
+    {
+        var activity = JobsDiagnostics.Start(activityName);
+
+        if (activity != null)
+        {
+            activity.SetTag("headless.job.id", context.JobId.ToString());
+            activity.SetTag("headless.job.type", context.Type.ToString());
+            activity.SetTag("headless.job.function", context.FunctionName);
+            activity.SetTag("headless.job.contract_version", context.ContractVersion);
+            activity.SetTag("headless.job.correlation_id", context.CorrelationId);
+            activity.SetTag("headless.job.causation_id", context.CausationId);
+            activity.SetTag("headless.job.priority", context.CachedPriority.ToString());
+            activity.SetTag("headless.job.machine", InstanceIdentifier);
+            activity.SetTag("headless.job.retry_count", context.Retries);
+
+            // Written at span creation rather than left to the execute middleware, so a job span that runs without
+            // the tenancy middleware still carries the tenant under the one attribute every entry point uses.
+            if (context.TenantId is { } tenantId)
+            {
+                TenantTelemetry.TagActivity(activity, _tenantTelemetry, tenantId);
+            }
+
+            if (context.ParentId.HasValue)
+            {
+                activity.SetTag("headless.job.parent_id", context.ParentId.Value.ToString());
+            }
+
+            if (context is { Type: JobType.TimeJob, ParentId: not null })
+            {
+                activity.SetTag("headless.job.run_condition", context.RunCondition.ToString());
+            }
+        }
+
+        return activity;
+    }
+
+    public override void LogJobEnqueued(string jobType, string functionName, Guid jobId, string? enqueuedFrom = null)
+    {
+        using var activity = JobsDiagnostics.Start("job.enqueue");
+        activity?.SetTag("headless.job.id", jobId.ToString());
+        activity?.SetTag("headless.job.type", jobType);
+        activity?.SetTag("headless.job.function", functionName);
+
+        // Get detailed caller information for OpenTelemetry
+        var callerInfo = enqueuedFrom;
+        if (string.IsNullOrEmpty(callerInfo))
+        {
+            callerInfo = logger.IsEnabled(LogLevel.Information) ? CallerInfoHelper.GetCallerInfo(6) : null;
+        }
+
+        activity?.SetTag("headless.job.enqueued_from", callerInfo);
+
+        base.LogJobEnqueued(jobType, functionName, jobId, callerInfo);
+    }
+
+    public override void LogJobCompleted(Guid jobId, string functionName, long executionTimeMs, bool success)
+    {
+        using var activity = JobsDiagnostics.Start("job.complete");
+        activity?.SetTag("headless.job.id", jobId.ToString());
+        activity?.SetTag("headless.job.function", functionName);
+        activity?.SetTag("headless.job.duration_ms", executionTimeMs);
+        activity?.SetTag("headless.job.success", success);
+
+        // Set activity status based on success
+        activity?.SetStatus(success ? ActivityStatusCode.Ok : ActivityStatusCode.Error);
+
+        base.LogJobCompleted(jobId, functionName, executionTimeMs, success);
+    }
+
+    public override void LogJobFailed(Guid jobId, string functionName, Exception exception, int retryCount)
+    {
+        using var activity = JobsDiagnostics.Start("job.fail");
+        activity?.SetTag("headless.job.id", jobId.ToString());
+        activity?.SetTag("headless.job.function", functionName);
+        activity?.SetTag("headless.job.retry_count", retryCount);
+        activity?.SetTag("exception.type", exception.GetType().Name);
+        activity?.SetTag("exception.message", exception.Message);
+
+        if (activity != null)
+        {
+            activity.SetStatus(ActivityStatusCode.Error, exception.Message);
+            // Record exception information in tags instead of RecordException (not available in all .NET versions)
+            if (exception.StackTrace != null)
+            {
+                activity.SetTag("exception.stacktrace", exception.StackTrace);
+            }
+        }
+
+        base.LogJobFailed(jobId, functionName, exception, retryCount);
+    }
+
+    public override void LogJobCancelled(Guid jobId, string functionName, string reason)
+    {
+        using var activity = JobsDiagnostics.Start("job.cancel");
+        activity?.SetTag("headless.job.id", jobId.ToString());
+        activity?.SetTag("headless.job.function", functionName);
+        activity?.SetTag("headless.job.cancellation_reason", reason);
+
+        activity?.SetStatus(ActivityStatusCode.Error, reason);
+
+        base.LogJobCancelled(jobId, functionName, reason);
+    }
+
+    public override void LogJobSkipped(Guid jobId, string functionName, string reason)
+    {
+        using var activity = JobsDiagnostics.Start("job.skip");
+        activity?.SetTag("headless.job.id", jobId.ToString());
+        activity?.SetTag("headless.job.function", functionName);
+        activity?.SetTag("headless.job.skip_reason", reason);
+
+        base.LogJobSkipped(jobId, functionName, reason);
+    }
+
+    public override void LogSeedingDataStarted(string seedingDataType)
+    {
+        using var activity = JobsDiagnostics.Start("seeding.start");
+        activity?.SetTag("headless.seeding.type", seedingDataType);
+        activity?.SetTag("headless.seeding.environment", InstanceIdentifier);
+
+        base.LogSeedingDataStarted(seedingDataType);
+    }
+
+    public override void LogSeedingDataCompleted(string seedingDataType)
+    {
+        using var activity = JobsDiagnostics.Start("seeding.complete");
+        activity?.SetTag("headless.seeding.type", seedingDataType);
+        activity?.SetTag("headless.seeding.environment", InstanceIdentifier);
+
+        base.LogSeedingDataCompleted(seedingDataType);
+    }
+
+    public override void LogRequestDeserializationFailure(
+        string requestType,
+        string functionName,
+        Guid jobId,
+        JobType type,
+        Exception exception
+    )
+    {
+        using var activity = JobsDiagnostics.Start("job.deserialize.fail");
+        activity?.SetTag("headless.job.id", jobId.ToString());
+        activity?.SetTag("headless.job.function", functionName);
+        activity?.SetTag("exception.type", exception.GetType().Name);
+        activity?.SetTag("exception.message", exception.Message);
+        base.LogRequestDeserializationFailure(requestType, functionName, jobId, type, exception);
+    }
+}

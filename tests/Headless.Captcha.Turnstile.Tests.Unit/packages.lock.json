@@ -442,20 +442,20 @@
           "xunit.v3.runner.common": "[4.0.0]"
         }
       },
-      "headless.captcha.abstractions": {
-        "type": "Project"
-      },
-      "headless.captcha.core": {
+      "headless.captcha": {
         "type": "Project",
         "dependencies": {
           "Headless.Captcha.Abstractions": "[1.0.0, )",
           "Headless.Checks": "[1.0.0, )"
         }
       },
+      "headless.captcha.abstractions": {
+        "type": "Project"
+      },
       "headless.captcha.recaptcha": {
         "type": "Project",
         "dependencies": {
-          "Headless.Captcha.Core": "[1.0.0, )",
+          "Headless.Captcha": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Microsoft.Extensions.Http.Resilience": "[10.10.0, )"
@@ -476,7 +476,7 @@
       "headless.captcha.turnstile": {
         "type": "Project",
         "dependencies": {
-          "Headless.Captcha.Core": "[1.0.0, )",
+          "Headless.Captcha": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Microsoft.Extensions.Http.Resilience": "[10.10.0, )"
@@ -485,14 +485,11 @@
       "headless.checks": {
         "type": "Project"
       },
-      "headless.core": {
+      "headless.context.abstractions": {
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
-          "Headless.Extensions": "[1.0.0, )",
-          "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
-          "Headless.Serializer.Json": "[1.0.0, )",
-          "TimeZoneConverter": "[7.2.0, )"
+          "Headless.Primitives": "[1.0.0, )"
         }
       },
       "headless.extensions": {
@@ -519,6 +516,8 @@
       "headless.hosting": {
         "type": "Project",
         "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
           "Headless.FluentValidation": "[1.0.0, )",
           "OpenTelemetry.Api": "[1.18.0, )"
         }
@@ -526,6 +525,7 @@
       "headless.multitenancy.abstractions": {
         "type": "Project",
         "dependencies": {
+          "Headless.Extensions": "[1.0.0, )",
           "Headless.Primitives": "[1.0.0, )"
         }
       },
@@ -542,23 +542,14 @@
           "Headless.Checks": "[1.0.0, )"
         }
       },
-      "headless.serializer.abstractions": {
-        "type": "Project"
-      },
-      "headless.serializer.json": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.Serializer.Abstractions": "[1.0.0, )"
-        }
-      },
       "headless.testing": {
         "type": "Project",
         "dependencies": {
           "AwesomeAssertions": "[9.6.0, )",
           "Bogus": "[35.6.5, )",
-          "Headless.Core": "[1.0.0, )",
+          "Headless.Context.Abstractions": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
+          "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
           "Headless.Security.Abstractions": "[1.0.0, )",
           "Meziantou.Extensions.Logging.Xunit.v3": "[3.0.6, )",
           "Microsoft.Extensions.TimeProvider.Testing": "[10.10.0, )",
@@ -666,12 +657,6 @@
         "dependencies": {
           "Polly.Core": "8.7.0"
         }
-      },
-      "TimeZoneConverter": {
-        "type": "CentralTransitive",
-        "requested": "[7.2.0, )",
-        "resolved": "7.2.0",
-        "contentHash": "4Poqu79dTmacVETqUJ53g3x4U21V/cmWPSlehdsVE4Q00akavvlRq+SRjcg/CmfO9ibOCjRl6TeUV7hkC5RC4w=="
       },
       "xunit.v3.assert": {
         "type": "CentralTransitive",

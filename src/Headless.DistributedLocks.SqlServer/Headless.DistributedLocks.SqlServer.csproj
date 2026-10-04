@@ -6,10 +6,9 @@
     <RootNamespace>Headless.DistributedLocks.SqlServer</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Headless.Core\Headless.Core.csproj" />
     <ProjectReference Include="..\Headless.DistributedLocks.Abstractions\Headless.DistributedLocks.Abstractions.csproj" />
-    <ProjectReference Include="..\Headless.DistributedLocks.Core\Headless.DistributedLocks.Core.csproj" />
-    <ProjectReference Include="..\Headless.DistributedLocks.Core.Database\Headless.DistributedLocks.Core.Database.csproj" />
+    <ProjectReference Include="..\Headless.DistributedLocks\Headless.DistributedLocks.csproj" />
+    <ProjectReference Include="..\Headless.DistributedLocks.Database\Headless.DistributedLocks.Database.csproj" />
     <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
     <ProjectReference Include="..\Headless.Sql.SqlServer\Headless.Sql.SqlServer.csproj" />
   </ItemGroup>

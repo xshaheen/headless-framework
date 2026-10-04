@@ -1,10 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Abstractions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
 
-namespace Headless.Api.Concurrency;
+namespace Headless.Api;
 
 internal sealed class EntityTagResponseFilter : IAsyncResultFilter
 {

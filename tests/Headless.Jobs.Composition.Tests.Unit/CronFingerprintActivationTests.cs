@@ -3,9 +3,7 @@
 using System.Collections.Frozen;
 using Headless.Jobs;
 using Headless.Jobs.BackgroundServices;
-using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Internal;
-using Headless.Jobs.Models;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;

@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Abstractions;
+namespace Headless.Api;
 
 /// <summary>Marks an endpoint as requiring exactly one strong <c>If-Match</c> entity tag.</summary>
 [PublicAPI]

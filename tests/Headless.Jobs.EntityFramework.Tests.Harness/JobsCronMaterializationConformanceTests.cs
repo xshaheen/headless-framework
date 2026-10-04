@@ -2,14 +2,10 @@
 
 using System.Data.Common;
 using System.Globalization;
-using Headless.Abstractions;
-using Headless.Hosting.Initialization;
+using Headless;
+using Headless.Hosting;
 using Headless.Jobs;
-using Headless.Jobs.Configurations;
-using Headless.Jobs.Entities;
-using Headless.Jobs.Enums;
 using Headless.Jobs.Infrastructure;
-using Headless.Jobs.Interfaces;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;

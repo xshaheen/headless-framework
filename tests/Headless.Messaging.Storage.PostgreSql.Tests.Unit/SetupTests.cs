@@ -1,10 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Reflection;
-using Headless.Hosting.Initialization;
+using Headless.Hosting;
 using Headless.Hosting.Initialization.Schema;
 using Headless.Messaging;
-using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Storage.PostgreSql;

@@ -3,8 +3,8 @@
 using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
+using Headless.Jobs;
 using Headless.Jobs.Infrastructure;
-using Headless.Jobs.Models;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;

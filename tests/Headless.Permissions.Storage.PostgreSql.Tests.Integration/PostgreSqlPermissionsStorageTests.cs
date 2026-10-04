@@ -1,15 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Abstractions;
+using Headless;
 using Headless.Caching;
-using Headless.Hosting.Initialization;
+using Headless.Hosting;
 using Headless.MultiTenancy;
 using Headless.Permissions;
-using Headless.Permissions.Definitions;
-using Headless.Permissions.Entities;
-using Headless.Permissions.Grants;
-using Headless.Permissions.Models;
-using Headless.Permissions.Repositories;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;

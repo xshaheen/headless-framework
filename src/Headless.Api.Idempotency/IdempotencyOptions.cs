@@ -1,7 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
-using Headless.Constants;
+using Headless.Context;
+using Headless.Http;
 using Microsoft.AspNetCore.Http;
 
 namespace Headless.Api.Idempotency;

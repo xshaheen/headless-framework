@@ -2,7 +2,6 @@
 
 using System.Diagnostics;
 using BenchmarkDotNet.Attributes;
-using Headless.Jobs.Enums;
 using Headless.Jobs.JobsThreadPool;
 
 namespace Headless.Jobs.Benchmarks;

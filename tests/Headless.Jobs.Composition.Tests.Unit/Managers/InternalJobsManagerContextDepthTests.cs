@@ -1,10 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Abstractions;
+using Headless;
 using Headless.Jobs;
-using Headless.Jobs.Entities;
-using Headless.Jobs.Enums;
-using Headless.Jobs.Interfaces;
 using Headless.Jobs.Managers;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;

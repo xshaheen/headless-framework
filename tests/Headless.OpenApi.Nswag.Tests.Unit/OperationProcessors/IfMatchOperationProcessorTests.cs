@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Reflection;
-using Headless.Abstractions;
+using Headless.Api;
 using Headless.OpenApi.Nswag;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Mvc.Abstractions;

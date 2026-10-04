@@ -1,6 +1,6 @@
 ---
 domain: Jobs (Background Jobs)
-packages: Jobs.Abstractions, Jobs.Core, Jobs.Dashboard, Jobs.SourceGenerator, Jobs.EntityFramework, Jobs.EntityFramework.PostgreSql, Jobs.EntityFramework.SqlServer
+packages: Jobs.Abstractions, Jobs, Jobs.Dashboard, Jobs.SourceGenerator, Jobs.EntityFramework, Jobs.EntityFramework.PostgreSql, Jobs.EntityFramework.SqlServer
 ---
 
 # Jobs (Background Jobs)
@@ -9,12 +9,12 @@ packages: Jobs.Abstractions, Jobs.Core, Jobs.Dashboard, Jobs.SourceGenerator, Jo
 
 ## Orientation
 
-Required packages: `Jobs.Core` + `Jobs.EntityFramework` (persistence) + `Jobs.SourceGenerator` (compile-time job registration). Add the PostgreSQL or SQL Server Jobs EF provider package for native atomic claims; otherwise the EF package uses its portable optimistic-CAS fallback.
+Required packages: `Jobs` + `Jobs.EntityFramework` (persistence) + `Jobs.SourceGenerator` (compile-time job registration). Add the PostgreSQL or SQL Server Jobs EF provider package for native atomic claims; otherwise the EF package uses its portable optimistic-CAS fallback.
 
 Optional add-ons:
 - `Jobs.Dashboard` — monitoring UI with authentication (basic, API key, host auth) plus live-cluster node view
-- OpenTelemetry tracing ships inside `Jobs.Core` (see [OpenTelemetry Instrumentation](#opentelemetry-instrumentation)) — there is no separate instrumentation package
-- `Jobs.Abstractions` — interfaces only; pulled in transitively by `Jobs.Core`; install directly only when building a library on top
+- OpenTelemetry tracing ships inside `Jobs` (see [OpenTelemetry Instrumentation](#opentelemetry-instrumentation)) — there is no separate instrumentation package
+- `Jobs.Abstractions` — interfaces only; pulled in transitively by `Jobs`; install directly only when building a library on top
 
 Minimum wiring (in-memory storage, no persistence):
 
@@ -54,7 +54,7 @@ Declare a job as a class that implements `IJob` (no arguments) or `IJob<TArgs>` 
 
 - Treat `(Function, ContractVersion, Request bytes)` as a durable executable contract. A schema change needs an explicit version; do not infer it from CLR names or trace IDs. Initialize storage using the [current contract mappings](#contract-storage) before starting workers or writers.
 - Do NOT use Hangfire or Quartz — use `Headless.Jobs` for all background jobs in this framework.
-- A job is a class, never a method: a top-level, non-abstract, non-generic `public` or `internal` class that implements exactly one of `IJob` or `IJob<TArgs>` (`Headless.Jobs.Base`) and carries `[Job("owner.name")]` (`JobAttribute`). The identity is durable and persisted with every run; its first segment names the owning module. `Cron`, `TimeZone`, `Priority`, `MaxConcurrency`, `ContractVersion`, `FailurePolicy`, `OnMissedRun`, `MissedRunGraceSeconds`, and `OnOverlap` are named properties. Add `Headless.Jobs.SourceGenerator` to the project for compile-time registration.
+- A job is a class, never a method: a top-level, non-abstract, non-generic `public` or `internal` class that implements exactly one of `IJob` or `IJob<TArgs>` (`Headless.Jobs`) and carries `[Job("owner.name")]` (`JobAttribute`). The identity is durable and persisted with every run; its first segment names the owning module. `Cron`, `TimeZone`, `Priority`, `MaxConcurrency`, `ContractVersion`, `FailurePolicy`, `OnMissedRun`, `MissedRunGraceSeconds`, and `OnOverlap` are named properties. Add `Headless.Jobs.SourceGenerator` to the project for compile-time registration.
 - Call `AddHeadlessJobs()` on `IServiceCollection`. There is no `app.UseJobs()` call — the scheduler starts automatically through `IHostedService` registered by `AddHeadlessJobs`.
 - Add every generated module with `options.AddModule<TAssembly.JobsModule>()`, including the host's own assembly. Nothing registers implicitly: an assembly whose module is not added contributes no functions or middleware, even when it is loaded. Each host builds its own catalog from the modules it adds and freezes it into an immutable registry when that registry is first resolved, so hosts in one process may add different modules. Runtime services and Dashboard read only that per-host registry.
 - A module that owns jobs contributes its generated module from its own `Add{Module}` entry point with `services.ConfigureJobs(jobs => jobs.AddModule<TAssembly.JobsModule>())` instead of calling `AddHeadlessJobs`. `JobsContributionBuilder` is not generic, so the module need not know the host's entity types. Contributions are recorded as descriptors and applied in the order they were added, whether they come before or after `AddHeadlessJobs`; contributing a module twice is harmless, and a host that never calls `AddHeadlessJobs` ignores them. Two modules that declare one job identity, one argument type, or one job class fail startup with an error that names both modules.
@@ -105,8 +105,7 @@ Both types share `BaseJobEntity` (`Id`, `Function`, `Description`, `CreatedAt`, 
 A job is a class that implements `IJob` or `IJob<TArgs>` and carries `[Job(identity)]`. `ExecuteAsync` receives a `JobContext` (or `JobContext<TArgs>`, whose `Request` holds the deserialized argument) and the cancellation token, and returns `ValueTask`.
 
 ```csharp
-using Headless.Jobs.Base;
-using Headless.Jobs.Enums;
+using Headless.Jobs;
 
 public sealed record ProcessOrderArgs(string OrderId);
 
@@ -273,7 +272,7 @@ Consequences:
 ### Distributed Coordination and Node Identity
 
 The durable operational store (EF provider) uses `Headless.Coordination` for:
-- **Node identity**: the node owner stamped on job rows is `node@incarnation` (a store-allocated incarnation ID), not `Environment.MachineName`. The node id is the host name `Headless.Core` resolves (`HostIdentityOptions.HostName`, then `POD_NAMESPACE/POD_NAME`, then the machine name; see [core.md](core.md)), not a `SchedulerOptionsBuilder` setting.
+- **Node identity**: the node owner stamped on job rows is `node@incarnation` (a store-allocated incarnation ID), not `Environment.MachineName`. The node id is the host name `Headless.Context` resolves (`HostIdentityOptions.HostName`, then `POD_NAMESPACE/POD_NAME`, then the machine name; see [context.md](context.md)), not a `SchedulerOptionsBuilder` setting.
 - **Dead-node recovery**: triggered by `Coordination` `NodeLeft` events plus a periodic liveness-snapshot reconcile (`DeadNodeReconcileInterval`, default 1 minute). Backend-neutral — works without Redis. Reclaim matches the dead `node@incarnation` exactly; it never touches rows owned by a restarted node's fresh incarnation.
 - **Fail-stop on membership loss**: if the local node loses coordination membership, the durable scheduler stops processing rather than stamping stale owners.
 - **Orphaned-owner sweep**: on the `DeadNodeReconcileInterval` cadence the fallback service also reclaims rows stamped by an owner identity absent from the liveness snapshot entirely — a superseded incarnation (never classified Dead, so the dead-node path cannot see it) or a dead identity pruned past retention. This is the only recovery path for owner-stamped `Idle`/`Queued` rows with no execution time (non-timed chain descendants) after a whole-cluster or single-node ungraceful restart.
@@ -374,9 +373,7 @@ An explicit `TenantId` is honored even when it differs from the current ambient 
 Cron is system-scope by contract, so tenant-scoped recurring work is an application-code pattern, not a framework feature: a system-scope cron handler enumerates tenants and schedules one tenant-scoped time job per tenant with an **explicit** `JobOptions.TenantId`.
 
 ```csharp
-using Headless.Jobs.Base;
-using Headless.Jobs.Interfaces;
-using Headless.Jobs.Models;
+using Headless.Jobs;
 
 // A tenant-scoped time job. When it runs, the execute middleware has already restored
 // ICurrentTenant to the job's TenantId, so tenant-scoped services (EF global filters,
@@ -505,7 +502,7 @@ The disposition is persisted explicitly so an owed replacement remains distingui
 
 The recovery *decision* — which instant to materialize at, which existing row to repurpose, which to step past, which
 to retire, and where the resolution window ends — is one storage-agnostic unit, `CronRecoveryPlanner` in
-`Headless.Jobs.Core`, and every provider consumes it. A provider snapshots the window the planner asks for
+`Headless.Jobs`, and every provider consumes it. A provider snapshots the window the planner asks for
 (`GetInspectionWindow`), hands those rows back (`CreatePlan`), and applies the returned `CronRecoveryPlan` as fenced
 writes inside its own transaction or critical section. The planner itself reads nothing, writes nothing, and calls
 back into no storage.
@@ -746,14 +743,12 @@ Contracts, entity types, manager interfaces, and execution primitives for the Jo
 dotnet add package Headless.Jobs.Abstractions
 ```
 
-Pulled in transitively by `Headless.Jobs.Core`. Install directly only when building a library that targets Jobs interfaces without depending on the Core implementation.
+Pulled in transitively by `Headless.Jobs`. Install directly only when building a library that targets Jobs interfaces without depending on the Core implementation.
 
 ### Setup and use
 
 ```csharp
-using Headless.Jobs.Base;
-using Headless.Jobs.Interfaces;
-using Headless.Jobs.Models;
+using Headless.Jobs;
 
 public sealed record OrderReminderRequest(string OrderId);
 
@@ -852,11 +847,10 @@ Omit an unused cancellation token, or pass `default` or `cancellationToken: defa
 
 A job without arguments is scheduled by its class: `await jobs.EnqueueAsync<CleanupJob>(ct)`, and likewise `ScheduleAsync<TJob>`, `ScheduleAfterAsync<TJob>`, `ScheduleRecurringAsync<TJob>`, `ScheduleKeyedAsync<TJob>`, and `ReplaceKeyedAsync<TJob>`. These overloads are constrained to `IJob`, so a job that takes arguments cannot be scheduled without them.
 
-Fluent callbacks are available on the argument and job-class `EnqueueAsync`, `ScheduleAsync`, and `ScheduleAfterAsync` calls. Import `Headless.Jobs` for `JobOptionsBuilder` and `JobSchedulerExtensions`, and `Headless.Jobs.Interfaces` for `IJobScheduler`. The singular `JobOptionsBuilder` authors one options snapshot; the plural generic `JobsOptionsBuilder<TTimeJob, TCronJob>` configures the subsystem in Core.
+Fluent callbacks are available on the argument and job-class `EnqueueAsync`, `ScheduleAsync`, and `ScheduleAfterAsync` calls. Import `Headless.Jobs` for `JobOptionsBuilder` and `JobSchedulerExtensions`, and `Headless.Jobs` for `IJobScheduler`. The singular `JobOptionsBuilder` authors one options snapshot; the plural generic `JobsOptionsBuilder<TTimeJob, TCronJob>` configures the subsystem in Core.
 
 ```csharp
 using Headless.Jobs;
-using Headless.Jobs.Interfaces;
 
 public sealed class JobCaller(IJobScheduler scheduler)
 {
@@ -870,13 +864,13 @@ public sealed class JobCaller(IJobScheduler scheduler)
 
 Each callback runs synchronously once on a fresh builder, immediately before the existing options overload. Async-void callbacks are unsupported. A null receiver or `configure: null!` throws before submission; a throwing callback submits nothing. Bare `null` still selects the existing nullable options overload. Cancellation tokens and the scheduler's returned task pass through unchanged, including pre-canceled tokens; configuration still runs before delegation.
 
-`Build()` returns the canonical `Headless.Jobs.Models.JobOptions` without validation or resolved defaults. Nullable setters accept `null` to restore inheritance; `WithRetries(0)` disables retries, `WithRetryIntervals()` replaces inherited intervals with an empty array, and `WithRetryIntervals(null)` inherits them. `AsSystemJob()` remains set across reuse; use a fresh builder to reset it. Existing scheduling validators still check retry values, node-death policies, and tenant/system conflicts.
+`Build()` returns the canonical `Headless.Jobs.JobOptions` without validation or resolved defaults. Nullable setters accept `null` to restore inheritance; `WithRetries(0)` disables retries, `WithRetryIntervals()` replaces inherited intervals with an empty array, and `WithRetryIntervals(null)` inherits them. `AsSystemJob()` remains set across reuse; use a fresh builder to reset it. Existing scheduling validators still check retry values, node-death policies, and tenant/system conflicts.
 
 Builders support sequential reuse and copy retry arrays when supplied and on every build. Mutating an input, retained builder, or one result cannot change another snapshot. Returned arrays remain caller-owned and mutable; concurrent builder mutation is unsupported. Use direct records or `builder.Build() with { ... }` for advanced options; keyed, recurring, and chain conveniences are outside this fluent surface.
 
 ### Configuration
 
-Configure job services in `Headless.Jobs.Core` via `AddHeadlessJobs(...)`. Configure tenancy only through `AddHeadlessTenancy(tenancy => tenancy.Jobs(...))`. `JobsTenancyOptions` exposes the resulting propagation, required-tenant, and cross-tenant rejection flags with no public setters.
+Configure job services in `Headless.Jobs` via `AddHeadlessJobs(...)`. Configure tenancy only through `AddHeadlessTenancy(tenancy => tenancy.Jobs(...))`. `JobsTenancyOptions` exposes the resulting propagation, required-tenant, and cross-tenant rejection flags with no public setters.
 
 ### Runtime behavior
 
@@ -884,7 +878,7 @@ None.
 
 ---
 
-## Headless.Jobs.Core
+## Headless.Jobs
 
 Core implementation of the Jobs scheduler: in-memory persistence provider, execution task handler, background services, bounded task scheduler, and the `AddHeadlessJobs` DI extension.
 
@@ -953,15 +947,13 @@ Cron expressions use `RecurringJobOptions.TimeZoneId` when present and otherwise
 ### Install
 
 ```bash
-dotnet add package Headless.Jobs.Core
+dotnet add package Headless.Jobs
 ```
 
 ### Setup and use
 
 ```csharp
-using Headless.Jobs.Base;
-using Headless.Jobs.Interfaces;
-using Headless.Jobs.Models;
+using Headless.Jobs;
 
 // 1. Register Jobs, adding the generated module of every assembly that declares jobs
 builder.Services.AddHeadlessJobs(options =>
@@ -1023,7 +1015,6 @@ A module that owns jobs contributes its generated module from its own entry poin
 
 ```csharp
 using Headless.Jobs;
-using Headless.Jobs.Enums;
 
 public static class BillingSetup
 {
@@ -1104,7 +1095,7 @@ Retries come from each job's [failure policy](#failure-policy), not from startup
 
 Startup policies accept only the node-death policy. `Retries` or `RetryIntervals` in a startup policy throw `ArgumentException` naming `DefaultFailurePolicy`, `[Job(FailurePolicy = ...)]`, and `Tune(...).FailurePolicy(...)` as the replacements. Tenant, system scope, description, correlation, and causation remain per-invocation metadata; supplying them in startup policies throws. Concurrency and priority are not scheduling options: they come from the `[Job]` declaration, and a host overrides them with `Tune(identity, job => job.Concurrency(2).Priority(JobPriority.High))` or `Headless:Jobs:Jobs:{identity}` configuration.
 
-The plural `JobsOptionsBuilder<TTimeJob, TCronJob>` also accepts `Action<JobOptionsBuilder>` for all three policy methods. Import `Headless.Jobs` for the singular options builder and `Headless.Jobs.Enums` for `NodeDeathPolicy`. For example, use `ConfigureDefaults(job => job.WithNodeDeathPolicy(NodeDeathPolicy.MarkFailed))`, `ConfigureJob<MyRequest>(job => job.WithNodeDeathPolicy(NodeDeathPolicy.Skip))`, or `Tune("billing.close-day", job => job.Options(policy => policy.WithNodeDeathPolicy(NodeDeathPolicy.Retry)))`. `WithRetries` and `WithRetryIntervals` belong on scheduling calls only. Each callback runs once synchronously with a fresh builder; asynchronous callbacks are unsupported. Each successful call replaces the previous policy for that scope. Callback failures or invalid settings leave the prior policy intact. Retained builders and supplied arrays cannot change the captured policy or another host.
+The plural `JobsOptionsBuilder<TTimeJob, TCronJob>` also accepts `Action<JobOptionsBuilder>` for all three policy methods. Import `Headless.Jobs` for the singular options builder and `Headless.Jobs` for `NodeDeathPolicy`. For example, use `ConfigureDefaults(job => job.WithNodeDeathPolicy(NodeDeathPolicy.MarkFailed))`, `ConfigureJob<MyRequest>(job => job.WithNodeDeathPolicy(NodeDeathPolicy.Skip))`, or `Tune("billing.close-day", job => job.Options(policy => policy.WithNodeDeathPolicy(NodeDeathPolicy.Retry)))`. `WithRetries` and `WithRetryIntervals` belong on scheduling calls only. Each callback runs once synchronously with a fresh builder; asynchronous callbacks are unsupported. Each successful call replaces the previous policy for that scope. Callback failures or invalid settings leave the prior policy intact. Retained builders and supplied arrays cannot change the captured policy or another host.
 
 Bare `null` and `default` arguments are ambiguous between the options-record and callback configuration overloads. Use `options:` or a typed `JobOptions` argument for the record overload, and `configure:` or a typed `Action<JobOptionsBuilder>` for the callback overload. Both reject null arguments.
 
@@ -1160,7 +1151,7 @@ builder.Services.AddHeadlessJobs(options =>
 
 ### Trimming and native AOT
 
-`Headless.Jobs.Abstractions` and `Headless.Jobs.Core` declare `IsAotCompatible` and build with the trim, AOT, and single-file analyzers enabled. Generated modules construct job classes and call them and their middleware directly, without reflection. A trimmed or native AOT host must still do the following:
+`Headless.Jobs.Abstractions` and `Headless.Jobs` declare `IsAotCompatible` and build with the trim, AOT, and single-file analyzers enabled. Generated modules construct job classes and call them and their middleware directly, without reflection. A trimmed or native AOT host must still do the following:
 
 - Supply JSON metadata for every typed request. Core reads payload metadata through the request options' `TypeInfoResolver`; when an app allows reflection-based serialization (the default outside trimmed and AOT publishing), a missing resolver falls back to reflection. Otherwise, register a `JsonSerializerContext`. Without one, the first enqueue or execution of a typed job throws `NotSupportedException` naming the type.
 
@@ -1319,8 +1310,7 @@ dotnet add package Headless.Jobs.SourceGenerator
 ### Setup and use
 
 ```csharp
-using Headless.Jobs.Base;
-using Headless.Jobs.Enums;
+using Headless.Jobs;
 using Microsoft.Extensions.DependencyInjection;
 
 // Recurring job without arguments, evaluated in a named time zone.
@@ -1368,7 +1358,7 @@ Emits `JobsModule.g.cs` at compile time. The generated file:
 
 ## OpenTelemetry Instrumentation
 
-OpenTelemetry instrumentation for `Headless.Jobs` is built into `Headless.Jobs.Core` — activity tracing for the full job execution lifecycle plus structured logging. (The former `Headless.Jobs.OpenTelemetry` satellite package was folded into `Jobs.Core` per the framework OTel conventions; native emission needs no separate package.) Cross-cutting naming, PII, and registration rules for all Headless instrumentation live in [OpenTelemetry instrumentation conventions](../solutions/conventions/opentelemetry-instrumentation-conventions.md).
+OpenTelemetry instrumentation for `Headless.Jobs` is built into `Headless.Jobs` — activity tracing for the full job execution lifecycle plus structured logging. (The former `Headless.Jobs.OpenTelemetry` satellite package was folded into `Jobs` per the framework OTel conventions; native emission needs no separate package.) Cross-cutting naming, PII, and registration rules for all Headless instrumentation live in [OpenTelemetry instrumentation conventions](../solutions/conventions/opentelemetry-instrumentation-conventions.md).
 
 ### Purpose
 
@@ -1441,7 +1431,7 @@ Entity Framework Core persistence provider for `Headless.Jobs` — durable, dist
 - **`UseEntityFramework(ef => …)`**: the EF registration extension on `JobsOptionsBuilder`.
 - **`UseJobsDbContext<TDbContext>(dbOptions)`**: registers a dedicated `JobsDbContext`. The schema comes from the feature-owned `ConfigureStorage` option, not from this call.
 - **`UseApplicationDbContext<TDbContext>(ConfigurationType)`**: shares an existing application `DbContext` instead of a dedicated one. Jobs creates that context outside any request scope, from a pooled factory and by cloning its options onto a unit of work's connection, so it must declare a public constructor accepting only `DbContextOptions<TDbContext>`; `UseApplicationDbContext` checks this when called and throws `InvalidOperationException` otherwise. A `HeadlessDbContext` (or `HeadlessIdentityDbContext`) works here and with `UsePostgreSql<TContext>()` / `UseSqlServer<TContext>()`, whether the application registered it with `AddHeadlessDbContext` or `AddHeadlessDbContextPool`: because Jobs creates it outside any request scope, the context opens a private DI scope for its save pipeline and disposes it with the context.
-- **Consumer-managed keyed models**: with `ConfigurationType.IgnoreModelCustomizer`, explicitly configure PostgreSQL `C` or SQL Server `Latin1_General_100_BIN2` collation on time-job `Function`, `TenantId`, and `BusinessKey` through `TimeJobConfigurations<TTimeJob>(schema, style, contractCollation)` or the matching model default. The required `StorageNamingStyle style` must match the database: pass `HeadlessStorageNaming.ForProvider(Database.ProviderName)` (namespace `Headless.Hosting.Initialization`), which `FinalizeJobsModel` also uses for the keyed index, check constraint, and reservation-table names. Call `modelBuilder.FinalizeJobsModel<TTimeJob>(this)` at the end of `OnModelCreating`, after Jobs configurations and all consumer table/column mappings, to build keyed indexes and check constraints from the final names and provider SQL syntax. The built-in Jobs model customizer finalizes automatically. Keyed operations reject missing finalization or missing/different collations without changing consumer mappings; initialize the database from the same model. Ordinary and coordinated add/update paths reject attachment to any retained keyed parent, including ORM-populated detached entities.
+- **Consumer-managed keyed models**: with `ConfigurationType.IgnoreModelCustomizer`, explicitly configure PostgreSQL `C` or SQL Server `Latin1_General_100_BIN2` collation on time-job `Function`, `TenantId`, and `BusinessKey` through `TimeJobConfigurations<TTimeJob>(schema, style, contractCollation)` or the matching model default. The required `StorageNamingStyle style` must match the database: pass `HeadlessStorageNaming.ForProvider(Database.ProviderName)` (namespace `Headless.Hosting`), which `FinalizeJobsModel` also uses for the keyed index, check constraint, and reservation-table names. Call `modelBuilder.FinalizeJobsModel<TTimeJob>(this)` at the end of `OnModelCreating`, after Jobs configurations and all consumer table/column mappings, to build keyed indexes and check constraints from the final names and provider SQL syntax. The built-in Jobs model customizer finalizes automatically. Keyed operations reject missing finalization or missing/different collations without changing consumer mappings; initialize the database from the same model. Ordinary and coordinated add/update paths reject attachment to any retained keyed parent, including ORM-populated detached entities.
 - **Database-clock lease authority**: on the EF path, lease renewal comparisons (`LockedUntil`) use the database server clock (`now()`/`GETUTCDATE()`), not the node's `TimeProvider`. Cross-node clock skew cannot reclaim a healthy renewing job.
 - **Bounded key locks**: key and run locks use one database command per acquisition call. Bulk operations retain every guarded run and parent ID, deduplicate them, and acquire them in sorted order. Each call has one 30-second contention budget for the complete batch, with a 60-second command timeout. Contention raises `TimeoutException` without changing the caller's lock-timeout policy or aborting its transaction. Locks already acquired remain owned by that transaction until commit or rollback.
 - **Atomic cron materialization**: one transaction locks the expected schedule position, recognizes or inserts the exact unclaimed `Idle` occurrence, and advances the watermark only with that durable outcome. Claiming and database-clock lease stamping happen afterward.
@@ -1569,7 +1559,7 @@ dotnet add package Headless.Jobs.EntityFramework
 ### Setup and use
 
 ```csharp
-using Headless.Jobs.DbContextFactory;
+using Headless.Jobs;
 using Microsoft.EntityFrameworkCore;
 using StackExchange.Redis;
 
@@ -1600,7 +1590,7 @@ Register one with AddHeadlessCoordination(...) before AddHeadlessJobs(... UseEnt
 ### Configuration
 
 ```csharp
-using Headless.Jobs.DbContextFactory;
+using Headless.Jobs;
 using Microsoft.EntityFrameworkCore;
 
 builder.Services.AddHeadlessJobs(options =>
@@ -1743,8 +1733,7 @@ public sealed class ProcessOrderJob(ILogger<ProcessOrderJob> logger) : IJob<Orde
 Throw `TerminateExecutionException` to stop execution immediately without consuming retry budget:
 
 ```csharp
-using Headless.Jobs.Enums;
-using Headless.Jobs.Exceptions;
+using Headless.Jobs;
 
 // Called from a job's ExecuteAsync.
 private static void StopIfUnrecoverable(bool configurationValid, bool permanentFailure)
@@ -1871,8 +1860,6 @@ dotnet add package Headless.Jobs.EntityFramework.PostgreSql
 
 ```csharp
 using Headless.Jobs;
-using Headless.Jobs.Enums;
-using Headless.Jobs.Models;
 using Microsoft.EntityFrameworkCore;
 
 builder.Services.AddDbContext<AppDbContext>(options => options.UseNpgsql(connectionString));
@@ -1937,8 +1924,6 @@ dotnet add package Headless.Jobs.EntityFramework.SqlServer
 
 ```csharp
 using Headless.Jobs;
-using Headless.Jobs.Enums;
-using Headless.Jobs.Models;
 using Microsoft.EntityFrameworkCore;
 
 builder.Services.AddDbContext<AppDbContext>(options => options.UseSqlServer(connectionString));

@@ -1,0 +1,64 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+namespace Headless.Payments.Paymob.CashIn;
+
+[PublicAPI]
+public sealed class CashInCallbackTransactionOrderShippingDetails
+{
+    [JsonPropertyName("id")]
+    public long Id { get; init; }
+
+    [JsonPropertyName("cash_on_delivery_amount")]
+    public long CashOnDeliveryAmount { get; init; }
+
+    [JsonPropertyName("cash_on_delivery_type")]
+    public string? CashOnDeliveryType { get; init; }
+
+    [JsonPropertyName("is_same_day")]
+    public int IsSameDay { get; init; }
+
+    [JsonPropertyName("number_of_packages")]
+    public int NumberOfPackages { get; init; }
+
+    [JsonPropertyName("weight")]
+    public int Weight { get; init; }
+
+    [JsonPropertyName("weight_unit")]
+    public required string WeightUnit { get; init; }
+
+    [JsonPropertyName("length")]
+    public int Length { get; init; }
+
+    [JsonPropertyName("width")]
+    public int Width { get; init; }
+
+    [JsonPropertyName("height")]
+    public int Height { get; init; }
+
+    [JsonPropertyName("delivery_type")]
+    public string? DeliveryType { get; init; }
+
+    [JsonPropertyName("order_id")]
+    public long OrderId { get; init; }
+
+    [JsonPropertyName("order")]
+    public long Order { get; init; }
+
+    [JsonPropertyName("notes")]
+    public string? Notes { get; init; }
+
+    /// <summary>Opaque Paymob passthrough value; shape is provider-defined and usually <see langword="null"/>.</summary>
+    [JsonPropertyName("latitude")]
+    public object? Latitude { get; init; }
+
+    /// <summary>Opaque Paymob passthrough value; shape is provider-defined and usually <see langword="null"/>.</summary>
+    [JsonPropertyName("longitude")]
+    public object? Longitude { get; init; }
+
+    /// <summary>Opaque Paymob passthrough value; shape is provider-defined and usually <see langword="null"/>.</summary>
+    [JsonPropertyName("return_type")]
+    public object? ReturnType { get; init; }
+
+    [JsonExtensionData]
+    public IDictionary<string, object?>? ExtensionData { get; set; }
+}

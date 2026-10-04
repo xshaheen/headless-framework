@@ -1,0 +1,15 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using Headless.IO;
+using Microsoft.AspNetCore.StaticFiles;
+
+namespace Headless.Api;
+
+internal sealed class ExtendedFileExtensionContentTypeProvider(IMimeTypeProvider mimeTypeProvider)
+    : IContentTypeProvider
+{
+    public bool TryGetContentType(string subpath, [MaybeNullWhen(false)] out string contentType)
+    {
+        return mimeTypeProvider.TryGetMimeType(subpath, out contentType);
+    }
+}

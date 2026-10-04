@@ -217,7 +217,7 @@ internal sealed class AmazonSqsConsumerClient(
             }
         }
 
-        async Task consumeAsync(string queueUrl, Message sqsMessage)
+        async Task consumeAsync(string queueUrl, Amazon.SQS.Model.Message sqsMessage)
         {
             var receiptHandle = sqsMessage.ReceiptHandle;
             var (header, body) = await _ReadMessageAsync(sqsMessage, queueUrl, receiptHandle).ConfigureAwait(false);
@@ -438,7 +438,7 @@ internal sealed class AmazonSqsConsumerClient(
     #region private methods
 
     private async Task<(Dictionary<string, string?>? Headers, string? Body)> _ReadMessageAsync(
-        Message sqsMessage,
+        Amazon.SQS.Model.Message sqsMessage,
         string queueUrl,
         string receiptHandle
     )

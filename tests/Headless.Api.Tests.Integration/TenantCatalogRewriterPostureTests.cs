@@ -5,13 +5,12 @@ using System.Security.Claims;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
-using Headless.Abstractions;
+using Headless;
 using Headless.Api;
-using Headless.Api.MultiTenancy;
 using Headless.Api.ServiceDefaults;
 using Headless.Caching;
-using Headless.Constants;
 using Headless.MultiTenancy;
+using Headless.Security;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
@@ -39,7 +38,7 @@ public sealed class TenantCatalogRewriterPostureTests : TestBase
     [Fact]
     public async Task should_fail_startup_when_a_catalog_resolution_host_never_calls_use_status_codes_rewriter()
     {
-        // The marker UseStatusCodesRewriter() records travels from Headless.Api.Core to
+        // The marker UseStatusCodesRewriter() records travels from Headless.Api to
         // TenantCatalogPostureValidator through the shared TenantPostureManifest; omitting the call leaves
         // it absent and the resolution posture unvalidated.
         await using var app = _CreateApp(RewriterPlacement.Omitted);
@@ -126,7 +125,7 @@ public sealed class TenantCatalogRewriterPostureTests : TestBase
             options.Validation.RequireUseHeadless = false;
             options.Validation.RequireMapHeadlessEndpoints = false;
             // Kept off so the ServiceDefaults presence check cannot stand in for the tenancy diagnostic
-            // under test — a plain Headless.Api.Core catalog host has no ServiceDefaults check at all.
+            // under test — a plain Headless.Api catalog host has no ServiceDefaults check at all.
             options.Validation.RequireStatusCodesRewriter = false;
             options.OpenTelemetry.Enabled = false;
             options.OpenApi.Enabled = false;

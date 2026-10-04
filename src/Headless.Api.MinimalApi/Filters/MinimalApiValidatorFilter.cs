@@ -2,7 +2,6 @@
 
 using FluentValidation;
 using FluentValidation.Results;
-using Headless.Abstractions;
 using Headless.Api.Resources;
 using Headless.Primitives;
 using Microsoft.AspNetCore.Http;

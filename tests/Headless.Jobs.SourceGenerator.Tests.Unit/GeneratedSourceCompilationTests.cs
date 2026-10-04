@@ -22,7 +22,7 @@ public sealed class GeneratedSourceCompilationTests
             """
             using System.Threading;
             using System.Threading.Tasks;
-            using Headless.Jobs.Base;
+            using Headless.Jobs;
 
             namespace Producer;
 
@@ -56,7 +56,7 @@ public sealed class GeneratedSourceCompilationTests
             """
             using System.Threading;
             using System.Threading.Tasks;
-            using Headless.Jobs.Base;
+            using Headless.Jobs;
 
             namespace Billing
             {
@@ -97,7 +97,7 @@ public sealed class GeneratedSourceCompilationTests
             """
             using System.Threading;
             using System.Threading.Tasks;
-            using Headless.Jobs.Base;
+            using Headless.Jobs;
 
             namespace Outer
             {
@@ -127,7 +127,7 @@ public sealed class GeneratedSourceCompilationTests
                 (
                     "first.cs",
                     """
-                    using Headless.Jobs.Base;
+                    using Headless.Jobs;
 
                     namespace Demo;
 
@@ -142,7 +142,7 @@ public sealed class GeneratedSourceCompilationTests
                     """
                     using System.Threading;
                     using System.Threading.Tasks;
-                    using Headless.Jobs.Base;
+                    using Headless.Jobs;
 
                     namespace Demo;
 
@@ -170,7 +170,7 @@ public sealed class GeneratedSourceCompilationTests
             """
             using System.Threading;
             using System.Threading.Tasks;
-            using Headless.Jobs.Base;
+            using Headless.Jobs;
 
             namespace Demo;
 
@@ -196,7 +196,7 @@ public sealed class GeneratedSourceCompilationTests
             """
             using System.Threading;
             using System.Threading.Tasks;
-            using Headless.Jobs.Base;
+            using Headless.Jobs;
 
             namespace Demo;
 
@@ -238,10 +238,10 @@ public sealed class GeneratedSourceCompilationTests
 
             public sealed class JobContext;
 
-            [Headless.Jobs.Base.Job("record.run")]
-            public sealed record RecordJob : Headless.Jobs.Base.IJob
+            [Headless.Jobs.Job("record.run")]
+            public sealed record RecordJob : Headless.Jobs.IJob
             {
-                public ValueTask ExecuteAsync(Headless.Jobs.Base.JobContext context, CancellationToken cancellationToken) =>
+                public ValueTask ExecuteAsync(Headless.Jobs.JobContext context, CancellationToken cancellationToken) =>
                     default;
             }
             """

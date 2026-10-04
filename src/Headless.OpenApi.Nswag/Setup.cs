@@ -1,10 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Asp.Versioning.ApiExplorer;
-using Headless.Api.ApiExplorer;
-using Headless.OpenApi.Nswag.OperationProcessors;
-using Headless.OpenApi.Nswag.SchemaProcessors;
-using Headless.OpenApi.Nswag.Surfaces;
+using Headless.Api;
 using Headless.Reflection;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;

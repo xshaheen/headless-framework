@@ -2,9 +2,9 @@
 
 using System.Collections.Concurrent;
 using System.Xml.Linq;
+using Headless;
 using Headless.Blobs;
 using Headless.Blobs.Internal;
-using Headless.Core;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 

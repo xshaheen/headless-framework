@@ -1,6 +1,6 @@
 ---
 domain: API & Web
-packages: Api.Abstractions, Api.Core, Api.ServiceDefaults, Api.DataProtection, Api.FluentValidation, Api.Idempotency, Api.Logging.Serilog, Api.MinimalApi, Api.Mvc
+packages: Api.Abstractions, Api, Api.ServiceDefaults, Api.DataProtection, Api.FluentValidation, Api.Idempotency, Api.Logging.Serilog, Api.MinimalApi, Api.Mvc
 ---
 
 # API & Web
@@ -11,8 +11,8 @@ packages: Api.Abstractions, Api.Core, Api.ServiceDefaults, Api.DataProtection, A
 
 The package split:
 
-- **`Headless.Api.ServiceDefaults`** — the one-line bootstrap. Call `AddHeadless()` to register compression, health checks, problem details, JWT, identity, validation, JSON defaults, OpenTelemetry, OpenAPI, service discovery, and HttpClient resilience in one shot. Antiforgery is opt-in (`options.Antiforgery.Enabled = true`) and the middleware is consumer-owned. Use `UseHeadless()` for the standard middleware order and `MapHeadlessEndpoints()` for `/health`, `/alive`, OpenAPI JSON, and static assets. Pull this for the happy path — it transitively brings in `Headless.Api.Core`.
-- **`Headless.Api.Core`** — the building blocks only. Pull this when composing your own pipeline without the framework orchestrator, or when you only need individual primitives like `AddHeadlessProblemDetails()`, `AddHeadlessAntiforgery()`, or `AddHeadlessApiResponseCompression()`.
+- **`Headless.Api.ServiceDefaults`** — the one-line bootstrap. Call `AddHeadless()` to register compression, health checks, problem details, JWT, identity, validation, JSON defaults, OpenTelemetry, OpenAPI, service discovery, and HttpClient resilience in one shot. Antiforgery is opt-in (`options.Antiforgery.Enabled = true`) and the middleware is consumer-owned. Use `UseHeadless()` for the standard middleware order and `MapHeadlessEndpoints()` for `/health`, `/alive`, OpenAPI JSON, and static assets. Pull this for the happy path — it transitively brings in `Headless.Api`.
+- **`Headless.Api`** — the building blocks only. Pull this when composing your own pipeline without the framework orchestrator, or when you only need individual primitives like `AddHeadlessProblemDetails()`, `AddHeadlessAntiforgery()`, or `AddHeadlessApiResponseCompression()`.
 
 Choose an endpoint style:
 
@@ -30,7 +30,7 @@ Additional packages:
 
 ## Agent Rules
 
-- Default install for any new Headless API: `Headless.Api.ServiceDefaults`. It transitively pulls in `Headless.Api.Core`. Only reach for `Headless.Api.Core` directly when you specifically want primitives without the orchestrator.
+- Default install for any new Headless API: `Headless.Api.ServiceDefaults`. It transitively pulls in `Headless.Api`. Only reach for `Headless.Api` directly when you specifically want primitives without the orchestrator.
 - Use `AddHeadless()` on `WebApplicationBuilder` for bootstrapping; do not manually register compression, security headers, JSON defaults, OpenTelemetry, OpenAPI, or problem details. `AddHeadless(configureServices: options => ...)` accepts a `HeadlessServiceDefaultsOptions` callback for Aspire-style toggles (OTel, OpenAPI, service discovery, validation, antiforgery). Antiforgery is opt-in — set `options.Antiforgery.Enabled = true` for cookie-auth apps and wire `app.UseAntiforgery()` yourself after `UseAuthentication()`/`UseAuthorization()`; bearer-token APIs leave it disabled.
 - Use `UseHeadless()` for the default middleware order (`UseStatusCodePages()` before `UseExceptionHandler()`), then add auth/tenant middleware, then map endpoints. `UseHeadless` and `MapHeadlessEndpoints` are idempotent.
 - For tenant-aware HTTP apps, configure `builder.AddHeadlessTenancy(tenancy => tenancy.Http(http => http.ResolveFromClaims()))` and place `app.UseHeadlessTenancy()` after app-owned `UseAuthentication()` and before app-owned `UseAuthorization()`.
@@ -61,23 +61,23 @@ Additional packages:
 
 ### Bootstrap model: ServiceDefaults vs Core
 
-`Headless.Api.ServiceDefaults` is the orchestrator. It wires together the primitives in `Headless.Api.Core` with Aspire-style conventions (OpenTelemetry, OpenAPI, service discovery, HttpClient resilience) and exposes three entry points:
+`Headless.Api.ServiceDefaults` is the orchestrator. It wires together the primitives in `Headless.Api` with Aspire-style conventions (OpenTelemetry, OpenAPI, service discovery, HttpClient resilience) and exposes three entry points:
 
 - `builder.AddHeadless()` — registers all services in one call.
 - `app.UseHeadless()` — applies the framework's standard middleware order.
 - `app.MapHeadlessEndpoints()` — maps `/health`, `/alive`, OpenAPI JSON, static assets.
 
-`Headless.Api.Core` exposes the same primitives individually (`AddHeadlessProblemDetails()`, `AddHeadlessApiResponseCompression()`, `AddHeadlessAntiforgery()`, `ConfigureHeadlessDefaultApi()`, etc.). Pull Core directly only when you must compose your own pipeline or toggle individual features; otherwise ServiceDefaults is the right default.
+`Headless.Api` exposes the same primitives individually (`AddHeadlessProblemDetails()`, `AddHeadlessApiResponseCompression()`, `AddHeadlessAntiforgery()`, `ConfigureHeadlessDefaultApi()`, etc.). Pull Core directly only when you must compose your own pipeline or toggle individual features; otherwise ServiceDefaults is the right default.
 
 ### Request context: `IRequestContext`
 
-`IRequestContext` (from `Headless.Api.Abstractions`, implemented in `Headless.Api.Core`) is the single abstraction for all request-scoped facts: user ID and claims, tenant ID, preferred locale, timezone, correlation ID, and request start time. Inject it in services instead of `IHttpContextAccessor`; the implementation reads from `HttpContext` behind the interface so services remain testable without a real HTTP context.
+`IRequestContext` (from `Headless.Api.Abstractions`, implemented in `Headless.Api`) is the single abstraction for all request-scoped facts: user ID and claims, tenant ID, preferred locale, timezone, correlation ID, and request start time. Inject it in services instead of `IHttpContextAccessor`; the implementation reads from `HttpContext` behind the interface so services remain testable without a real HTTP context.
 
 ### Problem details and error codes
 
 `AddHeadlessProblemDetails()` registers `IProblemDetailsCreator` (for building structured ProblemDetails responses) and `HeadlessApiExceptionHandler` (a single `IExceptionHandler` covering all framework-known exceptions). The creator adds standard extensions to every ProblemDetails: `traceId`, `buildNumber`, `commitNumber`, `instance`, `timestamp`. Error codes follow the `g:lower_snake_case` shape (`g:tenant_required`, `g:cross_tenant_write`, `g:idempotency_key_reused`). Every framework-emitted code — including FluentValidation validator failures (both the built-in codes mapped by `HeadlessFluentValidationErrorCodeMapper` and the Headless validators surfaced by `FluentValidatorErrorDescriber`) — uses this single `g:` shape, so clients see one consistent code namespace in `errors[].code`. Stable codes are exposed as compile-time `public const string` on `*ErrorCodes` holders (`GeneralErrorCodes`, `IdentityErrorCodes` in `Headless.Api.Resources`; `IdempotencyErrorCodes`) — branch on these constants. Clients should route on the stable `error.code` and `status` values, not on `title` or `detail` which are human-readable and may be localized.
 
-The exception table (see `# Headless.Api.Core` below) covers MVC actions and Minimal-API endpoints. Middleware running before `UseExceptionHandler`, hosted/background services, and SignalR hubs need their own catch sites.
+The exception table (see `# Headless.Api` below) covers MVC actions and Minimal-API endpoints. Middleware running before `UseExceptionHandler`, hosted/background services, and SignalR hubs need their own catch sites.
 
 ### Standard middleware order
 
@@ -110,11 +110,13 @@ Defines core interfaces and contracts for HTTP request context, user identity, w
 
 - `IRequestContext` — unified access to request-scoped information (user, tenant, locale, timezone, correlation ID)
 - `IWebClientInfoProvider` — client detection (IP address, user agent, device info)
-- `IUserAgentParser` — parses a raw `User-Agent` header (implemented in `Headless.Api.Core` over DeviceDetector.NET). `Parse(userAgent)` returns a `UserAgentInfo?` carrying everything identifiable: `IsBot`, a coarse `DeviceType` (`Desktop`/`Phone`/`Tablet`/`Bot`/…), device brand and model, OS name/version/platform, client name/version/type/engine, and bot name/category. Unidentified fields are `null`, never `""`. `GetDeviceInfo(userAgent)` is the display shorthand for `UserAgentInfo.Summary` — the `"Windows Chrome"` string behind `IWebClientInfoProvider.DeviceInfo` — so call `Parse` when any individual field is wanted rather than string-splitting the summary. Both return `null` for a blank agent or one nothing could be identified from, and both share a single memoized parse. **A User-Agent is self-reported and trivially forged: use it for diagnostics, session display, and analytics, never as an authorization input.** A consumer persisting `DeviceType` should store the name rather than the number so the set can gain members without rewriting rows. Substitute the interface to stub device detection in tests, or to swap the parser entirely. The default implementation owns a bounded private `MemoryCache`: parsing is local CPU work, entries come from untrusted request headers, and neither the keys nor results need to cross a process boundary or consume the host application's cache budget. Negatives (unidentifiable agents) are cached too, so subsequent calls reuse the memoized result while it remains valid. `UserAgentParserOptions`: `MaxEntries` 1,000, `SlidingExpiration` 6h, `Duration` (absolute cap) 24h, and `MaxUserAgentLength` 512 — longer values are truncated before parsing and keying, and `UserAgentInfo.UserAgent` reports the truncated value, so a caller persisting it is never handed an unbounded string. The singleton parser disposes its cache with its own lifetime and never registers or consumes the shared `IMemoryCache`.
+- `IUserAgentParser` — parses a raw `User-Agent` header (implemented in `Headless.Api` over DeviceDetector.NET). `Parse(userAgent)` returns a `UserAgentInfo?` carrying everything identifiable: `IsBot`, a coarse `DeviceType` (`Desktop`/`Phone`/`Tablet`/`Bot`/…), device brand and model, OS name/version/platform, client name/version/type/engine, and bot name/category. Unidentified fields are `null`, never `""`. `GetDeviceInfo(userAgent)` is the display shorthand for `UserAgentInfo.Summary` — the `"Windows Chrome"` string behind `IWebClientInfoProvider.DeviceInfo` — so call `Parse` when any individual field is wanted rather than string-splitting the summary. Both return `null` for a blank agent or one nothing could be identified from, and both share a single memoized parse. **A User-Agent is self-reported and trivially forged: use it for diagnostics, session display, and analytics, never as an authorization input.** A consumer persisting `DeviceType` should store the name rather than the number so the set can gain members without rewriting rows. Substitute the interface to stub device detection in tests, or to swap the parser entirely. The default implementation owns a bounded private `MemoryCache`: parsing is local CPU work, entries come from untrusted request headers, and neither the keys nor results need to cross a process boundary or consume the host application's cache budget. Negatives (unidentifiable agents) are cached too, so subsequent calls reuse the memoized result while it remains valid. `UserAgentParserOptions`: `MaxEntries` 1,000, `SlidingExpiration` 6h, `Duration` (absolute cap) 24h, and `MaxUserAgentLength` 512 — longer values are truncated before parsing and keying, and `UserAgentInfo.UserAgent` reports the truncated value, so a caller persisting it is never handed an unbounded string. The singleton parser disposes its cache with its own lifetime and never registers or consumes the shared `IMemoryCache`.
 - `IRequestedApiVersion` — API versioning abstraction
-- `IProblemDetailsCreator` — contract for building normalized RFC 7807 `ProblemDetails` responses (implemented in `Headless.Api.Core`)
+- `ITimezoneProvider` / `TimezoneOption` — time-zone enumeration and conversion (implemented in `Headless.Api`)
+- `IEnumLocaleAccessor` — localized enum display names (implemented in `Headless.Api` as `DefaultEnumLocaleAccessor`)
+- `IProblemDetailsCreator` — contract for building normalized RFC 7807 `ProblemDetails` responses (implemented in `Headless.Api`)
 - `IProblemDetailsCreator.ServiceUnavailable(retryAfterSeconds, error)` — the 503 for a control that fails closed, such as a limiter whose counter store is unreachable. `retryAfterSeconds` is optional and is stamped into `Extensions["retryAfter"]` only when supplied, so a client never reads a wait the server did not promise. Set the matching `Retry-After` header yourself, as with `TooManyRequests`
-- `IAbsoluteUrlFactory` — contract for building absolute URLs from the current request (implemented in `Headless.Api.Core`)
+- `IAbsoluteUrlFactory` — contract for building absolute URLs from the current request (implemented in `Headless.Api`)
 - Framework constants for HTTP headers and common values
 - `RequireIfMatchAttribute` — portable marker used by MVC and OpenAPI concurrency profiles
 
@@ -156,7 +158,7 @@ public sealed class OrderService(IRequestContext context, IOrderRepository repos
 
 #### API surfaces
 
-`IApiSurfaceMetadata` and `[ApiSurface("portal")]` identify an endpoint's API surface. `ApiSurfaceDescriptor` contains immutable `RoutePrefix`, `DefaultAuthorizationPolicy`, `DefaultTenancyMode`, and `OpenApi` settings. `HttpContext.GetApiSurface()` in `Headless.Api.Core` resolves that descriptor from the selected endpoint after routing. It does not describe the effective endpoint authorization policy.
+`IApiSurfaceMetadata` and `[ApiSurface("portal")]` identify an endpoint's API surface. `ApiSurfaceDescriptor` contains immutable `RoutePrefix`, `DefaultAuthorizationPolicy`, `DefaultTenancyMode`, and `OpenApi` settings. `HttpContext.GetApiSurface()` in `Headless.Api` resolves that descriptor from the selected endpoint after routing. It does not describe the effective endpoint authorization policy.
 
 `ApiSurfaceTenancyMode` has `Unspecified`, `RequireTenant`, `AllowMissingTenant`, and `SkipTenantResolution` values. These add metadata defaults only. `RequireTenant` needs the tenancy authorization handler and an applicable policy containing `TenantRequirement`; selecting the mode does not register either. Skipping resolution does not permit a missing tenant. Explicit endpoint metadata takes precedence.
 
@@ -168,7 +170,7 @@ None. This is an abstractions-only package.
 
 ---
 
-## Headless.Api.Core
+## Headless.Api
 
 Building blocks for ASP.NET Core APIs — primitives only. Provides service registration helpers, middleware, problem details, JWT, identity, security headers, and request-context abstractions. `Headless.Api.ServiceDefaults` is the orchestrator that composes these into a single `AddHeadless()` call.
 
@@ -182,6 +184,7 @@ Building blocks for ASP.NET Core APIs — primitives only. Provides service regi
 - `ConfigureHeadlessDefaultApi()` — Kestrel limits (no `Server` header, 30 MB body, 40 headers), HSTS (365-day max-age, subdomain, preload), lowercase route URLs, form limits (4 MB value, 16 KB multipart headers, 30 MB multipart body), default `self` liveness health check
 - `AddHeadlessJsonService()` — `IJsonOptionsProvider`, `IJsonSerializer`, `ITextSerializer`, `ISerializer` (all `TryAddSingleton` — safe to override)
 - `AddHeadlessTimeService()` — `TimeProvider.System`, `ITimezoneProvider` as `TzConvertTimezoneProvider` (all `TryAddSingleton`). The provider's Windows/IANA ID lists and mapping come from the TimeZoneConverter package's embedded CLDR data; offsets and DST rules come from the host OS time-zone database
+- `DefaultEnumLocaleAccessor` — the `IEnumLocaleAccessor` implementation
 - JWT request contracts — `JwtTokenRequest` groups token creation values, while `JwtTokenValidationRequest` uses required initializers for the token, signing key, issuer, and audience and groups the validation switches for `IJwtTokenFactory.ParseJwtTokenAsync(...)`
 - `AddServerTimingMiddleware()` + `UseServerTiming()` — appends `Server-Timing` trailer when response supports trailers
 - `UseNoCacheWhenMissingCacheHeaders()` — injects `Cache-Control: no-cache,no-store,must-revalidate` when response omits the header
@@ -212,7 +215,7 @@ Building blocks for ASP.NET Core APIs — primitives only. Provides service regi
 ### Install
 
 ```bash
-dotnet add package Headless.Api.Core
+dotnet add package Headless.Api
 ```
 
 ### Setup and use
@@ -323,7 +326,7 @@ JWT validation uses a request object instead of positional token, key, issuer, a
 
 ```csharp
 using System.Security.Claims;
-using Headless.Api.Security.Jwt;
+using Headless.Api.Security;
 
 public sealed class TokenValidator(IJwtTokenFactory tokens)
 {
@@ -436,7 +439,6 @@ An API surface is a named set of endpoints sharing routing, authorization and te
 
 ```csharp
 using Headless.Api;
-using Headless.Api.Surfaces;
 
 builder.Services.AddHeadlessApiSurface("portal", surface =>
 {
@@ -499,7 +501,7 @@ All other exceptions return `false`; the host default or a downstream handler re
 
 ## Headless.Api.ServiceDefaults
 
-The one-line bootstrap for Headless APIs. Combines `Headless.Api.Core` primitives with Aspire-style host conventions (OpenTelemetry, OpenAPI, service discovery, HttpClient resilience).
+The one-line bootstrap for Headless APIs. Combines `Headless.Api` primitives with Aspire-style host conventions (OpenTelemetry, OpenAPI, service discovery, HttpClient resilience).
 
 ### API and behavior
 
@@ -513,7 +515,7 @@ The one-line bootstrap for Headless APIs. Combines `Headless.Api.Core` primitive
 - Service discovery and HttpClient resilience
 - MVC and Minimal API JSON defaults
 - ASP.NET Core source-generated input validation
-- Transitively brings in all `Headless.Api.Core` primitives
+- Transitively brings in all `Headless.Api` primitives
 
 ### Install
 
@@ -643,7 +645,7 @@ Surface filtering runs before schema generation and is independent of API Explor
 ### Runtime behavior
 
 - Enables service-provider validation on startup (`ValidateOnBuild`, `ValidateScopes`).
-- Registers all core primitives from `Headless.Api.Core` including problem details, response compression, JWT, identity, status-code rewriting, and default API conventions.
+- Registers all core primitives from `Headless.Api` including problem details, response compression, JWT, identity, status-code rewriting, and default API conventions.
 - Registers antiforgery services only when `options.Antiforgery.Enabled` is `true`.
 - Configures MVC and Minimal API JSON serializer defaults.
 - Registers ASP.NET Core source-generated input validation (`services.AddValidation()`).
@@ -759,7 +761,7 @@ dotnet add package Headless.Api.FluentValidation
 using FileSignatures;
 using FileSignatures.Formats;
 using FluentValidation;
-using Headless.Api.Contracts;
+using Headless.Api;
 using Microsoft.AspNetCore.Http;
 
 public sealed record ProfileRequest(
@@ -1036,7 +1038,7 @@ portal.MapGet("bootstrap", () => "bootstrap").AllowMissingTenant();
 portal.MapGet("status", () => "ready").AllowAnonymous();
 ```
 
-Endpoint tenancy choices override surface defaults. Native authorization policies remain additive, and `AllowAnonymous` bypasses them. `RequireTenant` metadata needs the policy and services described in `Headless.Api.Core`. Unknown surface names throw during mapping; nested groups with conflicting surface identities throw when endpoints are built. API Explorer version groups remain independent.
+Endpoint tenancy choices override surface defaults. Native authorization policies remain additive, and `AllowAnonymous` bypasses them. `RequireTenant` metadata needs the policy and services described in `Headless.Api`. Unknown surface names throw during mapping; nested groups with conflicting surface identities throw when endpoints are built. API Explorer version groups remain independent.
 
 Representation validation is optional. The default accepts any strong entity tag. Configure the shared MVC and Minimal API validator when every conditional write uses a specific representation format:
 
@@ -1141,7 +1143,7 @@ Requests with no routed endpoint are left untouched. Registered before `UseRouti
 
 Register `AddHeadlessMvcApiSurfaces()` alongside `AddControllers()` and `AddHeadlessApiSurface(...)`. Mark controllers with `[ApiSurface("portal")]`. The convention adds the registry's prefix, named authorization policy, and tenancy defaults to their actions.
 
-Controller/action tenancy metadata takes precedence over surface defaults. Native authorization remains additive, and `[AllowAnonymous]` bypasses it. `RequireTenant` metadata needs the policy and services described in `Headless.Api.Core`. Unknown surface names fail MVC model construction. Controllers with a configured prefix must use relative controller and action routes; absolute templates are rejected because they escape that prefix. Existing `ApiExplorerSettings.GroupName` values are preserved for versioning. Repeated integration registration adds only one convention configurator.
+Controller/action tenancy metadata takes precedence over surface defaults. Native authorization remains additive, and `[AllowAnonymous]` bypasses it. `RequireTenant` metadata needs the policy and services described in `Headless.Api`. Unknown surface names fail MVC model construction. Controllers with a configured prefix must use relative controller and action routes; absolute templates are rejected because they escape that prefix. Existing `ApiExplorerSettings.GroupName` values are preserved for versioning. Repeated integration registration adds only one convention configurator.
 
 Other MVC features require no additional configuration.
 

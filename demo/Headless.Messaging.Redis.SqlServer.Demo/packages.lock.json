@@ -276,42 +276,42 @@
         "resolved": "9.0.13",
         "contentHash": "t8S9IDpjJKsLpLkeBdW8cWtcPyYqrGu93Dej1RO6WwuL/lkFSqWlan3rMJfortqz1mRIh+sys2AFsSA6jWJ3Jg=="
       },
-      "headless.caching.abstractions": {
+      "headless.checks": {
+        "type": "Project"
+      },
+      "headless.context": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Context.Abstractions": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )"
+        }
+      },
+      "headless.context.abstractions": {
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
           "Headless.Primitives": "[1.0.0, )"
         }
       },
-      "headless.checks": {
-        "type": "Project"
-      },
-      "headless.coordination.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )"
-        }
-      },
-      "headless.coordination.core": {
+      "headless.coordination": {
         "type": "Project",
         "dependencies": {
           "FluentValidation": "[12.1.1, )",
           "Headless.Checks": "[1.0.0, )",
+          "Headless.Context": "[1.0.0, )",
+          "Headless.Context.Abstractions": "[1.0.0, )",
           "Headless.Coordination.Abstractions": "[1.0.0, )",
-          "Headless.Core": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Headless.Serializer.Json": "[1.0.0, )"
         }
       },
-      "headless.core": {
+      "headless.coordination.abstractions": {
         "type": "Project",
         "dependencies": {
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.Extensions": "[1.0.0, )",
-          "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
-          "Headless.Serializer.Json": "[1.0.0, )",
-          "TimeZoneConverter": "[7.2.0, )"
+          "Headless.Checks": "[1.0.0, )"
         }
       },
       "headless.dashboard.authentication": {
@@ -353,8 +353,30 @@
       "headless.hosting": {
         "type": "Project",
         "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
           "Headless.FluentValidation": "[1.0.0, )",
           "OpenTelemetry.Api": "[1.18.0, )"
+        }
+      },
+      "headless.messaging": {
+        "type": "Project",
+        "dependencies": {
+          "FastExpressionCompiler": "[5.4.1, )",
+          "Headless.Coordination": "[1.0.0, )",
+          "Headless.Coordination.Abstractions": "[1.0.0, )",
+          "Headless.DistributedLocks.Abstractions": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )",
+          "Headless.Messaging.Abstractions": "[1.0.0, )",
+          "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
+          "Headless.Messaging.Queue.Abstractions": "[1.0.0, )",
+          "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
+          "Headless.Sql": "[1.0.0, )",
+          "Headless.Sql.Abstractions": "[1.0.0, )",
+          "Headless.UnitOfWork": "[1.0.0, )",
+          "OpenTelemetry.Api": "[1.18.0, )",
+          "Polly.Core": "[8.7.0, )"
         }
       },
       "headless.messaging.abstractions": {
@@ -371,33 +393,12 @@
           "Headless.Messaging.Abstractions": "[1.0.0, )"
         }
       },
-      "headless.messaging.core": {
-        "type": "Project",
-        "dependencies": {
-          "FastExpressionCompiler": "[5.4.1, )",
-          "Headless.Coordination.Abstractions": "[1.0.0, )",
-          "Headless.Coordination.Core": "[1.0.0, )",
-          "Headless.Core": "[1.0.0, )",
-          "Headless.DistributedLocks.Abstractions": "[1.0.0, )",
-          "Headless.Extensions": "[1.0.0, )",
-          "Headless.Hosting": "[1.0.0, )",
-          "Headless.Messaging.Abstractions": "[1.0.0, )",
-          "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
-          "Headless.Messaging.Queue.Abstractions": "[1.0.0, )",
-          "Headless.MultiTenancy": "[1.0.0, )",
-          "Headless.Sql.Abstractions": "[1.0.0, )",
-          "Headless.Sql.Core": "[1.0.0, )",
-          "Headless.UnitOfWork": "[1.0.0, )",
-          "OpenTelemetry.Api": "[1.18.0, )",
-          "Polly.Core": "[8.7.0, )"
-        }
-      },
       "headless.messaging.dashboard": {
         "type": "Project",
         "dependencies": {
           "Consul": "[1.8.0, )",
           "Headless.Dashboard.Authentication": "[1.0.0, )",
-          "Headless.Messaging.Core": "[1.0.0, )"
+          "Headless.Messaging": "[1.0.0, )"
         }
       },
       "headless.messaging.queue.abstractions": {
@@ -409,8 +410,8 @@
       "headless.messaging.redis": {
         "type": "Project",
         "dependencies": {
+          "Headless.Messaging": "[1.0.0, )",
           "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
-          "Headless.Messaging.Core": "[1.0.0, )",
           "Headless.Messaging.Queue.Abstractions": "[1.0.0, )",
           "StackExchange.Redis": "[3.2.0, )"
         }
@@ -418,24 +419,15 @@
       "headless.messaging.storage.sqlserver": {
         "type": "Project",
         "dependencies": {
-          "Headless.Messaging.Core": "[1.0.0, )",
+          "Headless.Messaging": "[1.0.0, )",
           "Headless.Sql.SqlServer": "[1.0.0, )",
           "Microsoft.Data.SqlClient": "[7.0.2, )"
-        }
-      },
-      "headless.multitenancy": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Caching.Abstractions": "[1.0.0, )",
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.Extensions": "[1.0.0, )",
-          "Headless.Hosting": "[1.0.0, )",
-          "Headless.MultiTenancy.Abstractions": "[1.0.0, )"
         }
       },
       "headless.multitenancy.abstractions": {
         "type": "Project",
         "dependencies": {
+          "Headless.Extensions": "[1.0.0, )",
           "Headless.Primitives": "[1.0.0, )"
         }
       },
@@ -462,10 +454,7 @@
           "Headless.Serializer.Abstractions": "[1.0.0, )"
         }
       },
-      "headless.sql.abstractions": {
-        "type": "Project"
-      },
-      "headless.sql.core": {
+      "headless.sql": {
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
@@ -476,14 +465,17 @@
           "OpenTelemetry.Api": "[1.18.0, )"
         }
       },
+      "headless.sql.abstractions": {
+        "type": "Project"
+      },
       "headless.sql.sqlserver": {
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
+          "Headless.Sql": "[1.0.0, )",
           "Headless.Sql.Abstractions": "[1.0.0, )",
-          "Headless.Sql.Core": "[1.0.0, )",
           "Microsoft.Data.SqlClient": "[7.0.2, )"
         }
       },
@@ -607,12 +599,6 @@
           "RESPite": "3.2.0",
           "System.IO.Hashing": "10.0.12"
         }
-      },
-      "TimeZoneConverter": {
-        "type": "CentralTransitive",
-        "requested": "[7.2.0, )",
-        "resolved": "7.2.0",
-        "contentHash": "4Poqu79dTmacVETqUJ53g3x4U21V/cmWPSlehdsVE4Q00akavvlRq+SRjcg/CmfO9ibOCjRl6TeUV7hkC5RC4w=="
       }
     }
   }

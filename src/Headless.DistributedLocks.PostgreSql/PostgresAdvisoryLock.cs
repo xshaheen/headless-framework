@@ -3,7 +3,6 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
-using Headless.Constants;
 using Npgsql;
 
 namespace Headless.DistributedLocks.PostgreSql;

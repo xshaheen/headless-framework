@@ -1,6 +1,6 @@
 ---
 domain: SMS
-packages: Sms.Abstractions, Sms.Core, Sms.Aws, Sms.Cequens, Sms.Connekio, Sms.Dev, Sms.Infobip, Sms.Twilio, Sms.VictoryLink, Sms.Vodafone
+packages: Sms.Abstractions, Sms, Sms.Aws, Sms.Cequens, Sms.Connekio, Sms.Dev, Sms.Infobip, Sms.Twilio, Sms.VictoryLink, Sms.Vodafone
 ---
 
 # SMS
@@ -15,7 +15,7 @@ Install `Headless.Sms.Abstractions` plus one provider package. Register with `Ad
 - **International**: `Headless.Sms.Twilio` (most popular), `Headless.Sms.Aws` (AWS SNS), `Headless.Sms.Infobip` (global platform).
 - **MENA regional**: `Headless.Sms.Cequens`, `Headless.Sms.Connekio`, `Headless.Sms.VictoryLink`, `Headless.Sms.Vodafone`.
 
-`Headless.Sms.Core` owns registration (`AddHeadlessSms`, `HeadlessSmsSetupBuilder`, `HeadlessSmsInstanceBuilder`), the `ISmsSenderProvider` implementation over keyed DI, and the Polly-aware `SmsFailureKinds` classifier used by provider packages. Providers pull it transitively — you rarely install it directly. `Headless.Sms.Abstractions` holds contracts only (`ISmsSender`, `IBulkSmsSender`, `ISmsSenderProvider`, request/response types, `SmsFailureKind`).
+`Headless.Sms` owns registration (`AddHeadlessSms`, `HeadlessSmsSetupBuilder`, `HeadlessSmsInstanceBuilder`), the `ISmsSenderProvider` implementation over keyed DI, and the Polly-aware `SmsFailureKinds` classifier used by provider packages. Providers pull it transitively — you rarely install it directly. `Headless.Sms.Abstractions` holds contracts only (`ISmsSender`, `IBulkSmsSender`, `ISmsSenderProvider`, request/response types, `SmsFailureKind`).
 
 Register additional **named** senders alongside an optional default: `setup.AddNamed("otp", i => i.UseTwilio(…))`. Resolve them with `ISmsSenderProvider.GetSender("otp")` or `[FromKeyedServices("otp")] ISmsSender`. The default sender is optional; when configured it resolves as the unkeyed `ISmsSender` (with no default, the unkeyed `ISmsSender` is simply not registered). Each named sender is keyed under its name and isolates its own provider, options, HttpClient (and resilience pipeline), and backend state.
 
@@ -90,7 +90,7 @@ SendSingleSmsResponse.Failed("reason", SmsFailureKind.Transient)  // classified 
 SendSingleSmsResponse.FromException(exception, kind)              // failure with a non-empty message + explicit kind
 ```
 
-Check `response.Success` after every send. `FailureError` is guaranteed non-null when `Success` is false (enforced by `[MemberNotNullWhen(false, nameof(FailureError))]`); `Failed` throws on a null/empty reason. `ProviderMessageId` carries the backend's message id on success when the provider returns one (Twilio SID, AWS SNS message id, Infobip bulk id), and is `null` otherwise. `FailureKind` (`SmsFailureKind`: `None`, `Unknown`, `Transient`, `RateLimited`, `InvalidRecipient`, `AuthFailure`, `OutOfCredit`) classifies failures so callers can decide whether to retry or switch providers. Failure classification has a single source of truth: `SmsFailureKinds.FromException` in `Headless.Sms.Core` (which references Polly, unlike `Headless.Sms.Abstractions`) maps BCL transport/network faults **and** the standard resilience pipeline's timeout, open-circuit, and rate-limiter rejections to `Transient`. Providers pass its result to `SendSingleSmsResponse.FromException(exception, kind)` — the contract type never re-derives a kind. Provider-specific failures are classified from each provider's own contract — AWS SNS from its typed SDK exceptions, Infobip from its delivery status group — and stay `Unknown` when the backend documents no machine-readable signal (kinds are never inferred from generic HTTP status semantics).
+Check `response.Success` after every send. `FailureError` is guaranteed non-null when `Success` is false (enforced by `[MemberNotNullWhen(false, nameof(FailureError))]`); `Failed` throws on a null/empty reason. `ProviderMessageId` carries the backend's message id on success when the provider returns one (Twilio SID, AWS SNS message id, Infobip bulk id), and is `null` otherwise. `FailureKind` (`SmsFailureKind`: `None`, `Unknown`, `Transient`, `RateLimited`, `InvalidRecipient`, `AuthFailure`, `OutOfCredit`) classifies failures so callers can decide whether to retry or switch providers. Failure classification has a single source of truth: `SmsFailureKinds.FromException` in `Headless.Sms` (which references Polly, unlike `Headless.Sms.Abstractions`) maps BCL transport/network faults **and** the standard resilience pipeline's timeout, open-circuit, and rate-limiter rejections to `Transient`. Providers pass its result to `SendSingleSmsResponse.FromException(exception, kind)` — the contract type never re-derives a kind. Provider-specific failures are classified from each provider's own contract — AWS SNS from its typed SDK exceptions, Infobip from its delivery status group — and stay `Unknown` when the backend documents no machine-readable signal (kinds are never inferred from generic HTTP status semantics).
 
 `IBulkSmsSender.SendBulkAsync` returns a `SendBulkSmsResponse` with one `SmsRecipientResult` (`Destination` + a per-recipient `SendSingleSmsResponse`) per recipient, plus `AllSucceeded`/`AnySucceeded` and an optional `ProviderBatchId`. Providers that return per-recipient detail (Infobip) populate each result individually; providers whose API reports a single batch status (Cequens, Connekio, VictoryLink, Vodafone) apply that one outcome to every recipient.
 
@@ -125,7 +125,7 @@ Defines the unified interface and message contract for SMS sending.
 
 - `ISmsSender` — single-recipient send: `SendAsync(SendSingleSmsRequest, CancellationToken) : ValueTask<SendSingleSmsResponse>`.
 - `IBulkSmsSender` — optional capability for multi-recipient sends: `SendBulkAsync(SendBulkSmsRequest, CancellationToken) : ValueTask<SendBulkSmsResponse>`. Only implemented by providers with native bulk support.
-- `ISmsSenderProvider` — resolves named senders by name: `GetSender(name)` (throws when unregistered) and `GetSenderOrNull(name)` (returns `null`), plus `RegisteredNames` (`IReadOnlySet<string>`) listing the registered named instances (the default is excluded) so an externally supplied name can be validated before resolving. Backed by the container's keyed `ISmsSender` registrations; the concrete implementation lives in `Headless.Sms.Core`.
+- `ISmsSenderProvider` — resolves named senders by name: `GetSender(name)` (throws when unregistered) and `GetSenderOrNull(name)` (returns `null`), plus `RegisteredNames` (`IReadOnlySet<string>`) listing the registered named instances (the default is excluded) so an externally supplied name can be validated before resolving. Backed by the container's keyed `ISmsSender` registrations; the concrete implementation lives in `Headless.Sms`.
 - `SendSingleSmsRequest` — single-recipient message contract with `Destination` (one `SmsRequestDestination`), `Text`, optional `MessageId`, and optional `Properties`.
 - `SendBulkSmsRequest` — bulk message contract with `Destinations` (list), `Text`, optional `MessageId`/`Properties`.
 - `SmsRequestDestination(int Code, string Number)` — phone number with separate country calling code and subscriber number.
@@ -168,11 +168,11 @@ No configuration required. This is an abstractions-only package.
 
 ### Runtime behavior
 
-None. This is an abstractions package. Registration lives in `Headless.Sms.Core`.
+None. This is an abstractions package. Registration lives in `Headless.Sms`.
 
 ---
 
-## Headless.Sms.Core
+## Headless.Sms
 
 Setup builder, registration gates, and the named-sender provider for the SMS abstraction.
 
@@ -191,7 +191,7 @@ The builder carries no shared, cross-provider feature options — it is provider
 ### Install
 
 ```bash
-dotnet add package Headless.Sms.Core
+dotnet add package Headless.Sms
 ```
 
 ### Setup and use

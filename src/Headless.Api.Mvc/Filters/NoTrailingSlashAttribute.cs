@@ -1,12 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Abstractions;
 using Headless.Checks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Headless.Api.Filters;
+namespace Headless.Api;
 
 /// <summary>
 /// Resource filter that rejects requests whose path ends with a trailing slash by returning a 404 Not Found
@@ -16,7 +15,7 @@ namespace Headless.Api.Filters;
 /// <remarks>
 /// The filter runs at the resource-execution stage, before model binding and action execution. It checks
 /// only the raw request path; URL casing is not considered. Apply at the controller or action level via
-/// <c>[NoTrailingSlash]</c>. Unlike <see cref="Headless.Api.Middlewares.RedirectToCanonicalUrlRule"/>, this filter does not
+/// <c>[NoTrailingSlash]</c>. Unlike <see cref="Headless.Api.RedirectToCanonicalUrlRule"/>, this filter does not
 /// redirect — it simply terminates the request with a 404. That rule also reads this attribute from endpoint
 /// metadata as an opt-out from trailing-slash appending, which requires it to be registered after
 /// <c>UseRouting()</c>.

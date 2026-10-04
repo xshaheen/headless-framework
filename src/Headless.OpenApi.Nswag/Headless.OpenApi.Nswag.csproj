@@ -12,7 +12,6 @@
     <PackageReference Include="NSwag.AspNetCore" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Headless.Api.Core\Headless.Api.Core.csproj" />
-    <ProjectReference Include="..\Headless.Core\Headless.Core.csproj" />
+    <ProjectReference Include="..\Headless.Api\Headless.Api.csproj" />
   </ItemGroup>
 </Project>

@@ -1,11 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net.Http.Json;
-using Headless.Abstractions;
+using Headless;
 using Headless.Api;
-using Headless.Api.Middlewares;
 using Headless.Api.ServiceDefaults;
-using Headless.Constants;
 using Headless.MultiTenancy;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Builder;

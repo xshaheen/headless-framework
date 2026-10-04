@@ -1,12 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Abstractions;
+using Headless;
 using Headless.Caching;
-using Headless.Settings.Definitions;
-using Headless.Settings.Entities;
-using Headless.Settings.Models;
-using Headless.Settings.Repositories;
-using Headless.Settings.Values;
+using Headless.Settings;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Options;
 using NSubstitute.ExceptionExtensions;

@@ -2,7 +2,7 @@
 
 using Microsoft.AspNetCore.Http;
 
-namespace Headless.Messaging.Dashboard.GatewayProxy;
+namespace Headless.Messaging.Dashboard;
 
 /// <summary>
 /// Maps an incoming ASP.NET Core <see cref="HttpRequest"/> to an outbound

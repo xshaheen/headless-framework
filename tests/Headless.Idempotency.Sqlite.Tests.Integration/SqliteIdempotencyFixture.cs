@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
-using Headless.Hosting.Initialization;
+using Headless.Hosting;
 using Headless.Idempotency;
 using Headless.Sql;
 using Headless.Sql.Sqlite;

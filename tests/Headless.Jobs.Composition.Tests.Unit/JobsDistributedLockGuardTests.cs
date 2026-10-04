@@ -1,16 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Abstractions;
+using Headless;
 using Headless.DistributedLocks;
 using Headless.DistributedLocks.InMemory;
 using Headless.Jobs;
 using Headless.Jobs.BackgroundServices;
 using Headless.Jobs.Coordination;
-using Headless.Jobs.Enums;
-using Headless.Jobs.Exceptions;
-using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Internal;
-using Headless.Jobs.Models;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;

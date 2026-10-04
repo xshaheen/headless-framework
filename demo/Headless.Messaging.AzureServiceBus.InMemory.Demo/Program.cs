@@ -2,7 +2,6 @@ using Demo;
 using Demo.Contracts.DomainEvents;
 using Demo.Contracts.IntegrationEvents;
 using Headless.Messaging;
-using Headless.Messaging.Configuration;
 using Headless.Messaging.Dashboard;
 
 var builder = WebApplication.CreateBuilder(args);

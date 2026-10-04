@@ -1,10 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Constants;
 using Headless.Primitives;
 using Microsoft.AspNetCore.Mvc;
 
-namespace Headless.Abstractions;
+namespace Headless.Api;
 
 /// <summary>
 /// Builds normalized <see cref="ProblemDetails"/> for the framework's standard error responses
@@ -32,7 +31,7 @@ public interface IProblemDetailsCreator
 
     /// <summary>
     /// Builds a normalized 404 <see cref="ProblemDetails"/> for entity-not-found responses
-    /// (typically mapped from <see cref="Headless.Exceptions.EntityNotFoundException"/>).
+    /// (typically mapped from <see cref="Headless.EntityNotFoundException"/>).
     /// </summary>
     /// <param name="error">
     /// Optional <see cref="ErrorDescriptor"/> stamped into <c>Extensions["error"]</c>. Omit to
@@ -104,7 +103,7 @@ public interface IProblemDetailsCreator
 
     /// <summary>
     /// Builds a normalized 409 <see cref="ProblemDetails"/> for conflicts (typically mapped from
-    /// <see cref="Headless.Exceptions.ConflictException"/>, EF concurrency failures, or duplicate
+    /// <see cref="Headless.ConflictException"/>, EF concurrency failures, or duplicate
     /// idempotency keys).
     /// </summary>
     /// <param name="errors">

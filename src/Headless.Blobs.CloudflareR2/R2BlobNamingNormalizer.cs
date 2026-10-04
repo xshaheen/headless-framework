@@ -2,7 +2,6 @@
 
 using System.Text.RegularExpressions;
 using Headless.Blobs.Internal;
-using Headless.Core;
 
 namespace Headless.Blobs.CloudflareR2;
 

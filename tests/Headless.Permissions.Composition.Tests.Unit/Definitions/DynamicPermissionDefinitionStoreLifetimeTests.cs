@@ -1,13 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Abstractions;
+using Headless;
 using Headless.Caching;
+using Headless.Context;
 using Headless.DistributedLocks;
 using Headless.Messaging;
 using Headless.Permissions;
-using Headless.Permissions.Definitions;
-using Headless.Permissions.Models;
-using Headless.Permissions.Repositories;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;

@@ -14,7 +14,7 @@ ARTIFACTS_DIR ?= artifacts
 PACKAGES_DIR ?= $(ARTIFACTS_DIR)/packages-results
 PACK_LOG_DIR ?= $(ARTIFACTS_DIR)/pack-logs
 PACKAGE_MANIFEST ?= eng/expected-packages.txt
-PACKAGE_VERSION ?= $(shell $(DOTNET) msbuild src/Headless.Core/Headless.Core.csproj -nologo -target:MinVer -getProperty:PackageVersion)
+PACKAGE_VERSION ?= $(shell $(DOTNET) msbuild src/Headless.Checks/Headless.Checks.csproj -nologo -target:MinVer -getProperty:PackageVersion)
 EXPECTED_PACKAGE_VERSION ?= $(shell if [ -f "$(PACKAGES_DIR)/package-version.txt" ]; then sed -n '1p' "$(PACKAGES_DIR)/package-version.txt"; else printf '%s\n' "$(PACKAGE_VERSION)"; fi)
 EXPECTED_REPOSITORY_URL ?= https://github.com/xshaheen/headless-framework.git
 EXPECTED_REPOSITORY_COMMIT ?= $(shell git rev-parse HEAD)
@@ -150,7 +150,7 @@ help: ## Show available commands.
 	@printf "\nExamples:\n"
 	@printf "  make build\n"
 	@printf "  make test-project TEST_PROJECT=tests/Headless.Api.Composition.Tests.Unit/Headless.Api.Composition.Tests.Unit.csproj\n"
-	@printf "  make test-class CLASS='*ClockTests' TEST_PROJECT=tests/Headless.Core.Tests.Unit/Headless.Core.Tests.Unit.csproj\n"
+	@printf "  make test-class CLASS='*CultureHelperTests' TEST_PROJECT=tests/Headless.Extensions.Tests.Unit/Headless.Extensions.Tests.Unit.csproj\n"
 	@printf "  make verify-affected            # build + unit tests + analyzers for the change, with a proof bundle\n"
 	@printf "  make test-affected\n"
 	@printf "  make quality-analyzers-affected\n"
@@ -170,13 +170,20 @@ tools: ## Restore repo-pinned .NET tools.
 	$(DOTNET) tool restore
 
 .PHONY: restore
-restore: ## Restore NuGet packages.
-	$(DOTNET) restore "$(SOLUTION)" -p:Configuration="$(CONFIGURATION)" $(RESTORE_ARGS)
+# CI restores in locked mode: a plain restore rewrites a lock file that no longer matches its project's
+# references, so drift would pass CI and surface later on an unrelated change. Local restores still update
+# lock files; commit them with the reference change.
+ifneq ($(CI),)
+RESTORE_LOCK_ARGS ?= --locked-mode
+endif
+
+restore: ## Restore NuGet packages (locked mode when CI is set).
+	$(DOTNET) restore "$(SOLUTION)" -p:Configuration="$(CONFIGURATION)" $(RESTORE_ARGS) $(RESTORE_LOCK_ARGS)
 
 .PHONY: restore-project
 restore-project: ## Restore one project; preferred for focused project work.
 	@test -n "$(PROJECT)" || (echo "PROJECT is required. Example: make restore-project PROJECT=src/Headless.Api/Headless.Api.csproj" && exit 2)
-	$(DOTNET) restore "$(PROJECT)" -p:Configuration="$(CONFIGURATION)" $(RESTORE_ARGS)
+	$(DOTNET) restore "$(PROJECT)" -p:Configuration="$(CONFIGURATION)" $(RESTORE_ARGS) $(RESTORE_LOCK_ARGS)
 
 .PHONY: hooks
 # A repository core.hooksPath replaces the global one, so on a machine whose global hooks already
@@ -431,7 +438,7 @@ test-project-fast: ## Run one prebuilt test project without restore/build.
 # project instead, which is what a scoped inner loop wants.
 .PHONY: test-class
 test-class: ## Run tests matching CLASS (MTP --filter-class). Solution-wide unless TEST_PROJECT is set.
-	@test -n "$(CLASS)" || (echo "CLASS is required. Example: make test-class CLASS='*ClockTests' TEST_PROJECT=tests/Headless.Core.Tests.Unit/Headless.Core.Tests.Unit.csproj" && exit 2)
+	@test -n "$(CLASS)" || (echo "CLASS is required. Example: make test-class CLASS='*CultureHelperTests' TEST_PROJECT=tests/Headless.Extensions.Tests.Unit/Headless.Extensions.Tests.Unit.csproj" && exit 2)
 	$(MAKE) $(TEST_SCOPE_TARGET) TEST_FILTER='--filter-class "$(CLASS)"'
 
 .PHONY: test-method
@@ -451,7 +458,7 @@ test-trait: ## Run tests matching TRAIT (MTP --filter-trait). Solution-wide unle
 
 .PHONY: test-query
 test-query: ## Run tests matching QUERY (MTP --filter-query). Solution-wide unless TEST_PROJECT is set.
-	@test -n "$(QUERY)" || (echo "QUERY is required. Example: make test-query QUERY='/Headless.Core.Tests.Unit/Tests.Abstractions/ClockTests/*'" && exit 2)
+	@test -n "$(QUERY)" || (echo "QUERY is required. Example: make test-query QUERY='/Headless.Extensions.Tests.Unit/Tests.Core/CultureHelperTests/*'" && exit 2)
 	$(MAKE) $(TEST_SCOPE_TARGET) TEST_FILTER='--filter-query "$(QUERY)"'
 
 # The affected set comes from the ProjectReference graph (scripts/project-graph.py), not from

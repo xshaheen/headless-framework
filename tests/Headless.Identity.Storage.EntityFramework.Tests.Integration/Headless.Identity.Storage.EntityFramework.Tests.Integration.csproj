@@ -1,4 +1,4 @@
-<Project Sdk="Headless.NET.Sdk.Test">
+﻿<Project Sdk="Headless.NET.Sdk.Test">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>Tests</RootNamespace>
@@ -13,8 +13,9 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../Headless.Identity.Storage.EntityFramework.Tests.Harness/Headless.Identity.Storage.EntityFramework.Tests.Harness.csproj" />
+    <ProjectReference Include="..\..\src\Headless.MultiTenancy\Headless.MultiTenancy.csproj" />
     <ProjectReference Include="..\..\src\Headless.Identity.Storage.EntityFramework\Headless.Identity.Storage.EntityFramework.csproj" />
-    <ProjectReference Include="..\Headless.EntityFramework.Tests.Harness\Headless.EntityFramework.Tests.Harness.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
+    <ProjectReference Include="..\Headless.EntityFramework.Tests.Harness\Headless.EntityFramework.Tests.Harness.csproj" />
   </ItemGroup>
 </Project>

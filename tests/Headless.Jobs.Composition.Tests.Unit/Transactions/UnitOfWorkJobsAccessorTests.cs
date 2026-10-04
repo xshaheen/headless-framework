@@ -1,9 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Jobs;
-using Headless.Jobs.Entities;
-using Headless.Jobs.Interfaces;
-using Headless.Jobs.Interfaces.Managers;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;
 using Microsoft.Extensions.DependencyInjection;

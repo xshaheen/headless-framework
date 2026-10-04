@@ -1,4 +1,4 @@
-using Headless.Jobs.Enums;
+using Headless.Jobs;
 using Headless.Jobs.JobsThreadPool;
 
 namespace Tests;

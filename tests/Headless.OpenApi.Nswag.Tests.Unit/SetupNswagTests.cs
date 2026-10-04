@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.OpenApi.Nswag;
-using Headless.OpenApi.Nswag.OperationProcessors;
-using Headless.OpenApi.Nswag.SchemaProcessors;
 using Headless.Primitives;
 using Microsoft.Extensions.DependencyInjection;
 using NJsonSchema;

@@ -1,10 +1,10 @@
-using Headless.Abstractions;
+using Headless;
 using Headless.Caching;
+using Headless.Context;
 using Headless.DistributedLocks;
 using Headless.Domain;
-using Headless.Hosting.Initialization;
+using Headless.Hosting;
 using Headless.Messaging;
-using Headless.Messaging.Configuration;
 using Headless.MultiTenancy;
 using Headless.Permissions;
 using Headless.Testing.Tests;

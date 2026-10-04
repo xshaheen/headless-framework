@@ -1,13 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Abstractions;
+using Headless;
 using Headless.Caching;
+using Headless.Context;
 using Headless.DistributedLocks;
 using Headless.Domain;
 using Headless.Features;
-using Headless.Hosting.Initialization;
+using Headless.Hosting;
 using Headless.Messaging;
-using Headless.Messaging.Configuration;
 using Headless.MultiTenancy;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;

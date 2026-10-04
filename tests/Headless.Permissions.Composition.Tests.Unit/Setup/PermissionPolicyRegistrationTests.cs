@@ -1,13 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Security.Claims;
-using Headless.Abstractions;
+using Headless.Context;
 using Headless.MultiTenancy;
 using Headless.Permissions;
-using Headless.Permissions.Definitions;
-using Headless.Permissions.Grants;
-using Headless.Permissions.Models;
-using Headless.Permissions.Requirements;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;

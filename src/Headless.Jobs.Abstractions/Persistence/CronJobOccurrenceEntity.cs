@@ -1,0 +1,132 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+namespace Headless.Jobs;
+
+/// <summary>
+/// Materialized execution row for a single occurrence of a recurring cron job. One row is created per
+/// scheduled tick of the parent <typeparamref name="TCronJob"/> and progresses through the
+/// <c>JobStatus</c> lifecycle.
+/// </summary>
+/// <typeparam name="TCronJob">The concrete cron job definition type that owns this occurrence.</typeparam>
+[PublicAPI]
+public class CronJobOccurrenceEntity<TCronJob>
+    where TCronJob : CronJobEntity
+{
+    /// <summary>Unique identifier for this occurrence row.</summary>
+    public virtual Guid Id { get; set; }
+
+    /// <summary>Logical function name snapshotted at materialization; never read through the mutable definition.</summary>
+    public virtual string Function { get; set; } = null!;
+
+    /// <summary>Payload schema version snapshotted at materialization.</summary>
+    public virtual string ContractVersion { get; set; } = JobContract.InitialVersion;
+
+    /// <summary>Exact serialized payload bytes owned by this occurrence.</summary>
+    public virtual byte[]? Request { get; set; }
+
+    /// <summary>Root business correlation, independent of tracing.</summary>
+    public virtual string? CorrelationId { get; set; }
+
+    /// <summary>Immediate business cause captured at materialization.</summary>
+    public virtual string? CausationId { get; set; }
+
+    /// <summary>Cron occurrences are system scoped; this value must remain null.</summary>
+    public virtual string? TenantId { get; set; }
+
+    internal void SnapshotContract(TCronJob definition)
+    {
+        Function = JobContract.ValidateName(definition.Function);
+        ContractVersion = JobContract.ValidateVersion(definition.ContractVersion);
+        Request = definition.Request?.ToArray();
+        CorrelationId = definition.CorrelationId ?? Id.ToString("D");
+        CausationId = definition.CausationId;
+        if (definition.TenantId is not null)
+        {
+            throw new InvalidOperationException("Cron occurrences must remain system scoped.");
+        }
+
+        TenantId = null;
+    }
+
+    /// <summary>Current lifecycle state of this occurrence.</summary>
+    public virtual JobStatus Status { get; internal set; }
+
+    /// <summary>
+    /// The <c>node@incarnation</c> identifier of the node that claimed and is executing this
+    /// occurrence, or <see langword="null"/> when unleased.
+    /// </summary>
+    public virtual string? OwnerId { get; internal set; }
+
+    /// <summary>UTC timestamp when this occurrence was scheduled to run.</summary>
+    public virtual DateTime ExecutionTime { get; set; }
+
+    /// <summary>Foreign key to the parent <typeparamref name="TCronJob"/> definition row.</summary>
+    public virtual Guid CronJobId { get; set; }
+
+    /// <summary>
+    /// UTC lease deadline: the occurrence's pickup lease is held until this instant, after which the
+    /// lease-expiry self-heal arm of the claim predicate may re-claim it. Stamped as <c>now + LeaseDuration</c>
+    /// using the provider's time authority (injected <see cref="TimeProvider"/> for in-memory storage; database UTC
+    /// clock for relational storage). Null means unleased.
+    /// </summary>
+    public virtual DateTime? LockedUntil { get; internal set; }
+
+    /// <summary>UTC timestamp when execution completed, or <see langword="null"/> if not yet completed.</summary>
+    public virtual DateTimeOffset? ExecutedAt { get; internal set; }
+
+    /// <summary>
+    /// Policy applied when the owning node dies mid-execution. Gates the claim predicate's lease-expiry arm
+    /// (only <see cref="NodeDeathPolicy.Retry"/> is speculatively re-claimable) and drives the dead-node
+    /// sweep's terminal transitions. Defaults to <see cref="NodeDeathPolicy.Retry"/>.
+    /// </summary>
+    public virtual NodeDeathPolicy OnNodeDeath { get; set; } = NodeDeathPolicy.Retry;
+
+    /// <summary>Navigation property to the parent cron job definition.</summary>
+    public virtual TCronJob CronJob { get; set; } = null!;
+
+    /// <summary>Serialized exception message when the occurrence ended in <c>Failed</c> status.</summary>
+    public virtual string? ExceptionMessage { get; internal set; }
+
+    /// <summary>Human-readable reason when the occurrence was skipped. Display text only — never read to decide
+    /// whether the row accounts for its instant; that is <see cref="Disposition" />'s job.</summary>
+    public virtual string? SkippedReason { get; internal set; }
+
+    /// <summary>
+    /// Typed record of why this row left the live lifecycle, and the sole input to the occupied-instant accounting
+    /// rule (see <c>CronOccurrenceAccounting</c>). Defaults to <see cref="CronOccurrenceDisposition.Accounted" />,
+    /// so a row created or retired by any producer that does not stamp it keeps today's suppressing behaviour.
+    /// </summary>
+    public virtual CronOccurrenceDisposition Disposition { get; internal set; } = CronOccurrenceDisposition.Accounted;
+
+    /// <summary>Wall-clock execution duration in milliseconds, set after the function completes.</summary>
+    public virtual long ElapsedTime { get; internal set; }
+
+    /// <summary>Number of retry attempts consumed so far for this occurrence.</summary>
+    public virtual int RetryCount { get; internal set; }
+
+    /// <summary>
+    /// First unaccounted-for missed instant this run stands in for, or <see langword="null"/> when the occurrence was
+    /// dispatched normally. The instant is the first unresolved occurrence after the definition's watermark, so it
+    /// is exact however large the backlog was. Earlier missed instants already represented by terminal or occupied
+    /// rows are not reported again.
+    /// </summary>
+    /// <remarks>
+    /// Persisted on the occurrence rather than derived at execution time: the definition's watermark has already
+    /// advanced past the backlog by then, so a run reclaimed after a restart could not otherwise reconstruct it.
+    /// The missed count and the latest missed instant are emitted as telemetry at recovery time and deliberately
+    /// not persisted.
+    /// </remarks>
+    public virtual DateTime? RecoveredFromUtc { get; internal set; }
+
+    /// <summary>
+    /// Whether this occurrence was materialized by misfire recovery rather than normal dispatch. Derived from
+    /// <see cref="RecoveredFromUtc"/> so the two can never disagree; not mapped to a column.
+    /// </summary>
+    public bool IsRecoveryRun => RecoveredFromUtc is not null;
+
+    /// <summary>UTC timestamp when this occurrence row was first created.</summary>
+    public virtual DateTimeOffset CreatedAt { get; internal set; }
+
+    /// <summary>UTC timestamp of the most recent update to this occurrence row.</summary>
+    public virtual DateTimeOffset UpdatedAt { get; internal set; }
+}

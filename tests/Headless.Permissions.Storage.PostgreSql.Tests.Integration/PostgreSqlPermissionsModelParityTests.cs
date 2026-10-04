@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Caching;
-using Headless.Hosting.Initialization;
+using Headless.Hosting;
 using Headless.Hosting.Initialization.Schema;
 using Headless.Permissions;
 using Headless.Testing.Tests;

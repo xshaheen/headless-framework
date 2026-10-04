@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Api.ApiExplorer;
+using Headless.Api;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authorization.Infrastructure;
 using NSwag;
@@ -8,7 +8,7 @@ using NSwag.Generation.AspNetCore;
 using NSwag.Generation.Processors;
 using NSwag.Generation.Processors.Contexts;
 
-namespace Headless.OpenApi.Nswag.OperationProcessors;
+namespace Headless.OpenApi.Nswag;
 
 /// <summary>
 /// NSwag operation processor that adds a 403 Forbidden response entry to operations whose authorization

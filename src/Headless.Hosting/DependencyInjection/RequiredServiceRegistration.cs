@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Hosting.DependencyInjection;
+namespace Headless.Hosting;
 
 /// <summary>
 /// One "the host must register this service" prerequisite declared during DI setup by a package that

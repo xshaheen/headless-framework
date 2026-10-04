@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Messaging.Dashboard.NodeDiscovery;
+namespace Headless.Messaging.Dashboard;
 
 /// <summary>
 /// Provides service-discovery operations for the Messaging Dashboard node federation.

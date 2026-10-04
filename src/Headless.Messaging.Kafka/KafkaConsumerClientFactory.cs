@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Headless.Messaging.Exceptions;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Options;
@@ -56,9 +55,9 @@ internal sealed class KafkaConsumerClientFactory(
                 new KafkaConsumerClient(subscriptionName, concurrency, kafkaOptions, serviceProvider, config)
             );
         }
-        catch (Exception e) when (e is not OperationCanceledException)
+        catch (Exception e)
         {
-            throw new BrokerConnectionException(e);
+            throw BrokerConnectGuard.ConnectFailure(e, cancellationToken);
         }
     }
 }

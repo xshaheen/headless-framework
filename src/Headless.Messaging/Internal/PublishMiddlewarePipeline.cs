@@ -1,0 +1,401 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using System.Collections.Concurrent;
+using System.Linq.Expressions;
+using System.Reflection;
+using System.Runtime.CompilerServices;
+using FastExpressionCompiler;
+using Headless.Checks;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+
+namespace Headless.Messaging.Internal;
+
+internal sealed class PublishMiddlewarePipeline(
+    IServiceProvider serviceProvider,
+    IMiddlewareDescriptorRegistry? descriptorRegistry = null,
+    ILogger<PublishMiddlewarePipeline>? logger = null
+) : IPublishMiddlewarePipeline
+{
+    private static readonly ConcurrentDictionary<MiddlewareDispatchKey, PublishMiddlewareInvoker> _TypedInvokers =
+        new();
+
+    private static readonly ConditionalWeakTable<Type, PublishContextType> _ContextTypes = [];
+
+    // Caches the IPublishMiddleware<TContext> closed service type per concrete PublishContext type, so the
+    // resolution path avoids running MakeGenericType on every publish.
+    private static readonly ConcurrentDictionary<Type, Type> _TypedMiddlewareServiceTypes = new();
+
+    // Cache the tracked-type HashSet per (registry, direction). The registry instance is stable for
+    // the application's lifetime, so we never recompute the set on the hot publish path.
+    private static readonly ConditionalWeakTable<
+        IMiddlewareDescriptorRegistry,
+        ConcurrentDictionary<MiddlewareDirection, HashSet<Type>>
+    > _TrackedTypesByRegistry = [];
+
+    private readonly IServiceProvider _serviceProvider = Argument.IsNotNull(serviceProvider);
+
+    // Registration existence is fixed once the container is built, so cache per closed context type whether any
+    // direct middleware is registered at all and skip the scoped GetServices + array build on the (common)
+    // zero-middleware publish path. A null probe (non-conforming container) always takes the slow path.
+    private readonly IServiceProviderIsService? _serviceProbe = serviceProvider.GetService<IServiceProviderIsService>();
+    private readonly ConcurrentDictionary<Type, bool> _hasDirectMiddleware = new();
+
+    public async Task ExecuteAsync<T>(
+        T? content,
+        MessageLane lane,
+        MessageOptions? options,
+        DeliveryDecision decision,
+        Func<MessageOptions?, CancellationToken, Task> innerPublish,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (options?.MessageType is { } declaredMessageType && declaredMessageType != typeof(T))
+        {
+            await ExecuteAsync(content, declaredMessageType, lane, options, decision, innerPublish, cancellationToken)
+                .ConfigureAwait(false);
+            return;
+        }
+
+        var context = new PublishContext<T>(content, lane, options, decision, cancellationToken);
+        await _ExecuteAsync(context, innerPublish).ConfigureAwait(false);
+    }
+
+    public async Task ExecuteAsync(
+        object? content,
+        Type declaredMessageType,
+        MessageLane lane,
+        MessageOptions? options,
+        DeliveryDecision decision,
+        Func<MessageOptions?, CancellationToken, Task> innerPublish,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var context = _CreateContext(content, declaredMessageType, lane, options, decision, cancellationToken);
+        await _ExecuteAsync(context, innerPublish).ConfigureAwait(false);
+    }
+
+    private async Task _ExecuteAsync(
+        PublishContext context,
+        Func<MessageOptions?, CancellationToken, Task> innerPublish
+    )
+    {
+        // Zero-middleware fast path. The scope below exists solely to resolve middleware — nothing in the
+        // inner publish ring reads from it — so when the container proves no middleware is registered for
+        // this context there is nothing to scope, chain, or track completion around beyond the inner call.
+        if (_HasNoMiddleware(context))
+        {
+            await innerPublish(context.Options, context.CancellationToken).ConfigureAwait(false);
+            _MarkCompleted(context);
+
+            return;
+        }
+
+        await using var scope = _serviceProvider.CreateAsyncScope();
+        var middleware = _ResolveMiddleware(scope.ServiceProvider, context);
+
+        // Inner-ring completion flag, hoisted into a single StrongBox so the per-middleware wiring below
+        // captures one loop-invariant reference instead of allocating a fresh `() => innerRingCompleted`
+        // delegate for every middleware in the chain. This flag is intentionally distinct from
+        // context.IsCompleted: it tracks whether the innermost publish actually ran, whereas a
+        // short-circuiting middleware can mark the context completed without the inner ring executing.
+        var innerRingCompleted = new StrongBox<bool>(value: false);
+
+        Func<ValueTask> next = async () =>
+        {
+            await innerPublish(context.Options, context.CancellationToken).ConfigureAwait(false);
+            innerRingCompleted.Value = true;
+            _MarkCompleted(context);
+        };
+
+        for (var i = middleware.Length - 1; i >= 0; i--)
+        {
+            var current = middleware[i];
+            var innerNext = next;
+            next = () => _InvokeAsync(current, context, innerNext, innerRingCompleted);
+        }
+
+        await next().ConfigureAwait(false);
+    }
+
+    private static PublishContext _CreateContext(
+        object? content,
+        Type declaredMessageType,
+        MessageLane lane,
+        MessageOptions? options,
+        DeliveryDecision decision,
+        CancellationToken cancellationToken
+    )
+    {
+        Argument.IsNotNull(declaredMessageType);
+        var contextType = _ContextTypes
+            .GetValue(
+                declaredMessageType,
+                static type => new PublishContextType(typeof(PublishContext<>).MakeGenericType(type))
+            )
+            .Type;
+
+        return (PublishContext)
+            Activator.CreateInstance(
+                contextType,
+                BindingFlags.Instance | BindingFlags.NonPublic,
+                binder: null,
+                args:
+                [
+                    content,
+                    content?.GetType() ?? declaredMessageType,
+                    lane,
+                    options,
+                    decision,
+                    true,
+                    cancellationToken,
+                ],
+                culture: null
+            )!;
+    }
+
+    private async ValueTask _InvokeAsync(
+        object middleware,
+        PublishContext context,
+        Func<ValueTask> innerNext,
+        StrongBox<bool> innerRingCompleted
+    )
+    {
+        try
+        {
+            await _InvokeMiddlewareAsync(middleware, context, innerNext).ConfigureAwait(false);
+            _MarkCompleted(context);
+        }
+        catch (Exception ex) when (innerRingCompleted.Value)
+        {
+            logger?.PublishPostSuccessMiddlewareFailed(ex, middleware.GetType().FullName ?? middleware.GetType().Name);
+            return;
+        }
+        catch (Exception ex) when (_ShouldRethrowOce(ex, context.CancellationToken))
+        {
+            throw new OperationCanceledException(context.CancellationToken);
+        }
+
+        if (context.CancellationToken.IsCancellationRequested)
+        {
+            context.CancellationToken.ThrowIfCancellationRequested();
+        }
+    }
+
+    private static ValueTask _InvokeMiddlewareAsync(object middleware, PublishContext context, Func<ValueTask> next)
+    {
+        if (middleware is IPublishMiddleware<PublishContext> busMiddleware)
+        {
+            return busMiddleware.InvokeAsync(context, next);
+        }
+
+        var invoker = _TypedInvokers.GetOrAdd(
+            new MiddlewareDispatchKey(middleware.GetType(), context.MessageType),
+            static (_, contextType) => _CompileTypedInvoker(contextType),
+            context.GetType()
+        );
+
+        return invoker(middleware, context, next);
+    }
+
+    /// <summary>
+    /// Proves that <see cref="_ResolveMiddleware"/> would return an empty set without opening a scope.
+    /// A null probe (non-conforming container) cannot prove absence, so it always takes the slow path.
+    /// </summary>
+    private bool _HasNoMiddleware(PublishContext context)
+    {
+        if (_serviceProbe is null)
+        {
+            return false;
+        }
+
+        if (
+            _hasDirectMiddleware.GetOrAdd(
+                context.GetType(),
+                static (type, self) => self._HasAnyDirectMiddleware(type),
+                this
+            )
+        )
+        {
+            return false;
+        }
+
+        return descriptorRegistry?.TryGetPublishDescriptors(context.MessageType, context.Lane, out _) != true;
+    }
+
+    private object[] _ResolveMiddleware(IServiceProvider provider, PublishContext context)
+    {
+        var directMiddleware = _ResolveDirectMiddleware(provider, context);
+
+        if (descriptorRegistry is null)
+        {
+            return directMiddleware;
+        }
+
+        if (descriptorRegistry.TryGetPublishDescriptors(context.MessageType, context.Lane, out var descriptors))
+        {
+            return
+            [
+                .. descriptors
+                    .Select(descriptor => _ResolveDescriptor(provider, descriptor))
+                    .Where(static middleware => middleware is not null)
+                    .Cast<object>(),
+                .. _GetUntrackedDirectMiddleware(directMiddleware, MiddlewareDirection.Publish),
+            ];
+        }
+
+        // A lane with no descriptors still runs middleware registered straight into DI, but never middleware the
+        // builder registered for the other lane: the registry is the only source of lane membership for those types.
+        // Most hosts have nothing registered straight into DI, so skip the filter and its allocation for them.
+        return directMiddleware.Length == 0
+            ? directMiddleware
+            : [.. _GetUntrackedDirectMiddleware(directMiddleware, MiddlewareDirection.Publish)];
+    }
+
+    private object[] _ResolveDirectMiddleware(IServiceProvider provider, PublishContext context)
+    {
+        var contextType = context.GetType();
+
+        if (
+            _serviceProbe is not null
+            && !_hasDirectMiddleware.GetOrAdd(
+                contextType,
+                static (type, self) => self._HasAnyDirectMiddleware(type),
+                this
+            )
+        )
+        {
+            return [];
+        }
+
+        var typedServiceType = _TypedMiddlewareServiceTypes.GetOrAdd(
+            contextType,
+            static contextType => typeof(IPublishMiddleware<>).MakeGenericType(contextType)
+        );
+        var busMiddleware = provider.GetServices<IPublishMiddleware<PublishContext>>().Cast<object>();
+        var typedMiddleware = provider
+            .GetServices(typedServiceType)
+            .Where(static middleware => middleware is not null)
+            .Cast<object>();
+
+        return [.. busMiddleware, .. typedMiddleware];
+    }
+
+    private bool _HasAnyDirectMiddleware(Type contextType)
+    {
+        var typedServiceType = _TypedMiddlewareServiceTypes.GetOrAdd(
+            contextType,
+            static type => typeof(IPublishMiddleware<>).MakeGenericType(type)
+        );
+
+        return _serviceProbe!.IsService(typeof(IPublishMiddleware<PublishContext>))
+            || _serviceProbe.IsService(typedServiceType);
+    }
+
+    private IEnumerable<object> _GetUntrackedDirectMiddleware(
+        IEnumerable<object> middleware,
+        MiddlewareDirection direction
+    )
+    {
+        var perDirection = _TrackedTypesByRegistry.GetValue(descriptorRegistry!, static _ => new());
+        var trackedTypes = perDirection.GetOrAdd(
+            direction,
+            (dir, registry) =>
+                [
+                    .. registry
+                        .Descriptors.Where(descriptor => descriptor.Direction == dir)
+                        .Select(descriptor => descriptor.MiddlewareType),
+                ],
+            descriptorRegistry!
+        );
+
+        return middleware.Where(current => !trackedTypes.Contains(current.GetType()));
+    }
+
+    private static object? _ResolveDescriptor(IServiceProvider provider, MiddlewareDescriptor descriptor)
+    {
+        return provider
+            .GetServices(descriptor.ServiceType)
+            .FirstOrDefault(service => service?.GetType() == descriptor.MiddlewareType);
+    }
+
+    private static PublishMiddlewareInvoker _CompileTypedInvoker(Type contextType)
+    {
+        var middlewareParam = Expression.Parameter(typeof(object), "middleware");
+        var contextParam = Expression.Parameter(typeof(PublishContext), "context");
+        var nextParam = Expression.Parameter(typeof(Func<ValueTask>), "next");
+        var serviceType = typeof(IPublishMiddleware<>).MakeGenericType(contextType);
+        var invokeMethod = serviceType.GetMethod(nameof(IPublishMiddleware<>.InvokeAsync))!;
+
+        var body = Expression.Call(
+            Expression.Convert(middlewareParam, serviceType),
+            invokeMethod,
+            Expression.Convert(contextParam, contextType),
+            nextParam
+        );
+
+        return Expression
+            .Lambda<PublishMiddlewareInvoker>(body, middlewareParam, contextParam, nextParam)
+            .CompileFast();
+    }
+
+    private static bool _ShouldRethrowOce(Exception exception, CancellationToken cancellationToken)
+    {
+        if (
+            exception is OperationCanceledException operationCanceledException
+            && operationCanceledException.CancellationToken == cancellationToken
+        )
+        {
+            return true;
+        }
+
+        if (exception is AggregateException aggregateException)
+        {
+            return aggregateException.InnerExceptions.Any(inner => _ShouldRethrowOce(inner, cancellationToken));
+        }
+
+        return false;
+    }
+
+    private static void _MarkCompleted(PublishContext context)
+    {
+        if (context is ICompletablePublishContext completableContext)
+        {
+            completableContext.MarkCompleted();
+        }
+    }
+
+    private delegate ValueTask PublishMiddlewareInvoker(
+        object middleware,
+        PublishContext context,
+        Func<ValueTask> next
+    );
+
+    private sealed record PublishContextType(Type Type);
+}
+
+internal interface IPublishMiddlewarePipeline
+{
+    Task ExecuteAsync(
+        object? content,
+        Type declaredMessageType,
+        MessageLane lane,
+        MessageOptions? options,
+        DeliveryDecision decision,
+        Func<MessageOptions?, CancellationToken, Task> innerPublish,
+        CancellationToken cancellationToken = default
+    );
+
+    Task ExecuteAsync<T>(
+        T? content,
+        MessageLane lane,
+        MessageOptions? options,
+        DeliveryDecision decision,
+        Func<MessageOptions?, CancellationToken, Task> innerPublish,
+        CancellationToken cancellationToken = default
+    );
+}

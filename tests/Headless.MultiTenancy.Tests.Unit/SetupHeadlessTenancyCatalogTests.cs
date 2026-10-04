@@ -1,8 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Abstractions;
 using Headless.Caching;
-using Headless.Hosting.DependencyInjection;
+using Headless.Hosting;
 using Headless.MultiTenancy;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -75,7 +74,7 @@ public sealed class SetupHeadlessTenancyCatalogTests : TestBase
             )
         );
         builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());
-        // A real host wires ambient tenant context through Api.Core/Jobs.Core/Messaging.Core (each of
+        // A real host wires ambient tenant context through Api/Jobs/Messaging (each of
         // which references Headless.Core); Headless.MultiTenancy cannot register it itself (a
         // no-cycle architecture constraint), so this test simulates that wiring directly.
         builder.Services.AddSingleton<ICurrentTenantAccessor>(AsyncLocalCurrentTenantAccessor.Instance);

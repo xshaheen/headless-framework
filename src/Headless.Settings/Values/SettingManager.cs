@@ -1,0 +1,611 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using Headless.Checks;
+using Headless.Context;
+using Headless.Messaging;
+using Headless.Settings.Resources;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+
+namespace Headless.Settings;
+
+/// <summary>Core implementation of <see cref="ISettingManager"/> that resolves, encrypts, and persists setting values across the registered provider stack.</summary>
+public sealed class SettingManager(
+    ISettingDefinitionManager definitionManager,
+    ISettingValueStore valueStore,
+    ISettingValueProviderManager valueProviderManager,
+    ISettingEncryptionService encryptionService,
+    ISettingErrorsDescriptor errorsDescriptor,
+    IHostIdentityAccessor hostIdentity,
+    IBus? bus = null,
+    ILogger<SettingManager>? logger = null
+) : ISettingManager
+{
+    private readonly ILogger _logger = logger ?? NullLogger<SettingManager>.Instance;
+
+    /// <inheritdoc/>
+    /// <exception cref="ArgumentNullException"><paramref name="settingName"/> is <see langword="null"/>.</exception>
+    /// <exception cref="Headless.ConflictException">The setting named <paramref name="settingName"/> is not defined.</exception>
+    public Task<SettingValue> GetAsync(
+        string settingName,
+        string? providerName = null,
+        string? providerKey = null,
+        bool fallback = true,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return _CoreGetOrDefaultAsync(settingName, providerName, providerKey, fallback, cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    /// <exception cref="ArgumentNullException"><paramref name="settingNames"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="settingNames"/> is empty.</exception>
+    public async Task<Dictionary<string, SettingValue>> GetAllAsync(
+        HashSet<string> settingNames,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(settingNames);
+
+        var allSettingDefinitions = await definitionManager.GetAllAsync(cancellationToken).ConfigureAwait(false);
+        var settingDefinitions = allSettingDefinitions.Where(x => settingNames.Contains(x.Name)).ToList();
+        var definitionMap = settingDefinitions.ToDictionary(x => x.Name, StringComparer.Ordinal);
+
+        // Accumulate the resolved value and its attributing provider per setting first, then build the
+        // immutable SettingValue records at the end (Value is init-only on the record, so it cannot be
+        // patched in place). The batch read carries no explicit provider key, so the attribution records
+        // only the resolving provider name (Key stays null), matching GetAsync when called without a key.
+        var resolvedValues = settingDefinitions.ToDictionary(x => x.Name, _ => (string?)null, StringComparer.Ordinal);
+        var resolvedProviders = settingDefinitions.ToDictionary(
+            x => x.Name,
+            _ => (SettingValueProvider?)null,
+            StringComparer.Ordinal
+        );
+
+        var processedNames = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var provider in valueProviderManager.Providers)
+        {
+            var supportedDefinitions = settingDefinitions
+                .Where(x =>
+                    !processedNames.Contains(x.Name)
+                    && (x.Providers.Count == 0 || x.Providers.Contains(provider.Name, StringComparer.Ordinal))
+                )
+                .ToArray();
+
+            var settingValues = await provider
+                .GetAllAsync(supportedDefinitions, cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+            var notNullValues = settingValues.Where(x => x.Value != null).ToList();
+
+            foreach (var settingValue in notNullValues)
+            {
+                var settingDefinition = definitionMap[settingValue.Name];
+
+                // Only providers that persist manager-encrypted writes hold ciphertext; plaintext sources
+                // (defaults, configuration) would throw on decrypt — same rule as _CoreGetOrDefaultAsync.
+                var value =
+                    settingDefinition.IsEncrypted && provider.StoresEncryptedValues
+                        ? encryptionService.Decrypt(settingDefinition, settingValue.Value)
+                        : settingValue.Value;
+
+                // Providers are ordered highest priority first, so the first non-null value wins.
+                if (resolvedValues.TryGetValue(settingValue.Name, out var existing) && existing is null)
+                {
+                    resolvedValues[settingValue.Name] = value;
+                    resolvedProviders[settingValue.Name] = new SettingValueProvider(provider.Name, Key: null);
+                }
+            }
+
+            foreach (var sv in notNullValues)
+            {
+                processedNames.Add(sv.Name);
+            }
+
+            if (processedNames.Count >= settingDefinitions.Count)
+            {
+                break;
+            }
+        }
+
+        return settingDefinitions.ToDictionary(
+            x => x.Name,
+            x => new SettingValue(x.Name, resolvedValues[x.Name], resolvedProviders[x.Name]),
+            StringComparer.Ordinal
+        );
+    }
+
+    /// <inheritdoc/>
+    /// <exception cref="ArgumentNullException"><paramref name="providerName"/> is <see langword="null"/>.</exception>
+    public async Task<IReadOnlyList<SettingValue>> GetAllAsync(
+        string providerName,
+        string? providerKey = null,
+        bool fallback = true,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(providerName);
+
+        var settingDefinitions = await definitionManager.GetAllAsync(cancellationToken).ConfigureAwait(false);
+
+        return await _GetAllFromProviderAsync(
+                settingDefinitions,
+                providerName,
+                providerKey,
+                fallback,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
+    /// <inheritdoc/>
+    /// <exception cref="ArgumentNullException"><paramref name="settingNames"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="providerName"/> is <see langword="null"/>.</exception>
+    public async Task<IReadOnlyList<SettingValue>> GetAllAsync(
+        HashSet<string> settingNames,
+        string providerName,
+        string? providerKey = null,
+        bool fallback = true,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNullOrEmpty(settingNames);
+        Argument.IsNotNull(providerName);
+
+        var allDefinitions = await definitionManager.GetAllAsync(cancellationToken).ConfigureAwait(false);
+
+        // Narrowing to the requested names before the provider walk is the whole point: the caller pays
+        // for the settings it asked for rather than for every setting the application happens to define.
+        var settingDefinitions = allDefinitions.Where(x => settingNames.Contains(x.Name)).ToList();
+
+        return await _GetAllFromProviderAsync(
+                settingDefinitions,
+                providerName,
+                providerKey,
+                fallback,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
+    private async Task<IReadOnlyList<SettingValue>> _GetAllFromProviderAsync(
+        IReadOnlyList<SettingDefinition> settingDefinitions,
+        string providerName,
+        string? providerKey,
+        bool fallback,
+        CancellationToken cancellationToken
+    )
+    {
+        var providers = valueProviderManager.Providers.SkipWhile(c =>
+            !string.Equals(c.Name, providerName, StringComparison.Ordinal)
+        );
+
+        if (!fallback)
+        {
+            providers = providers.TakeWhile(c => string.Equals(c.Name, providerName, StringComparison.Ordinal));
+        }
+
+        var providerList = providers.ToList();
+
+        if (providerList.Count == 0)
+        {
+            return [];
+        }
+
+        var settingValues = new Dictionary<string, SettingValue>(StringComparer.Ordinal);
+
+        // Non-inherited settings only ever consult the head of the chain while inherited ones walk it until
+        // a value appears, so the two groups are resolved separately. Each provider is then asked once with
+        // a batch instead of once per definition: every provider implements GetAllAsync as a single store
+        // round-trip, so the previous nested loop cost one round-trip per definition per provider.
+        var inherited = new List<SettingDefinition>();
+        var notInherited = new List<SettingDefinition>();
+
+        foreach (var setting in settingDefinitions)
+        {
+            (setting.IsInherited ? inherited : notInherited).Add(setting);
+        }
+
+        if (notInherited.Count != 0)
+        {
+            // SkipWhile guarantees the head of the chain is the requested provider, so it takes providerKey.
+            var provider = providerList[0];
+            var values = await provider
+                .GetAllAsync([.. notInherited], providerKey, cancellationToken)
+                .ConfigureAwait(false);
+
+            var resolved = _ToResolvedValues(values);
+
+            foreach (var setting in notInherited)
+            {
+                if (resolved.TryGetValue(setting.Name, out var value))
+                {
+                    _AddSettingValue(settingValues, setting, value, provider, providerKey);
+                }
+            }
+        }
+
+        var pending = inherited;
+
+        foreach (var provider in providerList)
+        {
+            if (pending.Count == 0)
+            {
+                break;
+            }
+
+            var pk = string.Equals(provider.Name, providerName, StringComparison.Ordinal) ? providerKey : null;
+            var values = await provider.GetAllAsync([.. pending], pk, cancellationToken).ConfigureAwait(false);
+            var resolved = _ToResolvedValues(values);
+
+            if (resolved.Count == 0)
+            {
+                continue;
+            }
+
+            var stillPending = new List<SettingDefinition>(pending.Count);
+
+            foreach (var setting in pending)
+            {
+                if (resolved.TryGetValue(setting.Name, out var value))
+                {
+                    _AddSettingValue(settingValues, setting, value, provider, pk);
+                }
+                else
+                {
+                    stillPending.Add(setting);
+                }
+            }
+
+            pending = stillPending;
+        }
+
+        // Emit in definition order: the previous per-definition loop populated the dictionary that way.
+        var orderedValues = new List<SettingValue>(settingValues.Count);
+
+        foreach (var setting in settingDefinitions)
+        {
+            if (settingValues.TryGetValue(setting.Name, out var settingValue))
+            {
+                orderedValues.Add(settingValue);
+            }
+        }
+
+        // The spread wraps the list in the compiler's throw-on-mutate read-only view, matching the previous
+        // implementation's return shape — callers must not be able to downcast and mutate manager state.
+        return [.. orderedValues];
+    }
+
+    /// <summary>Indexes the values a provider actually stored; a <see langword="null"/> value means "not set here".</summary>
+    private static Dictionary<string, string> _ToResolvedValues(List<SettingValue> providerValues)
+    {
+        var resolved = new Dictionary<string, string>(providerValues.Count, StringComparer.Ordinal);
+
+        foreach (var providerValue in providerValues)
+        {
+            if (providerValue.Value is not null)
+            {
+                resolved[providerValue.Name] = providerValue.Value;
+            }
+        }
+
+        return resolved;
+    }
+
+    /// <summary>Decrypts when required and records the resolved value against the provider that supplied it.</summary>
+    private void _AddSettingValue(
+        Dictionary<string, SettingValue> settingValues,
+        SettingDefinition setting,
+        string? value,
+        ISettingValueReadProvider resolvedProvider,
+        string? resolvedProviderKey
+    )
+    {
+        if (setting.IsEncrypted && resolvedProvider.StoresEncryptedValues)
+        {
+            value = encryptionService.Decrypt(setting, value);
+        }
+
+        if (value is not null)
+        {
+            settingValues[setting.Name] = new SettingValue(
+                setting.Name,
+                value,
+                new SettingValueProvider(resolvedProvider.Name, resolvedProviderKey)
+            );
+        }
+    }
+
+    /// <inheritdoc/>
+    /// <exception cref="ArgumentNullException"><paramref name="settingName"/> or <paramref name="providerName"/> is <see langword="null"/>.</exception>
+    /// <exception cref="Headless.ConflictException">The setting named <paramref name="settingName"/> is not defined, the provider named <paramref name="providerName"/> is not registered, or the resolved provider does not support write operations.</exception>
+    public Task SetAsync(
+        string settingName,
+        string? value,
+        string providerName,
+        string? providerKey,
+        bool forceToSet = false,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(settingName);
+
+        var values = new Dictionary<string, string?>(StringComparer.Ordinal) { [settingName] = value };
+
+        return SetAsync(values, providerName, providerKey, forceToSet, cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    /// <exception cref="ArgumentNullException"><paramref name="values"/> or <paramref name="providerName"/> is <see langword="null"/>.</exception>
+    /// <exception cref="Headless.ConflictException">A setting in <paramref name="values"/> is not defined, the provider named <paramref name="providerName"/> is not registered, or the resolved provider does not support write operations.</exception>
+    public async Task SetAsync(
+        IReadOnlyDictionary<string, string?> values,
+        string providerName,
+        string? providerKey,
+        bool forceToSet = false,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(values);
+        Argument.IsNotNull(providerName);
+
+        if (values.Count == 0)
+        {
+            return;
+        }
+
+        var requested = new List<KeyValuePair<SettingDefinition, string?>>(values.Count);
+
+        foreach (var (settingName, value) in values)
+        {
+            Argument.IsNotNull(settingName);
+
+            var setting =
+                await definitionManager.FindAsync(settingName, cancellationToken).ConfigureAwait(false)
+                ?? throw new ConflictException(errorsDescriptor.NotDefined(settingName));
+
+            requested.Add(new(setting, value));
+        }
+
+        var providers = valueProviderManager
+            .Providers.SkipWhile(p => !string.Equals(p.Name, providerName, StringComparison.Ordinal))
+            .ToList();
+
+        if (providers.Count == 0)
+        {
+            throw new ConflictException(errorsDescriptor.ProviderNotFound(providerName));
+        }
+
+        // Getting list for case of there are more than one provider with the same providerName
+        var writeProviders = new List<ISettingValueProvider>();
+
+        foreach (
+            var provider in providers.TakeWhile(p => string.Equals(p.Name, providerName, StringComparison.Ordinal))
+        )
+        {
+            // Rejected before anything is written: a read-only provider found half-way through the loop below
+            // would otherwise leave the providers ahead of it already written.
+            writeProviders.Add(
+                provider as ISettingValueProvider
+                    ?? throw new ConflictException(errorsDescriptor.ProviderIsReadonly(providerName))
+            );
+        }
+
+        var writes = new List<KeyValuePair<SettingDefinition, string?>>(requested.Count);
+
+        foreach (var (setting, value) in requested)
+        {
+            var storedValue = await _ResolveStoredValueAsync(setting, value, providers, forceToSet, cancellationToken)
+                .ConfigureAwait(false);
+
+            writes.Add(new(setting, storedValue));
+        }
+
+        foreach (var provider in writeProviders)
+        {
+            await provider.SetAllAsync(writes, providerKey, cancellationToken).ConfigureAwait(false);
+        }
+
+        await _PublishChangedAsync([.. values.Keys], providerName, providerKey, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Returns the value to store for <paramref name="setting"/>: encrypted when the definition asks for it, and
+    /// <see langword="null"/> when an inherited value equals what the next provider would supply anyway.
+    /// </summary>
+    private async Task<string?> _ResolveStoredValueAsync(
+        SettingDefinition setting,
+        string? value,
+        List<ISettingValueReadProvider> providers,
+        bool forceToSet,
+        CancellationToken cancellationToken
+    )
+    {
+        if (setting.IsEncrypted)
+        {
+            value = encryptionService.Encrypt(setting, value);
+        }
+
+        if (providers.Count > 1 && !forceToSet && setting.IsInherited && value is not null)
+        {
+            var fallbackValue = await _CoreGetOrDefaultAsync(
+                    setting,
+                    providers[1].Name,
+                    providerKey: null,
+                    fallback: true,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+
+            if (string.Equals(fallbackValue.Value, value, StringComparison.Ordinal))
+            {
+                // Clear the value if it is same as it's fallback value
+                return null;
+            }
+        }
+
+        return value;
+    }
+
+    /// <inheritdoc/>
+    public async Task DeleteAsync(
+        string providerName,
+        string providerKey,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var settings = await valueStore
+            .GetAllProviderValuesAsync(providerName, providerKey, cancellationToken)
+            .ConfigureAwait(false);
+
+        foreach (var setting in settings)
+        {
+            await valueStore
+                .DeleteAsync(setting.Name, providerName, providerKey, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        if (settings.Count != 0)
+        {
+            // Every removed name rather than a wildcard: a receiver should be able to match on the names it
+            // holds without knowing what else this provider scope contained.
+            var removedNames = settings.Select(x => x.Name).ToArray();
+
+            await _PublishChangedAsync(removedNames, providerName, providerKey, cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Announces a completed write so every instance holding a copy of the value, this one included, can re-read it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Published after the write, never before: a receiver that re-read on an announcement of a write that then
+    /// failed would cache the old value and believe it fresh. The write has already committed when this runs: the
+    /// stores save through their own context or connection and never join a unit of work the caller has open, so a peer
+    /// that re-reads on the announcement loads the new value. A <c>SetAsync</c> inside a unit that later rolls back
+    /// therefore leaves the value changed; the consumer contract in <c>docs/llms/settings.md</c> states this.
+    /// </para>
+    /// <para>
+    /// Best-effort by design — messaging is optional, and a failed announcement must not fail the write that
+    /// already succeeded, so publish failures are logged and swallowed. The cost of a lost message is that a
+    /// peer keeps a stale copy until its own refresh, which is the behavior of a deployment with no bus at all.
+    /// </para>
+    /// </remarks>
+    private async Task _PublishChangedAsync(
+        string[] settingNames,
+        string providerName,
+        string? providerKey,
+        CancellationToken cancellationToken
+    )
+    {
+        if (bus is null || settingNames.Length == 0)
+        {
+            return;
+        }
+
+        var message = new SettingChangedMessage
+        {
+            SettingNames = settingNames,
+            ProviderName = providerName,
+            ProviderKey = providerKey,
+            OriginHostName = hostIdentity.HostName,
+        };
+
+        try
+        {
+            await bus.PublishAsync(message, cancellationToken: cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogFailedToPublishSettingChanged(ex, providerName, providerKey, settingNames.Length);
+        }
+    }
+
+    /// <summary>Resolves a setting value by walking the provider chain, applying decryption when required, and attributing the resolving provider.</summary>
+    private async Task<SettingValue> _CoreGetOrDefaultAsync(
+        string settingName,
+        string? providerName,
+        string? providerKey,
+        bool fallback = true,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(settingName);
+
+        if (!fallback)
+        {
+            Argument.IsNotNull(providerName);
+        }
+
+        var definition =
+            await definitionManager.FindAsync(settingName, cancellationToken).ConfigureAwait(false)
+            ?? throw new ConflictException(errorsDescriptor.NotDefined(settingName));
+
+        return await _CoreGetOrDefaultAsync(definition, providerName, providerKey, fallback, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>Walks the provider chain for an already resolved <paramref name="definition"/>.</summary>
+    private async Task<SettingValue> _CoreGetOrDefaultAsync(
+        SettingDefinition definition,
+        string? providerName,
+        string? providerKey,
+        bool fallback,
+        CancellationToken cancellationToken
+    )
+    {
+        var settingName = definition.Name;
+        IEnumerable<ISettingValueReadProvider> providers = valueProviderManager.Providers;
+
+        if (providerName is not null)
+        {
+            providers = providers.SkipWhile(c => !string.Equals(c.Name, providerName, StringComparison.Ordinal));
+        }
+
+        if (!fallback || !definition.IsInherited)
+        {
+            providers = providers.TakeWhile(c => string.Equals(c.Name, providerName, StringComparison.Ordinal));
+        }
+
+        foreach (var provider in providers)
+        {
+            var pk = string.Equals(provider.Name, providerName, StringComparison.Ordinal) ? providerKey : null;
+            var value = await provider.GetOrDefaultAsync(definition, pk, cancellationToken).ConfigureAwait(false);
+
+            if (value is null)
+            {
+                continue;
+            }
+
+            if (definition.IsEncrypted && provider.StoresEncryptedValues)
+            {
+                value = encryptionService.Decrypt(definition, value);
+            }
+
+            return new SettingValue(settingName, value, new SettingValueProvider(provider.Name, pk));
+        }
+
+        return new SettingValue(settingName, Value: null, Provider: null);
+    }
+}
+
+/// <summary>Structured log helpers for <see cref="SettingManager"/>.</summary>
+internal static partial class SettingManagerLog
+{
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "FailedToPublishSettingChanged",
+        Level = LogLevel.Warning,
+        Message = "Failed to announce a setting change for provider {ProviderName} (key={ProviderKey}, names={NameCount}); the write succeeded and peers keep their copies until they re-read"
+    )]
+    public static partial void LogFailedToPublishSettingChanged(
+        this ILogger logger,
+        Exception exception,
+        string providerName,
+        string? providerKey,
+        int nameCount
+    );
+}

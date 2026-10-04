@@ -1,0 +1,64 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using System.Data.Common;
+using Headless.Messaging;
+using Headless.Messaging.Transport;
+using Headless.Testing.Tests;
+
+namespace Tests.Transport;
+
+public sealed class IDispatcherCompatibilityTests : TestBase
+{
+    [Fact]
+    public async Task should_delegate_to_legacy_dispose_implementation_when_dispose_async_with_timeout()
+    {
+        // given
+        await using var dispatcher = new LegacyDispatcher();
+
+        // when
+        await ((IDispatcher)dispatcher).DisposeAsync(TimeSpan.FromSeconds(1), AbortToken);
+
+        // then
+        dispatcher.IsDisposed.Should().BeTrue();
+    }
+
+    private sealed class LegacyDispatcher : IDispatcher
+    {
+        public bool IsDisposed { get; private set; }
+
+        public ValueTask StartAsync(CancellationToken stoppingToken)
+        {
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            IsDisposed = true;
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask EnqueueToPublish(MediumMessage message, CancellationToken cancellationToken = default)
+        {
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask EnqueueToExecute(
+            MediumMessage message,
+            ConsumerExecutorDescriptor? descriptor = null,
+            CancellationToken cancellationToken = default
+        )
+        {
+            return ValueTask.CompletedTask;
+        }
+
+        public Task EnqueueToScheduler(
+            MediumMessage message,
+            DateTimeOffset publishTime,
+            DbTransaction? transaction = null,
+            CancellationToken cancellationToken = default
+        )
+        {
+            return Task.CompletedTask;
+        }
+    }
+}

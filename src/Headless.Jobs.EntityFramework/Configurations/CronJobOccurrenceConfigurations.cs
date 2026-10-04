@@ -1,12 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.EntityFramework.Configurations;
-using Headless.Hosting.Initialization;
-using Headless.Jobs.Entities;
+using Headless.EntityFramework;
+using Headless.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
-namespace Headless.Jobs.Configurations;
+namespace Headless.Jobs;
 
 /// <summary>EF Core mapping of the Jobs cron-occurrence table.</summary>
 /// <param name="schema">The schema that holds the table.</param>
@@ -44,7 +43,7 @@ public class CronJobOccurrenceConfigurations<TCronJob>(
             builder.Property(x => x.ContractVersion).UseCollation(contractCollation);
         }
 
-        builder.Property(x => x.TenantId).HasMaxLength(Models.JobsTenancyOptions.TenantIdMaxLength);
+        builder.Property(x => x.TenantId).HasMaxLength(JobsTenancyOptions.TenantIdMaxLength);
 
         var table = JobsStorageNaming.Table(style, JobsStorageNaming.CronJobOccurrences);
 

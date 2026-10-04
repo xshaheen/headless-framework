@@ -1,11 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Jobs;
-using Headless.Jobs.DbContextFactory;
-using Headless.Jobs.Entities;
-using Headless.Jobs.Enums;
-using Headless.Jobs.Interfaces;
-using Headless.Jobs.Interfaces.Managers;
 using Headless.Messaging;
 using Headless.Messaging.Persistence;
 using Headless.Testing.Tests;
@@ -225,7 +220,7 @@ public abstract class JobsEnqueueAtomicityConformanceTests<TFixture>(TFixture fi
         try
         {
             var request = new CoordinatedFacadeRequest(Guid.NewGuid(), "facade commit");
-            var options = new Headless.Jobs.Models.JobOptions
+            var options = new Headless.Jobs.JobOptions
             {
                 Description = "facade coordinated enqueue",
                 Retries = 3,

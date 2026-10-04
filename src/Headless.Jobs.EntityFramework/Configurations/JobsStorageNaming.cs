@@ -1,11 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Text;
-using Headless.Hosting.Initialization;
+using Headless.Hosting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
-namespace Headless.Jobs.Configurations;
+namespace Headless.Jobs;
 
 /// <summary>
 /// The Jobs table names and the constraint and index names derived from them, in the casing of the database the

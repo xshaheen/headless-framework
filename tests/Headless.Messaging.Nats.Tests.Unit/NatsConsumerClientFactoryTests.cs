@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging;
-using Headless.Messaging.Exceptions;
 using Headless.Messaging.Nats;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
@@ -13,6 +12,7 @@ namespace Tests;
 public sealed class NatsConsumerClientFactoryTests : TestBase
 {
     private readonly IOptions<NatsMessagingOptions> _options;
+    private readonly IOptions<NatsMessagingOptions> _invalidUrlOptions;
     private readonly IServiceProvider _serviceProvider;
 
     public NatsConsumerClientFactoryTests()
@@ -27,6 +27,14 @@ public sealed class NatsConsumerClientFactoryTests : TestBase
                         ConnectTimeout = TimeSpan.FromMilliseconds(100),
                         RetryOnInitialConnect = false,
                     },
+            }
+        );
+        _invalidUrlOptions = Options.Create(
+            new NatsMessagingOptions
+            {
+                // The NATS client throws UriFormatException building its options from this value, before it ever
+                // observes the cancellation token: the deterministic connect failure the test needs.
+                Servers = "nats://not a valid url",
             }
         );
         _serviceProvider = new ServiceCollection().BuildServiceProvider();
@@ -73,6 +81,27 @@ public sealed class NatsConsumerClientFactoryTests : TestBase
             await factory.CreateAsync(new ConsumerClientRequest("test-group", 1, MessageLane.Queue), cts.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task should_preserve_factory_cancellation_when_connect_fails_first()
+    {
+        // given - a server URL the NATS client cannot parse, so without the early token observation the
+        // connect attempt fails synchronously with its own exception (UriFormatException) before it ever
+        // sees the cancelled token, and the caller's token is cancelled: whichever the client raises,
+        // cancellation must win. (The real client has no injectable connect seam at the factory level, so
+        // the unparseable URL is what makes the failure-first order deterministic instead of a race.)
+        var factory = new NatsConsumerClientFactory(_invalidUrlOptions, _serviceProvider);
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        // when
+        var act = async () =>
+            await factory.CreateAsync(new ConsumerClientRequest("test-group", 1, MessageLane.Queue), cts.Token);
+
+        // then
+        var exception = await act.Should().ThrowAsync<OperationCanceledException>();
+        exception.Which.CancellationToken.Should().Be(cts.Token);
     }
 
     [Fact]

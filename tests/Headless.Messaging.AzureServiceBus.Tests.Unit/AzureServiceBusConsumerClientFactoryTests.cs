@@ -2,7 +2,6 @@
 
 using Headless.Messaging;
 using Headless.Messaging.AzureServiceBus;
-using Headless.Messaging.Exceptions;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -36,6 +35,42 @@ public sealed class AzureServiceBusConsumerClientFactoryTests
             await factory.CreateAsync(new ConsumerClientRequest("test-group", 1, MessageLane.Queue), cts.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task should_preserve_factory_cancellation_when_failure_precedes_token_observation()
+    {
+        // given - the connection setup fails with its own exception (invalid namespace client) and cancels the
+        // caller's token before any await observes it: the failure must not outrank the cancellation.
+        var loggerFactory = Substitute.For<ILoggerFactory>();
+        loggerFactory.CreateLogger(Arg.Any<string>()).Returns(Substitute.For<ILogger>());
+        var pool = Substitute.For<IAzureServiceBusClientPool>();
+        using var cts = new CancellationTokenSource();
+        pool.GetClient()
+            .Returns(_ =>
+            {
+                cts.Cancel();
+                throw new InvalidOperationException("connect failed");
+            });
+        await using var factory = new AzureServiceBusConsumerClientFactory(
+            loggerFactory,
+            Options.Create(
+                new AzureServiceBusMessagingOptions
+                {
+                    ConnectionString = "Endpoint=sb://localhost/;SharedAccessKeyName=name;SharedAccessKey=key",
+                }
+            ),
+            new ServiceCollection().BuildServiceProvider(),
+            pool
+        );
+
+        // when
+        var act = async () =>
+            await factory.CreateAsync(new ConsumerClientRequest("test-group", 1, MessageLane.Queue), cts.Token);
+
+        // then
+        var exception = await act.Should().ThrowAsync<OperationCanceledException>();
+        exception.Which.CancellationToken.Should().Be(cts.Token);
     }
 
     [Fact]

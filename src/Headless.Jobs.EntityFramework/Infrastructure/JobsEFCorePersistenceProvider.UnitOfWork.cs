@@ -1,10 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data;
-using Headless.Jobs.Configurations;
-using Headless.Jobs.Entities;
-using Headless.Jobs.Interfaces;
-using Headless.Jobs.Models;
 using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 

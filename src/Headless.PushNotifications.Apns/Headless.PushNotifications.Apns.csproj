@@ -15,6 +15,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
-    <ProjectReference Include="..\Headless.PushNotifications.Core\Headless.PushNotifications.Core.csproj" />
+    <ProjectReference Include="..\Headless.PushNotifications\Headless.PushNotifications.csproj" />
   </ItemGroup>
 </Project>

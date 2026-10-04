@@ -2,8 +2,8 @@
 
 using System.Buffers;
 using System.Security.Cryptography;
+using Headless;
 using Headless.Checks;
-using Headless.Core;
 using Headless.IO;
 
 namespace System.IO;

@@ -183,20 +183,20 @@
         "resolved": "1.1.1",
         "contentHash": "CU0/Iuv5VDynK8I8pDLwkgF0rZhbQoZahtodfL0M3x2gFkpBRApKs8RyMyNlAi1mwExE4gsmqQXk4aFVvW9a4Q=="
       },
-      "headless.captcha.abstractions": {
-        "type": "Project"
-      },
-      "headless.captcha.core": {
+      "headless.captcha": {
         "type": "Project",
         "dependencies": {
           "Headless.Captcha.Abstractions": "[1.0.0, )",
           "Headless.Checks": "[1.0.0, )"
         }
       },
+      "headless.captcha.abstractions": {
+        "type": "Project"
+      },
       "headless.captcha.recaptcha": {
         "type": "Project",
         "dependencies": {
-          "Headless.Captcha.Core": "[1.0.0, )",
+          "Headless.Captcha": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Microsoft.Extensions.Http.Resilience": "[10.10.0, )"
@@ -205,7 +205,7 @@
       "headless.captcha.turnstile": {
         "type": "Project",
         "dependencies": {
-          "Headless.Captcha.Core": "[1.0.0, )",
+          "Headless.Captcha": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Microsoft.Extensions.Http.Resilience": "[10.10.0, )"
@@ -222,16 +222,14 @@
           "Headless.Primitives": "[1.0.0, )",
           "Headless.Urls": "[1.0.0, )",
           "Nito.AsyncEx": "[5.1.2, )",
-          "Nito.Disposables": "[2.5.0, )",
-          "libphonenumber-csharp": "[9.0.39, )"
+          "Nito.Disposables": "[2.5.0, )"
         }
       },
       "headless.fluentvalidation": {
         "type": "Project",
         "dependencies": {
           "FluentValidation": "[12.1.1, )",
-          "Headless.Extensions": "[1.0.0, )",
-          "libphonenumber-csharp": "[9.0.39, )"
+          "Headless.Extensions": "[1.0.0, )"
         }
       },
       "headless.generator.primitives.abstractions": {
@@ -240,6 +238,8 @@
       "headless.hosting": {
         "type": "Project",
         "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
           "Headless.FluentValidation": "[1.0.0, )",
           "OpenTelemetry.Api": "[1.18.0, )"
         }
@@ -248,8 +248,7 @@
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
-          "Headless.Generator.Primitives.Abstractions": "[1.0.0, )",
-          "libphonenumber-csharp": "[9.0.39, )"
+          "Headless.Generator.Primitives.Abstractions": "[1.0.0, )"
         }
       },
       "headless.serializer.abstractions": {
@@ -273,12 +272,6 @@
         "requested": "[12.1.1, )",
         "resolved": "12.1.1",
         "contentHash": "EPpkIe1yh1a0OXyC100oOA8WMbZvqUu5plwhvYcb7oSELfyUZzfxV48BLhvs3kKo4NwG7MGLNgy1RJiYtT8Dpw=="
-      },
-      "libphonenumber-csharp": {
-        "type": "CentralTransitive",
-        "requested": "[9.0.39, )",
-        "resolved": "9.0.39",
-        "contentHash": "NiBrwzjHgtBj1XxTVQrWrxn+XOUmiDRcpqxBG5/DtZn8c2vm29FS9aBaCPG5+hBTDYXEid1r0SAZd7a063oGWg=="
       },
       "Microsoft.Extensions.Http.Resilience": {
         "type": "CentralTransitive",

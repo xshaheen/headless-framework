@@ -126,5 +126,5 @@ public sealed class NamedInMemoryCacheTests : TestBase
     }
 
     // Reserved-name and whitespace-name rejection is owned by AddHeadlessCaching's AddNamed gate and is
-    // covered by Headless.Caching.Core.Tests.Unit/CachingSetupBuilderTests.
+    // covered by Headless.Caching.Tests.Unit/CachingSetupBuilderTests.
 }

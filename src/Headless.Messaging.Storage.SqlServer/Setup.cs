@@ -1,10 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
-using Headless.Abstractions;
 using Headless.Checks;
-using Headless.Constants;
-using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Storage.SqlServer;

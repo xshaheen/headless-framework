@@ -1,15 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
-using Headless.Abstractions;
 using Headless.Caching;
 using Headless.Checks;
-using Headless.Constants;
-using Headless.Jobs.Entities;
-using Headless.Jobs.Enums;
-using Headless.Jobs.Interfaces;
 using Headless.Jobs.Internal;
-using Headless.Jobs.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -1551,7 +1545,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
     private static bool _IsCallerCancellation(Exception exception, CancellationToken cancellationToken)
     {
-        // Mirrors FactoryCacheCoordinator.IsCallerCancellation (Headless.Caching.Core, not a dependency here):
+        // Mirrors FactoryCacheCoordinator.IsCallerCancellation (Headless.Caching, not a dependency here):
         // a cancellation is the caller's only when the caller token requested it or the OCE is bound to that exact
         // token. An OCE carrying a different/None token is a downstream timeout, not caller cancellation.
         if (cancellationToken.IsCancellationRequested)

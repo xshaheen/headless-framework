@@ -2,7 +2,6 @@
 
 using Headless.Checks;
 using Headless.Http.Resilience;
-using Headless.Payments.Paymob.CashOut.Models;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;

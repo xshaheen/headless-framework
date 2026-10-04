@@ -1,16 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
-using Headless.Abstractions;
+using Headless;
 using Headless.Coordination;
 using Headless.Messaging;
-using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
-using Headless.Messaging.Messages;
-using Headless.Messaging.Monitoring;
-using Headless.Messaging.Serialization;
 using Headless.Messaging.Storage.InMemory;
 using Headless.Messaging.Transport;
+using Headless.MultiTenancy;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;
 using Microsoft.Extensions.DependencyInjection;

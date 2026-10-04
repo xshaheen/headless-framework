@@ -80,7 +80,6 @@ internal static class JobsSourceEmitter
         writer.AppendLine("using System.Threading.Tasks;");
         writer.AppendLine("using Microsoft.Extensions.DependencyInjection;");
         writer.AppendLine("using Headless.Jobs;");
-        writer.AppendLine("using Headless.Jobs.Enums;");
 
         if (!string.IsNullOrEmpty(assemblyName))
         {
@@ -193,7 +192,7 @@ internal static class JobsSourceEmitter
     private static void _WriteInvoker(SourceCodeBuilder writer, JobModel job)
     {
         writer.AppendLine(
-            $"private static async Task {job.InvokerName}(IServiceProvider serviceProvider, global::Headless.Jobs.Base.JobContext context, CancellationToken cancellationToken)"
+            $"private static async Task {job.InvokerName}(IServiceProvider serviceProvider, global::Headless.Jobs.JobContext context, CancellationToken cancellationToken)"
         );
         writer.OpenBracket();
 
@@ -204,13 +203,13 @@ internal static class JobsSourceEmitter
             writer.AppendLine(
                 $"var request = await JobsRequestProvider.GetRequestAsync<{job.ArgsTypeName}>(context, cancellationToken).ConfigureAwait(false);"
             );
-            contextExpression = $"new global::Headless.Jobs.Base.JobContext<{job.ArgsTypeName}>(context, request)";
-            jobInterface = $"global::Headless.Jobs.Base.IJob<{job.ArgsTypeName}>";
+            contextExpression = $"new global::Headless.Jobs.JobContext<{job.ArgsTypeName}>(context, request)";
+            jobInterface = $"global::Headless.Jobs.IJob<{job.ArgsTypeName}>";
         }
         else
         {
             contextExpression = "context";
-            jobInterface = "global::Headless.Jobs.Base.IJob";
+            jobInterface = "global::Headless.Jobs.IJob";
         }
 
         writer.AppendHandlerInstance(

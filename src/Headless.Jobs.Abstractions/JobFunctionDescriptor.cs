@@ -1,0 +1,111 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using System.ComponentModel;
+using Headless.Checks;
+
+namespace Headless.Jobs;
+
+/// <summary>
+/// Describes a generated <c>[Job]</c> without exposing its execution delegate.
+/// </summary>
+/// <remarks>
+/// A <see langword="null"/> <see cref="RequestType"/> identifies a requestless function. The function name remains
+/// the durable identity persisted with scheduled jobs.
+/// </remarks>
+[PublicAPI]
+public sealed record JobFunctionDescriptor
+{
+    /// <summary>Creates a descriptor for a generated job function.</summary>
+    /// <param name="functionName">The unique durable name of the function.</param>
+    /// <param name="requestType">The request payload type, or <see langword="null"/> for a requestless function.</param>
+    /// <param name="cronExpression">
+    /// The six-field cron expression, an <c>IConfiguration</c> key prefixed with <c>%</c>, or
+    /// <see cref="string.Empty"/> for a time job.
+    /// </param>
+    /// <param name="priority">The scheduling priority generated from <c>[Job]</c>.</param>
+    /// <param name="maxConcurrency">
+    /// The maximum concurrent executions on one node; <c>0</c> means the global scheduler limit applies.
+    /// </param>
+    /// <param name="contractVersion">The ordinal payload schema version, bounded by <see cref="JobContract.VersionMaxLength"/>.</param>
+    /// <exception cref="ArgumentException">The function name or contract version violates <see cref="JobContract"/> identity rules.</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="cronExpression"/> is <see langword="null"/>.</exception>
+    /// <exception cref="System.ComponentModel.InvalidEnumArgumentException">
+    /// <paramref name="priority"/> is not a defined <see cref="JobPriority"/> value.
+    /// </exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="maxConcurrency"/> is negative.</exception>
+    public JobFunctionDescriptor(
+        string functionName,
+        Type? requestType,
+        string cronExpression,
+        JobPriority priority,
+        int maxConcurrency,
+        string contractVersion = JobContract.InitialVersion
+    )
+    {
+        if (string.IsNullOrWhiteSpace(functionName))
+        {
+            throw new ArgumentException(
+                "The function name cannot be null, empty, or whitespace.",
+                nameof(functionName)
+            );
+        }
+
+        Argument.IsNotNull(cronExpression);
+
+        if (!Enum.IsDefined(priority))
+        {
+            throw new InvalidEnumArgumentException(nameof(priority), (int)priority, typeof(JobPriority));
+        }
+
+        if (maxConcurrency < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maxConcurrency), "Maximum concurrency cannot be negative.");
+        }
+
+        FunctionName = JobContract.ValidateName(functionName);
+        ContractVersion = JobContract.ValidateVersion(contractVersion);
+        RequestType = requestType;
+        CronExpression = cronExpression;
+        Priority = priority;
+        MaxConcurrency = maxConcurrency;
+    }
+
+    /// <summary>The unique durable name persisted with scheduled jobs.</summary>
+    public string FunctionName { get; }
+
+    /// <summary>The frozen durable payload schema version; independent of run and retry identities.</summary>
+    public string ContractVersion { get; }
+
+    /// <summary>The request payload type, or <see langword="null"/> when the function is requestless.</summary>
+    public Type? RequestType { get; }
+
+    /// <summary>
+    /// The six-field cron expression, a configuration key prefixed with <c>%</c>, or <see cref="string.Empty"/> for a
+    /// time job.
+    /// </summary>
+    public string CronExpression { get; }
+
+    /// <summary>The immutable scheduling priority generated from <c>[Job]</c>.</summary>
+    public JobPriority Priority { get; }
+
+    /// <summary>The maximum concurrent executions on one node; <c>0</c> means the global limit applies.</summary>
+    public int MaxConcurrency { get; }
+
+    /// <summary>
+    /// Copies this descriptor with the given values replaced. Every copy goes through here so a new field is carried by
+    /// construction instead of being dropped by a caller that rebuilds the descriptor by hand.
+    /// </summary>
+    internal JobFunctionDescriptor With(
+        string? cronExpression = null,
+        JobPriority? priority = null,
+        int? maxConcurrency = null
+    ) =>
+        new(
+            FunctionName,
+            RequestType,
+            cronExpression ?? CronExpression,
+            priority ?? Priority,
+            maxConcurrency ?? MaxConcurrency,
+            ContractVersion
+        );
+}

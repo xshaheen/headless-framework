@@ -1,6 +1,6 @@
 ---
 domain: Sequences
-packages: Sequences.Abstractions, Sequences.Core, Sequences.PostgreSql, Sequences.SqlServer, Sequences.Sqlite
+packages: Sequences.Abstractions, Sequences, Sequences.PostgreSql, Sequences.SqlServer, Sequences.Sqlite
 ---
 
 # Sequences
@@ -110,14 +110,14 @@ Reference it from code that takes numbers. Registration lives in the Core and pr
 
 ---
 
-## Headless.Sequences.Core
+## Headless.Sequences
 
 Registration, policies, key resolution, and the provider seam.
 
 ### Setup
 
 ```bash
-dotnet add package Headless.Sequences.Core
+dotnet add package Headless.Sequences
 ```
 
 Applications reach it through a provider package; call `AddHeadlessSequences` as shown in [Orientation](#orientation).

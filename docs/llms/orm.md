@@ -1,17 +1,17 @@
 ---
 domain: ORM
-packages: EntityFramework.Core, EntityFramework, EntityFramework.Messaging, Couchbase
+packages: EntityFramework.Primitives, EntityFramework, EntityFramework.Messaging, Couchbase
 ---
 
 # ORM
 
-> ORM domain: `Headless.EntityFramework.Core` for reusable EF primitives, `Headless.EntityFramework` for relational stores with framework conventions and built-in unit-of-work support, `Headless.EntityFramework.Messaging` for the outbox bridge, and `Headless.Couchbase` for document storage via Couchbase.
+> ORM domain: `Headless.EntityFramework.Primitives` for reusable EF primitives, `Headless.EntityFramework` for relational stores with framework conventions and built-in unit-of-work support, `Headless.EntityFramework.Messaging` for the outbox bridge, and `Headless.Couchbase` for document storage via Couchbase.
 
 ## Orientation
 
 Choose by storage model:
 
-- `Headless.EntityFramework.Core` — provider-neutral EF Core primitives. Use it from storage feature packages that need shared converters, primitive mappings, or query helpers without taking a dependency on `HeadlessDbContext` or its application-level save pipeline.
+- `Headless.EntityFramework.Primitives` — provider-neutral EF Core primitives. Use it from storage feature packages that need shared converters, primitive mappings, or query helpers without taking a dependency on `HeadlessDbContext` or its application-level save pipeline.
 - `Headless.EntityFramework` — relational databases via EF Core. Provides `HeadlessDbContext` with conventions for audit fields, EF model-driven audit-log capture, soft-delete, multi-tenancy filters, DDD event dispatch (domain + integration), and transaction-aware save behavior. References `Headless.UnitOfWork.EntityFramework` directly, so `IUnitOfWorkFactory.BeginAsync(db)` / `Enlist(db, transaction)` / `RunAsync(db, …)` are always available — there is no separate opt-in adapter. See [Unit of Work](unit-of-work.md) for the underlying contract. The default choice for any relational store (PostgreSQL, SQL Server, SQLite).
 - `Headless.EntityFramework.Messaging` — add-on bridge. Supplies the real `IHeadlessOutboxDispatcher` so integration events emitted by EF entities are written to the messaging outbox atomically with the business data. Add it when entities emit integration payloads. It is not an alternative provider — it is always used alongside `Headless.EntityFramework`.
 - `Headless.Couchbase` — document database via Couchbase. Provides `CouchbaseBucketContext`, `IBucketContextProvider`, `ICouchbaseClustersProvider`, `DocumentSetExtensions`, and `ICouchbaseManager`. Adds no relational conventions — no EF, no global filters, no auditing pipeline.
@@ -28,8 +28,8 @@ Use these packages for ORM-level persistence primitives. For raw SQL connection 
 ## Agent Rules
 
 - The outbox dispatcher accepts captured `EventContext<object>` values. Preserve their IDs and business context, including null root causation/system tenant, across save and persistence retry; do not recapture at dispatch.
-- Treat `Headless.EntityFramework.Core` as the provider-neutral primitives package and `Headless.EntityFramework` as the application-facing relational package with unit-of-work support built in; the messaging outbox bridge is the one remaining opt-in adapter, while `Headless.Couchbase` is the document provider. Do not invent an ORM umbrella package.
-- Use `Headless.EntityFramework.Core` for provider-neutral EF converters, primitive mappings, and query helpers; do not reference the full `Headless.EntityFramework` package solely for those APIs.
+- Treat `Headless.EntityFramework.Primitives` as the provider-neutral primitives package and `Headless.EntityFramework` as the application-facing relational package with unit-of-work support built in; the messaging outbox bridge is the one remaining opt-in adapter, while `Headless.Couchbase` is the document provider. Do not invent an ORM umbrella package.
+- Use `Headless.EntityFramework.Primitives` for provider-neutral EF converters, primitive mappings, and query helpers; do not reference the full `Headless.EntityFramework` package solely for those APIs.
 - **Use `AddHeadlessDbContext<TDbContext>(...)` or `AddHeadlessDbContextPool<TDbContext>(...)`, not raw `AddDbContext`.** The raw registration misses the Headless service set, DI-registered interceptor auto-attachment, the `IDbContextFactory<TDbContext>` singleton, request-scope binding, and the compiled-query cache key replacement. Both Headless registrations add all of these.
 - **Choose pooled or per-scope registration.** `AddHeadlessDbContextPool<TDbContext>` leases contexts from an EF pool and saves per-request context construction and service resolution; prefer it for high-throughput services. Use `AddHeadlessDbContext<TDbContext>` when the context constructor takes scoped services or the options callback needs scoped services. See [Registration modes and scope binding](#registration-modes-and-scope-binding).
 - `HeadlessDbContext` has one constructor parameter: `protected HeadlessDbContext(DbContextOptions options)`. Declare subclasses as `AppDbContext(DbContextOptions<AppDbContext> options) : HeadlessDbContext(options)`. Subclasses must override `public abstract string? DefaultSchema { get; }` — an empty string or `null` means use the provider default, a non-empty string sets `modelBuilder.HasDefaultSchema`.
@@ -161,7 +161,7 @@ Change Data Capture (e.g. Debezium) is an advanced alternative that bypasses thi
 
 ---
 
-## Headless.EntityFramework.Core
+## Headless.EntityFramework.Primitives
 
 ### API and behavior
 
@@ -180,13 +180,13 @@ Change Data Capture (e.g. Debezium) is an advanced alternative that bypasses thi
 ### Install
 
 ```bash
-dotnet add package Headless.EntityFramework.Core
+dotnet add package Headless.EntityFramework.Primitives
 ```
 
 ### Setup and use
 
 ```csharp
-using Headless.EntityFramework.Configurations;
+using Headless.EntityFramework;
 using Microsoft.EntityFrameworkCore;
 
 public sealed class ScheduledWork
@@ -236,7 +236,7 @@ Entity Framework Core integration with framework conventions and save pipeline o
 - `IHeadlessDbContextBuilder` returned by `AddHeadlessDbContextServices(...)` for chaining event tiers
 - Runtime guard that fails the save with a remediation message when an entity emits events but the matching tier is not registered
 - References `Headless.UnitOfWork.EntityFramework` directly, so `IUnitOfWorkFactory.BeginAsync(db)` / `Enlist(db, transaction)` / `RunAsync(db, …)` and `db.UnitOfWork()` are available without a separate adapter package. `RunAsync(db, …)` is the resilient, unit-of-work-aware transaction entry point: it begins a unit of work on the context inside the EF execution strategy, runs the operation, and completes the unit after commit, so outbox rows and job writes made inside enlist and drain atomically
-- Transitively exposes the provider-neutral converters, model helpers, pagination, ordering, data-grid, date aggregation, and lookup APIs from `Headless.EntityFramework.Core`
+- Transitively exposes the provider-neutral converters, model helpers, pagination, ordering, data-grid, date aggregation, and lookup APIs from `Headless.EntityFramework.Primitives`
 - `IDbContextFactory<TDbContext>` auto-registered as singleton: `HeadlessDbContextFactory<TDbContext>` for per-scope registration, EF's `PooledDbContextFactory<TDbContext>` for pooled registration
 
 ### Design constraints

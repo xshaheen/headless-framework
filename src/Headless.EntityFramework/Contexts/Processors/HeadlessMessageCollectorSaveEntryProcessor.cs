@@ -1,10 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Domain;
+using Headless.EntityFramework.Contexts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 
-namespace Headless.EntityFramework.Contexts.Processors;
+namespace Headless.EntityFramework;
 
 /// <summary>
 /// Terminal save-entry processor that harvests pending integration and domain events from entities

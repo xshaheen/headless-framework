@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
-using Headless.Abstractions;
+using Headless;
 using Headless.DistributedLocks;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;

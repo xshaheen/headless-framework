@@ -1,10 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net;
-using Headless.Abstractions;
+using Headless;
 using Headless.Api;
 using Headless.Checks;
-using Headless.Constants;
+using Headless.Context;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;

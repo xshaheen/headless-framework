@@ -2,12 +2,8 @@
 
 using Headless.Jobs;
 using Headless.Jobs.BackgroundServices;
-using Headless.Jobs.Enums;
 using Headless.Jobs.Instrumentation;
-using Headless.Jobs.Interfaces;
-using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.JobsThreadPool;
-using Headless.Jobs.Models;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;

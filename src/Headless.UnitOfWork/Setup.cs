@@ -22,7 +22,7 @@ public static class SetupUnitOfWork
         /// </summary>
         /// <remarks>
         /// Idempotent: repeated calls register the factory at most once. Consumer packages
-        /// (<c>Headless.EntityFramework</c>, <c>Headless.Messaging.Core</c>, <c>Headless.Jobs.Core</c>) call
+        /// (<c>Headless.EntityFramework</c>, <c>Headless.Messaging</c>, <c>Headless.Jobs</c>) call
         /// this internally, so exactly one registration exists regardless of which setup the host invokes
         /// first. The factory holds no per-scope state, so any service — a singleton or hosted service included —
         /// may take it directly. A feature reached through <see cref="IUnitOfWork.GetFeature{TFeature}" /> must be

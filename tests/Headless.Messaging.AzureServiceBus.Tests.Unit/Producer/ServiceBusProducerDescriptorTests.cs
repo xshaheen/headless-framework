@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Messaging.AzureServiceBus.Producer;
+using Headless.Messaging.AzureServiceBus;
 
 namespace Tests.Producer;
 

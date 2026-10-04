@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless;
 using Headless.Caching;
-using Headless.Exceptions;
 using Headless.Primitives;
 using Headless.RateLimiting;
 using Headless.Testing.Tests;

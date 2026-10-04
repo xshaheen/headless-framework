@@ -11,7 +11,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.Caching.InMemory\Headless.Caching.InMemory.csproj" />
     <ProjectReference Include="..\..\src\Headless.Security\Headless.Security.csproj" />
-    <ProjectReference Include="..\..\src\Headless.Settings.Core\Headless.Settings.Core.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Settings\Headless.Settings.csproj" />
     <ProjectReference Include="..\..\src\Headless.Settings.Storage.EntityFramework\Headless.Settings.Storage.EntityFramework.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
   </ItemGroup>

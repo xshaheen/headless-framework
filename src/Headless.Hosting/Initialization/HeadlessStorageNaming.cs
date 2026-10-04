@@ -4,7 +4,7 @@ using System.Text;
 using System.Text.Json;
 using Headless.Checks;
 
-namespace Headless.Hosting.Initialization;
+namespace Headless.Hosting;
 
 /// <summary>
 /// Maps the PascalCase names a Headless relational feature declares for its tables, columns, keys, and indexes onto

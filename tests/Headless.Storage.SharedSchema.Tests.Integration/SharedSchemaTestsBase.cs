@@ -1,15 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Abstractions;
 using Headless.Caching;
+using Headless.Context;
 using Headless.Coordination;
 using Headless.DistributedLocks;
-using Headless.Hosting.Initialization;
+using Headless.Hosting;
 using Headless.Hosting.Initialization.Schema;
 using Headless.Jobs;
-using Headless.Jobs.DbContextFactory;
 using Headless.Messaging;
-using Headless.Messaging.Configuration;
 using Headless.Messaging.Persistence;
 using Headless.Security;
 using Headless.Testing.Tests;

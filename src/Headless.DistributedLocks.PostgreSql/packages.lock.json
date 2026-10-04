@@ -230,16 +230,16 @@
       "headless.checks": {
         "type": "Project"
       },
-      "headless.core": {
+      "headless.distributedlocks": {
         "type": "Project",
         "dependencies": {
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.Extensions": "[1.0.0, )",
-          "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
-          "Headless.Serializer.Json": "[1.0.0, )",
-          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
-          "Microsoft.Extensions.Logging.Abstractions": "[10.0.12, )",
-          "TimeZoneConverter": "[7.2.0, )"
+          "Headless.DistributedLocks.Abstractions": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )",
+          "Headless.Messaging.Abstractions": "[1.0.0, )",
+          "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
+          "Microsoft.Extensions.Telemetry.Abstractions": "[10.10.0, )",
+          "OpenTelemetry.Api": "[1.18.0, )",
+          "Polly.Core": "[8.7.0, )"
         }
       },
       "headless.distributedlocks.abstractions": {
@@ -250,25 +250,11 @@
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.12, )"
         }
       },
-      "headless.distributedlocks.core": {
+      "headless.distributedlocks.database": {
         "type": "Project",
         "dependencies": {
-          "Headless.Core": "[1.0.0, )",
+          "Headless.DistributedLocks": "[1.0.0, )",
           "Headless.DistributedLocks.Abstractions": "[1.0.0, )",
-          "Headless.Hosting": "[1.0.0, )",
-          "Headless.Messaging.Abstractions": "[1.0.0, )",
-          "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
-          "Microsoft.Extensions.Telemetry.Abstractions": "[10.10.0, )",
-          "OpenTelemetry.Api": "[1.18.0, )",
-          "Polly.Core": "[8.7.0, )"
-        }
-      },
-      "headless.distributedlocks.core.database": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Core": "[1.0.0, )",
-          "Headless.DistributedLocks.Abstractions": "[1.0.0, )",
-          "Headless.DistributedLocks.Core": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Nito.AsyncEx": "[5.1.2, )"
         }
@@ -297,6 +283,8 @@
       "headless.hosting": {
         "type": "Project",
         "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
           "Headless.FluentValidation": "[1.0.0, )",
           "Microsoft.Extensions.Configuration.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
@@ -321,12 +309,6 @@
           "Headless.Messaging.Abstractions": "[1.0.0, )"
         }
       },
-      "headless.multitenancy.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Primitives": "[1.0.0, )"
-        }
-      },
       "headless.primitives": {
         "type": "Project",
         "dependencies": {
@@ -340,20 +322,7 @@
           "Headless.Checks": "[1.0.0, )"
         }
       },
-      "headless.serializer.abstractions": {
-        "type": "Project"
-      },
-      "headless.serializer.json": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.Serializer.Abstractions": "[1.0.0, )"
-        }
-      },
-      "headless.sql.abstractions": {
-        "type": "Project"
-      },
-      "headless.sql.core": {
+      "headless.sql": {
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
@@ -364,14 +333,17 @@
           "OpenTelemetry.Api": "[1.18.0, )"
         }
       },
+      "headless.sql.abstractions": {
+        "type": "Project"
+      },
       "headless.sql.postgresql": {
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
+          "Headless.Sql": "[1.0.0, )",
           "Headless.Sql.Abstractions": "[1.0.0, )",
-          "Headless.Sql.Core": "[1.0.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.12, )",
           "Npgsql": "[10.0.3, )"
@@ -525,12 +497,6 @@
         "requested": "[8.7.0, )",
         "resolved": "8.7.0",
         "contentHash": "BS2t+nsBer16PIebCEPNBK5fgMisADQyRCd7K+BgkMWpFmSaiYE+rVVNpFhGRqUkJmNSLmw0uCNzHHWfgml28Q=="
-      },
-      "TimeZoneConverter": {
-        "type": "CentralTransitive",
-        "requested": "[7.2.0, )",
-        "resolved": "7.2.0",
-        "contentHash": "4Poqu79dTmacVETqUJ53g3x4U21V/cmWPSlehdsVE4Q00akavvlRq+SRjcg/CmfO9ibOCjRl6TeUV7hkC5RC4w=="
       }
     }
   }

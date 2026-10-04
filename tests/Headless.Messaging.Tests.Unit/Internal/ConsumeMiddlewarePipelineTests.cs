@@ -1,0 +1,295 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using Headless.Messaging;
+using Headless.Messaging.Internal;
+using Headless.Testing.Tests;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace Tests.Internal;
+
+public sealed class ConsumeMiddlewarePipelineTests : TestBase
+{
+    [Fact]
+    public async Task should_reject_unsupported_lane_header_before_dispatch_without_requiring_a_logger()
+    {
+        // given
+        var recorder = new MiddlewareCallRecorder();
+        var pipeline = _BuildPipeline(_CreateServices(recorder));
+        var context = _BuildConsumerContext();
+        context.MediumMessage.Origin.Headers[Headers.Intent] = "Unknown";
+
+        // when
+        var act = () =>
+            pipeline.ExecuteAsync(context, new MiddlewarePayload("hi"), typeof(MiddlewarePayload), AbortToken);
+
+        // then
+        await act.Should().ThrowExactlyAsync<InvalidOperationException>().WithMessage("*'Unknown'*");
+        recorder.Calls.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_keep_registration_lane_authoritative_when_compatible_header_disagrees()
+    {
+        // given
+        var recorder = new MiddlewareCallRecorder();
+        var pipeline = _BuildPipeline(_CreateServices(recorder));
+        var context = _BuildConsumerContext();
+        context.MediumMessage.Origin.Headers[Headers.Intent] = "Queue";
+
+        // when
+        await pipeline.ExecuteAsync(context, new MiddlewarePayload("hi"), typeof(MiddlewarePayload), AbortToken);
+
+        // then
+        recorder.Calls.Should().Equal("dispatcher");
+    }
+
+    [Fact]
+    public async Task should_invoke_bus_middleware_around_dispatcher()
+    {
+        // given
+        var recorder = new MiddlewareCallRecorder();
+        var services = _CreateServices(recorder);
+        services.AddScoped<IConsumeMiddleware<ConsumeContext>, RecordingConsumeMiddlewareA>();
+        services.AddScoped<IConsumeMiddleware<ConsumeContext>, RecordingConsumeMiddlewareB>();
+        var pipeline = _BuildPipeline(services);
+
+        // when
+        await pipeline.ExecuteAsync(
+            _BuildConsumerContext(),
+            new MiddlewarePayload("hi"),
+            typeof(MiddlewarePayload),
+            AbortToken
+        );
+
+        // then
+        recorder.Calls.Should().Equal("A.before", "B.before", "dispatcher", "B.after", "A.after");
+    }
+
+    [Fact]
+    public async Task should_log_and_suppress_post_success_consume_middleware_failure()
+    {
+        // given
+        var recorder = new MiddlewareCallRecorder();
+        var services = _CreateServices(recorder);
+        services.AddScoped<IConsumeMiddleware<ConsumeContext>, PostSuccessThrowingConsumeMiddleware>();
+        var pipeline = _BuildPipeline(services);
+
+        // when
+        await pipeline.ExecuteAsync(
+            _BuildConsumerContext(),
+            new MiddlewarePayload("hi"),
+            typeof(MiddlewarePayload),
+            AbortToken
+        );
+
+        // then
+        recorder.Calls.Should().Equal("dispatcher", "post-success.throw");
+    }
+
+    [Fact]
+    public async Task should_rethrow_matching_oce_thrown_after_consumer_completed()
+    {
+        // given
+        using var cts = new CancellationTokenSource();
+        var services = _CreateServices(new MiddlewareCallRecorder());
+        services.AddSingleton(cts);
+        services.AddScoped<IConsumeMiddleware<ConsumeContext>, MatchingOceAfterNextConsumeMiddleware>();
+        var pipeline = _BuildPipeline(services);
+
+        // when
+        var act = async () =>
+            await pipeline.ExecuteAsync(
+                _BuildConsumerContext(),
+                new MiddlewarePayload("hi"),
+                typeof(MiddlewarePayload),
+                cts.Token
+            );
+
+        // then
+        await act.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task should_convert_pre_success_aggregate_with_matching_oce_to_oce()
+    {
+        // given
+        using var cts = new CancellationTokenSource();
+        var services = _CreateServices(new MiddlewareCallRecorder());
+        services.AddSingleton(cts);
+        services.AddScoped<IConsumeMiddleware<ConsumeContext>, AggregateBeforeNextConsumeMiddleware>();
+        var pipeline = _BuildPipeline(services);
+
+        // when
+        var act = async () =>
+            await pipeline.ExecuteAsync(
+                _BuildConsumerContext(),
+                new MiddlewarePayload("hi"),
+                typeof(MiddlewarePayload),
+                cts.Token
+            );
+
+        // then
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task should_rethrow_when_consume_middleware_swallows_outer_cancellation_and_returns_normally()
+    {
+        // given
+        using var cts = new CancellationTokenSource();
+        var recorder = new MiddlewareCallRecorder();
+        var services = _CreateServices(recorder);
+        services.AddSingleton(cts);
+        services.AddScoped<IConsumeMiddleware<ConsumeContext>, SwallowingOuterCancellationConsumeMiddleware>();
+        var pipeline = _BuildPipeline(services);
+
+        // when
+        var act = async () =>
+            await pipeline.ExecuteAsync(
+                _BuildConsumerContext(),
+                new MiddlewarePayload("hi"),
+                typeof(MiddlewarePayload),
+                AbortToken
+            );
+
+        // then
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    private static ServiceCollection _CreateServices(MiddlewareCallRecorder recorder)
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(recorder);
+        services.AddSingleton(new RecordingMiddlewareDispatcher(recorder));
+        return services;
+    }
+
+    private static IConsumeMiddlewarePipeline _BuildPipeline(ServiceCollection services)
+    {
+        var runtimeRegistry = Substitute.For<IRuntimeConsumerRegistry>();
+        return new ConsumeMiddlewarePipeline(services.BuildServiceProvider(), runtimeRegistry);
+    }
+
+    private static ConsumerContext _BuildConsumerContext()
+    {
+        var descriptor = new ConsumerExecutorDescriptor
+        {
+            Lane = MessageLane.Bus,
+            ConsumerType = typeof(ConsumeMiddlewarePipelineTests),
+            MessageType = typeof(MiddlewarePayload),
+            Dispatch = static (services, _, cancellationToken) =>
+                services.GetRequiredService<RecordingMiddlewareDispatcher>().DispatchAsync(cancellationToken),
+            MessageName = "test.messageName",
+            SubscriptionName = "test-group",
+        };
+
+        var origin = new Message(
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                [Headers.MessageId] = "msg-1",
+                [Headers.MessageName] = "test.messageName",
+            },
+            new MiddlewarePayload("payload")
+        );
+
+        return new ConsumerContext(
+            descriptor,
+            new MediumMessage
+            {
+                StorageId = Guid.NewGuid(),
+                Origin = origin,
+                Content = "{}",
+                Lane = MessageLane.Bus,
+                Added = DateTimeOffset.UtcNow,
+            }
+        );
+    }
+}
+
+internal sealed class RecordingConsumeMiddlewareA(MiddlewareCallRecorder recorder) : IConsumeMiddleware<ConsumeContext>
+{
+    public async ValueTask InvokeAsync(ConsumeContext context, Func<ValueTask> next)
+    {
+        recorder.Record("A.before");
+        await next();
+        recorder.Record("A.after");
+    }
+}
+
+internal sealed class RecordingConsumeMiddlewareB(MiddlewareCallRecorder recorder) : IConsumeMiddleware<ConsumeContext>
+{
+    public async ValueTask InvokeAsync(ConsumeContext context, Func<ValueTask> next)
+    {
+        recorder.Record("B.before");
+        await next();
+        recorder.Record("B.after");
+    }
+}
+
+internal sealed class PostSuccessThrowingConsumeMiddleware(MiddlewareCallRecorder recorder)
+    : IConsumeMiddleware<ConsumeContext>
+{
+    public async ValueTask InvokeAsync(ConsumeContext context, Func<ValueTask> next)
+    {
+        await next();
+        recorder.Record("post-success.throw");
+        throw new ObjectDisposedException(nameof(PostSuccessThrowingConsumeMiddleware));
+    }
+}
+
+internal sealed class MatchingOceAfterNextConsumeMiddleware(CancellationTokenSource source)
+    : IConsumeMiddleware<ConsumeContext>
+{
+    public async ValueTask InvokeAsync(ConsumeContext context, Func<ValueTask> next)
+    {
+        await next();
+        await source.CancelAsync();
+        throw new OperationCanceledException(source.Token);
+    }
+}
+
+internal sealed class AggregateBeforeNextConsumeMiddleware(CancellationTokenSource source)
+    : IConsumeMiddleware<ConsumeContext>
+{
+    public async ValueTask InvokeAsync(ConsumeContext context, Func<ValueTask> next)
+    {
+        await source.CancelAsync();
+        throw new AggregateException(
+            new InvalidOperationException("diagnostic sibling"),
+            new OperationCanceledException(source.Token)
+        );
+    }
+}
+
+internal sealed class SwallowingOuterCancellationConsumeMiddleware(CancellationTokenSource source)
+    : IConsumeMiddleware<ConsumeContext>
+{
+    public async ValueTask InvokeAsync(ConsumeContext context, Func<ValueTask> next)
+    {
+        await source.CancelAsync();
+        context.SetCancellationToken(source.Token);
+
+        try
+        {
+            await next();
+        }
+        catch (OperationCanceledException)
+        {
+            // The pipeline must re-check context.CancellationToken after this normal return.
+        }
+    }
+}
+
+internal sealed class RecordingMiddlewareDispatcher(MiddlewareCallRecorder recorder)
+{
+    public ValueTask DispatchAsync(CancellationToken cancellationToken)
+    {
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return ValueTask.FromCanceled(cancellationToken);
+        }
+
+        recorder.Record("dispatcher");
+        return ValueTask.CompletedTask;
+    }
+}

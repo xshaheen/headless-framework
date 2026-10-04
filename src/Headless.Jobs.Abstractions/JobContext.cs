@@ -1,0 +1,153 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using Microsoft.Extensions.DependencyInjection;
+
+namespace Headless.Jobs;
+
+/// <summary>
+/// Typed job execution context that carries a strongly-typed deserialized request payload alongside the
+/// base scheduling metadata.
+/// </summary>
+/// <typeparam name="TArgs">The deserialized argument type stored in the job row.</typeparam>
+/// <remarks>
+/// Initializes a typed context by copying every base member from <paramref name="jobContext"/>
+/// through the base copy constructor — so a member added to <see cref="JobContext"/> is never
+/// silently dropped here — and attaching the deserialized <paramref name="request"/>.
+/// </remarks>
+/// <param name="jobContext">The base context supplied by the scheduler.</param>
+/// <param name="request">The deserialized request payload for this execution.</param>
+[PublicAPI]
+[method: SetsRequiredMembers]
+public class JobContext<TArgs>(JobContext jobContext, TArgs request) : JobContext(jobContext)
+{
+    /// <summary>The deserialized request payload for this job execution.</summary>
+    public TArgs Request { get; set; } = request;
+}
+
+/// <summary>
+/// Runtime context passed to a job by the scheduler. Exposes scheduling metadata and
+/// provides hooks for cooperative cancellation and cron-skip control.
+/// </summary>
+[PublicAPI]
+public class JobContext
+{
+    /// <summary>Initializes a new context; the scheduler populates its members via an object initializer.</summary>
+    public JobContext() { }
+
+    /// <summary>
+    /// Copy constructor used by the typed <see cref="JobContext{TArgs}"/> to clone an existing
+    /// context. Every base member is copied here in one place, so a member added to this base is never silently
+    /// dropped when a typed context wraps a base one.
+    /// </summary>
+    /// <param name="other">The context to copy from.</param>
+    [SetsRequiredMembers]
+    protected JobContext(JobContext other)
+    {
+        ServiceScope = other.ServiceScope;
+        Id = other.Id;
+        Type = other.Type;
+        RetryCount = other.RetryCount;
+        IsDue = other.IsDue;
+        ScheduledFor = other.ScheduledFor;
+        RecoveredFromUtc = other.RecoveredFromUtc;
+        Lateness = other.Lateness;
+        FunctionName = other.FunctionName;
+        ContractVersion = other.ContractVersion;
+        CorrelationId = other.CorrelationId;
+        CausationId = other.CausationId;
+        TenantId = other.TenantId;
+    }
+
+    internal AsyncServiceScope ServiceScope { get; set; }
+
+    /// <summary>Payload schema version selected before deserialization.</summary>
+    public string ContractVersion { get; internal set; } = JobContract.InitialVersion;
+
+    /// <summary>Root business correlation, independent of trace and attempt identities.</summary>
+    public string? CorrelationId { get; internal set; }
+
+    /// <summary>Immediate business cause of this execution.</summary>
+    public string? CausationId { get; internal set; }
+
+    /// <summary>Persisted tenant restored around this execution; null denotes system scope.</summary>
+    public string? TenantId { get; internal set; }
+
+    /// <summary>Unique identifier of the job row (time job or cron occurrence) being executed.</summary>
+    public Guid Id { get; internal set; }
+
+    /// <summary>Whether the execution is a time job or a cron occurrence.</summary>
+    public JobType Type { get; internal set; }
+
+    /// <summary>Number of times this job has been retried before the current attempt.</summary>
+    public int RetryCount { get; internal set; }
+
+    /// <summary>
+    /// <see langword="true"/> when the job's execution time was in the past at dispatch time
+    /// (i.e., the job was picked up from the stale-job backlog rather than dispatched live).
+    /// </summary>
+    public bool IsDue { get; internal set; }
+
+    /// <summary>
+    /// The time this job was scheduled to run (UTC). For time jobs this equals the row's
+    /// <c>ExecutionTime</c>; for cron occurrences it equals the occurrence's <c>ExecutionTime</c>.
+    /// </summary>
+    public DateTime ScheduledFor { get; internal set; }
+
+    /// <summary>
+    /// For a run materialized by misfire recovery, the first unaccounted-for missed instant it stands in for;
+    /// <see langword="null"/> for a normally dispatched run.
+    /// </summary>
+    /// <remarks>
+    /// Read from the occurrence rather than derived at execution time, because by then the definition's watermark has
+    /// already advanced past the backlog — a run reclaimed after a restart could not otherwise reconstruct what it
+    /// stands for.
+    /// <para>
+    /// A coalesced run represents every unresolved occurrence missed during the outage, not just this instant. Job
+    /// code doing incremental work should treat this as the lower bound of the window to process; the value is exact
+    /// even when the missed count was too large to enumerate, because it is the first unresolved occurrence after the
+    /// watermark.
+    /// </para>
+    /// </remarks>
+    public DateTime? RecoveredFromUtc { get; internal set; }
+
+    /// <summary>Whether this run was materialized by misfire recovery rather than dispatched normally.</summary>
+    public bool IsRecoveryRun => RecoveredFromUtc is not null;
+
+    /// <summary>
+    /// How late this run started relative to <see cref="ScheduledFor"/>. Near zero for a normally dispatched run;
+    /// for a recovery run it measures from the first unaccounted-for missed instant, so it spans the unresolved part
+    /// of the outage.
+    /// </summary>
+    /// <remarks>
+    /// Never negative: a run observed to start fractionally before its scheduled instant — possible when the store's
+    /// clock and this node's differ by a few milliseconds — reports <see cref="TimeSpan.Zero"/> rather than a negative
+    /// lateness that no consumer expects.
+    /// </remarks>
+    public TimeSpan Lateness { get; internal set; }
+
+    /// <summary>The registered function name that identifies this job handler.</summary>
+    public required string FunctionName { get; init; }
+
+    /// <summary>
+    /// Durably requests cooperative cancellation of this time job. The current owner observes the persisted request;
+    /// this method does not directly signal process-local execution state.
+    /// </summary>
+    /// <param name="cancellationToken">Cancels only the durable request operation.</param>
+    /// <returns><see langword="true"/> only when a new durable request was recorded.</returns>
+    /// <exception cref="InvalidOperationException">This context represents a cron occurrence.</exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> is cancelled.</exception>
+    public Task<bool> RequestCancellationAsync(CancellationToken cancellationToken = default)
+    {
+        if (Type != JobType.TimeJob)
+        {
+            throw new InvalidOperationException("Durable cancellation is supported only for time jobs.");
+        }
+
+        return ServiceScope.ServiceProvider.GetRequiredService<IJobScheduler>().CancelAsync(Id, cancellationToken);
+    }
+
+    internal void SetServiceScope(AsyncServiceScope serviceScope)
+    {
+        ServiceScope = serviceScope;
+    }
+}

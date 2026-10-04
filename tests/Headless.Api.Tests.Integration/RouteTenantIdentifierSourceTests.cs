@@ -3,13 +3,10 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
-using Headless.Abstractions;
+using Headless;
 using Headless.Api;
-using Headless.Api.Middlewares;
-using Headless.Api.MultiTenancy;
 using Headless.Api.ServiceDefaults;
 using Headless.Caching;
-using Headless.Constants;
 using Headless.MultiTenancy;
 using Headless.MultiTenancy.Resources;
 using Headless.Testing.Tests;

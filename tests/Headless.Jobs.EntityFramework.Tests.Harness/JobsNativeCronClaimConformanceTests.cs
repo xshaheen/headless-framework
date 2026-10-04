@@ -2,11 +2,7 @@
 
 using System.Collections.Concurrent;
 using System.Data.Common;
-using Headless.Jobs.DbContextFactory;
-using Headless.Jobs.Entities;
-using Headless.Jobs.Enums;
-using Headless.Jobs.Interfaces;
-using Headless.Jobs.Models;
+using Headless.Jobs;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;

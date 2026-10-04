@@ -2,7 +2,7 @@
 
 using System.ComponentModel.DataAnnotations;
 using System.Reflection;
-using Headless.OpenApi.Nswag.OperationProcessors;
+using Headless.OpenApi.Nswag;
 using Microsoft.AspNetCore.Mvc.Abstractions;
 using Microsoft.AspNetCore.Mvc.ApiExplorer;
 using Microsoft.AspNetCore.Mvc.ModelBinding;

@@ -1,11 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Security.Claims;
-using Headless.Constants;
 using Headless.Permissions;
-using Headless.Permissions.Definitions;
-using Headless.Permissions.Grants;
-using Headless.Permissions.Models;
+using Headless.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;

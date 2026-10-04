@@ -2,8 +2,6 @@
 
 using System.Net;
 using Headless.Payments.Paymob.CashIn;
-using Headless.Payments.Paymob.CashIn.Models;
-using Headless.Payments.Paymob.CashIn.Models.Auth;
 using WireMock.RequestBuilders;
 using WireMock.ResponseBuilders;
 

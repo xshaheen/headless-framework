@@ -8,7 +8,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Headless.Jobs;
-using Headless.Jobs.Enums;
 using Jobs.SourceGenerator.Tests;
 
 [assembly: global::Headless.Jobs.JobFunctionDescriptorMetadataAttribute("middleware.local", "1")]
@@ -43,10 +42,10 @@ namespace Jobs.SourceGenerator.Tests
         {
         }
 
-        private static async Task Invoke_Demo_Middleware_MiddlewareJob(IServiceProvider serviceProvider, global::Headless.Jobs.Base.JobContext context, CancellationToken cancellationToken)
+        private static async Task Invoke_Demo_Middleware_MiddlewareJob(IServiceProvider serviceProvider, global::Headless.Jobs.JobContext context, CancellationToken cancellationToken)
         {
             var job = ActivatorUtilities.CreateInstance<global::Demo.Middleware.MiddlewareJob>(serviceProvider);
-            await ((global::Headless.Jobs.Base.IJob)job).ExecuteAsync(context, cancellationToken).ConfigureAwait(false);
+            await ((global::Headless.Jobs.IJob)job).ExecuteAsync(context, cancellationToken).ConfigureAwait(false);
         }
     }
 }

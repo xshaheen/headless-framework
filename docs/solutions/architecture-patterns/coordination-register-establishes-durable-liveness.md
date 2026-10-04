@@ -1,7 +1,7 @@
 ---
 title: "Registration must durably establish liveness, not the first heartbeat (incarnation-guarded membership)"
 date: 2026-06-07
-module: Headless.Coordination.Core
+module: Headless.Coordination
 problem_type: architecture_pattern
 component: background_job
 severity: high

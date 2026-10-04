@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Threading.RateLimiting;
-using Headless.Abstractions;
+using Headless.Api;
 using Headless.Api.Resources;
 using Headless.Primitives;
 using Headless.Testing.Tests;

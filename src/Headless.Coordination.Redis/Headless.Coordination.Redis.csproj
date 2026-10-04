@@ -12,7 +12,7 @@
     <InternalsVisibleTo Include="Headless.Coordination.Redis.Tests.Integration" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Headless.Coordination.Core\Headless.Coordination.Core.csproj" />
+    <ProjectReference Include="..\Headless.Coordination\Headless.Coordination.csproj" />
     <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
     <ProjectReference Include="..\Headless.Redis\Headless.Redis.csproj" />
   </ItemGroup>

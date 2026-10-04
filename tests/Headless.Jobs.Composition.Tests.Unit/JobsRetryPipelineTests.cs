@@ -3,9 +3,6 @@
 using System.Collections.Concurrent;
 using System.Collections.Frozen;
 using Headless.Jobs;
-using Headless.Jobs.Enums;
-using Headless.Jobs.Exceptions;
-using Headless.Jobs.Models;
 using Headless.Reliability;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;

@@ -6,7 +6,6 @@ using Headless.DistributedLocks;
 using Headless.EntityFramework.Migrations.Startup;
 using Headless.Features;
 using Headless.Messaging;
-using Headless.Messaging.Configuration;
 using Headless.Permissions;
 using Headless.Settings;
 using Microsoft.EntityFrameworkCore;

@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using AutoFixture;
-using Headless.Payments.Paymob.CashOut.Models;
+using Headless.Payments.Paymob.CashOut;
 using Microsoft.Extensions.Options;
 using WireMock.Server;
 using WireMock.Settings;

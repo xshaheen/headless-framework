@@ -17,7 +17,7 @@
 [![GitHub Stars](https://img.shields.io/github/stars/xshaheen/headless-framework?style=social)](https://github.com/xshaheen/headless-framework)
 [![English](https://img.shields.io/badge/lang-English-2563EB?style=flat-square)](README.md)
 
-198 package &bull; نفس الـ setup في كل حتة &bull; بدّل أي provider بسطر واحد
+199 package &bull; نفس الـ setup في كل حتة &bull; بدّل أي provider بسطر واحد
 
 [ليه Headless](#ليه-headless) &bull; [ابدأ في 60 ثانية](#ابدأ-في-60-ثانية) &bull; [Setup واحد لكل المجالات](#setup-واحد-لكل-المجالات) &bull; [إيه اللي في الصندوق](#إيه-اللي-في-الصندوق) &bull; [فهرس الحزم](#فهرس-الحزم)
 
@@ -53,7 +53,7 @@ builder.Services.AddHeadlessCaching(setup => setup.UseRedis(...)); // production
 
 أي service أو repository أو handler بياخد `ICache` مش هيتأثر بالتعديل دا. ونفس الكلام على `IBlobStorage` بين S3 و Azure و Cloudflare R2 و FileSystem و Redis و SFTP، وعلى `IEmailSender` بين SES و Azure Communication Services و SMTP، وعلى الـ messaging بين 8 transports.
 
-**هتركّب 3 packages، مش 198.** الفهرس كبير عشان عدد الـ providers كبير. الخدمة اللي محتاجة caching بتركّب `Headless.Caching.Abstractions` و `Headless.Caching.Core` وprovider واحد. والـ libraries بتاعة الـ domain والـ application بتعتمد على الـ Abstractions package لوحدها: `Headless.Caching.Abstractions` بتجرّ وراها package-ين بس، ومفيش فيهم أي dependency خارجية: `Headless.Checks` و `Headless.Primitives`.
+**هتركّب 3 packages، مش 199.** الفهرس كبير عشان عدد الـ providers كبير. الخدمة اللي محتاجة caching بتركّب `Headless.Caching.Abstractions` و `Headless.Caching` وprovider واحد. والـ libraries بتاعة الـ domain والـ application بتعتمد على الـ Abstractions package لوحدها: `Headless.Caching.Abstractions` بتجرّ وراها package-ين بس، ومفيش فيهم أي dependency خارجية: `Headless.Checks` و `Headless.Primitives`.
 
 **الـ tests مش محتاجة Docker عشان تبقى سريعة.** الـ caching والـ distributed locks والـ messaging فيهم in-memory providers؛ والـ emails والـ SMS والـ push notifications فيهم dev providers مش بتبعت حاجة؛ والـ blob storage بيشتغل على الـ file system المحلي. يعني الـ unit tests بتجرّب نفس الـ contract الحقيقي من غير containers. ولما تحتاج الـ backend الحقيقي، `Headless.Testing.Testcontainers` بتجهّزلك الـ fixtures. الـ repo نفسه ماشي على التقسيمة دي: 122 مشروع unit tests و 63 مشروع integration tests.
 
@@ -109,7 +109,7 @@ app.Run();
 
 ```bash
 dotnet add package Headless.Caching.Abstractions
-dotnet add package Headless.Caching.Core
+dotnet add package Headless.Caching
 dotnet add package Headless.Caching.InMemory
 ```
 
@@ -152,7 +152,7 @@ builder.Services.AddHeadlessCaching(setup =>
 
 ```bash
 dotnet add package Headless.Blobs.Abstractions
-dotnet add package Headless.Blobs.Core
+dotnet add package Headless.Blobs
 dotnet add package Headless.Blobs.FileSystem
 ```
 
@@ -234,7 +234,7 @@ Headless.<Feature>.Testing       -> test helpers, where the domain has them
 
 <div dir="rtl" align="right">
 
-خلّي الـ libraries بتاعة الـ domain والـ application تعتمد على الـ Abstractions package لوحدها. وضيف الـ Core package وpackage الـ provider في الـ composition root بتاع الـ host. التقسيمة دي هي اللي بتمنع أنواع الـ provider إنها تتسرّب لكود الـ business.
+خلّي الـ libraries بتاعة الـ domain والـ application تعتمد على الـ Abstractions package لوحدها. وضيف الـ root package بتاعة الـ feature وpackage الـ provider في الـ composition root بتاع الـ host. التقسيمة دي هي اللي بتمنع أنواع الـ provider إنها تتسرّب لكود الـ business.
 
 ## ملاحظات مهمة للـ Production
 
@@ -291,7 +291,7 @@ packages الـ providers دي packages عادية على NuGet. عشان تضي
 </div>
 
 <details dir="rtl" align="right">
-<summary><strong>كل الـ 198 package، مرتّبة حسب الـ domain</strong> — اضغط للعرض</summary>
+<summary><strong>كل الـ 199 package، مرتّبة حسب الـ domain</strong> — اضغط للعرض</summary>
 
 ### API & Web
 
@@ -299,7 +299,7 @@ APIs جاهزة للـ production على ASP.NET Core: conventions للـ reques
 
 | Package | الوصف |
 |---------|-------|
-| [Headless.Api.Core](src/Headless.Api.Core/README.md) | Building blocks لبناء ASP.NET Core APIs (Problem Details، JWT، identity، middleware) |
+| [Headless.Api](src/Headless.Api/README.md) | Building blocks لبناء ASP.NET Core APIs (Problem Details، JWT، identity، middleware) |
 | [Headless.Api.ServiceDefaults](src/Headless.Api.ServiceDefaults/README.md) | نقطة دخول `AddHeadless()` مع defaults بأسلوب Aspire (OpenTelemetry، OpenAPI، service discovery) |
 | [Headless.Api.Abstractions](src/Headless.Api.Abstractions/README.md) | الـ abstractions والـ contracts بتاعة الـ API |
 | [Headless.Api.DataProtection](src/Headless.Api.DataProtection/README.md) | تخزين مفاتيح الـ Data Protection على أي `IBlobStorage` |
@@ -316,7 +316,8 @@ Building blocks مشتركة عبر الـ framework: domain primitives، وbase
 | Package | الوصف |
 |---------|-------|
 | [Headless.Extensions](src/Headless.Extensions/README.md) | Extension methods وcollections وIO وthreading وreflection helpers |
-| [Headless.Core](src/Headless.Core/README.md) | Building blocks للـ Domain-Driven Design |
+| [Headless.Context.Abstractions](src/Headless.Context.Abstractions/README.md) | الـ contracts بتاعة الـ ambient context: الـ current user والـ principal والـ locale والـ time zone والـ correlation والـ cancellation والـ host identity |
+| [Headless.Context](src/Headless.Context/README.md) | تطبيقات الـ ambient context وتسجيل `AddHeadlessHostIdentity()` |
 | [Headless.Security.Abstractions](src/Headless.Security.Abstractions/README.md) | الـ contracts والـ options بتاعة الـ security |
 | [Headless.Security](src/Headless.Security/README.md) | تشفير الـ strings، وlookup hashing، وsecret hashing (PBKDF2) |
 | [Headless.Security.Argon2](src/Headless.Security.Argon2/README.md) | Secret hashing بـ Argon2id، وهو الـ algorithm الافتراضي لـ `ISecretHasher` |
@@ -335,7 +336,7 @@ Audit logging على مستوى الـ property لتتبّع تغييرات ال
 | Package | الوصف |
 |---------|-------|
 | [Headless.AuditLog.Abstractions](src/Headless.AuditLog.Abstractions/README.md) | الـ contracts بتاعة الـ audit log |
-| [Headless.AuditLog.Core](src/Headless.AuditLog.Core/README.md) | الـ DI setup، وvalidation للـ options، وpipeline الـ providers |
+| [Headless.AuditLog](src/Headless.AuditLog/README.md) | الـ DI setup، وvalidation للـ options، وpipeline الـ providers |
 | [Headless.AuditLog.Storage.EntityFramework](src/Headless.AuditLog.Storage.EntityFramework/README.md) | تخزين الـ audit log على EF Core |
 | [Headless.AuditLog.Storage.PostgreSql](src/Headless.AuditLog.Storage.PostgreSql/README.md) | تخزين الـ audit log في PostgreSQL |
 | [Headless.AuditLog.Storage.SqlServer](src/Headless.AuditLog.Storage.SqlServer/README.md) | تخزين الـ audit log في SQL Server |
@@ -347,7 +348,7 @@ Interface واحدة لتخزين الملفات، وproviders لكل cloud وpr
 | Package | الوصف |
 |---------|-------|
 | [Headless.Blobs.Abstractions](src/Headless.Blobs.Abstractions/README.md) | الـ interfaces بتاعة الـ blob storage |
-| [Headless.Blobs.Core](src/Headless.Blobs.Core/README.md) | Setup builder للـ default store وللـ named stores |
+| [Headless.Blobs](src/Headless.Blobs/README.md) | Setup builder للـ default store وللـ named stores |
 | [Headless.Blobs.Aws](src/Headless.Blobs.Aws/README.md) | Provider لـ AWS S3 |
 | [Headless.Blobs.Azure](src/Headless.Blobs.Azure/README.md) | Provider لـ Azure Blob Storage |
 | [Headless.Blobs.CloudflareR2](src/Headless.Blobs.CloudflareR2/README.md) | Provider لـ Cloudflare R2 (متوافق مع S3) |
@@ -364,7 +365,7 @@ Cache متعدد الـ tiers خلف abstraction واحدة: in-memory، وRedis
 | Package | الوصف |
 |---------|-------|
 | [Headless.Caching.Abstractions](src/Headless.Caching.Abstractions/README.md) | الـ interfaces بتاعة الـ caching |
-| [Headless.Caching.Core](src/Headless.Caching.Core/README.md) | Orchestration مشتركة قايمة على الـ factories |
+| [Headless.Caching](src/Headless.Caching/README.md) | Orchestration مشتركة قايمة على الـ factories |
 | [Headless.Caching.Hybrid](src/Headless.Caching.Hybrid/README.md) | Hybrid cache بـ L1/L2 |
 | [Headless.Caching.InMemory](src/Headless.Caching.InMemory/README.md) | Cache جوه الـ process |
 | [Headless.Caching.Redis](src/Headless.Caching.Redis/README.md) | Cache فوق Redis |
@@ -379,7 +380,7 @@ Cache متعدد الـ tiers خلف abstraction واحدة: in-memory، وRedis
 | Package | الوصف |
 |---------|-------|
 | [Headless.Captcha.Abstractions](src/Headless.Captcha.Abstractions/README.md) | الـ interfaces بتاعة الـ CAPTCHA verification والـ builder |
-| [Headless.Captcha.Core](src/Headless.Captcha.Core/README.md) | الـ setup وpipeline الـ validation |
+| [Headless.Captcha](src/Headless.Captcha/README.md) | الـ setup وpipeline الـ validation |
 | [Headless.Captcha.ReCaptcha](src/Headless.Captcha.ReCaptcha/README.md) | Provider لـ Google reCAPTCHA v2/v3 |
 | [Headless.Captcha.Turnstile](src/Headless.Captcha.Turnstile/README.md) | Provider لـ Cloudflare Turnstile |
 
@@ -390,7 +391,7 @@ Cache متعدد الـ tiers خلف abstraction واحدة: in-memory، وRedis
 | Package | الوصف |
 |---------|-------|
 | [Headless.Emails.Abstractions](src/Headless.Emails.Abstractions/README.md) | الـ interfaces بتاعة إرسال الـ email |
-| [Headless.Emails.Core](src/Headless.Emails.Core/README.md) | الـ setup builder وأدوات قايمة على MimeKit |
+| [Headless.Emails](src/Headless.Emails/README.md) | الـ setup builder وأدوات قايمة على MimeKit |
 | [Headless.Emails.Aws](src/Headless.Emails.Aws/README.md) | Provider لـ AWS SES |
 | [Headless.Emails.Azure](src/Headless.Emails.Azure/README.md) | Provider لـ Azure Communication Services |
 | [Headless.Emails.Dev](src/Headless.Emails.Dev/README.md) | Dev provider مش بيبعت حاجة |
@@ -403,7 +404,7 @@ Feature flags وقت الـ runtime مدعومة بـ storage دائم. بدّل
 | Package | الوصف |
 |---------|-------|
 | [Headless.Features.Abstractions](src/Headless.Features.Abstractions/README.md) | الـ interfaces بتاعة الـ feature flags |
-| [Headless.Features.Core](src/Headless.Features.Core/README.md) | الـ implementation بتاعة إدارة الـ features |
+| [Headless.Features](src/Headless.Features/README.md) | الـ implementation بتاعة إدارة الـ features |
 | [Headless.Features.Storage.EntityFramework](src/Headless.Features.Storage.EntityFramework/README.md) | Storage على EF Core |
 | [Headless.Features.Storage.PostgreSql](src/Headless.Features.Storage.PostgreSql/README.md) | Storage خام في PostgreSQL |
 | [Headless.Features.Storage.SqlServer](src/Headless.Features.Storage.SqlServer/README.md) | Storage خام في SQL Server |
@@ -423,7 +424,7 @@ Image processing بـ backends قابلة للتبديل: resize، وcrop، وco
 | Package | الوصف |
 |---------|-------|
 | [Headless.Imaging.Abstractions](src/Headless.Imaging.Abstractions/README.md) | الـ interfaces بتاعة الـ image processing |
-| [Headless.Imaging.Core](src/Headless.Imaging.Core/README.md) | الـ image processing الأساسي |
+| [Headless.Imaging](src/Headless.Imaging/README.md) | الـ image processing الأساسي |
 | [Headless.Imaging.ImageSharp](src/Headless.Imaging.ImageSharp/README.md) | Implementation على ImageSharp |
 
 ### Logging
@@ -452,7 +453,7 @@ Message bus موزّع بـ transactional outbox، وretries، وdelayed deliver
 | [Headless.Messaging.Abstractions](src/Headless.Messaging.Abstractions/README.md) | الـ interfaces والـ contracts الأساسية بتاعة الـ messaging |
 | [Headless.Messaging.Bus.Abstractions](src/Headless.Messaging.Bus.Abstractions/README.md) | الـ contracts بتاعة الـ publisher بنمط pub/sub |
 | [Headless.Messaging.Queue.Abstractions](src/Headless.Messaging.Queue.Abstractions/README.md) | الـ contracts بتاعة الـ publisher والـ request client بنمط point-to-point |
-| [Headless.Messaging.Core](src/Headless.Messaging.Core/README.md) | الـ runtime engine: outbox، وretries، وdelayed delivery، وorchestration للـ consumers |
+| [Headless.Messaging](src/Headless.Messaging/README.md) | الـ runtime engine: outbox، وretries، وdelayed delivery، وorchestration للـ consumers |
 | [Headless.Messaging.Dashboard](src/Headless.Messaging.Dashboard/README.md) | Web UI لمتابعة الـ messages والـ failures وحالة النظام |
 | [Headless.Messaging.Dashboard.K8s](src/Headless.Messaging.Dashboard.K8s/README.md) | اكتشاف الـ nodes أوتوماتيك جوه Kubernetes |
 | [Headless.Messaging.Testing](src/Headless.Messaging.Testing/README.md) | Test harness جوه الـ process للتحقق من الـ published والـ consumed والـ faulted messages |
@@ -487,7 +488,7 @@ Message bus موزّع بـ transactional outbox، وretries، وdelayed deliver
 | Package | الوصف |
 |---------|-------|
 | [Headless.Jobs.Abstractions](src/Headless.Jobs.Abstractions/README.md) | الـ interfaces بتاعة الـ job scheduling |
-| [Headless.Jobs.Core](src/Headless.Jobs.Core/README.md) | الـ job engine: cron، وdelays، وretries، وmonitoring |
+| [Headless.Jobs](src/Headless.Jobs/README.md) | الـ job engine: cron، وdelays، وretries، وmonitoring |
 | [Headless.Jobs.SourceGenerator](src/Headless.Jobs.SourceGenerator/README.md) | توليد كود وقت الـ compile للـ job classes المعلّمة بـ `[Job]` |
 | [Headless.Jobs.Dashboard](src/Headless.Jobs.Dashboard/README.md) | Web UI لمتابعة الـ jobs |
 | [Headless.Jobs.EntityFramework](src/Headless.Jobs.EntityFramework/README.md) | تخزين حالة الـ jobs على EF Core؛ بيستخدم `Headless.Caching.ICache` اختيارياً لـ caching الـ cron expressions |
@@ -519,7 +520,7 @@ Message bus موزّع بـ transactional outbox، وretries، وdelayed deliver
 | Package | الوصف |
 |---------|-------|
 | [Headless.EntityFramework](src/Headless.EntityFramework/README.md) | أدوات لـ Entity Framework Core |
-| [Headless.EntityFramework.Core](src/Headless.EntityFramework.Core/README.md) | EF converters وprimitive mappings وquery helpers من غير `HeadlessDbContext` |
+| [Headless.EntityFramework.Primitives](src/Headless.EntityFramework.Primitives/README.md) | EF converters وprimitive mappings وquery helpers من غير `HeadlessDbContext` |
 | [Headless.EntityFramework.Messaging](src/Headless.EntityFramework.Messaging/README.md) | Outbox dispatcher للـ EF Core: كتابة الـ integration events بشكل atomic مع الـ save |
 | [Headless.Couchbase](src/Headless.Couchbase/README.md) | أدوات للوصول لبيانات Couchbase |
 
@@ -540,7 +541,7 @@ Permission system مدعوم بـ database. عرّف الـ permissions في ا�
 | Package | الوصف |
 |---------|-------|
 | [Headless.Permissions.Abstractions](src/Headless.Permissions.Abstractions/README.md) | الـ interfaces بتاعة الـ permission system |
-| [Headless.Permissions.Core](src/Headless.Permissions.Core/README.md) | الـ implementation بتاعة الـ permission system |
+| [Headless.Permissions](src/Headless.Permissions/README.md) | الـ implementation بتاعة الـ permission system |
 | [Headless.Permissions.Testing](src/Headless.Permissions.Testing/README.md) | Doubles للـ tests بترجّع allow دايماً |
 | [Headless.Permissions.Storage.EntityFramework](src/Headless.Permissions.Storage.EntityFramework/README.md) | تخزين الـ permissions على EF Core |
 | [Headless.Permissions.Storage.PostgreSql](src/Headless.Permissions.Storage.PostgreSql/README.md) | تخزين الـ permissions في PostgreSQL |
@@ -554,7 +555,7 @@ Firebase Cloud Messaging خلف abstraction واضحة، ومعاه dev provider
 |---------|-------|
 | [Headless.PushNotifications.Abstractions](src/Headless.PushNotifications.Abstractions/README.md) | الـ interfaces بتاعة الـ push notifications |
 | [Headless.PushNotifications.Apns](src/Headless.PushNotifications.Apns/README.md) | Apple Push Notification service (APNs) |
-| [Headless.PushNotifications.Core](src/Headless.PushNotifications.Core/README.md) | Setup builder للـ services المسماة |
+| [Headless.PushNotifications](src/Headless.PushNotifications/README.md) | Setup builder للـ services المسماة |
 | [Headless.PushNotifications.Dev](src/Headless.PushNotifications.Dev/README.md) | Dev provider للـ push |
 | [Headless.PushNotifications.Firebase](src/Headless.PushNotifications.Firebase/README.md) | Provider لـ Firebase Cloud Messaging |
 
@@ -565,8 +566,8 @@ Firebase Cloud Messaging خلف abstraction واضحة، ومعاه dev provider
 | Package | الوصف |
 |---------|-------|
 | [Headless.DistributedLocks.Abstractions](src/Headless.DistributedLocks.Abstractions/README.md) | الـ interfaces بتاعة الـ distributed locking |
-| [Headless.DistributedLocks.Core](src/Headless.DistributedLocks.Core/README.md) | الـ implementation بتاعة الـ locking |
-| [Headless.DistributedLocks.Core.Database](src/Headless.DistributedLocks.Core.Database/README.md) | أساس relational مشترك لـ providers الـ database |
+| [Headless.DistributedLocks](src/Headless.DistributedLocks/README.md) | الـ implementation بتاعة الـ locking |
+| [Headless.DistributedLocks.Database](src/Headless.DistributedLocks.Database/README.md) | أساس relational مشترك لـ providers الـ database |
 | [Headless.DistributedLocks.InMemory](src/Headless.DistributedLocks.InMemory/README.md) | Locking جوه نفس الـ process |
 | [Headless.DistributedLocks.PostgreSql](src/Headless.DistributedLocks.PostgreSql/README.md) | Locking بـ advisory locks في PostgreSQL |
 | [Headless.DistributedLocks.Redis](src/Headless.DistributedLocks.Redis/README.md) | Locking على Redis |
@@ -587,8 +588,8 @@ Cluster membership وliveness tracking: اعرف مين من الـ nodes شغّ
 | Package | الوصف |
 |---------|-------|
 | [Headless.Coordination.Abstractions](src/Headless.Coordination.Abstractions/README.md) | الـ contracts بتاعة الـ membership والـ liveness والـ lifecycle |
-| [Headless.Coordination.Core](src/Headless.Coordination.Core/README.md) | Membership engine من غير provider محدد |
-| [Headless.Coordination.Core.Database](src/Headless.Coordination.Core.Database/README.md) | أساس relational مشترك لـ providers الـ SQL |
+| [Headless.Coordination](src/Headless.Coordination/README.md) | Membership engine من غير provider محدد |
+| [Headless.Coordination.Database](src/Headless.Coordination.Database/README.md) | أساس relational مشترك لـ providers الـ SQL |
 | [Headless.Coordination.PostgreSql](src/Headless.Coordination.PostgreSql/README.md) | Membership في PostgreSQL بـ liveness من ساعة الـ server |
 | [Headless.Coordination.Redis](src/Headless.Coordination.Redis/README.md) | Membership على Redis عن طريق Lua وساعة Redis |
 | [Headless.Coordination.SqlServer](src/Headless.Coordination.SqlServer/README.md) | Membership في SQL Server بـ writes محروسة |
@@ -601,7 +602,7 @@ Cluster membership وliveness tracking: اعرف مين من الـ nodes شغّ
 | Package | الوصف |
 |---------|-------|
 | [Headless.Sequences.Abstractions](src/Headless.Sequences.Abstractions/README.md) | `ISequenceGenerator` و`SequenceRange` والـ accessor `unit.Sequences` |
-| [Headless.Sequences.Core](src/Headless.Sequences.Core/README.md) | الـ registration وسياسات الترقيم وتحديد مفتاح الـ tenant |
+| [Headless.Sequences](src/Headless.Sequences/README.md) | الـ registration وسياسات الترقيم وتحديد مفتاح الـ tenant |
 | [Headless.Sequences.PostgreSql](src/Headless.Sequences.PostgreSql/README.md) | Counters في PostgreSQL بـ upsert-increment واحد |
 | [Headless.Sequences.SqlServer](src/Headless.Sequences.SqlServer/README.md) | Counters في SQL Server بـ upsert محمي بـ range lock |
 | [Headless.Sequences.Sqlite](src/Headless.Sequences.Sqlite/README.md) | Counters في SQLite تحت الـ write lock بتاع الـ database |
@@ -613,7 +614,7 @@ Leases دائمة بين الـ processes بتوقف الـ writes بتاعة at
 | Package | الوصف |
 |---------|-------|
 | [Headless.Fencing.Abstractions](src/Headless.Fencing.Abstractions/README.md) | `IFencedLeases` و`FencedLease` والـ accessor `unit.Leases` |
-| [Headless.Fencing.Core](src/Headless.Fencing.Core/README.md) | الـ registration، وتحديد الـ key، والـ sweep بتاع الـ leases اللي انتهت |
+| [Headless.Fencing](src/Headless.Fencing/README.md) | الـ registration، وتحديد الـ key، والـ sweep بتاع الـ leases اللي انتهت |
 | [Headless.Fencing.InMemory](src/Headless.Fencing.InMemory/README.md) | Leases جوه الـ process للـ tests وللـ hosts اللي شغالة بـ instance واحدة |
 | [Headless.Fencing.PostgreSql](src/Headless.Fencing.PostgreSql/README.md) | Leases في PostgreSQL بـ sweep بيستخدم `SKIP LOCKED` |
 | [Headless.Fencing.SqlServer](src/Headless.Fencing.SqlServer/README.md) | Leases في SQL Server بـ sweep بيستخدم `READPAST` |
@@ -626,7 +627,7 @@ Idempotent admission دائم ومتقسّم حسب الـ tenant: اقبل ال
 | Package | الوصف |
 |---------|-------|
 | [Headless.Idempotency.Abstractions](src/Headless.Idempotency.Abstractions/README.md) | `IIdempotentOperations` و`IdempotentAdmission` والـ accessor `unit.Idempotency` |
-| [Headless.Idempotency.Core](src/Headless.Idempotency.Core/README.md) | الـ registration، وorchestration للـ admission، والـ purge بعد مدة الـ retention |
+| [Headless.Idempotency](src/Headless.Idempotency/README.md) | الـ registration، وorchestration للـ admission، والـ purge بعد مدة الـ retention |
 | [Headless.Idempotency.Caching](src/Headless.Idempotency.Caching/README.md) | Records الـ idempotency في cache مشترك (Redis) للـ autonomous calls بين الـ replicas من غير SQL |
 | [Headless.Idempotency.InMemory](src/Headless.Idempotency.InMemory/README.md) | Records جوه الـ process للـ tests وللـ hosts اللي شغالة بـ instance واحدة |
 | [Headless.Idempotency.PostgreSql](src/Headless.Idempotency.PostgreSql/README.md) | Records الـ idempotency في PostgreSQL |
@@ -663,7 +664,7 @@ Application settings ديناميكية متخزّنة في database. غيّر �
 | Package | الوصف |
 |---------|-------|
 | [Headless.Settings.Abstractions](src/Headless.Settings.Abstractions/README.md) | الـ interfaces بتاعة الـ dynamic settings |
-| [Headless.Settings.Core](src/Headless.Settings.Core/README.md) | الـ implementation بتاعة إدارة الـ settings |
+| [Headless.Settings](src/Headless.Settings/README.md) | الـ implementation بتاعة إدارة الـ settings |
 | [Headless.Settings.Storage.EntityFramework](src/Headless.Settings.Storage.EntityFramework/README.md) | تخزين الـ settings على EF Core |
 | [Headless.Settings.Storage.PostgreSql](src/Headless.Settings.Storage.PostgreSql/README.md) | تخزين الـ settings في PostgreSQL |
 | [Headless.Settings.Storage.SqlServer](src/Headless.Settings.Storage.SqlServer/README.md) | تخزين الـ settings في SQL Server |
@@ -675,7 +676,7 @@ Application settings ديناميكية متخزّنة في database. غيّر �
 | Package | الوصف |
 |---------|-------|
 | [Headless.Sms.Abstractions](src/Headless.Sms.Abstractions/README.md) | الـ interfaces بتاعة إرسال الـ SMS |
-| [Headless.Sms.Core](src/Headless.Sms.Core/README.md) | الـ setup builder واختيار الـ provider |
+| [Headless.Sms](src/Headless.Sms/README.md) | الـ setup builder واختيار الـ provider |
 | [Headless.Sms.Aws](src/Headless.Sms.Aws/README.md) | Provider لـ AWS SNS |
 | [Headless.Sms.Cequens](src/Headless.Sms.Cequens/README.md) | Provider لـ Cequens |
 | [Headless.Sms.Connekio](src/Headless.Sms.Connekio/README.md) | Provider لـ Connekio |
@@ -692,7 +693,7 @@ Connection factories للوصول لـ SQL خام لما تحتاج تنزل ت�
 | Package | الوصف |
 |---------|-------|
 | [Headless.Sql.Abstractions](src/Headless.Sql.Abstractions/README.md) | الـ interfaces بتاعة الـ SQL connections |
-| [Headless.Sql.Core](src/Headless.Sql.Core/README.md) | Implementation للـ current connection على مستوى الـ scope |
+| [Headless.Sql](src/Headless.Sql/README.md) | Implementation للـ current connection على مستوى الـ scope |
 | [Headless.Sql.PostgreSql](src/Headless.Sql.PostgreSql/README.md) | Connection factory لـ PostgreSQL |
 | [Headless.Sql.SqlServer](src/Headless.Sql.SqlServer/README.md) | Connection factory لـ SQL Server |
 | [Headless.Sql.Sqlite](src/Headless.Sql.Sqlite/README.md) | Connection factory لـ SQLite |

@@ -18,12 +18,11 @@ internal sealed class PulsarProviderConformanceDriver(PulsarFixture fixture) : T
 
     public override bool SupportsEveryInstance => true;
 
-    public override void ConfigureRoutingAffinityTransport(
-        Headless.Messaging.Configuration.MessagingSetupBuilder setup
-    ) => setup.UsePulsar(fixture.ConnectionString);
+    public override void ConfigureRoutingAffinityTransport(Headless.Messaging.MessagingSetupBuilder setup) =>
+        setup.UsePulsar(fixture.ConnectionString);
 
     // The same transport a consuming host uses, so the startup-rejection proof runs against the real provider wiring.
-    public override void ConfigureRequestReplyTransport(Headless.Messaging.Configuration.MessagingSetupBuilder setup) =>
+    public override void ConfigureRequestReplyTransport(Headless.Messaging.MessagingSetupBuilder setup) =>
         ConfigureRoutingAffinityTransport(setup);
 
     public override async Task AssertNativePublisherPathsAsync(CancellationToken cancellationToken)

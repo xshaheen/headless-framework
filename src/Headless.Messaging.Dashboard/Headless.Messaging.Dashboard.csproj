@@ -16,7 +16,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Dashboard.Authentication\Headless.Dashboard.Authentication.csproj" />
-    <ProjectReference Include="..\Headless.Messaging.Core\Headless.Messaging.Core.csproj" />
+    <ProjectReference Include="..\Headless.Messaging\Headless.Messaging.csproj" />
   </ItemGroup>
   <!-- Builds wwwroot SPA and embeds wwwroot/dist/** at build time (dist is gitignored, not committed). -->
   <Import Project="$(MSBuildThisFileDirectory)..\..\eng\DashboardSpa.targets" />

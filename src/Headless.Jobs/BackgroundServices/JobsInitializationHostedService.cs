@@ -1,0 +1,412 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using System.Globalization;
+using Headless.DistributedLocks;
+using Headless.Jobs.Internal;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+
+namespace Headless.Jobs.BackgroundServices;
+
+/// <summary>
+/// Handles Jobs core initialization (function building, seeding, notification wiring, external provider init).
+/// Signals <see cref="JobsActivationBarrier"/> when it finishes, which is what actually orders the scheduler behind
+/// it — registration order alone does not survive <c>HostOptions.ServicesStartConcurrently</c>.
+/// </summary>
+internal sealed class JobsInitializationHostedService(
+    IServiceProvider serviceProvider,
+    JobFunctionRegistry functionRegistry,
+    JobsActivationBarrier activationBarrier,
+    ILogger<JobsInitializationHostedService> logger
+) : IHostedService
+{
+    private Action<object?, CoreNotifyActionType>? _notifyCoreHandler;
+    private JobsExecutionContext? _executionContext;
+
+    public async Task StartAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _StartCoreAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            // Fail closed. Publish the failure to every loop parked on the barrier — including loops already running
+            // under a concurrent start — so none of them proceeds to select work under an unverified schedule
+            // interpretation, then let the original exception abort host startup as before.
+            activationBarrier.MarkFailed(exception);
+
+            throw;
+        }
+
+        activationBarrier.MarkCompleted();
+    }
+
+    private async Task _StartCoreAsync(CancellationToken cancellationToken)
+    {
+        _ = serviceProvider.GetRequiredService<JobSchedulingPolicies>();
+        var executionContext = serviceProvider.GetRequiredService<JobsExecutionContext>();
+        var notificationHubSender = serviceProvider.GetRequiredService<IJobsNotificationHubSender>();
+        var schedulerOptions = serviceProvider.GetRequiredService<SchedulerOptionsBuilder>();
+
+        // A pickup lease (LockedUntil = now + LeaseDuration) shorter than the fallback re-queue cadence can expire
+        // between fallback ticks, letting another node speculatively re-claim a still-owned Idle/Queued row. The CAS
+        // on the InProgress transition prevents double execution, but the redundant pickup is wasteful. Warn so the
+        // operator widens LeaseDuration — the Jobs analog of messaging's DeadThreshold >= DispatchTimeout guard.
+        if (schedulerOptions.LeaseDuration < schedulerOptions.FallbackIntervalChecker)
+        {
+            logger.LeaseDurationShorterThanFallback(
+                schedulerOptions.LeaseDuration,
+                schedulerOptions.FallbackIntervalChecker
+            );
+        }
+
+        // #316 ValidateOnStart-equivalent: reject a misconfigured explicit lease-renewal cadence at startup
+        // (must be positive and strictly less than LeaseDuration) so a bad value fails fast rather than silently
+        // letting a running job's lease lapse. Throws InvalidOperationException; no-op for the derived default.
+        schedulerOptions.ResolveLeaseRenewalInterval();
+
+        // Probe for the background scheduler: its presence is what tells this initializer whether background services
+        // were registered at all, gating both the notification wiring below and the fingerprint drain further down.
+        // JobsStartMode.Manual is deliberately NOT pushed onto it from here — the scheduler consumes its own configured
+        // start mode, because a push only lands in time when this initializer starts first, which
+        // HostOptions.ServicesStartConcurrently does not guarantee.
+        var backgroundScheduler = serviceProvider.GetService<JobsSchedulerBackgroundService>();
+        if (backgroundScheduler is not null)
+        {
+            _executionContext = executionContext;
+            _notifyCoreHandler = (value, type) =>
+            {
+                if (value is null)
+                {
+                    return;
+                }
+
+                switch (type)
+                {
+                    case CoreNotifyActionType.NotifyHostExceptionMessage:
+                        notificationHubSender.UpdateHostException(value);
+                        executionContext.LastHostExceptionMessage = (string)value;
+
+                        break;
+                    case CoreNotifyActionType.NotifyNextOccurence:
+                        notificationHubSender.UpdateNextOccurrence(value);
+
+                        break;
+                    case CoreNotifyActionType.NotifyHostStatus:
+                        notificationHubSender.UpdateHostStatus(value);
+
+                        break;
+                    case CoreNotifyActionType.NotifyThreadCount:
+                        notificationHubSender.UpdateActiveThreads(value);
+
+                        break;
+                }
+            };
+            executionContext.NotifyCoreAction += _notifyCoreHandler;
+        }
+
+        // Seeding pipeline
+        var options = executionContext.OptionsSeeding;
+
+        if (options?.SeedDefinedCronJobs != false)
+        {
+            await SeedDefinedCronJobsAsync(schedulerOptions, cancellationToken).ConfigureAwait(false);
+        }
+
+        // Each seeder runs inside its own scope. A consumer-supplied seeder commonly resolves the scoped
+        // ITimeJobManager<>/ICronJobManager<>/IJobScheduler facades; resolving them from this hosted service's
+        // root provider would be a captive-dependency error under ValidateScopes.
+        if (options?.TimeSeederAction is not null)
+        {
+            await using var scope = serviceProvider.CreateAsyncScope();
+            await options.TimeSeederAction(scope.ServiceProvider).ConfigureAwait(false);
+        }
+
+        if (options?.CronSeederAction is not null)
+        {
+            await using var scope = serviceProvider.CreateAsyncScope();
+            await options.CronSeederAction(scope.ServiceProvider).ConfigureAwait(false);
+        }
+
+        // External provider init (e.g., EF Core dead-node cleanup)
+        if (executionContext.ExternalProviderApplicationAction is not null)
+        {
+            executionContext.ExternalProviderApplicationAction(serviceProvider);
+            executionContext.ExternalProviderApplicationAction = null;
+        }
+
+        // Drain one stable store snapshot here, before the caller opens the activation barrier and therefore before any
+        // loop can pick up a uninitialized or stale-fingerprint row. The BARRIER is the ordering guarantee, not hosted-
+        // service registration order: a host that sets HostOptions.ServicesStartConcurrently starts the scheduler at
+        // the same time as this initializer. Deterministically invalid definitions are durably deferred by the manager;
+        // storage/infrastructure failures propagate, leave the barrier closed-with-failure, and fail closed instead of
+        // allowing dispatch under an unverified interpretation.
+        if (backgroundScheduler is not null)
+        {
+            await DrainFingerprintSnapshotAsync(schedulerOptions, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    public Task StopAsync(CancellationToken cancellationToken)
+    {
+        if (_executionContext is not null && _notifyCoreHandler is not null)
+        {
+            _executionContext.NotifyCoreAction -= _notifyCoreHandler;
+        }
+
+        return Task.CompletedTask;
+    }
+
+    internal async Task DrainFingerprintSnapshotAsync(
+        SchedulerOptionsBuilder schedulerOptions,
+        CancellationToken cancellationToken
+    )
+    {
+        var manager = serviceProvider.GetRequiredService<IInternalJobManager>();
+        Guid? cursor = null;
+        Guid? highWatermark = null;
+        var scanned = 0;
+        var rebased = 0;
+        var deferred = 0;
+        var lostFence = 0;
+        CronFingerprintSweepResult result;
+        while (true)
+        {
+            result = await manager
+                .RebaseStaleFingerprintsAsync(
+                    schedulerOptions.FingerprintSweepBatchSize,
+                    afterId: cursor,
+                    throughId: highWatermark,
+                    cancellationToken: cancellationToken
+                )
+                .ConfigureAwait(false);
+            scanned += result.Scanned;
+            rebased += result.Rebased;
+            deferred += result.Deferred;
+            lostFence += result.LostFence;
+            cursor = result.NextCursorId;
+            highWatermark ??= result.SnapshotHighWatermarkId;
+
+            if (result.HasMore)
+            {
+                if (cursor is null)
+                {
+                    throw new InvalidOperationException(
+                        "Fingerprint sweep reported more rows without a continuation cursor."
+                    );
+                }
+
+                continue;
+            }
+
+            break;
+        }
+
+        logger.CronFingerprintActivationCompleted(scanned, rebased, deferred, lostFence);
+    }
+
+    // Instance method (not static) so the lock + logger come from constructor injection rather than a mid-body
+    // service-locator — resolution happens at DI-build time, inside the construction fault boundary, consistent with
+    // JobsDeadOwnerReclaimer. Internal (not private) is the codebase's standard InternalsVisibleTo test seam: the guard
+    // unit test constructs the service and calls this directly, avoiding a full StartAsync run.
+    internal async Task SeedDefinedCronJobsAsync(
+        SchedulerOptionsBuilder schedulerOptions,
+        CancellationToken cancellationToken
+    )
+    {
+        // Run this seeder in its own scope — matches the TimeSeederAction/CronSeederAction seeders below and
+        // future-proofs against a scoped resolution creeping into this path (IInternalJobManager itself is
+        // singleton today).
+        await using var scope = serviceProvider.CreateAsyncScope();
+        var scopedProvider = scope.ServiceProvider;
+        var internalJobsManager = scopedProvider.GetRequiredService<IInternalJobManager>();
+
+        // Resolve the per-definition knobs HERE rather than in the provider, so every node seeds the same values: if
+        // each provider resolved them from local configuration, two nodes could disagree about whether the same
+        // instant misfired.
+        var functionsToSeed = functionRegistry
+            .Functions.Where(x => !string.IsNullOrEmpty(x.Value.CronExpression))
+            .Select(x =>
+                _ToSeed(
+                    x.Key,
+                    x.Value,
+                    schedulerOptions,
+                    scopedProvider
+                        .GetRequiredService<CronScheduleCache>()
+                        .ComputeEvaluationFingerprint(x.Value.TimeZoneId),
+                    functionRegistry.Descriptors[x.Key].ContractVersion,
+                    functionRegistry.GetFlattenedFailurePolicy(x.Key)
+                )
+            )
+            .ToArray();
+
+        // No lock configured (default): run the seed directly. Seeded rows carry a DETERMINISTIC primary key derived
+        // from the function, so simultaneous first-boot on N nodes converges on a single row (PK dedup) — no duplicate
+        // schedules even without the lock. The optional lock below only removes the redundant N-node scan/write storm;
+        // it is never the correctness boundary — per-row predicates, node@incarnation ownership, and per-job leases are.
+        if (!schedulerOptions.UseStorageLock)
+        {
+            await internalJobsManager.MigrateDefinedCronJobs(functionsToSeed, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        IDistributedLease? lease;
+        try
+        {
+            // Resolve the keyed lock lazily INSIDE the try (not via constructor injection) so a consumer factory that
+            // throws at resolution — e.g. UseDistributedLock(sp => sp.GetRequiredService<IDistributedLock>()) when no
+            // provider is registered — is treated as an acquire fault and skipped, rather than crashing host startup
+            // when DI constructs this hosted service.
+            var lockProvider = scopedProvider.GetRequiredKeyedService<IDistributedLock>(JobsKeys.LockProvider);
+            lease = await lockProvider
+                .TryAcquireAsync(JobsKeys.CronSeedMigrationResource, JobsKeys.GuardAcquireOptions, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Host-shutdown / caller cancellation (our own token tripped) must propagate — do not swallow it as a skip.
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // Lock-store hiccup — including a provider that surfaces an internal timeout as a
+            // (Task)OperationCanceledException while our token is NOT cancelled: another node seeds, or the next boot
+            // retries. Skip rather than fail startup instead of letting a provider-internal cancel crash host start.
+            logger.CronSeedMigrationLockAcquireFailed(ex);
+            return;
+        }
+
+        if (lease is null)
+        {
+            // Another node holds the seed lock and is migrating; skip the redundant scan (skip-on-contention).
+            logger.CronSeedMigrationSkipped();
+            return;
+        }
+
+        await using (lease.ConfigureAwait(false))
+        {
+            await internalJobsManager.MigrateDefinedCronJobs(functionsToSeed, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Resolves one declared function's knobs — attribute value, else the scheduler-wide default — and rejects any
+    /// that a hand-written registration could still carry out of range; the source generator already rejects them for
+    /// attributes. The retries come from the job's resolved failure policy, flattened the same way a scheduling call
+    /// stores them.
+    /// </summary>
+    private static CronSeedDefinition _ToSeed(
+        string function,
+        JobFunctionRegistration registration,
+        SchedulerOptionsBuilder schedulerOptions,
+        string evaluationFingerprint,
+        string contractVersion,
+        (int Retries, int[]? RetryIntervals) flattenedFailurePolicy
+    )
+    {
+        var onMissedRun = registration.OnMissedRun ?? schedulerOptions.DefaultMissedRunPolicy;
+        var graceSeconds = registration.MissedRunGraceSeconds ?? schedulerOptions.DefaultMissedRunGraceSeconds;
+        var onOverlap = registration.OnOverlap ?? schedulerOptions.DefaultOverlapPolicy;
+
+        if (!Enum.IsDefined(onMissedRun))
+        {
+            throw new JobValidatorException(
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Missed-run policy value '{(int)onMissedRun}' is not defined for function '{function}'."
+                )
+            );
+        }
+
+        if (graceSeconds <= 0)
+        {
+            throw new JobValidatorException(
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Missed-run grace must be greater than zero seconds for function '{function}' but was {graceSeconds}."
+                )
+            );
+        }
+
+        if (!Enum.IsDefined(onOverlap))
+        {
+            throw new JobValidatorException(
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"Overlap policy value '{(int)onOverlap}' is not defined for function '{function}'."
+                )
+            );
+        }
+
+        return new CronSeedDefinition(
+            function,
+            registration.CronExpression,
+            onMissedRun,
+            graceSeconds,
+            onOverlap,
+            evaluationFingerprint,
+            contractVersion,
+            registration.TimeZoneId,
+            flattenedFailurePolicy.Retries,
+            flattenedFailurePolicy.RetryIntervals
+        );
+    }
+}
+
+internal static partial class JobsInitializationLog
+{
+    [LoggerMessage(
+        EventId = 5,
+        EventName = "CronFingerprintActivationCompleted",
+        Level = LogLevel.Information,
+        Message = "Cron fingerprint activation gate completed: scanned={Scanned}, rebased={Rebased}, "
+            + "deferred={Deferred}, lostFence={LostFence}."
+    )]
+    public static partial void CronFingerprintActivationCompleted(
+        this ILogger logger,
+        int scanned,
+        int rebased,
+        int deferred,
+        int lostFence
+    );
+
+    [LoggerMessage(
+        EventId = 1,
+        EventName = "LeaseDurationShorterThanFallback",
+        Level = LogLevel.Warning,
+        Message = "SchedulerOptionsBuilder.LeaseDuration ({LeaseDuration}) is shorter than FallbackIntervalChecker "
+            + "({FallbackInterval}). A pickup lease can expire before the fallback re-queues the row, letting another "
+            + "node speculatively re-claim a still-owned Idle/Queued job. Set LeaseDuration >= FallbackIntervalChecker "
+            + "to avoid redundant pickups."
+    )]
+    public static partial void LeaseDurationShorterThanFallback(
+        this ILogger logger,
+        TimeSpan leaseDuration,
+        TimeSpan fallbackInterval
+    );
+
+    [LoggerMessage(
+        EventId = 2,
+        EventName = "CronSeedMigrationSkipped",
+        Level = LogLevel.Debug,
+        Message = "Skipped cron-seed migration: another node holds the '"
+            + JobsKeys.CronSeedMigrationResource
+            + "' lock and is seeding."
+    )]
+    public static partial void CronSeedMigrationSkipped(this ILogger logger);
+
+    [LoggerMessage(
+        EventId = 3,
+        EventName = "CronSeedMigrationLockAcquireFailed",
+        // Warning, not Debug: a contention skip (lease == null) is normal on every rolling deploy, but an acquire
+        // *fault* signals a lock-store problem. If the store is down for all nodes at first boot, every node hits
+        // this path and the seed is skipped until the next restart — that must be operator-visible.
+        Level = LogLevel.Warning,
+        Message = "Skipped cron-seed migration: acquiring the '"
+            + JobsKeys.CronSeedMigrationResource
+            + "' lock failed. Another node will seed or the next boot will retry."
+    )]
+    public static partial void CronSeedMigrationLockAcquireFailed(this ILogger logger, Exception exception);
+}

@@ -4,7 +4,7 @@ using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
 using Headless.Blobs;
 using Headless.Blobs.SshNet;
-using Headless.Hosting.Options;
+using Headless.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 

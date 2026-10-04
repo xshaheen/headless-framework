@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation.TestHelper;
-using Headless.Api.Cors;
+using Headless.Api;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Hosting.Internal;

@@ -4,11 +4,9 @@ using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Threading.Channels;
+using DotNet.Testcontainers.Builders;
 using Headless.Messaging;
-using Headless.Messaging.Configuration;
-using Headless.Messaging.Exceptions;
 using Headless.Messaging.Nats;
-using Headless.Messaging.Registration;
 using Headless.Messaging.Transport;
 using Headless.Testing.Testcontainers;
 using Headless.Testing.Tests;
@@ -35,6 +33,11 @@ namespace Tests;
 [Collection("Nats")]
 public sealed class NatsReplyTransportTests(NatsFixture fixture) : TestBase
 {
+    // The reply listener's stream-check outcomes.
+    private const int _StreamCapturesRepliesEventId = 13;
+    private const int _StreamCheckSkippedEventId = 14;
+    private const int _StreamCheckPassedEventId = 15;
+
     // Generous enough for a server under test load; each condition is normally met in well under a second.
     private static readonly TimeSpan _Bound = TimeSpan.FromSeconds(30);
 
@@ -185,8 +188,8 @@ public sealed class NatsReplyTransportTests(NatsFixture fixture) : TestBase
 
             // then — the address is served regardless, and one warning names the stream
             address.Should().StartWith(ReplyAddresses.Prefix);
-            await _WaitUntilAsync(() => _CapturedWarnings(log).Count > 0);
-            var warning = _CapturedWarnings(log).Should().ContainSingle().Subject;
+            await _WaitUntilAsync(() => _Entries(log, _StreamCapturesRepliesEventId).Count > 0);
+            var warning = _Entries(log, _StreamCapturesRepliesEventId).Should().ContainSingle().Subject;
             warning.Level.Should().Be(LogLevel.Warning);
             warning.Message.Should().Contain(streamName).And.Contain(address);
         }
@@ -209,9 +212,48 @@ public sealed class NatsReplyTransportTests(NatsFixture fixture) : TestBase
         await listener.WaitForAddressAsync(AbortToken).AsTask().WaitAsync(_Bound, AbortToken);
 
         // then — the check ran against a live JetStream API and found nothing to warn about
-        await Task.Delay(TimeSpan.FromSeconds(2), AbortToken);
-        _CapturedWarnings(log).Should().BeEmpty();
-        log.Should().NotContain(entry => entry.EventId.Id == 14, "the check itself must not fail on a healthy server");
+        await _WaitUntilAsync(() => _Entries(log, _StreamCheckPassedEventId).Count > 0);
+        _Entries(log, _StreamCheckPassedEventId).Should().ContainSingle();
+        _Entries(log, _StreamCapturesRepliesEventId).Should().BeEmpty();
+        _Entries(log, _StreamCheckSkippedEventId)
+            .Should()
+            .BeEmpty("the check itself must not fail on a healthy server");
+    }
+
+    [Fact]
+    public async Task should_serve_the_address_and_skip_the_stream_check_on_a_server_without_jetstream()
+    {
+        // given — a server of this test's own, started without --jetstream, so the JetStream API has no responder
+        await using var server = new ContainerBuilder(TestImages.Nats)
+            .WithCommand("--port", NatsBuilder.NatsClientPort.ToString(CultureInfo.InvariantCulture))
+            .WithPortBinding(NatsBuilder.NatsClientPort, assignRandomHostPort: true)
+            .WithWaitStrategy(
+                Wait.ForUnixContainer()
+                    .UntilMessageIsLogged("Server is ready")
+                    .UntilExternalTcpPortIsAvailable(NatsBuilder.NatsClientPort)
+            )
+            .Build();
+        await server.StartAsync(AbortToken);
+        var servers = $"nats://{server.Hostname}:{server.GetMappedPublicPort(NatsBuilder.NatsClientPort)}";
+        var log = new List<(LogLevel Level, EventId EventId, string Message)>();
+        var received = Channel.CreateUnbounded<TransportMessage>();
+
+        // when
+        await using var listener = await _CreateTransport(_CreatePool(servers), log)
+            .OpenListenerAsync((reply, _) => received.Writer.WriteAsync(reply, AbortToken), AbortToken);
+        var address = await listener.WaitForAddressAsync(AbortToken).AsTask().WaitAsync(_Bound, AbortToken);
+
+        // then — the failed check leaves one debug entry naming its exception, and the listener still receives
+        await _WaitUntilAsync(() => _Entries(log, _StreamCheckSkippedEventId).Count > 0);
+        var skipped = _Entries(log, _StreamCheckSkippedEventId).Should().ContainSingle().Subject;
+        skipped.Level.Should().Be(LogLevel.Debug);
+        skipped.Message.Should().Contain(address).And.Contain($"({nameof(NatsNoRespondersException)})");
+        _Entries(log, _StreamCapturesRepliesEventId).Should().BeEmpty();
+        _Entries(log, _StreamCheckPassedEventId).Should().BeEmpty();
+
+        await _CreateTransport(_CreatePool(servers)).SendAsync(address, _Reply("without-jetstream"), AbortToken);
+        var delivered = await received.Reader.ReadAsync(AbortToken).AsTask().WaitAsync(_Bound, AbortToken);
+        delivered.Headers[MessagingHeaders.InReplyTo].Should().Be("without-jetstream");
     }
 
     [Theory]
@@ -310,20 +352,22 @@ public sealed class NatsReplyTransportTests(NatsFixture fixture) : TestBase
     )
     {
         // Fully qualified: the test base exposes a LoggerFactory property of its own.
+        // The factory filters at Information unless told otherwise, and the stream check logs its outcome at Debug.
         var factory = Microsoft.Extensions.Logging.LoggerFactory.Create(logging =>
-            logging.AddProvider(new CapturingLoggerProvider(log))
+            logging.SetMinimumLevel(LogLevel.Trace).AddProvider(new CapturingLoggerProvider(log))
         );
         _loggerFactories.Add(factory);
         return new NatsReplyTransport(pool, TimeProvider.System, factory.CreateLogger<NatsReplyTransport>());
     }
 
-    private static List<(LogLevel Level, EventId EventId, string Message)> _CapturedWarnings(
-        List<(LogLevel Level, EventId EventId, string Message)> log
+    private static List<(LogLevel Level, EventId EventId, string Message)> _Entries(
+        List<(LogLevel Level, EventId EventId, string Message)> log,
+        int eventId
     )
     {
         lock (log)
         {
-            return [.. log.Where(static entry => entry.EventId.Id == 13)];
+            return [.. log.Where(entry => entry.EventId.Id == eventId)];
         }
     }
 

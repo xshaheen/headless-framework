@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging;
-using Headless.Messaging.Configuration;
-using Headless.Messaging.Exceptions;
 using Headless.Messaging.RabbitMq;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
@@ -11,6 +9,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute.ExceptionExtensions;
 using RabbitMQ.Client;
+using RabbitMQ.Client.Exceptions;
 
 namespace Tests;
 
@@ -251,6 +250,45 @@ public sealed class RabbitMqConsumerClientFactoryTests : TestBase
             await factory.CreateAsync(new ConsumerClientRequest("test-group", 1, MessageLane.Queue), cts.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task should_preserve_factory_cancellation_when_failure_precedes_token_observation()
+    {
+        // given - the caller cancels while the connection attempt is in flight, and the attempt then fails
+        // with its own exception before any await observes the token: the failure must not outrank the
+        // cancellation.
+        var pool = Substitute.For<IConnectionChannelPool>();
+        pool.Exchange.Returns("test.exchange");
+        using var cts = new CancellationTokenSource();
+        pool.GetConnectionAsync(Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                cts.Cancel();
+                return Task.FromException<IConnection>(
+                    new BrokerUnreachableException(new InvalidOperationException("connect failed"))
+                );
+            });
+        var factory = new RabbitMqConsumerClientFactory(
+            Options.Create(
+                new RabbitMqMessagingOptions
+                {
+                    HostName = "localhost",
+                    UserName = "guest",
+                    Password = "guest",
+                }
+            ),
+            pool,
+            Substitute.For<IServiceProvider>()
+        );
+
+        // when
+        var act = async () =>
+            await factory.CreateAsync(new ConsumerClientRequest("test-group", 1, MessageLane.Queue), cts.Token);
+
+        // then
+        var exception = await act.Should().ThrowAsync<OperationCanceledException>();
+        exception.Which.CancellationToken.Should().Be(cts.Token);
     }
 
     [Fact]

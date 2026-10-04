@@ -1,0 +1,683 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using Headless.Messaging;
+using Headless.Testing.Tests;
+using Microsoft.Extensions.DependencyInjection;
+using Polly;
+
+namespace Tests.Configuration;
+
+public sealed class MessagingOptionsValidationTests : TestBase
+{
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(1)]
+    public void should_validate_all_history_retentions_as_positive_without_default_floor(int days)
+    {
+        var options = new MessagingOptions
+        {
+            InboxCleanupReceiptRetention = TimeSpan.FromDays(days),
+            InboxCleanupAuditRetention = TimeSpan.FromDays(days),
+            InboxOperatorReceiptRetention = TimeSpan.FromDays(days),
+            InboxOperatorAuditRetention = TimeSpan.FromDays(days),
+        };
+        var result = new MessagingOptionsValidator().Validate(options);
+        var properties = new[]
+        {
+            nameof(options.InboxCleanupReceiptRetention),
+            nameof(options.InboxCleanupAuditRetention),
+            nameof(options.InboxOperatorReceiptRetention),
+            nameof(options.InboxOperatorAuditRetention),
+        };
+        foreach (var property in properties)
+        {
+            result
+                .Errors.Exists(x => string.Equals(x.PropertyName, property, StringComparison.Ordinal))
+                .Should()
+                .Be(days <= 0);
+        }
+    }
+
+    [Fact]
+    public void should_default_history_retention_to_finite_independent_lifetimes()
+    {
+        var options = new MessagingOptions();
+        options.InboxCleanupReceiptRetention.Should().Be(TimeSpan.FromDays(7));
+        options.InboxCleanupAuditRetention.Should().Be(TimeSpan.FromDays(7));
+        options.InboxOperatorReceiptRetention.Should().Be(TimeSpan.FromDays(30));
+        options.InboxOperatorAuditRetention.Should().Be(TimeSpan.FromDays(90));
+    }
+
+    [Theory]
+    [InlineData(0, 10)]
+    [InlineData(-1, 10)]
+    [InlineData(300, 0)]
+    [InlineData(300, -1)]
+    [InlineData(300, 100001)]
+    public void should_reject_invalid_orphan_probe_options(int seconds, int batchSize)
+    {
+        var result = new MessagingOptionsValidator().Validate(
+            new MessagingOptions
+            {
+                OrphanProbeInterval = TimeSpan.FromSeconds(seconds),
+                OrphanProbeBatchSize = batchSize,
+            }
+        );
+        result.IsValid.Should().BeFalse();
+    }
+
+    [Fact]
+    public void should_validate_topic_name_length()
+    {
+        // given
+        var options = _CreateBuilder();
+        var longTopic = new string('a', 256);
+
+        // when
+        var act = () => options.WithMessageNameMapping<TestMessage>(longTopic);
+
+        // then
+        act.Should()
+            .Throw<ArgumentException>()
+            .WithMessage("*exceeds maximum length of 255*")
+            .WithParameterName("messageName");
+    }
+
+    [Fact]
+    public void should_accept_max_length_topic_name()
+    {
+        // given
+        var options = _CreateBuilder();
+        var maxLengthTopic = new string('a', 255);
+
+        // when
+        var result = options.WithMessageNameMapping<TestMessage>(maxLengthTopic);
+
+        // then
+        result.Should().BeSameAs(options);
+    }
+
+    [Fact]
+    public void should_validate_topic_name_characters()
+    {
+        // given
+        var options = _CreateBuilder();
+
+        // when/then - invalid characters
+        var act1 = () => options.WithMessageNameMapping<TestMessage>("messageName@name");
+        act1.Should().Throw<ArgumentException>().WithMessage("*invalid character*@*");
+
+        var act2 = () => options.WithMessageNameMapping<TestMessage>("messageName#name");
+        act2.Should().Throw<ArgumentException>().WithMessage("*invalid character*#*");
+
+        var act3 = () => options.WithMessageNameMapping<TestMessage>("messageName name");
+        act3.Should().Throw<ArgumentException>().WithMessage("*invalid character* *");
+
+        var act4 = () => options.WithMessageNameMapping<TestMessage>("messageName/name");
+        act4.Should().Throw<ArgumentException>().WithMessage("*invalid character*/*");
+    }
+
+    [Fact]
+    public void should_accept_valid_topic_name_characters()
+    {
+        // given
+        var options = _CreateBuilder();
+
+        // when/then - valid characters: alphanumeric, dots, hyphens, underscores
+        var result1 = options.WithMessageNameMapping<TestMessage>("valid.messageName-name_123");
+        result1.Should().BeSameAs(options);
+    }
+
+    [Fact]
+    public void should_reject_leading_dots()
+    {
+        // given
+        var options = _CreateBuilder();
+
+        // when
+        var act = () => options.WithMessageNameMapping<TestMessage>(".leading.dot");
+
+        // then
+        act.Should().Throw<ArgumentException>().WithMessage("*cannot start or end with a dot*");
+    }
+
+    [Fact]
+    public void should_reject_trailing_dots()
+    {
+        // given
+        var options = _CreateBuilder();
+
+        // when
+        var act = () => options.WithMessageNameMapping<TestMessage>("trailing.dot.");
+
+        // then
+        act.Should().Throw<ArgumentException>().WithMessage("*cannot start or end with a dot*");
+    }
+
+    [Fact]
+    public void should_reject_consecutive_dots()
+    {
+        // given
+        var options = _CreateBuilder();
+
+        // when
+        var act = () => options.WithMessageNameMapping<TestMessage>("messageName..name");
+
+        // then
+        act.Should().Throw<ArgumentException>().WithMessage("*cannot contain consecutive dots*");
+    }
+
+    [Fact]
+    public void should_set_default_retry_policy()
+    {
+        // given
+        var options = new MessagingOptions();
+
+        // then
+        options.RetryPolicy.RetryStrategy.MaxRetryAttempts.Should().Be(2);
+        options.RetryPolicy.MaxPersistedRetries.Should().Be(15);
+        options.RetryPolicy.InitialDispatchGrace.Should().Be(TimeSpan.FromSeconds(30));
+        options.RetryPolicy.DispatchTimeout.Should().Be(TimeSpan.FromMinutes(5));
+        options.TransportPublishTimeout.Should().Be(TimeSpan.FromSeconds(10));
+        options.CommandTimeout.Should().Be(TimeSpan.FromSeconds(30));
+        options.ShutdownTimeout.Should().Be(TimeSpan.FromSeconds(30));
+        options.SubscriptionEstablishedTimeout.Should().Be(TimeSpan.FromSeconds(30));
+        options.RetryPolicy.RetryStrategy.BackoffType.Should().Be(DelayBackoffType.Exponential);
+        options.RetryPolicy.RetryStrategy.ShouldHandle.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void should_set_default_parallel_settings()
+    {
+        // given
+        var options = new MessagingOptions();
+
+        // then
+        options.EnableSubscriberParallelExecute.Should().BeFalse();
+        options.SubscriberParallelExecuteThreadCount.Should().Be(Environment.ProcessorCount);
+        options.SubscriberParallelExecuteBufferFactor.Should().Be(1);
+        options.EnablePublishParallelSend.Should().BeFalse();
+        options.ConsumerThreadCount.Should().Be(1);
+    }
+
+    [Fact]
+    public void should_set_default_message_expiration()
+    {
+        // given
+        var options = new MessagingOptions();
+
+        // then
+        options.SucceedMessageExpiredAfter.Should().Be(24 * 3600); // 24 hours
+        options.FailedMessageExpiredAfter.Should().Be(15 * 24 * 3600); // 15 days
+    }
+
+    [Fact]
+    public void should_reject_retry_policy_with_negative_max_persisted_retries()
+    {
+        // given
+        var options = new RetryPolicyOptions { MaxPersistedRetries = -1 };
+
+        // when
+        var result = new RetryPolicyOptionsValidator().Validate(options);
+
+        // then
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(x => x.PropertyName == nameof(RetryPolicyOptions.MaxPersistedRetries));
+    }
+
+    [Fact]
+    public void should_accept_retry_policy_with_zero_persisted_retries_and_zero_inline_retries()
+    {
+        // No retries at all (single attempt only) is a valid configuration.
+        var options = new RetryPolicyOptions
+        {
+            MaxPersistedRetries = 0,
+            RetryStrategy = TestRetryStrategies.ZeroDelay(0),
+        };
+
+        // when
+        var result = new RetryPolicyOptionsValidator().Validate(options);
+
+        // then
+        result.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void should_reject_retry_policy_with_negative_max_inline_retries()
+    {
+        // given
+        var options = new RetryPolicyOptions { RetryStrategy = TestRetryStrategies.ZeroDelay(-1) };
+
+        // when
+        var result = new RetryPolicyOptionsValidator().Validate(options);
+
+        // then
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(x => x.PropertyName == "RetryStrategy.MaxRetryAttempts");
+    }
+
+    [Fact]
+    public void should_reject_retry_policy_with_max_inline_retries_above_cap()
+    {
+        // Cap is intentionally well above realistic production budgets but tight enough
+        // to bound DoS-by-config: a custom backoff strategy returning Continue(TimeSpan.Zero)
+        // combined with very high inline budget could saturate the retry-pickup index.
+        var options = new RetryPolicyOptions { RetryStrategy = TestRetryStrategies.ZeroDelay(101) };
+
+        var result = new RetryPolicyOptionsValidator().Validate(options);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(x => x.PropertyName == "RetryStrategy.MaxRetryAttempts");
+    }
+
+    [Fact]
+    public void should_reject_retry_policy_with_max_persisted_retries_above_cap()
+    {
+        var options = new RetryPolicyOptions { MaxPersistedRetries = 1_001 };
+
+        var result = new RetryPolicyOptionsValidator().Validate(options);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(x => x.PropertyName == nameof(RetryPolicyOptions.MaxPersistedRetries));
+    }
+
+    [Fact]
+    public void should_accept_retry_policy_at_max_inline_and_persisted_caps()
+    {
+        var options = new RetryPolicyOptions
+        {
+            RetryStrategy = TestRetryStrategies.ZeroDelay(100),
+            MaxPersistedRetries = 1_000,
+        };
+
+        var result = new RetryPolicyOptionsValidator().Validate(options);
+
+        result.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void should_reject_retry_policy_with_non_positive_initial_dispatch_grace()
+    {
+        // given
+        var options = new RetryPolicyOptions { InitialDispatchGrace = TimeSpan.Zero };
+
+        // when
+        var result = new RetryPolicyOptionsValidator().Validate(options);
+
+        // then
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(x => x.PropertyName == nameof(RetryPolicyOptions.InitialDispatchGrace));
+    }
+
+    [Fact]
+    public void should_reject_retry_policy_when_initial_dispatch_grace_exceeds_one_hour()
+    {
+        // given
+        var options = new RetryPolicyOptions { InitialDispatchGrace = TimeSpan.FromHours(2) };
+
+        // when
+        var result = new RetryPolicyOptionsValidator().Validate(options);
+
+        // then
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(x => x.PropertyName == nameof(RetryPolicyOptions.InitialDispatchGrace));
+    }
+
+    [Fact]
+    public void should_reject_retry_policy_with_invalid_dispatch_timeout()
+    {
+        new RetryPolicyOptionsValidator()
+            .Validate(new RetryPolicyOptions { DispatchTimeout = TimeSpan.Zero })
+            .IsValid.Should()
+            .BeFalse();
+
+        new RetryPolicyOptionsValidator()
+            .Validate(new RetryPolicyOptions { DispatchTimeout = TimeSpan.FromHours(2) })
+            .IsValid.Should()
+            .BeFalse();
+    }
+
+    [Fact]
+    public void should_reject_messaging_options_with_invalid_transport_or_command_timeout()
+    {
+        new MessagingOptionsValidator()
+            .Validate(new MessagingOptions { TransportPublishTimeout = TimeSpan.Zero })
+            .IsValid.Should()
+            .BeFalse();
+
+        new MessagingOptionsValidator()
+            .Validate(new MessagingOptions { ShutdownTimeout = TimeSpan.Zero })
+            .IsValid.Should()
+            .BeFalse();
+
+        new MessagingOptionsValidator()
+            .Validate(new MessagingOptions { ShutdownTimeout = TimeSpan.FromMinutes(6) })
+            .IsValid.Should()
+            .BeFalse();
+
+        new MessagingOptionsValidator()
+            .Validate(new MessagingOptions { CommandTimeout = TimeSpan.FromMinutes(6) })
+            .IsValid.Should()
+            .BeFalse();
+
+        new MessagingOptionsValidator()
+            .Validate(new MessagingOptions { SubscriptionEstablishedTimeout = TimeSpan.Zero })
+            .IsValid.Should()
+            .BeFalse();
+
+        new MessagingOptionsValidator()
+            .Validate(new MessagingOptions { SubscriptionEstablishedTimeout = TimeSpan.FromMinutes(6) })
+            .IsValid.Should()
+            .BeFalse();
+    }
+
+    [Fact]
+    public void should_reject_messaging_options_with_non_positive_dead_node_reconcile_interval()
+    {
+        var zero = new MessagingOptionsValidator().Validate(
+            new MessagingOptions { DeadNodeReconcileInterval = TimeSpan.Zero }
+        );
+        zero.IsValid.Should().BeFalse();
+        zero.Errors.Should().Contain(x => x.PropertyName == nameof(MessagingOptions.DeadNodeReconcileInterval));
+
+        new MessagingOptionsValidator()
+            .Validate(new MessagingOptions { DeadNodeReconcileInterval = TimeSpan.FromSeconds(-1) })
+            .IsValid.Should()
+            .BeFalse();
+    }
+
+    [Fact]
+    public void should_reject_messaging_options_with_non_positive_scheduler_batch_size()
+    {
+        var result = new MessagingOptionsValidator().Validate(new MessagingOptions { SchedulerBatchSize = 0 });
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(x => x.PropertyName == nameof(MessagingOptions.SchedulerBatchSize));
+    }
+
+    [Theory]
+    [InlineData(0, 1, 1)]
+    [InlineData(1025, 1, 1)]
+    [InlineData(1, 0, 1)]
+    [InlineData(1, 1025, 1)]
+    [InlineData(1, 1, 0)]
+    [InlineData(1, 1, 1025)]
+    [InlineData(1, 1000, 101)]
+    public void should_reject_unbounded_messaging_concurrency(
+        int consumerThreads,
+        int subscriberThreads,
+        int bufferFactor
+    )
+    {
+        var result = new MessagingOptionsValidator().Validate(
+            new MessagingOptions
+            {
+                ConsumerThreadCount = consumerThreads,
+                SubscriberParallelExecuteThreadCount = subscriberThreads,
+                SubscriberParallelExecuteBufferFactor = bufferFactor,
+            }
+        );
+
+        result.IsValid.Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData(0, 200)]
+    [InlineData(100001, 200)]
+    [InlineData(1000, 0)]
+    [InlineData(1000, 100001)]
+    public void should_reject_unbounded_scheduler_and_retry_batches(int schedulerBatchSize, int retryBatchSize)
+    {
+        var result = new MessagingOptionsValidator().Validate(
+            new MessagingOptions { SchedulerBatchSize = schedulerBatchSize, RetryBatchSize = retryBatchSize }
+        );
+
+        result.IsValid.Should().BeFalse();
+    }
+
+    [Fact]
+    public void should_reject_retry_policy_with_non_positive_on_exhausted_timeout()
+    {
+        // given
+        var options = new RetryPolicyOptions { OnExhaustedTimeout = TimeSpan.Zero };
+
+        // when
+        var result = new RetryPolicyOptionsValidator().Validate(options);
+
+        // then
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(x => x.PropertyName == nameof(RetryPolicyOptions.OnExhaustedTimeout));
+    }
+
+    [Fact]
+    public void should_reject_retry_policy_when_on_exhausted_timeout_exceeds_one_hour()
+    {
+        // given
+        var options = new RetryPolicyOptions { OnExhaustedTimeout = TimeSpan.FromHours(2) };
+
+        // when
+        var result = new RetryPolicyOptionsValidator().Validate(options);
+
+        // then
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(x => x.PropertyName == nameof(RetryPolicyOptions.OnExhaustedTimeout));
+    }
+
+    [Fact]
+    public void should_reject_retry_policy_with_null_retry_strategy()
+    {
+        // given
+        var options = new RetryPolicyOptions { RetryStrategy = null! };
+
+        // when
+        var result = new RetryPolicyOptionsValidator().Validate(options);
+
+        // then
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(x => x.PropertyName == nameof(RetryPolicyOptions.RetryStrategy));
+    }
+
+    [Fact]
+    public void should_accept_default_retry_policy()
+    {
+        // given
+        var options = new RetryPolicyOptions();
+
+        // when
+        var result = new RetryPolicyOptionsValidator().Validate(options);
+
+        // then
+        result.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void should_set_default_version()
+    {
+        // given
+        var options = new MessagingOptions();
+
+        // then
+        options.Version.Should().Be("v1");
+    }
+
+    [Fact]
+    public void should_require_transactional_inbox_capability_by_default()
+    {
+        new MessagingOptions().RequiredInboxCapability.Should().Be(MessagingInboxCapabilityTier.Transactional);
+    }
+
+    [Fact]
+    public void should_reject_unknown_required_inbox_capability()
+    {
+        var result = new MessagingOptionsValidator().Validate(
+            new MessagingOptions { RequiredInboxCapability = (MessagingInboxCapabilityTier)999 }
+        );
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(error => error.PropertyName == nameof(MessagingOptions.RequiredInboxCapability));
+    }
+
+    [Theory]
+    [InlineData(null, "v1", "consumer identity")]
+    [InlineData("orders-projection", null, "contract version")]
+    public void should_reject_durable_metadata_without_explicit_identity_or_contract_version(
+        string? consumerIdentity,
+        string? contractVersion,
+        string expectedMessage
+    )
+    {
+        var options = new MessagingOptions();
+
+        var act = () =>
+            options.CreateConsumerMetadata(
+                typeof(TestConsumer),
+                typeof(TestMessage),
+                mappedMessageName: "orders.created",
+                consumerIdentity: consumerIdentity!,
+                messageContractVersion: contractVersion!,
+                lane: MessageLane.Bus
+            );
+
+        act.Should().Throw<MessagingConfigurationException>().WithMessage($"*{expectedMessage}*");
+    }
+
+    [Fact]
+    public void should_reject_duplicate_topic_mapping_with_different_topic()
+    {
+        // given
+        var services = new ServiceCollection().AddOptions();
+        var options = new MessagingSetupBuilder(services, new MessagingOptions());
+        options.WithMessageNameMapping<TestMessage>("first.messageName");
+        options.WithMessageNameMapping<TestMessage>("second.messageName");
+        using var provider = services.BuildServiceProvider();
+
+        // when - the mappings are recorded, and the registry build folds them
+        var act = () => SetupMessaging.BuildConsumerRegistry(provider);
+
+        // then
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*already mapped to messageName*first.messageName*Cannot map to*second.messageName*");
+    }
+
+    [Fact]
+    public void should_allow_same_topic_mapping()
+    {
+        // given
+        var options = _CreateBuilder();
+        options.WithMessageNameMapping<TestMessage>("same.messageName");
+
+        // when
+        var result = options.WithMessageNameMapping<TestMessage>("same.messageName");
+
+        // then - should not throw
+        result.Should().BeSameAs(options);
+    }
+
+    [Fact]
+    public void should_reject_null_topic()
+    {
+        // given
+        var options = _CreateBuilder();
+
+        // when
+        var act = () => options.WithMessageNameMapping<TestMessage>(null!);
+
+        // then
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void should_reject_empty_topic()
+    {
+        // given
+        var options = _CreateBuilder();
+
+        // when
+        var act = () => options.WithMessageNameMapping<TestMessage>("");
+
+        // then
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void should_reject_whitespace_topic()
+    {
+        // given
+        var options = _CreateBuilder();
+
+        // when
+        var act = () => options.WithMessageNameMapping<TestMessage>("   ");
+
+        // then
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void should_set_default_scheduler_batch_size()
+    {
+        // given
+        var options = new MessagingOptions();
+
+        // then
+        options.SchedulerBatchSize.Should().Be(1000);
+    }
+
+    [Fact]
+    public void should_set_default_collector_cleaning_interval()
+    {
+        // given
+        var options = new MessagingOptions();
+
+        // then
+        options.CollectorCleaningInterval.Should().Be(300); // 5 minutes
+    }
+
+    [Fact]
+    public void should_have_default_json_serializer_options()
+    {
+        // given
+        var options = new MessagingOptions();
+
+        // then
+        options.JsonSerializerOptions.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void should_have_storage_lock_disabled_by_default()
+    {
+        // given
+        var options = new MessagingOptions();
+
+        // then
+        options.UseStorageLock.Should().BeFalse();
+    }
+
+    [Fact]
+    public void should_have_null_publish_batch_size_by_default()
+    {
+        // given
+        var options = new MessagingOptions();
+
+        // then
+        options.PublishBatchSize.Should().BeNull();
+    }
+
+    private static MessagingSetupBuilder _CreateBuilder()
+    {
+        var services = new ServiceCollection();
+        var options = new MessagingOptions();
+        return new MessagingSetupBuilder(services, options);
+    }
+
+    private sealed class TestMessage;
+
+    private sealed class TestConsumer : IConsume<TestMessage>
+    {
+        public ValueTask ConsumeAsync(ConsumeContext<TestMessage> context, CancellationToken cancellationToken)
+        {
+            return ValueTask.CompletedTask;
+        }
+    }
+}

@@ -14,7 +14,7 @@
     <PackageReference Include="Microsoft.Extensions.Logging" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Headless.Messaging.Core\Headless.Messaging.Core.csproj" />
+    <ProjectReference Include="..\Headless.Messaging\Headless.Messaging.csproj" />
     <ProjectReference Include="..\Headless.Messaging.InMemory\Headless.Messaging.InMemory.csproj" />
     <ProjectReference Include="..\Headless.Messaging.Storage.InMemory\Headless.Messaging.Storage.InMemory.csproj" />
   </ItemGroup>

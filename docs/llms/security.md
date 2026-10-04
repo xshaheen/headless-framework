@@ -35,7 +35,7 @@ Choose by what the stored value must do:
 - When the record does not exist, verify against a fixed dummy hash made with the configured parameters, then fail. Otherwise a missing account answers faster than a wrong secret and reveals which accounts exist.
 - A 6-digit PIN has only 10⁶ possibilities. No hash parameters protect it from an offline attacker, so pair PIN verification with rate limiting and lockout.
 - A high-entropy API key (at least 128 random bits) gains nothing from a slow hash, and hashing one on every request costs latency and CPU. Prefer an HMAC over such keys; use `ISecretHasher` for low-entropy secrets.
-- Register `IStringEncryptionService` before `AddHeadlessSettings(...)`: `Headless.Settings.Core` requires it. The recommended way is to bind `Headless:StringEncryption` with `AddStringEncryptionService(...)`.
+- Register `IStringEncryptionService` before `AddHeadlessSettings(...)`: `Headless.Settings` requires it. The recommended way is to bind `Headless:StringEncryption` with `AddStringEncryptionService(...)`.
 - `AddStringEncryptionService` and `AddLookupHasher` are idempotent: the first call wins and later calls are ignored, so configure each service once. `AddHeadlessSecretHasher` throws on a second call.
 
 ## Secret hashing
@@ -119,6 +119,7 @@ Security contracts and option models. There is no implementation and no DI coupl
 
 ### API and behavior
 
+- `IPasswordGenerator` / `GeneratePasswordOptions` — cryptographically secure password generation driven by a caller-supplied policy (length, required character sets, `RequiredUniqueChars`). `PasswordGenerator` (in `Headless.Security`) uses `RandomNumberGenerator` for all selection and shuffling
 - **`IStringEncryptionService`**: an AES-GCM authenticated encryption contract.
     - `Encrypt(string? plainText, string? passPhrase = null, byte[]? salt = null) → string?` encrypts with the configured default pass phrase and salt, or with an explicit override. It returns `null` when `plainText` is `null`. Every call uses a fresh random nonce.
     - `Decrypt(string? cipherText, string? passPhrase = null, byte[]? salt = null) → string?` returns `null` for `null` or empty input. It throws `CryptographicException` when the cipher text is too short, has been tampered with, or the pass phrase or salt does not match.

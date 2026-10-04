@@ -1,6 +1,6 @@
 ---
 domain: Permissions
-packages: Permissions.Abstractions, Permissions.Core, Permissions.Storage.EntityFramework, Permissions.Storage.PostgreSql, Permissions.Storage.SqlServer, Permissions.Testing
+packages: Permissions.Abstractions, Permissions, Permissions.Storage.EntityFramework, Permissions.Storage.PostgreSql, Permissions.Storage.SqlServer, Permissions.Testing
 ---
 
 # Permissions
@@ -9,7 +9,7 @@ packages: Permissions.Abstractions, Permissions.Core, Permissions.Storage.Entity
 
 ## Orientation
 
-Install `Headless.Permissions.Abstractions` to depend on interfaces only (domain/application layers). Install `Headless.Permissions.Core` plus exactly one storage provider for the full runtime.
+Install `Headless.Permissions.Abstractions` to depend on interfaces only (domain/application layers). Install `Headless.Permissions` plus exactly one storage provider for the full runtime.
 
 Typical setup:
 
@@ -44,7 +44,7 @@ Provider packages:
 - Batch writes via `SetAsync(IReadOnlyCollection<string>, ...)` are all-or-nothing — a single invalid name rejects the entire batch.
 - A batch grant converts existing `Prohibited` records to grants and inserts records for names that have none, exactly like the single-name path; names that are already granted are left untouched.
 - `PermissionDefinition.Providers` restricts which grant providers can read/write that permission. An empty list allows all providers.
-- For integration tests, reference `Headless.Permissions.Testing` and call `services.AddAlwaysAllowAuthorization()` to replace both `IPermissionManager` and `IAuthorizationService` with always-allow stubs. This lives in a separate test-only package so the production `Headless.Permissions.Core` surface never ships an authorization bypass.
+- For integration tests, reference `Headless.Permissions.Testing` and call `services.AddAlwaysAllowAuthorization()` to replace both `IPermissionManager` and `IAuthorizationService` with always-allow stubs. This lives in a separate test-only package so the production `Headless.Permissions` surface never ships an authorization bypass.
 - Grant caching is tenant-scoped: the cache key includes the current tenant id. A permission check for tenant A does not serve a cached result for tenant B.
 
 ## Core Concepts
@@ -258,7 +258,7 @@ None.
 
 ---
 
-## Headless.Permissions.Core
+## Headless.Permissions
 
 Core implementation of permission management with grant resolution, caching, background initialization, and ASP.NET Core authorization integration.
 
@@ -274,9 +274,9 @@ Core implementation of permission management with grant resolution, caching, bac
 - `RelationalPermissionsOptions` — base of `PostgreSqlPermissionsOptions` and `SqlServerPermissionsOptions` (`ConnectionString`, `CommandTimeout`). Core also holds the one relational grant and definition repository both raw providers run, written over the `ISqlDialect` statement kit; each provider package supplies only its options, DDL, and registration
 - `HeadlessPermissionsSetupBuilder` — fluent builder returned inside `AddHeadlessPermissions`; exposes `ConfigureManagement`, `ConfigureStorage`, `DisableStartupInitialization`, `DisablePermissionNamePolicies`, `RegisterExtension`. `ConfigureStorage` also accepts the `Headless:Permissions:Storage` configuration section.
 - `PermissionPolicyProvider` — `IAuthorizationPolicyProvider` that resolves a defined permission name as a policy holding one `PermissionRequirement`; registered by default in place of ASP.NET Core's default provider
-- `IAuthorizationPolicyCatalog` (`Headless.Permissions.Requirements`) — lists names: `GetRegisteredPolicyNamesAsync()` (policies added to `AuthorizationOptions`), `GetPermissionNamesAsync()` (defined permission names, for grant checks), and `GetPolicyNamesAsync()` (every name that resolves to a policy through the active provider: the registered policies, plus the permissions with any `PolicyNamePrefix` applied when `PermissionPolicyProvider` is that provider). Every name `GetPolicyNamesAsync()` returns is safe to pass to `IAuthorizationService`, including under `DisablePermissionNamePolicies()` or a host-owned provider, where it returns the registered policies only
-- `IGrantedPoliciesReader` (`Headless.Permissions.Grants`) — `GetAsync(PrincipalContext, policyNames, …)` returns the set of every granted permission name plus every listed policy the principal satisfies
-- `PrincipalContext(ClaimsPrincipal Principal, string? TenantId)` (`Headless.Abstractions`, in `Headless.Core`) — the principal and tenant a reader resolves for in place of the ambient ones
+- `IAuthorizationPolicyCatalog` (`Headless.Permissions`) — lists names: `GetRegisteredPolicyNamesAsync()` (policies added to `AuthorizationOptions`), `GetPermissionNamesAsync()` (defined permission names, for grant checks), and `GetPolicyNamesAsync()` (every name that resolves to a policy through the active provider: the registered policies, plus the permissions with any `PolicyNamePrefix` applied when `PermissionPolicyProvider` is that provider). Every name `GetPolicyNamesAsync()` returns is safe to pass to `IAuthorizationService`, including under `DisablePermissionNamePolicies()` or a host-owned provider, where it returns the registered policies only
+- `IGrantedPoliciesReader` (`Headless.Permissions`) — `GetAsync(PrincipalContext, policyNames, …)` returns the set of every granted permission name plus every listed policy the principal satisfies
+- `PrincipalContext(ClaimsPrincipal Principal, string? TenantId)` (`Headless.Context` namespace, in `Headless.Context.Abstractions`) — the principal and tenant a reader resolves for in place of the ambient ones
 - `HeadlessPermissionsBuilder` — returned by `AddHeadlessPermissions`; exposes `Services` for post-registration additions
 - `services.AddPermissionDefinitionProvider<T>()` — registers a custom `IPermissionDefinitionProvider` as singleton
 - `services.AddPermissionGrantProvider<T>()` — registers an additional grant provider (last-registered = highest priority)
@@ -305,7 +305,7 @@ The always-allow test doubles (`AlwaysAllowPermissionManager` / `AlwaysAllowAuth
 ### Install
 
 ```bash
-dotnet add package Headless.Permissions.Core
+dotnet add package Headless.Permissions
 ```
 
 ### Setup and use
@@ -525,7 +525,7 @@ Entity Framework Core storage implementation for permission management.
 
 - `setup.UseEntityFramework<TContext>()` — registers the EF storage provider via `HeadlessPermissionsSetupBuilder`
 - `modelBuilder.AddHeadlessPermissions(DbContext context)` — applies entity configurations by resolving `PermissionsStorageOptions` from the context's service provider (no constructor injection required) and the naming style from `context.Database.ProviderName`: snake_case on Npgsql, PascalCase on every other provider
-- `modelBuilder.AddHeadlessPermissions(PermissionsStorageOptions options, StorageNamingStyle style)` — overload for when you already hold the options; pass `HeadlessStorageNaming.ForProvider(Database.ProviderName)` (namespace `Headless.Hosting.Initialization`) so the style matches the database
+- `modelBuilder.AddHeadlessPermissions(PermissionsStorageOptions options, StorageNamingStyle style)` — overload for when you already hold the options; pass `HeadlessStorageNaming.ForProvider(Database.ProviderName)` (namespace `Headless.Hosting`) so the style matches the database
 - `EfPermissionGrantRepository<TContext>` — EF repository for `IPermissionGrantRepository`
 - `EfPermissionDefinitionRecordRepository<TContext>` — EF repository for `IPermissionDefinitionRecordRepository`
 - Startup gate that inspects the EF model before hosted services start and throws `InvalidOperationException` with an actionable message if any permissions entity is missing
@@ -654,7 +654,7 @@ Configure schema and table names through `PermissionsStorageOptions` via `setup.
 ### Runtime behavior
 
 - Registers the permissions schema contribution; the one schema runner applies it at startup
-- Registers the shared relational repositories from `Headless.Permissions.Core`, over the PostgreSQL dialect, as `IPermissionGrantRepository` and `IPermissionDefinitionRecordRepository` (singletons)
+- Registers the shared relational repositories from `Headless.Permissions`, over the PostgreSQL dialect, as `IPermissionGrantRepository` and `IPermissionDefinitionRecordRepository` (singletons)
 
 ---
 
@@ -722,7 +722,7 @@ Configure schema and table names through `PermissionsStorageOptions` via `setup.
 ### Runtime behavior
 
 - Registers the permissions schema contribution; the one schema runner applies it at startup
-- Registers the shared relational repositories from `Headless.Permissions.Core`, over the SQL Server dialect, as `IPermissionGrantRepository` and `IPermissionDefinitionRecordRepository` (singletons)
+- Registers the shared relational repositories from `Headless.Permissions`, over the SQL Server dialect, as `IPermissionGrantRepository` and `IPermissionDefinitionRecordRepository` (singletons)
 
 ---
 

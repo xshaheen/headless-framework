@@ -1,8 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Jobs.Base;
-using Headless.Jobs.Enums;
-
 namespace Headless.Jobs.GeneratedDiscoveryFixture;
 
 public sealed record DiscoveryRequest(string Value);

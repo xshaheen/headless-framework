@@ -3,10 +3,8 @@
 using System.Collections.Concurrent;
 using System.Reflection;
 using Headless.Messaging;
-using Headless.Messaging.Exceptions;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Nats;
-using Headless.Messaging.Registration;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;

@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.EntityFramework.Contexts.Runtime;
+using Headless.EntityFramework.Contexts;
+
+namespace Headless.EntityFramework;
 
 /// <summary>
 /// Exception messages the save pipeline and the outbox dispatcher share, so a mis-wired save fails with the

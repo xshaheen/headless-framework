@@ -106,7 +106,7 @@ internal sealed class TenantCatalogPostureValidator : IHeadlessTenancyValidator
 /// <summary>
 /// Shared, non-PII posture identifiers for the <c>Catalog</c> tenancy seam. <c>Headless.MultiTenancy</c>
 /// records <see cref="AccessorCapability"/> when a store is configured via <c>Catalog(...)</c>.
-/// <c>Headless.Api.Core</c>'s pre-auth resolution middleware is the intended caller that records
+/// <c>Headless.Api</c>'s pre-auth resolution middleware is the intended caller that records
 /// <see cref="ResolutionCapability"/> and marks <see cref="ResolutionPipelineRuntimeMarker"/> once an
 /// identifier source is registered, and its <c>UseStatusCodesRewriter()</c> marks
 /// <see cref="StatusCodesRewriterRuntimeMarker"/> ahead of authorization or

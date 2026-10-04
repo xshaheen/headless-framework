@@ -14,7 +14,7 @@
 
 [اللغة: العربية](README.ar.md)
 
-198 packages &bull; One setup grammar &bull; Swap any provider in one line
+199 packages &bull; One setup grammar &bull; Swap any provider in one line
 
 [Why Headless](#why-headless) &bull; [60-second start](#60-second-start) &bull; [One grammar, every domain](#one-grammar-every-domain) &bull; [What is in the box](#what-is-in-the-box) &bull; [Package catalog](#package-catalog)
 
@@ -44,7 +44,7 @@ builder.Services.AddHeadlessCaching(setup => setup.UseRedis(...)); // production
 
 Every service, repository, and handler that injects `ICache` is untouched by that edit. The same holds for `IBlobStorage` across S3, Azure, Cloudflare R2, the file system, Redis, and SFTP; for `IEmailSender` across SES, Azure Communication Services, and SMTP; and for messaging across eight transports.
 
-**You install three packages, not 198.** The catalog is large because the provider matrix is large. A service that needs caching installs `Headless.Caching.Abstractions`, `Headless.Caching.Core`, and one provider. Domain and application libraries reference the abstraction package alone. `Headless.Caching.Abstractions` pulls in two packages with no third-party dependencies: `Headless.Checks` and `Headless.Primitives`.
+**You install three packages, not 199.** The catalog is large because the provider matrix is large. A service that needs caching installs `Headless.Caching.Abstractions`, `Headless.Caching`, and one provider. Domain and application libraries reference the abstraction package alone. `Headless.Caching.Abstractions` pulls in two packages with no third-party dependencies: `Headless.Checks` and `Headless.Primitives`.
 
 **Tests do not need Docker to be fast.** Caching, distributed locks, and messaging ship in-memory providers; email, SMS, and push notifications ship dev providers that send nothing; blob storage runs against the local file system. Unit tests exercise the real contract with no containers. When you want the real backend, `Headless.Testing.Testcontainers` supplies the fixtures. The repository itself runs 122 unit-test projects and 63 integration-test projects on that split.
 
@@ -94,7 +94,7 @@ Application code that only consumes a cache references `Headless.Caching.Abstrac
 
 ```bash
 dotnet add package Headless.Caching.Abstractions
-dotnet add package Headless.Caching.Core
+dotnet add package Headless.Caching
 dotnet add package Headless.Caching.InMemory
 ```
 
@@ -129,7 +129,7 @@ Use named stores when one application needs several storage backends, or several
 
 ```bash
 dotnet add package Headless.Blobs.Abstractions
-dotnet add package Headless.Blobs.Core
+dotnet add package Headless.Blobs
 dotnet add package Headless.Blobs.FileSystem
 ```
 
@@ -252,7 +252,7 @@ Provider packages are ordinary NuGet packages. To add a custom backend, implemen
 ## Package catalog
 
 <details>
-<summary><strong>All 198 packages, grouped by domain</strong> — expand to browse</summary>
+<summary><strong>All 199 packages, grouped by domain</strong> — expand to browse</summary>
 
 ### API & Web
 
@@ -260,7 +260,7 @@ Production ASP.NET Core APIs: request and response conventions, validation pipel
 
 | Package | Description |
 |---------|-------------|
-| [Headless.Api.Core](src/Headless.Api.Core/README.md) | ASP.NET Core API building blocks (problem details, JWT, identity, middleware) |
+| [Headless.Api](src/Headless.Api/README.md) | ASP.NET Core API building blocks (problem details, JWT, identity, middleware) |
 | [Headless.Api.ServiceDefaults](src/Headless.Api.ServiceDefaults/README.md) | `AddHeadless()` orchestrator plus Aspire-style defaults (OpenTelemetry, OpenAPI, service discovery) |
 | [Headless.Api.Abstractions](src/Headless.Api.Abstractions/README.md) | API abstractions and contracts |
 | [Headless.Api.DataProtection](src/Headless.Api.DataProtection/README.md) | Data protection key storage |
@@ -277,7 +277,8 @@ Foundational building blocks shared across the framework — domain primitives, 
 | Package | Description |
 |---------|-------------|
 | [Headless.Extensions](src/Headless.Extensions/README.md) | Core primitives and utilities |
-| [Headless.Core](src/Headless.Core/README.md) | Domain-Driven Design building blocks |
+| [Headless.Context.Abstractions](src/Headless.Context.Abstractions/README.md) | Ambient-context contracts: current user, principal, locale, time zone, correlation, cancellation, host identity |
+| [Headless.Context](src/Headless.Context/README.md) | Ambient-context implementations and `AddHeadlessHostIdentity()` setup |
 | [Headless.Security.Abstractions](src/Headless.Security.Abstractions/README.md) | Security contracts and options |
 | [Headless.Security](src/Headless.Security/README.md) | String encryption, lookup hashing, and secret hashing (PBKDF2) services |
 | [Headless.Security.Argon2](src/Headless.Security.Argon2/README.md) | Argon2id secret hashing, the default `ISecretHasher` algorithm |
@@ -296,7 +297,7 @@ Property-level audit logging for entity mutations and explicit business events. 
 | Package | Description |
 |---------|-------------|
 | [Headless.AuditLog.Abstractions](src/Headless.AuditLog.Abstractions/README.md) | Audit log contracts and interfaces |
-| [Headless.AuditLog.Core](src/Headless.AuditLog.Core/README.md) | Audit log DI setup, options validation, and provider setup pipeline |
+| [Headless.AuditLog](src/Headless.AuditLog/README.md) | Audit log DI setup, options validation, and provider setup pipeline |
 | [Headless.AuditLog.Storage.EntityFramework](src/Headless.AuditLog.Storage.EntityFramework/README.md) | EF Core audit log persistence |
 | [Headless.AuditLog.Storage.PostgreSql](src/Headless.AuditLog.Storage.PostgreSql/README.md) | PostgreSQL raw audit log storage |
 | [Headless.AuditLog.Storage.SqlServer](src/Headless.AuditLog.Storage.SqlServer/README.md) | SQL Server raw audit log storage |
@@ -308,7 +309,7 @@ One blob storage interface with providers for every major cloud and protocol.
 | Package | Description |
 |---------|-------------|
 | [Headless.Blobs.Abstractions](src/Headless.Blobs.Abstractions/README.md) | Blob storage interfaces |
-| [Headless.Blobs.Core](src/Headless.Blobs.Core/README.md) | Unified setup builder for composing named blob stores |
+| [Headless.Blobs](src/Headless.Blobs/README.md) | Unified setup builder for composing named blob stores |
 | [Headless.Blobs.Aws](src/Headless.Blobs.Aws/README.md) | AWS S3 blob storage |
 | [Headless.Blobs.Azure](src/Headless.Blobs.Azure/README.md) | Azure Blob storage |
 | [Headless.Blobs.CloudflareR2](src/Headless.Blobs.CloudflareR2/README.md) | Cloudflare R2 (S3-compatible) blob storage |
@@ -325,7 +326,7 @@ Multi-tier caching behind one abstraction: in-memory, Redis, and hybrid L1/L2.
 | Package | Description |
 |---------|-------------|
 | [Headless.Caching.Abstractions](src/Headless.Caching.Abstractions/README.md) | Caching interfaces |
-| [Headless.Caching.Core](src/Headless.Caching.Core/README.md) | Shared factory-backed cache orchestration |
+| [Headless.Caching](src/Headless.Caching/README.md) | Shared factory-backed cache orchestration |
 | [Headless.Caching.Hybrid](src/Headless.Caching.Hybrid/README.md) | Hybrid caching (L1/L2) |
 | [Headless.Caching.InMemory](src/Headless.Caching.InMemory/README.md) | In-memory caching |
 | [Headless.Caching.Redis](src/Headless.Caching.Redis/README.md) | Redis caching |
@@ -340,7 +341,7 @@ Verify CAPTCHA tokens behind one pass/fail abstraction. Compose Google reCAPTCHA
 | Package | Description |
 |---------|-------------|
 | [Headless.Captcha.Abstractions](src/Headless.Captcha.Abstractions/README.md) | CAPTCHA verification interfaces and builder |
-| [Headless.Captcha.Core](src/Headless.Captcha.Core/README.md) | CAPTCHA setup and validation pipeline |
+| [Headless.Captcha](src/Headless.Captcha/README.md) | CAPTCHA setup and validation pipeline |
 | [Headless.Captcha.ReCaptcha](src/Headless.Captcha.ReCaptcha/README.md) | Google reCAPTCHA v2/v3 provider |
 | [Headless.Captcha.Turnstile](src/Headless.Captcha.Turnstile/README.md) | Cloudflare Turnstile provider |
 
@@ -351,7 +352,7 @@ Transactional and marketing email through one interface.
 | Package | Description |
 |---------|-------------|
 | [Headless.Emails.Abstractions](src/Headless.Emails.Abstractions/README.md) | Email sending interfaces |
-| [Headless.Emails.Core](src/Headless.Emails.Core/README.md) | Core email implementation |
+| [Headless.Emails](src/Headless.Emails/README.md) | Core email implementation |
 | [Headless.Emails.Aws](src/Headless.Emails.Aws/README.md) | AWS SES email provider |
 | [Headless.Emails.Azure](src/Headless.Emails.Azure/README.md) | Azure Communication Services email provider |
 | [Headless.Emails.Dev](src/Headless.Emails.Dev/README.md) | Development email provider |
@@ -364,7 +365,7 @@ Runtime feature flags backed by persistent storage. Toggle features without a re
 | Package | Description |
 |---------|-------------|
 | [Headless.Features.Abstractions](src/Headless.Features.Abstractions/README.md) | Feature flag interfaces |
-| [Headless.Features.Core](src/Headless.Features.Core/README.md) | Feature management implementation |
+| [Headless.Features](src/Headless.Features/README.md) | Feature management implementation |
 | [Headless.Features.Storage.EntityFramework](src/Headless.Features.Storage.EntityFramework/README.md) | EF Core feature storage |
 | [Headless.Features.Storage.PostgreSql](src/Headless.Features.Storage.PostgreSql/README.md) | PostgreSQL raw-DDL feature storage |
 | [Headless.Features.Storage.SqlServer](src/Headless.Features.Storage.SqlServer/README.md) | SQL Server raw-DDL feature storage |
@@ -384,7 +385,7 @@ Image processing with pluggable backends: resize, crop, convert, and optimize.
 | Package | Description |
 |---------|-------------|
 | [Headless.Imaging.Abstractions](src/Headless.Imaging.Abstractions/README.md) | Image processing interfaces |
-| [Headless.Imaging.Core](src/Headless.Imaging.Core/README.md) | Core image processing |
+| [Headless.Imaging](src/Headless.Imaging/README.md) | Core image processing |
 | [Headless.Imaging.ImageSharp](src/Headless.Imaging.ImageSharp/README.md) | ImageSharp implementation |
 
 ### Logging
@@ -413,7 +414,7 @@ Distributed message bus with a transactional outbox, retries, delayed delivery, 
 | [Headless.Messaging.Abstractions](src/Headless.Messaging.Abstractions/README.md) | Core messaging interfaces and contracts |
 | [Headless.Messaging.Bus.Abstractions](src/Headless.Messaging.Bus.Abstractions/README.md) | Broadcast (pub/sub) publisher contracts |
 | [Headless.Messaging.Queue.Abstractions](src/Headless.Messaging.Queue.Abstractions/README.md) | Point-to-point queue publisher and request client contracts |
-| [Headless.Messaging.Core](src/Headless.Messaging.Core/README.md) | Runtime engine: outbox, retries, delayed delivery, consumer orchestration |
+| [Headless.Messaging](src/Headless.Messaging/README.md) | Runtime engine: outbox, retries, delayed delivery, consumer orchestration |
 | [Headless.Messaging.SourceGenerator](src/Headless.Messaging.SourceGenerator/README.md) | Compile-time registration and typed dispatch for `[BusConsumer]` and `[QueueConsumer]` classes |
 | [Headless.Messaging.Dashboard](src/Headless.Messaging.Dashboard/README.md) | Web UI for monitoring messages, failures, and system health |
 | [Headless.Messaging.Dashboard.K8s](src/Headless.Messaging.Dashboard.K8s/README.md) | Kubernetes node auto-discovery for the dashboard |
@@ -449,7 +450,7 @@ Distributed background job scheduling with cron expressions, delayed execution, 
 | Package | Description |
 |---------|-------------|
 | [Headless.Jobs.Abstractions](src/Headless.Jobs.Abstractions/README.md) | Job scheduling interfaces |
-| [Headless.Jobs.Core](src/Headless.Jobs.Core/README.md) | Job engine: cron, delays, retries, monitoring |
+| [Headless.Jobs](src/Headless.Jobs/README.md) | Job engine: cron, delays, retries, monitoring |
 | [Headless.Jobs.SourceGenerator](src/Headless.Jobs.SourceGenerator/README.md) | Compile-time code generation for `[Job]`-marked job classes |
 | [Headless.Jobs.Dashboard](src/Headless.Jobs.Dashboard/README.md) | Web UI for job monitoring |
 | [Headless.Jobs.EntityFramework](src/Headless.Jobs.EntityFramework/README.md) | EF Core job state persistence; uses optional `Headless.Caching.ICache` for cron-expression caching |
@@ -481,7 +482,7 @@ Database access for Entity Framework Core and Couchbase — conventions, seed da
 | Package | Description |
 |---------|-------------|
 | [Headless.EntityFramework](src/Headless.EntityFramework/README.md) | Entity Framework Core utilities |
-| [Headless.EntityFramework.Core](src/Headless.EntityFramework.Core/README.md) | Provider-neutral EF converters, primitive mappings, and query helpers without `HeadlessDbContext` |
+| [Headless.EntityFramework.Primitives](src/Headless.EntityFramework.Primitives/README.md) | Provider-neutral EF converters, primitive mappings, and query helpers without `HeadlessDbContext` |
 | [Headless.EntityFramework.Messaging](src/Headless.EntityFramework.Messaging/README.md) | EF Core outbox dispatcher — atomic integration-event writes on save |
 | [Headless.Couchbase](src/Headless.Couchbase/README.md) | Couchbase data-access utilities |
 
@@ -502,7 +503,7 @@ Database-backed permission system. Define permissions as code, store assignments
 | Package | Description |
 |---------|-------------|
 | [Headless.Permissions.Abstractions](src/Headless.Permissions.Abstractions/README.md) | Permission system interfaces |
-| [Headless.Permissions.Core](src/Headless.Permissions.Core/README.md) | Permission system implementation |
+| [Headless.Permissions](src/Headless.Permissions/README.md) | Permission system implementation |
 | [Headless.Permissions.Testing](src/Headless.Permissions.Testing/README.md) | Test-only always-allow permission and authorization doubles |
 | [Headless.Permissions.Storage.EntityFramework](src/Headless.Permissions.Storage.EntityFramework/README.md) | EF Core permission storage |
 | [Headless.Permissions.Storage.PostgreSql](src/Headless.Permissions.Storage.PostgreSql/README.md) | PostgreSQL raw-DDL permission storage |
@@ -516,7 +517,7 @@ Firebase Cloud Messaging and Apple Push Notification service behind a clean abst
 |---------|-------------|
 | [Headless.PushNotifications.Abstractions](src/Headless.PushNotifications.Abstractions/README.md) | Push notification interfaces |
 | [Headless.PushNotifications.Apns](src/Headless.PushNotifications.Apns/README.md) | Apple Push Notification service (APNs) |
-| [Headless.PushNotifications.Core](src/Headless.PushNotifications.Core/README.md) | Unified setup builder for composing named push-notification services |
+| [Headless.PushNotifications](src/Headless.PushNotifications/README.md) | Unified setup builder for composing named push-notification services |
 | [Headless.PushNotifications.Dev](src/Headless.PushNotifications.Dev/README.md) | Development push provider |
 | [Headless.PushNotifications.Firebase](src/Headless.PushNotifications.Firebase/README.md) | Firebase Cloud Messaging |
 
@@ -527,8 +528,8 @@ Coordinate access to shared resources across distributed services.
 | Package | Description |
 |---------|-------------|
 | [Headless.DistributedLocks.Abstractions](src/Headless.DistributedLocks.Abstractions/README.md) | Distributed locking interfaces |
-| [Headless.DistributedLocks.Core](src/Headless.DistributedLocks.Core/README.md) | Distributed locking implementation |
-| [Headless.DistributedLocks.Core.Database](src/Headless.DistributedLocks.Core.Database/README.md) | Shared relational substrate for database lock providers |
+| [Headless.DistributedLocks](src/Headless.DistributedLocks/README.md) | Distributed locking implementation |
+| [Headless.DistributedLocks.Database](src/Headless.DistributedLocks.Database/README.md) | Shared relational substrate for database lock providers |
 | [Headless.DistributedLocks.InMemory](src/Headless.DistributedLocks.InMemory/README.md) | In-process locking |
 | [Headless.DistributedLocks.PostgreSql](src/Headless.DistributedLocks.PostgreSql/README.md) | PostgreSQL advisory-lock locking |
 | [Headless.DistributedLocks.Redis](src/Headless.DistributedLocks.Redis/README.md) | Redis-based locking |
@@ -549,8 +550,8 @@ Cluster membership and liveness tracking. Know which nodes are alive across a di
 | Package | Description |
 |---------|-------------|
 | [Headless.Coordination.Abstractions](src/Headless.Coordination.Abstractions/README.md) | Membership, liveness, and lifecycle contracts |
-| [Headless.Coordination.Core](src/Headless.Coordination.Core/README.md) | Provider-agnostic membership engine |
-| [Headless.Coordination.Core.Database](src/Headless.Coordination.Core.Database/README.md) | Shared relational substrate for SQL coordination providers |
+| [Headless.Coordination](src/Headless.Coordination/README.md) | Provider-agnostic membership engine |
+| [Headless.Coordination.Database](src/Headless.Coordination.Database/README.md) | Shared relational substrate for SQL coordination providers |
 | [Headless.Coordination.PostgreSql](src/Headless.Coordination.PostgreSql/README.md) | PostgreSQL membership with server-clock liveness |
 | [Headless.Coordination.Redis](src/Headless.Coordination.Redis/README.md) | Redis membership via Lua scripts and server time |
 | [Headless.Coordination.SqlServer](src/Headless.Coordination.SqlServer/README.md) | SQL Server membership with guarded writes |
@@ -563,7 +564,7 @@ Per-tenant consecutive numbers for receipts, invoices, and case numbers. The fas
 | Package | Description |
 |---------|-------------|
 | [Headless.Sequences.Abstractions](src/Headless.Sequences.Abstractions/README.md) | `ISequenceGenerator`, `SequenceRange`, and the `unit.Sequences` accessor |
-| [Headless.Sequences.Core](src/Headless.Sequences.Core/README.md) | Registration, numbering policies, and tenant key resolution |
+| [Headless.Sequences](src/Headless.Sequences/README.md) | Registration, numbering policies, and tenant key resolution |
 | [Headless.Sequences.PostgreSql](src/Headless.Sequences.PostgreSql/README.md) | PostgreSQL counters with a single upsert-increment |
 | [Headless.Sequences.SqlServer](src/Headless.Sequences.SqlServer/README.md) | SQL Server counters with a range-locked upsert |
 | [Headless.Sequences.Sqlite](src/Headless.Sequences.Sqlite/README.md) | SQLite counters under the database write lock |
@@ -575,7 +576,7 @@ Durable, cross-process leases that fence a stale or zombie attempt's writes at t
 | Package | Description |
 |---------|-------------|
 | [Headless.Fencing.Abstractions](src/Headless.Fencing.Abstractions/README.md) | `IFencedLeases`, `FencedLease`, and the `unit.Leases` accessor |
-| [Headless.Fencing.Core](src/Headless.Fencing.Core/README.md) | Registration, key resolution, and the expired-lease sweep |
+| [Headless.Fencing](src/Headless.Fencing/README.md) | Registration, key resolution, and the expired-lease sweep |
 | [Headless.Fencing.InMemory](src/Headless.Fencing.InMemory/README.md) | In-process leases for tests and single-instance hosts |
 | [Headless.Fencing.PostgreSql](src/Headless.Fencing.PostgreSql/README.md) | PostgreSQL leases with a `SKIP LOCKED` sweep |
 | [Headless.Fencing.SqlServer](src/Headless.Fencing.SqlServer/README.md) | SQL Server leases with a `READPAST` sweep |
@@ -588,7 +589,7 @@ Durable, tenant-scoped idempotent admission: admit a key once across processes a
 | Package | Description |
 |---------|-------------|
 | [Headless.Idempotency.Abstractions](src/Headless.Idempotency.Abstractions/README.md) | `IIdempotentOperations`, `IdempotentAdmission`, and the `unit.Idempotency` accessor |
-| [Headless.Idempotency.Core](src/Headless.Idempotency.Core/README.md) | Registration, admission orchestration, and the retention purge |
+| [Headless.Idempotency](src/Headless.Idempotency/README.md) | Registration, admission orchestration, and the retention purge |
 | [Headless.Idempotency.Caching](src/Headless.Idempotency.Caching/README.md) | Idempotency records in a shared cache (Redis) for autonomous calls across replicas without SQL |
 | [Headless.Idempotency.InMemory](src/Headless.Idempotency.InMemory/README.md) | In-process idempotency records for tests and single-instance hosts |
 | [Headless.Idempotency.PostgreSql](src/Headless.Idempotency.PostgreSql/README.md) | PostgreSQL idempotency records |
@@ -625,7 +626,7 @@ Dynamic application settings stored in a database. Change configuration at runti
 | Package | Description |
 |---------|-------------|
 | [Headless.Settings.Abstractions](src/Headless.Settings.Abstractions/README.md) | Dynamic settings interfaces |
-| [Headless.Settings.Core](src/Headless.Settings.Core/README.md) | Settings management implementation |
+| [Headless.Settings](src/Headless.Settings/README.md) | Settings management implementation |
 | [Headless.Settings.Storage.EntityFramework](src/Headless.Settings.Storage.EntityFramework/README.md) | EF Core settings storage |
 | [Headless.Settings.Storage.PostgreSql](src/Headless.Settings.Storage.PostgreSql/README.md) | PostgreSQL raw-DDL settings storage |
 | [Headless.Settings.Storage.SqlServer](src/Headless.Settings.Storage.SqlServer/README.md) | SQL Server raw-DDL settings storage |
@@ -637,7 +638,7 @@ One interface with providers for major regional and global carriers.
 | Package | Description |
 |---------|-------------|
 | [Headless.Sms.Abstractions](src/Headless.Sms.Abstractions/README.md) | SMS sending interfaces |
-| [Headless.Sms.Core](src/Headless.Sms.Core/README.md) | SMS setup builder and provider selection |
+| [Headless.Sms](src/Headless.Sms/README.md) | SMS setup builder and provider selection |
 | [Headless.Sms.Aws](src/Headless.Sms.Aws/README.md) | AWS SNS SMS provider |
 | [Headless.Sms.Cequens](src/Headless.Sms.Cequens/README.md) | Cequens SMS provider |
 | [Headless.Sms.Connekio](src/Headless.Sms.Connekio/README.md) | Connekio SMS provider |
@@ -654,7 +655,7 @@ Connection factories for raw SQL access when you need to drop below the ORM.
 | Package | Description |
 |---------|-------------|
 | [Headless.Sql.Abstractions](src/Headless.Sql.Abstractions/README.md) | SQL connection interfaces |
-| [Headless.Sql.Core](src/Headless.Sql.Core/README.md) | Default scoped ambient current-connection implementation |
+| [Headless.Sql](src/Headless.Sql/README.md) | Default scoped ambient current-connection implementation |
 | [Headless.Sql.PostgreSql](src/Headless.Sql.PostgreSql/README.md) | PostgreSQL connection factory |
 | [Headless.Sql.SqlServer](src/Headless.Sql.SqlServer/README.md) | SQL Server connection factory |
 | [Headless.Sql.Sqlite](src/Headless.Sql.Sqlite/README.md) | SQLite connection factory |

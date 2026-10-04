@@ -1,0 +1,412 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using System.Globalization;
+using Headless.Checks;
+using Headless.Messaging.Internal;
+using Headless.Messaging.Persistence;
+using Microsoft.Extensions.Logging;
+
+namespace Headless.Messaging.Retry;
+
+/// <summary>
+/// Shared retry decision logic used by consume and publish retry paths.
+/// </summary>
+/// <remarks>
+/// <para>
+/// On publish, Polly's configured <c>RetryStrategyOptions.ShouldHandle</c> classifies the failure and its delay
+/// configuration supplies the next retry delay. On consume, the consumer's failure policy does both through
+/// <see cref="ConsumeRetryBudget"/>. Messaging maps either outcome into its own durable scheduled or terminal state.
+/// </para>
+/// <para>
+/// <c>MediumMessage.Retries</c> counts persisted-retry pickups only — inline iterations do not
+/// advance it. The call site (not this helper) increments the counter when the resulting transition
+/// is "persist for a later pickup". This helper is pure with respect to <see cref="MediumMessage"/>.
+/// </para>
+/// </remarks>
+internal static class RetryHelper
+{
+    /// <summary>
+    /// Returns <see langword="true"/> when the supplied <paramref name="cancellationToken"/>
+    /// has been cancelled and <paramref name="ex"/> is an <see cref="OperationCanceledException"/>.
+    /// The embedded token on the OCE is intentionally not required to match
+    /// <paramref name="cancellationToken"/>: a linked CTS produced by
+    /// <see cref="CancellationTokenSource.CreateLinkedTokenSource(CancellationToken)"/> carries
+    /// the LINKED token on its OCE, not the outer token, so a strict identity check would
+    /// mis-classify host-shutdown cancellations that arrive via a linked source.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The outer-token <c>IsCancellationRequested</c> guard still distinguishes shutdown OCEs
+    /// from unrelated timeout OCEs (e.g. an <c>HttpClient</c> timeout fires its own OCE while the
+    /// outer token is NOT cancelled, so this method returns <see langword="false"/> and the
+    /// failure flows through the normal retry pipeline).
+    /// </para>
+    /// <para>
+    /// A consumer awaiting a request when its host stops sees the requester's shutdown instead of an OCE: the reply
+    /// listener fails every pending call with <see cref="RequestAbortedException"/>, and refuses a new one with a
+    /// stopping <see cref="RequestNotSentException"/>, as soon as it quiesces, which can be before the dispatch
+    /// token's cancellation callbacks run. Under a cancelled token either one is the same shutdown, wherever it sits
+    /// in the exception chain.
+    /// </para>
+    /// </remarks>
+    public static bool IsCancellation(Exception ex, CancellationToken cancellationToken)
+    {
+        return cancellationToken.IsCancellationRequested
+            && (ex is OperationCanceledException || _IsRequesterShutdown(ex));
+    }
+
+    private static bool _IsRequesterShutdown(Exception ex)
+    {
+        for (Exception? current = ex; current is not null; current = current.InnerException)
+        {
+            if (current is RequestAbortedException or RequestNotSentException { IsRequesterStopping: true })
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Detects a crash-recovered inline burst: the durable <see cref="MediumMessage.InlineAttempts"/>
+    /// counter already reserved the final inline attempt before the process terminated, so no fresh
+    /// attempt may run. Returns a synthetic retryable attempt (with classification bypassed) that
+    /// routes the row to its persisted-retry or exhausted transition, or <see langword="null"/> when
+    /// inline budget remains. Shared by the publish and consume paths so the threshold and message
+    /// cannot drift.
+    /// </summary>
+    public static MessagingRetryAttempt? DetectCrashRecoveredReservation(
+        int reservedInlineAttempts,
+        RetryPolicyOptions policy
+    )
+    {
+        return reservedInlineAttempts < policy.RetryStrategy.MaxRetryAttempts + 1 ? null : _CrashRecoveredAttempt();
+    }
+
+    /// <summary>
+    /// The consume-side counterpart of <see cref="DetectCrashRecoveredReservation(int, RetryPolicyOptions)"/>: the
+    /// threshold is the consumer's own budget for the row's dispatch, so a delayed pickup (one attempt) and a first
+    /// dispatch (one attempt plus the immediate retries) each detect their own spent reservation.
+    /// </summary>
+    public static MessagingRetryAttempt? DetectCrashRecoveredReservation(
+        int retries,
+        int reservedInlineAttempts,
+        ConsumeRetryBudget budget
+    )
+    {
+        return budget.IsFinalAttemptReserved(retries, reservedInlineAttempts) ? _CrashRecoveredAttempt() : null;
+    }
+
+    /// <summary>
+    /// Detects a received row whose <see cref="MediumMessage.Retries"/> already exceeds its consumer's delayed
+    /// budget, typically because the consumer's policy shrank since the row was scheduled. Returns a synthetic
+    /// retryable attempt (classification bypassed) so the row ends through the same terminal path as a spent budget,
+    /// without invoking the handler; <see langword="null"/> while the row is within budget.
+    /// </summary>
+    public static MessagingRetryAttempt? DetectBudgetOverrun(int retries, ConsumeRetryBudget budget)
+    {
+        if (!budget.IsOverBudget(retries))
+        {
+            return null;
+        }
+
+        var overrunException = new InvalidOperationException(
+            string.Create(
+                CultureInfo.InvariantCulture,
+                $"The message has used {retries} delayed retries, more than its consumer's failure policy allows ({budget.Policy.DelayedRetries})."
+            )
+        );
+
+        return MessagingRetryAttempt.Retryable(OperateResult.Failed(overrunException), bypassClassification: true);
+    }
+
+    private static MessagingRetryAttempt _CrashRecoveredAttempt()
+    {
+        var recoveryException = new InvalidOperationException(
+            "The process terminated after reserving the final inline delivery attempt."
+        );
+
+        return MessagingRetryAttempt.Retryable(OperateResult.Failed(recoveryException), bypassClassification: true);
+    }
+
+    /// <summary>
+    /// Invokes the supplied <paramref name="callback"/> with a hard timeout via
+    /// <see cref="Task.WaitAsync(TimeSpan,TimeProvider,CancellationToken)"/>.
+    /// On timeout the callback is orphaned (continues running in the background) and a
+    /// <c>OnExhaustedTimedOut</c> log event is emitted. Exceptions thrown by the callback
+    /// are caught and logged so they cannot crash the dispatch loop. Cancellation observed
+    /// on the supplied token is treated like any other callback exception — logged and absorbed.
+    /// </summary>
+    /// <remarks>
+    /// On timeout, the linked CTS attached to the callback's <see cref="CancellationToken"/> is
+    /// cancelled — this gives a cooperative callback a chance to short-circuit before the surrounding
+    /// dispatch scope is disposed and <see cref="FailedInfo.ServiceProvider"/> becomes invalid. A
+    /// callback that ignores its CT is still orphaned (we cannot abort an unmanaged Task), but the
+    /// well-behaved case lands cleanly.
+    /// </remarks>
+    public static async Task InvokeOnExhaustedAsync(
+        Func<FailedInfo, CancellationToken, Task> callback,
+        FailedInfo failedInfo,
+        TimeSpan timeout,
+        Guid storageId,
+        ILogger logger,
+        TimeProvider timeProvider,
+        CancellationToken cancellationToken
+    )
+    {
+        Argument.IsNotNull(callback);
+
+        // #1 — own disposal explicitly. On timeout the callback Task is orphaned but still holds
+        // callbackCts.Token. If we `using`-dispose the CTS here, any subsequent `ct.ThrowIf*` or
+        // `Task.Delay(_, ct)` inside the orphan throws ObjectDisposedException instead of
+        // OperationCanceledException, breaking the cooperative-cancel contract. Dispose the CTS
+        // only after the orphan completes (fire-and-forget continuation).
+#pragma warning disable CA2000 // False positive: disposed in the finally via ctsOwned, or by the orphan-completion continuation.
+        var callbackCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+#pragma warning restore CA2000
+        var ctsOwned = true;
+
+        try
+        {
+            // Invoke via Task.Run-equivalent capture so a synchronous throw from the user callback
+            // is materialized as a faulted Task — matching the original `await callback(...)` semantics
+            // where the await harvests both synchronous and asynchronous exceptions. Without this,
+            // a synchronously-throwing callback would escape outside the inner try and crash the
+            // dispatch loop.
+            Task callbackTask;
+            try
+            {
+                callbackTask = callback(failedInfo, callbackCts.Token);
+            }
+            catch (Exception syncEx)
+            {
+                callbackTask = Task.FromException(syncEx);
+            }
+
+            try
+            {
+                await callbackTask.WaitAsync(timeout, timeProvider, cancellationToken).ConfigureAwait(false);
+            }
+            catch (TimeoutException)
+            {
+                logger.OnExhaustedTimedOut(storageId, timeout.TotalSeconds);
+                // Orphan warning: scope-bound services (FailedInfo.ServiceProvider) may become
+                // invalid after the dispatch scope disposes. The orphaned callback continues running
+                // in the background; an uncooperative callback that ignores the CT may race scope
+                // disposal.
+                logger.OnExhaustedCallbackOrphaned(storageId);
+
+                // Signal the callback to stop touching scope-bound services. A cooperative callback
+                // observes the token and unwinds; an uncooperative one is orphaned and may still
+                // race the dispatch scope's disposal — documented as user responsibility.
+                try
+                {
+                    await callbackCts.CancelAsync().ConfigureAwait(false);
+                }
+                catch (Exception cancelEx)
+                {
+                    logger.ExecutedThresholdCallbackFailed(cancelEx, LogSanitizer.Sanitize(cancelEx.Message));
+                }
+
+                // Hand ownership of CTS disposal to a continuation that fires when the orphan
+                // completes. This ensures a cooperative callback observes OCE (not
+                // ObjectDisposedException) when it checks the token after timeout.
+                var localCts = callbackCts;
+                _ = callbackTask.ContinueWith(
+                    _ => localCts.Dispose(),
+                    CancellationToken.None,
+                    TaskContinuationOptions.ExecuteSynchronously,
+                    TaskScheduler.Default
+                );
+                ctsOwned = false;
+            }
+            catch (OperationCanceledException oce)
+                when (cancellationToken.IsCancellationRequested
+                    && (oce.CancellationToken == cancellationToken || oce.CancellationToken == callbackCts.Token)
+                )
+            {
+                // #13 — Host shutdown observed during WaitAsync. The OCE may carry either the outer
+                // host token (when WaitAsync raises it directly) or the inner linked callbackCts.Token
+                // (when a cooperative callback awaits something tied to its CT and the linked CTS
+                // fires first). Both indicate shutdown — accept either token-identity.
+                // Cancel the linked CTS so a cooperative callback sees cancellation and unwinds
+                // cleanly instead of touching a disposed scope. Not a callback fault — debug log only.
+                logger.OnExhaustedCallbackCancelledAtShutdown(storageId);
+                try
+                {
+                    await callbackCts.CancelAsync().ConfigureAwait(false);
+                }
+#pragma warning disable ERP022  // Best-effort: a throw here would only mask the shutdown signal — swallow.
+                catch
+                {
+                    // ignored
+                }
+#pragma warning restore ERP022
+            }
+            catch (Exception callbackEx)
+            {
+                logger.ExecutedThresholdCallbackFailed(callbackEx, LogSanitizer.Sanitize(callbackEx.Message));
+            }
+        }
+        finally
+        {
+            if (ctsOwned)
+            {
+                callbackCts.Dispose();
+            }
+        }
+    }
+
+    /// <summary>
+    /// End-to-end <c>OnExhausted</c> invocation: enters the message's tenant context, builds the
+    /// <see cref="FailedInfo"/> envelope around the configured callback, and applies the configured
+    /// timeout / cancellation contract. Both the publish path (<c>MessageSender</c>) and the consume
+    /// path (<c>SubscribeExecutor</c>) share this body; the only per-path knob is
+    /// <paramref name="messageType"/>.
+    /// </summary>
+    /// <remarks>
+    /// Returns immediately when <see cref="RetryPolicyOptions.OnExhausted"/> is <see langword="null"/>.
+    /// All callback failures (synchronous throw, async fault, timeout, shutdown) are absorbed via
+    /// <see cref="InvokeOnExhaustedAsync"/> — see that method for the cancellation/timeout contract.
+    /// </remarks>
+    public static async Task RunOnExhaustedAsync(
+        RetryPolicyOptions policy,
+        MediumMessage message,
+        Exception exception,
+        IServiceProvider dispatchServices,
+        MessageType messageType,
+        ILogger logger,
+        TimeProvider timeProvider,
+        CancellationToken cancellationToken
+    )
+    {
+        var callback = policy.OnExhausted;
+        if (callback is null)
+        {
+            return;
+        }
+
+        // Use the live dispatch scope so scoped services resolved by the callback are the same
+        // instances seen during the consume/send attempt. The caller (Dispatcher) owns this scope.
+        using var tenantScope = TenantContextScope.ChangeFromEnvelope(dispatchServices, message.Origin, logger);
+        await InvokeOnExhaustedAsync(
+                callback,
+                new FailedInfo
+                {
+                    ServiceProvider = dispatchServices,
+                    MessageType = messageType,
+                    Message = message.Origin,
+                    Lane = message.Lane,
+                    Exception = exception,
+                    StorageId = message.StorageId,
+                    RetryCount = message.Retries,
+                },
+                policy.OnExhaustedTimeout,
+                message.StorageId,
+                logger,
+                timeProvider,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Derives the persistence state from a retry decision and inline-retry counters.
+    /// Both the consume path (SubscribeExecutor) and the publish path (MessageSender) share
+    /// identical logic; a single definition prevents the two from drifting.
+    /// </summary>
+    /// <remarks>
+    /// The due time leaves Core as a <see cref="RetryDelay"/>, never an instant: the store adds it to the clock its
+    /// retry pickup compares against, so an application clock skewed from the store's cannot fire a retry early or late.
+    /// </remarks>
+    public static RetryNextState ResolveNextState(
+        MessagingRetryDecision decision,
+        int inlineRetries,
+        RetryPolicyOptions policy
+    )
+    {
+        // #1 — when Polly returns Delay >= DispatchTimeout, the inline retry burst ends early
+        // the Polly pipeline must hand control to the persisted-retry path without sleeping.
+        // Otherwise the call site would skip the Retries++ increment (gated on
+        // !IsInlineRetryInFlight), the row would sit with NextRetryAt set but Retries unchanged,
+        // and the persisted budget would never be consumed — OnExhausted would never fire.
+        var inlineBudgetWouldOversleep =
+            decision.Outcome == MessagingRetryDecision.Kind.Continue && decision.Delay >= policy.DispatchTimeout;
+
+        var isInlineRetryInFlight =
+            decision.Outcome == MessagingRetryDecision.Kind.Continue
+            && policy.HasMoreInlineAttempts(inlineRetries)
+            && !inlineBudgetWouldOversleep;
+
+        return _ResolveNextState(decision, isInlineRetryInFlight, policy.InitialDispatchGrace);
+    }
+
+    /// <summary>
+    /// The consume-side counterpart of <see cref="ResolveNextState(MessagingRetryDecision, int, RetryPolicyOptions)"/>:
+    /// whether the decision keeps the retry inside this dispatch comes from the consumer's
+    /// <paramref name="budget"/>, the same one that made the decision, so the persisted state cannot contradict it.
+    /// </summary>
+    /// <param name="decision">The decision for the failed attempt.</param>
+    /// <param name="retries">The delayed retries the row has used, before this failure.</param>
+    /// <param name="inlineRetries">The back-to-back retries this dispatch has already run.</param>
+    /// <param name="budget">The consumer's budget.</param>
+    /// <param name="initialDispatchGrace">The padding that keeps the retry processor off a row mid-burst.</param>
+    public static RetryNextState ResolveNextState(
+        MessagingRetryDecision decision,
+        int retries,
+        int inlineRetries,
+        ConsumeRetryBudget budget,
+        TimeSpan initialDispatchGrace
+    )
+    {
+        var isInlineRetryInFlight =
+            decision.Outcome == MessagingRetryDecision.Kind.Continue
+            && budget.HasMoreInlineAttempts(retries, inlineRetries);
+
+        return _ResolveNextState(decision, isInlineRetryInFlight, initialDispatchGrace);
+    }
+
+    private static RetryNextState _ResolveNextState(
+        MessagingRetryDecision decision,
+        bool isInlineRetryInFlight,
+        TimeSpan initialDispatchGrace
+    )
+    {
+        var nextStatus = isInlineRetryInFlight ? StatusName.Scheduled : StatusName.Failed;
+
+        if (decision.Outcome != MessagingRetryDecision.Kind.Continue)
+        {
+            // Stop / Exhausted: clear NextRetryAt so the row is terminal and excluded from pickup.
+            return new RetryNextState(isInlineRetryInFlight, NextRetry: null, nextStatus);
+        }
+
+        if (!isInlineRetryInFlight)
+        {
+            // Persisted-retry transition: NextRetryAt drives when the retry processor picks up
+            // the row, so it MUST equal the strategy's delay (no padding, no preservation).
+            return new RetryNextState(isInlineRetryInFlight, RetryDelay.Exactly(decision.Delay), nextStatus);
+        }
+
+        // Inline-retry in-flight transition: the persisted NextRetryAt only matters for
+        // crash recovery (the Polly pipeline itself drives the actual delay). Push NextRetryAt
+        // past the inline-retry resume point by InitialDispatchGrace so the polling cycle does
+        // not race the inline path mid-sleep, AND let the store keep any existing schedule that is
+        // later (e.g., InitialDispatchGrace from initial store), since only the store reads the row's current value.
+        return new RetryNextState(
+            isInlineRetryInFlight,
+            RetryDelay.AtLeast(decision.Delay + initialDispatchGrace),
+            nextStatus
+        );
+    }
+}
+
+/// <summary>
+/// Value returned by the <c>RetryHelper.ResolveNextState</c> overloads describing the persistence state
+/// for a single failed delivery attempt.
+/// </summary>
+internal readonly record struct RetryNextState(
+    bool IsInlineRetryInFlight,
+    RetryDelay? NextRetry,
+    StatusName NextStatus
+);

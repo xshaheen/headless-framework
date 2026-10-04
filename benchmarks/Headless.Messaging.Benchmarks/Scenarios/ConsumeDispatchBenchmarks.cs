@@ -3,7 +3,6 @@
 using BenchmarkDotNet.Attributes;
 using Headless.Messaging.Benchmarks.Support;
 using Headless.Messaging.Internal;
-using Headless.Messaging.Messages;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Messaging.Benchmarks.Scenarios;

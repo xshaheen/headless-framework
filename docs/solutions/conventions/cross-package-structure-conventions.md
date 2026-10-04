@@ -41,7 +41,7 @@ All relational providers use the **`PostgreSql`** spelling (the lone `Postgres` 
 consumer may want to swap** (JSON ↔ MessagePack) — primarily **cache and messaging payloads**. It is **not**
 meant to funnel every serialization in the framework.
 
-- **Route through `ISerializer`** when the format is a consumer choice. Example: `Caching.Core` resolves an
+- **Route through `ISerializer`** when the format is a consumer choice. Example: `Caching` resolves an
   `ISerializer` via a configurable factory, which is why `Headless.Serializer.MessagePack` exists alongside `Json`.
 - **Call `System.Text.Json` directly** for **local/internal** serialization where pluggability is not a goal —
   e.g. `Blobs.Abstractions` blob-content helpers and `Settings.Abstractions` value (de)serialization. These
@@ -60,7 +60,7 @@ gets. `Headless.Api.*` is reserved for packages whose subject is the HTTP pipeli
 | Shape | Meaning | Examples |
 |---|---|---|
 | `Headless.<Feature>.<Capability>` | ASP.NET Core surface for a Headless feature family | `Caching.OutputCache`, `Jobs.Dashboard`, `Messaging.Dashboard`, `Blobs.SignedUrlEndpoint` |
-| `Headless.Api.<Concern>` | The HTTP pipeline itself, or a third-party library adapted into it | `Api.Core`, `Api.Mvc`, `Api.MinimalApi`, `Api.Idempotency`, `Api.FluentValidation`, `Api.Logging.Serilog` |
+| `Headless.Api.<Concern>` | The HTTP pipeline itself, or a third-party library adapted into it | `Api`, `Api.Mvc`, `Api.MinimalApi`, `Api.Idempotency`, `Api.FluentValidation`, `Api.Logging.Serilog` |
 
 **Why feature-first:** a consumer looking for signed blob URLs searches the `Blobs.*` packages, not `Api.*`. An
 `Api.<Feature>` name also misstates the product, since `Api.Blobs` reads as a REST API over blob storage, and it

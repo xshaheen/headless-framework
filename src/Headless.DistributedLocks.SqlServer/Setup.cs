@@ -1,10 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
-using Headless.Abstractions;
 using Headless.Checks;
-using Headless.Constants;
 using Headless.DistributedLocks.SqlServer;
+using Headless.Hosting;
 using Headless.Sql;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;

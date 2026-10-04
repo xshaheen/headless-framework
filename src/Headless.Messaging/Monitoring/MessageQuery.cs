@@ -1,0 +1,39 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+namespace Headless.Messaging;
+
+/// <summary>
+/// Filter and pagination parameters passed to <see cref="IMonitoringApi.GetMessagesAsync"/>.
+/// All filter properties are optional; omitting them returns all rows of the selected type.
+/// </summary>
+[PublicAPI]
+public class MessageQuery
+{
+    /// <summary>Gets or sets whether to query the published or received message table.</summary>
+    public MessageType MessageType { get; set; }
+
+    /// <summary>Gets or sets an optional consumer identity filter for received rows (case-sensitive, exact match).</summary>
+    public string? ConsumerIdentity { get; set; }
+
+    /// <summary>Gets or sets an optional message name filter (case-sensitive, exact match).</summary>
+    public string? Name { get; set; }
+
+    /// <summary>Gets or sets an optional content substring filter applied to the serialized message body.</summary>
+    public string? Content { get; set; }
+
+    /// <summary>Gets or sets an optional status filter (e.g., <see cref="StatusName.Succeeded"/>, <see cref="StatusName.Failed"/>).</summary>
+    public StatusName? StatusName { get; set; }
+
+    /// <summary>Gets or sets an optional delivery lane filter.</summary>
+    public MessageLane? Lane { get; set; }
+
+    /// <summary>
+    /// Gets or sets the zero-based page index for paginated results, matching the
+    /// <see cref="Headless.Primitives.IndexPage{T}.Index"/> of the returned page.
+    /// Values below zero are normalized to zero.
+    /// </summary>
+    public int CurrentPage { get; set; }
+
+    /// <summary>Gets or sets the maximum number of rows returned per page.</summary>
+    public int PageSize { get; set; }
+}

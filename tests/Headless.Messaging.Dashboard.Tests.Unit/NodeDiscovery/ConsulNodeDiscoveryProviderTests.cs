@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging.Dashboard;
-using Headless.Messaging.Dashboard.NodeDiscovery;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
 

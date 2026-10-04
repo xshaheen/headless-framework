@@ -35,15 +35,14 @@ packages share their feature root.
 One constraint makes it safe: **type names must stay unique within the shared namespace across all sibling
 packages.** Two packages that ship a same-name type into one namespace produce CS0433 for consumers.
 
-A namespace that exactly matches another package's name belongs to that package: only `Headless.Api.Abstractions`
-may ship the `Headless.Api.Abstractions` namespace. Outside that, family packages share their feature root
-freely.
+A namespace that exactly matches another package's name belongs to that package, and no other package ships
+into it. Outside that, family packages share their feature root freely.
 
 ### Documented exception: the API response envelopes
 
 `DataEnvelope<T>`, `CollectionEnvelope<T>`, `ValueEnvelope<T>`, `IdEnvelope`, `IdMessageEnvelope`,
 `MessageEnvelope`, `OperationDescriptor`, `OperationsDataEnvelope<T>`, and `OperationsCollectionEnvelope<T>` in
-`Headless.Api.Core`, plus the `ApiResult` conversion holders in `Headless.Api.Mvc` and
+`Headless.Api`, plus the `ApiResult` conversion holders in `Headless.Api.Mvc` and
 `Headless.Api.MinimalApi`, deliberately ship into the `Headless.Primitives` namespace, so envelopes surface
 beside the result primitives consumers already import. This is safe only while type names stay unique across
 every package that ships into `Headless.Primitives`. Check for a collision before adding a type to that
@@ -52,11 +51,13 @@ namespace from any package.
 ## A sub-namespace needs a distinct audience
 
 A family's public types live in its root namespace by default, so a feature's common tasks need one `using`.
-Add a sub-namespace only for a distinct audience or opt-in area: a provider (`Headless.Caching.Redis`),
+Add a sub-namespace only for a distinct audience or opt-in area: a provider (`Headless.DistributedLocks.Redis`),
 `Internal`, extension points for implementers (`Headless.Messaging.Transport`), `Testing`, or `Dashboard`.
 Never name one after a kind of type (`Models`, `Enums`, `Interfaces`, `Entities`, `Exceptions`, `Helpers`,
-`Extensions`, `Constants`, `Dtos`, `Base`, `Utilities`): it groups types by implementation detail instead of
-use, so one scenario needs several imports.
+`Extensions`, `Constants`, `Dtos`, `Base`, `Utilities`) or a bucket (`Abstractions`, `Core`, `Common`,
+`Contracts`): it groups types by implementation detail instead of use, so one scenario needs several imports.
+The rule covers every segment after `Headless`, the family segment included, so the base library's
+general-purpose types live in the `Headless` root namespace rather than in `Headless.Core` or `Headless.Constants`.
 
 Folders organize files, not namespaces. `.editorconfig` sets `dotnet_style_namespace_match_folder = false`, so a
 file declares the namespace this policy gives it wherever it sits, with no `IDE0130` suppression.

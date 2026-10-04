@@ -2,7 +2,7 @@
 
 using Headless.Checks;
 
-namespace Headless.Api.Surfaces;
+namespace Headless.Api;
 
 /// <summary>Immutable surface defaults. Endpoint metadata can override tenancy and anonymous access.</summary>
 [PublicAPI]

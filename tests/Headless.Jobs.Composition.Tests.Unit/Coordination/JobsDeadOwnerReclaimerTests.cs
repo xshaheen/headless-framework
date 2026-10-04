@@ -3,7 +3,6 @@
 using Headless.Coordination;
 using Headless.Jobs;
 using Headless.Jobs.Coordination;
-using Headless.Jobs.Interfaces.Managers;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Options;
 

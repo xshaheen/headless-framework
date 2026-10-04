@@ -26,9 +26,9 @@
     <ProjectReference Include="..\..\src\Headless.Fencing.SqlServer\Headless.Fencing.SqlServer.csproj" />
     <ProjectReference Include="..\..\src\Headless.Idempotency.PostgreSql\Headless.Idempotency.PostgreSql.csproj" />
     <ProjectReference Include="..\..\src\Headless.Idempotency.SqlServer\Headless.Idempotency.SqlServer.csproj" />
-    <ProjectReference Include="..\..\src\Headless.Jobs.Core\Headless.Jobs.Core.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Jobs\Headless.Jobs.csproj" />
     <ProjectReference Include="..\..\src\Headless.Jobs.EntityFramework\Headless.Jobs.EntityFramework.csproj" />
-    <ProjectReference Include="..\..\src\Headless.Messaging.Core\Headless.Messaging.Core.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Messaging\Headless.Messaging.csproj" />
     <ProjectReference Include="..\..\src\Headless.Messaging.Storage.PostgreSql\Headless.Messaging.Storage.PostgreSql.csproj" />
     <ProjectReference Include="..\..\src\Headless.Messaging.Storage.SqlServer\Headless.Messaging.Storage.SqlServer.csproj" />
     <ProjectReference Include="..\..\src\Headless.Permissions.Storage.PostgreSql\Headless.Permissions.Storage.PostgreSql.csproj" />

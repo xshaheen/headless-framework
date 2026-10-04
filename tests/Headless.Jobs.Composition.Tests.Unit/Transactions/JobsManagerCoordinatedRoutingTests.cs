@@ -3,16 +3,10 @@
 using System.Data;
 using System.Data.Common;
 using System.Linq.Expressions;
-using Headless.Abstractions;
+using Headless;
 using Headless.Jobs;
 using Headless.Jobs.BackgroundServices;
-using Headless.Jobs.Entities;
-using Headless.Jobs.Enums;
-using Headless.Jobs.Exceptions;
-using Headless.Jobs.Interfaces;
-using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Managers;
-using Headless.Jobs.Models;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;
 using Microsoft.Extensions.DependencyInjection;

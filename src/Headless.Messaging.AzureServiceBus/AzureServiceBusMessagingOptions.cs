@@ -3,7 +3,6 @@
 using Azure.Core;
 using Azure.Messaging.ServiceBus;
 using FluentValidation;
-using Headless.Messaging.AzureServiceBus.Producer;
 
 namespace Headless.Messaging.AzureServiceBus;
 

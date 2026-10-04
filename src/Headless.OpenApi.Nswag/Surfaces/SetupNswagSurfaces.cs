@@ -1,8 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Api.Surfaces;
+using Headless.Api;
 using Headless.Checks;
-using Headless.OpenApi.Nswag.Surfaces;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using NSwag.AspNetCore;

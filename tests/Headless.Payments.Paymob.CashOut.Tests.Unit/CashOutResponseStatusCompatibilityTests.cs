@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Payments.Paymob.Services.CashOut.Responses;
+using Headless.Payments.Paymob.Services.CashOut;
 
 namespace Tests;
 

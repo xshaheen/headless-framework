@@ -9,7 +9,7 @@
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Headless.Core\Headless.Core.csproj" />
+    <ProjectReference Include="..\Headless.Context.Abstractions\Headless.Context.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.MultiTenancy.Abstractions\Headless.MultiTenancy.Abstractions.csproj" />
   </ItemGroup>
 </Project>

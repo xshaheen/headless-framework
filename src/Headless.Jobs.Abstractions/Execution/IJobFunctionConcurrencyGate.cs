@@ -1,0 +1,17 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+namespace Headless.Jobs;
+
+/// <summary>
+/// Manages per-function concurrency limits using semaphores.
+/// </summary>
+[PublicAPI]
+public interface IJobFunctionConcurrencyGate
+{
+    /// <summary>
+    /// Returns a <see cref="SemaphoreSlim"/> that limits concurrency for the given function,
+    /// or <see langword="null"/> when <paramref name="maxConcurrency"/> is 0 (unlimited).
+    /// The semaphore is created lazily and cached for the lifetime of the application.
+    /// </summary>
+    SemaphoreSlim? GetSemaphoreOrNull(string functionName, int maxConcurrency);
+}

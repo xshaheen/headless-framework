@@ -4,7 +4,7 @@ Test-only doubles that bypass all permission and authorization checks.
 
 ## Why use this package
 
-Integration tests often need to exercise endpoints without wiring up real grants. This package supplies always-allow replacements for `IPermissionManager` and `IAuthorizationService`, kept out of `Headless.Permissions.Core` so the production surface never ships an authorization bypass.
+Integration tests often need to exercise endpoints without wiring up real grants. This package supplies always-allow replacements for `IPermissionManager` and `IAuthorizationService`, kept out of `Headless.Permissions` so the production surface never ships an authorization bypass.
 
 ## Install
 

@@ -3,7 +3,7 @@
 using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Hosting.Options;
+namespace Headless.Hosting;
 
 /// <summary>An <see cref="IOptionsSnapshot{TOptions}"/> that always returns a single fixed value.</summary>
 /// <remarks>

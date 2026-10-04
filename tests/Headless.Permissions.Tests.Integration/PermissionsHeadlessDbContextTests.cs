@@ -1,11 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.EntityFramework;
-using Headless.Hosting.Initialization;
+using Headless.Hosting;
 using Headless.MultiTenancy;
 using Headless.Permissions;
-using Headless.Permissions.Entities;
-using Headless.Permissions.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;

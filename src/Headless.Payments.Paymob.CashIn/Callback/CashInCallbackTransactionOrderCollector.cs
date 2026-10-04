@@ -1,0 +1,52 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
+using Headless.Payments.Paymob.CashIn.Internal;
+
+namespace Headless.Payments.Paymob.CashIn;
+
+[PublicAPI]
+public sealed class CashInCallbackTransactionOrderCollector
+{
+    [JsonPropertyName("id")]
+    public long Id { get; init; }
+
+    [JsonPropertyName("created_at")]
+    [JsonConverter(typeof(AddEgyptZoneOffsetToUnspecifiedDateTimeJsonConverter))]
+    public DateTimeOffset CreatedAt { get; init; }
+
+    [JsonPropertyName("company_name")]
+    public required string CompanyName { get; init; }
+
+    [JsonPropertyName("state")]
+    public string? State { get; init; }
+
+    [JsonPropertyName("country")]
+    public string? Country { get; init; }
+
+    [JsonPropertyName("city")]
+    public string? City { get; init; }
+
+    [JsonPropertyName("postal_code")]
+    public string? PostalCode { get; init; }
+
+    [JsonPropertyName("street")]
+    public string? Street { get; init; }
+
+    /// <summary>Collector phone entries as returned by Paymob; elements are opaque provider-defined objects. Never <see langword="null"/>.</summary>
+    [JsonPropertyName("phones")]
+    [field: AllowNull, MaybeNull]
+    public IReadOnlyList<object?> Phones
+    {
+        get => field ?? [];
+        init;
+    }
+
+    /// <summary>Collector company-email entries as returned by Paymob; elements are opaque provider-defined objects. Never <see langword="null"/>.</summary>
+    [JsonPropertyName("company_emails")]
+    [field: AllowNull, MaybeNull]
+    public IReadOnlyList<object?> CompanyEmails
+    {
+        get => field ?? [];
+        init;
+    }
+}

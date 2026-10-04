@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Headless.Constants;
+using Headless.Http;
 
 namespace Headless.Media.Indexing;
 

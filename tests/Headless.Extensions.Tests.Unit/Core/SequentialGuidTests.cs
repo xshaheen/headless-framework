@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections.Concurrent;
-using Headless.Core;
+using Headless;
 
 namespace Tests.Core;
 

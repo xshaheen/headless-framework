@@ -2,13 +2,10 @@
 
 using System.Data.Common;
 using System.Threading.Channels;
-using Headless.Abstractions;
+using Headless;
+using Headless.Hosting;
 using Headless.Jobs;
-using Headless.Jobs.DbContextFactory;
-using Headless.Jobs.Entities;
-using Headless.Jobs.Enums;
 using Headless.Jobs.Infrastructure;
-using Headless.Jobs.Interfaces;
 using Headless.Jobs.Provider;
 using Headless.Testing.Tests;
 using Microsoft.Data.Sqlite;

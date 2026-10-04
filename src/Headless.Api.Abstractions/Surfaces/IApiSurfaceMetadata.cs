@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Api.Surfaces;
+namespace Headless.Api;
 
 /// <summary>
 /// Marks an endpoint or controller as belonging to a named API surface partition.

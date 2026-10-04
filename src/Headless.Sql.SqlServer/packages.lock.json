@@ -354,16 +354,14 @@
           "Headless.Primitives": "[1.0.0, )",
           "Headless.Urls": "[1.0.0, )",
           "Nito.AsyncEx": "[5.1.2, )",
-          "Nito.Disposables": "[2.5.0, )",
-          "libphonenumber-csharp": "[9.0.39, )"
+          "Nito.Disposables": "[2.5.0, )"
         }
       },
       "headless.fluentvalidation": {
         "type": "Project",
         "dependencies": {
           "FluentValidation": "[12.1.1, )",
-          "Headless.Extensions": "[1.0.0, )",
-          "libphonenumber-csharp": "[9.0.39, )"
+          "Headless.Extensions": "[1.0.0, )"
         }
       },
       "headless.generator.primitives.abstractions": {
@@ -372,6 +370,8 @@
       "headless.hosting": {
         "type": "Project",
         "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
           "Headless.FluentValidation": "[1.0.0, )",
           "Microsoft.Extensions.Configuration.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
@@ -385,14 +385,10 @@
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
-          "Headless.Generator.Primitives.Abstractions": "[1.0.0, )",
-          "libphonenumber-csharp": "[9.0.39, )"
+          "Headless.Generator.Primitives.Abstractions": "[1.0.0, )"
         }
       },
-      "headless.sql.abstractions": {
-        "type": "Project"
-      },
-      "headless.sql.core": {
+      "headless.sql": {
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
@@ -402,6 +398,9 @@
           "Nito.AsyncEx": "[5.1.2, )",
           "OpenTelemetry.Api": "[1.18.0, )"
         }
+      },
+      "headless.sql.abstractions": {
+        "type": "Project"
       },
       "headless.unitofwork": {
         "type": "Project",
@@ -431,12 +430,6 @@
         "requested": "[12.1.1, )",
         "resolved": "12.1.1",
         "contentHash": "EPpkIe1yh1a0OXyC100oOA8WMbZvqUu5plwhvYcb7oSELfyUZzfxV48BLhvs3kKo4NwG7MGLNgy1RJiYtT8Dpw=="
-      },
-      "libphonenumber-csharp": {
-        "type": "CentralTransitive",
-        "requested": "[9.0.39, )",
-        "resolved": "9.0.39",
-        "contentHash": "NiBrwzjHgtBj1XxTVQrWrxn+XOUmiDRcpqxBG5/DtZn8c2vm29FS9aBaCPG5+hBTDYXEid1r0SAZd7a063oGWg=="
       },
       "Microsoft.Extensions.Caching.Abstractions": {
         "type": "CentralTransitive",
