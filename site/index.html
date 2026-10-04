@@ -1,0 +1,1224 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Headless for .NET</title>
+<meta name="description" content="The backend toolkit for .NET: caching, messaging, jobs, storage, multi-tenancy, permissions, and more. 198 packages, one registration grammar, providers you swap in one line.">
+<meta property="og:title" content="Headless for .NET">
+<meta property="og:description" content="The backend toolkit for .NET. Add it in one line. Swap it in one line.">
+<link rel="icon" type="image/png" href="logo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one centered column; the hero code window and the code tour are the widest objects on the page. */
+:root {
+  color-scheme: dark;
+  --bg: #09090d;
+  --panel: #111118;
+  --panel-2: #181822;
+  --line: #262633;
+  --text: #ededf3;
+  --muted: #9b9bb0;
+  --accent: #9d8cff;     /* .NET violet, lifted for a dark ground */
+  --accent-ink: #120f2b;
+  --keep: #7ee2b8;
+  --tok-kw: #c4a7ff;
+  --tok-type: #7dd3fc;
+  --tok-fn: #fcd88a;
+  --tok-str: #a5e3b4;
+  --tok-com: #6b6b80;
+  --tok-num: #f9a98b;
+  --sans: "Geist", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --radius: 12px;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } * { transition: none !important; animation: none !important; } }
+body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.6 var(--sans); -webkit-font-smoothing: antialiased; }
+[hidden] { display: none !important; }
+a { color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+code, pre { font-family: var(--mono); font-variant-ligatures: none; }
+h1, h2, h3 { margin: 0; text-wrap: balance; letter-spacing: -0.02em; }
+p { margin: 0; }
+.wrap { max-width: 1160px; margin-inline: auto; padding-inline: clamp(16px, 4vw, 32px); }
+section { padding-block: clamp(48px, 7vw, 88px); }
+.head { display: grid; gap: 12px; max-width: 640px; margin-bottom: 40px; }
+.head h2 { font-size: clamp(1.9rem, 3.6vw, 2.6rem); font-weight: 600; line-height: 1.1; }
+.head p { color: var(--muted); font-size: 1.08rem; }
+
+/* Nav */
+.nav { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 10; background: color-mix(in srgb, var(--bg) 82%, transparent); backdrop-filter: blur(12px); border-bottom: 1px solid var(--line); }
+.nav .wrap { display: flex; align-items: center; gap: 28px; min-height: 60px; }
+.logo { display: flex; align-items: center; gap: 10px; text-decoration: none; font-weight: 600; font-size: 1.05rem; }
+.logo img { width: 24px; height: 24px; }
+.nav nav { display: flex; gap: 24px; margin-left: auto; align-items: center; }
+.nav nav a { text-decoration: none; color: var(--muted); font-size: 0.92rem; }
+.nav nav a:hover { color: var(--text); }
+.nav nav .gh { color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; }
+@media (max-width: 640px) { .nav nav .opt { display: none; } }
+
+/* Hero */
+.hero { padding-block: clamp(56px, 9vw, 104px) 0; }
+.hero .wrap { display: grid; grid-template-columns: minmax(0, 1fr); gap: 28px; justify-items: center; text-align: center; }
+.pill { display: inline-flex; gap: 8px; align-items: center; font-size: 0.82rem; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 5px 14px; text-decoration: none; }
+.pill b { color: var(--accent); font-weight: 500; }
+.hero h1 { font-size: clamp(2.6rem, 7vw, 5rem); font-weight: 700; line-height: 1; letter-spacing: -0.045em; }
+.hero h1 span { display: block; color: var(--muted); font-weight: 600; font-size: 0.56em; letter-spacing: -0.03em; margin-top: 0.35em; }
+.lede { max-width: 620px; color: var(--muted); font-size: 1.15rem; }
+.cta { max-width: 100%; display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; align-items: center; }
+.btn { display: inline-flex; align-items: center; height: 44px; padding: 0 20px; border-radius: 10px; font-weight: 500; text-decoration: none; border: 1px solid var(--line); background: var(--panel); }
+.btn:hover { border-color: #3a3a4b; }
+.btn.primary { background: var(--text); color: var(--bg); border-color: var(--text); }
+.btn.primary:hover { background: #fff; }
+.install { display: inline-flex; align-items: center; gap: 12px; height: 44px; padding: 0 6px 0 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); font: 0.9rem var(--mono); max-width: 100%; min-width: 0; }
+.install code { display: block; overflow-x: auto; white-space: nowrap; min-width: 0; }
+.install code::before { content: "$ "; color: var(--tok-com); }
+
+/* Code windows */
+.window { border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); overflow: hidden; min-width: 0; }
+.win-bar { display: flex; align-items: center; gap: 12px; padding: 10px 12px 10px 16px; border-bottom: 1px solid var(--line); font-size: 0.85rem; }
+.win-title { font-weight: 500; }
+.win-meta { color: var(--muted); font: 0.78rem var(--mono); }
+.copy { margin-left: auto; font: 500 0.78rem var(--sans); color: var(--muted); background: var(--panel-2); border: 1px solid var(--line); border-radius: 7px; padding: 4px 10px; cursor: pointer; }
+.copy:hover { color: var(--text); }
+pre { margin: 0; padding: 18px 20px 20px 6px; overflow-x: auto; font-size: 0.8rem; line-height: 1.7; }
+pre code { display: block; counter-reset: ln; }
+.line::before { counter-increment: ln; content: counter(ln); display: inline-block; width: 2.4em; margin-right: 1.4em; text-align: right; color: var(--tok-com); opacity: 0.6; user-select: none; font-variant-numeric: tabular-nums; }
+.line.rev { display: inline-block; min-width: 100%; background: color-mix(in srgb, var(--accent) 16%, transparent); box-shadow: inset 2px 0 0 var(--accent); }
+.line.rev::before { color: var(--accent); opacity: 1; }
+.line.rev.flash { animation: flash 0.8s ease-out; }
+@keyframes flash { from { background: color-mix(in srgb, var(--accent) 45%, transparent); } }
+.k { color: var(--tok-kw); } .t { color: var(--tok-type); } .f { color: var(--tok-fn); } .s { color: var(--tok-str); } .c { color: var(--tok-com); font-style: italic; } .n { color: var(--tok-num); }
+
+/* Hero demo */
+.demo { width: 100%; margin-top: 28px; text-align: left; box-shadow: 0 40px 120px -40px color-mix(in srgb, var(--accent) 35%, transparent); }
+.demo-tabs { display: flex; gap: 4px; padding: 8px; border-bottom: 1px solid var(--line); overflow-x: auto; }
+.demo-tabs button, .providers button, .chip { font: 500 0.86rem var(--sans); color: var(--muted); background: none; border: 1px solid transparent; border-radius: 8px; padding: 6px 12px; cursor: pointer; white-space: nowrap; }
+.demo-tabs button:hover, .providers button:hover, .chip:hover { color: var(--text); }
+.demo-tabs button[aria-pressed="true"], .chip[aria-pressed="true"] { color: var(--text); background: var(--panel-2); border-color: var(--line); }
+.pane + .pane { border-top: 1px solid var(--line); }
+.pane-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 10px 16px; font: 0.8rem var(--mono); color: var(--muted); }
+.pane-bar .file { color: var(--text); }
+.providers { display: flex; flex-wrap: wrap; gap: 4px; margin-left: auto; }
+.providers button { font: 0.78rem var(--mono); padding: 3px 10px; border-color: var(--line); }
+.providers button[aria-pressed="true"] { color: var(--accent-ink); background: var(--accent); border-color: var(--accent); }
+.note { color: var(--keep); margin-left: auto; }
+.pane pre { padding-top: 4px; }
+
+/* Provider strip */
+.strip { padding-block: 40px 0; }
+.strip p { text-align: center; color: var(--muted); font-size: 0.9rem; margin-bottom: 18px; }
+.strip ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; justify-content: center; gap: 10px 28px; }
+.strip li { color: #c9c9d6; font-weight: 500; font-size: 0.98rem; }
+
+/* Packages */
+.pkgs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+@media (max-width: 900px) { .pkgs { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .pkgs { grid-template-columns: minmax(0, 1fr); } }
+.pkg { display: grid; gap: 8px; align-content: start; padding: 24px; background: var(--bg); text-decoration: none; transition: background 0.15s; }
+.pkg:hover { background: var(--panel); }
+.pkg h3 { font-size: 1.05rem; font-weight: 600; }
+.pkg p { color: var(--muted); font-size: 0.93rem; }
+.pkg span { font: 0.74rem var(--mono); color: var(--accent); margin-top: 6px; }
+.grammar { margin-top: 24px; display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; color: var(--muted); font-size: 0.92rem; }
+.grammar code { color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; font-size: 0.85rem; overflow-x: auto; max-width: 100%; white-space: nowrap; }
+
+/* Tour */
+.chips { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 20px; }
+.tour { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+.list { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 6px; }
+@media (max-width: 640px) { .list { display: flex; overflow-x: auto; padding-bottom: 4px; } .list [role="tab"] { min-width: 220px; } }
+.list [role="tab"] { display: grid; gap: 2px; text-align: left; font: inherit; color: var(--text); background: none; border: 1px solid transparent; border-radius: 10px; padding: 10px 14px; cursor: pointer; }
+.list [role="tab"] b { font-weight: 500; font-size: 0.95rem; }
+.list [role="tab"] span { color: var(--muted); font-size: 0.82rem; line-height: 1.45; }
+.list [role="tab"]:hover { background: var(--panel); }
+.list [role="tab"][aria-selected="true"] { background: var(--panel); border-color: var(--line); box-shadow: inset 2px 0 0 var(--accent); }
+.sample { display: grid; gap: 18px; min-width: 0; }
+.gets { display: grid; gap: 14px; }
+.gets ul { margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 28px; }
+@media (max-width: 640px) { .gets ul { grid-template-columns: minmax(0, 1fr); } }
+.gets li { position: relative; padding-left: 22px; color: #cfcfdb; font-size: 0.93rem; }
+.gets li::before { content: ""; position: absolute; left: 2px; top: 0.5em; width: 10px; height: 6px; border-left: 2px solid var(--keep); border-bottom: 2px solid var(--keep); transform: rotate(-45deg); }
+.gets li code { font-size: 0.85em; color: var(--text); }
+.guide { color: var(--muted); font-size: 0.85rem; text-underline-offset: 3px; }
+.guide:hover { color: var(--text); }
+
+/* Facts */
+.facts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 900px) { .facts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .facts { grid-template-columns: minmax(0, 1fr); } }
+.fact { display: grid; gap: 8px; align-content: start; padding: 22px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); text-decoration: none; }
+.fact:hover { border-color: #3a3a4b; }
+.fact h3 { font-size: 1.02rem; font-weight: 600; }
+.fact p { color: var(--muted); font-size: 0.92rem; }
+
+/* Split */
+.split { display: grid; grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr); gap: clamp(28px, 5vw, 56px); align-items: center; }
+@media (max-width: 920px) { .split { grid-template-columns: minmax(0, 1fr); } }
+.split .head { margin: 0; }
+.split pre { white-space: pre-wrap; padding-left: 18px; font-size: 0.8rem; }
+
+/* Closing */
+.closing .wrap { display: grid; grid-template-columns: minmax(0, 1fr); gap: 28px; justify-items: center; text-align: center; }
+.closing h2 { font-size: clamp(2rem, 4.4vw, 3.2rem); font-weight: 700; letter-spacing: -0.035em; }
+.closing .window { width: 100%; max-width: 920px; text-align: left; }
+.status { color: var(--muted); font-size: 0.9rem; max-width: 560px; }
+footer { border-top: 1px solid var(--line); padding-block: 28px; color: var(--muted); font-size: 0.88rem; }
+footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px 24px; }
+footer nav { display: flex; gap: 20px; flex-wrap: wrap; }
+footer a { text-decoration: none; }
+footer a:hover { color: var(--text); }
+</style>
+
+</head>
+<body>
+<header class="nav">
+  <div class="wrap">
+    <a class="logo" href="#top"><img src="logo.png" alt="">Headless</a>
+    <nav aria-label="Primary">
+      <a class="opt" href="#packages">Packages</a>
+      <a class="opt" href="#code">Code</a>
+      <a class="opt" href="#agents">AI agents</a>
+      <a href="https://github.com/xshaheen/headless-framework/blob/main/docs/llms/index.md">Docs</a>
+      <a class="gh" href="https://github.com/xshaheen/headless-framework">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+<section class="hero">
+  <div class="wrap">
+    <a class="pill" href="https://github.com/xshaheen/headless-framework/releases"><b>v0.21</b> Now on .NET 10</a>
+    <h1>The backend toolkit for .NET<span>Add it in one line. Swap it in one line.</span></h1>
+    <p class="lede">Caching, messaging, background jobs, blob storage, locks, multi-tenancy, permissions, email, and more. 198 packages that register the same way, so your code depends on <code>ICache</code>, never on Redis.</p>
+    <div class="cta">
+      <a class="btn primary" href="#start">Get started</a>
+      <div class="install"><code>dotnet add package Headless.Caching.Core</code><button class="copy" type="button" data-copy="dotnet add package Headless.Caching.Core">Copy</button></div>
+    </div>
+
+    <div class="window demo">
+      <div class="demo-tabs" role="group" aria-label="Domain"><button type="button" data-domain="caching" aria-pressed="true">Caching</button><button type="button" data-domain="blobs" aria-pressed="false">Blob storage</button><button type="button" data-domain="messaging" aria-pressed="false">Messaging</button></div>
+      <div class="pane">
+        <div class="pane-bar"><span class="file">Program.cs</span><span>Choose a provider</span><div class="providers" id="demo-providers" role="group" aria-label="Provider"></div></div>
+        <pre><code id="demo-root"></code></pre>
+      </div>
+      <div class="pane">
+        <div class="pane-bar"><span class="file" id="demo-consumer-name"></span><span class="note">Unchanged for every provider</span></div>
+        <pre><code id="demo-consumer"></code></pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="strip wrap">
+  <p>Providers for the infrastructure you already run</p>
+  <ul><li>Redis</li><li>PostgreSQL</li><li>SQL Server</li><li>RabbitMQ</li><li>Kafka</li><li>Azure Service Bus</li><li>Amazon SQS</li><li>NATS</li><li>Pulsar</li><li>Amazon S3</li><li>Azure Blob</li><li>Cloudflare R2</li><li>SFTP</li><li>Twilio</li><li>Amazon SES</li><li>Firebase</li><li>APNs</li><li>Turnstile</li></ul>
+</div>
+
+<section id="packages">
+  <div class="wrap">
+    <div class="head">
+      <h2>Everything a backend needs, in one style.</h2>
+      <p>Each feature ships as a small contract package plus one package per provider. Learn one, and you know the rest.</p>
+    </div>
+    <div class="pkgs"><a class="pkg" href="#tour-state-caching" data-tab="tour-state-caching"><h3>Caching</h3><p>In-memory, Redis, or a hybrid L1/L2 tier with stampede protection and fail-safe.</p><span>Redis · InMemory · Hybrid</span></a><a class="pkg" href="#tour-state-blob-stores" data-tab="tour-state-blob-stores"><h3>Blob storage</h3><p>One IBlobStorage over six backends, with named stores and presigned URLs.</p><span>S3 · Azure · R2 · SFTP · FileSystem · Redis</span></a><a class="pkg" href="#tour-messaging-setup" data-tab="tour-messaging-setup"><h3>Messaging</h3><p>Bus and queue lanes with a transactional outbox, inbox, retries, and delays.</p><span>RabbitMQ · Kafka · Service Bus · SQS · NATS · Pulsar</span></a><a class="pkg" href="#tour-jobs-declare" data-tab="tour-jobs-declare"><h3>Background jobs</h3><p>Cron and on-demand jobs, chains, atomic claims, and a dashboard.</p><span>PostgreSQL · SQL Server</span></a><a class="pkg" href="#tour-reliability-locks" data-tab="tour-reliability-locks"><h3>Distributed locks</h3><p>Leases with fencing tokens, semaphores, and reader-writer locks.</p><span>Redis · PostgreSQL · SQL Server</span></a><a class="pkg" href="#tour-reliability-idempotency" data-tab="tour-reliability-idempotency"><h3>Idempotency</h3><p>Admit an operation once and replay the stored result on retry.</p><span>PostgreSQL · SQL Server · Cache</span></a><a class="pkg" href="#tour-tenancy-access-tenancy" data-tab="tour-tenancy-access-tenancy"><h3>Multi-tenancy</h3><p>Tenant context through HTTP, EF Core filters, caches, and messages.</p><span>HTTP · EF Core · Messaging · Blobs</span></a><a class="pkg" href="#tour-tenancy-access-permissions" data-tab="tour-tenancy-access-permissions"><h3>Permissions</h3><p>Permission trees that become ASP.NET Core policies.</p><span>EF Core · PostgreSQL · SQL Server</span></a><a class="pkg" href="#tour-tenancy-access-feature-flags" data-tab="tour-tenancy-access-feature-flags"><h3>Feature flags</h3><p>Plans, editions, and per-tenant switches with typed values.</p><span>EF Core · PostgreSQL · SQL Server</span></a><a class="pkg" href="#tour-tenancy-access-settings" data-tab="tour-tenancy-access-settings"><h3>Settings</h3><p>Runtime settings with encryption and live typed snapshots.</p><span>EF Core · PostgreSQL · SQL Server</span></a><a class="pkg" href="#tour-state-audit-log" data-tab="tour-state-audit-log"><h3>Audit log</h3><p>Property-level change capture from your EF model, with redaction.</p><span>EF Core · PostgreSQL · SQL Server</span></a><a class="pkg" href="#tour-integrations-email-sms-push" data-tab="tour-integrations-email-sms-push"><h3>Email, SMS, push</h3><p>Outbound channels with the same setup and typed send results.</p><span>SES · MailKit · Twilio · Firebase · APNs</span></a></div>
+    <div class="grammar"><span>Every package registers the same way:</span><code class="inline-cs">services.AddHeadless&lt;Feature&gt;(setup =&gt; setup.Use&lt;Provider&gt;(...));</code></div>
+  </div>
+</section>
+
+<section id="code">
+  <div class="wrap">
+    <div class="head">
+      <h2>See the code.</h2>
+      <p>48 samples from the consumer guides, formatted with CSharpier and checked against the source.</p>
+    </div>
+    <div class="chips" role="group" aria-label="Area"><button type="button" class="chip" data-group="g-api" aria-pressed="true">API</button><button type="button" class="chip" data-group="g-state" aria-pressed="false">State</button><button type="button" class="chip" data-group="g-messaging" aria-pressed="false">Messaging</button><button type="button" class="chip" data-group="g-jobs" aria-pressed="false">Jobs</button><button type="button" class="chip" data-group="g-transactions" aria-pressed="false">Transactions</button><button type="button" class="chip" data-group="g-reliability" aria-pressed="false">Reliability</button><button type="button" class="chip" data-group="g-tenancy-access" aria-pressed="false">Tenancy &amp; access</button><button type="button" class="chip" data-group="g-integrations" aria-pressed="false">Integrations</button><button type="button" class="chip" data-group="g-testing" aria-pressed="false">Testing</button><button type="button" class="chip" data-group="g-foundations" aria-pressed="false">Foundations</button></div>
+    <div class="tour">
+      <div><div class="list" role="tablist" aria-label="API" data-group="g-api"><button type="button" role="tab" id="t-tour-api-host" aria-controls="tour-api-host" aria-selected="false" tabindex="-1"><b>Host</b><span>One package wires telemetry, problem details, health, OpenAPI, and the middleware order.</span></button><button type="button" role="tab" id="t-tour-api-results-etags" aria-controls="tour-api-results-etags" aria-selected="false" tabindex="-1"><b>Results &amp; ETags</b><span>Return ApiResult&lt;T&gt; from services; endpoints map failures to problem+json and enforce If-Match.</span></button><button type="button" role="tab" id="t-tour-api-idempotency" aria-controls="tour-api-idempotency" aria-selected="false" tabindex="-1"><b>Idempotency</b><span>Durable admission replays the original response byte-for-byte when a client retries.</span></button><button type="button" role="tab" id="t-tour-api-validation" aria-controls="tour-api-validation" aria-selected="false" tabindex="-1"><b>Validation</b><span>FluentValidation rules for the shapes APIs actually receive, including magic-byte checks.</span></button><button type="button" role="tab" id="t-tour-api-openapi" aria-controls="tour-api-openapi" aria-selected="false" tabindex="-1"><b>OpenAPI</b><span>NSwag generation plus a Scalar UI, with FluentValidation rules and problem details in the spec.</span></button></div><div class="list" role="tablist" aria-label="State" data-group="g-state" hidden><button type="button" role="tab" id="t-tour-state-caching" aria-controls="tour-state-caching" aria-selected="false" tabindex="-1"><b>Caching</b><span>One ICache contract; in-memory today, Redis tomorrow, named instances side by side.</span></button><button type="button" role="tab" id="t-tour-state-stampede-fail-safe" aria-controls="tour-state-stampede-fail-safe" aria-selected="false" tabindex="-1"><b>Stampede &amp; fail-safe</b><span>GetOrAdd with single-flight, background refresh, stale fallback, timeouts, and tags.</span></button><button type="button" role="tab" id="t-tour-state-hybrid-l1-l2" aria-controls="tour-state-hybrid-l1-l2" aria-selected="false" tabindex="-1"><b>Hybrid L1/L2</b><span>A memory tier in front of Redis, with peer invalidation over the messaging backplane.</span></button><button type="button" role="tab" id="t-tour-state-blob-stores" aria-controls="tour-state-blob-stores" aria-selected="false" tabindex="-1"><b>Blob stores</b><span>A default store plus named stores, each its own provider and credentials.</span></button><button type="button" role="tab" id="t-tour-state-upload-presign" aria-controls="tour-state-upload-presign" aria-selected="false" tabindex="-1"><b>Upload &amp; presign</b><span>BlobLocation addressing, metadata, and presigned URLs with enforceable constraints.</span></button><button type="button" role="tab" id="t-tour-state-ef-core" aria-controls="tour-state-ef-core" aria-selected="false" tabindex="-1"><b>EF Core</b><span>Inherit the base types; HeadlessDbContext stamps fields, filters deleted rows, and dispatches events.</span></button><button type="button" role="tab" id="t-tour-state-audit-log" aria-controls="tour-state-audit-log" aria-selected="false" tabindex="-1"><b>Audit log</b><span>Property-level change capture on SaveChanges, plus explicit business events, with redaction.</span></button></div><div class="list" role="tablist" aria-label="Messaging" data-group="g-messaging" hidden><button type="button" role="tab" id="t-tour-messaging-setup" aria-controls="tour-messaging-setup" aria-selected="false" tabindex="-1"><b>Setup</b><span>Pick a broker and a storage, then tune each consumer by its durable identity.</span></button><button type="button" role="tab" id="t-tour-messaging-consumers" aria-controls="tour-messaging-consumers" aria-selected="false" tabindex="-1"><b>Consumers</b><span>Messages are ordinary types; a consumer declares its identity and the generator registers it.</span></button><button type="button" role="tab" id="t-tour-messaging-publish" aria-controls="tour-messaging-publish" aria-selected="false" tabindex="-1"><b>Publish</b><span>Broadcast an event; get back a receipt with the wire id and the durable storage id.</span></button><button type="button" role="tab" id="t-tour-messaging-queue" aria-controls="tour-messaging-queue" aria-selected="false" tabindex="-1"><b>Queue</b><span>One message, one competing consumer: commands go through IQueue.</span></button><button type="button" role="tab" id="t-tour-messaging-request-reply" aria-controls="tour-messaging-request-reply" aria-selected="false" tabindex="-1"><b>Request/reply</b><span>A responder returns the response; the caller awaits it with a deadline.</span></button><button type="button" role="tab" id="t-tour-messaging-every-instance" aria-controls="tour-messaging-every-instance" aria-selected="false" tabindex="-1"><b>Every instance</b><span>Per-process state (caches, waiters) gets its own subscription per host instance.</span></button><button type="button" role="tab" id="t-tour-messaging-outbox" aria-controls="tour-messaging-outbox" aria-selected="false" tabindex="-1"><b>Outbox</b><span>Publish through the unit of work: the message commits or rolls back with your data.</span></button><button type="button" role="tab" id="t-tour-messaging-delay-callbacks" aria-controls="tour-messaging-delay-callbacks" aria-selected="false" tabindex="-1"><b>Delay &amp; callbacks</b><span>Delay a durable publish, revoke it before it fires, or ask for a callback response.</span></button><button type="button" role="tab" id="t-tour-messaging-retry-failure" aria-controls="tour-messaging-retry-failure" aria-selected="false" tabindex="-1"><b>Retry &amp; failure</b><span>Declare retries on the consumer; tune or trip them per identity on the host.</span></button><button type="button" role="tab" id="t-tour-messaging-middleware" aria-controls="tour-messaging-middleware" aria-selected="false" tabindex="-1"><b>Middleware</b><span>Reject raw envelopes before deserialization; wrap typed consumes after.</span></button><button type="button" role="tab" id="t-tour-messaging-tenancy" aria-controls="tour-messaging-tenancy" aria-selected="false" tabindex="-1"><b>Tenancy</b><span>Stamp the ambient tenant on publish, restore it around every consume.</span></button><button type="button" role="tab" id="t-tour-messaging-observability" aria-controls="tour-messaging-observability" aria-selected="false" tabindex="-1"><b>Observability</b><span>Spans and instruments ship inside Messaging.Core; subscribe and enrich.</span></button><button type="button" role="tab" id="t-tour-messaging-testing" aria-controls="tour-messaging-testing" aria-selected="false" tabindex="-1"><b>Testing</b><span>The harness records the real pipeline; wait for what you expect.</span></button></div><div class="list" role="tablist" aria-label="Jobs" data-group="g-jobs" hidden><button type="button" role="tab" id="t-tour-jobs-declare" aria-controls="tour-jobs-declare" aria-selected="false" tabindex="-1"><b>Declare</b><span>Recurring or on-demand, the source generator registers it at compile time.</span></button><button type="button" role="tab" id="t-tour-jobs-schedule" aria-controls="tour-jobs-schedule" aria-selected="false" tabindex="-1"><b>Schedule</b><span>Address a job by its argument type; compose success and failure branches atomically.</span></button><button type="button" role="tab" id="t-tour-jobs-durable-setup" aria-controls="tour-jobs-durable-setup" aria-selected="false" tabindex="-1"><b>Durable setup</b><span>PostgreSQL native claims, cluster membership, and unit-of-work enlistment in one call.</span></button><button type="button" role="tab" id="t-tour-jobs-dashboard" aria-controls="tour-jobs-dashboard" aria-selected="false" tabindex="-1"><b>Dashboard</b><span>Monitor, retry, pause cron, and see live cluster nodes.</span></button></div><div class="list" role="tablist" aria-label="Transactions" data-group="g-transactions" hidden><button type="button" role="tab" id="t-tour-unit-of-work-atomic-commit" aria-controls="tour-unit-of-work-atomic-commit" aria-selected="false" tabindex="-1"><b>Atomic commit</b><span>Write data, publish, and schedule through the same unit; all commit or none do.</span></button></div><div class="list" role="tablist" aria-label="Reliability" data-group="g-reliability" hidden><button type="button" role="tab" id="t-tour-reliability-locks" aria-controls="tour-reliability-locks" aria-selected="false" tabindex="-1"><b>Locks</b><span>Acquire a lease, watch for loss, and hand the token to the resource you write.</span></button><button type="button" role="tab" id="t-tour-reliability-fencing" aria-controls="tour-reliability-fencing" aria-selected="false" tabindex="-1"><b>Fencing</b><span>Grant, heartbeat with progress, and fence the result write in the same transaction.</span></button><button type="button" role="tab" id="t-tour-reliability-idempotency" aria-controls="tour-reliability-idempotency" aria-selected="false" tabindex="-1"><b>Idempotency</b><span>Replay a stored result, defer an in-flight duplicate, or run it exactly once.</span></button><button type="button" role="tab" id="t-tour-reliability-coordination" aria-controls="tour-reliability-coordination" aria-selected="false" tabindex="-1"><b>Coordination</b><span>Store-clocked membership with node@incarnation identities and lifecycle events.</span></button><button type="button" role="tab" id="t-tour-reliability-sequences" aria-controls="tour-reliability-sequences" aria-selected="false" tabindex="-1"><b>Sequences</b><span>Invoice numbers a regulator audits, or batch ids where a gap is fine.</span></button><button type="button" role="tab" id="t-tour-reliability-failure-policy" aria-controls="tour-reliability-failure-policy" aria-selected="false" tabindex="-1"><b>Failure policy</b><span>Immediate, delayed with jittered backoff, and fail-fast rules in one class.</span></button><button type="button" role="tab" id="t-tour-reliability-attempt-limits" aria-controls="tour-reliability-attempt-limits" aria-selected="false" tabindex="-1"><b>Attempt limits</b><span>Cap login codes or PIN tries per subject, shared across every replica.</span></button></div><div class="list" role="tablist" aria-label="Tenancy &amp; access" data-group="g-tenancy-access" hidden><button type="button" role="tab" id="t-tour-tenancy-access-tenancy" aria-controls="tour-tenancy-access-tenancy" aria-selected="false" tabindex="-1"><b>Tenancy</b><span>One builder wires HTTP resolution, authorization, EF write guards, and blob scoping.</span></button><button type="button" role="tab" id="t-tour-tenancy-access-tenant-scope" aria-controls="tour-tenancy-access-tenant-scope" aria-selected="false" tabindex="-1"><b>Tenant scope</b><span>ICurrentTenant.Change scopes jobs, consumers, and admin tools; filters and caches follow.</span></button><button type="button" role="tab" id="t-tour-tenancy-access-permissions" aria-controls="tour-tenancy-access-permissions" aria-selected="false" tabindex="-1"><b>Permissions</b><span>Define permission trees once; every name becomes an ASP.NET Core policy.</span></button><button type="button" role="tab" id="t-tour-tenancy-access-feature-flags" aria-controls="tour-tenancy-access-feature-flags" aria-selected="false" tabindex="-1"><b>Feature flags</b><span>Typed feature values resolved through tenant and edition providers.</span></button><button type="button" role="tab" id="t-tour-tenancy-access-settings" aria-controls="tour-tenancy-access-settings" aria-selected="false" tabindex="-1"><b>Settings</b><span>Define settings once; read per user or tenant, or bind a live typed snapshot.</span></button></div><div class="list" role="tablist" aria-label="Integrations" data-group="g-integrations" hidden><button type="button" role="tab" id="t-tour-integrations-email-sms-push" aria-controls="tour-integrations-email-sms-push" aria-selected="false" tabindex="-1"><b>Email · SMS · Push</b><span>Same setup shape for email, SMS, and push; file-backed dev providers locally.</span></button><button type="button" role="tab" id="t-tour-integrations-send-classify" aria-controls="tour-integrations-send-classify" aria-selected="false" tabindex="-1"><b>Send &amp; classify</b><span>Every send returns a closed result: success, provider id, or a classified failure.</span></button><button type="button" role="tab" id="t-tour-integrations-captcha" aria-controls="tour-integrations-captcha" aria-selected="false" tabindex="-1"><b>Captcha</b><span>Verify through one interface; switch Turnstile and reCAPTCHA by configuration.</span></button></div><div class="list" role="tablist" aria-label="Testing" data-group="g-testing" hidden><button type="button" role="tab" id="t-tour-testing-unit-tests" aria-controls="tour-testing-unit-tests" aria-selected="false" tabindex="-1"><b>Unit tests</b><span>TestBase gives logging, fakers, and a cancellation token; swap the clock in one line.</span></button><button type="button" role="tab" id="t-tour-testing-integration-isolation" aria-controls="tour-testing-integration-isolation" aria-selected="false" tabindex="-1"><b>Integration &amp; isolation</b><span>A real host with fake time and database reset, plus assertions that probe cross-tenant leaks.</span></button></div><div class="list" role="tablist" aria-label="Foundations" data-group="g-foundations" hidden><button type="button" role="tab" id="t-tour-foundations-guards-results" aria-controls="tour-foundations-guards-results" aria-selected="false" tabindex="-1"><b>Guards &amp; results</b><span>Argument checks that return the value, typed results instead of exceptions, safe value objects.</span></button></div></div>
+      <div><article class="sample" role="tabpanel" id="tour-api-host" aria-labelledby="t-tour-api-host" hidden><div class="window"><div class="win-bar"><span class="win-title">A production API host in three calls</span><span class="win-meta">C# &middot; 10 lines</span><button class="copy" type="button">Copy</button></div><pre><code class="cs">var builder = WebApplication.CreateBuilder(args);
+
+builder.AddHeadless(); // telemetry, problem details, OpenAPI, health
+
+var app = builder.Build();
+
+app.UseHeadless(); // middleware in the right order
+app.MapHeadlessEndpoints(); // /health, /alive, OpenAPI JSON
+
+app.Run();</code></pre></div><div class="gets"><ul><li><code>OpenTelemetry</code> logs, metrics, and traces with operational endpoints filtered out</li><li>Bare 401/403/404 and unhandled exceptions become structured application/problem+json</li><li>Startup validation catches a missing <code>UseHeadless()</code> or <code>MapHeadlessEndpoints()</code></li><li>/health and /alive are anonymous and exempt from rate limiting</li></ul><a class="guide" href="https://github.com/xshaheen/headless-framework/blob/main/docs/llms/api.md#headlessapiservicedefaults">Read the guide: docs/llms/api.md</a></div></article><article class="sample" role="tabpanel" id="tour-api-results-etags" aria-labelledby="t-tour-api-results-etags" hidden><div class="window"><div class="win-bar"><span class="win-title">Results in, problem details and ETags out</span><span class="win-meta">C# &middot; 20 lines</span><button class="copy" type="button">Copy</button></div><pre><code class="cs">builder.AddHeadless().ConfigureMinimalApi();
+builder.Services.AddHeadlessMinimalApiEntityTagConcurrency();
+
+app.MapGet(
+        "/invoices/{id:guid}",
+        async (Guid id, IInvoiceService invoices, IProblemDetailsCreator problems, CancellationToken ct) =&gt;
+            (await invoices.GetAsync(id, ct)).ToHttpResult(problems) // 200, or 404 problem+json
+    )
+    .WithEntityTag(); // emits ETag
+
+app.MapPut(
+        "/invoices/{id:guid}",
+        async (Guid id, UpdateInvoice body, IIfMatchContext ifMatch, IInvoiceService invoices, CancellationToken ct) =&gt;
+            await invoices.UpdateAsync(id, body, ifMatch.EntityTag!, ct)
+    )
+    .RequireIfMatch(); // 428 without If-Match
+
+// In the service: expected failures are values, not exceptions.
+public async Task&lt;ApiResult&lt;Invoice&gt;&gt; GetAsync(Guid id, CancellationToken ct) =&gt;
+    await db.Invoices.FindAsync([id], ct) is { } invoice ? invoice : ApiResult&lt;Invoice&gt;.NotFound("Invoice", id);</code></pre></div><div class="gets"><ul><li><code>ApiResult&lt;T&gt;</code> converts implicitly from T; <code>NotFound</code>/Conflict/Forbidden are typed errors</li><li>Every error code uses one g:lower_snake_case namespace clients can branch on</li><li>Missing If-Match returns 428 g:if_match_required; stale writes return 409 g:concurrency_failure</li><li>The same flow exists for MVC via <code>ToActionResult</code> and [<code>RequireIfMatch</code>]</li></ul><a class="guide" href="https://github.com/xshaheen/headless-framework/blob/main/docs/llms/api.md#headlessapiminimalapi">Read the guide: docs/llms/api.md</a></div></article><article class="sample" role="tabpanel" id="tour-api-idempotency" aria-labelledby="t-tour-api-idempotency" hidden><div class="window"><div class="win-bar"><span class="win-title">Exactly-once POSTs over HTTP</span><span class="win-meta">C# &middot; 18 lines</span><button class="copy" type="button">Copy</button></div><pre><code class="cs">builder.Services.AddHeadlessIdempotency(setup =&gt;
+    setup.UsePostgreSql(builder.Configuration.GetConnectionString("Payments")!)
+);
+
+builder.Services.AddIdempotency(options =&gt;
+{
+    options.Retention = TimeSpan.FromHours(24);
+    options.InFlightStrategy = InFlightStrategy.Reject; // or WaitAndReplay
+});
+
+app.UseHeadless();
+app.UseAuthentication();
+app.UseHeadlessTenancy();
+app.UseAuthorization();
+app.UseIdempotency(); // after auth and tenancy
+
+app.MapPost("/disbursements", CreateDisbursement);
+app.MapPost("/webhooks/stripe", HandleWebhook).WithIdempotency(options =&gt; options.Retention = TimeSpan.FromDays(7));</code></pre></div><div class="gets"><ul><li>Replays status, allowlisted headers, and body for a repeated Idempotency-Key</li><li>Same key with a different request is rejected instead of silently replayed</li><li>Swap <code>UsePostgreSql</code> for <code>UseSqlServer</code>, <code>UseCache</code> (Redis), or <code>UseInMemory</code> for tests</li><li>Handlers can fence their own writes against the admission inside a unit of work</li></ul><a class="guide" href="https://github.com/xshaheen/headless-framework/blob/main/docs/llms/api.md#headlessapiidempotency">Read the guide: docs/llms/api.md</a></div></article><article class="sample" role="tabpanel" id="tour-api-validation" aria-labelledby="t-tour-api-validation" hidden><div class="window"><div class="win-bar"><span class="win-title">Request validation that knows files, phones, and coordinates</span><span class="win-meta">C# &middot; 16 lines</span><button class="copy" type="button">Copy</button></div><pre><code class="cs">public sealed record ProfileRequest(IFormFile? Avatar, PhoneNumberRequest? PhoneNumber, GeoCoordinateRequest? Location);
+
+public sealed class ProfileRequestValidator : AbstractValidator&lt;ProfileRequest&gt;
+{
+    public ProfileRequestValidator(IFileFormatInspector inspector)
+    {
+        RuleFor(x =&gt; x.Avatar)
+            .FileNotEmpty()
+            .LessThanOrEqualTo(5 * 1024 * 1024) // bytes
+            .ContentTypes(["image/jpeg", "image/png"])
+            .HaveSignatures(inspector, f =&gt; f is Jpeg or Png); // real bytes, not the header
+
+        RuleFor(x =&gt; x.PhoneNumber).PhoneNumber();
+        RuleFor(x =&gt; x.Location).GeoCoordinate();
+    }
+}</code></pre></div><div class="gets"><ul><li>File rules check size, declared content type, and the actual file signature</li><li>Validation failures surface as g: error codes in the same problem-details shape</li><li>Shared request contracts (<code>PhoneNumberRequest</code>, <code>GeoCoordinateRequest</code>) ship with the API package</li></ul><a class="guide" href="https://github.com/xshaheen/headless-framework/blob/main/docs/llms/api.md#headlessapifluentvalidation">Read the guide: docs/llms/api.md</a></div></article><article class="sample" role="tabpanel" id="tour-api-openapi" aria-labelledby="t-tour-api-openapi" hidden><div class="window"><div class="win-bar"><span class="win-title">OpenAPI that reads your validators</span><span class="win-meta">C# &middot; 11 lines</span><button class="copy" type="button">Copy</button></div><pre><code class="cs">builder.Services.AddNswagOpenApi(options =&gt;
+{
+    options.AddBearerSecurity = true;
+    options.AddPrimitiveMappings = true; // Money, Month, UserId, AccountId
+    options.ThrowOnSchemaProcessingError = builder.Environment.IsDevelopment();
+});
+
+var app = builder.Build();
+
+app.MapNswagOpenApi(); // /openapi/{documentName}.json
+app.MapScalarOpenApi(); // interactive docs UI</code></pre></div><div class="gets"><ul><li><code>IValidator&lt;T&gt;</code> rules become JSON Schema constraints (length, range, pattern, required)</li><li>400/401/403/404/409/422/429 responses get typed <code>ProblemDetails</code> schemas and examples</li><li>401/403 responses are added automatically for endpoints with authorization requirements</li><li>Use <code>MapNswagOpenApiVersions()</code> for versioned APIs</li></ul><a class="guide" href="https://github.com/xshaheen/headless-framework/blob/main/docs/llms/openapi.md#orientation">Read the guide: docs/llms/openapi.md</a></div></article><article class="sample" role="tabpanel" id="tour-state-caching" aria-labelledby="t-tour-state-caching" hidden><div class="window"><div class="win-bar"><span class="win-title">Swap the cache, not the code</span><span class="win-meta">C# &middot; 18 lines</span><button class="copy" type="button">Copy</button></div><pre><code class="cs">builder.Services.AddHeadlessCaching(setup =&gt;
+{
+    setup.UseRedis(options =&gt;
+        options.ConnectionMultiplexer = ConnectionMultiplexer.Connect(
+            builder.Configuration.GetConnectionString("Redis")!
+        )
+    );
+
+    setup.AddNamed("sessions", cache =&gt; cache.UseInMemory());
+});
+
+public sealed class CartService(ICache cache, ICacheProvider caches)
+{
+    private readonly ICache _sessions = caches.GetCache("sessions");
+
+    public ValueTask&lt;CacheValue&lt;Cart&gt;&gt; GetAsync(string id, CancellationToken ct) =&gt;
+        cache.GetAsync&lt;Cart&gt;($"cart:{id}", ct);
+}</code></pre></div><div class="gets"><ul><li>Consumers depend on ICache from <code>Headless.Caching.Abstractions</code> only</li><li><code>AddNamed</code> registers keyed instances; <code>ICacheProvider.RegisteredNames</code> validates external names</li><li>Providers: <code>UseInMemory</code>, <code>UseRedis</code>, <code>UseHybrid</code> (L1 + L2)</li></ul><a class="guide" href="https://github.com/xshaheen/headless-framework/blob/main/README.md#add-a-cache">Read the guide: README.md</a></div></article><article class="sample" role="tabpanel" id="tour-state-stampede-fail-safe" aria-labelledby="t-tour-state-stampede-fail-safe" hidden><div class="window"><div class="win-bar"><span class="win-title">Hot keys that never stampede and never go dark</span><span class="win-meta">C# &middot; 20 lines</span><button class="copy" type="button">Copy</button></div><pre><code class="cs">var product = await cache.GetOrAddAsync(
+    $"product:{id}",
+    token =&gt; repository.GetAsync(id, token),
+    new CacheEntryOptions
+    {
+        Duration = TimeSpan.FromMinutes(10),
+        EagerRefreshThreshold = 0.8f, // refresh in background after 8 min
+        IsFailSafeEnabled = true, // serve stale if the origin fails
+        FailSafeMaxDuration = TimeSpan.FromHours(1),
+        FactorySoftTimeout = TimeSpan.FromMilliseconds(200),
+        FactoryHardTimeout = TimeSpan.FromSeconds(2),
+        Tags = ["products", $"product:{id}"],
+    },
+    ct
+);
+
+if (product.IsStale)
+    logger.LogWarning("Serving stale product {Id}", id);
+
+await cache.RemoveByTagAsync("products", ct); // O(1) logical invalidation</code></pre></div><div class="gets"><ul><li>One factory call per key per node; opt into cross-node single-flight with <code>UseDistributedFactoryLock</code></li><li>Soft timeout returns stale data while the factory finishes in the background</li><li>Tag and whole-cache invalidation are <code>O(1)</code> markers, not key scans</li><li>Conditional factories support the HTTP-304 pattern via ETag / <code>LastModifiedAt</code></li></ul><a class="guide" href="https://github.com/xshaheen/headless-framework/blob/main/docs/llms/caching.md#setup-and-use">Read the guide: docs/llms/caching.md</a></div></article><article class="sample" role="tabpanel" id="tour-state-hybrid-l1-l2" aria-labelledby="t-tour-state-hybrid-l1-l2" hidden><div class="window"><div class="win-bar"><span class="win-title">In-process speed, cluster-wide consistency</span><span class="win-meta">C# &middot; 14 lines</span><button class="copy" type="button">Copy</button></div><pre><code class="cs">var redis = ConnectionMultiplexer.Connect(builder.Configuration.GetConnectionString("Redis")!);
+
+builder.Services.AddHeadlessMessaging(messaging =&gt;
+{
+    messaging.UseRedis(builder.Configuration.GetConnectionString("Redis")!);
+    messaging.UsePostgreSql(builder.Configuration.GetConnectionString("Messaging")!);
+});
+
+builder.Services.AddHeadlessCaching(setup =&gt;
+{
+    setup.AddMemoryTier();
+    setup.AddRedisTier(options =&gt; options.ConnectionMultiplexer = redis);
+    setup.UseHybrid(options =&gt; options.DefaultLocalExpiration = TimeSpan.FromMinutes(5));
+});</code></pre></div><div class="gets"><ul><li>Reads hit the local tier first; misses fall through to Redis</li><li>Writes and removals broadcast invalidations so peers drop their L1 copy</li><li>Named hybrids bind named L1/L2 instances via <code>LocalCacheName</code> / <code>RemoteCacheName</code></li><li>Consumers still inject plain ICache</li></ul><a class="guide" href="https://github.com/xshaheen/headless-framework/blob/main/docs/llms/caching.md#headlesscachinghybrid">Read the guide: docs/llms/caching.md</a></div></article><article class="sample" role="tabpanel" id="tour-state-blob-stores" aria-labelledby="t-tour-state-blob-stores" hidden><div class="window"><div class="win-bar"><span class="win-title">Every storage backend behind one interface</span><span class="win-meta">C# &middot; 18 lines</span><button class="copy" type="button">Copy</button></div><pre><code class="cs">builder.Services.AddHeadlessBlobs(blobs =&gt;
+{
+    blobs.UseCloudflareR2(options =&gt; // default IBlobStorage
+    {
+        options.AccountId = builder.Configuration["R2:AccountId"]!;
+        options.AccessKeyId = builder.Configuration["R2:AccessKeyId"]!;
+        options.SecretAccessKey = builder.Configuration["R2:SecretAccessKey"]!;
+    });
+
+    blobs.AddNamed(
+        "archive",
+        store =&gt; store.UseAws(options =&gt; { }, builder.Configuration.GetAWSOptions("AWS:Archive"))
+    );
+
+    blobs.AddNamed("scratch", store =&gt; store.UseFileSystem(options =&gt; options.BaseDirectoryPath = "/tmp/app-blobs"));
+});
+
+public sealed class ReportArchiver([FromKeyedServices("archive")] IBlobStorage archive) { }</code></pre></div><div class="gets"><ul><li>Providers: AWS S3, S3-compatible (<code>MinIO</code>), Azure, Cloudflare R2, file system, Redis, SFTP</li><li>Named stores resolve as keyed services or through <code>IBlobStorageProvider</code></li><li>Container management and presigned URLs are opt-in capabilities, not forced on every backend</li></ul><a class="guide" href="https://github.com/xshaheen/headless-framework/blob/main/docs/llms/blobs.md#headlessblobscore">Read the guide: docs/llms/blobs.md</a></div></article><article class="sample" role="tabpanel" id="tour-state-upload-presign" aria-labelledby="t-tour-state-upload-presign" hidden><div class="window"><div class="win-bar"><span class="win-title">Stream in, stream out, or let the client go direct</span><span class="win-meta">C# &middot; 25 lines</span><button class="copy" type="button">Copy</button></div><pre><code class="cs">public sealed class InvoiceFiles(
+    [FromKeyedServices("archive")] IPresignedUrlBlobStorage presigned,
+    IBlobStorage storage
+)
+{
+    public ValueTask SaveAsync(Guid id, Stream pdf, CancellationToken ct) =&gt;
+        storage.UploadAsync(
+            new BlobLocation("invoices", "2026", $"{id}.pdf"),
+            pdf,
+            metadata: new Dictionary&lt;string, string&gt; { ["source"] = "billing" },
+            contentType: "application/pdf",
+            cancellationToken: ct
+        );
+
+    public async Task&lt;Stream?&gt; OpenAsync(Guid id, CancellationToken ct) =&gt;
+        (await storage.OpenReadStreamAsync(new BlobLocation("invoices", "2026", $"{id}.pdf"), ct))?.Stream;
+
+    public ValueTask&lt;Uri&gt; GetUploadUrlAsync(BlobLocation location, CancellationToken ct) =&gt;
+        presigned.GetPresignedUploadUrlAsync(
+            location,
+            TimeSpan.FromMinutes(10),
+            new PresignedUploadConstraints { ContentType = "image/png", MaxLength = 2_000_000 },
+            ct
+        );
+}</code></pre></div><div class="gets"><ul><li><code>BlobLocation</code> validates container and key once, at the boundary</li><li><code>SupportedUploadConstraints</code> reports which constraints the backend actually enforces</li><li><code>FileSystem</code>, Redis, and SFTP stores gain presigned URLs through the signed-URL endpoint package</li><li>Listing is token-paged and streamed with await foreach over <code>GetBlobsAsync</code></li></ul><a class="guide" href="https://github.com/xshaheen/headless-framework/blob/main/docs/llms/blobs.md#headlessblobsabstractions">Read the guide: docs/llms/blobs.md</a></div></article><article class="sample" role="tabpanel" id="tour-state-ef-core" aria-labelledby="t-tour-state-ef-core" hidden><div class="window"><div class="win-bar"><span class="win-title">Aggregates with audit, soft delete, and events built in</span><span class="win-meta">C# &middot; 24 lines</span><button class="copy" type="button">Copy</button></div><pre><code class="cs">public sealed class Invoice : AuditedAggregateRoot&lt;Guid&gt;, IMultiTenant
+{
+    public string? TenantId { get; private set; }
+    public required string Number { get; init; }
+
+    public void Void()
+    {
+        IsDeleted = true; // soft delete; DeletedAt stamped on save
+        AddDomainEvent(new InvoiceVoided(Id));
+    }
+}
+
+public sealed class BillingDbContext(DbContextOptions&lt;BillingDbContext&gt; options) : HeadlessDbContext(options)
+{
+    public DbSet&lt;Invoice&gt; Invoices =&gt; Set&lt;Invoice&gt;();
+}
+
+builder
+    .Services.AddHeadlessDbContextPool&lt;BillingDbContext&gt;(o =&gt;
+        o.UseNpgsql(builder.Configuration.GetConnectionString("Billing"))
+    )
+    .AddDomainEvents();
+
+var archive = await db.Invoices.IgnoreNotDeletedFilter().ToListAsync(ct); // admin view</code></pre></div><div class="gets"><ul><li>Created/updated/deleted/suspended audit fields stamped on <code>SaveChanges</code></li><li>Named query filters for soft delete, suspension, and tenant ownership</li><li>Guid keys generated client-side (Version7 or SQL Server comb) before save</li><li>Domain events dispatch inside the save transaction; integration events go to the outbox</li></ul><a class="guide" href="https://github.com/xshaheen/headless-framework/blob/main/docs/llms/orm.md#headlessentityframework">Read the guide: docs/llms/orm.md</a></div></article><article class="sample" role="tabpanel" id="tour-state-audit-log" aria-labelledby="t-tour-state-audit-log" hidden><div class="window"><div class="win-bar"><span class="win-title">Compliance-grade audit trail from your EF model</span><span class="win-meta">C# &middot; 24 lines</span><button class="copy" type="button">Copy</button></div><pre><code class="cs">builder.Services.AddHeadlessAuditLog(setup =&gt;
+{
+    setup.ConfigureOptions(o =&gt; o.SensitiveDataStrategy = SensitiveDataStrategy.Redact);
+    setup.UseEntityFramework&lt;ClinicDbContext&gt;();
+});
+
+// OnModelCreating
+modelBuilder.Entity&lt;Patient&gt;(patient =&gt;
+{
+    patient.IsAudited();
+    patient.Property(x =&gt; x.NationalId).IsAuditSensitive();
+    patient.Property(x =&gt; x.LastComputedAt).ExcludeFromAudit();
+});
+
+// Explicit event: no entity changed, but someone saw PII
+await auditLog.LogAsync(
+    new AuditLogWriteRequest
+    {
+        Action = "pii.revealed",
+        EntityType = typeof(Patient).FullName,
+        EntityId = patientId.ToString(),
+    },
+    ct
+);</code></pre></div><div class="gets"><ul><li>Old values, new values, and changed fields captured per audited entity</li><li>Actor, tenant, and correlation ID resolved from ambient context</li><li>Sensitive properties redacted or excluded per property</li><li><code>IReadAuditLog&lt;TContext&gt;</code> pages history with continuation tokens</li></ul><a class="guide" href="https://github.com/xshaheen/headless-framework/blob/main/docs/llms/audit-log.md#headlessauditlogstorageentityframework">Read the guide: docs/llms/audit-log.md</a></div></article><article class="sample" role="tabpanel" id="tour-messaging-setup" aria-labelledby="t-tour-messaging-setup" hidden><div class="window"><div class="win-bar"><span class="win-title">One call wires transport, storage, and tuning</span><span class="win-meta">C# &middot; 19 lines</span><button class="copy" type="button">Copy</button></div><pre><code class="cs">builder.Services.AddHeadlessMessaging(setup =&gt;
+{
+    setup.UseRabbitMq(options =&gt;
+    {
+        options.HostName = "localhost";
+        options.UserName = builder.Configuration["RabbitMq:UserName"]!;
+        options.Password = builder.Configuration["RabbitMq:Password"]!;
+    });
+
+    // EF Core storage over your own DbContext: outbox + transactional inbox.
+    setup.UseEntityFramework&lt;AppDbContext&gt;();
+
+    setup.AddModule&lt;Orders.MessagingModule&gt;(); // source-generated per assembly
+
+    setup.Tune(
+        "orders.projection",
+        consumer =&gt; consumer.Concurrency(4).UseRabbitMq(rabbit =&gt; rabbit.PrefetchCount(20))
+    );
+});</code></pre></div><div class="gets"><ul><li><code>RabbitMQ</code>, Kafka, NATS, Redis, Pulsar, Azure Service Bus, AWS SNS/SQS, or in-memory behind one API</li><li>Durable by default: every publish is stored first, then relayed</li><li>Startup validation fails fast on missing storage or an unsupported capability</li><li>Per-consumer concurrency and broker hatches tuned by identity, not by class</li></ul><a class="guide" href="https://github.com/xshaheen/headless-framework/blob/main/docs/llms/messaging.md#orientation">Read the guide: docs/llms/messaging.md</a></div></article><article class="sample" role="tabpanel" id="tour-messaging-consumers" aria-labelledby="t-tour-messaging-consumers" hidden><div class="window"><div class="win-bar"><span class="win-title">Plain records in, attributed consumers out</span><span class="win-meta">C# &middot; 15 lines</span><button class="copy" type="button">Copy</button></div><pre><code class="cs">public sealed record OrderPlaced(Guid OrderId);
+
+[BusConsumer("orders.projection")]
+public sealed class OrderProjection(IOrderReadModel readModel) : IConsume&lt;OrderPlaced&gt;
+{
+    public ValueTask ConsumeAsync(ConsumeContext&lt;OrderPlaced&gt; context, CancellationToken cancellationToken) =&gt;
+        readModel.ApplyAsync(context.Message, cancellationToken);
+}
+
+// The module that owns the consumers contributes its contracts.
+services.ConfigureMessaging(messaging =&gt;
+{
+    messaging.AddModule&lt;Orders.MessagingModule&gt;();
+    messaging.Message&lt;OrderPlaced&gt;("orders.placed").CorrelateBy(o =&gt; o.OrderId.ToString());
+});</code></pre></div><div class="gets"><ul><li>No base classes or marker interfaces on message types</li><li>Compile-time registration: no reflection scanning at startup</li><li>The identity names the subscription, inbox rows, circuit breaker, and metrics</li><li>Duplicate identities fail the build, or fail startup naming both modules</li></ul><a class="guide" href="https://github.com/xshaheen/headless-framework/blob/main/docs/llms/messaging.md#orientation">Read the guide: docs/llms/messaging.md</a></div></article><article class="sample" role="tabpanel" id="tour-messaging-publish" aria-labelledby="t-tour-messaging-publish" hidden><div class="window"><div class="win-bar"><span class="win-title">Publish to every subscriber with IBus</span><span class="win-meta">C# &middot; 13 lines</span><button class="copy" type="button">Copy</button></div><pre><code class="cs">public sealed class Checkout(IBus bus)
+{
+    public async Task CompleteAsync(Order order, string correlationId, CancellationToken ct)
+    {
+        PublishReceipt receipt = await bus.PublishAsync(
+            new OrderPlaced(order.Id),
+            options =&gt; options.WithHeader("source", "checkout").WithCorrelationId(correlationId),
+            ct
+        );
+
+        // receipt.MessageId: wire id; receipt.StorageId: durable row (null for Direct delivery)
+    }
+}</code></pre></div><div class="gets"><ul><li>Stored first, relayed after: a broker outage does not lose the event</li><li>Fluent options builder for headers, correlation, causation, tenant, and delay</li><li>Opt out per message type with <code>WithDeliveryMode(DeliveryMode.Direct)</code></li><li>IBus is a singleton that any service or hosted worker can inject</li></ul><a class="guide" href="https://github.com/xshaheen/headless-framework/blob/main/docs/llms/messaging.md#headlessmessagingbusabstractions">Read the guide: docs/llms/messaging.md</a></div></article><article class="sample" role="tabpanel" id="tour-messaging-queue" aria-labelledby="t-tour-messaging-queue" hidden><div class="window"><div class="win-bar"><span class="win-title">Point-to-point work on the Queue lane</span><span class="win-meta">C# &middot; 13 lines</span><button class="copy" type="button">Copy</button></div><pre><code class="cs">public sealed record FulfilOrder(Guid OrderId);
+
+[QueueConsumer("warehouse.fulfil-order")]
+public sealed class FulfilOrderHandler(IWarehouse warehouse) : IConsume&lt;FulfilOrder&gt;
+{
+    public ValueTask ConsumeAsync(ConsumeContext&lt;FulfilOrder&gt; context, CancellationToken cancellationToken) =&gt;
+        warehouse.PickAndShipAsync(context.Message.OrderId, cancellationToken);
+}
+
+public sealed class Orders(IQueue queue)
+{
+    public Task SubmitAsync(Guid orderId, CancellationToken ct) =&gt; queue.EnqueueAsync(new FulfilOrder(orderId), ct);
+}</code></pre></div><div class="gets"><ul><li>Bus and Queue are separate lanes with separate semantics, not a flag</li><li>Same consumer contract, middleware, retry, and inbox on both lanes</li><li>Split work across hosts with <code>ConsumeOnly(&quot;warehouse.fulfil-order&quot;)</code></li><li>Lane carried through storage, tracing, and the dashboard</li></ul><a class="guide" href="https://github.com/xshaheen/headless-framework/blob/main/docs/llms/messaging.md#headlessmessagingqueueabstractions">Read the guide: docs/llms/messaging.md</a></div></article><article class="sample" role="tabpanel" id="tour-messaging-request-reply" aria-labelledby="t-tour-messaging-request-reply" hidden><div class="window"><div class="win-bar"><span class="win-title">Await a typed answer over the Queue lane</span><span class="win-meta">C# &middot; 16 lines</span><button class="copy" type="button">Copy</button></div><pre><code class="cs">// Pricing service
+[QueueConsumer("pricing.get-quote")]
+public sealed class GetQuoteResponder(IPriceBook prices) : IRespond&lt;GetQuote, Quote&gt;
+{
+    public async ValueTask&lt;Quote&gt; RespondAsync(ConsumeContext&lt;GetQuote&gt; context, CancellationToken ct) =&gt;
+        new(context.Message.Sku, await prices.GetUnitPriceAsync(context.Message.Sku, ct));
+}
+
+// Checkout service
+setup.AddRequestReply(requests =&gt; requests.DefaultTimeout = TimeSpan.FromSeconds(10));
+
+Quote quote = await requestClient.RequestAsync&lt;GetQuote, Quote&gt;(
+    new GetQuote("SKU-42", Quantity: 3),
+    new RequestOptions { Timeout = TimeSpan.FromSeconds(5) },
+    ct
+);</code></pre></div><div class="gets"><ul><li>Reply leaves only after the responder&#x27;s outcome is durable</li><li>Typed failures: <code>RequestTimeoutException</code>, <code>RequestFaultedException</code>, and more under <code>RequestReplyException</code></li><li>Analyzer checks: a [<code>BusConsumer</code>] responder or two responders for one request fail the build</li><li>Supported on <code>InMemory</code>, <code>RabbitMQ</code>, NATS, and Redis</li></ul><a class="guide" href="https://github.com/xshaheen/headless-framework/blob/main/docs/llms/messaging.md#requestreply">Read the guide: docs/llms/messaging.md</a></div></article><article class="sample" role="tabpanel" id="tour-messaging-every-instance" aria-labelledby="t-tour-messaging-every-instance" hidden><div class="window"><div class="win-bar"><span class="win-title">Deliver to every process, not one</span><span class="win-meta">C# &middot; 10 lines</span><button class="copy" type="button">Copy</button></div><pre><code class="cs">[BusConsumer("pricing.price-cache", EveryInstance = true)]
+public sealed class PriceCache(IPriceCacheStore store) : IConsume&lt;PriceChanged&gt;, IOnSubscriptionEstablished
+{
+    public ValueTask ConsumeAsync(ConsumeContext&lt;PriceChanged&gt; context, CancellationToken ct) =&gt;
+        store.EvictAsync(context.Message.Sku, ct);
+
+    // Messages published while this process was disconnected never arrive: drop what may be stale.
+    public ValueTask OnSubscriptionEstablishedAsync(SubscriptionEstablishedContext context, CancellationToken ct) =&gt;
+        context.IsReconnect ? store.ClearAsync(ct) : ValueTask.CompletedTask;
+}</code></pre></div><div class="gets"><ul><li>One broker subscription per process, cleaned up when it stops</li><li>Reconnect hook tells you exactly when messages may have been missed</li><li>No inbox, retry, or backlog: at-most-once by design for derived state</li><li>Unsupported transports fail startup instead of silently degrading</li></ul><a class="guide" href="https://github.com/xshaheen/headless-framework/blob/main/docs/llms/messaging.md#every-instance-bus-delivery">Read the guide: docs/llms/messaging.md</a></div></article><article class="sample" role="tabpanel" id="tour-messaging-outbox" aria-labelledby="t-tour-messaging-outbox" hidden><div class="window"><div class="win-bar"><span class="win-title">Transactional outbox with EF Core</span><span class="win-meta">C# &middot; 14 lines</span><button class="copy" type="button">Copy</button></div><pre><code class="cs">public sealed class PlaceOrderHandler(IUnitOfWorkFactory factory, AppDbContext db)
+{
+    public async Task HandleAsync(Order order, CancellationToken ct)
+    {
+        await using var unit = await factory.BeginAsync(db, cancellationToken: ct);
+
+        db.Orders.Add(order);
+        await db.SaveChangesAsync(ct);
+
+        await unit.Outbox.PublishAsync(new OrderPlaced(order.Id), ct); // row inside this transaction
+
+        await unit.CompleteAsync(ct); // commit, then dispatch
+    }
+}</code></pre></div><div class="gets"><ul><li>Enlistment is the receiver you call: unit.Outbox always joins, IBus never does</li><li>Refuses before any effect when storage cannot join the unit, never silently degrades</li><li>Transactional inbox dedupes redeliveries in the consumer&#x27;s own transaction</li><li>Rolled-back unit discards the message row with the business write</li></ul><a class="guide" href="https://github.com/xshaheen/headless-framework/blob/main/docs/llms/unit-of-work.md#setup-and-use">Read the guide: docs/llms/unit-of-work.md</a></div></article><article class="sample" role="tabpanel" id="tour-messaging-delay-callbacks" aria-labelledby="t-tour-messaging-delay-callbacks" hidden><div class="window"><div class="win-bar"><span class="win-title">Schedule, revoke, and reply without waiting</span><span class="win-meta">C# &middot; 13 lines</span><button class="copy" type="button">Copy</button></div><pre><code class="cs">// Delay: durable, and revocable until the first dispatch.
+var receipt = await bus.PublishAsync(new PaymentReminder(orderId), o =&gt; o.WithDelay(TimeSpan.FromHours(24)), ct);
+
+if (await revoker.RevokeAsync(receipt.StorageId!.Value, ct) == MessageRevocationResult.Revoked)
+{
+    // the reminder will never be delivered
+}
+
+// Callback: the consumer's response is published durably to "orders.stock-reserved".
+await bus.PublishAsync(new ReserveStock(orderId), new PublishOptions { CallbackName = "orders.stock-reserved" }, ct);
+
+// ...inside the ReserveStock consumer:
+context.SetResponse(new StockReserved(orderId));</code></pre></div><div class="gets"><ul><li>Delays and absolute schedules go through storage, so they survive restarts</li><li>Revocation is fenced: Revoked, <code>NotFound</code>, or <code>AttemptReserved</code>, never a guess</li><li>Callbacks are at-least-once Bus publishes: no caller waits</li><li>Use request/reply instead when the caller needs the answer to continue</li></ul><a class="guide" href="https://github.com/xshaheen/headless-framework/blob/main/docs/llms/messaging.md#headlessmessagingabstractions">Read the guide: docs/llms/messaging.md</a></div></article><article class="sample" role="tabpanel" id="tour-messaging-retry-failure" aria-labelledby="t-tour-messaging-retry-failure" hidden><div class="window"><div class="win-bar"><span class="win-title">Failure policies and circuit breakers per consumer</span><span class="win-meta">C# &middot; 25 lines</span><button class="copy" type="button">Copy</button></div><pre><code class="cs">public sealed class PaymentsFailurePolicy : FailurePolicy
+{
+    protected override void Configure(FailurePolicyBuilder policy) =&gt;
+        policy
+            .Immediate(retries: 1)
+            .Delayed(retries: 6, initialDelay: TimeSpan.FromMinutes(1), maxDelay: TimeSpan.FromMinutes(30))
+            .FailOn&lt;PaymentDeclinedException&gt;();
+}
+
+[QueueConsumer("payments.charge-order", FailurePolicy = typeof(PaymentsFailurePolicy))]
+public sealed class ChargeOrder : IConsume&lt;PlaceOrder&gt;
+{
+    // ...
+}
+
+setup.Tune(
+    "payments.charge-order",
+    consumer =&gt;
+        consumer.CircuitBreaker(cb =&gt;
+        {
+            cb.FailureThreshold = 3;
+            cb.OpenDuration = TimeSpan.FromSeconds(60);
+            cb.IsTransientException = ex =&gt; ex is PaymentGatewayUnavailableException;
+        })
+);</code></pre></div><div class="gets"><ul><li>Immediate retries in-process, delayed retries persisted with jittered backoff</li><li>Permanent failures (<code>FailOn</code>, <code>ArgumentException</code>) stop at once, no wasted retries</li><li>Circuit breaker pauses a failing consumer instead of burning its budget</li><li>Terminal failures are kept and re-executable from the dashboard</li></ul><a class="guide" href="https://github.com/xshaheen/headless-framework/blob/main/docs/llms/messaging.md#consumer-failure-policy">Read the guide: docs/llms/messaging.md</a></div></article><article class="sample" role="tabpanel" id="tour-messaging-middleware" aria-labelledby="t-tour-messaging-middleware" hidden><div class="window"><div class="win-bar"><span class="win-title">Russian-doll middleware on publish, receive, and consume</span><span class="win-meta">C# &middot; 22 lines</span><button class="copy" type="button">Copy</button></div><pre><code class="cs">public sealed class SignatureCheck : IReceiveMiddleware
+{
+    public ValueTask InvokeAsync(ReceiveContext context, Func&lt;ValueTask&gt; next)
+    {
+        if (!context.Headers.ContainsKey("x-signature"))
+        {
+            context.Reject("Missing signature header");
+            return ValueTask.CompletedTask;
+        }
+        return next();
+    }
+}
+
+var messaging = builder.Services.AddHeadlessMessaging(setup =&gt;
+{
+    // ...
+});
+messaging.AddReceiveMiddleware&lt;SignatureCheck&gt;().WithPriority(-100);
+messaging.AddBusConsumeMiddleware&lt;AuditConsumeMiddleware&gt;();
+
+// Or for one consumer only:
+setup.Tune("orders.projection", c =&gt; c.UseMiddleware&lt;AuditConsumeMiddleware&gt;());</code></pre></div><div class="gets"><ul><li>Three stages: typed publish, raw receive, typed consume</li><li>Accept, Skip, or Reject outcomes with storage and settlement owned by the framework</li><li>Scoped per lane, per message type, or per consumer identity</li><li>Priority ordering keeps byte-exact verification ahead of body transforms</li></ul><a class="guide" href="https://github.com/xshaheen/headless-framework/blob/main/docs/llms/messaging.md#middleware">Read the guide: docs/llms/messaging.md</a></div></article><article class="sample" role="tabpanel" id="tour-messaging-tenancy" aria-labelledby="t-tour-messaging-tenancy" hidden><div class="window"><div class="win-bar"><span class="win-title">Tenant context that crosses the wire</span><span class="win-meta">C# &middot; 15 lines</span><button class="copy" type="button">Copy</button></div><pre><code class="cs">builder.AddHeadlessTenancy(tenancy =&gt;
+    tenancy
+        .Http(http =&gt; http.ResolveFromClaims())
+        .Messaging(messaging =&gt;
+            messaging
+                .PropagateTenant() // stamp on publish, restore on consume
+                .RequireTenantOnPublish() // no tenant? the publish throws
+        )
+);
+
+// A background worker with no HTTP scope sets the tenant explicitly:
+using (currentTenant.Change(tenantId))
+{
+    await bus.PublishAsync(new InvoiceIssued(invoiceId), ct);
+}</code></pre></div><div class="gets"><ul><li>Every Bus and Queue consumer runs inside the envelope tenant&#x27;s scope</li><li>Strict mode turns a missing tenant into <code>MissingTenantContextException</code></li><li>Reserved tenant headers cannot be forged through custom headers</li><li>Same seam configures HTTP, Messaging, and Jobs tenancy</li></ul><a class="guide" href="https://github.com/xshaheen/headless-framework/blob/main/docs/llms/messaging.md#strict-publish-tenancy">Read the guide: docs/llms/messaging.md</a></div></article><article class="sample" role="tabpanel" id="tour-messaging-observability" aria-labelledby="t-tour-messaging-observability" hidden><div class="window"><div class="win-bar"><span class="win-title">Native OpenTelemetry traces and metrics</span><span class="win-meta">C# &middot; 11 lines</span><button class="copy" type="button">Copy</button></div><pre><code class="cs">builder.Services.AddHeadlessMessaging(setup =&gt;
+{
+    // ... transport + storage ...
+    setup.Instrumentation.AddEnricher(new TenantTagEnricher());
+    setup.Instrumentation.SuppressRetryCountTag = true;
+});
+
+builder
+    .Services.AddOpenTelemetry()
+    .WithTracing(tracing =&gt; tracing.AddMessagingInstrumentation())
+    .WithMetrics(metrics =&gt; metrics.AddMessagingInstrumentation());</code></pre></div><div class="gets"><ul><li>Trace context flows publish to consume, including request/reply</li><li>Delivery mode, retries, circuit-breaker trips, and every-instance outcomes as metrics</li><li>No separate instrumentation package to install</li><li>Custom tags through <code>IActivityTagEnricher</code></li></ul><a class="guide" href="https://github.com/xshaheen/headless-framework/blob/main/docs/llms/messaging.md#opentelemetry-native-in-headlessmessagingcore">Read the guide: docs/llms/messaging.md</a></div></article><article class="sample" role="tabpanel" id="tour-messaging-testing" aria-labelledby="t-tour-messaging-testing" hidden><div class="window"><div class="win-bar"><span class="win-title">Assert on messages, not on mocks</span><span class="win-meta">C# &middot; 13 lines</span><button class="copy" type="button">Copy</button></div><pre><code class="cs">await using var harness = await MessagingTestHarness.CreateAsync(services =&gt;
+    services.AddHeadlessMessaging(setup =&gt;
+    {
+        setup.UseInMemory();
+        setup.UseInMemoryStorage();
+        setup.AddModule&lt;Orders.MessagingModule&gt;();
+    })
+);
+
+await harness.RunInUnitOfWorkAsync(async (sp, unit) =&gt; await unit.Outbox.PublishAsync(new OrderPlaced(orderId)));
+
+var consumed = await harness.WaitForConsumed&lt;OrderPlaced&gt;(TimeSpan.FromSeconds(5));
+consumed.IsCoordinated.Should().BeTrue();</code></pre></div><div class="gets"><ul><li>Production delivery semantics: store-first, real consumers, real middleware</li><li><code>WaitForPublished</code>, <code>WaitForConsumed</code>, <code>WaitForFaulted</code>, <code>WaitForExhausted</code></li><li>Exercise enlisted publishes against a real commit or rollback</li><li><code>ResetAsync</code> drains in-flight work before clearing a shared harness</li></ul><a class="guide" href="https://github.com/xshaheen/headless-framework/blob/main/docs/llms/messaging.md#headlessmessagingtesting">Read the guide: docs/llms/messaging.md</a></div></article><article class="sample" role="tabpanel" id="tour-jobs-declare" aria-labelledby="t-tour-jobs-declare" hidden><div class="window"><div class="win-bar"><span class="win-title">A job is a class with an identity</span><span class="win-meta">C# &middot; 14 lines</span><button class="copy" type="button">Copy</button></div><pre><code class="cs">// Recurring: six cron fields, seconds first.
+[Job("reports.daily", Cron = "0 0 0 * * *", Priority = JobPriority.High)]
+public sealed class DailyReportJob(IReportService reports) : IJob
+{
+    public async ValueTask ExecuteAsync(JobContext context, CancellationToken ct) =&gt; await reports.BuildDailyAsync(ct);
+}
+
+// On demand, with a typed argument.
+[Job("orders.process", FailurePolicy = typeof(OrdersFailurePolicy))]
+public sealed class ProcessOrderJob(IOrderService orders) : IJob&lt;ProcessOrderArgs&gt;
+{
+    public async ValueTask ExecuteAsync(JobContext&lt;ProcessOrderArgs&gt; context, CancellationToken ct) =&gt;
+        await orders.ProcessAsync(context.Request.OrderId, ct);
+}</code></pre></div><div class="gets"><ul><li>Constructor injection from a per-run DI scope</li><li>Generated invokers: no reflection on the hot path, trimming and AOT friendly</li><li>Durable identity persisted with every run; duplicates fail the build</li><li>Same <code>FailurePolicy</code> type works for jobs and message consumers</li></ul><a class="guide" href="https://github.com/xshaheen/headless-framework/blob/main/docs/llms/jobs.md#declaring-a-job">Read the guide: docs/llms/jobs.md</a></div></article><article class="sample" role="tabpanel" id="tour-jobs-schedule" aria-labelledby="t-tour-jobs-schedule" hidden><div class="window"><div class="win-bar"><span class="win-title">Enqueue, schedule, and chain</span><span class="win-meta">C# &middot; 14 lines</span><button class="copy" type="button">Copy</button></div><pre><code class="cs">public sealed class OrderService(IJobScheduler jobs)
+{
+    public async Task PlaceAsync(Guid orderId, DateTimeOffset remindAt, CancellationToken ct)
+    {
+        await jobs.EnqueueAsync(new ProcessOrderArgs(orderId), ct);
+        await jobs.ScheduleAsync(new SendReminderArgs(orderId), remindAt, ct);
+
+        var chain = JobChain.Start(new ChargeCard(orderId));
+        chain.Root.Then(new SendReceipt(orderId)); // on success
+        chain.Root.Catch(new RefundPayment(orderId)); // on failure
+
+        await jobs.EnqueueAsync(chain.Build(), ct); // one atomic write
+    }
+}</code></pre></div><div class="gets"><ul><li>Typed by argument: no function-name strings at call sites</li><li>Explicit <code>DateTimeOffset</code> instants; <code>DateTime</code> overloads are compile errors</li><li>Idempotent enqueue with <code>WithIdempotencyKey</code> / <code>WithIdempotencyTtl</code></li><li>Keyed one-shot deadlines with <code>ScheduleKeyedAsync</code> and generation-fenced replace</li></ul><a class="guide" href="https://github.com/xshaheen/headless-framework/blob/main/docs/llms/jobs.md#typed-job-chains">Read the guide: docs/llms/jobs.md</a></div></article><article class="sample" role="tabpanel" id="tour-jobs-durable-setup" aria-labelledby="t-tour-jobs-durable-setup" hidden><div class="window"><div class="win-bar"><span class="win-title">Durable jobs on your own DbContext</span><span class="win-meta">C# &middot; 12 lines</span><button class="copy" type="button">Copy</button></div><pre><code class="cs">builder.Services.AddDbContext&lt;AppDbContext&gt;(options =&gt;
+    options.UseNpgsql(builder.Configuration.GetConnectionString("App"))
+);
+
+builder.Services.AddHeadlessJobs(jobs =&gt;
+{
+    jobs.AddModule&lt;MyApp.JobsModule&gt;(); // generated per assembly
+    jobs.UsePostgreSql&lt;AppDbContext&gt;(coordination =&gt; coordination.ClusterName = "orders");
+    jobs.ConfigureScheduler(scheduler =&gt; scheduler.MaxConcurrency = 10);
+    jobs.Tune("orders.process", job =&gt; job.Concurrency(2));
+});
+// No app.UseJobs(): the scheduler starts as a hosted service.</code></pre></div><div class="gets"><ul><li>Native SKIP LOCKED-style claims on <code>PostgreSQL</code> and SQL Server</li><li>Sliding leases: long jobs never need an oversized timeout</li><li>node@incarnation ownership with dead-node recovery</li><li>Misfire recovery and overlap policies for cron definitions</li></ul><a class="guide" href="https://github.com/xshaheen/headless-framework/blob/main/docs/llms/jobs.md#agent-rules">Read the guide: docs/llms/jobs.md</a></div></article><article class="sample" role="tabpanel" id="tour-jobs-dashboard" aria-labelledby="t-tour-jobs-dashboard" hidden><div class="window"><div class="win-bar"><span class="win-title">An embedded dashboard with real auth</span><span class="win-meta">C# &middot; 11 lines</span><button class="copy" type="button">Copy</button></div><pre><code class="cs">builder.Services.AddHeadlessJobs(jobs =&gt;
+    jobs.AddDashboard(dashboard =&gt;
+    {
+        dashboard.SetBasePath("/jobs-dashboard");
+        dashboard.WithHostAuthentication(); // or WithBasicAuth(...) / WithApiKey(...)
+    })
+);
+
+// No app.MapJobs(): the dashboard middleware is added through IStartupFilter.
+var app = builder.Build();
+app.Run();</code></pre></div><div class="gets"><ul><li>Host authentication policy, basic auth, or API key</li><li>Requeue failed runs and pause or resume cron definitions</li><li>Live node view backed by Coordination membership</li><li>A sibling dashboard ships for Messaging with the same auth model</li></ul><a class="guide" href="https://github.com/xshaheen/headless-framework/blob/main/docs/llms/jobs.md#headlessjobsdashboard">Read the guide: docs/llms/jobs.md</a></div></article><article class="sample" role="tabpanel" id="tour-unit-of-work-atomic-commit" aria-labelledby="t-tour-unit-of-work-atomic-commit" hidden><div class="window"><div class="win-bar"><span class="win-title">One transaction: rows, messages, and jobs</span><span class="win-meta">C# &middot; 13 lines</span><button class="copy" type="button">Copy</button></div><pre><code class="cs">await factory.RunAsync(
+    db,
+    async (unit, ct) =&gt;
+    {
+        db.Orders.Add(order);
+        await db.SaveChangesAsync(ct);
+
+        await unit.Outbox.PublishAsync(new OrderPlaced(order.Id), ct);
+        await unit.Jobs.ScheduleAsync(new ExpireReservation(order.Id), order.HoldUntil, ct);
+        await unit.TransactionLocks.AcquireAsync($"customer:{order.CustomerId}", cancellationToken: ct);
+    },
+    cancellationToken: ct
+);</code></pre></div><div class="gets"><ul><li>No ambient Current: the handle you hold is the unit</li><li><code>RunAsync</code> joins a caller&#x27;s unit on the same <code>DbContext</code>, or owns its own</li><li>Replays the whole block under EF retrying execution strategies</li><li>Messages and jobs dispatch only after the commit</li></ul><a class="guide" href="https://github.com/xshaheen/headless-framework/blob/main/docs/llms/unit-of-work.md#orientation">Read the guide: docs/llms/unit-of-work.md</a></div></article><article class="sample" role="tabpanel" id="tour-reliability-locks" aria-labelledby="t-tour-reliability-locks" hidden><div class="window"><div class="win-bar"><span class="win-title">Distributed locks with fencing tokens</span><span class="win-meta">C# &middot; 17 lines</span><button class="copy" type="button">Copy</button></div><pre><code class="cs">builder.Services.AddHeadlessDistributedLocks(setup =&gt;
+    setup.UsePostgreSql(options =&gt; options.ConnectionString = builder.Configuration.GetConnectionString("Postgres"))
+);
+
+await using var lease = await locks.AcquireAsync(
+    $"orders:{orderId}",
+    new DistributedLockAcquireOptions
+    {
+        TimeUntilExpires = TimeSpan.FromMinutes(5),
+        AcquireTimeout = TimeSpan.FromSeconds(10),
+        Monitoring = LockMonitoringMode.Monitor,
+    },
+    ct
+);
+
+lease.ThrowIfLost();
+await ledger.WriteAsync(orderId, lease.FencingToken!.Value, lease.LostToken);</code></pre></div><div class="gets"><ul><li>Redis, <code>PostgreSQL</code>, SQL Server, and in-memory providers</li><li>Monotonic fencing tokens stop a paused holder&#x27;s stale write</li><li>Reader-writer locks, semaphores, and multi-resource composites</li><li>Transaction-scoped locks via unit.<code>TransactionLocks</code></li></ul><a class="guide" href="https://github.com/xshaheen/headless-framework/blob/main/docs/llms/distributed-locks.md#locks-and-fencing-tokens">Read the guide: docs/llms/distributed-locks.md</a></div></article><article class="sample" role="tabpanel" id="tour-reliability-fencing" aria-labelledby="t-tour-reliability-fencing" hidden><div class="window"><div class="win-bar"><span class="win-title">Fenced leases for work that outlives a process</span><span class="win-meta">C# &middot; 18 lines</span><button class="copy" type="button">Copy</button></div><pre><code class="cs">var grant = await leases.GrantAsync("exports", "order-42", TimeSpan.FromMinutes(5), ct);
+if (!grant.IsAcquired)
+    return; // someone else holds it
+
+// The executor heartbeats and records a resumable cursor.
+await leases.RenewAsync(grant.Lease!, TimeSpan.FromMinutes(5), new LeaseProgress(cursorBytes, "exports.cursor/v1"), ct);
+
+// Post the result: rejected if a later grant replaced this one.
+await factory.RunAsync(
+    db,
+    async (unit, ct) =&gt;
+    {
+        await unit.Leases.FenceAsync(grant.Lease!, ct); // throws StaleLeaseException
+        // ... write the export result ...
+        await unit.Leases.SettleAsync(grant.Lease!, ct);
+    },
+    cancellationToken: ct
+);</code></pre></div><div class="gets"><ul><li>Generation-fenced: a stale executor can never commit</li><li>Progress survives takeover, so the next holder resumes, not restarts</li><li><code>SweepExpiredAsync</code> routes abandoned work inside a unit of work</li><li><code>PostgreSQL</code>, SQL Server, SQLite, and in-memory stores</li></ul><a class="guide" href="https://github.com/xshaheen/headless-framework/blob/main/docs/llms/fencing.md#orientation">Read the guide: docs/llms/fencing.md</a></div></article><article class="sample" role="tabpanel" id="tour-reliability-idempotency" aria-labelledby="t-tour-reliability-idempotency" hidden><div class="window"><div class="win-bar"><span class="win-title">Admit an operation once across retries</span><span class="win-meta">C# &middot; 34 lines</span><button class="copy" type="button">Copy</button></div><pre><code class="cs">var admission = await operations.AdmitAsync(
+    key,
+    IdempotencyFingerprint.Compute(requestBytes),
+    expectedContract: "orders.receipt/v1",
+    cancellationToken: ct
+);
+
+switch (admission.Disposition)
+{
+    case IdempotentDisposition.Replay:
+        return admission.Result!.Deserialize(ReceiptJsonContext.Default.Receipt);
+    case IdempotentDisposition.InFlight:
+        return null; // redeliver later
+    case IdempotentDisposition.Conflict:
+        throw new InvalidOperationException("Key reused with a different request.");
+}
+
+return await factory.RunAsync(
+    db,
+    async (unit, ct) =&gt;
+    {
+        await unit.Idempotency.FenceAsync(admission, ct);
+        var receipt = await ChargeAsync(ct);
+        await unit.Idempotency.CompleteAsync(
+            admission,
+            receipt,
+            ReceiptJsonContext.Default.Receipt,
+            contract: "orders.receipt/v1",
+            cancellationToken: ct
+        );
+        return receipt;
+    },
+    cancellationToken: ct
+);</code></pre></div><div class="gets"><ul><li>Fingerprinted keys: same key, different payload is a Conflict, not a replay</li><li>Result completes in the same transaction as the work</li><li>Recovery points close the crash window between commit and completion</li><li>Powers <code>Headless.Api.Idempotency</code> for HTTP Idempotency-Key headers</li></ul><a class="guide" href="https://github.com/xshaheen/headless-framework/blob/main/docs/llms/idempotency.md#orientation">Read the guide: docs/llms/idempotency.md</a></div></article><article class="sample" role="tabpanel" id="tour-reliability-coordination" aria-labelledby="t-tour-reliability-coordination" hidden><div class="window"><div class="win-bar"><span class="win-title">Know which process incarnations are alive</span><span class="win-meta">C# &middot; 15 lines</span><button class="copy" type="button">Copy</button></div><pre><code class="cs">builder.Services.AddHeadlessCoordination(setup =&gt;
+{
+    setup.Configure(options =&gt; options.ClusterName = "orders");
+    setup.UsePostgreSql(builder.Configuration.GetConnectionString("App")!);
+});
+
+NodeIdentity me = await membership.RegisterAsync(ct); // e.g. orders-worker-0@7
+
+IReadOnlyList&lt;NodeIdentity&gt; alive = await membership.GetLiveNodesAsync(ct);
+
+await foreach (var change in membership.WatchAsync(ct))
+{
+    if (change is NodeLeft left)
+        await ReclaimWorkOwnedByAsync(left.Identity, ct);
+}</code></pre></div><div class="gets"><ul><li>The database clock decides Alive, Suspected, or Dead, never app clocks</li><li>A restarted process is a new incarnation, so stale owners are detectable</li><li><code>PostgreSQL</code>, SQL Server, SQLite, and Redis providers</li><li>Backs Jobs dead-node recovery out of the box</li></ul><a class="guide" href="https://github.com/xshaheen/headless-framework/blob/main/docs/llms/coordination.md#orientation">Read the guide: docs/llms/coordination.md</a></div></article><article class="sample" role="tabpanel" id="tour-reliability-sequences" aria-labelledby="t-tour-reliability-sequences" hidden><div class="window"><div class="win-bar"><span class="win-title">Gap-free and fast counters, per tenant</span><span class="win-meta">C# &middot; 19 lines</span><button class="copy" type="button">Copy</button></div><pre><code class="cs">builder.Services.AddHeadlessSequences(setup =&gt;
+{
+    setup.UsePostgreSql(builder.Configuration.GetConnectionString("App")!);
+    setup.Policy("invoice", new SequencePolicy { Mode = SequenceMode.GapFree });
+});
+
+// Fast: committed on its own; a rollback leaves a gap.
+long receipt = await sequences.NextAsync("receipt", partition: "2026", ct);
+SequenceRange block = await sequences.ReserveAsync("batch", count: 50, cancellationToken: ct);
+
+// Gap-free: the number commits or returns with your unit.
+await factory.RunAsync(
+    db,
+    async (unit, ct) =&gt;
+    {
+        invoice.Number = await unit.Sequences.NextAsync("invoice", partition: "2026", ct);
+    },
+    cancellationToken: ct
+);</code></pre></div><div class="gets"><ul><li>Counters keyed by tenant, name, and optional partition</li><li>Block reservation for high-throughput id allocation</li><li>Gap-free mode holds the row lock only until your unit ends</li><li><code>PostgreSQL</code>, SQL Server, and SQLite providers</li></ul><a class="guide" href="https://github.com/xshaheen/headless-framework/blob/main/docs/llms/sequences.md#orientation">Read the guide: docs/llms/sequences.md</a></div></article><article class="sample" role="tabpanel" id="tour-reliability-failure-policy" aria-labelledby="t-tour-reliability-failure-policy" hidden><div class="window"><div class="win-bar"><span class="win-title">One retry policy type for consumers and jobs</span><span class="win-meta">C# &middot; 21 lines</span><button class="copy" type="button">Copy</button></div><pre><code class="cs">public sealed class PaymentsFailurePolicy : FailurePolicy
+{
+    protected override void Configure(FailurePolicyBuilder policy) =&gt;
+        policy
+            .Immediate(retries: 2)
+            .Delayed(retries: 5, initialDelay: TimeSpan.FromSeconds(30), maxDelay: TimeSpan.FromMinutes(15))
+            .FailOn&lt;CardDeclinedException&gt;()
+            .FailWhen(static ex =&gt; ex is HttpRequestException { StatusCode: HttpStatusCode.BadRequest });
+}
+
+[QueueConsumer("payments.charge", FailurePolicy = typeof(PaymentsFailurePolicy))]
+public sealed class ChargeConsumer : IConsume&lt;ChargeCard&gt;
+{
+    // ...
+}
+
+[Job("payments.settle", FailurePolicy = typeof(PaymentsFailurePolicy))]
+public sealed class SettleJob : IJob
+{
+    // ...
+}</code></pre></div><div class="gets"><ul><li>8 attempts total: 1 + 2 immediate + 5 delayed, each ±20% jitter</li><li>Fail rules end a hopeless message or job without wasting retries</li><li>Hosts override by identity in code or configuration</li><li>Shared model: identical semantics in Messaging and Jobs</li></ul><a class="guide" href="https://github.com/xshaheen/headless-framework/blob/main/docs/llms/reliability.md#headlessreliabilityabstractions">Read the guide: docs/llms/reliability.md</a></div></article><article class="sample" role="tabpanel" id="tour-reliability-attempt-limits" aria-labelledby="t-tour-reliability-attempt-limits" hidden><div class="window"><div class="win-bar"><span class="win-title">Cluster-wide attempt quotas for sensitive actions</span><span class="win-meta">C# &middot; 17 lines</span><button class="copy" type="button">Copy</button></div><pre><code class="cs">builder.Services.AddHeadlessCaching(setup =&gt; setup.UseRedis(builder.Configuration.GetSection("Redis")));
+builder.Services.AddAttemptLimiter(builder.Configuration.GetSection("AttemptLimiter"));
+
+public sealed class SendLoginCodeHandler(IAttemptLimiter limiter, ISmsSender sms)
+{
+    private static readonly AttemptQuota _Quota = new(limit: 5, window: TimeSpan.FromMinutes(15));
+
+    public async Task HandleAsync(string phoneNumber, CancellationToken ct)
+    {
+        var attempt = await limiter.AcquireAsync("login-code-delivery", phoneNumber, _Quota, ct);
+
+        // 429 with Retry-After through the API exception handler.
+        attempt.ThrowIfRejected(new ErrorDescriptor("login_code_attempts_exceeded", "Too many codes requested."));
+
+        // ... send the code
+    }
+}</code></pre></div><div class="gets"><ul><li>Shared budget across replicas through the distributed cache</li><li>Subjects are HMAC-hashed before they reach a cache key</li><li>Every attempt is charged; <code>ResetAsync</code> after success</li><li>Pairs with <code>ASP.NET</code> Core rate limiting for edge load shedding</li></ul><a class="guide" href="https://github.com/xshaheen/headless-framework/blob/main/docs/llms/rate-limiting.md#headlessratelimiting">Read the guide: docs/llms/rate-limiting.md</a></div></article><article class="sample" role="tabpanel" id="tour-tenancy-access-tenancy" aria-labelledby="t-tour-tenancy-access-tenancy" hidden><div class="window"><div class="win-bar"><span class="win-title">Declare your tenant posture once</span><span class="win-meta">C# &middot; 23 lines</span><button class="copy" type="button">Copy</button></div><pre><code class="cs">builder.AddHeadless();
+
+builder.AddHeadlessTenancy(tenancy =&gt;
+    tenancy
+        .Http(http =&gt; http.ResolveFromClaims())
+        .Authorization(auth =&gt; auth.RequireTenant())
+        .EntityFramework(ef =&gt; ef.GuardTenantWrites())
+        .Blobs(blobs =&gt; blobs.ScopeByTenant())
+);
+
+builder.Services.AddAuthorization(options =&gt;
+    options.FallbackPolicy = new AuthorizationPolicyBuilder()
+        .RequireAuthenticatedUser()
+        .AddRequirements(new TenantRequirement())
+        .Build()
+);
+
+app.UseHeadless();
+app.UseAuthentication();
+app.UseHeadlessTenancy(); // after authentication, before authorization
+app.UseAuthorization();
+
+app.MapPost("/webhooks/billing", HandleBillingWebhook).SkipTenantResolution().AllowMissingTenant();</code></pre></div><div class="gets"><ul><li>Startup fails if HTTP tenancy is configured but the middleware is missing</li><li>Startup fails if no default or fallback policy carries <code>TenantRequirement</code></li><li>EF queries filter by tenant; cross-tenant writes throw <code>CrossTenantWriteException</code></li><li>Same builder adds .<code>Messaging(...)</code> and .<code>Jobs(...)</code> tenant propagation</li></ul><a class="guide" href="https://github.com/xshaheen/headless-framework/blob/main/docs/llms/multi-tenancy.md#headlessmultitenancy">Read the guide: docs/llms/multi-tenancy.md</a></div></article><article class="sample" role="tabpanel" id="tour-tenancy-access-tenant-scope" aria-labelledby="t-tour-tenancy-access-tenant-scope" hidden><div class="window"><div class="win-bar"><span class="win-title">Run as a tenant anywhere, not just in HTTP</span><span class="win-meta">C# &middot; 22 lines</span><button class="copy" type="button">Copy</button></div><pre><code class="cs">public sealed class MonthlyStatementJob(
+    ICurrentTenant currentTenant,
+    IDbContextFactory&lt;BillingDbContext&gt; contexts,
+    TimeProvider clock
+)
+{
+    public async Task RunAsync(IEnumerable&lt;string&gt; tenantIds, CancellationToken ct)
+    {
+        foreach (var tenantId in tenantIds)
+        {
+            using (currentTenant.Change(tenantId)) // restored on dispose
+            {
+                await using var db = await contexts.CreateDbContextAsync(ct);
+                var open = await db.Invoices.Where(i =&gt; i.DueAt &lt; clock.GetUtcNow()).ToListAsync(ct);
+                // ...only this tenant's rows are visible
+            }
+        }
+    }
+}
+
+// Platform admin path, explicit and traced:
+var all = await db.Invoices.IgnoreMultiTenancyFilter().CountAsync(ct);</code></pre></div><div class="gets"><ul><li>Ambient tenant flows across awaits via <code>AsyncLocal</code></li><li>EF tenant filter reads the active tenant on every query</li><li>Filter bypasses emit a [SECURITY AUDIT] trace with caller and file</li><li><code>AddTenantScopedCache&lt;T&gt;()</code> prefixes cache keys by tenant automatically</li></ul><a class="guide" href="https://github.com/xshaheen/headless-framework/blob/main/docs/llms/multi-tenancy.md#headlessmultitenancyabstractions">Read the guide: docs/llms/multi-tenancy.md</a></div></article><article class="sample" role="tabpanel" id="tour-tenancy-access-permissions" aria-labelledby="t-tour-tenancy-access-permissions" hidden><div class="window"><div class="win-bar"><span class="win-title">Permissions as policies, with no policy boilerplate</span><span class="win-meta">C# &middot; 21 lines</span><button class="copy" type="button">Copy</button></div><pre><code class="cs">public sealed class OrderPermissions : IPermissionDefinitionProvider
+{
+    public void Define(IPermissionDefinitionContext context)
+    {
+        var orders = context.AddGroup("Orders");
+        orders.AddChild("Orders.View");
+        orders.AddChild("Orders.Edit");
+        orders.AddChild("Orders.Billing").AddChild("Orders.Billing.Refund");
+    }
+}
+
+builder.Services.AddPermissionDefinitionProvider&lt;OrderPermissions&gt;();
+builder.Services.AddHeadlessPermissions(setup =&gt; setup.UseEntityFramework&lt;AppDbContext&gt;());
+
+app.MapPut("/orders/{id}", UpdateOrder).RequireAuthorization("Orders.Edit");
+
+var grants = await permissions.IsGrantedAsync(currentUser, ["Orders.View", "Orders.Edit"], ct);
+if (grants.AllGranted)
+{
+    // render editor
+}</code></pre></div><div class="gets"><ul><li>Grants resolve per user, role, or custom provider, cached per tenant</li><li><code>PermissionsRequirement</code> composes AND/OR sets under one policy name</li><li>Storage: EF Core, <code>PostgreSQL</code>, or SQL Server</li><li>Startup refuses a host with no cache provider instead of failing on first check</li></ul><a class="guide" href="https://github.com/xshaheen/headless-framework/blob/main/docs/llms/permissions.md#headlesspermissionscore">Read the guide: docs/llms/permissions.md</a></div></article><article class="sample" role="tabpanel" id="tour-tenancy-access-feature-flags" aria-labelledby="t-tour-tenancy-access-feature-flags" hidden><div class="window"><div class="win-bar"><span class="win-title">Plans, editions, and kill switches per tenant</span><span class="win-meta">C# &middot; 17 lines</span><button class="copy" type="button">Copy</button></div><pre><code class="cs">public sealed class PlanFeatures : IFeatureDefinitionProvider
+{
+    public void Define(IFeatureDefinitionContext context)
+    {
+        var plan = context.AddGroup("Plan");
+        plan.AddChild(new FeatureDefinitionCreateOptions { Name = "Reports", DefaultValue = "false" });
+        plan.AddChild(new FeatureDefinitionCreateOptions { Name = "MaxSeats", DefaultValue = "5" });
+    }
+}
+
+builder.Services.AddFeatureDefinitionProvider&lt;PlanFeatures&gt;();
+builder.Services.AddHeadlessFeatures(setup =&gt; setup.UseEntityFramework&lt;AppDbContext&gt;());
+
+await features.EnsureEnabledAsync("Reports", ct); // ConflictException when off
+var seats = await features.GetAsync&lt;int&gt;("MaxSeats", cancellationToken: ct);
+
+await features.GrantToTenantAsync("Reports", tenantId); // upgrade one tenant</code></pre></div><div class="gets"><ul><li>Values resolve tenant -&gt; edition -&gt; default, cached and invalidated on change</li><li>Batch writes are atomic per provider and announce one change message</li><li>Storage: EF Core, <code>PostgreSQL</code>, or SQL Server</li></ul><a class="guide" href="https://github.com/xshaheen/headless-framework/blob/main/docs/llms/features.md#headlessfeaturesabstractions">Read the guide: docs/llms/features.md</a></div></article><article class="sample" role="tabpanel" id="tour-tenancy-access-settings" aria-labelledby="t-tour-tenancy-access-settings" hidden><div class="window"><div class="win-bar"><span class="win-title">Runtime settings with encryption and hot snapshots</span><span class="win-meta">C# &middot; 27 lines</span><button class="copy" type="button">Copy</button></div><pre><code class="cs">public sealed class AppSettings : ISettingDefinitionProvider
+{
+    public void Define(ISettingDefinitionContext context)
+    {
+        context.Add(new SettingDefinitionCreateOptions { Name = "Mail.DailyLimit", DefaultValue = "500" });
+        context.Add(
+            new SettingDefinitionCreateOptions
+            {
+                Name = "Smtp.Password",
+                IsEncrypted = true,
+                IsVisibleToClients = false,
+            }
+        );
+    }
+}
+
+builder.Services.AddSettingDefinitionProvider&lt;AppSettings&gt;();
+builder.Services.AddHeadlessSettings(setup =&gt; setup.UseEntityFramework&lt;AppDbContext&gt;());
+builder.Services.AddSettingsSnapshot&lt;MailPolicy&gt;(snapshot =&gt;
+    snapshot
+        .Names("Mail.DailyLimit")
+        .Bind(values =&gt; new MailPolicy(int.Parse(values["Mail.DailyLimit"] ?? "500", CultureInfo.InvariantCulture)))
+        .Backstop(TimeSpan.FromMinutes(1))
+);
+
+await settings.SetForTenantAsync(tenantId, "Mail.DailyLimit", "2000", cancellationToken: ct);
+var policy = await mailPolicy.GetAsync(ct); // ISettingsSnapshot&lt;MailPolicy&gt;, sync after first load</code></pre></div><div class="gets"><ul><li>Values resolve user -&gt; tenant -&gt; global -&gt; configuration -&gt; default</li><li>Encrypted settings are stored encrypted via <code>IStringEncryptionService</code></li><li>Snapshots reload on change announcements across processes, with a backstop re-read</li><li>Revision and <code>OnChange</code> let rate limiters and partitions react only to real changes</li></ul><a class="guide" href="https://github.com/xshaheen/headless-framework/blob/main/docs/llms/settings.md#settings-snapshot">Read the guide: docs/llms/settings.md</a></div></article><article class="sample" role="tabpanel" id="tour-integrations-email-sms-push" aria-labelledby="t-tour-integrations-email-sms-push" hidden><div class="window"><div class="win-bar"><span class="win-title">One grammar for every outbound channel</span><span class="win-meta">C# &middot; 23 lines</span><button class="copy" type="button">Copy</button></div><pre><code class="cs">var dev = builder.Environment.IsDevelopment();
+
+builder.Services.AddHeadlessEmails(setup =&gt;
+{
+    if (dev)
+        setup.UseDevelopment("artifacts/emails.txt");
+    else
+        setup.UseAwsSes(builder.Configuration.GetAWSOptions());
+    setup.AddNamed("marketing", i =&gt; i.UseMailkit(builder.Configuration.GetSection("Mail:Marketing")));
+});
+
+builder.Services.AddHeadlessSms(setup =&gt;
+{
+    if (dev)
+        setup.UseDevelopment("artifacts/sms.txt");
+    else
+        setup.UseTwilio(builder.Configuration.GetSection("Sms:Twilio"));
+    setup.AddNamed("otp", i =&gt; i.UseCequens(builder.Configuration.GetSection("Sms:Otp")));
+});
+
+builder.Services.AddHeadlessPushNotifications(setup =&gt;
+    setup.UseFirebase(builder.Configuration.GetSection("Push:Firebase"))
+);</code></pre></div><div class="gets"><ul><li>Default sender plus any number of named senders, resolved as keyed services</li><li>Each named instance gets isolated options, clients, and resilience pipeline</li><li>SMS sends never auto-retry, so recipients do not get duplicates</li><li>Email: SES, Azure, <code>MailKit</code>. SMS: Twilio, AWS SNS, Infobip, Cequens, and more. Push: Firebase, APNs</li></ul><a class="guide" href="https://github.com/xshaheen/headless-framework/blob/main/docs/llms/emails.md#named-senders">Read the guide: docs/llms/emails.md</a></div></article><article class="sample" role="tabpanel" id="tour-integrations-send-classify" aria-labelledby="t-tour-integrations-send-classify" hidden><div class="window"><div class="win-bar"><span class="win-title">Typed results you can act on</span><span class="win-meta">C# &middot; 26 lines</span><button class="copy" type="button">Copy</button></div><pre><code class="cs">public sealed class OtpSender(ISmsSender sms, IPushNotificationService push, IDeviceTokenStore tokens)
+{
+    public async Task SendAsync(string phone, string deviceToken, string code, CancellationToken ct)
+    {
+        var sent = await sms.SendAsync(
+            new SendSingleSmsRequest
+            {
+                Destination = new SmsRequestDestination(20, phone), // +20 Egypt
+                Text = $"Your code is {code}",
+            },
+            ct
+        );
+
+        if (!sent.Success &amp;&amp; sent.FailureKind == SmsFailureKind.Transient)
+        {
+            var pushed = await push.SendToDeviceAsync(
+                deviceToken,
+                new PushNotificationRequest { Title = "Sign-in code", Body = code },
+                ct
+            );
+
+            if (pushed.IsUnregistered())
+                await tokens.RemoveAsync(deviceToken, ct);
+        }
+    }
+}</code></pre></div><div class="gets"><ul><li><code>FailureError</code> is non-null whenever Success is false, enforced by nullable annotations</li><li><code>SmsFailureKind</code> separates transient, rate-limited, invalid recipient, auth, and out-of-credit</li><li>Push responses flag unregistered tokens so stores stay clean</li><li>Multicast and bulk SMS return per-recipient results</li></ul><a class="guide" href="https://github.com/xshaheen/headless-framework/blob/main/docs/llms/sms.md#result-model">Read the guide: docs/llms/sms.md</a></div></article><article class="sample" role="tabpanel" id="tour-integrations-captcha" aria-labelledby="t-tour-integrations-captcha" hidden><div class="window"><div class="win-bar"><span class="win-title">Bot checks without vendor lock-in</span><span class="win-meta">C# &middot; 14 lines</span><button class="copy" type="button">Copy</button></div><pre><code class="cs">builder.Services.AddHeadlessCaptcha(captcha =&gt;
+{
+    captcha.UseTurnstile(builder.Configuration.GetSection("Captcha:Turnstile"));
+    captcha.AddNamed("recaptcha", i =&gt; i.UseReCaptchaV3(builder.Configuration.GetSection("Captcha:ReCaptchaV3")));
+});
+
+public sealed class SignupHandler(ICaptchaVerifier captcha)
+{
+    public async Task&lt;bool&gt; IsHumanAsync(string token, string? remoteIp, CancellationToken ct)
+    {
+        var result = await captcha.VerifyAsync(new CaptchaVerifyRequest { Response = token, RemoteIp = remoteIp }, ct);
+        return result.Success;
+    }
+}</code></pre></div><div class="gets"><ul><li>Provider-agnostic pass/fail contract; provider-only data such as <code>reCAPTCHA</code> v3 Score via <code>IReCaptchaV3Verifier</code></li><li>Named verifiers resolve via <code>ICaptchaProvider.GetVerifierOrNull</code> for request-supplied names</li><li>Razor tag helpers render the widget scripts</li></ul><a class="guide" href="https://github.com/xshaheen/headless-framework/blob/main/docs/llms/captcha.md#headlesscaptchacore">Read the guide: docs/llms/captcha.md</a></div></article><article class="sample" role="tabpanel" id="tour-testing-unit-tests" aria-labelledby="t-tour-testing-unit-tests" hidden><div class="window"><div class="win-bar"><span class="win-title">Deterministic tests with time you control</span><span class="win-meta">C# &middot; 19 lines</span><button class="copy" type="button">Copy</button></div><pre><code class="cs">public sealed class InvoiceReminderTests : TestBase
+{
+    [Fact]
+    public async Task should_send_reminder_after_due_date()
+    {
+        var services = new ServiceCollection();
+        services.AddBilling();
+        var clock = services.AddTestTimeProvider(); // replaces TimeProvider.System
+        await using var provider = services.BuildServiceProvider();
+
+        clock.SetUtcNow(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        var reminders = provider.GetRequiredService&lt;ReminderService&gt;();
+
+        clock.Advance(TimeSpan.FromDays(31));
+        var sent = await reminders.RunAsync(AbortToken);
+
+        sent.Should().Be(1);
+    }
+}</code></pre></div><div class="gets"><ul><li><code>AbortToken</code> cancels with the test run</li><li>Logger, <code>LoggerFactory</code>, and a Bogus Faker are ready on <code>TestBase</code></li><li>[<code>RetryFact</code>] retries known-flaky integration tests</li><li>In-memory and no-op providers exist for caching, idempotency, email, SMS, and push</li></ul><a class="guide" href="https://github.com/xshaheen/headless-framework/blob/main/docs/llms/testing.md#headlesstesting">Read the guide: docs/llms/testing.md</a></div></article><article class="sample" role="tabpanel" id="tour-testing-integration-isolation" aria-labelledby="t-tour-testing-integration-isolation" hidden><div class="window"><div class="win-bar"><span class="win-title">Prove tenant isolation, not just assume it</span><span class="win-meta">C# &middot; 27 lines</span><button class="copy" type="button">Copy</button></div><pre><code class="cs">public sealed class InvoiceIsolationTests(HeadlessTestServer&lt;Program&gt; app) : TestBase
+{
+    [Fact]
+    public async Task tenant_b_cannot_see_tenant_a_invoice()
+    {
+        var world = new TenantWorld(app.Services.GetRequiredService&lt;ICurrentTenant&gt;());
+        var contexts = app.Services.GetRequiredService&lt;IDbContextFactory&lt;BillingDbContext&gt;&gt;();
+        var id = await SeedInvoiceAsync(world, contexts); // created under world.AsTenantA()
+
+        await TenantIsolationDbAssertions.ShouldNotSeeAcrossTenantsAsync&lt;Invoice&gt;(
+            world,
+            () =&gt; contexts.CreateDbContext(),
+            id,
+            AbortToken
+        );
+
+        using var client = CreateClientFor(TenantWorld.CreatePrincipal(world.TenantB));
+        await TenantIsolationHttpAssertions.ShouldAnswerNotFoundAcrossTenantsAsync(
+            client,
+            $"/invoices/{id}",
+            $"/invoices/{Guid.NewGuid()}",
+            cancellationToken: AbortToken
+        );
+
+        app.AdvanceTime(TimeSpan.FromDays(30)); // host-wide FakeTimeProvider
+    }
+}</code></pre></div><div class="gets"><ul><li>Fails if a tenant B query finds tenant A&#x27;s row or a cross-tenant write succeeds</li><li>Requires a cross-tenant GET to be indistinguishable from a missing id (no existence leak)</li><li><code>HeadlessTestServer</code> wraps <code>WebApplicationFactory</code> with readiness checks and database reset</li><li>Testcontainers fixtures (<code>HeadlessPostgreSqlFixture</code>, <code>HeadlessRedisFixture</code>) with pinned, reusable images</li></ul><a class="guide" href="https://github.com/xshaheen/headless-framework/blob/main/docs/llms/testing.md#tenant-isolation">Read the guide: docs/llms/testing.md</a></div></article><article class="sample" role="tabpanel" id="tour-foundations-guards-results" aria-labelledby="t-tour-foundations-guards-results" hidden><div class="window"><div class="win-bar"><span class="win-title">Guards, results, and money that cannot be wrong</span><span class="win-meta">C# &middot; 18 lines</span><button class="copy" type="button">Copy</button></div><pre><code class="cs">public sealed class InvoiceLine
+{
+    public InvoiceLine(string sku, int quantity, Money unitPrice)
+    {
+        Sku = Argument.HasMaxLength(Argument.IsNotNullOrWhiteSpace(sku), 64);
+        Quantity = Argument.IsPositive(quantity);
+        Total = Argument.IsNotNull(unitPrice) * quantity; // Money * decimal, banker's rounding
+    }
+
+    public string Sku { get; }
+    public int Quantity { get; }
+    public Money Total { get; }
+}
+
+var price = new Money(100m, "EGP") + new Money(20m, "EGP"); // throws on currency mismatch
+
+ApiResult&lt;Invoice&gt; result = invoice is null ? ApiResult&lt;Invoice&gt;.NotFound("Invoice", id) : invoice;
+var message = result.Match(success: i =&gt; $"Total {i.Total}", failure: e =&gt; e.Message);</code></pre></div><div class="gets"><ul><li>Guards capture the parameter name via <code>CallerArgumentExpression</code> and return the validated value</li><li>Ensure.* covers internal invariants separately from argument preconditions</li><li>Money, <code>GeoCoordinate</code>, <code>Range&lt;T&gt;</code> validate on construction, so invalid instances cannot exist</li><li><code>ApiResult</code> errors map straight to problem details at the HTTP edge</li></ul><a class="guide" href="https://github.com/xshaheen/headless-framework/blob/main/docs/llms/extensions.md#setup-and-use">Read the guide: docs/llms/extensions.md</a></div></article></div>
+    </div>
+  </div>
+</section>
+
+<section id="production">
+  <div class="wrap">
+    <div class="head">
+      <h2>The hard parts are already written.</h2>
+      <p>The details that decide whether a backend loses messages or runs a job twice.</p>
+    </div>
+    <div class="facts"><a class="fact" href="#tour-jobs-durable-setup" data-tab="tour-jobs-durable-setup"><h3>Jobs never run twice</h3><p>Workers claim rows with FOR UPDATE SKIP LOCKED on PostgreSQL and READPAST on SQL Server.</p></a><a class="fact" href="#tour-messaging-outbox" data-tab="tour-messaging-outbox"><h3>Messages commit with your data</h3><p>The outbox row is written in your EF Core transaction and dispatched after commit.</p></a><a class="fact" href="#tour-reliability-fencing" data-tab="tour-reliability-fencing"><h3>Stale lock holders can&#x27;t write</h3><p>Every lease carries a monotonic fencing token that the next write checks.</p></a><a class="fact" href="#tour-reliability-idempotency" data-tab="tour-reliability-idempotency"><h3>Retries replay, not repeat</h3><p>Fingerprinted admission returns the stored result instead of running twice.</p></a><a class="fact" href="#tour-reliability-coordination" data-tab="tour-reliability-coordination"><h3>Liveness from the database clock</h3><p>Node membership never trusts a node&#x27;s own clock to decide who is alive.</p></a><a class="fact" href="#tour-tenancy-access-tenant-scope" data-tab="tour-tenancy-access-tenant-scope"><h3>Tenants stay apart</h3><p>Queries filter by tenant, cross-tenant writes throw, and messages carry the tenant.</p></a></div>
+  </div>
+</section>
+
+<section id="agents">
+  <div class="wrap split">
+    <div class="head">
+      <h2>Your AI agent reads the docs first.</h2>
+      <p>Every domain has a guide written for coding agents in <code>docs/llms</code>. Paste this block into your <code>AGENTS.md</code> or <code>CLAUDE.md</code>, and the agent loads the right guide for the version you installed.</p>
+    </div>
+    <div class="window">
+      <div class="win-bar"><span class="win-title">AGENTS.md</span><button class="copy" type="button">Copy</button></div>
+      <pre><code>## Headless Framework
+
+This project uses [Headless .NET Framework](https://github.com/xshaheen/headless-framework).
+
+For any task touching a `Headless.*` package or `Headless.NET.Sdk*` SDK:
+
+1. Resolve the exact package IDs and versions used by this project.
+2. Before planning, editing, or reviewing, read the [Headless agent-docs index](https://raw.githubusercontent.com/xshaheen/headless-framework/main/docs/llms/index.md).
+3. Use the index as a router: load every affected domain guide, resolve its links relative to the index URL, and follow its `Agent Rules`.
+4. Match the docs to the installed version by replacing `main` in their URLs with the corresponding Git tag. If no matching docs ref exists, inspect the installed package and report the mismatch.
+
+Package READMEs are discovery pages. Verify APIs against installed packages; do not guess them from memory.</code></pre>
+    </div>
+  </div>
+</section>
+
+<section id="start" class="closing">
+  <div class="wrap">
+    <h2>Start with one package.</h2>
+    <div class="window">
+      <div class="win-bar"><span class="win-title">Program.cs</span><span class="win-meta">dotnet add package Headless.Api.ServiceDefaults</span><button class="copy" type="button">Copy</button></div>
+      <pre><code class="cs">var builder = WebApplication.CreateBuilder(args);
+
+builder.AddHeadless();
+builder.Services.AddHeadlessCaching(setup =&gt; setup.UseInMemory());
+
+var app = builder.Build();
+app.UseHeadless();
+app.MapHeadlessEndpoints();
+app.Run();</code></pre>
+    </div>
+    <div class="cta">
+      <a class="btn primary" href="https://github.com/xshaheen/headless-framework/blob/main/docs/llms/index.md">Read the docs</a>
+      <a class="btn" href="https://github.com/xshaheen/headless-framework">View on GitHub</a>
+      <a class="btn" href="https://www.nuget.org/packages?q=Headless.">Browse NuGet</a>
+    </div>
+    <p class="status">Headless is pre-1.0. Breaking changes land when they make the API more correct, and the release notes say so.</p>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>Headless for .NET</span>
+    <nav aria-label="Footer">
+      <a href="https://github.com/xshaheen/headless-framework">GitHub</a>
+      <a href="https://github.com/xshaheen/headless-framework/releases">Releases</a>
+      <a href="https://github.com/xshaheen/headless-framework/blob/main/docs/llms/index.md">Docs</a>
+      <a href="https://www.nuget.org/packages?q=Headless.">NuGet</a>
+    </nav>
+  </div>
+</footer>
+<script>
+const KEYWORDS = new Set(("abstract as async await base bool break byte case catch char class const continue decimal default delegate do double else enum event explicit extern false finally fixed float for foreach get goto if implicit in init int interface internal is lock long namespace new null object operator out override params partial private protected public readonly record ref required return sealed set short static string struct switch this throw true try typeof uint ulong using var virtual void volatile when where while with yield nameof file scoped global").split(" "));
+const TOKEN = /(\/\/[^\n]*)|(\$?@?"(?:[^"\\\n]|\\.|"")*")|('(?:[^'\\]|\\.)')|(\b\d[\d_]*(?:\.\d+)?[mMdDfFlLuU]?\b)|([A-Za-z_][A-Za-z0-9_]*)|([\s\S])/g;
+const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+function highlight(src) {
+  let out = "", m;
+  TOKEN.lastIndex = 0;
+  while ((m = TOKEN.exec(src))) {
+    const [all, com, str, chr, num, id] = m;
+    if (com) out += `<span class="c">${esc(com)}</span>`;
+    else if (str || chr) out += `<span class="s">${esc(all)}</span>`;
+    else if (num) out += `<span class="n">${all}</span>`;
+    else if (id) {
+      const call = /^\s*(<[^()]*?>)?\s*\(/.test(src.slice(TOKEN.lastIndex));
+      if (KEYWORDS.has(id)) out += `<span class="k">${id}</span>`;
+      else if (call) out += `<span class="f">${id}</span>`;
+      else if (/^[A-Z]/.test(id)) out += `<span class="t">${id}</span>`;
+      else out += id;
+    } else out += esc(all);
+  }
+  return out;
+}
+function numbered(src, mark = -1) {
+  return src.split("\n").map((l, i) => `<span class="line${i === mark ? " rev" : ""}">${highlight(l)}</span>`).join("\n");
+}
+document.querySelectorAll("pre code.cs").forEach(el => { el.innerHTML = numbered(el.textContent); });
+document.querySelectorAll("code.inline-cs").forEach(el => { el.innerHTML = highlight(el.textContent); });
+
+document.addEventListener("click", async e => {
+  const btn = e.target.closest(".copy");
+  if (!btn) return;
+  const text = btn.dataset.copy ?? btn.closest(".window, .install").querySelector("pre code, code").textContent;
+  try { await navigator.clipboard.writeText(text); btn.textContent = "Copied"; } catch { btn.textContent = "Select to copy"; }
+  setTimeout(() => (btn.textContent = "Copy"), 1500);
+});
+
+// Hero demo: domain tabs, provider pills, one revised line.
+const DEMO = {"caching": {"root": "builder.Services.AddHeadlessCaching(setup =>\n    {{USE}});", "providers": [{"name": "InMemory", "line": "setup.UseInMemory()", "source": "builder.Services.AddHeadlessCaching(setup => setup.UseInMemory());", "mark": "UseInMemory"}, {"name": "Redis", "line": "setup.UseRedis(builder.Configuration.GetSection(\"Redis\"))", "source": "builder.Services.AddHeadlessCaching(setup => setup.UseRedis(builder.Configuration.GetSection(\"Redis\")));", "mark": "UseRedis"}, {"name": "Hybrid", "line": "setup.UseHybrid(builder.Configuration.GetSection(\"Hybrid\"))", "source": "builder.Services.AddHeadlessCaching(setup => setup.UseHybrid(builder.Configuration.GetSection(\"Hybrid\")));", "mark": "UseHybrid"}], "consumerFile": "ProductCatalog.cs", "contract": "ICache", "package": "Headless.Caching.Abstractions", "consumer": "public sealed class ProductCatalog(ICache cache, IProductStore products)\n{\n    public async ValueTask<Product?> GetAsync(int id, CancellationToken ct)\n    {\n        var options = new CacheEntryOptions { Duration = TimeSpan.FromMinutes(10) };\n        var entry = await cache.GetOrAddAsync($\"product:{id}\", t => products.GetAsync(id, t), options, ct);\n        return entry.Value;\n    }\n}"}, "blobs": {"root": "builder.Services.AddHeadlessBlobs(blobs =>\n    {{USE}});", "providers": [{"name": "FileSystem", "line": "blobs.UseFileSystem(builder.Configuration.GetSection(\"Blobs\"))", "source": "builder.Services.AddHeadlessBlobs(blobs => blobs.UseFileSystem(builder.Configuration.GetSection(\"Blobs\")));", "mark": "UseFileSystem"}, {"name": "AWS S3", "line": "blobs.UseAws(builder.Configuration.GetSection(\"Blobs\"))", "source": "builder.Services.AddHeadlessBlobs(blobs => blobs.UseAws(builder.Configuration.GetSection(\"Blobs\")));", "mark": "UseAws"}, {"name": "Azure", "line": "blobs.UseAzure(builder.Configuration.GetSection(\"Blobs\"))", "source": "builder.Services.AddHeadlessBlobs(blobs => blobs.UseAzure(builder.Configuration.GetSection(\"Blobs\")));", "mark": "UseAzure"}, {"name": "Cloudflare R2", "line": "blobs.UseCloudflareR2(builder.Configuration.GetSection(\"Blobs\"))", "source": "builder.Services.AddHeadlessBlobs(blobs => blobs.UseCloudflareR2(builder.Configuration.GetSection(\"Blobs\")));", "mark": "UseCloudflareR2"}, {"name": "SFTP", "line": "blobs.UseSsh(builder.Configuration.GetSection(\"Blobs\"))", "source": "builder.Services.AddHeadlessBlobs(blobs => blobs.UseSsh(builder.Configuration.GetSection(\"Blobs\")));", "mark": "UseSsh"}, {"name": "Redis", "line": "blobs.UseRedis(builder.Configuration.GetSection(\"Blobs\"))", "source": "builder.Services.AddHeadlessBlobs(blobs => blobs.UseRedis(builder.Configuration.GetSection(\"Blobs\")));", "mark": "UseRedis"}], "consumerFile": "InvoiceArchive.cs", "contract": "IBlobStorage", "package": "Headless.Blobs.Abstractions", "consumer": "public sealed class InvoiceArchive(IBlobStorage storage)\n{\n    public ValueTask SaveAsync(Guid id, Stream pdf, CancellationToken ct) =>\n        storage.UploadAsync(\n            new BlobLocation(\"invoices\", $\"{id}.pdf\"),\n            pdf,\n            contentType: \"application/pdf\",\n            cancellationToken: ct\n        );\n}"}, "messaging": {"root": "builder.Services.AddHeadlessMessaging(setup =>\n{\n    {{USE}};\n    setup.UseEntityFramework<AppDbContext>(); // outbox + inbox\n    setup.AddModule<Orders.MessagingModule>();\n});", "providers": [{"name": "RabbitMQ", "line": "setup.UseRabbitMq(builder.Configuration.GetSection(\"RabbitMq\"))", "source": "builder.Services.AddHeadlessMessaging(setup =>\n{\n    setup.UseRabbitMq(builder.Configuration.GetSection(\"RabbitMq\"));\n    setup.UseEntityFramework<AppDbContext>(); // outbox + inbox\n    setup.AddModule<Orders.MessagingModule>();\n});", "mark": "UseRabbitMq"}, {"name": "Kafka", "line": "setup.UseKafka(builder.Configuration.GetSection(\"Kafka\"))", "source": "builder.Services.AddHeadlessMessaging(setup =>\n{\n    setup.UseKafka(builder.Configuration.GetSection(\"Kafka\"));\n    setup.UseEntityFramework<AppDbContext>(); // outbox + inbox\n    setup.AddModule<Orders.MessagingModule>();\n});", "mark": "UseKafka"}, {"name": "Azure Service Bus", "line": "setup.UseAzureServiceBus(builder.Configuration.GetSection(\"ServiceBus\"))", "source": "builder.Services.AddHeadlessMessaging(setup =>\n{\n    setup.UseAzureServiceBus(builder.Configuration.GetSection(\"ServiceBus\"));\n    setup.UseEntityFramework<AppDbContext>(); // outbox + inbox\n    setup.AddModule<Orders.MessagingModule>();\n});", "mark": "UseAzureServiceBus"}, {"name": "AWS", "line": "setup.UseAws(builder.Configuration.GetSection(\"Aws\"))", "source": "builder.Services.AddHeadlessMessaging(setup =>\n{\n    setup.UseAws(builder.Configuration.GetSection(\"Aws\"));\n    setup.UseEntityFramework<AppDbContext>(); // outbox + inbox\n    setup.AddModule<Orders.MessagingModule>();\n});", "mark": "UseAws"}, {"name": "NATS", "line": "setup.UseNats(builder.Configuration.GetSection(\"Nats\"))", "source": "builder.Services.AddHeadlessMessaging(setup =>\n{\n    setup.UseNats(builder.Configuration.GetSection(\"Nats\"));\n    setup.UseEntityFramework<AppDbContext>(); // outbox + inbox\n    setup.AddModule<Orders.MessagingModule>();\n});", "mark": "UseNats"}, {"name": "Pulsar", "line": "setup.UsePulsar(builder.Configuration.GetSection(\"Pulsar\"))", "source": "builder.Services.AddHeadlessMessaging(setup =>\n{\n    setup.UsePulsar(builder.Configuration.GetSection(\"Pulsar\"));\n    setup.UseEntityFramework<AppDbContext>(); // outbox + inbox\n    setup.AddModule<Orders.MessagingModule>();\n});", "mark": "UsePulsar"}, {"name": "Redis", "line": "setup.UseRedis(builder.Configuration.GetSection(\"Redis\"))", "source": "builder.Services.AddHeadlessMessaging(setup =>\n{\n    setup.UseRedis(builder.Configuration.GetSection(\"Redis\"));\n    setup.UseEntityFramework<AppDbContext>(); // outbox + inbox\n    setup.AddModule<Orders.MessagingModule>();\n});", "mark": "UseRedis"}, {"name": "InMemory", "line": "setup.UseInMemory()", "source": "builder.Services.AddHeadlessMessaging(setup =>\n{\n    setup.UseInMemory();\n    setup.UseEntityFramework<AppDbContext>(); // outbox + inbox\n    setup.AddModule<Orders.MessagingModule>();\n});", "mark": "UseInMemory"}], "consumerFile": "OrderProjection.cs", "contract": "IConsume<T>", "package": "Headless.Messaging.Abstractions", "consumer": "[BusConsumer(\"orders.projection\")]\npublic sealed class OrderProjection(IOrderReadModel readModel) : IConsume<OrderPlaced>\n{\n    public ValueTask ConsumeAsync(ConsumeContext<OrderPlaced> context, CancellationToken ct) =>\n        readModel.ApplyAsync(context.Message, ct);\n}"}};
+const rootEl = document.getElementById("demo-root"), consEl = document.getElementById("demo-consumer");
+const provBox = document.getElementById("demo-providers"), consName = document.getElementById("demo-consumer-name");
+let domain = "caching";
+function setProvider(name, flash) {
+  const p = DEMO[domain].providers.find(p => p.name === name);
+  rootEl.innerHTML = numbered(p.source, p.source.split("\n").findIndex(l => l.includes("." + p.mark + "(")));
+  if (flash) rootEl.querySelector(".rev")?.classList.add("flash");
+  provBox.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", b.dataset.p === name));
+}
+function setDomain(name) {
+  domain = name;
+  const d = DEMO[name];
+  document.querySelectorAll(".demo-tabs button").forEach(b => b.setAttribute("aria-pressed", b.dataset.domain === name));
+  provBox.innerHTML = d.providers.map(p => `<button type="button" data-p="${p.name}">${p.name}</button>`).join("");
+  consName.textContent = d.consumerFile;
+  consEl.innerHTML = numbered(d.consumer);
+  setProvider(d.providers[0].name, false);
+}
+document.querySelectorAll(".demo-tabs button").forEach(b => b.addEventListener("click", () => setDomain(b.dataset.domain)));
+provBox.addEventListener("click", e => { const b = e.target.closest("button"); if (b) setProvider(b.dataset.p, true); });
+setDomain("caching");
+
+// Code tour: group chips choose a list; list tabs choose a sample.
+const tabs = [...document.querySelectorAll('.list [role="tab"]')];
+function selectTab(tab, focus) {
+  const list = tab.closest(".list");
+  document.querySelectorAll(".list").forEach(l => (l.hidden = l !== list));
+  document.querySelectorAll(".chip").forEach(c => c.setAttribute("aria-pressed", c.dataset.group === list.dataset.group));
+  tabs.forEach(t => {
+    const on = t === tab;
+    t.setAttribute("aria-selected", on);
+    t.tabIndex = on ? 0 : -1;
+    document.getElementById(t.getAttribute("aria-controls")).hidden = !on;
+  });
+  if (focus) tab.focus();
+}
+document.querySelectorAll(".chip").forEach(c => c.addEventListener("click", () =>
+  selectTab(document.querySelector(`.list[data-group="${c.dataset.group}"] [role="tab"]`))));
+tabs.forEach(t => {
+  t.addEventListener("click", () => selectTab(t));
+  t.addEventListener("keydown", e => {
+    const peers = [...t.closest(".list").querySelectorAll('[role="tab"]')], i = peers.indexOf(t);
+    const d = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 }[e.key];
+    if (d) { e.preventDefault(); selectTab(peers[(i + d + peers.length) % peers.length], true); }
+  });
+});
+function openSample(id) {
+  const tab = tabs.find(t => t.getAttribute("aria-controls") === id);
+  if (!tab) return false;
+  selectTab(tab);
+  document.getElementById("code").scrollIntoView();
+  return true;
+}
+document.querySelectorAll("[data-tab]").forEach(a => a.addEventListener("click", e => { if (openSample(a.dataset.tab)) e.preventDefault(); }));
+selectTab(tabs[0]);
+if (location.hash.startsWith("#tour-")) openSample(location.hash.slice(1));
+</script>
+</body>
+</html>
