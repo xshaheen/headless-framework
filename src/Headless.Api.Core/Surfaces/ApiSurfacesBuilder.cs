@@ -3,7 +3,7 @@
 using FluentValidation;
 using Headless.Checks;
 
-namespace Headless.Api.Surfaces;
+namespace Headless.Api;
 
 /// <summary>Configuration consumed immediately by AddHeadlessApiSurfaces, not by the deferred options pipeline.</summary>
 [PublicAPI]

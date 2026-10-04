@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation.TestHelper;
-using Headless.Api.MultiTenancy;
+using Headless.Api;
 using Headless.Testing.Tests;
 
 namespace Tests.MultiTenancy;

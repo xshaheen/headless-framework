@@ -12,7 +12,7 @@ namespace Headless.Api;
 public static class SetupMvcSurfaces
 {
     /// <summary>
-    /// Adds MVC conventions for API surfaces, enabling <see cref="Mvc.Surfaces.ApiSurfaceAttribute"/> to automatically
+    /// Adds MVC conventions for API surfaces, enabling <see cref="ApiSurfaceAttribute"/> to automatically
     /// apply route prefixes, authorization policies, and surface metadata.
     /// </summary>
     public static IServiceCollection AddHeadlessMvcApiSurfaces(this IServiceCollection services)

@@ -4,7 +4,7 @@ using System.Collections.ObjectModel;
 using Headless.Abstractions;
 using TimeZoneConverter;
 
-namespace Headless.Api.Abstractions;
+namespace Headless.Api;
 
 /// <summary>
 /// <see cref="ITimezoneProvider"/> implementation backed by the <c>TimeZoneConverter</c> (TZConvert) library,

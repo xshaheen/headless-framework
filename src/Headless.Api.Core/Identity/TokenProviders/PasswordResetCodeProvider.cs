@@ -2,7 +2,7 @@
 
 using Microsoft.Extensions.Options;
 
-namespace Headless.Api.Identity.TokenProviders;
+namespace Headless.Api.Identity;
 
 /// <summary>
 /// Generates and validates 6-digit TOTP codes for password reset with configurable

@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc.Authorization;
 using Microsoft.AspNetCore.Mvc.Filters;
 
-namespace Headless.Api.ApiExplorer;
+namespace Headless.Api;
 
 /// <summary>Extension methods for <see cref="IList{FilterDescriptor}"/>.</summary>
 public static class FilterDescriptorExtensions

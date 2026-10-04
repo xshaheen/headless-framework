@@ -5,7 +5,7 @@ using System.Net;
 using System.Security.Cryptography;
 using Headless.Checks;
 
-namespace Headless.Api.Identity.TokenProviders;
+namespace Headless.Api.Identity;
 
 /// <summary>
 /// Generates and validates RFC 6238 TOTP codes using HMAC-SHA1, HMAC-SHA256, or HMAC-SHA512.

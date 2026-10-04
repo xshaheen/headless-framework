@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Api.Middlewares;
 using Headless.Checks;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Rewrite;
@@ -22,8 +21,8 @@ public static class SetupCanonicalUrl
     /// <returns>The same application builder.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="application"/> is <see langword="null"/>.</exception>
     /// <remarks>
-    /// Place this after <c>UseRouting()</c>. The rule reads the <see cref="Filters.NoTrailingSlashAttribute"/> and
-    /// <see cref="Filters.NoLowercaseQueryStringAttribute"/> opt-outs from endpoint metadata, so requests that have
+    /// Place this after <c>UseRouting()</c>. The rule reads the <see cref="NoTrailingSlashAttribute"/> and
+    /// <see cref="NoLowercaseQueryStringAttribute"/> opt-outs from endpoint metadata, so requests that have
     /// not been routed yet are left untouched rather than redirected past an opt-out.
     /// </remarks>
     public static IApplicationBuilder UseRedirectToCanonicalUrl(this IApplicationBuilder application)

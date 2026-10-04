@@ -2,7 +2,7 @@
 
 using Headless.Primitives;
 
-namespace Headless.Api.Contracts;
+namespace Headless.Api;
 
 /// <summary>
 /// API response view for page SEO metadata. Maps the domain <see cref="PageMetadata"/> primitive

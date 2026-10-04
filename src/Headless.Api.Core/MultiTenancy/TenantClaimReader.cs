@@ -4,7 +4,7 @@ using System.Security.Claims;
 using Headless.Constants;
 using Headless.MultiTenancy;
 
-namespace Headless.Api.MultiTenancy;
+namespace Headless.Api;
 
 /// <summary>
 /// Shared claim-type resolution used by both the identifier/claim mismatch post-authorization integrity check

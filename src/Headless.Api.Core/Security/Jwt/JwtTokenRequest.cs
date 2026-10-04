@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Api.Security.Jwt;
+namespace Headless.Api.Security;
 
 /// <summary>
 /// Parameters for creating a signed (and optionally encrypted) JWT token via

@@ -3,7 +3,7 @@
 using Headless.Abstractions;
 using Microsoft.AspNetCore.Http;
 
-namespace Headless.Api.Concurrency;
+namespace Headless.Api;
 
 internal sealed class EntityTagResponseEndpointFilter : IEndpointFilter
 {

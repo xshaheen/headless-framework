@@ -5,7 +5,7 @@ using Headless.Constants;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Api.Security.Claims;
+namespace Headless.Api.Security;
 
 /// <summary>
 /// Creates authenticated <see cref="ClaimsPrincipal"/> and <see cref="ClaimsIdentity"/> instances

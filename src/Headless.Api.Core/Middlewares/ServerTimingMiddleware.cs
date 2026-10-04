@@ -4,7 +4,7 @@ using System.Diagnostics;
 using Headless.Checks;
 using Microsoft.AspNetCore.Http;
 
-namespace Headless.Api.Middlewares;
+namespace Headless.Api;
 
 /// <summary>
 /// Measures the time the request takes to process and returns this in a Server-Timing trailing HTTP header. It is

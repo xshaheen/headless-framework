@@ -3,7 +3,7 @@
 using System.Security.Claims;
 using Headless.MultiTenancy;
 
-namespace Headless.Api.MultiTenancy;
+namespace Headless.Api;
 
 /// <summary>
 /// The single identifier/claim mismatch comparison rule shared by every enforcement point: the pre-auth catalog check in

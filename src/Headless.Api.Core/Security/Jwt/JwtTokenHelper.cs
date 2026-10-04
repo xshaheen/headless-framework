@@ -2,7 +2,7 @@
 
 using Microsoft.IdentityModel.JsonWebTokens;
 
-namespace Headless.Api.Security.Jwt;
+namespace Headless.Api.Security;
 
 /// <summary>Shared <see cref="JsonWebTokenHandler"/> instance used by <see cref="JwtTokenFactory"/>.</summary>
 public static class JwtTokenHelper

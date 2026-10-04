@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Api.Surfaces;
+using Headless.Api;
 using Headless.Testing.Tests;
 
 namespace Tests.Surfaces;

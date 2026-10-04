@@ -8,7 +8,7 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
-namespace Headless.Api.Authorization;
+namespace Headless.Api;
 
 /// <summary>
 /// Records an audit entry for every authorization challenge and forbid, then hands the result to the wrapped

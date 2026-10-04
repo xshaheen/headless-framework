@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Api.Middlewares;
+namespace Headless.Api;
 
 internal static class RetryAfterSeconds
 {

@@ -3,7 +3,7 @@
 using Headless.Abstractions;
 using Microsoft.AspNetCore.Http;
 
-namespace Headless.Api.Middlewares;
+namespace Headless.Api;
 
 /// <summary>
 /// Middleware that intercepts bare 401, 403, and 404 responses without a body and rewrites them

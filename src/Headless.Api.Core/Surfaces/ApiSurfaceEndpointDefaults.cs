@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Api.MultiTenancy;
-
-namespace Headless.Api.Surfaces;
+namespace Headless.Api;
 
 internal static class ApiSurfaceEndpointDefaults
 {

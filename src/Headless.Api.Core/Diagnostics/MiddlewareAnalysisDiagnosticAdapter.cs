@@ -3,7 +3,7 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 
-namespace Headless.Api.Diagnostics;
+namespace Headless.Api;
 
 /// <summary>
 /// Diagnostic observer that subscribes to middleware analysis events and writes structured log

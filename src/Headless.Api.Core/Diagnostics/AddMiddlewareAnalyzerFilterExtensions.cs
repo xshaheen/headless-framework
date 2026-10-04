@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.MiddlewareAnalysis;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Headless.Api.Diagnostics;
+namespace Headless.Api;
 
 [PublicAPI]
 public static class AddMiddlewareAnalyzerFilterExtensions

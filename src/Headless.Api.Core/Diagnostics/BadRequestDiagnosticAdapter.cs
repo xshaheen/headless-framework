@@ -3,7 +3,7 @@
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.Logging;
 
-namespace Headless.Api.Diagnostics;
+namespace Headless.Api;
 
 /// <summary>
 /// Diagnostic observer that subscribes to the Kestrel bad-request event and writes a structured

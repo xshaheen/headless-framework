@@ -9,7 +9,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Api.Abstractions;
+namespace Headless.Api;
 
 internal sealed class ProblemDetailsCreator(
     TimeProvider timeProvider,

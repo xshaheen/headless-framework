@@ -4,7 +4,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 
-namespace Headless.Api.Diagnostics;
+namespace Headless.Api;
 
 /// <summary>
 /// Reads named properties from a <see cref="System.Diagnostics.DiagnosticListener"/> event payload. Producers such as

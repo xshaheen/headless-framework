@@ -5,7 +5,7 @@ using Headless.Constants;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Net.Http.Headers;
 
-namespace Headless.Api.Cors;
+namespace Headless.Api;
 
 /// <summary>
 /// Configures one named CORS policy registered from options by <c>AddHeadlessCors</c> or
