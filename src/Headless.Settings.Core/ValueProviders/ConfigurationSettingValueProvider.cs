@@ -1,10 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Settings.Models;
-using Headless.Settings.Values;
 using Microsoft.Extensions.Configuration;
 
-namespace Headless.Settings.ValueProviders;
+namespace Headless.Settings;
 
 /// <summary>Provides setting values from <see cref="IConfiguration"/> under the <c>Settings:</c> key prefix. This provider is read-only; <see cref="ISettingValueProvider.SetAsync"/> and <see cref="ISettingValueProvider.ClearAsync"/> are not supported.</summary>
 public sealed class ConfigurationSettingValueProvider(IConfiguration configuration) : ISettingValueReadProvider

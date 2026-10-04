@@ -3,10 +3,9 @@
 using System.Data.Common;
 using Headless.Primitives;
 using Headless.Serializer;
-using Headless.Settings.Entities;
 using Headless.Sql;
 
-namespace Headless.Settings.Repositories;
+namespace Headless.Settings;
 
 /// <summary>The relational <see cref="ISettingDefinitionRecordRepository"/>, written once over <see cref="ISqlDialect"/>.</summary>
 #pragma warning disable CA2100 // SQL text interpolates only validated schema and table identifiers; values are parameters.

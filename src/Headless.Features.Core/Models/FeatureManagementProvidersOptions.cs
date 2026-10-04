@@ -1,10 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Collections;
-using Headless.Features.Definitions;
-using Headless.Features.ValueProviders;
 
-namespace Headless.Features.Models;
+namespace Headless.Features;
 
 /// <summary>
 /// Registers the ordered provider type lists and deletion tombstone sets used by the feature management pipeline.

@@ -3,11 +3,7 @@
 using Headless.Abstractions;
 using Headless.Caching;
 using Headless.MultiTenancy;
-using Headless.Permissions.Definitions;
-using Headless.Permissions.Entities;
-using Headless.Permissions.Grants;
-using Headless.Permissions.Models;
-using Headless.Permissions.Repositories;
+using Headless.Permissions;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;

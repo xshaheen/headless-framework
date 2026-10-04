@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Features.Models;
-
-namespace Headless.Features.Values;
+namespace Headless.Features;
 
 /// <summary>Reads and writes feature values across one or more value providers.</summary>
 /// <remarks>

@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Settings.Entities;
+namespace Headless.Settings;
 
 /// <summary>Column length limits for <see cref="SettingValueRecord"/> fields.</summary>
 public static class SettingValueRecordConstants

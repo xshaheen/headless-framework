@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Features.Models;
-
-namespace Headless.Features.ValueProviders;
+namespace Headless.Features;
 
 /// <summary>Read-write contract for a feature value provider; extends <see cref="IFeatureValueReadProvider"/> with mutation operations.</summary>
 public interface IFeatureValueProvider : IFeatureValueReadProvider

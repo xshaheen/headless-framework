@@ -3,7 +3,6 @@
 using Headless.Hosting.Initialization;
 using Headless.Security;
 using Headless.Settings;
-using Headless.Settings.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;

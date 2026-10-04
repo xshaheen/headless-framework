@@ -1,9 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Abstractions;
-using Headless.Permissions.Models;
 
-namespace Headless.Permissions.Grants;
+namespace Headless.Permissions;
 
 /// <summary>
 /// Resolves and mutates permission grants for a principal. Resolution is AWS IAM-style: an explicit

@@ -1,9 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Headless.Features.Models;
 
-namespace Headless.Features.Definitions;
+namespace Headless.Features;
 
 /// <summary>
 /// <see cref="IFeatureDefinitionManager"/> implementation that merges static and dynamic feature definitions,

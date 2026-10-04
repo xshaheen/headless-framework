@@ -3,7 +3,7 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
-namespace Headless.Settings.Values;
+namespace Headless.Settings;
 
 /// <summary>
 /// Loads every registered settings snapshot in the background once the host starts, then re-reads each on its backstop

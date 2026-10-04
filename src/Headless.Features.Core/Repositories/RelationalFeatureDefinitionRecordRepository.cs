@@ -4,12 +4,11 @@ using System.Collections.Concurrent;
 using System.Data.Common;
 using System.Globalization;
 using System.Text;
-using Headless.Features.Entities;
 using Headless.Primitives;
 using Headless.Serializer;
 using Headless.Sql;
 
-namespace Headless.Features.Repositories;
+namespace Headless.Features;
 
 /// <summary>
 /// The relational <see cref="IFeatureDefinitionRecordRepository"/>, written once over <see cref="ISqlDialect"/>. New

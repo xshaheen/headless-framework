@@ -2,11 +2,9 @@
 
 using Headless.Abstractions;
 using Headless.Core;
-using Headless.Features.Entities;
-using Headless.Features.Models;
 using Headless.Primitives;
 
-namespace Headless.Features.Definitions;
+namespace Headless.Features;
 
 /// <summary>Default <see cref="IFeatureDefinitionSerializer"/> implementation.</summary>
 public sealed class FeatureDefinitionSerializer(IGuidGenerator guidGenerator) : IFeatureDefinitionSerializer

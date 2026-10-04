@@ -2,7 +2,7 @@
 
 using Headless.Serializer;
 
-namespace Headless.Settings.Values;
+namespace Headless.Settings;
 
 /// <summary>General-purpose convenience extensions on <see cref="ISettingManager"/>.</summary>
 [PublicAPI]

@@ -2,7 +2,6 @@
 
 using Headless.Checks;
 using Headless.Constants;
-using Headless.Features.Repositories;
 using Headless.Features.SqlServer;
 using Headless.Sql;
 using Headless.Sql.SqlServer;

@@ -3,16 +3,9 @@
 # is not listed here and on a listed namespace that no longer exists, so this file only shrinks.
 Headless.Api.Extensions
 Headless.Api.Extensions.Cookies
-Headless.Features.Entities
-Headless.Features.Models
 Headless.Messaging.Exceptions
 Headless.NetTopologySuite.Constants
 Headless.OpenApi.Nswag.Extensions
 Headless.OpenApi.Nswag.Models
 Headless.OpenApi.Nswag.SchemaProcessors.FluentValidation.Models
-Headless.Permissions.Entities
-Headless.Permissions.Models
-Headless.Settings.Entities
-Headless.Settings.Helpers
-Headless.Settings.Models
 Headless.Testing.Helpers

@@ -4,14 +4,10 @@ using Headless.Abstractions;
 using Headless.Caching;
 using Headless.Checks;
 using Headless.MultiTenancy;
-using Headless.Permissions.Definitions;
-using Headless.Permissions.Entities;
-using Headless.Permissions.Models;
-using Headless.Permissions.Repositories;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Permissions.Grants;
+namespace Headless.Permissions;
 
 public sealed class PermissionGrantStore(
     IPermissionDefinitionManager permissionDefinitionManager,

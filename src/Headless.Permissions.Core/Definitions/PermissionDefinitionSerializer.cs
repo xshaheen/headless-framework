@@ -2,11 +2,9 @@
 
 using Headless.Abstractions;
 using Headless.Core;
-using Headless.Permissions.Entities;
-using Headless.Permissions.Models;
 using Headless.Primitives;
 
-namespace Headless.Permissions.Definitions;
+namespace Headless.Permissions;
 
 /// <summary>Default implementation of <see cref="IPermissionDefinitionSerializer"/>.</summary>
 public sealed class PermissionDefinitionSerializer(IGuidGenerator guidGenerator) : IPermissionDefinitionSerializer
@@ -80,7 +78,7 @@ public sealed class PermissionDefinitionSerializer(IGuidGenerator guidGenerator)
 
 /// <summary>
 /// Converts in-memory permission definitions into their database record equivalents so they can be
-/// persisted by <see cref="Repositories.IPermissionDefinitionRecordRepository"/>.
+/// persisted by <see cref="IPermissionDefinitionRecordRepository"/>.
 /// </summary>
 public interface IPermissionDefinitionSerializer
 {

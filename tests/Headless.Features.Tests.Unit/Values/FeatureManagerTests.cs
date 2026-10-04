@@ -2,11 +2,8 @@
 
 using Headless.Abstractions;
 using Headless.Exceptions;
-using Headless.Features.Definitions;
-using Headless.Features.Models;
+using Headless.Features;
 using Headless.Features.Resources;
-using Headless.Features.ValueProviders;
-using Headless.Features.Values;
 using Headless.Messaging;
 using Headless.Testing.Tests;
 using NSubstitute.ExceptionExtensions;

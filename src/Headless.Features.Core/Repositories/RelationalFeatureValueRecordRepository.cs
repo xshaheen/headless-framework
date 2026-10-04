@@ -2,10 +2,9 @@
 
 using System.Data;
 using System.Data.Common;
-using Headless.Features.Entities;
 using Headless.Sql;
 
-namespace Headless.Features.Repositories;
+namespace Headless.Features;
 
 /// <summary>
 /// The relational <see cref="IFeatureValueRecordRepository"/>, written once over <see cref="ISqlDialect"/>. Batched

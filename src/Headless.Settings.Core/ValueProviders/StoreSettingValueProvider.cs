@@ -1,9 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Settings.Models;
-using Headless.Settings.Values;
-
-namespace Headless.Settings.ValueProviders;
+namespace Headless.Settings;
 
 /// <summary>Base class for <see cref="ISettingValueProvider"/> implementations that delegate persistence to an <see cref="ISettingValueStore"/>.</summary>
 public abstract class StoreSettingValueProvider(ISettingValueStore store) : ISettingValueProvider

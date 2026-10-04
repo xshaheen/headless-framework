@@ -2,10 +2,8 @@
 
 using System.Security.Claims;
 using Headless.Abstractions;
-using Headless.Features.Models;
-using Headless.Features.Values;
 
-namespace Headless.Features.ValueProviders;
+namespace Headless.Features;
 
 /// <summary>
 /// Feature value provider that resolves values scoped to the current user's edition, derived from

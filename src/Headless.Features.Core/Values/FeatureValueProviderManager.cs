@@ -1,11 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Features.Models;
-using Headless.Features.ValueProviders;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Features.Values;
+namespace Headless.Features;
 
 /// <summary>
 /// Default implementation of <see cref="IFeatureValueProviderManager"/> that resolves providers from the DI container

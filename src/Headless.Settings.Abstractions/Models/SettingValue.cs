@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Settings.Models;
+namespace Headless.Settings;
 
 /// <summary>Holds the resolved value of a named setting along with the provider that supplied it.</summary>
 /// <param name="Name">Unique name of the setting.</param>

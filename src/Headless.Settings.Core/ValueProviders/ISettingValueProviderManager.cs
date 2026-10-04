@@ -1,10 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Settings.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Settings.ValueProviders;
+namespace Headless.Settings;
 
 /// <summary>Manages the ordered list of registered <see cref="ISettingValueReadProvider"/> instances.</summary>
 public interface ISettingValueProviderManager

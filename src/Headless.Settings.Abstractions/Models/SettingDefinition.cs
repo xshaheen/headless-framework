@@ -3,7 +3,7 @@
 using Headless.Checks;
 using Headless.Primitives;
 
-namespace Headless.Settings.Models;
+namespace Headless.Settings;
 
 /// <summary>Describes a named application setting, including its defaults, visibility, and storage options.</summary>
 /// <remarks>

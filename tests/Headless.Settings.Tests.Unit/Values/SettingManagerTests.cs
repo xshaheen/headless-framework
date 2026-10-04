@@ -3,12 +3,8 @@
 using Headless.Abstractions;
 using Headless.Exceptions;
 using Headless.Messaging;
-using Headless.Settings.Definitions;
-using Headless.Settings.Helpers;
-using Headless.Settings.Models;
+using Headless.Settings;
 using Headless.Settings.Resources;
-using Headless.Settings.ValueProviders;
-using Headless.Settings.Values;
 using Headless.Testing.Tests;
 using NSubstitute.ExceptionExtensions;
 using Tests.Fakes;

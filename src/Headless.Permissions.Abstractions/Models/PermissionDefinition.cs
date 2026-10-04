@@ -3,7 +3,7 @@
 using Headless.Checks;
 using Headless.Primitives;
 
-namespace Headless.Permissions.Models;
+namespace Headless.Permissions;
 
 /// <summary>
 /// A single permission within a <see cref="PermissionGroupDefinition"/>. Permissions form a tree: a child is

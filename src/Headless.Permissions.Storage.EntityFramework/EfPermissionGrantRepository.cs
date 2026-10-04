@@ -1,15 +1,12 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Caching;
-using Headless.Permissions.Entities;
-using Headless.Permissions.Grants;
-using Headless.Permissions.Repositories;
 using Microsoft.EntityFrameworkCore;
 
 namespace Headless.Permissions;
 
 /// <summary>
-/// EF Core implementation of <see cref="Repositories.IPermissionGrantRepository"/> that manages permission grant
+/// EF Core implementation of <see cref="IPermissionGrantRepository"/> that manages permission grant
 /// records through <typeparamref name="TContext"/>.
 /// </summary>
 /// <remarks>

@@ -1,9 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Headless.Settings.Models;
 
-namespace Headless.Settings.Definitions;
+namespace Headless.Settings;
 
 /// <summary>
 /// Default implementation of <see cref="ISettingDefinitionManager"/> that resolves setting definitions

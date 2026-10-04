@@ -2,9 +2,8 @@
 
 using System.Collections.Concurrent;
 using System.Reflection;
-using Headless.Features.Values;
 
-namespace Headless.Features.Filters;
+namespace Headless.Features;
 
 /// <summary>Checks feature requirements declared on a method being invoked, throwing when a required feature is disabled.</summary>
 public interface IMethodInvocationFeatureCheckerService

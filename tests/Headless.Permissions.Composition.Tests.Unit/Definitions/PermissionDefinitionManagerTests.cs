@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Permissions.Definitions;
-using Headless.Permissions.Models;
+using Headless.Permissions;
 using Headless.Testing.Tests;
 
 namespace Tests.Definitions;

@@ -3,10 +3,8 @@
 using Headless.Abstractions;
 using Headless.Checks;
 using Headless.MultiTenancy;
-using Headless.Settings.Definitions;
-using Headless.Settings.Values;
 
-namespace Headless.Settings.ClientVisibility;
+namespace Headless.Settings;
 
 /// <summary>Default <see cref="IClientVisibleSettingsReader"/>.</summary>
 internal sealed class ClientVisibleSettingsReader(
@@ -48,7 +46,7 @@ internal sealed class ClientVisibleSettingsReader(
 }
 
 /// <summary>
-/// Reads the values of every setting whose definition is <see cref="Models.SettingDefinition.IsVisibleToClients"/>,
+/// Reads the values of every setting whose definition is <see cref="SettingDefinition.IsVisibleToClients"/>,
 /// for example to include in the configuration an application returns to its front end.
 /// </summary>
 [PublicAPI]

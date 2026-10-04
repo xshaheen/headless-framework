@@ -3,7 +3,7 @@
 using Headless.Checks;
 using Headless.Primitives;
 
-namespace Headless.Features.Models;
+namespace Headless.Features;
 
 /// <summary>Describes a feature, its metadata, and its position in the feature hierarchy.</summary>
 [PublicAPI]

@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Settings.Models;
-
-namespace Headless.Settings.Definitions;
+namespace Headless.Settings;
 
 /// <summary>Used to define a setting definition.</summary>
 public interface ISettingDefinitionProvider

@@ -1,9 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Permissions.Models;
+namespace Headless.Permissions;
 
 /// <summary>
-/// The mutable builder passed to <see cref="Definitions.IPermissionDefinitionProvider.Define"/> for declaring
+/// The mutable builder passed to <see cref="IPermissionDefinitionProvider.Define"/> for declaring
 /// permission groups and permissions. Group names must be unique within the context.
 /// </summary>
 public interface IPermissionDefinitionContext

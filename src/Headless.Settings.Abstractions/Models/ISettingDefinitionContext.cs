@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Settings.Models;
+namespace Headless.Settings;
 
 /// <summary>Provides access to the setting definition registry during the definition phase.</summary>
 public interface ISettingDefinitionContext

@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Features.Models;
+namespace Headless.Features;
 
 /// <summary>Implemented by types that can own child <see cref="FeatureDefinition"/> entries (groups and features).</summary>
 public interface ICanAddChildFeature
