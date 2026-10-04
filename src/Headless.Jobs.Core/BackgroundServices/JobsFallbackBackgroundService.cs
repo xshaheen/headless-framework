@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Coordination;
-using Headless.Jobs.Interfaces;
-using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Internal;
 using Headless.Jobs.JobsThreadPool;
 using Microsoft.Extensions.Hosting;

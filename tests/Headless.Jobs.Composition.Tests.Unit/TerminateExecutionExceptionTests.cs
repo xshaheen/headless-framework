@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Jobs.Enums;
-using Headless.Jobs.Exceptions;
+using Headless.Jobs;
 
 namespace Tests;
 

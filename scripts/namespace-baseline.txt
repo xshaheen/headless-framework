@@ -5,14 +5,6 @@ Headless.Api.Extensions
 Headless.Api.Extensions.Cookies
 Headless.Features.Entities
 Headless.Features.Models
-Headless.Jobs.Base
-Headless.Jobs.Entities
-Headless.Jobs.Entities.BaseEntity
-Headless.Jobs.Enums
-Headless.Jobs.Exceptions
-Headless.Jobs.Interfaces
-Headless.Jobs.Interfaces.Managers
-Headless.Jobs.Models
 Headless.Messaging.Exceptions
 Headless.NetTopologySuite.Constants
 Headless.OpenApi.Nswag.Extensions

@@ -5,7 +5,6 @@ using System.Text.Encodings.Web;
 using Headless.Constants;
 using Headless.Dashboard.Authentication;
 using Headless.Jobs.Endpoints;
-using Headless.Jobs.Entities;
 using Headless.Jobs.Infrastructure;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;

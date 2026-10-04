@@ -8,7 +8,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Headless.Jobs;
-using Headless.Jobs.Enums;
 using Jobs.SourceGenerator.Tests;
 
 [assembly: global::Headless.Jobs.JobFunctionDescriptorMetadataAttribute("shapes.async-disposable", "1")]
@@ -54,38 +53,38 @@ namespace Jobs.SourceGenerator.Tests
             catalog.AddRequestTypes(requestTypes);
         }
 
-        private static async Task Invoke_Demo_Shapes_AsyncDisposableJob(IServiceProvider serviceProvider, global::Headless.Jobs.Base.JobContext context, CancellationToken cancellationToken)
+        private static async Task Invoke_Demo_Shapes_AsyncDisposableJob(IServiceProvider serviceProvider, global::Headless.Jobs.JobContext context, CancellationToken cancellationToken)
         {
             var job = ActivatorUtilities.CreateInstance<global::Demo.Shapes.AsyncDisposableJob>(serviceProvider);
             await using (job.ConfigureAwait(false))
             {
-                await ((global::Headless.Jobs.Base.IJob)job).ExecuteAsync(context, cancellationToken).ConfigureAwait(false);
+                await ((global::Headless.Jobs.IJob)job).ExecuteAsync(context, cancellationToken).ConfigureAwait(false);
             }
         }
 
-        private static async Task Invoke_Demo_Shapes_DisposableJob(IServiceProvider serviceProvider, global::Headless.Jobs.Base.JobContext context, CancellationToken cancellationToken)
+        private static async Task Invoke_Demo_Shapes_DisposableJob(IServiceProvider serviceProvider, global::Headless.Jobs.JobContext context, CancellationToken cancellationToken)
         {
             using var job = ActivatorUtilities.CreateInstance<global::Demo.Shapes.DisposableJob>(serviceProvider);
-            await ((global::Headless.Jobs.Base.IJob)job).ExecuteAsync(context, cancellationToken).ConfigureAwait(false);
+            await ((global::Headless.Jobs.IJob)job).ExecuteAsync(context, cancellationToken).ConfigureAwait(false);
         }
 
-        private static async Task Invoke_Demo_Shapes_ExplicitJob(IServiceProvider serviceProvider, global::Headless.Jobs.Base.JobContext context, CancellationToken cancellationToken)
+        private static async Task Invoke_Demo_Shapes_ExplicitJob(IServiceProvider serviceProvider, global::Headless.Jobs.JobContext context, CancellationToken cancellationToken)
         {
             var job = ActivatorUtilities.CreateInstance<global::Demo.Shapes.ExplicitJob>(serviceProvider);
-            await ((global::Headless.Jobs.Base.IJob)job).ExecuteAsync(context, cancellationToken).ConfigureAwait(false);
+            await ((global::Headless.Jobs.IJob)job).ExecuteAsync(context, cancellationToken).ConfigureAwait(false);
         }
 
-        private static async Task Invoke_Demo_Shapes_CloseDay(IServiceProvider serviceProvider, global::Headless.Jobs.Base.JobContext context, CancellationToken cancellationToken)
+        private static async Task Invoke_Demo_Shapes_CloseDay(IServiceProvider serviceProvider, global::Headless.Jobs.JobContext context, CancellationToken cancellationToken)
         {
             var job = ActivatorUtilities.CreateInstance<global::Demo.Shapes.CloseDay>(serviceProvider);
-            await ((global::Headless.Jobs.Base.IJob)job).ExecuteAsync(context, cancellationToken).ConfigureAwait(false);
+            await ((global::Headless.Jobs.IJob)job).ExecuteAsync(context, cancellationToken).ConfigureAwait(false);
         }
 
-        private static async Task Invoke_Demo_Shapes_SendInvoice(IServiceProvider serviceProvider, global::Headless.Jobs.Base.JobContext context, CancellationToken cancellationToken)
+        private static async Task Invoke_Demo_Shapes_SendInvoice(IServiceProvider serviceProvider, global::Headless.Jobs.JobContext context, CancellationToken cancellationToken)
         {
             var request = await JobsRequestProvider.GetRequestAsync<global::Demo.Shapes.InvoiceArgs>(context, cancellationToken).ConfigureAwait(false);
             var job = ActivatorUtilities.CreateInstance<global::Demo.Shapes.SendInvoice>(serviceProvider);
-            await ((global::Headless.Jobs.Base.IJob<global::Demo.Shapes.InvoiceArgs>)job).ExecuteAsync(new global::Headless.Jobs.Base.JobContext<global::Demo.Shapes.InvoiceArgs>(context, request), cancellationToken).ConfigureAwait(false);
+            await ((global::Headless.Jobs.IJob<global::Demo.Shapes.InvoiceArgs>)job).ExecuteAsync(new global::Headless.Jobs.JobContext<global::Demo.Shapes.InvoiceArgs>(context, request), cancellationToken).ConfigureAwait(false);
         }
     }
 }

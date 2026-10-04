@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Jobs.DashboardDtos;
+namespace Headless.Jobs;
 
 /// <summary>
 /// Request body for the dashboard "update cron job" endpoint. Only non-null fields are applied.

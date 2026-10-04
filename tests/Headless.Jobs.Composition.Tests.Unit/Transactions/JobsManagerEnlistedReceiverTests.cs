@@ -2,11 +2,6 @@
 
 using System.Data;
 using Headless.Jobs;
-using Headless.Jobs.Entities;
-using Headless.Jobs.Enums;
-using Headless.Jobs.Interfaces;
-using Headless.Jobs.Interfaces.Managers;
-using Headless.Jobs.Models;
 using Headless.UnitOfWork;
 
 namespace Tests.Transactions;

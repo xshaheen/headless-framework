@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Jobs.Enums;
+namespace Headless.Jobs;
 
 internal enum CoreNotifyActionType
 {

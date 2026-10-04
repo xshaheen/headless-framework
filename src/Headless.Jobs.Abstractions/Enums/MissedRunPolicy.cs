@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Jobs.Enums;
+namespace Headless.Jobs;
 
 /// <summary>
 /// How a cron definition recovers when its schedule watermark falls behind — more than one occurrence is

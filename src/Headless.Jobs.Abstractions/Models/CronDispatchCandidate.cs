@@ -1,9 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Jobs.Entities;
-using Headless.Jobs.Enums;
-
-namespace Headless.Jobs.Models;
+namespace Headless.Jobs;
 
 /// <summary>
 /// A cron definition as the scheduler's selection path sees it: the dispatch fields plus the schedule position the

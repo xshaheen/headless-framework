@@ -1,9 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Jobs.Enums;
-using Headless.Jobs.Models;
-
-namespace Headless.Jobs.Interfaces.Managers;
+namespace Headless.Jobs;
 
 internal interface IInternalJobManager
 {

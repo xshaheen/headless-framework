@@ -1,13 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Headless.Jobs.Entities;
-using Headless.Jobs.Interfaces;
-using Headless.Jobs.Models;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging;
 
-namespace Headless.Jobs.Hubs;
+namespace Headless.Jobs;
 
 internal sealed class JobsNotificationHubSender : IJobsNotificationHubSender, IDisposable
 {

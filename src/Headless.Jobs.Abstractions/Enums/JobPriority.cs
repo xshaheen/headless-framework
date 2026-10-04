@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Jobs.Enums;
+namespace Headless.Jobs;
 
 /// <summary>
 /// Controls which thread pool and execution order the Jobs scheduler uses for a job function.

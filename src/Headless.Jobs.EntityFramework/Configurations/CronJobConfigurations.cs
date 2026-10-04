@@ -2,13 +2,10 @@
 
 using Headless.EntityFramework.Configurations;
 using Headless.Hosting.Initialization;
-using Headless.Jobs.Entities;
-using Headless.Jobs.Enums;
-using Headless.Jobs.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
-namespace Headless.Jobs.Configurations;
+namespace Headless.Jobs;
 
 /// <summary>EF Core mapping of the Jobs cron-definition table.</summary>
 /// <param name="schema">The schema that holds the table.</param>

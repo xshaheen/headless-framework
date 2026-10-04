@@ -1,10 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Jobs;
-using Headless.Jobs.Base;
-using Headless.Jobs.Enums;
 using Headless.Jobs.Instrumentation;
-using Headless.Jobs.Interfaces.Managers;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 

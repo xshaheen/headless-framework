@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Jobs.Enums;
+namespace Headless.Jobs;
 
 /// <summary>
 /// Discriminates the two schedulable row types that flow through the Jobs execution pipeline.

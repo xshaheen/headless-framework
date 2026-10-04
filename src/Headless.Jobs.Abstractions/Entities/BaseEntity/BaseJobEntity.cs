@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Jobs.Entities.BaseEntity;
+namespace Headless.Jobs;
 
 /// <summary>
 /// Base entity shared by <c>TimeJobEntity</c> and <c>CronJobEntity</c>. Carries the identity,

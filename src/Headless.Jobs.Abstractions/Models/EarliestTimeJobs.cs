@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Jobs.Entities;
-
-namespace Headless.Jobs.Models;
+namespace Headless.Jobs;
 
 /// <summary>
 /// The earliest pending second of time jobs, together with the instant the STORE observed while reading them.

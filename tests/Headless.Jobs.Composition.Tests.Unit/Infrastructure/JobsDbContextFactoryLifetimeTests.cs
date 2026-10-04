@@ -3,10 +3,6 @@
 using Headless.Hosting.DependencyInjection;
 using Headless.Hosting.Validation;
 using Headless.Jobs;
-using Headless.Jobs.Customizer;
-using Headless.Jobs.DbContextFactory;
-using Headless.Jobs.Entities;
-using Headless.Jobs.Interfaces;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;

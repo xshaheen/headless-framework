@@ -3,8 +3,6 @@
 using System.Diagnostics.CodeAnalysis;
 using System.Linq.Expressions;
 using Headless.Checks;
-using Headless.Jobs.Entities;
-using Headless.Jobs.Enums;
 
 namespace Headless.Jobs;
 

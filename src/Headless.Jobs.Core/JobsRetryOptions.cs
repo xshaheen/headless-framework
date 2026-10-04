@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
-using Headless.Jobs.Enums;
-using Headless.Jobs.Exceptions;
 
 namespace Headless.Jobs;
 

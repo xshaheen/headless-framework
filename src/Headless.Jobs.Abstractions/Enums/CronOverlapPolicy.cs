@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Jobs.Enums;
+namespace Headless.Jobs;
 
 /// <summary>
 /// What a cron definition does when one of its occurrences becomes due while an earlier occurrence of the same

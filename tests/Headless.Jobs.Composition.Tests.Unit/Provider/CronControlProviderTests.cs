@@ -2,10 +2,7 @@
 
 using Headless.Abstractions;
 using Headless.Jobs;
-using Headless.Jobs.Entities;
-using Headless.Jobs.Enums;
 using Headless.Jobs.Internal;
-using Headless.Jobs.Models;
 using Headless.Jobs.Provider;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;

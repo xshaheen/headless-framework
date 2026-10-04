@@ -1,9 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Jobs.Base;
-using Headless.Jobs.Entities.BaseEntity;
-using Headless.Jobs.Models;
-
 namespace Headless.Jobs;
 
 /// <summary>Ordering constants for Jobs middleware. Lower values run first.</summary>

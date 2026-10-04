@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Jobs.Enums;
-
-namespace Headless.Jobs.Entities;
+namespace Headless.Jobs;
 
 /// <summary>
 /// Materialized execution row for a single occurrence of a recurring cron job. One row is created per

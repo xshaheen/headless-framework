@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Jobs.Interfaces;
+namespace Headless.Jobs;
 
 /// <summary>
 /// Supplies the current node's owner identity for stamping durable job rows and for logging/telemetry.

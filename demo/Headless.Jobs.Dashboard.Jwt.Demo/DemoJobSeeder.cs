@@ -1,6 +1,3 @@
-using Headless.Jobs.Entities;
-using Headless.Jobs.Interfaces.Managers;
-
 namespace Headless.Jobs.Dashboard.Jwt.Demo;
 
 /// <summary>

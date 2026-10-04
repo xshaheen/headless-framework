@@ -2,12 +2,11 @@
 
 using Headless.Abstractions;
 using Headless.Checks;
-using Headless.Jobs.Models;
 using Headless.MultiTenancy;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Jobs.MultiTenancy;
+namespace Headless.Jobs;
 
 /// <summary>
 /// Restores the job's persisted tenant via <see cref="ICurrentTenant.Change"/> around every handler attempt whenever

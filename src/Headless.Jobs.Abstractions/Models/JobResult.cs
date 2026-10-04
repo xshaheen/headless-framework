@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Jobs.Models;
+namespace Headless.Jobs;
 
 /// <summary>
 /// Discriminated result returned by <c>ITimeJobManager</c> and <c>ICronJobManager</c> update and delete

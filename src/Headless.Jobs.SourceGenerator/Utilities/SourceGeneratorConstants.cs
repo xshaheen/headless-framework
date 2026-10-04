@@ -7,9 +7,9 @@ namespace Headless.Jobs.SourceGenerator.Utilities;
 /// </summary>
 internal static class SourceGeneratorConstants
 {
-    public const string JobAttributeMetadataName = "Headless.Jobs.Base.JobAttribute";
-    public const string JobInterfaceMetadataName = "Headless.Jobs.Base.IJob";
-    public const string GenericJobInterfaceMetadataName = "Headless.Jobs.Base.IJob`1";
+    public const string JobAttributeMetadataName = "Headless.Jobs.JobAttribute";
+    public const string JobInterfaceMetadataName = "Headless.Jobs.IJob";
+    public const string GenericJobInterfaceMetadataName = "Headless.Jobs.IJob`1";
     public const string ScheduleMiddlewareAttributeMetadataName = "Headless.Jobs.JobScheduleMiddlewareAttribute`1";
     public const string ExecuteMiddlewareAttributeMetadataName = "Headless.Jobs.JobExecuteMiddlewareAttribute`1";
     public const string DescriptorMetadataAttributeName = "Headless.Jobs.JobFunctionDescriptorMetadataAttribute";

@@ -3,7 +3,6 @@
 using System.Diagnostics.CodeAnalysis;
 using Headless.Abstractions;
 using Headless.Checks;
-using Headless.Jobs.Models;
 using Headless.MultiTenancy;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;

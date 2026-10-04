@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Jobs.Models;
+using Headless.Jobs;
 
 namespace Microsoft.EntityFrameworkCore;
 

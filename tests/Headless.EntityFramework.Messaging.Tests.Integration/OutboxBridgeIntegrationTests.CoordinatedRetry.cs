@@ -1,8 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Domain;
-using Headless.Jobs.Interfaces;
-using Headless.Jobs.Models;
+using Headless.Jobs;
 using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;

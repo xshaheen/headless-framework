@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Linq.Expressions;
-using Headless.Jobs.Entities;
-using Headless.Jobs.Enums;
 
 namespace Headless.Jobs;
 

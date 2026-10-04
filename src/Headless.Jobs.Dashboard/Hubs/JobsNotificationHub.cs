@@ -4,7 +4,7 @@ using Headless.Dashboard.Authentication;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging;
 
-namespace Headless.Jobs.Hubs;
+namespace Headless.Jobs;
 
 public class JobsNotificationHub(
     ILogger<JobsNotificationHub> logger,

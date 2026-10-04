@@ -1,13 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Jobs;
-using Headless.Jobs.Entities;
-using Headless.Jobs.Enums;
-using Headless.Jobs.Exceptions;
-using Headless.Jobs.Interfaces;
-using Headless.Jobs.Interfaces.Managers;
 using Headless.Jobs.Internal;
-using Headless.Jobs.Models;
 using Headless.Reliability;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
@@ -713,9 +707,9 @@ public sealed class JobSchedulingDefaultsTests : TestBase
 
     private sealed record Request;
 
-    private sealed class RequestlessJob : Headless.Jobs.Base.IJob
+    private sealed class RequestlessJob : Headless.Jobs.IJob
     {
-        public ValueTask ExecuteAsync(Headless.Jobs.Base.JobContext context, CancellationToken cancellationToken) =>
+        public ValueTask ExecuteAsync(Headless.Jobs.JobContext context, CancellationToken cancellationToken) =>
             ValueTask.CompletedTask;
     }
 }

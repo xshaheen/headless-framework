@@ -1,9 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Jobs.Entities;
-using Headless.Jobs.Enums;
-
-namespace Headless.Jobs.Models;
+namespace Headless.Jobs;
 
 /// <summary>
 /// Applies a recovery policy to a cron definition whose watermark fell behind: resolves whatever occurrences already

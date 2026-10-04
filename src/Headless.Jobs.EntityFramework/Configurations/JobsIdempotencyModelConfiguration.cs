@@ -1,15 +1,13 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Hosting.Initialization;
-using Headless.Jobs.Entities;
-using Headless.Jobs.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Microsoft.EntityFrameworkCore.Storage;
 
-namespace Headless.Jobs.Configurations;
+namespace Headless.Jobs;
 
 // Model mapping for the Jobs-owned idempotency reservation table. Uniqueness is the composite primary key on
 // (ScopeKey, Function, ContractVersion, IdempotencyKey) — never a nullable-tenant unique index, whose semantics

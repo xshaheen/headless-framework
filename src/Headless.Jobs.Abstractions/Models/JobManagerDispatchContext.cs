@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Jobs.Enums;
-
-namespace Headless.Jobs.Models;
+namespace Headless.Jobs;
 
 /// <summary>
 /// SPI projection of a cron job definition that the manager dispatches to a persistence provider to generate and

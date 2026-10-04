@@ -2,10 +2,9 @@
 
 using System.Reflection;
 using Headless.Coordination;
+using Headless.Jobs;
 using Headless.Jobs.Coordination;
-using Headless.Jobs.Entities;
 using Headless.Jobs.Infrastructure.Dashboard;
-using Headless.Jobs.Interfaces;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Tests.Dashboard;

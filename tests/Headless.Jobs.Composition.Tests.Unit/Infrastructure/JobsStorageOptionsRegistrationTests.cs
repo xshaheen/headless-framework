@@ -2,7 +2,6 @@
 
 using Headless.Coordination;
 using Headless.Jobs;
-using Headless.Jobs.Entities;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;

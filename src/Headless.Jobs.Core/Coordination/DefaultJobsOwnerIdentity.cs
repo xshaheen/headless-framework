@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Jobs.Interfaces;
-
 namespace Headless.Jobs.Coordination;
 
 /// <summary>

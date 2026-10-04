@@ -3,8 +3,6 @@
 using Headless.Coordination;
 using Headless.Jobs;
 using Headless.Jobs.Coordination;
-using Headless.Jobs.Entities;
-using Headless.Jobs.Interfaces;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests.Coordination;
