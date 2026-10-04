@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net.Http.Json;
-using Headless.Abstractions;
 using Headless.Api;
 using Headless.Api.ServiceDefaults;
 using Headless.Caching;

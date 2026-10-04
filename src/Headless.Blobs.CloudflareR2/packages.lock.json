@@ -237,7 +237,6 @@
           "AWSSDK.S3": "[4.0.103.1, )",
           "Headless.Blobs.Abstractions": "[1.0.0, )",
           "Headless.Blobs.Core": "[1.0.0, )",
-          "Headless.Core": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )"
         }
       },
@@ -252,15 +251,6 @@
       },
       "headless.checks": {
         "type": "Project"
-      },
-      "headless.core": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.Extensions": "[1.0.0, )",
-          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
-          "Microsoft.Extensions.Logging.Abstractions": "[10.0.12, )"
-        }
       },
       "headless.extensions": {
         "type": "Project",
@@ -286,6 +276,8 @@
       "headless.hosting": {
         "type": "Project",
         "dependencies": {
+          "Headless.Checks": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
           "Headless.FluentValidation": "[1.0.0, )",
           "Microsoft.Extensions.Configuration.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",

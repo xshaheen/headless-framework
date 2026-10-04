@@ -1,9 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Security.Claims;
-using Headless.Abstractions;
 using Headless.Api;
 using Headless.Constants;
+using Headless.Context;
 using Headless.Primitives;
 using Headless.Testing.Tests;
 

@@ -320,7 +320,8 @@
         <Project Path="src\Headless.Http.Resilience\Headless.Http.Resilience.csproj" />
         <Project Path="src\Headless.Primitives\Headless.Primitives.csproj" />
         <Project Path="src\Headless.PhoneNumbers\Headless.PhoneNumbers.csproj" />
-        <Project Path="src\Headless.Core\Headless.Core.csproj" />
+        <Project Path="src\Headless.Context\Headless.Context.csproj" />
+        <Project Path="src\Headless.Context.Abstractions\Headless.Context.Abstractions.csproj" />
         <Project Path="src/Headless.FluentValidation/Headless.FluentValidation.csproj" />
         <Project Path="src\Headless.Checks\Headless.Checks.csproj" />
         <Project Path="src\Headless.Domain.LocalEventBus\Headless.Domain.LocalEventBus.csproj" />
@@ -338,7 +339,7 @@
         <Project Path="tests/Headless.FluentValidation.Tests.Unit/Headless.FluentValidation.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Http.Resilience.Tests.Unit\Headless.Http.Resilience.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Checks.Tests.Unit\Headless.Checks.Tests.Unit.csproj" />
-        <Project Path="tests\Headless.Core.Tests.Unit\Headless.Core.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Context.Tests.Unit\Headless.Context.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Domain.LocalEventBus.Tests.Unit\Headless.Domain.LocalEventBus.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Domain.Tests.Unit\Headless.Domain.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Extensions.Tests.Unit\Headless.Extensions.Tests.Unit.csproj" />

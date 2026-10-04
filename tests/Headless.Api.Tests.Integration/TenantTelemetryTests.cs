@@ -2,7 +2,6 @@
 
 using System.Collections.Concurrent;
 using System.Diagnostics;
-using Headless.Abstractions;
 using Headless.Api;
 using Headless.Api.ServiceDefaults;
 using Headless.Constants;

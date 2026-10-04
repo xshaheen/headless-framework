@@ -4,7 +4,7 @@ using System.Collections.Concurrent;
 using System.Data;
 using System.Data.Common;
 using System.Text.RegularExpressions;
-using Headless.Abstractions;
+using Headless.Context;
 using Headless.Coordination;
 using Headless.Hosting;
 using Headless.Jobs;

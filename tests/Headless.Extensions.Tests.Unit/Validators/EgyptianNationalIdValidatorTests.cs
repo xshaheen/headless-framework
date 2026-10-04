@@ -16,6 +16,7 @@ public sealed class EgyptianNationalIdValidatorTests
     [InlineData("30001012234567")] // 2000-01-01, Alexandria (02)
     [InlineData("29512311112345")] // 1995-12-31, Damietta (11)
     [InlineData("30206152112345")] // 2002-06-15, Giza (21)
+    [InlineData("29901010123456")] // 1999-01-01, Cairo (01)
     public void should_return_true_for_valid_id(string nationalId)
     {
         var result = EgyptianNationalIdValidator.IsValid(nationalId);
@@ -172,5 +173,21 @@ public sealed class EgyptianNationalIdValidatorTests
         map["11"].Should().Be("دمياط");
         map["21"].Should().Be("الجيزة");
         map["88"].Should().Be("N/A");
+    }
+
+    [Theory]
+    [InlineData("1234567890123")] // Less than 14 digits
+    [InlineData("123456789012345")] // More than 14 digits
+    [InlineData("1234567890123a")] // Contains non-digit character
+    [InlineData("00000000000000")] // Invalid date
+    [InlineData("30000000000000")] // Invalid century indicator
+    [InlineData("29912319945678")] // Invalid governorate code
+    public void should_return_false_for_malformed_input(string nationalId)
+    {
+        // given, when
+        var result = EgyptianNationalIdValidator.IsValid(nationalId);
+
+        // then
+        result.Should().BeFalse();
     }
 }

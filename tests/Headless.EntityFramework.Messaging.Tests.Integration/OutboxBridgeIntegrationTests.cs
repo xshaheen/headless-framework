@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
-using Headless.Abstractions;
 using Headless.Domain;
 using Headless.EntityFramework;
 using Headless.Hosting.Initialization.Schema;

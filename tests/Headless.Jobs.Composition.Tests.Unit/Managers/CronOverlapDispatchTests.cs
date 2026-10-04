@@ -3,6 +3,7 @@
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using Headless.Abstractions;
+using Headless.Hosting;
 using Headless.Jobs;
 using Headless.Jobs.Instrumentation;
 using Headless.Jobs.Managers;

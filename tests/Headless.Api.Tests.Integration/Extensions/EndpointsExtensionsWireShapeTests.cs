@@ -4,6 +4,7 @@ using System.Net;
 using Headless.Abstractions;
 using Headless.Api;
 using Headless.Constants;
+using Headless.Context;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;

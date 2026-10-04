@@ -17,7 +17,7 @@ There is exactly one package in this domain. No provider choice is required.
 
 - **Register behaviors with the canonical setup extensions, not manually:** use `services.AddMediatorValidationRequestBehavior()` and `services.AddMediatorLoggingBehaviors()`. Both extensions are idempotent (`TryAddEnumerable`).
 - **Register `IValidator<T>` implementations separately.** The validation pre-processor picks up every `IValidator<TMessage>` from DI; it does not self-register validators.
-- **Register `ICurrentUser` before calling any logging behavior extension.** All three logging behaviors inject `ICurrentUser` from `Headless.Core`. For background/worker hosts where no real user exists, register `NullCurrentUser`.
+- **Register `ICurrentUser` before calling any logging behavior extension.** All three logging behaviors inject `ICurrentUser` from `Headless.Context.Abstractions`. For background/worker hosts where no real user exists, register `NullCurrentUser`.
 - **Do NOT put authentication or authorization in a pipeline behavior.** Auth belongs at `app.UseAuthentication()` + `app.UseAuthorization()` + endpoint-level `[Authorize]` / `RequireAuthorization()`. A Mediator-side auth check runs after model binding (abusive payloads already deserialized), fires on every internal `Send()` (handler-to-handler composition produces spurious 401/403), and requires `IHttpContextAccessor` (breaks host-agnosticism).
 - **Do NOT put tenancy enforcement in a pipeline behavior.** Use `[RequireTenant]` / `.RequireTenant()` endpoint conventions and `TenantRequirement` authorization policy from `Headless.Api.Core`. For worker/console/consumer paths, set tenant scope explicitly with `currentTenant.Change(tenantId)` around the `mediator.Send()` call.
 - **Do NOT implement an idempotency pipeline behavior.** The Mediator abstraction only sees the typed response object — it cannot cache the original HTTP status code, response headers, or byte body. It also fires on every internal `Send()` producing false positives on handler composition. Use `Headless.Api.Idempotency` (`services.AddIdempotency()` + `app.UseIdempotency()`) instead. A handler that must fence its own writes against the admission reads `HttpContext.GetIdempotencyContext()` (`IIdempotencyContext`) and calls `unit.Idempotency.FenceAsync(context.Admission)` inside its own unit of work — never as a pipeline behavior.
@@ -94,7 +94,7 @@ The four concerns commonly proposed as pipeline behaviors that this framework re
 
 ### Design constraints
 
-**`ICurrentUser` instead of `IHttpContextAccessor`** — all logging behaviors resolve the current user through `ICurrentUser` from `Headless.Core` rather than reading `HttpContext`. This preserves host-agnosticism: the same handler and behavior registrations run identically from a web host and a worker service. Callers that have no real user (background processes) should register `NullCurrentUser`.
+**`ICurrentUser` instead of `IHttpContextAccessor`** — all logging behaviors resolve the current user through `ICurrentUser` from `Headless.Context.Abstractions` rather than reading `HttpContext`. This preserves host-agnosticism: the same handler and behavior registrations run identically from a web host and a worker service. Callers that have no real user (background processes) should register `NullCurrentUser`.
 
 **`TryAddEnumerable` for idempotency** — all setup extensions use `TryAddEnumerable` to register the open-generic `IPipelineBehavior<,>` descriptor. Calling the same extension twice does not produce duplicate behaviors in the pipeline.
 
@@ -180,7 +180,7 @@ builder.Services.AddMediatorSlowRequestsLoggingBehaviors();
 For worker/console hosts where no real user exists, register `NullCurrentUser` before the logging behaviors:
 
 ```csharp
-using Headless.Abstractions;
+using Headless.Context;
 
 builder.Services.AddSingleton<ICurrentUser, NullCurrentUser>();
 builder.Services.AddMediatorLoggingBehaviors();

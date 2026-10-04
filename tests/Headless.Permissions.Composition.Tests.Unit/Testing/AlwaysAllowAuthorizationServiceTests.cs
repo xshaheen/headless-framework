@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Security.Claims;
-using Headless.Abstractions;
+using Headless.Context;
 using Headless.Permissions.Testing;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Authorization;

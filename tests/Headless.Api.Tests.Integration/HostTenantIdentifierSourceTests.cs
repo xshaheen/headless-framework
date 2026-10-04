@@ -4,7 +4,6 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using Headless.Abstractions;
 using Headless.Api;
 using Headless.Api.ServiceDefaults;
 using Headless.Caching;

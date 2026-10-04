@@ -1,10 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Globalization;
-using Headless.Abstractions;
 using Headless.Checks;
 using Headless.Coordination;
 using Headless.DistributedLocks;
+using Headless.Hosting;
 using Headless.Messaging.Coordination;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Processor;

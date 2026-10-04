@@ -43,7 +43,8 @@ Headless.Coordination.PostgreSql
 Headless.Coordination.Redis
 Headless.Coordination.SqlServer
 Headless.Coordination.Sqlite
-Headless.Core
+Headless.Context
+Headless.Context.Abstractions
 Headless.Couchbase
 Headless.Dashboard.Authentication
 Headless.DistributedLocks.Abstractions

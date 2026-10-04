@@ -119,6 +119,7 @@ Security contracts and option models. There is no implementation and no DI coupl
 
 ### API and behavior
 
+- `IPasswordGenerator` / `GeneratePasswordOptions` — cryptographically secure password generation driven by a caller-supplied policy (length, required character sets, `RequiredUniqueChars`). `PasswordGenerator` (in `Headless.Security`) uses `RandomNumberGenerator` for all selection and shuffling
 - **`IStringEncryptionService`**: an AES-GCM authenticated encryption contract.
     - `Encrypt(string? plainText, string? passPhrase = null, byte[]? salt = null) → string?` encrypts with the configured default pass phrase and salt, or with an explicit override. It returns `null` when `plainText` is `null`. Every call uses a fresh random nonce.
     - `Decrypt(string? cipherText, string? passPhrase = null, byte[]? salt = null) → string?` returns `null` for `null` or empty input. It throws `CryptographicException` when the cipher text is too short, has been tampered with, or the pass phrase or salt does not match.

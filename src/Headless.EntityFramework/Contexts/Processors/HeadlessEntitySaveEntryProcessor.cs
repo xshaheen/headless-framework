@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Abstractions;
 using Headless.Domain;
 using Headless.EntityFramework.Contexts;
 using Headless.MultiTenancy;

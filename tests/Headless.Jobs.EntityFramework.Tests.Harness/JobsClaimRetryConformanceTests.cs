@@ -2,7 +2,7 @@
 
 using System.Collections.Concurrent;
 using System.Data.Common;
-using Headless.Abstractions;
+using Headless.Context;
 using Headless.Coordination;
 using Headless.Jobs;
 using Headless.Testing.Tests;

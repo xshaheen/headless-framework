@@ -2,7 +2,6 @@
 
 using System.Collections;
 using System.Diagnostics;
-using Headless.Abstractions;
 using Headless.MultiTenancy;
 using OpenTelemetry;
 using OpenTelemetry.Logs;

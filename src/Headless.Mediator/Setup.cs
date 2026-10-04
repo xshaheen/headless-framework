@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Context;
 using Headless.Mediator.Behaviors;
 using Mediator;
 using Microsoft.Extensions.DependencyInjection;
@@ -41,7 +42,7 @@ public static class SetupMediator
 
         /// <summary>Adds the standard Mediator request, response, and slow-request logging behaviors.</summary>
         /// <remarks>
-        /// Consumers must register <see cref="Headless.Abstractions.ICurrentUser" /> separately.
+        /// Consumers must register <see cref="ICurrentUser" /> separately.
         /// Registration is idempotent.
         /// </remarks>
         /// <returns>The same <see cref="IServiceCollection" /> instance.</returns>
@@ -57,7 +58,7 @@ public static class SetupMediator
 
         /// <summary>Adds the standard Mediator request, and response logging behaviors.</summary>
         /// <remarks>
-        /// Consumers must register <see cref="Headless.Abstractions.ICurrentUser" /> separately.
+        /// Consumers must register <see cref="ICurrentUser" /> separately.
         /// Registration is idempotent.
         /// </remarks>
         /// <returns>The same <see cref="IServiceCollection" /> instance.</returns>
@@ -80,7 +81,7 @@ public static class SetupMediator
 
         /// <summary>Adds the slow-request logging behaviors.</summary>
         /// <remarks>
-        /// Consumers must register <see cref="Headless.Abstractions.ICurrentUser" /> separately.
+        /// Consumers must register <see cref="ICurrentUser" /> separately.
         /// Registration is idempotent.
         /// </remarks>
         /// <returns>The same <see cref="IServiceCollection" /> instance.</returns>
