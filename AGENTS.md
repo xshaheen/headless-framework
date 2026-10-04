@@ -29,7 +29,7 @@ Relational storage features create their tables through one `SchemaRunner`, whic
 
 ## Build and test
 
-Use the `make` targets instead of raw `dotnet`. They pin configuration, results directories, and parallelism. `make help` lists every target. The rules below cover what `make help` does not say.
+Use the `make` targets instead of raw `dotnet`. They pin configuration, results directories, and parallelism. `make help` lists every target, `make doctor` checks the prerequisites with a fix for each, and `make check` runs the CI gates over the affected scope. The rules below cover what `make help` does not say.
 
 ### Work in the affected scope
 

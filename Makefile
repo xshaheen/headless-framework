@@ -152,15 +152,78 @@ help: ## Show available commands.
 	@printf "  make test-project TEST_PROJECT=tests/Headless.Api.Composition.Tests.Unit/Headless.Api.Composition.Tests.Unit.csproj\n"
 	@printf "  make test-class CLASS='*CultureHelperTests' TEST_PROJECT=tests/Headless.Extensions.Tests.Unit/Headless.Extensions.Tests.Unit.csproj\n"
 	@printf "  make verify-affected            # build + unit tests + analyzers for the change, with a proof bundle\n"
+	@printf "  make check                      # the CI gate over the affected scope: check-layering, format-check, verify-affected\n"
 	@printf "  make test-affected\n"
 	@printf "  make quality-analyzers-affected\n"
 	@printf "  make bench-compare BENCH_AREA=Caching BENCH_FILTER='*Memory*' BASE=origin/main\n"
 	@printf "  make coverage-json\n"
-	@printf "  make pack CONFIGURATION=Release\n\n"
+	@printf "  make pack CONFIGURATION=Release\n"
+	@printf "  make doctor JSON=1              # prerequisites per capability group as the project CLI contract report\n\n"
 	@printf "Scoping notes:\n"
 	@printf "  CONFIGURATION defaults to Release, matching CI; overriding it means a separate set of build outputs.\n"
 	@printf "  test-class/-method/-namespace/-trait/-query are solution-wide unless you add TEST_PROJECT=<csproj>.\n"
 	@printf "  build-fast/build-project-fast skip analyzers and MinVer: type-checking only, never a quality gate.\n\n"
+
+# doctor report (project CLI contract v1). stdin: one check per line, `group|component|check|status|reason|fix`
+# (status: ok fail missing gated unavailable). Prints a table, or the contract JSON when JSON=1, and exits
+# 4 when a tool is missing, 1 when a check failed, else 0. One awk pass sees every row, which is what lets
+# it derive the six group statuses and the typed exit code; independent `cmd && echo ok` recipe lines
+# have no step that sees every state and exit 0 whatever they find.
+define doctor_report
+awk -F'|' -v json="$(JSON)" ' \
+function q(s) { gsub(/\\/, "\\\\", s); gsub(/"/, "\\\"", s); return "\"" s "\"" } \
+BEGIN { n = split("run data quality observe debug invariants", G, " ") } \
+{ c++; g[c] = $$1; comp[c] = $$2; chk[c] = $$3; st[c] = $$4; why[c] = $$5; fix[c] = $$6; \
+  if ($$4 == "missing") code = 4; else if ($$4 == "fail" && code != 4) code = 1; \
+  if ($$4 == "fail" || $$4 == "missing" || $$4 == "unavailable") { if (!($$1 in bad)) bad[$$1] = $$3 ": " $$5 } \
+  else if ($$4 == "gated") { if (!($$1 in gate)) gate[$$1] = $$3 ": " $$5 } else if ($$4 == "ok") seen[$$1] = 1 } \
+END { for (i = 1; i <= n; i++) { grp = G[i]; \
+    if (grp in bad) { gs[grp] = "unavailable"; gr[grp] = bad[grp] } \
+    else if (grp in gate) { gs[grp] = "gated"; gr[grp] = gate[grp] } \
+    else if (grp in seen) { gs[grp] = "available"; gr[grp] = "" } \
+    else { gs[grp] = "unavailable"; gr[grp] = "no check declared for this group" } } \
+  if (json) { printf "{\"contract\": 1, \"ok\": %s, \"exit\": %d, \"groups\": {", (code ? "false" : "true"), code; \
+    for (i = 1; i <= n; i++) printf "%s%s: {\"status\": %s, \"reason\": %s}", (i > 1 ? ", " : ""), q(G[i]), q(gs[G[i]]), q(gr[G[i]]); \
+    printf "}, \"checks\": ["; \
+    for (i = 1; i <= c; i++) printf "%s{\"group\": %s, \"component\": %s, \"check\": %s, \"status\": %s, \"reason\": %s, \"fix\": %s}", \
+      (i > 1 ? ", " : ""), q(g[i]), q(comp[i]), q(chk[i]), q(st[i]), q(why[i]), q(fix[i]); \
+    print "]}" } \
+  else { for (i = 1; i <= c; i++) printf "%-11s %-10s %-12s %-16s %s%s\n", st[i], g[i], comp[i], chk[i], why[i], (fix[i] != "" ? "  -> " fix[i] : ""); \
+    for (i = 1; i <= n; i++) printf "group %-10s %s%s\n", G[i], gs[G[i]], (gr[G[i]] != "" ? ": " gr[G[i]] : "") } \
+  exit code }'
+endef
+
+# tool <group> <component> <tool> <fix>: ok with the tool's version line, else missing.
+define doctor_tool
+tool() { if command -v "$$3" >/dev/null 2>&1; then echo "$$1|$$2|$$3|ok|$$("$$3" --version 2>/dev/null | head -n 1 | tr -d '|')|"; else echo "$$1|$$2|$$3|missing|$$3 is not on PATH|$$4"; fi; }
+endef
+
+# This repository is a library: nothing for `make up` to start, so run and data report `library, no
+# runtime` (the phrase a caller matches to tell a library from a broken stack) and no up/ready/down/db-q
+# target exists. Docker gets no row on purpose: the integration suites are opt-in (CI runs none) and one
+# gated row would gate the whole quality group, which `make check` does not need; test-integration's help
+# line names the requirement. npm is probed by PATH only because a wrapper such as Socket's rejects
+# --version. Every probe is a PATH lookup, a --version, or a file test, so doctor answers in about a
+# second with no build, restore, or network call.
+.PHONY: doctor
+doctor: ## Check prerequisites per capability group with a fix for each; JSON=1 prints the project CLI contract report.
+	@{ $(doctor_tool); \
+	  if ! command -v $(DOTNET) >/dev/null 2>&1; then echo "quality|dotnet|sdk|missing|$(DOTNET) is not on PATH|https://dot.net"; \
+	  elif v="$$($(DOTNET) --version 2>/dev/null)"; then echo "quality|dotnet|sdk|ok|$$v|"; \
+	  else echo "quality|dotnet|sdk|fail|the SDK global.json pins is not installed|install the SDK global.json names: https://dot.net"; fi; \
+	  if [ -f "$(SOLUTION)" ]; then echo "quality|dotnet|solution|ok|$(SOLUTION)|"; else echo "quality|dotnet|solution|fail|$(SOLUTION) not found|make SOLUTION=<path>.slnx"; fi; \
+	  if v="$$($(DOTNET) csharpier --version 2>/dev/null)"; then echo "quality|dotnet|csharpier|ok|$$v|"; else echo "quality|dotnet|csharpier|fail|tool not restored (format, format-check, hooks need it)|make tools"; fi; \
+	  tool quality scripts $(PYTHON) 'brew install python3'; \
+	  if ! command -v node >/dev/null 2>&1; then echo "quality|dashboards|node|missing|node is not on PATH; the dashboard SPAs build with npm (Node 22+)|https://nodejs.org"; \
+	  else v="$$(node --version 2>/dev/null)"; major="$${v#v}"; major="$${major%%.*}"; \
+	    if [ "$${major:-0}" -ge 22 ]; then echo "quality|dashboards|node|ok|$$v|"; else echo "quality|dashboards|node|fail|$$v is below the Node 22 the dashboard SPAs need|https://nodejs.org"; fi; fi; \
+	  if command -v $(NPM) >/dev/null 2>&1; then echo "quality|dashboards|npm|ok|$$(command -v $(NPM))|"; else echo "quality|dashboards|npm|missing|$(NPM) is not on PATH|https://nodejs.org"; fi; \
+	  p="$$(git config core.hooksPath || true)"; p="$${p/#\~/$$HOME}"; \
+	  if [ "$$p" = .githooks ] || { [ -n "$$p" ] && grep -qs '\.githooks/' "$$p/pre-commit" "$$p/pre-push"; }; then echo "quality|git|hooks|ok|$$p runs .githooks|"; else echo "quality|git|hooks|fail|core.hooksPath does not run .githooks|make hooks"; fi; \
+	  if command -v $(PYTHON) >/dev/null 2>&1 && [ -f scripts/project-graph.py ]; then echo "invariants|layering|check-layering|ok|make check-layering|"; else echo "invariants|layering|check-layering|unavailable|needs $(PYTHON) and scripts/project-graph.py|brew install python3"; fi; \
+	  echo "run|runtime|library|unavailable|library, no runtime|"; \
+	  echo "data|runtime|library|unavailable|library, no runtime|"; \
+	} | $(doctor_report)
 
 .PHONY: bootstrap
 bootstrap: tools restore hooks ## Initialize a clone/worktree: restore tools, packages, and git hooks.
@@ -504,6 +567,21 @@ verify-affected: ## Build, unit-test (with coverage), and analyze the affected s
 	$(AFFECTED_ANALYZER_STAGE) \
 	$(PROOF) summarize --dir "$$run" > /dev/null || status=1; \
 	$(PROOF_REPORT) "$$run"; exit $$status
+
+# The CI gate (project CLI contract v1), over the affected scope. CI runs check-layering, format-check, a
+# clean rebuild with analyzers, quality-analyzers-affected, and the unit suite; verify-affected is the
+# build, analyzer, and unit stages of that for the projects this branch changed, which is what a local run
+# finishes in minutes (the whole-solution version is ci-build, far past ten minutes on ~430 projects).
+# The gates run one after another through a sub-make so a failed gate does not hide the next, and a dry
+# run still only prints because the sub-make inherits -n. The dashboard SPAs keep their own CI jobs
+# (npm ci, build, lint:check, test:unit per SPA) and stay out of the local gate.
+CHECK_GATES ?= check-layering format-check verify-affected
+
+.PHONY: check
+check: ## CI gate over the affected scope: check-layering, format-check, verify-affected; every gate runs, every failure is reported.
+	@failed=""; for gate in $(CHECK_GATES); do $(MAKE) $$gate || failed="$$failed $$gate"; done; \
+	if [ -n "$$failed" ]; then printf '[check] failed:%s\n' "$$failed" >&2; exit 1; fi; \
+	printf '[check] passed: %s\n' "$(CHECK_GATES)"
 
 .PHONY: check-layering
 check-layering: ## Check package dependency direction under src/ (Abstractions and Core packages).
