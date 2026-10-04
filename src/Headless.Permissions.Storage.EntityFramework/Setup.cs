@@ -2,7 +2,6 @@
 
 using FluentValidation;
 using Headless.Permissions.Internal;
-using Headless.Permissions.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;

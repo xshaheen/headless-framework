@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Features.Entities;
-using Headless.Features.Repositories;
 using Microsoft.EntityFrameworkCore;
 
 namespace Headless.Features;

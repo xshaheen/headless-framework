@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Hosting.Initialization;
-using Headless.Permissions.Definitions;
-using Headless.Permissions.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -10,7 +8,7 @@ using Microsoft.Extensions.Options;
 using Polly;
 using Polly.Retry;
 
-namespace Headless.Permissions.Seeders;
+namespace Headless.Permissions;
 
 /// <summary>
 /// Hosted service that synchronizes static permission definitions to the dynamic store on application startup.

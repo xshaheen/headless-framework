@@ -1,12 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
-using Headless.Permissions.Entities;
 using Headless.Primitives;
 using Headless.Serializer;
 using Headless.Sql;
 
-namespace Headless.Permissions.Repositories;
+namespace Headless.Permissions;
 
 /// <summary>
 /// The relational <see cref="IPermissionDefinitionRecordRepository"/>, written once over <see cref="ISqlDialect"/>.

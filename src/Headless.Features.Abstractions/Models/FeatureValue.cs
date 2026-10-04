@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Features.Models;
+namespace Headless.Features;
 
 /// <summary>Holds the resolved value of a feature along with the provider that supplied it.</summary>
 /// <param name="Name">The feature name.</param>

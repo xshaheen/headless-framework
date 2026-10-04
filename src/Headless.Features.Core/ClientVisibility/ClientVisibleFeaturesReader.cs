@@ -2,11 +2,9 @@
 
 using Headless.Abstractions;
 using Headless.Checks;
-using Headless.Features.Definitions;
-using Headless.Features.Values;
 using Headless.MultiTenancy;
 
-namespace Headless.Features.ClientVisibility;
+namespace Headless.Features;
 
 /// <summary>Default <see cref="IClientVisibleFeaturesReader"/>.</summary>
 internal sealed class ClientVisibleFeaturesReader(
@@ -41,7 +39,7 @@ internal sealed class ClientVisibleFeaturesReader(
 
 /// <summary>
 /// Reads the effective values of every feature whose definition is
-/// <see cref="Models.FeatureDefinition.IsVisibleToClients"/>, for example to include in the configuration an
+/// <see cref="FeatureDefinition.IsVisibleToClients"/>, for example to include in the configuration an
 /// application returns to its front end.
 /// </summary>
 [PublicAPI]

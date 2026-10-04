@@ -2,9 +2,7 @@
 
 using Headless.Abstractions;
 using Headless.Primitives;
-using Headless.Settings.Models;
-using Headless.Settings.ValueProviders;
-using Headless.Settings.Values;
+using Headless.Settings;
 using Headless.Testing.Tests;
 
 namespace Tests.ValueProviders;

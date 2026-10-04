@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Permissions.Entities;
+namespace Headless.Permissions;
 
 /// <summary>Column-length constraints for <see cref="PermissionGroupDefinitionRecord"/> enforced at both the entity
 /// constructor and the database schema level.</summary>

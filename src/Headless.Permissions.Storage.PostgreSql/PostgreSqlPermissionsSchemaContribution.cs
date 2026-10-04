@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Hosting.Initialization.Schema;
-using Headless.Permissions.Entities;
-using Headless.Permissions.Repositories;
 using Headless.Sql.PostgreSql;
 
 namespace Headless.Permissions.PostgreSql;

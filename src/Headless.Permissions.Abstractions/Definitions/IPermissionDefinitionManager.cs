@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Permissions.Models;
-
-namespace Headless.Permissions.Definitions;
+namespace Headless.Permissions;
 
 /// <summary>
 /// Read-only access to the merged set of permission definitions contributed by the registered

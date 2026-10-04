@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Permissions.Grants;
+namespace Headless.Permissions;
 
 /// <summary>
 /// Canonical names of the built-in grant providers. Use these constants as the <c>providerName</c> argument

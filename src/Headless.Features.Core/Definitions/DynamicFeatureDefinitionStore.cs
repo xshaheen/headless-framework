@@ -4,14 +4,11 @@ using System.Text.Json.Serialization.Metadata;
 using Headless.Abstractions;
 using Headless.Caching;
 using Headless.DistributedLocks;
-using Headless.Features.Entities;
-using Headless.Features.Models;
-using Headless.Features.Repositories;
 using Headless.Serializer.Modifiers;
 using Microsoft.Extensions.Options;
 using Nito.AsyncEx;
 
-namespace Headless.Features.Definitions;
+namespace Headless.Features;
 
 /// <summary>
 /// <see cref="IDynamicFeatureDefinitionStore"/> implementation that reads feature definitions from a database-backed

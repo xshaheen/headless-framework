@@ -276,7 +276,7 @@ Core implementation of dynamic settings management with hierarchical value provi
 - `services.AddSettingDefinitionProvider<T>()` — registers a custom `ISettingDefinitionProvider`
 - `services.AddSettingValueProvider<T>()` — registers a custom value provider (idempotent by type)
 - `services.AddSettingsSnapshot<T>(snapshot => ...)` — registers an `ISettingsSnapshot<T>` configured through `SettingsSnapshotBuilder<T>` (`Names`, `Bind`, `Backstop`, at most `MaxBackstop`), its startup load and backstop, and the every-instance change consumer when the host uses messaging. Registering the same `T` twice, or omitting `Names` or `Bind`, throws `InvalidOperationException`; see [Settings snapshot](#settings-snapshot)
-- `IClientVisibleSettingsReader` (`Headless.Settings.ClientVisibility`) — `GetAsync(PrincipalContext, …)` returns the value of every setting whose definition is `IsVisibleToClients`, keyed by name, through one `GetAllAsync(settingNames)` read, for example to include in the configuration an application returns to its front end. Headless ships no endpoint; see the client-config recipe in `docs/llms/permissions.md`
+- `IClientVisibleSettingsReader` (`Headless.Settings`) — `GetAsync(PrincipalContext, …)` returns the value of every setting whose definition is `IsVisibleToClients`, keyed by name, through one `GetAllAsync(settingNames)` read, for example to include in the configuration an application returns to its front end. Headless ships no endpoint; see the client-config recipe in `docs/llms/permissions.md`
 
 ### Design constraints
 

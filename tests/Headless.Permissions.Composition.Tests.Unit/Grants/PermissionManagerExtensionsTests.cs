@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Permissions.Grants;
+using Headless.Permissions;
 using Headless.Testing.Tests;
 
 namespace Tests.Grants;

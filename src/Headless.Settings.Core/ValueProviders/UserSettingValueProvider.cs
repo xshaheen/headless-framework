@@ -1,9 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Abstractions;
-using Headless.Settings.Values;
 
-namespace Headless.Settings.ValueProviders;
+namespace Headless.Settings;
 
 /// <summary>Provides setting values scoped to the current user.</summary>
 public sealed class UserSettingValueProvider(ISettingValueStore store, ICurrentUser user)

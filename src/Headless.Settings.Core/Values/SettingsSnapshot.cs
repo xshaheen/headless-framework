@@ -3,10 +3,9 @@
 using System.Collections.Frozen;
 using System.Diagnostics.CodeAnalysis;
 using Headless.Checks;
-using Headless.Settings.Definitions;
 using Microsoft.Extensions.Logging;
 
-namespace Headless.Settings.Values;
+namespace Headless.Settings;
 
 /// <summary>Why a snapshot is being reloaded; decides whether a reload that saw no change re-reads again.</summary>
 internal enum SettingsSnapshotReloadReason

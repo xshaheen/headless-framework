@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Features.Entities;
 using Headless.Features.Internal;
 using Headless.Hosting.Initialization;
 using Microsoft.EntityFrameworkCore;

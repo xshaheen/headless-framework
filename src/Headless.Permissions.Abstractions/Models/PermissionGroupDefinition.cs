@@ -3,7 +3,7 @@
 using Headless.Checks;
 using Headless.Primitives;
 
-namespace Headless.Permissions.Models;
+namespace Headless.Permissions;
 
 /// <summary>
 /// A named container that groups related permissions for display and organization. Permissions are added with

@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Settings.Values;
+using Headless.Settings;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
 using Tests.Fakes;

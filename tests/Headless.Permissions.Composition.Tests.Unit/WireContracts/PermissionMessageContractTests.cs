@@ -5,8 +5,6 @@ using Headless.Messaging.Configuration;
 using Headless.Messaging.Runtime;
 using Headless.Messaging.Testing;
 using Headless.Permissions;
-using Headless.Permissions.Events;
-using Headless.Permissions.Grants;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;

@@ -2,9 +2,8 @@
 
 using Headless.Abstractions;
 using Headless.MultiTenancy;
-using Headless.Settings.Values;
 
-namespace Headless.Settings.ValueProviders;
+namespace Headless.Settings;
 
 /// <summary>Provides setting values scoped to the current tenant.</summary>
 public sealed class TenantSettingValueProvider(ISettingValueStore store, ICurrentTenant tenant)

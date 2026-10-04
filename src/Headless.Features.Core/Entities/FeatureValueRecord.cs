@@ -3,7 +3,7 @@
 using Headless.Checks;
 using Headless.Domain;
 
-namespace Headless.Features.Entities;
+namespace Headless.Features;
 
 /// <summary>Persistence record for a stored feature value, scoped to a specific provider and optional provider key.</summary>
 /// <remarks>

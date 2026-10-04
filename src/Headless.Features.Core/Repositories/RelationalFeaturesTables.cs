@@ -2,7 +2,7 @@
 
 using Headless.Sql;
 
-namespace Headless.Features.Repositories;
+namespace Headless.Features;
 
 /// <summary>
 /// The features tables' names in one dialect's convention, shared by the relational repositories and each

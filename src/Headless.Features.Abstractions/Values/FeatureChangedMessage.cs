@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Features.Values;
+namespace Headless.Features;
 
 /// <summary>
 /// Message published over <c>IBus</c> by <c>FeatureManager</c> after a write, so peer instances holding a

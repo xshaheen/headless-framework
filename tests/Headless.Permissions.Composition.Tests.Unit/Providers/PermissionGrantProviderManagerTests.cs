@@ -2,9 +2,7 @@
 
 using Headless.Abstractions;
 using Headless.MultiTenancy;
-using Headless.Permissions.GrantProviders;
-using Headless.Permissions.Grants;
-using Headless.Permissions.Models;
+using Headless.Permissions;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;

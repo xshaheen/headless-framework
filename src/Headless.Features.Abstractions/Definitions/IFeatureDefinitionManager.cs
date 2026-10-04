@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Features.Models;
-
-namespace Headless.Features.Definitions;
+namespace Headless.Features;
 
 /// <summary>Manages the set of all registered feature definitions.</summary>
 /// <remarks>

@@ -3,13 +3,9 @@
 using Headless.Abstractions;
 using Headless.Caching;
 using Headless.Checks;
-using Headless.Settings.Definitions;
-using Headless.Settings.Entities;
-using Headless.Settings.Models;
-using Headless.Settings.Repositories;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Settings.Values;
+namespace Headless.Settings;
 
 /// <summary>Default <see cref="ISettingValueStore"/> implementation that reads from and writes to the repository, with read-through caching via <see cref="ICache{T}"/>.</summary>
 public sealed class SettingValueStore(

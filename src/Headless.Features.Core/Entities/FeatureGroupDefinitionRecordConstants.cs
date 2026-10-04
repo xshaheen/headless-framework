@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Features.Entities;
+namespace Headless.Features;
 
 /// <summary>Column-length limits for <see cref="FeatureGroupDefinitionRecord"/> fields.</summary>
 public static class FeatureGroupDefinitionRecordConstants

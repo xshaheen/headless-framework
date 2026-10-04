@@ -2,10 +2,8 @@
 
 using Headless.Abstractions;
 using Headless.MultiTenancy;
-using Headless.Permissions.Grants;
-using Headless.Permissions.Models;
 
-namespace Headless.Permissions.GrantProviders;
+namespace Headless.Permissions;
 
 /// <summary>
 /// Base class for grant providers that delegate storage to <see cref="IPermissionGrantStore"/>.

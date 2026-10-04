@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Features.Models;
-
-namespace Headless.Features.Values;
+namespace Headless.Features;
 
 /// <summary>Extension members on <see cref="IFeatureManager"/> scoped to the tenant provider.</summary>
 [PublicAPI]

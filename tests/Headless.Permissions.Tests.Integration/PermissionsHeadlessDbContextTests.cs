@@ -4,8 +4,6 @@ using Headless.EntityFramework;
 using Headless.Hosting.Initialization;
 using Headless.MultiTenancy;
 using Headless.Permissions;
-using Headless.Permissions.Entities;
-using Headless.Permissions.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;

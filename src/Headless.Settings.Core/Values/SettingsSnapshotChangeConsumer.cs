@@ -3,7 +3,7 @@
 using Headless.Checks;
 using Headless.Messaging;
 
-namespace Headless.Settings.Values;
+namespace Headless.Settings;
 
 /// <summary>
 /// Reloads the settings snapshots a <see cref="SettingChangedMessage"/> concerns. One consumer serves every snapshot the

@@ -1,10 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Features.Models;
+namespace Headless.Features;
 
 /// <summary>
 /// Provides read/write access to the feature group registry during the definition phase.
-/// Passed to each <see cref="Headless.Features.Definitions.IFeatureDefinitionProvider"/> so that providers can
+/// Passed to each <see cref="Headless.Features.IFeatureDefinitionProvider"/> so that providers can
 /// add, look up, or remove feature groups.
 /// </summary>
 public interface IFeatureDefinitionContext

@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Settings.Models;
-
-namespace Headless.Settings.ValueProviders;
+namespace Headless.Settings;
 
 /// <summary>Provides read and write access to setting values from a named source.</summary>
 public interface ISettingValueProvider : ISettingValueReadProvider
