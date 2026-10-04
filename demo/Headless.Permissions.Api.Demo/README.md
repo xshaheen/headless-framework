@@ -415,7 +415,7 @@ app.MapPost("/api/permissions/grants", async (
 
 ## References
 
-- IPermissionManager: `src/Headless.Permissions.Abstractions/Grants/IPermissionManager.cs`
-- IPermissionDefinitionManager: `src/Headless.Permissions.Abstractions/Definitions/IPermissionDefinitionManager.cs`
+- IPermissionManager: `src/Headless.Permissions.Abstractions/IPermissionManager.cs`
+- IPermissionDefinitionManager: `src/Headless.Permissions.Abstractions/IPermissionDefinitionManager.cs`
 - Minimal API docs: https://learn.microsoft.com/en-us/aspnet/core/fundamentals/minimal-apis
 - ASP.NET Core Model Validation: https://learn.microsoft.com/en-us/aspnet/core/mvc/models/validation
