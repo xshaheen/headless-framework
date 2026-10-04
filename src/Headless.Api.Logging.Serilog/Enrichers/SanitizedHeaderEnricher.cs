@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Http;
 using Serilog.Core;
 using Serilog.Events;
 
-namespace Headless.Logging.Enrichers;
+namespace Headless.Logging;
 
 /// <summary>
 /// Enricher that adds sanitized HTTP request headers to log events.
