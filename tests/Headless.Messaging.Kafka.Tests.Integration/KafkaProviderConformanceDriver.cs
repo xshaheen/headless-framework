@@ -13,12 +13,11 @@ internal sealed class KafkaProviderConformanceDriver(KafkaFixture fixture) : Tra
 
     public override bool SupportsRoutingAffinity => true;
 
-    public override void ConfigureRoutingAffinityTransport(
-        Headless.Messaging.Configuration.MessagingSetupBuilder setup
-    ) => setup.UseKafka(fixture.ConnectionString);
+    public override void ConfigureRoutingAffinityTransport(Headless.Messaging.MessagingSetupBuilder setup) =>
+        setup.UseKafka(fixture.ConnectionString);
 
     // The same transport a consuming host uses, so the startup-rejection proof runs against the real provider wiring.
-    public override void ConfigureRequestReplyTransport(Headless.Messaging.Configuration.MessagingSetupBuilder setup) =>
+    public override void ConfigureRequestReplyTransport(Headless.Messaging.MessagingSetupBuilder setup) =>
         ConfigureRoutingAffinityTransport(setup);
 
     public override void AssertNativeRoutingAffinity(TransportConformanceDelivery delivery, string expectedKey)

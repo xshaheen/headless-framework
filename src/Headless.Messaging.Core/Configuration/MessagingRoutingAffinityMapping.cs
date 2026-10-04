@@ -2,7 +2,7 @@
 
 using Headless.Checks;
 
-namespace Headless.Messaging.Configuration;
+namespace Headless.Messaging;
 
 /// <summary>Immutable native key mapping for a locally verified destination configuration.</summary>
 /// <remarks>Affinity requires stable broker topology. It does not promise ordering or handler exclusivity.</remarks>

@@ -2,7 +2,6 @@
 
 using Headless.Messaging;
 using Headless.Messaging.Aws;
-using Headless.Messaging.Configuration;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;

@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Messaging.Runtime;
+namespace Headless.Messaging;
 
 /// <summary>
 /// A background processing unit that runs for the lifetime of the messaging host — for example the

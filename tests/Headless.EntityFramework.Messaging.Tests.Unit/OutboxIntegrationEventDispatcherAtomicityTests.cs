@@ -3,8 +3,6 @@
 using Headless.Domain;
 using Headless.EntityFramework;
 using Headless.Messaging;
-using Headless.Messaging.Messages;
-using Headless.Messaging.Monitoring;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Testing;
 using Headless.Testing.Tests;

@@ -6,7 +6,6 @@ using Azure.Messaging.ServiceBus;
 using Azure.Messaging.ServiceBus.Administration;
 using Headless.Messaging;
 using Headless.Messaging.AzureServiceBus;
-using Headless.Messaging.Configuration;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;

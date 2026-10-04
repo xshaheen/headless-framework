@@ -2,7 +2,6 @@
 
 using System.Xml.Linq;
 using Headless.Messaging;
-using Headless.Messaging.Configuration;
 using Headless.Messaging.InMemory;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;

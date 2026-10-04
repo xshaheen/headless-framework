@@ -3,7 +3,7 @@
 using System.Globalization;
 using Headless.Checks;
 
-namespace Headless.Messaging.Registration;
+namespace Headless.Messaging;
 
 /// <summary>
 /// Collects one <c>Message&lt;T&gt;</c> declaration until its contribution completes, then freezes it into an immutable

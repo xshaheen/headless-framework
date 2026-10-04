@@ -1,12 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
-using Headless.Messaging.Messages;
 using Headless.Messaging.Retry;
 using Polly;
 using Polly.Retry;
 
-namespace Headless.Messaging.Configuration;
+namespace Headless.Messaging;
 
 /// <summary>
 /// Configures publish retries, the dispatch lease and grace shared by publishing and consuming, and the

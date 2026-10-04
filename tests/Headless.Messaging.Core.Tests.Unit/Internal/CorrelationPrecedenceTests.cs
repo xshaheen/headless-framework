@@ -2,9 +2,7 @@
 
 using Headless.Abstractions;
 using Headless.Messaging;
-using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
-using Headless.Messaging.Registration;
 using Headless.MultiTenancy;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Options;

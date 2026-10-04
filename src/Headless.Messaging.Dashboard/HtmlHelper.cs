@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Messaging.Runtime;
-
 namespace Headless.Messaging.Dashboard;
 
 internal static class HtmlHelper

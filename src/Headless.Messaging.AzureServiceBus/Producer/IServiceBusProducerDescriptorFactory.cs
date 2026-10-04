@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Messaging.AzureServiceBus.Producer;
+namespace Headless.Messaging.AzureServiceBus;
 
 /// <summary>
 /// Resolves the <see cref="IServiceBusProducerDescriptor"/> to use for a given outbound message.

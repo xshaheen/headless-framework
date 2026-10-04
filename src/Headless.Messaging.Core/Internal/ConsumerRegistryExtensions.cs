@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Messaging.Registration;
-
 namespace Headless.Messaging.Internal;
 
 internal static class ConsumerRegistryExtensions

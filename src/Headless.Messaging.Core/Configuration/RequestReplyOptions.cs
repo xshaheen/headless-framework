@@ -3,7 +3,7 @@
 using System.Globalization;
 using FluentValidation;
 
-namespace Headless.Messaging.Configuration;
+namespace Headless.Messaging;
 
 /// <summary>Configures request/reply on the Queue lane for this host.</summary>
 /// <remarks>

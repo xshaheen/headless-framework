@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
-using Headless.Messaging.Messages;
+using Headless.Messaging;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 

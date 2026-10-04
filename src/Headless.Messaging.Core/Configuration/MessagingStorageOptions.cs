@@ -2,7 +2,7 @@
 
 using Headless.Hosting;
 
-namespace Headless.Messaging.Configuration;
+namespace Headless.Messaging;
 
 /// <summary>
 /// Storage-layer configuration shared by every messaging database provider. Messaging owns the

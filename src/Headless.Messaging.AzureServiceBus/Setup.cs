@@ -2,7 +2,6 @@
 
 using Headless.Checks;
 using Headless.Messaging.AzureServiceBus;
-using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Configuration;

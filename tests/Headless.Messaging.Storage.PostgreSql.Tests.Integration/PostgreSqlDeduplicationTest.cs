@@ -1,10 +1,7 @@
 using Headless.Abstractions;
 using Headless.Coordination;
 using Headless.Messaging;
-using Headless.Messaging.Configuration;
-using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
-using Headless.Messaging.Serialization;
 using Headless.Messaging.Storage.PostgreSql;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;

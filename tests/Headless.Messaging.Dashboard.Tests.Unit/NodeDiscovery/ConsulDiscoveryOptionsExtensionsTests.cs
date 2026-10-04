@@ -2,8 +2,7 @@
 
 using System.Reflection;
 using Headless.Messaging;
-using Headless.Messaging.Configuration;
-using Headless.Messaging.Dashboard.NodeDiscovery;
+using Headless.Messaging.Dashboard;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 

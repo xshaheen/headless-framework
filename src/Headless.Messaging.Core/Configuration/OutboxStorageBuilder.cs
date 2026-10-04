@@ -4,7 +4,7 @@ using Headless.Checks;
 using Headless.Messaging.Internal;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Headless.Messaging.Configuration;
+namespace Headless.Messaging;
 
 /// <summary>
 /// Chooses the storage of one additional outbox, returned by <see cref="MessagingSetupBuilder.AddOutbox"/>.

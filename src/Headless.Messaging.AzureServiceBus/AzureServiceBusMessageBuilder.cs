@@ -10,10 +10,7 @@ internal static class AzureServiceBusMessageBuilder
     {
         if (!enableSessions)
         {
-            Configuration.MessagingRoutingAffinityMapping.RejectUnsupported(
-                transportMessage,
-                "Azure Service Bus without sessions"
-            );
+            MessagingRoutingAffinityMapping.RejectUnsupported(transportMessage, "Azure Service Bus without sessions");
         }
 
         var affinityKey = AzureServiceBusRoutingAffinity.Mapping.ResolveKey(transportMessage);

@@ -3,10 +3,7 @@
 using Headless.Checks;
 using Headless.Coordination;
 using Headless.DistributedLocks;
-using Headless.Messaging.Configuration;
-using Headless.Messaging.Registration;
 using Headless.Messaging.RequestReply;
-using Headless.Messaging.Runtime;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;

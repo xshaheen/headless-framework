@@ -2,7 +2,6 @@
 
 using System.Runtime.ExceptionServices;
 using Headless.Coordination;
-using Headless.Messaging.Configuration;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Persistence;
 using Microsoft.Extensions.Logging;

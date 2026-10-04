@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging;
-using Headless.Messaging.Messages;
 using Headless.Testing.Tests;
 
 namespace Tests;
@@ -13,8 +12,8 @@ public sealed class MediumMessageTests : TestBase
     [InlineData("order-42")]
     public async Task should_preserve_routing_affinity_through_durable_and_transport_serialization(string? key)
     {
-        var serializer = new Headless.Messaging.Serialization.JsonUtf8Serializer(
-            Microsoft.Extensions.Options.Options.Create(new Headless.Messaging.Configuration.MessagingOptions())
+        var serializer = new Headless.Messaging.JsonUtf8Serializer(
+            Microsoft.Extensions.Options.Options.Create(new Headless.Messaging.MessagingOptions())
         );
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal);
         if (key is not null)

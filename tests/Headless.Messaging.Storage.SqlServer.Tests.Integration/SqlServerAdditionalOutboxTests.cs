@@ -3,7 +3,6 @@
 using System.Text;
 using Dapper;
 using Headless.Messaging;
-using Headless.Messaging.Configuration;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 

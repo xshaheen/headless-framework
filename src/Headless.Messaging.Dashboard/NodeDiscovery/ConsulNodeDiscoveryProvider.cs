@@ -4,7 +4,7 @@ using System.Net;
 using Consul;
 using Microsoft.Extensions.Logging;
 
-namespace Headless.Messaging.Dashboard.NodeDiscovery;
+namespace Headless.Messaging.Dashboard;
 
 /// <summary>
 /// Consul-backed implementation of <see cref="INodeDiscoveryProvider"/>.

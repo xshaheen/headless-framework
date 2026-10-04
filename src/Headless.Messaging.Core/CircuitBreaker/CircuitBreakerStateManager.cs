@@ -6,7 +6,7 @@ using Headless.Messaging.Internal;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Messaging.CircuitBreaker;
+namespace Headless.Messaging;
 
 /// <summary>
 /// Default implementation of <see cref="ICircuitBreakerStateManager"/>.

@@ -2,9 +2,6 @@
 
 using Headless.Messaging;
 using Headless.Messaging.Internal;
-using Headless.Messaging.Messages;
-using Headless.Messaging.Registration;
-using Headless.Messaging.Runtime;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Fixture = Headless.Messaging.GeneratedModuleFixture;

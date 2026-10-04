@@ -8,7 +8,6 @@ using Headless.Hosting;
 using Headless.Hosting.Initialization.Schema;
 using Headless.Jobs;
 using Headless.Messaging;
-using Headless.Messaging.Configuration;
 using Headless.Messaging.Persistence;
 using Headless.Security;
 using Headless.Testing.Tests;

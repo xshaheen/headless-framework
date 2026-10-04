@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Messaging.CircuitBreaker;
+namespace Headless.Messaging;
 
 /// <summary>
 /// Represents the state of a circuit breaker for a messaging consumer.

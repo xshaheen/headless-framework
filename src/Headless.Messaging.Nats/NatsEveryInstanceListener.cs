@@ -3,7 +3,6 @@
 using System.Globalization;
 using System.Threading.Channels;
 using Headless.Checks;
-using Headless.Messaging.Exceptions;
 using Headless.Messaging.Transport;
 using NATS.Client.Core;
 

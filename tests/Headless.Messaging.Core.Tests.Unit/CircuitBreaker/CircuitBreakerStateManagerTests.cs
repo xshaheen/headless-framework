@@ -3,8 +3,6 @@
 using System.Diagnostics.Metrics;
 using System.Reflection;
 using Headless.Messaging;
-using Headless.Messaging.CircuitBreaker;
-using Headless.Messaging.Exceptions;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;

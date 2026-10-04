@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Messaging.Configuration;
-
-namespace Headless.Messaging.Messages;
+namespace Headless.Messaging;
 
 /// <summary>
 /// Contains information about a message that has failed processing and exceeded the retry threshold.

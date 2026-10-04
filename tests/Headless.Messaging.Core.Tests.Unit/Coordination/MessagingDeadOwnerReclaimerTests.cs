@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Messaging.Configuration;
+using Headless.Messaging;
 using Headless.Messaging.Coordination;
 using Headless.Messaging.Persistence;
 using Headless.Testing.Tests;

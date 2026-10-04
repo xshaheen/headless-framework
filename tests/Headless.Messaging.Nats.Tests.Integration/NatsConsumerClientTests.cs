@@ -2,8 +2,6 @@
 
 using System.Diagnostics.Metrics;
 using Headless.Messaging;
-using Headless.Messaging.Configuration;
-using Headless.Messaging.Exceptions;
 using Headless.Messaging.Nats;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;

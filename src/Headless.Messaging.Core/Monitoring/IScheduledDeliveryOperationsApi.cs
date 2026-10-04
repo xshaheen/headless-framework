@@ -2,7 +2,7 @@
 
 using Headless.Primitives;
 
-namespace Headless.Messaging.Monitoring;
+namespace Headless.Messaging;
 
 /// <summary>Provider-neutral, payload-free scheduled delivery administration surface.</summary>
 [PublicAPI]

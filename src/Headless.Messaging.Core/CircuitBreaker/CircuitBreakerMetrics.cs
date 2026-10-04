@@ -3,7 +3,7 @@
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
 
-namespace Headless.Messaging.CircuitBreaker;
+namespace Headless.Messaging;
 
 /// <summary>
 /// OpenTelemetry-compatible metrics for the circuit breaker, emitted via the shared

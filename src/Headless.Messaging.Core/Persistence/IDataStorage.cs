@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Data.Common;
-using Headless.Messaging.Messages;
-using Headless.Messaging.Monitoring;
 
 namespace Headless.Messaging.Persistence;
 

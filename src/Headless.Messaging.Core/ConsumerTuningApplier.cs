@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Globalization;
-using Headless.Messaging.CircuitBreaker;
 using Headless.Reliability;
 using Microsoft.Extensions.Configuration;
 

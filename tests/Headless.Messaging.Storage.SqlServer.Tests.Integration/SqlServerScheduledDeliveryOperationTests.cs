@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Messaging;
-using Headless.Messaging.Configuration;
 using Headless.Messaging.Storage.SqlServer;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;

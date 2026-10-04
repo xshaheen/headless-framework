@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
 using Headless.Messaging.Transactions;
 using Headless.Messaging.Transport;

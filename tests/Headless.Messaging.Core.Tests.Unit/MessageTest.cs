@@ -1,5 +1,4 @@
-using Headless.Messaging.Messages;
-using Headless.Messaging.Serialization;
+using Headless.Messaging;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;

@@ -6,7 +6,6 @@ using Headless.Coordination;
 using Headless.Hosting;
 using Headless.Jobs;
 using Headless.Messaging;
-using Headless.Messaging.Configuration;
 using Headless.Testing.Testcontainers;
 using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;

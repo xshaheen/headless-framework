@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Messaging.CircuitBreaker;
 using Headless.Messaging.Internal;
-using Headless.Messaging.Messages;
 using Headless.Messaging.Persistence;
 using Microsoft.Extensions.Logging;
 

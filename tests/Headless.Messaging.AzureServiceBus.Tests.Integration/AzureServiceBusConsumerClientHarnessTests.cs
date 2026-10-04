@@ -2,7 +2,6 @@
 
 using Azure.Messaging.ServiceBus;
 using Headless.Messaging;
-using Headless.Messaging.Configuration;
 
 namespace Tests;
 
