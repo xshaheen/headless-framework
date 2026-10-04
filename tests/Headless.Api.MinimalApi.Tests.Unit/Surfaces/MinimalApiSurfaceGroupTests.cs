@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Api;
-using Headless.Api.MultiTenancy;
-using Headless.Api.Surfaces;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;

@@ -2,7 +2,7 @@
 
 using FluentValidation;
 
-namespace Headless.Api.MultiTenancy;
+namespace Headless.Api;
 
 /// <summary>
 /// Options for the header tenant identifier source: the request header names read, in

@@ -2,11 +2,11 @@
 
 using Microsoft.AspNetCore.Mvc.Filters;
 
-namespace Headless.Api.Filters;
+namespace Headless.Api;
 
 /// <summary>
 /// Marker attribute that opts an endpoint out of automatic query-string lowercasing applied by
-/// <see cref="Headless.Api.Middlewares.RedirectToCanonicalUrlRule"/>. When present on a controller or action,
+/// <see cref="Headless.Api.RedirectToCanonicalUrlRule"/>. When present on a controller or action,
 /// the rewrite rule preserves the original casing of query string parameters instead of redirecting
 /// to a lowercase equivalent.
 /// </summary>

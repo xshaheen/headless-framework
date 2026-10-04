@@ -2,7 +2,7 @@
 
 using Microsoft.AspNetCore.Http;
 
-namespace Headless.Api.Middlewares;
+namespace Headless.Api;
 
 /// <summary>Adds a no-cache response header when the application did not explicitly set one.</summary>
 internal sealed class NoCacheHeadersMiddleware(RequestDelegate next)

@@ -3,7 +3,7 @@
 using System.Diagnostics;
 using FluentValidation.Results;
 using Headless.Abstractions;
-using Headless.Api.Abstractions;
+using Headless.Api;
 using Headless.Constants;
 using Headless.Exceptions;
 using Headless.MultiTenancy;
@@ -17,7 +17,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
-using HeadlessApiExceptionHandler = Headless.Api.Middlewares.HeadlessApiExceptionHandler;
+using HeadlessApiExceptionHandler = Headless.Api.HeadlessApiExceptionHandler;
 using JsonOptions = Microsoft.AspNetCore.Http.Json.JsonOptions;
 
 namespace Tests;

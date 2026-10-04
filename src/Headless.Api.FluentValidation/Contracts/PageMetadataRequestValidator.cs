@@ -3,7 +3,7 @@
 using FluentValidation;
 using Headless.Primitives;
 
-namespace Headless.Api.Contracts;
+namespace Headless.Api;
 
 internal sealed class PageMetadataRequestValidator : AbstractValidator<PageMetadataRequest>
 {

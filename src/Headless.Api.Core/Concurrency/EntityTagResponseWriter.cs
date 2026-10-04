@@ -4,7 +4,7 @@ using Headless.Abstractions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Net.Http.Headers;
 
-namespace Headless.Api.Concurrency;
+namespace Headless.Api;
 
 internal static class EntityTagResponseWriter
 {

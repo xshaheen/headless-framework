@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Api.Filters;
 using Headless.Checks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Extensions;
@@ -9,7 +8,7 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Api.Middlewares;
+namespace Headless.Api;
 
 /// <summary>
 /// To improve Search Engine Optimization SEO, there should only be a single URL for each resource. Case
@@ -24,8 +23,8 @@ namespace Headless.Api.Middlewares;
 /// <para>
 /// <b>Ordering requirement</b> — register this rule AFTER <c>UseRouting()</c>, ideally through
 /// <see cref="Headless.Api.SetupCanonicalUrl.UseRedirectToCanonicalUrl(Microsoft.AspNetCore.Builder.IApplicationBuilder)"/>.
-/// The <see cref="Headless.Api.Filters.NoTrailingSlashAttribute"/> and
-/// <see cref="Headless.Api.Filters.NoLowercaseQueryStringAttribute"/> opt-outs are read from endpoint metadata,
+/// The <see cref="Headless.Api.NoTrailingSlashAttribute"/> and
+/// <see cref="Headless.Api.NoLowercaseQueryStringAttribute"/> opt-outs are read from endpoint metadata,
 /// which only exists once <c>EndpointRoutingMiddleware</c> has matched the request.
 /// </para>
 /// <para>
@@ -61,7 +60,7 @@ public sealed partial class RedirectToCanonicalUrlRule : IRule
     /// Initializes the rule with explicit trailing-slash and lowercase settings.
     /// </summary>
     /// <param name="appendTrailingSlash">When <see langword="true"/>, a trailing slash is appended; when <see langword="false"/>, it is stripped.</param>
-    /// <param name="lowercaseUrls">When <see langword="true"/>, the path and query string are lower-cased (query only when no <see cref="Headless.Api.Filters.NoLowercaseQueryStringAttribute"/> is present).</param>
+    /// <param name="lowercaseUrls">When <see langword="true"/>, the path and query string are lower-cased (query only when no <see cref="Headless.Api.NoLowercaseQueryStringAttribute"/> is present).</param>
     public RedirectToCanonicalUrlRule(bool appendTrailingSlash, bool lowercaseUrls)
     {
         AppendTrailingSlash = appendTrailingSlash;

@@ -3,7 +3,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
-namespace Headless.Api.Surfaces;
+namespace Headless.Api;
 
 // Native OpenAPI providers need document names before the service collection becomes read-only.
 // Closing registration prevents later surfaces from silently missing their inferred documents.

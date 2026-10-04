@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Api.Identity.TokenProviders;
+namespace Headless.Api.Identity;
 
 /// <summary>Configuration options for <see cref="TotpTokenProvider{TUser}"/>.</summary>
 [PublicAPI]

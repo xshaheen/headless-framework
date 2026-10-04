@@ -4,7 +4,7 @@ using Headless.Abstractions;
 using Headless.MultiTenancy;
 using Microsoft.AspNetCore.Http;
 
-namespace Headless.Api.Abstractions;
+namespace Headless.Api;
 
 internal sealed class HttpRequestContext(
     IHttpContextAccessor accessor,

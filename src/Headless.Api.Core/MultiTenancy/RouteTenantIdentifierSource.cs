@@ -4,7 +4,7 @@ using Headless.Checks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Api.MultiTenancy;
+namespace Headless.Api;
 
 /// <summary>
 /// Tenant identifier source reading a route value: yields the string route value named by

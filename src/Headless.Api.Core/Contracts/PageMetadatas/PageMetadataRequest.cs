@@ -2,7 +2,7 @@
 
 using Headless.Primitives;
 
-namespace Headless.Api.Contracts;
+namespace Headless.Api;
 
 /// <summary>
 /// API request contract for page SEO metadata. All properties are optional; validate with

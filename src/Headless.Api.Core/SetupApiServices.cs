@@ -2,7 +2,6 @@
 
 using System.IO.Compression;
 using Headless.Abstractions;
-using Headless.Api.Abstractions;
 using Headless.Constants;
 using Headless.MultiTenancy;
 using Headless.Serializer;
@@ -67,7 +66,7 @@ public static class SetupApiServices
         /// Registers <see cref="IProblemDetailsCreator"/>, ASP.NET Core's
         /// <see cref="Microsoft.AspNetCore.Http.IProblemDetailsService"/> with a
         /// <c>CustomizeProblemDetails</c> hook that normalizes the response through the creator, and
-        /// <see cref="Middlewares.HeadlessApiExceptionHandler"/> as a singleton
+        /// <see cref="HeadlessApiExceptionHandler"/> as a singleton
         /// <see cref="Microsoft.AspNetCore.Diagnostics.IExceptionHandler"/>.
         /// </summary>
         /// <remarks>
@@ -108,9 +107,7 @@ public static class SetupApiServices
             // Minimal-API endpoints, middleware, hosted services, and hubs. ASP.NET Core's
             // AddExceptionHandler<T>() uses plain AddSingleton which is not idempotent; using
             // TryAddEnumerable directly collapses duplicate registrations to a single descriptor.
-            services.TryAddEnumerable(
-                ServiceDescriptor.Singleton<IExceptionHandler, Middlewares.HeadlessApiExceptionHandler>()
-            );
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IExceptionHandler, HeadlessApiExceptionHandler>());
 
             return services;
         }

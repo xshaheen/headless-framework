@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Headless.Api.Middlewares;
+namespace Headless.Api;
 
 /// <summary>Writes the framework 429 response for a request the ASP.NET Core rate limiter rejected.</summary>
 internal static class RateLimiterRejectionWriter

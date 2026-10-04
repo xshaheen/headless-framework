@@ -4,7 +4,7 @@ using System.Security.Claims;
 using Headless.Checks;
 using Microsoft.AspNetCore.Authorization;
 
-namespace Headless.Api.Authorization;
+namespace Headless.Api;
 
 /// <summary>
 /// ASP.NET Core authorization requirement that requires a principal to possess exactly one claim of a given

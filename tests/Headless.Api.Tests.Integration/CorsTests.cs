@@ -2,7 +2,6 @@
 
 using System.Net;
 using Headless.Api;
-using Headless.Api.Cors;
 using Headless.Constants;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Builder;

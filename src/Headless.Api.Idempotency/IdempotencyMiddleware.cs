@@ -4,7 +4,6 @@ using System.Buffers;
 using System.Security.Cryptography;
 using Headless.Abstractions;
 using Headless.Api.Idempotency.Resources;
-using Headless.Api.MultiTenancy;
 using Headless.Constants;
 using Headless.Idempotency;
 using Headless.MultiTenancy;

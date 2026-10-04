@@ -4,7 +4,6 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using Headless.Api;
 using Headless.Api.ServiceDefaults;
-using Headless.Api.Surfaces;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;

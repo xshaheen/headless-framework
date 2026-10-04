@@ -3,7 +3,7 @@
 using Headless.Abstractions;
 using Microsoft.AspNetCore.Http;
 
-namespace Headless.Api.Abstractions;
+namespace Headless.Api;
 
 internal sealed class HttpWebClientInfoProvider(IHttpContextAccessor accessor, IUserAgentParser userAgentParser)
     : IWebClientInfoProvider

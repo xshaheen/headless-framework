@@ -1,9 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Api.Surfaces;
 using Headless.Checks;
 
-namespace Headless.Api.Mvc.Surfaces;
+namespace Headless.Api;
 
 /// <summary>
 /// Associates a controller with a specific API surface partition.

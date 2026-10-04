@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Api.Concurrency;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 

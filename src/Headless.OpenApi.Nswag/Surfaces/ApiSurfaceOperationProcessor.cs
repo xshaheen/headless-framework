@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Api.Surfaces;
+using Headless.Api;
 using NSwag.Generation.AspNetCore;
 using NSwag.Generation.Processors;
 using NSwag.Generation.Processors.Contexts;

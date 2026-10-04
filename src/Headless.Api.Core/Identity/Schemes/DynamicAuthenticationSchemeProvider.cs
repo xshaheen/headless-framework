@@ -1,12 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Api.Identity.Authentication.ApiKey;
 using Headless.Constants;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Api.Identity.Schemes;
+namespace Headless.Api.Identity;
 
 /// <summary>
 /// An <see cref="AuthenticationSchemeProvider"/> that automatically selects the correct scheme

@@ -2,7 +2,7 @@
 
 using FluentValidation;
 
-namespace Headless.Api.UserAgent;
+namespace Headless.Api;
 
 /// <summary>Options for <see cref="Headless.Abstractions.IUserAgentParser"/>'s private in-process memoization.</summary>
 [PublicAPI]

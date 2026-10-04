@@ -2,7 +2,7 @@
 
 using Headless.Primitives;
 
-namespace Headless.Api.Contracts;
+namespace Headless.Api;
 
 /// <summary>
 /// API response view for a stored image resource. Extends <see cref="FileView"/> with

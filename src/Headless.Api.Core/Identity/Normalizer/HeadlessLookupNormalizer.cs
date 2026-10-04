@@ -3,7 +3,7 @@
 using Headless.Text;
 using Microsoft.AspNetCore.Identity;
 
-namespace Headless.Api.Identity.Normalizer;
+namespace Headless.Api.Identity;
 
 /// <summary>
 /// <see cref="ILookupNormalizer"/> that delegates to <c>Headless.Text.LookupNormalizer</c>

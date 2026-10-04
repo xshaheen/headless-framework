@@ -2,7 +2,7 @@
 
 using Headless.Checks;
 
-namespace Headless.Api.Surfaces;
+namespace Headless.Api;
 
 /// <summary>Configures one surface before registration freezes its definition.</summary>
 [PublicAPI]

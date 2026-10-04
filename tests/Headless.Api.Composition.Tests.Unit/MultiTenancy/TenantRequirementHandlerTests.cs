@@ -2,7 +2,7 @@
 
 using System.Security.Claims;
 using Headless.Abstractions;
-using Headless.Api.MultiTenancy;
+using Headless.Api;
 using Headless.Testing.Helpers;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;

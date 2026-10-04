@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Api.MultiTenancy;
+namespace Headless.Api;
 
 /// <summary>
 /// <see cref="LinkGenerator"/> decorator that keeps the tenant route segment in generated links:

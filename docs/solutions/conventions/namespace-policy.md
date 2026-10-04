@@ -35,9 +35,8 @@ packages share their feature root.
 One constraint makes it safe: **type names must stay unique within the shared namespace across all sibling
 packages.** Two packages that ship a same-name type into one namespace produce CS0433 for consumers.
 
-A namespace that exactly matches another package's name belongs to that package: only `Headless.Api.Abstractions`
-may ship the `Headless.Api.Abstractions` namespace. Outside that, family packages share their feature root
-freely.
+A namespace that exactly matches another package's name belongs to that package, and no other package ships
+into it. Outside that, family packages share their feature root freely.
 
 ### Documented exception: the API response envelopes
 

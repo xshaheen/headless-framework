@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Api.ApiExplorer;
+using Headless.Api;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authorization.Infrastructure;
 using NSwag;

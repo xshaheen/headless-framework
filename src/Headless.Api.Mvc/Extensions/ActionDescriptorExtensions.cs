@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Mvc.Abstractions;
 using Microsoft.AspNetCore.Mvc.Controllers;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 
-namespace Headless.Api.Extensions;
+namespace Headless.Api;
 
 [PublicAPI]
 public static class ActionDescriptorExtensions

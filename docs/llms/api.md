@@ -323,7 +323,7 @@ JWT validation uses a request object instead of positional token, key, issuer, a
 
 ```csharp
 using System.Security.Claims;
-using Headless.Api.Security.Jwt;
+using Headless.Api.Security;
 
 public sealed class TokenValidator(IJwtTokenFactory tokens)
 {
@@ -436,7 +436,6 @@ An API surface is a named set of endpoints sharing routing, authorization and te
 
 ```csharp
 using Headless.Api;
-using Headless.Api.Surfaces;
 
 builder.Services.AddHeadlessApiSurface("portal", surface =>
 {
@@ -759,7 +758,7 @@ dotnet add package Headless.Api.FluentValidation
 using FileSignatures;
 using FileSignatures.Formats;
 using FluentValidation;
-using Headless.Api.Contracts;
+using Headless.Api;
 using Microsoft.AspNetCore.Http;
 
 public sealed record ProfileRequest(

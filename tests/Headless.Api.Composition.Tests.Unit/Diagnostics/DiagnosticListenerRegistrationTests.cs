@@ -2,7 +2,6 @@
 
 using System.Diagnostics;
 using Headless.Api;
-using Headless.Api.Diagnostics;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;

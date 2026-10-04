@@ -3,7 +3,7 @@
 using Headless.Constants;
 using Microsoft.AspNetCore.Authentication;
 
-namespace Headless.Api.Identity.Authentication.ApiKey;
+namespace Headless.Api.Identity;
 
 /// <summary>Options for the API key authentication scheme.</summary>
 [PublicAPI]

@@ -2,7 +2,7 @@
 
 using Microsoft.AspNetCore.Mvc;
 
-namespace Headless.Api.Controllers;
+namespace Headless.Api;
 
 [PublicAPI]
 public static class ControllerBaseExtensions

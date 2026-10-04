@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Api.Surfaces;
 using Headless.Checks;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;

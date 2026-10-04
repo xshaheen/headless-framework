@@ -3,7 +3,7 @@
 using Headless.Abstractions;
 using Microsoft.AspNetCore.StaticFiles;
 
-namespace Headless.Api.Abstractions;
+namespace Headless.Api;
 
 internal sealed class ExtendedFileExtensionContentTypeProvider(IMimeTypeProvider mimeTypeProvider)
     : IContentTypeProvider

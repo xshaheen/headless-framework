@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Api.Identity.Authentication.Basic;
+namespace Headless.Api.Identity;
 
 /// <summary>
 /// ASP.NET Core authentication handler for HTTP Basic authentication (RFC 7617).

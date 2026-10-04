@@ -1,9 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Reflection;
-using Headless.Api.MultiTenancy;
-using Headless.Api.Mvc.Surfaces;
-using Headless.Api.Surfaces;
+using Headless.Api;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
