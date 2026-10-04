@@ -197,6 +197,7 @@ internal sealed class NatsReplyListener : IReplyListener
 
             if (streams.Count == 0)
             {
+                _logger.ReplySubjectNotCapturedByStreams(_subject);
                 return;
             }
 
@@ -417,4 +418,12 @@ internal static partial class NatsReplyListenerLog
         string replyAddress,
         string exceptionType
     );
+
+    [LoggerMessage(
+        EventId = 15,
+        EventName = "NatsReplySubjectNotCapturedByStreams",
+        Level = LogLevel.Debug,
+        Message = "No JetStream stream captures NATS reply subject '{ReplyAddress}'."
+    )]
+    public static partial void ReplySubjectNotCapturedByStreams(this ILogger logger, string replyAddress);
 }
