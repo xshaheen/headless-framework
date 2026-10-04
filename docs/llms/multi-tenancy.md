@@ -11,9 +11,8 @@ packages: MultiTenancy.Abstractions, MultiTenancy, MultiTenancy.Storage.EntityFr
 
 Headless multi-tenancy is built from these pieces:
 
-- `Headless.MultiTenancy.Abstractions` holds the family's contract surface: `ICurrentTenant`, `ICurrentTenantAccessor`, the tenant write-guard types and exceptions (moved from `Headless.Core`), and the opt-in tenant catalog's store SPI and models (`TenantInfo`, `ITenantStore`, `ITenantDirectory`, `ICurrentTenantInfo`, `TenantResolutionOutcome`) — all under the `Headless.MultiTenancy` namespace.
-- `Headless.Core` supplies the default tenant-context implementations (`CurrentTenant`, `AsyncLocalCurrentTenantAccessor`, `NullCurrentTenant`, `TenantWriteGuardBypass`) that hold the current tenant in an `AsyncLocal` scope.
-- `Headless.MultiTenancy` provides the root `AddHeadlessTenancy(...)` composition surface, a shared, non-PII tenant posture manifest, and — opt-in via `.Catalog(...)` — the tenant catalog service, caching, error codes, and the in-memory and configuration-backed stores. See [Tenant Catalog](#tenant-catalog).
+- `Headless.MultiTenancy.Abstractions` holds the family's contract surface: `ICurrentTenant`, `ICurrentTenantAccessor`, the tenant write-guard types and exceptions, the default tenant-context implementations (`CurrentTenant`, `AsyncLocalCurrentTenantAccessor`, `NullCurrentTenant`, `TenantWriteGuardBypass`), the shared tenant posture manifest and its builder contract, and the opt-in tenant catalog's store SPI and models (`TenantInfo`, `ITenantStore`, `ITenantDirectory`, `ICurrentTenantInfo`, `TenantResolutionOutcome`) — all under the `Headless.MultiTenancy` namespace.
+- `Headless.MultiTenancy` provides the root `AddHeadlessTenancy(...)` composition surface, the tenancy startup validator, and — opt-in via `.Catalog(...)` — the tenant catalog service, caching, error codes, and the in-memory and configuration-backed stores. See [Tenant Catalog](#tenant-catalog).
 - `Headless.MultiTenancy.Storage.EntityFramework` ships an EF Core-backed tenant store as a separate package so apps that only need in-memory or configuration stores take no EF dependency.
 - `Headless.Api.Core` resolves tenant context for HTTP requests via `UseHeadlessTenancy()` (claim-based, post-authentication) and, when a catalog is configured, via `UseHeadlessTenantCatalogResolution()` (identifier-based, pre-authentication) with built-in host, route, and header identifier sources (`AddHostSource`, `AddRouteSource`, `AddHeaderSource`) plus a delegate shortcut. It can enforce tenant presence before endpoint execution through `.Authorization(auth => auth.RequireTenant())`.
 - `Headless.Messaging.Core` propagates tenant context across message publish/consume and can require tenant context on publish.
@@ -1067,7 +1066,7 @@ Tests that assert the normalized 403 `g:tenant_required` ProblemDetails (or any 
 dotnet add package Headless.MultiTenancy.Abstractions
 ```
 
-Most applications receive this package transitively through `Headless.Core` (which implements the tenant-context contracts) or through a seam package (`Headless.Api.Core`, `Headless.Messaging.Core`, `Headless.EntityFramework`, `Headless.MultiTenancy`). Add it directly only when authoring a package that needs these contracts without pulling in an implementation — for example a custom `ITenantStore` over an app-owned tenant aggregate.
+Most applications receive this package transitively through a seam package (`Headless.Api.Core`, `Headless.Messaging.Core`, `Headless.Jobs.Core`, `Headless.EntityFramework`, `Headless.MultiTenancy`). Add it directly only when authoring a package that needs these contracts without pulling in an implementation — for example a custom `ITenantStore` over an app-owned tenant aggregate.
 
 ### Setup and use
 
@@ -1090,7 +1089,7 @@ public sealed class OrderService(ICurrentTenant currentTenant)
 }
 ```
 
-`ICurrentTenant` and `ICurrentTenantAccessor` are contracts only — this package registers nothing. `Headless.Core` supplies the default `AsyncLocal`-backed implementations. `ITenantStore`, `ITenantDirectory`, and `ICurrentTenantInfo` are also contracts only — `Headless.MultiTenancy`'s `Catalog(...)` builder wires the store implementation and the catalog service.
+`ICurrentTenant` and `ICurrentTenantAccessor` are contracts only — this package registers nothing, though it does ship the default `AsyncLocal`-backed implementations (`CurrentTenant`, `AsyncLocalCurrentTenantAccessor`); the seam packages register them. `ITenantStore`, `ITenantDirectory`, and `ICurrentTenantInfo` are also contracts only — `Headless.MultiTenancy`'s `Catalog(...)` builder wires the store implementation and the catalog service.
 
 ### Configuration
 

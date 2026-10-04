@@ -3,6 +3,7 @@
 using Headless.Abstractions;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
+using Headless.MultiTenancy;
 using Microsoft.Extensions.Options;
 
 namespace Tests.Internal;

@@ -1,9 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Abstractions;
 using Headless.MultiTenancy;
 
-namespace Tests.Abstractions;
+namespace Tests;
 
 // Directly exercises the CAS ref-count state machine behind ITenantWriteGuardBypass — its in-window
 // race is not reachable through the public BeginBypass API, so it is tested at the primitive level.

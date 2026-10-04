@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics.CodeAnalysis;
-using Headless.Abstractions;
 using Headless.Checks;
 using Headless.MultiTenancy;
 using Microsoft.Extensions.DependencyInjection;

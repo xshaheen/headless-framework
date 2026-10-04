@@ -10,6 +10,9 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.Blobs.MultiTenancy\Headless.Blobs.MultiTenancy.csproj" />
+    <!-- AddHeadlessTenancy and the posture root builder live in Headless.MultiTenancy, no longer
+         reachable transitively through Headless.Blobs.MultiTenancy. -->
+    <ProjectReference Include="..\..\src\Headless.MultiTenancy\Headless.MultiTenancy.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
   </ItemGroup>
 </Project>
