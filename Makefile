@@ -1,5 +1,6 @@
-SHELL := /bin/bash
-.SHELLFLAGS := -eu -o pipefail -c
+# Strict mode lives in SHELL itself: macOS ships GNU Make 3.81, which ignores .SHELLFLAGS, so a
+# .SHELLFLAGS line left local recipes without -e, -u, and pipefail while CI's make 4 applied them.
+SHELL := /bin/bash -eu -o pipefail
 
 .DEFAULT_GOAL := help
 
@@ -78,10 +79,17 @@ endif
 # Filter targets scope to one project when TEST_PROJECT is set and fall back to the whole solution.
 TEST_SCOPE_TARGET = $(if $(TEST_PROJECT),test-project,test)
 # Restore is the largest fixed cost in the scoped test loop and almost never has work to do: the
-# package graph moves only when Directory.Packages.props or a project's lock file moves. Assert the
-# project is restored and current instead of restoring, and name the command that fixes it, so a
-# missing restore is one sentence rather than a wall of CS0234/NETSDK1004.
-ASSERT_RESTORED = assert_restored() { local project="$$1" dir assets input; dir="$${project%/*}"; assets="$$dir/obj/project.assets.json"; if [ ! -f "$$assets" ]; then printf 'ERROR: %s is not restored (%s is missing).\n       Run: make restore-project PROJECT=%s   (or `make bootstrap` in a fresh clone/worktree)\n' "$$project" "$$assets" "$$project" >&2; return 2; fi; for input in Directory.Packages.props "$$dir/packages.lock.json"; do if [ -f "$$input" ] && [ "$$input" -nt "$$assets" ]; then printf 'ERROR: restore is stale for %s (%s is newer than %s).\n       Run: make restore-project PROJECT=%s\n' "$$project" "$$input" "$$assets" "$$project" >&2; return 2; fi; done; }
+# package graph moves only when Directory.Packages.props, the project file, or its lock file moves.
+# Assert the project is restored and current instead of restoring, and name the command that fixes
+# it, so a missing restore is one sentence rather than a wall of CS0234/NETSDK1004.
+ASSERT_RESTORED = assert_restored() { local project="$$1" dir assets input; dir="$${project%/*}"; assets="$$dir/obj/project.assets.json"; if [ ! -f "$$assets" ]; then printf 'ERROR: %s is not restored (%s is missing).\n       Run: make restore-project PROJECT=%s   (or `make bootstrap` in a fresh clone/worktree)\n' "$$project" "$$assets" "$$project" >&2; return 2; fi; for input in Directory.Packages.props "$$project" "$$dir/packages.lock.json"; do if [ -f "$$input" ] && [ "$$input" -nt "$$assets" ]; then printf 'ERROR: restore is stale for %s (%s is newer than %s).\n       Run: make restore-project PROJECT=%s\n' "$$project" "$$input" "$$assets" "$$project" >&2; return 2; fi; done; }
+# A no-op restore leaves project.assets.json untouched, so after an input's timestamp moves without a
+# package change (a branch switch, an edit to an unrelated property) the assert above would call the
+# project stale forever, however often it is restored. Every restore a target runs therefore stamps
+# the assets files it covered; outside make, `make restore` or `make restore-project` clears the error.
+MARK_RESTORED = mark_restored() { local project assets; for project in "$$@"; do assets="$${project%/*}/obj/project.assets.json"; if [ -f "$$assets" ]; then touch "$$assets"; fi; done; }
+# The solution's project paths, one per line, with the separators the shell expects.
+SOLUTION_PROJECTS = sed -n 's/.*<Project Path="\([^"]*\)".*/\1/p' "$(SOLUTION)" | tr '\\' '/'
 # Collects every path this side changed, including uncommitted and untracked work. Diffing the merge
 # base rather than AFFECTED_BASE itself matters when the branch is behind: a plain two-dot diff also
 # reports the commits upstream has and we do not, which are not our changes and not ours to test.
@@ -111,14 +119,18 @@ AFFECTED_ANALYZER_STAGE = if [ -s "$$run/changed.txt" ]; then \
 			else $(DOTNET) format analyzers "$$run/changed.slnf" "$$@" --report "$$run/analyzers" || worst=$$?; fi; \
 			exit $$worst' bash "$$run" --no-restore --verify-no-changes --severity "$(QUALITY_SEVERITY)" -v minimal $(if $(QUALITY_DIAGNOSTICS),--diagnostics $(QUALITY_DIAGNOSTICS),) || true; \
 	fi;
-AFFECTED_PREPARE = $(ASSERT_RESTORED); prepare() { \
+AFFECTED_PREPARE = $(ASSERT_RESTORED); $(MARK_RESTORED); prepare() { \
 	git rev-parse --verify -q "$(AFFECTED_BASE)^{commit}" >/dev/null || { printf 'ERROR: AFFECTED_BASE=%s does not resolve to a commit. Fetch it, or pass AFFECTED_BASE=<ref>.\n' "$(AFFECTED_BASE)" >&2; return 2; }; \
 	rm -rf "$$1"; $(GRAPH) affected --base "$(AFFECTED_BASE)" --out-dir "$$1"; }; prepare
 # Restore is asserted, not repeated: the solution-filter restore runs only when a selected project's
 # assets are missing or older than Directory.Packages.props or its lock file.
 AFFECTED_BUILD_STAGES = if [ -s "$$run/build.txt" ]; then \
 		stale=0; while IFS= read -r project; do assert_restored "$$project" 2>/dev/null || stale=1; done < "$$run/build.txt"; \
-		if [ $$stale -eq 1 ]; then $(PROOF) run --dir "$$run" --name restore -- $(DOTNET) restore "$$run/build.slnf" $(RESTORE_ARGS) -v:q -nologo || status=1; fi; \
+		if [ $$stale -eq 1 ]; then \
+			if $(PROOF) run --dir "$$run" --name restore -- $(DOTNET) restore "$$run/build.slnf" $(RESTORE_ARGS) -v:q -nologo; then \
+				while IFS= read -r project; do mark_restored "$$project"; done < "$$run/build.txt"; \
+			else status=1; fi; \
+		fi; \
 		$(PROOF) run --dir "$$run" --name build -- $(DOTNET) build "$$run/build.slnf" --configuration "$(CONFIGURATION)" --no-restore -v:q -nologo $(MSBUILD_ARGS) || status=1; \
 	fi;
 AFFECTED_UNIT_STAGE = if [ $$status -ne 0 ]; then $(PROOF) skip --dir "$$run" --name unit-tests --reason "an earlier stage failed; --no-build would test stale binaries"; \
@@ -152,7 +164,7 @@ help: ## Show available commands.
 	@printf "  make test-project TEST_PROJECT=tests/Headless.Api.Composition.Tests.Unit/Headless.Api.Composition.Tests.Unit.csproj\n"
 	@printf "  make test-class CLASS='*CultureHelperTests' TEST_PROJECT=tests/Headless.Extensions.Tests.Unit/Headless.Extensions.Tests.Unit.csproj\n"
 	@printf "  make verify-affected            # build + unit tests + analyzers for the change, with a proof bundle\n"
-	@printf "  make check                      # the CI gate over the affected scope: check-layering, format-check, verify-affected\n"
+	@printf "  make check                      # the CI gate over the affected scope: check-layering, format-check-changed, verify-affected\n"
 	@printf "  make test-affected\n"
 	@printf "  make quality-analyzers-affected\n"
 	@printf "  make bench-compare BENCH_AREA=Caching BENCH_FILTER='*Memory*' BASE=origin/main\n"
@@ -242,6 +254,7 @@ endif
 
 restore: ## Restore NuGet packages (locked mode when CI is set).
 	$(DOTNET) restore "$(SOLUTION)" -p:Configuration="$(CONFIGURATION)" $(RESTORE_ARGS) $(RESTORE_LOCK_ARGS)
+	@$(MARK_RESTORED); $(SOLUTION_PROJECTS) | while IFS= read -r project; do mark_restored "$$project"; done
 
 .PHONY: restore-project
 RESTORE_PROJECT = $(DOTNET) restore "$(PROJECT)" -p:Configuration="$(CONFIGURATION)" $(RESTORE_ARGS) $(RESTORE_LOCK_ARGS)
@@ -249,6 +262,7 @@ RESTORE_PROJECT = $(DOTNET) restore "$(PROJECT)" -p:Configuration="$(CONFIGURATI
 restore-project: ## Restore one project; preferred for focused project work.
 	@test -n "$(PROJECT)" || (echo "PROJECT is required. Example: make restore-project PROJECT=src/Headless.Api/Headless.Api.csproj" && exit 2)
 	$(RESTORE_PROJECT)
+	@$(MARK_RESTORED); mark_restored "$(PROJECT)"
 
 .PHONY: hooks
 # A repository core.hooksPath replaces the global one, so on a machine whose global hooks already
@@ -298,15 +312,46 @@ hook-pre-push-message:
 # merge gate proves anyway. Run `make hook-build` by hand when you want that solution-wide compile
 # before pushing. Assumes `make bootstrap` already restored tools (no tool-restore in the hot path).
 .PHONY: hook-format-check
-hook-format-check: ## Git hook: CSharpier-check only the C# files changed vs upstream.
-	@base=$$(git rev-parse --verify -q '@{upstream}' 2>/dev/null || git merge-base origin/main HEAD 2>/dev/null || true); \
-	if [ -n "$$base" ]; then \
-		files=$$(git -c core.quotePath=false diff --name-only --diff-filter=ACMR "$$base"...HEAD -- '*.cs'); \
-	else \
-		files=$$(git -c core.quotePath=false ls-files '*.cs'); \
-	fi; \
-	if [ -z "$$files" ]; then echo "[pre-push] no changed C# files to check"; exit 0; fi; \
-	printf '%s\n' "$$files" | tr '\n' '\0' | xargs -0 $(DOTNET) csharpier check
+hook-format-check: ## Git hook: CSharpier-check the C# files committed since AFFECTED_BASE (upstream, else origin/main).
+	@$(FORMAT_CHANGED) committed
+
+# CSharpier costs ~60 ms per path argument and ~0.3 s per directory scan (measured: 80 files 4.5 s as
+# paths, 0.67 s as their 6 project folders; 400 files 20.7 s against 1.8 s; the whole repository 5.8 s).
+# So the changed files' project folders are scanned once and the report is filtered back to the changed
+# files. An unformatted file the change did not touch is listed as a warning, not a failure: it is not
+# this change's drift, and CI's whole-repository format-check still fails on it. A non-zero exit that
+# names no file (a CSharpier crash) fails. `committed` checks what a push publishes; `worktree` adds
+# staged, unstaged, and untracked files, for the local gate. With no merge base the whole tree is checked.
+# Past ~100 folders one repository scan is cheaper (2087 files in 345 folders: 14.6 s against 5.8 s).
+FORMAT_CHANGED_MAX_DIRS ?= 100
+FORMAT_CHANGED = format_changed() { \
+	local mode="$$1" base file dir out rc=0 arc=0; local -a files=() dirs=(); \
+	base="$$(git merge-base "$(AFFECTED_BASE)" HEAD 2>/dev/null || true)"; \
+	if [ -z "$$base" ]; then echo "[format] no merge base with $(AFFECTED_BASE); checking every C\# file"; $(DOTNET) csharpier check .; return; fi; \
+	while IFS= read -r -d '' file; do if [ -f "$$file" ]; then files+=("$$file"); fi; done < <( \
+		if [ "$$mode" = worktree ]; then \
+			git -c core.quotePath=false diff -z --name-only --diff-filter=ACMR "$$base" -- '*.cs'; \
+			git -c core.quotePath=false ls-files -z --others --exclude-standard -- '*.cs'; \
+		else git -c core.quotePath=false diff -z --name-only --diff-filter=ACMR "$$base"...HEAD -- '*.cs'; fi); \
+	if [ "$${\#files[@]}" -eq 0 ]; then echo "[format] no changed C\# files to check"; return 0; fi; \
+	while IFS= read -r dir; do dirs+=("$$dir"); done < <(printf '%s\n' "$${files[@]}" | awk -F/ '{ print (NF >= 3 ? $$1 "/" $$2 : $$0) }' | sort -u); \
+	if [ "$${\#dirs[@]}" -gt $(FORMAT_CHANGED_MAX_DIRS) ]; then dirs=(.); fi; \
+	out="$$($(DOTNET) csharpier check "$${dirs[@]}" 2>&1)" || rc=$$?; \
+	awk 'NR == FNR { changed["./" $$0] = 1; next } \
+		/^Error \.\// { path = $$0; sub(/^Error /, "", path); sub(/ - [^\/]*$$/, "", path); named++; mine = (path in changed); \
+			if (mine) { bad++; print } else other[++others] = path; next } \
+		/^  / { if (mine) print; next } \
+		{ mine = 0 } \
+		END { if (others) { printf "[format] warning: %d unchanged file(s) in the scanned folders are not formatted (not part of this change):\n", others; for (i = 1; i <= others; i++) print "  " other[i] } \
+			if (bad) { printf "[format] %d changed file(s) are not formatted or do not parse. Run: make format (a syntax error needs a code fix first)\n", bad; exit 3 } \
+			if (named == 0 && rc != 0) exit 1 }' rc="$$rc" <(printf '%s\n' "$${files[@]}") <(printf '%s\n' "$$out") || arc=$$?; \
+	if [ $$arc -eq 1 ]; then printf '%s\n' "$$out" >&2; echo "[format] csharpier exited $$rc without naming a file" >&2; return $$rc; fi; \
+	if [ $$arc -ne 0 ]; then return $$arc; fi; \
+	printf '[format] %d changed C\# file(s) formatted (%d folder(s) scanned)\n' "$${\#files[@]}" "$${\#dirs[@]}"; }; format_changed
+
+.PHONY: format-check-changed
+format-check-changed: ## Check C# formatting of the files changed vs AFFECTED_BASE, committed or not; the local gate's format stage.
+	@$(FORMAT_CHANGED) worktree
 
 # Manual pre-push sanity build; no longer wired into the hook. Warning posture is NOT "warnings stay
 # warnings": Headless.NET.Sdk turns CodeAnalysisTreatWarningsAsErrors and MSBuildTreatWarningsAsErrors
@@ -323,8 +368,14 @@ hook-build: ## Manual: incremental solution build over warm outputs (no restore,
 .PHONY: ci-build
 ci-build: format-check rebuild ci-test pack-built verify-packages ## CI: check formatting, clean-build, test with coverage, then pack and verify already-built projects.
 
+# Asserts restore instead of running it: a no-op solution restore costs ~5 s of a ~19 s warm build. A
+# package change now needs `make restore` first, which the error names. rebuild keeps its restore, so
+# CI's clean builds are unchanged.
 .PHONY: build
-build: restore ## Build the solution.
+build: ## Build the solution; asserts restore (run `make restore` after a package change).
+	@$(ASSERT_RESTORED); stale=0; first=""; \
+	while IFS= read -r project; do assert_restored "$$project" 2>/dev/null || { stale=$$((stale + 1)); [ -n "$$first" ] || first="$$project"; }; done < <($(SOLUTION_PROJECTS)); \
+	if [ $$stale -gt 0 ]; then printf 'ERROR: %d solution project(s) are not restored or are stale, first %s.\n       Run: make restore   (or `make bootstrap` in a fresh clone/worktree)\n' "$$stale" "$$first" >&2; exit 1; fi
 	$(DOTNET) build "$(SOLUTION)" --configuration "$(CONFIGURATION)" --no-restore -v:q -nologo /clp:ErrorsOnly $(MSBUILD_ARGS)
 
 .PHONY: rebuild
@@ -341,6 +392,7 @@ rebuild-no-restore: ## Build without restore or incremental compilation; use aft
 build-project: ## Build one project; preferred when working on a specified project.
 	@test -n "$(PROJECT)" || (echo "PROJECT is required. Example: make build-project PROJECT=src/Headless.Api/Headless.Api.csproj" && exit 2)
 	$(RESTORE_PROJECT)
+	@$(MARK_RESTORED); mark_restored "$(PROJECT)"
 	$(DOTNET) build "$(PROJECT)" --configuration "$(CONFIGURATION)" --no-restore -v:q -nologo /clp:ErrorsOnly $(MSBUILD_ARGS)
 
 .PHONY: build-project-no-restore
@@ -577,13 +629,15 @@ verify-affected: ## Build, unit-test (with coverage), and analyze the affected s
 # clean rebuild with analyzers, quality-analyzers-affected, and the unit suite; verify-affected is the
 # build, analyzer, and unit stages of that for the projects this branch changed, which is what a local run
 # finishes in minutes (the whole-solution version is ci-build, far past ten minutes on ~430 projects).
+# Formatting follows the same scope: format-check-changed checks the changed files (~0.3-2 s against
+# ~6 s for the whole repository), and CI's format-check job keeps the whole-repository check.
 # The gates run one after another through a sub-make so a failed gate does not hide the next, and a dry
 # run still only prints because the sub-make inherits -n. The dashboard SPAs keep their own CI jobs
 # (npm ci, build, lint:check, test:unit per SPA) and stay out of the local gate.
-CHECK_GATES ?= check-layering format-check verify-affected
+CHECK_GATES ?= check-layering format-check-changed verify-affected
 
 .PHONY: check
-check: ## CI gate over the affected scope: check-layering, format-check, verify-affected; every gate runs, every failure is reported.
+check: ## CI gate over the affected scope: check-layering, format-check-changed, verify-affected; every gate runs, every failure is reported.
 	@failed=""; for gate in $(CHECK_GATES); do $(MAKE) $$gate || failed="$$failed $$gate"; done; \
 	if [ -n "$$failed" ]; then printf '[check] failed:%s\n' "$$failed" >&2; exit 1; fi; \
 	printf '[check] passed: %s\n' "$(CHECK_GATES)"
