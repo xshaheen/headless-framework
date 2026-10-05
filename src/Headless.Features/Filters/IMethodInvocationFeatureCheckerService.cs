@@ -13,7 +13,9 @@ public interface IMethodInvocationFeatureCheckerService
     /// <paramref name="context"/> and throws if any required feature is not enabled.
     /// </summary>
     /// <param name="context">The context describing the method being checked.</param>
-    Task CheckAsync(MethodInvocationFeatureCheckerContext context);
+    /// <param name="cancellationToken">The abort token.</param>
+    /// <exception cref="Headless.ConflictException">A required feature is not enabled.</exception>
+    Task CheckAsync(MethodInvocationFeatureCheckerContext context, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Carries the reflection metadata needed to check feature requirements for a single method invocation.</summary>
@@ -33,7 +35,10 @@ public sealed class MethodInvocationFeatureCheckerService(IFeatureManager featur
     private static readonly ConcurrentDictionary<MethodInfo, FeatureRequirements> _RequirementsCache = new();
 
     /// <inheritdoc/>
-    public async Task CheckAsync(MethodInvocationFeatureCheckerContext context)
+    public async Task CheckAsync(
+        MethodInvocationFeatureCheckerContext context,
+        CancellationToken cancellationToken = default
+    )
     {
         var requirements = _RequirementsCache.GetOrAdd(context.Method, static method => _ResolveRequirements(method));
 
@@ -45,7 +50,11 @@ public sealed class MethodInvocationFeatureCheckerService(IFeatureManager featur
         foreach (var requiresFeatureAttribute in requirements.Required)
         {
             await featureManager
-                .EnsureEnabledAsync(requiresFeatureAttribute.IsAnd, requiresFeatureAttribute.Features)
+                .EnsureEnabledAsync(
+                    requiresFeatureAttribute.IsAnd,
+                    requiresFeatureAttribute.Features,
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
         }
     }
