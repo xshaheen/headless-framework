@@ -78,7 +78,7 @@ public sealed class PermissionsHeadlessDbContextTests(PermissionsTestFixture fix
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
-            modelBuilder.AddHeadlessPermissions(
+            modelBuilder.ConfigureHeadlessPermissions(
                 storageOptions.Value,
                 HeadlessStorageNaming.ForProvider(Database.ProviderName)
             );

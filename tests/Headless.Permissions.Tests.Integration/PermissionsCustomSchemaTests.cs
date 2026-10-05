@@ -202,7 +202,7 @@ public sealed class PermissionsCustomSchemaTests(PermissionsTestFixture fixture)
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
-            modelBuilder.AddHeadlessPermissions(
+            modelBuilder.ConfigureHeadlessPermissions(
                 storageOptions.Value,
                 HeadlessStorageNaming.ForProvider(Database.ProviderName)
             );
@@ -217,7 +217,7 @@ public sealed class PermissionsCustomSchemaTests(PermissionsTestFixture fixture)
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
-            modelBuilder.AddHeadlessPermissions(
+            modelBuilder.ConfigureHeadlessPermissions(
                 storageOptions.Value,
                 HeadlessStorageNaming.ForProvider(Database.ProviderName)
             );

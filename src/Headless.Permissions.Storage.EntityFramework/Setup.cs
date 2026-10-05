@@ -29,7 +29,7 @@ public static class SetupPermissionsEntityFramework
         /// (e.g., <c>services.AddDbContextFactory&lt;TContext&gt;()</c>).
         /// </para>
         /// <para>
-        /// Call <c>modelBuilder.AddHeadlessPermissions(this)</c> inside
+        /// Call <c>modelBuilder.ConfigureHeadlessPermissions(this)</c> inside
         /// <c>OnModelCreating</c> so that <typeparamref name="TContext"/> maps the three permissions
         /// entities; a startup gate validates the mapping before hosted services start and throws
         /// <see cref="InvalidOperationException"/> with an actionable message if any entity is missing.

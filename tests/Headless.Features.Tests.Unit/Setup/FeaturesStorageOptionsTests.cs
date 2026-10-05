@@ -251,7 +251,7 @@ public sealed class FeaturesStorageOptionsTests
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
-            modelBuilder.AddHeadlessFeatures(storageOptions, StorageNamingStyle.PascalCase);
+            modelBuilder.ConfigureHeadlessFeatures(storageOptions, StorageNamingStyle.PascalCase);
         }
     }
 }

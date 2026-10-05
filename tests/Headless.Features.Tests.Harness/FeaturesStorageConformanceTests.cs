@@ -90,7 +90,7 @@ public abstract class FeaturesStorageConformanceTests<TFixture>(TFixture fixture
     {
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
-            modelBuilder.AddHeadlessFeatures(storageOptions, style);
+            modelBuilder.ConfigureHeadlessFeatures(storageOptions, style);
         }
     }
 

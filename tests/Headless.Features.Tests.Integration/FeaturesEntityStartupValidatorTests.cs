@@ -37,7 +37,7 @@ public sealed class FeaturesEntityStartupValidatorTests(FeaturesTestFixture fixt
         await action
             .Should()
             .ThrowAsync<InvalidOperationException>()
-            .WithMessage("*FeatureValueRecord*modelBuilder.AddHeadlessFeatures*");
+            .WithMessage("*FeatureValueRecord*modelBuilder.ConfigureHeadlessFeatures*");
     }
 
     private sealed class MissingFeaturesEntityDbContext(DbContextOptions<MissingFeaturesEntityDbContext> options)

@@ -84,7 +84,7 @@ public abstract class SettingsStorageConformanceTests<TFixture>(TFixture fixture
     {
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
-            modelBuilder.AddHeadlessSettings(storageOptions, style);
+            modelBuilder.ConfigureHeadlessSettings(storageOptions, style);
         }
     }
 

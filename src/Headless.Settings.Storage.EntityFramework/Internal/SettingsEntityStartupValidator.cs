@@ -27,7 +27,7 @@ internal sealed class SettingsEntityStartupValidator<TContext>(IServiceProvider 
     /// <param name="cancellationToken">Token to observe for cancellation.</param>
     /// <exception cref="InvalidOperationException">
     /// Thrown when <typeparamref name="TContext"/> does not contain the required settings entity type.
-    /// Ensure <c>modelBuilder.AddHeadlessSettings(…)</c> is called in <c>OnModelCreating</c>.
+    /// Ensure <c>modelBuilder.ConfigureHeadlessSettings(…)</c> is called in <c>OnModelCreating</c>.
     /// </exception>
     public async Task ValidateAsync(CancellationToken cancellationToken)
     {
@@ -63,7 +63,7 @@ internal sealed class SettingsEntityStartupValidator<TContext>(IServiceProvider 
 
         throw new InvalidOperationException(
             $"Headless.Settings: the registered DbContext `{context.GetType().FullName}` does not contain `{entityName}`. "
-                + "Call `modelBuilder.AddHeadlessSettings(this)` in your `OnModelCreating`."
+                + "Call `modelBuilder.ConfigureHeadlessSettings(this)` in your `OnModelCreating`."
         );
     }
 }

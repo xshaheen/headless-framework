@@ -110,7 +110,7 @@ public sealed class PermissionGrantRecordConfigurationTests
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
-            modelBuilder.AddHeadlessPermissions(new PermissionsStorageOptions(), style);
+            modelBuilder.ConfigureHeadlessPermissions(new PermissionsStorageOptions(), style);
         }
     }
 

@@ -21,7 +21,7 @@ public static class SetupFeaturesEntityFramework
         /// </summary>
         /// <typeparam name="TContext">
         /// The <see cref="DbContext"/> type whose model must include the Headless feature entities
-        /// (registered by calling <c>modelBuilder.AddHeadlessFeatures(...)</c> in <c>OnModelCreating</c>).
+        /// (registered by calling <c>modelBuilder.ConfigureHeadlessFeatures(...)</c> in <c>OnModelCreating</c>).
         /// </typeparam>
         /// <returns>The same <see cref="HeadlessFeaturesSetupBuilder"/> instance for chaining.</returns>
         public HeadlessFeaturesSetupBuilder UseEntityFramework<TContext>()

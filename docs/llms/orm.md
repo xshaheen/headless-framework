@@ -45,7 +45,7 @@ Use these packages for ORM-level persistence primitives. For raw SQL connection 
 - `AddHeadlessDbContextServices(...)` returns `IHeadlessDbContextBuilder`; chain `.AddDomainEvents()` and `.AddIntegrationEventOutbox()` off it to opt in to each event tier. `.AddDomainEvents()` lives in `Headless.EntityFramework`; `.AddIntegrationEventOutbox()` lives in `Headless.EntityFramework.Messaging` and is parameterless.
 - **There is no startup validation for event tiers.** A runtime guard throws `InvalidOperationException` at save time, only when an entity actually emits an event for a tier that is not registered. The guard message names the exact registration to add.
 - Customize the save pipeline through `options.AddSaveEntryProcessor<TProcessor>(ServiceLifetime)` on `HeadlessDbContextOptions`; use `options.RemoveSaveEntryProcessor<TProcessor>()` to opt out of a built-in processor. Replace `IHeadlessSaveChangesPipeline` only when you need full orchestration control.
-- Apply module-specific EF mappings explicitly through `ModelBuilder` extensions inside `OnModelCreating`: `modelBuilder.AddHeadlessAuditLog(...)`, `modelBuilder.AddHeadlessFeatures(...)`, `modelBuilder.AddHeadlessPermissions(...)`, `modelBuilder.AddHeadlessSettings(...)`. These read schema and table names from validated `*StorageOptions`.
+- Apply module-specific EF mappings explicitly through `ModelBuilder` extensions inside `OnModelCreating`: `modelBuilder.AddHeadlessAuditLog(...)`, `modelBuilder.ConfigureHeadlessFeatures(...)`, `modelBuilder.ConfigureHeadlessPermissions(...)`, `modelBuilder.ConfigureHeadlessSettings(...)`. These read schema and table names from validated `*StorageOptions`.
 - **Completed local drains survive persistence retry.** The pipeline retains captured occurrence IDs and skips a completed local drain on subsequent persistence retries. Handler failures have no per-handler checkpoint and can repeat handler entry. Local handlers must remain replay-safe and keep external effects out of the transaction. The transactional outbox can commit atomically with application state; delivery and external effects remain at-least-once and require idempotency.
 - **Enlisted write retry boundary.** A Jobs write or a `unit.Outbox` publish enlisted in a *pipeline-owned* save (observed mode, from a domain-event handler) calls `IUnitOfWork.PreventRetry()`, which prevents automatic retries of that save because the handler is not re-run on replay and the row is not retained in the business change tracker. A later failure propagates unchanged; recover with a fresh context and aggregate graph after a known rollback, or reconcile an unknown commit first. The same writes issued directly inside a caller's own `RunAsync(db, …)` block leave it replayable, because the replay re-runs the block. A caller-owned save that dispatched domain or integration events ends replay of that block instead: the save clears the emitters, so a replayed block would find nothing to re-dispatch. Saves whose only enlisted writes are entity-emitted integration events retain their existing retry behavior.
 - Raw SQL commands and stored procedures bypass query filters and the write guard. Supply explicit tenant predicates and authorization. `BeginBypass()` has no effect on raw SQL. Bulk `ExecuteUpdate` and `ExecuteDelete` consume query filters but skip the save guard.
@@ -459,9 +459,9 @@ protected override void OnModelCreating(ModelBuilder modelBuilder)
 {
     base.OnModelCreating(modelBuilder);
     modelBuilder.AddHeadlessAuditLog(_auditLogStorage.Value);
-    modelBuilder.AddHeadlessFeatures(_featuresStorage.Value);
-    modelBuilder.AddHeadlessPermissions(_permissionsStorage.Value);
-    modelBuilder.AddHeadlessSettings(_settingsStorage.Value);
+    modelBuilder.ConfigureHeadlessFeatures(_featuresStorage.Value);
+    modelBuilder.ConfigureHeadlessPermissions(_permissionsStorage.Value);
+    modelBuilder.ConfigureHeadlessSettings(_settingsStorage.Value);
 }
 ```
 
