@@ -75,6 +75,13 @@ internal interface ISettingsSnapshotEntry
 /// tier and broadcast.
 /// </para>
 /// <para>
+/// A snapshot runs at most one settle chain, so a burst of announcements costs at most <see cref="SettleDelays"/> re-reads.
+/// A trigger that settles while a chain runs joins it with its own names and baseline. Each re-read releases every trigger
+/// whose names changed, and the chain stops once none is left or its last delay passed. One merged baseline would release
+/// a trigger on another trigger's change and lose its value. Joining does not restart the delays, because a steady stream
+/// of announcements would otherwise postpone the re-reads indefinitely.
+/// </para>
+/// <para>
 /// Only <see cref="SettingsSnapshotReloadReason.Initial"/> loads an unloaded snapshot. A message, establishment, or settle
 /// reload before then does nothing, so the subscription hook never waits on the store during host startup and every first
 /// load validates the names.
@@ -82,7 +89,7 @@ internal interface ISettingsSnapshotEntry
 /// </remarks>
 internal sealed partial class SettingsSnapshot<T> : ISettingsSnapshot<T>, ISettingsSnapshotEntry, IDisposable
 {
-    /// <summary>Delays between settle re-reads, cumulative from the reload that scheduled them.</summary>
+    /// <summary>Delays between settle re-reads, cumulative from the reload that started the chain.</summary>
     internal static readonly TimeSpan[] SettleDelays =
     [
         TimeSpan.FromMilliseconds(500),
@@ -101,8 +108,10 @@ internal sealed partial class SettingsSnapshot<T> : ISettingsSnapshot<T>, ISetti
 #pragma warning restore CA2213
     private readonly CancellationTokenSource _disposeCts = new();
     private readonly Lock _listenersLock = new();
+    private readonly Lock _settleLock = new();
     private Action<T, long>[] _listeners = [];
     private volatile State? _state;
+    private SettleChain? _settle;
     private bool _namesValidated;
     private int _disposed;
 
@@ -316,7 +325,7 @@ internal sealed partial class SettingsSnapshot<T> : ISettingsSnapshot<T>, ISetti
         // would only fail and log again. With no earlier state there is nothing the trigger could be waiting to replace.
         if (watched is { Count: > 0 } && before is not null && _SameValues(before, after, watched))
         {
-            _ = _SettleAsync(before, watched);
+            _JoinSettle(before, watched);
         }
 
         return after;
@@ -365,41 +374,115 @@ internal sealed partial class SettingsSnapshot<T> : ISettingsSnapshot<T>, ISetti
         }
     }
 
-    private async Task _SettleAsync(FrozenDictionary<string, string?> baseline, IReadOnlyCollection<string> watched)
+    private void _JoinSettle(FrozenDictionary<string, string?> baseline, IReadOnlyCollection<string> watched)
     {
-        CancellationToken token;
+        SettleChain? started = null;
 
-        try
+        lock (_settleLock)
         {
-            token = _disposeCts.Token;
-        }
-        catch (ObjectDisposedException)
-        {
-            return;
+            var chain = _settle ??= started = new SettleChain();
+            chain.Waiting.Add((baseline, watched));
         }
 
+        if (started is not null)
+        {
+            _ = _SettleAsync(started);
+        }
+    }
+
+    private async Task _SettleAsync(SettleChain chain)
+    {
         try
         {
-            foreach (var delay in SettleDelays)
+            var token = _disposeCts.Token;
+
+            for (var i = 0; i < SettleDelays.Length; i++)
             {
-                await Task.Delay(delay, _timeProvider, token).ConfigureAwait(false);
+                await Task.Delay(SettleDelays[i], _timeProvider, token).ConfigureAwait(false);
+
+                // A trigger that joins from here on may have read after this re-read, so this re-read cannot judge it.
+                int judged;
+
+                lock (_settleLock)
+                {
+                    judged = chain.Waiting.Count;
+                }
+
                 var read = await _TryReloadAsync(SettingsSnapshotReloadReason.Settle, announcedNames: null, token)
                     .ConfigureAwait(false);
 
-                if (read is not null && !_SameValues(baseline, read, watched))
+                if (_TryEndSettle(chain, read, judged, isLast: i == SettleDelays.Length - 1))
                 {
                     return;
                 }
             }
         }
-        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        catch (OperationCanceledException) when (Volatile.Read(ref _disposed) != 0)
         {
             // The snapshot was disposed with the host.
         }
         catch (ObjectDisposedException)
         {
-            // The snapshot was disposed between two re-reads.
+            // The snapshot was disposed before the chain started or between two re-reads.
         }
+        finally
+        {
+            lock (_settleLock)
+            {
+                if (ReferenceEquals(_settle, chain))
+                {
+                    _settle = null;
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Releases the first <paramref name="judged"/> triggers whose watched names changed in <paramref name="read"/>, and
+    /// ends the chain when no trigger is left or this was its last re-read. Triggers that joined during the last re-read
+    /// move to a new chain, since nothing re-read after them.
+    /// </summary>
+    private bool _TryEndSettle(SettleChain chain, FrozenDictionary<string, string?>? read, int judged, bool isLast)
+    {
+        SettleChain? next = null;
+
+        // Under the lock that joins, so no trigger joins a chain after it decided to end.
+        lock (_settleLock)
+        {
+            if (read is not null)
+            {
+                for (var i = judged - 1; i >= 0; i--)
+                {
+                    var (baseline, watched) = chain.Waiting[i];
+
+                    if (!_SameValues(baseline, read, watched))
+                    {
+                        chain.Waiting.RemoveAt(i);
+                        judged--;
+                    }
+                }
+            }
+
+            if (!isLast && chain.Waiting.Count != 0)
+            {
+                return false;
+            }
+
+            if (chain.Waiting.Count > judged)
+            {
+                next = new SettleChain();
+                next.Waiting.AddRange(chain.Waiting.Skip(judged));
+            }
+
+            _settle = next;
+        }
+
+        if (next is not null)
+        {
+            _ = _SettleAsync(next);
+        }
+
+        return true;
     }
 
     private async Task<FrozenDictionary<string, string?>> _ReadAsync(CancellationToken cancellationToken)
@@ -507,6 +590,16 @@ internal sealed partial class SettingsSnapshot<T> : ISettingsSnapshot<T>, ISetti
     );
 
     private sealed record State(T Value, long Revision, FrozenDictionary<string, string?> Raw);
+
+    /// <summary>The triggers a settle chain re-reads for, each with the values it read and the names it waits on.</summary>
+    private sealed class SettleChain
+    {
+        /// <summary>Guarded by <c>_settleLock</c>.</summary>
+        public List<(
+            FrozenDictionary<string, string?> Baseline,
+            IReadOnlyCollection<string> Watched
+        )> Waiting { get; } = [];
+    }
 
     private sealed class Subscription(SettingsSnapshot<T> owner, Action<T, long> listener) : IDisposable
     {
