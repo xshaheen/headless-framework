@@ -8,7 +8,7 @@ internal static class StableConsumerTestContracts
 {
     public static void UseProcessLocalInMemoryStorage(this MessagingSetupBuilder setup)
     {
-        setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
+        setup.Options.MinimumInboxGuarantee = InboxGuarantee.ProcessLocal;
         setup.UseInMemoryStorage();
     }
 }

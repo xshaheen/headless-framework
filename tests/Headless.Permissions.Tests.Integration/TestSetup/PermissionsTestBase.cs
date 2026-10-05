@@ -63,7 +63,7 @@ public abstract class PermissionsTestBase(PermissionsTestFixture fixture) : Test
         // Messages
         services.AddHeadlessMessaging(setup =>
         {
-            setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
+            setup.Options.MinimumInboxGuarantee = InboxGuarantee.ProcessLocal;
             setup.UseInMemory();
             setup.UseInMemoryStorage();
         });

@@ -106,7 +106,7 @@ public static class ReceiveMiddlewareOutcomeConformance
         {
             configureTransport(setup);
             configureStorage(setup);
-            setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
+            setup.Options.MinimumInboxGuarantee = InboxGuarantee.ProcessLocal;
             setup.Options.Version = "v1";
         });
         services.ConfigureMessaging(messaging =>
@@ -172,7 +172,7 @@ public static class ReceiveMiddlewareOutcomeConformance
         {
             configureTransport(setup);
             configureStorage(setup);
-            setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
+            setup.Options.MinimumInboxGuarantee = InboxGuarantee.ProcessLocal;
             setup.Options.Version = "v1";
         });
         services.ConfigureMessaging(messaging =>
@@ -227,7 +227,7 @@ public static class ReceiveMiddlewareOutcomeConformance
         {
             configureTransport(setup);
             configureStorage(setup);
-            setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
+            setup.Options.MinimumInboxGuarantee = InboxGuarantee.ProcessLocal;
             setup.Options.Version = "v1";
             setup.Options.RetryPolicy.OnExhausted = (_, _) =>
             {
@@ -297,7 +297,7 @@ public static class ReceiveMiddlewareOutcomeConformance
         {
             configureTransport(setup);
             configureStorage(setup);
-            setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
+            setup.Options.MinimumInboxGuarantee = InboxGuarantee.ProcessLocal;
             setup.Options.Version = "v1";
         });
         services.ConfigureMessaging(messaging =>

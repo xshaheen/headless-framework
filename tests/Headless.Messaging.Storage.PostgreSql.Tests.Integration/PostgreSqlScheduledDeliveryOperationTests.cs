@@ -30,7 +30,7 @@ public sealed class PostgreSqlScheduledDeliveryOperationTests(PostgreSqlTestFixt
 
     protected override void ConfigureStorage(MessagingSetupBuilder setup)
     {
-        setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.DurableDedupeOnly;
+        setup.Options.MinimumInboxGuarantee = InboxGuarantee.Durable;
         setup.ConfigureStorage(storage => storage.Schema = $"scheduled_policy_{Guid.NewGuid():N}");
         setup.UsePostgreSql(fixture.ConnectionString);
     }

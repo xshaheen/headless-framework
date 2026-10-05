@@ -144,7 +144,7 @@ public sealed class NatsReplyTransportTests(NatsFixture fixture) : TestBase
         {
             setup.UseNats(options => options.Servers = fixture.ConnectionString);
             setup.UseInMemoryStorage();
-            setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
+            setup.Options.MinimumInboxGuarantee = InboxGuarantee.ProcessLocal;
             setup.AddRequestReply();
         });
         await using var caller = services.BuildServiceProvider();

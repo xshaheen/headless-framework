@@ -147,7 +147,7 @@ public static class SetupPostgreSqlEntityFrameworkMessaging
                 current.Provider,
                 current.Lanes.ToArray(),
                 current.SupportsDelayedScheduling,
-                MessagingInboxCapabilityTier.Transactional
+                InboxGuarantee.Transactional
             )
         );
     }

@@ -145,7 +145,7 @@ public static class SetupSqlServerEntityFrameworkMessaging
                 current.Provider,
                 current.Lanes.ToArray(),
                 current.SupportsDelayedScheduling,
-                MessagingInboxCapabilityTier.Transactional
+                InboxGuarantee.Transactional
             )
         );
     }

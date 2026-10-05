@@ -243,7 +243,7 @@ public sealed class DefaultDeliveryModeTests : TestBase
         {
             setup.UseInMemory();
             setup.UseInMemoryStorage();
-            setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
+            setup.Options.MinimumInboxGuarantee = InboxGuarantee.ProcessLocal;
             setup.Options.DefaultDeliveryMode = mode;
             registrations?.Invoke(setup);
         });

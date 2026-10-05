@@ -253,10 +253,9 @@ public sealed class MessagingOptions
 
     /// <summary>
     /// Gets or sets the inbox guarantee required for durable consumers. Defaults to
-    /// <see cref="MessagingInboxCapabilityTier.Transactional"/>; selecting a weaker tier is an explicit opt-down.
+    /// <see cref="InboxGuarantee.Transactional"/>; selecting a weaker guarantee is an explicit opt-down.
     /// </summary>
-    public MessagingInboxCapabilityTier RequiredInboxCapability { get; set; } =
-        MessagingInboxCapabilityTier.Transactional;
+    public InboxGuarantee MinimumInboxGuarantee { get; set; } = InboxGuarantee.Transactional;
 
     /// <summary>
     /// Gets or sets the delivery mode inherited by publications without a per-call override. Defaults to
@@ -366,7 +365,7 @@ public sealed class MessagingOptions
         target.ShutdownTimeout = ShutdownTimeout;
         target.SubscriptionEstablishedTimeout = SubscriptionEstablishedTimeout;
         target.DeadNodeReconcileInterval = DeadNodeReconcileInterval;
-        target.RequiredInboxCapability = RequiredInboxCapability;
+        target.MinimumInboxGuarantee = MinimumInboxGuarantee;
         target.DefaultDeliveryMode = DefaultDeliveryMode;
         target.MaxPoisonEnvelopeBytes = MaxPoisonEnvelopeBytes;
         target.DefaultFailurePolicy = DefaultFailurePolicy;
@@ -523,9 +522,9 @@ internal sealed class MessagingOptionsValidator : AbstractValidator<MessagingOpt
             .GreaterThan(TimeSpan.Zero)
             .WithMessage("DeadNodeReconcileInterval must be greater than zero.");
         RuleFor(x => x.DefaultDeliveryMode).IsInEnum();
-        RuleFor(x => x.RequiredInboxCapability)
+        RuleFor(x => x.MinimumInboxGuarantee)
             .IsInEnum()
-            .WithMessage("RequiredInboxCapability must be a defined inbox capability tier.");
+            .WithMessage("MinimumInboxGuarantee must be a defined inbox guarantee.");
         // #2 — Version is persisted as a literal into a VARCHAR(20)/nvarchar(20) column by the SQL
         // storage providers; reject >20 chars at startup instead of failing every outbox insert at runtime.
         RuleFor(x => x.Version)

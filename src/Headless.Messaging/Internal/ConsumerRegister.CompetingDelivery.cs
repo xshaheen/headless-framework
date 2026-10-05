@@ -504,7 +504,7 @@ internal sealed partial class ConsumerRegister
                 var storageCapability = _capabilityModel.Providers.FirstOrDefault(capability =>
                     capability.Role is MessagingProviderRole.Storage
                 );
-                if (storageCapability?.InboxCapability is { } inboxTier)
+                if (storageCapability?.InboxGuarantee is { } inboxGuarantee)
                 {
                     MessagingMetrics.RecordInbox(
                         admission.Disposition is InboxAdmissionDisposition.Winner
@@ -523,7 +523,7 @@ internal sealed partial class ConsumerRegister
                                 $"Unsupported inbox admission disposition '{admission.Disposition}'."
                             ),
                         },
-                        inboxTier,
+                        inboxGuarantee,
                         storageCapability.Provider,
                         message.Headers.TryGetValue(Headers.TenantId, out var tenantId) ? tenantId : null,
                         _inboxMetricPolicy.TenantTagName

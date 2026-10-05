@@ -699,7 +699,7 @@ internal sealed partial class RelationalDataStorage
                 row.ConsumerIdentity,
                 row.Lane,
                 InboxMetricOutcome.Expired,
-                Options.RequiredInboxCapability,
+                Options.MinimumInboxGuarantee,
                 _storage.ProviderName
             );
         }

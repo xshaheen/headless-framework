@@ -93,7 +93,7 @@ public sealed class SharedHarnessFixture : IAsyncLifetime
             {
                 setup.UseInMemory();
                 setup.UseInMemoryStorage();
-                setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
+                setup.Options.MinimumInboxGuarantee = InboxGuarantee.ProcessLocal;
             });
             services.ConfigureMessaging(messaging =>
             {

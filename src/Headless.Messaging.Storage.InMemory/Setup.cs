@@ -39,7 +39,7 @@ public static class SetupInMemoryStorage
                     "InMemory",
                     [MessageLane.Bus, MessageLane.Queue],
                     supportsDelayedScheduling: true,
-                    inboxCapability: MessagingInboxCapabilityTier.ProcessLocal
+                    inboxGuarantee: InboxGuarantee.ProcessLocal
                 )
             );
 

@@ -39,7 +39,7 @@ internal sealed class RequestClient(
             throw new InvalidOperationException(
                 "A request cannot be sent from inside a transactional inbox unit: waiting for the reply would hold the "
                     + "database transaction and the inbox lease for the whole timeout. Send it after the unit completes, "
-                    + "or from a consumer on the non-transactional tier."
+                    + "or from a consumer under a weaker inbox guarantee than Transactional."
             );
         }
 

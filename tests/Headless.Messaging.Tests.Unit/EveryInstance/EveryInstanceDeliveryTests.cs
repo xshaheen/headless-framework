@@ -557,15 +557,14 @@ public sealed class EveryInstanceDeliveryTests : TestBase
     }
 
     [Fact]
-    public async Task should_not_require_an_inbox_tier_for_a_host_whose_only_consumers_are_every_instance()
+    public async Task should_not_require_an_inbox_guarantee_for_a_host_whose_only_consumers_are_every_instance()
     {
         // given
         var factory = new RecordingFactory();
         await using var provider = _BuildHost(
             factory,
             configure: services => services.ConfigureMessaging(m => m.AddModule<PriceCacheModule>()),
-            configureMessaging: setup =>
-                setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.Transactional
+            configureMessaging: setup => setup.Options.MinimumInboxGuarantee = InboxGuarantee.Transactional
         );
 
         // when
@@ -590,7 +589,7 @@ public sealed class EveryInstanceDeliveryTests : TestBase
         {
             setup.UseInMemory();
             setup.UseProcessLocalInMemoryStorage();
-            setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
+            setup.Options.MinimumInboxGuarantee = InboxGuarantee.ProcessLocal;
             configureMessaging?.Invoke(setup);
         });
         configure?.Invoke(services);

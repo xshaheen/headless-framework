@@ -116,7 +116,7 @@ public sealed class SubscribeExecutorRetryTests : TestBase
         var executor = _CreateExecutor(
             invoker,
             storage,
-            new MessagingOptions { RequiredInboxCapability = MessagingInboxCapabilityTier.DurableDedupeOnly }
+            new MessagingOptions { MinimumInboxGuarantee = InboxGuarantee.Durable }
         );
         var message = _CreateMediumMessage();
         message.Origin.Headers[Headers.ConsumerIdentity] = "obsolete.consumer";

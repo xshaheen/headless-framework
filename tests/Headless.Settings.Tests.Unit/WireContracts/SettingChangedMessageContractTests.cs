@@ -35,7 +35,7 @@ public sealed class SettingChangedMessageContractTests : TestBase
                 {
                     setup.UseInMemory();
                     setup.UseInMemoryStorage();
-                    setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
+                    setup.Options.MinimumInboxGuarantee = InboxGuarantee.ProcessLocal;
                     setup.UseConventions(static conventions =>
                         conventions
                             .UseKebabCaseMessageNames()

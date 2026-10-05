@@ -619,7 +619,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
                 "TestStorage",
                 [MessageLane.Bus, MessageLane.Queue],
                 supportsDelayedScheduling: true,
-                inboxCapability: MessagingInboxCapabilityTier.Transactional
+                inboxGuarantee: InboxGuarantee.Transactional
             ),
         ]);
         var sut = new MessageNeedToRetryProcessor(

@@ -104,7 +104,7 @@ public sealed class ProviderConformanceEvidenceTests(KafkaFixture fixture) : Tes
                 "TestStorage",
                 [MessageLane.Bus, MessageLane.Queue],
                 supportsDelayedScheduling: true,
-                inboxCapability: MessagingInboxCapabilityTier.Transactional
+                inboxGuarantee: InboxGuarantee.Transactional
             )
         );
         services.AddSingleton<IStorageTableNames>(_ =>

@@ -25,7 +25,7 @@ public sealed class SetupTests : TestBase
         services.AddHeadlessMessaging(setup =>
         {
             setup.Options.Version = "v7";
-            setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.DurableDedupeOnly;
+            setup.Options.MinimumInboxGuarantee = InboxGuarantee.Durable;
             setup.UseInMemory();
             setup.UsePostgreSql("Host=localhost;Database=test");
         });
@@ -56,7 +56,7 @@ public sealed class SetupTests : TestBase
 
         services.AddHeadlessMessaging(setup =>
         {
-            setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.DurableDedupeOnly;
+            setup.Options.MinimumInboxGuarantee = InboxGuarantee.Durable;
             setup.UseInMemory();
             setup.UsePostgreSql("Host=localhost;Database=test");
         });
@@ -77,7 +77,7 @@ public sealed class SetupTests : TestBase
 
         services.AddHeadlessMessaging(setup =>
         {
-            setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.DurableDedupeOnly;
+            setup.Options.MinimumInboxGuarantee = InboxGuarantee.Durable;
             setup.UseInMemory();
             setup.UsePostgreSql();
         });
@@ -99,7 +99,7 @@ public sealed class SetupTests : TestBase
 
         services.AddHeadlessMessaging(setup =>
         {
-            setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.DurableDedupeOnly;
+            setup.Options.MinimumInboxGuarantee = InboxGuarantee.Durable;
             setup.UseInMemory();
             setup.UsePostgreSql("Host=localhost;Database=own");
         });
@@ -120,7 +120,7 @@ public sealed class SetupTests : TestBase
 
         services.AddHeadlessMessaging(setup =>
         {
-            setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.DurableDedupeOnly;
+            setup.Options.MinimumInboxGuarantee = InboxGuarantee.Durable;
             setup.UseInMemory();
             setup.UsePostgreSql();
         });

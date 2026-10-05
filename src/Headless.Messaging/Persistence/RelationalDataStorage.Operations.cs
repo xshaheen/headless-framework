@@ -376,7 +376,7 @@ internal sealed partial class RelationalDataStorage
             row.ConsumerIdentity,
             row.Lane,
             metricOutcome,
-            Options.RequiredInboxCapability,
+            Options.MinimumInboxGuarantee,
             _storage.ProviderName
         );
     }

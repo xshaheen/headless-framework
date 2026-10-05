@@ -80,7 +80,7 @@ public sealed class SubscribeExecutorReplyTests : TestBase
         RecordingReplyTransport? replies = null;
         FakeInboxTransactionRunner? runner = null;
         await using var host = ResponderExecutorHost.Create(
-            options => options.RequiredInboxCapability = MessagingInboxCapabilityTier.Transactional,
+            options => options.MinimumInboxGuarantee = InboxGuarantee.Transactional,
             services =>
                 services.AddScoped<IInboxTransactionRunner>(sp =>
                     runner = new FakeInboxTransactionRunner(
@@ -308,7 +308,7 @@ public sealed class SubscribeExecutorReplyTests : TestBase
         RecordingReplyTransport? replies = null;
         FakeInboxTransactionRunner? runner = null;
         await using var host = ResponderExecutorHost.Create(
-            options => options.RequiredInboxCapability = MessagingInboxCapabilityTier.Transactional,
+            options => options.MinimumInboxGuarantee = InboxGuarantee.Transactional,
             services =>
                 services.AddScoped<IInboxTransactionRunner>(sp =>
                     runner = new FakeInboxTransactionRunner(

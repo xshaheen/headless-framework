@@ -19,7 +19,7 @@ public sealed class InMemoryScheduledDeliveryOperationTests : ScheduledDeliveryO
 
     protected override void ConfigureStorage(MessagingSetupBuilder setup)
     {
-        setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
+        setup.Options.MinimumInboxGuarantee = InboxGuarantee.ProcessLocal;
         setup.UseInMemoryStorage();
     }
 }

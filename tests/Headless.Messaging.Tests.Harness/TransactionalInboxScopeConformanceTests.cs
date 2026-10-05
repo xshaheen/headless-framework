@@ -76,7 +76,7 @@ public abstract class TransactionalInboxScopeConformanceTests : TestBase
         {
             setup.UseInMemory();
             ConfigureStorage(setup);
-            setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.Transactional;
+            setup.Options.MinimumInboxGuarantee = InboxGuarantee.Transactional;
         });
         messagingBuilder.AddBusConsumeMiddleware<InboxScopeMiddleware>();
         messagingBuilder.AddQueueConsumeMiddleware<InboxScopeMiddleware>();
@@ -354,7 +354,9 @@ public abstract class TransactionalInboxScopeConformanceTests : TestBase
             // rows that survive the fence rejection this test forces.
             var unitOfWork =
                 context.UnitOfWork
-                ?? throw new InvalidOperationException("The transactional inbox tier must hand the consumer its unit.");
+                ?? throw new InvalidOperationException(
+                    "The transactional inbox guarantee must hand the consumer its unit."
+                );
             var output = new InboxScopeOutput(context.Message.Id);
             await unitOfWork.Outbox.PublishAsync(output, cancellationToken);
             await unitOfWork.Outbox.EnqueueAsync(output, cancellationToken);

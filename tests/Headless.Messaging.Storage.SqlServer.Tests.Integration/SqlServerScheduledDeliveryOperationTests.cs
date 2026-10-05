@@ -30,7 +30,7 @@ public sealed class SqlServerScheduledDeliveryOperationTests(SqlServerTestFixtur
 
     protected override void ConfigureStorage(MessagingSetupBuilder setup)
     {
-        setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.DurableDedupeOnly;
+        setup.Options.MinimumInboxGuarantee = InboxGuarantee.Durable;
         setup.ConfigureStorage(storage => storage.Schema = $"scheduled_policy_{Guid.NewGuid():N}");
         setup.UseSqlServer(fixture.ConnectionString);
     }

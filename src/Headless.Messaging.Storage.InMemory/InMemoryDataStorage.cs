@@ -1191,7 +1191,7 @@ internal sealed partial class InMemoryDataStorage(
                                 key.ConsumerIdentity,
                                 key.Lane,
                                 InboxMetricOutcome.Expired,
-                                MessagingInboxCapabilityTier.ProcessLocal,
+                                InboxGuarantee.ProcessLocal,
                                 "InMemory"
                             );
                         }
