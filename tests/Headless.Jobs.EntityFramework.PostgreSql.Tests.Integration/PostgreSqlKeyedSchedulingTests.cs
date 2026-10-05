@@ -27,6 +27,18 @@ public sealed class PostgreSqlKeyedSchedulingTests(PostgreSqlJobsCoordinationFix
     public override Task store_transaction_commit_fault_is_not_replayed(bool afterCommit) =>
         base.store_transaction_commit_fault_is_not_replayed(afterCommit);
 
+    [Fact]
+    public override Task seeded_cron_insert_replays_whole_after_a_transient_fault() =>
+        base.seeded_cron_insert_replays_whole_after_a_transient_fault();
+
+    [Fact]
+    public override Task cron_resume_replays_whole_after_a_transient_fault() =>
+        base.cron_resume_replays_whole_after_a_transient_fault();
+
+    [Fact]
+    public override Task cron_schedule_edit_replays_whole_after_a_transient_fault() =>
+        base.cron_schedule_edit_replays_whole_after_a_transient_fault();
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
