@@ -197,6 +197,8 @@ The fencing packages emit no metrics.
 
 Enlisted calls (`unit.Leases.*`) follow the same rules as `unit.Sequences` (see [unit-of-work.md](unit-of-work.md)): they run `RequireTransaction`, then `ValidateEnlistment` (a live transaction, on the owning connection, on the same database as the configured provider via `RelationalDatabaseIdentity`), then — for grant, renew, settle, and release only, never for the fence read — mark an *observed*-mode unit non-retryable before running. Enlisted calls are never retried; a refused call runs no statement and leaves the unit retryable. What the unit must carry is the provider's judgment: the relational providers need a live transaction on their own database, while the in-memory provider refuses any unit over a database connection and accepts a resource-less unit (`IUnitOfWorkFactory.BeginAsync()`), which then plays the transaction. Autonomous calls open their own connection at READ COMMITTED and retry only a deadlock or serialization failure (PostgreSQL `40P01`/`40001`, SQL Server 1205/3960), in a fresh transaction, up to three attempts, waiting a jittered delay (`n × 10–50 ms` before retry `n`, on the registered `TimeProvider`) between them.
 
+With `Headless.UnitOfWork.Analyzers` referenced, [HF2005](unit-of-work.md#hf2005) reports an `IFencedLeases` grant, renew, settle, or release made while a unit of work is in scope, and its code fix moves the call onto `unit.Leases`. `SweepExpiredAsync` and `PurgeAsync` have no enlisted counterpart and are not reported.
+
 ## Choosing a Provider
 
 | Provider | Use when | Avoid when | Trade-off |

@@ -32,6 +32,7 @@ See [Choosing a Provider](#choosing-a-provider) for the package-selection table.
 
 - Inject `IUnitOfWorkFactory` anywhere — it is a singleton with no scope-bound state, so a hosted service or a framework singleton depends on it directly and needs no `IServiceScopeFactory` dance. The same is true of `IBus`, `IQueue`, `IJobScheduler`, and the Jobs managers: all singletons, all autonomous.
 - To enlist a write, call it on the handle you hold: `unit.Outbox.PublishAsync(...)`, `unit.Jobs.ScheduleAsync(...)`, `unit.TimeJobs<T>().AddAsync(...)`. The injected publishers and schedulers never enlist, whatever scope they came from. The accessors are free to read at each call site — each binds once per unit and is kept as unit-local state — and refuse a unit that already reached a terminal state; a binding retained past that point throws on its next use, before anything is stored.
+- To catch an injected call made while you hold a unit, reference `Headless.UnitOfWork.Analyzers`. Its rules (HF2001–HF2006; HF2004 is unused) report the call and name the enlisted receiver on your unit, and a code fix rewrites the one-to-one calls. See [Headless.UnitOfWork.Analyzers](#headlessunitofworkanalyzers).
 - Reach the unit through the handle or the object it was begun on. Nothing ambient carries it, so a callee that must enlist takes the `IUnitOfWork` as a parameter, reads it from the `DbContext` or `DbConnection` it was begun on (`db.UnitOfWork()`, `connection.UnitOfWork()`), reads `context.UnitOfWork` in a transactional consumer, or wraps its own work in `RunAsync(db, …)` / `RunAsync(connection, …)` on that object — which joins the live unit. Do not `BeginAsync` a second unit inside a callee to "get one": on a context or connection that already carries a live unit, `BeginAsync` and `Enlist` throw and name the join.
 - Never end the unit inside a `RunAsync` block (`CompleteAsync`, `RollbackAsync`, or a dispose): `RunAsync` completes it when the block returns and rolls it back when the block throws. An owned block that completed its own unit gets its result back with a warning and is never replayed, one that rolled it back or disposed it and then returned is refused with `InvalidOperationException`, and a joined block that ends the owner's unit is refused once it returns.
 - Open the unit of work explicitly, on the line you choose. Nothing in this framework opens one on your behalf — no mediator behavior, no endpoint filter, no consumer-runtime wrapper. If a handler needs one, call `factory.BeginAsync(...)` or `factory.RunAsync(...)` yourself.
@@ -627,7 +628,41 @@ Roslyn analyzers that report a write made through an autonomous service while a 
 dotnet add package Headless.UnitOfWork.Analyzers
 ```
 
-The package is a development dependency: it adds analyzers to the project that references it and flows to no consumer.
+The package is a development dependency: it adds analyzers to the project that references it and flows to no consumer. It needs a .NET 10 SDK or Visual Studio 2026 (Roslyn 5.0), the same floor the C# 14 accessors it suggests already set.
+
+### When a unit is in scope
+
+A call is reported only when an `IUnitOfWork` local or parameter is visible at the call. There is no ambient unit, so the analyzer reads the same explicit handle the code would write through.
+
+- The unit is a lambda or method parameter (the `RunAsync(db, (unit, ct) => …)` block), or a local such as `var unit = db.UnitOfWork()`, `connection.UnitOfWork()`, `context.UnitOfWork` in a consumer, or `await factory.BeginAsync(ct)`. A unit captured from an enclosing method or lambda counts at any depth.
+- The unit is declared before the call and definitely assigned there.
+- The compiler's nullable flow state for the unit at the call is not-null. `db.UnitOfWork()`, `connection.UnitOfWork()`, and `context.UnitOfWork` return `IUnitOfWork?`, so the call counts only after a check such as `if (unit is null) return;`, `?? throw`, or `is { } unit`. Where nullable analysis is off, the unit counts.
+- Inside a callback passed to `OnCompleted` or `OnFailed` (a lambda, or a local function passed as a method group), a unit declared outside the callback does not count: the callback runs after the transaction ends, where the autonomous call is the right one and the enlisted receiver refuses the write.
+- Inside a `static` lambda or local function, an outer unit does not count, because the code cannot capture it.
+- After a statement that always runs before the call and completes, rolls back, or disposes the unit, the unit does not count. A rollback inside an early-exit branch (`if (!valid) { await unit.RollbackAsync(); return; }`) leaves the unit live on the path that reaches the call, so the call is still reported.
+- Fields, properties, and primary-constructor parameters are not units in scope.
+- When several units are eligible, the message names the one declared last.
+
+### Known limits
+
+- An enlisted Jobs receiver that reaches the call through a parameter, or a local assigned more than once, is reported, because the analyzer cannot trace it back to `unit.Jobs`. Suppress that call with a reason.
+- A delegate stored in a variable first and then passed to `OnCompleted` is not recognized as a callback, so a call inside it is reported. Suppress it, or pass the lambda or local function directly.
+- A local function declared before the unit cannot capture it, so a call inside it is not reported even when the function runs later.
+- The analyzer cannot see provider topology. Where a provider refuses enlistment, the enlisted receiver throws: the cache idempotency provider refuses every `unit.Idempotency` call, SQLite idempotency refuses enlisted admission, and `unit.Outbox` refuses a unit on a different database from the messaging storage. On such a host, do not apply the fix: set that rule's severity to `none`, or suppress the call with a reason.
+- Where nullable analysis is off, the code fix can write `unit.Outbox` in a branch where the unit is null at run time.
+
+### Severity and suppression
+
+Every rule is a suggestion by default, because some autonomous calls inside a unit are correct: a lock that must outlive the transaction, a notification that must go out even if the unit rolls back. Raise each rule on its own in `.editorconfig`:
+
+```ini
+[*.cs]
+dotnet_diagnostic.HF2001.severity = error
+dotnet_diagnostic.HF2002.severity = warning
+dotnet_diagnostic.HF2003.severity = suggestion
+```
+
+Keep a deliberate autonomous call with an inline reason, for example `#pragma warning disable HF2001 // The alert must go out even when the order rolls back.`. There is no attribute or option that marks a call site or a message type as autonomous: the receiver at the call site is the declaration.
 
 ### Diagnostics
 
