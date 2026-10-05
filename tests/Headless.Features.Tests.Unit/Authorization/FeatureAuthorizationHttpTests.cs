@@ -353,6 +353,48 @@ public sealed class FeatureAuthorizationHttpTests : TestBase
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*AddAuthorization*");
     }
 
+    [Theory]
+    [InlineData("/reports")]
+    [InlineData("/minimal")]
+    [InlineData("/minimal/attribute")]
+    public async Task should_refuse_a_gated_endpoint_when_routing_runs_after_the_implicit_authorization(string path)
+    {
+        // given - the host calls UseRouting() but never UseAuthorization(), and the feature is enabled, so only the
+        // guard can stop the request: ASP.NET Core's own check ignores endpoints without [Authorize]
+        await using var app = await _StartAsync(
+            new HostOptions
+            {
+                EnabledFeatures = [_Reports],
+                CallUseAuthorization = false,
+                CallUseRoutingWithoutAuthorization = true,
+            }
+        );
+
+        // when
+        var act = async () =>
+        {
+            using var response = await _GetAsync(app, path, authenticated: true);
+        };
+
+        // then
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*UseAuthorization()*");
+    }
+
+    [Fact]
+    public async Task should_run_an_ungated_endpoint_when_routing_runs_after_the_implicit_authorization()
+    {
+        // given
+        await using var app = await _StartAsync(
+            new HostOptions { CallUseAuthorization = false, CallUseRoutingWithoutAuthorization = true }
+        );
+
+        // when
+        using var response = await _GetAsync(app, "/open", authenticated: false);
+
+        // then
+        await _AssertOkAsync(response, "open");
+    }
+
     #endregion
 
     #region Helpers
@@ -374,6 +416,8 @@ public sealed class FeatureAuthorizationHttpTests : TestBase
         public bool CallUseAuthorization { get; init; } = true;
 
         public bool AddControllers { get; init; } = true;
+
+        public bool CallUseRoutingWithoutAuthorization { get; init; }
     }
 
     private static async Task<WebApplication> _StartAsync(HostOptions options)
@@ -444,6 +488,14 @@ public sealed class FeatureAuthorizationHttpTests : TestBase
             app.UseAuthentication();
             app.UseAuthorization();
         }
+        else if (options.CallUseRoutingWithoutAuthorization)
+        {
+            // Routing now runs after the authorization middleware WebApplication adds on its own, so that middleware
+            // sees no endpoint and never evaluates the gate.
+            app.UseRouting();
+        }
+
+        app.MapGet("/open", () => "open");
 
         if (options.AddControllers)
         {

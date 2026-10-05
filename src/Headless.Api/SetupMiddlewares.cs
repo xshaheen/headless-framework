@@ -5,6 +5,7 @@ using Headless.Context;
 using Headless.MultiTenancy;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -64,6 +65,9 @@ public static class SetupMiddlewares
     /// <c>FeatureRequirement</c>s (<c>[RequiresFeature]</c>, <c>RequireFeatures(...)</c>) is rewritten from the
     /// challenge or forbid into a 409 <c>g:feature_currently_not_available</c> problem response. An evaluator
     /// registered after this call replaces the wrapper, and feature failures then keep ASP.NET Core's 401 or 403.
+    /// It also refuses, with <see cref="InvalidOperationException"/>, to run an endpoint that carries authorization
+    /// requirement data (<c>[RequiresFeature]</c>) when the authorization middleware never saw it, as ASP.NET Core
+    /// already does for <c>[Authorize]</c>; <c>RouteOptions.SuppressCheckForUnhandledSecurityMetadata</c> turns both off.
     /// </remarks>
     /// <param name="services">The service collection to register into.</param>
     /// <returns>The same service collection.</returns>
@@ -81,6 +85,12 @@ public static class SetupMiddlewares
             services.TryAddTransient<IAuthorizationEvaluator, DefaultAuthorizationEvaluator>();
             services.TryDecorate<IAuthorizationEvaluator, FeatureRejectionAuthorizationEvaluator>();
         }
+
+        // ASP.NET Core refuses an [Authorize] endpoint the authorization middleware never saw, but runs a
+        // [RequiresFeature] endpoint unchecked; this guard closes that gap for every requirement-data endpoint.
+        services.TryAddEnumerable(
+            ServiceDescriptor.Singleton<MatcherPolicy, AuthorizationRequirementDataGuardMatcherPolicy>()
+        );
 
         return services;
     }
