@@ -78,6 +78,7 @@ public static class SetupApiServices
         /// <item><description><see cref="Headless.MultiTenancy.MissingTenantContextException"/> → 403 with <c>g:tenant_required</c></description></item>
         /// <item><description><c>FluentValidation.ValidationException</c> → 422</description></item>
         /// <item><description><c>Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException</c> (matched by name) → 409</description></item>
+        /// <item><description><c>Microsoft.EntityFrameworkCore.DbUpdateException</c> (matched by name) caused by a PostgreSQL, SQL Server, or SQLite unique-constraint violation → 409 with <c>g:unique_violation</c></description></item>
         /// <item><description><see cref="TimeoutException"/> → 408</description></item>
         /// <item><description><see cref="NotImplementedException"/> → 501</description></item>
         /// <item><description>Client-cancelled (<see cref="OperationCanceledException"/> with <c>RequestAborted</c>) → 499</description></item>

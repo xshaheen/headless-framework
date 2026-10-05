@@ -26,6 +26,12 @@ public static class GeneralErrorCodes
     /// <summary>An optimistic-concurrency conflict prevented the operation from completing. Maps to 409.</summary>
     public const string ConcurrencyFailure = "g:concurrency_failure";
 
+    /// <summary>
+    /// The write would duplicate a value that a database unique constraint or index requires to be unique. Maps to
+    /// 409.
+    /// </summary>
+    public const string UniqueViolation = "g:unique_violation";
+
     /// <summary>A required <c>If-Match</c> precondition was omitted. Maps to 428.</summary>
     public const string IfMatchRequired = "g:if_match_required";
 
