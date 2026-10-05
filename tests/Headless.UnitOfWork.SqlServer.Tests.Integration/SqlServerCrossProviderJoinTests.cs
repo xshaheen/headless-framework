@@ -30,7 +30,7 @@ public sealed class SqlServerCrossProviderJoinTests(SqlServerUnitOfWorkFixture f
         var connection = (SqlConnection)db.Database.GetDbConnection();
         IUnitOfWork? joined = null;
 
-        await using (var owner = await factory.BeginAsync(db, cancellationToken: AbortToken))
+        await using (var owner = await factory.BeginAsync(db, AbortToken))
         {
             // The raw-ADO helper's own RunAsync, on the connection EF opened the transaction on.
             await factory.RunAsync(
@@ -71,9 +71,9 @@ public sealed class SqlServerCrossProviderJoinTests(SqlServerUnitOfWorkFixture f
         var db = scope.ServiceProvider.GetRequiredService<ProbeDbContext>();
         var connection = (SqlConnection)db.Database.GetDbConnection();
 
-        await using var adoOwner = await factory.BeginAsync(connection, cancellationToken: AbortToken);
+        await using var adoOwner = await factory.BeginAsync(connection, AbortToken);
 
-        var act = () => factory.BeginAsync(db, cancellationToken: AbortToken).AsTask();
+        var act = () => factory.BeginAsync(db, AbortToken).AsTask();
 
         (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage(
             "*connection beneath this DbContext already carries an active unit of work*Begin the EF unit of work first*RunAsync(connection*"
@@ -95,7 +95,7 @@ public sealed class SqlServerCrossProviderJoinTests(SqlServerUnitOfWorkFixture f
         var connection = (SqlConnection)db.Database.GetDbConnection();
         var ran = false;
 
-        await using var adoOwner = await factory.BeginAsync(connection, cancellationToken: AbortToken);
+        await using var adoOwner = await factory.BeginAsync(connection, AbortToken);
 
         var act = async () =>
             await factory.RunAsync(

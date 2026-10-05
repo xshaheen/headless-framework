@@ -268,7 +268,7 @@ public abstract partial class JobsTransactionalKeyedConformanceTests<TFixture>(T
                 // Owned mode, driven manually (not RunAsync): the retry loop above is this test's OWN strategy, unrelated
                 // to context's configured one, so RunAsync's built-in retry (which reads context's real strategy) would
                 // not retry InjectedFailureException — a fresh unit per attempt is asserted by the disposal below.
-                await using var unit = await factory.BeginAsync(context, cancellationToken: AbortToken);
+                await using var unit = await factory.BeginAsync(context, AbortToken);
                 attempts++;
                 await JobsCoordinationFixtureExtensions.InsertProbeRowAsync(
                     context.Database.GetDbConnection(),

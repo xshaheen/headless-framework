@@ -72,7 +72,7 @@ public sealed class SqliteFencingFixture : ICollectionFixture<SqliteFencingFixtu
         CancellationToken cancellationToken
     )
     {
-        return factory.BeginAsync((SqliteConnection)connection, cancellationToken: cancellationToken);
+        return factory.BeginAsync((SqliteConnection)connection, cancellationToken);
     }
 
     public IUnitOfWork Enlist(IUnitOfWorkFactory factory, DbConnection connection, DbTransaction transaction)

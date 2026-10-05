@@ -238,7 +238,7 @@ public sealed class PlaceOrderHandler(IUnitOfWorkFactory factory, AppDbContext d
 {
     public async Task<OrderId> Handle(PlaceOrder cmd, CancellationToken ct)
     {
-        await using var unit = await factory.BeginAsync(db, cancellationToken: ct); // the EF provider's overload
+        await using var unit = await factory.BeginAsync(db, ct); // the EF provider's overload
         db.Orders.Add(order);
         await db.SaveChangesAsync(ct);
         await unit.Outbox.PublishAsync(new OrderPlaced(orderId), ct);              // row inside this unit's transaction
@@ -336,9 +336,10 @@ Gives a plain EF Core `DbContext` the three unit-of-work entry points it needs �
 
 ### API and behavior
 
-- `IUnitOfWorkFactory.BeginAsync(db, isolation = ReadCommitted, ct)` — owned mode: rejects a context (or its connection) that already carries a live unit (naming the `RunAsync` join and `db.UnitOfWork()`), a context that already has a transaction (naming `Enlist`), and a retrying execution strategy (naming `RunAsync`); begins the transaction eagerly and records the `DbContext → IUnitOfWork` binding plus the same binding on the connection beneath the context. `CompleteAsync` commits, then drains.
+- **Every provider's `BeginAsync` and `RunAsync` come as overload pairs, never with an optional isolation level.** One overload takes the target (and the operation) plus the token and begins at `ReadCommitted`; the other takes an explicit `IsolationLevel` before the token. A token therefore always passes positionally: `BeginAsync(db, ct)`, `RunAsync(db, operation, ct)`, `BeginAsync(db, IsolationLevel.Serializable, ct)`. The replayable per-attempt `RunAsync(dataSource or connectionFactory, operation, …)` adds a third overload, `(…, isolation, retry, ct)`, for a per-call replay policy; to set one at `ReadCommitted`, pass `IsolationLevel.ReadCommitted` explicitly. The overloads without `retry` replay under the host's `UnitOfWorkRetryOptions.RetryStrategy`.
+- `IUnitOfWorkFactory.BeginAsync(db, ct)` and `BeginAsync(db, isolation, ct)` — owned mode: rejects a context (or its connection) that already carries a live unit (naming the `RunAsync` join and `db.UnitOfWork()`), a context that already has a transaction (naming `Enlist`), and a retrying execution strategy (naming `RunAsync`); begins the transaction eagerly and records the `DbContext → IUnitOfWork` binding plus the same binding on the connection beneath the context. `CompleteAsync` commits, then drains.
 - `IUnitOfWorkFactory.Enlist(db, transaction)` — observed mode for a transaction the caller commits: the unit's verbs are no-ops on the transaction; `CompleteAsync` drains without committing; `RollbackAsync` reports the caller's rollback and suppresses the forgotten-completion warning. Records the same binding, and refuses a context that already carries a live unit.
-- `IUnitOfWorkFactory.RunAsync(db, operation, isolation, ct)` (and the `TResult` overload) — on a context that already carries a live unit, **joins** it: the block receives the owner's handle, runs inline outside any execution strategy of its own at the owner's isolation level (`isolation` is ignored), and leaves commit and rollback to the owner — a block that ends the unit itself is refused once it returns. On a context whose connection a raw-ADO unit owns, refused before the strategy runs. Otherwise begin → block → complete inside `db.Database.CreateExecutionStrategy()`. The block receives the unit. A retriable failure before commit replays with a fresh transaction and a fresh unit; once commit has started, or after `PreventRetry()`, the fault is captured and rethrown **outside** the strategy so EF cannot replay a possibly-committed block. A drain fault after a durable commit (an `OnCompleted` callback throwing once the unit is `Completed`) is logged and the block's result is returned — the same policy as the Npgsql/SqlClient `RunAsync` — because surfacing it would invite a retry that double-applies a committed block.
+- `IUnitOfWorkFactory.RunAsync(db, operation, ct)` and `RunAsync(db, operation, isolation, ct)` (and their `TResult` overloads) — on a context that already carries a live unit, **joins** it: the block receives the owner's handle, runs inline outside any execution strategy of its own at the owner's isolation level (`isolation` is ignored), and leaves commit and rollback to the owner — a block that ends the unit itself is refused once it returns. On a context whose connection a raw-ADO unit owns, refused before the strategy runs. Otherwise begin → block → complete inside `db.Database.CreateExecutionStrategy()`. The block receives the unit. A retriable failure before commit replays with a fresh transaction and a fresh unit; once commit has started, or after `PreventRetry()`, the fault is captured and rethrown **outside** the strategy so EF cannot replay a possibly-committed block. A drain fault after a durable commit (an `OnCompleted` callback throwing once the unit is `Completed`) is logged and the block's result is returned — the same policy as the Npgsql/SqlClient `RunAsync` — because surfacing it would invite a retry that double-applies a committed block.
 - `db.UnitOfWork()` (`HeadlessDbContextUnitOfWorkExtensions`, an extension on `DbContext` declared in `Microsoft.EntityFrameworkCore`, so it is in scope wherever the context type is) — the unit bound to this context while it is `Active`, or `null`. On a sibling context built over a bound context's connection, it returns that unit and adopts its transaction. The Headless save pipeline (in `Headless.EntityFramework`) reads it to find the unit that owns a caller-owned transaction; a domain-event handler or repository handed only the context reads it to enlist.
 - `AddEntityFrameworkUnitOfWork()` — idempotent; delegates to `AddUnitOfWork()` and registers nothing else.
 
@@ -368,7 +369,7 @@ services.AddDbContext<MyDbContext>(options => options.UseNpgsql(connectionString
 services.AddEntityFrameworkUnitOfWork();
 
 // Owned mode: the transaction begins on this line; CompleteAsync commits and drains.
-await using var unit = await factory.BeginAsync(db, cancellationToken: ct);
+await using var unit = await factory.BeginAsync(db, ct);
 db.Orders.Add(order);
 await db.SaveChangesAsync(ct);
 await unit.Outbox.PublishAsync(new OrderPlaced(order.Id), ct); // row in this transaction, dispatched after commit
@@ -452,7 +453,7 @@ using Npgsql;
 services.AddPostgreSqlUnitOfWork();
 
 // factory is the singleton IUnitOfWorkFactory.
-await using var unit = await factory.BeginAsync(connection, cancellationToken: ct);
+await using var unit = await factory.BeginAsync(connection, ct);
 var relational = (IRelationalUnitOfWorkResource)unit.Resource!;
 await using (var command = new NpgsqlCommand("INSERT INTO orders (id) VALUES (@id)", connection, (NpgsqlTransaction)relational.Transaction))
 {
@@ -477,7 +478,7 @@ await factory.RunAsync(
         await unit.Outbox.PublishAsync(new AccountDebited(accountId), ct); // rolled back and written again on a replay
     },
     IsolationLevel.Serializable,
-    cancellationToken: ct // retry: omitted, so the host's UnitOfWorkRetryOptions applies
+    ct // no retry argument, so the host's UnitOfWorkRetryOptions applies
 );
 ```
 
@@ -533,7 +534,7 @@ services.AddSqlServerUnitOfWork();
 
 // factory is the singleton IUnitOfWorkFactory; BeginAsync opens a closed connection.
 await using var connection = new SqlConnection(connectionString);
-await using var unit = await factory.BeginAsync(connection, cancellationToken: ct);
+await using var unit = await factory.BeginAsync(connection, ct);
 var relational = (IRelationalUnitOfWorkResource)unit.Resource!;
 await using (var command = new SqlCommand("INSERT INTO orders (id) VALUES (@id)", connection, (SqlTransaction)relational.Transaction))
 {
@@ -557,8 +558,8 @@ await factory.RunAsync(
         await command.ExecuteNonQueryAsync(ct);
     },
     IsolationLevel.Snapshot,
-    retry: new RetryStrategyOptions { MaxRetryAttempts = 3, ShouldHandle = UnitOfWorkRetryOptions.DefaultShouldHandle },
-    cancellationToken: ct
+    new RetryStrategyOptions { MaxRetryAttempts = 3, ShouldHandle = UnitOfWorkRetryOptions.DefaultShouldHandle },
+    ct
 );
 ```
 

@@ -135,7 +135,7 @@ public sealed class EfUnitOfWorkObservedModeTests : TestBase
         await using var transaction = await session.Db.Database.BeginTransactionAsync(AbortToken);
         await using var observed = session.Factory.Enlist(session.Db, transaction);
 
-        var act = () => session.Factory.BeginAsync(session.Db, cancellationToken: AbortToken).AsTask();
+        var act = () => session.Factory.BeginAsync(session.Db, AbortToken).AsTask();
 
         (await act.Should().ThrowAsync<InvalidOperationException>()).WithMessage(
             "*DbContext already carries an active unit of work*RunAsync(db*"

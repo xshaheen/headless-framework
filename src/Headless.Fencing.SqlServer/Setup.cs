@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Data;
 using Headless.Checks;
 using Headless.Fencing.SqlServer;
 using Headless.Sql;
@@ -120,7 +119,7 @@ public static class SetupFencingSqlServer
         SqlServerDialect.Instance,
         "Headless.Fencing.SqlServer",
         static (factory, connection, cancellationToken) =>
-            factory.BeginAsync((SqlConnection)connection, IsolationLevel.ReadCommitted, cancellationToken),
+            factory.BeginAsync((SqlConnection)connection, cancellationToken),
         static services => services.AddSqlServerUnitOfWork(),
         SqlServerFencingSchemaContribution.Create
     );

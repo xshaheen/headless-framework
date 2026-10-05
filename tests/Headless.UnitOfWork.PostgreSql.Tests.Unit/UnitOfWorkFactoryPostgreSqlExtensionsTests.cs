@@ -45,7 +45,7 @@ public sealed class UnitOfWorkFactoryPostgreSqlExtensionsTests : TestBase
         var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>();
         await using var connection = new NpgsqlConnection("Host=localhost;Database=unused");
 
-        var beginAct = () => manager.BeginAsync((NpgsqlConnection)null!, cancellationToken: AbortToken).AsTask();
+        var beginAct = () => manager.BeginAsync((NpgsqlConnection)null!, AbortToken).AsTask();
         var beginNull = (await beginAct.Should().ThrowAsync<ArgumentNullException>()).Which;
 
         var enlistAct = () => manager.Enlist(connection, null!);

@@ -55,7 +55,7 @@ public sealed class SqliteUnitOfWorkFixture
 
         try
         {
-            var unitOfWork = await factory.BeginAsync(connection, cancellationToken: cancellationToken);
+            var unitOfWork = await factory.BeginAsync(connection, cancellationToken);
 
             return new UnitOfWorkResourceHandle(unitOfWork, connection);
         }
@@ -91,7 +91,7 @@ public sealed class SqliteUnitOfWorkFixture
         CancellationToken cancellationToken
     )
     {
-        return factory.BeginAsync((SqliteConnection)connection, cancellationToken: cancellationToken);
+        return factory.BeginAsync((SqliteConnection)connection, cancellationToken);
     }
 
     public IUnitOfWork EnlistOn(IUnitOfWorkFactory factory, DbConnection connection, DbTransaction transaction)
@@ -106,7 +106,7 @@ public sealed class SqliteUnitOfWorkFixture
         CancellationToken cancellationToken
     )
     {
-        return factory.RunAsync((SqliteConnection)connection, operation, cancellationToken: cancellationToken);
+        return factory.RunAsync((SqliteConnection)connection, operation, cancellationToken);
     }
 
     public Task InsertProbeRowAsync(IUnitOfWork unitOfWork, string name, CancellationToken cancellationToken)

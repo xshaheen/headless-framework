@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Data;
 using Headless.Checks;
 using Headless.Fencing.PostgreSql;
 using Headless.Sql;
@@ -120,7 +119,7 @@ public static class SetupFencingPostgreSql
         PostgreSqlDialect.Instance,
         "Headless.Fencing.PostgreSql",
         static (factory, connection, cancellationToken) =>
-            factory.BeginAsync((NpgsqlConnection)connection, IsolationLevel.ReadCommitted, cancellationToken),
+            factory.BeginAsync((NpgsqlConnection)connection, cancellationToken),
         static services => services.AddPostgreSqlUnitOfWork(),
         PostgreSqlFencingSchemaContribution.Create
     );

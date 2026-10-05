@@ -94,7 +94,7 @@ public sealed class EntityFrameworkReplayFixture(
             CancellationToken cancellationToken
         )
         {
-            return factory.RunAsync(db, operation, cancellationToken: cancellationToken);
+            return factory.RunAsync(db, operation, cancellationToken);
         }
     }
 

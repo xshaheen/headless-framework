@@ -24,7 +24,7 @@ public sealed class EfUnitOfWorkSharedConnectionTests : TestBase
         await using var host = await EfUnitOfWorkHost.CreateAsync();
         await using var owner = host.CreateSession();
         await using var sibling = host.CreateSession();
-        await using var unit = await owner.Factory.BeginAsync(owner.Db, cancellationToken: AbortToken);
+        await using var unit = await owner.Factory.BeginAsync(owner.Db, AbortToken);
         IUnitOfWork? joined = null;
 
         await owner.Db.Probes.AddAsync(new ProbeRow { Name = "owner" }, AbortToken);
@@ -62,7 +62,7 @@ public sealed class EfUnitOfWorkSharedConnectionTests : TestBase
         await using var owner = host.CreateSession();
         await using var sibling = host.CreateSession();
 
-        await using (var unit = await owner.Factory.BeginAsync(owner.Db, cancellationToken: AbortToken))
+        await using (var unit = await owner.Factory.BeginAsync(owner.Db, AbortToken))
         {
             await sibling.Factory.RunAsync(
                 sibling.Db,
@@ -86,7 +86,7 @@ public sealed class EfUnitOfWorkSharedConnectionTests : TestBase
         await using var host = await EfUnitOfWorkHost.CreateAsync();
         await using var owner = host.CreateSession();
         await using var sibling = host.CreateSession();
-        await using var unit = await owner.Factory.BeginAsync(owner.Db, cancellationToken: AbortToken);
+        await using var unit = await owner.Factory.BeginAsync(owner.Db, AbortToken);
 
         // when — a repository handed only the sibling context reads the unit, then saves plainly
         var read = sibling.Db.UnitOfWork();
@@ -108,7 +108,7 @@ public sealed class EfUnitOfWorkSharedConnectionTests : TestBase
         await using var owner = host.CreateSession();
         await using var sibling = host.CreateSession();
 
-        await using (var unit = await owner.Factory.BeginAsync(owner.Db, cancellationToken: AbortToken))
+        await using (var unit = await owner.Factory.BeginAsync(owner.Db, AbortToken))
         {
             sibling.Db.UnitOfWork().Should().BeSameAs(unit);
             await unit.CompleteAsync(AbortToken);
@@ -118,7 +118,7 @@ public sealed class EfUnitOfWorkSharedConnectionTests : TestBase
         sibling.Db.Database.CurrentTransaction.Should().BeNull();
         sibling.Db.UnitOfWork().Should().BeNull();
 
-        await using var next = await sibling.Factory.BeginAsync(sibling.Db, cancellationToken: AbortToken);
+        await using var next = await sibling.Factory.BeginAsync(sibling.Db, AbortToken);
         await sibling.Db.Probes.AddAsync(new ProbeRow { Name = "next" }, AbortToken);
         await sibling.Db.SaveChangesAsync(AbortToken);
         await next.CompleteAsync(AbortToken);
@@ -133,7 +133,7 @@ public sealed class EfUnitOfWorkSharedConnectionTests : TestBase
         await using var owner = host.CreateSession();
         await using var sibling = host.CreateSession();
 
-        await using (var unit = await owner.Factory.BeginAsync(owner.Db, cancellationToken: AbortToken))
+        await using (var unit = await owner.Factory.BeginAsync(owner.Db, AbortToken))
         {
             sibling.Db.UnitOfWork().Should().BeSameAs(unit);
             await unit.RollbackAsync();
@@ -147,7 +147,7 @@ public sealed class EfUnitOfWorkSharedConnectionTests : TestBase
     {
         await using var host = await EfUnitOfWorkHost.CreateAsync();
         await using var owner = host.CreateSession();
-        await using var unit = await owner.Factory.BeginAsync(owner.Db, cancellationToken: AbortToken);
+        await using var unit = await owner.Factory.BeginAsync(owner.Db, AbortToken);
 
         // A sibling resolved from a shorter-lived scope (a module's request-scoped service) joins, writes, and is
         // disposed while the owner's unit is still open.
@@ -171,7 +171,7 @@ public sealed class EfUnitOfWorkSharedConnectionTests : TestBase
     {
         await using var host = await EfUnitOfWorkHost.CreateAsync();
         await using var owner = host.CreateSession();
-        await using var unit = await owner.Factory.BeginAsync(owner.Db, cancellationToken: AbortToken);
+        await using var unit = await owner.Factory.BeginAsync(owner.Db, AbortToken);
 
         await using (var sibling = host.CreateSession())
         {
@@ -194,10 +194,10 @@ public sealed class EfUnitOfWorkSharedConnectionTests : TestBase
         await using var host = await EfUnitOfWorkHost.CreateAsync();
         await using var owner = host.CreateSession();
         await using var sibling = host.CreateSession();
-        await using var unit = await owner.Factory.BeginAsync(owner.Db, cancellationToken: AbortToken);
+        await using var unit = await owner.Factory.BeginAsync(owner.Db, AbortToken);
 
         // when
-        var begin = async () => await sibling.Factory.BeginAsync(sibling.Db, cancellationToken: AbortToken);
+        var begin = async () => await sibling.Factory.BeginAsync(sibling.Db, AbortToken);
 
         // then
         await begin.Should().ThrowAsync<InvalidOperationException>().WithMessage(_SharedConnectionPattern);
@@ -211,7 +211,7 @@ public sealed class EfUnitOfWorkSharedConnectionTests : TestBase
         await using var host = await EfUnitOfWorkHost.CreateAsync();
         await using var owner = host.CreateSession();
         await using var sibling = host.CreateSession();
-        await using var unit = await owner.Factory.BeginAsync(owner.Db, cancellationToken: AbortToken);
+        await using var unit = await owner.Factory.BeginAsync(owner.Db, AbortToken);
 
         // when — the sibling tries to observe the owner's own transaction as a second unit
         var enlist = () => sibling.Factory.Enlist(sibling.Db, owner.Db.Database.CurrentTransaction!);

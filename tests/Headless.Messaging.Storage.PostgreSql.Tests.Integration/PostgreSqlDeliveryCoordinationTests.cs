@@ -84,7 +84,7 @@ public sealed class PostgreSqlDeliveryCoordinationTests(PostgreSqlTestFixture fi
             NullLogger<RelationalDataStorage>.Instance
         );
 
-        await using var unit = await factory.BeginAsync(db, cancellationToken: AbortToken);
+        await using var unit = await factory.BeginAsync(db, AbortToken);
 
         return storage.Resolve(unit);
     }
