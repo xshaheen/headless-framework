@@ -184,7 +184,8 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
     IGuidGenerator guidGenerator,
     IJobsOwnerIdentity ownerIdentity,
     SchedulerOptionsBuilder optionsBuilder,
-    JobsRunFilter? runFilter = null
+    JobsRunFilter? runFilter = null,
+    JobsClusterConcurrency? clusterConcurrency = null
 ) : IJobsClaimStrategy<TTimeJob, TCronJob>
     where TDbContext : DbContext
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
@@ -200,6 +201,10 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
     // descendant is a boundary — not descended into, claimed independently.
     private readonly int _maxChainDepth = optionsBuilder.MaxChainDepth;
 
+    // The CAS claim leases in autocommit statements so PostgreSQL's transaction-start now() never shortens a lease, and a
+    // cluster limit needs its lock and count in the same transaction as the lease. It refuses instead of overshooting.
+    private readonly JobsClusterConcurrency _clusterConcurrency = clusterConcurrency ?? JobsClusterConcurrency.None;
+
     // Test seam: when set, invoked once between the root claim and the first descendant lease so a test can
     // deterministically invalidate the root lease and drive the frontier fence. Always null in production.
     internal Func<Task>? OnFrontierBeforeLease { get; set; }
@@ -209,6 +214,7 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         [EnumeratorCancellation] CancellationToken cancellationToken
     )
     {
+        _ThrowIfClusterLimited();
         if (!ownerIdentity.TryGetStampOwner(out var owner))
         {
             yield break;
@@ -275,6 +281,7 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         [EnumeratorCancellation] CancellationToken cancellationToken
     )
     {
+        _ThrowIfClusterLimited();
         if (!ownerIdentity.TryGetStampOwner(out var owner))
         {
             yield break;
@@ -363,6 +370,7 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         [EnumeratorCancellation] CancellationToken cancellationToken
     )
     {
+        _ThrowIfClusterLimited();
         if (!ownerIdentity.TryGetStampOwner(out var owner))
         {
             yield break;
@@ -437,6 +445,7 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         [EnumeratorCancellation] CancellationToken cancellationToken
     )
     {
+        _ThrowIfClusterLimited();
         if (!ownerIdentity.TryGetStampOwner(out var owner))
         {
             yield break;
@@ -639,6 +648,18 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
             result.LockedUntil = timestamps.LockedUntil;
             result.UpdatedAt = timestamps.UpdatedAt;
             yield return result;
+        }
+    }
+
+    private void _ThrowIfClusterLimited()
+    {
+        if (_clusterConcurrency.HasLimits)
+        {
+            throw new NotSupportedException(
+                "Cluster-wide job concurrency needs a native claim provider: call UsePostgreSqlClaims() or "
+                    + "UseSqlServerClaims() in UseEntityFramework, or keep the model compatible with the native claim. "
+                    + $"Jobs with a ClusterMaxConcurrency: {string.Join(", ", _clusterConcurrency.LimitedFunctions)}."
+            );
         }
     }
 

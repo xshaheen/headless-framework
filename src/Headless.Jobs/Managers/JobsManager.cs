@@ -335,6 +335,12 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 _CacheFunctionReferences(contexts.AsSpan());
                 await _dispatcher.DispatchAsync(contexts, cancellationToken).ConfigureAwait(false);
             }
+            else
+            {
+                // A due row left unacquired (a cluster-limited job, or one another node took) is the scheduler's to
+                // claim, so wake it now rather than at its next planned poll.
+                _jobsHostScheduler.Restart();
+            }
         }
         else
         {
@@ -1055,6 +1061,12 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 var contexts = _BuildImmediateContextsFromNonGeneric(acquired);
                 _CacheFunctionReferences(contexts.AsSpan());
                 await _dispatcher.DispatchAsync(contexts, cancellationToken).ConfigureAwait(false);
+            }
+
+            // Due rows left unacquired (cluster-limited jobs, or ones another node took) are the scheduler's to claim.
+            if (acquired.Length < immediateTickers.Count)
+            {
+                _jobsHostScheduler.Restart();
             }
         }
 

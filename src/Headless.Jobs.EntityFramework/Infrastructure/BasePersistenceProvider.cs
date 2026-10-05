@@ -19,7 +19,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     ICache? cache,
     IJobsClaimStrategy<TTimeJob, TCronJob> claimStrategy,
     ILogger logger,
-    JobsRunFilter? runFilter = null
+    JobsRunFilter? runFilter = null,
+    JobsClusterConcurrency? clusterConcurrency = null
 )
     where TDbContext : DbContext
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
@@ -32,6 +33,9 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     // Which functions this host claims. Applied to every root claim, acquire, and next-occurrence read, never to an
     // in-tree descendant, which runs with the root that claimed it.
     protected JobsRunFilter RunFilter { get; } = runFilter ?? JobsRunFilter.All;
+
+    // Cluster-limited functions are never acquired immediately; the scheduler's claim leases them against the limit.
+    protected JobsClusterConcurrency ClusterConcurrency { get; } = clusterConcurrency ?? JobsClusterConcurrency.None;
 
     // Pickup-lease deadline window: every acquire stamps LockedUntil = now + LeaseDuration.
     protected TimeSpan LeaseDuration { get; } = optionsBuilder.LeaseDuration;
@@ -226,9 +230,28 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         // Define the window: ignore anything older than 1 second ago
         var oneSecondAgo = now.UtcDateTime.AddSeconds(-1);
 
-        var baseQuery = dbContext
-            .Set<TTimeJob>()
-            .AsNoTracking()
+        // A due row of a limited function with no free slot cannot be claimed, so peeking it would keep the
+        // scheduler's wake at now and spin it until the row ages into the fallback sweep's window. The count takes no
+        // lock: it only steers the peek, and the claim still enforces the limit.
+        string[] saturated = ClusterConcurrency.HasLimits
+            ? await dbContext
+                .Database.CreateExecutionStrategy()
+                .ExecuteAsync(
+                    dbContext,
+                    (context, ct) =>
+                        JobsClusterClaim.SaturatedAsync<TTimeJob, TCronJob>(context, ClusterConcurrency, ct),
+                    cancellationToken
+                )
+                .ConfigureAwait(false)
+            : [];
+
+        var peekable = dbContext.Set<TTimeJob>().AsNoTracking();
+        if (saturated.Length != 0)
+        {
+            peekable = peekable.Where(x => !saturated.Contains(x.Function));
+        }
+
+        var baseQuery = peekable
             .Where(x => x.ExecutionTime != null)
             .Where(x => x.ExecutionTime >= oneSecondAgo) // Ignore old jobs (fallback handles them)
             .WhereRunnable(RunFilter)
@@ -1027,6 +1050,7 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             .Set<TTimeJob>()
             .Where(x => ((IEnumerable<Guid>)ids).Contains(x.Id))
             .WhereRunnable(RunFilter)
+            .WhereNotClusterLimited(ClusterConcurrency)
             .WhereCanAcquireUsingDatabaseClock(owner)
             // Gate the immediate-acquire path too — a timed descendant is claimable only once its parent
             // reached its matching terminal state. Roots (ParentId == null) pass trivially.
