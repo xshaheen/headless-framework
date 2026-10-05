@@ -43,6 +43,27 @@ public sealed class QueryableBehaviorTests : TestBase
     }
 
     [Fact]
+    public async Task should_return_a_projection_and_throw_a_typed_error_when_projection_is_missing()
+    {
+        await using var fixture = await QueryFixture.CreateAsync(AbortToken);
+
+        var found = await fixture
+            .Context.Rows.Where(row => row.Id == 2)
+            .Select(row => new RowView { Name = row.Name })
+            .FirstOrNotFoundAsync(nameof(QueryRow), 2, AbortToken);
+        Func<Task> missing = async () =>
+            await fixture
+                .Context.GuidRows.Where(row => row.Id == Guid.Empty)
+                .Select(row => new RowView { Name = row.Name })
+                .FirstOrNotFoundAsync(nameof(GuidQueryRow), Guid.Empty, AbortToken);
+
+        found.Name.Should().Be("beta");
+        var exception = await missing.Should().ThrowAsync<EntityNotFoundException>();
+        exception.Which.Entity.Should().Be(nameof(GuidQueryRow));
+        exception.Which.Key.Should().Be(Guid.Empty.ToString());
+    }
+
+    [Fact]
     public async Task should_materialize_a_lookup_with_the_requested_projection_and_comparer()
     {
         await using var fixture = await QueryFixture.CreateAsync(AbortToken);
@@ -189,6 +210,11 @@ public sealed class QueryableBehaviorTests : TestBase
     }
 
     private sealed class StringQueryRow : Entity<string>
+    {
+        public required string Name { get; init; }
+    }
+
+    private sealed class RowView
     {
         public required string Name { get; init; }
     }
