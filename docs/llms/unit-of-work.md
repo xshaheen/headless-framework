@@ -1,6 +1,6 @@
 ---
 domain: Unit of Work
-packages: UnitOfWork.Abstractions, UnitOfWork, UnitOfWork.EntityFramework, UnitOfWork.PostgreSql, UnitOfWork.SqlServer, UnitOfWork.Sqlite
+packages: UnitOfWork.Abstractions, UnitOfWork, UnitOfWork.EntityFramework, UnitOfWork.PostgreSql, UnitOfWork.SqlServer, UnitOfWork.Sqlite, UnitOfWork.Analyzers
 ---
 
 # Unit of Work
@@ -617,3 +617,22 @@ None.
 
 Registers the singleton `IUnitOfWorkFactory` only.
 
+## Headless.UnitOfWork.Analyzers
+
+Roslyn analyzers that report a write made through an autonomous service while a unit of work is in scope, and name the enlisted receiver on that unit. A code fix rewrites the call where the enlisted call is one-to-one.
+
+### Install
+
+```bash
+dotnet add package Headless.UnitOfWork.Analyzers
+```
+
+The package is a development dependency: it adds analyzers to the project that references it and flows to no consumer.
+
+### Diagnostics
+
+Every rule is reported in category `Headless.UnitOfWork.Analyzers` and is a suggestion (`info`) by default. The table below is each rule's help link target.
+
+| Rule | Reported when | Fix |
+| --- | --- | --- |
+| <a id="hf2001"></a>HF2001 | `IBus.PublishAsync` or `IQueue.EnqueueAsync` is called while a unit of work is in scope. | Call `unit.Outbox.PublishAsync` or `unit.Outbox.EnqueueAsync`. The code fix rewrites the `(content, cancellationToken)` overload; the options and builder overloads take options the outbox does not, so they get no fix. |

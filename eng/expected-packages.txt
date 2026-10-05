@@ -193,6 +193,7 @@ Headless.Tus.Azure
 Headless.Tus.DistributedLocks
 Headless.UnitOfWork
 Headless.UnitOfWork.Abstractions
+Headless.UnitOfWork.Analyzers
 Headless.UnitOfWork.EntityFramework
 Headless.UnitOfWork.PostgreSql
 Headless.UnitOfWork.SqlServer

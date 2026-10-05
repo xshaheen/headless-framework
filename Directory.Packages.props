@@ -71,9 +71,13 @@
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.12" />
     <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.12" />
     <PackageVersion Include="Microsoft.CodeAnalysis.Analyzers" Version="5.9.0" />
-    <!-- Pinned: must match SDK's Roslyn version. Source generators fail silently if higher. -->
+    <!--
+      Pinned: must match SDK's Roslyn version. Source generators fail silently if higher, and an analyzer or code fix
+      built against a newer Roslyn does not load in an older host. Workspaces 5.0.0 also pins Common to 5.0.0 exactly.
+    -->
     <PackageVersion Include="Microsoft.CodeAnalysis.Common" Version="[5.0.0]" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="[5.0.0]" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="[5.0.0]" />
     <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.12" />
     <!-- Transitive-pin the SQLitePCLRaw chain to the patched 3.x line: EF/Data.Sqlite 10.0.x still requests the 2.1.x
          bundle, whose SQLitePCLRaw.lib.e_sqlite3 2.1.11 carries GHSA-2m69-gcr7-jv3q (NU1903). No 2.1.x patch exists; the
