@@ -27,6 +27,7 @@ internal sealed class JobsExecutionTaskHandler
     // it as a lost lease — the lease window, after which the row is certainly being reclaimed elsewhere.
     private readonly TimeSpan _leaseDuration;
     private readonly TimeSpan _cancellationObservationInterval;
+    private readonly TimeSpan _progressReportInterval;
     private readonly JobsRetryOptions _retryOptions;
     private readonly JobsRetryPipeline _retryPipeline;
 
@@ -65,6 +66,7 @@ internal sealed class JobsExecutionTaskHandler
         _leaseRenewalInterval = schedulerOptions.ResolveLeaseRenewalInterval();
         _leaseDuration = schedulerOptions.LeaseDuration;
         _cancellationObservationInterval = schedulerOptions.ResolveCancellationObservationInterval();
+        _progressReportInterval = schedulerOptions.ProgressReportInterval;
         _retryOptions = retryOptions ?? new JobsRetryOptions();
         _retryPipeline = new JobsRetryPipeline(functionRegistry, timeProvider, logger);
     }
@@ -270,6 +272,18 @@ internal sealed class JobsExecutionTaskHandler
             Lateness = _Lateness(context.ExecutionTime, _timeProvider.GetUtcNow().UtcDateTime),
         };
 
+        // One reporter per claim, so a report survives every in-process retry; beginCompletionAsync hands its unwritten
+        // value to the terminal write, and releaseExecutionAsync stops it on every other exit.
+        await using var progressReporter = new JobProgressReporter(
+            context,
+            _internalJobsManager,
+            _timeProvider,
+            _progressReportInterval,
+            () => executionOwnsRegistration(),
+            _logger
+        );
+        jobFunctionContext.ProgressSink = progressReporter;
+
         // #316 sliding lease: renew this job's lease on a cadence for the whole execution (every retry attempt and
         // backoff wait). A renewal affecting 0 rows means the lease was lost (reclaimed / owner changed /
         // terminalized); the loop then cancels cancellationTokenSource, cancelling the running job.
@@ -343,6 +357,8 @@ internal sealed class JobsExecutionTaskHandler
             executionReleased = true;
             await stopObservationAsync().ConfigureAwait(false);
             await stopRenewalAsync().ConfigureAwait(false);
+            // A non-terminal exit (lease loss, host shutdown) leaves the row to recovery; its unwritten report is dropped.
+            await progressReporter.StopAsync().ConfigureAwait(false);
             _cancellationRegistry.TryRemove(cancellationRegistration);
             cancellationTokenSource.Dispose();
             observationCts?.Dispose();
@@ -357,6 +373,12 @@ internal sealed class JobsExecutionTaskHandler
         {
             await stopObservationAsync().ConfigureAwait(false);
             await stopRenewalAsync().ConfigureAwait(false);
+            // The final report rides on the terminal write instead of costing a round-trip of its own.
+            if (await progressReporter.StopAsync().ConfigureAwait(false) is { } unwrittenProgress)
+            {
+                context.SetProperty(x => x.Progress, unwrittenProgress);
+            }
+
             return _cancellationRegistry.TryBeginCompletion(cancellationRegistration);
         }
 

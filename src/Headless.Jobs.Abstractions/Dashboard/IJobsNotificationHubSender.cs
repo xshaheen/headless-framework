@@ -26,4 +26,7 @@ internal interface IJobsNotificationHubSender
         where TCronJobEntity : CronJobEntity, new();
 
     Task CanceledJobNotifyAsync(Guid id);
+
+    /// <summary>Pushes a running job's stored progress so an open dashboard moves its bar without reloading.</summary>
+    void UpdateJobProgress(JobExecutionState executionState, JobProgress progress);
 }

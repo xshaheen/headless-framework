@@ -100,6 +100,11 @@ public static class SetupJobs
         );
         _ = schedulerOptionsBuilder.ResolveCancellationObservationInterval();
         Ensure.True(
+            schedulerOptionsBuilder.ProgressReportInterval > TimeSpan.Zero
+                && schedulerOptionsBuilder.ProgressReportInterval != Timeout.InfiniteTimeSpan,
+            "SchedulerOptionsBuilder.ProgressReportInterval must be finite and greater than TimeSpan.Zero."
+        );
+        Ensure.True(
             schedulerOptionsBuilder.MaxConcurrency > 0,
             "SchedulerOptionsBuilder.MaxConcurrency must be greater than zero."
         );

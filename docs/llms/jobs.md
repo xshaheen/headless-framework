@@ -58,6 +58,7 @@ Declare a job as a class that implements `IJob` (no arguments) or `IJob<TArgs>` 
 - Call `AddHeadlessJobs()` on `IServiceCollection`. There is no `app.UseJobs()` call — the scheduler starts automatically through `IHostedService` registered by `AddHeadlessJobs`.
 - Add every generated module with `options.AddModule<TAssembly.JobsModule>()`, including the host's own assembly. Nothing registers implicitly: an assembly whose module is not added contributes no functions or middleware, even when it is loaded. Each host builds its own catalog from the modules it adds and freezes it into an immutable registry when that registry is first resolved, so hosts in one process may add different modules. Runtime services and Dashboard read only that per-host registry.
 - A module that owns jobs contributes its generated module from its own `Add{Module}` entry point with `services.ConfigureJobs(jobs => jobs.AddModule<TAssembly.JobsModule>())` instead of calling `AddHeadlessJobs`. `JobsContributionBuilder` is not generic, so the module need not know the host's entity types. Contributions are recorded as descriptors and applied in the order they were added, whether they come before or after `AddHeadlessJobs`; contributing a module twice is harmless, and a host that never calls `AddHeadlessJobs` ignores them. Two modules that declare one job identity, one argument type, or one job class fail startup with an error that names both modules.
+- Report how far a long-running job has got with `context.ReportProgress(percent, message)`. The call never waits for the store: the scheduler writes the latest value at most once per `ProgressReportInterval` and with the final status, keeps it through retries, and the dashboard reads it back. See [Progress reporting](#progress-reporting).
 - Tune a declared job's deployment settings by identity with `Tune("billing.close-day", job => job.Concurrency(2))`, on `JobsOptionsBuilder` or `JobsContributionBuilder`. `JobTuningBuilder` sets `Concurrency(int)`, `ClusterConcurrency(int)`, `Priority(JobPriority)`, `FailurePolicy<TPolicy>()` or `FailurePolicy(p => ...)`, `Options(...)` (the node-death override for that job), and per-job `UseExecuteMiddleware<T>()` / `UseScheduleMiddleware<T>()` resolved from DI. Tuning never declares a job or changes its identity, argument type, or cron schedule. Configuration binds after every `Tune` call from `Headless:Jobs:Jobs:{identity}` (`Concurrency`, `ClusterConcurrency`, `Priority`, and the `FailurePolicy` section). An unknown identity, an unknown setting, or an invalid value fails startup.
 - Split execution between hosts that share modules with `RunOnly("orders.*", "billing.close-day")` on `JobsOptionsBuilder`. An entry is an exact identity or an `owner.*` pattern matching the text before the first `.`; calls accumulate, and an entry that matches no registered job fails startup. Filtered-out jobs stay registered: the host still schedules them, seeds their cron definitions, and shows them in the Dashboard, but its claim, acquire, timed-out sweep, and next-occurrence queries never lease their rows, so a host without the filter runs them. An in-tree chain step runs with the root that claimed it.
 - Use `Jobs.EntityFramework` for durable persistence. Without it, jobs live in memory and are lost on restart.
@@ -737,6 +738,53 @@ Limits and caveats:
   `NotSupportedException` naming the limited jobs. Use `UsePostgreSql`/`UsePostgreSqlClaims()` or
   `UseSqlServer`/`UseSqlServerClaims()`.
 
+## Progress reporting
+
+A long-running job reports how far it has got with `JobContext.ReportProgress(percent, message)`. The scheduler stores
+the latest report on the job's row, so the dashboard shows it after a refresh and on any node:
+
+```csharp
+[Job("customers.import")]
+public sealed class ImportCustomers : IJob
+{
+    public async ValueTask ExecuteAsync(JobContext context, CancellationToken cancellationToken)
+    {
+        const int batches = 40;
+        for (var batch = 1; batch <= batches; batch++)
+        {
+            await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken); // import one batch
+            context.ReportProgress(100d * batch / batches, $"batch {batch} of {batches}");
+        }
+    }
+}
+```
+
+- **Arguments**: `percent` runs from `0` to `100` and may be fractional. `message` is optional and holds at most
+  `JobProgress.MessageMaxLength` (512) characters. A percent outside the range, `NaN`, an infinity, or a longer message
+  throws `ArgumentOutOfRangeException`. Each report replaces the stored one whole, so a report without a message clears
+  the stored message.
+- **Throttling**: the call only records the value in memory and returns, so calling it in a tight loop is cheap. The
+  first report is written at once; after that, at most one write per `SchedulerOptionsBuilder.ProgressReportInterval`
+  (default two seconds) carries the latest value. A report still unwritten when the run ends is written with its final
+  status, in the same statement. Each write is an `UPDATE` of one row, so budget one write per interval per reporting
+  job.
+- **Failures**: progress is advisory. A failed progress write is logged and retried with the latest value after the
+  interval; it never fails the run. A write that matches no row because the node lost the lease is dropped, and lease
+  loss stays the renewal loop's to handle.
+- **Ownership**: a progress write lands only on an `InProgress` row the current node owns, the same fence as lease
+  renewal, so a node that lost its lease cannot overwrite the new owner's progress. Relational stores stamp
+  `ProgressUpdatedAt` with the database clock.
+- **Retries and recovery**: stored progress stays through in-process retries and crash-recovery re-runs until the next
+  report overwrites it, so a retried job shows where the last attempt got to. It also stays on the terminal row, so a
+  failed job shows how far it got. A requeue starts a new run and clears it. Each cron occurrence starts with none.
+- **Storage**: `TimeJobEntity` and `CronJobOccurrenceEntity` carry `ProgressPercent`, `ProgressMessage`, and
+  `ProgressUpdatedAt`, all nullable; EF maps them to three nullable columns on each table. A custom
+  `IJobPersistenceProvider` implements `UpdateTimeJobProgressAsync` and `UpdateCronJobOccurrenceProgressAsync` with
+  that ownership fence, persists `JobExecutionState.Progress` when a terminal update lists it in
+  `PropertiesToUpdate`, and clears the three fields on requeue.
+- **Outside the scheduler**: on a `JobContext` the scheduler did not create, such as one built in a unit test, the call
+  validates its arguments and records nothing.
+
 ## Choosing a Provider
 
 The base EF package is the compatibility layer. Native claim packages optimize pickup without changing the scheduler contract, lease rules, descendant stamping, or fallback-window behavior.
@@ -1161,6 +1209,7 @@ builder.Services.AddHeadlessJobs(options =>
         scheduler.IdleWorkerTimeOut = TimeSpan.FromMinutes(1); // default: 1 min
         scheduler.LeaseDuration = TimeSpan.FromMinutes(5); // default: 5 min
         scheduler.LeaseRenewalInterval = null; // null → LeaseDuration / 3
+        scheduler.ProgressReportInterval = TimeSpan.FromSeconds(2); // default: 2s; least time between progress writes
         scheduler.FallbackIntervalChecker = TimeSpan.FromSeconds(30); // default: 30s
         scheduler.SchedulerTimeZone = TimeZoneInfo.Utc; // default: UTC — never Local (fleet-divergent cron dedup)
         scheduler.DeadNodeReconcileInterval = TimeSpan.FromMinutes(1); // durable path; default: 1 min
@@ -1232,6 +1281,10 @@ Read [dashboards.md](dashboards.md) for the shared authentication modes and prod
 - **Responsive operational layout**: content cards shrink within mobile viewports while wide data tables retain their own overflow boundary.
 - **Live cluster view**: `GET /api/nodes` returns live node projections from `Headless.Coordination` membership; `NodeJoined` / `NodeLeft` / `NodeSuspected` push updates over SignalR — no polling required.
 - **Error monitoring**: surfaces failed, cancelled, and skipped jobs; retry counts; execution timings; exception messages.
+- **Job progress**: a running time job or cron occurrence that [reports progress](#progress-reporting) shows a progress
+  bar with its percent and message; the tooltip shows how long ago it was written. Each stored write also pushes a
+  `JobProgressNotification` over SignalR that moves the bar in place without reloading the page. A finished row keeps
+  its last progress, greyed out, so a failed job shows how far it got.
 - **Requeue**: `Failed` time jobs and cron occurrences show a requeue button. `POST /api/job/requeue?id=…` and `POST /api/cron-job-occurrence/requeue?id=…` call `IJobScheduler.RequeueAsync` and `RequeueOccurrenceAsync`; HTTP 200 means the row was requeued, and HTTP 400 carries the refusal's `JobRequeueOutcome` name. See [Requeue a failed job](#requeue-a-failed-job).
 - **Storage-reduced cron graphs**: bundled providers select distinct UTC dates and aggregate status counts in storage;
   the dashboard does not load a cron job's lifetime occurrence entities to render its bounded history graph.

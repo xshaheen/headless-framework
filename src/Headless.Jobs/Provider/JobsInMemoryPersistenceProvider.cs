@@ -461,7 +461,9 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         CancellationToken cancellationToken = default
     )
     {
-        if (_timeJobs.TryGetValue(functionContext.JobId, out var job))
+        // Retry a lost compare-and-swap: a concurrent write to the same running row (a renewal, a progress write, a
+        // cancellation request) is not a lost lease, and only the ownership fence below may answer 0.
+        while (_timeJobs.TryGetValue(functionContext.JobId, out var job))
         {
             // #5 completion fence (mirror EF WhereOwnedBy): only the still-owning node may complete a
             // non-terminal row, so a swept/reclaimed row is not clobbered by a late completion.
@@ -885,7 +887,9 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         // cancel-on-loss.
         var now = _timeProvider.GetUtcNow();
 
-        if (_timeJobs.TryGetValue(jobId, out var job))
+        // Retry a lost compare-and-swap: a concurrent write to the same running row (a renewal, a progress write, a
+        // cancellation request) is not a lost lease, and only the ownership fence below may answer 0.
+        while (_timeJobs.TryGetValue(jobId, out var job))
         {
             // Renewal slides a RUNNING lease only: extending an Idle/Queued row would return 1 ("lease held") and
             // suppress cancel-on-loss. Mirror the EF RenewTimeJobLeaseAsync InProgress fence.
@@ -2920,21 +2924,23 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         CancellationToken cancellationToken = default
     )
     {
-        if (_cronOccurrences.TryGetValue(functionContext.JobId, out var occurrence))
+        // Retry a lost compare-and-swap: a concurrent write to the same running row (a renewal, a progress write, a
+        // cancellation request) is not a lost lease, and only the ownership fence below may answer 0.
+        while (_cronOccurrences.TryGetValue(functionContext.JobId, out var occurrence))
         {
             // #5 completion fence (mirror EF WhereOwnedBy): only the still-owning node may complete a non-terminal occurrence.
-            var ownedNonTerminal = _IsOwnedNonTerminal(occurrence.OwnerId, occurrence.Status);
-
-            if (ownedNonTerminal)
+            if (!_IsOwnedNonTerminal(occurrence.OwnerId, occurrence.Status))
             {
-                var updatedOccurrence = _CloneCronOccurrence(occurrence);
-                _ApplyFunctionContextToCronOccurrence(updatedOccurrence, functionContext);
+                return Task.FromResult(0);
+            }
 
-                // Return 1 only when the completion was actually applied (mirror EF affected-row count).
-                if (_cronOccurrences.TryUpdate(functionContext.JobId, updatedOccurrence, occurrence))
-                {
-                    return Task.FromResult(1);
-                }
+            var updatedOccurrence = _CloneCronOccurrence(occurrence);
+            _ApplyFunctionContextToCronOccurrence(updatedOccurrence, functionContext);
+
+            // Return 1 only when the completion was actually applied (mirror EF affected-row count).
+            if (_cronOccurrences.TryUpdate(functionContext.JobId, updatedOccurrence, occurrence))
+            {
+                return Task.FromResult(1);
             }
         }
 
@@ -2946,7 +2952,9 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         // #316 sliding lease (mirror EF RenewCronJobOccurrenceLeaseAsync). Lost/reclaimed/terminalized -> 0.
         var now = _timeProvider.GetUtcNow();
 
-        if (_cronOccurrences.TryGetValue(occurrenceId, out var occurrence))
+        // Retry a lost compare-and-swap: a concurrent write to the same running row (a renewal, a progress write, a
+        // cancellation request) is not a lost lease, and only the ownership fence below may answer 0.
+        while (_cronOccurrences.TryGetValue(occurrenceId, out var occurrence))
         {
             // Renewal slides a RUNNING lease only (see RenewTimeJobLeaseAsync InProgress fence).
             var ownedRunning = _IsOwnedRunning(occurrence.OwnerId, occurrence.Status);
@@ -2967,6 +2975,70 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         }
 
         return Task.FromResult(0);
+    }
+
+    public Task<bool> UpdateTimeJobProgressAsync(
+        Guid jobId,
+        JobProgress progress,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var now = _timeProvider.GetUtcNow();
+
+        // Same fence and compare-and-swap retry as RenewTimeJobLeaseAsync.
+        while (_timeJobs.TryGetValue(jobId, out var job))
+        {
+            if (!_IsOwnedRunning(job.OwnerId, job.Status))
+            {
+                return Task.FromResult(false);
+            }
+
+            var updated = _CloneTicker(job);
+            updated.ProgressPercent = progress.Percent;
+            updated.ProgressMessage = progress.Message;
+            updated.ProgressUpdatedAt = now;
+            updated.UpdatedAt = now;
+
+            if (_TryUpdateTimeJob(jobId, updated, job))
+            {
+                return Task.FromResult(true);
+            }
+        }
+
+        return Task.FromResult(false);
+    }
+
+    public Task<bool> UpdateCronJobOccurrenceProgressAsync(
+        Guid occurrenceId,
+        JobProgress progress,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var now = _timeProvider.GetUtcNow();
+
+        // Same fence and compare-and-swap retry as RenewCronJobOccurrenceLeaseAsync.
+        while (_cronOccurrences.TryGetValue(occurrenceId, out var occurrence))
+        {
+            if (!_IsOwnedRunning(occurrence.OwnerId, occurrence.Status))
+            {
+                return Task.FromResult(false);
+            }
+
+            var updated = _CloneCronOccurrence(occurrence);
+            updated.ProgressPercent = progress.Percent;
+            updated.ProgressMessage = progress.Message;
+            updated.ProgressUpdatedAt = now;
+            updated.UpdatedAt = now;
+
+            if (_cronOccurrences.TryUpdate(occurrenceId, updated, occurrence))
+            {
+                return Task.FromResult(true);
+            }
+        }
+
+        return Task.FromResult(false);
     }
 
     public Task<int> ReclaimStalledCronJobOccurrencesAsync(CancellationToken cancellationToken = default)
@@ -3717,6 +3789,9 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             ExceptionMessage = job.ExceptionMessage,
             SkippedReason = job.SkippedReason,
             ElapsedTime = job.ElapsedTime,
+            ProgressPercent = job.ProgressPercent,
+            ProgressMessage = job.ProgressMessage,
+            ProgressUpdatedAt = job.ProgressUpdatedAt,
             RetryIntervals = job.RetryIntervals?.ToArray(),
             RunCondition = job.RunCondition,
             ExecutedAt = job.ExecutedAt,
@@ -3759,6 +3834,9 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             // clone that dropped it would silently turn a seeding-migration retirement into an ordinary one.
             Disposition = occurrence.Disposition,
             ElapsedTime = occurrence.ElapsedTime,
+            ProgressPercent = occurrence.ProgressPercent,
+            ProgressMessage = occurrence.ProgressMessage,
+            ProgressUpdatedAt = occurrence.ProgressUpdatedAt,
             ExecutedAt = occurrence.ExecutedAt,
             CreatedAt = occurrence.CreatedAt,
             UpdatedAt = occurrence.UpdatedAt,
@@ -3802,6 +3880,14 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         if (propsToUpdate.Contains(nameof(JobExecutionState.RetryCount)))
         {
             job.RetryCount = context.RetryCount;
+        }
+
+        // PROGRESS — the report the throttle had not written yet when the run ended
+        if (propsToUpdate.Contains(nameof(JobExecutionState.Progress)) && context.Progress is { } progress)
+        {
+            job.ProgressPercent = progress.Percent;
+            job.ProgressMessage = progress.Message;
+            job.ProgressUpdatedAt = _timeProvider.GetUtcNow();
         }
 
         // RELEASE LOCK
@@ -3858,6 +3944,14 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         if (propsToUpdate.Contains(nameof(JobExecutionState.RetryCount)))
         {
             occurrence.RetryCount = context.RetryCount;
+        }
+
+        // PROGRESS — the report the throttle had not written yet when the run ended
+        if (propsToUpdate.Contains(nameof(JobExecutionState.Progress)) && context.Progress is { } progress)
+        {
+            occurrence.ProgressPercent = progress.Percent;
+            occurrence.ProgressMessage = progress.Message;
+            occurrence.ProgressUpdatedAt = _timeProvider.GetUtcNow();
         }
 
         // RELEASE LOCK

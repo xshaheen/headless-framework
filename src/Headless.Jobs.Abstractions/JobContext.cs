@@ -56,9 +56,12 @@ public class JobContext
         CorrelationId = other.CorrelationId;
         CausationId = other.CausationId;
         TenantId = other.TenantId;
+        ProgressSink = other.ProgressSink;
     }
 
     internal AsyncServiceScope ServiceScope { get; set; }
+
+    internal IJobProgressSink? ProgressSink { get; set; }
 
     /// <summary>Payload schema version selected before deserialization.</summary>
     public string ContractVersion { get; internal set; } = JobContract.InitialVersion;
@@ -144,6 +147,33 @@ public class JobContext
         }
 
         return ServiceScope.ServiceProvider.GetRequiredService<IJobScheduler>().CancelAsync(Id, cancellationToken);
+    }
+
+    /// <summary>
+    /// Records how far this run has got. The scheduler persists the latest report on the time job or cron occurrence
+    /// row, where the dashboard reads it, but does not write on every call: the first report is written at once, then at
+    /// most one write per <c>SchedulerOptionsBuilder.ProgressReportInterval</c> carries the latest value, and a report
+    /// still unwritten when the run ends is written with its final status.
+    /// </summary>
+    /// <param name="percent">Completion from <c>0</c> to <c>100</c>, inclusive.</param>
+    /// <param name="message">
+    /// Optional human-readable status, at most <see cref="JobProgress.MessageMaxLength"/> characters. Each report
+    /// replaces the previous one whole, so omitting the message clears the stored one.
+    /// </param>
+    /// <remarks>
+    /// The call only records the value and never waits for the store, so it is cheap to call in a tight loop. A failed
+    /// progress write is logged and never fails the run. Stored progress survives in-process retries and
+    /// crash-recovery re-runs until the next report overwrites it. On a context the scheduler did not create, such as
+    /// one built in a unit test, the call validates its arguments and records nothing.
+    /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="percent"/> is outside <c>0</c>–<c>100</c> or is not a finite number, or
+    /// <paramref name="message"/> is longer than <see cref="JobProgress.MessageMaxLength"/>.
+    /// </exception>
+    public void ReportProgress(double percent, string? message = null)
+    {
+        var progress = new JobProgress(percent, message);
+        ProgressSink?.Report(progress);
     }
 
     internal void SetServiceScope(AsyncServiceScope serviceScope)
