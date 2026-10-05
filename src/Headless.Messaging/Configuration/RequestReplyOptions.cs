@@ -39,10 +39,30 @@ public sealed class RequestReplyOptions
     /// </remarks>
     public bool IncludeExceptionDetailsInFaults { get; set; }
 
+    /// <summary>
+    /// Gets or sets the most requests this host may have waiting for a reply at once. Defaults to
+    /// <see langword="null"/>, for no limit; when set, it must be greater than zero.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A call made while the limit is reached fails at once with <see cref="RequestNotSentException"/> and the request
+    /// is not published, so retrying it cannot repeat work. A slot frees as soon as a waiting call ends, whether it was
+    /// replied to, timed out, was canceled, or was aborted when the host stopped.
+    /// </para>
+    /// <para>
+    /// Without a limit the number of waiting calls is still bounded by the request rate multiplied by the timeout, so it
+    /// grows only while responders are slow or down. Set a limit to fail fast in that case instead of holding every
+    /// caller, and its memory, until the timeout; size it from the host's peak request rate and timeout so it never
+    /// refuses healthy traffic.
+    /// </para>
+    /// </remarks>
+    public int? MaxPendingRequests { get; set; }
+
     internal void CopyTo(RequestReplyOptions target)
     {
         target.DefaultTimeout = DefaultTimeout;
         target.IncludeExceptionDetailsInFaults = IncludeExceptionDetailsInFaults;
+        target.MaxPendingRequests = MaxPendingRequests;
     }
 }
 
@@ -60,5 +80,10 @@ internal sealed class RequestReplyOptionsValidator : AbstractValidator<RequestRe
                     $"RequestReply.DefaultTimeout must not exceed {RequestReplyOptions.MaxDefaultTimeout.TotalMinutes} minutes."
                 )
             );
+
+        RuleFor(x => x.MaxPendingRequests)
+            .GreaterThan(0)
+            .When(x => x.MaxPendingRequests.HasValue)
+            .WithMessage("RequestReply.MaxPendingRequests must be greater than zero when set.");
     }
 }

@@ -256,7 +256,10 @@ public sealed class SubscribeExecutorCancellationTests : TestBase
             TimeSpan.FromMinutes(1),
             TimeProvider.System
         );
-        pending.TryRegister(call, TimeSpan.FromMinutes(1), CancellationToken.None).Should().BeTrue();
+        pending
+            .TryRegister(call, TimeSpan.FromMinutes(1), CancellationToken.None)
+            .Should()
+            .Be(PendingRegistration.Registered);
 
         var awaiting = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var invoker = Substitute.For<ISubscribeInvoker>();

@@ -105,7 +105,12 @@ public sealed class MessagingOptionsCopyToTests : TestBase
             CircuitBreaker = { FailureThreshold = 42, OpenDuration = TimeSpan.FromMinutes(7) },
             RetryProcessor = { BaseInterval = TimeSpan.FromSeconds(13), CircuitOpenRateThreshold = 0.42 },
             RetryPolicy = { DispatchTimeout = TimeSpan.FromSeconds(23) },
-            RequestReply = { DefaultTimeout = TimeSpan.FromSeconds(11), IncludeExceptionDetailsInFaults = true },
+            RequestReply =
+            {
+                DefaultTimeout = TimeSpan.FromSeconds(11),
+                IncludeExceptionDetailsInFaults = true,
+                MaxPendingRequests = 64,
+            },
         };
 
         var target = new MessagingOptions();
@@ -125,6 +130,7 @@ public sealed class MessagingOptionsCopyToTests : TestBase
         target.RetryPolicy.DispatchTimeout.Should().Be(TimeSpan.FromSeconds(23));
         target.RequestReply.DefaultTimeout.Should().Be(TimeSpan.FromSeconds(11));
         target.RequestReply.IncludeExceptionDetailsInFaults.Should().BeTrue();
+        target.RequestReply.MaxPendingRequests.Should().Be(64);
     }
 
     [Fact]

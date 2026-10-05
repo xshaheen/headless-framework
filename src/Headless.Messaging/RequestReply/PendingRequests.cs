@@ -8,14 +8,24 @@ namespace Headless.Messaging.RequestReply;
 /// The calls of this process waiting for a reply, keyed by request id. An ended call stays as a tombstone for one more
 /// timeout, so a reply arriving after it can be told apart from a reply nobody here asked for.
 /// </summary>
-internal sealed class PendingRequests
+/// <param name="maxPending">
+/// The most calls that may wait at once, or <see langword="null"/> for no limit. A call over the limit is refused.
+/// </param>
+internal sealed class PendingRequests(int? maxPending = null)
 {
     private readonly ConcurrentDictionary<string, PendingRequestEntry> _entries = new(StringComparer.Ordinal);
     private readonly Lock _lock = new();
     private volatile bool _closed;
 
+    // Counted rather than scanned so the limit costs nothing per request: incremented when a call registers, and
+    // decremented by the one transition that takes the call out of waiting, whichever way it ends.
+    private int _pendingCount;
+
+    /// <summary>Gets the most calls that may wait at once, or <see langword="null"/> when there is no limit.</summary>
+    public int? MaxPending { get; } = maxPending;
+
     /// <summary>Gets the number of calls still waiting for their outcome.</summary>
-    public int PendingCount => _entries.Values.Count(static entry => entry.State is PendingRequestState.Pending);
+    public int PendingCount => Volatile.Read(ref _pendingCount);
 
     /// <summary>Gets the number of tracked entries, waiting calls and tombstones alike.</summary>
     public int TrackedCount => _entries.Count;
@@ -24,26 +34,36 @@ internal sealed class PendingRequests
     public bool IsClosed => _closed;
 
     /// <summary>
-    /// Starts tracking <paramref name="request"/> and arms its timeout, or returns <see langword="false"/> when the
-    /// requester is stopping and accepts no new calls.
+    /// Starts tracking <paramref name="request"/> and arms its timeout, or refuses it when the requester is stopping or
+    /// <see cref="MaxPending"/> calls already wait.
     /// </summary>
-    public bool TryRegister(PendingRequest request, TimeSpan dueIn, CancellationToken cancellationToken)
+    public PendingRegistration TryRegister(PendingRequest request, TimeSpan dueIn, CancellationToken cancellationToken)
     {
         lock (_lock)
         {
             if (_closed)
             {
-                return false;
+                return PendingRegistration.Closed;
             }
 
+            // Reserve first and give the slot back on overflow: completions decrement outside the lock, so a read-then-
+            // increment could admit a call over the limit.
+            if (Interlocked.Increment(ref _pendingCount) > MaxPending)
+            {
+                Interlocked.Decrement(ref _pendingCount);
+                return PendingRegistration.Full;
+            }
+
+            // Owned before the entry is visible, so whichever transition ends the call can give the slot back.
+            request.Entry.Owner = this;
             _entries[request.RequestId] = request.Entry;
 
             // Armed under the lock Close takes, so a concurrent Close sees an armed call and ends it; arming after the
             // lock would leave the timer and the token registration of a call Close already ended.
-            request.Arm(this, dueIn, cancellationToken);
+            request.Arm(dueIn, cancellationToken);
         }
 
-        return true;
+        return PendingRegistration.Registered;
     }
 
     public bool TryGet(string requestId, [NotNullWhen(true)] out PendingRequestEntry? entry)
@@ -63,6 +83,12 @@ internal sealed class PendingRequests
     public void Remove(PendingRequestEntry entry)
     {
         _entries.TryRemove(new KeyValuePair<string, PendingRequestEntry>(entry.RequestId, entry));
+    }
+
+    // Called once per registered call, by the transition that takes it out of waiting.
+    internal void OnLeftPending()
+    {
+        Interlocked.Decrement(ref _pendingCount);
     }
 
     /// <summary>
@@ -87,6 +113,17 @@ internal sealed class PendingRequests
             entry.Call?.TryEnd(new RequestAbortedException(entry.RequestId));
         }
     }
+}
+
+internal enum PendingRegistration
+{
+    Registered = 0,
+
+    /// <summary>The requester is stopping and accepts no new calls.</summary>
+    Closed = 1,
+
+    /// <summary><see cref="PendingRequests.MaxPending"/> calls already wait.</summary>
+    Full = 2,
 }
 
 internal enum PendingRequestState
@@ -131,10 +168,23 @@ internal sealed class PendingRequestEntry(string requestId, PendingRequest call)
     }
 
     /// <summary>Moves a waiting call to <paramref name="state"/>. Only the first transition out of waiting wins.</summary>
+    /// <remarks>
+    /// Every way a call ends passes through here, so the winning transition is the one place that frees the call's
+    /// slot in its owner's count.
+    /// </remarks>
     internal bool TryLeavePending(PendingRequestState state)
     {
-        return Interlocked.CompareExchange(ref _state, (int)state, (int)PendingRequestState.Pending)
-            == (int)PendingRequestState.Pending;
+        if (
+            Interlocked.CompareExchange(ref _state, (int)state, (int)PendingRequestState.Pending)
+            != (int)PendingRequestState.Pending
+        )
+        {
+            return false;
+        }
+
+        // A call that never registered has no owner and took no slot.
+        Owner?.OnLeftPending();
+        return true;
     }
 
     // Runs once, on the call's winning transition: the entry drops the call and stays as a tombstone for the retention
@@ -231,9 +281,8 @@ internal sealed class PendingRequest
 
     public TimeSpan TimeoutDuration { get; }
 
-    internal void Arm(PendingRequests owner, TimeSpan dueIn, CancellationToken cancellationToken)
+    internal void Arm(TimeSpan dueIn, CancellationToken cancellationToken)
     {
-        Entry.Owner = owner;
         _timeoutTimer = _timeProvider.CreateTimer(
             static state =>
             {

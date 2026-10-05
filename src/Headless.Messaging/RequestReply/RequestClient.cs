@@ -141,9 +141,18 @@ internal sealed class RequestClient(
             timeProvider
         );
 
-        if (!pending.TryRegister(call, remaining, cancellationToken))
+        switch (pending.TryRegister(call, remaining, cancellationToken))
         {
-            throw ReplyListenerHost.Stopping(requestId);
+            case PendingRegistration.Closed:
+                throw ReplyListenerHost.Stopping(requestId);
+            case PendingRegistration.Full:
+                throw new RequestNotSentException(
+                    string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"{pending.MaxPending} requests are already waiting for a reply, the limit set by RequestReply.MaxPendingRequests, so the request was not sent."
+                    ),
+                    requestId
+                );
         }
 
         var stamp = new RequestStamp(
