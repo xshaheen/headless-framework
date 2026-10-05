@@ -283,6 +283,122 @@ public sealed class HeadlessApiDefaultsTests : TestBase
         data.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
+    [Theory]
+    [InlineData(EnvironmentNames.Test, HttpStatusCode.OK)]
+    [InlineData(EnvironmentNames.Development, HttpStatusCode.OK)]
+    [InlineData(EnvironmentNames.Production, HttpStatusCode.TemporaryRedirect)]
+    public async Task should_redirect_to_https_only_outside_development_and_test(
+        string environmentName,
+        HttpStatusCode expectedStatus
+    )
+    {
+        // given - an explicit HTTPS port, so the redirection middleware would redirect whenever it runs
+        var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = environmentName });
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        _AddDefaultHeadlessSecurityConfiguration(builder.Configuration);
+        builder.AddHeadless(configureServices: options =>
+        {
+            options.Validation.ValidateServiceProviderOnStartup = false;
+            options.OpenTelemetry.Enabled = false;
+        });
+        builder.Services.AddAuthentication();
+        builder.Services.AddHttpsRedirection(options => options.HttpsPort = 443);
+
+        await using var app = builder.Build();
+        app.UseHeadless();
+        app.MapHeadlessEndpoints();
+        app.MapGet("/data", () => Results.Ok());
+        await app.StartAsync(AbortToken);
+
+        using var handler = new HttpClientHandler { AllowAutoRedirect = false, CheckCertificateRevocationList = true };
+        using var client = new HttpClient(handler) { BaseAddress = new Uri(app.Urls.Single()) };
+
+        // when
+        using var response = await client.GetAsync("/data", AbortToken);
+
+        // then
+        response.StatusCode.Should().Be(expectedStatus);
+    }
+
+    [Fact]
+    public async Task should_run_inserted_middleware_at_its_stage_position_when_stage_is_disabled()
+    {
+        // given
+        var order = new List<string>();
+        await using var app = await _CreateAppAsync(
+            application => application.MapGet("/data", () => Results.Ok()),
+            options =>
+            {
+                options.UseHsts = false;
+                options
+                    .InsertAfter(HeadlessPipelineStage.Hsts, _Record(order, "after-hsts"))
+                    .InsertAfter(HeadlessPipelineStage.ExceptionHandler, _Record(order, "after-exception-handler"))
+                    .InsertBefore(HeadlessPipelineStage.ForwardedHeaders, _Record(order, "before-forwarded-headers"))
+                    .InsertAfter(HeadlessPipelineStage.ExceptionHandler, _Record(order, "after-exception-handler-2"));
+            }
+        );
+        using var client = _CreateClient(app);
+
+        // when
+        using var response = await client.GetAsync("/data", AbortToken);
+
+        // then
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        order
+            .Should()
+            .Equal("before-forwarded-headers", "after-exception-handler", "after-exception-handler-2", "after-hsts");
+    }
+
+    [Fact]
+    public async Task should_handle_exception_thrown_by_middleware_inserted_after_exception_handler()
+    {
+        // given
+        await using var app = await _CreateAppAsync(
+            application => application.MapGet("/data", () => Results.Ok()),
+            options =>
+                options.InsertAfter(
+                    HeadlessPipelineStage.ExceptionHandler,
+                    pipeline =>
+                        pipeline.Use(
+                            (HttpContext _, RequestDelegate _) => throw new InvalidOperationException("inserted")
+                        )
+                )
+        );
+        using var client = _CreateClient(app);
+
+        // when
+        using var response = await client.GetAsync("/data", AbortToken);
+
+        // then
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        response.Content.Headers.ContentType!.MediaType.Should().Be(ContentTypes.Applications.ProblemJson);
+    }
+
+    [Fact]
+    public void should_throw_when_inserting_at_undefined_stage()
+    {
+        // given
+        var options = new HeadlessApiDefaultsOptions();
+
+        // when
+        var act = () => options.InsertBefore((HeadlessPipelineStage)99, _ => { });
+
+        // then
+        act.Should().Throw<System.ComponentModel.InvalidEnumArgumentException>();
+    }
+
+    private static Action<IApplicationBuilder> _Record(List<string> order, string name)
+    {
+        return pipeline =>
+            pipeline.Use(
+                (context, next) =>
+                {
+                    order.Add(name);
+                    return next(context);
+                }
+            );
+    }
+
     private async Task<WebApplication> _CreateAppAsync(
         Action<WebApplication> map,
         Action<HeadlessApiDefaultsOptions>? configure = null,
