@@ -23,8 +23,12 @@ namespace Headless.Permissions;
 /// 30 seconds. Cancellation, invalid arguments, and unsupported operations are not retried.
 /// </para>
 /// </summary>
+/// <param name="retryTimeProvider">
+/// Clock for the retry back-off only. Registration passes <see cref="TimeProvider.System"/>: back-off is elapsed
+/// time, not app time, so a host that fakes its app <see cref="TimeProvider"/> does not stall the retries.
+/// </param>
 internal sealed class PermissionsInitializationBackgroundService(
-    TimeProvider timeProvider,
+    TimeProvider retryTimeProvider,
     IServiceScopeFactory serviceScopeFactory,
     IOptions<PermissionManagementOptions> optionsAccessor,
     ILogger<PermissionsInitializationBackgroundService> logger
@@ -136,7 +140,7 @@ internal sealed class PermissionsInitializationBackgroundService(
             ),
         };
 
-        var builder = new ResiliencePipelineBuilder { TimeProvider = timeProvider };
+        var builder = new ResiliencePipelineBuilder { TimeProvider = retryTimeProvider };
         var pipeline = builder.AddRetry(options).Build();
 
         await pipeline

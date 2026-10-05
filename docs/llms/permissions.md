@@ -157,7 +157,7 @@ When a save adds or updates definitions, the dynamic store publishes `DynamicPer
 
 `PermissionsInitializationBackgroundService` runs after the application starts. It:
 
-1. Persists static permission definitions to the database (guarded by a distributed lock; up to 10 jittered exponential-back-off retries capped at 30 seconds), when `SaveStaticPermissionsToDatabase = true`.
+1. Persists static permission definitions to the database (guarded by a distributed lock; up to 10 jittered exponential-back-off retries capped at 30 seconds), when `SaveStaticPermissionsToDatabase = true`. The back-off waits run on the system clock, not the registered `TimeProvider`, so a host that registers a `FakeTimeProvider` (a test host) still retries in real time.
 2. Pre-caches dynamic definitions from the database into the in-process cache, when `IsDynamicPermissionStoreEnabled = true`.
 
 Dependents can await `WaitForInitializationAsync()` on the `IInitializer` interface to block until both tasks complete. Cancellation, `ArgumentException`, and `NotSupportedException` fail immediately without retry; other terminal failures surface to every waiter. When both options are `false`, initialization is a no-op and `IsInitialized` is set to `true` immediately.

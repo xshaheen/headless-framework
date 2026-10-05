@@ -126,7 +126,7 @@ The two messages travel on separate subscriptions, and nothing orders them. With
 
 ### Startup Initialization
 
-`FeaturesInitializationBackgroundService` runs after the application starts. It saves static feature definitions to the database (idempotent and guarded by a distributed lock), with up to 10 jittered exponential-back-off retries capped at 30 seconds, then pre-caches the dynamic feature definitions if `IsDynamicFeatureStoreEnabled` is true. Cancellation, `ArgumentException`, and `NotSupportedException` fail immediately without retry; other terminal failures surface through `WaitForInitializationAsync()`. Both tasks are skipped when their governing option flags are disabled — in that case the service signals completion immediately.
+`FeaturesInitializationBackgroundService` runs after the application starts. It saves static feature definitions to the database (idempotent and guarded by a distributed lock), with up to 10 jittered exponential-back-off retries capped at 30 seconds, then pre-caches the dynamic feature definitions if `IsDynamicFeatureStoreEnabled` is true. Cancellation, `ArgumentException`, and `NotSupportedException` fail immediately without retry; other terminal failures surface through `WaitForInitializationAsync()`. Both tasks are skipped when their governing option flags are disabled — in that case the service signals completion immediately. The back-off waits run on the system clock, not the registered `TimeProvider`, so a host that registers a `FakeTimeProvider` (a test host) still retries in real time; skip seeding entirely with `setup.DisableStartupInitialization()`.
 
 ## Choosing a Provider
 

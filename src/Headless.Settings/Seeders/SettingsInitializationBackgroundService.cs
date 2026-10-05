@@ -19,8 +19,12 @@ namespace Headless.Settings;
 /// Static-definition persistence retries other failures up to 10 times with jittered exponential back-off capped at
 /// 30 seconds. Cancellation, invalid arguments, and unsupported operations are not retried.
 /// </remarks>
+/// <param name="retryTimeProvider">
+/// Clock for the retry back-off only. Registration passes <see cref="TimeProvider.System"/>: back-off is elapsed
+/// time, not app time, so a host that fakes its app <see cref="TimeProvider"/> does not stall the retries.
+/// </param>
 internal sealed class SettingsInitializationBackgroundService(
-    TimeProvider timeProvider,
+    TimeProvider retryTimeProvider,
     IServiceScopeFactory serviceScopeFactory,
     IOptions<SettingManagementOptions> optionsAccessor,
     ILogger<SettingsInitializationBackgroundService> logger
@@ -129,7 +133,7 @@ internal sealed class SettingsInitializationBackgroundService(
             ),
         };
 
-        var builder = new ResiliencePipelineBuilder { TimeProvider = timeProvider };
+        var builder = new ResiliencePipelineBuilder { TimeProvider = retryTimeProvider };
         var pipeline = builder.AddRetry(options).Build();
 
         await pipeline
