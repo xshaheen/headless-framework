@@ -103,7 +103,7 @@ public static class SetupPostgreSqlEntityFrameworkMessaging
 
             services.AddSingleton<IConfigureOptions<PostgreSqlOptions>, ConfigurePostgreSqlOptions<TContext>>();
 
-            if (options.EnableTransactionalOutbox)
+            if (options.EnableTransactionalInbox)
             {
                 services.AddEntityFrameworkUnitOfWork();
                 _PromoteStorageCapability(services, "PostgreSql");

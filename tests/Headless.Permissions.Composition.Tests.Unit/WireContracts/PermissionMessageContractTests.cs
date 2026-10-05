@@ -34,8 +34,10 @@ public sealed class PermissionMessageContractTests : TestBase
         await harness.Publisher.PublishAsync(message, cancellationToken: AbortToken);
 
         // then
-        var published = await harness.WaitForPublished<PermissionGrantChangedMessage>(cancellationToken: AbortToken);
-        var consumed = await harness.WaitForConsumed<PermissionGrantChangedMessage>(cancellationToken: AbortToken);
+        var published = await harness.WaitForPublishedAsync<PermissionGrantChangedMessage>(
+            cancellationToken: AbortToken
+        );
+        var consumed = await harness.WaitForConsumedAsync<PermissionGrantChangedMessage>(cancellationToken: AbortToken);
         published.MessageName.Should().Be("headless.permissions.grant-changed");
         consumed.MessageName.Should().Be("headless.permissions.grant-changed");
         _ContractVersionOf<AppPermissionGrantChangedConsumer>(harness).Should().Be("1");
@@ -56,10 +58,10 @@ public sealed class PermissionMessageContractTests : TestBase
         await harness.Publisher.PublishAsync(message, cancellationToken: AbortToken);
 
         // then
-        var published = await harness.WaitForPublished<DynamicPermissionDefinitionsChanged>(
+        var published = await harness.WaitForPublishedAsync<DynamicPermissionDefinitionsChanged>(
             cancellationToken: AbortToken
         );
-        var consumed = await harness.WaitForConsumed<DynamicPermissionDefinitionsChanged>(
+        var consumed = await harness.WaitForConsumedAsync<DynamicPermissionDefinitionsChanged>(
             cancellationToken: AbortToken
         );
         published.MessageName.Should().Be("headless.permissions.definitions-changed");

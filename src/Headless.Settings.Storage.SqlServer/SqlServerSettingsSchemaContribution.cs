@@ -94,7 +94,8 @@ internal static class SqlServerSettingsSchemaContribution
                     indexesSql
                 ),
             ],
-            applyOnStartup: applyOnStartup
+            applyOnStartup: applyOnStartup,
+            hostStateTables: [definitionsName]
         );
     }
 }

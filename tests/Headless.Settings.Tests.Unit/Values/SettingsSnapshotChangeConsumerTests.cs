@@ -131,7 +131,7 @@ public sealed class SettingsSnapshotChangeConsumerTests : TestBase
             },
             cancellationToken: AbortToken
         );
-        await harness.WaitForConsumed<SettingChangedMessage>(cancellationToken: AbortToken);
+        await harness.WaitForConsumedAsync<SettingChangedMessage>(cancellationToken: AbortToken);
 
         // then
         snapshot.TryGetCurrent(out var updated).Should().BeTrue();

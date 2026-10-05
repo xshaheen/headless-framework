@@ -17,11 +17,11 @@ public sealed class DatabaseResetOptionsTests
     }
 
     [Fact]
-    public void should_default_to_empty_tables_to_ignore()
+    public void should_default_to_empty_tables_to_preserve()
     {
         var options = new DatabaseResetOptions();
 
-        options.TablesToIgnore.Should().BeEmpty();
+        options.TablesToPreserve.Should().BeEmpty();
     }
 
     [Fact]
@@ -41,13 +41,13 @@ public sealed class DatabaseResetOptionsTests
     }
 
     [Fact]
-    public void should_accept_custom_tables_to_ignore()
+    public void should_accept_custom_tables_to_preserve()
     {
         var options = new DatabaseResetOptions
         {
-            TablesToIgnore = [new Table("CustomTable"), new Table("AnotherTable")],
+            TablesToPreserve = [new Table("CustomTable"), new Table("AnotherTable")],
         };
 
-        options.TablesToIgnore.Should().HaveCount(2);
+        options.TablesToPreserve.Should().HaveCount(2);
     }
 }

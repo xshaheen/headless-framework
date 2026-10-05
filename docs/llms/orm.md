@@ -139,7 +139,7 @@ The full save-transaction order within a `HeadlessDbContext` pipeline-owned tran
 2. The `OutboxIntegrationEventDispatcher` publishes each integration event through that unit's `Outbox` (`OutboxOptions`, always durable), so the outbox writer buffers the row inside the unit's transaction — not sent to the broker in-band. It deliberately does not use `IBus`: that publisher is autonomous, and its rows would survive the save's rollback.
 3. `IUnitOfWork.CompleteAsync` drains the buffered dispatch after the transaction commits; a rollback (explicit or abandoned) discards it.
 
-On a transactional messaging consume path, the same compatible local transaction also owns the current fenced inbox completion. This atomic boundary covers enlisted EF state and captured durable Bus/Queue rows, not handler entry, `Direct`, or external effects.
+On a transactional messaging consume path, the same compatible local transaction also owns the current fenced inbox completion. This atomic boundary covers enlisted EF state and rows the handler publishes through `context.UnitOfWork.Outbox`, not handler entry, `IBus`/`IQueue` publishes (which never join the unit), `Direct`, or external effects.
 4. The background messaging relay sweeps committed rows independently for crash recovery. On PostgreSQL the relay is the primary latency-bounded path; pick the outbox storage provider on `AddHeadlessMessaging` with that trade-off in mind.
 
 Change Data Capture (e.g. Debezium) is an advanced alternative that bypasses this bridge entirely — it reads the database transaction log and is a host-infrastructure decision, not a package option.

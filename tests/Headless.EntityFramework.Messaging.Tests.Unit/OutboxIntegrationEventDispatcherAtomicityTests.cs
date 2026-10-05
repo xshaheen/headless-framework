@@ -150,7 +150,7 @@ public sealed class OutboxIntegrationEventDispatcherAtomicityTests : TestBase
         }
 
         // then — one durable row per event, dispatched to the broker after the commit
-        await harness.WaitForPublished<OutboxOrderPlaced>(
+        await harness.WaitForPublishedAsync<OutboxOrderPlaced>(
             message => string.Equals(message.UniqueId, "committed-2", StringComparison.Ordinal),
             TimeSpan.FromSeconds(5),
             AbortToken
