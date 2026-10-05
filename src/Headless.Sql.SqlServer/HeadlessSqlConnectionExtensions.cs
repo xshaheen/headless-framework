@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Text.RegularExpressions;
 using Headless.Checks;
 
 namespace Microsoft.Data.SqlClient;
@@ -10,7 +11,7 @@ namespace Microsoft.Data.SqlClient;
 /// augmented type's namespace so the accessor is discoverable wherever a <see cref="SqlConnection" /> is in scope.
 /// </summary>
 [PublicAPI]
-public static class HeadlessSqlConnectionExtensions
+public static partial class HeadlessSqlConnectionExtensions
 {
     extension(SqlConnection connection)
     {
@@ -35,8 +36,9 @@ public static class HeadlessSqlConnectionExtensions
         /// <exception cref="InvalidOperationException">
         /// The connection authenticates with an <see cref="SqlConnection.AccessToken" />, an
         /// <see cref="SqlConnection.AccessTokenCallback" />, or a <see cref="SqlConnection.Credential" />, none of
-        /// which a connection string carries; or the string names a SQL login without a password, as the
-        /// connection's own string does once it has opened unless <c>Persist Security Info</c> is set.
+        /// which a connection string carries; or the string names a SQL login and no password keyword, as the
+        /// connection's own string does once it has opened unless <c>Persist Security Info</c> is set. An explicit
+        /// empty password (<c>Password=;</c>) is accepted.
         /// </exception>
         public string GetReusableConnectionString(string? configuredConnectionString = null)
         {
@@ -67,7 +69,7 @@ public static class HeadlessSqlConnectionExtensions
                 !builder.IntegratedSecurity
                 && builder.Authentication is SqlAuthenticationMethod.NotSpecified or SqlAuthenticationMethod.SqlPassword
                 && !string.IsNullOrEmpty(builder.UserID)
-                && string.IsNullOrEmpty(builder.Password)
+                && !_NamesPassword(connectionString)
             )
             {
                 throw new InvalidOperationException(
@@ -81,4 +83,12 @@ public static class HeadlessSqlConnectionExtensions
             return connectionString;
         }
     }
+
+    // SqlClient removes the password keyword itself, so a stripped string has no keyword at all, while an explicit
+    // empty password ("Password=;") is a login that really has none. Both connection string builders drop a keyword
+    // whose value is empty, so the keyword is looked for in the raw string.
+    private static bool _NamesPassword(string connectionString) => _PasswordKeyword().IsMatch(connectionString);
+
+    [GeneratedRegex(@"(?:^|;)\s*(?:password|pwd)\s*=", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, 100)]
+    private static partial Regex _PasswordKeyword();
 }

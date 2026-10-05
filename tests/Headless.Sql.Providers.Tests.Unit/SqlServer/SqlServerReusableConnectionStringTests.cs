@@ -10,6 +10,8 @@ public sealed class SqlServerReusableConnectionStringTests : TestBase
 {
     [Theory]
     [InlineData("Server=localhost;Database=app;User ID=sa;Password=secret;TrustServerCertificate=True")]
+    [InlineData("Server=localhost;Database=app;User ID=sa;Password=;")]
+    [InlineData("Server=localhost;Database=app;UID=sa;PWD=secret")]
     [InlineData("Server=localhost;Database=app;Integrated Security=True")]
     [InlineData("Server=localhost;Database=app;Authentication=Active Directory Default")]
     [InlineData("Server=localhost;Database=app;User ID=client;Authentication=Active Directory Managed Identity")]
