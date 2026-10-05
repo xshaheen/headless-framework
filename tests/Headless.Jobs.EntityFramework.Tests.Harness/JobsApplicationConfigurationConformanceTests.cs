@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using Headless.EntityFramework;
 using Headless.Hosting;
 using Headless.Jobs;
@@ -8,6 +9,7 @@ using Headless.Messaging.Persistence;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -174,6 +176,71 @@ public abstract class JobsApplicationConfigurationConformanceTests<TFixture>(TFi
             : _RunUnderScopeValidationAsync<ApplicationContext>(services =>
                 services.AddDbContext<ApplicationContext>(fixture.ConfigureStore)
             );
+    }
+
+    // Scoped options are resolved once, from a scope Jobs holds for the host's lifetime. A HeadlessDbContext built from
+    // them must still open its own scope per context, so its save pipeline's scoped collaborators are not shared by
+    // concurrent writes and are disposed with the context.
+    public virtual async Task scoped_options_headless_context_opens_a_scope_per_coordinated_write()
+    {
+        await fixture.ResetDatabaseAsync(AbortToken);
+        var recorder = new ScopeProbeRecorder();
+        var builder = Host.CreateApplicationBuilder(
+            new HostApplicationBuilderSettings { EnvironmentName = Environments.Development }
+        );
+        builder.Logging.SetMinimumLevel(LogLevel.Warning);
+        builder.Services.AddSingleton(recorder);
+        builder.Services.AddHeadlessDbContext<HeadlessApplicationContext>(
+            fixture.ConfigureStore,
+            options => options.AddSaveEntryProcessor<ScopeProbeProcessor>(ServiceLifetime.Scoped)
+        );
+        fixture.ConfigureUnitOfWork(builder.Services);
+        builder.Services.AddHeadlessJobs(jobs =>
+        {
+            jobs.DisableBackgroundServices();
+            jobs.AddModule<CoordinatedJobsModule>();
+            fixture.ConfigureApplicationJobs<HeadlessApplicationContext>(
+                jobs,
+                coordination => coordination.ClusterName = "application-scope-per-write"
+            );
+        });
+
+        using var host = builder.Build();
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync<HeadlessApplicationContext>(host, AbortToken);
+        await host.StartAsync(AbortToken);
+
+        try
+        {
+            // Startup writes are not the subject; only the two enlisted writes below are counted.
+            recorder.Clear();
+            var seenAfterEachWrite = new List<int>();
+            for (var write = 0; write < 2; write++)
+            {
+                await fixture.RunCoordinatedTransactionAsync(
+                    host.Services,
+                    async (_, unit, _, _, ct) =>
+                    {
+                        await unit.Jobs.ScheduleAsync(
+                            new CoordinatedFacadeRequest(Guid.NewGuid(), "enlisted"),
+                            new DateTimeOffset(2035, 4, 5, 12, 30, 0, TimeSpan.Zero),
+                            ct
+                        );
+                    },
+                    AbortToken
+                );
+                seenAfterEachWrite.Add(recorder.Instances.Count);
+            }
+
+            (await fixture.CountTimeJobsAsync(AbortToken)).Should().Be(2);
+            seenAfterEachWrite[0].Should().BePositive("the enlisted write saves through the Headless pipeline");
+            seenAfterEachWrite[1]
+                .Should()
+                .BeGreaterThan(seenAfterEachWrite[0], "the second write's context opens a scope of its own");
+        }
+        finally
+        {
+            await host.StopAsync(AbortToken);
+        }
     }
 
     private async Task _RunUnderScopeValidationAsync<TContext>(Action<IServiceCollection> registerContext)
@@ -399,6 +466,23 @@ public abstract class JobsApplicationConfigurationConformanceTests<TFixture>(TFi
                 }
             );
         }
+    }
+
+    /// <summary>Collects every distinct scoped processor instance; one instance per DI scope that saved.</summary>
+    private sealed class ScopeProbeRecorder
+    {
+        private readonly ConcurrentDictionary<ScopeProbeProcessor, byte> _instances = new();
+
+        public ICollection<ScopeProbeProcessor> Instances => _instances.Keys;
+
+        public void Record(ScopeProbeProcessor processor) => _instances.TryAdd(processor, 0);
+
+        public void Clear() => _instances.Clear();
+    }
+
+    private sealed class ScopeProbeProcessor(ScopeProbeRecorder recorder) : IHeadlessSaveEntryProcessor
+    {
+        public void Process(EntityEntry entry, HeadlessSaveEntryContext context) => recorder.Record(this);
     }
 
     private sealed class ApplicationProbe

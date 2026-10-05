@@ -69,12 +69,24 @@ internal static class ServiceBuilder
                 // The template lives as long as the host. Scoped options (the AddDbContext and AddHeadlessDbContext
                 // default) build from scoped configuration, which the root provider refuses under scope validation,
                 // so they resolve once from a scope Jobs holds for the host's lifetime.
-                var optionsProvider =
-                    serviceDescriptor.Lifetime == ServiceLifetime.Singleton
-                        ? provider
-                        : provider.GetRequiredService<OptionsTemplateScope>().Services;
+                if (serviceDescriptor.Lifetime == ServiceLifetime.Singleton)
+                {
+                    return (DbContextOptions<TContext>)serviceDescriptor.ImplementationFactory(provider);
+                }
 
-                return (DbContextOptions<TContext>)serviceDescriptor.ImplementationFactory(optionsProvider);
+                var scopedTemplate =
+                    (DbContextOptions<TContext>)
+                        serviceDescriptor.ImplementationFactory(
+                            provider.GetRequiredService<OptionsTemplateScope>().Services
+                        );
+
+                // EF stamps options with the provider that built them, and a HeadlessDbContext adopts a non-root
+                // stamp as its own scope. Every Jobs context would then share that host-lifetime scope, so its save
+                // pipeline's scoped collaborators would be used concurrently and never disposed. Stamped with the
+                // root, each context opens and disposes a private scope, as it does from singleton options.
+                return new DbContextOptionsBuilder<TContext>(scopedTemplate)
+                    .UseApplicationServiceProvider(provider)
+                    .Options;
             }
 
             services.TryAddSingleton<OptionsTemplateScope>();

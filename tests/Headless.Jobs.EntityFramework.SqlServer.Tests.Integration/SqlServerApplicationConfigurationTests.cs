@@ -53,4 +53,10 @@ public sealed class SqlServerApplicationConfigurationTests(SqlServerJobsCoordina
     {
         return base.scoped_options_application_context_runs_under_scope_validation(headless);
     }
+
+    [Fact]
+    public override Task scoped_options_headless_context_opens_a_scope_per_coordinated_write()
+    {
+        return base.scoped_options_headless_context_opens_a_scope_per_coordinated_write();
+    }
 }
