@@ -83,7 +83,8 @@ internal static class PostgreSqlSettingsSchemaContribution
                     indexesSql
                 ),
             ],
-            applyOnStartup: applyOnStartup
+            applyOnStartup: applyOnStartup,
+            hostStateTables: [definitionsName]
         );
     }
 }

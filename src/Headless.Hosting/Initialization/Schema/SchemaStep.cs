@@ -70,10 +70,16 @@ public sealed record SchemaContribution
     /// applies nor verifies it. For a feature that runs its database's steps with a runner of its own, so that one
     /// database being unreachable cannot fail the host's startup, and still belongs in the host's deploy script.
     /// </param>
+    /// <param name="hostStateTables">
+    /// The unquoted names, within <paramref name="schema"/>, of the feature's tables whose rows are host state rather
+    /// than application data: rows the feature writes at startup from code (definitions) or keeps live while the host
+    /// runs (cluster membership). A tool that clears application data between tests must keep them, because the
+    /// running host never writes them again. Omit for a feature whose tables hold only application data.
+    /// </param>
     /// <exception cref="ArgumentNullException"><paramref name="dialect"/>, <paramref name="createConnection"/>, or <paramref name="steps"/> is null.</exception>
     /// <exception cref="ArgumentException">
     /// <paramref name="feature"/> or <paramref name="schema"/> is null or whitespace, <paramref name="steps"/> is
-    /// empty, or two steps share a version.
+    /// empty, two steps share a version, or <paramref name="hostStateTables"/> holds a null or whitespace name.
     /// </exception>
     public SchemaContribution(
         string feature,
@@ -82,7 +88,8 @@ public sealed record SchemaContribution
         string schema,
         IReadOnlyList<SchemaStep> steps,
         bool applyOnStartup = true,
-        bool exportOnly = false
+        bool exportOnly = false,
+        IReadOnlyList<string>? hostStateTables = null
     )
     {
         Feature = Argument.IsNotNullOrWhiteSpace(feature);
@@ -100,6 +107,12 @@ public sealed record SchemaContribution
         Steps = steps;
         ApplyOnStartup = applyOnStartup;
         ExportOnly = exportOnly;
+        HostStateTables = hostStateTables ?? [];
+        Argument.IsTrue(
+            HostStateTables.All(static name => !string.IsNullOrWhiteSpace(name)),
+            "A host-state table name cannot be null or whitespace.",
+            nameof(hostStateTables)
+        );
     }
 
     /// <summary>The feature's stable name.</summary>
@@ -122,6 +135,12 @@ public sealed record SchemaContribution
 
     /// <summary>Whether the runner only exports the steps, and never applies or verifies them.</summary>
     public bool ExportOnly { get; }
+
+    /// <summary>
+    /// The unquoted names, within <see cref="Schema"/>, of the tables whose rows are host state written at startup or
+    /// kept live by the running host, so a test data reset keeps them. Empty when every table holds application data.
+    /// </summary>
+    public IReadOnlyList<string> HostStateTables { get; }
 
     /// <summary>
     /// Returns the history identity of a feature whose object names are configurable: <paramref name="feature"/>

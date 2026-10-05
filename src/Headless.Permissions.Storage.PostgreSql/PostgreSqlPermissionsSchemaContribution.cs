@@ -89,7 +89,8 @@ internal static class PostgreSqlPermissionsSchemaContribution
                 new SchemaStep(TablesStepVersion, "Create the grant, definition, and group tables.", tablesSql),
                 new SchemaStep(IndexesStepVersion, "Create the grant, definition, and group indexes.", indexesSql),
             ],
-            applyOnStartup: applyOnStartup
+            applyOnStartup: applyOnStartup,
+            hostStateTables: [definitionsName, groupsName]
         );
     }
 }
