@@ -17,6 +17,12 @@ public static class GeneralMessageDescriber
         return new(code: GeneralErrorCodes.ConcurrencyFailure, description: Messages.g_concurrency_failure);
     }
 
+    /// <summary>Returns a descriptor for a database unique-constraint violation (<c>g:unique_violation</c>).</summary>
+    public static ErrorDescriptor UniqueViolation()
+    {
+        return new(code: GeneralErrorCodes.UniqueViolation, description: Messages.g_unique_violation);
+    }
+
     /// <summary>Returns a descriptor for a missing required <c>If-Match</c> header.</summary>
     public static ErrorDescriptor IfMatchRequired() =>
         new(GeneralErrorCodes.IfMatchRequired, Messages.g_if_match_required);

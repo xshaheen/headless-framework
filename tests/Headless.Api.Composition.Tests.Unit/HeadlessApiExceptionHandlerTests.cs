@@ -201,6 +201,115 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         httpContext.Response.StatusCode.Should().Be(StatusCodes.Status409Conflict);
     }
 
+    public static TheoryData<string, string> UniqueViolations =>
+        new()
+        {
+            { "postgresql", "23505" },
+            { "sqlserver", "2627" },
+            { "sqlserver", "2601" },
+            { "sqlite", "2067" },
+            { "sqlite", "1555" },
+        };
+
+    private static Exception _CreateProviderException(string provider, string code)
+    {
+        return provider switch
+        {
+            "postgresql" => new Tests.Fakes.SqlStateDbException(code),
+            "sqlserver" => new Microsoft.Data.SqlClient.SqlException(int.Parse(code, CultureInfo.InvariantCulture)),
+            "sqlite" => new Microsoft.Data.Sqlite.SqliteException(int.Parse(code, CultureInfo.InvariantCulture)),
+            _ => new InvalidOperationException(code),
+        };
+    }
+
+    [Theory]
+    [MemberData(nameof(UniqueViolations))]
+    public async Task should_map_db_update_exception_to_409_unique_violation_when_provider_reports_unique_violation(
+        string provider,
+        string code
+    )
+    {
+        // given
+        var problemDetailsService = Substitute.For<IProblemDetailsService>();
+        problemDetailsService.TryWriteAsync(Arg.Any<ProblemDetailsContext>()).Returns(true);
+        var logger = new CapturingLogger<HeadlessApiExceptionHandler>();
+        var handler = _CreateHandler(problemDetailsService, _CreateRealCreator(), logger);
+        var httpContext = new DefaultHttpContext();
+
+        // when
+        var result = await handler.TryHandleAsync(
+            httpContext,
+            new DbUpdateException("save failed", _CreateProviderException(provider, code)),
+            AbortToken
+        );
+
+        // then
+        result.Should().BeTrue();
+        httpContext.Response.StatusCode.Should().Be(StatusCodes.Status409Conflict);
+        logger.Entries.Should().Contain(e => e.EventId.Id == 5013 && e.Level == LogLevel.Warning);
+        await problemDetailsService
+            .Received(1)
+            .TryWriteAsync(
+                Arg.Is<ProblemDetailsContext>(c =>
+                    c.ProblemDetails.Status == 409
+                    && ((IEnumerable<ErrorDescriptor>)c.ProblemDetails.Extensions["errors"]!).Single().Code
+                        == "g:unique_violation"
+                )
+            );
+    }
+
+    public static TheoryData<string, string> OtherDatabaseFailures =>
+        new()
+        {
+            { "postgresql", "23503" },
+            { "sqlserver", "547" },
+            { "sqlite", "787" },
+            { "none", "not a provider error" },
+        };
+
+    [Theory]
+    [MemberData(nameof(OtherDatabaseFailures))]
+    public async Task should_not_handle_db_update_exception_when_cause_is_not_a_unique_violation(
+        string provider,
+        string code
+    )
+    {
+        // given
+        var problemDetailsService = Substitute.For<IProblemDetailsService>();
+        var handler = _CreateHandler(problemDetailsService, _CreateRealCreator());
+        var httpContext = new DefaultHttpContext();
+
+        // when
+        var result = await handler.TryHandleAsync(
+            httpContext,
+            new DbUpdateException("save failed", _CreateProviderException(provider, code)),
+            AbortToken
+        );
+
+        // then
+        result.Should().BeFalse();
+        await problemDetailsService.DidNotReceive().TryWriteAsync(Arg.Any<ProblemDetailsContext>());
+    }
+
+    [Fact]
+    public async Task should_not_handle_provider_unique_violation_when_not_wrapped_by_ef()
+    {
+        // given
+        var problemDetailsService = Substitute.For<IProblemDetailsService>();
+        var handler = _CreateHandler(problemDetailsService, _CreateRealCreator());
+        var httpContext = new DefaultHttpContext();
+
+        // when
+        var result = await handler.TryHandleAsync(
+            httpContext,
+            new Tests.Fakes.SqlStateDbException("23505"),
+            AbortToken
+        );
+
+        // then
+        result.Should().BeFalse();
+    }
+
     [Fact]
     public async Task should_map_timeout_exception_to_408()
     {

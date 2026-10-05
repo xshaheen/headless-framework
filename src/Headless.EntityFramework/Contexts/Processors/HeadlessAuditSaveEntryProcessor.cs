@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Concurrent;
-using System.Runtime.CompilerServices;
 using Headless.Context;
 using Headless.Domain;
 using Headless.EntityFramework.Contexts;
@@ -20,24 +18,16 @@ namespace Headless.EntityFramework;
 /// <remarks>
 /// On <c>Added</c> entries it sets <c>ICreateAudit.CreatedAt</c> (if not already set) and
 /// <c>CreatedById</c> (resolved from <c>ICurrentUser</c>, skipped if already set or the user is
-/// anonymous). On <c>Modified</c> entries it updates <c>IUpdateAudit.UpdatedAt</c> and
-/// <c>UpdatedById</c>, and reconciles delete/suspend audit fields when <c>IsDeleted</c> or
-/// <c>IsSuspended</c> transitions are detected.
+/// anonymous). On <c>Modified</c> entries it stamps <c>IUpdateAudit.UpdatedAt</c> and <c>UpdatedById</c>, and
+/// on an <c>IsDeleted</c> or <c>IsSuspended</c> transition it stamps the matching delete, restore, suspend, or
+/// unsuspend fields. Fields of the opposite transition are kept as history. A non-null value the save already set
+/// explicitly (for example through a transition method) wins over the stamp. An update or transition with no actor,
+/// given or resolved from <c>ICurrentUser</c>, records a null actor id rather than keep the previous actor.
 /// </remarks>
 [PublicAPI]
 public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, ICurrentUser currentUser)
     : IHeadlessSaveEntryProcessor
 {
-    private static readonly ConditionalWeakTable<
-        Type,
-        ConcurrentDictionary<Type, bool>
-    > _ImplementsGenericInterfaceCache = [];
-
-    private static readonly ConditionalWeakTable<
-        Type,
-        ConcurrentDictionary<Type, bool>
-    >.CreateValueCallback _CreateImplementsInner = static _ => new ConcurrentDictionary<Type, bool>();
-
     // Method group captured once instead of a `() => timeProvider.GetUtcNow()` lambda per stamped entity:
     // that lambda closes over `this`, so it allocates on every save. Stays a factory rather than an eager
     // value so the clock is read only when the target property actually exists.
@@ -129,232 +119,195 @@ public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, I
 
     private void _TrySetUpdateAudit(EntityEntry entry, ref ActorPair actor)
     {
-        if (entry.Entity is not IUpdateAudit entity)
+        if (entry.Entity is not IUpdateAudit)
         {
             return;
         }
 
-        _TrySetUpdateAuditDate(entry, entity);
-        _TrySetUpdateAuditId(entry, ref actor);
-    }
-
-    private void _TrySetUpdateAuditDate(EntityEntry entry, IUpdateAudit entity)
-    {
-        var propertyEntry = entry.Property(nameof(IUpdateAudit.UpdatedAt));
-
-        if (
-            entity.UpdatedAt != null
-            && propertyEntry.IsModified
-            && !Equals(propertyEntry.CurrentValue, propertyEntry.OriginalValue)
-        )
-        {
-            return;
-        }
-
-        if (ObjectPropertiesHelper.TrySetProperty(entity, nameof(IUpdateAudit.UpdatedAt), _getUtcNow))
-        {
-            propertyEntry.IsModified = true;
-        }
-    }
-
-    private static void _TrySetUpdateAuditId(EntityEntry entry, ref ActorPair actor)
-    {
-        var byUser = entry.Entity as IUpdateAudit<UserId>;
-        var byAccount = entry.Entity as IUpdateAudit<AccountId>;
-
-        if (byUser is null && byAccount is null)
-        {
-            return;
-        }
-
-        var (currentUserId, currentAccountId) = actor.Resolve();
-
-        if (currentUserId is null && currentAccountId is null)
-        {
-            return;
-        }
-
-        var propertyEntry = entry.Property(nameof(IUpdateAudit<>.UpdatedById));
-
-        if (propertyEntry.IsModified && !Equals(propertyEntry.CurrentValue, propertyEntry.OriginalValue))
-        {
-            return;
-        }
-
-        if (byUser is not null && byUser.UpdatedById is null && currentUserId is not null)
-        {
-            if (ObjectPropertiesHelper.TrySetPropertyValue(byUser, nameof(IUpdateAudit<>.UpdatedById), currentUserId))
-            {
-                propertyEntry.IsModified = true;
-            }
-
-            return;
-        }
-
-        if (byAccount is not null && byAccount.UpdatedById is null && currentAccountId is not null)
-        {
-            if (
-                ObjectPropertiesHelper.TrySetPropertyValue(
-                    byAccount,
-                    nameof(IUpdateAudit<>.UpdatedById),
-                    currentAccountId
-                )
-            )
-            {
-                propertyEntry.IsModified = true;
-            }
-        }
+        // Every modified save is a new update, so the previous updater is replaced, not kept: with no actor the update
+        // records null rather than attribute this change to the previous updater.
+        _StampTransition(
+            entry,
+            nameof(IUpdateAudit.UpdatedAt),
+            nameof(IUpdateAudit<>.UpdatedById),
+            new ActorKind(entry.Entity is IUpdateAudit<UserId>, entry.Entity is IUpdateAudit<AccountId>),
+            StampMode.Transition,
+            ref actor
+        );
     }
 
     private void _TrySetDeleteAudit(EntityEntry entry, ref ActorPair actor)
     {
-        if (entry.Entity is not IDeleteAudit deleteAudit || !entry.Property(nameof(IDeleteAudit.IsDeleted)).IsModified)
+        if (entry.Entity is not IDeleteAudit)
         {
             return;
         }
 
-        if (deleteAudit.IsDeleted)
+        var kind = new ActorKind(entry.Entity is IDeleteAudit<UserId>, entry.Entity is IDeleteAudit<AccountId>);
+
+        switch (_GetTransition(entry.Property(nameof(IDeleteAudit.IsDeleted))))
         {
-            _TrySetDeleteAuditDate(entry, deleteAudit);
-            _TrySetDeleteAuditId(entry, ref actor);
-
-            return;
-        }
-
-        ObjectPropertiesHelper.TrySetPropertyToNull(deleteAudit, nameof(IDeleteAudit.DeletedAt));
-
-        if (_ImplementsGenericInterface(entry.Entity.GetType(), typeof(IDeleteAudit<>)))
-        {
-            ObjectPropertiesHelper.TrySetPropertyToNull(deleteAudit, nameof(IDeleteAudit<>.DeletedById));
-        }
-    }
-
-    private void _TrySetDeleteAuditDate(EntityEntry entry, IDeleteAudit entity)
-    {
-        if (entity.DeletedAt == null || !entry.Property(nameof(IDeleteAudit.DeletedAt)).IsModified)
-        {
-            ObjectPropertiesHelper.TrySetProperty(entity, nameof(IDeleteAudit.DeletedAt), _getUtcNow);
-        }
-    }
-
-    private static void _TrySetDeleteAuditId(EntityEntry entry, ref ActorPair actor)
-    {
-        var byUser = entry.Entity as IDeleteAudit<UserId>;
-        var byAccount = entry.Entity as IDeleteAudit<AccountId>;
-
-        if (byUser is null && byAccount is null)
-        {
-            return;
-        }
-
-        var (currentUserId, currentAccountId) = actor.Resolve();
-
-        if (currentUserId is null && currentAccountId is null)
-        {
-            return;
-        }
-
-        var propertyEntry = entry.Property(nameof(IDeleteAudit<>.DeletedById));
-
-        if (propertyEntry.IsModified && !Equals(propertyEntry.CurrentValue, propertyEntry.OriginalValue))
-        {
-            return;
-        }
-
-        if (byUser is not null && byUser.DeletedById is null && currentUserId is not null)
-        {
-            ObjectPropertiesHelper.TrySetPropertyValue(byUser, nameof(IDeleteAudit<>.DeletedById), currentUserId);
-        }
-
-        if (byAccount is not null && byAccount.DeletedById is null && currentAccountId is not null)
-        {
-            ObjectPropertiesHelper.TrySetPropertyValue(byAccount, nameof(IDeleteAudit<>.DeletedById), currentAccountId);
+            case FlagTransition.Raised:
+                _StampTransition(
+                    entry,
+                    nameof(IDeleteAudit.DeletedAt),
+                    nameof(IDeleteAudit<>.DeletedById),
+                    kind,
+                    StampMode.Transition,
+                    ref actor
+                );
+                break;
+            case FlagTransition.Lowered:
+                _StampTransition(
+                    entry,
+                    nameof(IDeleteAudit.RestoredAt),
+                    nameof(IDeleteAudit<>.RestoredById),
+                    kind,
+                    StampMode.Transition,
+                    ref actor
+                );
+                break;
+            case FlagTransition.MarkedWhileRaised:
+                _StampTransition(
+                    entry,
+                    nameof(IDeleteAudit.DeletedAt),
+                    nameof(IDeleteAudit<>.DeletedById),
+                    kind,
+                    StampMode.FillMissing,
+                    ref actor
+                );
+                break;
         }
     }
 
     private void _TrySetSuspendAudit(EntityEntry entry, ref ActorPair actor)
     {
-        if (
-            entry.Entity is not ISuspendAudit suspendAudit
-            || !entry.Property(nameof(ISuspendAudit.IsSuspended)).IsModified
-        )
+        if (entry.Entity is not ISuspendAudit)
         {
             return;
         }
 
-        if (suspendAudit.IsSuspended)
-        {
-            _TrySetSuspendAuditDate(entry, suspendAudit);
-            _TrySetSuspendAuditId(entry, ref actor);
+        var kind = new ActorKind(entry.Entity is ISuspendAudit<UserId>, entry.Entity is ISuspendAudit<AccountId>);
 
+        switch (_GetTransition(entry.Property(nameof(ISuspendAudit.IsSuspended))))
+        {
+            case FlagTransition.Raised:
+                _StampTransition(
+                    entry,
+                    nameof(ISuspendAudit.SuspendedAt),
+                    nameof(ISuspendAudit<>.SuspendedById),
+                    kind,
+                    StampMode.Transition,
+                    ref actor
+                );
+                break;
+            case FlagTransition.Lowered:
+                _StampTransition(
+                    entry,
+                    nameof(ISuspendAudit.UnsuspendedAt),
+                    nameof(ISuspendAudit<>.UnsuspendedById),
+                    kind,
+                    StampMode.Transition,
+                    ref actor
+                );
+                break;
+            case FlagTransition.MarkedWhileRaised:
+                _StampTransition(
+                    entry,
+                    nameof(ISuspendAudit.SuspendedAt),
+                    nameof(ISuspendAudit<>.SuspendedById),
+                    kind,
+                    StampMode.FillMissing,
+                    ref actor
+                );
+                break;
+        }
+    }
+
+    private static FlagTransition _GetTransition(PropertyEntry flag)
+    {
+        if (!flag.IsModified)
+        {
+            return FlagTransition.None;
+        }
+
+        var isRaised = flag.CurrentValue is true;
+        var wasRaised = flag.OriginalValue is true;
+
+        if (isRaised != wasRaised)
+        {
+            return isRaised ? FlagTransition.Raised : FlagTransition.Lowered;
+        }
+
+        // Attaching a detached entity with Update() marks every property modified with no original snapshot, so the
+        // transition is unknown. Fill only what is missing for the current state rather than overwrite history.
+        return isRaised ? FlagTransition.MarkedWhileRaised : FlagTransition.None;
+    }
+
+    /// <summary>
+    /// Stamps the timestamp and actor id of one audit change. <see cref="StampMode.Transition"/> replaces a value left
+    /// over from an earlier change unless this save set it explicitly; <see cref="StampMode.FillMissing"/> only fills a
+    /// missing value.
+    /// </summary>
+    private void _StampTransition(
+        EntityEntry entry,
+        string timestampName,
+        string actorIdName,
+        ActorKind kind,
+        StampMode mode,
+        ref ActorPair actor
+    )
+    {
+        var timestamp = entry.Property(timestampName);
+        var timestampSetBySave = _IsExplicitlySet(timestamp);
+
+        if (mode is StampMode.FillMissing ? timestamp.CurrentValue is null : !timestampSetBySave)
+        {
+            timestamp.CurrentValue = _getUtcNow();
+        }
+
+        if (!kind.IsUser && !kind.IsAccount)
+        {
             return;
         }
 
-        ObjectPropertiesHelper.TrySetPropertyToNull(suspendAudit, nameof(ISuspendAudit.SuspendedAt));
+        var actorId = entry.Property(actorIdName);
 
-        if (_ImplementsGenericInterface(entry.Entity.GetType(), typeof(ISuspendAudit<>)))
+        if (mode is StampMode.FillMissing ? actorId.CurrentValue is not null : _IsExplicitlySet(actorId))
         {
-            ObjectPropertiesHelper.TrySetPropertyToNull(suspendAudit, nameof(ISuspendAudit<>.SuspendedById));
+            return;
         }
-    }
 
-    private void _TrySetSuspendAuditDate(EntityEntry entry, ISuspendAudit entity)
-    {
-        if (entity.SuspendedAt == null || !entry.Property(nameof(ISuspendAudit.SuspendedAt)).IsModified)
-        {
-            ObjectPropertiesHelper.TrySetProperty(entity, nameof(ISuspendAudit.SuspendedAt), _getUtcNow);
-        }
-    }
-
-    private static void _TrySetSuspendAuditId(EntityEntry entry, ref ActorPair actor)
-    {
-        var byUser = entry.Entity as ISuspendAudit<UserId>;
-        var byAccount = entry.Entity as ISuspendAudit<AccountId>;
-
-        if (byUser is null && byAccount is null)
+        // A transition method that recorded the time also wrote the actor it was given. An id it left unchanged is
+        // that same actor, not a leftover, so it is kept.
+        if (mode is StampMode.Transition && timestampSetBySave && actorId.CurrentValue is not null)
         {
             return;
         }
 
         var (currentUserId, currentAccountId) = actor.Resolve();
+        object? current = kind.IsUser ? currentUserId : null;
+        current ??= kind.IsAccount ? currentAccountId : null;
 
-        if (currentUserId is null && currentAccountId is null)
+        if (current is null && mode is StampMode.FillMissing)
         {
             return;
         }
 
-        var propertyEntry = entry.Property(nameof(ISuspendAudit<>.SuspendedById));
-
-        if (propertyEntry.IsModified && !Equals(propertyEntry.CurrentValue, propertyEntry.OriginalValue))
+        // A transition with no resolved actor records null rather than keep the actor of the previous transition,
+        // which would attribute this one to the wrong account. EF fixes up an unchanged navigation from the new
+        // foreign key value on the final change detection.
+        if (!Equals(actorId.CurrentValue, current))
         {
-            return;
-        }
-
-        if (byUser is not null && byUser.SuspendedById is null && currentUserId is not null)
-        {
-            ObjectPropertiesHelper.TrySetPropertyValue(byUser, nameof(ISuspendAudit<>.SuspendedById), currentUserId);
-        }
-
-        if (byAccount is not null && byAccount.SuspendedById is null && currentAccountId is not null)
-        {
-            ObjectPropertiesHelper.TrySetPropertyValue(
-                byAccount,
-                nameof(ISuspendAudit<>.SuspendedById),
-                currentAccountId
-            );
+            actorId.CurrentValue = current;
         }
     }
 
-    private static bool _ImplementsGenericInterface(Type type, Type genericInterfaceDefinition)
+    private static bool _IsExplicitlySet(PropertyEntry property)
     {
-        var inner = _ImplementsGenericInterfaceCache.GetValue(type, _CreateImplementsInner);
-
-        return inner.GetOrAdd(
-            genericInterfaceDefinition,
-            static (interfaceDef, entityType) =>
-                entityType.GetInterfaces().Exists(x => x.IsGenericType && x.GetGenericTypeDefinition() == interfaceDef),
-            type
-        );
+        return property.IsModified
+            && property.CurrentValue is not null
+            && !Equals(property.CurrentValue, property.OriginalValue);
     }
 
     /// <summary>
@@ -379,5 +332,25 @@ public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, I
 
             return (_userId, _accountId);
         }
+    }
+
+    private readonly record struct ActorKind(bool IsUser, bool IsAccount);
+
+    private enum StampMode
+    {
+        // An update, delete, restore, suspend, or unsuspend: replace leftovers, and record null when no actor
+        // resolves.
+        Transition = 0,
+
+        // A flag already raised with no known transition: fill only missing values.
+        FillMissing = 1,
+    }
+
+    private enum FlagTransition
+    {
+        None = 0,
+        Raised = 1,
+        Lowered = 2,
+        MarkedWhileRaised = 3,
     }
 }

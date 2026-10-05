@@ -28,8 +28,7 @@ public static partial class HeadlessQueryableExtensions
     {
         var user = await source.FirstOrDefaultAsync(x => x.Id.Equals(id), cancellationToken).ConfigureAwait(false);
 
-        return user
-            ?? throw new EntityNotFoundException(_FirstGenericArgumentTypeName(source.GetType()), id.ToString()!);
+        return user ?? throw new EntityNotFoundException(typeof(TEntity).Name, id.ToString()!);
     }
 
     /// <summary>
@@ -46,7 +45,7 @@ public static partial class HeadlessQueryableExtensions
     {
         var user = await source.FirstOrDefaultAsync(x => x.Id == id, cancellationToken).ConfigureAwait(false);
 
-        return user ?? throw new EntityNotFoundException(_FirstGenericArgumentTypeName(source.GetType()), id);
+        return user ?? throw new EntityNotFoundException(typeof(TEntity).Name, id);
     }
 
     /// <summary>
@@ -63,7 +62,7 @@ public static partial class HeadlessQueryableExtensions
     {
         var user = await source.FirstOrDefaultAsync(x => x.Id == id, cancellationToken).ConfigureAwait(false);
 
-        return user ?? throw new EntityNotFoundException(_FirstGenericArgumentTypeName(source.GetType()), id);
+        return user ?? throw new EntityNotFoundException(typeof(TEntity).Name, id);
     }
 
     /// <summary>
@@ -80,7 +79,7 @@ public static partial class HeadlessQueryableExtensions
     {
         var user = await source.FirstOrDefaultAsync(x => x.Id == id, cancellationToken).ConfigureAwait(false);
 
-        return user ?? throw new EntityNotFoundException(_FirstGenericArgumentTypeName(source.GetType()), id);
+        return user ?? throw new EntityNotFoundException(typeof(TEntity).Name, id);
     }
 
     /// <summary>
@@ -97,15 +96,6 @@ public static partial class HeadlessQueryableExtensions
     {
         var user = await source.FirstOrDefaultAsync(x => x.Id == id, cancellationToken).ConfigureAwait(false);
 
-        return user ?? throw new EntityNotFoundException(_FirstGenericArgumentTypeName(source.GetType()), id);
-    }
-
-    private static string _FirstGenericArgumentTypeName(Type type)
-    {
-        var genericArguments = type.GetGenericArguments();
-        var genericArgument = genericArguments[0];
-        var genericArgumentTypeName = genericArgument.Name;
-
-        return genericArgumentTypeName;
+        return user ?? throw new EntityNotFoundException(typeof(TEntity).Name, id);
     }
 }

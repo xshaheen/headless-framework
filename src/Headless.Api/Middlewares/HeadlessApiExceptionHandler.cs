@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data.Common;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using FluentValidation;
@@ -45,6 +46,11 @@ internal sealed partial class HeadlessApiExceptionHandler(
     private const string _DbUpdateConcurrencyExceptionFullName =
         "Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException";
 
+    private const string _DbUpdateExceptionFullName = "Microsoft.EntityFrameworkCore.DbUpdateException";
+
+    // Bounds the walk from the EF exception to the provider exception; the provider error sits one or two levels down.
+    private const int _MaxProviderExceptionDepth = 5;
+
     // Cached per concrete exception type to avoid re-walking the inheritance chain on every hit.
     // ConditionalWeakTable lets entries (and their owning AssemblyLoadContext) unload when the
     // exception type is no longer referenced elsewhere.
@@ -55,6 +61,11 @@ internal sealed partial class HeadlessApiExceptionHandler(
         StrongBox<bool>
     >.CreateValueCallback _DbUpdateConcurrencyFactory = static type =>
         _MatchesExceptionFullName(type, _DbUpdateConcurrencyExceptionFullName);
+
+    private static readonly ConditionalWeakTable<Type, StrongBox<bool>> _DbUpdateTypeCache = [];
+
+    private static readonly ConditionalWeakTable<Type, StrongBox<bool>>.CreateValueCallback _DbUpdateFactory =
+        static type => _MatchesExceptionFullName(type, _DbUpdateExceptionFullName);
 
     private static StrongBox<bool> _MatchesExceptionFullName(Type type, string fullName)
     {
@@ -174,6 +185,16 @@ internal sealed partial class HeadlessApiExceptionHandler(
                     statusCode = StatusCodes.Status409Conflict;
                     break;
 
+                // EF Core's DbUpdateException is matched by full type name for the same reason as the
+                // concurrency case above. A unique-constraint violation is a conflict with existing data
+                // (typically two requests racing past an existence check), not a server fault. The
+                // constraint name stays in the logs: it describes the schema, not the request.
+                case not null when _IsUniqueConstraintViolation(exception):
+                    _LogUniqueConstraintViolation(logger, exception);
+                    problemDetails = problemDetailsCreator.Conflict([GeneralMessageDescriber.UniqueViolation()]);
+                    statusCode = StatusCodes.Status409Conflict;
+                    break;
+
                 case TimeoutException:
                     _LogRequestTimeoutException(logger, exception);
                     problemDetails = problemDetailsCreator.RequestTimeout();
@@ -289,6 +310,60 @@ internal sealed partial class HeadlessApiExceptionHandler(
         return _DbUpdateConcurrencyTypeCache.GetValue(ex.GetType(), _DbUpdateConcurrencyFactory).Value;
     }
 
+    private static bool _IsUniqueConstraintViolation(Exception ex)
+    {
+        if (!_DbUpdateTypeCache.GetValue(ex.GetType(), _DbUpdateFactory).Value)
+        {
+            return false;
+        }
+
+        var inner = ex.InnerException;
+
+        for (var depth = 0; inner is not null && depth < _MaxProviderExceptionDepth; depth++)
+        {
+            if (inner is DbException dbException && _IsUniqueViolation(dbException))
+            {
+                return true;
+            }
+
+            inner = inner.InnerException;
+        }
+
+        return false;
+    }
+
+    // Provider exceptions are recognized by type name and public error-code properties, so Headless.Api takes no
+    // dependency on any ADO.NET provider.
+    private static bool _IsUniqueViolation(DbException exception)
+    {
+        // PostgreSQL (Npgsql) exposes SQLSTATE through the standard DbException.SqlState: 23505 is unique_violation.
+        if (string.Equals(exception.SqlState, "23505", StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        return exception.GetType().FullName switch
+        {
+            // 2627: unique constraint violated; 2601: duplicate key in a unique index.
+            "Microsoft.Data.SqlClient.SqlException" or "System.Data.SqlClient.SqlException" => _ReadInt32Property(
+                exception,
+                "Number"
+            )
+                is 2627
+                    or 2601,
+            // SQLITE_CONSTRAINT_UNIQUE (2067) and SQLITE_CONSTRAINT_PRIMARYKEY (1555).
+            "Microsoft.Data.Sqlite.SqliteException" => _ReadInt32Property(exception, "SqliteExtendedErrorCode")
+                is 2067
+                    or 1555,
+            _ => false,
+        };
+    }
+
+    private static int? _ReadInt32Property(Exception exception, string propertyName)
+    {
+        return exception.GetType().GetProperty(propertyName)?.GetValue(exception) as int?;
+    }
+
     private static bool _IsCancellationException(Exception? ex, int maxDepth = 20)
     {
         // Iterative walk capped at depth so a pathological/cyclic InnerException chain cannot blow
@@ -350,6 +425,15 @@ internal sealed partial class HeadlessApiExceptionHandler(
         SkipEnabledCheck = true
     )]
     private static partial void _LogDbConcurrencyException(ILogger logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 5013,
+        EventName = "UniqueConstraintViolation",
+        Level = LogLevel.Warning,
+        Message = "Database unique constraint violation occurred",
+        SkipEnabledCheck = true
+    )]
+    private static partial void _LogUniqueConstraintViolation(ILogger logger, Exception exception);
 
     [LoggerMessage(
         EventId = 5010,

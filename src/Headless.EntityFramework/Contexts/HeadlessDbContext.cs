@@ -182,7 +182,7 @@ public abstract class HeadlessDbContext : DbContext, IHeadlessDbContext, IHeadle
 
     /// <summary>
     /// Applies the <see cref="DefaultSchema"/> (if non-null), calls <c>base.OnModelCreating</c>, and then
-    /// lets the Headless runtime apply global query filters (multi-tenancy, soft-delete, suspend) and
+    /// lets the Headless runtime apply the default global query filters (multi-tenancy, soft-delete) and
     /// entity conventions. Always call <c>base.OnModelCreating</c> when overriding.
     /// </summary>
     /// <param name="modelBuilder">The model builder for the current context.</param>
