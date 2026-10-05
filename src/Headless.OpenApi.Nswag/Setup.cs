@@ -96,10 +96,11 @@ public static class SetupNswag
 
     #endregion
 
-    #region Map
+    #region Use
 
     /// <summary>
-    /// Mounts one OpenAPI JSON endpoint per API version and a single Swagger UI at <c>/swagger</c>.
+    /// Adds middleware that serves one OpenAPI JSON document per API version and a single Swagger UI at
+    /// <c>/swagger</c>.
     /// </summary>
     /// <param name="app">The web application to configure.</param>
     /// <param name="documentSettings">
@@ -116,8 +117,13 @@ public static class SetupNswag
     /// Each version is served at <c>/openapi/{groupName}.json</c> in descending version order.
     /// The UI document selector pattern is <c>/openapi/{documentName}.json</c>, which matches all
     /// version endpoints automatically.
+    /// <para>
+    /// This is path-matched middleware, not an endpoint, so the authorization middleware cannot exempt it. Call it
+    /// before <c>UseAuthorization()</c>: placed after it, a fallback authorization policy rejects the documents
+    /// with 401.
+    /// </para>
     /// </remarks>
-    public static WebApplication MapNswagOpenApiVersions(
+    public static WebApplication UseNswagOpenApiVersions(
         this WebApplication app,
         Action<OpenApiDocumentMiddlewareSettings, ApiVersionDescription>? documentSettings = null,
         Action<SwaggerUiSettings>? uiSettings = null
@@ -148,8 +154,8 @@ public static class SetupNswag
     }
 
     /// <summary>
-    /// Mounts an OpenAPI JSON endpoint at <c>/openapi/{documentName}.json</c> and a Swagger UI at <c>/swagger</c>
-    /// for a single-document (non-versioned) setup.
+    /// Adds middleware that serves the OpenAPI JSON document at <c>/openapi/{documentName}.json</c> and a Swagger UI
+    /// at <c>/swagger</c> for a single-document (non-versioned) setup.
     /// </summary>
     /// <param name="app">The web application to configure.</param>
     /// <param name="documentSettings">
@@ -160,7 +166,12 @@ public static class SetupNswag
     /// enabled, try-it-out enabled, tags sorted alphabetically, operations collapsed.
     /// </param>
     /// <returns>The same <paramref name="app"/> instance for chaining.</returns>
-    public static WebApplication MapNswagOpenApi(
+    /// <remarks>
+    /// This is path-matched middleware, not an endpoint, so the authorization middleware cannot exempt it. Call it
+    /// before <c>UseAuthorization()</c>: placed after it, a fallback authorization policy rejects the documents
+    /// with 401.
+    /// </remarks>
+    public static WebApplication UseNswagOpenApi(
         this WebApplication app,
         Action<OpenApiDocumentMiddlewareSettings>? documentSettings = null,
         Action<SwaggerUiSettings>? uiSettings = null

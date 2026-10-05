@@ -20,7 +20,7 @@ public sealed class SetupIdempotencyTests : TestBase
         var services = new ServiceCollection();
         services.AddLogging();
 
-        services.AddIdempotency(o => o.Retention = TimeSpan.FromHours(2));
+        services.AddHeadlessHttpIdempotency(o => o.Retention = TimeSpan.FromHours(2));
 
         var descriptor = services.SingleOrDefault(s => s.ServiceType == typeof(IdempotencyMiddleware));
         descriptor.Should().NotBeNull();
@@ -33,7 +33,7 @@ public sealed class SetupIdempotencyTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddIdempotency(_ => { });
+        services.AddHeadlessHttpIdempotency(_ => { });
 
         // when
         var act = () => _RunStartingAsync(services);
@@ -51,7 +51,7 @@ public sealed class SetupIdempotencyTests : TestBase
         // given
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddIdempotency(_ => { });
+        services.AddHeadlessHttpIdempotency(_ => { });
         services.AddSingleton(Substitute.For<IIdempotentOperations>());
 
         // when
@@ -67,7 +67,7 @@ public sealed class SetupIdempotencyTests : TestBase
         var services = new ServiceCollection();
         services.AddLogging();
 
-        services.AddIdempotency(o => o.Retention = TimeSpan.FromHours(7));
+        services.AddHeadlessHttpIdempotency(o => o.Retention = TimeSpan.FromHours(7));
 
         var sp = services.BuildServiceProvider();
         var resolved = sp.GetRequiredService<IOptions<IdempotencyOptions>>().Value;
@@ -79,7 +79,7 @@ public sealed class SetupIdempotencyTests : TestBase
     {
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddIdempotency(_ => { });
+        services.AddHeadlessHttpIdempotency(_ => { });
 
         var resolved = services.BuildServiceProvider().GetRequiredService<IOptions<IdempotencyOptions>>().Value;
 
@@ -94,7 +94,7 @@ public sealed class SetupIdempotencyTests : TestBase
         services.AddLogging();
         services.AddSingleton(new ConfigSource(TimeSpan.FromHours(9)));
 
-        services.AddIdempotency(
+        services.AddHeadlessHttpIdempotency(
             (o, sp) =>
             {
                 var src = sp.GetRequiredService<ConfigSource>();
@@ -119,7 +119,7 @@ public sealed class SetupIdempotencyTests : TestBase
 
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddIdempotency(config);
+        services.AddHeadlessHttpIdempotency(config);
 
         var resolved = services.BuildServiceProvider().GetRequiredService<IOptions<IdempotencyOptions>>().Value;
         resolved.HeaderName.Should().Be("X-My-Key");
@@ -134,7 +134,7 @@ public sealed class SetupIdempotencyTests : TestBase
         // falls back to DefaultCachePredicate.Instance at request time when this is null.
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddIdempotency(_ => { });
+        services.AddHeadlessHttpIdempotency(_ => { });
 
         var resolved = services.BuildServiceProvider().GetRequiredService<IOptions<IdempotencyOptions>>().Value;
         resolved.ShouldCacheResponse.Should().BeNull();
@@ -147,7 +147,7 @@ public sealed class SetupIdempotencyTests : TestBase
 
         var services = new ServiceCollection();
         services.AddLogging();
-        services.AddIdempotency(o => o.ShouldCacheResponse = custom);
+        services.AddHeadlessHttpIdempotency(o => o.ShouldCacheResponse = custom);
 
         var resolved = services.BuildServiceProvider().GetRequiredService<IOptions<IdempotencyOptions>>().Value;
         resolved.ShouldCacheResponse.Should().BeSameAs(custom);

@@ -16,6 +16,8 @@ public static class EndpointsExtensions
     /// Maps a catch-all <c>GET /{*path}</c> route constrained to <paramref name="redirectHosts"/>
     /// that issues a 301 permanent redirect to the corresponding path under <paramref name="mainHost"/>.
     /// No route is registered when <paramref name="redirectHosts"/> is <see langword="null"/> or empty.
+    /// The route allows anonymous requests, so a fallback authorization policy does not turn the redirect into 401,
+    /// and it is excluded from API descriptions.
     /// </summary>
     /// <param name="app">The web application to map the route on.</param>
     /// <param name="mainHost">
@@ -23,11 +25,13 @@ public static class EndpointsExtensions
     /// Must be an absolute URI.
     /// </param>
     /// <param name="redirectHosts">
-    /// Additional host names that should redirect to <paramref name="mainHost"/>.
-    /// Passed to <see cref="Microsoft.AspNetCore.Builder.RoutingEndpointConventionBuilderExtensions.RequireHost"/>.
+    /// Additional host names that should redirect to <paramref name="mainHost"/>, such as <c>www.example.com</c> or
+    /// <c>example.net:8080</c>. Host names, not URLs: each entry is passed to
+    /// <see cref="Microsoft.AspNetCore.Builder.RoutingEndpointConventionBuilderExtensions.RequireHost"/>, so an entry
+    /// with a scheme never matches.
     /// </param>
     /// <exception cref="UriFormatException"><paramref name="mainHost"/> is not a well-formed absolute URI.</exception>
-    public static void RedirectHosts(this WebApplication app, string mainHost, string[]? redirectHosts)
+    public static void MapHeadlessHostRedirects(this WebApplication app, string mainHost, string[]? redirectHosts)
     {
         if (redirectHosts is not { Length: > 0 })
         {
@@ -48,7 +52,9 @@ public static class EndpointsExtensions
                         problemDetailsCreator
                     )
             )
-            .RequireHost(redirectHosts);
+            .RequireHost(redirectHosts)
+            .AllowAnonymous()
+            .ExcludeFromDescription();
     }
 
     /// <summary>

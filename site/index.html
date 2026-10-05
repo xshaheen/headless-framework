@@ -248,7 +248,7 @@ var app = builder.Build();
 app.UseHeadless(); // middleware in the right order
 app.MapHeadlessEndpoints(); // /health, /alive, OpenAPI JSON
 
-app.Run();</code></pre></div><div class="gets"><ul><li><code>OpenTelemetry</code> logs, metrics, and traces with operational endpoints filtered out</li><li>Bare 401/403/404 and unhandled exceptions become structured application/problem+json</li><li>Startup validation catches a missing <code>UseHeadless()</code> or <code>MapHeadlessEndpoints()</code></li><li>/health and /alive are anonymous and exempt from rate limiting</li></ul><a class="guide" href="https://github.com/xshaheen/headless-framework/blob/main/docs/llms/api.md#headlessapiservicedefaults">Read the guide: docs/llms/api.md</a></div></article><article class="sample" role="tabpanel" id="tour-api-results-etags" aria-labelledby="t-tour-api-results-etags" hidden><div class="window"><div class="win-bar"><span class="win-title">Results in, problem details and ETags out</span><span class="win-meta">C# &middot; 20 lines</span><button class="copy" type="button">Copy</button></div><pre><code class="cs">builder.AddHeadless().ConfigureMinimalApi();
+app.Run();</code></pre></div><div class="gets"><ul><li><code>OpenTelemetry</code> logs, metrics, and traces with operational endpoints filtered out</li><li>Bare 401/403/404 and unhandled exceptions become structured application/problem+json</li><li>Startup validation catches a missing <code>UseHeadless()</code> or <code>MapHeadlessEndpoints()</code></li><li>/health and /alive are anonymous and exempt from rate limiting</li></ul><a class="guide" href="https://github.com/xshaheen/headless-framework/blob/main/docs/llms/api.md#headlessapiservicedefaults">Read the guide: docs/llms/api.md</a></div></article><article class="sample" role="tabpanel" id="tour-api-results-etags" aria-labelledby="t-tour-api-results-etags" hidden><div class="window"><div class="win-bar"><span class="win-title">Results in, problem details and ETags out</span><span class="win-meta">C# &middot; 20 lines</span><button class="copy" type="button">Copy</button></div><pre><code class="cs">builder.AddHeadless().ConfigureHeadlessMinimalApi();
 builder.Services.AddHeadlessMinimalApiEntityTagConcurrency();
 
 app.MapGet(
@@ -271,7 +271,7 @@ public async Task&lt;ApiResult&lt;Invoice&gt;&gt; GetAsync(Guid id, Cancellation
     setup.UsePostgreSql(builder.Configuration.GetConnectionString("Payments")!)
 );
 
-builder.Services.AddIdempotency(options =&gt;
+builder.Services.AddHeadlessHttpIdempotency(options =&gt;
 {
     options.Retention = TimeSpan.FromHours(24);
     options.InFlightStrategy = InFlightStrategy.Reject; // or WaitAndReplay
@@ -281,7 +281,7 @@ app.UseHeadless();
 app.UseAuthentication();
 app.UseHeadlessTenancy();
 app.UseAuthorization();
-app.UseIdempotency(); // after auth and tenancy
+app.UseHeadlessHttpIdempotency(); // after auth and tenancy
 
 app.MapPost("/disbursements", CreateDisbursement);
 app.MapPost("/webhooks/stripe", HandleWebhook).WithIdempotency(options =&gt; options.Retention = TimeSpan.FromDays(7));</code></pre></div><div class="gets"><ul><li>Replays status, allowlisted headers, and body for a repeated Idempotency-Key</li><li>Same key with a different request is rejected instead of silently replayed</li><li>Swap <code>UsePostgreSql</code> for <code>UseSqlServer</code>, <code>UseCache</code> (Redis), or <code>UseInMemory</code> for tests</li><li>Handlers can fence their own writes against the admission inside a unit of work</li></ul><a class="guide" href="https://github.com/xshaheen/headless-framework/blob/main/docs/llms/api.md#headlessapiidempotency">Read the guide: docs/llms/api.md</a></div></article><article class="sample" role="tabpanel" id="tour-api-validation" aria-labelledby="t-tour-api-validation" hidden><div class="window"><div class="win-bar"><span class="win-title">Request validation that knows files, phones, and coordinates</span><span class="win-meta">C# &middot; 16 lines</span><button class="copy" type="button">Copy</button></div><pre><code class="cs">public sealed record ProfileRequest(IFormFile? Avatar, PhoneNumberRequest? PhoneNumber, GeoCoordinateRequest? Location);
@@ -308,8 +308,8 @@ public sealed class ProfileRequestValidator : AbstractValidator&lt;ProfileReques
 
 var app = builder.Build();
 
-app.MapNswagOpenApi(); // /openapi/{documentName}.json
-app.MapScalarOpenApi(); // interactive docs UI</code></pre></div><div class="gets"><ul><li><code>IValidator&lt;T&gt;</code> rules become JSON Schema constraints (length, range, pattern, required)</li><li>400/401/403/404/409/422/429 responses get typed <code>ProblemDetails</code> schemas and examples</li><li>401/403 responses are added automatically for endpoints with authorization requirements</li><li>Use <code>MapNswagOpenApiVersions()</code> for versioned APIs</li></ul><a class="guide" href="https://github.com/xshaheen/headless-framework/blob/main/docs/llms/openapi.md#orientation">Read the guide: docs/llms/openapi.md</a></div></article><article class="sample" role="tabpanel" id="tour-state-caching" aria-labelledby="t-tour-state-caching" hidden><div class="window"><div class="win-bar"><span class="win-title">Swap the cache, not the code</span><span class="win-meta">C# &middot; 18 lines</span><button class="copy" type="button">Copy</button></div><pre><code class="cs">builder.Services.AddHeadlessCaching(setup =&gt;
+app.UseNswagOpenApi(); // /openapi/{documentName}.json
+app.MapScalarOpenApi(); // interactive docs UI</code></pre></div><div class="gets"><ul><li><code>IValidator&lt;T&gt;</code> rules become JSON Schema constraints (length, range, pattern, required)</li><li>400/401/403/404/409/422/429 responses get typed <code>ProblemDetails</code> schemas and examples</li><li>401/403 responses are added automatically for endpoints with authorization requirements</li><li>Use <code>UseNswagOpenApiVersions()</code> for versioned APIs</li></ul><a class="guide" href="https://github.com/xshaheen/headless-framework/blob/main/docs/llms/openapi.md#orientation">Read the guide: docs/llms/openapi.md</a></div></article><article class="sample" role="tabpanel" id="tour-state-caching" aria-labelledby="t-tour-state-caching" hidden><div class="window"><div class="win-bar"><span class="win-title">Swap the cache, not the code</span><span class="win-meta">C# &middot; 18 lines</span><button class="copy" type="button">Copy</button></div><pre><code class="cs">builder.Services.AddHeadlessCaching(setup =&gt;
 {
     setup.UseRedis(options =&gt;
         options.ConnectionMultiplexer = ConnectionMultiplexer.Connect(

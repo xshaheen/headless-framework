@@ -21,11 +21,11 @@ public static class SetupMiddlewares
 
     /// <summary>
     /// Registers <c>ServerTimingMiddleware</c> as a singleton in the DI container.
-    /// Call <see cref="UseServerTiming"/> after this to add it to the pipeline.
+    /// Call <see cref="UseHeadlessServerTiming"/> after this to add it to the pipeline.
     /// </summary>
     /// <param name="services">The service collection to register into.</param>
     /// <returns>The same service collection.</returns>
-    public static IServiceCollection AddServerTimingMiddleware(this IServiceCollection services)
+    public static IServiceCollection AddHeadlessServerTiming(this IServiceCollection services)
     {
         services.TryAddSingleton<ServerTimingMiddleware>();
         return services;
@@ -38,7 +38,7 @@ public static class SetupMiddlewares
     /// </summary>
     /// <param name="application">The application builder.</param>
     /// <returns>The same application builder.</returns>
-    public static IApplicationBuilder UseServerTiming(this IApplicationBuilder application)
+    public static IApplicationBuilder UseHeadlessServerTiming(this IApplicationBuilder application)
     {
         return application.UseMiddleware<ServerTimingMiddleware>();
     }

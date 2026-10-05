@@ -16,8 +16,8 @@ The package split:
 
 Choose an endpoint style:
 
-- **Minimal API** (recommended for new projects): Add `Headless.Api.MinimalApi` and call `ConfigureMinimalApi()` for JSON config, validation filters, and exception handling.
-- **MVC/Controllers**: Add `Headless.Api.Mvc` and call `ConfigureMvc()` for base controllers, exception filters, and URL canonicalization.
+- **Minimal API** (recommended for new projects): Add `Headless.Api.MinimalApi` and call `ConfigureHeadlessMinimalApi()` for JSON config, validation filters, and exception handling.
+- **MVC/Controllers**: Add `Headless.Api.Mvc` and call `ConfigureHeadlessMvc()` for base controllers, exception filters, and URL canonicalization.
 
 Use `Headless.Api.Abstractions` when you only need interfaces (`IRequestContext`, `IWebClientInfoProvider`) without pulling in the full API stack.
 
@@ -35,7 +35,7 @@ Additional packages:
 - Use `UseHeadless()` for the default middleware order (`UseStatusCodePages()` before `UseExceptionHandler()`), then add auth/tenant middleware, then map endpoints. `UseHeadless` and `MapHeadlessEndpoints` are idempotent.
 - For tenant-aware HTTP apps, configure `builder.AddHeadlessTenancy(tenancy => tenancy.Http(http => http.ResolveFromClaims()))` and place `app.UseHeadlessTenancy()` after app-owned `UseAuthentication()` and before app-owned `UseAuthorization()`.
 - For identifier-based (pre-auth) tenant resolution, add a `.Catalog(...)` store and `.Http(http => http.ResolveFromCatalog(sources => sources.AddHostSource("{tenant}.example.com")))` — or `AddRouteSource()`, `AddHeaderSource()`, `AddSource(context => ...)` — and place `app.UseHeadlessTenantCatalogResolution()` after `UseRouting()` and before `UseAuthentication()`, with `UseForwardedHeaders()` (behind a proxy), host filtering, and `UseCors()` ahead of it. Sources run in registration order; register the host source before a header source where hostnames carry perimeter controls. See [multi-tenancy.md](multi-tenancy.md#tenant-catalog).
-- For idempotent-replay middleware, register `services.AddHeadlessIdempotency(...)` with a provider (relational; `UseCache()` over a shared Redis cache for replicas without SQL, autonomous calls only; or `UseInMemory()` for tests and single-instance hosts), then `services.AddIdempotency(o => { ... })`, and place `app.UseIdempotency()` AFTER `UseAuthorization()` and AFTER `UseHeadlessTenancy()`. The durable store scopes every admission by the authenticated principal's tenant claim, never by the ambient pre-auth tenant (anonymous requests share one host-scope namespace); auth must be resolved first so unauthenticated/unauthorized requests do not admit a key. `InFlightStrategy = WaitAndReplay` polls the durable store with a bounded backoff — it has no `IDistributedLock` dependency.
+- For idempotent-replay middleware, register `services.AddHeadlessIdempotency(...)` with a provider (relational; `UseCache()` over a shared Redis cache for replicas without SQL, autonomous calls only; or `UseInMemory()` for tests and single-instance hosts), then `services.AddHeadlessHttpIdempotency(o => { ... })`, and place `app.UseHeadlessHttpIdempotency()` AFTER `UseAuthorization()` and AFTER `UseHeadlessTenancy()`. The durable store scopes every admission by the authenticated principal's tenant claim, never by the ambient pre-auth tenant (anonymous requests share one host-scope namespace); auth must be resolved first so unauthenticated/unauthorized requests do not admit a key. `InFlightStrategy = WaitAndReplay` polls the durable store with a bounded backoff — it has no `IDistributedLock` dependency.
 - Basic and API-key handlers authenticate only credentials supplied for their own scheme. Do not rely on an existing cookie/bearer principal to satisfy an endpoint that explicitly requires `Basic` or `ApiKey`.
 - API-key query-string authentication is opt-in (`AllowApiKeyInQueryString = true`); the dynamic scheme provider ignores `?api_key=` unless the API-key handler would accept it.
 - Use `MapHeadlessEndpoints()` to expose `/health`, `/alive`, OpenAPI JSON, and static web assets. `AddHeadless()` registers a `self` health check tagged `live`. `/health` and `/alive` are never rate limited; see [HTTP edge limits](rate-limiting.md#http-edge-limits).
@@ -45,14 +45,14 @@ Additional packages:
 - `Headless.Api.ServiceDefaults` validates by default that `UseHeadless()`, `UseStatusCodesRewriter()`, and `MapHeadlessEndpoints()` were applied at startup. For custom/manual pipelines, disable via `options.Validation.RequireUseHeadless = false`, `options.Validation.RequireStatusCodesRewriter = false`, and `options.Validation.RequireMapHeadlessEndpoints = false`.
 - `AddHeadless()` invokes `SetupApi.ConfigureGlobalSettings()` automatically (idempotent) to set regex timeout, FluentValidation, and JWT defaults. Call it manually only if you need those defaults applied before `AddHeadless()` runs.
 - Prefer `Headless.Api.MinimalApi` over `Headless.Api.Mvc` for new projects. Use `.Validate<T>()` on endpoints for FluentValidation integration.
-- For MVC, inherit from `ApiControllerBase` — it provides common utilities. Use `ConfigureMvc()` not manual `MvcOptions` configuration.
+- For MVC, inherit from `ApiControllerBase` — it provides common utilities. Use `ConfigureHeadlessMvc()` not manual `MvcOptions` configuration.
 - Use `Headless.Api.FluentValidation` validators (`FileNotEmpty()`, `LessThanOrEqualTo()`, `ContentTypes()`, `HaveSignatures()`, `PhoneNumber()`, `GeoCoordinate()`, `PageMetadata()`) for API-boundary validation — do not write manual file or request-contract validation logic.
 - Use `PersistKeysToBlobStorage()` from `Headless.Api.DataProtection` to persist Data Protection keys in distributed/containerized environments.
-- For Serilog enrichment, call `AddSerilogEnrichers()` on services and `UseSerilogEnrichers()` on the app — place the middleware early in the pipeline.
+- For Serilog enrichment, call `AddHeadlessSerilogEnrichers()` on services and `UseHeadlessSerilogEnrichers()` on the app — place the middleware early in the pipeline.
 - Inject `IRequestContext` (from Abstractions) for request-scoped user, tenant, locale, timezone, and correlation ID — never access `HttpContext` directly in service code.
 - `AddHeadless()` auto-binds `Headless:StringEncryption` and `Headless:LookupHasher` through `Headless.Security`, and also exposes explicit overloads for configuration sections and option callbacks when the defaults are not suitable. When the hash callback is omitted, it still binds `Headless:LookupHasher` by default.
-- Place `UseResponseCompression()` **before** `UseIdempotency()` in the pipeline. Compression middleware registered inside idempotency records compressed bytes in the cache; replaying those bytes without re-encoding them produces garbled or double-encoded responses.
-- `HeaderName` per-endpoint overrides via `.WithIdempotency()` are silently ignored — the middleware reads the request header before resolving endpoint metadata. Change the header name globally via `AddIdempotency(o => o.HeaderName = ...)` only.
+- Place `UseResponseCompression()` **before** `UseHeadlessHttpIdempotency()` in the pipeline. Compression middleware registered inside idempotency records compressed bytes in the cache; replaying those bytes without re-encoding them produces garbled or double-encoded responses.
+- `HeaderName` per-endpoint overrides via `.WithIdempotency()` are silently ignored — the middleware reads the request header before resolving endpoint metadata. Change the header name globally via `AddHeadlessHttpIdempotency(o => o.HeaderName = ...)` only.
 - `TenantRequirement` must be in `DefaultPolicy` or `FallbackPolicy` for framework-level enforcement; placing it in a named policy is not detected by the startup validator.
 - `UseHeadlessTenancy()` must run after `UseRouting()` so `HttpContext.GetEndpoint()` returns metadata when `[SkipTenantResolution]` is checked.
 - `UseHeadlessTenantCatalogResolution()` must also run after `UseRouting()`: placed earlier it still resolves host, header, and delegate sources and only loses the `[SkipTenantResolution]` opt-out, but a route source then finds nothing and every request runs as host context (logged once per process at Error level as `HEADLESS_TENANT_CATALOG_ROUTE_SOURCE_MISORDERED`).
@@ -186,7 +186,7 @@ Building blocks for ASP.NET Core APIs — primitives only. Provides service regi
 - `AddHeadlessTimeService()` — `TimeProvider.System`, `ITimezoneProvider` as `TzConvertTimezoneProvider` (all `TryAddSingleton`). The provider's Windows/IANA ID lists and mapping come from the TimeZoneConverter package's embedded CLDR data; offsets and DST rules come from the host OS time-zone database
 - `DefaultEnumLocaleAccessor` — the `IEnumLocaleAccessor` implementation
 - JWT request contracts — `JwtTokenRequest` groups token creation values, while `JwtTokenValidationRequest` uses required initializers for the token, signing key, issuer, and audience and groups the validation switches for `IJwtTokenFactory.ParseJwtTokenAsync(...)`
-- `AddServerTimingMiddleware()` + `UseServerTiming()` — appends `Server-Timing` trailer when response supports trailers
+- `AddHeadlessServerTiming()` + `UseHeadlessServerTiming()` — appends `Server-Timing` trailer when response supports trailers
 - `UseNoCacheWhenMissingCacheHeaders()` — injects `Cache-Control: no-cache,no-store,must-revalidate` when response omits the header
 - Basic/API-key authentication helpers — `AddBasicSchema()` and `AddApiKey()` register the canonical `Basic` and `ApiKey` schemes; handlers only authenticate credentials supplied for their own scheme
 - HTTP tenant resolution: `ResolveFromClaims()`, `UseHeadlessTenancy()`, `[SkipTenantResolution]`, `.SkipTenantResolution()`
@@ -233,13 +233,13 @@ builder.Services.AddHeadlessProblemDetails();
 builder.Services.AddHeadlessApiResponseCompression();
 builder.Services.ConfigureHeadlessDefaultApi(); // Kestrel limits + HSTS + health check + routing
 builder.Services.AddStatusCodesRewriterMiddleware();
-builder.Services.AddServerTimingMiddleware();
+builder.Services.AddHeadlessServerTiming();
 
 var app = builder.Build();
 app.UseResponseCompression();
 app.UseStatusCodesRewriter(); // before UseExceptionHandler
 app.UseExceptionHandler();
-app.UseServerTiming();
+app.UseHeadlessServerTiming();
 app.MapHealthChecks("/health");
 app.Run();
 ```
@@ -822,7 +822,7 @@ Stripe-style HTTP idempotency middleware for ASP.NET Core. Admits each request t
 
 The middleware is a thin adapter over `IIdempotentOperations`: it admits, runs the handler behind a lease-renewal loop (every third of `InFlightLease`), and completes with the captured response after the handler's unit commits — or releases the admission when `ShouldCacheResponse` rejects the response or the handler threw. Completion happens after commit, not inside it, so a crash in that window leaves the record `Pending`, and the next request takes the key over with `IsTakeover = true`. Recovery points close that window. The handler records a final "done" point with its response state in the same unit as its writes: `unit.Idempotency.SetRecoveryPointAsync(context.Admission, "done", state, contract)`. The takeover then finds it on `context.RecoveryPoint` and rebuilds the response from that state instead of running the work again. A multi-step handler records one point per step and resumes after the last. A release on a handler exception keeps the point, and completion clears it. See [idempotency.md § Recovery points](idempotency.md#recovery-points). A handler whose side effects are not safe to repeat and that records no points should check `IsTakeover`, fence its own writes with `unit.Idempotency.FenceAsync(context.Admission)`, or both.
 
-`HeaderName` per-endpoint overrides via `.WithIdempotency()` are deliberately ignored — the middleware reads the request header before resolving endpoint metadata. Changing the header for a single endpoint would require a custom middleware that runs before idempotency, which complicates pipeline ordering without a realistic use case. Change `HeaderName` globally via `AddIdempotency(o => o.HeaderName = ...)`.
+`HeaderName` per-endpoint overrides via `.WithIdempotency()` are deliberately ignored — the middleware reads the request header before resolving endpoint metadata. Changing the header for a single endpoint would require a custom middleware that runs before idempotency, which complicates pipeline ordering without a realistic use case. Change `HeaderName` globally via `AddHeadlessHttpIdempotency(o => o.HeaderName = ...)`.
 
 `RequestBodyBufferThreshold` controls when request buffering spills from memory to a temporary file; `MaxBodySizeForHashing` independently controls which bodies are eligible for idempotency. The default remains 1 MiB + 1 byte: corrected non-seekable request-body benchmarks showed that 30/64/128 KiB thresholds reduced managed allocations but missed the latency gate at concurrency 1/32/128. Lower it only after measuring the memory, temporary-file I/O, and latency trade-off under representative concurrency.
 
@@ -834,7 +834,7 @@ dotnet add package Headless.Api.Idempotency
 
 ### Setup and use
 
-> Durable admission is a hard prerequisite. This package references only `Headless.Idempotency.Abstractions`, so the `IIdempotentOperations` the middleware admits, completes, and releases through comes from `AddHeadlessIdempotency(...)` with a provider (`UsePostgreSql` / `UseSqlServer`; `UseCache` for several replicas that share a Redis cache and have no SQL database, autonomous calls only; or `UseInMemory` for tests, local development, and single-instance hosts, which needs no database but deduplicates only within one process). `AddIdempotency` declares the dependency via `Headless.Hosting`'s `RequireRegisteredService<T>`, so a host without it is refused at startup with a `MissingRequiredServiceException` rather than failing on the first idempotent request. Registration order does not matter — the check runs at host start.
+> Durable admission is a hard prerequisite. This package references only `Headless.Idempotency.Abstractions`, so the `IIdempotentOperations` the middleware admits, completes, and releases through comes from `AddHeadlessIdempotency(...)` with a provider (`UsePostgreSql` / `UseSqlServer`; `UseCache` for several replicas that share a Redis cache and have no SQL database, autonomous calls only; or `UseInMemory` for tests, local development, and single-instance hosts, which needs no database but deduplicates only within one process). `AddHeadlessHttpIdempotency` declares the dependency via `Headless.Hosting`'s `RequireRegisteredService<T>`, so a host without it is refused at startup with a `MissingRequiredServiceException` rather than failing on the first idempotent request. Registration order does not matter — the check runs at host start.
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -846,7 +846,7 @@ builder.Services.AddAuthorization();
 builder.Services.AddHeadlessIdempotency(setup => setup.UsePostgreSql(connectionString)); // or setup.UseSqlServer(...)
 // tests, local development, one instance: AddHeadlessIdempotency(setup => setup.UseInMemory())
 // replicas sharing Redis, no SQL: AddHeadlessCaching(c => c.UseRedis(...)) + AddHeadlessIdempotency(setup => setup.UseCache())
-builder.Services.AddIdempotency(o =>
+builder.Services.AddHeadlessHttpIdempotency(o =>
 {
     o.Retention = TimeSpan.FromHours(24);
     o.InFlightStrategy = InFlightStrategy.Reject;
@@ -854,11 +854,11 @@ builder.Services.AddIdempotency(o =>
 
 var app = builder.Build();
 
-app.UseHeadless(); // includes UseResponseCompression, which must stay OUTSIDE (before) UseIdempotency
+app.UseHeadless(); // includes UseResponseCompression, which must stay OUTSIDE (before) UseHeadlessHttpIdempotency
 app.UseAuthentication();
 app.UseHeadlessTenancy(); // tenant must be resolved before idempotency
 app.UseAuthorization();
-app.UseIdempotency(); // installs response-capture stream; place AFTER auth and tenancy
+app.UseHeadlessHttpIdempotency(); // installs response-capture stream; place AFTER auth and tenancy
 
 app.MapHeadlessEndpoints();
 app.MapPost("/disbursements", CreateDisbursement);
@@ -954,14 +954,14 @@ var builder = WebApplication.CreateBuilder(args);
 builder.AddHeadless(); // registers IRequestContext, which the enrichers read
 
 // Register enrichers
-builder.Services.AddSerilogEnrichers();
+builder.Services.AddHeadlessSerilogEnrichers();
 
 var app = builder.Build();
 
 app.UseHeadless();
 
 // Use enrichers middleware (place early in pipeline)
-app.UseSerilogEnrichers();
+app.UseHeadlessSerilogEnrichers();
 
 app.MapHeadlessEndpoints();
 app.Run();
@@ -1002,7 +1002,7 @@ dotnet add package Headless.Api.MinimalApi
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.AddHeadless().ConfigureMinimalApi();
+builder.AddHeadless().ConfigureHeadlessMinimalApi();
 builder.Services.AddHeadlessMinimalApiEntityTagConcurrency();
 
 var app = builder.Build();
@@ -1083,7 +1083,7 @@ dotnet add package Headless.Api.Mvc
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
 
-builder.AddHeadless().ConfigureMvc();
+builder.AddHeadless().ConfigureHeadlessMvc();
 builder.Services.AddControllers();
 builder.Services.AddHeadlessMvcEntityTagConcurrency();
 
