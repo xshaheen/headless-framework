@@ -201,6 +201,17 @@ public static class SetupRedisCache
             sp.GetRequiredKeyedService<RedisCacheScriptsInitializer>(initializerKey)
         );
 
+        services.AddHeadlessHealthCheck(
+            "cache-redis-" + name,
+            async (provider, cancellationToken) =>
+                await provider
+                    .GetRequiredService<IOptionsMonitor<RedisCacheOptions>>()
+                    .Get(name)
+                    .ConnectionMultiplexer.PingAsync(cancellationToken)
+                    .ConfigureAwait(false),
+            HeadlessHealthCheckTags.Redis
+        );
+
         services.AddKeyedSingleton<ICache>(
             name,
             (sp, _) =>
@@ -251,6 +262,15 @@ public static class SetupRedisCache
         );
         services.AddInitializerHostedService<RedisCacheScriptsInitializer>();
         services.TryAddSingleton<IRemoteCache, RedisCache>();
+        services.AddHeadlessHealthCheck(
+            "cache-redis",
+            static async (provider, cancellationToken) =>
+                await provider
+                    .GetRequiredService<RedisCacheOptions>()
+                    .ConnectionMultiplexer.PingAsync(cancellationToken)
+                    .ConfigureAwait(false),
+            HeadlessHealthCheckTags.Redis
+        );
         services.TryAddSingleton(typeof(ICache<>), typeof(Cache<>));
 
         if (!isDefault)

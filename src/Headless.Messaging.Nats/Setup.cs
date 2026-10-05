@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Hosting;
 using Headless.Messaging.Nats;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Configuration;
@@ -23,6 +24,8 @@ namespace Headless.Messaging;
 /// <para/>
 /// Request/reply is supported on core NATS, outside JetStream: a requesting process receives replies on a subject of
 /// its own under the reserved <c>headless.reply.</c> prefix, which no provisioned stream captures.
+/// <para/>
+/// The <c>messaging-nats</c> readiness health check is contributed too; it pings the server over a pooled connection.
 /// </remarks>
 public static class SetupNatsMessaging
 {
@@ -142,6 +145,16 @@ public static class SetupNatsMessaging
             services.AddSingleton<IReplyTransport, NatsReplyTransport>();
             services.AddSingleton<IConsumerClientFactory, NatsConsumerClientFactory>();
             services.AddSingleton<INatsConnectionPool, NatsConnectionPool>();
+            services.AddHeadlessHealthCheck(
+                "messaging-nats",
+                static async (provider, cancellationToken) =>
+                    await provider
+                        .GetRequiredService<INatsConnectionPool>()
+                        .GetConnection()
+                        .PingAsync(cancellationToken)
+                        .ConfigureAwait(false),
+                HeadlessHealthCheckTags.Messaging
+            );
         }
     }
 }

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Checks;
 using StackExchange.Redis;
 
 namespace Headless.Redis;
@@ -47,5 +48,25 @@ public static class HeadlessConnectionMultiplexerExtensions
         }
 
         return count;
+    }
+
+    /// <summary>Sends <c>PING</c> through the default database and returns the round-trip time.</summary>
+    /// <param name="muxer">The multiplexer to probe.</param>
+    /// <param name="cancellationToken">
+    /// Token that abandons the wait. StackExchange.Redis does not expose cancellation for <c>PING</c>, so the command
+    /// itself still ends through the multiplexer's own timeout.
+    /// </param>
+    /// <returns>The time the server took to answer.</returns>
+    /// <exception cref="RedisConnectionException">No connection to the server is available.</exception>
+    /// <exception cref="RedisTimeoutException">The server did not answer within the multiplexer's timeout.</exception>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken" /> was cancelled.</exception>
+    public static Task<TimeSpan> PingAsync(
+        this IConnectionMultiplexer muxer,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(muxer);
+
+        return muxer.GetDatabase().PingAsync().WaitAsync(cancellationToken);
     }
 }
