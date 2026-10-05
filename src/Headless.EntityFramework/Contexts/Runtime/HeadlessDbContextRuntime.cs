@@ -5,6 +5,7 @@ using Headless.Domain;
 using Headless.EntityFramework.ChangeTrackers;
 using Headless.EntityFramework.Contexts;
 using Headless.MultiTenancy;
+using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Infrastructure;
@@ -170,6 +171,10 @@ internal sealed class HeadlessDbContextRuntime(DbContext db)
     /// </summary>
     public IServiceScope? Release()
     {
+        // A unit the caller enlisted on this context and never completed must not follow the instance back into the
+        // pool, where the next lease would refuse to save on its account.
+        DbContextUnitOfWorkBinding.Unbind(_db);
+
         var ownedScope = _ownedScope;
 
         _ownedScope = null;
