@@ -273,6 +273,7 @@ public static class SetupJobs
             )
         );
         services.TryAddSingleton(provider => provider.GetRequiredService<JobFunctionRegistry>().RunFilter);
+        services.TryAddSingleton(provider => provider.GetRequiredService<JobFunctionRegistry>().ClusterConcurrency);
 
         optionInstance.ExternalProviderConfigServiceAction?.Invoke(services);
         optionInstance.DashboardServiceAction?.Invoke(services, requestSerializationOptions);

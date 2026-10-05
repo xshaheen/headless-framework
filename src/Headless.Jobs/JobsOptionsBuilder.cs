@@ -51,8 +51,8 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     /// </summary>
     /// <remarks>
     /// The identity is checked when the host's job registry is built: an identity no registered module declares fails
-    /// startup. <c>Headless:Jobs:Jobs:{identity}</c> configuration (<c>Concurrency</c>, <c>Priority</c>,
-    /// <c>FailurePolicy</c>) applies after every <c>Tune</c> call. <paramref name="configure"/> runs once, synchronously, during this call.
+    /// startup. <c>Headless:Jobs:Jobs:{identity}</c> configuration (<c>Concurrency</c>, <c>ClusterConcurrency</c>,
+    /// <c>Priority</c>, <c>FailurePolicy</c>) applies after every <c>Tune</c> call. <paramref name="configure"/> runs once, synchronously, during this call.
     /// </remarks>
     /// <param name="identity">The job's <c>[Job]</c> identity.</param>
     /// <param name="configure">Changes the job's deployment settings.</param>

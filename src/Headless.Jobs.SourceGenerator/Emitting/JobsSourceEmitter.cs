@@ -140,6 +140,13 @@ internal static class JobsSourceEmitter
             .Append(job.TypeName)
             .Append(')');
 
+        if (job.ClusterMaxConcurrency > 0)
+        {
+            registration
+                .Append(", ClusterMaxConcurrency = ")
+                .Append(job.ClusterMaxConcurrency.ToString(CultureInfo.InvariantCulture));
+        }
+
         if (job.TimeZone is not null)
         {
             registration.Append(", TimeZoneId = ").Append(HandlerSource.Literal(job.TimeZone));
