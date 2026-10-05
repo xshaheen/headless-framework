@@ -59,13 +59,33 @@ public static class SetupMiddlewares
     /// Registers <c>StatusCodesRewriterMiddleware</c> as a singleton in the DI container.
     /// Call <see cref="UseStatusCodesRewriter"/> after this to add it to the pipeline.
     /// </summary>
+    /// <remarks>
+    /// Also wraps the registered <see cref="IAuthorizationEvaluator"/> so an HTTP authorization that failed only on
+    /// <c>FeatureRequirement</c>s (<c>[RequiresFeature]</c>, <c>RequireFeatures(...)</c>) is rewritten from the
+    /// challenge or forbid into a 409 <c>g:feature_currently_not_available</c> problem response. An evaluator
+    /// registered after this call replaces the wrapper, and feature failures then keep ASP.NET Core's 401 or 403.
+    /// </remarks>
     /// <param name="services">The service collection to register into.</param>
     /// <returns>The same service collection.</returns>
     public static IServiceCollection AddStatusCodesRewriterMiddleware(this IServiceCollection services)
     {
         services.TryAddSingleton<StatusCodesRewriterMiddleware>();
+
+        // The rewriter writes the 409 for an authorization that failed only on a disabled feature; the evaluator
+        // decorator is what hands it that rejection. AddAuthorizationCore registers the default evaluator with
+        // TryAdd, so registering it first keeps one registration whichever call runs first and gives the decorator
+        // something to wrap. The marker keeps a repeated call from wrapping it twice.
+        if (!services.IsAdded<FeatureRejectionEvaluatorMarker>())
+        {
+            services.AddSingleton(new FeatureRejectionEvaluatorMarker());
+            services.TryAddTransient<IAuthorizationEvaluator, DefaultAuthorizationEvaluator>();
+            services.TryDecorate<IAuthorizationEvaluator, FeatureRejectionAuthorizationEvaluator>();
+        }
+
         return services;
     }
+
+    private sealed class FeatureRejectionEvaluatorMarker;
 
     /// <summary>
     /// Adds the status-codes rewriter middleware to the ASP.NET Core request pipeline.

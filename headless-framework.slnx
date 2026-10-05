@@ -12,7 +12,6 @@
         <Project Path="demo\Headless.Api.Demo\Headless.Api.Demo.csproj" />
         <Project Path="src\Headless.Api.Abstractions\Headless.Api.Abstractions.csproj" />
         <Project Path="src\Headless.Api.DataProtection\Headless.Api.DataProtection.csproj" />
-        <Project Path="src\Headless.Api.Features\Headless.Api.Features.csproj" />
         <Project Path="src\Headless.Api.FluentValidation\Headless.Api.FluentValidation.csproj" />
         <Project Path="src\Headless.Api.Logging.Serilog\Headless.Api.Logging.Serilog.csproj" />
         <Project Path="src\Headless.Api.MinimalApi\Headless.Api.MinimalApi.csproj" />
@@ -29,7 +28,6 @@
         <Project Path="tests\Headless.Api.Composition.Tests.Unit\Headless.Api.Composition.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Api.DataProtection.Tests.Integration\Headless.Api.DataProtection.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Api.DataProtection.Tests.Unit\Headless.Api.DataProtection.Tests.Unit.csproj" />
-        <Project Path="tests\Headless.Api.Features.Tests.Unit\Headless.Api.Features.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Api.FluentValidation.Tests.Unit\Headless.Api.FluentValidation.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Api.Idempotency.Tests.Integration\Headless.Api.Idempotency.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Api.Idempotency.Tests.Unit\Headless.Api.Idempotency.Tests.Unit.csproj" />

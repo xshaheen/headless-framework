@@ -50,7 +50,7 @@ Package READMEs are discovery pages. They explain why a package exists and link 
 | Store blobs in S3, MinIO or another S3-compatible server, Azure, R2, filesystem, Redis, or SFTP | [Blob Storage](blobs.md) |
 | Persist dynamic settings | [Settings](settings.md) |
 | Evaluate feature flags | [Features](features.md) |
-| Gate a controller action or Minimal API endpoint on a feature flag | [API & Web](api.md#headlessapifeatures), [Features](features.md) |
+| Gate a controller action or Minimal API endpoint on a feature flag | [Features](features.md#gating-http-endpoints) |
 | React when a setting, feature, or permission grant changes instead of polling | [Settings](settings.md), [Features](features.md), [Permissions](permissions.md) — each has a "Reacting to a change" section |
 | Record entity changes or explicit audit events | [Audit Log](audit-log.md) |
 | Issue per-tenant consecutive numbers (receipts, invoices, case numbers), gap-free when audited | [Sequences](sequences.md) |

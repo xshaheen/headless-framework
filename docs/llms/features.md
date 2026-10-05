@@ -17,7 +17,7 @@ Install `Headless.Features.Abstractions` plus `Headless.Features` and exactly on
 - `Headless.Features.Storage.PostgreSql` — raw ADO.NET persistence for PostgreSQL (no EF dependency)
 - `Headless.Features.Storage.SqlServer` — raw ADO.NET persistence for SQL Server (no EF dependency)
 
-To gate HTTP endpoints on features, add `Headless.Api.Features` ([api.md § Headless.Api.Features](api.md#headlessapifeatures)). The packages above do not reference ASP.NET Core, so console and worker hosts use them without the ASP.NET Core shared framework.
+Feature gates on HTTP endpoints are ASP.NET Core authorization requirements (see [Gating HTTP endpoints](#gating-http-endpoints)), so `AddHeadlessFeatures` alone enforces them. The packages above reference only the host-agnostic `Microsoft.AspNetCore.Authorization` package, not the ASP.NET Core shared framework, so console and worker hosts use them without the ASP.NET runtime.
 
 Typical registration:
 
@@ -49,7 +49,7 @@ builder.Services.AddHeadlessFeatures(setup => setup.UseEntityFramework<AppDbCont
 - Feature value caching is automatic. Both `IFeatureManager` writes and direct `IFeatureValueRecordRepository` writes invalidate the affected cache entry (the repository removes it after `SaveChangesAsync`), and a distributed cache propagates the eviction across nodes. Only writes that bypass the repository entirely (raw SQL, direct `DbContext`) leave the cache stale.
 - Custom value providers must implement `IFeatureValueReadProvider` (read-only) or `IFeatureValueProvider` (read-write). Register with `services.AddFeatureValueProvider<T>()`. The last-registered provider has the highest resolution priority. `FeatureManager` writes through `IFeatureValueProvider.SetAllAsync`; its default implementation calls `SetAsync` / `ClearAsync` once per entry, so a custom provider overrides it when its source can apply a batch atomically.
 - `FeatureDefinition.Providers` restricts which providers can read/write a feature. An empty list means all providers are allowed — the most common case.
-- Gate HTTP access with `[RequiresFeature("FeatureName")]` on controllers or actions, and with `.RequireFeatures("FeatureName")` on Minimal API endpoints or route groups. The attribute gates nothing by itself: install `Headless.Api.Features` and call `services.AddHeadlessHttpFeatures()` for controllers (see [api.md § Headless.Api.Features](api.md#headlessapifeatures)). Use `[DisableFeatureCheck]` on an action or endpoint to bypass a controller-level or group-level gate. A disabled feature throws `ConflictException` with code `g:feature_currently_not_available`, which the Headless exception handler returns as a 409 problem response.
+- Gate HTTP access with `[RequiresFeature("FeatureName")]` on controllers, actions, or Minimal API handlers, and with `.RequireFeatures("FeatureName")` (`Headless.Api`) on endpoints or route groups. The attribute is authorization data that ASP.NET Core's authorization middleware enforces through the handler `AddHeadlessFeatures` registers; no other registration exists. Use `[DisableFeatureCheck]` or `.DisableFeatureCheck()` to bypass a controller-level or group-level gate. With `Headless.Api`'s status-codes rewriter, a disabled feature returns 409 with code `g:feature_currently_not_available`; see [Gating HTTP endpoints](#gating-http-endpoints).
 - `SetAsync` with `forceToSet: false` (default) skips the write when the supplied value equals the fallback value of the next lower-priority provider. Set `forceToSet: true` when you must persist the value explicitly (e.g., `GrantAsync`/`RevokeAsync` always use `forceToSet: true`).
 - To write several features at once, call `SetAsync(values, providerName, providerKey)` with an `IReadOnlyDictionary<string, string?>` keyed by feature name; a `null` value clears that feature. It checks every name, the provider, and its writability before writing anything, so an undefined name or a read-only provider rejects the whole batch with `ConflictException` and changes nothing. The built-in stores (EF, PostgreSQL, SQL Server) then write the batch in one transaction, so a failed write leaves every value as it was, and a successful one publishes a single `FeatureChangedMessage` listing every name. `forceToSet` applies to each value as it does for the single-name call. An empty dictionary writes and announces nothing. The single-name `SetAsync` is the one-entry case of this call. Clearing a value removes only the row stored under the exact provider key the provider resolves, not that feature under every key of the provider. Atomicity holds per provider: when several registered providers share `providerName`, each writes the batch in its own transaction. The store-backed providers open their own connection and transaction, so the write does not join a unit of work the caller has open, and rolling that unit back does not undo it. When a concurrent writer inserts or deletes one of the batch's rows between the store's read and its save, the store reads again and retries (up to three attempts); the last writer's value wins.
 - `DeleteAsync` removes all feature values for a given provider and key (e.g., all tenant overrides for a deleted tenant). It silently skips read-only providers.
@@ -159,8 +159,11 @@ Defines the unified interface for feature management and feature flags across di
 - `FeatureValueProviderNames` — constants `Tenant`, `Edition`, `DefaultValue` for targeting built-in providers
 - Extension methods on `IFeatureManager`: `IsEnabledAsync`, `GetAsync<T>`, `EnsureEnabledAsync`, `GrantAsync`, `RevokeAsync`
 - Scoped extension methods: `GetForTenantAsync`, `SetForTenantAsync`, `GrantToTenantAsync`, `RevokeFromTenantAsync`, `DeleteForTenantAsync` (tenant); equivalent `*ForEditionAsync` / `*ToEditionAsync` set (edition); `GetDefaultAsync`, `GetAllDefaultAsync` (default provider)
-- `RequiresFeatureAttribute` — gates a controller class or action on one or more features; `IsAnd` property controls AND vs. OR policy (default: OR). Enforced on HTTP by `Headless.Api.Features` and on other call sites by `IMethodInvocationFeatureCheckerService`
-- `DisableFeatureCheckAttribute` — bypasses a controller-level or route-group `[RequiresFeature]` gate on one action or endpoint
+- `RequiresFeatureAttribute` — gates a controller class, action, or Minimal API handler on one or more features; `IsAnd` property controls AND vs. OR policy (default: OR). It implements `IAuthorizationRequirementData`, so on HTTP the authorization middleware adds a `FeatureRequirement` to the endpoint's policy; other call sites evaluate it through `IMethodInvocationFeatureCheckerService`. An attribute with no feature names adds no requirement
+- `DisableFeatureCheckAttribute` — bypasses every feature requirement on one action or endpoint, including a controller-level, route-group, or route-convention gate; other policies still apply
+- `FeatureRequirement(string[] featureNames, bool requiresAll)` — the authorization requirement behind the attribute; add it to a named policy (`policy.AddRequirements(new FeatureRequirement(["Reports"], requiresAll: false))`) to gate a policy on features. An empty list throws `ArgumentException`
+
+This package references the host-agnostic `Microsoft.AspNetCore.Authorization` package for those types, not the ASP.NET Core shared framework.
 
 ### Install
 
@@ -360,6 +363,54 @@ Every object follows its database's naming convention. On PostgreSQL the tables,
 - Registers `DefaultValueFeatureValueProvider`, `EditionFeatureValueProvider`, `TenantFeatureValueProvider` as singletons
 - Starts `FeaturesInitializationBackgroundService` as a hosted service
 - Registers `IMethodInvocationFeatureCheckerService` as singleton
+- Registers the feature authorization handler (transient, once however often `AddHeadlessFeatures` runs) and calls `AddAuthorizationCore()`, which only adds services the host has not registered
+
+### Gating HTTP endpoints
+
+A feature gate is an ASP.NET Core authorization requirement, so `AddHeadlessFeatures` plus the host's ordinary `AddAuthorization()` / `UseAuthorization()` enforce it. No HTTP-specific registration exists to forget.
+
+- **Declaring a gate.** `[RequiresFeature]` on a controller, an action, or a Minimal API handler, or `.RequireFeatures(...)` (`Headless.Api`) on an endpoint, a route group, or `MapControllers()`. Each attribute or call adds its own `FeatureRequirement`, so a controller and an action requirement, or a group and an endpoint requirement, must both pass. `[DisableFeatureCheck]` on an action or handler, or `.DisableFeatureCheck()`, skips every feature requirement on that endpoint.
+- **Composition.** The requirement joins the endpoint's other authorization data in one policy: a `[Authorize("Reports.View")]` permission and a `[RequiresFeature("Reports")]` both apply. A feature gate is not `[Authorize]`, so on an endpoint without `[Authorize]` the fallback policy still applies, and the gate adds no authenticated-user requirement of its own.
+- **Anonymous callers.** A feature is the tenant's or edition's state, not a right of the caller, so the gate applies to anonymous callers too: with the feature off they get the 409, with it on they pass unless another policy requires a user. `[AllowAnonymous]` skips ASP.NET Core authorization entirely, feature requirements included, so never combine it with a feature gate; an endpoint that must serve anonymous callers behind a gate needs no `[Authorize]` and no fallback policy that requires a user.
+- **Failure.** The handler leaves an unmet requirement pending. When disabled features are the only unmet requirements, `Headless.Api`'s status-codes rewriter (`AddStatusCodesRewriterMiddleware()` + `UseStatusCodesRewriter()`, wired by `AddHeadless()` / `UseHeadless()`) replaces the challenge or forbid with a 409 problem response carrying one `g:feature_currently_not_available` error per failed requirement, with the same `Type` and `FeatureNames` parameters `EnsureEnabledAsync` uses. When any other requirement also fails, the response stays what that failure produces: 401 for a missing user, 403 for a missing permission, so an unauthenticated caller learns nothing about the feature. Without `Headless.Api`, ASP.NET Core's default applies: 401 for an anonymous caller, 403 for an authenticated one.
+- **409, not 403.** The caller may hold every permission it needs; the resource is unavailable in the tenant's current state. Permission checks return 401 or 403; see [permissions.md](permissions.md).
+- **Fail-closed wiring.** `AddHeadlessFeatures` registers the authorization handler services, so `WebApplication` adds the authorization middleware itself when the host never calls `UseAuthorization()`, and a host that never calls `AddAuthorization()` fails at startup instead of serving gated endpoints unchecked (MVC's `AddControllers()` calls `AddAuthorization()` for you). Two placements still skip the gate silently, because ASP.NET Core's "authorization metadata without the middleware" check covers only `[Authorize]`: a host that calls `UseRouting()` explicitly but leaves `UseAuthorization()` implicit (the implicit middleware runs before routing and sees no endpoint), and a hand-built pipeline without `UseAuthorization()`. Call `UseAuthorization()` after `UseRouting()`, and `UseStatusCodesRewriter()` before it so the rewriter wraps authorization.
+- Code outside HTTP, such as an interceptor or a job, checks the same attributes through `IMethodInvocationFeatureCheckerService`, or calls `IFeatureManager.EnsureEnabledAsync` directly.
+
+```csharp
+builder.AddHeadless();
+builder.Services.AddHeadlessFeatures(setup => setup.UsePostgreSql());
+builder.Services.AddControllers();
+
+var app = builder.Build();
+app.UseHeadless(); // includes UseStatusCodesRewriter()
+app.UseRouting();
+app.UseAuthentication();
+app.UseAuthorization();
+app.MapControllers();
+
+var reports = app.MapGroup("/api/reports").RequireFeatures("Reports").RequireAuthorization("Reports.View");
+reports.MapGet("/", () => Results.Ok());
+reports.MapGet("/export", () => Results.Ok()).RequireFeatures(requiresAll: true, "Reports.Export", "Exports");
+reports.MapGet("/status", () => Results.Ok()).DisableFeatureCheck(); // reachable while "Reports" is off
+
+[ApiController]
+[Route("reports")]
+[RequiresFeature("Reports")]
+public sealed class ReportsController : ControllerBase
+{
+    [HttpGet]
+    public IActionResult List() => Ok();
+
+    [HttpGet("export")]
+    [RequiresFeature("Reports.Export")] // checked in addition to "Reports"
+    public IActionResult Export() => Ok();
+
+    [HttpGet("status")]
+    [DisableFeatureCheck] // reachable while "Reports" is off
+    public IActionResult Status() => Ok();
+}
+```
 
 ---
 

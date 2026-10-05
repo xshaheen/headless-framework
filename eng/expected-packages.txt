@@ -2,7 +2,6 @@
 Headless.Api
 Headless.Api.Abstractions
 Headless.Api.DataProtection
-Headless.Api.Features
 Headless.Api.FluentValidation
 Headless.Api.Idempotency
 Headless.Api.Logging.Serilog
