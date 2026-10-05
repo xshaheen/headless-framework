@@ -987,7 +987,7 @@ Framework integration for ASP.NET Core Minimal APIs with JSON configuration, val
 - Pre-configured JSON serialization options
 - `MinimalApiValidatorFilter` — FluentValidation integration via `.Validate<T>()` on endpoint builders
 - Entity-tag concurrency via `.WithEntityTag()` and `.RequireIfMatch()` endpoint filters
-- `ApiResult<T>.ToHttpResult(...)` / `ApiResult.ToHttpResult(...)` — exception-equivalent ProblemDetails mapping with automatic 200/204 and 401/403/404/409/422 OpenAPI metadata
+- `ApiResult<T>.ToHttpResult(...)` / `ApiResult.ToHttpResult(...)` — exception-equivalent ProblemDetails mapping with automatic 200/204 and 401/403/404/409/422 OpenAPI metadata. The extensions (`ApiResultExtensions`) and the returned `ApiResultHttpResult<T>` / `ApiResultHttpResult` live in `Headless.Api`, the namespace the rest of the package's endpoint API uses, so a file that imports `Headless.Api` and `Headless.Primitives` (for `ApiResult`) sees them; do not write a local bridge
 - API versioning integration
 - Endpoint discovery extensions
 
@@ -1068,7 +1068,7 @@ Framework integration for ASP.NET Core MVC/Web API with controllers, filters, JS
 - URL canonicalization middleware (`RedirectToCanonicalUrlRule`, registered via `UseRedirectToCanonicalUrl()`)
 - Pre-configured JSON and MVC options
 - Direct MVC `ObjectResult` responses carrying Headless-normalized `ProblemDetails` run `ProblemDetailsOptions.CustomizeProblemDetails` once before serialization
-- `ApiResult<T>.ToActionResult(...)` / `ApiResult.ToActionResult(...)` — exception-equivalent ProblemDetails mapping for expected failures
+- `ApiResult<T>.ToActionResult(...)` / `ApiResult.ToActionResult(...)` — exception-equivalent ProblemDetails mapping for expected failures. The extensions (`ApiResultMvcExtensions`) live in `Headless.Api`, as the Minimal API bridge does
 - API versioning integration with API Explorer
 - Opt-in strong ETag responses and `If-Match` request validation
 
