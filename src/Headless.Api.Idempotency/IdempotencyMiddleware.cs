@@ -578,7 +578,7 @@ internal sealed partial class IdempotencyMiddleware(
     /// exactly as originally captured. Sets the <c>Idempotent-Replayed: true</c> response header.
     /// </summary>
     /// <exception cref="InvalidOperationException">
-    /// The response has already started. Indicates <c>UseIdempotency()</c> is ordered after
+    /// The response has already started. Indicates <c>UseHeadlessHttpIdempotency()</c> is ordered after
     /// middleware that already wrote to the response body.
     /// </exception>
     private async Task _ReplayAsync(
@@ -593,7 +593,7 @@ internal sealed partial class IdempotencyMiddleware(
         {
             throw new InvalidOperationException(
                 "Cannot replay idempotent response: HttpResponse has already started. "
-                    + "Ensure UseIdempotency() is registered before any middleware that writes to the response body."
+                    + "Ensure UseHeadlessHttpIdempotency() is registered before any middleware that writes to the response body."
             );
         }
 

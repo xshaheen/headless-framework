@@ -55,14 +55,21 @@ public static class SetupNswagSurfaces
         return services;
     }
 
-    /// <summary>Serves registered documents at /openapi/{documentName}.json and Swagger UI at /swagger.</summary>
-    public static WebApplication MapNswagApiSurfaceDocuments(
+    /// <summary>
+    /// Adds middleware that serves the registered surface documents at <c>/openapi/{documentName}.json</c> and
+    /// Swagger UI at <c>/swagger</c>.
+    /// </summary>
+    /// <remarks>
+    /// This is path-matched middleware, not an endpoint. Call it before <c>UseAuthorization()</c>: placed after it,
+    /// a fallback authorization policy rejects the documents with 401.
+    /// </remarks>
+    public static WebApplication UseNswagApiSurfaceDocuments(
         this WebApplication app,
         Action<OpenApiDocumentMiddlewareSettings>? documentSettings = null,
         Action<SwaggerUiSettings>? uiSettings = null
     )
     {
         Argument.IsNotNull(app);
-        return app.MapNswagOpenApi(documentSettings, uiSettings);
+        return app.UseNswagOpenApi(documentSettings, uiSettings);
     }
 }

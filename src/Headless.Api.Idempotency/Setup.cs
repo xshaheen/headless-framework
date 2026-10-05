@@ -10,7 +10,7 @@ namespace Headless.Api.Idempotency;
 
 /// <summary>
 /// Service-collection extensions that register the Stripe-style HTTP idempotency middleware and
-/// its supporting options/validators. Pair with <c>UseIdempotency()</c> on the application
+/// its supporting options/validators. Pair with <c>UseHeadlessHttpIdempotency()</c> on the application
 /// pipeline.
 /// </summary>
 /// <remarks>
@@ -32,7 +32,7 @@ public static class SetupIdempotency
         /// The configuration section to bind to <see cref="IdempotencyOptions"/>.
         /// </param>
         /// <returns>The same <see cref="IServiceCollection"/> for chaining.</returns>
-        /// <remarks>Call <c>UseIdempotency()</c> on the application builder to activate the middleware.</remarks>
+        /// <remarks>Call <c>UseHeadlessHttpIdempotency()</c> on the application builder to activate the middleware.</remarks>
         /// <exception cref="ArgumentNullException">
         /// <paramref name="configuration"/> is <see langword="null"/>.
         /// </exception>
@@ -40,7 +40,7 @@ public static class SetupIdempotency
         /// Thrown at host startup (during <c>ValidateOnStart()</c>) when
         /// <see cref="IdempotencyOptions"/> fails FluentValidation rules.
         /// </exception>
-        public IServiceCollection AddIdempotency(IConfiguration configuration)
+        public IServiceCollection AddHeadlessHttpIdempotency(IConfiguration configuration)
         {
             services.Configure<IdempotencyOptions, IdempotencyOptionsValidator>(configuration);
             return services._AddIdempotencyCore();
@@ -53,7 +53,7 @@ public static class SetupIdempotency
         /// </summary>
         /// <param name="setupAction">Delegate that configures <see cref="IdempotencyOptions"/>.</param>
         /// <returns>The same <see cref="IServiceCollection"/> for chaining.</returns>
-        /// <remarks>Call <c>UseIdempotency()</c> on the application builder to activate the middleware.</remarks>
+        /// <remarks>Call <c>UseHeadlessHttpIdempotency()</c> on the application builder to activate the middleware.</remarks>
         /// <exception cref="ArgumentNullException">
         /// <paramref name="setupAction"/> is <see langword="null"/>.
         /// </exception>
@@ -61,7 +61,7 @@ public static class SetupIdempotency
         /// Thrown at host startup (during <c>ValidateOnStart()</c>) when
         /// <see cref="IdempotencyOptions"/> fails FluentValidation rules.
         /// </exception>
-        public IServiceCollection AddIdempotency(Action<IdempotencyOptions> setupAction)
+        public IServiceCollection AddHeadlessHttpIdempotency(Action<IdempotencyOptions> setupAction)
         {
             services.Configure<IdempotencyOptions, IdempotencyOptionsValidator>(setupAction);
             return services._AddIdempotencyCore();
@@ -78,7 +78,7 @@ public static class SetupIdempotency
         /// <see cref="IServiceProvider"/> for resolving additional services.
         /// </param>
         /// <returns>The same <see cref="IServiceCollection"/> for chaining.</returns>
-        /// <remarks>Call <c>UseIdempotency()</c> on the application builder to activate the middleware.</remarks>
+        /// <remarks>Call <c>UseHeadlessHttpIdempotency()</c> on the application builder to activate the middleware.</remarks>
         /// <exception cref="ArgumentNullException">
         /// <paramref name="setupAction"/> is <see langword="null"/>.
         /// </exception>
@@ -86,7 +86,7 @@ public static class SetupIdempotency
         /// Thrown at host startup (during <c>ValidateOnStart()</c>) when
         /// <see cref="IdempotencyOptions"/> fails FluentValidation rules.
         /// </exception>
-        public IServiceCollection AddIdempotency(Action<IdempotencyOptions, IServiceProvider> setupAction)
+        public IServiceCollection AddHeadlessHttpIdempotency(Action<IdempotencyOptions, IServiceProvider> setupAction)
         {
             services.Configure<IdempotencyOptions, IdempotencyOptionsValidator>(setupAction);
             return services._AddIdempotencyCore();

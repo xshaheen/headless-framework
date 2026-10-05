@@ -15,7 +15,7 @@ public static class IdempotencyApplicationBuilderExtensions
         /// </summary>
         /// <returns>The same <see cref="IApplicationBuilder"/> for chaining.</returns>
         /// <remarks>
-        /// Place <c>UseIdempotency()</c> AFTER <c>UseAuthorization()</c> and AFTER
+        /// Place <c>UseHeadlessHttpIdempotency()</c> AFTER <c>UseAuthorization()</c> and AFTER
         /// <c>UseHeadlessTenancy()</c>. The middleware scopes keys by the current user, and the durable
         /// store keys every record by the authenticated principal's tenant claim, never by the ambient
         /// tenant pre-auth resolution set from the host or a header. Anonymous requests share one
@@ -23,10 +23,10 @@ public static class IdempotencyApplicationBuilderExtensions
         /// unauthorized requests don't allocate idempotency storage.
         /// </remarks>
         /// <exception cref="InvalidOperationException">
-        /// Thrown at request time if <c>AddIdempotency()</c> was not called during service
+        /// Thrown at request time if <c>AddHeadlessHttpIdempotency()</c> was not called during service
         /// registration (required services are not in the DI container).
         /// </exception>
-        public IApplicationBuilder UseIdempotency()
+        public IApplicationBuilder UseHeadlessHttpIdempotency()
         {
             return app.UseMiddleware<IdempotencyMiddleware>();
         }

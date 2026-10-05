@@ -16,8 +16,10 @@ public sealed class ReCaptchaV2ScriptTagHelper(
     ICaptchaLanguageCodeProvider languageCodeProvider
 ) : TagHelper
 {
+#pragma warning disable MA0154 // False positive: "async" names the HTML script attribute, not the C# keyword.
     /// <summary>Gets or sets a value indicating whether to add the <c>async</c> attribute to the script tag.</summary>
     public bool ScriptAsync { get; set; } = true;
+#pragma warning restore MA0154
 
     /// <summary>Gets or sets a value indicating whether to add the <c>defer</c> attribute to the script tag.</summary>
     public bool ScriptDefer { get; set; } = true;

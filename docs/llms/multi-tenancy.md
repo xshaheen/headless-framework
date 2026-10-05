@@ -159,8 +159,8 @@ app.UseAuthorization();
 
 `.Authorization(auth => auth.RequireTenant())` delegates to the API package and:
 
-- Registers `TenantRequirementHandler`
-- Decorates ASP.NET Core's effective authorization result handler with a wrapper that only intercepts tenant failures
+- Registers `TenantRequirementHandler`, which fails `TenantRequirement` when no tenant is ambient and flags the request so `UseStatusCodesRewriter()` writes the `g:tenant_required` 403 body. It hands the rejection over through a request feature instead of decorating the authorization result handler, so an application's own `IAuthorizationMiddlewareResultHandler` composes with it in any registration order
+- Does not add `TenantRequirement` to any policy: put it in `FallbackPolicy` or `DefaultPolicy` yourself, and in any named policy that must also require a tenant
 - Records an `Authorization` seam with the `require-tenant` capability
 - Adds startup validation that fails fast when neither `DefaultPolicy` nor `FallbackPolicy` includes `TenantRequirement`
 

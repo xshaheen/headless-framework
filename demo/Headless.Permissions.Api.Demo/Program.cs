@@ -39,7 +39,7 @@ var app = builder.Build();
 // Configure middleware pipeline
 app.UseAuthentication();
 app.UseAuthorization();
-app.MapNswagOpenApi();
+app.UseNswagOpenApi();
 
 // List all permission definitions
 app.MapGet(

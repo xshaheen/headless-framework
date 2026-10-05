@@ -452,13 +452,15 @@ public static class SetupApi
     /// </summary>
     /// <param name="app">The <see cref="WebApplication"/> to configure.</param>
     /// <param name="configure">
-    /// Optional callback to tune <see cref="HeadlessApiDefaultsOptions"/> — forwarded headers,
-    /// response compression, status-code pages, exception handling, HTTPS redirection, HSTS,
-    /// and no-cache injection.
+    /// Optional callback to tune <see cref="HeadlessApiDefaultsOptions"/>: turn a stage off, or insert application
+    /// middleware before or after a stage with <see cref="HeadlessApiDefaultsOptions.InsertBefore"/> and
+    /// <see cref="HeadlessApiDefaultsOptions.InsertAfter"/>.
     /// </param>
     /// <returns><paramref name="app"/> for chaining.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="app"/> is <see langword="null"/>.</exception>
     /// <remarks>
+    /// The stages run in <see cref="HeadlessPipelineStage"/> order. HTTPS redirection and HSTS never run in the
+    /// Development or Test environment.
     /// Must be called before the application starts for startup validation to pass when
     /// <see cref="HeadlessServiceDefaultsValidationOptions.RequireUseHeadless"/> is <see langword="true"/> (the default).
     /// </remarks>
@@ -481,57 +483,63 @@ public static class SetupApi
 
         applicationBuilder.Properties[HeadlessApiDefaultsOptions.AppliedKey] = true;
 
-        if (options.UseForwardedHeaders)
-        {
-            var forwardedHeadersOptions = new ForwardedHeadersOptions { ForwardedHeaders = options.ForwardedHeaders };
+        // Development and Test hosts usually serve plain HTTP (local Kestrel, TestServer); redirecting them breaks
+        // clients, and HSTS would pin HTTPS for a shared local host name in the browser.
+        var enforceHttps = !app.Environment.IsDevelopmentOrTest();
 
-            if (options.TrustForwardedHeadersFromAnyProxy)
+        _ApplyStage(
+            app,
+            options,
+            HeadlessPipelineStage.ForwardedHeaders,
+            options.UseForwardedHeaders,
+            _UseForwardedHeaders
+        );
+        _ApplyStage(
+            app,
+            options,
+            HeadlessPipelineStage.ResponseCompression,
+            options.UseResponseCompression,
+            static (a, _) => a.UseResponseCompression()
+        );
+        _ApplyStage(
+            app,
+            options,
+            HeadlessPipelineStage.StatusCodePages,
+            options.UseStatusCodePages,
+            static (a, _) =>
             {
-                forwardedHeadersOptions.KnownIPNetworks.Clear();
-                forwardedHeadersOptions.KnownProxies.Clear();
+                a.UseStatusCodePages();
+                a.UseStatusCodesRewriter();
             }
-
-            options.ConfigureForwardedHeaders?.Invoke(forwardedHeadersOptions);
-            app.UseForwardedHeaders(forwardedHeadersOptions);
-        }
-
-        if (options.UseResponseCompression)
-        {
-            app.UseResponseCompression();
-        }
-
-        if (options.UseStatusCodePages)
-        {
-            app.UseStatusCodePages();
-            app.UseStatusCodesRewriter();
-        }
-
-        if (options.UseExceptionHandler)
-        {
-            if (string.IsNullOrWhiteSpace(options.ExceptionHandlerPath))
-            {
-                app.UseExceptionHandler();
-            }
-            else
-            {
-                app.UseExceptionHandler(options.ExceptionHandlerPath, options.CreateScopeForErrors);
-            }
-        }
-
-        if (options.UseHttpsRedirection)
-        {
-            app.UseHttpsRedirection();
-        }
-
-        if (options.UseHsts && !app.Environment.IsDevelopment())
-        {
-            app.UseHsts();
-        }
-
-        if (options.SetNoCacheWhenMissingCacheHeaders)
-        {
-            app.UseNoCacheWhenMissingCacheHeaders();
-        }
+        );
+        _ApplyStage(
+            app,
+            options,
+            HeadlessPipelineStage.ExceptionHandler,
+            options.UseExceptionHandler,
+            _UseExceptionHandler
+        );
+        _ApplyStage(
+            app,
+            options,
+            HeadlessPipelineStage.HttpsRedirection,
+            options.UseHttpsRedirection && enforceHttps,
+            static (a, _) => a.UseHttpsRedirection()
+        );
+        _ApplyStage(
+            app,
+            options,
+            HeadlessPipelineStage.Hsts,
+            options.UseHsts && enforceHttps,
+            static (a, _) => a.UseHsts()
+        );
+        _ApplyStage(
+            app,
+            options,
+            HeadlessPipelineStage.NoCacheHeaders,
+            options.SetNoCacheWhenMissingCacheHeaders,
+            static (a, _) => a.UseNoCacheWhenMissingCacheHeaders()
+        );
 
         if (app.Services.GetService<HeadlessStartupState>() is { } startupState)
         {
@@ -539,6 +547,50 @@ public static class SetupApi
         }
 
         return app;
+    }
+
+    private static void _ApplyStage(
+        IApplicationBuilder app,
+        HeadlessApiDefaultsOptions options,
+        HeadlessPipelineStage stage,
+        bool enabled,
+        Action<IApplicationBuilder, HeadlessApiDefaultsOptions> use
+    )
+    {
+        options.ApplyInsertions(stage, after: false, app);
+
+        if (enabled)
+        {
+            use(app, options);
+        }
+
+        options.ApplyInsertions(stage, after: true, app);
+    }
+
+    private static void _UseForwardedHeaders(IApplicationBuilder app, HeadlessApiDefaultsOptions options)
+    {
+        var forwardedHeadersOptions = new ForwardedHeadersOptions { ForwardedHeaders = options.ForwardedHeaders };
+
+        if (options.TrustForwardedHeadersFromAnyProxy)
+        {
+            forwardedHeadersOptions.KnownIPNetworks.Clear();
+            forwardedHeadersOptions.KnownProxies.Clear();
+        }
+
+        options.ConfigureForwardedHeaders?.Invoke(forwardedHeadersOptions);
+        app.UseForwardedHeaders(forwardedHeadersOptions);
+    }
+
+    private static void _UseExceptionHandler(IApplicationBuilder app, HeadlessApiDefaultsOptions options)
+    {
+        if (string.IsNullOrWhiteSpace(options.ExceptionHandlerPath))
+        {
+            app.UseExceptionHandler();
+        }
+        else
+        {
+            app.UseExceptionHandler(options.ExceptionHandlerPath, options.CreateScopeForErrors);
+        }
     }
 
     /// <summary>
