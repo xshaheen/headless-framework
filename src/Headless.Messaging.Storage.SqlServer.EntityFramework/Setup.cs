@@ -8,6 +8,7 @@ using Headless.Messaging.Persistence;
 using Headless.Messaging.Storage.SqlServer;
 using Headless.Messaging.Storage.SqlServer.EntityFramework;
 using Headless.UnitOfWork;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
@@ -306,7 +307,14 @@ public static class SetupSqlServerEntityFrameworkMessaging
 
             using var scope = serviceScopeFactory.CreateScope();
             using var dbContext = scope.ServiceProvider.GetRequiredService<TContext>();
-            options.ConnectionString = dbContext.Database.GetConnectionString();
+            // The connection can hold credentials a connection string cannot carry; the copy refuses one that
+            // authenticates with them rather than failing at the first login. GetConnectionString() is the string
+            // the context was configured from, which keeps the password a pooled, already-opened connection lost.
+            options.ConnectionString = dbContext.Database.GetDbConnection() is SqlConnection connection
+                ? connection.GetReusableConnectionString(dbContext.Database.GetConnectionString())
+                : throw new InvalidOperationException(
+                    $"Messaging UseEntityFramework<{typeof(TContext).Name}> requires a SQL Server DbContext."
+                );
 
             if (string.IsNullOrWhiteSpace(options.ConnectionString))
             {

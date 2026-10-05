@@ -2,10 +2,13 @@
 
 using System.Reflection;
 using Headless.Messaging;
+using Headless.Messaging.Storage.SqlServer;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Tests;
 
@@ -75,6 +78,47 @@ public sealed class SetupTests : TestBase
             .Single(capability => string.Equals(capability.Provider, "SqlServer", StringComparison.Ordinal))
             .InboxCapability.Should()
             .Be(MessagingInboxCapabilityTier.DurableDedupeOnly);
+    }
+
+    [Fact]
+    public async Task should_copy_the_context_connection_string_with_its_password()
+    {
+        // given
+        const string connectionString = "Server=localhost;Database=entity;User ID=sa;Password=secret";
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddDbContext<TestMessagingDbContext>(builder => builder.UseSqlServer(connectionString));
+        services.AddHeadlessMessaging(setup => setup.UseEntityFramework<TestMessagingDbContext>());
+
+        await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+
+        // when
+        var options = provider.GetRequiredService<IOptions<SqlServerOptions>>().Value;
+
+        // then
+        new SqlConnectionStringBuilder(options.ConnectionString)
+            .Password.Should()
+            .Be("secret");
+    }
+
+    [Fact]
+    public async Task should_fail_at_startup_when_the_context_connection_authenticates_with_an_access_token()
+    {
+        // given: a token a connection string cannot carry, so a copied string would fail at the first login
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddDbContext<TestMessagingDbContext>(builder =>
+            builder.UseSqlServer(new SqlConnection("Server=localhost;Database=entity") { AccessToken = "token" })
+        );
+        services.AddHeadlessMessaging(setup => setup.UseEntityFramework<TestMessagingDbContext>());
+
+        await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
+
+        // when
+        var act = () => provider.GetRequiredService<IOptions<SqlServerOptions>>().Value;
+
+        // then
+        act.Should().Throw<InvalidOperationException>().WithMessage("*access token*");
     }
 
     private sealed class TestMessagingDbContext(DbContextOptions<TestMessagingDbContext> options) : DbContext(options);
