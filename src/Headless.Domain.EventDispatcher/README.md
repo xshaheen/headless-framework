@@ -1,4 +1,4 @@
-# Headless.Domain.LocalEventBus
+# Headless.Domain.EventDispatcher
 
 DI-based implementation of `IDomainEventDispatcher` for in-process domain event handling.
 
@@ -9,10 +9,10 @@ Provides in-memory domain event dispatch that resolves handlers from the DI cont
 ## Install
 
 ```bash
-dotnet add package Headless.Domain.LocalEventBus
+dotnet add package Headless.Domain.EventDispatcher
 ```
 
 ## Documentation
 
 - [Headless Framework](https://github.com/xshaheen/headless-framework#readme)
-- [Core guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/core.md#headlessdomainlocaleventbus)
+- [Core guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/core.md#headlessdomaineventdispatcher)

@@ -300,7 +300,7 @@
           "Headless.Checks": "[1.0.0, )"
         }
       },
-      "headless.domain.localeventbus": {
+      "headless.domain.eventdispatcher": {
         "type": "Project",
         "dependencies": {
           "Headless.Domain": "[1.0.0, )",

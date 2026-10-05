@@ -864,7 +864,7 @@
           "Headless.Checks": "[1.0.0, )"
         }
       },
-      "headless.domain.localeventbus": {
+      "headless.domain.eventdispatcher": {
         "type": "Project",
         "dependencies": {
           "Headless.Domain": "[1.0.0, )",
@@ -879,7 +879,7 @@
           "Headless.Context": "[1.0.0, )",
           "Headless.Context.Abstractions": "[1.0.0, )",
           "Headless.Domain": "[1.0.0, )",
-          "Headless.Domain.LocalEventBus": "[1.0.0, )",
+          "Headless.Domain.EventDispatcher": "[1.0.0, )",
           "Headless.EntityFramework.Primitives": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Headless.MultiTenancy.Abstractions": "[1.0.0, )",

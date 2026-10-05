@@ -323,7 +323,7 @@ Building blocks مشتركة عبر الـ framework: domain primitives، وbase
 | [Headless.Security.Argon2](src/Headless.Security.Argon2/README.md) | Secret hashing بـ Argon2id، وهو الـ algorithm الافتراضي لـ `ISecretHasher` |
 | [Headless.Checks](src/Headless.Checks/README.md) | Guard clauses وvalidation للـ arguments |
 | [Headless.Domain](src/Headless.Domain/README.md) | Entities وevents بتاعة الـ domain |
-| [Headless.Domain.LocalEventBus](src/Headless.Domain.LocalEventBus/README.md) | `ILocalEventBus` لنشر الـ domain events جوه نفس الـ process |
+| [Headless.Domain.EventDispatcher](src/Headless.Domain.EventDispatcher/README.md) | `IDomainEventDispatcher` بيشغّل الـ handlers بتاعة الـ domain events جوه نفس الـ process |
 | [Headless.Mediator](src/Headless.Mediator/README.md) | Pipeline behaviors للـ mediator (FluentValidation، وlogging للـ request والـ response) |
 | [Headless.MultiTenancy.Abstractions](src/Headless.MultiTenancy.Abstractions/README.md) | الـ contracts بتاعة الـ tenant context، ومعاها الـ store SPI والـ models بتاعة الـ tenant catalog الاختياري |
 | [Headless.MultiTenancy](src/Headless.MultiTenancy/README.md) | تركيب الـ tenant posture عبر packages الـ Headless |
