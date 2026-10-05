@@ -21,8 +21,8 @@ namespace Headless.EntityFramework;
 /// anonymous). On <c>Modified</c> entries it stamps <c>IUpdateAudit.UpdatedAt</c> and <c>UpdatedById</c>, and
 /// on an <c>IsDeleted</c> or <c>IsSuspended</c> transition it stamps the matching delete, restore, suspend, or
 /// unsuspend fields. Fields of the opposite transition are kept as history. A non-null value the save already set
-/// explicitly (for example through a transition method) wins over the stamp. A transition with no actor, given or
-/// resolved from <c>ICurrentUser</c>, records a null actor id rather than keep the previous transition's actor.
+/// explicitly (for example through a transition method) wins over the stamp. An update or transition with no actor,
+/// given or resolved from <c>ICurrentUser</c>, records a null actor id rather than keep the previous actor.
 /// </remarks>
 [PublicAPI]
 public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, ICurrentUser currentUser)
@@ -124,13 +124,14 @@ public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, I
             return;
         }
 
-        // Every modified save is a new update, so the previous updater is replaced, not kept.
+        // Every modified save is a new update, so the previous updater is replaced, not kept: with no actor the update
+        // records null rather than attribute this change to the previous updater.
         _StampTransition(
             entry,
             nameof(IUpdateAudit.UpdatedAt),
             nameof(IUpdateAudit<>.UpdatedById),
             new ActorKind(entry.Entity is IUpdateAudit<UserId>, entry.Entity is IUpdateAudit<AccountId>),
-            StampMode.Update,
+            StampMode.Transition,
             ref actor
         );
     }
@@ -244,9 +245,9 @@ public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, I
     }
 
     /// <summary>
-    /// Stamps the timestamp and actor id of one audit change. <see cref="StampMode.Update"/> and
-    /// <see cref="StampMode.Transition"/> replace a value left over from an earlier change unless this save set it
-    /// explicitly; <see cref="StampMode.FillMissing"/> only fills a missing value.
+    /// Stamps the timestamp and actor id of one audit change. <see cref="StampMode.Transition"/> replaces a value left
+    /// over from an earlier change unless this save set it explicitly; <see cref="StampMode.FillMissing"/> only fills a
+    /// missing value.
     /// </summary>
     private void _StampTransition(
         EntityEntry entry,
@@ -288,7 +289,7 @@ public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, I
         object? current = kind.IsUser ? currentUserId : null;
         current ??= kind.IsAccount ? currentAccountId : null;
 
-        if (current is null && mode is not StampMode.Transition)
+        if (current is null && mode is StampMode.FillMissing)
         {
             return;
         }
@@ -337,14 +338,12 @@ public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, I
 
     private enum StampMode
     {
-        // A modified save: replace leftovers, but keep the previous updater when no actor resolves.
-        Update = 0,
-
-        // A delete, restore, suspend, or unsuspend: replace leftovers, and record null when no actor resolves.
-        Transition = 1,
+        // An update, delete, restore, suspend, or unsuspend: replace leftovers, and record null when no actor
+        // resolves.
+        Transition = 0,
 
         // A flag already raised with no known transition: fill only missing values.
-        FillMissing = 2,
+        FillMissing = 1,
     }
 
     private enum FlagTransition

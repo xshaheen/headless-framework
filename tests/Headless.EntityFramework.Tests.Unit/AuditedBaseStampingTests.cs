@@ -112,6 +112,85 @@ public sealed class AuditedBaseStampingTests : TestBase
     }
 
     [Theory]
+    [MemberData(nameof(Rows))]
+    public async Task should_record_null_updater_when_audited_base_modified_anonymously(string kind)
+    {
+        // given
+        await using var harness = await _CreateHarnessAsync<AuditedDbContext>();
+        await using var db = harness.CreateContext();
+        var entity = _Create(kind);
+        db.Add(entity);
+        await db.SaveChangesAsync(AbortToken);
+        entity.Rename("renamed by user-1");
+        await db.SaveChangesAsync(AbortToken);
+        _clock.Advance(TimeSpan.FromMinutes(5));
+        _SignOut();
+
+        // when
+        entity.Rename("renamed anonymously");
+        await db.SaveChangesAsync(AbortToken);
+
+        // then
+        var saved = await harness.ReloadAsync(entity);
+        saved.UpdatedAt.Should().Be(_Start.AddMinutes(5));
+        saved.UpdatedById.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_clear_loaded_updater_navigation_when_navigation_base_modified_anonymously()
+    {
+        // given
+        await using var harness = await _CreateHarnessAsync<AuditedDbContext>();
+        await using var db = harness.CreateContext();
+        var userA = new TestAccount { Id = "user-1" };
+        db.Add(userA);
+        var document = new AuditedDocument { Id = Guid.CreateVersion7(), Name = "doc" };
+        db.Add(document);
+        await db.SaveChangesAsync(AbortToken);
+        document.Update(_Start, userA.Id, userA);
+        await db.SaveChangesAsync(AbortToken);
+        _SignOut();
+
+        // when
+        document.Name = "renamed anonymously";
+        await db.SaveChangesAsync(AbortToken);
+
+        // then
+        document.UpdatedById.Should().BeNull();
+        document.UpdatedBy.Should().BeNull();
+        var saved = await harness.ReloadAsync(document);
+        saved.UpdatedById.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_keep_explicit_updater_when_update_called_anonymously()
+    {
+        // given
+        await using var harness = await _CreateHarnessAsync<AuditedDbContext>();
+        await using var db = harness.CreateContext();
+        db.Add(new TestAccount { Id = "user-1" });
+        var owner = new TestAccount { Id = "owner" };
+        db.Add(owner);
+        var document = new AuditedDocument { Id = Guid.CreateVersion7(), Name = "doc" };
+        db.Add(document);
+        await db.SaveChangesAsync(AbortToken);
+        _SignOut();
+        document.Update(_Start.AddMinutes(1), owner.Id, owner);
+        await db.SaveChangesAsync(AbortToken);
+
+        // when: the same actor updates again, so the id value itself does not change in this save
+        document.Name = "renamed";
+        document.Update(_Start.AddMinutes(2), owner.Id, owner);
+        await db.SaveChangesAsync(AbortToken);
+
+        // then
+        document.UpdatedBy.Should().BeSameAs(owner);
+        var saved = await harness.ReloadAsync(document);
+        saved.UpdatedAt.Should().Be(_Start.AddMinutes(2));
+        saved.UpdatedById.Should().Be((UserId)"owner");
+    }
+
+    [Theory]
     [MemberData(nameof(DeletableRows))]
     public async Task should_stamp_delete_audit_when_audited_base_soft_deleted(string kind)
     {

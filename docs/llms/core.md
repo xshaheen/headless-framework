@@ -213,7 +213,7 @@ The `HeadlessDbContext` save pipeline stamps the audit fields, and it stamps the
 - Each pair holds the most recent transition of its kind. A reversal keeps the opposite pair as history, so read `IsDeleted` / `IsSuspended`, not the timestamps, for the current state.
 - A non-null value the save already set explicitly wins over the stamp.
 - A delete, restore, suspend, or unsuspend with no actor records a null actor id, never the previous transition's actor. "No actor" means none was passed to the transition method and none resolved from `ICurrentUser`. The transition methods likewise write `byId` and `by` exactly as given, including `null`.
-- A modified save with no resolved current user keeps the previous `UpdatedById`. Pass the actor to `Update(...)` in anonymous flows.
+- A modified save with no resolved current user records a null `UpdatedById` and clears a loaded `UpdatedBy`. An anonymous flow that knows the actor passes it to `Update(now, byId, by)` in the same save, which wins.
 
 The entity changes `IsSuspended` / `IsDeleted` through its own behavior:
 

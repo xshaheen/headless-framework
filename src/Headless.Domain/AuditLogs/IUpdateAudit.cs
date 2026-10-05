@@ -39,7 +39,7 @@ public interface IUpdateAudit<TAccountId, TAccount> : IUpdateAudit<TAccountId>
     /// Persistence infrastructure stamps the update audit on every save, so call this only when the recorded time or
     /// account must differ from the ambient clock and current user, such as an anonymous flow acting for a known
     /// account. A non-null <paramref name="byId"/> is kept; a <see langword="null"/> one is filled from the current
-    /// user.
+    /// user, and stays <see langword="null"/> when there is none.
     /// </remarks>
     /// <param name="now">The UTC timestamp of the update.</param>
     /// <param name="byId">The identifier of the account performing the update, or <see langword="null"/> if unknown.</param>
