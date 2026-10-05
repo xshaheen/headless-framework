@@ -17,15 +17,17 @@ internal sealed class ProblemDetailsCreator(
     IOptions<ApiBehaviorOptions> apiOptionsAccessor
 ) : IProblemDetailsCreator
 {
-    public ProblemDetails EndpointNotFound(ErrorDescriptor? error = null)
+    public ProblemDetails EndpointNotFound(string? detail = null, ErrorDescriptor? error = null)
     {
         var problemDetails = new ProblemDetails
         {
             Status = StatusCodes.Status404NotFound,
             Title = HeadlessProblemDetailsConstants.Titles.EndpointNotFound,
-            Detail = HeadlessProblemDetailsConstants.Details.EndpointNotFound(
-                httpContextAccessor.HttpContext?.Request.Path.Value ?? ""
-            ),
+            Detail =
+                detail
+                ?? HeadlessProblemDetailsConstants.Details.EndpointNotFound(
+                    httpContextAccessor.HttpContext?.Request.Path.Value ?? ""
+                ),
         };
 
         _SetError(problemDetails, error);
@@ -34,13 +36,13 @@ internal sealed class ProblemDetailsCreator(
         return problemDetails;
     }
 
-    public ProblemDetails EntityNotFound(ErrorDescriptor? error = null)
+    public ProblemDetails EntityNotFound(string? detail = null, ErrorDescriptor? error = null)
     {
         var problemDetails = new ProblemDetails
         {
             Status = StatusCodes.Status404NotFound,
             Title = HeadlessProblemDetailsConstants.Titles.EntityNotFound,
-            Detail = HeadlessProblemDetailsConstants.Details.EntityNotFound,
+            Detail = detail ?? HeadlessProblemDetailsConstants.Details.EntityNotFound,
         };
 
         _SetError(problemDetails, error);
@@ -109,13 +111,13 @@ internal sealed class ProblemDetailsCreator(
         return problemDetails;
     }
 
-    public ProblemDetails Unauthorized(ErrorDescriptor? error = null)
+    public ProblemDetails Unauthorized(string? detail = null, ErrorDescriptor? error = null)
     {
         var problemDetails = new ProblemDetails
         {
             Status = StatusCodes.Status401Unauthorized,
             Title = HeadlessProblemDetailsConstants.Titles.Unauthorized,
-            Detail = HeadlessProblemDetailsConstants.Details.Unauthorized,
+            Detail = detail ?? HeadlessProblemDetailsConstants.Details.Unauthorized,
         };
 
         _SetError(problemDetails, error);
@@ -124,13 +126,13 @@ internal sealed class ProblemDetailsCreator(
         return problemDetails;
     }
 
-    public ProblemDetails RequestTimeout(ErrorDescriptor? error = null)
+    public ProblemDetails RequestTimeout(string? detail = null, ErrorDescriptor? error = null)
     {
         var problemDetails = new ProblemDetails
         {
             Status = StatusCodes.Status408RequestTimeout,
             Title = HeadlessProblemDetailsConstants.Titles.RequestTimeout,
-            Detail = HeadlessProblemDetailsConstants.Details.RequestTimeout,
+            Detail = detail ?? HeadlessProblemDetailsConstants.Details.RequestTimeout,
         };
 
         _SetError(problemDetails, error);
@@ -139,13 +141,13 @@ internal sealed class ProblemDetailsCreator(
         return problemDetails;
     }
 
-    public ProblemDetails NotImplemented(ErrorDescriptor? error = null)
+    public ProblemDetails NotImplemented(string? detail = null, ErrorDescriptor? error = null)
     {
         var problemDetails = new ProblemDetails
         {
             Status = StatusCodes.Status501NotImplemented,
             Title = HeadlessProblemDetailsConstants.Titles.NotImplemented,
-            Detail = HeadlessProblemDetailsConstants.Details.NotImplemented,
+            Detail = detail ?? HeadlessProblemDetailsConstants.Details.NotImplemented,
         };
 
         _SetError(problemDetails, error);
@@ -154,13 +156,13 @@ internal sealed class ProblemDetailsCreator(
         return problemDetails;
     }
 
-    public ProblemDetails TooManyRequests(int retryAfterSeconds, ErrorDescriptor? error = null)
+    public ProblemDetails TooManyRequests(int retryAfterSeconds, string? detail = null, ErrorDescriptor? error = null)
     {
         var problemDetails = new ProblemDetails
         {
             Status = StatusCodes.Status429TooManyRequests,
             Title = HeadlessProblemDetailsConstants.Titles.TooManyRequests,
-            Detail = HeadlessProblemDetailsConstants.Details.TooManyRequests,
+            Detail = detail ?? HeadlessProblemDetailsConstants.Details.TooManyRequests,
             Extensions = { ["retryAfter"] = retryAfterSeconds },
         };
 
@@ -170,13 +172,17 @@ internal sealed class ProblemDetailsCreator(
         return problemDetails;
     }
 
-    public ProblemDetails ServiceUnavailable(int? retryAfterSeconds = null, ErrorDescriptor? error = null)
+    public ProblemDetails ServiceUnavailable(
+        int? retryAfterSeconds = null,
+        string? detail = null,
+        ErrorDescriptor? error = null
+    )
     {
         var problemDetails = new ProblemDetails
         {
             Status = StatusCodes.Status503ServiceUnavailable,
             Title = HeadlessProblemDetailsConstants.Titles.ServiceUnavailable,
-            Detail = HeadlessProblemDetailsConstants.Details.ServiceUnavailable,
+            Detail = detail ?? HeadlessProblemDetailsConstants.Details.ServiceUnavailable,
         };
 
         // Only stamped when the caller knows a duration. An invented retryAfter would have clients

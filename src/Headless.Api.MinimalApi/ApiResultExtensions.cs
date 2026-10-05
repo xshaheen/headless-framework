@@ -65,7 +65,7 @@ public static class ApiResultExtensions
 
             ForbiddenError e => TypedResults.Problem(creator.Forbidden(error: e.Error)),
 
-            UnauthorizedError e => TypedResults.Problem(creator.Unauthorized(e.Error)),
+            UnauthorizedError e => TypedResults.Problem(creator.Unauthorized(error: e.Error)),
 
             AggregateError e when e.TryGetValidationErrors(out var validationErrors) => TypedResults.Problem(
                 creator.UnprocessableEntity(validationErrors)

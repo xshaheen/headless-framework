@@ -32,7 +32,7 @@ internal static class RateLimiterRejectionWriter
 
         var problemDetails = httpContext
             .RequestServices.GetRequiredService<IProblemDetailsCreator>()
-            .TooManyRequests(retryAfterSeconds, GeneralMessageDescriber.RateLimitExceeded());
+            .TooManyRequests(retryAfterSeconds, error: GeneralMessageDescriber.RateLimitExceeded());
 
         httpContext.Response.Headers.RetryAfter = retryAfterSeconds.ToString(CultureInfo.InvariantCulture);
         // A shared cache must never replay a rejection to a caller whose budget is open.

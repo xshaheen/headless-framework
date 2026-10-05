@@ -98,7 +98,7 @@ public sealed class ProblemDetailsCreatorTests : TestBase
         var error = new ErrorDescriptor("custom-code", "custom description");
 
         // when
-        var result = creator.EntityNotFound(error);
+        var result = creator.EntityNotFound(error: error);
 
         // then
         result.Extensions.Should().ContainKey("error").WhoseValue.Should().BeEquivalentTo(error);
@@ -455,6 +455,44 @@ public sealed class ProblemDetailsCreatorTests : TestBase
         result.Extensions.Should().ContainKey("buildNumber");
         result.Extensions.Should().ContainKey("commitNumber");
         result.Extensions.Should().ContainKey("timestamp");
+    }
+
+    [Theory]
+    [InlineData(nameof(IProblemDetailsCreator.EndpointNotFound), StatusCodes.Status404NotFound)]
+    [InlineData(nameof(IProblemDetailsCreator.EntityNotFound), StatusCodes.Status404NotFound)]
+    [InlineData(nameof(IProblemDetailsCreator.BadRequest), StatusCodes.Status400BadRequest)]
+    [InlineData(nameof(IProblemDetailsCreator.Forbidden), StatusCodes.Status403Forbidden)]
+    [InlineData(nameof(IProblemDetailsCreator.Unauthorized), StatusCodes.Status401Unauthorized)]
+    [InlineData(nameof(IProblemDetailsCreator.RequestTimeout), StatusCodes.Status408RequestTimeout)]
+    [InlineData(nameof(IProblemDetailsCreator.NotImplemented), StatusCodes.Status501NotImplemented)]
+    [InlineData(nameof(IProblemDetailsCreator.TooManyRequests), StatusCodes.Status429TooManyRequests)]
+    [InlineData(nameof(IProblemDetailsCreator.ServiceUnavailable), StatusCodes.Status503ServiceUnavailable)]
+    public void should_use_supplied_detail_and_error_in_single_error_factories(string factory, int expectedStatus)
+    {
+        // given
+        var creator = _CreateCreator();
+        const string detail = "Caller supplied detail.";
+        var error = new ErrorDescriptor("custom-code", "custom description");
+
+        // when
+        var result = factory switch
+        {
+            nameof(IProblemDetailsCreator.EndpointNotFound) => creator.EndpointNotFound(detail, error),
+            nameof(IProblemDetailsCreator.EntityNotFound) => creator.EntityNotFound(detail, error),
+            nameof(IProblemDetailsCreator.BadRequest) => creator.BadRequest(detail, error),
+            nameof(IProblemDetailsCreator.Forbidden) => creator.Forbidden(detail, error),
+            nameof(IProblemDetailsCreator.Unauthorized) => creator.Unauthorized(detail, error),
+            nameof(IProblemDetailsCreator.RequestTimeout) => creator.RequestTimeout(detail, error),
+            nameof(IProblemDetailsCreator.NotImplemented) => creator.NotImplemented(detail, error),
+            nameof(IProblemDetailsCreator.TooManyRequests) => creator.TooManyRequests(60, detail, error),
+            nameof(IProblemDetailsCreator.ServiceUnavailable) => creator.ServiceUnavailable(30, detail, error),
+            _ => throw new ArgumentOutOfRangeException(nameof(factory), factory, message: null),
+        };
+
+        // then
+        result.Status.Should().Be(expectedStatus);
+        result.Detail.Should().Be(detail);
+        result.Extensions.Should().ContainKey("error").WhoseValue.Should().BeEquivalentTo(error);
     }
 
     #endregion

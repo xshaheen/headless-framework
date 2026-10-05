@@ -125,7 +125,7 @@ internal sealed partial class HeadlessApiExceptionHandler(
                     break;
 
                 case UnauthorizedException unauthorized:
-                    problemDetails = problemDetailsCreator.Unauthorized(unauthorized.Error);
+                    problemDetails = problemDetailsCreator.Unauthorized(error: unauthorized.Error);
                     statusCode = StatusCodes.Status401Unauthorized;
                     break;
 
@@ -138,7 +138,7 @@ internal sealed partial class HeadlessApiExceptionHandler(
                     retryAfterSeconds = RetryAfterSeconds.From(tooManyRequests.RetryAfter);
                     problemDetails = problemDetailsCreator.TooManyRequests(
                         retryAfterSeconds.Value,
-                        tooManyRequests.Error
+                        error: tooManyRequests.Error
                     );
                     statusCode = StatusCodes.Status429TooManyRequests;
                     break;

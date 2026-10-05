@@ -183,7 +183,7 @@ public sealed class ApiResultMvcExtensionsTests : TestBase
         _ = new UnauthorizedError(descriptor).ToActionResult(controller, creator);
 
         // then
-        creator.Received(1).Unauthorized(descriptor);
+        creator.Received(1).Unauthorized(error: descriptor);
     }
 
     [Fact]
@@ -402,7 +402,7 @@ public sealed class ApiResultMvcExtensionsTests : TestBase
             .Returns(ci => new ProblemDetails { Status = StatusCodes.Status403Forbidden, Title = "Forbidden" });
 
         creator
-            .Unauthorized(Arg.Any<ErrorDescriptor?>())
+            .Unauthorized(Arg.Any<string?>(), Arg.Any<ErrorDescriptor?>())
             .Returns(new ProblemDetails { Status = StatusCodes.Status401Unauthorized, Title = "Unauthorized" });
 
         creator
