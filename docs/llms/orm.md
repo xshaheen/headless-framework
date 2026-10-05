@@ -517,7 +517,7 @@ configurationBuilder.Properties<MoneyAmount>().HaveConversion<MoneyAmountValueCo
 - Registers `TenantGuardOptions` and `ITenantWriteGuardBypass` (always; both guards are disabled by default)
 - Registers via `TryAddSingleton`: `TimeProvider.System`, keyed `IGuidGenerator` strategies (`Version7` and `SqlServer`) plus an unkeyed `Version7` default, `ICurrentTenantAccessor`, `ICurrentUser` (`NullCurrentUser`), `ICorrelationIdProvider`
 - Registers `ICurrentTenant` (`CurrentTenant`), replacing only the framework-fallback `NullCurrentTenant` while preserving consumer-provided tenant implementations
-- Replaces `ICompiledQueryCacheKeyGenerator` so tenant-scoped queries share compiled plans correctly
+- Registers nothing into EF Core's internal service provider: Headless services resolve from the application provider, and the tenant query filter reads the executing context's tenant as a query parameter, so one compiled plan serves every tenant
 - Registers `IAmbientDbTransactionAccessor` and `IAuditChangeCapture` (`EfAuditChangeCapture`), which reads the finalized EF model policy
 
 ---

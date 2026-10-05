@@ -362,8 +362,6 @@ public sealed class IdentityTenantModelTests : TestBase
             {
                 options.UseNpgsql("Host=localhost;Database=identity-model-only");
             }
-
-            options.AddHeadlessExtension();
         });
         return services.BuildServiceProvider();
     }

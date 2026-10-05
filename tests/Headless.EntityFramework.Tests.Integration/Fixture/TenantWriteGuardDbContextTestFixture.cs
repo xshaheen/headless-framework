@@ -63,9 +63,7 @@ public abstract class TenantWriteGuardDbContextTestFixtureBase : IAsyncLifetime
         services.AddOrReplaceSingleton<ICurrentTenant>(_ => CurrentTenant);
         services.AddRecordingHeadlessDispatcher();
 
-        services.AddDbContext<TestHeadlessDbContext>(options =>
-            options.UseNpgsql(SqlConnectionString).AddHeadlessExtension()
-        );
+        services.AddDbContext<TestHeadlessDbContext>(options => options.UseNpgsql(SqlConnectionString));
 
         ServiceProvider = services.BuildServiceProvider();
 

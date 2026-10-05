@@ -66,7 +66,6 @@ internal static class HeadlessDbContextRegistration
             (serviceProvider, optionsBuilder) =>
             {
                 optionsAction?.Invoke(serviceProvider, optionsBuilder);
-                optionsBuilder.AddHeadlessExtension();
             },
             contextLifetime,
             optionsLifetime
@@ -106,7 +105,6 @@ internal static class HeadlessDbContextRegistration
             (serviceProvider, optionsBuilder) =>
             {
                 optionsAction?.Invoke(serviceProvider, optionsBuilder);
-                optionsBuilder.AddHeadlessExtension();
             },
             poolSize
         );
