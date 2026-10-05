@@ -112,7 +112,7 @@ public sealed class EntityFrameworkFeaturesFactoryLifetimeTests : TestBase
     {
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
-            modelBuilder.AddHeadlessFeatures(this);
+            modelBuilder.ConfigureHeadlessFeatures(this);
         }
     }
 }

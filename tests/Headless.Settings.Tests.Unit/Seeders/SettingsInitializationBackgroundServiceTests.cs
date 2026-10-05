@@ -1,7 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Security;
 using Headless.Settings;
 using Headless.Testing.Tests;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -370,6 +372,46 @@ public sealed class SettingsInitializationBackgroundServiceTests : TestBase
         callCount.Should().Be(1);
     }
 
+    [Fact]
+    public async Task should_retry_on_the_system_clock_when_the_host_time_provider_is_fake()
+    {
+        // given - the host's app clock is a fake that nothing advances, as in a test host
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<TimeProvider>(new FakeTimeProvider());
+        services.AddStringEncryptionService(options =>
+        {
+            options.DefaultPassPhrase = "SeederTestPassPhrase";
+            options.DefaultSalt = [.. "SeederTestSalt16"u8];
+        });
+        services.AddHeadlessSettings(setup => setup.UseEntityFramework<SeederTestDbContext>());
+
+        var callCount = 0;
+        var store = Substitute.For<IDynamicSettingDefinitionStore>();
+        store
+            .SaveAsync(Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                if (Interlocked.Increment(ref callCount) == 1)
+                {
+                    throw new InvalidOperationException("Transient failure");
+                }
+
+                return Task.CompletedTask;
+            });
+        services.AddSingleton(store);
+
+        await using var provider = services.BuildServiceProvider();
+        var sut = provider.GetRequiredService<SettingsInitializationBackgroundService>();
+
+        // when
+        await sut.StartAsync(AbortToken);
+
+        // then - the retry back-off elapses in real time instead of waiting on the fake clock
+        await sut.WaitForInitializationAsync(AbortToken).WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
+        callCount.Should().Be(2);
+    }
+
     #endregion
 
     #region Cancellation
@@ -509,4 +551,6 @@ public sealed class SettingsInitializationBackgroundServiceTests : TestBase
     }
 
     #endregion
+
+    private sealed class SeederTestDbContext(DbContextOptions<SeederTestDbContext> options) : DbContext(options);
 }

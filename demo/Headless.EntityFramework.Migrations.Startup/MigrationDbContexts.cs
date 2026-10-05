@@ -10,7 +10,7 @@ internal sealed class SettingsMigrationDbContext(DbContextOptions<SettingsMigrat
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
-        modelBuilder.AddHeadlessSettings(this);
+        modelBuilder.ConfigureHeadlessSettings(this);
     }
 }
 
@@ -20,7 +20,7 @@ internal sealed class PermissionsMigrationDbContext(DbContextOptions<Permissions
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
-        modelBuilder.AddHeadlessPermissions(this);
+        modelBuilder.ConfigureHeadlessPermissions(this);
     }
 }
 
@@ -30,6 +30,6 @@ internal sealed class FeaturesMigrationDbContext(DbContextOptions<FeaturesMigrat
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
-        modelBuilder.AddHeadlessFeatures(this);
+        modelBuilder.ConfigureHeadlessFeatures(this);
     }
 }

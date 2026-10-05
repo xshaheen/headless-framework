@@ -157,7 +157,7 @@ When a save adds or updates definitions, the dynamic store publishes `DynamicPer
 
 `PermissionsInitializationBackgroundService` runs after the application starts. It:
 
-1. Persists static permission definitions to the database (guarded by a distributed lock; up to 10 jittered exponential-back-off retries capped at 30 seconds), when `SaveStaticPermissionsToDatabase = true`.
+1. Persists static permission definitions to the database (guarded by a distributed lock; up to 10 jittered exponential-back-off retries capped at 30 seconds), when `SaveStaticPermissionsToDatabase = true`. The back-off waits run on the system clock, not the registered `TimeProvider`, so a host that registers a `FakeTimeProvider` (a test host) still retries in real time.
 2. Pre-caches dynamic definitions from the database into the in-process cache, when `IsDynamicPermissionStoreEnabled = true`.
 
 Dependents can await `WaitForInitializationAsync()` on the `IInitializer` interface to block until both tasks complete. Cancellation, `ArgumentException`, and `NotSupportedException` fail immediately without retry; other terminal failures surface to every waiter. When both options are `false`, initialization is a no-op and `IsInitialized` is set to `true` immediately.
@@ -524,8 +524,8 @@ Entity Framework Core storage implementation for permission management.
 ### API and behavior
 
 - `setup.UseEntityFramework<TContext>()` — registers the EF storage provider via `HeadlessPermissionsSetupBuilder`
-- `modelBuilder.AddHeadlessPermissions(DbContext context)` — applies entity configurations by resolving `PermissionsStorageOptions` from the context's service provider (no constructor injection required) and the naming style from `context.Database.ProviderName`: snake_case on Npgsql, PascalCase on every other provider
-- `modelBuilder.AddHeadlessPermissions(PermissionsStorageOptions options, StorageNamingStyle style)` — overload for when you already hold the options; pass `HeadlessStorageNaming.ForProvider(Database.ProviderName)` (namespace `Headless.Hosting`) so the style matches the database
+- `modelBuilder.ConfigureHeadlessPermissions(DbContext context)` — applies entity configurations by resolving `PermissionsStorageOptions` from the context's service provider (no constructor injection required) and the naming style from `context.Database.ProviderName`: snake_case on Npgsql, PascalCase on every other provider
+- `modelBuilder.ConfigureHeadlessPermissions(PermissionsStorageOptions options, StorageNamingStyle style)` — overload for when you already hold the options; pass `HeadlessStorageNaming.ForProvider(Database.ProviderName)` (namespace `Headless.Hosting`) so the style matches the database
 - `EfPermissionGrantRepository<TContext>` — EF repository for `IPermissionGrantRepository`
 - `EfPermissionDefinitionRecordRepository<TContext>` — EF repository for `IPermissionDefinitionRecordRepository`
 - Startup gate that inspects the EF model before hosted services start and throws `InvalidOperationException` with an actionable message if any permissions entity is missing
@@ -533,7 +533,7 @@ Entity Framework Core storage implementation for permission management.
 
 ### Design constraints
 
-The package does not ship a dedicated permissions `DbContext` or a permissions-specific `DbContext` interface. Consumers register a singleton `IDbContextFactory<TContext>` (`AddDbContextFactory<TContext>()` or `AddPooledDbContextFactory<TContext>()` for a plain `DbContext`, or `AddHeadlessDbContext<TContext>()` or `AddHeadlessDbContextPool<TContext>()` for a `HeadlessDbContext`; both Headless registrations add the factory), map entities with `modelBuilder.AddHeadlessPermissions(this)` in `OnModelCreating`, and keep their public context API free of framework-specific `DbSet` properties. The factory must be a singleton (the default lifetime of all four registrations): the EF repositories are singletons that would capture a scoped or transient factory for the life of the host, so startup refuses one with `InvalidServiceLifetimeException`. Read paths use `IDbContextFactory<TContext>` and `AsNoTracking()`; writes commit through a fresh context owned by the repository.
+The package does not ship a dedicated permissions `DbContext` or a permissions-specific `DbContext` interface. Consumers register a singleton `IDbContextFactory<TContext>` (`AddDbContextFactory<TContext>()` or `AddPooledDbContextFactory<TContext>()` for a plain `DbContext`, or `AddHeadlessDbContext<TContext>()` or `AddHeadlessDbContextPool<TContext>()` for a `HeadlessDbContext`; both Headless registrations add the factory), map entities with `modelBuilder.ConfigureHeadlessPermissions(this)` in `OnModelCreating`, and keep their public context API free of framework-specific `DbSet` properties. The factory must be a singleton (the default lifetime of all four registrations): the EF repositories are singletons that would capture a scoped or transient factory for the life of the host, so startup refuses one with `InvalidServiceLifetimeException`. Read paths use `IDbContextFactory<TContext>` and `AsNoTracking()`; writes commit through a fresh context owned by the repository.
 
 ### Install
 
@@ -551,7 +551,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         base.OnModelCreating(modelBuilder);
         // Resolves PermissionsStorageOptions from the context's service provider —
         // no need to inject IOptions<PermissionsStorageOptions> into the constructor.
-        modelBuilder.AddHeadlessPermissions(this);
+        modelBuilder.ConfigureHeadlessPermissions(this);
     }
 }
 

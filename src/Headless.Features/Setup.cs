@@ -6,6 +6,7 @@ using Headless.Context;
 using Headless.Features.Resources;
 using Headless.Hosting;
 using Headless.Messaging;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
@@ -134,6 +135,11 @@ public static class SetupFeatures
 
         if (registerStartupInitializer)
         {
+            // Registered first so the initializer below reuses this instance: its retry back-off runs on the system clock,
+            // never on a faked app TimeProvider that a test host does not advance.
+            services.TryAddSingleton(static sp =>
+                ActivatorUtilities.CreateInstance<FeaturesInitializationBackgroundService>(sp, TimeProvider.System)
+            );
             services.AddInitializerHostedService<FeaturesInitializationBackgroundService>();
         }
 
@@ -192,6 +198,9 @@ public static class SetupFeatures
         services.TryAddTransient<IClientVisibleFeaturesReader, ClientVisibleFeaturesReader>();
 
         services.AddSingleton<IMethodInvocationFeatureCheckerService, MethodInvocationFeatureCheckerService>();
+
+        // Enforces [RequiresFeature] on every controller action. Inert in hosts that do not use MVC.
+        services.Configure<MvcOptions>(static options => options.Filters.Add(new RequiresFeatureResourceFilter()));
 
         return services;
     }

@@ -44,7 +44,7 @@ public sealed class SettingsEntityStartupValidatorTests(SettingsTestFixture fixt
         await action
             .Should()
             .ThrowAsync<InvalidOperationException>()
-            .WithMessage("*SettingValueRecord*modelBuilder.AddHeadlessSettings*");
+            .WithMessage("*SettingValueRecord*modelBuilder.ConfigureHeadlessSettings*");
     }
 
     private sealed class MissingSettingsEntityDbContext(DbContextOptions<MissingSettingsEntityDbContext> options)

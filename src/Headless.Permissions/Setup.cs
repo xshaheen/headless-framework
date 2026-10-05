@@ -137,6 +137,11 @@ public static class SetupPermissions
 
         if (setup.RegisterStartupInitializer)
         {
+            // Registered first so the initializer below reuses this instance: its retry back-off runs on the system clock,
+            // never on a faked app TimeProvider that a test host does not advance.
+            services.TryAddSingleton(static sp =>
+                ActivatorUtilities.CreateInstance<PermissionsInitializationBackgroundService>(sp, TimeProvider.System)
+            );
             services.AddInitializerHostedService<PermissionsInitializationBackgroundService>();
         }
 

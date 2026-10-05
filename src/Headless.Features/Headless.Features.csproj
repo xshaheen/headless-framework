@@ -12,6 +12,10 @@
     <InternalsVisibleTo Include="Headless.Features.Tests.Unit" />
   </ItemGroup>
   <ItemGroup>
+    <!-- Enforces [RequiresFeature] on MVC actions and Minimal API endpoints. -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+  <ItemGroup>
     <PackageReference Include="Polly.Core" />
   </ItemGroup>
   <ItemGroup>
