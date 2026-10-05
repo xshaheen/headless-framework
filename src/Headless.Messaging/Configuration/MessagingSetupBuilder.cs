@@ -6,6 +6,7 @@ using Headless.Reliability;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging;
 
@@ -157,7 +158,9 @@ public sealed class MessagingSetupBuilder : IMessagingBuilder
         configure?.Invoke(Options.RequestReply);
 
         Services.TryAddSingleton<RequestReplyMarkerService>();
-        Services.TryAddSingleton<PendingRequests>();
+        Services.TryAddSingleton(static sp => new PendingRequests(
+            sp.GetRequiredService<IOptions<MessagingOptions>>().Value.RequestReply.MaxPendingRequests
+        ));
         Services.TryAddSingleton<ReplyDispatcher>();
         Services.TryAddSingleton<ReplyListenerHost>();
         Services.TryAddSingleton<IRequestClient, RequestClient>();
