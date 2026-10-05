@@ -244,9 +244,11 @@ restore: ## Restore NuGet packages (locked mode when CI is set).
 	$(DOTNET) restore "$(SOLUTION)" -p:Configuration="$(CONFIGURATION)" $(RESTORE_ARGS) $(RESTORE_LOCK_ARGS)
 
 .PHONY: restore-project
+RESTORE_PROJECT = $(DOTNET) restore "$(PROJECT)" -p:Configuration="$(CONFIGURATION)" $(RESTORE_ARGS) $(RESTORE_LOCK_ARGS)
+
 restore-project: ## Restore one project; preferred for focused project work.
 	@test -n "$(PROJECT)" || (echo "PROJECT is required. Example: make restore-project PROJECT=src/Headless.Api/Headless.Api.csproj" && exit 2)
-	$(DOTNET) restore "$(PROJECT)" -p:Configuration="$(CONFIGURATION)" $(RESTORE_ARGS) $(RESTORE_LOCK_ARGS)
+	$(RESTORE_PROJECT)
 
 .PHONY: hooks
 # A repository core.hooksPath replaces the global one, so on a machine whose global hooks already
@@ -334,8 +336,11 @@ rebuild-no-restore: ## Build without restore or incremental compilation; use aft
 	$(DOTNET) build "$(SOLUTION)" --configuration "$(CONFIGURATION)" --no-restore --no-incremental -v:q -nologo /clp:ErrorsOnly $(MSBUILD_ARGS)
 
 .PHONY: build-project
-build-project: restore-project ## Build one project; preferred when working on a specified project.
+# Restores in its own recipe rather than through a restore-project prerequisite, so a missing PROJECT
+# is reported with this target's example instead of restore-project's.
+build-project: ## Build one project; preferred when working on a specified project.
 	@test -n "$(PROJECT)" || (echo "PROJECT is required. Example: make build-project PROJECT=src/Headless.Api/Headless.Api.csproj" && exit 2)
+	$(RESTORE_PROJECT)
 	$(DOTNET) build "$(PROJECT)" --configuration "$(CONFIGURATION)" --no-restore -v:q -nologo /clp:ErrorsOnly $(MSBUILD_ARGS)
 
 .PHONY: build-project-no-restore
@@ -587,6 +592,12 @@ check: ## CI gate over the affected scope: check-layering, format-check, verify-
 check-layering: ## Check package dependency direction under src/ (Abstractions and Core packages).
 	@$(GRAPH) layering
 
+# The contract's invariants entry point. A library has no database to hold the wiki's business-rule files
+# against, so the invariants here are the repository-level rules; layering is the one scripted today and
+# exits 3 on a violation, as the contract asks.
+.PHONY: invariants
+invariants: check-layering ## Run the repository-level invariants (check-layering); exit 3 on a violation.
+
 .PHONY: test-timeout
 test-timeout: ## Run all tests with an explicit MTP timeout. SDK defaults still provide TRX and dumps.
 	$(MAKE) test TEST_ARGS='$(TEST_ARGS) --timeout $(TEST_TIMEOUT)'
@@ -716,7 +727,7 @@ BENCH_RUN = bench_run() { \
 	printf '\033[36m[bench]\033[0m %s in %s\n' "$$ref" "$$tree"; \
 	(cd "$$tree" && $(DOTNET) run --configuration Release --project "benchmarks/Headless.$(BENCH_AREA).Benchmarks" -- $(BENCH_ARGS) --artifacts "$$out") && rc=0 || rc=$$?; \
 	git worktree remove --force "$$tree" >/dev/null 2>&1 || rm -rf "$$tree"; return $$rc; }; \
-	working_tree_ref() { git stash create 2>/dev/null || git rev-parse HEAD; }
+	working_tree_ref() { local ref; ref="$$(git stash create 2>/dev/null || true)"; if [ -n "$$ref" ]; then echo "$$ref"; else git rev-parse HEAD; fi; }
 
 .PHONY: bench
 bench: ## Run BENCH_AREA benchmarks for the working tree (BENCH_FILTER, BENCH_JOB=short); JSON under artifacts/benchmark-runs/.
