@@ -5,7 +5,12 @@ namespace Tests;
 /// <summary>Runs the typed-chain runtime conformance suite against SQL Server.</summary>
 [Collection<SqlServerJobsCoordinationFixture>]
 public sealed class SqlServerChainConformanceTests(SqlServerJobsCoordinationFixture fixture)
-    : JobsChainConformanceTests<SqlServerJobsCoordinationFixture>(fixture)
+    : SqlServerChainConformanceTestsBase<SqlServerJobsCoordinationFixture>(fixture);
+
+/// <summary>The SqlServer overrides of the shared suite, run on both the default and the retrying-strategy fixture.</summary>
+public abstract class SqlServerChainConformanceTestsBase<TFixture>(TFixture fixture)
+    : JobsChainConformanceTests<TFixture>(fixture)
+    where TFixture : SqlServerJobsCoordinationFixture
 {
     [Fact]
     public override Task enqueue_persists_conditional_tree_edges()

@@ -5,7 +5,12 @@ namespace Tests;
 /// <summary>Runs the cross-provider Jobs+Coordination conformance suite against SQL Server.</summary>
 [Collection<SqlServerJobsCoordinationFixture>]
 public sealed class SqlServerConformanceTests(SqlServerJobsCoordinationFixture fixture)
-    : JobsCoordinationConformanceTests<SqlServerJobsCoordinationFixture>(fixture)
+    : SqlServerConformanceTestsBase<SqlServerJobsCoordinationFixture>(fixture);
+
+/// <summary>The SqlServer overrides of the shared suite, run on both the default and the retrying-strategy fixture.</summary>
+public abstract class SqlServerConformanceTestsBase<TFixture>(TFixture fixture)
+    : JobsCoordinationConformanceTests<TFixture>(fixture)
+    where TFixture : SqlServerJobsCoordinationFixture
 {
     [Fact]
     public override Task time_job_cancellation_is_atomic_durable_and_preserves_rejected_audit_state()
@@ -221,7 +226,12 @@ public sealed class SqlServerConformanceTests(SqlServerJobsCoordinationFixture f
 /// <summary>Runs native Jobs claim conformance through SQL Server production registration.</summary>
 [Collection<SqlServerJobsCoordinationFixture>]
 public sealed class SqlServerClaimConformanceTests(SqlServerJobsCoordinationFixture fixture)
-    : JobsClaimConformanceTests<SqlServerJobsCoordinationFixture>(fixture)
+    : SqlServerClaimConformanceTestsBase<SqlServerJobsCoordinationFixture>(fixture);
+
+/// <summary>The SqlServer overrides of the shared suite, run on both the default and the retrying-strategy fixture.</summary>
+public abstract class SqlServerClaimConformanceTestsBase<TFixture>(TFixture fixture)
+    : JobsClaimConformanceTests<TFixture>(fixture)
+    where TFixture : SqlServerJobsCoordinationFixture
 {
     [Fact]
     public override Task direct_claim_of_a_full_candidate_page_claims_every_job_once() =>

@@ -4,7 +4,12 @@ namespace Tests;
 
 [Collection<PostgreSqlJobsCoordinationFixture>]
 public sealed class PostgreSqlGenericCronClaimTests(PostgreSqlJobsCoordinationFixture fixture)
-    : JobsGenericCronClaimConformanceTests<PostgreSqlJobsCoordinationFixture>(fixture)
+    : PostgreSqlGenericCronClaimTestsBase<PostgreSqlJobsCoordinationFixture>(fixture);
+
+/// <summary>The PostgreSql overrides of the shared suite, run on both the default and the retrying-strategy fixture.</summary>
+public abstract class PostgreSqlGenericCronClaimTestsBase<TFixture>(TFixture fixture)
+    : JobsGenericCronClaimConformanceTests<TFixture>(fixture)
+    where TFixture : PostgreSqlJobsCoordinationFixture
 {
     [Theory]
     [InlineData(false)]

@@ -22,7 +22,7 @@ namespace Tests;
 /// </summary>
 [UsedImplicitly]
 [CollectionDefinition(DisableParallelization = true)]
-public sealed class PostgreSqlJobsCoordinationFixture
+public class PostgreSqlJobsCoordinationFixture
     : HeadlessPostgreSqlFixture,
         ICollectionFixture<PostgreSqlJobsCoordinationFixture>,
         IJobsApplicationConfigurationFixture
@@ -74,9 +74,14 @@ public sealed class PostgreSqlJobsCoordinationFixture
         setup.UsePostgreSql(ConnectionString);
     }
 
-    public void ConfigureStore(DbContextOptionsBuilder db)
+    public virtual void ConfigureStore(DbContextOptionsBuilder db)
     {
         db.UseNpgsql(ConnectionString);
+    }
+
+    public void ConfigureRetryingStore(DbContextOptionsBuilder db)
+    {
+        db.UseNpgsql(ConnectionString, provider => provider.EnableRetryOnFailure(1, TimeSpan.Zero, null));
     }
 
     public void ConfigureClaims(JobsEfCoreOptionBuilder<TimeJobEntity, CronJobEntity> builder)

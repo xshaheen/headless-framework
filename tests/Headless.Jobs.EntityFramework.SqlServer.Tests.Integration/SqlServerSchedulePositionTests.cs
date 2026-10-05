@@ -5,7 +5,12 @@ namespace Tests;
 /// <summary>Runs the cron schedule-position advance conformance suite against SQL Server.</summary>
 [Collection<SqlServerJobsCoordinationFixture>]
 public sealed class SqlServerSchedulePositionTests(SqlServerJobsCoordinationFixture fixture)
-    : JobsSchedulePositionConformanceTests<SqlServerJobsCoordinationFixture>(fixture)
+    : SqlServerSchedulePositionTestsBase<SqlServerJobsCoordinationFixture>(fixture);
+
+/// <summary>The SqlServer overrides of the shared suite, run on both the default and the retrying-strategy fixture.</summary>
+public abstract class SqlServerSchedulePositionTestsBase<TFixture>(TFixture fixture)
+    : JobsSchedulePositionConformanceTests<TFixture>(fixture)
+    where TFixture : SqlServerJobsCoordinationFixture
 {
     [Fact]
     public override Task advance_from_the_observed_watermark_persists_the_new_position()

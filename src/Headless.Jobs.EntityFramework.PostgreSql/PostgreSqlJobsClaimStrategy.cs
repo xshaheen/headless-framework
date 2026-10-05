@@ -854,7 +854,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
         CancellationToken cancellationToken
     )
     {
-        return JobsClaimRetry.RunAsync(operation, action, timeProvider, logger, cancellationToken);
+        return JobsClaimRetry.RunAsync(operation, dbContextFactory, action, timeProvider, logger, cancellationToken);
     }
 
     private readonly record struct ClaimResult(Guid[] Ids, DateTimeOffset ClaimedAt);

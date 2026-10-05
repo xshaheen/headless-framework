@@ -445,139 +445,154 @@ internal sealed class EfCoreCasJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>
         var now = timeProvider.GetUtcNow();
         var executionTime = cronJobOccurrences.Key;
 
+        // The definition fences, the occurrence inserts, and the reuse pairing commit together, inside the context's
+        // execution strategy so a retrying strategy replays the whole wave; the lease stamp below stays autocommit.
+        var (claimResults, claimableOccurrenceIds) = await JobsStoreTransaction
+            .ExecuteAsync<TDbContext, (CronJobOccurrenceEntity<TCronJob>?[] Results, List<Guid> ClaimableIds)>(
+                dbContextFactory,
+                async (attempt, _) =>
+                {
+                    var dbContext = attempt.DbContext;
+                    var context = dbContext.Set<CronJobOccurrenceEntity<TCronJob>>();
+                    var claimResults = new CronJobOccurrenceEntity<TCronJob>?[cronJobOccurrences.Items.Length];
+                    var claimableOccurrenceIds = new List<Guid>();
+
+                    // R3b: ONE occupancy probe per claim wave instead of one round trip per candidate. Every item in
+                    // the wave shares the same execution instant (it is the batch key), so the accounting question is a
+                    // single indexed read over (ExecutionTime, CronJobId). Reading it before the loop widens the window
+                    // between probe and insert, which is harmless: only live rows can appear in that window, and the
+                    // filtered unique index rejects the insert that would collide with one.
+                    var insertCandidateIds = cronJobOccurrences
+                        .Items.Where(x => x.NextCronOccurrence is null)
+                        .Select(x => x.Id)
+                        .Distinct()
+                        .ToArray();
+                    var accountedDefinitionIds =
+                        insertCandidateIds.Length == 0
+                            ? []
+                            : (
+                                await context
+                                    .AsNoTracking()
+                                    .Where(x =>
+                                        insertCandidateIds.Contains(x.CronJobId) && x.ExecutionTime == executionTime
+                                    )
+                                    .Select(CronOccurrenceAccounting.InstantViewSelector<TCronJob>())
+                                    .ToArrayAsync(cancellationToken)
+                                    .ConfigureAwait(false)
+                            )
+                                .Where(x => x.AccountsForInstant)
+                                .Select(x => x.CronJobId)
+                                .ToHashSet();
+
+                    for (var index = 0; index < cronJobOccurrences.Items.Length; index++)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        var item = cronJobOccurrences.Items[index];
+
+                        var definitionAccepted = await dbContext
+                            .Set<TCronJob>()
+                            .Where(x => x.Id == item.Id && !x.IsPaused && x.ScheduleRevision == item.ScheduleRevision)
+                            .WhereDefinitionRunnable(_runFilter)
+                            .ExecuteUpdateAsync(
+                                setter => setter.SetProperty(x => x.ScheduleRevision, x => x.ScheduleRevision),
+                                cancellationToken
+                            )
+                            .ConfigureAwait(false);
+                        if (definitionAccepted == 0)
+                        {
+                            continue;
+                        }
+
+                        if (item.NextCronOccurrence is null)
+                        {
+                            // A row that ACCOUNTS for this instant — including a terminal one the reuse pairing cannot
+                            // see (its read is filtered to claimable rows) — means the advance stands. The filtered
+                            // unique index blocks duplicates only among live rows, so without this check a completed
+                            // resume-created occurrence would be re-materialized and the tick would run twice. The one
+                            // row that does NOT account is the seeding migration's ReplacementOwed retirement, whose
+                            // fire is still owed; it must fall through and insert. A live row left unclaimed here is
+                            // picked up by the fallback sweep; nothing is disturbed either way.
+                            if (accountedDefinitionIds.Contains(item.Id))
+                            {
+                                continue;
+                            }
+
+                            var itemToAdd = new CronJobOccurrenceEntity<TCronJob>
+                            {
+                                Id = guidGenerator.Create(),
+                                Status = JobStatus.Idle,
+                                OwnerId = null,
+                                ExecutionTime = executionTime,
+                                CronJobId = item.Id,
+                                LockedUntil = null,
+                                OnNodeDeath = item.OnNodeDeath,
+                                CreatedAt = now,
+                                UpdatedAt = now,
+                            };
+
+                            var definition = await dbContext
+                                .Set<TCronJob>()
+                                .AsNoTracking()
+                                .SingleAsync(x => x.Id == item.Id, cancellationToken)
+                                .ConfigureAwait(false);
+                            itemToAdd.SnapshotContract(definition);
+                            await context.AddAsync(itemToAdd, cancellationToken).ConfigureAwait(false);
+                            try
+                            {
+                                await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                            }
+                            catch (DbUpdateException)
+                            {
+                                dbContext.Entry(itemToAdd).State = EntityState.Detached;
+                                continue;
+                            }
+
+                            dbContext.Entry(itemToAdd).State = EntityState.Detached;
+                            itemToAdd.Status = JobStatus.Queued;
+                            itemToAdd.OwnerId = owner;
+                            itemToAdd.CronJob = MappingExtensions.ProjectCronJob<TCronJob>(item, owner);
+                            claimResults[index] = itemToAdd;
+                            claimableOccurrenceIds.Add(itemToAdd.Id);
+                            continue;
+                        }
+
+                        var affectedUpdate = await context
+                            .Where(x => x.Id == item.NextCronOccurrence.Id)
+                            .Where(x => x.ExecutionTime == executionTime)
+                            .WhereCanAcquireUsingDatabaseClock(owner)
+                            .ExecuteUpdateAsync(
+                                prop =>
+                                    prop.SetProperty(y => y.Status, y => y.Status)
+                                        .SetProperty(y => y.OnNodeDeath, item.OnNodeDeath),
+                                cancellationToken
+                            )
+                            .ConfigureAwait(false);
+
+                        if (affectedUpdate <= 0)
+                        {
+                            continue;
+                        }
+
+                        claimResults[index] = await context
+                            .AsNoTracking()
+                            .Include(x => x.CronJob)
+                            .SingleAsync(x => x.Id == item.NextCronOccurrence.Id, cancellationToken)
+                            .ConfigureAwait(false);
+                        claimableOccurrenceIds.Add(item.NextCronOccurrence.Id);
+                    }
+
+                    await attempt.CommitAsync(cancellationToken).ConfigureAwait(false);
+
+                    return (claimResults, claimableOccurrenceIds);
+                },
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
         await using var dbContext = await dbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
-        await using var transaction = await dbContext
-            .Database.BeginTransactionAsync(cancellationToken)
-            .ConfigureAwait(false);
         var context = dbContext.Set<CronJobOccurrenceEntity<TCronJob>>();
-        var claimResults = new CronJobOccurrenceEntity<TCronJob>?[cronJobOccurrences.Items.Length];
-        var claimableOccurrenceIds = new List<Guid>();
-
-        // R3b: ONE occupancy probe per claim wave instead of one round trip per candidate. Every item in the wave
-        // shares the same execution instant (it is the batch key), so the accounting question is a single indexed
-        // read over (ExecutionTime, CronJobId). Reading it before the loop widens the window between probe and
-        // insert, which is harmless: only live rows can appear in that window, and the filtered unique index rejects
-        // the insert that would collide with one.
-        var insertCandidateIds = cronJobOccurrences
-            .Items.Where(x => x.NextCronOccurrence is null)
-            .Select(x => x.Id)
-            .Distinct()
-            .ToArray();
-        var accountedDefinitionIds =
-            insertCandidateIds.Length == 0
-                ? []
-                : (
-                    await context
-                        .AsNoTracking()
-                        .Where(x => insertCandidateIds.Contains(x.CronJobId) && x.ExecutionTime == executionTime)
-                        .Select(CronOccurrenceAccounting.InstantViewSelector<TCronJob>())
-                        .ToArrayAsync(cancellationToken)
-                        .ConfigureAwait(false)
-                )
-                    .Where(x => x.AccountsForInstant)
-                    .Select(x => x.CronJobId)
-                    .ToHashSet();
-
-        for (var index = 0; index < cronJobOccurrences.Items.Length; index++)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var item = cronJobOccurrences.Items[index];
-
-            var definitionAccepted = await dbContext
-                .Set<TCronJob>()
-                .Where(x => x.Id == item.Id && !x.IsPaused && x.ScheduleRevision == item.ScheduleRevision)
-                .WhereDefinitionRunnable(_runFilter)
-                .ExecuteUpdateAsync(
-                    setter => setter.SetProperty(x => x.ScheduleRevision, x => x.ScheduleRevision),
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
-            if (definitionAccepted == 0)
-            {
-                continue;
-            }
-
-            if (item.NextCronOccurrence is null)
-            {
-                // A row that ACCOUNTS for this instant — including a terminal one the reuse pairing
-                // cannot see (its read is filtered to claimable rows) — means the advance stands. The filtered
-                // unique index blocks duplicates only among live rows, so without this check a completed
-                // resume-created occurrence would be re-materialized and the tick would run twice. The one row that
-                // does NOT account is the seeding migration's ReplacementOwed retirement, whose fire is still owed;
-                // it must fall through and insert. A live row left unclaimed here is picked up by the fallback
-                // sweep; nothing is disturbed either way.
-                if (accountedDefinitionIds.Contains(item.Id))
-                {
-                    continue;
-                }
-
-                var itemToAdd = new CronJobOccurrenceEntity<TCronJob>
-                {
-                    Id = guidGenerator.Create(),
-                    Status = JobStatus.Idle,
-                    OwnerId = null,
-                    ExecutionTime = executionTime,
-                    CronJobId = item.Id,
-                    LockedUntil = null,
-                    OnNodeDeath = item.OnNodeDeath,
-                    CreatedAt = now,
-                    UpdatedAt = now,
-                };
-
-                var definition = await dbContext
-                    .Set<TCronJob>()
-                    .AsNoTracking()
-                    .SingleAsync(x => x.Id == item.Id, cancellationToken)
-                    .ConfigureAwait(false);
-                itemToAdd.SnapshotContract(definition);
-                await context.AddAsync(itemToAdd, cancellationToken).ConfigureAwait(false);
-                try
-                {
-                    await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-                }
-                catch (DbUpdateException)
-                {
-                    dbContext.Entry(itemToAdd).State = EntityState.Detached;
-                    continue;
-                }
-
-                dbContext.Entry(itemToAdd).State = EntityState.Detached;
-                itemToAdd.Status = JobStatus.Queued;
-                itemToAdd.OwnerId = owner;
-                itemToAdd.CronJob = MappingExtensions.ProjectCronJob<TCronJob>(item, owner);
-                claimResults[index] = itemToAdd;
-                claimableOccurrenceIds.Add(itemToAdd.Id);
-                continue;
-            }
-
-            var affectedUpdate = await context
-                .Where(x => x.Id == item.NextCronOccurrence.Id)
-                .Where(x => x.ExecutionTime == executionTime)
-                .WhereCanAcquireUsingDatabaseClock(owner)
-                .ExecuteUpdateAsync(
-                    prop =>
-                        prop.SetProperty(y => y.Status, y => y.Status)
-                            .SetProperty(y => y.OnNodeDeath, item.OnNodeDeath),
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
-
-            if (affectedUpdate <= 0)
-            {
-                continue;
-            }
-
-            claimResults[index] = await context
-                .AsNoTracking()
-                .Include(x => x.CronJob)
-                .SingleAsync(x => x.Id == item.NextCronOccurrence.Id, cancellationToken)
-                .ConfigureAwait(false);
-            claimableOccurrenceIds.Add(item.NextCronOccurrence.Id);
-        }
-
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
 
         if (claimableOccurrenceIds.Count > 0)
         {

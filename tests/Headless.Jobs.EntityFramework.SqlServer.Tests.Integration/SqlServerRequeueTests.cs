@@ -5,7 +5,12 @@ namespace Tests;
 /// <summary>Runs the failed-job requeue conformance suite against SQL Server.</summary>
 [Collection<SqlServerJobsCoordinationFixture>]
 public sealed class SqlServerRequeueTests(SqlServerJobsCoordinationFixture fixture)
-    : JobsRequeueConformanceTests<SqlServerJobsCoordinationFixture>(fixture)
+    : SqlServerRequeueTestsBase<SqlServerJobsCoordinationFixture>(fixture);
+
+/// <summary>The SqlServer overrides of the shared suite, run on both the default and the retrying-strategy fixture.</summary>
+public abstract class SqlServerRequeueTestsBase<TFixture>(TFixture fixture)
+    : JobsRequeueConformanceTests<TFixture>(fixture)
+    where TFixture : SqlServerJobsCoordinationFixture
 {
     [Fact]
     public override Task failed_time_job_returns_to_idle_due_now_and_is_claimed_by_the_main_peek()

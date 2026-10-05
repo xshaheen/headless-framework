@@ -5,7 +5,12 @@ namespace Tests;
 /// <summary>Runs the failed-job requeue conformance suite against PostgreSQL.</summary>
 [Collection<PostgreSqlJobsCoordinationFixture>]
 public sealed class PostgreSqlRequeueTests(PostgreSqlJobsCoordinationFixture fixture)
-    : JobsRequeueConformanceTests<PostgreSqlJobsCoordinationFixture>(fixture)
+    : PostgreSqlRequeueTestsBase<PostgreSqlJobsCoordinationFixture>(fixture);
+
+/// <summary>The PostgreSql overrides of the shared suite, run on both the default and the retrying-strategy fixture.</summary>
+public abstract class PostgreSqlRequeueTestsBase<TFixture>(TFixture fixture)
+    : JobsRequeueConformanceTests<TFixture>(fixture)
+    where TFixture : PostgreSqlJobsCoordinationFixture
 {
     [Fact]
     public override Task failed_time_job_returns_to_idle_due_now_and_is_claimed_by_the_main_peek()

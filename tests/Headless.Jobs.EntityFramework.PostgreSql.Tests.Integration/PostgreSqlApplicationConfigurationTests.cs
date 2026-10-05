@@ -23,4 +23,26 @@ public sealed class PostgreSqlApplicationConfigurationTests(PostgreSqlJobsCoordi
     {
         return base.headless_application_context_shares_transaction(pooled, commit);
     }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public override Task retrying_application_context_shares_transaction(bool commit)
+    {
+        return base.retrying_application_context_shares_transaction(commit);
+    }
+
+    [Fact]
+    public override Task retrying_application_context_seeds_and_runs_jobs()
+    {
+        return base.retrying_application_context_seeds_and_runs_jobs();
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public override Task retrying_application_context_enlists_in_connection_unit(bool commit)
+    {
+        return base.retrying_application_context_enlists_in_connection_unit(commit);
+    }
 }

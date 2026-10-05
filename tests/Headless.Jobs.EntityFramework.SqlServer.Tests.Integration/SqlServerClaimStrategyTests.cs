@@ -426,7 +426,12 @@ public sealed class SqlServerClaimStrategyTests(SqlServerJobsCoordinationFixture
 /// <summary>Runs the claim retry conformance suite on SQL Server, with a genuine deadlock-victim exception.</summary>
 [Collection<SqlServerJobsCoordinationFixture>]
 public sealed class SqlServerClaimRetryConformanceTests(SqlServerJobsCoordinationFixture fixture)
-    : JobsClaimRetryConformanceTests<SqlServerJobsCoordinationFixture>(fixture)
+    : SqlServerClaimRetryConformanceTestsBase<SqlServerJobsCoordinationFixture>(fixture);
+
+/// <summary>The SqlServer overrides of the shared suite, run on both the default and the retrying-strategy fixture.</summary>
+public abstract class SqlServerClaimRetryConformanceTestsBase<TFixture>(TFixture fixture)
+    : JobsClaimRetryConformanceTests<TFixture>(fixture)
+    where TFixture : SqlServerJobsCoordinationFixture
 {
     private const int _DeadlockVictimErrorNumber = 1205;
 
