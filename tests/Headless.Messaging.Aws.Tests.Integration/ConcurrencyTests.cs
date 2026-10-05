@@ -47,7 +47,7 @@ public sealed class ConcurrencyTests(LocalStackTestFixture fixture) : TestBase
 
         // then
         results.Should().HaveCount(parallelCount);
-        results.Should().AllSatisfy(r => r.Succeeded.Should().BeTrue());
+        results.Should().AllSatisfy(r => r.Succeeded.Should().BeTrue("the send failed with {0}", r.Exception));
     }
 
     [Fact]
@@ -81,7 +81,7 @@ public sealed class ConcurrencyTests(LocalStackTestFixture fixture) : TestBase
 
         // then
         results.Should().HaveCount(parallelCount);
-        results.Should().AllSatisfy(r => r.Succeeded.Should().BeTrue());
+        results.Should().AllSatisfy(r => r.Succeeded.Should().BeTrue("the send failed with {0}", r.Exception));
     }
 
     [Fact]
@@ -120,7 +120,7 @@ public sealed class ConcurrencyTests(LocalStackTestFixture fixture) : TestBase
 
         // then
         results.Should().HaveCount(parallelCount);
-        results.Should().AllSatisfy(r => r.Succeeded.Should().BeTrue());
+        results.Should().AllSatisfy(r => r.Succeeded.Should().BeTrue("the send failed with {0}", r.Exception));
     }
 
     [Fact]
@@ -153,7 +153,7 @@ public sealed class ConcurrencyTests(LocalStackTestFixture fixture) : TestBase
 
         // then - All should succeed since topics are auto-created
         results.Should().HaveCount(parallelCount);
-        results.Should().AllSatisfy(r => r.Succeeded.Should().BeTrue());
+        results.Should().AllSatisfy(r => r.Succeeded.Should().BeTrue("the send failed with {0}", r.Exception));
     }
 
     private async Task<IBusTransport> _CreateTransportAsync()
