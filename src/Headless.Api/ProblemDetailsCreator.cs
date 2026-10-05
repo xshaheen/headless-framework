@@ -15,7 +15,8 @@ internal sealed class ProblemDetailsCreator(
     TimeProvider timeProvider,
     IBuildInformationAccessor buildInformationAccessor,
     IHttpContextAccessor httpContextAccessor,
-    IOptions<ApiBehaviorOptions> apiOptionsAccessor
+    IOptions<ApiBehaviorOptions> apiOptionsAccessor,
+    IErrorDescriptionLocalizer errorDescriptionLocalizer
 ) : IProblemDetailsCreator
 {
     public ProblemDetails EndpointNotFound(string? detail = null, ErrorDescriptor? error = null)
@@ -254,6 +255,8 @@ internal sealed class ProblemDetailsCreator(
                 break;
         }
 
+        _LocalizeErrors(problemDetails);
+
         if (!problemDetails.Extensions.ContainsKey("traceId"))
         {
             problemDetails.Extensions["traceId"] =
@@ -296,6 +299,102 @@ internal sealed class ProblemDetailsCreator(
         );
     }
 #pragma warning restore CA1863
+
+    // Runs in Normalize, not in each factory, so descriptors a caller stamps on its own ProblemDetails
+    // before normalizing (middleware, filters) are localized the same way as the factories' output.
+    private void _LocalizeErrors(ProblemDetails problemDetails)
+    {
+        var extensions = problemDetails.Extensions;
+
+        if (extensions.TryGetValue("error", out var single) && single is ErrorDescriptor error)
+        {
+            extensions["error"] = _Localize(error);
+        }
+
+        if (!extensions.TryGetValue("errors", out var many))
+        {
+            return;
+        }
+
+        switch (many)
+        {
+            case IReadOnlyDictionary<string, IReadOnlyList<ErrorDescriptor>> fieldErrors:
+                extensions["errors"] = _LocalizeFieldErrors(fieldErrors) ?? fieldErrors;
+                break;
+            case IReadOnlyCollection<ErrorDescriptor> errors:
+                extensions["errors"] = _LocalizeAll(errors) ?? errors;
+                break;
+        }
+    }
+
+    // The two helpers below return null when no description changes, so the default no-op localizer
+    // leaves the caller's collections in place and allocates nothing.
+    private Dictionary<string, IReadOnlyList<ErrorDescriptor>>? _LocalizeFieldErrors(
+        IReadOnlyDictionary<string, IReadOnlyList<ErrorDescriptor>> fieldErrors
+    )
+    {
+        Dictionary<string, IReadOnlyList<ErrorDescriptor>>? localized = null;
+        var index = 0;
+
+        foreach (var (field, errors) in fieldErrors)
+        {
+            var localizedErrors = _LocalizeAll(errors);
+
+            if (localizedErrors is not null && localized is null)
+            {
+                localized = new(fieldErrors.Count, StringComparer.Ordinal);
+
+                foreach (var (previousField, previousErrors) in fieldErrors.Take(index))
+                {
+                    localized[previousField] = previousErrors;
+                }
+            }
+
+            localized?[field] = localizedErrors ?? errors;
+
+            index++;
+        }
+
+        return localized;
+    }
+
+    private List<ErrorDescriptor>? _LocalizeAll(IReadOnlyCollection<ErrorDescriptor> errors)
+    {
+        List<ErrorDescriptor>? localized = null;
+        var index = 0;
+
+        foreach (var error in errors)
+        {
+            var result = _Localize(error);
+
+            if (localized is null && !ReferenceEquals(result, error))
+            {
+                localized = new List<ErrorDescriptor>(errors.Count);
+                localized.AddRange(errors.Take(index));
+            }
+
+            localized?.Add(result);
+            index++;
+        }
+
+        return localized;
+    }
+
+    // Builds a copy instead of mutating: descriptors are shared reference types, and the caller may
+    // reuse the same instance for another response under another culture.
+    private ErrorDescriptor _Localize(ErrorDescriptor error)
+    {
+        var description = errorDescriptionLocalizer.Localize(error);
+
+        if (description is null || string.Equals(description, error.Description, StringComparison.Ordinal))
+        {
+            return error;
+        }
+
+        return error.Params is { } parameters
+            ? new ErrorDescriptor(error.Code, description, parameters, error.Severity)
+            : new ErrorDescriptor(error.Code, description, error.Severity);
+    }
 
     private static void _SetError(ProblemDetails problemDetails, ErrorDescriptor? error)
     {

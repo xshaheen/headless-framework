@@ -84,8 +84,24 @@ Additional packages:
 - **Default details are localized per call.** Every `IProblemDetailsCreator` factory, and `Normalize` when it fills a missing `Detail` for 404/408/413/500/501, resolves the default text from `Headless.Api` resources under `CultureInfo.CurrentUICulture` at the moment it runs. English and Arabic ship with the framework. An application without request localization (no `UseRequestLocalization()`, or any culture without a translation) gets English.
 - **A caller-supplied `detail` passes through untouched.** `creator.Forbidden(detail: "...")` writes exactly that string under every culture, and `Normalize` never replaces a `Detail` that is already set. Only the framework default is localized, so a decorator that rewrites `Detail` unconditionally overwrites the caller's text.
 - **Framework error descriptions are localized the same way.** `GeneralMessageDescriber`, `IdentityMessageDescriber`, `TenancyMessageDescriber`, and the other `*MessageDescriber` factories build a new descriptor per call from resources. Call them per response: a descriptor cached in a `static` keeps the culture of its first caller.
+- **Applications localize their own codes through `IErrorDescriptionLocalizer`.** `Normalize`, which every factory and therefore the Minimal API `ToHttpResult` and MVC `ToActionResult` bridges run, passes each `ErrorDescriptor` in the `error` and `errors` extensions to the localizer. Returning a string replaces the description on a copy of the descriptor (code, severity, and params are kept, and the caller's instance is never mutated); returning `null` keeps the original. `AddHeadlessProblemDetails()` registers a no-op default with `TryAddSingleton`, so register yours before or after it. The localizer is a singleton called concurrently: read the culture per call.
 
-When the framework logs a problem-details failure it records event IDs and exception types, never the localized `detail` or `description`, so log queries stay stable across cultures. Log your own failures by `code` for the same reason.
+```csharp
+public sealed class AppErrorLocalizer(IStringLocalizer<AppErrors> strings) : IErrorDescriptionLocalizer
+{
+    public string? Localize(ErrorDescriptor error)
+    {
+        // Key on the stable code; a missing resource keeps the original description.
+        var localized = strings[error.Code];
+        return localized.ResourceNotFound ? null : localized.Value;
+    }
+}
+
+builder.Services.AddLocalization();
+builder.Services.AddSingleton<IErrorDescriptionLocalizer, AppErrorLocalizer>();
+```
+
+`IStringLocalizer<T>` resolves against `CultureInfo.CurrentUICulture` on each lookup, so the singleton follows each request's culture. When the framework logs a problem-details failure it records event IDs and exception types, never the localized `detail` or `description`, so log queries stay stable across cultures. Log your own failures by `code` for the same reason.
 
 The exception table (see `# Headless.Api` below) covers MVC actions and Minimal-API endpoints. Middleware running before `UseExceptionHandler`, hosted/background services, and SignalR hubs need their own catch sites.
 
@@ -124,6 +140,7 @@ Defines core interfaces and contracts for HTTP request context, user identity, w
 - `IRequestedApiVersion` — API versioning abstraction
 - `ITimezoneProvider` / `TimezoneOption` — time-zone enumeration and conversion (implemented in `Headless.Api`)
 - `IEnumLocaleAccessor` — localized enum display names (implemented in `Headless.Api` as `DefaultEnumLocaleAccessor`)
+- `IErrorDescriptionLocalizer` — `string? Localize(ErrorDescriptor error)`; the hook `IProblemDetailsCreator.Normalize` calls for every descriptor in the `error` and `errors` extensions, so an application can localize its own error codes. Return `null` to keep the description. `Headless.Api` registers a no-op default. See [What clients branch on, and what is localized](#what-clients-branch-on-and-what-is-localized)
 - `IProblemDetailsCreator` — contract for building normalized RFC 7807 `ProblemDetails` responses (implemented in `Headless.Api`). Every single-error factory has one parameter order: its type-specific arguments first, then an optional `string? detail` that replaces the default `Detail` text, then an optional `ErrorDescriptor? error` stamped into `Extensions["error"]`. That covers `EndpointNotFound(detail, error)`, `EntityNotFound(detail, error)`, `BadRequest(detail, error)`, `Forbidden(detail, error)`, `Unauthorized(detail, error)`, `RequestTimeout(detail, error)`, `NotImplemented(detail, error)`, `TooManyRequests(retryAfterSeconds, detail, error)`, and `ServiceUnavailable(retryAfterSeconds, detail, error)`. To attach only a descriptor, name it: `EntityNotFound(error: descriptor)`. `Conflict(errors)` and `UnprocessableEntity(errors)` carry a descriptor collection in `Extensions["errors"]` and keep the default `Detail`. The default `Detail` is resolved per call under the current UI culture; a supplied `detail` is written as given. Never put an entity name or key in an `EntityNotFound` detail; it belongs in server logs
 - `IProblemDetailsCreator.ServiceUnavailable(retryAfterSeconds, detail, error)` — the 503 for a control that fails closed, such as a limiter whose counter store is unreachable. `retryAfterSeconds` is optional and is stamped into `Extensions["retryAfter"]` only when supplied, so a client never reads a wait the server did not promise. Set the matching `Retry-After` header yourself, as with `TooManyRequests`
 - `IAbsoluteUrlFactory` — contract for building absolute URLs from the current request (implemented in `Headless.Api`)
@@ -186,7 +203,7 @@ Building blocks for ASP.NET Core APIs — primitives only. Provides service regi
 
 ### API and behavior
 
-- `AddHeadlessProblemDetails()` — registers `IProblemDetailsCreator`, `HeadlessApiExceptionHandler`, and the `CustomizeProblemDetails` hook that normalizes every response
+- `AddHeadlessProblemDetails()` — registers `IProblemDetailsCreator`, a no-op `IErrorDescriptionLocalizer` (`TryAddSingleton`), `HeadlessApiExceptionHandler`, and the `CustomizeProblemDetails` hook that normalizes every response
 - `GeneralMessageDescriber.TenantRequired()` (`g:tenant_required`), `CrossTenantWrite()` (`g:cross_tenant_write`), and `InvalidRequestType()` (`g:invalid_request_type`) — per-call localized descriptors for the framework's tenancy and request-type failures, with their codes on `GeneralErrorCodes`
 - `AddHeadlessApiResponseCompression()` — Brotli + Gzip at `Fastest` level; extends MIME list with `application/problem+json`, `image/svg+xml`, `image/x-icon`
 - `AddHeadlessAntiforgery()` — antiforgery service registration

@@ -160,7 +160,8 @@ public sealed class NoTrailingSlashAttributeTests : TestBase
             timeProvider,
             buildInformationAccessor,
             httpContextAccessor,
-            apiBehaviorOptions
+            apiBehaviorOptions,
+            NullErrorDescriptionLocalizer.Instance
         );
     }
 

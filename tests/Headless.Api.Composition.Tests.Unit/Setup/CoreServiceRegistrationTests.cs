@@ -79,6 +79,62 @@ public sealed class CoreServiceRegistrationTests
             );
     }
 
+    [Fact]
+    public void should_register_a_replaceable_no_op_error_description_localizer_with_problem_details()
+    {
+        // given
+        IServiceCollection services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHttpContextAccessor();
+        services.AddSingleton(Substitute.For<Headless.Context.IBuildInformationAccessor>());
+        services.AddSingleton(TimeProvider.System);
+
+        // when
+        services.AddHeadlessProblemDetails().AddHeadlessProblemDetails();
+        using var provider = services.BuildServiceProvider();
+
+        // then
+        services.Should().ContainSingle(descriptor => descriptor.ServiceType == typeof(IErrorDescriptionLocalizer));
+        provider
+            .GetRequiredService<IErrorDescriptionLocalizer>()
+            .Localize(new Headless.Primitives.ErrorDescriptor("app:any", "Any."))
+            .Should()
+            .BeNull();
+        provider.GetRequiredService<IProblemDetailsCreator>().Should().NotBeNull();
+    }
+
+    [Fact]
+    public void should_keep_a_consumer_error_description_localizer_registered_before_problem_details()
+    {
+        // given
+        IServiceCollection services = new ServiceCollection();
+        var custom = Substitute.For<IErrorDescriptionLocalizer>();
+        services.AddSingleton(custom);
+
+        // when
+        services.AddHeadlessProblemDetails();
+        using var provider = services.BuildServiceProvider();
+
+        // then
+        provider.GetRequiredService<IErrorDescriptionLocalizer>().Should().BeSameAs(custom);
+    }
+
+    [Fact]
+    public void should_resolve_the_problem_details_creator_from_tenant_catalog_registration_alone()
+    {
+        // given: a catalog host's rejection paths resolve the creator without AddHeadlessProblemDetails()
+        IServiceCollection services = new ServiceCollection();
+        services.AddLogging();
+        services.AddOptions();
+
+        // when
+        services.AddTenantCatalogResolution();
+        using var provider = services.BuildServiceProvider();
+
+        // then
+        provider.GetRequiredService<IProblemDetailsCreator>().Should().NotBeNull();
+    }
+
     private sealed class ExistingStartupFilter : IStartupFilter
     {
         public Action<Microsoft.AspNetCore.Builder.IApplicationBuilder> Configure(

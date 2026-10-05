@@ -781,7 +781,13 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         buildInfo.GetCommitNumber().Returns("abc123");
         var httpContextAccessor = Substitute.For<IHttpContextAccessor>();
         var apiBehaviorOptions = Options.Create(new ApiBehaviorOptions());
-        return new ProblemDetailsCreator(timeProvider, buildInfo, httpContextAccessor, apiBehaviorOptions);
+        return new ProblemDetailsCreator(
+            timeProvider,
+            buildInfo,
+            httpContextAccessor,
+            apiBehaviorOptions,
+            NullErrorDescriptionLocalizer.Instance
+        );
     }
 
     private sealed class StartedResponseFeature : IHttpResponseFeature

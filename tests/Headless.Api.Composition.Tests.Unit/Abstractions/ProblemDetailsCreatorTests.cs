@@ -40,7 +40,13 @@ public sealed class ProblemDetailsCreatorTests : TestBase
 
         var apiBehaviorOptions = Options.Create(new ApiBehaviorOptions());
 
-        return new ProblemDetailsCreator(timeProvider, buildInfo, httpContextAccessor, apiBehaviorOptions);
+        return new ProblemDetailsCreator(
+            timeProvider,
+            buildInfo,
+            httpContextAccessor,
+            apiBehaviorOptions,
+            NullErrorDescriptionLocalizer.Instance
+        );
     }
 
     #region Factory Methods

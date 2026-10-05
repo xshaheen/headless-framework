@@ -208,7 +208,9 @@ public interface IProblemDetailsCreator
     /// Resolves <c>Title</c>/<c>Type</c> from <see cref="Microsoft.AspNetCore.Mvc.ApiBehaviorOptions.ClientErrorMapping"/>,
     /// then fills missing <c>Title</c>/<c>Type</c> for status codes the framework cares about
     /// (404, 408, 413, 500, 501) from <see cref="HeadlessProblemDetailsConstants"/> and a missing
-    /// <c>Detail</c> from the localized defaults.
+    /// <c>Detail</c> from the localized defaults. Passes every <see cref="ErrorDescriptor"/> in the
+    /// <c>error</c> and <c>errors</c> extensions through <see cref="IErrorDescriptionLocalizer"/>,
+    /// replacing a descriptor with a localized copy rather than mutating it.
     /// Always stamps <c>traceId</c>, <c>buildNumber</c>, <c>commitNumber</c>, and <c>timestamp</c>
     /// extensions, plus <c>Instance</c> from the current request path. Idempotent: existing values
     /// are preserved.

@@ -183,6 +183,101 @@ public sealed class ProblemDetailsLocalizationTests : TestBase
         second.Description.Should().NotBe(first.Description);
     }
 
+    [Fact]
+    public void should_apply_localizer_to_single_error_and_keep_code_severity_and_params()
+    {
+        // given
+        var creator = _CreateCreator(new DictionaryLocalizer(("app:out_of_stock", "نفدت الكمية")));
+        var error = new ErrorDescriptor(
+            "app:out_of_stock",
+            "Out of stock.",
+            ValidationSeverity.Warning,
+            ("sku", "A-1")
+        );
+
+        // when
+        var result = creator.Conflict(error);
+        var single = creator.BadRequest(error: error);
+
+        // then
+        var localized = result
+            .Extensions["errors"]
+            .Should()
+            .BeAssignableTo<IReadOnlyCollection<ErrorDescriptor>>()
+            .Subject.Should()
+            .ContainSingle()
+            .Subject;
+        localized.Code.Should().Be("app:out_of_stock");
+        localized.Description.Should().Be("نفدت الكمية");
+        localized.Severity.Should().Be(ValidationSeverity.Warning);
+        localized.Params.Should().ContainKey("sku").WhoseValue.Should().Be("A-1");
+
+        single.Extensions["error"].Should().BeOfType<ErrorDescriptor>().Which.Description.Should().Be("نفدت الكمية");
+
+        // the caller's descriptor is copied, never mutated
+        error.Description.Should().Be("Out of stock.");
+    }
+
+    [Fact]
+    public void should_apply_localizer_to_field_errors_and_keep_unlocalized_fields()
+    {
+        // given
+        var creator = _CreateCreator(new DictionaryLocalizer(("app:email_taken", "البريد مستخدم")));
+        var errors = new Dictionary<string, IReadOnlyList<ErrorDescriptor>>(StringComparer.Ordinal)
+        {
+            ["name"] = [new ErrorDescriptor("app:name_required", "Name is required.")],
+            ["email"] = [new ErrorDescriptor("app:email_taken", "Email is taken.")],
+        };
+
+        // when
+        var result = creator.UnprocessableEntity(errors);
+
+        // then
+        var written = result
+            .Extensions["errors"]
+            .Should()
+            .BeAssignableTo<IReadOnlyDictionary<string, IReadOnlyList<ErrorDescriptor>>>()
+            .Subject;
+        written.Keys.Should().Equal("name", "email");
+        written["name"].Should().ContainSingle().Which.Description.Should().Be("Name is required.");
+        written["email"].Should().ContainSingle().Which.Description.Should().Be("البريد مستخدم");
+    }
+
+    [Fact]
+    public void should_keep_original_descriptor_when_localizer_returns_null()
+    {
+        // given
+        var creator = _CreateCreator(new DictionaryLocalizer());
+        var error = new ErrorDescriptor("app:unknown_to_localizer", "Original description.");
+        IReadOnlyCollection<ErrorDescriptor> errors = [error];
+
+        // when
+        var single = creator.Forbidden(error: error);
+        var many = creator.Conflict(errors);
+
+        // then
+        single.Extensions["error"].Should().BeSameAs(error);
+        many.Extensions["errors"].Should().BeSameAs(errors);
+    }
+
+    [Fact]
+    public void should_apply_localizer_to_descriptors_on_externally_built_problem_details()
+    {
+        // given
+        var creator = _CreateCreator(new DictionaryLocalizer(("app:locked", "مقفل")));
+        var problemDetails = new ProblemDetails
+        {
+            Status = StatusCodes.Status423Locked,
+            Extensions = { ["error"] = new ErrorDescriptor("app:locked", "Locked.") },
+        };
+
+        // when
+        creator.Normalize(problemDetails);
+
+        // then
+        problemDetails.Extensions["error"].Should().BeOfType<ErrorDescriptor>().Which.Description.Should().Be("مقفل");
+    }
+
     private static ProblemDetails _Normalized(ProblemDetailsCreator creator, int status)
     {
         var problemDetails = new ProblemDetails { Status = status };
@@ -227,7 +322,7 @@ public sealed class ProblemDetailsLocalizationTests : TestBase
         );
     }
 
-    private static ProblemDetailsCreator _CreateCreator()
+    private static ProblemDetailsCreator _CreateCreator(IErrorDescriptionLocalizer? localizer = null)
     {
         var buildInfo = Substitute.For<IBuildInformationAccessor>();
         buildInfo.GetVersion().Returns("1.0.0");
@@ -240,7 +335,20 @@ public sealed class ProblemDetailsLocalizationTests : TestBase
             new FakeTimeProvider(DateTimeOffset.UtcNow),
             buildInfo,
             httpContextAccessor,
-            Options.Create(new ApiBehaviorOptions())
+            Options.Create(new ApiBehaviorOptions()),
+            localizer ?? NullErrorDescriptionLocalizer.Instance
         );
+    }
+
+    private sealed class DictionaryLocalizer(params (string Code, string Description)[] entries)
+        : IErrorDescriptionLocalizer
+    {
+        private readonly Dictionary<string, string> _entries = entries.ToDictionary(
+            e => e.Code,
+            e => e.Description,
+            StringComparer.Ordinal
+        );
+
+        public string? Localize(ErrorDescriptor error) => _entries.GetValueOrDefault(error.Code);
     }
 }

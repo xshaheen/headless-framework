@@ -147,7 +147,8 @@ public sealed class RequireEnvironmentAttributeTests : TestBase
             timeProvider,
             buildInformationAccessor,
             httpContextAccessor,
-            apiBehaviorOptions
+            apiBehaviorOptions,
+            NullErrorDescriptionLocalizer.Instance
         );
     }
 

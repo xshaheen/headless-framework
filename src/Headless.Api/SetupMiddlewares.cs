@@ -188,6 +188,7 @@ public static class SetupMiddlewares
         // replacements authoritative; ProblemDetailsCreator's own dependencies are registered the same
         // way so the write path is resolvable in a host that registers nothing else.
         services.TryAddSingleton<IProblemDetailsCreator, ProblemDetailsCreator>();
+        services.TryAddSingleton<IErrorDescriptionLocalizer>(NullErrorDescriptionLocalizer.Instance);
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<IBuildInformationAccessor, BuildInformationAccessor>();
 
