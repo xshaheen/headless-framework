@@ -324,7 +324,6 @@ public static class SetupEntityFramework
             );
             services.TryAddSingleton<ICurrentUser, NullCurrentUser>();
             services.TryAddSingleton<ICorrelationIdProvider, ActivityCorrelationIdProvider>();
-            services.ReplaceCompiledQueryCacheKeyGenerator();
 
             return new HeadlessDbContextBuilder(services);
         }

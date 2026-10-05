@@ -17,23 +17,18 @@ namespace Headless.EntityFramework;
 /// <remarks>
 /// Instances already present on the builder's <see cref="CoreOptionsExtension.Interceptors"/> (e.g. added by the
 /// consumer's own options action, or by another registered configuration) are skipped by reference equality, so an
-/// interceptor never runs twice per edge. Interceptors are expected to be singletons (the framework's own are).
+/// interceptor never runs twice per edge.
+/// <para>
+/// The interceptors are resolved from the provider EF Core builds the options from, not captured when this singleton
+/// is created, so they follow the options lifetime: scoped options take a scoped interceptor from their scope, and
+/// singleton or pooled options take interceptors from the root, where a scoped one fails scope validation.
+/// </para>
 /// </remarks>
-internal sealed class DiRegisteredInterceptorsOptionsConfiguration<TContext>(IEnumerable<IInterceptor> interceptors)
-    : IDbContextOptionsConfiguration<TContext>
+internal sealed class DiRegisteredInterceptorsOptionsConfiguration<TContext> : IDbContextOptionsConfiguration<TContext>
     where TContext : DbContext
 {
     public void Configure(IServiceProvider serviceProvider, DbContextOptionsBuilder optionsBuilder)
     {
-        var existing = optionsBuilder.Options.FindExtension<CoreOptionsExtension>()?.Interceptors;
-
-        var missing = interceptors
-            .Where(interceptor => existing?.Any(e => ReferenceEquals(e, interceptor)) != true)
-            .ToArray();
-
-        if (missing.Length > 0)
-        {
-            optionsBuilder.AddInterceptors(missing);
-        }
+        optionsBuilder.AddDiRegisteredInterceptors(serviceProvider);
     }
 }

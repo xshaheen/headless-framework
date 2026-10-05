@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Runtime.ExceptionServices;
 using Headless.Checks;
 using Microsoft.EntityFrameworkCore;
 
@@ -163,45 +162,21 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
             cancellationToken
         );
 
-    private async Task<TResult> _ExecuteKeyedTransactionAsync<TResult>(
+    private Task<TResult> _ExecuteKeyedTransactionAsync<TResult>(
         Func<TDbContext, CancellationToken, Task<TResult>> operation,
         CancellationToken cancellationToken
     )
     {
-        await using var strategyContext = await DbContextFactory
-            .CreateDbContextAsync(cancellationToken)
-            .ConfigureAwait(false);
-        var (result, error) = await strategyContext
-            .Database.CreateExecutionStrategy()
-            .ExecuteAsync(
-                async ct =>
-                {
-                    var commitStarted = false;
-                    var result = default(TResult)!;
-                    try
-                    {
-                        await using var context = await DbContextFactory.CreateDbContextAsync(ct).ConfigureAwait(false);
-                        await using var transaction = await context
-                            .Database.BeginTransactionAsync(ct)
-                            .ConfigureAwait(false);
-                        result = await operation(context, ct).ConfigureAwait(false);
-                        commitStarted = true;
-                        await transaction.CommitAsync(ct).ConfigureAwait(false);
-                        // The explicit nullable cast fixes the tuple's Error type; without it the lambda's two returns
-                        // infer a non-nullable ExceptionDispatchInfo and the deconstruction below fails CS8619.
-                        return (Result: result, Error: (ExceptionDispatchInfo?)null);
-                    }
-                    catch (Exception exception) when (commitStarted)
-                    {
-                        // A commit or disposal fault may follow a successful commit; never replay it speculatively.
-                        return (Result: result, Error: ExceptionDispatchInfo.Capture(exception));
-                    }
-                },
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-        error?.Throw();
-        return result;
+        return JobsStoreTransaction.ExecuteAsync<TDbContext, TResult>(
+            DbContextFactory,
+            async (attempt, ct) =>
+            {
+                var result = await operation(attempt.DbContext, ct).ConfigureAwait(false);
+                await attempt.CommitAsync(ct).ConfigureAwait(false);
+                return result;
+            },
+            cancellationToken
+        );
     }
 
     private static async Task<JobScheduleResult> _CancelKeyedAsync(

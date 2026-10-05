@@ -410,87 +410,99 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
     {
         resilienceContext.Properties.Set(_TreeDeleteCommitStartedKey, value: false);
         var cancellationToken = resilienceContext.CancellationToken;
-        await using var dbContext = await DbContextFactory
-            .CreateDbContextAsync(cancellationToken)
+
+        // The conflict retry above wraps the context's execution strategy: the strategy replays transient faults, and
+        // the pipeline replays the foreign-key race the strategy does not classify as transient.
+        return await JobsStoreTransaction
+            .ExecuteAsync<TDbContext, int>(
+                DbContextFactory,
+                async (attempt, _) =>
+                {
+                    var dbContext = attempt.DbContext;
+                    // The factory is bound to one provider for the instance's lifetime, so the name is captured once;
+                    // the retry predicate reads it because Polly's predicate never sees the per-call state.
+                    if (_treeDeleteProviderName is null)
+                    {
+                        Interlocked.CompareExchange(
+                            ref _treeDeleteProviderName,
+                            dbContext.Database.ProviderName,
+                            comparand: null
+                        );
+                    }
+
+                    // The Parent/Children FK is DeleteBehavior.NoAction (TimeJobConfigurations): neither EF nor the
+                    // database cascades, so the subtree must be resolved explicitly. A surviving descendant is never
+                    // harmless — a non-timed one is unreachable forever (every claim path requires ExecutionTime !=
+                    // null), and a timed one whose ParentId was nulled passes the ParentId == null arm of the
+                    // parent-terminal gate and runs unconditionally at its scheduled time. Walked one level at a time
+                    // rather than with a recursive CTE so a single query shape serves every relational provider; the
+                    // visited set also terminates a corrupted cycle. The foreign key is the atomicity fence: a
+                    // conflicting write rolls this scope back and fresh discovery runs.
+                    var levels = new List<Guid[]> { timeJobIds };
+                    var visited = new HashSet<Guid>(timeJobIds);
+                    var frontier = timeJobIds;
+
+                    while (frontier.Length > 0)
+                    {
+                        var parentIds = frontier;
+
+                        var childIds = await dbContext
+                            .Set<TTimeJob>()
+                            .AsNoTracking()
+                            .Where(x => x.ParentId != null && ((IEnumerable<Guid>)parentIds).Contains(x.ParentId.Value))
+                            .Select(x => x.Id)
+                            .ToArrayAsync(cancellationToken)
+                            .ConfigureAwait(false);
+
+                        frontier = [.. childIds.Where(visited.Add)];
+
+                        if (frontier.Length > 0)
+                        {
+                            levels.Add(frontier);
+                        }
+                    }
+
+                    if (OnTreeDeleteBeforeFirstDelete is { } beforeFirstDelete)
+                    {
+                        await beforeFirstDelete().ConfigureAwait(false);
+                    }
+
+                    // Deepest level first: with a non-cascading FK a row may only be deleted once its children are
+                    // gone.
+                    var retainedIds = visited.ToArray();
+                    await JobsKeyLock.AcquireRunsAsync(dbContext, retainedIds, cancellationToken).ConfigureAwait(false);
+                    if (
+                        await dbContext
+                            .Set<TTimeJob>()
+                            .AnyAsync(row => retainedIds.Contains(row.Id) && row.BusinessKey != null, cancellationToken)
+                            .ConfigureAwait(false)
+                    )
+                    {
+                        throw new InvalidOperationException(
+                            "Keyed jobs and all historical generations are retained indefinitely. No member of this delete batch was removed."
+                        );
+                    }
+
+                    var deleted = 0;
+                    for (var level = levels.Count - 1; level >= 0; level--)
+                    {
+                        var ids = levels[level];
+
+                        deleted += await dbContext
+                            .Set<TTimeJob>()
+                            .Where(x => ((IEnumerable<Guid>)ids).Contains(x.Id))
+                            .ExecuteDeleteAsync(cancellationToken)
+                            .ConfigureAwait(false);
+                    }
+
+                    resilienceContext.Properties.Set(_TreeDeleteCommitStartedKey, value: true);
+                    await attempt.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+
+                    return deleted;
+                },
+                cancellationToken
+            )
             .ConfigureAwait(false);
-        // The factory is bound to one provider for the instance's lifetime, so the name is captured once; the retry
-        // predicate reads it because Polly's predicate never sees the per-call state.
-        if (_treeDeleteProviderName is null)
-        {
-            Interlocked.CompareExchange(ref _treeDeleteProviderName, dbContext.Database.ProviderName, comparand: null);
-        }
-
-        await using var transaction = await dbContext
-            .Database.BeginTransactionAsync(cancellationToken)
-            .ConfigureAwait(false);
-
-        // The Parent/Children FK is DeleteBehavior.NoAction (TimeJobConfigurations): neither EF nor the database
-        // cascades, so the subtree must be resolved explicitly. A surviving descendant is never harmless — a
-        // non-timed one is unreachable forever (every claim path requires ExecutionTime != null), and a timed one
-        // whose ParentId was nulled passes the ParentId == null arm of the parent-terminal gate and runs
-        // unconditionally at its scheduled time. Walked one level at a time rather than with a recursive CTE so a
-        // single query shape serves every relational provider; the visited set also terminates a corrupted cycle.
-        // The foreign key is the atomicity fence: a conflicting write rolls this scope back and fresh discovery runs.
-        var levels = new List<Guid[]> { timeJobIds };
-        var visited = new HashSet<Guid>(timeJobIds);
-        var frontier = timeJobIds;
-
-        while (frontier.Length > 0)
-        {
-            var parentIds = frontier;
-
-            var childIds = await dbContext
-                .Set<TTimeJob>()
-                .AsNoTracking()
-                .Where(x => x.ParentId != null && ((IEnumerable<Guid>)parentIds).Contains(x.ParentId.Value))
-                .Select(x => x.Id)
-                .ToArrayAsync(cancellationToken)
-                .ConfigureAwait(false);
-
-            frontier = [.. childIds.Where(visited.Add)];
-
-            if (frontier.Length > 0)
-            {
-                levels.Add(frontier);
-            }
-        }
-
-        if (OnTreeDeleteBeforeFirstDelete is { } beforeFirstDelete)
-        {
-            await beforeFirstDelete().ConfigureAwait(false);
-        }
-
-        // Deepest level first: with a non-cascading FK a row may only be deleted once its children are gone.
-        var retainedIds = visited.ToArray();
-        await JobsKeyLock.AcquireRunsAsync(dbContext, retainedIds, cancellationToken).ConfigureAwait(false);
-        if (
-            await dbContext
-                .Set<TTimeJob>()
-                .AnyAsync(row => retainedIds.Contains(row.Id) && row.BusinessKey != null, cancellationToken)
-                .ConfigureAwait(false)
-        )
-        {
-            throw new InvalidOperationException(
-                "Keyed jobs and all historical generations are retained indefinitely. No member of this delete batch was removed."
-            );
-        }
-
-        var deleted = 0;
-        for (var level = levels.Count - 1; level >= 0; level--)
-        {
-            var ids = levels[level];
-
-            deleted += await dbContext
-                .Set<TTimeJob>()
-                .Where(x => ((IEnumerable<Guid>)ids).Contains(x.Id))
-                .ExecuteDeleteAsync(cancellationToken)
-                .ConfigureAwait(false);
-        }
-
-        resilienceContext.Properties.Set(_TreeDeleteCommitStartedKey, value: true);
-        await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
-
-        return deleted;
     }
 
     private ResiliencePipeline _BuildTreeDeleteRetryPipeline(TimeProvider timeProvider, ILogger logger)
@@ -553,59 +565,65 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         CancellationToken cancellationToken = default
     )
     {
-        await using var dbContext = await DbContextFactory
-            .CreateDbContextAsync(cancellationToken)
-            .ConfigureAwait(false);
-        await using var transaction = await dbContext
-            .Database.BeginTransactionAsync(cancellationToken)
-            .ConfigureAwait(false);
+        return await JobsStoreTransaction
+            .ExecuteAsync<TDbContext, TCronJob?>(
+                DbContextFactory,
+                async (attempt, _) =>
+                {
+                    var dbContext = attempt.DbContext;
 
-        var accepted = await dbContext
-            .Set<TCronJob>()
-            .Where(x => x.Id == cronJobId && !x.IsPaused)
-            .ExecuteUpdateAsync(
-                setter =>
-                    setter
-                        .SetProperty(x => x.IsPaused, valueExpression: true)
-                        .SetProperty(x => x.ScheduleRevision, x => x.ScheduleRevision + 1)
-                        .SetProperty(x => x.UpdatedAt, operationTimeUtc),
+                    var accepted = await dbContext
+                        .Set<TCronJob>()
+                        .Where(x => x.Id == cronJobId && !x.IsPaused)
+                        .ExecuteUpdateAsync(
+                            setter =>
+                                setter
+                                    .SetProperty(x => x.IsPaused, valueExpression: true)
+                                    .SetProperty(x => x.ScheduleRevision, x => x.ScheduleRevision + 1)
+                                    .SetProperty(x => x.UpdatedAt, operationTimeUtc),
+                            cancellationToken
+                        )
+                        .ConfigureAwait(false);
+
+                    if (accepted == 0)
+                    {
+                        return null;
+                    }
+
+                    await dbContext
+                        .Set<CronJobOccurrenceEntity<TCronJob>>()
+                        .Where(x =>
+                            x.CronJobId == cronJobId && (x.Status == JobStatus.Idle || x.Status == JobStatus.Queued)
+                        )
+                        .ExecuteUpdateAsync(
+                            setter =>
+                                setter
+                                    .SetProperty(x => x.Status, JobStatus.Skipped)
+                                    .SetProperty(x => x.ExecutedAt, operationTimeUtc)
+                                    .SetProperty(x => x.UpdatedAt, operationTimeUtc)
+                                    .SetProperty(x => x.SkippedReason, "Cron definition paused")
+                                    // A paused definition must not fire; resume creates its own occurrence. Nothing is
+                                    // owed at this instant, so the retired row accounts for it.
+                                    .SetProperty(x => x.Disposition, CronOccurrenceDisposition.Accounted)
+                                    .SetProperty(x => x.OwnerId, _ => null)
+                                    .SetProperty(x => x.LockedUntil, _ => null),
+                            cancellationToken
+                        )
+                        .ConfigureAwait(false);
+
+                    var result = await dbContext
+                        .Set<TCronJob>()
+                        .AsNoTracking()
+                        .SingleAsync(x => x.Id == cronJobId, cancellationToken)
+                        .ConfigureAwait(false);
+                    await attempt.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+                    await InvalidateCronExpressionsCacheAsync().ConfigureAwait(false);
+
+                    return result;
+                },
                 cancellationToken
             )
             .ConfigureAwait(false);
-
-        if (accepted == 0)
-        {
-            return null;
-        }
-
-        await dbContext
-            .Set<CronJobOccurrenceEntity<TCronJob>>()
-            .Where(x => x.CronJobId == cronJobId && (x.Status == JobStatus.Idle || x.Status == JobStatus.Queued))
-            .ExecuteUpdateAsync(
-                setter =>
-                    setter
-                        .SetProperty(x => x.Status, JobStatus.Skipped)
-                        .SetProperty(x => x.ExecutedAt, operationTimeUtc)
-                        .SetProperty(x => x.UpdatedAt, operationTimeUtc)
-                        .SetProperty(x => x.SkippedReason, "Cron definition paused")
-                        // A paused definition must not fire; resume creates its own occurrence. Nothing is owed at
-                        // this instant, so the retired row accounts for it.
-                        .SetProperty(x => x.Disposition, CronOccurrenceDisposition.Accounted)
-                        .SetProperty(x => x.OwnerId, _ => null)
-                        .SetProperty(x => x.LockedUntil, _ => null),
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-
-        var result = await dbContext
-            .Set<TCronJob>()
-            .AsNoTracking()
-            .SingleAsync(x => x.Id == cronJobId, cancellationToken)
-            .ConfigureAwait(false);
-        await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
-        await InvalidateCronExpressionsCacheAsync().ConfigureAwait(false);
-
-        return result;
     }
 
     public async Task<TCronJob?> ResumeCronJobAsync(
@@ -616,96 +634,103 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         CancellationToken cancellationToken = default
     )
     {
-        await using var dbContext = await DbContextFactory
-            .CreateDbContextAsync(cancellationToken)
-            .ConfigureAwait(false);
-        await using var transaction = await dbContext
-            .Database.BeginTransactionAsync(cancellationToken)
-            .ConfigureAwait(false);
+        return await JobsStoreTransaction
+            .ExecuteAsync<TDbContext, TCronJob?>(
+                DbContextFactory,
+                async (attempt, _) =>
+                {
+                    var dbContext = attempt.DbContext;
 
-        // The schedule position moves inside the SAME transition that clears the pause and bumps the revision, so
-        // no window exposes a resumed definition still carrying its pre-pause position — which would read as a backlog
-        // spanning the entire pause and hand recovery an interval that was deliberately not running.
-        //
-        var accepted = await dbContext
-            .Set<TCronJob>()
-            .Where(x => x.Id == cronJobId && x.IsPaused && x.ScheduleRevision == expectedScheduleRevision)
-            .ExecuteUpdateAsync(
-                setter =>
-                    setter
-                        .SetProperty(x => x.IsPaused, valueExpression: false)
-                        .SetProperty(x => x.ScheduleRevision, x => x.ScheduleRevision + 1)
-                        .SetProperty(x => x.ReconciledThroughUtc, _ => DateTime.UtcNow)
-                        .SetProperty(x => x.UpdatedAt, operationTimeUtc),
+                    // The schedule position moves inside the SAME transition that clears the pause and bumps the
+                    // revision, so no window exposes a resumed definition still carrying its pre-pause position — which
+                    // would read as a backlog spanning the entire pause and hand recovery an interval that was
+                    // deliberately not running.
+                    //
+                    var accepted = await dbContext
+                        .Set<TCronJob>()
+                        .Where(x => x.Id == cronJobId && x.IsPaused && x.ScheduleRevision == expectedScheduleRevision)
+                        .ExecuteUpdateAsync(
+                            setter =>
+                                setter
+                                    .SetProperty(x => x.IsPaused, valueExpression: false)
+                                    .SetProperty(x => x.ScheduleRevision, x => x.ScheduleRevision + 1)
+                                    .SetProperty(x => x.ReconciledThroughUtc, _ => DateTime.UtcNow)
+                                    .SetProperty(x => x.UpdatedAt, operationTimeUtc),
+                            cancellationToken
+                        )
+                        .ConfigureAwait(false);
+
+                    if (accepted == 0)
+                    {
+                        return null;
+                    }
+
+                    var scheduleAnchorUtc = await dbContext
+                        .Set<TCronJob>()
+                        .AsNoTracking()
+                        .Where(x => x.Id == cronJobId)
+                        .Select(x => x.ReconciledThroughUtc)
+                        .SingleAsync(cancellationToken)
+                        .ConfigureAwait(false);
+                    scheduleAnchorUtc = DateTime.SpecifyKind(scheduleAnchorUtc, DateTimeKind.Utc);
+                    var nextOccurrence = nextOccurrenceFactory(scheduleAnchorUtc);
+                    if (nextOccurrence is null || nextOccurrence.CronJobId != cronJobId)
+                    {
+                        return null;
+                    }
+
+                    var resumeProjection = nextOccurrence.ExecutionTime;
+                    var evaluationFingerprint = nextOccurrence.CronJob?.EvaluationFingerprint;
+                    await dbContext
+                        .Set<TCronJob>()
+                        .Where(x => x.Id == cronJobId)
+                        .ExecuteUpdateAsync(
+                            setter =>
+                                setter
+                                    .SetProperty(x => x.NextDueUtc, resumeProjection)
+                                    .SetProperty(x => x.EvaluationFingerprint, evaluationFingerprint)
+                                    .SetProperty(x => x.FingerprintFailureCount, 0)
+                                    .SetProperty(x => x.FingerprintRetryAfterUtc, _ => null),
+                            cancellationToken
+                        )
+                        .ConfigureAwait(false);
+
+                    var contractDefinition = await dbContext
+                        .Set<TCronJob>()
+                        .AsNoTracking()
+                        .SingleAsync(x => x.Id == cronJobId, cancellationToken)
+                        .ConfigureAwait(false);
+                    if (
+                        !await _DefersReplacementToMaterializationAsync(
+                                dbContext,
+                                cronJobId,
+                                contractDefinition.OnOverlap,
+                                cancellationToken
+                            )
+                            .ConfigureAwait(false)
+                    )
+                    {
+                        nextOccurrence.SnapshotContract(contractDefinition);
+                        nextOccurrence.CronJob = null!;
+                        await dbContext
+                            .Set<CronJobOccurrenceEntity<TCronJob>>()
+                            .AddAsync(nextOccurrence, cancellationToken);
+                        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                    }
+
+                    var result = await dbContext
+                        .Set<TCronJob>()
+                        .AsNoTracking()
+                        .SingleAsync(x => x.Id == cronJobId, cancellationToken)
+                        .ConfigureAwait(false);
+                    await attempt.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+                    await InvalidateCronExpressionsCacheAsync().ConfigureAwait(false);
+
+                    return result;
+                },
                 cancellationToken
             )
             .ConfigureAwait(false);
-
-        if (accepted == 0)
-        {
-            return null;
-        }
-
-        var scheduleAnchorUtc = await dbContext
-            .Set<TCronJob>()
-            .AsNoTracking()
-            .Where(x => x.Id == cronJobId)
-            .Select(x => x.ReconciledThroughUtc)
-            .SingleAsync(cancellationToken)
-            .ConfigureAwait(false);
-        scheduleAnchorUtc = DateTime.SpecifyKind(scheduleAnchorUtc, DateTimeKind.Utc);
-        var nextOccurrence = nextOccurrenceFactory(scheduleAnchorUtc);
-        if (nextOccurrence is null || nextOccurrence.CronJobId != cronJobId)
-        {
-            return null;
-        }
-
-        var resumeProjection = nextOccurrence.ExecutionTime;
-        var evaluationFingerprint = nextOccurrence.CronJob?.EvaluationFingerprint;
-        await dbContext
-            .Set<TCronJob>()
-            .Where(x => x.Id == cronJobId)
-            .ExecuteUpdateAsync(
-                setter =>
-                    setter
-                        .SetProperty(x => x.NextDueUtc, resumeProjection)
-                        .SetProperty(x => x.EvaluationFingerprint, evaluationFingerprint)
-                        .SetProperty(x => x.FingerprintFailureCount, 0)
-                        .SetProperty(x => x.FingerprintRetryAfterUtc, _ => null),
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-
-        var contractDefinition = await dbContext
-            .Set<TCronJob>()
-            .AsNoTracking()
-            .SingleAsync(x => x.Id == cronJobId, cancellationToken)
-            .ConfigureAwait(false);
-        if (
-            !await _DefersReplacementToMaterializationAsync(
-                    dbContext,
-                    cronJobId,
-                    contractDefinition.OnOverlap,
-                    cancellationToken
-                )
-                .ConfigureAwait(false)
-        )
-        {
-            nextOccurrence.SnapshotContract(contractDefinition);
-            nextOccurrence.CronJob = null!;
-            await dbContext.Set<CronJobOccurrenceEntity<TCronJob>>().AddAsync(nextOccurrence, cancellationToken);
-            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        }
-
-        var result = await dbContext
-            .Set<TCronJob>()
-            .AsNoTracking()
-            .SingleAsync(x => x.Id == cronJobId, cancellationToken)
-            .ConfigureAwait(false);
-        await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
-        await InvalidateCronExpressionsCacheAsync().ConfigureAwait(false);
-
-        return result;
     }
 
     /// <summary>
@@ -743,239 +768,258 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
             return null;
         }
 
-        await using var dbContext = await DbContextFactory
-            .CreateDbContextAsync(cancellationToken)
-            .ConfigureAwait(false);
-        await using var transaction = await dbContext
-            .Database.BeginTransactionAsync(cancellationToken)
-            .ConfigureAwait(false);
-        var definitionIds = updates.Select(x => x.Definition.Id).ToArray();
-        var currentById = await dbContext
-            .Set<TCronJob>()
-            .AsNoTracking()
-            .Where(x => definitionIds.Contains(x.Id))
-            .ToDictionaryAsync(x => x.Id, cancellationToken)
-            .ConfigureAwait(false);
-        var results = new TCronJob[updates.Length];
-
-        foreach (
-            var (update, inputIndex) in updates
-                .Select((update, index) => (update, index))
-                .OrderBy(x => x.update.Definition.Id)
-        )
-        {
-            if (
-                !currentById.TryGetValue(update.Definition.Id, out var current)
-                || current.ScheduleRevision != update.ExpectedScheduleRevision
-            )
-            {
-                return null;
-            }
-
-            var scheduleChanged =
-                !string.Equals(current.Expression, update.Definition.Expression, StringComparison.Ordinal)
-                || !string.Equals(current.TimeZoneId, update.Definition.TimeZoneId, StringComparison.Ordinal);
-            var recoveryChanged =
-                current.OnMissedRun != update.Definition.OnMissedRun
-                || current.MissedRunGraceSeconds != update.Definition.MissedRunGraceSeconds;
-            var revisionChanged = scheduleChanged || recoveryChanged;
-
-            if (scheduleChanged && !current.IsPaused && update.NextOccurrenceFactory is null)
-            {
-                return null;
-            }
-
-            // A schedule-changing edit rebases the position in the same transition that bumps the revision, so the
-            // old expression's projection never survives the edit. A metadata-only edit leaves both untouched — the
-            // schedule did not move, so neither should the position. The provider stamps its own clock first, then
-            // supplies that exact persisted anchor to the occurrence factory before this transaction commits.
-            var rebasePosition = scheduleChanged && !current.IsPaused;
-
-            var affected = await dbContext
-                .Set<TCronJob>()
-                .Where(x => x.Id == current.Id && x.ScheduleRevision == update.ExpectedScheduleRevision)
-                .ExecuteUpdateAsync(
-                    setter =>
-                        setter
-                            .SetProperty(x => x.Function, update.Definition.Function)
-                            .SetProperty(x => x.ContractVersion, update.Definition.ContractVersion)
-                            .SetProperty(x => x.Description, update.Definition.Description)
-                            .SetProperty(x => x.Expression, update.Definition.Expression)
-                            .SetProperty(x => x.TimeZoneId, update.Definition.TimeZoneId)
-                            .SetProperty(x => x.Request, update.Definition.Request)
-                            .SetProperty(x => x.Retries, update.Definition.Retries)
-                            .SetProperty(x => x.RetryIntervals, update.Definition.RetryIntervals)
-                            .SetProperty(x => x.OnNodeDeath, update.Definition.OnNodeDeath)
-                            // The runtime API is the AUTHORITY for these two. The attribute only seeds them at
-                            // creation and is never reapplied, so persisting them here is what makes an operator
-                            // override survive restarts. They change recovery semantics and therefore bump the same
-                            // revision fence used by recovery, without replacing the schedule occurrence.
-                            .SetProperty(x => x.OnMissedRun, update.Definition.OnMissedRun)
-                            .SetProperty(x => x.MissedRunGraceSeconds, update.Definition.MissedRunGraceSeconds)
-                            // Same authority rule, but no revision bump: materialization reads the overlap policy
-                            // from the definition row it has just locked, like OnNodeDeath, so no stale copy of it
-                            // travels on a dispatch candidate that a fence would need to reject.
-                            .SetProperty(x => x.OnOverlap, update.Definition.OnOverlap)
-                            .SetProperty(
-                                x => x.ScheduleRevision,
-                                revisionChanged ? current.ScheduleRevision + 1 : current.ScheduleRevision
-                            )
-                            .SetProperty(
-                                x => x.EvaluationFingerprint,
-                                x =>
-                                    revisionChanged
-                                        ? update.Definition.EvaluationFingerprint ?? x.EvaluationFingerprint
-                                        : x.EvaluationFingerprint
-                            )
-                            .SetProperty(
-                                x => x.FingerprintFailureCount,
-                                x => revisionChanged ? 0 : x.FingerprintFailureCount
-                            )
-                            .SetProperty(
-                                x => x.FingerprintRetryAfterUtc,
-                                x => revisionChanged ? null : x.FingerprintRetryAfterUtc
-                            )
-                            .SetProperty(
-                                x => x.ReconciledThroughUtc,
-                                x => rebasePosition ? DateTime.UtcNow : x.ReconciledThroughUtc
-                            )
-                            .SetProperty(x => x.UpdatedAt, operationTimeUtc),
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
-
-            if (affected == 0)
-            {
-                return null;
-            }
-
-            CronJobOccurrenceEntity<TCronJob>? replacement = null;
-            if (rebasePosition)
-            {
-                var scheduleAnchorUtc = await dbContext
-                    .Set<TCronJob>()
-                    .AsNoTracking()
-                    .Where(x => x.Id == current.Id)
-                    .Select(x => x.ReconciledThroughUtc)
-                    .SingleAsync(cancellationToken)
-                    .ConfigureAwait(false);
-                scheduleAnchorUtc = DateTime.SpecifyKind(scheduleAnchorUtc, DateTimeKind.Utc);
-                replacement = update.NextOccurrenceFactory!(scheduleAnchorUtc);
-                if (replacement is null || replacement.CronJobId != current.Id)
+        return await JobsStoreTransaction
+            .ExecuteAsync<TDbContext, TCronJob[]?>(
+                DbContextFactory,
+                async (attempt, _) =>
                 {
-                    return null;
-                }
-
-                await dbContext
-                    .Set<TCronJob>()
-                    .Where(x => x.Id == current.Id)
-                    .ExecuteUpdateAsync(
-                        setter => setter.SetProperty(x => x.NextDueUtc, replacement.ExecutionTime),
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false);
-            }
-
-            if (scheduleChanged)
-            {
-                await dbContext
-                    .Set<CronJobOccurrenceEntity<TCronJob>>()
-                    .Where(x =>
-                        x.CronJobId == current.Id && (x.Status == JobStatus.Idle || x.Status == JobStatus.Queued)
-                    )
-                    .ExecuteUpdateAsync(
-                        setter =>
-                            setter
-                                .SetProperty(x => x.Status, JobStatus.Skipped)
-                                .SetProperty(x => x.ExecutedAt, operationTimeUtc)
-                                .SetProperty(x => x.UpdatedAt, operationTimeUtc)
-                                .SetProperty(x => x.SkippedReason, "Cron definition updated")
-                                // KTD1a: the SAME SkippedReason the seeding migration writes, and the opposite
-                                // accounting answer. This path rebases the projection and creates the replacement
-                                // occurrence itself just below (or leaves a paused definition idle until resume), so
-                                // the new schedule already owns what comes next. Stamping ReplacementOwed here would
-                                // double-run every expression edit — which is exactly why the rule reads this column
-                                // and never the free-form string the two producers share.
-                                .SetProperty(x => x.Disposition, CronOccurrenceDisposition.Superseded)
-                                .SetProperty(x => x.OwnerId, _ => null)
-                                .SetProperty(x => x.LockedUntil, _ => null),
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false);
-
-                if (
-                    !current.IsPaused
-                    && !await _DefersReplacementToMaterializationAsync(
-                            dbContext,
-                            current.Id,
-                            update.Definition.OnOverlap,
-                            cancellationToken
-                        )
-                        .ConfigureAwait(false)
-                )
-                {
-                    replacement!.CronJobId = current.Id;
-                    var contractDefinition = await dbContext
+                    var dbContext = attempt.DbContext;
+                    var definitionIds = updates.Select(x => x.Definition.Id).ToArray();
+                    var currentById = await dbContext
                         .Set<TCronJob>()
                         .AsNoTracking()
-                        .SingleAsync(x => x.Id == current.Id, cancellationToken)
+                        .Where(x => definitionIds.Contains(x.Id))
+                        .ToDictionaryAsync(x => x.Id, cancellationToken)
                         .ConfigureAwait(false);
-                    replacement.SnapshotContract(contractDefinition);
-                    replacement.CronJob = null!;
-                    await dbContext
-                        .Set<CronJobOccurrenceEntity<TCronJob>>()
-                        .AddAsync(replacement, cancellationToken)
+                    var results = new TCronJob[updates.Length];
+
+                    foreach (
+                        var (update, inputIndex) in updates
+                            .Select((update, index) => (update, index))
+                            .OrderBy(x => x.update.Definition.Id)
+                    )
+                    {
+                        if (
+                            !currentById.TryGetValue(update.Definition.Id, out var current)
+                            || current.ScheduleRevision != update.ExpectedScheduleRevision
+                        )
+                        {
+                            return null;
+                        }
+
+                        var scheduleChanged =
+                            !string.Equals(current.Expression, update.Definition.Expression, StringComparison.Ordinal)
+                            || !string.Equals(
+                                current.TimeZoneId,
+                                update.Definition.TimeZoneId,
+                                StringComparison.Ordinal
+                            );
+                        var recoveryChanged =
+                            current.OnMissedRun != update.Definition.OnMissedRun
+                            || current.MissedRunGraceSeconds != update.Definition.MissedRunGraceSeconds;
+                        var revisionChanged = scheduleChanged || recoveryChanged;
+
+                        if (scheduleChanged && !current.IsPaused && update.NextOccurrenceFactory is null)
+                        {
+                            return null;
+                        }
+
+                        // A schedule-changing edit rebases the position in the same transition that bumps the revision,
+                        // so the old expression's projection never survives the edit. A metadata-only edit leaves both
+                        // untouched — the schedule did not move, so neither should the position. The provider stamps
+                        // its own clock first, then supplies that exact persisted anchor to the occurrence factory
+                        // before this transaction commits.
+                        var rebasePosition = scheduleChanged && !current.IsPaused;
+
+                        var affected = await dbContext
+                            .Set<TCronJob>()
+                            .Where(x => x.Id == current.Id && x.ScheduleRevision == update.ExpectedScheduleRevision)
+                            .ExecuteUpdateAsync(
+                                setter =>
+                                    setter
+                                        .SetProperty(x => x.Function, update.Definition.Function)
+                                        .SetProperty(x => x.ContractVersion, update.Definition.ContractVersion)
+                                        .SetProperty(x => x.Description, update.Definition.Description)
+                                        .SetProperty(x => x.Expression, update.Definition.Expression)
+                                        .SetProperty(x => x.TimeZoneId, update.Definition.TimeZoneId)
+                                        .SetProperty(x => x.Request, update.Definition.Request)
+                                        .SetProperty(x => x.Retries, update.Definition.Retries)
+                                        .SetProperty(x => x.RetryIntervals, update.Definition.RetryIntervals)
+                                        .SetProperty(x => x.OnNodeDeath, update.Definition.OnNodeDeath)
+                                        // The runtime API is the AUTHORITY for these two. The attribute only seeds them
+                                        // at creation and is never reapplied, so persisting them here is what makes an
+                                        // operator override survive restarts. They change recovery semantics and
+                                        // therefore bump the same revision fence used by recovery, without replacing
+                                        // the schedule occurrence.
+                                        .SetProperty(x => x.OnMissedRun, update.Definition.OnMissedRun)
+                                        .SetProperty(
+                                            x => x.MissedRunGraceSeconds,
+                                            update.Definition.MissedRunGraceSeconds
+                                        )
+                                        // Same authority rule, but no revision bump: materialization reads the overlap
+                                        // policy from the definition row it has just locked, like OnNodeDeath, so no
+                                        // stale copy of it travels on a dispatch candidate that a fence would need to
+                                        // reject.
+                                        .SetProperty(x => x.OnOverlap, update.Definition.OnOverlap)
+                                        .SetProperty(
+                                            x => x.ScheduleRevision,
+                                            revisionChanged ? current.ScheduleRevision + 1 : current.ScheduleRevision
+                                        )
+                                        .SetProperty(
+                                            x => x.EvaluationFingerprint,
+                                            x =>
+                                                revisionChanged
+                                                    ? update.Definition.EvaluationFingerprint ?? x.EvaluationFingerprint
+                                                    : x.EvaluationFingerprint
+                                        )
+                                        .SetProperty(
+                                            x => x.FingerprintFailureCount,
+                                            x => revisionChanged ? 0 : x.FingerprintFailureCount
+                                        )
+                                        .SetProperty(
+                                            x => x.FingerprintRetryAfterUtc,
+                                            x => revisionChanged ? null : x.FingerprintRetryAfterUtc
+                                        )
+                                        .SetProperty(
+                                            x => x.ReconciledThroughUtc,
+                                            x => rebasePosition ? DateTime.UtcNow : x.ReconciledThroughUtc
+                                        )
+                                        .SetProperty(x => x.UpdatedAt, operationTimeUtc),
+                                cancellationToken
+                            )
+                            .ConfigureAwait(false);
+
+                        if (affected == 0)
+                        {
+                            return null;
+                        }
+
+                        CronJobOccurrenceEntity<TCronJob>? replacement = null;
+                        if (rebasePosition)
+                        {
+                            var scheduleAnchorUtc = await dbContext
+                                .Set<TCronJob>()
+                                .AsNoTracking()
+                                .Where(x => x.Id == current.Id)
+                                .Select(x => x.ReconciledThroughUtc)
+                                .SingleAsync(cancellationToken)
+                                .ConfigureAwait(false);
+                            scheduleAnchorUtc = DateTime.SpecifyKind(scheduleAnchorUtc, DateTimeKind.Utc);
+                            replacement = update.NextOccurrenceFactory!(scheduleAnchorUtc);
+                            if (replacement is null || replacement.CronJobId != current.Id)
+                            {
+                                return null;
+                            }
+
+                            await dbContext
+                                .Set<TCronJob>()
+                                .Where(x => x.Id == current.Id)
+                                .ExecuteUpdateAsync(
+                                    setter => setter.SetProperty(x => x.NextDueUtc, replacement.ExecutionTime),
+                                    cancellationToken
+                                )
+                                .ConfigureAwait(false);
+                        }
+
+                        if (scheduleChanged)
+                        {
+                            await dbContext
+                                .Set<CronJobOccurrenceEntity<TCronJob>>()
+                                .Where(x =>
+                                    x.CronJobId == current.Id
+                                    && (x.Status == JobStatus.Idle || x.Status == JobStatus.Queued)
+                                )
+                                .ExecuteUpdateAsync(
+                                    setter =>
+                                        setter
+                                            .SetProperty(x => x.Status, JobStatus.Skipped)
+                                            .SetProperty(x => x.ExecutedAt, operationTimeUtc)
+                                            .SetProperty(x => x.UpdatedAt, operationTimeUtc)
+                                            .SetProperty(x => x.SkippedReason, "Cron definition updated")
+                                            // KTD1a: the SAME SkippedReason the seeding migration writes, and the
+                                            // opposite accounting answer. This path rebases the projection and creates
+                                            // the replacement occurrence itself just below (or leaves a paused
+                                            // definition idle until resume), so the new schedule already owns what
+                                            // comes next. Stamping ReplacementOwed here would double-run every
+                                            // expression edit — which is exactly why the rule reads this column and
+                                            // never the free-form string the two producers share.
+                                            .SetProperty(x => x.Disposition, CronOccurrenceDisposition.Superseded)
+                                            .SetProperty(x => x.OwnerId, _ => null)
+                                            .SetProperty(x => x.LockedUntil, _ => null),
+                                    cancellationToken
+                                )
+                                .ConfigureAwait(false);
+
+                            if (
+                                !current.IsPaused
+                                && !await _DefersReplacementToMaterializationAsync(
+                                        dbContext,
+                                        current.Id,
+                                        update.Definition.OnOverlap,
+                                        cancellationToken
+                                    )
+                                    .ConfigureAwait(false)
+                            )
+                            {
+                                replacement!.CronJobId = current.Id;
+                                var contractDefinition = await dbContext
+                                    .Set<TCronJob>()
+                                    .AsNoTracking()
+                                    .SingleAsync(x => x.Id == current.Id, cancellationToken)
+                                    .ConfigureAwait(false);
+                                replacement.SnapshotContract(contractDefinition);
+                                replacement.CronJob = null!;
+                                await dbContext
+                                    .Set<CronJobOccurrenceEntity<TCronJob>>()
+                                    .AddAsync(replacement, cancellationToken)
+                                    .ConfigureAwait(false);
+                            }
+                        }
+
+                        var result = update.Definition;
+                        result.CorrelationId = current.CorrelationId;
+                        result.CausationId = current.CausationId;
+                        result.IsPaused = current.IsPaused;
+                        result.ScheduleRevision = revisionChanged
+                            ? current.ScheduleRevision + 1
+                            : current.ScheduleRevision;
+                        result.EvaluationFingerprint = revisionChanged
+                            ? update.Definition.EvaluationFingerprint ?? current.EvaluationFingerprint
+                            : current.EvaluationFingerprint;
+                        result.FingerprintFailureCount = revisionChanged ? 0 : current.FingerprintFailureCount;
+                        result.FingerprintRetryAfterUtc = revisionChanged ? null : current.FingerprintRetryAfterUtc;
+                        result.CreatedAt = current.CreatedAt;
+                        result.UpdatedAt = operationTimeUtc;
+                        results[inputIndex] = result;
+                    }
+
+                    await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+                    // Read the committed schedule position back onto each result, the same way the pause and resume
+                    // paths already re-read their definition. The watermark is stamped by the DATABASE clock inside the
+                    // update statement, so the caller's definition instance cannot know it — and JobsManager publishes
+                    // whatever this returns, so without this the edit path would broadcast an unset position while the
+                    // store holds the rebased one.
+                    var committedPositions = await dbContext
+                        .Set<TCronJob>()
+                        .AsNoTracking()
+                        .Where(x => definitionIds.Contains(x.Id))
+                        .Select(x => new
+                        {
+                            x.Id,
+                            x.ReconciledThroughUtc,
+                            x.NextDueUtc,
+                        })
+                        .ToDictionaryAsync(x => x.Id, cancellationToken)
                         .ConfigureAwait(false);
-                }
-            }
 
-            var result = update.Definition;
-            result.CorrelationId = current.CorrelationId;
-            result.CausationId = current.CausationId;
-            result.IsPaused = current.IsPaused;
-            result.ScheduleRevision = revisionChanged ? current.ScheduleRevision + 1 : current.ScheduleRevision;
-            result.EvaluationFingerprint = revisionChanged
-                ? update.Definition.EvaluationFingerprint ?? current.EvaluationFingerprint
-                : current.EvaluationFingerprint;
-            result.FingerprintFailureCount = revisionChanged ? 0 : current.FingerprintFailureCount;
-            result.FingerprintRetryAfterUtc = revisionChanged ? null : current.FingerprintRetryAfterUtc;
-            result.CreatedAt = current.CreatedAt;
-            result.UpdatedAt = operationTimeUtc;
-            results[inputIndex] = result;
-        }
+                    foreach (var result in results)
+                    {
+                        if (committedPositions.TryGetValue(result.Id, out var position))
+                        {
+                            result.ReconciledThroughUtc = position.ReconciledThroughUtc;
+                            result.NextDueUtc = position.NextDueUtc;
+                        }
+                    }
 
-        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                    await attempt.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+                    await InvalidateCronExpressionsCacheAsync().ConfigureAwait(false);
 
-        // Read the committed schedule position back onto each result, the same way the pause and resume paths already
-        // re-read their definition. The watermark is stamped by the DATABASE clock inside the update statement, so the
-        // caller's definition instance cannot know it — and JobsManager publishes whatever this returns, so without
-        // this the edit path would broadcast an unset position while the store holds the rebased one.
-        var committedPositions = await dbContext
-            .Set<TCronJob>()
-            .AsNoTracking()
-            .Where(x => definitionIds.Contains(x.Id))
-            .Select(x => new
-            {
-                x.Id,
-                x.ReconciledThroughUtc,
-                x.NextDueUtc,
-            })
-            .ToDictionaryAsync(x => x.Id, cancellationToken)
+                    return results;
+                },
+                cancellationToken
+            )
             .ConfigureAwait(false);
-
-        foreach (var result in results)
-        {
-            if (committedPositions.TryGetValue(result.Id, out var position))
-            {
-                result.ReconciledThroughUtc = position.ReconciledThroughUtc;
-                result.NextDueUtc = position.NextDueUtc;
-            }
-        }
-
-        await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
-        await InvalidateCronExpressionsCacheAsync().ConfigureAwait(false);
-
-        return results;
     }
 
     public async Task<TCronJob[]> GetCronJobsAsync(
@@ -1055,37 +1099,40 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
             return CronSchedulePositionSeedResult.Empty;
         }
 
-        await using var dbContext = await DbContextFactory
-            .CreateDbContextAsync(cancellationToken)
-            .ConfigureAwait(false);
-
         // One transaction so the anchor and the rows it positions commit together: a crash between them would leave a
         // definition claiming to be reconciled through an instant no row records. The statement clock read inside it
         // is what makes this safe on PostgreSQL, where an EF-translated DateTime.UtcNow would freeze at the
         // transaction's start instead — the same rule the coordinated path is bound by, kept identical here so the two
         // creation paths cannot drift.
-        await using var transaction = await dbContext
-            .Database.BeginTransactionAsync(cancellationToken)
+        return await JobsStoreTransaction
+            .ExecuteAsync<TDbContext, CronSchedulePositionSeedResult>(
+                DbContextFactory,
+                async (attempt, _) =>
+                {
+                    var dbContext = attempt.DbContext;
+
+                    var storeUtcNow = await JobsStoreClock
+                        .GetStatementUtcNowAsync(dbContext, cancellationToken)
+                        .ConfigureAwait(false);
+
+                    var earliestNextDueUtc = _ApplySchedulePositionSeed(jobs, seeder, storeUtcNow);
+
+                    await dbContext.Set<TCronJob>().AddRangeAsync(jobs, cancellationToken).ConfigureAwait(false);
+                    var affected = await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                    await attempt.CommitAsync(cancellationToken).ConfigureAwait(false);
+
+                    await InvalidateCronExpressionsCacheAsync().ConfigureAwait(false);
+
+                    return new CronSchedulePositionSeedResult
+                    {
+                        StoreUtcNow = storeUtcNow,
+                        AffectedRows = affected,
+                        EarliestNextDueUtc = earliestNextDueUtc,
+                    };
+                },
+                cancellationToken
+            )
             .ConfigureAwait(false);
-
-        var storeUtcNow = await JobsStoreClock
-            .GetStatementUtcNowAsync(dbContext, cancellationToken)
-            .ConfigureAwait(false);
-
-        var earliestNextDueUtc = _ApplySchedulePositionSeed(jobs, seeder, storeUtcNow);
-
-        await dbContext.Set<TCronJob>().AddRangeAsync(jobs, cancellationToken).ConfigureAwait(false);
-        var affected = await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-
-        await InvalidateCronExpressionsCacheAsync().ConfigureAwait(false);
-
-        return new CronSchedulePositionSeedResult
-        {
-            StoreUtcNow = storeUtcNow,
-            AffectedRows = affected,
-            EarliestNextDueUtc = earliestNextDueUtc,
-        };
     }
 
     public async Task<int> UpdateCronJobsAsync(TCronJob[] cronJobs, CancellationToken cancellationToken = default)

@@ -5,7 +5,12 @@ namespace Tests;
 /// <summary>Runs the misfire-recovery conformance suite against SQL Server.</summary>
 [Collection<SqlServerJobsCoordinationFixture>]
 public sealed class SqlServerRecoveryTests(SqlServerJobsCoordinationFixture fixture)
-    : JobsRecoveryConformanceTests<SqlServerJobsCoordinationFixture>(fixture)
+    : SqlServerRecoveryTestsBase<SqlServerJobsCoordinationFixture>(fixture);
+
+/// <summary>The SqlServer overrides of the shared suite, run on both the default and the retrying-strategy fixture.</summary>
+public abstract class SqlServerRecoveryTestsBase<TFixture>(TFixture fixture)
+    : JobsRecoveryConformanceTests<TFixture>(fixture)
+    where TFixture : SqlServerJobsCoordinationFixture
 {
     [Fact]
     public override Task coalesce_materializes_one_run_stamped_with_the_earliest_missed_instant()

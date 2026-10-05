@@ -8,51 +8,10 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.EntityFramework;
 
-/// <summary>
-/// Extension methods for attaching the <see cref="HeadlessDbContextOptionsExtension"/> to EF Core
-/// options builders. Called automatically by <c>AddHeadlessDbContext</c>; only needed directly when
-/// wiring a plain <c>AddDbContext</c> call alongside Headless services.
-/// </summary>
+/// <summary>Options-builder helpers for wiring a plain <c>AddDbContext</c> call alongside Headless services.</summary>
 [PublicAPI]
 public static class SetupOptionsExtension
 {
-    /// <summary>
-    /// Attaches the <see cref="HeadlessDbContextOptionsExtension"/> to the options builder, which in turn
-    /// registers Headless EF Core infrastructure services when EF Core builds the internal service provider.
-    /// </summary>
-    /// <param name="optionsBuilder">The EF Core options builder to configure.</param>
-    /// <returns>The same options builder.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="optionsBuilder"/> is <see langword="null"/>.</exception>
-    public static DbContextOptionsBuilder AddHeadlessExtension(this DbContextOptionsBuilder optionsBuilder)
-    {
-        Argument.IsNotNull(optionsBuilder);
-
-        var ext = new HeadlessDbContextOptionsExtension();
-        ((IDbContextOptionsBuilderInfrastructure)optionsBuilder).AddOrUpdateExtension(ext);
-
-        return optionsBuilder;
-    }
-
-    /// <summary>
-    /// Attaches the <see cref="HeadlessDbContextOptionsExtension"/> to the strongly-typed options builder.
-    /// </summary>
-    /// <typeparam name="TContext">The <see cref="DbContext"/> type.</typeparam>
-    /// <param name="optionsBuilder">The EF Core options builder to configure.</param>
-    /// <returns>The same options builder.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="optionsBuilder"/> is <see langword="null"/>.</exception>
-    public static DbContextOptionsBuilder<TContext> AddHeadlessExtension<TContext>(
-        this DbContextOptionsBuilder<TContext> optionsBuilder
-    )
-        where TContext : DbContext
-    {
-        Argument.IsNotNull(optionsBuilder);
-
-        var ext = new HeadlessDbContextOptionsExtension();
-        ((IDbContextOptionsBuilderInfrastructure)optionsBuilder).AddOrUpdateExtension(ext);
-
-        return optionsBuilder;
-    }
-
     /// <summary>
     /// Applies <see cref="IInterceptor" /> services registered in the application container to the context
     /// options. EF Core does <b>not</b> auto-discover interceptors from the application service provider —
@@ -61,9 +20,9 @@ public static class SetupOptionsExtension
     /// </summary>
     /// <remarks>
     /// Instances the consumer already added through its own options action are skipped (reference equality)
-    /// so an interceptor never runs twice per edge. Interceptors are expected to be registered as singletons
-    /// (the framework's own are); a scoped <see cref="IInterceptor" /> combined with
-    /// <c>optionsLifetime: ServiceLifetime.Singleton</c> is unsupported and fails scope validation.
+    /// so an interceptor never runs twice per edge. Interceptors resolve from <paramref name="serviceProvider" />, so
+    /// a scoped <see cref="IInterceptor" /> needs scoped options; with singleton or pooled options it resolves from the
+    /// root and fails scope validation. The framework's own interceptors are singletons.
     /// <para>
     /// <c>AddHeadlessDbContext</c> / <c>AddHeadlessIdentityDbContext</c> call this automatically. Consumers wiring a
     /// plain <see cref="DbContext" /> via <c>AddDbContext</c> can call it from their options action
@@ -95,49 +54,5 @@ public static class SetupOptionsExtension
         }
 
         return optionsBuilder;
-    }
-}
-
-/// <summary>
-/// EF Core options extension that registers Headless EF Core infrastructure services via the
-/// <c>IDbContextOptionsExtension</c> hook. Attached by <see cref="SetupOptionsExtension.AddHeadlessExtension(DbContextOptionsBuilder)"/>.
-/// </summary>
-[PublicAPI]
-public sealed class HeadlessDbContextOptionsExtension : IDbContextOptionsExtension
-{
-    /// <summary>
-    /// Called by EF Core when building the internal service provider; delegates to
-    /// <c>AddHeadlessDbContextServices()</c>.
-    /// </summary>
-    /// <param name="services">The EF Core internal service collection.</param>
-    public void ApplyServices(IServiceCollection services)
-    {
-        services.AddHeadlessDbContextServices();
-    }
-
-    /// <summary>Performs no validation; all Headless prerequisites are validated at startup by DI.</summary>
-    /// <param name="options">The current EF Core options.</param>
-    public void Validate(IDbContextOptions options) { }
-
-    /// <summary>Extension metadata used by EF Core for logging and service-provider hashing.</summary>
-    public DbContextOptionsExtensionInfo Info => new HeadlessOptionsExtensionInfo(this);
-
-    private sealed class HeadlessOptionsExtensionInfo(IDbContextOptionsExtension e) : DbContextOptionsExtensionInfo(e)
-    {
-        public override string LogFragment => "HeadlessOptionsExtension";
-
-        public override bool IsDatabaseProvider => false;
-
-        public override void PopulateDebugInfo(IDictionary<string, string> debugInfo) { }
-
-        public override int GetServiceProviderHashCode()
-        {
-            return 0;
-        }
-
-        public override bool ShouldUseSameServiceProvider(DbContextOptionsExtensionInfo other)
-        {
-            return other is HeadlessOptionsExtensionInfo;
-        }
     }
 }

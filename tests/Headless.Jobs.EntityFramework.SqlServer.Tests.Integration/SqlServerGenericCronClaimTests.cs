@@ -4,7 +4,12 @@ namespace Tests;
 
 [Collection<SqlServerJobsCoordinationFixture>]
 public sealed class SqlServerGenericCronClaimTests(SqlServerJobsCoordinationFixture fixture)
-    : JobsGenericCronClaimConformanceTests<SqlServerJobsCoordinationFixture>(fixture)
+    : SqlServerGenericCronClaimTestsBase<SqlServerJobsCoordinationFixture>(fixture);
+
+/// <summary>The SqlServer overrides of the shared suite, run on both the default and the retrying-strategy fixture.</summary>
+public abstract class SqlServerGenericCronClaimTestsBase<TFixture>(TFixture fixture)
+    : JobsGenericCronClaimConformanceTests<TFixture>(fixture)
+    where TFixture : SqlServerJobsCoordinationFixture
 {
     [Theory]
     [InlineData(false)]

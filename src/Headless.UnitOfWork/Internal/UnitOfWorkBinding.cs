@@ -32,6 +32,23 @@ internal sealed class UnitOfWorkBinding<TKey>
     public void Bind(TKey key, IUnitOfWork unit) => _bindings.AddOrUpdate(key, unit);
 
     /// <summary>
+    /// Removes the entry for <paramref name="key" /> without touching the unit, and returns the removed unit. With
+    /// <paramref name="expected" />, removes it only when <paramref name="key" /> is still bound to that unit, so a
+    /// key that has since been bound to another unit keeps its binding.
+    /// </summary>
+    public IUnitOfWork? Unbind(TKey key, IUnitOfWork? expected = null)
+    {
+        if (!_bindings.TryGetValue(key, out var bound) || (expected is not null && !ReferenceEquals(bound, expected)))
+        {
+            return null;
+        }
+
+        _bindings.Remove(key);
+
+        return bound;
+    }
+
+    /// <summary>
     /// Gets the unit bound to <paramref name="key" /> when it is still <see cref="UnitOfWorkState.Active" /> and,
     /// for an owned unit, its transaction is still open; anything else is evicted, and an owned unit that
     /// outlived its own transaction is abandoned in the background so a handle someone kept refuses further

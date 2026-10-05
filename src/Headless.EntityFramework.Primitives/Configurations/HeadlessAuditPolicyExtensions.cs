@@ -16,7 +16,7 @@ public static class HeadlessAuditPolicyExtensions
     /// <returns>The same builder so additional configuration can be chained.</returns>
     public static EntityTypeBuilder IsAudited(this EntityTypeBuilder builder)
     {
-        return builder.HasAnnotation(HeadlessModelAnnotations.AuditLog.EntityIsAudited, value: true);
+        return builder.HasAnnotation(HeadlessAuditAnnotations.EntityIsAudited, value: true);
     }
 
     /// <summary>Explicitly includes an entity type in automatic audit capture.</summary>
@@ -26,7 +26,7 @@ public static class HeadlessAuditPolicyExtensions
     public static EntityTypeBuilder<TEntity> IsAudited<TEntity>(this EntityTypeBuilder<TEntity> builder)
         where TEntity : class
     {
-        builder.HasAnnotation(HeadlessModelAnnotations.AuditLog.EntityIsAudited, value: true);
+        builder.HasAnnotation(HeadlessAuditAnnotations.EntityIsAudited, value: true);
         return builder;
     }
 
@@ -35,7 +35,7 @@ public static class HeadlessAuditPolicyExtensions
     /// <returns>The same builder so additional configuration can be chained.</returns>
     public static EntityTypeBuilder ExcludeFromAudit(this EntityTypeBuilder builder)
     {
-        return builder.HasAnnotation(HeadlessModelAnnotations.AuditLog.EntityIsAudited, value: false);
+        return builder.HasAnnotation(HeadlessAuditAnnotations.EntityIsAudited, value: false);
     }
 
     /// <summary>Explicitly excludes an entity type from automatic audit capture.</summary>
@@ -45,7 +45,7 @@ public static class HeadlessAuditPolicyExtensions
     public static EntityTypeBuilder<TEntity> ExcludeFromAudit<TEntity>(this EntityTypeBuilder<TEntity> builder)
         where TEntity : class
     {
-        builder.HasAnnotation(HeadlessModelAnnotations.AuditLog.EntityIsAudited, value: false);
+        builder.HasAnnotation(HeadlessAuditAnnotations.EntityIsAudited, value: false);
         return builder;
     }
 
@@ -54,7 +54,7 @@ public static class HeadlessAuditPolicyExtensions
     /// <returns>The same builder so additional configuration can be chained.</returns>
     public static PropertyBuilder ExcludeFromAudit(this PropertyBuilder builder)
     {
-        return builder.HasAnnotation(HeadlessModelAnnotations.AuditLog.PropertyIsExcluded, value: true);
+        return builder.HasAnnotation(HeadlessAuditAnnotations.PropertyIsExcluded, value: true);
     }
 
     /// <summary>Excludes a property from captured values and changed fields.</summary>
@@ -63,7 +63,7 @@ public static class HeadlessAuditPolicyExtensions
     /// <returns>The same builder so additional configuration can be chained.</returns>
     public static PropertyBuilder<TProperty> ExcludeFromAudit<TProperty>(this PropertyBuilder<TProperty> builder)
     {
-        builder.HasAnnotation(HeadlessModelAnnotations.AuditLog.PropertyIsExcluded, value: true);
+        builder.HasAnnotation(HeadlessAuditAnnotations.PropertyIsExcluded, value: true);
         return builder;
     }
 
@@ -109,15 +109,15 @@ public static class HeadlessAuditPolicyExtensions
 
     private static void _ConfigureSensitiveProperty(PropertyBuilder builder, SensitiveDataStrategy? strategy)
     {
-        builder.HasAnnotation(HeadlessModelAnnotations.AuditLog.PropertyIsSensitive, value: true);
+        builder.HasAnnotation(HeadlessAuditAnnotations.PropertyIsSensitive, value: true);
 
         if (strategy is null)
         {
-            builder.Metadata.RemoveAnnotation(HeadlessModelAnnotations.AuditLog.PropertySensitiveStrategy);
+            builder.Metadata.RemoveAnnotation(HeadlessAuditAnnotations.PropertySensitiveStrategy);
             return;
         }
 
         Argument.IsInEnum(strategy.Value);
-        builder.HasAnnotation(HeadlessModelAnnotations.AuditLog.PropertySensitiveStrategy, (int)strategy.Value);
+        builder.HasAnnotation(HeadlessAuditAnnotations.PropertySensitiveStrategy, (int)strategy.Value);
     }
 }

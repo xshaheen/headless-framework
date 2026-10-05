@@ -6,7 +6,6 @@ using Headless.MultiTenancy;
 using Headless.Testing;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Time.Testing;
 
@@ -67,17 +66,8 @@ public static class AuditIntegrationFixture
 
         void configureOptions(DbContextOptionsBuilder opts)
         {
-            opts.UseSqlite(connection).AddHeadlessExtension();
+            opts.UseSqlite(connection);
             configureDbContext?.Invoke(opts);
-
-            // Audit capture resolves TimeProvider, ICurrentUser, ICurrentTenant
-            // via this.GetService<T>() which hits EF's INTERNAL service provider (populated by
-            // IDbContextOptionsExtension.ApplyServices), not the application DI scope.
-            // This extension injects the test doubles into EF's internal provider so they win
-            // over the defaults (NullCurrentUser etc.) registered by AddHeadlessDbContextServices.
-            ((IDbContextOptionsBuilderInfrastructure)opts).AddOrUpdateExtension(
-                new TestHeadlessServicesOptionsExtension(clock, currentUser, currentTenant)
-            );
         }
 
         switch (registration)

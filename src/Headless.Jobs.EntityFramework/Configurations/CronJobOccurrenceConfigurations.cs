@@ -24,6 +24,10 @@ public class CronJobOccurrenceConfigurations<TCronJob>(
 {
     public void Configure(EntityTypeBuilder<CronJobOccurrenceEntity<TCronJob>> builder)
     {
+        // Scheduler bookkeeping, not business data: an application context that audits by default would otherwise
+        // write audit rows for every claim, heartbeat, and sweep.
+        builder.ExcludeFromAudit();
+
         var utcDateTimeConverter = new NormalizeDateTimeValueConverter();
         var nullableUtcDateTimeConverter = new NullableNormalizeDateTimeValueConverter();
 

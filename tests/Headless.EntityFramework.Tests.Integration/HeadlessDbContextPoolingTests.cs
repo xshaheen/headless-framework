@@ -5,6 +5,7 @@ using Headless.Domain;
 using Headless.EntityFramework;
 using Headless.MultiTenancy;
 using Headless.Testing.Tests;
+using Headless.UnitOfWork;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -61,7 +62,6 @@ public sealed class HeadlessDbContextPoolingTests : TestBase
         var counting = new ScopeCountingServiceProvider(root);
         var options = new DbContextOptionsBuilder<FactoryTestDbContext>()
             .UseNpgsql("Host=localhost;Database=unused;Username=unused;Password=unused")
-            .AddHeadlessExtension()
             .UseApplicationServiceProvider(counting)
             .Options;
         var context = new FactoryTestDbContext(options);
@@ -78,6 +78,40 @@ public sealed class HeadlessDbContextPoolingTests : TestBase
         await context.DisposeAsync();
         var act = () => scoped.GetRequiredService<IServiceScopeFactory>();
         act.Should().Throw<ObjectDisposedException>("the private scope is disposed with the context");
+    }
+
+    [Fact]
+    public async Task should_not_carry_a_forgotten_unit_of_work_into_the_next_lease()
+    {
+        // given — a pooled context whose caller enlisted a unit of work and returned the context without completing it
+        await using var keeper = new SqliteConnection("Data Source=pool-unit-binding;Mode=Memory;Cache=Shared");
+        await keeper.OpenAsync(AbortToken);
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessDbContextPool<FactoryTestDbContext>(
+            options => options.UseSqlite(keeper.ConnectionString),
+            poolSize: 1
+        );
+        await using var provider = services.BuildServiceProvider(validateScopes: true);
+        var factory = provider.GetRequiredService<IDbContextFactory<FactoryTestDbContext>>();
+        var unitOfWorkFactory = provider.GetRequiredService<IUnitOfWorkFactory>();
+
+        var first = await factory.CreateDbContextAsync(AbortToken);
+        await using var forgottenTransaction = await first.Database.BeginTransactionAsync(AbortToken);
+#pragma warning disable CA2000 // Not a leak to fix: the forgotten handle is the scenario under test.
+        unitOfWorkFactory.Enlist(first, forgottenTransaction);
+#pragma warning restore CA2000
+        await first.DisposeAsync();
+
+        // when
+        await using var second = await factory.CreateDbContextAsync(AbortToken);
+
+        // then — the instance comes back from the pool without the unit its previous caller forgot
+        second.Should().BeSameAs(first, "a pool of one hands back the same instance");
+        second.UnitOfWork().Should().BeNull();
+        await using var transaction = await second.Database.BeginTransactionAsync(AbortToken);
+        await using var unit = unitOfWorkFactory.Enlist(second, transaction);
+        second.UnitOfWork().Should().BeSameAs(unit);
     }
 
     [Theory]

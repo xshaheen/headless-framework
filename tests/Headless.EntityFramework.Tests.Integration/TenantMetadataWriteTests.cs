@@ -384,7 +384,6 @@ public sealed class TenantMetadataWriteTests(
     {
         var options = new DbContextOptionsBuilder<MetadataContext>()
             .UseNpgsql(enabledFixture.SqlConnectionString)
-            .AddHeadlessExtension()
             .UseApplicationServiceProvider(provider);
         if (sql is not null)
         {

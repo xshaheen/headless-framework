@@ -16,8 +16,6 @@ public sealed class HarnessDbContextTestFixture
 {
     protected override void ConfigureDbContext(IServiceCollection services)
     {
-        services.AddDbContext<HarnessDbContext>(options =>
-            options.UseNpgsql(SqlConnectionString).AddHeadlessExtension()
-        );
+        services.AddDbContext<HarnessDbContext>(options => options.UseNpgsql(SqlConnectionString));
     }
 }

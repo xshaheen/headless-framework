@@ -8,6 +8,7 @@ using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using Npgsql;
 
 namespace Tests;
 
@@ -123,6 +124,61 @@ public sealed class SetupTests : TestBase
 
         // then
         act.Should().Throw<ArgumentNullException>();
+    }
+
+    // A data source carries what the context's connection string cannot: its password provider and other
+    // customizations, and the password itself, which that string omits once EF connects through a data source.
+    [Fact]
+    public async Task should_share_the_data_source_ef_builds_for_the_context()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddDbContext<TestMessagingDbContext>(builder =>
+            builder.UseNpgsql(
+                "Host=localhost;Database=entity;Username=postgres;Password=postgres",
+                npgsql => npgsql.ConfigureDataSource(_ => { })
+            )
+        );
+        services.AddHeadlessMessaging(setup =>
+        {
+            setup.UseInMemory();
+            setup.UseEntityFramework<TestMessagingDbContext>();
+        });
+
+        await using var provider = services.BuildServiceProvider();
+
+        // when
+        var options = provider.GetRequiredService<IOptions<PostgreSqlOptions>>().Value;
+
+        // then
+        options.DataSource.Should().NotBeNull();
+        options.DataSource!.ConnectionString.Should().Contain("Database=entity");
+    }
+
+    [Fact]
+    public async Task should_share_the_data_source_passed_to_the_context()
+    {
+        // given
+        await using var dataSource = NpgsqlDataSource.Create(
+            "Host=localhost;Database=entity;Username=postgres;Password=postgres"
+        );
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddDbContext<TestMessagingDbContext>(builder => builder.UseNpgsql(dataSource));
+        services.AddHeadlessMessaging(setup =>
+        {
+            setup.UseInMemory();
+            setup.UseEntityFramework<TestMessagingDbContext>();
+        });
+
+        await using var provider = services.BuildServiceProvider();
+
+        // when
+        var options = provider.GetRequiredService<IOptions<PostgreSqlOptions>>().Value;
+
+        // then
+        options.DataSource.Should().BeSameAs(dataSource);
     }
 
     private static string _GetInternalString(object instance, string propertyName)

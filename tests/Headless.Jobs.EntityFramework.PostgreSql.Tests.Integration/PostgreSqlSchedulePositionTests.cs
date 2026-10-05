@@ -9,7 +9,12 @@ namespace Tests;
 /// <summary>Runs the cron schedule-position advance conformance suite against PostgreSQL.</summary>
 [Collection<PostgreSqlJobsCoordinationFixture>]
 public sealed class PostgreSqlSchedulePositionTests(PostgreSqlJobsCoordinationFixture fixture)
-    : JobsSchedulePositionConformanceTests<PostgreSqlJobsCoordinationFixture>(fixture)
+    : PostgreSqlSchedulePositionTestsBase<PostgreSqlJobsCoordinationFixture>(fixture);
+
+/// <summary>The PostgreSql overrides of the shared suite, run on both the default and the retrying-strategy fixture.</summary>
+public abstract class PostgreSqlSchedulePositionTestsBase<TFixture>(TFixture fixture)
+    : JobsSchedulePositionConformanceTests<TFixture>(fixture)
+    where TFixture : PostgreSqlJobsCoordinationFixture
 {
     private readonly PostgreSqlJobsCoordinationFixture _fixture = fixture;
 

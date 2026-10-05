@@ -33,6 +33,9 @@ public interface IJobsApplicationConfigurationFixture : IJobsCoordinationFixture
         Action<CoordinationOptions> configureCoordination
     )
         where TContext : DbContext;
+
+    /// <summary>Wires the EF Core provider for an application context with its retrying execution strategy enabled.</summary>
+    void ConfigureRetryingStore(DbContextOptionsBuilder db);
 }
 
 /// <summary>

@@ -289,7 +289,6 @@ public sealed class TenantIsolationDbAssertionsTests : TestBase
 
         var options = new DbContextOptionsBuilder<NotesContext>()
             .UseSqlite(connection)
-            .AddHeadlessExtension()
             .UseApplicationServiceProvider(provider)
             .Options;
 

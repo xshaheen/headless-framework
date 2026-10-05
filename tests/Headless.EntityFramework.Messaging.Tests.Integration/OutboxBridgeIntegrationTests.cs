@@ -530,7 +530,7 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
         services.AddScoped<IDomainEventHandler<OrderShipping>, DeriveShippingFacts>();
         services.AddDbContext<BridgeTestDbContext>(options =>
         {
-            options.UseNpgsql(fixture.ConnectionString).AddHeadlessExtension();
+            options.UseNpgsql(fixture.ConnectionString);
             configureDbContext?.Invoke(options);
         });
         if (includeJobs)

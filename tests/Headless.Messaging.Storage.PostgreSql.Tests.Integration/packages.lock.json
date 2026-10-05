@@ -892,6 +892,7 @@
       "headless.entityframework.primitives": {
         "type": "Project",
         "dependencies": {
+          "Headless.AuditLog.Abstractions": "[1.0.0, )",
           "Headless.Checks": "[1.0.0, )",
           "Headless.Domain": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
@@ -1010,7 +1011,8 @@
           "Headless.Messaging.Storage.PostgreSql": "[1.0.0, )",
           "Headless.UnitOfWork.EntityFramework": "[1.0.0, )",
           "Microsoft.EntityFrameworkCore.Relational": "[10.0.12, )",
-          "Microsoft.Extensions.Options": "[10.0.12, )"
+          "Microsoft.Extensions.Options": "[10.0.12, )",
+          "Npgsql.EntityFrameworkCore.PostgreSQL": "[10.0.3, )"
         }
       },
       "headless.messaging.tests.harness": {

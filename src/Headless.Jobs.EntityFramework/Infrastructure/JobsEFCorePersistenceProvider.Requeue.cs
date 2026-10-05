@@ -17,12 +17,12 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         CancellationToken cancellationToken = default
     )
     {
-        await using var dbContext = await DbContextFactory
+        await using var readContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
-        var occurrences = dbContext.Set<CronJobOccurrenceEntity<TCronJob>>();
 
-        var observed = await occurrences
+        var observed = await readContext
+            .Set<CronJobOccurrenceEntity<TCronJob>>()
             .AsNoTracking()
             .Where(x => x.Id == occurrenceId)
             .Select(x => new
@@ -44,86 +44,96 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
             return JobRequeueOutcome.NotFailed;
         }
 
-        await using var transaction = await dbContext
-            .Database.BeginTransactionAsync(cancellationToken)
-            .ConfigureAwait(false);
+        return await JobsStoreTransaction
+            .ExecuteAsync<TDbContext, JobRequeueOutcome>(
+                DbContextFactory,
+                async (attempt, _) =>
+                {
+                    var dbContext = attempt.DbContext;
+                    var occurrences = dbContext.Set<CronJobOccurrenceEntity<TCronJob>>();
 
-        // Take the definition row lock that every occurrence producer takes first (materialization, recovery, pause,
-        // resume, schedule edit). A no-op write is enough to hold it through commit, so no new occurrence of this
-        // definition can appear between the checks below and the write.
-        var cronJobId = observed.CronJobId;
-        var locked = await dbContext
-            .Set<TCronJob>()
-            .Where(x => x.Id == cronJobId)
-            .ExecuteUpdateAsync(
-                setter => setter.SetProperty(x => x.ScheduleRevision, x => x.ScheduleRevision),
+                    // Take the definition row lock that every occurrence producer takes first (materialization,
+                    // recovery, pause, resume, schedule edit). A no-op write is enough to hold it through commit, so no
+                    // new occurrence of this definition can appear between the checks below and the write.
+                    var cronJobId = observed.CronJobId;
+                    var locked = await dbContext
+                        .Set<TCronJob>()
+                        .Where(x => x.Id == cronJobId)
+                        .ExecuteUpdateAsync(
+                            setter => setter.SetProperty(x => x.ScheduleRevision, x => x.ScheduleRevision),
+                            cancellationToken
+                        )
+                        .ConfigureAwait(false);
+
+                    if (locked == 0)
+                    {
+                        return JobRequeueOutcome.NotFound;
+                    }
+
+                    var onOverlap = await dbContext
+                        .Set<TCronJob>()
+                        .AsNoTracking()
+                        .Where(x => x.Id == cronJobId)
+                        .Select(x => x.OnOverlap)
+                        .SingleAsync(cancellationToken)
+                        .ConfigureAwait(false);
+
+                    var unfinishedSiblings = occurrences
+                        .Where(CronOverlapRule.UnfinishedOccurrenceOf<TCronJob>(cronJobId))
+                        .Where(x => x.Id != occurrenceId);
+
+                    if (
+                        CronOverlapRule.ForbidsOverlap(onOverlap)
+                        && await unfinishedSiblings.AnyAsync(cancellationToken).ConfigureAwait(false)
+                    )
+                    {
+                        return JobRequeueOutcome.Overlap;
+                    }
+
+                    // The occurrence keeps its instant, which the filtered unique index allows to only one live row.
+                    var executionTime = observed.ExecutionTime;
+                    if (
+                        await unfinishedSiblings
+                            .AnyAsync(x => x.ExecutionTime == executionTime, cancellationToken)
+                            .ConfigureAwait(false)
+                    )
+                    {
+                        return JobRequeueOutcome.Conflict;
+                    }
+
+                    var affected = await occurrences
+                        .Where(x => x.Id == occurrenceId && x.Status == JobStatus.Failed)
+                        .ExecuteUpdateAsync(
+                            setter =>
+                                setter
+                                    .SetProperty(x => x.Status, JobStatus.Idle)
+                                    .SetProperty(x => x.RetryCount, 0)
+                                    .SetProperty(x => x.ExceptionMessage, _ => null)
+                                    .SetProperty(x => x.SkippedReason, _ => null)
+                                    .SetProperty(x => x.OwnerId, _ => null)
+                                    .SetProperty(x => x.LockedUntil, _ => null)
+                                    .SetProperty(x => x.ExecutedAt, _ => null)
+                                    .SetProperty(x => x.ElapsedTime, 0L)
+                                    // An audit stamp inside the transaction, which BasePersistenceProvider's clock
+                                    // invariant permits: only lease deadlines must never be written inside an explicit
+                                    // transaction.
+                                    .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
+                            cancellationToken
+                        )
+                        .ConfigureAwait(false);
+
+                    if (affected == 0)
+                    {
+                        // Another requeue moved the row after the read above; it waited on the definition lock and
+                        // lost.
+                        return JobRequeueOutcome.Conflict;
+                    }
+
+                    await attempt.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+                    return JobRequeueOutcome.Requeued;
+                },
                 cancellationToken
             )
             .ConfigureAwait(false);
-
-        if (locked == 0)
-        {
-            return JobRequeueOutcome.NotFound;
-        }
-
-        var onOverlap = await dbContext
-            .Set<TCronJob>()
-            .AsNoTracking()
-            .Where(x => x.Id == cronJobId)
-            .Select(x => x.OnOverlap)
-            .SingleAsync(cancellationToken)
-            .ConfigureAwait(false);
-
-        var unfinishedSiblings = occurrences
-            .Where(CronOverlapRule.UnfinishedOccurrenceOf<TCronJob>(cronJobId))
-            .Where(x => x.Id != occurrenceId);
-
-        if (
-            CronOverlapRule.ForbidsOverlap(onOverlap)
-            && await unfinishedSiblings.AnyAsync(cancellationToken).ConfigureAwait(false)
-        )
-        {
-            return JobRequeueOutcome.Overlap;
-        }
-
-        // The occurrence keeps its instant, which the filtered unique index allows to only one live row.
-        var executionTime = observed.ExecutionTime;
-        if (
-            await unfinishedSiblings
-                .AnyAsync(x => x.ExecutionTime == executionTime, cancellationToken)
-                .ConfigureAwait(false)
-        )
-        {
-            return JobRequeueOutcome.Conflict;
-        }
-
-        var affected = await occurrences
-            .Where(x => x.Id == occurrenceId && x.Status == JobStatus.Failed)
-            .ExecuteUpdateAsync(
-                setter =>
-                    setter
-                        .SetProperty(x => x.Status, JobStatus.Idle)
-                        .SetProperty(x => x.RetryCount, 0)
-                        .SetProperty(x => x.ExceptionMessage, _ => null)
-                        .SetProperty(x => x.SkippedReason, _ => null)
-                        .SetProperty(x => x.OwnerId, _ => null)
-                        .SetProperty(x => x.LockedUntil, _ => null)
-                        .SetProperty(x => x.ExecutedAt, _ => null)
-                        .SetProperty(x => x.ElapsedTime, 0L)
-                        // An audit stamp inside the transaction, which BasePersistenceProvider's clock invariant
-                        // permits: only lease deadlines must never be written inside an explicit transaction.
-                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
-                cancellationToken
-            )
-            .ConfigureAwait(false);
-
-        if (affected == 0)
-        {
-            // Another requeue moved the row after the read above; it waited on the definition lock and lost.
-            return JobRequeueOutcome.Conflict;
-        }
-
-        await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
-        return JobRequeueOutcome.Requeued;
     }
 }

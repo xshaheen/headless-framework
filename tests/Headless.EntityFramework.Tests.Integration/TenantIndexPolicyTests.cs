@@ -109,7 +109,7 @@ public sealed class TenantIndexPolicyTests : TestBase
         services.AddLogging();
         services.AddHeadlessDbContextServices();
         services.AddDbContext<IndexContext<TPolicy>>(options =>
-            options.UseNpgsql("Host=localhost;Database=index-model-only").AddHeadlessExtension()
+            options.UseNpgsql("Host=localhost;Database=index-model-only")
         );
         return services.BuildServiceProvider();
     }

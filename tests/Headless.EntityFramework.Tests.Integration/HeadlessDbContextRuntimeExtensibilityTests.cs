@@ -767,7 +767,7 @@ public sealed class HeadlessDbContextRuntimeExtensibilityTests : TestBase
         configureServices?.Invoke(services);
         services.AddDbContext<RuntimeTestDbContext>(options =>
         {
-            options.UseSqlite(connection).AddHeadlessExtension();
+            options.UseSqlite(connection);
             configureDbContext?.Invoke(options);
         });
 

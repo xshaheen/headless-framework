@@ -20,6 +20,10 @@ public class TimeJobConfigurations<TTimeJob>(string schema, StorageNamingStyle s
 {
     public void Configure(EntityTypeBuilder<TTimeJob> builder)
     {
+        // Scheduler bookkeeping, not business data: an application context that audits by default would otherwise
+        // write audit rows for every claim, heartbeat, and sweep.
+        builder.ExcludeFromAudit();
+
         builder
             .Property(x => x.Function)
             .IsRequired()

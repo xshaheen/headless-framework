@@ -21,7 +21,7 @@ namespace Tests;
 /// </summary>
 [UsedImplicitly]
 [CollectionDefinition(DisableParallelization = true)]
-public sealed class SqlServerJobsCoordinationFixture
+public class SqlServerJobsCoordinationFixture
     : HeadlessSqlServerFixture,
         ICollectionFixture<SqlServerJobsCoordinationFixture>,
         IJobsApplicationConfigurationFixture
@@ -104,9 +104,14 @@ public sealed class SqlServerJobsCoordinationFixture
         setup.UseSqlServer(ConnectionString);
     }
 
-    public void ConfigureStore(DbContextOptionsBuilder db)
+    public virtual void ConfigureStore(DbContextOptionsBuilder db)
     {
         db.UseSqlServer(ConnectionString);
+    }
+
+    public void ConfigureRetryingStore(DbContextOptionsBuilder db)
+    {
+        db.UseSqlServer(ConnectionString, provider => provider.EnableRetryOnFailure(1, TimeSpan.Zero, null));
     }
 
     public void ConfigureClaims(JobsEfCoreOptionBuilder<TimeJobEntity, CronJobEntity> builder)

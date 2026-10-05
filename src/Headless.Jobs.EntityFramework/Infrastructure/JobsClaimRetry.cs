@@ -2,6 +2,8 @@
 
 using Headless.Sql;
 using Headless.Threading;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
 
 namespace Headless.Jobs.Infrastructure;
@@ -22,23 +24,44 @@ internal static partial class JobsClaimRetry
     public const string ClaimTimedOutCronJobOccurrences = "jobs.claim_timed_out_cron_job_occurrences";
 
     /// <summary>Runs <paramref name="scope" />, retrying a transient fault raised before its commit.</summary>
-    public static async Task<TResult> RunAsync<TResult>(
+    public static async Task<TResult> RunAsync<TDbContext, TResult>(
         string operation,
+        IDbContextFactory<TDbContext> dbContextFactory,
         Func<SqlAutonomousAttempt, CancellationToken, Task<TResult>> scope,
         TimeProvider timeProvider,
         ILogger logger,
         CancellationToken cancellationToken
     )
+        where TDbContext : DbContext
     {
-        return await SqlAutonomousTransaction
-            .RetryAsync(
-                operation,
-                scope,
-                timeProvider,
-                (ex, attemptNumber) => LogClaimRetry(logger, attemptNumber, TransientRetry.MaxAttempts, ex),
+        // The claim owns its retry. The context's configured strategy (EnableRetryOnFailure) would refuse the attempt's
+        // transaction, or replay a commit fault this retry deliberately surfaces, so the claim runs under a strategy
+        // that never retries. EF runs every strategy nested inside an executing one as a pass-through.
+        await using var strategyContext = await dbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        return await new ClaimExecutionStrategy(strategyContext)
+            .ExecuteAsync(
+                async ct =>
+                    await SqlAutonomousTransaction
+                        .RetryAsync(
+                            operation,
+                            scope,
+                            timeProvider,
+                            (ex, attemptNumber) => LogClaimRetry(logger, attemptNumber, TransientRetry.MaxAttempts, ex),
+                            ct
+                        )
+                        .ConfigureAwait(false),
                 cancellationToken
             )
             .ConfigureAwait(false);
+    }
+
+    private sealed class ClaimExecutionStrategy(DbContext context)
+        : ExecutionStrategy(context, maxRetryCount: 0, maxRetryDelay: TimeSpan.Zero)
+    {
+        protected override bool ShouldRetryOn(Exception exception) => false;
     }
 
     [LoggerMessage(
