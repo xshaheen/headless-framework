@@ -2279,6 +2279,7 @@ Registers Kafka transports, connection pool, consumer factory, and provider-spec
 - Consumer hatch: `Tune(identity, c => c.UseNats(nats => nats.Sharded()))`, needed only when the producer shards a message this host declares without `SubjectShard(...)`.
 - Consumer startup honors host cancellation while connecting and provisioning JetStream topology, while preserving configured topology timeouts.
 - Request/reply over a core NATS subscription on `headless.reply.{32 hex}`, outside JetStream; the address survives reconnects. Keep JetStream streams off `headless.reply.>`. See [Request/reply](#requestreply).
+- Contributes the `messaging-nats` readiness health check (tags `ready`, `headless`, `messaging`), which sends a NATS `PING` on a pooled connection. See [Health checks](utilities.md#health-checks).
 
 ### Design constraints
 

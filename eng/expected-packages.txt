@@ -55,7 +55,7 @@ Headless.DistributedLocks.PostgreSql
 Headless.DistributedLocks.Redis
 Headless.DistributedLocks.SqlServer
 Headless.Domain
-Headless.Domain.LocalEventBus
+Headless.Domain.EventDispatcher
 Headless.Emails
 Headless.Emails.Abstractions
 Headless.Emails.Aws

@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Hosting;
 using Headless.Sql.PostgreSql;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -10,6 +11,10 @@ namespace Headless.Sql;
 /// <summary>
 /// Registration extensions for the PostgreSQL SQL data-access provider.
 /// </summary>
+/// <remarks>
+/// Both overloads also contribute the <c>sql-postgresql</c> readiness health check, which runs <c>SELECT 1</c> on a new
+/// connection each time health is checked. Remove it with <c>services.RemoveHealthChecks(...)</c>.
+/// </remarks>
 [PublicAPI]
 public static class SetupPostgreSqlSql
 {
@@ -63,6 +68,12 @@ public static class SetupPostgreSqlSql
     {
         services.TryAddSingleton<IConnectionStringChecker, NpgsqlConnectionStringChecker>();
         services.TryAddScoped<ISqlCurrentConnection, DefaultSqlCurrentConnection>();
+        services.AddHeadlessHealthCheck(
+            "sql-postgresql",
+            static (provider, cancellationToken) =>
+                provider.GetRequiredService<ISqlConnectionFactory>().PingAsync(cancellationToken),
+            HeadlessHealthCheckTags.Database
+        );
 
         return services;
     }

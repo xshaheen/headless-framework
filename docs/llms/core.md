@@ -1,6 +1,6 @@
 ---
 domain: Core
-packages: Checks, Domain, Domain.LocalEventBus
+packages: Checks, Domain, Domain.EventDispatcher
 ---
 
 # Core
@@ -11,7 +11,7 @@ packages: Checks, Domain, Domain.LocalEventBus
 
 - **`Headless.Checks`** — guard clause library with `Argument` (preconditions) and `Ensure` (runtime assertions).
 - **`Headless.Domain`** — DDD abstractions: `Entity`, `AggregateRoot`, `ValueObject`, auditing interfaces, concurrency stamps, and event contracts. Domain (in-process) events use plain payloads through `IDomainEventEmitter`; integration (distributed) events use plain payloads through `IIntegrationEventEmitter`. `AggregateRoot` implements both emitters; integration events are dispatched by the ORM/messaging layer, not from this package (see [orm.md](orm.md)).
-- **`Headless.Domain.LocalEventBus`** — DI-based `IDomainEventDispatcher` for in-process domain event dispatch. Register with `AddHeadlessDomainEventDispatcher()` and implement `IDomainEventHandler<T>`. Namespace: `Headless.Domain`.
+- **`Headless.Domain.EventDispatcher`** — DI-based `IDomainEventDispatcher` for in-process domain event dispatch. Register with `AddHeadlessDomainEventDispatcher()` and implement `IDomainEventHandler<T>`. Namespace: `Headless.Domain`.
 - The ambient-context contracts and services (`ICurrentUser`, `ICurrentLocale`, `ICurrentPrincipalAccessor`, host identity, ...) ship as `Headless.Context.Abstractions` / `Headless.Context`; see [context.md](context.md).
 
 ## Agent Rules
@@ -121,7 +121,7 @@ Core domain-driven design abstractions including entities, aggregate roots, valu
 - **Audited bases**: `AuditedEntity<TId>` (over `Entity<TId>`) and `AuditedAggregateRoot<TId>` (over `AggregateRoot<TId>`) implement all four audit interfaces with `protected` setters. The `<TId, TAccountId>` and `<TId, TAccountId, TAccount>` forms add the matching interface arity; only the last form exposes the public transition methods
 - **Concurrency**: `IHasConcurrencyStamp`
 - **Multi-tenancy**: `IMultiTenant`
-- **Domain Events (in-process)**: `IDomainEventEmitter`, `IDomainEventHandler<T>`, `DomainEventHandlerOrderAttribute`. An aggregate raises its own events through the `protected AddDomainEvent`; the readers/clearers (`GetDomainEvents`, `ClearDomainEvents`) and the `IDomainEventEmitter` contract stay public for infrastructure that collects and dispatches them. Dispatch is provided by `Headless.Domain.LocalEventBus`.
+- **Domain Events (in-process)**: `IDomainEventEmitter`, `IDomainEventHandler<T>`, `DomainEventHandlerOrderAttribute`. An aggregate raises its own events through the `protected AddDomainEvent`; the readers/clearers (`GetDomainEvents`, `ClearDomainEvents`) and the `IDomainEventEmitter` contract stay public for infrastructure that collects and dispatches them. Dispatch is provided by `Headless.Domain.EventDispatcher`.
 - **Integration Events (distributed)**: `IIntegrationEventEmitter`. An aggregate raises its own events through the `protected AddIntegrationEvent`; `GetIntegrationEvents`/`ClearIntegrationEvents` and the `IIntegrationEventEmitter` contract stay public for infrastructure. This package only defines the contract and the emitter — integration events are dispatched by the ORM/messaging layer (`Headless.EntityFramework.Messaging`), not from `Headless.Domain` (see [orm.md](orm.md)).
 - **Entity Events**: `EntityCreatedEventData`, `EntityUpdatedEventData`, `EntityDeletedEventData`
 
@@ -236,7 +236,7 @@ No configuration required. This is an abstractions package.
 
 `EventEmissionScope.Begin` temporarily establishes async-flow-local business lineage. Dispose its scope in reverse creation order to restore the parent; no services, persistence, or transport are registered.
 
-## Headless.Domain.LocalEventBus
+## Headless.Domain.EventDispatcher
 
 DI-based implementation of `IDomainEventDispatcher` for in-process domain event handling.
 
@@ -258,7 +258,7 @@ DI-based implementation of `IDomainEventDispatcher` for in-process domain event 
 ### Install
 
 ```bash
-dotnet add package Headless.Domain.LocalEventBus
+dotnet add package Headless.Domain.EventDispatcher
 ```
 
 ### Setup and use

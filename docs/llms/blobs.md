@@ -606,6 +606,7 @@ Azure Blob Storage implementation of `IBlobStorage` for storing files in Azure.
 - Container lifecycle via a dedicated `AzureBlobContainerManager` resolved from DI (ensured-container cache retained). `UploadAsync` no longer auto-creates a missing container — that is an error.
 - Non-seekable upload streams pass through (no buffering).
 - Per-store `BlobServiceClient` from an optional `clientFactory`; falls back to the ambient `BlobServiceClient` from DI.
+- Contributes a readiness health check per store: `blobs-azure` for the default store and `blobs-azure-{name}` for a named one (tags `ready`, `headless`, `blobs`). The probe reads one page of the account's container list, so the identity needs `containers/read` (Storage Blob Data Reader or above, or an account SAS that can list). See [Health checks](utilities.md#health-checks).
 
 ### Install
 

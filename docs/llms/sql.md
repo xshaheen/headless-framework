@@ -55,6 +55,8 @@ public interface ISqlConnectionFactory
 
 Each provider implementation's public `CreateNewConnectionAsync` returns a covariant, strongly-typed connection (e.g. `NpgsqlConnection`, `SqlConnection`, `SqliteConnection`) so provider-aware code can access driver-specific APIs without an extra cast. The `ISqlConnectionFactory` explicit implementation returns `DbConnection` for abstraction consumers.
 
+`factory.PingAsync(cancellationToken)` (`Headless.Sql`) opens a new connection and runs `SELECT 1` on it. It sends a query because opening a pooled connection can return an idle one without a round trip. The provider health checks use it as their probe.
+
 ### Ambient connection (`ISqlCurrentConnection`)
 
 `ISqlCurrentConnection` is for unit-of-work scenarios where multiple repositories must share the same underlying connection within a request:
@@ -315,6 +317,7 @@ Default implementation package for provider-agnostic SQL helpers.
 - Lazily opens one connection per scope and reuses it until disposal.
 - Reopens the underlying connection if it is observed closed.
 - `SqlAutonomousTransaction` and `SqlAutonomousAttempt` — the store kit's autonomous-call retry (see [Store statement kit](#store-statement-kit-for-provider-authors)). They classify faults through `RelationalTransientFaults`, so the package depends on `Headless.UnitOfWork`.
+- `PingAsync(CancellationToken)` on `ISqlConnectionFactory` — opens a new connection and runs `SELECT 1`; throws the driver's `DbException` when the server is unreachable.
 - `SqlDiagnostics` and the `AddSqlInstrumentation()` extensions on `TracerProviderBuilder` and `MeterProviderBuilder` — the autonomous-call telemetry (see [Store kit observability](#store-kit-observability)).
 
 ### Install
@@ -408,7 +411,7 @@ services.AddPostgreSqlSql(sp =>
 
 ### Runtime behavior
 
-`AddPostgreSqlSql` registers `ISqlConnectionFactory` and `IConnectionStringChecker` as singletons and `ISqlCurrentConnection` (`DefaultSqlCurrentConnection`) as scoped.
+`AddPostgreSqlSql` registers `ISqlConnectionFactory` and `IConnectionStringChecker` as singletons and `ISqlCurrentConnection` (`DefaultSqlCurrentConnection`) as scoped. It also contributes the `sql-postgresql` readiness health check (tags `ready`, `headless`, `database`), which runs `PingAsync` each time health is checked; storage features that reuse the shared connection are covered by it. See [Health checks](utilities.md#health-checks).
 
 ---
 ## Headless.Sql.SqlServer
@@ -473,7 +476,7 @@ services.AddSqlServerSql(sp =>
 
 ### Runtime behavior
 
-`AddSqlServerSql` registers `ISqlConnectionFactory` and `IConnectionStringChecker` as singletons and `ISqlCurrentConnection` (`DefaultSqlCurrentConnection`) as scoped.
+`AddSqlServerSql` registers `ISqlConnectionFactory` and `IConnectionStringChecker` as singletons and `ISqlCurrentConnection` (`DefaultSqlCurrentConnection`) as scoped. It also contributes the `sql-sqlserver` readiness health check (tags `ready`, `headless`, `database`), which runs `PingAsync` each time health is checked. See [Health checks](utilities.md#health-checks).
 
 ---
 ## Headless.Sql.Sqlite

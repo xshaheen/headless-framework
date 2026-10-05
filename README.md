@@ -284,7 +284,7 @@ Foundational building blocks shared across the framework — domain primitives, 
 | [Headless.Security.Argon2](src/Headless.Security.Argon2/README.md) | Argon2id secret hashing, the default `ISecretHasher` algorithm |
 | [Headless.Checks](src/Headless.Checks/README.md) | Guard clauses and argument validation |
 | [Headless.Domain](src/Headless.Domain/README.md) | Domain entities and events |
-| [Headless.Domain.LocalEventBus](src/Headless.Domain.LocalEventBus/README.md) | DI-based `ILocalEventBus` for in-process domain event publishing |
+| [Headless.Domain.EventDispatcher](src/Headless.Domain.EventDispatcher/README.md) | DI-based `IDomainEventDispatcher` that runs in-process domain event handlers |
 | [Headless.Mediator](src/Headless.Mediator/README.md) | Mediator pipeline behaviors (FluentValidation, request/response logging) |
 | [Headless.MultiTenancy.Abstractions](src/Headless.MultiTenancy.Abstractions/README.md) | Tenant-context contracts plus the optional tenant catalog's store SPI and models |
 | [Headless.MultiTenancy](src/Headless.MultiTenancy/README.md) | Composition surface for tenant posture across Headless packages |
