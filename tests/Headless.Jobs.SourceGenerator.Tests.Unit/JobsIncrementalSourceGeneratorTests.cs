@@ -389,6 +389,14 @@ public sealed class JobsIncrementalSourceGeneratorTests
     }
 
     [Fact]
+    public void should_report_a_negative_cluster_concurrency_before_emission()
+    {
+        var diagnostics = _Diagnostics(_Job("billing.broken", "Broken", ", ClusterMaxConcurrency = -1"));
+
+        diagnostics.Should().ContainSingle().Which.Id.Should().Be("HF013");
+    }
+
+    [Fact]
     public void should_report_unknown_and_duplicate_middleware_declarations()
     {
         var driver = GeneratorTestHelper.Run(

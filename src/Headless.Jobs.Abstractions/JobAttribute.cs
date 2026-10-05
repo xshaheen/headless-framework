@@ -48,6 +48,14 @@ public sealed class JobAttribute(string identity) : Attribute
     /// </summary>
     public int MaxConcurrency { get; set; }
 
+    /// <summary>
+    /// Maximum number of concurrent runs across every node that shares the job store. <c>0</c> means no cluster-wide
+    /// limit. A run holds its slot from the moment a node claims it until its lease ends, including while it waits
+    /// for <see cref="MaxConcurrency"/> admission and while an in-process retry backs off. Enforced by the PostgreSQL
+    /// and SQL Server native claim providers and by in-memory storage.
+    /// </summary>
+    public int ClusterMaxConcurrency { get; set; }
+
     /// <summary>Durable argument schema version, compared ordinally. Defaults to the initial schema version.</summary>
     public string ContractVersion { get; set; } = JobContract.InitialVersion;
 

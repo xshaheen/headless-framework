@@ -46,6 +46,13 @@ public readonly record struct JobFunctionRegistration
     public required int MaxConcurrency { get; init; }
 
     /// <summary>
+    /// Maximum number of concurrent runs of this function across every node that shares the job store; <c>0</c>
+    /// means no cluster-wide limit. A run counts from its claim until its lease ends.
+    /// </summary>
+    /// <remarks>Optional by the additive-only policy above: an assembly compiled before this member existed reads as unlimited.</remarks>
+    public int ClusterMaxConcurrency { get; init; }
+
+    /// <summary>
     /// Recovery policy to seed onto this function's cron definition when it is first created, or
     /// <see langword="null"/> to take the scheduler-wide default. Ignored for time jobs.
     /// </summary>

@@ -22,6 +22,7 @@ public sealed class JobTuningBuilder
     private readonly List<JobScheduleMiddlewareRegistration> _schedule = [];
     private readonly List<JobExecuteMiddlewareRegistration> _execute = [];
     private int? _maxConcurrency;
+    private int? _clusterMaxConcurrency;
     private JobPriority? _priority;
     private JobOptions? _options;
     private FailurePolicyDefinition? _failurePolicy;
@@ -43,6 +44,20 @@ public sealed class JobTuningBuilder
     public JobTuningBuilder Concurrency(int maxConcurrency)
     {
         _maxConcurrency = Argument.IsPositiveOrZero(maxConcurrency);
+        return this;
+    }
+
+    /// <summary>
+    /// Sets the maximum number of concurrent runs of this job across every node that shares the job store. <c>0</c>
+    /// removes the cluster-wide limit. Every node should configure the same value: each node enforces the value it has
+    /// when it claims a run.
+    /// </summary>
+    /// <param name="clusterMaxConcurrency">The cluster-wide limit; <c>0</c> means no cluster-wide limit.</param>
+    /// <returns>This builder, for chaining.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="clusterMaxConcurrency"/> is negative.</exception>
+    public JobTuningBuilder ClusterConcurrency(int clusterMaxConcurrency)
+    {
+        _clusterMaxConcurrency = Argument.IsPositiveOrZero(clusterMaxConcurrency);
         return this;
     }
 
@@ -167,7 +182,16 @@ public sealed class JobTuningBuilder
     }
 
     internal JobTuning Build() =>
-        new(Identity, _maxConcurrency, _priority, _options, [.. _schedule], [.. _execute], _failurePolicy);
+        new(
+            Identity,
+            _maxConcurrency,
+            _clusterMaxConcurrency,
+            _priority,
+            _options,
+            [.. _schedule],
+            [.. _execute],
+            _failurePolicy
+        );
 
     // Prefixed with the job identity so the tuned registration orders deterministically next to generated middleware
     // and a type attached to two jobs keeps two distinct registrations.
@@ -178,6 +202,7 @@ public sealed class JobTuningBuilder
 internal sealed record JobTuning(
     string Identity,
     int? MaxConcurrency,
+    int? ClusterMaxConcurrency,
     JobPriority? Priority,
     JobOptions? Options,
     JobScheduleMiddlewareRegistration[] ScheduleMiddleware,

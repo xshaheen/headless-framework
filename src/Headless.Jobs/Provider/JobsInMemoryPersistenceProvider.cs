@@ -59,6 +59,11 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
     // an in-tree descendant, which runs with the root that claimed it.
     private readonly JobsRunFilter _runFilter;
 
+    // Cluster-wide limits. A limited function's claim counts its live leased rows and leases under _clusterSlotsLock,
+    // so two concurrent claims never both take the last slot. The lock is innermost: nothing is acquired under it.
+    private readonly JobsClusterConcurrency _clusterConcurrency;
+    private readonly Lock _clusterSlotsLock = new();
+
     public JobsInMemoryPersistenceProvider(IServiceProvider serviceProvider)
     {
         _timeProvider = serviceProvider.GetRequiredService<TimeProvider>();
@@ -68,7 +73,50 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         _leaseDuration = optionsBuilder?.LeaseDuration ?? TimeSpan.FromMinutes(5);
         _maxChainDepth = optionsBuilder?.MaxChainDepth ?? SchedulerOptionsBuilder.DefaultMaxChainDepth;
         _runFilter = serviceProvider.GetService<JobsRunFilter>() ?? JobsRunFilter.All;
+        _clusterConcurrency = serviceProvider.GetService<JobsClusterConcurrency>() ?? JobsClusterConcurrency.None;
     }
+
+    /// <summary>
+    /// Runs <paramref name="claim"/> for a row of <paramref name="function"/>, under the slots lock and only while a
+    /// slot is free when the function is cluster-limited.
+    /// </summary>
+    private bool _TryClaimWithinClusterLimit(string function, DateTimeOffset now, Func<bool> claim)
+    {
+        if (!_clusterConcurrency.IsLimited(function))
+        {
+            return claim();
+        }
+
+        lock (_clusterSlotsLock)
+        {
+            return _HasFreeClusterSlot(function, now) && claim();
+        }
+    }
+
+    // The limited functions with no free slot. The peek skips them: a due row the claim cannot lease would keep the
+    // scheduler's wake at now and spin it until the row ages into the fallback sweep's window.
+    private HashSet<string> _SaturatedClusterFunctions(DateTimeOffset now) =>
+        _clusterConcurrency.HasLimits
+            ? [.. _clusterConcurrency.LimitedFunctions.Where(function => !_HasFreeClusterSlot(function, now))]
+            : [];
+
+    private bool _HasFreeClusterSlot(string function, DateTimeOffset now)
+    {
+        var live =
+            _timeJobs.Values.Count(x =>
+                string.Equals(x.Function, function, StringComparison.Ordinal)
+                && _HoldsClusterSlot(x.Status, x.LockedUntil, now)
+            )
+            + _cronOccurrences.Values.Count(x =>
+                string.Equals(x.Function, function, StringComparison.Ordinal)
+                && _HoldsClusterSlot(x.Status, x.LockedUntil, now)
+            );
+
+        return live < _clusterConcurrency.LimitOf(function);
+    }
+
+    private static bool _HoldsClusterSlot(JobStatus status, DateTime? lockedUntil, DateTimeOffset now) =>
+        status is JobStatus.Queued or JobStatus.InProgress && lockedUntil > now.UtcDateTime;
 
     // The #5 completion/claim fence (mirror of EF WhereOwnedBy): a row is touchable only when this node owns it and it
     // is still non-terminal. Extracted (#467) so the predicate that guards every completion/claim path lives in one
@@ -171,7 +219,13 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                     updatedTicker.UpdatedAt = now;
                     updatedTicker.Status = JobStatus.Queued;
 
-                    if (_TryUpdateTimeJob(timeJob.Id, updatedTicker, existingTicker))
+                    if (
+                        _TryClaimWithinClusterLimit(
+                            existingTicker.Function,
+                            now,
+                            () => _TryUpdateTimeJob(timeJob.Id, updatedTicker, existingTicker)
+                        )
+                    )
                     {
                         _SyncReconcileCandidate(updatedTicker);
                         var claimedIds = _ClaimIdleDescendants(timeJob.Id, now);
@@ -292,7 +346,13 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                     updatedTicker.UpdatedAt = now;
                     updatedTicker.Status = JobStatus.Queued;
 
-                    if (_TryUpdateTimeJob(job.Id, updatedTicker, existingTicker))
+                    if (
+                        _TryClaimWithinClusterLimit(
+                            existingTicker.Function,
+                            now,
+                            () => _TryUpdateTimeJob(job.Id, updatedTicker, existingTicker)
+                        )
+                    )
                     {
                         _SyncReconcileCandidate(updatedTicker);
                         var claimedIds = _ClaimIdleDescendants(job.Id, now);
@@ -351,6 +411,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         // reconcile here, and reporting the instant keeps the caller's wake arithmetic identical across providers.
         var now = _timeProvider.GetUtcNow();
         var oneSecondAgo = now.UtcDateTime.AddSeconds(-1);
+        var saturated = _SaturatedClusterFunctions(now);
 
         // Base query: same filter as EF provider, but over the snapshot. A timed descendant surfaces here as
         // its own candidate (excluded from the in-tree walk), so the parent gate keeps it out until its parent matched.
@@ -359,6 +420,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 x.ExecutionTime != null
                 && _CanAcquire(x)
                 && x.ExecutionTime >= oneSecondAgo
+                && !saturated.Contains(x.Function)
                 && _ParentGateAllowsClaim(x)
             )
             .ToArray();
@@ -784,7 +846,8 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 continue;
             }
 
-            if (!_CanAcquire(job) || !_ParentGateAllowsClaim(job))
+            // A cluster-limited row is left for the scheduler's claim, the one path that counts it against the limit.
+            if (!_CanAcquire(job) || !_ParentGateAllowsClaim(job) || _clusterConcurrency.IsLimited(job.Function))
             {
                 continue;
             }
@@ -2740,7 +2803,14 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                     // re-attach on the way out instead of trusting every producer to have done it.
                     updatedOccurrence.CronJob ??= currentDefinition;
 
-                    if (_cronOccurrences.TryUpdate(occurrenceId, updatedOccurrence, existingOccurrence))
+                    // With no free slot the occurrence is left for the fallback sweep, which claims it once one frees.
+                    if (
+                        _TryClaimWithinClusterLimit(
+                            currentDefinition.Function,
+                            now,
+                            () => _cronOccurrences.TryUpdate(occurrenceId, updatedOccurrence, existingOccurrence)
+                        )
+                    )
                     {
                         yield return _CloneCronOccurrence(updatedOccurrence);
                     }
@@ -2770,9 +2840,24 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                     newOccurrence.SnapshotContract(currentDefinition);
 
                     // Attach the cron navigation when the definition is in the in-memory map (execution needs Function).
-                    if (_cronOccurrences.TryAdd(newOccurrence.Id, newOccurrence))
+                    if (
+                        _TryClaimWithinClusterLimit(
+                            newOccurrence.Function,
+                            now,
+                            () => _cronOccurrences.TryAdd(newOccurrence.Id, newOccurrence)
+                        )
+                    )
                     {
                         yield return _CloneCronOccurrence(newOccurrence);
+                    }
+                    else if (_clusterConcurrency.IsLimited(newOccurrence.Function))
+                    {
+                        // No free slot: materialize the occurrence Idle and unleased so the fallback sweep runs it
+                        // once a slot frees, as the relational providers do.
+                        newOccurrence.Status = JobStatus.Idle;
+                        newOccurrence.OwnerId = null;
+                        newOccurrence.LockedUntil = null;
+                        _cronOccurrences.TryAdd(newOccurrence.Id, newOccurrence);
                     }
                 }
             }
@@ -2815,7 +2900,13 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                     updatedOccurrence.UpdatedAt = now;
                     updatedOccurrence.Status = JobStatus.Queued;
 
-                    if (_cronOccurrences.TryUpdate(occurrence.Id, updatedOccurrence, existingOccurrence))
+                    if (
+                        _TryClaimWithinClusterLimit(
+                            existingOccurrence.Function,
+                            now,
+                            () => _cronOccurrences.TryUpdate(occurrence.Id, updatedOccurrence, existingOccurrence)
+                        )
+                    )
                     {
                         yield return _CloneCronOccurrence(updatedOccurrence);
                     }
@@ -3279,7 +3370,7 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
                 continue;
             }
 
-            if (!_CanAcquireCronOccurrence(occurrence))
+            if (!_CanAcquireCronOccurrence(occurrence) || _clusterConcurrency.IsLimited(occurrence.Function))
             {
                 continue;
             }

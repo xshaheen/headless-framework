@@ -29,6 +29,7 @@ internal sealed record JobModel(
     string? TimeZone,
     int Priority,
     int MaxConcurrency,
+    int ClusterMaxConcurrency,
     int? OnMissedRun,
     int? MissedRunGraceSeconds,
     int? OnOverlap,

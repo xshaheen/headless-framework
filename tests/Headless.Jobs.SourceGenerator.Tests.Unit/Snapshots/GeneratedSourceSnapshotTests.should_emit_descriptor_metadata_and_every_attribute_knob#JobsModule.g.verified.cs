@@ -22,7 +22,7 @@ namespace Jobs.SourceGenerator.Tests
         static void global::Headless.Jobs.IJobsModule.Register(global::Headless.Jobs.JobsCatalogBuilder catalog)
         {
             var functions = new Dictionary<string, JobFunctionRegistration>(2);
-            functions.Add("knobs.all", new JobFunctionRegistration { CronExpression = "*/5 * * * * *", Priority = (JobPriority)3, Delegate = Invoke_Demo_Knobs_AllKnobs, MaxConcurrency = 4, JobType = typeof(global::Demo.Knobs.AllKnobs), TimeZoneId = "Africa/Cairo", OnMissedRun = (MissedRunPolicy)1, MissedRunGraceSeconds = 90, OnOverlap = (CronOverlapPolicy)1 });
+            functions.Add("knobs.all", new JobFunctionRegistration { CronExpression = "*/5 * * * * *", Priority = (JobPriority)3, Delegate = Invoke_Demo_Knobs_AllKnobs, MaxConcurrency = 4, JobType = typeof(global::Demo.Knobs.AllKnobs), ClusterMaxConcurrency = 6, TimeZoneId = "Africa/Cairo", OnMissedRun = (MissedRunPolicy)1, MissedRunGraceSeconds = 90, OnOverlap = (CronOverlapPolicy)1 });
             functions.Add("knobs.defaults", new JobFunctionRegistration { CronExpression = "", Priority = (JobPriority)0, Delegate = Invoke_Demo_Knobs_Defaults, MaxConcurrency = 0, JobType = typeof(global::Demo.Knobs.Defaults) });
             catalog.AddFunctions(functions);
             RegisterRequestTypes(catalog);

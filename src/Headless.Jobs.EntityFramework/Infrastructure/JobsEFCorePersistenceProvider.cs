@@ -55,7 +55,8 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         ICache? cache,
         IJobsClaimStrategy<TTimeJob, TCronJob> claimStrategy,
         ILogger logger,
-        JobsRunFilter? runFilter = null
+        JobsRunFilter? runFilter = null,
+        JobsClusterConcurrency? clusterConcurrency = null
     )
         : base(
             dbContextFactory,
@@ -66,7 +67,8 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
             cache,
             claimStrategy,
             logger,
-            runFilter
+            runFilter,
+            clusterConcurrency
         )
     {
         _coordinatedWriteOptions = coordinatedWriteOptions;
@@ -1365,6 +1367,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
             .Set<CronJobOccurrenceEntity<TCronJob>>()
             .Where(x => ((IEnumerable<Guid>)occurrenceIds).Contains(x.Id))
             .WhereRunnable(RunFilter)
+            .WhereNotClusterLimited(ClusterConcurrency)
             .WhereCanAcquireUsingDatabaseClock(owner);
 
         // Lock and mark InProgress

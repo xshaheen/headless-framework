@@ -221,6 +221,9 @@ internal sealed record JobFunctionRegistry(
     /// </summary>
     public JobsRunFilter RunFilter { get; init; } = JobsRunFilter.All;
 
+    /// <summary>The cluster-wide concurrency limit of every job that declares or is tuned to one.</summary>
+    public JobsClusterConcurrency ClusterConcurrency { get; init; } = JobsClusterConcurrency.None;
+
     /// <summary>Node-death overrides tuned per job identity.</summary>
     public FrozenDictionary<string, JobOptions> OptionsByFunction { get; init; } =
         FrozenDictionary<string, JobOptions>.Empty;
