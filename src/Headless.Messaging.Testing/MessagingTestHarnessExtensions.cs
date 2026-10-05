@@ -52,7 +52,7 @@ public static class MessagingTestHarnessExtensions
     /// var harness = factory.Services.GetRequiredService&lt;MessagingTestHarness&gt;();
     ///
     /// await client.PostAsJsonAsync("/orders", new { Id = "ORD-1" });
-    /// await harness.WaitForConsumed&lt;OrderCreated&gt;(TimeSpan.FromSeconds(5));
+    /// await harness.WaitForConsumedAsync&lt;OrderCreated&gt;(TimeSpan.FromSeconds(5));
     /// </code>
     /// </para>
     /// </remarks>

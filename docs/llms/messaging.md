@@ -2614,8 +2614,8 @@ EF execution-strategy retries are allowed only before handler entry. After entry
 ### API and behavior
 
 - `MessagingTestHarness` records messages at the bus/queue transport layer.
-- `WaitForPublished<T>(...)`, `WaitForConsumed<T>(...)`, `WaitForFaulted<T>(...)`, and `WaitForExhausted<T>(...)` block until a match arrives or the timeout elapses.
-- Consumers under test register the same way as in production: attribute-declared classes and `AddModule<…MessagingModule>()`. `WaitForPublished<T>(MessageLane.Bus)` / `MessageLane.Queue` distinguishes identical payloads sent through the two lanes.
+- `WaitForPublishedAsync<T>(...)`, `WaitForConsumedAsync<T>(...)`, `WaitForFaultedAsync<T>(...)`, and `WaitForExhaustedAsync<T>(...)` block until a match arrives or the timeout elapses.
+- Consumers under test register the same way as in production: attribute-declared classes and `AddModule<…MessagingModule>()`. `WaitForPublishedAsync<T>(MessageLane.Bus)` / `MessageLane.Queue` distinguishes identical payloads sent through the two lanes.
 - Predicate overloads for filtering by payload shape.
 - Store-first by default: the harness keeps the production `DeliveryMode.Durable` default, so a plain publish is stored first and dispatched from storage; `RecordedMessage.RequestedDeliveryMode` / `ResolvedDeliveryMode` report what was asked for and what ran.
 - `RunInUnitOfWorkAsync(...)` creates a service scope, begins a resource-less unit of work on it, and hands the delegate **both** that scope's `IServiceProvider` and the `IUnitOfWork` itself — `Func<IServiceProvider, IUnitOfWork, Task>`, plus a `Task<TResult>` overload. Publish through the unit's `Outbox` inside the delegate to exercise an enlisted publish against a live commit or rollback.
@@ -2626,9 +2626,9 @@ EF execution-strategy retries are allowed only before handler entry. After entry
 
 Use the testing package for application tests that need to assert published messages or consumed messages. Provider conformance still belongs in provider-specific or shared harness tests.
 
-The harness does not weaken delivery: `MessagingOptions.DefaultDeliveryMode` stays `Durable`, so `PublishAsync` returns once the row is in in-memory storage and the transport send, the `Published` observation, and consumption follow on dispatcher threads. Assert through `WaitFor*` rather than reading the collections right after a publish. `ResetAsync()` waits until no published row is `Scheduled`/`Queued` and no received row is `Scheduled` (those states bracket every send and consumer execution), drops transport messages no consumer picked up, and only then clears observations and storage; a publish delayed by more than a minute is not awaited and still fires when due. `RunInUnitOfWorkAsync` begins the unit of work with `IUnitOfWorkFactory.BeginAsync()` (resource-less) and hands it to the delegate; in-memory storage is the one storage that can join a resource-less unit (see [Delivery Modes](#delivery-modes)), so `unit.Outbox` publishes made inside the delegate are captured on the unit. Completion stores the captured rows and hands them to the dispatcher, so they surface through `WaitForPublished`/`WaitForConsumed`; an exception from the delegate rolls the unit back, discards the rows, and records nothing. Every call opens an independent scope and unit — a nested call is a second unit, not a participant in the outer one. The recorded `ResolvedDeliveryMode` is `Durable` either way; enlistment shows up in `RecordedMessage.IsCoordinated`, not in the mode.
+The harness does not weaken delivery: `MessagingOptions.DefaultDeliveryMode` stays `Durable`, so `PublishAsync` returns once the row is in in-memory storage and the transport send, the `Published` observation, and consumption follow on dispatcher threads. Assert through `WaitFor*` rather than reading the collections right after a publish. `ResetAsync()` waits until no published row is `Scheduled`/`Queued` and no received row is `Scheduled` (those states bracket every send and consumer execution), drops transport messages no consumer picked up, and only then clears observations and storage; a publish delayed by more than a minute is not awaited and still fires when due. `RunInUnitOfWorkAsync` begins the unit of work with `IUnitOfWorkFactory.BeginAsync()` (resource-less) and hands it to the delegate; in-memory storage is the one storage that can join a resource-less unit (see [Delivery Modes](#delivery-modes)), so `unit.Outbox` publishes made inside the delegate are captured on the unit. Completion stores the captured rows and hands them to the dispatcher, so they surface through `WaitForPublishedAsync`/`WaitForConsumedAsync`; an exception from the delegate rolls the unit back, discards the rows, and records nothing. Every call opens an independent scope and unit — a nested call is a second unit, not a participant in the outer one. The recorded `ResolvedDeliveryMode` is `Durable` either way; enlistment shows up in `RecordedMessage.IsCoordinated`, not in the mode.
 
-Two consequences of running on in-memory storage. First, the in-memory transport hands a message to its consumer inside the send, before the sending thread records `Published`; the harness's consume decorator therefore waits for the message's `Published` record before running the consumer, so for any one message `Published` is always observable before `Consumed` or `Faulted`, and `harness.Published` is safe to read after `WaitForConsumed`. Second, `harness.Publisher`, `harness.Queue`, and `harness.GetRequiredService<T>()` resolve from a harness-owned scope, and `IBus`/`IQueue` are autonomous singletons in any case, so publishes through them are always standalone durable writes that survive a rollback — including inside the `RunInUnitOfWorkAsync` delegate. Enlistment in a test comes from the unit handed to that delegate and nothing else.
+Two consequences of running on in-memory storage. First, the in-memory transport hands a message to its consumer inside the send, before the sending thread records `Published`; the harness's consume decorator therefore waits for the message's `Published` record before running the consumer, so for any one message `Published` is always observable before `Consumed` or `Faulted`, and `harness.Published` is safe to read after `WaitForConsumedAsync`. Second, `harness.Publisher`, `harness.Queue`, and `harness.GetRequiredService<T>()` resolve from a harness-owned scope, and `IBus`/`IQueue` are autonomous singletons in any case, so publishes through them are always standalone durable writes that survive a rollback — including inside the `RunInUnitOfWorkAsync` delegate. Enlistment in a test comes from the unit handed to that delegate and nothing else.
 
 ### Install
 
@@ -2644,7 +2644,7 @@ using AwesomeAssertions;
 services.AddMessagingTestHarness();
 
 var harness = provider.GetRequiredService<MessagingTestHarness>();
-await harness.WaitForPublished<OrderPlaced>(TimeSpan.FromSeconds(5));
+await harness.WaitForPublishedAsync<OrderPlaced>(TimeSpan.FromSeconds(5));
 
 // Shared harness: wait for in-flight store-first work, then clear observations and storage.
 await harness.ResetAsync();
@@ -2656,7 +2656,7 @@ await harness.RunInUnitOfWorkAsync(async (sp, unit) =>
     await unit.Outbox.PublishAsync(new OrderPlaced(Guid.NewGuid()));
 });
 
-var recorded = await harness.WaitForPublished<OrderPlaced>(TimeSpan.FromSeconds(5));
+var recorded = await harness.WaitForPublishedAsync<OrderPlaced>(TimeSpan.FromSeconds(5));
 recorded.ResolvedDeliveryMode.Should().Be(DeliveryMode.Durable);
 recorded.IsCoordinated.Should().BeTrue();
 ```

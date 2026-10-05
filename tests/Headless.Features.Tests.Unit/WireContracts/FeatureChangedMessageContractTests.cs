@@ -53,8 +53,8 @@ public sealed class FeatureChangedMessageContractTests : TestBase
         await harness.Publisher.PublishAsync(message, cancellationToken: AbortToken);
 
         // then
-        var published = await harness.WaitForPublished<FeatureChangedMessage>(cancellationToken: AbortToken);
-        var consumed = await harness.WaitForConsumed<FeatureChangedMessage>(cancellationToken: AbortToken);
+        var published = await harness.WaitForPublishedAsync<FeatureChangedMessage>(cancellationToken: AbortToken);
+        var consumed = await harness.WaitForConsumedAsync<FeatureChangedMessage>(cancellationToken: AbortToken);
         published.MessageName.Should().Be("headless.features.changed");
         consumed.MessageName.Should().Be("headless.features.changed");
         harness
