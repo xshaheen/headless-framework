@@ -95,23 +95,14 @@ public sealed class JwtTokenFactory(IClaimsPrincipalFactory claimsPrincipalFacto
     {
         Argument.IsNotNull(request);
 
-        var tokenValidationParameters = new TokenValidationParameters
-        {
-            ValidateIssuer = request.ValidateIssuer,
-            ValidateAudience = request.ValidateAudience,
-            ValidIssuer = request.Issuer,
-            ValidAudience = request.Audience,
-            ValidateLifetime = true,
-            RequireExpirationTime = true,
-            ClockSkew = TimeSpan.Zero,
-            NameClaimType = UserClaimTypes.UserName,
-            RoleClaimType = UserClaimTypes.Roles,
-            AuthenticationType = AuthenticationConstants.IdentityAuthenticationType,
-            ValidateIssuerSigningKey = true,
-            RequireSignedTokens = true,
-            IssuerSigningKey = _CreateSecurityKey(request.SigningKey),
-            TokenDecryptionKey = request.EncryptingKey is null ? null : _CreateSecurityKey(request.EncryptingKey),
-        };
+        var tokenValidationParameters = CreateTokenValidationParameters(
+            request.SigningKey,
+            request.EncryptingKey,
+            request.Issuer,
+            request.Audience,
+            request.ValidateIssuer,
+            request.ValidateAudience
+        );
 
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -122,13 +113,50 @@ public sealed class JwtTokenFactory(IClaimsPrincipalFactory claimsPrincipalFacto
         return result.IsValid ? new(result.ClaimsIdentity) : null;
     }
 
+    /// <summary>The minimum UTF-8 length of an HMAC-SHA256 signing key: 256 bits.</summary>
+    internal const int MinimumSigningKeyBytes = 32;
+
+    /// <summary>
+    /// Builds the validation rules for tokens this factory issues. <see cref="ParseJwtTokenAsync"/> and the JWT bearer
+    /// scheme <c>AddHeadlessJwtBearer</c> registers share it, so a token the factory parses is a token the bearer
+    /// scheme accepts, with the same clock skew, claim types, and key derivation.
+    /// </summary>
+    internal static TokenValidationParameters CreateTokenValidationParameters(
+        string signingKey,
+        string? encryptingKey,
+        string? issuer,
+        string? audience,
+        bool validateIssuer,
+        bool validateAudience
+    )
+    {
+        return new TokenValidationParameters
+        {
+            ValidateIssuer = validateIssuer,
+            ValidateAudience = validateAudience,
+            ValidIssuer = issuer,
+            ValidAudience = audience,
+            ValidateLifetime = true,
+            RequireExpirationTime = true,
+            // Tokens carry exact lifetimes set from TimeProvider; any skew silently extends every token's life.
+            ClockSkew = TimeSpan.Zero,
+            NameClaimType = UserClaimTypes.UserName,
+            RoleClaimType = UserClaimTypes.Roles,
+            AuthenticationType = AuthenticationConstants.IdentityAuthenticationType,
+            ValidateIssuerSigningKey = true,
+            RequireSignedTokens = true,
+            IssuerSigningKey = _CreateSecurityKey(signingKey),
+            TokenDecryptionKey = encryptingKey is null ? null : _CreateSecurityKey(encryptingKey),
+        };
+    }
+
     #region Helper Methods
 
     private static SigningCredentials _GetSigningCredentials(string key)
     {
         var keyBytes = Encoding.UTF8.GetBytes(key);
 
-        if (keyBytes.Length < 32)
+        if (keyBytes.Length < MinimumSigningKeyBytes)
         {
             throw new ArgumentException(
                 "JWT signing key must be at least 256 bits (32 bytes) for HMAC-SHA256.",
