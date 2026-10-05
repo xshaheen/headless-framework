@@ -66,8 +66,18 @@ internal static class ServiceBuilder
                     throw new InvalidOperationException($"Cannot resolve DbContextOptions<{typeof(TContext).Name}>");
                 }
 
-                return (DbContextOptions<TContext>)serviceDescriptor.ImplementationFactory(provider);
+                // The template lives as long as the host. Scoped options (the AddDbContext and AddHeadlessDbContext
+                // default) build from scoped configuration, which the root provider refuses under scope validation,
+                // so they resolve once from a scope Jobs holds for the host's lifetime.
+                var optionsProvider =
+                    serviceDescriptor.Lifetime == ServiceLifetime.Singleton
+                        ? provider
+                        : provider.GetRequiredService<OptionsTemplateScope>().Services;
+
+                return (DbContextOptions<TContext>)serviceDescriptor.ImplementationFactory(optionsProvider);
             }
+
+            services.TryAddSingleton<OptionsTemplateScope>();
 
             services.TryAddSingleton<IDbContextFactory<TContext>>(provider => new PooledDbContextFactory<TContext>(
                 resolveOptionsTemplate(provider),
@@ -228,6 +238,21 @@ internal static class ServiceBuilder
                 provider.GetService<JobsRunFilter>()
             )
         );
+    }
+
+    /// <summary>
+    /// The scope the application context's scoped options template resolves from. The root provider disposes it with
+    /// the host, so the scoped services the template captured live exactly as long as the template.
+    /// </summary>
+    private sealed class OptionsTemplateScope(IServiceScopeFactory scopeFactory) : IDisposable, IAsyncDisposable
+    {
+        private readonly AsyncServiceScope _scope = scopeFactory.CreateAsyncScope();
+
+        public IServiceProvider Services => _scope.ServiceProvider;
+
+        public void Dispose() => _scope.Dispose();
+
+        public ValueTask DisposeAsync() => _scope.DisposeAsync();
     }
 
     private static DbContextOptions<TContext> _UpdateDbContextOptionsService<TContext, TTimeJob, TCronJob>(

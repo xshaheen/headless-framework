@@ -162,6 +162,79 @@ public abstract class JobsApplicationConfigurationConformanceTests<TFixture>(TFi
         }
     }
 
+    // AddDbContext and AddHeadlessDbContext register scoped DbContextOptions by default, and a Development host
+    // validates scopes, so the singleton Jobs store must build its contexts without resolving scoped options from the
+    // root provider.
+    public virtual Task scoped_options_application_context_runs_under_scope_validation(bool headless)
+    {
+        return headless
+            ? _RunUnderScopeValidationAsync<HeadlessApplicationContext>(services =>
+                services.AddHeadlessDbContext<HeadlessApplicationContext>(fixture.ConfigureStore)
+            )
+            : _RunUnderScopeValidationAsync<ApplicationContext>(services =>
+                services.AddDbContext<ApplicationContext>(fixture.ConfigureStore)
+            );
+    }
+
+    private async Task _RunUnderScopeValidationAsync<TContext>(Action<IServiceCollection> registerContext)
+        where TContext : DbContext
+    {
+        await fixture.ResetDatabaseAsync(AbortToken);
+        var builder = Host.CreateApplicationBuilder(
+            new HostApplicationBuilderSettings { EnvironmentName = Environments.Development }
+        );
+        builder.Logging.SetMinimumLevel(LogLevel.Warning);
+        registerContext(builder.Services);
+        fixture.ConfigureUnitOfWork(builder.Services);
+        builder.Services.AddHeadlessJobs(jobs =>
+        {
+            jobs.DisableBackgroundServices();
+            jobs.AddModule<CoordinatedJobsModule>();
+            fixture.ConfigureApplicationJobs<TContext>(
+                jobs,
+                coordination => coordination.ClusterName = "application-scope-validation"
+            );
+        });
+
+        using var host = builder.Build();
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync<TContext>(host, AbortToken);
+        await host.StartAsync(AbortToken);
+
+        try
+        {
+            await using (var scope = host.Services.CreateAsyncScope())
+            {
+                await scope
+                    .ServiceProvider.GetRequiredService<IJobScheduler>()
+                    .ScheduleAsync(
+                        new CoordinatedFacadeRequest(Guid.NewGuid(), "autonomous"),
+                        new DateTimeOffset(2035, 4, 5, 12, 30, 0, TimeSpan.Zero),
+                        AbortToken
+                    );
+            }
+
+            // The enlisted write builds its context on the unit's connection from the same options.
+            await fixture.RunCoordinatedTransactionAsync(
+                host.Services,
+                async (_, unit, _, _, ct) =>
+                {
+                    await unit.Jobs.ScheduleAsync(
+                        new CoordinatedFacadeRequest(Guid.NewGuid(), "enlisted"),
+                        new DateTimeOffset(2035, 4, 5, 12, 30, 0, TimeSpan.Zero),
+                        ct
+                    );
+                },
+                AbortToken
+            );
+
+            (await fixture.CountTimeJobsAsync(AbortToken)).Should().Be(2);
+        }
+        finally
+        {
+            await host.StopAsync(AbortToken);
+        }
+    }
+
     private async Task<int> _WaitForTimeJobStatusAsync(Guid jobId, JobStatus expected)
     {
         // The background scheduler completes the job on its own loop, so the test observes the row until it reaches

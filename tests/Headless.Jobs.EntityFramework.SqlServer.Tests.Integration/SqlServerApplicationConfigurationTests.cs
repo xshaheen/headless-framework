@@ -45,4 +45,12 @@ public sealed class SqlServerApplicationConfigurationTests(SqlServerJobsCoordina
     {
         return base.retrying_application_context_enlists_in_connection_unit(commit);
     }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public override Task scoped_options_application_context_runs_under_scope_validation(bool headless)
+    {
+        return base.scoped_options_application_context_runs_under_scope_validation(headless);
+    }
 }
