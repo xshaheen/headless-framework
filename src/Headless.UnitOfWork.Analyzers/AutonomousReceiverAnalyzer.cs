@@ -92,6 +92,14 @@ public sealed class AutonomousReceiverAnalyzer : DiagnosticAnalyzer
             return;
         }
 
+        if (
+            rule.EnlistedIsReceiver
+            && EnlistedReceiver.IsCalledOn(invocation, rule, unitOfWorkType, context.CancellationToken)
+        )
+        {
+            return;
+        }
+
         var unit = UnitScope.Find(model, syntax, unitOfWorkType, context.CancellationToken);
 
         if (unit is null)
@@ -192,6 +200,14 @@ public sealed class AutonomousReceiverAnalyzer : DiagnosticAnalyzer
             return false;
         }
 
+        if (
+            rule.AccessorShape == AccessorShape.GenericMethod
+            && (extendedType.TypeArguments.Length == 0 || !_SatisfiesNewConstraint(extendedType.TypeArguments[0]))
+        )
+        {
+            return false;
+        }
+
         var enlistedType = rule.EnlistedIsReceiver
             ? extendedType
             : model.Compilation.GetTypeByMetadataName(rule.EnlistedMetadataName);
@@ -209,5 +225,60 @@ public sealed class AutonomousReceiverAnalyzer : DiagnosticAnalyzer
         return model
                 .GetSpeculativeSymbolInfo(call.SpanStart, rewritten, SpeculativeBindingOption.BindAsExpression)
                 .Symbol is IMethodSymbol;
+    }
+
+    /// <summary>
+    /// Whether a type argument satisfies the <c>new()</c> constraint the generic Jobs accessors add over the manager
+    /// interfaces: a concrete type with a public parameterless constructor and no <see langword="required"/> member left unset.
+    /// </summary>
+    private static bool _SatisfiesNewConstraint(ITypeSymbol type)
+    {
+        if (type is ITypeParameterSymbol parameter)
+        {
+            return parameter.HasConstructorConstraint || parameter.HasValueTypeConstraint;
+        }
+
+        if (type is not INamedTypeSymbol { IsAbstract: false } named)
+        {
+            return false;
+        }
+
+        var constructor = named.InstanceConstructors.FirstOrDefault(candidate =>
+            candidate.Parameters.Length == 0 && candidate.DeclaredAccessibility == Accessibility.Public
+        );
+
+        if (constructor is null)
+        {
+            return false;
+        }
+
+        if (
+            constructor
+                .GetAttributes()
+                .Any(attribute =>
+                    string.Equals(
+                        attribute.AttributeClass?.Name,
+                        "SetsRequiredMembersAttribute",
+                        StringComparison.Ordinal
+                    )
+                )
+        )
+        {
+            return true;
+        }
+
+        for (ITypeSymbol? current = named; current is not null; current = current.BaseType)
+        {
+            if (
+                current
+                    .GetMembers()
+                    .Any(member => member is IPropertySymbol { IsRequired: true } or IFieldSymbol { IsRequired: true })
+            )
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 }

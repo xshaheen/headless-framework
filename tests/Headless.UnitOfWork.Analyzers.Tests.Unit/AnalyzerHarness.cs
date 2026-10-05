@@ -32,6 +32,7 @@ internal static class AnalyzerHarness
             typeof(IUnitOfWork).Assembly,
             typeof(DbContext).Assembly,
             typeof(DbConnection).Assembly,
+            typeof(System.Text.Json.Serialization.Metadata.JsonTypeInfo).Assembly,
             typeof(HeadlessDbConnectionUnitOfWorkExtensions).Assembly,
             typeof(HeadlessDbContextUnitOfWorkExtensions).Assembly,
             typeof(IBus).Assembly,

@@ -60,5 +60,64 @@ internal sealed class ReceiverRule(
             AccessorShape.Property,
             "Headless.Messaging.UnitOfWorkOutbox"
         ),
+        // Only the Jobs members that pass the unit through enlist; cancel, pause, resume, requeue, update, and delete
+        // ignore it even through unit.Jobs, so reporting them would promise atomicity the enlisted call does not give.
+        new(
+            DiagnosticDescriptors.JobsReceiver,
+            "Headless.Jobs.IJobScheduler",
+            [
+                "EnqueueAsync",
+                "ScheduleAsync",
+                "ScheduleAfterAsync",
+                "ScheduleRecurringAsync",
+                "ScheduleKeyedAsync",
+                "ReplaceKeyedAsync",
+                "CancelKeyedAsync",
+            ],
+            "Jobs",
+            AccessorShape.Property,
+            "Headless.Jobs.IJobScheduler"
+        ),
+        new(
+            DiagnosticDescriptors.JobsReceiver,
+            "Headless.Jobs.ITimeJobManager`1",
+            ["AddAsync", "AddIdempotentAsync", "AddBatchAsync", "ScheduleKeyedAsync", "CancelKeyedAsync"],
+            "TimeJobs",
+            AccessorShape.GenericMethod,
+            "Headless.Jobs.ITimeJobManager`1"
+        ),
+        new(
+            DiagnosticDescriptors.JobsReceiver,
+            "Headless.Jobs.ICronJobManager`1",
+            ["AddAsync", "AddBatchAsync"],
+            "CronJobs",
+            AccessorShape.GenericMethod,
+            "Headless.Jobs.ICronJobManager`1"
+        ),
+        // The transaction lock takes an acquire timeout and returns a different handle, so no fix is offered.
+        new(
+            DiagnosticDescriptors.TransactionLocksReceiver,
+            "Headless.DistributedLocks.IDistributedLock",
+            ["AcquireAsync", "TryAcquireAsync"],
+            "TransactionLocks",
+            AccessorShape.Property,
+            enlistedMetadataName: null
+        ),
+        new(
+            DiagnosticDescriptors.LeasesReceiver,
+            "Headless.Fencing.IFencedLeases",
+            ["GrantAsync", "RenewAsync", "SettleAsync", "ReleaseAsync"],
+            "Leases",
+            AccessorShape.Property,
+            "Headless.Fencing.UnitOfWorkLeases"
+        ),
+        new(
+            DiagnosticDescriptors.IdempotencyReceiver,
+            "Headless.Idempotency.IIdempotentOperations",
+            ["AdmitAsync", "CompleteAsync", "SetRecoveryPointAsync", "ReleaseAsync"],
+            "Idempotency",
+            AccessorShape.Property,
+            "Headless.Idempotency.UnitOfWorkIdempotency"
+        ),
     ];
 }

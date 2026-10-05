@@ -21,4 +21,40 @@
   <data name="OutboxReceiverDescription" xml:space="preserve">
     <value>IBus and IQueue never join a transaction, so a message they send goes out even when the unit's work rolls back, and the unit's work can commit while the send is lost. The unit's outbox writes the message inside the unit's transaction. Keep the autonomous call only for a message that must go out even if the unit rolls back.</value>
   </data>
+  <data name="JobsReceiverTitle" xml:space="preserve">
+    <value>Job scheduled outside the unit of work's transaction</value>
+  </data>
+  <data name="JobsReceiverMessage" xml:space="preserve">
+    <value>This call commits on its own while unit of work '{0}' is in scope; call it through '{1}' so the job is scheduled with the unit</value>
+  </data>
+  <data name="JobsReceiverDescription" xml:space="preserve">
+    <value>IJobScheduler, ITimeJobManager, and ICronJobManager from dependency injection write outside any transaction, so a job can exist for work that rolled back, or be missing for work that committed. The unit's Jobs accessors write the job inside the unit's transaction. Cancel, pause, resume, requeue, update, and delete never enlist and are not reported.</value>
+  </data>
+  <data name="TransactionLocksReceiverTitle" xml:space="preserve">
+    <value>Distributed lock taken independently of the unit of work</value>
+  </data>
+  <data name="TransactionLocksReceiverMessage" xml:space="preserve">
+    <value>This lock is independent of unit of work '{0}'; if it should end with the transaction, take it through '{1}'</value>
+  </data>
+  <data name="TransactionLocksReceiverDescription" xml:space="preserve">
+    <value>An IDistributedLock lease outlives the transaction and is released or renewed separately. A transaction lock taken through the unit is released by the database when the unit commits or rolls back. Keep the autonomous lock when it must outlive the transaction. No code fix is offered because the two calls take different arguments and return different handles.</value>
+  </data>
+  <data name="LeasesReceiverTitle" xml:space="preserve">
+    <value>Fenced lease changed outside the unit of work's transaction</value>
+  </data>
+  <data name="LeasesReceiverMessage" xml:space="preserve">
+    <value>This call commits on its own while unit of work '{0}' is in scope; call it through '{1}' so the lease change commits with the unit</value>
+  </data>
+  <data name="LeasesReceiverDescription" xml:space="preserve">
+    <value>IFencedLeases writes lease state outside the transaction, so a lease can be settled for work that rolled back, or stay held after the work committed. The unit's Leases receiver writes the lease change with the work it protects.</value>
+  </data>
+  <data name="IdempotencyReceiverTitle" xml:space="preserve">
+    <value>Idempotency record written outside the unit of work's transaction</value>
+  </data>
+  <data name="IdempotencyReceiverMessage" xml:space="preserve">
+    <value>This call commits on its own while unit of work '{0}' is in scope; call it through '{1}' so the idempotency record commits with the unit</value>
+  </data>
+  <data name="IdempotencyReceiverDescription" xml:space="preserve">
+    <value>IIdempotentOperations records admission, completion, and recovery points outside the transaction, so a retry can replay a result whose effect rolled back, or repeat an effect whose record was lost. The unit's Idempotency receiver writes the record with the effect. A provider that refuses enlistment, such as the cache provider, throws when the enlisted receiver is used.</value>
+  </data>
 </root>

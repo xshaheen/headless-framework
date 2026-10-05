@@ -23,7 +23,10 @@ public sealed class DiagnosticDescriptorMetadataTests : TestBase
     public void should_declare_exactly_the_shipped_rules()
     {
         // HF2004 is deliberately absent: a sequence name's configured mode, not the receiver, decides gap-free numbering.
-        _Descriptors().Select(descriptor => descriptor.Id).Should().BeEquivalentTo(["HF2001"]);
+        _Descriptors()
+            .Select(descriptor => descriptor.Id)
+            .Should()
+            .BeEquivalentTo(["HF2001", "HF2002", "HF2003", "HF2005", "HF2006"]);
         new AutonomousReceiverAnalyzer()
             .SupportedDiagnostics.Select(descriptor => descriptor.Id)
             .Should()

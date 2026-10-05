@@ -39,6 +39,54 @@ internal static class DiagnosticDescriptors
         customTags: _CustomTags
     );
 
+    public static readonly DiagnosticDescriptor JobsReceiver = new(
+        "HF2002",
+        _Resource("JobsReceiverTitle"),
+        _Resource("JobsReceiverMessage"),
+        _Category,
+        DiagnosticSeverity.Info,
+        isEnabledByDefault: true,
+        description: _Resource("JobsReceiverDescription"),
+        helpLinkUri: _HelpLinkBase + "hf2002",
+        customTags: _CustomTags
+    );
+
+    public static readonly DiagnosticDescriptor TransactionLocksReceiver = new(
+        "HF2003",
+        _Resource("TransactionLocksReceiverTitle"),
+        _Resource("TransactionLocksReceiverMessage"),
+        _Category,
+        DiagnosticSeverity.Info,
+        isEnabledByDefault: true,
+        description: _Resource("TransactionLocksReceiverDescription"),
+        helpLinkUri: _HelpLinkBase + "hf2003",
+        customTags: _CustomTags
+    );
+
+    public static readonly DiagnosticDescriptor LeasesReceiver = new(
+        "HF2005",
+        _Resource("LeasesReceiverTitle"),
+        _Resource("LeasesReceiverMessage"),
+        _Category,
+        DiagnosticSeverity.Info,
+        isEnabledByDefault: true,
+        description: _Resource("LeasesReceiverDescription"),
+        helpLinkUri: _HelpLinkBase + "hf2005",
+        customTags: _CustomTags
+    );
+
+    public static readonly DiagnosticDescriptor IdempotencyReceiver = new(
+        "HF2006",
+        _Resource("IdempotencyReceiverTitle"),
+        _Resource("IdempotencyReceiverMessage"),
+        _Category,
+        DiagnosticSeverity.Info,
+        isEnabledByDefault: true,
+        description: _Resource("IdempotencyReceiverDescription"),
+        helpLinkUri: _HelpLinkBase + "hf2006",
+        customTags: _CustomTags
+    );
+
     private static LocalizableResourceString _Resource(string name) =>
         new(name, _Resources, typeof(DiagnosticDescriptors));
 }

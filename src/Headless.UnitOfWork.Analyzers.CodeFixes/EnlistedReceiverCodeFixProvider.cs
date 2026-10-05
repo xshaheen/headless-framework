@@ -29,7 +29,7 @@ public sealed class EnlistedReceiverCodeFixProvider : CodeFixProvider
     private const string _UnitOfWorkNamespace = "Headless.UnitOfWork";
     private const string _EquivalenceKey = "Headless.UnitOfWork.Analyzers.EnlistedReceiver";
 
-    public override ImmutableArray<string> FixableDiagnosticIds { get; } = ["HF2001"];
+    public override ImmutableArray<string> FixableDiagnosticIds { get; } = ["HF2001", "HF2002", "HF2005", "HF2006"];
 
     public override FixAllProvider GetFixAllProvider() =>
         FixAllProvider.Create(
