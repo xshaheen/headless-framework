@@ -1,17 +1,18 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless;
+using Headless.Api.Features;
 using Headless.Features;
+using Headless.Hosting;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.TestHost;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
-namespace Tests.Filters;
+namespace Tests;
 
 public sealed class RequiresFeatureEnforcementTests : TestBase
 {
@@ -21,11 +22,13 @@ public sealed class RequiresFeatureEnforcementTests : TestBase
     #region MVC
 
     [Fact]
-    public async Task should_register_the_mvc_filter_when_adding_headless_features()
+    public async Task should_register_the_mvc_filter_once_when_adding_http_features_twice()
     {
         // given
         var services = new ServiceCollection();
-        services.AddHeadlessFeatures(setup => setup.UseEntityFramework<FiltersTestDbContext>());
+        services.AddOptions();
+        services.AddHeadlessHttpFeatures();
+        services.AddHeadlessHttpFeatures();
         await using var provider = services.BuildServiceProvider();
 
         // when
@@ -33,6 +36,23 @@ public sealed class RequiresFeatureEnforcementTests : TestBase
 
         // then
         filters.Should().ContainSingle(filter => filter is RequiresFeatureResourceFilter);
+    }
+
+    [Fact]
+    public async Task should_fail_startup_when_feature_management_is_not_registered()
+    {
+        // given
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.WebHost.UseTestServer();
+        builder.Services.AddHeadlessHttpFeatures();
+        await using var app = builder.Build();
+
+        // when
+        var act = () => app.StartAsync(AbortToken);
+
+        // then
+        var exception = (await act.Should().ThrowAsync<MissingRequiredServiceException>()).Which;
+        exception.MissingServices.Should().ContainSingle().Which.ServiceType.Should().Be<IFeatureManager>();
     }
 
     [Fact]
@@ -217,11 +237,10 @@ public sealed class RequiresFeatureEnforcementTests : TestBase
             });
         builder.Services.AddSingleton(featureManager);
 
-        // The same filter instance AddHeadlessFeatures adds; registering it directly keeps this host free of the
-        // storage and caching prerequisites the full feature registration needs.
-        builder
-            .Services.AddControllers(options => options.Filters.Add(new RequiresFeatureResourceFilter()))
-            .AddApplicationPart(typeof(RequiresFeatureEnforcementTests).Assembly);
+        // A substituted IFeatureManager stands in for AddHeadlessFeatures, keeping this host free of the storage and
+        // caching prerequisites the full feature registration needs.
+        builder.Services.AddHeadlessHttpFeatures();
+        builder.Services.AddControllers().AddApplicationPart(typeof(RequiresFeatureEnforcementTests).Assembly);
 
         var app = builder.Build();
         var controllers = app.MapControllers();
@@ -244,8 +263,6 @@ public sealed class RequiresFeatureEnforcementTests : TestBase
     }
 
     #endregion
-
-    private sealed class FiltersTestDbContext(DbContextOptions<FiltersTestDbContext> options) : DbContext(options);
 }
 
 [ApiController]

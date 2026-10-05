@@ -1,10 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Features;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Headless.Features;
+namespace Headless.Api.Features;
 
 /// <summary>
 /// Global MVC filter that enforces <see cref="RequiresFeatureAttribute"/> on controllers and actions. It runs as a

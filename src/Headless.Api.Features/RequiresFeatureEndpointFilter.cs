@@ -1,9 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Features;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Headless.Features;
+namespace Headless.Api.Features;
 
 /// <summary>Endpoint filter behind <c>RequireFeatures</c>: enforces one requirement on a Minimal API endpoint.</summary>
 /// <remarks>

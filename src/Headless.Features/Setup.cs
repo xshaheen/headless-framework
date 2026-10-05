@@ -6,7 +6,6 @@ using Headless.Context;
 using Headless.Features.Resources;
 using Headless.Hosting;
 using Headless.Messaging;
-using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
@@ -198,9 +197,6 @@ public static class SetupFeatures
         services.TryAddTransient<IClientVisibleFeaturesReader, ClientVisibleFeaturesReader>();
 
         services.AddSingleton<IMethodInvocationFeatureCheckerService, MethodInvocationFeatureCheckerService>();
-
-        // Enforces [RequiresFeature] on every controller action. Inert in hosts that do not use MVC.
-        services.Configure<MvcOptions>(static options => options.Filters.Add(new RequiresFeatureResourceFilter()));
 
         return services;
     }

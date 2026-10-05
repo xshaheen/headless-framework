@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Features;
+using Headless.Features;
+
+namespace Headless.Api.Features;
 
 /// <summary>Enforces the <see cref="RequiresFeatureAttribute"/> requirements carried in an endpoint's metadata.</summary>
 internal static class FeatureRequirementMetadata

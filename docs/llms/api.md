@@ -1,6 +1,6 @@
 ---
 domain: API & Web
-packages: Api.Abstractions, Api, Api.ServiceDefaults, Api.DataProtection, Api.FluentValidation, Api.Idempotency, Api.Logging.Serilog, Api.MinimalApi, Api.Mvc
+packages: Api.Abstractions, Api, Api.ServiceDefaults, Api.DataProtection, Api.Features, Api.FluentValidation, Api.Idempotency, Api.Logging.Serilog, Api.MinimalApi, Api.Mvc
 ---
 
 # API & Web
@@ -25,6 +25,7 @@ Additional packages:
 
 - `Headless.Api.FluentValidation` — validators for `IFormFile` uploads (size, content type, magic bytes) plus API request contracts (`PhoneNumberRequest`, `GeoCoordinateRequest`, `PageMetadataRequest`).
 - `Headless.Api.DataProtection` — persist ASP.NET Core Data Protection keys to any `IBlobStorage` provider.
+- `Headless.Api.Features` — enforce `[RequiresFeature]` on controller actions and gate Minimal API endpoints with `RequireFeatures(...)`. See [features.md](features.md) for feature definitions and values.
 - `Headless.Api.Logging.Serilog` — enrich Serilog logs with per-request context (IP, user agent, user ID, tenant ID, correlation ID).
 - `Headless.Api.Idempotency` — Stripe-style idempotency middleware: admits each key through the durable `Headless.Idempotency` store and replays the captured HTTP response byte-equivalent on identical retries. See [idempotency.md](idempotency.md) for the durable admission contract and [mediator.md](mediator.md) for why idempotency is HTTP middleware and not a Mediator behavior.
 
@@ -798,6 +799,72 @@ Provisioning matrix: **managed** — a manager is registered/keyed/passed, the c
 - Configures `KeyManagementOptions.XmlRepository` to use blob storage
 - `ValidateKeyRingAtStartup()` registers an `IHostedLifecycleService` that probes the key ring in `StartingAsync`, before other hosted services start (with `AutoGenerateKeys`, the first key may be created at boot instead of at first use; with `ProbeWritePath`, a sentinel blob is written and deleted each boot)
 - `AddDataProtectionKeyRing()` adds an `IHealthCheck` registration (default name `dataprotection-keyring`); with the default `KeyRingProbeStyle.WriteProbe`, each probe writes and deletes the sentinel blob
+
+---
+
+## Headless.Api.Features
+
+HTTP enforcement for Headless feature management. `[RequiresFeature]` and `[DisableFeatureCheck]` live in `Headless.Features.Abstractions` and gate nothing by themselves; this package enforces them on controllers and adds `RequireFeatures(...)` for Minimal APIs. It is a separate package so `Headless.Features` stays free of the ASP.NET Core shared framework. See [features.md](features.md) for definitions, values, and `IFeatureManager`.
+
+### API and behavior
+
+- `services.AddHeadlessHttpFeatures()` — adds a global MVC resource filter that enforces `[RequiresFeature]`. It reads the endpoint's metadata, so it sees the attribute on the controller class and on the action, plus any requirement added through route conventions (`MapControllers().RequireFeatures(...)`). Every requirement must pass. `[DisableFeatureCheck]` on the action skips them all. A repeated call adds the filter once.
+- `endpoint.RequireFeatures(params string[] features)` / `RequireFeatures(bool requiresAll, params string[] features)` — gates a Minimal API endpoint or route group (any `IEndpointConventionBuilder`). Each call adds its own requirement, so a group requirement and an endpoint requirement must both pass. An endpoint with `[DisableFeatureCheck]` on its handler, or `.WithMetadata(new DisableFeatureCheckAttribute())`, skips the gates on its group. On Minimal APIs the `[RequiresFeature]` attribute alone does nothing. An empty feature list throws `ArgumentException`.
+- Failure: a disabled feature throws `ConflictException` with code `g:feature_currently_not_available` before the handler runs. The Headless exception handler (`AddHeadless()` / `UseHeadless()`) returns it as a 409 problem response; without it the exception reaches whatever handler the host uses.
+
+### Design constraints
+
+- The MVC filter runs as a resource filter, before model binding and validation, so a request to a disabled feature gets the feature error rather than a validation error for a body it could never use.
+- A disabled feature is a 409, not a 403. The caller may hold every permission it needs; the resource is unavailable in the tenant's or edition's current state. Permission checks stay on ASP.NET Core authorization (`[Authorize("Orders.Edit")]`, `RequireAuthorization("Orders.Edit")`), which returns 401 or 403; see [permissions.md](permissions.md). A gate that needs both chains the two calls.
+- Code outside HTTP, such as an interceptor or a job, checks the same attributes through `IMethodInvocationFeatureCheckerService` in `Headless.Features`, or calls `IFeatureManager.EnsureEnabledAsync` directly.
+
+### Install
+
+```bash
+dotnet add package Headless.Api.Features
+```
+
+### Setup and use
+
+> `AddHeadlessHttpFeatures` declares `IFeatureManager` with `Headless.Hosting`'s `RequireRegisteredService<T>`, so a host that never calls `AddHeadlessFeatures(...)` with a storage provider is refused at startup with a `MissingRequiredServiceException`. Registration order does not matter. `RequireFeatures(...)` needs no registration of its own beyond `AddHeadlessFeatures(...)`.
+
+```csharp
+builder.AddHeadless();
+builder.Services.AddHeadlessFeatures(setup => setup.UsePostgreSql());
+builder.Services.AddHeadlessHttpFeatures(); // enforces [RequiresFeature] on controllers
+builder.Services.AddControllers();
+
+var app = builder.Build();
+app.UseHeadless();
+app.MapControllers();
+
+var reports = app.MapGroup("/api/reports").RequireFeatures("Reports").RequireAuthorization("Reports.View");
+reports.MapGet("/", () => Results.Ok());
+reports.MapGet("/export", () => Results.Ok()).RequireFeatures(requiresAll: true, "Reports.Export", "Exports");
+reports.MapGet("/status", [DisableFeatureCheck] () => Results.Ok());
+
+[ApiController]
+[Route("reports")]
+[RequiresFeature("Reports")]
+public sealed class ReportsController : ControllerBase
+{
+    [HttpGet]
+    public IActionResult List() => Ok();
+
+    [HttpGet("export")]
+    [RequiresFeature("Reports.Export")] // checked in addition to "Reports"
+    public IActionResult Export() => Ok();
+
+    [HttpGet("status")]
+    [DisableFeatureCheck] // reachable while "Reports" is off
+    public IActionResult Status() => Ok();
+}
+```
+
+### Runtime behavior
+
+- Adds one `IConfigureOptions<MvcOptions>` that registers the resource filter; inert in hosts without MVC.
+- Each gated request resolves `IFeatureManager` from the request services and checks the features with the request's abort token.
 
 ---
 

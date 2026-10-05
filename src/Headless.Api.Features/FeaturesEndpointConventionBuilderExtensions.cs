@@ -1,10 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Features;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 
-namespace Headless.Features;
+namespace Headless.Api.Features;
 
 /// <summary>Extension members that gate Minimal API endpoints and route groups on features.</summary>
 [PublicAPI]

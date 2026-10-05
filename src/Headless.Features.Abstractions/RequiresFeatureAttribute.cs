@@ -9,6 +9,8 @@ namespace Headless.Features;
 /// When placed on a class, the check applies to all public methods unless a method overrides it with
 /// <see cref="DisableFeatureCheckAttribute"/>. The <see cref="IsAnd"/> property controls whether all features
 /// must be enabled (<see langword="true"/>) or any one is sufficient (<see langword="false"/>).
+/// The attribute gates nothing by itself: <c>Headless.Api.Features</c> enforces it on HTTP requests, and
+/// <c>IMethodInvocationFeatureCheckerService</c> in <c>Headless.Features</c> evaluates it at other call sites.
 /// </remarks>
 /// <param name="features">The feature names to check.</param>
 [PublicAPI]
