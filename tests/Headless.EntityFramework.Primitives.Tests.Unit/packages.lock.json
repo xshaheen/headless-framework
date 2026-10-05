@@ -486,6 +486,12 @@
           "xunit.v3.runner.common": "[4.0.0]"
         }
       },
+      "headless.auditlog.abstractions": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Extensions": "[1.0.0, )"
+        }
+      },
       "headless.checks": {
         "type": "Project"
       },
@@ -505,6 +511,7 @@
       "headless.entityframework.primitives": {
         "type": "Project",
         "dependencies": {
+          "Headless.AuditLog.Abstractions": "[1.0.0, )",
           "Headless.Checks": "[1.0.0, )",
           "Headless.Domain": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",

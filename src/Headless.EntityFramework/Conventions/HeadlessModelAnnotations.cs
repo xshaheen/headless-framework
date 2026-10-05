@@ -13,10 +13,10 @@ internal static class HeadlessModelAnnotations
 
     internal static class AuditLog
     {
-        internal const string EntityIsAudited = "Headless:AuditLog:EntityIsAudited";
-        internal const string PropertyIsExcluded = "Headless:AuditLog:PropertyIsExcluded";
-        internal const string PropertyIsSensitive = "Headless:AuditLog:PropertyIsSensitive";
-        internal const string PropertySensitiveStrategy = "Headless:AuditLog:PropertySensitiveStrategy";
+        internal const string EntityIsAudited = HeadlessAuditAnnotations.EntityIsAudited;
+        internal const string PropertyIsExcluded = HeadlessAuditAnnotations.PropertyIsExcluded;
+        internal const string PropertyIsSensitive = HeadlessAuditAnnotations.PropertyIsSensitive;
+        internal const string PropertySensitiveStrategy = HeadlessAuditAnnotations.PropertySensitiveStrategy;
     }
 
     internal static class Identity

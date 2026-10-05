@@ -65,6 +65,31 @@ public sealed class JobsModelCustomizerSchemaTests : TestBase
     }
 
     [Fact]
+    public void customizer_excludes_every_jobs_table_from_audit_capture()
+    {
+        // An application context that audits by default would otherwise write audit rows for every claim, heartbeat,
+        // and sweep. The annotation name is the contract Headless audit capture reads.
+        using var context = _CreateCustomizedContext(_CustomSchema);
+
+        foreach (
+            var type in new[]
+            {
+                typeof(TimeJobEntity),
+                typeof(CronJobEntity),
+                typeof(CronJobOccurrenceEntity<CronJobEntity>),
+                typeof(JobIdempotencyReservationEntity),
+            }
+        )
+        {
+            context
+                .Model.FindEntityType(type)!
+                .FindAnnotation("Headless:AuditLog:EntityIsAudited")
+                ?.Value.Should()
+                .Be(false, "{0} is scheduler bookkeeping", type.Name);
+        }
+    }
+
+    [Fact]
     public void customizer_falls_back_to_the_default_schema_when_nothing_is_configured()
     {
         using var context = _CreateCustomizedContext(HeadlessStorageDefaults.Schema);

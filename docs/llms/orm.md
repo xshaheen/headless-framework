@@ -168,6 +168,7 @@ Change Data Capture (e.g. Debezium) is an advanced alternative that bypasses thi
 - Provider-neutral converters and comparers for dates, JSON-backed values, locales, extra properties, and Headless primitives.
 - Money and phone model configuration plus pagination, ordering, data-grid, date aggregation, entity lookup, and asynchronous lookup helpers.
 - Generic model/configuration helpers that do not require `HeadlessDbContext` or runtime policy.
+- The audit capture policy for the EF model: `IsAudited()`, `ExcludeFromAudit()`, and `IsAuditSensitive(...)` (`HeadlessAuditPolicyExtensions`, namespace `Microsoft.EntityFrameworkCore`). They only write model annotations; `Headless.EntityFramework`'s audit capture reads them. A storage package that maps its own tables, such as Jobs, uses them to keep its rows out of an application context's audit log.
 - `DateTimeKind.Unspecified` is treated as an already-UTC relational value and stamped without shifting its clock value.
 
 ### Design constraints
@@ -175,7 +176,7 @@ Change Data Capture (e.g. Debezium) is an advanced alternative that bypasses thi
 - This package is intentionally independent of `HeadlessDbContext`. Storage feature packages can consume its EF primitives without inheriting application-level ORM behavior.
 - `NormalizeDateTimeValueConverter` is the single UTC-normalization API; Core does not expose a parallel converter family.
 - A converter that stores a mutable reference type (a collection, dictionary, or object) as JSON needs a value comparer too. Without one, EF compares references and misses in-place edits, so they are never saved. Pair `JsonValueConverter<T>` with `JsonValueComparer<T>`, which treats two values as equal when they serialize to the same JSON and snapshots by deep copy; pass the converter's `JsonSerializerOptions` to both.
-- The package has no database-provider, hosting, interception, tenancy, auditing, or save-pipeline dependency.
+- The package has no database-provider, hosting, interception, tenancy, or save-pipeline dependency. Its only audit dependency is `Headless.AuditLog.Abstractions`, for the `SensitiveDataStrategy` that `IsAuditSensitive(...)` takes; the capture itself lives in `Headless.EntityFramework`.
 
 ### Install
 
