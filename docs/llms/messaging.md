@@ -2547,6 +2547,8 @@ Registers PostgreSQL storage, the monitoring API, table-name resolution, and the
 
 Adds `setup.UseEntityFramework<TContext>()` for PostgreSQL, derives the connection from the registered context, and registers `Headless.UnitOfWork` (`AddUnitOfWork()`); there is no startup gate. Depends on the raw PostgreSQL storage package; install it only for EF-backed transactional outbox composition.
 
+The storage connects the way the context connects. When the context holds an Npgsql data source (one passed to `UseNpgsql`, one registered in DI, or one EF builds for `ConfigureDataSource` or a plugin such as NetTopologySuite), the storage shares it, with its password provider and other customizations; the context's connection string would omit the password. Otherwise it uses the context's connection string. A context that is not on Npgsql fails at startup.
+
 Each transactional consume attempt shares one DI scope and configured `TContext` across the EF runner, consume middleware, and handler. The runner saves tracked changes after the handler returns and keeps the scope alive through commit or rollback. Explicit handler saves and captured durable Bus/Queue rows roll back with application state when inbox completion rejects the attempt fence.
 
 EF execution-strategy retries are allowed only before handler entry. After entry, handler, save, commit, rollback, and disposal failures return to Messaging's fenced retry path; EF cannot transparently replay the handler within the reserved attempt. Ambiguous commit outcomes are still probed before deciding whether the attempt committed.
