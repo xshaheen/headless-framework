@@ -399,12 +399,13 @@ Pre-requisite: configure and register string encryption before settings manageme
   "Headless": {
     "StringEncryption": {
       "DefaultPassPhrase": "YourPassPhrase123",
-      "InitVectorBytes": "WW91ckluaXRWZWN0b3IxNg==",
-      "DefaultSalt": "WW91clNhbHQ="
+      "DefaultSalt": "WW91clNhbHQxMjM0NTY3OA=="
     }
   }
 }
 ```
+
+`StringEncryptionOptions` has four settings: `DefaultPassPhrase` and `DefaultSalt` (base64, at least 16 random bytes) are required, and `KeySize` (default 256) and `Iterations` (default 600,000) are optional. The service encrypts with AES-GCM and a random nonce per value, so there is no initialization-vector setting.
 
 #### SettingManagementOptions
 

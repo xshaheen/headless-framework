@@ -620,12 +620,13 @@ Surface filtering runs before schema generation and is independent of API Explor
     "Headless": {
         "StringEncryption": {
             "DefaultPassPhrase": "YourPassPhrase123",
-            "InitVectorBytes": "WW91ckluaXRWZWN0b3IxNg==",
-            "DefaultSalt": "WW91clNhbHQ="
+            "DefaultSalt": "WW91clNhbHQxMjM0NTY3OA=="
         }
     }
 }
 ```
+
+`DefaultPassPhrase` and `DefaultSalt` (base64, at least 16 random bytes) are required. `KeySize` (default 256) and `Iterations` (default 600,000) are optional. Encryption is AES-GCM with a random nonce per value, so there is no initialization-vector setting.
 
 #### Lookup Hashing
 
