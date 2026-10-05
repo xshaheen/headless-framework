@@ -22,7 +22,7 @@ public sealed class SetupTests : TestBase
     }
 
     [Fact]
-    public async Task should_enable_transactional_outbox_by_default_on_entity_framework_path()
+    public async Task should_enable_transactional_inbox_by_default_on_entity_framework_path()
     {
         // given
         var services = new ServiceCollection();
@@ -54,7 +54,7 @@ public sealed class SetupTests : TestBase
     }
 
     [Fact]
-    public async Task should_opt_out_of_transactional_outbox_when_requested()
+    public async Task should_opt_out_of_transactional_inbox_when_requested()
     {
         // given
         var services = new ServiceCollection();
@@ -63,7 +63,7 @@ public sealed class SetupTests : TestBase
         // when — EF path but explicitly opted out via the per-storage flag
         services.AddHeadlessMessaging(setup =>
         {
-            setup.UseEntityFramework<TestMessagingDbContext>(o => o.EnableTransactionalOutbox = false);
+            setup.UseEntityFramework<TestMessagingDbContext>(o => o.EnableTransactionalInbox = false);
         });
 
         await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
