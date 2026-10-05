@@ -5,6 +5,7 @@ using System.Net.Http.Json;
 using AwesomeAssertions.Extensions;
 using Headless;
 using Headless.Api;
+using Headless.Api.Resources;
 using Headless.Http;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Hosting;
@@ -59,7 +60,7 @@ public sealed class ProblemDetailsTests : TestBase
             HeadlessProblemDetailsConstants.Types.EndpointNotFound,
             HeadlessProblemDetailsConstants.Titles.EndpointNotFound,
             StatusCodes.Status404NotFound,
-            HeadlessProblemDetailsConstants.Details.EndpointNotFound("/12345678")
+            Messages.problem_endpoint_not_found.Replace("{0}", "/12345678", StringComparison.Ordinal)
         );
 
         jsonElement.EnumerateObject().Should().HaveCount(9);
@@ -152,7 +153,7 @@ public sealed class ProblemDetailsTests : TestBase
             HeadlessProblemDetailsConstants.Types.BadRequest,
             HeadlessProblemDetailsConstants.Titles.BadRequest,
             StatusCodes.Status400BadRequest,
-            HeadlessProblemDetailsConstants.Details.BadRequest
+            Messages.problem_bad_request
         );
 
         jsonElement.TryGetProperty("error", out _).Should().BeFalse();
@@ -217,7 +218,7 @@ public sealed class ProblemDetailsTests : TestBase
             HeadlessProblemDetailsConstants.Types.EntityNotFound,
             HeadlessProblemDetailsConstants.Titles.EntityNotFound,
             StatusCodes.Status404NotFound,
-            HeadlessProblemDetailsConstants.Details.EntityNotFound
+            Messages.problem_entity_not_found
         );
 
         // Entity/key params removed for security (OWASP A01:2021 - prevents info disclosure)
@@ -287,7 +288,7 @@ public sealed class ProblemDetailsTests : TestBase
             HeadlessProblemDetailsConstants.Types.Conflict,
             HeadlessProblemDetailsConstants.Titles.Conflict,
             StatusCodes.Status409Conflict,
-            HeadlessProblemDetailsConstants.Details.Conflict
+            Messages.problem_conflict
         );
 
         var errors = jsonElement.GetProperty("errors").EnumerateArray().ToList();
@@ -360,7 +361,7 @@ public sealed class ProblemDetailsTests : TestBase
             HeadlessProblemDetailsConstants.Types.UnprocessableEntity,
             HeadlessProblemDetailsConstants.Titles.UnprocessableEntity,
             StatusCodes.Status422UnprocessableEntity,
-            HeadlessProblemDetailsConstants.Details.UnprocessableEntity
+            Messages.problem_unprocessable_entity
         );
 
         var errorsObject = jsonElement.GetProperty("errors").EnumerateObject().ToList();
@@ -441,7 +442,7 @@ public sealed class ProblemDetailsTests : TestBase
             HeadlessProblemDetailsConstants.Types.InternalError,
             HeadlessProblemDetailsConstants.Titles.InternalError,
             StatusCodes.Status500InternalServerError,
-            HeadlessProblemDetailsConstants.Details.InternalError
+            Messages.problem_internal_error
         );
 
         jsonElement.EnumerateObject().Should().HaveCount(9);
@@ -491,7 +492,7 @@ public sealed class ProblemDetailsTests : TestBase
             HeadlessProblemDetailsConstants.Types.Unauthorized,
             HeadlessProblemDetailsConstants.Titles.Unauthorized,
             StatusCodes.Status401Unauthorized,
-            HeadlessProblemDetailsConstants.Details.Unauthorized
+            Messages.problem_unauthorized
         );
 
         jsonElement.EnumerateObject().Should().HaveCount(9);
@@ -545,7 +546,7 @@ public sealed class ProblemDetailsTests : TestBase
             HeadlessProblemDetailsConstants.Types.Forbidden,
             HeadlessProblemDetailsConstants.Titles.Forbidden,
             StatusCodes.Status403Forbidden,
-            HeadlessProblemDetailsConstants.Details.Forbidden
+            Messages.problem_forbidden
         );
 
         jsonElement.TryGetProperty("error", out _).Should().BeFalse();

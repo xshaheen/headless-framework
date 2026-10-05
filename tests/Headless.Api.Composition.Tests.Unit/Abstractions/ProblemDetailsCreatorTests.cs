@@ -2,6 +2,7 @@
 
 using System.Diagnostics;
 using Headless.Api;
+using Headless.Api.Resources;
 using Headless.Context;
 using Headless.Primitives;
 using Headless.Testing.Tests;
@@ -114,7 +115,7 @@ public sealed class ProblemDetailsCreatorTests : TestBase
         var result = creator.EntityNotFound();
 
         // then
-        result.Detail.Should().Be(HeadlessProblemDetailsConstants.Details.EntityNotFound);
+        result.Detail.Should().Be(Messages.problem_entity_not_found);
     }
 
     [Fact]
@@ -129,7 +130,7 @@ public sealed class ProblemDetailsCreatorTests : TestBase
         // then
         result.Status.Should().Be(StatusCodes.Status400BadRequest);
         result.Title.Should().Be(HeadlessProblemDetailsConstants.Titles.BadRequest);
-        result.Detail.Should().Be(HeadlessProblemDetailsConstants.Details.BadRequest);
+        result.Detail.Should().Be(Messages.problem_bad_request);
         result.Extensions.Should().NotContainKey("error");
     }
 
@@ -151,7 +152,7 @@ public sealed class ProblemDetailsCreatorTests : TestBase
     {
         // given
         var creator = _CreateCreator();
-        var error = HeadlessProblemDetailsConstants.Errors.TenantContextRequired;
+        var error = GeneralMessageDescriber.TenantRequired();
 
         // when
         var result = creator.BadRequest(error: error);
@@ -168,19 +169,19 @@ public sealed class ProblemDetailsCreatorTests : TestBase
 
         // when
         var result = creator.Forbidden(
-            detail: HeadlessProblemDetailsConstants.Details.TenantContextRequired,
-            error: HeadlessProblemDetailsConstants.Errors.TenantContextRequired
+            detail: Messages.g_tenant_required,
+            error: GeneralMessageDescriber.TenantRequired()
         );
 
         // then
         result.Status.Should().Be(StatusCodes.Status403Forbidden);
         result.Title.Should().Be(HeadlessProblemDetailsConstants.Titles.Forbidden);
-        result.Detail.Should().Be(HeadlessProblemDetailsConstants.Details.TenantContextRequired);
+        result.Detail.Should().Be(Messages.g_tenant_required);
         result
             .Extensions.Should()
             .ContainKey("error")
             .WhoseValue.Should()
-            .BeEquivalentTo(HeadlessProblemDetailsConstants.Errors.TenantContextRequired);
+            .BeEquivalentTo(GeneralMessageDescriber.TenantRequired());
         result.Extensions.Should().NotContainKey("errors");
     }
 
@@ -196,7 +197,7 @@ public sealed class ProblemDetailsCreatorTests : TestBase
         // then
         result.Status.Should().Be(StatusCodes.Status429TooManyRequests);
         result.Title.Should().Be(HeadlessProblemDetailsConstants.Titles.TooManyRequests);
-        result.Detail.Should().Be(HeadlessProblemDetailsConstants.Details.TooManyRequests);
+        result.Detail.Should().Be(Messages.problem_too_many_requests);
     }
 
     [Fact]
@@ -226,7 +227,7 @@ public sealed class ProblemDetailsCreatorTests : TestBase
         // then
         result.Status.Should().Be(StatusCodes.Status503ServiceUnavailable);
         result.Title.Should().Be(HeadlessProblemDetailsConstants.Titles.ServiceUnavailable);
-        result.Detail.Should().Be(HeadlessProblemDetailsConstants.Details.ServiceUnavailable);
+        result.Detail.Should().Be(Messages.problem_service_unavailable);
     }
 
     [Fact]
@@ -288,7 +289,7 @@ public sealed class ProblemDetailsCreatorTests : TestBase
         // then
         result.Status.Should().Be(StatusCodes.Status422UnprocessableEntity);
         result.Title.Should().Be(HeadlessProblemDetailsConstants.Titles.UnprocessableEntity);
-        result.Detail.Should().Be(HeadlessProblemDetailsConstants.Details.UnprocessableEntity);
+        result.Detail.Should().Be(Messages.problem_unprocessable_entity);
     }
 
     [Fact]
@@ -323,7 +324,7 @@ public sealed class ProblemDetailsCreatorTests : TestBase
         // then
         result.Status.Should().Be(StatusCodes.Status409Conflict);
         result.Title.Should().Be(HeadlessProblemDetailsConstants.Titles.Conflict);
-        result.Detail.Should().Be(HeadlessProblemDetailsConstants.Details.Conflict);
+        result.Detail.Should().Be(Messages.problem_conflict);
     }
 
     [Fact]
@@ -357,7 +358,7 @@ public sealed class ProblemDetailsCreatorTests : TestBase
         // then
         result.Status.Should().Be(StatusCodes.Status401Unauthorized);
         result.Title.Should().Be(HeadlessProblemDetailsConstants.Titles.Unauthorized);
-        result.Detail.Should().Be(HeadlessProblemDetailsConstants.Details.Unauthorized);
+        result.Detail.Should().Be(Messages.problem_unauthorized);
     }
 
     [Fact]
@@ -372,7 +373,7 @@ public sealed class ProblemDetailsCreatorTests : TestBase
         // then
         result.Status.Should().Be(StatusCodes.Status403Forbidden);
         result.Title.Should().Be(HeadlessProblemDetailsConstants.Titles.Forbidden);
-        result.Detail.Should().Be(HeadlessProblemDetailsConstants.Details.Forbidden);
+        result.Detail.Should().Be(Messages.problem_forbidden);
         result.Extensions.Should().NotContainKey("error");
         result.Extensions.Should().NotContainKey("errors");
     }
@@ -385,8 +386,8 @@ public sealed class ProblemDetailsCreatorTests : TestBase
 
         // when
         var result = creator.BadRequest(
-            detail: HeadlessProblemDetailsConstants.Details.TenantContextRequired,
-            error: HeadlessProblemDetailsConstants.Errors.TenantContextRequired
+            detail: Messages.g_tenant_required,
+            error: GeneralMessageDescriber.TenantRequired()
         );
 
         // then - Normalize ran (traceId/buildNumber/commitNumber/timestamp present)
@@ -404,8 +405,8 @@ public sealed class ProblemDetailsCreatorTests : TestBase
 
         // when
         var result = creator.Forbidden(
-            detail: HeadlessProblemDetailsConstants.Details.TenantContextRequired,
-            error: HeadlessProblemDetailsConstants.Errors.TenantContextRequired
+            detail: Messages.g_tenant_required,
+            error: GeneralMessageDescriber.TenantRequired()
         );
 
         // then - Normalize ran (traceId/buildNumber/commitNumber/timestamp present)
@@ -427,7 +428,7 @@ public sealed class ProblemDetailsCreatorTests : TestBase
         // then
         result.Status.Should().Be(StatusCodes.Status408RequestTimeout);
         result.Title.Should().Be(HeadlessProblemDetailsConstants.Titles.RequestTimeout);
-        result.Detail.Should().Be(HeadlessProblemDetailsConstants.Details.RequestTimeout);
+        result.Detail.Should().Be(Messages.problem_request_timeout);
         result.Extensions.Should().NotContainKey("errors");
         result.Extensions.Should().NotContainKey("error");
         result.Extensions.Should().ContainKey("traceId");
@@ -448,7 +449,7 @@ public sealed class ProblemDetailsCreatorTests : TestBase
         // then
         result.Status.Should().Be(StatusCodes.Status501NotImplemented);
         result.Title.Should().Be(HeadlessProblemDetailsConstants.Titles.NotImplemented);
-        result.Detail.Should().Be(HeadlessProblemDetailsConstants.Details.NotImplemented);
+        result.Detail.Should().Be(Messages.problem_not_implemented);
         result.Extensions.Should().NotContainKey("errors");
         result.Extensions.Should().NotContainKey("error");
         result.Extensions.Should().ContainKey("traceId");
@@ -624,7 +625,7 @@ public sealed class ProblemDetailsCreatorTests : TestBase
 
         // then
         problemDetails.Title.Should().Be(HeadlessProblemDetailsConstants.Titles.InternalError);
-        problemDetails.Detail.Should().Be(HeadlessProblemDetailsConstants.Details.InternalError);
+        problemDetails.Detail.Should().Be(Messages.problem_internal_error);
     }
 
     [Fact]
@@ -654,7 +655,7 @@ public sealed class ProblemDetailsCreatorTests : TestBase
         // then
         problemDetails.Title.Should().Be(HeadlessProblemDetailsConstants.Titles.RequestTimeout);
         problemDetails.Type.Should().Be(HeadlessProblemDetailsConstants.Types.RequestTimeout);
-        problemDetails.Detail.Should().Be(HeadlessProblemDetailsConstants.Details.RequestTimeout);
+        problemDetails.Detail.Should().Be(Messages.problem_request_timeout);
     }
 
     [Fact]
@@ -692,7 +693,7 @@ public sealed class ProblemDetailsCreatorTests : TestBase
         // then
         problemDetails.Title.Should().Be(HeadlessProblemDetailsConstants.Titles.NotImplemented);
         problemDetails.Type.Should().Be(HeadlessProblemDetailsConstants.Types.NotImplemented);
-        problemDetails.Detail.Should().Be(HeadlessProblemDetailsConstants.Details.NotImplemented);
+        problemDetails.Detail.Should().Be(Messages.problem_not_implemented);
     }
 
     [Fact]
@@ -734,7 +735,7 @@ public sealed class ProblemDetailsCreatorTests : TestBase
         // then
         problemDetails.Title.Should().Be(HeadlessProblemDetailsConstants.Titles.PayloadTooLarge);
         problemDetails.Type.Should().Be(HeadlessProblemDetailsConstants.Types.PayloadTooLarge);
-        problemDetails.Detail.Should().Be(HeadlessProblemDetailsConstants.Details.PayloadTooLarge);
+        problemDetails.Detail.Should().Be(Messages.problem_payload_too_large);
     }
 
     [Fact]

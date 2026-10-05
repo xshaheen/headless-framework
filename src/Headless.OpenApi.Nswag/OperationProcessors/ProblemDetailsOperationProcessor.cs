@@ -131,6 +131,9 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
 
     #region Examples
 
+    // The example text is English on purpose: NSwag caches the generated document, so text resolved
+    // under the culture of whichever request generated it first would be served to every reader.
+
     private static readonly DateTimeOffset _ExampleTimestamp = new(2024, 1, 1, 12, 0, 0, TimeSpan.Zero);
 
     private static readonly BadRequestProblemDetails _Status400ProblemDetails = new()
@@ -138,7 +141,8 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
         Type = HeadlessProblemDetailsConstants.Types.BadRequest,
         Title = HeadlessProblemDetailsConstants.Titles.BadRequest,
         Status = StatusCodes.Status400BadRequest,
-        Detail = HeadlessProblemDetailsConstants.Details.BadRequest,
+        Detail =
+            "Failed to parse. The request body is empty or could not be understood by the server due to malformed syntax.",
         Instance = "/public/some-endpoint",
         TraceId = "<trace-id>",
         BuildNumber = "<version>",
@@ -151,7 +155,7 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
         Type = HeadlessProblemDetailsConstants.Types.Unauthorized,
         Title = HeadlessProblemDetailsConstants.Titles.Unauthorized,
         Status = StatusCodes.Status401Unauthorized,
-        Detail = HeadlessProblemDetailsConstants.Details.Unauthorized,
+        Detail = "You are unauthenticated to access this resource.",
         Instance = "/public/some-endpoint",
         TraceId = "<trace-id>",
         BuildNumber = "<version>",
@@ -164,7 +168,7 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
         Type = HeadlessProblemDetailsConstants.Types.Forbidden,
         Title = HeadlessProblemDetailsConstants.Titles.Forbidden,
         Status = StatusCodes.Status403Forbidden,
-        Detail = HeadlessProblemDetailsConstants.Details.Forbidden,
+        Detail = "You are forbidden from accessing this resource.",
         Instance = "/public/some-endpoint",
         TraceId = "<trace-id>",
         BuildNumber = "<version>",
@@ -177,7 +181,7 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
         Type = HeadlessProblemDetailsConstants.Types.EntityNotFound,
         Title = HeadlessProblemDetailsConstants.Titles.EntityNotFound,
         Status = StatusCodes.Status404NotFound,
-        Detail = HeadlessProblemDetailsConstants.Details.EntityNotFound,
+        Detail = "The requested resource was not found.",
         Instance = "/public/some-endpoint",
         TraceId = "<trace-id>",
         BuildNumber = "<version>",
@@ -190,7 +194,7 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
         Type = HeadlessProblemDetailsConstants.Types.Conflict,
         Title = HeadlessProblemDetailsConstants.Titles.Conflict,
         Status = StatusCodes.Status409Conflict,
-        Detail = HeadlessProblemDetailsConstants.Details.Conflict,
+        Detail = "Conflict - one or more business rules violated.",
         Instance = "/public/some-endpoint",
         TraceId = "<trace-id>",
         BuildNumber = "<version>",
@@ -218,7 +222,7 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
         Type = HeadlessProblemDetailsConstants.Types.UnprocessableEntity,
         Title = HeadlessProblemDetailsConstants.Titles.UnprocessableEntity,
         Status = StatusCodes.Status422UnprocessableEntity,
-        Detail = HeadlessProblemDetailsConstants.Details.UnprocessableEntity,
+        Detail = "One or more validation errors occurred.",
         Instance = "/public/some-endpoint",
         TraceId = "<trace-id>",
         BuildNumber = "<version>",
@@ -243,7 +247,7 @@ public sealed class ProblemDetailsOperationProcessor : IOperationProcessor
         Type = HeadlessProblemDetailsConstants.Types.TooManyRequests,
         Title = HeadlessProblemDetailsConstants.Titles.TooManyRequests,
         Status = StatusCodes.Status429TooManyRequests,
-        Detail = HeadlessProblemDetailsConstants.Details.TooManyRequests,
+        Detail = "Too many requests - please try again later.",
         Instance = "/public/some-endpoint",
         TraceId = "<trace-id>",
         BuildNumber = "<version>",

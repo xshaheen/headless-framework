@@ -117,9 +117,10 @@ internal sealed partial class HeadlessApiExceptionHandler(
                         _LogTenantResolutionMiddlewareMissing(logger, httpContext.Request.Path);
                     }
 
+                    var tenantRequired = GeneralMessageDescriber.TenantRequired();
                     problemDetails = problemDetailsCreator.Forbidden(
-                        detail: HeadlessProblemDetailsConstants.Details.TenantContextRequired,
-                        error: HeadlessProblemDetailsConstants.Errors.TenantContextRequired
+                        detail: tenantRequired.Description,
+                        error: tenantRequired
                     );
                     statusCode = StatusCodes.Status403Forbidden;
                     break;
@@ -155,9 +156,7 @@ internal sealed partial class HeadlessApiExceptionHandler(
 
                 case CrossTenantWriteException:
                     _LogCrossTenantWriteException(logger, exception);
-                    problemDetails = problemDetailsCreator.Conflict([
-                        HeadlessProblemDetailsConstants.Errors.CrossTenantWrite,
-                    ]);
+                    problemDetails = problemDetailsCreator.Conflict([GeneralMessageDescriber.CrossTenantWrite()]);
                     statusCode = StatusCodes.Status409Conflict;
                     break;
 

@@ -4,6 +4,7 @@ using System.Net;
 using System.Net.Http.Json;
 using Headless;
 using Headless.Api;
+using Headless.Api.Resources;
 using Headless.Api.ServiceDefaults;
 using Headless.MultiTenancy;
 using Headless.Testing.Tests;
@@ -147,7 +148,7 @@ public sealed class TenantRequirementTests : TestBase
 
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
         var body = await response.Content.ReadAsStringAsync(AbortToken);
-        body.Should().NotContain(HeadlessProblemDetailsConstants.Errors.TenantContextRequired.Code);
+        body.Should().NotContain(GeneralErrorCodes.TenantRequired);
     }
 
     [Fact]
@@ -191,7 +192,7 @@ public sealed class TenantRequirementTests : TestBase
             .GetProperty("code")
             .GetString()
             .Should()
-            .Be(HeadlessProblemDetailsConstants.Errors.TenantContextRequired.Code);
+            .Be(GeneralErrorCodes.TenantRequired);
     }
 
     [Fact]
@@ -213,7 +214,7 @@ public sealed class TenantRequirementTests : TestBase
             .GetProperty("code")
             .GetString()
             .Should()
-            .Be(HeadlessProblemDetailsConstants.Errors.TenantContextRequired.Code);
+            .Be(GeneralErrorCodes.TenantRequired);
     }
 
     [Theory]
@@ -354,15 +355,8 @@ public sealed class TenantRequirementTests : TestBase
 
         root.GetProperty("status").GetInt32().Should().Be(StatusCodes.Status403Forbidden);
         root.GetProperty("title").GetString().Should().Be(HeadlessProblemDetailsConstants.Titles.Forbidden);
-        root.GetProperty("detail")
-            .GetString()
-            .Should()
-            .Be(HeadlessProblemDetailsConstants.Details.TenantContextRequired);
-        root.GetProperty("error")
-            .GetProperty("code")
-            .GetString()
-            .Should()
-            .Be(HeadlessProblemDetailsConstants.Errors.TenantContextRequired.Code);
+        root.GetProperty("detail").GetString().Should().Be(Messages.g_tenant_required);
+        root.GetProperty("error").GetProperty("code").GetString().Should().Be(GeneralErrorCodes.TenantRequired);
     }
 
     private sealed record TenantRequiredResponse(string? TenantId);

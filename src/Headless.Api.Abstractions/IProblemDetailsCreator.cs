@@ -13,12 +13,20 @@ namespace Headless.Api;
 /// handlers, middleware, endpoint code).
 /// </summary>
 /// <remarks>
+/// <para>
 /// Every single-error factory takes its type-specific arguments first, then an optional
 /// <c>detail</c> that overrides the default <c>Detail</c> text, then an optional
 /// <see cref="ErrorDescriptor"/> written to <c>Extensions["error"]</c> as a machine-readable
-/// discriminator. Clients should branch on that code rather than parse the human-readable
-/// <c>Detail</c>. <see cref="Conflict"/> and <see cref="UnprocessableEntity"/> carry a collection
+/// discriminator. <see cref="Conflict"/> and <see cref="UnprocessableEntity"/> carry a collection
 /// of descriptors instead and keep the default <c>Detail</c>.
+/// </para>
+/// <para>
+/// The default <c>Detail</c> is resolved per call under
+/// <see cref="System.Globalization.CultureInfo.CurrentUICulture"/> (English and Arabic ship with the
+/// framework; an application without request localization gets English). A caller-supplied
+/// <c>detail</c> is written exactly as given. <c>Type</c>, <c>Status</c>, <c>Title</c>, and error
+/// codes never vary by culture: clients branch on those, never on <c>Detail</c>.
+/// </para>
 /// </remarks>
 public interface IProblemDetailsCreator
 {
@@ -198,8 +206,9 @@ public interface IProblemDetailsCreator
     /// </param>
     /// <remarks>
     /// Resolves <c>Title</c>/<c>Type</c> from <see cref="Microsoft.AspNetCore.Mvc.ApiBehaviorOptions.ClientErrorMapping"/>,
-    /// then fills missing <c>Title</c>/<c>Type</c>/<c>Detail</c> for status codes the framework
-    /// cares about (404, 408, 413, 500, 501) from <see cref="HeadlessProblemDetailsConstants"/>.
+    /// then fills missing <c>Title</c>/<c>Type</c> for status codes the framework cares about
+    /// (404, 408, 413, 500, 501) from <see cref="HeadlessProblemDetailsConstants"/> and a missing
+    /// <c>Detail</c> from the localized defaults.
     /// Always stamps <c>traceId</c>, <c>buildNumber</c>, <c>commitNumber</c>, and <c>timestamp</c>
     /// extensions, plus <c>Instance</c> from the current request path. Idempotent: existing values
     /// are preserved.

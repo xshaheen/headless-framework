@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Api.Resources;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -35,12 +36,10 @@ internal sealed class TenantContextRequiredFeature : IStatusCodeRejectionFeature
         // Clear() also resets the status to 200; WriteAsync assigns the 403 again before writing.
         context.Response.Clear();
 
+        var error = GeneralMessageDescriber.TenantRequired();
         var problemDetails = context
             .RequestServices.GetRequiredService<IProblemDetailsCreator>()
-            .Forbidden(
-                detail: HeadlessProblemDetailsConstants.Details.TenantContextRequired,
-                error: HeadlessProblemDetailsConstants.Errors.TenantContextRequired
-            );
+            .Forbidden(detail: error.Description, error: error);
 
         await TenantCatalogRejectionWriter
             .WriteAsync(context, StatusCodes.Status403Forbidden, problemDetails)

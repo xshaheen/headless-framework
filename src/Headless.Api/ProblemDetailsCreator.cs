@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Diagnostics;
+using Headless.Api.Resources;
 using Headless.Checks;
 using Headless.Context;
 using Headless.Primitives;
@@ -23,11 +24,7 @@ internal sealed class ProblemDetailsCreator(
         {
             Status = StatusCodes.Status404NotFound,
             Title = HeadlessProblemDetailsConstants.Titles.EndpointNotFound,
-            Detail =
-                detail
-                ?? HeadlessProblemDetailsConstants.Details.EndpointNotFound(
-                    httpContextAccessor.HttpContext?.Request.Path.Value ?? ""
-                ),
+            Detail = detail ?? _EndpointNotFoundDetail(),
         };
 
         _SetError(problemDetails, error);
@@ -42,7 +39,7 @@ internal sealed class ProblemDetailsCreator(
         {
             Status = StatusCodes.Status404NotFound,
             Title = HeadlessProblemDetailsConstants.Titles.EntityNotFound,
-            Detail = detail ?? HeadlessProblemDetailsConstants.Details.EntityNotFound,
+            Detail = detail ?? Messages.problem_entity_not_found,
         };
 
         _SetError(problemDetails, error);
@@ -57,7 +54,7 @@ internal sealed class ProblemDetailsCreator(
         {
             Status = StatusCodes.Status400BadRequest,
             Title = HeadlessProblemDetailsConstants.Titles.BadRequest,
-            Detail = detail ?? HeadlessProblemDetailsConstants.Details.BadRequest,
+            Detail = detail ?? Messages.problem_bad_request,
         };
 
         _SetError(problemDetails, error);
@@ -72,7 +69,7 @@ internal sealed class ProblemDetailsCreator(
         {
             Title = HeadlessProblemDetailsConstants.Titles.UnprocessableEntity,
             Status = StatusCodes.Status422UnprocessableEntity,
-            Detail = HeadlessProblemDetailsConstants.Details.UnprocessableEntity,
+            Detail = Messages.problem_unprocessable_entity,
             Extensions = { ["errors"] = errors },
         };
 
@@ -87,7 +84,7 @@ internal sealed class ProblemDetailsCreator(
         {
             Status = StatusCodes.Status409Conflict,
             Title = HeadlessProblemDetailsConstants.Titles.Conflict,
-            Detail = HeadlessProblemDetailsConstants.Details.Conflict,
+            Detail = Messages.problem_conflict,
             Extensions = { ["errors"] = errors },
         };
 
@@ -102,7 +99,7 @@ internal sealed class ProblemDetailsCreator(
         {
             Status = StatusCodes.Status403Forbidden,
             Title = HeadlessProblemDetailsConstants.Titles.Forbidden,
-            Detail = detail ?? HeadlessProblemDetailsConstants.Details.Forbidden,
+            Detail = detail ?? Messages.problem_forbidden,
         };
 
         _SetError(problemDetails, error);
@@ -117,7 +114,7 @@ internal sealed class ProblemDetailsCreator(
         {
             Status = StatusCodes.Status401Unauthorized,
             Title = HeadlessProblemDetailsConstants.Titles.Unauthorized,
-            Detail = detail ?? HeadlessProblemDetailsConstants.Details.Unauthorized,
+            Detail = detail ?? Messages.problem_unauthorized,
         };
 
         _SetError(problemDetails, error);
@@ -132,7 +129,7 @@ internal sealed class ProblemDetailsCreator(
         {
             Status = StatusCodes.Status408RequestTimeout,
             Title = HeadlessProblemDetailsConstants.Titles.RequestTimeout,
-            Detail = detail ?? HeadlessProblemDetailsConstants.Details.RequestTimeout,
+            Detail = detail ?? Messages.problem_request_timeout,
         };
 
         _SetError(problemDetails, error);
@@ -147,7 +144,7 @@ internal sealed class ProblemDetailsCreator(
         {
             Status = StatusCodes.Status501NotImplemented,
             Title = HeadlessProblemDetailsConstants.Titles.NotImplemented,
-            Detail = detail ?? HeadlessProblemDetailsConstants.Details.NotImplemented,
+            Detail = detail ?? Messages.problem_not_implemented,
         };
 
         _SetError(problemDetails, error);
@@ -162,7 +159,7 @@ internal sealed class ProblemDetailsCreator(
         {
             Status = StatusCodes.Status429TooManyRequests,
             Title = HeadlessProblemDetailsConstants.Titles.TooManyRequests,
-            Detail = detail ?? HeadlessProblemDetailsConstants.Details.TooManyRequests,
+            Detail = detail ?? Messages.problem_too_many_requests,
             Extensions = { ["retryAfter"] = retryAfterSeconds },
         };
 
@@ -182,7 +179,7 @@ internal sealed class ProblemDetailsCreator(
         {
             Status = StatusCodes.Status503ServiceUnavailable,
             Title = HeadlessProblemDetailsConstants.Titles.ServiceUnavailable,
-            Detail = detail ?? HeadlessProblemDetailsConstants.Details.ServiceUnavailable,
+            Detail = detail ?? Messages.problem_service_unavailable,
         };
 
         // Only stamped when the caller knows a duration. An invented retryAfter would have clients
@@ -218,7 +215,7 @@ internal sealed class ProblemDetailsCreator(
         {
             case 500:
                 problemDetails.Title = HeadlessProblemDetailsConstants.Titles.InternalError;
-                problemDetails.Detail ??= HeadlessProblemDetailsConstants.Details.InternalError;
+                problemDetails.Detail ??= Messages.problem_internal_error;
 
                 break;
             case 404
@@ -228,9 +225,7 @@ internal sealed class ProblemDetailsCreator(
                     StringComparison.Ordinal
                 ):
                 problemDetails.Title = HeadlessProblemDetailsConstants.Titles.EndpointNotFound;
-                problemDetails.Detail ??= HeadlessProblemDetailsConstants.Details.EndpointNotFound(
-                    httpContextAccessor.HttpContext?.Request.Path.Value ?? ""
-                );
+                problemDetails.Detail ??= _EndpointNotFoundDetail();
 
                 break;
             // 408, 413, and 501 are not in ASP.NET Core's default ApiBehaviorOptions.ClientErrorMapping,
@@ -242,19 +237,19 @@ internal sealed class ProblemDetailsCreator(
             case 408:
                 problemDetails.Title ??= HeadlessProblemDetailsConstants.Titles.RequestTimeout;
                 problemDetails.Type ??= HeadlessProblemDetailsConstants.Types.RequestTimeout;
-                problemDetails.Detail ??= HeadlessProblemDetailsConstants.Details.RequestTimeout;
+                problemDetails.Detail ??= Messages.problem_request_timeout;
 
                 break;
             case 413:
                 problemDetails.Title ??= HeadlessProblemDetailsConstants.Titles.PayloadTooLarge;
                 problemDetails.Type ??= HeadlessProblemDetailsConstants.Types.PayloadTooLarge;
-                problemDetails.Detail ??= HeadlessProblemDetailsConstants.Details.PayloadTooLarge;
+                problemDetails.Detail ??= Messages.problem_payload_too_large;
 
                 break;
             case 501:
                 problemDetails.Title ??= HeadlessProblemDetailsConstants.Titles.NotImplemented;
                 problemDetails.Type ??= HeadlessProblemDetailsConstants.Types.NotImplemented;
-                problemDetails.Detail ??= HeadlessProblemDetailsConstants.Details.NotImplemented;
+                problemDetails.Detail ??= Messages.problem_not_implemented;
 
                 break;
         }
@@ -290,6 +285,17 @@ internal sealed class ProblemDetailsCreator(
     {
         Normalize(problemDetails);
     }
+
+#pragma warning disable CA1863 // Use 'CompositeFormat': the format is a resource that changes with the UI culture, so a cached CompositeFormat would pin one language.
+    private string _EndpointNotFoundDetail()
+    {
+        return string.Format(
+            CultureInfo.CurrentCulture,
+            Messages.problem_endpoint_not_found,
+            httpContextAccessor.HttpContext?.Request.Path.Value ?? ""
+        );
+    }
+#pragma warning restore CA1863
 
     private static void _SetError(ProblemDetails problemDetails, ErrorDescriptor? error)
     {
