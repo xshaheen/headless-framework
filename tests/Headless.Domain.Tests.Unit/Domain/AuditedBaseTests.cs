@@ -235,6 +235,28 @@ public sealed class AuditedBaseTests
 
     [Theory]
     [MemberData(nameof(Suspendables))]
+    public void should_record_null_actor_when_unsuspend_and_resuspend_without_actor(string kind)
+    {
+        // given
+        var subject = (ISuspendAudit<string, Account>)_Create(kind);
+        subject.Suspend(_Earlier, "user-a", new Account { Id = "user-a" });
+
+        // when
+        subject.Unsuspend(_Later);
+        var unsuspendedById = subject.UnsuspendedById;
+        var unsuspendedBy = subject.UnsuspendedBy;
+        subject.Suspend(_Latest);
+
+        // then
+        unsuspendedById.Should().BeNull();
+        unsuspendedBy.Should().BeNull();
+        subject.SuspendedAt.Should().Be(_Latest);
+        subject.SuspendedById.Should().BeNull();
+        subject.SuspendedBy.Should().BeNull();
+    }
+
+    [Theory]
+    [MemberData(nameof(Suspendables))]
     public void should_do_nothing_when_unsuspend_not_suspended(string kind)
     {
         // given
@@ -304,6 +326,28 @@ public sealed class AuditedBaseTests
         subject.RestoredAt.Should().Be(_Later);
         subject.RestoredById.Should().Be("support");
         subject.RestoredBy.Should().BeSameAs(support);
+    }
+
+    [Theory]
+    [MemberData(nameof(SoftDeletables))]
+    public void should_record_null_actor_when_restore_and_redelete_without_actor(string kind)
+    {
+        // given
+        var subject = (IDeleteAudit<string, Account>)_Create(kind);
+        subject.Delete(_Earlier, "user-a", new Account { Id = "user-a" });
+
+        // when
+        subject.Restore(_Later);
+        var restoredById = subject.RestoredById;
+        var restoredBy = subject.RestoredBy;
+        subject.Delete(_Latest);
+
+        // then
+        restoredById.Should().BeNull();
+        restoredBy.Should().BeNull();
+        subject.DeletedAt.Should().Be(_Latest);
+        subject.DeletedById.Should().BeNull();
+        subject.DeletedBy.Should().BeNull();
     }
 
     [Theory]

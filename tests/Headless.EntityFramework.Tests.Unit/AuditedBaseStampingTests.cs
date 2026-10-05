@@ -249,6 +249,154 @@ public sealed class AuditedBaseStampingTests : TestBase
 
     [Theory]
     [MemberData(nameof(SuspendableRows))]
+    public async Task should_record_null_actor_when_audited_base_unsuspended_and_resuspended_anonymously(string kind)
+    {
+        // given
+        await using var harness = await _CreateHarnessAsync<AuditedDbContext>();
+        await using var db = harness.CreateContext();
+        var entity = (ISuspendableRow)_Create(kind);
+        db.Add(entity);
+        await db.SaveChangesAsync(AbortToken);
+        entity.Freeze();
+        await db.SaveChangesAsync(AbortToken);
+        _SignOut();
+
+        // when
+        entity.Unfreeze();
+        await db.SaveChangesAsync(AbortToken);
+        var unsuspended = (ISuspendableRow)await harness.ReloadAsync((IAuditedRow)entity);
+        entity.Freeze();
+        await db.SaveChangesAsync(AbortToken);
+        var resuspended = (ISuspendableRow)await harness.ReloadAsync((IAuditedRow)entity);
+
+        // then
+        unsuspended.UnsuspendedById.Should().BeNull();
+        unsuspended.SuspendedById.Should().Be((UserId)"user-1");
+        resuspended.SuspendedById.Should().BeNull();
+        resuspended.UnsuspendedById.Should().BeNull();
+    }
+
+    [Theory]
+    [MemberData(nameof(DeletableRows))]
+    public async Task should_record_null_actor_when_audited_base_restored_and_redeleted_anonymously(string kind)
+    {
+        // given
+        await using var harness = await _CreateHarnessAsync<AuditedDbContext>();
+        await using var db = harness.CreateContext();
+        var entity = (IDeletableRow)_Create(kind);
+        db.Add(entity);
+        await db.SaveChangesAsync(AbortToken);
+        entity.SoftDelete();
+        await db.SaveChangesAsync(AbortToken);
+        _SignOut();
+
+        // when
+        entity.Undelete();
+        await db.SaveChangesAsync(AbortToken);
+        var restored = (IDeletableRow)await harness.ReloadAsync((IAuditedRow)entity);
+        entity.SoftDelete();
+        await db.SaveChangesAsync(AbortToken);
+        var redeleted = (IDeletableRow)await harness.ReloadAsync((IAuditedRow)entity);
+
+        // then
+        restored.RestoredById.Should().BeNull();
+        restored.DeletedById.Should().Be((UserId)"user-1");
+        redeleted.DeletedById.Should().BeNull();
+        redeleted.RestoredById.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_record_null_actor_and_navigation_when_navigation_base_transitions_anonymously()
+    {
+        // given
+        await using var harness = await _CreateHarnessAsync<AuditedDbContext>();
+        await using var db = harness.CreateContext();
+        var userA = new TestAccount { Id = "user-1" };
+        db.Add(userA);
+        var document = new SuspendableDocument { Id = Guid.CreateVersion7(), Name = "doc" };
+        db.Add(document);
+        await db.SaveChangesAsync(AbortToken);
+        document.Suspend(_Start, userA.Id, userA);
+        await db.SaveChangesAsync(AbortToken);
+        _SignOut();
+
+        // when
+        document.Unsuspend(_Start.AddMinutes(1));
+        await db.SaveChangesAsync(AbortToken);
+        document.Suspend(_Start.AddMinutes(2));
+        await db.SaveChangesAsync(AbortToken);
+
+        // then
+        document.SuspendedBy.Should().BeNull();
+        document.UnsuspendedBy.Should().BeNull();
+        var saved = await harness.ReloadAsync(document);
+        saved.SuspendedAt.Should().Be(_Start.AddMinutes(2));
+        saved.SuspendedById.Should().BeNull();
+        saved.UnsuspendedAt.Should().Be(_Start.AddMinutes(1));
+        saved.UnsuspendedById.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_clear_loaded_navigation_when_navigation_base_flag_raised_anonymously()
+    {
+        // given
+        await using var harness = await _CreateHarnessAsync<AuditedDbContext>();
+        await using var db = harness.CreateContext();
+        var userA = new TestAccount { Id = "user-1" };
+        db.Add(userA);
+        var document = new SuspendableDocument { Id = Guid.CreateVersion7(), Name = "doc" };
+        db.Add(document);
+        await db.SaveChangesAsync(AbortToken);
+        document.Suspend(_Start, userA.Id, userA);
+        await db.SaveChangesAsync(AbortToken);
+        _SignOut();
+        document.Unfreeze();
+        await db.SaveChangesAsync(AbortToken);
+
+        // when
+        document.Freeze();
+        await db.SaveChangesAsync(AbortToken);
+
+        // then
+        document.SuspendedById.Should().BeNull();
+        document.SuspendedBy.Should().BeNull();
+        var saved = await harness.ReloadAsync(document);
+        saved.SuspendedById.Should().BeNull();
+        saved.UnsuspendedById.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_record_null_actor_when_navigation_base_restored_and_redeleted_anonymously()
+    {
+        // given
+        await using var harness = await _CreateHarnessAsync<AuditedDbContext>();
+        await using var db = harness.CreateContext();
+        var userA = new TestAccount { Id = "user-1" };
+        db.Add(userA);
+        var document = new AuditedDocument { Id = Guid.CreateVersion7(), Name = "doc" };
+        db.Add(document);
+        await db.SaveChangesAsync(AbortToken);
+        document.Delete(_Start, userA.Id, userA);
+        await db.SaveChangesAsync(AbortToken);
+        _SignOut();
+
+        // when
+        document.Restore(_Start.AddMinutes(1));
+        await db.SaveChangesAsync(AbortToken);
+        document.Delete(_Start.AddMinutes(2));
+        await db.SaveChangesAsync(AbortToken);
+
+        // then
+        document.DeletedBy.Should().BeNull();
+        var saved = await harness.ReloadAsync(document);
+        saved.DeletedAt.Should().Be(_Start.AddMinutes(2));
+        saved.DeletedById.Should().BeNull();
+        saved.RestoredAt.Should().Be(_Start.AddMinutes(1));
+        saved.RestoredById.Should().BeNull();
+    }
+
+    [Theory]
+    [MemberData(nameof(SuspendableRows))]
     public async Task should_return_suspended_rows_when_entity_did_not_opt_into_suspend_filter(string kind)
     {
         // given
@@ -327,6 +475,12 @@ public sealed class AuditedBaseStampingTests : TestBase
         saved.IsDeleted.Should().BeTrue();
         saved.DeletedAt.Should().Be(deletedAt);
         saved.DeletedById.Should().Be(_currentUser.UserId);
+    }
+
+    private void _SignOut()
+    {
+        _currentUser.UserId = null;
+        _currentUser.IsAuthenticated = false;
     }
 
     private static Task<int> _CountAsync(DbContext db, IAuditedRow entity, bool ignoreSuspendFilter = false)
@@ -468,6 +622,8 @@ public sealed class AuditedBaseStampingTests : TestBase
 
         public DbSet<AuditedDocument> Documents => Set<AuditedDocument>();
 
+        public DbSet<SuspendableDocument> SuspendableDocuments => Set<SuspendableDocument>();
+
         public DbSet<TestAccount> Accounts => Set<TestAccount>();
 
         public override string DefaultSchema => "";
@@ -566,6 +722,15 @@ public sealed class AuditedBaseStampingTests : TestBase
     public sealed class AuditedDocument : SoftDeletableAggregateRoot<Guid, UserId, TestAccount>
     {
         public required string Name { get; set; }
+    }
+
+    public sealed class SuspendableDocument : SuspendableAggregateRoot<Guid, UserId, TestAccount>
+    {
+        public required string Name { get; set; }
+
+        public void Freeze() => IsSuspended = true;
+
+        public void Unfreeze() => IsSuspended = false;
     }
 
     public sealed class TestAccount
