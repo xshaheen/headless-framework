@@ -36,8 +36,8 @@ Register with `services.AddHeadlessDbContext<TDbContext, TUser, TRole, TKey, ...
 
 `HeadlessIdentityDbContext<>` derives from `IdentityDbContext<>` (so all stock Identity model/store conventions are inherited) and also implements `IHeadlessDbContext`. The framework runtime (`HeadlessDbContextRuntime`) is embedded in the constructor and takes over `SaveChanges`/`SaveChangesAsync`/`Dispose`/`DisposeAsync` to run the save-entry processor chain — the same pipeline that runs for `HeadlessDbContext`. This means:
 
-- **Audit columns** (`CreatedAt`, `UpdatedAt`, `CreatedBy`, `UpdatedBy`) are set automatically on every save for entities implementing the audit interfaces.
-- **Soft delete** query filters are applied automatically for entities implementing `IHasDeletedAt`.
+- **Audit columns** (`CreatedAt`, `UpdatedAt`, `CreatedById`, `UpdatedById`) are set automatically on every save for entities implementing the audit interfaces.
+- **Soft delete** query filters are applied automatically for entities implementing `IDeleteAudit`. Suspension (`ISuspendAudit`) is not filtered unless the entity type opts in with `HasNotSuspendedFilter()`, so a suspended user or account stays loadable for the command that lifts the suspension.
 - **Domain events** are dispatched within the save transaction for entities implementing `IDomainEventEmitter`.
 - **Multi-tenancy** query filters and the optional tenant-write guard apply the same way as any other `HeadlessDbContext`.
 - **`IDbContextFactory<TDbContext>`** is registered as singleton by both registrations, so background services can create contexts without a separate `AddDbContextFactory` call. A factory-created context gets its scoped services from a private DI scope, as described in [ORM scope binding](orm.md#registration-modes-and-scope-binding).

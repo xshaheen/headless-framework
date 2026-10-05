@@ -178,7 +178,7 @@ public static class HeadlessEntityConventionExtensions
 
     /// <summary>Applies update-audit column configuration for a strongly-typed entity builder.</summary>
     public static void ConfigureUpdateAudit<TEntity>(this EntityTypeBuilder<TEntity> b)
-        where TEntity : class, IDeleteAudit
+        where TEntity : class, IUpdateAudit
     {
         b.Cast<EntityTypeBuilder>().TryConfigureUpdateAudit();
     }

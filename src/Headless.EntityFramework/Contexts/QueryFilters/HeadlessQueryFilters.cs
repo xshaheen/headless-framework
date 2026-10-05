@@ -11,9 +11,13 @@ namespace Headless.EntityFramework;
 /// filters: multi-tenancy, soft-delete, and suspend.
 /// </summary>
 /// <remarks>
+/// The multi-tenancy and soft-delete filters apply by default to tenant-owned and <c>IDeleteAudit</c> entity types.
+/// The suspend filter applies only to entity types that opt in with <c>HasNotSuspendedFilter()</c>.
+/// <para>
 /// The bypass extensions emit a debug-level security audit trace before calling
 /// <c>IgnoreQueryFilters</c>. Use them instead of calling <c>IgnoreQueryFilters</c> directly so
 /// cross-filter bypasses are traceable.
+/// </para>
 /// </remarks>
 [PublicAPI]
 public static class HeadlessQueryFilters
@@ -24,7 +28,10 @@ public static class HeadlessQueryFilters
     /// <summary>Named tag for the <c>IDeleteAudit.IsDeleted == false</c> soft-delete filter.</summary>
     public const string NotDeletedFilter = "NotDeletedFilter";
 
-    /// <summary>Named tag for the <c>ISuspendAudit.IsSuspended == false</c> suspend filter.</summary>
+    /// <summary>
+    /// Named tag for the opt-in <c>ISuspendAudit.IsSuspended == false</c> suspend filter, added per entity type by
+    /// <c>HasNotSuspendedFilter()</c>.
+    /// </summary>
     public const string NotSuspendedFilter = "NotSuspendedFilter";
 
     extension<TEntity>(IQueryable<TEntity> source)

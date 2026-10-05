@@ -23,6 +23,13 @@ public sealed class HarnessDbContext(RecordingHeadlessMessageDispatcher messageD
 
     public override string DefaultSchema => "";
 
+    // The harness filter suites verify the opt-in suspend filter, so the shared test entity opts in.
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        base.OnModelCreating(modelBuilder);
+        modelBuilder.Entity<HarnessTestEntity>().HasNotSuspendedFilter();
+    }
+
     /// <summary>
     /// Clears all captured messages. Useful for test cleanup between operations.
     /// </summary>

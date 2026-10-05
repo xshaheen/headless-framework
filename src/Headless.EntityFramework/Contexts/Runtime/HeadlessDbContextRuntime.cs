@@ -444,15 +444,8 @@ internal sealed class HeadlessDbContextRuntime(DbContext db)
             );
         }
 
-        if (entityType.IsAssignableTo<ISuspendAudit>())
-        {
-            var isSuspendedName = _GetColumnName(entityBuilder.Metadata, nameof(ISuspendAudit.IsSuspended));
-
-            entityBuilder.HasQueryFilter(
-                HeadlessQueryFilters.NotSuspendedFilter,
-                x => !EF.Property<bool>(x, isSuspendedName)
-            );
-        }
+        // No default filter for ISuspendAudit: suspension is a business state that admin views and the commands that
+        // lift it must see. An entity type opts in with HasNotSuspendedFilter() when suspended rows should be hidden.
     }
 
     private static string _GetColumnName(IMutableEntityType type, string name)

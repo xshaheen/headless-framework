@@ -38,6 +38,13 @@ public sealed class TestIdentityDbContext(
 
     public override string DefaultSchema => "";
 
+    // The harness filter suites verify the opt-in suspend filter, so the shared test entity opts in.
+    protected override void OnModelCreating(ModelBuilder builder)
+    {
+        base.OnModelCreating(builder);
+        builder.Entity<HarnessTestEntity>().HasNotSuspendedFilter();
+    }
+
     /// <summary>
     /// Clears all captured messages. Useful for test cleanup between operations.
     /// </summary>
