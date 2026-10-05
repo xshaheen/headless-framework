@@ -122,12 +122,7 @@ public static class FileHelper
 
         await TransientRetry
             .RunAsync(
-                async ct =>
-                {
-                    await writeFileAsync((filePath, blobStream), ct).ConfigureAwait(false);
-
-                    return true;
-                },
+                ct => writeFileAsync((filePath, blobStream), ct),
                 static exception => exception is IOException,
                 _IoMaxAttempts,
                 static failedAttempt => _IoRetryBaseDelay * Math.Pow(2, failedAttempt - 1),
