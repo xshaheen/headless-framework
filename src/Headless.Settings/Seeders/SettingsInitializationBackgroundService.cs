@@ -31,6 +31,7 @@ internal sealed class SettingsInitializationBackgroundService(
     private readonly SettingManagementOptions _options = optionsAccessor.Value;
     private CancellationTokenSource? _linkedCts;
     private Task? _initializeDynamicSettingsTask;
+    private int _disposed;
 
     /// <summary>Gets a value indicating whether initialization has completed successfully.</summary>
     public bool IsInitialized => _tcs.Task.IsCompletedSuccessfully;
@@ -64,6 +65,13 @@ internal sealed class SettingsInitializationBackgroundService(
     /// <inheritdoc/>
     public async Task StopAsync(CancellationToken cancellationToken)
     {
+        // A host can stop its services again after disposing them (WebApplicationFactory does when the app's own
+        // RunAsync already shut the host down); Dispose has cancelled initialization, so there is nothing left to stop.
+        if (Volatile.Read(ref _disposed) != 0)
+        {
+            return;
+        }
+
         await _cancellationTokenSource.CancelAsync().ConfigureAwait(false);
 
         if (_initializeDynamicSettingsTask is not null)
@@ -79,6 +87,13 @@ internal sealed class SettingsInitializationBackgroundService(
     /// <inheritdoc/>
     public void Dispose()
     {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        {
+            return;
+        }
+
+        // Cancel before disposing so an initialization still running when the host skips StopAsync stops promptly.
+        _cancellationTokenSource.Cancel();
         _linkedCts?.Dispose();
         _cancellationTokenSource.Dispose();
     }

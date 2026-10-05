@@ -490,6 +490,28 @@ public sealed class PermissionsInitializationBackgroundServiceTests : TestBase
         action.Should().NotThrow();
     }
 
+    [Fact]
+    public async Task should_not_throw_when_stopped_after_dispose()
+    {
+        // given - a host can dispose its services and then stop them again, as WebApplicationFactory does
+        // when the app's own RunAsync already shut the host down
+        var sut = _CreateSut(
+            new PermissionManagementOptions
+            {
+                SaveStaticPermissionsToDatabase = true,
+                IsDynamicPermissionStoreEnabled = false,
+            }
+        );
+        await sut.StartAsync(AbortToken);
+        sut.Dispose();
+
+        // when
+        var stop = () => sut.StopAsync(AbortToken);
+
+        // then
+        await stop.Should().NotThrowAsync();
+    }
+
     #endregion
 
     #region Error Logging
