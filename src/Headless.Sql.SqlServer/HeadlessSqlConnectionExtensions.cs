@@ -87,8 +87,8 @@ public static partial class HeadlessSqlConnectionExtensions
     // SqlClient removes the password keyword itself, so a stripped string has no keyword at all, while an explicit
     // empty password ("Password=;") is a login that really has none. Both connection string builders drop a keyword
     // whose value is empty, so the keyword is looked for in the raw string.
-    private static bool _NamesPassword(string connectionString) => _PasswordKeyword().IsMatch(connectionString);
+    private static bool _NamesPassword(string connectionString) => _PasswordKeyword.IsMatch(connectionString);
 
     [GeneratedRegex(@"(?:^|;)\s*(?:password|pwd)\s*=", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, 100)]
-    private static partial Regex _PasswordKeyword();
+    private static partial Regex _PasswordKeyword { get; }
 }

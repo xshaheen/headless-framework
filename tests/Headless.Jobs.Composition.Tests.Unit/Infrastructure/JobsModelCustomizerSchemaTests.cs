@@ -81,11 +81,10 @@ public sealed class JobsModelCustomizerSchemaTests : TestBase
             }
         )
         {
-            context
-                .Model.FindEntityType(type)!
-                .FindAnnotation("Headless:AuditLog:EntityIsAudited")
-                ?.Value.Should()
-                .Be(false, "{0} is scheduler bookkeeping", type.Name);
+            var annotation = context.Model.FindEntityType(type)!.FindAnnotation("Headless:AuditLog:EntityIsAudited");
+
+            annotation.Should().NotBeNull("{0} declares its audit policy", type.Name);
+            annotation!.Value.Should().Be(false, "{0} is scheduler bookkeeping", type.Name);
         }
     }
 
