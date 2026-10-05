@@ -66,8 +66,30 @@ internal static class ServiceBuilder
                     throw new InvalidOperationException($"Cannot resolve DbContextOptions<{typeof(TContext).Name}>");
                 }
 
-                return (DbContextOptions<TContext>)serviceDescriptor.ImplementationFactory(provider);
+                // The template lives as long as the host. Scoped options (the AddDbContext and AddHeadlessDbContext
+                // default) build from scoped configuration, which the root provider refuses under scope validation,
+                // so they resolve once from a scope Jobs holds for the host's lifetime.
+                if (serviceDescriptor.Lifetime == ServiceLifetime.Singleton)
+                {
+                    return (DbContextOptions<TContext>)serviceDescriptor.ImplementationFactory(provider);
+                }
+
+                var scopedTemplate =
+                    (DbContextOptions<TContext>)
+                        serviceDescriptor.ImplementationFactory(
+                            provider.GetRequiredService<OptionsTemplateScope>().Services
+                        );
+
+                // EF stamps options with the provider that built them, and a HeadlessDbContext adopts a non-root
+                // stamp as its own scope. Every Jobs context would then share that host-lifetime scope, so its save
+                // pipeline's scoped collaborators would be used concurrently and never disposed. Stamped with the
+                // root, each context opens and disposes a private scope, as it does from singleton options.
+                return new DbContextOptionsBuilder<TContext>(scopedTemplate)
+                    .UseApplicationServiceProvider(provider)
+                    .Options;
             }
+
+            services.TryAddSingleton<OptionsTemplateScope>();
 
             services.TryAddSingleton<IDbContextFactory<TContext>>(provider => new PooledDbContextFactory<TContext>(
                 resolveOptionsTemplate(provider),
@@ -228,6 +250,21 @@ internal static class ServiceBuilder
                 provider.GetService<JobsRunFilter>()
             )
         );
+    }
+
+    /// <summary>
+    /// The scope the application context's scoped options template resolves from. The root provider disposes it with
+    /// the host, so the scoped services the template captured live exactly as long as the template.
+    /// </summary>
+    private sealed class OptionsTemplateScope(IServiceScopeFactory scopeFactory) : IDisposable, IAsyncDisposable
+    {
+        private readonly AsyncServiceScope _scope = scopeFactory.CreateAsyncScope();
+
+        public IServiceProvider Services => _scope.ServiceProvider;
+
+        public void Dispose() => _scope.Dispose();
+
+        public ValueTask DisposeAsync() => _scope.DisposeAsync();
     }
 
     private static DbContextOptions<TContext> _UpdateDbContextOptionsService<TContext, TTimeJob, TCronJob>(

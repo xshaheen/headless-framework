@@ -345,82 +345,92 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
 
     public async Task<bool> RequestTimeJobCancellationAsync(Guid jobId, CancellationToken cancellationToken = default)
     {
-        await using var dbContext = await DbContextFactory
-            .CreateDbContextAsync(cancellationToken)
-            .ConfigureAwait(false);
-        await using var transaction = await dbContext
-            .Database.BeginTransactionAsync(cancellationToken)
-            .ConfigureAwait(false);
+        return await JobsStoreTransaction
+            .ExecuteAsync<TDbContext, bool>(
+                DbContextFactory,
+                async (attempt, _) =>
+                {
+                    var dbContext = attempt.DbContext;
 
-        var affected = await dbContext
-            .Set<TTimeJob>()
-            .Where(x => x.Id == jobId && !x.CancelRequested)
-            .Where(x => x.Status == JobStatus.Idle || x.Status == JobStatus.Queued || x.Status == JobStatus.InProgress)
-            .ExecuteUpdateAsync(
-                setters =>
-                    setters
-                        .SetProperty(x => x.CancelRequested, valueExpression: true)
-                        .SetProperty(
-                            x => x.Status,
-                            x =>
-                                x.Status == JobStatus.Idle
-                                && (x.BusinessKey == null || (x.OwnerId == null && x.LockedUntil == null))
-                                    ? JobStatus.Cancelled
-                                    : x.Status
+                    var affected = await dbContext
+                        .Set<TTimeJob>()
+                        .Where(x => x.Id == jobId && !x.CancelRequested)
+                        .Where(x =>
+                            x.Status == JobStatus.Idle
+                            || x.Status == JobStatus.Queued
+                            || x.Status == JobStatus.InProgress
                         )
-                        .SetProperty(
-                            x => x.ExecutedAt,
-                            x =>
-                                x.Status == JobStatus.Idle
-                                && (x.BusinessKey == null || (x.OwnerId == null && x.LockedUntil == null))
-                                    ? DateTime.UtcNow
-                                    : x.ExecutedAt
+                        .ExecuteUpdateAsync(
+                            setters =>
+                                setters
+                                    .SetProperty(x => x.CancelRequested, valueExpression: true)
+                                    .SetProperty(
+                                        x => x.Status,
+                                        x =>
+                                            x.Status == JobStatus.Idle
+                                            && (x.BusinessKey == null || (x.OwnerId == null && x.LockedUntil == null))
+                                                ? JobStatus.Cancelled
+                                                : x.Status
+                                    )
+                                    .SetProperty(
+                                        x => x.ExecutedAt,
+                                        x =>
+                                            x.Status == JobStatus.Idle
+                                            && (x.BusinessKey == null || (x.OwnerId == null && x.LockedUntil == null))
+                                                ? DateTime.UtcNow
+                                                : x.ExecutedAt
+                                    )
+                                    .SetProperty(
+                                        x => x.OwnerId,
+                                        x =>
+                                            x.Status == JobStatus.Idle
+                                            && (x.BusinessKey == null || (x.OwnerId == null && x.LockedUntil == null))
+                                                ? null
+                                                : x.OwnerId
+                                    )
+                                    .SetProperty(
+                                        x => x.LockedUntil,
+                                        x =>
+                                            x.Status == JobStatus.Idle
+                                            && (x.BusinessKey == null || (x.OwnerId == null && x.LockedUntil == null))
+                                                ? null
+                                                : x.LockedUntil
+                                    )
+                                    .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
+                            cancellationToken
                         )
-                        .SetProperty(
-                            x => x.OwnerId,
-                            x =>
-                                x.Status == JobStatus.Idle
-                                && (x.BusinessKey == null || (x.OwnerId == null && x.LockedUntil == null))
-                                    ? null
-                                    : x.OwnerId
-                        )
-                        .SetProperty(
-                            x => x.LockedUntil,
-                            x =>
-                                x.Status == JobStatus.Idle
-                                && (x.BusinessKey == null || (x.OwnerId == null && x.LockedUntil == null))
-                                    ? null
-                                    : x.LockedUntil
-                        )
-                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
+                        .ConfigureAwait(false);
+
+                    if (affected != 1)
+                    {
+                        return false;
+                    }
+
+                    var resultingStatus = await dbContext
+                        .Set<TTimeJob>()
+                        .AsNoTracking()
+                        .Where(x => x.Id == jobId)
+                        .Select(x => x.Status)
+                        .SingleAsync(cancellationToken)
+                        .ConfigureAwait(false);
+                    if (resultingStatus == JobStatus.Cancelled)
+                    {
+                        await _ApplyCancelledParentRunConditionsAsync(dbContext, jobId, cancellationToken)
+                            .ConfigureAwait(false);
+                    }
+
+                    await attempt.CommitAsync(cancellationToken).ConfigureAwait(false);
+
+                    // _ApplyCancelledParentRunConditionsAsync (in the committed transaction) handled the NON-timed
+                    // children. The cancelled parent's TIMED children are reconciled by
+                    // ApplyParentTerminalRunConditionsAsync, driven post-cancellation by the manager so the
+                    // released-child scheduler wake (RestartIfNeeded) is threaded through the same path as the
+                    // executor/sweep reconcile — and by the poll-time / sweep reconcile as a backstop.
+                    return true;
+                },
                 cancellationToken
             )
             .ConfigureAwait(false);
-
-        if (affected != 1)
-        {
-            return false;
-        }
-
-        var resultingStatus = await dbContext
-            .Set<TTimeJob>()
-            .AsNoTracking()
-            .Where(x => x.Id == jobId)
-            .Select(x => x.Status)
-            .SingleAsync(cancellationToken)
-            .ConfigureAwait(false);
-        if (resultingStatus == JobStatus.Cancelled)
-        {
-            await _ApplyCancelledParentRunConditionsAsync(dbContext, jobId, cancellationToken).ConfigureAwait(false);
-        }
-
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-
-        // _ApplyCancelledParentRunConditionsAsync (in the committed transaction) handled the NON-timed
-        // children. The cancelled parent's TIMED children are reconciled by ApplyParentTerminalRunConditionsAsync,
-        // driven post-cancellation by the manager so the released-child scheduler wake (RestartIfNeeded) is threaded
-        // through the same path as the executor/sweep reconcile — and by the poll-time / sweep reconcile as a backstop.
-        return true;
     }
 
     public async Task<JobRequeueOutcome> RequeueTimeJobAsync(Guid jobId, CancellationToken cancellationToken = default)
@@ -627,54 +637,68 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         CancellationToken cancellationToken = default
     )
     {
-        await using var dbContext = await DbContextFactory
-            .CreateDbContextAsync(cancellationToken)
-            .ConfigureAwait(false);
-        await using var transaction = await dbContext
-            .Database.BeginTransactionAsync(cancellationToken)
-            .ConfigureAwait(false);
+        return await JobsStoreTransaction
+            .ExecuteAsync<TDbContext, DateTime?>(
+                DbContextFactory,
+                async (attempt, _) =>
+                {
+                    var dbContext = attempt.DbContext;
 
-        var (earliest, _) = await _ReconcileParentTerminalTimedChildrenAsync(dbContext, parentId, cancellationToken)
+                    var (earliest, _) = await _ReconcileParentTerminalTimedChildrenAsync(
+                            dbContext,
+                            parentId,
+                            cancellationToken
+                        )
+                        .ConfigureAwait(false);
+
+                    await attempt.CommitAsync(cancellationToken).ConfigureAwait(false);
+
+                    return earliest;
+                },
+                cancellationToken
+            )
             .ConfigureAwait(false);
-
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-
-        return earliest;
     }
 
     public async Task<int> SkipStrandedTimedChildrenAsync(CancellationToken cancellationToken = default)
     {
-        await using var dbContext = await DbContextFactory
-            .CreateDbContextAsync(cancellationToken)
-            .ConfigureAwait(false);
-
-        var jobs = dbContext.Set<TTimeJob>();
-
         // Probe for a MISMATCHED stranded candidate BEFORE opening a transaction. This is the poll-time safety net
         // (now gated to the fallback cadence), and it almost always finds nothing — so the common empty case must
         // not open (and hold) a transaction. Probing the MISMATCHED set (not merely "parent is terminal") is what
         // makes the sweep bounded and starvation-free: this path only ever skips, never releases, so a page full of
         // matching (release-side) children — which it never mutates — must not keep re-triggering the reconcile.
-        var hasMismatchedCandidate = await _TimedChildReconcileCandidates(jobs)
-            .AsNoTracking()
-            .WhereParentTerminalRunConditionMismatched(jobs)
-            .AnyAsync(cancellationToken)
-            .ConfigureAwait(false);
-
-        if (!hasMismatchedCandidate)
+        await using (
+            var probeContext = await DbContextFactory.CreateDbContextAsync(cancellationToken).ConfigureAwait(false)
+        )
         {
-            return 0;
+            var jobs = probeContext.Set<TTimeJob>();
+            var hasMismatchedCandidate = await _TimedChildReconcileCandidates(jobs)
+                .AsNoTracking()
+                .WhereParentTerminalRunConditionMismatched(jobs)
+                .AnyAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            if (!hasMismatchedCandidate)
+            {
+                return 0;
+            }
         }
 
-        await using var transaction = await dbContext
-            .Database.BeginTransactionAsync(cancellationToken)
+        return await JobsStoreTransaction
+            .ExecuteAsync<TDbContext, int>(
+                DbContextFactory,
+                async (attempt, _) =>
+                {
+                    var skipped = await _SkipStrandedTimedChildrenBoundedAsync(attempt.DbContext, cancellationToken)
+                        .ConfigureAwait(false);
+
+                    await attempt.CommitAsync(cancellationToken).ConfigureAwait(false);
+
+                    return skipped;
+                },
+                cancellationToken
+            )
             .ConfigureAwait(false);
-
-        var skipped = await _SkipStrandedTimedChildrenBoundedAsync(dbContext, cancellationToken).ConfigureAwait(false);
-
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-
-        return skipped;
     }
 
     // The poll-time safety net's BOUNDED skip pass. Selects only the rows it mutates — IDLE gated timed
@@ -849,9 +873,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         CancellationToken cancellationToken = default
     )
     {
-        await using var dbContext = await DbContextFactory
-            .CreateDbContextAsync(cancellationToken)
-            .ConfigureAwait(false);
+        // Cancellation is honored only until the reclaim starts; its writes then run to completion.
+        cancellationToken.ThrowIfCancellationRequested();
 
         // #316 clock-skew: the InProgress lease-deferral arms compare LockedUntil <= now against the DB clock, not the
         // reclaiming node's TimeProvider, so a still-leased running row survives regardless of cross-node skew.
@@ -868,100 +891,110 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         // idempotent by design). Do not "fix" this by removing the transaction: that reintroduces the half-reclaimed
         // node the transaction exists to prevent. Equally, do not add a lease-deadline write here — see the
         // class-level note for why that would silently shorten the lease.
-        await using var transaction = await dbContext
-            .Database.BeginTransactionAsync(CancellationToken.None)
-            .ConfigureAwait(false);
+        return await JobsStoreTransaction
+            .ExecuteAsync<TDbContext, int>(
+                DbContextFactory,
+                async (attempt, _) =>
+                {
+                    var dbContext = attempt.DbContext;
 
-        // Per-policy dead-node transition (#315, #316). Idle/Queued never started → reclaimed immediately on node
-        // death (fast recovery preserved). InProgress arms defer to the lease (LockedUntil <= now): a busy node's
-        // still-leased running jobs survive a membership blip — once the (dead) node stops renewing, the lease lapses
-        // and the stalled-lease reclaim recovers them within ≈ one lease TTL. Retry rows are released to Idle (InProgress
-        // is invisible to the claim predicate, so they must be handed back, not left for the lease-expiry arm).
-        // Split by attempt state: Idle/Queued rows never invoked user code so their budget is untouched, while an
-        // InProgress row is a STARTED attempt lost to node death — it consumes one retry-budget unit, per the
-        // NodeDeathPolicy.Retry contract (see ReclaimStalledTimeJobsAsync for the crash-loop rationale).
-        var releasedNotStarted = await dbContext
-            .Set<TTimeJob>()
-            .WhereOwnedBy(instanceIdentifier)
-            .Where(x => x.Status == JobStatus.Idle || x.Status == JobStatus.Queued)
-            .ExecuteUpdateAsync(
-                setter =>
-                    setter
-                        .SetProperty(x => x.OwnerId, _ => null)
-                        .SetProperty(x => x.LockedUntil, _ => null)
-                        .SetProperty(x => x.Status, JobStatus.Idle)
-                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
+                    // Per-policy dead-node transition (#315, #316). Idle/Queued never started → reclaimed immediately
+                    // on node death (fast recovery preserved). InProgress arms defer to the lease (LockedUntil <= now):
+                    // a busy node's still-leased running jobs survive a membership blip — once the (dead) node stops
+                    // renewing, the lease lapses and the stalled-lease reclaim recovers them within ≈ one lease TTL.
+                    // Retry rows are released to Idle (InProgress is invisible to the claim predicate, so they must be
+                    // handed back, not left for the lease-expiry arm). Split by attempt state: Idle/Queued rows never
+                    // invoked user code so their budget is untouched, while an InProgress row is a STARTED attempt lost
+                    // to node death — it consumes one retry-budget unit, per the NodeDeathPolicy.Retry contract (see
+                    // ReclaimStalledTimeJobsAsync for the crash-loop rationale).
+                    var releasedNotStarted = await dbContext
+                        .Set<TTimeJob>()
+                        .WhereOwnedBy(instanceIdentifier)
+                        .Where(x => x.Status == JobStatus.Idle || x.Status == JobStatus.Queued)
+                        .ExecuteUpdateAsync(
+                            setter =>
+                                setter
+                                    .SetProperty(x => x.OwnerId, _ => null)
+                                    .SetProperty(x => x.LockedUntil, _ => null)
+                                    .SetProperty(x => x.Status, JobStatus.Idle)
+                                    .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
+                            CancellationToken.None
+                        )
+                        .ConfigureAwait(false);
+
+                    var releasedInterrupted = await dbContext
+                        .Set<TTimeJob>()
+                        .WhereOwnedBy(instanceIdentifier)
+                        .Where(x =>
+                            x.Status == JobStatus.InProgress
+                            && x.OnNodeDeath == NodeDeathPolicy.Retry
+                            && x.LockedUntil <= DateTime.UtcNow
+                        )
+                        .ExecuteUpdateAsync(
+                            setter =>
+                                setter
+                                    .SetProperty(x => x.OwnerId, _ => null)
+                                    .SetProperty(x => x.LockedUntil, _ => null)
+                                    .SetProperty(x => x.Status, JobStatus.Idle)
+                                    .SetProperty(x => x.RetryCount, x => x.RetryCount + 1)
+                                    .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
+                            CancellationToken.None
+                        )
+                        .ConfigureAwait(false);
+
+                    var released = releasedNotStarted + releasedInterrupted;
+
+                    // MarkFailed: non-idempotent job that must not retry on node death — terminal Failed, once the
+                    // lease lapsed.
+                    var failed = await dbContext
+                        .Set<TTimeJob>()
+                        .WhereOwnedBy(instanceIdentifier)
+                        .Where(x =>
+                            x.Status == JobStatus.InProgress
+                            && x.OnNodeDeath == NodeDeathPolicy.MarkFailed
+                            && x.LockedUntil <= DateTime.UtcNow
+                        )
+                        .ExecuteUpdateAsync(
+                            setter =>
+                                setter
+                                    .SetProperty(x => x.Status, JobStatus.Failed)
+                                    .SetProperty(x => x.LockedUntil, _ => null)
+                                    .SetProperty(x => x.ExceptionMessage, "Node is not alive!")
+                                    .SetProperty(x => x.ExecutedAt, _ => DateTime.UtcNow)
+                                    .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
+                            CancellationToken.None
+                        )
+                        .ConfigureAwait(false);
+
+                    // Skip: idempotency-critical job that must never run twice — terminal Skipped, once the lease
+                    // lapsed.
+                    var skipped = await dbContext
+                        .Set<TTimeJob>()
+                        .WhereOwnedBy(instanceIdentifier)
+                        .Where(x =>
+                            x.Status == JobStatus.InProgress
+                            && x.OnNodeDeath == NodeDeathPolicy.Skip
+                            && x.LockedUntil <= DateTime.UtcNow
+                        )
+                        .ExecuteUpdateAsync(
+                            setter =>
+                                setter
+                                    .SetProperty(x => x.Status, JobStatus.Skipped)
+                                    .SetProperty(x => x.LockedUntil, _ => null)
+                                    .SetProperty(x => x.SkippedReason, "Node is not alive!")
+                                    .SetProperty(x => x.ExecutedAt, _ => DateTime.UtcNow)
+                                    .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
+                            CancellationToken.None
+                        )
+                        .ConfigureAwait(false);
+
+                    await attempt.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+
+                    return released + failed + skipped;
+                },
                 CancellationToken.None
             )
             .ConfigureAwait(false);
-
-        var releasedInterrupted = await dbContext
-            .Set<TTimeJob>()
-            .WhereOwnedBy(instanceIdentifier)
-            .Where(x =>
-                x.Status == JobStatus.InProgress
-                && x.OnNodeDeath == NodeDeathPolicy.Retry
-                && x.LockedUntil <= DateTime.UtcNow
-            )
-            .ExecuteUpdateAsync(
-                setter =>
-                    setter
-                        .SetProperty(x => x.OwnerId, _ => null)
-                        .SetProperty(x => x.LockedUntil, _ => null)
-                        .SetProperty(x => x.Status, JobStatus.Idle)
-                        .SetProperty(x => x.RetryCount, x => x.RetryCount + 1)
-                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
-                CancellationToken.None
-            )
-            .ConfigureAwait(false);
-
-        var released = releasedNotStarted + releasedInterrupted;
-
-        // MarkFailed: non-idempotent job that must not retry on node death — terminal Failed, once the lease lapsed.
-        var failed = await dbContext
-            .Set<TTimeJob>()
-            .WhereOwnedBy(instanceIdentifier)
-            .Where(x =>
-                x.Status == JobStatus.InProgress
-                && x.OnNodeDeath == NodeDeathPolicy.MarkFailed
-                && x.LockedUntil <= DateTime.UtcNow
-            )
-            .ExecuteUpdateAsync(
-                setter =>
-                    setter
-                        .SetProperty(x => x.Status, JobStatus.Failed)
-                        .SetProperty(x => x.LockedUntil, _ => null)
-                        .SetProperty(x => x.ExceptionMessage, "Node is not alive!")
-                        .SetProperty(x => x.ExecutedAt, _ => DateTime.UtcNow)
-                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
-                CancellationToken.None
-            )
-            .ConfigureAwait(false);
-
-        // Skip: idempotency-critical job that must never run twice — terminal Skipped, once the lease lapsed.
-        var skipped = await dbContext
-            .Set<TTimeJob>()
-            .WhereOwnedBy(instanceIdentifier)
-            .Where(x =>
-                x.Status == JobStatus.InProgress
-                && x.OnNodeDeath == NodeDeathPolicy.Skip
-                && x.LockedUntil <= DateTime.UtcNow
-            )
-            .ExecuteUpdateAsync(
-                setter =>
-                    setter
-                        .SetProperty(x => x.Status, JobStatus.Skipped)
-                        .SetProperty(x => x.LockedUntil, _ => null)
-                        .SetProperty(x => x.SkippedReason, "Node is not alive!")
-                        .SetProperty(x => x.ExecutedAt, _ => DateTime.UtcNow)
-                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
-                CancellationToken.None
-            )
-            .ConfigureAwait(false);
-
-        await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
-
-        return released + failed + skipped;
     }
 
     #endregion
@@ -1141,79 +1174,83 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         // death. A healthy renewing job keeps a future LockedUntil and never matches. Same per-policy transitions
         // and PR#456 terminal-row hygiene as ReleaseDeadNodeTimeJobResourcesAsync, wrapped in one transaction so a crash
         // between phases can't leave a half-reclaimed view (re-run is idempotent regardless).
-        await using var dbContext = await DbContextFactory
-            .CreateDbContextAsync(cancellationToken)
-            .ConfigureAwait(false);
 
         // #316 clock-skew: lease-expiry is decided by the DB clock, never the reclaiming node's TimeProvider.
 
-        await using var transaction = await dbContext
-            .Database.BeginTransactionAsync(cancellationToken)
+        return await JobsStoreTransaction
+            .ExecuteAsync<TDbContext, int>(
+                DbContextFactory,
+                async (attempt, _) =>
+                {
+                    var dbContext = attempt.DbContext;
+
+                    var set = dbContext.Set<TTimeJob>();
+
+                    // The reclaim writes run under CancellationToken.None (mirroring the dead-node sweep): a host-stop
+                    // racing the sweep must not tear down a per-policy transition mid-statement and revert the whole
+                    // transaction. The Retry arm increments RetryCount: an InProgress row with a lapsed lease
+                    // represents a STARTED attempt that was lost, and NodeDeathPolicy.Retry documents that such
+                    // attempts count toward the retry budget. Without the increment a handler that reliably kills or
+                    // wedges its host is reclaimed and re-run forever with a fresh budget each cycle; the executor's
+                    // exhaustion gate terminalizes the row once the persisted count passes the budget.
+                    var released = await set.Where(x =>
+                            x.Status == JobStatus.InProgress
+                            && x.LockedUntil <= DateTime.UtcNow
+                            && x.OnNodeDeath == NodeDeathPolicy.Retry
+                        )
+                        .ExecuteUpdateAsync(
+                            setter =>
+                                setter
+                                    .SetProperty(x => x.OwnerId, _ => null)
+                                    .SetProperty(x => x.LockedUntil, _ => null)
+                                    .SetProperty(x => x.Status, JobStatus.Idle)
+                                    .SetProperty(x => x.RetryCount, x => x.RetryCount + 1)
+                                    .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
+                            CancellationToken.None
+                        )
+                        .ConfigureAwait(false);
+
+                    var failed = await set.Where(x =>
+                            x.Status == JobStatus.InProgress
+                            && x.LockedUntil <= DateTime.UtcNow
+                            && x.OnNodeDeath == NodeDeathPolicy.MarkFailed
+                        )
+                        .ExecuteUpdateAsync(
+                            setter =>
+                                setter
+                                    .SetProperty(x => x.Status, JobStatus.Failed)
+                                    .SetProperty(x => x.LockedUntil, _ => null)
+                                    .SetProperty(x => x.ExceptionMessage, "Lease lapsed while running!")
+                                    .SetProperty(x => x.ExecutedAt, _ => DateTime.UtcNow)
+                                    .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
+                            CancellationToken.None
+                        )
+                        .ConfigureAwait(false);
+
+                    var skipped = await set.Where(x =>
+                            x.Status == JobStatus.InProgress
+                            && x.LockedUntil <= DateTime.UtcNow
+                            && x.OnNodeDeath == NodeDeathPolicy.Skip
+                        )
+                        .ExecuteUpdateAsync(
+                            setter =>
+                                setter
+                                    .SetProperty(x => x.Status, JobStatus.Skipped)
+                                    .SetProperty(x => x.LockedUntil, _ => null)
+                                    .SetProperty(x => x.SkippedReason, "Lease lapsed while running!")
+                                    .SetProperty(x => x.ExecutedAt, _ => DateTime.UtcNow)
+                                    .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
+                            CancellationToken.None
+                        )
+                        .ConfigureAwait(false);
+
+                    await attempt.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+
+                    return released + failed + skipped;
+                },
+                cancellationToken
+            )
             .ConfigureAwait(false);
-
-        var set = dbContext.Set<TTimeJob>();
-
-        // The reclaim writes run under CancellationToken.None (mirroring the dead-node sweep): a host-stop racing
-        // the sweep must not tear down a per-policy transition mid-statement and revert the whole transaction.
-        // The Retry arm increments RetryCount: an InProgress row with a lapsed lease represents a STARTED attempt
-        // that was lost, and NodeDeathPolicy.Retry documents that such attempts count toward the retry budget.
-        // Without the increment a handler that reliably kills or wedges its host is reclaimed and re-run forever
-        // with a fresh budget each cycle; the executor's exhaustion gate terminalizes the row once the persisted
-        // count passes the budget.
-        var released = await set.Where(x =>
-                x.Status == JobStatus.InProgress
-                && x.LockedUntil <= DateTime.UtcNow
-                && x.OnNodeDeath == NodeDeathPolicy.Retry
-            )
-            .ExecuteUpdateAsync(
-                setter =>
-                    setter
-                        .SetProperty(x => x.OwnerId, _ => null)
-                        .SetProperty(x => x.LockedUntil, _ => null)
-                        .SetProperty(x => x.Status, JobStatus.Idle)
-                        .SetProperty(x => x.RetryCount, x => x.RetryCount + 1)
-                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
-                CancellationToken.None
-            )
-            .ConfigureAwait(false);
-
-        var failed = await set.Where(x =>
-                x.Status == JobStatus.InProgress
-                && x.LockedUntil <= DateTime.UtcNow
-                && x.OnNodeDeath == NodeDeathPolicy.MarkFailed
-            )
-            .ExecuteUpdateAsync(
-                setter =>
-                    setter
-                        .SetProperty(x => x.Status, JobStatus.Failed)
-                        .SetProperty(x => x.LockedUntil, _ => null)
-                        .SetProperty(x => x.ExceptionMessage, "Lease lapsed while running!")
-                        .SetProperty(x => x.ExecutedAt, _ => DateTime.UtcNow)
-                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
-                CancellationToken.None
-            )
-            .ConfigureAwait(false);
-
-        var skipped = await set.Where(x =>
-                x.Status == JobStatus.InProgress
-                && x.LockedUntil <= DateTime.UtcNow
-                && x.OnNodeDeath == NodeDeathPolicy.Skip
-            )
-            .ExecuteUpdateAsync(
-                setter =>
-                    setter
-                        .SetProperty(x => x.Status, JobStatus.Skipped)
-                        .SetProperty(x => x.LockedUntil, _ => null)
-                        .SetProperty(x => x.SkippedReason, "Lease lapsed while running!")
-                        .SetProperty(x => x.ExecutedAt, _ => DateTime.UtcNow)
-                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
-                CancellationToken.None
-            )
-            .ConfigureAwait(false);
-
-        await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
-
-        return released + failed + skipped;
     }
 
     #region Core_Cron_Ticker_Methods
@@ -1223,246 +1260,261 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         CancellationToken cancellationToken = default
     )
     {
-        await using var dbContext = await DbContextFactory
-            .CreateDbContextAsync(cancellationToken)
-            .ConfigureAwait(false);
-        await using var transaction = await dbContext
-            .Database.BeginTransactionAsync(cancellationToken)
-            .ConfigureAwait(false);
-        var now = TimeProvider.GetUtcNow();
-
-        var functions = cronJobs.Select(x => x.Function).ToArray();
-        var cronSet = dbContext.Set<TCronJob>();
-
-        // Identify seeded cron jobs (created from in-memory definitions)
-        const string seedPrefix = "MemoryTicker_Seeded_";
-
-        var seededCron = await cronSet
-            .Where(c => c.InitIdentifier != null && c.InitIdentifier.StartsWith(seedPrefix))
-            .ToListAsync(cancellationToken)
-            .ConfigureAwait(false);
-
-        var newFunctionSet = functions.ToHashSet(StringComparer.Ordinal);
-
-        // Delete seeded cron jobs whose function no longer exists in the code definitions
-        var seededToDelete = seededCron.Where(c => !newFunctionSet.Contains(c.Function)).Select(c => c.Id).ToArray();
-
-        if (seededToDelete.Length > 0)
-        {
-            foreach (var definitionId in seededToDelete.Order())
-            {
-                await cronSet
-                    .Where(x => x.Id == definitionId)
-                    .ExecuteUpdateAsync(
-                        setter => setter.SetProperty(x => x.ScheduleRevision, x => x.ScheduleRevision),
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false);
-            }
-
-            // Parent rows are locked above in canonical order; delete children before parents for FK safety.
-            await dbContext
-                .Set<CronJobOccurrenceEntity<TCronJob>>()
-                .Where(o => ((IEnumerable<Guid>)seededToDelete).Contains(o.CronJobId))
-                .ExecuteDeleteAsync(cancellationToken)
-                .ConfigureAwait(false);
-
-            await cronSet
-                .Where(c => ((IEnumerable<Guid>)seededToDelete).Contains(c.Id))
-                .ExecuteDeleteAsync(cancellationToken)
-                .ConfigureAwait(false);
-        }
-
-        // Load existing (remaining) cron jobs for the current function set
-        var existing = await cronSet
-            .Where(c => ((IEnumerable<string>)functions).Contains(c.Function))
-            .ToListAsync(cancellationToken)
-            .ConfigureAwait(false);
-
-        var existingByFunction = existing
-            .GroupBy(c => c.Function, StringComparer.Ordinal)
-            .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
-        var changedDefinitionIds = new List<Guid>();
-        var orderedCronJobs = cronJobs
-            .Select(x =>
-                (
-                    x.Function,
-                    x.Expression,
-                    x.OnMissedRun,
-                    x.MissedRunGraceSeconds,
-                    x.OnOverlap,
-                    x.EvaluationFingerprint,
-                    x.ContractVersion,
-                    x.TimeZoneId,
-                    x.Retries,
-                    x.RetryIntervals,
-                    Id: existingByFunction.TryGetValue(x.Function, out var existingDefinition)
-                        ? existingDefinition.Id
-                        : JobsSeedId.ForCronSeed(x.Function)
-                )
-            )
-            .OrderBy(x => x.Id)
-            .ToArray();
-        var insertedSeeds = orderedCronJobs
-            .Where(x => !existingByFunction.ContainsKey(x.Function))
-            .ToDictionary(x => x.Id, x => x.Function);
-
-        foreach (
-            var (
-                function,
-                expression,
-                onMissedRun,
-                missedRunGraceSeconds,
-                onOverlap,
-                evaluationFingerprint,
-                contractVersion,
-                timeZoneId,
-                retries,
-                retryIntervals,
-                _
-            ) in orderedCronJobs
-        )
-        {
-            if (existingByFunction.TryGetValue(function, out var cron))
-            {
-                // Reseeding cannot upgrade the schema label of bytes already stored by an older writer.
-                // Existing function/version/request tuples change only through an explicit definition edit.
-                // Update the schedule if its expression or zone changed
-                if (
-                    !string.Equals(cron.Expression, expression, StringComparison.Ordinal)
-                    || !string.Equals(cron.TimeZoneId, timeZoneId, StringComparison.Ordinal)
-                )
+        await JobsStoreTransaction
+            .ExecuteAsync<TDbContext>(
+                DbContextFactory,
+                async (attempt, _) =>
                 {
-                    await cronSet
-                        .Where(x => x.Id == cron.Id)
-                        .ExecuteUpdateAsync(
-                            setter => setter.SetProperty(x => x.ScheduleRevision, x => x.ScheduleRevision),
-                            cancellationToken
-                        )
-                        .ConfigureAwait(false);
-                    await dbContext.Entry(cron).ReloadAsync(cancellationToken).ConfigureAwait(false);
+                    var dbContext = attempt.DbContext;
+                    var now = TimeProvider.GetUtcNow();
 
-                    if (
-                        !string.Equals(cron.Expression, expression, StringComparison.Ordinal)
-                        || !string.Equals(cron.TimeZoneId, timeZoneId, StringComparison.Ordinal)
+                    var functions = cronJobs.Select(x => x.Function).ToArray();
+                    var cronSet = dbContext.Set<TCronJob>();
+
+                    // Identify seeded cron jobs (created from in-memory definitions)
+                    const string seedPrefix = "MemoryTicker_Seeded_";
+
+                    var seededCron = await cronSet
+                        .Where(c => c.InitIdentifier != null && c.InitIdentifier.StartsWith(seedPrefix))
+                        .ToListAsync(cancellationToken)
+                        .ConfigureAwait(false);
+
+                    var newFunctionSet = functions.ToHashSet(StringComparer.Ordinal);
+
+                    // Delete seeded cron jobs whose function no longer exists in the code definitions
+                    var seededToDelete = seededCron
+                        .Where(c => !newFunctionSet.Contains(c.Function))
+                        .Select(c => c.Id)
+                        .ToArray();
+
+                    if (seededToDelete.Length > 0)
+                    {
+                        foreach (var definitionId in seededToDelete.Order())
+                        {
+                            await cronSet
+                                .Where(x => x.Id == definitionId)
+                                .ExecuteUpdateAsync(
+                                    setter => setter.SetProperty(x => x.ScheduleRevision, x => x.ScheduleRevision),
+                                    cancellationToken
+                                )
+                                .ConfigureAwait(false);
+                        }
+
+                        // Parent rows are locked above in canonical order; delete children before parents for FK
+                        // safety.
+                        await dbContext
+                            .Set<CronJobOccurrenceEntity<TCronJob>>()
+                            .Where(o => ((IEnumerable<Guid>)seededToDelete).Contains(o.CronJobId))
+                            .ExecuteDeleteAsync(cancellationToken)
+                            .ConfigureAwait(false);
+
+                        await cronSet
+                            .Where(c => ((IEnumerable<Guid>)seededToDelete).Contains(c.Id))
+                            .ExecuteDeleteAsync(cancellationToken)
+                            .ConfigureAwait(false);
+                    }
+
+                    // Load existing (remaining) cron jobs for the current function set
+                    var existing = await cronSet
+                        .Where(c => ((IEnumerable<string>)functions).Contains(c.Function))
+                        .ToListAsync(cancellationToken)
+                        .ConfigureAwait(false);
+
+                    var existingByFunction = existing
+                        .GroupBy(c => c.Function, StringComparer.Ordinal)
+                        .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+                    var changedDefinitionIds = new List<Guid>();
+                    var orderedCronJobs = cronJobs
+                        .Select(x =>
+                            (
+                                x.Function,
+                                x.Expression,
+                                x.OnMissedRun,
+                                x.MissedRunGraceSeconds,
+                                x.OnOverlap,
+                                x.EvaluationFingerprint,
+                                x.ContractVersion,
+                                x.TimeZoneId,
+                                x.Retries,
+                                x.RetryIntervals,
+                                Id: existingByFunction.TryGetValue(x.Function, out var existingDefinition)
+                                    ? existingDefinition.Id
+                                    : JobsSeedId.ForCronSeed(x.Function)
+                            )
+                        )
+                        .OrderBy(x => x.Id)
+                        .ToArray();
+                    var insertedSeeds = orderedCronJobs
+                        .Where(x => !existingByFunction.ContainsKey(x.Function))
+                        .ToDictionary(x => x.Id, x => x.Function);
+
+                    foreach (
+                        var (
+                            function,
+                            expression,
+                            onMissedRun,
+                            missedRunGraceSeconds,
+                            onOverlap,
+                            evaluationFingerprint,
+                            contractVersion,
+                            timeZoneId,
+                            retries,
+                            retryIntervals,
+                            _
+                        ) in orderedCronJobs
                     )
                     {
-                        cron.Expression = expression;
-                        cron.TimeZoneId = timeZoneId;
-                        cron.ScheduleRevision++;
-                        cron.UpdatedAt = now;
+                        if (existingByFunction.TryGetValue(function, out var cron))
+                        {
+                            // Reseeding cannot upgrade the schema label of bytes already stored by an older writer.
+                            // Existing function/version/request tuples change only through an explicit definition edit.
+                            // Update the schedule if its expression or zone changed
+                            if (
+                                !string.Equals(cron.Expression, expression, StringComparison.Ordinal)
+                                || !string.Equals(cron.TimeZoneId, timeZoneId, StringComparison.Ordinal)
+                            )
+                            {
+                                await cronSet
+                                    .Where(x => x.Id == cron.Id)
+                                    .ExecuteUpdateAsync(
+                                        setter => setter.SetProperty(x => x.ScheduleRevision, x => x.ScheduleRevision),
+                                        cancellationToken
+                                    )
+                                    .ConfigureAwait(false);
+                                await dbContext.Entry(cron).ReloadAsync(cancellationToken).ConfigureAwait(false);
 
-                        // The stored projection was derived under the OLD expression; left standing it keeps
-                        // selecting (or hiding) the definition by the stale schedule — a yearly→minutes edit would
-                        // not fire until next year. Reset the position to the uninitialized sentinel so the next
-                        // wake re-derives it by the same creation rule under the new expression: anchored at the
-                        // store instant, no interval replayed, the edit effective on the next wake — matching the
-                        // runtime edit path's observable contract.
-                        cron.ReconciledThroughUtc = default;
-                        cron.NextDueUtc = default;
-                        cron.EvaluationFingerprint = evaluationFingerprint;
-                        cron.FingerprintFailureCount = 0;
-                        cron.FingerprintRetryAfterUtc = null;
-                        changedDefinitionIds.Add(cron.Id);
+                                if (
+                                    !string.Equals(cron.Expression, expression, StringComparison.Ordinal)
+                                    || !string.Equals(cron.TimeZoneId, timeZoneId, StringComparison.Ordinal)
+                                )
+                                {
+                                    cron.Expression = expression;
+                                    cron.TimeZoneId = timeZoneId;
+                                    cron.ScheduleRevision++;
+                                    cron.UpdatedAt = now;
+
+                                    // The stored projection was derived under the OLD expression; left standing it
+                                    // keeps selecting (or hiding) the definition by the stale schedule — a
+                                    // yearly→minutes edit would not fire until next year. Reset the position to the
+                                    // uninitialized sentinel so the next wake re-derives it by the same creation rule
+                                    // under the new expression: anchored at the store instant, no interval replayed,
+                                    // the edit effective on the next wake — matching the runtime edit path's observable
+                                    // contract.
+                                    cron.ReconciledThroughUtc = default;
+                                    cron.NextDueUtc = default;
+                                    cron.EvaluationFingerprint = evaluationFingerprint;
+                                    cron.FingerprintFailureCount = 0;
+                                    cron.FingerprintRetryAfterUtc = null;
+                                    changedDefinitionIds.Add(cron.Id);
+                                }
+                            }
+                        }
+                        else
+                        {
+                            // Insert new seeded cron job. The id is DETERMINISTIC (derived from the function) so two
+                            // nodes seeding the same new function concurrently target the same primary key — the DB
+                            // dedups to a single row instead of inserting two distinct-id rows and double-scheduling
+                            // the function.
+                            var entity = new TCronJob
+                            {
+                                Id = JobsSeedId.ForCronSeed(function),
+                                Function = function,
+                                ContractVersion = contractVersion,
+                                Expression = expression,
+                                TimeZoneId = timeZoneId,
+                                InitIdentifier = $"MemoryTicker_Seeded_{function}",
+                                CreatedAt = now,
+                                UpdatedAt = now,
+                                Request = [],
+                                // Seeded at CREATION only. The expression-changed branch above deliberately leaves
+                                // these alone, so a value set later through ICronJobManager survives every redeploy and
+                                // is an operator override by construction — which is why no provenance marker is
+                                // persisted.
+                                OnMissedRun = onMissedRun,
+                                MissedRunGraceSeconds = missedRunGraceSeconds,
+                                OnOverlap = onOverlap,
+                                Retries = retries,
+                                RetryIntervals = retryIntervals?.ToArray(),
+                                EvaluationFingerprint = evaluationFingerprint,
+                            };
+                            await cronSet.AddAsync(entity, cancellationToken).ConfigureAwait(false);
+                        }
                     }
-                }
-            }
-            else
-            {
-                // Insert new seeded cron job. The id is DETERMINISTIC (derived from the function) so two nodes seeding
-                // the same new function concurrently target the same primary key — the DB dedups to a single row
-                // instead of inserting two distinct-id rows and double-scheduling the function.
-                var entity = new TCronJob
-                {
-                    Id = JobsSeedId.ForCronSeed(function),
-                    Function = function,
-                    ContractVersion = contractVersion,
-                    Expression = expression,
-                    TimeZoneId = timeZoneId,
-                    InitIdentifier = $"MemoryTicker_Seeded_{function}",
-                    CreatedAt = now,
-                    UpdatedAt = now,
-                    Request = [],
-                    // Seeded at CREATION only. The expression-changed branch above deliberately leaves these
-                    // alone, so a value set later through ICronJobManager survives every redeploy and is an operator
-                    // override by construction — which is why no provenance marker is persisted.
-                    OnMissedRun = onMissedRun,
-                    MissedRunGraceSeconds = missedRunGraceSeconds,
-                    OnOverlap = onOverlap,
-                    Retries = retries,
-                    RetryIntervals = retryIntervals?.ToArray(),
-                    EvaluationFingerprint = evaluationFingerprint,
-                };
-                await cronSet.AddAsync(entity, cancellationToken).ConfigureAwait(false);
-            }
-        }
 
-        try
-        {
-            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                    try
+                    {
+                        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
-            if (changedDefinitionIds.Count > 0)
-            {
-                await dbContext
-                    .Set<CronJobOccurrenceEntity<TCronJob>>()
-                    .Where(x =>
-                        changedDefinitionIds.Contains(x.CronJobId)
-                        && (x.Status == JobStatus.Idle || x.Status == JobStatus.Queued)
-                    )
-                    .ExecuteUpdateAsync(
-                        setter =>
-                            setter
-                                .SetProperty(x => x.Status, JobStatus.Skipped)
-                                .SetProperty(x => x.ExecutedAt, now)
-                                .SetProperty(x => x.UpdatedAt, now)
-                                .SetProperty(x => x.SkippedReason, "Cron definition updated")
-                                // KTD1a: THE producer that owes a re-fire. Seeding retires the old-expression rows
-                                // without creating a replacement and resets the projection to be re-derived, so the
-                                // instant is unaccounted for and must be materializable again. The runtime edit path
-                                // writes the identical SkippedReason but stamps Superseded, which is exactly why the
-                                // accounting rule reads this column and never that string.
-                                .SetProperty(x => x.Disposition, CronOccurrenceDisposition.ReplacementOwed)
-                                .SetProperty(x => x.OwnerId, _ => null)
-                                .SetProperty(x => x.LockedUntil, _ => null),
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false);
-            }
+                        if (changedDefinitionIds.Count > 0)
+                        {
+                            await dbContext
+                                .Set<CronJobOccurrenceEntity<TCronJob>>()
+                                .Where(x =>
+                                    changedDefinitionIds.Contains(x.CronJobId)
+                                    && (x.Status == JobStatus.Idle || x.Status == JobStatus.Queued)
+                                )
+                                .ExecuteUpdateAsync(
+                                    setter =>
+                                        setter
+                                            .SetProperty(x => x.Status, JobStatus.Skipped)
+                                            .SetProperty(x => x.ExecutedAt, now)
+                                            .SetProperty(x => x.UpdatedAt, now)
+                                            .SetProperty(x => x.SkippedReason, "Cron definition updated")
+                                            // KTD1a: THE producer that owes a re-fire. Seeding retires the
+                                            // old-expression rows without creating a replacement and resets the
+                                            // projection to be re-derived, so the instant is unaccounted for and must
+                                            // be materializable again. The runtime edit path writes the identical
+                                            // SkippedReason but stamps Superseded, which is exactly why the accounting
+                                            // rule reads this column and never that string.
+                                            .SetProperty(x => x.Disposition, CronOccurrenceDisposition.ReplacementOwed)
+                                            .SetProperty(x => x.OwnerId, _ => null)
+                                            .SetProperty(x => x.LockedUntil, _ => null),
+                                    cancellationToken
+                                )
+                                .ConfigureAwait(false);
+                        }
 
-            await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
-            await InvalidateCronExpressionsCacheAsync().ConfigureAwait(false);
-        }
-        catch (DbUpdateException ex)
-            when (_IsUniqueConstraintViolation(dbContext.Database.ProviderName, ex) && insertedSeeds.Count != 0)
-        {
-            await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
-            dbContext.ChangeTracker.Clear();
+                        await attempt.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+                        await InvalidateCronExpressionsCacheAsync().ConfigureAwait(false);
+                    }
+                    catch (DbUpdateException ex)
+                        when (_IsUniqueConstraintViolation(dbContext.Database.ProviderName, ex)
+                            && insertedSeeds.Count != 0
+                        )
+                    {
+                        await attempt.Transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+                        dbContext.ChangeTracker.Clear();
 
-            await using var verificationContext = await DbContextFactory
-                .CreateDbContextAsync(CancellationToken.None)
-                .ConfigureAwait(false);
-            var winningSeeds = await verificationContext
-                .Set<TCronJob>()
-                .Where(x => ((IEnumerable<Guid>)insertedSeeds.Keys).Contains(x.Id))
-                .Select(x => new { x.Id, x.Function })
-                .ToDictionaryAsync(x => x.Id, x => x.Function, CancellationToken.None)
-                .ConfigureAwait(false);
+                        await using var verificationContext = await DbContextFactory
+                            .CreateDbContextAsync(CancellationToken.None)
+                            .ConfigureAwait(false);
+                        var winningSeeds = await verificationContext
+                            .Set<TCronJob>()
+                            .Where(x => ((IEnumerable<Guid>)insertedSeeds.Keys).Contains(x.Id))
+                            .Select(x => new { x.Id, x.Function })
+                            .ToDictionaryAsync(x => x.Id, x => x.Function, CancellationToken.None)
+                            .ConfigureAwait(false);
 
-            if (
-                insertedSeeds.Any(expected =>
-                    !winningSeeds.TryGetValue(expected.Key, out var function)
-                    || !string.Equals(function, expected.Value, StringComparison.Ordinal)
-                )
+                        if (
+                            insertedSeeds.Any(expected =>
+                                !winningSeeds.TryGetValue(expected.Key, out var function)
+                                || !string.Equals(function, expected.Value, StringComparison.Ordinal)
+                            )
+                        )
+                        {
+                            throw;
+                        }
+
+                        // A concurrent first boot committed every deterministic seed we attempted. Only this verified
+                        // race is benign; constraint, conversion, connectivity, and other update failures continue to
+                        // fail startup.
+                        Logger.LogCronSeedConflictDiscarded(ex);
+                        await InvalidateCronExpressionsCacheAsync().ConfigureAwait(false);
+                    }
+                },
+                cancellationToken
             )
-            {
-                throw;
-            }
-
-            // A concurrent first boot committed every deterministic seed we attempted. Only this verified race is
-            // benign; constraint, conversion, connectivity, and other update failures continue to fail startup.
-            Logger.LogCronSeedConflictDiscarded(ex);
-            await InvalidateCronExpressionsCacheAsync().ConfigureAwait(false);
-        }
+            .ConfigureAwait(false);
     }
 
     private static bool _IsUniqueConstraintViolation(string? providerName, DbUpdateException exception)
@@ -1773,260 +1825,277 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         CancellationToken cancellationToken = default
     )
     {
-        await using var dbContext = await DbContextFactory
-            .CreateDbContextAsync(cancellationToken)
-            .ConfigureAwait(false);
-
         // One transaction, unlike the ordinary advance. The occurrence resolution and the watermark move must not
         // interleave: a crash between them would leave the backlog partly resolved with the watermark already past it,
         // and nothing to re-derive the remainder from. Safe here precisely because the recovery instant is a
         // caller-supplied store instant, so no database-clock expression is frozen at transaction open (a concern
         // that applies to clock EXPRESSIONS inside transactions, not transactions as such).
-        await using var transaction = await dbContext
-            .Database.BeginTransactionAsync(cancellationToken)
-            .ConfigureAwait(false);
+        return await JobsStoreTransaction
+            .ExecuteAsync<TDbContext, CronRecoveryResult<TCronJob>?>(
+                DbContextFactory,
+                async (attempt, _) =>
+                {
+                    var dbContext = attempt.DbContext;
 
-        var definitions = dbContext.Set<TCronJob>();
-        var initialRecoveredThroughUtc = request.RecoveredThroughUtc;
-        var initialNextDueUtc = request.NextDueUtc;
+                    var definitions = dbContext.Set<TCronJob>();
+                    var initialRecoveredThroughUtc = request.RecoveredThroughUtc;
+                    var initialNextDueUtc = request.NextDueUtc;
 
-        var advanced = await definitions
-            .WhereScheduleAdvanceFenceHolds(
-                request.CronJobId,
-                request.ObservedReconciledThroughUtc,
-                request.ExpectedScheduleRevision
-            )
-            .ExecuteUpdateAsync(
-                setter =>
-                    setter
-                        .SetProperty(x => x.ReconciledThroughUtc, initialRecoveredThroughUtc)
-                        .SetProperty(x => x.NextDueUtc, initialNextDueUtc),
+                    var advanced = await definitions
+                        .WhereScheduleAdvanceFenceHolds(
+                            request.CronJobId,
+                            request.ObservedReconciledThroughUtc,
+                            request.ExpectedScheduleRevision
+                        )
+                        .ExecuteUpdateAsync(
+                            setter =>
+                                setter
+                                    .SetProperty(x => x.ReconciledThroughUtc, initialRecoveredThroughUtc)
+                                    .SetProperty(x => x.NextDueUtc, initialNextDueUtc),
+                            cancellationToken
+                        )
+                        .ConfigureAwait(false);
+
+                    if (advanced == 0)
+                    {
+                        // Another node recovered this backlog first. Nothing was written; the transaction rolls back on
+                        // dispose.
+                        return null;
+                    }
+
+                    var occurrences = dbContext.Set<CronJobOccurrenceEntity<TCronJob>>();
+                    var cronJobId = request.CronJobId;
+                    var window = CronRecoveryPlanner.GetInspectionWindow(request);
+                    var windowStart = window.StartExclusiveUtc;
+                    var windowEnd = window.EndInclusiveUtc;
+
+                    // Every row in the missed window, whatever its state: the non-terminal ones are the policy's to
+                    // resolve, and the terminal ones still matter because a terminal row occupying the earliest missed
+                    // instant means that instant already ran and must not be materialized a second time.
+                    //
+                    // Projected through the SHARED accounting selector, the same one
+                    // MaterializeCronScheduleOccurrenceAsync uses. Reading bare Status here is what let the two paths
+                    // disagree — recovery treated every non-live row as occupying the instant while the native claim
+                    // path re-materialized the identical row. It also keeps the raw status out of materialization, so a
+                    // value written by a newer binary cannot throw here.
+                    var inWindow = await occurrences
+                        .AsNoTracking()
+                        .Where(x =>
+                            x.CronJobId == cronJobId && x.ExecutionTime > windowStart && x.ExecutionTime <= windowEnd
+                        )
+                        .Select(CronOccurrenceAccounting.InstantViewSelector<TCronJob>())
+                        .ToArrayAsync(cancellationToken)
+                        .ConfigureAwait(false);
+
+                    // The decision itself is storage-agnostic and shared with every other provider (#834). What remains
+                    // below is this backend's mechanics: fenced writes inside the transaction already open.
+                    var plan = CronRecoveryPlanner.CreatePlan(request, inWindow);
+                    CronJobOccurrenceEntity<TCronJob>? coalescedRun = null;
+                    var preservedOccurrenceId = Guid.Empty;
+
+                    foreach (var step in plan.RunSteps)
+                    {
+                        var stepInstant = step.ExecutionTimeUtc;
+
+                        if (step.Kind is CronRecoveryRunStepKind.Create)
+                        {
+                            coalescedRun = new CronJobOccurrenceEntity<TCronJob>
+                            {
+                                Id = step.OccurrenceId,
+                                CronJobId = cronJobId,
+                                Status = JobStatus.Idle,
+                                OwnerId = null,
+                                LockedUntil = null,
+                                ExecutionTime = stepInstant,
+                                RecoveredFromUtc = stepInstant,
+                                OnNodeDeath = request.OnNodeDeath,
+                                CreatedAt = request.OperationTimeUtc,
+                                UpdatedAt = request.OperationTimeUtc,
+                            };
+
+                            var definition = await dbContext
+                                .Set<TCronJob>()
+                                .AsNoTracking()
+                                .SingleAsync(x => x.Id == cronJobId, cancellationToken)
+                                .ConfigureAwait(false);
+                            coalescedRun.SnapshotContract(definition);
+                            await occurrences.AddAsync(coalescedRun, cancellationToken).ConfigureAwait(false);
+                            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                            dbContext.Entry(coalescedRun).State = EntityState.Detached;
+                            preservedOccurrenceId = coalescedRun.Id;
+                            break;
+                        }
+
+                        // Revoking ownership is the whole mechanism. The claim path's in-progress transition already
+                        // requires OwnerId == owner, so a prior owner that was holding this row simply fails that
+                        // predicate and drops it — no new machinery, and no cost on the normal execution path.
+                        //
+                        // The status predicate makes this a CAS rather than a blind write: the window read above takes
+                        // no lock, so the row can begin executing between the read and this statement. Zero rows
+                        // affected means exactly that — the instant is now accounted for, and the walk moves on to the
+                        // planner's next step.
+                        var candidateId = step.OccurrenceId;
+                        var repurposed = await occurrences
+                            .Where(x =>
+                                x.Id == candidateId && (x.Status == JobStatus.Idle || x.Status == JobStatus.Queued)
+                            )
+                            .ExecuteUpdateAsync(
+                                setter =>
+                                    setter
+                                        .SetProperty(x => x.Status, JobStatus.Idle)
+                                        .SetProperty(x => x.OwnerId, _ => null)
+                                        .SetProperty(x => x.LockedUntil, _ => null)
+                                        .SetProperty(x => x.RecoveredFromUtc, stepInstant)
+                                        .SetProperty(x => x.UpdatedAt, request.OperationTimeUtc),
+                                cancellationToken
+                            )
+                            .ConfigureAwait(false);
+
+                        if (repurposed == 0)
+                        {
+                            continue;
+                        }
+
+                        preservedOccurrenceId = candidateId;
+                        coalescedRun = await occurrences
+                            .AsNoTracking()
+                            .Include(x => x.CronJob)
+                            .SingleAsync(x => x.Id == candidateId, cancellationToken)
+                            .ConfigureAwait(false);
+                        break;
+                    }
+
+                    // Everything else not yet executing in the window is retired: under skip because nothing may run,
+                    // under coalesce because the single coalesced run already stands in for the whole backlog. Which
+                    // window that is — the full recovery span, or only a saturated page's examined prefix — is the
+                    // planner's call, not this provider's.
+                    var resolution = coalescedRun is null ? plan.WhenNoRunEstablished : plan.WhenRunEstablished;
+                    var resolutionStart = resolution.RetireFromExclusiveUtc;
+                    var resolutionEnd = resolution.RetireThroughInclusiveUtc;
+                    var toSkip = await occurrences
+                        .AsNoTracking()
+                        .Where(x =>
+                            x.CronJobId == cronJobId
+                            && x.ExecutionTime > resolutionStart
+                            && x.ExecutionTime <= resolutionEnd
+                            && x.Id != preservedOccurrenceId
+                            && (x.Status == JobStatus.Idle || x.Status == JobStatus.Queued)
+                        )
+                        .Select(x => x.Id)
+                        .ToArrayAsync(cancellationToken)
+                        .ConfigureAwait(false);
+                    var skippedCount = 0;
+
+                    if (toSkip.Length > 0)
+                    {
+                        // Same CAS discipline as the repurpose: a row that began executing since the unlocked window
+                        // read fails the status predicate and is left alone rather than blindly stamped Skipped over a
+                        // running execution.
+                        skippedCount = await occurrences
+                            .Where(x =>
+                                toSkip.Contains(x.Id) && (x.Status == JobStatus.Idle || x.Status == JobStatus.Queued)
+                            )
+                            .ExecuteUpdateAsync(
+                                setter =>
+                                    setter
+                                        .SetProperty(x => x.Status, JobStatus.Skipped)
+                                        .SetProperty(x => x.OwnerId, _ => null)
+                                        .SetProperty(x => x.LockedUntil, _ => null)
+                                        .SetProperty(x => x.ExecutedAt, request.OperationTimeUtc)
+                                        .SetProperty(x => x.UpdatedAt, request.OperationTimeUtc)
+                                        .SetProperty(
+                                            x => x.SkippedReason,
+                                            "Cron occurrence missed and resolved by recovery"
+                                        )
+                                        // Recovery resolves the backlog: the single coalesced run (or, under Skip,
+                                        // deliberate nothing) stands in for these instants, so they are accounted for.
+                                        .SetProperty(x => x.Disposition, CronOccurrenceDisposition.Accounted),
+                                cancellationToken
+                            )
+                            .ConfigureAwait(false);
+                    }
+
+                    CronJobOccurrenceEntity<TCronJob>? overlapSkippedRun = null;
+
+                    if (coalescedRun is not null)
+                    {
+                        // Overlap is judged only after the backlog is resolved, so rows this recovery just retired no
+                        // longer count as unfinished; whatever still does — an execution already running, or a retry
+                        // waiting to re-run — was started before this recovery and would overlap the coalesced run.
+                        var runId = coalescedRun.Id;
+                        var onOverlap = await definitions
+                            .AsNoTracking()
+                            .Where(x => x.Id == cronJobId)
+                            .Select(x => x.OnOverlap)
+                            .SingleAsync(cancellationToken)
+                            .ConfigureAwait(false);
+
+                        if (
+                            CronOverlapRule.ForbidsOverlap(onOverlap)
+                            && await occurrences
+                                .Where(CronOverlapRule.UnfinishedOccurrenceOf<TCronJob>(cronJobId))
+                                .AnyAsync(x => x.Id != runId, cancellationToken)
+                                .ConfigureAwait(false)
+                        )
+                        {
+                            var skippedRun = await occurrences
+                                .Where(x => x.Id == runId && x.Status == JobStatus.Idle)
+                                .ExecuteUpdateAsync(
+                                    setter =>
+                                        setter
+                                            .SetProperty(x => x.Status, JobStatus.Skipped)
+                                            .SetProperty(x => x.ExecutedAt, request.OperationTimeUtc)
+                                            .SetProperty(x => x.UpdatedAt, request.OperationTimeUtc)
+                                            .SetProperty(x => x.SkippedReason, CronOverlapRule.SkippedReason)
+                                            // The run stood in for the backlog, so skipping it still accounts for its
+                                            // instant: a later recovery must not replay what this one resolved.
+                                            .SetProperty(x => x.Disposition, CronOccurrenceDisposition.Accounted),
+                                    cancellationToken
+                                )
+                                .ConfigureAwait(false);
+
+                            if (skippedRun > 0)
+                            {
+                                overlapSkippedRun = coalescedRun;
+                                coalescedRun = null;
+                            }
+                        }
+                    }
+
+                    var finalRecoveredThroughUtc = resolution.ReconciledThroughUtc;
+                    var finalNextDueUtc = resolution.NextDueUtc;
+
+                    // The fence above already wrote the full-recovery position, which is what WhenRunEstablished asks
+                    // for. Only a resolution that differs from it — a saturated page confined to its examined prefix —
+                    // needs a second write.
+                    if (finalRecoveredThroughUtc != initialRecoveredThroughUtc || finalNextDueUtc != initialNextDueUtc)
+                    {
+                        await definitions
+                            .Where(x => x.Id == cronJobId)
+                            .ExecuteUpdateAsync(
+                                setter =>
+                                    setter
+                                        .SetProperty(x => x.ReconciledThroughUtc, finalRecoveredThroughUtc)
+                                        .SetProperty(x => x.NextDueUtc, finalNextDueUtc),
+                                cancellationToken
+                            )
+                            .ConfigureAwait(false);
+                    }
+
+                    await attempt.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+
+                    return new CronRecoveryResult<TCronJob>
+                    {
+                        CoalescedRun = coalescedRun,
+                        SkippedOccurrenceCount = skippedCount,
+                        OverlapSkippedRun = overlapSkippedRun,
+                        ReconciledThroughUtc = finalRecoveredThroughUtc,
+                        NextDueUtc = finalNextDueUtc,
+                    };
+                },
                 cancellationToken
             )
             .ConfigureAwait(false);
-
-        if (advanced == 0)
-        {
-            // Another node recovered this backlog first. Nothing was written; the transaction rolls back on dispose.
-            return null;
-        }
-
-        var occurrences = dbContext.Set<CronJobOccurrenceEntity<TCronJob>>();
-        var cronJobId = request.CronJobId;
-        var window = CronRecoveryPlanner.GetInspectionWindow(request);
-        var windowStart = window.StartExclusiveUtc;
-        var windowEnd = window.EndInclusiveUtc;
-
-        // Every row in the missed window, whatever its state: the non-terminal ones are the policy's to resolve, and
-        // the terminal ones still matter because a terminal row occupying the earliest missed instant means that
-        // instant already ran and must not be materialized a second time.
-        //
-        // Projected through the SHARED accounting selector, the same one MaterializeCronScheduleOccurrenceAsync
-        // uses. Reading bare Status here is what let the two paths disagree — recovery treated every non-live row as
-        // occupying the instant while the native claim path re-materialized the identical row. It also keeps the raw
-        // status out of materialization, so a value written by a newer binary cannot throw here.
-        var inWindow = await occurrences
-            .AsNoTracking()
-            .Where(x => x.CronJobId == cronJobId && x.ExecutionTime > windowStart && x.ExecutionTime <= windowEnd)
-            .Select(CronOccurrenceAccounting.InstantViewSelector<TCronJob>())
-            .ToArrayAsync(cancellationToken)
-            .ConfigureAwait(false);
-
-        // The decision itself is storage-agnostic and shared with every other provider (#834). What remains below is
-        // this backend's mechanics: fenced writes inside the transaction already open.
-        var plan = CronRecoveryPlanner.CreatePlan(request, inWindow);
-        CronJobOccurrenceEntity<TCronJob>? coalescedRun = null;
-        var preservedOccurrenceId = Guid.Empty;
-
-        foreach (var step in plan.RunSteps)
-        {
-            var stepInstant = step.ExecutionTimeUtc;
-
-            if (step.Kind is CronRecoveryRunStepKind.Create)
-            {
-                coalescedRun = new CronJobOccurrenceEntity<TCronJob>
-                {
-                    Id = step.OccurrenceId,
-                    CronJobId = cronJobId,
-                    Status = JobStatus.Idle,
-                    OwnerId = null,
-                    LockedUntil = null,
-                    ExecutionTime = stepInstant,
-                    RecoveredFromUtc = stepInstant,
-                    OnNodeDeath = request.OnNodeDeath,
-                    CreatedAt = request.OperationTimeUtc,
-                    UpdatedAt = request.OperationTimeUtc,
-                };
-
-                var definition = await dbContext
-                    .Set<TCronJob>()
-                    .AsNoTracking()
-                    .SingleAsync(x => x.Id == cronJobId, cancellationToken)
-                    .ConfigureAwait(false);
-                coalescedRun.SnapshotContract(definition);
-                await occurrences.AddAsync(coalescedRun, cancellationToken).ConfigureAwait(false);
-                await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-                dbContext.Entry(coalescedRun).State = EntityState.Detached;
-                preservedOccurrenceId = coalescedRun.Id;
-                break;
-            }
-
-            // Revoking ownership is the whole mechanism. The claim path's in-progress transition already
-            // requires OwnerId == owner, so a prior owner that was holding this row simply fails that predicate and
-            // drops it — no new machinery, and no cost on the normal execution path.
-            //
-            // The status predicate makes this a CAS rather than a blind write: the window read above takes no lock,
-            // so the row can begin executing between the read and this statement. Zero rows affected means exactly
-            // that — the instant is now accounted for, and the walk moves on to the planner's next step.
-            var candidateId = step.OccurrenceId;
-            var repurposed = await occurrences
-                .Where(x => x.Id == candidateId && (x.Status == JobStatus.Idle || x.Status == JobStatus.Queued))
-                .ExecuteUpdateAsync(
-                    setter =>
-                        setter
-                            .SetProperty(x => x.Status, JobStatus.Idle)
-                            .SetProperty(x => x.OwnerId, _ => null)
-                            .SetProperty(x => x.LockedUntil, _ => null)
-                            .SetProperty(x => x.RecoveredFromUtc, stepInstant)
-                            .SetProperty(x => x.UpdatedAt, request.OperationTimeUtc),
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
-
-            if (repurposed == 0)
-            {
-                continue;
-            }
-
-            preservedOccurrenceId = candidateId;
-            coalescedRun = await occurrences
-                .AsNoTracking()
-                .Include(x => x.CronJob)
-                .SingleAsync(x => x.Id == candidateId, cancellationToken)
-                .ConfigureAwait(false);
-            break;
-        }
-
-        // Everything else not yet executing in the window is retired: under skip because nothing may run, under
-        // coalesce because the single coalesced run already stands in for the whole backlog. Which window that is —
-        // the full recovery span, or only a saturated page's examined prefix — is the planner's call, not this
-        // provider's.
-        var resolution = coalescedRun is null ? plan.WhenNoRunEstablished : plan.WhenRunEstablished;
-        var resolutionStart = resolution.RetireFromExclusiveUtc;
-        var resolutionEnd = resolution.RetireThroughInclusiveUtc;
-        var toSkip = await occurrences
-            .AsNoTracking()
-            .Where(x =>
-                x.CronJobId == cronJobId
-                && x.ExecutionTime > resolutionStart
-                && x.ExecutionTime <= resolutionEnd
-                && x.Id != preservedOccurrenceId
-                && (x.Status == JobStatus.Idle || x.Status == JobStatus.Queued)
-            )
-            .Select(x => x.Id)
-            .ToArrayAsync(cancellationToken)
-            .ConfigureAwait(false);
-        var skippedCount = 0;
-
-        if (toSkip.Length > 0)
-        {
-            // Same CAS discipline as the repurpose: a row that began executing since the unlocked window read fails
-            // the status predicate and is left alone rather than blindly stamped Skipped over a running execution.
-            skippedCount = await occurrences
-                .Where(x => toSkip.Contains(x.Id) && (x.Status == JobStatus.Idle || x.Status == JobStatus.Queued))
-                .ExecuteUpdateAsync(
-                    setter =>
-                        setter
-                            .SetProperty(x => x.Status, JobStatus.Skipped)
-                            .SetProperty(x => x.OwnerId, _ => null)
-                            .SetProperty(x => x.LockedUntil, _ => null)
-                            .SetProperty(x => x.ExecutedAt, request.OperationTimeUtc)
-                            .SetProperty(x => x.UpdatedAt, request.OperationTimeUtc)
-                            .SetProperty(x => x.SkippedReason, "Cron occurrence missed and resolved by recovery")
-                            // Recovery resolves the backlog: the single coalesced run (or, under Skip, deliberate
-                            // nothing) stands in for these instants, so they are accounted for.
-                            .SetProperty(x => x.Disposition, CronOccurrenceDisposition.Accounted),
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
-        }
-
-        CronJobOccurrenceEntity<TCronJob>? overlapSkippedRun = null;
-
-        if (coalescedRun is not null)
-        {
-            // Overlap is judged only after the backlog is resolved, so rows this recovery just retired no longer count
-            // as unfinished; whatever still does — an execution already running, or a retry waiting to re-run — was
-            // started before this recovery and would overlap the coalesced run.
-            var runId = coalescedRun.Id;
-            var onOverlap = await definitions
-                .AsNoTracking()
-                .Where(x => x.Id == cronJobId)
-                .Select(x => x.OnOverlap)
-                .SingleAsync(cancellationToken)
-                .ConfigureAwait(false);
-
-            if (
-                CronOverlapRule.ForbidsOverlap(onOverlap)
-                && await occurrences
-                    .Where(CronOverlapRule.UnfinishedOccurrenceOf<TCronJob>(cronJobId))
-                    .AnyAsync(x => x.Id != runId, cancellationToken)
-                    .ConfigureAwait(false)
-            )
-            {
-                var skippedRun = await occurrences
-                    .Where(x => x.Id == runId && x.Status == JobStatus.Idle)
-                    .ExecuteUpdateAsync(
-                        setter =>
-                            setter
-                                .SetProperty(x => x.Status, JobStatus.Skipped)
-                                .SetProperty(x => x.ExecutedAt, request.OperationTimeUtc)
-                                .SetProperty(x => x.UpdatedAt, request.OperationTimeUtc)
-                                .SetProperty(x => x.SkippedReason, CronOverlapRule.SkippedReason)
-                                // The run stood in for the backlog, so skipping it still accounts for its instant:
-                                // a later recovery must not replay what this one resolved.
-                                .SetProperty(x => x.Disposition, CronOccurrenceDisposition.Accounted),
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false);
-
-                if (skippedRun > 0)
-                {
-                    overlapSkippedRun = coalescedRun;
-                    coalescedRun = null;
-                }
-            }
-        }
-
-        var finalRecoveredThroughUtc = resolution.ReconciledThroughUtc;
-        var finalNextDueUtc = resolution.NextDueUtc;
-
-        // The fence above already wrote the full-recovery position, which is what WhenRunEstablished asks for. Only a
-        // resolution that differs from it — a saturated page confined to its examined prefix — needs a second write.
-        if (finalRecoveredThroughUtc != initialRecoveredThroughUtc || finalNextDueUtc != initialNextDueUtc)
-        {
-            await definitions
-                .Where(x => x.Id == cronJobId)
-                .ExecuteUpdateAsync(
-                    setter =>
-                        setter
-                            .SetProperty(x => x.ReconciledThroughUtc, finalRecoveredThroughUtc)
-                            .SetProperty(x => x.NextDueUtc, finalNextDueUtc),
-                    cancellationToken
-                )
-                .ConfigureAwait(false);
-        }
-
-        await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
-
-        return new CronRecoveryResult<TCronJob>
-        {
-            CoalescedRun = coalescedRun,
-            SkippedOccurrenceCount = skippedCount,
-            OverlapSkippedRun = overlapSkippedRun,
-            ReconciledThroughUtc = finalRecoveredThroughUtc,
-            NextDueUtc = finalNextDueUtc,
-        };
     }
 
     public async Task<CronDispatchCandidates?> GetEarliestCronDispatchCandidatesAsync(
@@ -2232,10 +2301,9 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             nameof(materialization)
         );
 
-        await using var dbContext = await DbContextFactory
+        await using var eligibilityContext = await DbContextFactory
             .CreateDbContextAsync(cancellationToken)
             .ConfigureAwait(false);
-        var definitions = dbContext.Set<TCronJob>();
 
         var executionTimeUtc = materialization.ExecutionTimeUtc;
         // Authorize due-ness in autocommit before opening the atomic write transaction. PostgreSQL translates
@@ -2243,7 +2311,8 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         // statement clock and avoids a row-lock wait making a newly due projection look future. Time is monotonic, and
         // the transaction below repeats every position/revision/projection fence, so an authorized projection cannot
         // become "not due" while a competitor can only turn the later write into LostFence.
-        var eligibility = await definitions
+        var eligibility = await eligibilityContext
+            .Set<TCronJob>()
             .AsNoTracking()
             .WhereScheduleAdvanceFenceHolds(
                 advance.CronJobId,
@@ -2265,175 +2334,195 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
             return new CronScheduleMaterializationResult { Outcome = CronScheduleMaterializationOutcome.NotDue };
         }
 
-        await using var transaction = await dbContext
-            .Database.BeginTransactionAsync(cancellationToken)
-            .ConfigureAwait(false);
+        return await JobsStoreTransaction
+            .ExecuteAsync<TDbContext, CronScheduleMaterializationResult>(
+                DbContextFactory,
+                async (attempt, _) =>
+                {
+                    var dbContext = attempt.DbContext;
+                    var definitions = dbContext.Set<TCronJob>();
 
-        // The fenced UPDATE is deliberately first: its row lock is held through commit and is the per-definition
-        // mutex for every conforming materializer. Read committed therefore gives one winner without PostgreSQL's
-        // expected serialization aborts, while occurrence arbitration and the position remain one transaction. The
-        // due decision above is safe to omit here because it was already true and the repeated exact-position fence
-        // rejects every intervening definition transition.
+                    // The fenced UPDATE is deliberately first: its row lock is held through commit and is the
+                    // per-definition mutex for every conforming materializer. Read committed therefore gives one winner
+                    // without PostgreSQL's expected serialization aborts, while occurrence arbitration and the position
+                    // remain one transaction. The due decision above is safe to omit here because it was already true
+                    // and the repeated exact-position fence rejects every intervening definition transition.
 
-        var fenced = definitions.WhereScheduleAdvanceFenceHolds(
-            advance.CronJobId,
-            advance.ObservedReconciledThroughUtc,
-            advance.ExpectedScheduleRevision
-        );
-        fenced = fenced.Where(x => x.NextDueUtc == executionTimeUtc);
+                    var fenced = definitions.WhereScheduleAdvanceFenceHolds(
+                        advance.CronJobId,
+                        advance.ObservedReconciledThroughUtc,
+                        advance.ExpectedScheduleRevision
+                    );
+                    fenced = fenced.Where(x => x.NextDueUtc == executionTimeUtc);
 
-        var reconciledThroughUtc = advance.ReconciledThroughUtc;
-        var nextDueUtc = advance.NextDueUtc;
-        var affected = await fenced
-            .ExecuteUpdateAsync(
-                setter =>
-                    setter
-                        .SetProperty(x => x.ReconciledThroughUtc, reconciledThroughUtc)
-                        .SetProperty(x => x.NextDueUtc, nextDueUtc),
+                    var reconciledThroughUtc = advance.ReconciledThroughUtc;
+                    var nextDueUtc = advance.NextDueUtc;
+                    var affected = await fenced
+                        .ExecuteUpdateAsync(
+                            setter =>
+                                setter
+                                    .SetProperty(x => x.ReconciledThroughUtc, reconciledThroughUtc)
+                                    .SetProperty(x => x.NextDueUtc, nextDueUtc),
+                            cancellationToken
+                        )
+                        .ConfigureAwait(false);
+
+                    if (affected == 0)
+                    {
+                        return new CronScheduleMaterializationResult
+                        {
+                            Outcome = CronScheduleMaterializationOutcome.LostFence,
+                        };
+                    }
+
+                    var committedDefinition = await definitions
+                        .AsNoTracking()
+                        .Where(x => x.Id == advance.CronJobId)
+                        .SingleAsync(cancellationToken)
+                        .ConfigureAwait(false);
+
+                    var occurrences = dbContext.Set<CronJobOccurrenceEntity<TCronJob>>();
+
+                    // KTD1c: every row at the instant, projected through the SHARED accounting selector that
+                    // ApplyCronRecoveryAsync also uses, so the two paths cannot reach opposite verdicts about one row.
+                    // All rows rather than the first, because accounting is an aggregate: several rows may share an
+                    // instant (the filtered unique index constrains only the live ones), and any single accounting row
+                    // takes it. The raw status is never materialized, so a value written by a newer binary fails closed
+                    // instead of throwing.
+                    var rowsAtInstant = await occurrences
+                        .AsNoTracking()
+                        .Where(x =>
+                            x.CronJobId == advance.CronJobId && x.ExecutionTime == materialization.ExecutionTimeUtc
+                        )
+                        .Select(CronOccurrenceAccounting.InstantViewSelector<TCronJob>())
+                        .ToArrayAsync(cancellationToken)
+                        .ConfigureAwait(false);
+
+                    // R3a: live-first, THEN CreatedAt/Id. Ordering by CreatedAt alone lets an older terminal row mask a
+                    // live one sharing the instant and report the wrong occurrence identity to the dispatcher.
+                    var existing = rowsAtInstant
+                        .OrderBy(CronOccurrenceAccounting.LiveFirstRank)
+                        .ThenBy(x => x.CreatedAt)
+                        .ThenBy(x => x.Id)
+                        .FirstOrDefault();
+
+                    Guid occurrenceId;
+                    DateTimeOffset occurrenceCreatedAt;
+                    CronScheduleMaterializationOutcome outcome;
+
+                    if (!CronOccurrenceAccounting.IsInstantAccountedFor(rowsAtInstant))
+                    {
+                        // Nothing here accounts for the instant — either no row at all, or only rows a seeding
+                        // migration retired without a replacement. Both owe the fire, so both materialize. The
+                        // definition row lock taken by the fenced update above is also what makes the overlap check
+                        // sound: no other scheduled occurrence of this definition can be created until this transaction
+                        // ends.
+                        var skipForOverlap =
+                            CronOverlapRule.ForbidsOverlap(committedDefinition.OnOverlap)
+                            && await occurrences
+                                .AnyAsync(
+                                    CronOverlapRule.UnfinishedOccurrenceOf<TCronJob>(advance.CronJobId),
+                                    cancellationToken
+                                )
+                                .ConfigureAwait(false);
+
+                        var now = TimeProvider.GetUtcNow();
+                        var created = new CronJobOccurrenceEntity<TCronJob>
+                        {
+                            Id = GuidGenerator.Create(),
+                            CronJobId = advance.CronJobId,
+                            ExecutionTime = materialization.ExecutionTimeUtc,
+                            Status = skipForOverlap ? JobStatus.Skipped : JobStatus.Idle,
+                            OwnerId = null,
+                            LockedUntil = null,
+                            OnNodeDeath = committedDefinition.OnNodeDeath,
+                            CreatedAt = now,
+                            UpdatedAt = now,
+                        };
+
+                        if (skipForOverlap)
+                        {
+                            // A durable skipped row, not just a moved watermark: the instant is visibly accounted for,
+                            // so neither recovery nor a claim-time insert fires it later, and the dashboard shows why
+                            // it did not run.
+                            created.ExecutedAt = now;
+                            created.SkippedReason = CronOverlapRule.SkippedReason;
+                            created.Disposition = CronOccurrenceDisposition.Accounted;
+                        }
+
+                        created.SnapshotContract(committedDefinition);
+                        await occurrences.AddAsync(created, cancellationToken).ConfigureAwait(false);
+                        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                        occurrenceId = created.Id;
+                        occurrenceCreatedAt = created.CreatedAt;
+                        outcome = skipForOverlap
+                            ? CronScheduleMaterializationOutcome.OccurrenceSkippedForOverlap
+                            : CronScheduleMaterializationOutcome.OccurrenceCreated;
+                    }
+                    else
+                    {
+                        occurrenceId = existing!.Id;
+                        occurrenceCreatedAt = existing.CreatedAt;
+                        outcome = existing.IsLive
+                            ? CronScheduleMaterializationOutcome.OccurrenceExists
+                            : CronScheduleMaterializationOutcome.OccurrenceAlreadyTerminal;
+
+                        // A live row created ahead of its instant has not been judged for overlap yet; judge it now,
+                        // when due. Only a still-idle row is retired: one already claimed or running has started and is
+                        // left alone.
+                        var existingId = existing.Id;
+                        if (
+                            existing.IsLive
+                            && CronOverlapRule.ForbidsOverlap(committedDefinition.OnOverlap)
+                            && await occurrences
+                                .Where(CronOverlapRule.UnfinishedOccurrenceOf<TCronJob>(advance.CronJobId))
+                                .AnyAsync(x => x.Id != existingId, cancellationToken)
+                                .ConfigureAwait(false)
+                        )
+                        {
+                            var skippedAt = TimeProvider.GetUtcNow();
+                            var retired = await occurrences
+                                .Where(x => x.Id == existingId && x.Status == JobStatus.Idle)
+                                .ExecuteUpdateAsync(
+                                    setter =>
+                                        setter
+                                            .SetProperty(x => x.Status, JobStatus.Skipped)
+                                            .SetProperty(x => x.OwnerId, _ => null)
+                                            .SetProperty(x => x.LockedUntil, _ => null)
+                                            .SetProperty(x => x.ExecutedAt, skippedAt)
+                                            .SetProperty(x => x.UpdatedAt, skippedAt)
+                                            .SetProperty(x => x.SkippedReason, CronOverlapRule.SkippedReason)
+                                            .SetProperty(x => x.Disposition, CronOccurrenceDisposition.Accounted),
+                                    cancellationToken
+                                )
+                                .ConfigureAwait(false);
+
+                            if (retired > 0)
+                            {
+                                outcome = CronScheduleMaterializationOutcome.OccurrenceSkippedForOverlap;
+                            }
+                        }
+                    }
+
+                    await attempt.CommitAsync(cancellationToken).ConfigureAwait(false);
+
+                    return new CronScheduleMaterializationResult
+                    {
+                        Outcome = outcome,
+                        SchedulePosition = new CronScheduleAdvanceResult
+                        {
+                            ReconciledThroughUtc = committedDefinition.ReconciledThroughUtc,
+                            NextDueUtc = committedDefinition.NextDueUtc,
+                            StoreUtcNow = eligibility.StoreUtcNow,
+                        },
+                        OccurrenceId = occurrenceId,
+                        OccurrenceCreatedAt = occurrenceCreatedAt,
+                        OnNodeDeath = committedDefinition.OnNodeDeath,
+                    };
+                },
                 cancellationToken
             )
             .ConfigureAwait(false);
-
-        if (affected == 0)
-        {
-            return new CronScheduleMaterializationResult { Outcome = CronScheduleMaterializationOutcome.LostFence };
-        }
-
-        var committedDefinition = await definitions
-            .AsNoTracking()
-            .Where(x => x.Id == advance.CronJobId)
-            .SingleAsync(cancellationToken)
-            .ConfigureAwait(false);
-
-        var occurrences = dbContext.Set<CronJobOccurrenceEntity<TCronJob>>();
-
-        // KTD1c: every row at the instant, projected through the SHARED accounting selector that ApplyCronRecoveryAsync
-        // also uses, so the two paths cannot reach opposite verdicts about one row. All rows rather than the first,
-        // because accounting is an aggregate: several rows may share an instant (the filtered unique index constrains
-        // only the live ones), and any single accounting row takes it. The raw status is never materialized, so a
-        // value written by a newer binary fails closed instead of throwing.
-        var rowsAtInstant = await occurrences
-            .AsNoTracking()
-            .Where(x => x.CronJobId == advance.CronJobId && x.ExecutionTime == materialization.ExecutionTimeUtc)
-            .Select(CronOccurrenceAccounting.InstantViewSelector<TCronJob>())
-            .ToArrayAsync(cancellationToken)
-            .ConfigureAwait(false);
-
-        // R3a: live-first, THEN CreatedAt/Id. Ordering by CreatedAt alone lets an older terminal row mask a live one
-        // sharing the instant and report the wrong occurrence identity to the dispatcher.
-        var existing = rowsAtInstant
-            .OrderBy(CronOccurrenceAccounting.LiveFirstRank)
-            .ThenBy(x => x.CreatedAt)
-            .ThenBy(x => x.Id)
-            .FirstOrDefault();
-
-        Guid occurrenceId;
-        DateTimeOffset occurrenceCreatedAt;
-        CronScheduleMaterializationOutcome outcome;
-
-        if (!CronOccurrenceAccounting.IsInstantAccountedFor(rowsAtInstant))
-        {
-            // Nothing here accounts for the instant — either no row at all, or only rows a seeding migration retired
-            // without a replacement. Both owe the fire, so both materialize. The definition row lock taken by the
-            // fenced update above is also what makes the overlap check sound: no other scheduled occurrence of this
-            // definition can be created until this transaction ends.
-            var skipForOverlap =
-                CronOverlapRule.ForbidsOverlap(committedDefinition.OnOverlap)
-                && await occurrences
-                    .AnyAsync(CronOverlapRule.UnfinishedOccurrenceOf<TCronJob>(advance.CronJobId), cancellationToken)
-                    .ConfigureAwait(false);
-
-            var now = TimeProvider.GetUtcNow();
-            var created = new CronJobOccurrenceEntity<TCronJob>
-            {
-                Id = GuidGenerator.Create(),
-                CronJobId = advance.CronJobId,
-                ExecutionTime = materialization.ExecutionTimeUtc,
-                Status = skipForOverlap ? JobStatus.Skipped : JobStatus.Idle,
-                OwnerId = null,
-                LockedUntil = null,
-                OnNodeDeath = committedDefinition.OnNodeDeath,
-                CreatedAt = now,
-                UpdatedAt = now,
-            };
-
-            if (skipForOverlap)
-            {
-                // A durable skipped row, not just a moved watermark: the instant is visibly accounted for, so neither
-                // recovery nor a claim-time insert fires it later, and the dashboard shows why it did not run.
-                created.ExecutedAt = now;
-                created.SkippedReason = CronOverlapRule.SkippedReason;
-                created.Disposition = CronOccurrenceDisposition.Accounted;
-            }
-
-            created.SnapshotContract(committedDefinition);
-            await occurrences.AddAsync(created, cancellationToken).ConfigureAwait(false);
-            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-            occurrenceId = created.Id;
-            occurrenceCreatedAt = created.CreatedAt;
-            outcome = skipForOverlap
-                ? CronScheduleMaterializationOutcome.OccurrenceSkippedForOverlap
-                : CronScheduleMaterializationOutcome.OccurrenceCreated;
-        }
-        else
-        {
-            occurrenceId = existing!.Id;
-            occurrenceCreatedAt = existing.CreatedAt;
-            outcome = existing.IsLive
-                ? CronScheduleMaterializationOutcome.OccurrenceExists
-                : CronScheduleMaterializationOutcome.OccurrenceAlreadyTerminal;
-
-            // A live row created ahead of its instant has not been judged for overlap yet; judge it now, when due.
-            // Only a still-idle row is retired: one already claimed or running has started and is left alone.
-            var existingId = existing.Id;
-            if (
-                existing.IsLive
-                && CronOverlapRule.ForbidsOverlap(committedDefinition.OnOverlap)
-                && await occurrences
-                    .Where(CronOverlapRule.UnfinishedOccurrenceOf<TCronJob>(advance.CronJobId))
-                    .AnyAsync(x => x.Id != existingId, cancellationToken)
-                    .ConfigureAwait(false)
-            )
-            {
-                var skippedAt = TimeProvider.GetUtcNow();
-                var retired = await occurrences
-                    .Where(x => x.Id == existingId && x.Status == JobStatus.Idle)
-                    .ExecuteUpdateAsync(
-                        setter =>
-                            setter
-                                .SetProperty(x => x.Status, JobStatus.Skipped)
-                                .SetProperty(x => x.OwnerId, _ => null)
-                                .SetProperty(x => x.LockedUntil, _ => null)
-                                .SetProperty(x => x.ExecutedAt, skippedAt)
-                                .SetProperty(x => x.UpdatedAt, skippedAt)
-                                .SetProperty(x => x.SkippedReason, CronOverlapRule.SkippedReason)
-                                .SetProperty(x => x.Disposition, CronOccurrenceDisposition.Accounted),
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false);
-
-                if (retired > 0)
-                {
-                    outcome = CronScheduleMaterializationOutcome.OccurrenceSkippedForOverlap;
-                }
-            }
-        }
-
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-
-        return new CronScheduleMaterializationResult
-        {
-            Outcome = outcome,
-            SchedulePosition = new CronScheduleAdvanceResult
-            {
-                ReconciledThroughUtc = committedDefinition.ReconciledThroughUtc,
-                NextDueUtc = committedDefinition.NextDueUtc,
-                StoreUtcNow = eligibility.StoreUtcNow,
-            },
-            OccurrenceId = occurrenceId,
-            OccurrenceCreatedAt = occurrenceCreatedAt,
-            OnNodeDeath = committedDefinition.OnNodeDeath,
-        };
     }
 
     #endregion
@@ -2476,107 +2565,114 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         CancellationToken cancellationToken = default
     )
     {
-        await using var dbContext = await DbContextFactory
-            .CreateDbContextAsync(cancellationToken)
-            .ConfigureAwait(false);
+        // Cancellation is honored only until the reclaim starts; its writes then run to completion.
+        cancellationToken.ThrowIfCancellationRequested();
 
         // #316 clock-skew: InProgress lease-deferral arms compare LockedUntil <= now against the DB clock (see
         // ReleaseDeadNodeTimeJobResourcesAsync).
 
         // See ReleaseDeadNodeTimeJobResourcesAsync: strict WhereOwnedBy, one transaction so a crash between the
         // writes can't leave a half-reclaimed row, and CancellationToken.None for the reclaim writes.
-        await using var transaction = await dbContext
-            .Database.BeginTransactionAsync(CancellationToken.None)
-            .ConfigureAwait(false);
+        return await JobsStoreTransaction
+            .ExecuteAsync<TDbContext, int>(
+                DbContextFactory,
+                async (attempt, _) =>
+                {
+                    var dbContext = attempt.DbContext;
 
-        // Per-policy dead-node transition (#315, #316) — mirrors ReleaseDeadNodeTimeJobResourcesAsync. Idle/Queued
-        // reclaimed immediately; InProgress arms defer to the lease (LockedUntil <= now) so a still-leased running
-        // occurrence survives a membership blip and is recovered by the stalled-lease reclaim once its lease lapses.
-        // Split by attempt state: only the started (InProgress) Retry arm consumes a retry-budget unit.
-        var releasedNotStarted = await dbContext
-            .Set<CronJobOccurrenceEntity<TCronJob>>()
-            .WhereOwnedBy(instanceIdentifier)
-            .Where(x => x.Status == JobStatus.Idle || x.Status == JobStatus.Queued)
-            .ExecuteUpdateAsync(
-                setter =>
-                    setter
-                        .SetProperty(x => x.OwnerId, _ => null)
-                        .SetProperty(x => x.LockedUntil, _ => null)
-                        .SetProperty(x => x.Status, JobStatus.Idle)
-                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
+                    // Per-policy dead-node transition (#315, #316) — mirrors ReleaseDeadNodeTimeJobResourcesAsync.
+                    // Idle/Queued reclaimed immediately; InProgress arms defer to the lease (LockedUntil <= now) so a
+                    // still-leased running occurrence survives a membership blip and is recovered by the stalled-lease
+                    // reclaim once its lease lapses. Split by attempt state: only the started (InProgress) Retry arm
+                    // consumes a retry-budget unit.
+                    var releasedNotStarted = await dbContext
+                        .Set<CronJobOccurrenceEntity<TCronJob>>()
+                        .WhereOwnedBy(instanceIdentifier)
+                        .Where(x => x.Status == JobStatus.Idle || x.Status == JobStatus.Queued)
+                        .ExecuteUpdateAsync(
+                            setter =>
+                                setter
+                                    .SetProperty(x => x.OwnerId, _ => null)
+                                    .SetProperty(x => x.LockedUntil, _ => null)
+                                    .SetProperty(x => x.Status, JobStatus.Idle)
+                                    .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
+                            CancellationToken.None
+                        )
+                        .ConfigureAwait(false);
+
+                    var releasedInterrupted = await dbContext
+                        .Set<CronJobOccurrenceEntity<TCronJob>>()
+                        .WhereOwnedBy(instanceIdentifier)
+                        .Where(x =>
+                            x.Status == JobStatus.InProgress
+                            && x.OnNodeDeath == NodeDeathPolicy.Retry
+                            && x.LockedUntil <= DateTime.UtcNow
+                        )
+                        .ExecuteUpdateAsync(
+                            setter =>
+                                setter
+                                    .SetProperty(x => x.OwnerId, _ => null)
+                                    .SetProperty(x => x.LockedUntil, _ => null)
+                                    .SetProperty(x => x.Status, JobStatus.Idle)
+                                    .SetProperty(x => x.RetryCount, x => x.RetryCount + 1)
+                                    .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
+                            CancellationToken.None
+                        )
+                        .ConfigureAwait(false);
+
+                    var released = releasedNotStarted + releasedInterrupted;
+
+                    var failed = await dbContext
+                        .Set<CronJobOccurrenceEntity<TCronJob>>()
+                        .WhereOwnedBy(instanceIdentifier)
+                        .Where(x =>
+                            x.Status == JobStatus.InProgress
+                            && x.OnNodeDeath == NodeDeathPolicy.MarkFailed
+                            && x.LockedUntil <= DateTime.UtcNow
+                        )
+                        .ExecuteUpdateAsync(
+                            setter =>
+                                setter
+                                    .SetProperty(x => x.Status, JobStatus.Failed)
+                                    .SetProperty(x => x.LockedUntil, _ => null)
+                                    .SetProperty(x => x.ExceptionMessage, "Node is not alive!")
+                                    .SetProperty(x => x.ExecutedAt, _ => DateTime.UtcNow)
+                                    .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
+                            CancellationToken.None
+                        )
+                        .ConfigureAwait(false);
+
+                    var skipped = await dbContext
+                        .Set<CronJobOccurrenceEntity<TCronJob>>()
+                        .WhereOwnedBy(instanceIdentifier)
+                        .Where(x =>
+                            x.Status == JobStatus.InProgress
+                            && x.OnNodeDeath == NodeDeathPolicy.Skip
+                            && x.LockedUntil <= DateTime.UtcNow
+                        )
+                        .ExecuteUpdateAsync(
+                            setter =>
+                                setter
+                                    .SetProperty(x => x.Status, JobStatus.Skipped)
+                                    .SetProperty(x => x.LockedUntil, _ => null)
+                                    .SetProperty(x => x.SkippedReason, "Node is not alive!")
+                                    // KTD1b: the occurrence never executed, but re-running it is the reclaim/recovery
+                                    // path's job. Materializing a fresh row at the same instant would race that path,
+                                    // so the dead owner's row still accounts for its instant.
+                                    .SetProperty(x => x.Disposition, CronOccurrenceDisposition.Accounted)
+                                    .SetProperty(x => x.ExecutedAt, _ => DateTime.UtcNow)
+                                    .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
+                            CancellationToken.None
+                        )
+                        .ConfigureAwait(false);
+
+                    await attempt.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+
+                    return released + failed + skipped;
+                },
                 CancellationToken.None
             )
             .ConfigureAwait(false);
-
-        var releasedInterrupted = await dbContext
-            .Set<CronJobOccurrenceEntity<TCronJob>>()
-            .WhereOwnedBy(instanceIdentifier)
-            .Where(x =>
-                x.Status == JobStatus.InProgress
-                && x.OnNodeDeath == NodeDeathPolicy.Retry
-                && x.LockedUntil <= DateTime.UtcNow
-            )
-            .ExecuteUpdateAsync(
-                setter =>
-                    setter
-                        .SetProperty(x => x.OwnerId, _ => null)
-                        .SetProperty(x => x.LockedUntil, _ => null)
-                        .SetProperty(x => x.Status, JobStatus.Idle)
-                        .SetProperty(x => x.RetryCount, x => x.RetryCount + 1)
-                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
-                CancellationToken.None
-            )
-            .ConfigureAwait(false);
-
-        var released = releasedNotStarted + releasedInterrupted;
-
-        var failed = await dbContext
-            .Set<CronJobOccurrenceEntity<TCronJob>>()
-            .WhereOwnedBy(instanceIdentifier)
-            .Where(x =>
-                x.Status == JobStatus.InProgress
-                && x.OnNodeDeath == NodeDeathPolicy.MarkFailed
-                && x.LockedUntil <= DateTime.UtcNow
-            )
-            .ExecuteUpdateAsync(
-                setter =>
-                    setter
-                        .SetProperty(x => x.Status, JobStatus.Failed)
-                        .SetProperty(x => x.LockedUntil, _ => null)
-                        .SetProperty(x => x.ExceptionMessage, "Node is not alive!")
-                        .SetProperty(x => x.ExecutedAt, _ => DateTime.UtcNow)
-                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
-                CancellationToken.None
-            )
-            .ConfigureAwait(false);
-
-        var skipped = await dbContext
-            .Set<CronJobOccurrenceEntity<TCronJob>>()
-            .WhereOwnedBy(instanceIdentifier)
-            .Where(x =>
-                x.Status == JobStatus.InProgress
-                && x.OnNodeDeath == NodeDeathPolicy.Skip
-                && x.LockedUntil <= DateTime.UtcNow
-            )
-            .ExecuteUpdateAsync(
-                setter =>
-                    setter
-                        .SetProperty(x => x.Status, JobStatus.Skipped)
-                        .SetProperty(x => x.LockedUntil, _ => null)
-                        .SetProperty(x => x.SkippedReason, "Node is not alive!")
-                        // KTD1b: the occurrence never executed, but re-running it is the reclaim/recovery path's
-                        // job. Materializing a fresh row at the same instant would race that path, so the dead
-                        // owner's row still accounts for its instant.
-                        .SetProperty(x => x.Disposition, CronOccurrenceDisposition.Accounted)
-                        .SetProperty(x => x.ExecutedAt, _ => DateTime.UtcNow)
-                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
-                CancellationToken.None
-            )
-            .ConfigureAwait(false);
-
-        await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
-
-        return released + failed + skipped;
     }
 
     public async Task<int> RenewCronJobOccurrenceLeaseAsync(
@@ -2619,77 +2715,82 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
     public async Task<int> ReclaimStalledCronJobOccurrencesAsync(CancellationToken cancellationToken = default)
     {
         // #316 — cron mirror of ReclaimStalledTimeJobsAsync. Reclaim lapsed-lease InProgress occurrences on any node.
-        await using var dbContext = await DbContextFactory
-            .CreateDbContextAsync(cancellationToken)
-            .ConfigureAwait(false);
 
         // #316 clock-skew: lease-expiry is decided by the DB clock, never the reclaiming node's TimeProvider.
 
-        await using var transaction = await dbContext
-            .Database.BeginTransactionAsync(cancellationToken)
+        return await JobsStoreTransaction
+            .ExecuteAsync<TDbContext, int>(
+                DbContextFactory,
+                async (attempt, _) =>
+                {
+                    var dbContext = attempt.DbContext;
+
+                    var set = dbContext.Set<CronJobOccurrenceEntity<TCronJob>>();
+
+                    // Reclaim writes under CancellationToken.None (see ReclaimStalledTimeJobsAsync). The Retry arm
+                    // increments RetryCount — a lapsed-lease InProgress occurrence is a started attempt that was lost,
+                    // and it consumes one retry-budget unit (see ReclaimStalledTimeJobsAsync for the crash-loop
+                    // rationale).
+                    var released = await set.Where(x =>
+                            x.Status == JobStatus.InProgress
+                            && x.LockedUntil <= DateTime.UtcNow
+                            && x.OnNodeDeath == NodeDeathPolicy.Retry
+                        )
+                        .ExecuteUpdateAsync(
+                            setter =>
+                                setter
+                                    .SetProperty(x => x.OwnerId, _ => null)
+                                    .SetProperty(x => x.LockedUntil, _ => null)
+                                    .SetProperty(x => x.Status, JobStatus.Idle)
+                                    .SetProperty(x => x.RetryCount, x => x.RetryCount + 1)
+                                    .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
+                            CancellationToken.None
+                        )
+                        .ConfigureAwait(false);
+
+                    var failed = await set.Where(x =>
+                            x.Status == JobStatus.InProgress
+                            && x.LockedUntil <= DateTime.UtcNow
+                            && x.OnNodeDeath == NodeDeathPolicy.MarkFailed
+                        )
+                        .ExecuteUpdateAsync(
+                            setter =>
+                                setter
+                                    .SetProperty(x => x.Status, JobStatus.Failed)
+                                    .SetProperty(x => x.LockedUntil, _ => null)
+                                    .SetProperty(x => x.ExceptionMessage, "Lease lapsed while running!")
+                                    .SetProperty(x => x.ExecutedAt, _ => DateTime.UtcNow)
+                                    .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
+                            CancellationToken.None
+                        )
+                        .ConfigureAwait(false);
+
+                    var skipped = await set.Where(x =>
+                            x.Status == JobStatus.InProgress
+                            && x.LockedUntil <= DateTime.UtcNow
+                            && x.OnNodeDeath == NodeDeathPolicy.Skip
+                        )
+                        .ExecuteUpdateAsync(
+                            setter =>
+                                setter
+                                    .SetProperty(x => x.Status, JobStatus.Skipped)
+                                    .SetProperty(x => x.LockedUntil, _ => null)
+                                    .SetProperty(x => x.SkippedReason, "Lease lapsed while running!")
+                                    // An ordinary retirement: the instant is spent and nothing owes it a replacement.
+                                    .SetProperty(x => x.Disposition, CronOccurrenceDisposition.Accounted)
+                                    .SetProperty(x => x.ExecutedAt, _ => DateTime.UtcNow)
+                                    .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
+                            CancellationToken.None
+                        )
+                        .ConfigureAwait(false);
+
+                    await attempt.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+
+                    return released + failed + skipped;
+                },
+                cancellationToken
+            )
             .ConfigureAwait(false);
-
-        var set = dbContext.Set<CronJobOccurrenceEntity<TCronJob>>();
-
-        // Reclaim writes under CancellationToken.None (see ReclaimStalledTimeJobsAsync). The Retry arm
-        // increments RetryCount — a lapsed-lease InProgress occurrence is a started attempt that was lost, and it
-        // consumes one retry-budget unit (see ReclaimStalledTimeJobsAsync for the crash-loop rationale).
-        var released = await set.Where(x =>
-                x.Status == JobStatus.InProgress
-                && x.LockedUntil <= DateTime.UtcNow
-                && x.OnNodeDeath == NodeDeathPolicy.Retry
-            )
-            .ExecuteUpdateAsync(
-                setter =>
-                    setter
-                        .SetProperty(x => x.OwnerId, _ => null)
-                        .SetProperty(x => x.LockedUntil, _ => null)
-                        .SetProperty(x => x.Status, JobStatus.Idle)
-                        .SetProperty(x => x.RetryCount, x => x.RetryCount + 1)
-                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
-                CancellationToken.None
-            )
-            .ConfigureAwait(false);
-
-        var failed = await set.Where(x =>
-                x.Status == JobStatus.InProgress
-                && x.LockedUntil <= DateTime.UtcNow
-                && x.OnNodeDeath == NodeDeathPolicy.MarkFailed
-            )
-            .ExecuteUpdateAsync(
-                setter =>
-                    setter
-                        .SetProperty(x => x.Status, JobStatus.Failed)
-                        .SetProperty(x => x.LockedUntil, _ => null)
-                        .SetProperty(x => x.ExceptionMessage, "Lease lapsed while running!")
-                        .SetProperty(x => x.ExecutedAt, _ => DateTime.UtcNow)
-                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
-                CancellationToken.None
-            )
-            .ConfigureAwait(false);
-
-        var skipped = await set.Where(x =>
-                x.Status == JobStatus.InProgress
-                && x.LockedUntil <= DateTime.UtcNow
-                && x.OnNodeDeath == NodeDeathPolicy.Skip
-            )
-            .ExecuteUpdateAsync(
-                setter =>
-                    setter
-                        .SetProperty(x => x.Status, JobStatus.Skipped)
-                        .SetProperty(x => x.LockedUntil, _ => null)
-                        .SetProperty(x => x.SkippedReason, "Lease lapsed while running!")
-                        // An ordinary retirement: the instant is spent and nothing owes it a replacement.
-                        .SetProperty(x => x.Disposition, CronOccurrenceDisposition.Accounted)
-                        .SetProperty(x => x.ExecutedAt, _ => DateTime.UtcNow)
-                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
-                CancellationToken.None
-            )
-            .ConfigureAwait(false);
-
-        await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
-
-        return released + failed + skipped;
     }
 
     public async Task ReleaseAcquiredCronJobOccurrencesAsync(
@@ -2819,61 +2920,44 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         var startsExecution =
             functionContext.PropertiesToUpdate.Contains(nameof(JobExecutionState.Status))
             && functionContext.Status == JobStatus.InProgress;
-        await using var transaction = startsExecution
-            ? await dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false)
-            : null;
 
-        if (startsExecution)
-        {
-            var definitionIds = await dbContext
+        // Starting execution fences every definition against a concurrent pause, so the fence and the transition
+        // share one transaction; any other unified update is a single autocommit statement.
+        var affected = startsExecution
+            ? await JobsStoreTransaction
+                .ExecuteAsync<TDbContext, int>(
+                    DbContextFactory,
+                    async (attempt, _) =>
+                    {
+                        var transitioned = await _StartCronOccurrencesExecutionAsync(
+                                attempt.DbContext,
+                                cronOccurrenceIds,
+                                functionContext,
+                                owner,
+                                cancellationToken
+                            )
+                            .ConfigureAwait(false);
+
+                        if (transitioned != 0)
+                        {
+                            await attempt.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+                        }
+
+                        return transitioned;
+                    },
+                    cancellationToken
+                )
+                .ConfigureAwait(false)
+            : await dbContext
                 .Set<CronJobOccurrenceEntity<TCronJob>>()
-                .AsNoTracking()
                 .Where(x => ((IEnumerable<Guid>)cronOccurrenceIds).Contains(x.Id))
-                .Select(x => x.CronJobId)
-                .Distinct()
-                .Order()
-                .ToArrayAsync(cancellationToken)
+                .WhereOwnedBy(owner)
+                .ExecuteUpdateAsync(setter => setter.UpdateCronJobOccurrence(functionContext), cancellationToken)
                 .ConfigureAwait(false);
-
-            foreach (var definitionId in definitionIds)
-            {
-                var active = await dbContext
-                    .Set<TCronJob>()
-                    .Where(x => x.Id == definitionId && !x.IsPaused)
-                    .ExecuteUpdateAsync(
-                        setter => setter.SetProperty(x => x.ScheduleRevision, x => x.ScheduleRevision),
-                        cancellationToken
-                    )
-                    .ConfigureAwait(false);
-                if (active == 0)
-                {
-                    return [];
-                }
-            }
-        }
-
-        var rowsToUpdate = dbContext
-            .Set<CronJobOccurrenceEntity<TCronJob>>()
-            .Where(x => ((IEnumerable<Guid>)cronOccurrenceIds).Contains(x.Id))
-            .WhereOwnedBy(owner);
-
-        if (startsExecution)
-        {
-            rowsToUpdate = rowsToUpdate.Where(x => x.Status == JobStatus.Queued && !x.CronJob.IsPaused);
-        }
-
-        var affected = await rowsToUpdate
-            .ExecuteUpdateAsync(setter => setter.UpdateCronJobOccurrence(functionContext), cancellationToken)
-            .ConfigureAwait(false);
 
         if (affected == 0)
         {
             return [];
-        }
-
-        if (transaction is not null)
-        {
-            await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
         }
 
         var updated = dbContext
@@ -2888,6 +2972,52 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         }
 
         return await updated.Select(x => x.Id).ToArrayAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    // The Queued→InProgress transition of a unified update: locks each definition that is not paused, then moves only
+    // the still-Queued owned occurrences of unpaused definitions. Returns 0 when a definition is paused or no row
+    // moved, in which case the caller rolls back.
+    private static async Task<int> _StartCronOccurrencesExecutionAsync(
+        TDbContext dbContext,
+        Guid[] cronOccurrenceIds,
+        JobExecutionState functionContext,
+        string owner,
+        CancellationToken cancellationToken
+    )
+    {
+        var definitionIds = await dbContext
+            .Set<CronJobOccurrenceEntity<TCronJob>>()
+            .AsNoTracking()
+            .Where(x => ((IEnumerable<Guid>)cronOccurrenceIds).Contains(x.Id))
+            .Select(x => x.CronJobId)
+            .Distinct()
+            .Order()
+            .ToArrayAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        foreach (var definitionId in definitionIds)
+        {
+            var active = await dbContext
+                .Set<TCronJob>()
+                .Where(x => x.Id == definitionId && !x.IsPaused)
+                .ExecuteUpdateAsync(
+                    setter => setter.SetProperty(x => x.ScheduleRevision, x => x.ScheduleRevision),
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+            if (active == 0)
+            {
+                return 0;
+            }
+        }
+
+        return await dbContext
+            .Set<CronJobOccurrenceEntity<TCronJob>>()
+            .Where(x => ((IEnumerable<Guid>)cronOccurrenceIds).Contains(x.Id))
+            .WhereOwnedBy(owner)
+            .Where(x => x.Status == JobStatus.Queued && !x.CronJob.IsPaused)
+            .ExecuteUpdateAsync(setter => setter.UpdateCronJobOccurrence(functionContext), cancellationToken)
+            .ConfigureAwait(false);
     }
 
     #endregion

@@ -628,7 +628,7 @@ public sealed class AuditedBaseStampingTests : TestBase
             services.AddSingleton(currentUser);
             // The aggregate-root base raises lifecycle domain events on every save, which the pipeline refuses to drop.
             services.AddHeadlessDbContextServices().AddDomainEvents();
-            services.AddDbContext<TContext>(options => options.UseSqlite(_connection).AddHeadlessExtension());
+            services.AddDbContext<TContext>(options => options.UseSqlite(_connection));
             _provider = services.BuildServiceProvider();
         }
 

@@ -21,6 +21,10 @@ public class CronJobConfigurations<TCronJob>(string schema, StorageNamingStyle s
 {
     public void Configure(EntityTypeBuilder<TCronJob> builder)
     {
+        // Scheduler bookkeeping, not business data: an application context that audits by default would otherwise
+        // write audit rows for every claim, heartbeat, and sweep.
+        builder.ExcludeFromAudit();
+
         // SQL Server materializes datetime2 with DateTimeKind.Unspecified, so the watermark and projection need the
         // same normalization the occurrence timestamps use — their UTC contract must not depend on the host's Kind
         // defaults.

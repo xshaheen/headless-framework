@@ -4,7 +4,11 @@ using Headless.Checks;
 using Headless.Coordination;
 using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.DependencyInjection;
+using Npgsql;
+using Npgsql.EntityFrameworkCore.PostgreSQL.Storage.Internal;
 
 namespace Headless.Jobs;
 
@@ -63,9 +67,19 @@ public static class SetupPostgreSqlJobsEntityFramework
                                     );
                                 }
 
-                                // A context without a connection string leaves it empty, which the coordination
-                                // options validator then reports at startup.
-                                options.ConnectionString = context.Database.GetConnectionString() ?? string.Empty;
+                                // A data source EF holds (one passed to UseNpgsql, or one EF builds for a plugin
+                                // such as NetTopologySuite or for ConfigureDataSource) drops the password from the
+                                // context's connection string, so coordination connects through that data source. A
+                                // context without either leaves the string empty, which the coordination options
+                                // validator then reports at startup.
+                                if (_GetDataSource(context) is { } dataSource)
+                                {
+                                    options.DataSource = dataSource;
+                                }
+                                else
+                                {
+                                    options.ConnectionString = context.Database.GetConnectionString() ?? string.Empty;
+                                }
                             }
                         );
                     });
@@ -73,6 +87,16 @@ public static class SetupPostgreSqlJobsEntityFramework
             });
         }
     }
+
+    // The data source belongs to EF (or to the application that passed it in) and outlives the host's coordination
+    // store, which never disposes a data source it was handed.
+#pragma warning disable EF1001 // EF Core exposes no public accessor for the data source a context connects through; INpgsqlRelationalConnection is the provider's own handle on it.
+    private static NpgsqlDataSource? _GetDataSource(DbContext context) =>
+        context.GetService<IRelationalConnection>()
+            is INpgsqlRelationalConnection { DataSource: NpgsqlDataSource dataSource }
+            ? dataSource
+            : null;
+#pragma warning restore EF1001
 
     extension<TTimeJob, TCronJob>(JobsEfCoreOptionBuilder<TTimeJob, TCronJob> builder)
         where TTimeJob : TimeJobEntity<TTimeJob>, new()

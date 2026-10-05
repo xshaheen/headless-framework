@@ -5,7 +5,12 @@ namespace Tests;
 /// <summary>Runs the misfire-recovery conformance suite against PostgreSQL.</summary>
 [Collection<PostgreSqlJobsCoordinationFixture>]
 public sealed class PostgreSqlRecoveryTests(PostgreSqlJobsCoordinationFixture fixture)
-    : JobsRecoveryConformanceTests<PostgreSqlJobsCoordinationFixture>(fixture)
+    : PostgreSqlRecoveryTestsBase<PostgreSqlJobsCoordinationFixture>(fixture);
+
+/// <summary>The PostgreSql overrides of the shared suite, run on both the default and the retrying-strategy fixture.</summary>
+public abstract class PostgreSqlRecoveryTestsBase<TFixture>(TFixture fixture)
+    : JobsRecoveryConformanceTests<TFixture>(fixture)
+    where TFixture : PostgreSqlJobsCoordinationFixture
 {
     [Fact]
     public override Task coalesce_materializes_one_run_stamped_with_the_earliest_missed_instant()

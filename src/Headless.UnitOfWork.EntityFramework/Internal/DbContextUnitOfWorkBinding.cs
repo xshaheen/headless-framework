@@ -4,6 +4,7 @@ using System.Data.Common;
 using Headless.UnitOfWork;
 using Headless.UnitOfWork.Internal;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage;
 
 namespace Headless.UnitOfWork;
@@ -46,6 +47,29 @@ internal static class DbContextUnitOfWorkBinding
     {
         _Binding.Bind(db, unit);
         DbConnectionUnitOfWorkBinding.Bind(db.Database.GetDbConnection(), unit);
+    }
+
+    /// <summary>
+    /// Drops the unit bound to <paramref name="db" /> when the context is disposed, and the same unit's binding of
+    /// the connection beneath it when EF owns that connection. A disposed context cannot host the unit's work, and a
+    /// pooled instance is leased again: a handle its caller never completed would otherwise make every later lease
+    /// refuse to begin or save with "already carries an active unit of work". The unit itself is left alone, so
+    /// whoever still holds the handle can finish it. A connection the application supplied may still carry the unit
+    /// for raw-ADO work after the context is gone, so its binding stays.
+    /// </summary>
+    public static void Unbind(DbContext db)
+    {
+        if (_Binding.Unbind(db) is not { } unit)
+        {
+            return;
+        }
+
+        var configuredConnection = RelationalOptionsExtension.Extract(db.GetService<IDbContextOptions>()).Connection;
+
+        if (configuredConnection is null)
+        {
+            DbConnectionUnitOfWorkBinding.Unbind(db.Database.GetDbConnection(), unit);
+        }
     }
 
     /// <summary>

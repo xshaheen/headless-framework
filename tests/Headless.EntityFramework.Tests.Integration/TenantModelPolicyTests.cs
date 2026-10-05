@@ -179,7 +179,7 @@ public sealed class TenantModelPolicyTests : TestBase
         services.AddSingleton<ICurrentTenant>(provider => provider.GetRequiredService<TestCurrentTenant>());
         services.AddHeadlessDbContextServices();
         services.AddDbContext<PolicyContext<TPolicy>>(options =>
-            options.UseNpgsql("Host=localhost;Database=tenant-model-only").AddHeadlessExtension()
+            options.UseNpgsql("Host=localhost;Database=tenant-model-only")
         );
         return services.BuildServiceProvider();
     }

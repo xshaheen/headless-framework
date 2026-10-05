@@ -304,7 +304,12 @@ internal sealed class PostgreSqlMappedJobsDbContext(DbContextOptions<PostgreSqlM
 /// <summary>Runs the claim retry conformance suite on PostgreSQL, with the driver's deadlock-detected exception.</summary>
 [Collection<PostgreSqlJobsCoordinationFixture>]
 public sealed class PostgreSqlClaimRetryConformanceTests(PostgreSqlJobsCoordinationFixture fixture)
-    : JobsClaimRetryConformanceTests<PostgreSqlJobsCoordinationFixture>(fixture)
+    : PostgreSqlClaimRetryConformanceTestsBase<PostgreSqlJobsCoordinationFixture>(fixture);
+
+/// <summary>The PostgreSql overrides of the shared suite, run on both the default and the retrying-strategy fixture.</summary>
+public abstract class PostgreSqlClaimRetryConformanceTestsBase<TFixture>(TFixture fixture)
+    : JobsClaimRetryConformanceTests<TFixture>(fixture)
+    where TFixture : PostgreSqlJobsCoordinationFixture
 {
     [Fact]
     public override Task transient_fault_before_commit_is_retried_and_commits_correct_durable_state() =>

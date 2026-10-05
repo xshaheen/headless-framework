@@ -1,13 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Linq.Expressions;
 using Headless.EntityFramework;
 using Headless.Hosting;
 using Headless.MultiTenancy;
 using Headless.Testing.Tests;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.EntityFrameworkCore.Query;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
@@ -16,30 +14,6 @@ namespace Tests;
 
 public sealed class EntityFrameworkInfrastructureBehaviorTests : TestBase
 {
-    [Fact]
-    public void should_isolate_compiled_query_cache_keys_by_tenant_for_headless_contexts()
-    {
-        var expression = Expression.Constant(1);
-        var otherExpression = Expression.Constant(2);
-        var options = new DbContextOptionsBuilder<StubHeadlessDbContext>()
-            .UseSqlite("Data Source=:memory:")
-            .AddHeadlessExtension()
-            .Options;
-        using var context = new StubHeadlessDbContext(options, "tenant-a");
-        var generator = context.GetService<ICompiledQueryCacheKeyGenerator>();
-
-        var tenantA = generator.GenerateCacheKey(expression, async: true);
-        var tenantARepeat = generator.GenerateCacheKey(expression, async: true);
-        var tenantAOtherQuery = generator.GenerateCacheKey(otherExpression, async: true);
-        context.TenantId = "tenant-b";
-        var tenantB = generator.GenerateCacheKey(expression, async: true);
-
-        tenantA.Should().Be(tenantARepeat);
-        tenantA.Should().NotBe(tenantAOtherQuery);
-        tenantA.Should().NotBe(tenantB);
-        tenantA.GetHashCode().Should().Be(tenantARepeat.GetHashCode());
-    }
-
     [Fact]
     public async Task should_report_invalid_configuration_when_recorded_tenant_guard_resolves_disabled()
     {
@@ -194,26 +168,5 @@ public sealed class EntityFrameworkInfrastructureBehaviorTests : TestBase
         provider.GetServices<DbMigrationSeeder<UnregisteredDbContext>>().Should().ContainSingle();
     }
 
-    private sealed class StubHeadlessDbContext(DbContextOptions options, string? tenantId)
-        : DbContext(options),
-            IHeadlessDbContext
-    {
-        public string? TenantId { get; set; } = tenantId;
-
-        public string? DefaultSchema => null;
-
-        public IServiceProvider ServiceProvider => EmptyServiceProvider.Instance;
-    }
-
     private sealed class UnregisteredDbContext(DbContextOptions<UnregisteredDbContext> options) : DbContext(options);
-
-    private sealed class EmptyServiceProvider : IServiceProvider
-    {
-        public static EmptyServiceProvider Instance { get; } = new();
-
-        public object? GetService(Type serviceType)
-        {
-            return null;
-        }
-    }
 }

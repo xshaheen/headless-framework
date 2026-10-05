@@ -14,8 +14,6 @@ public sealed class HeadlessDbContextTestFixture
 
     protected override void ConfigureDbContext(IServiceCollection services)
     {
-        services.AddDbContext<TestHeadlessDbContext>(options =>
-            options.UseNpgsql(SqlConnectionString).AddHeadlessExtension()
-        );
+        services.AddDbContext<TestHeadlessDbContext>(options => options.UseNpgsql(SqlConnectionString));
     }
 }

@@ -20,6 +20,9 @@ internal static class DbConnectionUnitOfWorkBinding
 
     public static bool TryGet(DbConnection connection, out IUnitOfWork unit) => _Binding.TryGet(connection, out unit);
 
+    /// <summary>Removes the binding of <paramref name="connection" /> when it is still bound to <paramref name="unit" />.</summary>
+    public static void Unbind(DbConnection connection, IUnitOfWork unit) => _Binding.Unbind(connection, unit);
+
     /// <summary>The lookup for a caller about to begin on <paramref name="connection" />: a stale unit is abandoned before this returns.</summary>
     public static ValueTask<IUnitOfWork?> TryGetAsync(DbConnection connection) => _Binding.TryGetAsync(connection);
 

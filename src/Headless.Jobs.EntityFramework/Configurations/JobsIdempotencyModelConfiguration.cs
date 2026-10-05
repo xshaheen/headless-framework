@@ -26,6 +26,8 @@ internal static class JobsIdempotencyModelConfiguration
 
         builder.Entity<JobIdempotencyReservationEntity>(entity =>
         {
+            // Scheduler bookkeeping, like the job tables: never captured by an application context's audit log.
+            entity.ExcludeFromAudit();
             entity.ToTable(table, schema);
             entity
                 .HasKey(row => new

@@ -15,6 +15,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Npgsql;
+using Npgsql.EntityFrameworkCore.PostgreSQL.Storage.Internal;
 
 namespace Headless.Messaging;
 
@@ -308,25 +309,42 @@ public static class SetupPostgreSqlEntityFrameworkMessaging
 
             using var scope = serviceScopeFactory.CreateScope();
             using var dbContext = scope.ServiceProvider.GetRequiredService<TContext>();
-            var providerOptions = dbContext.GetService<IDbContextOptions>();
-            var extension = providerOptions.Extensions.First(x => x.Info.IsDatabaseProvider);
-
-#pragma warning disable REFL003, REFL017 // Provider options expose connection state through provider-specific members.
-            options.DataSource =
-                extension.GetType().GetProperty(nameof(options.DataSource))?.GetValue(extension) as NpgsqlDataSource;
-            if (options.DataSource is null)
+            if (!dbContext.Database.IsNpgsql())
             {
-                options.ConnectionString =
-                    extension.GetType().GetProperty(nameof(options.ConnectionString))?.GetValue(extension) as string;
+                throw new InvalidOperationException(
+                    $"Messaging UseEntityFramework<{typeof(TContext).Name}> requires a PostgreSQL DbContext."
+                );
             }
-#pragma warning restore REFL003, REFL017
+
+            // A data source EF holds (one passed to UseNpgsql, one registered in DI, or one EF builds for
+            // ConfigureDataSource or a plugin such as NetTopologySuite) carries configuration the connection string
+            // does not: its password provider, its certificates, and the password itself, which the context's
+            // connection string omits. Messaging connects through it whenever there is one.
+            if (_GetDataSource(dbContext) is { } dataSource)
+            {
+                options.DataSource = dataSource;
+            }
+            else
+            {
+                options.ConnectionString = dbContext.Database.GetConnectionString();
+            }
 
             if (options.DataSource is null && string.IsNullOrWhiteSpace(options.ConnectionString))
             {
                 throw new InvalidOperationException(
-                    $"Failed to resolve a DataSource or ConnectionString from '{extension.GetType().FullName}' for DbContext '{typeof(TContext).FullName}'."
+                    $"Failed to resolve a data source or connection string from DbContext '{typeof(TContext).FullName}'."
                 );
             }
         }
+
+        // The data source belongs to EF (or to the application that registered it) and outlives the messaging
+        // storage, which never disposes a data source it was handed.
+#pragma warning disable EF1001 // EF Core exposes no public accessor for the data source a context connects through; INpgsqlRelationalConnection is the provider's own handle on it.
+        private static NpgsqlDataSource? _GetDataSource(DbContext context) =>
+            context.GetService<IRelationalConnection>()
+                is INpgsqlRelationalConnection { DataSource: NpgsqlDataSource dataSource }
+                ? dataSource
+                : null;
+#pragma warning restore EF1001
     }
 }

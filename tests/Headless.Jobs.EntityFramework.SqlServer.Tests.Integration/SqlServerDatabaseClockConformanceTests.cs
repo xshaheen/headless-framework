@@ -5,7 +5,12 @@ namespace Tests;
 /// <summary>Runs the database-clock ownership conformance suite against SQL Server (expects <c>GETUTCDATE()</c>).</summary>
 [Collection<SqlServerJobsCoordinationFixture>]
 public sealed class SqlServerDatabaseClockConformanceTests(SqlServerJobsCoordinationFixture fixture)
-    : JobsDatabaseClockConformanceTests<SqlServerJobsCoordinationFixture>(fixture)
+    : SqlServerDatabaseClockConformanceTestsBase<SqlServerJobsCoordinationFixture>(fixture);
+
+/// <summary>The SqlServer overrides of the shared suite, run on both the default and the retrying-strategy fixture.</summary>
+public abstract class SqlServerDatabaseClockConformanceTestsBase<TFixture>(TFixture fixture)
+    : JobsDatabaseClockConformanceTests<TFixture>(fixture)
+    where TFixture : SqlServerJobsCoordinationFixture
 {
     [Fact]
     public override Task claim_and_acquire_lease_sql_is_owned_by_the_database_clock()

@@ -3,6 +3,7 @@
 using Headless.Checks;
 using Headless.Coordination;
 using Headless.UnitOfWork;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -64,9 +65,16 @@ public static class SetupSqlServerJobsEntityFramework
                                     );
                                 }
 
-                                // A context without a connection string leaves it empty, which the coordination
-                                // options validator then reports at startup.
-                                options.ConnectionString = context.Database.GetConnectionString() ?? string.Empty;
+                                // The connection can hold credentials a connection string cannot carry; the copy
+                                // refuses one that authenticates with them rather than failing at the first login.
+                                // GetConnectionString() is the string the context was configured from, which keeps
+                                // the password a pooled, already-opened connection lost. A context without a
+                                // connection string leaves it empty, which the coordination options validator then
+                                // reports at startup.
+                                options.ConnectionString = context.Database.GetDbConnection()
+                                    is SqlConnection connection
+                                    ? connection.GetReusableConnectionString(context.Database.GetConnectionString())
+                                    : string.Empty;
                             }
                         );
                     });

@@ -5,7 +5,12 @@ namespace Tests;
 /// <summary>Runs the database-clock ownership conformance suite against Postgres (expects <c>now()</c>).</summary>
 [Collection<PostgreSqlJobsCoordinationFixture>]
 public sealed class PostgreSqlDatabaseClockConformanceTests(PostgreSqlJobsCoordinationFixture fixture)
-    : JobsDatabaseClockConformanceTests<PostgreSqlJobsCoordinationFixture>(fixture)
+    : PostgreSqlDatabaseClockConformanceTestsBase<PostgreSqlJobsCoordinationFixture>(fixture);
+
+/// <summary>The PostgreSql overrides of the shared suite, run on both the default and the retrying-strategy fixture.</summary>
+public abstract class PostgreSqlDatabaseClockConformanceTestsBase<TFixture>(TFixture fixture)
+    : JobsDatabaseClockConformanceTests<TFixture>(fixture)
+    where TFixture : PostgreSqlJobsCoordinationFixture
 {
     [Fact]
     public override Task claim_and_acquire_lease_sql_is_owned_by_the_database_clock()

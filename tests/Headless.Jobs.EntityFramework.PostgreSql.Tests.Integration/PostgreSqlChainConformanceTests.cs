@@ -5,7 +5,12 @@ namespace Tests;
 /// <summary>Runs the typed-chain runtime conformance suite against Postgres.</summary>
 [Collection<PostgreSqlJobsCoordinationFixture>]
 public sealed class PostgreSqlChainConformanceTests(PostgreSqlJobsCoordinationFixture fixture)
-    : JobsChainConformanceTests<PostgreSqlJobsCoordinationFixture>(fixture)
+    : PostgreSqlChainConformanceTestsBase<PostgreSqlJobsCoordinationFixture>(fixture);
+
+/// <summary>The PostgreSql overrides of the shared suite, run on both the default and the retrying-strategy fixture.</summary>
+public abstract class PostgreSqlChainConformanceTestsBase<TFixture>(TFixture fixture)
+    : JobsChainConformanceTests<TFixture>(fixture)
+    where TFixture : PostgreSqlJobsCoordinationFixture
 {
     [Fact]
     public override Task enqueue_persists_conditional_tree_edges()

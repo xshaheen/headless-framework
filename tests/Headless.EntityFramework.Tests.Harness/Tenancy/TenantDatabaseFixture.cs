@@ -106,7 +106,6 @@ public abstract class TenantDatabaseFixture(TenantDatabaseProvider provider, Ten
             options.UseSqlServer(_connectionString);
         }
 
-        options.AddHeadlessExtension();
         options.ReplaceService<IModelCacheKeyFactory, PlacementModelCacheKeyFactory>();
     }
 
