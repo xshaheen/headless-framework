@@ -113,6 +113,10 @@
     <PackageVersion Include="Microsoft.Data.SqlClient" Version="7.0.2" />
     <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.10.0" />
     <PackageVersion Include="Microsoft.IdentityModel.JsonWebTokens" Version="8.22.0" />
+    <!-- Transitive-only pins: Microsoft.AspNetCore.Authentication.JwtBearer and Microsoft.Identity.Client bring these at older versions than JsonWebTokens, and IdentityModel assemblies from different versions fail at run time (MissingMethodException, IDX errors). Keep the whole family on one version. -->
+    <PackageVersion Include="Microsoft.IdentityModel.Abstractions" Version="8.22.0" />
+    <PackageVersion Include="Microsoft.IdentityModel.Protocols" Version="8.22.0" />
+    <PackageVersion Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" Version="8.22.0" />
     <!-- Transitive-only pin: never referenced directly; sets the version under Microsoft.AspNetCore.OpenApi and Swashbuckle.AspNetCore. -->
     <PackageVersion Include="Microsoft.OpenApi" Version="2.12.2" />
     <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="10.0.401" />
@@ -185,6 +189,8 @@
     <PackageVersion Include="StackExchange.Redis" Version="3.2.0" />
     <PackageVersion Include="Swashbuckle.AspNetCore" Version="10.2.3" />
     <PackageVersion Include="System.Buffers" Version="4.6.1" />
+    <!-- Transitive-only pin: keeps the IdentityModel family on one version; see Microsoft.IdentityModel.Protocols above. -->
+    <PackageVersion Include="System.IdentityModel.Tokens.Jwt" Version="8.22.0" />
     <PackageVersion Include="System.Memory" Version="4.6.3" />
     <PackageVersion Include="System.Numerics.Vectors" Version="4.6.1" />
     <PackageVersion Include="System.Runtime.CompilerServices.Unsafe" Version="6.1.2" />
