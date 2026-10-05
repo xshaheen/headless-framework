@@ -35,6 +35,18 @@ export function formatDate(
     return `${dd}.${MM}.${yyyy} ${hh}:${mm}:${ss}`;
 }
 
+/**
+ * Parses a server instant. Some stores hand back a timestamp without an offset even though it is UTC, so a missing
+ * offset is read as UTC rather than local time.
+ */
+export function parseUtcInstant(value: string): Date {
+    let iso = value.trim().replace(' ', 'T');
+    if (!TIME_ZONE_SUFFIX.test(iso)) {
+        iso += 'Z';
+    }
+    return new Date(iso);
+}
+
 function toTimeZoneDate(utcIsoString: string, timeZone?: string): Date {
   const utcDate = new Date(utcIsoString);
 

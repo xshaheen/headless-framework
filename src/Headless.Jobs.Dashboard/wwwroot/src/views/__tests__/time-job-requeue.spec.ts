@@ -60,6 +60,7 @@ vi.mock('@/hub/jobNotificationHub', () => {
       onReceiveUpdateTimeJob: noop,
       onReceiveDeleteTimeJob: noop,
       onReceiveAddTimeJobsBatch: noop,
+      onReceiveJobProgress: noop,
       stopReceiver: noop,
     },
   }

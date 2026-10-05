@@ -13,6 +13,8 @@ import { canRequeue } from '@/utilities/requeue'
 import { useConnectionStore } from '@/stores/connectionStore'
 import { useTimeZoneStore } from '@/stores/timeZoneStore'
 import PaginationFooter from '@/components/PaginationFooter.vue'
+import JobProgressCell from '@/components/JobProgressCell.vue'
+import { applyJobProgress, type JobProgressNotification } from '@/utilities/job-progress'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
 import { LineChart, PieChart } from 'echarts/charts'
@@ -157,6 +159,7 @@ onUnmounted(() => {
   JobNotificationHub.stopReceiver(methodName.onReceiveUpdateTimeJob)
   JobNotificationHub.stopReceiver(methodName.onReceiveDeleteTimeJob)
   JobNotificationHub.stopReceiver(methodName.onReceiveAddTimeJobsBatch)
+  JobNotificationHub.stopReceiver(methodName.onReceiveJobProgress)
 })
 
 // Load page data with pagination
@@ -371,6 +374,12 @@ const addHubListeners = async () => {
     loadPageData()
     loadTimeSeriesChartData(-3, 3)
     loadPieChartData()
+  })
+
+  // Progress ticks arrive every couple of seconds per running job, so they patch the row in place; a reload here
+  // would refetch the page that often. Rows on other pages pick their progress up from the store when loaded.
+  JobNotificationHub.onReceiveJobProgress<JobProgressNotification>((notification) => {
+    applyJobProgress(getTimeJobsPaginated.response.value?.items, notification)
   })
 }
 
@@ -1263,6 +1272,12 @@ const canBeForceDeleted = ref<string[]>([])
                   <span class="font-weight-medium text-caption">{{ item.status }}</span>
                 </v-chip>
               </div>
+              <JobProgressCell
+                :status="item.status"
+                :percent="item.progressPercent"
+                :message="item.progressMessage"
+                :updated-at="item.progressUpdatedAt"
+              />
             </template>
             <template #[`item.RequestType`]="{ item }">
               <v-badge

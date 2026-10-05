@@ -9,6 +9,8 @@ import { methodName, type JobNotificationHubType } from '@/hub/jobNotificationHu
 import type { GetCronJobOccurrenceResponse } from '@/http/services/types/cronJobOccurrenceService.types'
 import { ConfirmDialogProps } from '@/components/common/confirm-dialog-props'
 import PaginationFooter from '@/components/PaginationFooter.vue'
+import JobProgressCell from '@/components/JobProgressCell.vue'
+import { applyJobProgress, type JobProgressNotification } from '@/utilities/job-progress'
 import { formatTime } from '@/utilities/dateTimeParser'
 import { canRequeue } from '@/utilities/requeue'
 import { format } from 'timeago.js'
@@ -126,6 +128,12 @@ const addHubListeners = async () => {
     // Reload current page when new item is added
     loadPageData();
   });
+
+  // Progress ticks patch the row in place; unlike an occurrence update, one for a row off this page is dropped rather
+  // than reloading, because it arrives every couple of seconds while the occurrence runs.
+  props.jobNotificationHub.onReceiveJobProgress((notification: JobProgressNotification) => {
+    applyJobProgress(getByCronJobIdPaginated.response.value?.items, notification);
+  });
 }
 
 onMounted(() => {
@@ -135,6 +143,7 @@ onMounted(() => {
 onUnmounted(() => {
   props.jobNotificationHub.stopReceiver(methodName.onReceiveUpdateCronJobOccurrence)
   props.jobNotificationHub.stopReceiver(methodName.onReceiveAddCronJobOccurrence)
+  props.jobNotificationHub.stopReceiver(methodName.onReceiveJobProgress)
 })
 
 watch(
@@ -348,6 +357,12 @@ const setRowProp = (propContext: { item: GetCronJobOccurrenceResponse }) => {
                   </v-tooltip>
                 </div>
               </div>
+              <JobProgressCell
+                :status="item.status"
+                :percent="item.progressPercent"
+                :message="item.progressMessage"
+                :updated-at="item.progressUpdatedAt"
+              />
             </template>
 
             <!-- Executed At Column -->
