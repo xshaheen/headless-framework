@@ -362,11 +362,9 @@ const addHubListeners = async () => {
     debouncedRefresh()
   })
 
+  // A batch delete sends one notification per row, so the reload is debounced like other row updates.
   JobNotificationHub.onReceiveDeleteTimeJob<string>(() => {
-    // Reload current page when item is deleted
-    loadPageData()
-    // Update charts
-    loadPieChartData()
+    debouncedRefresh()
   })
 
   // Batch insert notification: just refresh current view and charts once
@@ -908,7 +906,14 @@ const requeue = async (id: string) => {
 
 const onSubmitConfirmDialog = async () => {
   confirmDialog.close()
-  await deleteTimeJob.requestAsync(confirmDialog.propData.id)
+  try {
+    await deleteTimeJob.requestAsync(confirmDialog.propData.id)
+  } finally {
+    // Reload whatever the outcome, so the list shows what the server holds even when the hub's removal notification
+    // never arrives (a dropped connection, or a host whose hub refuses this client).
+    await loadPageData()
+    await loadPieChartData()
+  }
 }
 
 const canBeForceDeleted = ref<string[]>([])
