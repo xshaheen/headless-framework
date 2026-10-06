@@ -290,6 +290,15 @@ internal static class MappingExtensions
             setters.SetProperty(x => x.RetryCount, functionContext.RetryCount);
         }
 
+        // PROGRESS — the report the throttle had not written yet when the run ended, stamped with the database clock
+        if (propsToUpdate.Contains(nameof(JobExecutionState.Progress)) && functionContext.Progress is { } progress)
+        {
+            setters
+                .SetProperty(x => x.ProgressPercent, progress.Percent)
+                .SetProperty(x => x.ProgressMessage, progress.Message)
+                .SetProperty(x => x.ProgressUpdatedAt, _ => DateTime.UtcNow);
+        }
+
         // RELEASE LOCK
         if (propsToUpdate.Contains(nameof(JobExecutionState.ReleaseLock)))
         {
@@ -355,6 +364,15 @@ internal static class MappingExtensions
         if (propsToUpdate.Contains(nameof(JobExecutionState.RetryCount)))
         {
             setters.SetProperty(x => x.RetryCount, functionContext.RetryCount);
+        }
+
+        // PROGRESS — the report the throttle had not written yet when the run ended, stamped with the database clock
+        if (propsToUpdate.Contains(nameof(JobExecutionState.Progress)) && functionContext.Progress is { } progress)
+        {
+            setters
+                .SetProperty(x => x.ProgressPercent, progress.Percent)
+                .SetProperty(x => x.ProgressMessage, progress.Message)
+                .SetProperty(x => x.ProgressUpdatedAt, _ => DateTime.UtcNow);
         }
 
         // RELEASE LOCK

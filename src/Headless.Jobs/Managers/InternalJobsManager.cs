@@ -1117,6 +1117,29 @@ internal sealed partial class InternalJobsManager<TTimeJob, TCronJob>(
                 .ConfigureAwait(false);
     }
 
+    public async Task<bool> UpdateProgressAsync(
+        JobExecutionState context,
+        JobProgress progress,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var written =
+            context.Type == JobType.CronJobOccurrence
+                ? await persistenceProvider
+                    .UpdateCronJobOccurrenceProgressAsync(context.JobId, progress, cancellationToken)
+                    .ConfigureAwait(false)
+                : await persistenceProvider
+                    .UpdateTimeJobProgressAsync(context.JobId, progress, cancellationToken)
+                    .ConfigureAwait(false);
+
+        if (written)
+        {
+            notificationHubSender.UpdateJobProgress(context, progress);
+        }
+
+        return written;
+    }
+
     public async Task<bool> RequestTimeJobCancellationAsync(Guid jobId, CancellationToken cancellationToken = default)
     {
         var accepted = await persistenceProvider

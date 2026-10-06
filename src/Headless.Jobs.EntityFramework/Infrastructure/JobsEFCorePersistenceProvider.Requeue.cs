@@ -114,6 +114,10 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
                                     .SetProperty(x => x.LockedUntil, _ => null)
                                     .SetProperty(x => x.ExecutedAt, _ => null)
                                     .SetProperty(x => x.ElapsedTime, 0L)
+                                    // A requeue is a new run, so the old run's progress would misreport it.
+                                    .SetProperty(x => x.ProgressPercent, _ => null)
+                                    .SetProperty(x => x.ProgressMessage, _ => null)
+                                    .SetProperty(x => x.ProgressUpdatedAt, _ => null)
                                     // An audit stamp inside the transaction, which BasePersistenceProvider's clock
                                     // invariant permits: only lease deadlines must never be written inside an explicit
                                     // transaction.

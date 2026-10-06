@@ -1380,6 +1380,8 @@ internal sealed class JobsSideEffectsProbe : IJobsHostScheduler, IJobsNotificati
     {
         return Task.CompletedTask;
     }
+
+    void IJobsNotificationHubSender.UpdateJobProgress(JobExecutionState executionState, JobProgress progress) { }
 }
 
 /// <summary>

@@ -53,6 +53,7 @@ const noop = () => {}
 const hub = {
   onReceiveUpdateCronJobOccurrence: noop,
   onReceiveAddCronJobOccurrence: noop,
+  onReceiveJobProgress: noop,
   stopReceiver: noop,
   joinGroup: noop,
   leaveGroup: noop,

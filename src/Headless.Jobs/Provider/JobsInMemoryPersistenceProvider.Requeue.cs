@@ -42,6 +42,10 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             updated.LockedUntil = null;
             updated.ExecutedAt = null;
             updated.ElapsedTime = 0;
+            // A requeue is a new run, so the old run's progress would misreport it.
+            updated.ProgressPercent = null;
+            updated.ProgressMessage = null;
+            updated.ProgressUpdatedAt = null;
             updated.CancelRequested = false;
             updated.ExecutionTime = now.UtcDateTime;
             updated.UpdatedAt = now;
@@ -129,6 +133,10 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             updated.LockedUntil = null;
             updated.ExecutedAt = null;
             updated.ElapsedTime = 0;
+            // A requeue is a new run, so the old run's progress would misreport it.
+            updated.ProgressPercent = null;
+            updated.ProgressMessage = null;
+            updated.ProgressUpdatedAt = null;
             updated.UpdatedAt = now;
 
             return Task.FromResult(

@@ -36,6 +36,16 @@ internal interface IInternalJobManager
     /// </summary>
     Task<int> RenewLeaseAsync(JobExecutionState context, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Stores the running job's latest progress through the provider's ownership fence, then tells the dashboard.
+    /// Returns <see langword="false"/> when the fence matched no row.
+    /// </summary>
+    Task<bool> UpdateProgressAsync(
+        JobExecutionState context,
+        JobProgress progress,
+        CancellationToken cancellationToken = default
+    );
+
     /// <summary>Requests the durable time-job cancellation transition and publishes its post-commit side effects.</summary>
     Task<bool> RequestTimeJobCancellationAsync(Guid jobId, CancellationToken cancellationToken = default);
 

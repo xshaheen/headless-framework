@@ -77,6 +77,12 @@ public class JobExecutionState
     /// <summary>Captured exception text when the execution faulted; otherwise <see langword="null"/>.</summary>
     public string? ExceptionDetails { get; set; }
 
+    /// <summary>
+    /// Progress reported since the last progress write, persisted with this update and stamped with the store's
+    /// clock; <see langword="null"/> when there is none to write.
+    /// </summary>
+    public JobProgress? Progress { get; set; }
+
     /// <summary>UTC timestamp at which the execution ran.</summary>
     public DateTimeOffset ExecutedAt { get; set; }
 

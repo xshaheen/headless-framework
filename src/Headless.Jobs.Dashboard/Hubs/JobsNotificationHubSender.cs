@@ -10,6 +10,7 @@ internal sealed class JobsNotificationHubSender : IJobsNotificationHubSender, ID
 {
     private readonly IHubContext<JobsNotificationHub> _hubContext;
     private readonly ILogger<JobsNotificationHubSender> _logger;
+    private readonly TimeProvider _timeProvider;
     private readonly ITimer _timeJobUpdateTimer;
     private int _hasPendingTimeJobUpdate;
     private static readonly TimeSpan _TimeJobUpdateDebounce = TimeSpan.FromMilliseconds(100);
@@ -22,6 +23,7 @@ internal sealed class JobsNotificationHubSender : IJobsNotificationHubSender, ID
     {
         _hubContext = Argument.IsNotNull(hubContext);
         _logger = Argument.IsNotNull(logger);
+        _timeProvider = Argument.IsNotNull(timeProvider);
 
         _timeJobUpdateTimer = timeProvider.CreateTimer(
             _TimeJobUpdateCallback,
@@ -170,12 +172,40 @@ internal sealed class JobsNotificationHubSender : IJobsNotificationHubSender, ID
             "UpdateCronOccurrenceNotification"
         );
 
+        // A report the throttle had not written rides on this terminal update; the open dialog merges the occurrence
+        // payload, which has no progress fields, so the final value travels as its own progress event.
+        if (executionState.Progress is { } progress)
+        {
+            UpdateJobProgress(executionState, progress);
+        }
+
         return Task.CompletedTask;
     }
 
     public async Task CanceledJobNotifyAsync(Guid id)
     {
         await _hubContext.Clients.All.SendAsync("CanceledJobNotification", id).ConfigureAwait(false);
+    }
+
+    public void UpdateJobProgress(JobExecutionState executionState, JobProgress progress)
+    {
+        // The SPA patches the matching row in place, so a progress tick never reloads the page the way a status
+        // change does. Cron occurrences go to their definition's group, the only clients showing them.
+        var payload = new
+        {
+            id = executionState.JobId,
+            type = executionState.Type,
+            percent = progress.Percent,
+            message = progress.Message,
+            updatedAt = _timeProvider.GetUtcNow(),
+        };
+
+        var clients =
+            executionState.Type == JobType.CronJobOccurrence
+                ? _hubContext.Clients.Group(executionState.ParentId?.ToString() ?? string.Empty)
+                : _hubContext.Clients.All;
+
+        _ObserveSend(clients.SendAsync("JobProgressNotification", payload), "JobProgressNotification");
     }
 
     public void Dispose()
