@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '../stores/authStore'
 import { getBasePath, requiresAuthentication } from '@/utilities/pathResolver'
+import { SESSION_EXPIRED_EVENT } from '@/services/auth'
 
 const router = createRouter({
   history: createWebHistory(getBasePath()),
@@ -85,10 +86,25 @@ router.beforeEach(async (to, _from, next) => {
     }
   }
 
+  if (authStore.enforceSessionTimeout()) {
+    next({ name: 'Login', query: { redirect: to.fullPath } })
+    return
+  }
+
   if (authStore.isLoggedIn) {
     next()
   } else {
     next({ name: 'Login', query: { redirect: to.fullPath } })
+  }
+})
+
+// An API request that found the sign-in expired already cleared the credentials; show why and ask to sign in again.
+window.addEventListener(SESSION_EXPIRED_EVENT, () => {
+  useAuthStore().markSessionExpired()
+
+  const current = router.currentRoute.value
+  if (current.name !== 'Login') {
+    void router.push({ name: 'Login', query: { redirect: current.fullPath } })
   }
 })
 

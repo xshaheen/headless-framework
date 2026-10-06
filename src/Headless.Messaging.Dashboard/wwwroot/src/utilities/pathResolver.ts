@@ -78,10 +78,12 @@ export function requiresAuthentication(): boolean {
   return config?.auth?.enabled || false
 }
 
-export function getAuthMode(): 'basic' | 'apikey' | 'host' | 'none' {
+export type AuthMode = 'basic' | 'apikey' | 'host' | 'custom' | 'none'
+
+export function getAuthMode(): AuthMode {
   const config = window.MessagingConfig
   if (!config?.auth) return 'none'
-  return config.auth.mode as 'basic' | 'apikey' | 'host' | 'none'
+  return config.auth.mode
 }
 
 /**
@@ -89,7 +91,7 @@ export function getAuthMode(): 'basic' | 'apikey' | 'host' | 'none' {
  * The fragment is removed before the token is returned so it does not remain in browser history.
  */
 export function consumeHostAccessTokenFromFragment(
-  authMode: 'basic' | 'apikey' | 'host' | 'none' = getAuthMode(),
+  authMode: AuthMode = getAuthMode(),
 ): string | null {
   const fragment = new URLSearchParams(window.location.hash.slice(1))
 
@@ -111,9 +113,14 @@ export function consumeHostAccessTokenFromFragment(
   return token.startsWith('Bearer ') ? token : `Bearer ${token}`
 }
 
+// Matches the server default of MessagingDashboardOptionsBuilder.SetStatsPollingInterval.
+export const DEFAULT_STATS_POLLING_INTERVAL_MS = 2000
+
 export function getStatsPollingInterval(): number {
-  const config = window.MessagingConfig
-  return config?.statsPollingInterval || 5000
+  const interval = window.MessagingConfig?.statsPollingInterval
+  return typeof interval === 'number' && Number.isFinite(interval) && interval > 0
+    ? interval
+    : DEFAULT_STATS_POLLING_INTERVAL_MS
 }
 
 function getProtocolFromDomain(domain: string): string {

@@ -1,6 +1,11 @@
 import { defineStore } from 'pinia'
 import { ref, computed, reactive } from 'vue'
-import { authService, type AuthStatus, type LoginCredentials } from '@/services/auth'
+import {
+  authService,
+  SESSION_EXPIRED_MESSAGE,
+  type AuthStatus,
+  type LoginCredentials,
+} from '@/services/auth'
 
 export const useAuthStore = defineStore('auth', () => {
   // State
@@ -20,6 +25,7 @@ export const useAuthStore = defineStore('auth', () => {
     password: '',
     apiKey: '',
     hostAccessKey: '',
+    customCredential: '',
   })
 
   // Computed properties
@@ -36,8 +42,13 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       isLoading.value = true
 
+      const isExpired = authService.expireSessionIfStale()
       await authService.initialize()
       authStatus.value = authService.getStatus()
+
+      if (isExpired) {
+        markSessionExpired()
+      }
     } catch (error) {
       console.error('Auth initialization failed:', error)
       authStatus.value = {
@@ -66,6 +77,7 @@ export const useAuthStore = defineStore('auth', () => {
         credentials.username = ''
         credentials.password = ''
         credentials.apiKey = ''
+        credentials.customCredential = ''
 
         return true
       } else {
@@ -96,6 +108,7 @@ export const useAuthStore = defineStore('auth', () => {
       credentials.username = ''
       credentials.password = ''
       credentials.apiKey = ''
+      credentials.customCredential = ''
       errorMessage.value = ''
     } catch (error) {
       console.error('Logout error:', error)
@@ -132,6 +145,19 @@ export const useAuthStore = defineStore('auth', () => {
     forceUpdate.value++
   }
 
+  // The stored credentials are already gone; this only tells the user why they are back on the login page.
+  const markSessionExpired = () => {
+    authStatus.value = { authenticated: false, username: '', message: SESSION_EXPIRED_MESSAGE }
+    errorMessage.value = SESSION_EXPIRED_MESSAGE
+  }
+
+  /** Expires a sign-in older than the configured session timeout. Returns true when it did. */
+  const enforceSessionTimeout = (): boolean => {
+    if (!authService.expireSessionIfStale()) return false
+    markSessionExpired()
+    return true
+  }
+
   const clearError = () => {
     errorMessage.value = ''
   }
@@ -154,6 +180,8 @@ export const useAuthStore = defineStore('auth', () => {
     logout,
     revalidate,
     handle401Error,
+    markSessionExpired,
+    enforceSessionTimeout,
     clearError,
   }
 })
