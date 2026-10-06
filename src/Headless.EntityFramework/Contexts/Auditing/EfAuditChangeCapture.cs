@@ -434,16 +434,6 @@ internal sealed class EfAuditChangeCapture(
 
             context.IsSoftDeleted = !wasDeleted && nowDeleted;
             context.IsRestored = wasDeleted && !nowDeleted;
-            return;
-        }
-
-        if (string.Equals(propertyName, nameof(ISuspendAudit.IsSuspended), StringComparison.Ordinal))
-        {
-            var nowSuspended = property.CurrentValue is true;
-            var wasSuspended = property.OriginalValue is true;
-
-            context.IsSuspended = !wasSuspended && nowSuspended;
-            context.IsUnsuspended = wasSuspended && !nowSuspended;
         }
     }
 
@@ -459,16 +449,6 @@ internal sealed class EfAuditChangeCapture(
             if (context.IsRestored)
             {
                 return AuditActionNames.Restored;
-            }
-
-            if (context.IsSuspended)
-            {
-                return AuditActionNames.Suspended;
-            }
-
-            if (context.IsUnsuspended)
-            {
-                return AuditActionNames.Unsuspended;
             }
         }
 
@@ -678,10 +658,6 @@ internal sealed class EfAuditChangeCapture(
         public bool IsSoftDeleted { get; set; }
 
         public bool IsRestored { get; set; }
-
-        public bool IsSuspended { get; set; }
-
-        public bool IsUnsuspended { get; set; }
     }
 }
 

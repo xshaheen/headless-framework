@@ -10,11 +10,11 @@ public static class AddSerilogExtensions
 {
     /// <summary>
     /// Registers <see cref="SerilogEnrichersMiddleware"/> as a scoped service so that it can be resolved
-    /// per-request when <see cref="UseSerilogEnrichers"/> adds it to the pipeline.
+    /// per-request when <see cref="UseHeadlessSerilogEnrichers"/> adds it to the pipeline.
     /// </summary>
     /// <param name="services">The service collection to register into.</param>
     /// <returns><paramref name="services"/> for chaining.</returns>
-    public static IServiceCollection AddSerilogEnrichers(this IServiceCollection services)
+    public static IServiceCollection AddHeadlessSerilogEnrichers(this IServiceCollection services)
     {
         return services.AddScoped<SerilogEnrichersMiddleware>();
     }
@@ -28,10 +28,10 @@ public static class AddSerilogExtensions
     /// <param name="builder">The application builder.</param>
     /// <returns><paramref name="builder"/> for chaining.</returns>
     /// <remarks>
-    /// Call <see cref="AddSerilogEnrichers"/> first to register the middleware's dependencies.
+    /// Call <see cref="AddHeadlessSerilogEnrichers"/> first to register the middleware's dependencies.
     /// Place this call after authentication middleware so that <c>IRequestContext.User</c> is populated.
     /// </remarks>
-    public static IApplicationBuilder UseSerilogEnrichers(this IApplicationBuilder builder)
+    public static IApplicationBuilder UseHeadlessSerilogEnrichers(this IApplicationBuilder builder)
     {
         return builder.UseMiddleware<SerilogEnrichersMiddleware>();
     }

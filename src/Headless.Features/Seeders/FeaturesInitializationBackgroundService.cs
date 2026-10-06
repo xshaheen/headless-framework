@@ -22,8 +22,12 @@ namespace Headless.Features;
 /// </list>
 /// Both steps are skipped (and the initializer signals completion immediately) when both options are disabled.
 /// </remarks>
+/// <param name="retryTimeProvider">
+/// Clock for the retry back-off only. Registration passes <see cref="TimeProvider.System"/>: back-off is elapsed
+/// time, not app time, so a host that fakes its app <see cref="TimeProvider"/> does not stall the retries.
+/// </param>
 internal sealed class FeaturesInitializationBackgroundService(
-    TimeProvider timeProvider,
+    TimeProvider retryTimeProvider,
     IServiceScopeFactory serviceScopeFactory,
     IOptions<FeatureManagementOptions> optionsAccessor,
     ILogger<FeaturesInitializationBackgroundService> logger
@@ -145,7 +149,7 @@ internal sealed class FeaturesInitializationBackgroundService(
             ),
         };
 
-        var builder = new ResiliencePipelineBuilder { TimeProvider = timeProvider };
+        var builder = new ResiliencePipelineBuilder { TimeProvider = retryTimeProvider };
         var pipeline = builder.AddRetry(options).Build();
 
         await pipeline

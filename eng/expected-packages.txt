@@ -1,13 +1,15 @@
 # Canonical NuGet package IDs. One sorted ID per evaluated packable src project.
 Headless.Api
 Headless.Api.Abstractions
-Headless.Api.DataProtection
 Headless.Api.FluentValidation
 Headless.Api.Idempotency
+Headless.Api.Identity
+Headless.Api.Jwt
 Headless.Api.Logging.Serilog
 Headless.Api.MinimalApi
 Headless.Api.Mvc
 Headless.Api.ServiceDefaults
+Headless.Api.UserAgent
 Headless.AuditLog
 Headless.AuditLog.Abstractions
 Headless.AuditLog.Storage.EntityFramework
@@ -47,6 +49,7 @@ Headless.Coordination.SqlServer
 Headless.Coordination.Sqlite
 Headless.Couchbase
 Headless.Dashboard.Authentication
+Headless.DataProtection.Blobs
 Headless.DistributedLocks
 Headless.DistributedLocks.Abstractions
 Headless.DistributedLocks.Database
@@ -55,7 +58,7 @@ Headless.DistributedLocks.PostgreSql
 Headless.DistributedLocks.Redis
 Headless.DistributedLocks.SqlServer
 Headless.Domain
-Headless.Domain.LocalEventBus
+Headless.Domain.EventDispatcher
 Headless.Emails
 Headless.Emails.Abstractions
 Headless.Emails.Aws

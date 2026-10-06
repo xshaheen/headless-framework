@@ -21,14 +21,17 @@ public sealed class AuditedBaseStampingTests : TestBase
     private readonly FakeTimeProvider _clock = new(_Start);
     private readonly TestCurrentUser _currentUser = new() { UserId = "user-1", IsAuthenticated = true };
 
-    public static TheoryData<string> Bases => [nameof(AuditedNote), nameof(AuditedLedger)];
+    public static TheoryData<string> Rows =>
+        [nameof(AuditedNote), nameof(AuditedLedger), nameof(DeletableNote), nameof(DeletableLedger)];
+
+    public static TheoryData<string> DeletableRows => [nameof(DeletableNote), nameof(DeletableLedger)];
 
     [Theory]
-    [MemberData(nameof(Bases))]
+    [MemberData(nameof(Rows))]
     public async Task should_stamp_create_audit_when_audited_base_added(string kind)
     {
         // given
-        await using var harness = await _CreateHarnessAsync();
+        await using var harness = await _CreateHarnessAsync<AuditedDbContext>();
         await using var db = harness.CreateContext();
         var entity = _Create(kind);
         db.Add(entity);
@@ -45,38 +48,146 @@ public sealed class AuditedBaseStampingTests : TestBase
     }
 
     [Theory]
-    [MemberData(nameof(Bases))]
-    public async Task should_stamp_update_audit_when_audited_base_modified(string kind)
+    [MemberData(nameof(Rows))]
+    public async Task should_stamp_latest_updater_when_audited_base_modified_by_successive_users(string kind)
     {
         // given
-        await using var harness = await _CreateHarnessAsync();
+        await using var harness = await _CreateHarnessAsync<AuditedDbContext>();
         await using var db = harness.CreateContext();
         var entity = _Create(kind);
         db.Add(entity);
         await db.SaveChangesAsync(AbortToken);
         _clock.Advance(TimeSpan.FromMinutes(5));
         _currentUser.UserId = "user-2";
+        entity.Rename("first rename");
+        await db.SaveChangesAsync(AbortToken);
+        _clock.Advance(TimeSpan.FromMinutes(5));
+        _currentUser.UserId = "user-3";
 
         // when
-        entity.Rename("renamed");
+        entity.Rename("second rename");
         await db.SaveChangesAsync(AbortToken);
 
         // then
         var saved = await harness.ReloadAsync(entity);
         saved.CreatedAt.Should().Be(_Start);
         saved.CreatedById.Should().Be((UserId)"user-1");
-        saved.UpdatedAt.Should().Be(_Start.AddMinutes(5));
-        saved.UpdatedById.Should().Be((UserId)"user-2");
+        saved.UpdatedAt.Should().Be(_Start.AddMinutes(10));
+        saved.UpdatedById.Should().Be((UserId)"user-3");
+    }
+
+    [Fact]
+    public async Task should_keep_explicit_update_audit_when_update_called()
+    {
+        // given
+        await using var harness = await _CreateHarnessAsync<AuditedDbContext>();
+        await using var db = harness.CreateContext();
+        db.Add(new TestAccount { Id = "user-1" });
+        db.Add(new TestAccount { Id = "owner" });
+        var document = new AuditedDocument { Id = Guid.CreateVersion7(), Name = "doc" };
+        db.Add(document);
+        await db.SaveChangesAsync(AbortToken);
+        var requestStartedAt = _Start.AddSeconds(30);
+        _clock.Advance(TimeSpan.FromMinutes(5));
+
+        // when
+        document.Name = "renamed";
+        document.Update(requestStartedAt, "owner");
+        await db.SaveChangesAsync(AbortToken);
+
+        // then
+        var saved = await harness.ReloadAsync(document);
+        saved.UpdatedAt.Should().Be(requestStartedAt);
+        saved.UpdatedById.Should().Be((UserId)"owner");
     }
 
     [Theory]
-    [MemberData(nameof(Bases))]
+    [MemberData(nameof(Rows))]
+    public async Task should_record_null_updater_when_audited_base_modified_anonymously(string kind)
+    {
+        // given
+        await using var harness = await _CreateHarnessAsync<AuditedDbContext>();
+        await using var db = harness.CreateContext();
+        var entity = _Create(kind);
+        db.Add(entity);
+        await db.SaveChangesAsync(AbortToken);
+        entity.Rename("renamed by user-1");
+        await db.SaveChangesAsync(AbortToken);
+        _clock.Advance(TimeSpan.FromMinutes(5));
+        _SignOut();
+
+        // when
+        entity.Rename("renamed anonymously");
+        await db.SaveChangesAsync(AbortToken);
+
+        // then
+        var saved = await harness.ReloadAsync(entity);
+        saved.UpdatedAt.Should().Be(_Start.AddMinutes(5));
+        saved.UpdatedById.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_clear_loaded_updater_navigation_when_navigation_base_modified_anonymously()
+    {
+        // given
+        await using var harness = await _CreateHarnessAsync<AuditedDbContext>();
+        await using var db = harness.CreateContext();
+        var userA = new TestAccount { Id = "user-1" };
+        db.Add(userA);
+        var document = new AuditedDocument { Id = Guid.CreateVersion7(), Name = "doc" };
+        db.Add(document);
+        await db.SaveChangesAsync(AbortToken);
+        document.Update(_Start, userA.Id, userA);
+        await db.SaveChangesAsync(AbortToken);
+        _SignOut();
+
+        // when
+        document.Name = "renamed anonymously";
+        await db.SaveChangesAsync(AbortToken);
+
+        // then
+        document.UpdatedById.Should().BeNull();
+        document.UpdatedBy.Should().BeNull();
+        var saved = await harness.ReloadAsync(document);
+        saved.UpdatedById.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_keep_explicit_updater_when_update_called_anonymously()
+    {
+        // given
+        await using var harness = await _CreateHarnessAsync<AuditedDbContext>();
+        await using var db = harness.CreateContext();
+        db.Add(new TestAccount { Id = "user-1" });
+        var owner = new TestAccount { Id = "owner" };
+        db.Add(owner);
+        var document = new AuditedDocument { Id = Guid.CreateVersion7(), Name = "doc" };
+        db.Add(document);
+        await db.SaveChangesAsync(AbortToken);
+        _SignOut();
+        document.Update(_Start.AddMinutes(1), owner.Id, owner);
+        await db.SaveChangesAsync(AbortToken);
+
+        // when: the same actor updates again, so the id value itself does not change in this save
+        document.Name = "renamed";
+        document.Update(_Start.AddMinutes(2), owner.Id, owner);
+        await db.SaveChangesAsync(AbortToken);
+
+        // then
+        document.UpdatedBy.Should().BeSameAs(owner);
+        var saved = await harness.ReloadAsync(document);
+        saved.UpdatedAt.Should().Be(_Start.AddMinutes(2));
+        saved.UpdatedById.Should().Be((UserId)"owner");
+    }
+
+    [Theory]
+    [MemberData(nameof(DeletableRows))]
     public async Task should_stamp_delete_audit_when_audited_base_soft_deleted(string kind)
     {
         // given
-        await using var harness = await _CreateHarnessAsync();
+        await using var harness = await _CreateHarnessAsync<AuditedDbContext>();
         await using var db = harness.CreateContext();
-        var entity = _Create(kind);
+        var entity = (IDeletableRow)_Create(kind);
         db.Add(entity);
         await db.SaveChangesAsync(AbortToken);
         _clock.Advance(TimeSpan.FromMinutes(5));
@@ -86,88 +197,137 @@ public sealed class AuditedBaseStampingTests : TestBase
         await db.SaveChangesAsync(AbortToken);
 
         // then
-        var saved = await harness.ReloadAsync(entity);
+        var saved = (IDeletableRow)await harness.ReloadAsync((IAuditedRow)entity);
         saved.IsDeleted.Should().BeTrue();
         saved.DeletedAt.Should().Be(_Start.AddMinutes(5));
         saved.DeletedById.Should().Be(_currentUser.UserId);
+        saved.RestoredAt.Should().BeNull();
+        saved.RestoredById.Should().BeNull();
     }
 
     [Theory]
-    [MemberData(nameof(Bases))]
-    public async Task should_clear_delete_audit_when_audited_base_restored(string kind)
+    [MemberData(nameof(DeletableRows))]
+    public async Task should_keep_deletion_and_stamp_restoration_when_audited_base_restored(string kind)
     {
         // given
-        await using var harness = await _CreateHarnessAsync();
+        await using var harness = await _CreateHarnessAsync<AuditedDbContext>();
         await using var db = harness.CreateContext();
-        var entity = _Create(kind);
+        var entity = (IDeletableRow)_Create(kind);
         db.Add(entity);
         await db.SaveChangesAsync(AbortToken);
+        _clock.Advance(TimeSpan.FromMinutes(5));
         entity.SoftDelete();
         await db.SaveChangesAsync(AbortToken);
+        _clock.Advance(TimeSpan.FromMinutes(5));
+        _currentUser.UserId = "user-2";
 
         // when
         entity.Undelete();
         await db.SaveChangesAsync(AbortToken);
 
         // then
-        var saved = await harness.ReloadAsync(entity);
+        var saved = (IDeletableRow)await harness.ReloadAsync((IAuditedRow)entity);
         saved.IsDeleted.Should().BeFalse();
-        saved.DeletedAt.Should().BeNull();
-        saved.DeletedById.Should().BeNull();
+        saved.DeletedAt.Should().Be(_Start.AddMinutes(5));
+        saved.DeletedById.Should().Be((UserId)"user-1");
+        saved.RestoredAt.Should().Be(_Start.AddMinutes(10));
+        saved.RestoredById.Should().Be((UserId)"user-2");
     }
 
     [Theory]
-    [MemberData(nameof(Bases))]
-    public async Task should_stamp_suspend_audit_when_audited_base_suspended(string kind)
+    [MemberData(nameof(DeletableRows))]
+    public async Task should_replace_previous_deletion_when_audited_base_deleted_again(string kind)
     {
         // given
-        await using var harness = await _CreateHarnessAsync();
+        await using var harness = await _CreateHarnessAsync<AuditedDbContext>();
         await using var db = harness.CreateContext();
-        var entity = _Create(kind);
+        var entity = (IDeletableRow)_Create(kind);
         db.Add(entity);
+        await db.SaveChangesAsync(AbortToken);
+        entity.SoftDelete();
+        await db.SaveChangesAsync(AbortToken);
+        entity.Undelete();
         await db.SaveChangesAsync(AbortToken);
         _clock.Advance(TimeSpan.FromMinutes(5));
+        _currentUser.UserId = "user-3";
 
         // when
-        entity.Freeze();
+        entity.SoftDelete();
         await db.SaveChangesAsync(AbortToken);
 
         // then
-        var saved = await harness.ReloadAsync(entity);
-        saved.IsSuspended.Should().BeTrue();
-        saved.SuspendedAt.Should().Be(_Start.AddMinutes(5));
-        saved.SuspendedById.Should().Be(_currentUser.UserId);
+        var saved = (IDeletableRow)await harness.ReloadAsync((IAuditedRow)entity);
+        saved.IsDeleted.Should().BeTrue();
+        saved.DeletedAt.Should().Be(_Start.AddMinutes(5));
+        saved.DeletedById.Should().Be((UserId)"user-3");
+        saved.RestoredAt.Should().Be(_Start);
+        saved.RestoredById.Should().Be((UserId)"user-1");
     }
 
     [Theory]
-    [MemberData(nameof(Bases))]
-    public async Task should_clear_suspend_audit_when_audited_base_unsuspended(string kind)
+    [MemberData(nameof(DeletableRows))]
+    public async Task should_record_null_actor_when_audited_base_restored_and_redeleted_anonymously(string kind)
     {
         // given
-        await using var harness = await _CreateHarnessAsync();
+        await using var harness = await _CreateHarnessAsync<AuditedDbContext>();
         await using var db = harness.CreateContext();
-        var entity = _Create(kind);
+        var entity = (IDeletableRow)_Create(kind);
         db.Add(entity);
         await db.SaveChangesAsync(AbortToken);
-        entity.Freeze();
+        entity.SoftDelete();
         await db.SaveChangesAsync(AbortToken);
+        _SignOut();
 
         // when
-        entity.Unfreeze();
+        entity.Undelete();
+        await db.SaveChangesAsync(AbortToken);
+        var restored = (IDeletableRow)await harness.ReloadAsync((IAuditedRow)entity);
+        entity.SoftDelete();
+        await db.SaveChangesAsync(AbortToken);
+        var redeleted = (IDeletableRow)await harness.ReloadAsync((IAuditedRow)entity);
+
+        // then
+        restored.RestoredById.Should().BeNull();
+        restored.DeletedById.Should().Be((UserId)"user-1");
+        redeleted.DeletedById.Should().BeNull();
+        redeleted.RestoredById.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_record_null_actor_when_navigation_base_restored_and_redeleted_anonymously()
+    {
+        // given
+        await using var harness = await _CreateHarnessAsync<AuditedDbContext>();
+        await using var db = harness.CreateContext();
+        var userA = new TestAccount { Id = "user-1" };
+        db.Add(userA);
+        var document = new AuditedDocument { Id = Guid.CreateVersion7(), Name = "doc" };
+        db.Add(document);
+        await db.SaveChangesAsync(AbortToken);
+        document.Delete(_Start, userA.Id, userA);
+        await db.SaveChangesAsync(AbortToken);
+        _SignOut();
+
+        // when
+        document.Restore(_Start.AddMinutes(1));
+        await db.SaveChangesAsync(AbortToken);
+        document.Delete(_Start.AddMinutes(2));
         await db.SaveChangesAsync(AbortToken);
 
         // then
-        var saved = await harness.ReloadAsync(entity);
-        saved.IsSuspended.Should().BeFalse();
-        saved.SuspendedAt.Should().BeNull();
-        saved.SuspendedById.Should().BeNull();
+        document.DeletedBy.Should().BeNull();
+        var saved = await harness.ReloadAsync(document);
+        saved.DeletedAt.Should().Be(_Start.AddMinutes(2));
+        saved.DeletedById.Should().BeNull();
+        saved.RestoredAt.Should().Be(_Start.AddMinutes(1));
+        saved.RestoredById.Should().BeNull();
     }
 
     [Fact]
     public async Task should_keep_transition_time_and_stamp_actor_when_navigation_base_deleted_without_actor()
     {
         // given
-        await using var harness = await _CreateHarnessAsync();
+        await using var harness = await _CreateHarnessAsync<AuditedDbContext>();
         await using var db = harness.CreateContext();
         db.Add(new TestAccount { Id = "user-1" });
         var document = new AuditedDocument { Id = Guid.CreateVersion7(), Name = "doc" };
@@ -181,11 +341,17 @@ public sealed class AuditedBaseStampingTests : TestBase
         await db.SaveChangesAsync(AbortToken);
 
         // then
-        var saved = await harness.ReloadAsync<AuditedDocument>(document);
+        var saved = await harness.ReloadAsync(document);
         saved.CreatedById.Should().Be(_currentUser.UserId);
         saved.IsDeleted.Should().BeTrue();
         saved.DeletedAt.Should().Be(deletedAt);
         saved.DeletedById.Should().Be(_currentUser.UserId);
+    }
+
+    private void _SignOut()
+    {
+        _currentUser.UserId = null;
+        _currentUser.IsAuthenticated = false;
     }
 
     private static IAuditedRow _Create(string kind)
@@ -194,13 +360,16 @@ public sealed class AuditedBaseStampingTests : TestBase
         {
             nameof(AuditedNote) => new AuditedNote { Id = Guid.CreateVersion7(), Name = "note" },
             nameof(AuditedLedger) => new AuditedLedger { Id = Guid.CreateVersion7(), Name = "ledger" },
+            nameof(DeletableNote) => new DeletableNote { Id = Guid.CreateVersion7(), Name = "note" },
+            nameof(DeletableLedger) => new DeletableLedger { Id = Guid.CreateVersion7(), Name = "ledger" },
             _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, message: null),
         };
     }
 
-    private async Task<Harness> _CreateHarnessAsync()
+    private async Task<Harness<TContext>> _CreateHarnessAsync<TContext>()
+        where TContext : DbContext
     {
-        var harness = new Harness(_clock, _currentUser);
+        var harness = new Harness<TContext>(_clock, _currentUser);
 
         try
         {
@@ -216,7 +385,8 @@ public sealed class AuditedBaseStampingTests : TestBase
         }
     }
 
-    private sealed class Harness : IAsyncDisposable
+    private sealed class Harness<TContext> : IAsyncDisposable
+        where TContext : DbContext
     {
         private readonly SqliteConnection _connection = new("Data Source=:memory:");
         private readonly ServiceProvider _provider;
@@ -230,7 +400,7 @@ public sealed class AuditedBaseStampingTests : TestBase
             services.AddSingleton(currentUser);
             // The aggregate-root base raises lifecycle domain events on every save, which the pipeline refuses to drop.
             services.AddHeadlessDbContextServices().AddDomainEvents();
-            services.AddDbContext<AuditedDbContext>(options => options.UseSqlite(_connection));
+            services.AddDbContext<TContext>(options => options.UseSqlite(_connection));
             _provider = services.BuildServiceProvider();
         }
 
@@ -241,12 +411,12 @@ public sealed class AuditedBaseStampingTests : TestBase
             await db.Database.EnsureCreatedAsync(AbortToken);
         }
 
-        public AuditedDbContext CreateContext()
+        public TContext CreateContext()
         {
             var scope = _provider.CreateAsyncScope();
             _scopes.Add(scope);
 
-            return scope.ServiceProvider.GetRequiredService<AuditedDbContext>();
+            return scope.ServiceProvider.GetRequiredService<TContext>();
         }
 
         // A fresh context proves the stamped values reached the row, not just the tracked instance.
@@ -256,6 +426,8 @@ public sealed class AuditedBaseStampingTests : TestBase
             {
                 AuditedNote note => await ReloadAsync(note),
                 AuditedLedger ledger => await ReloadAsync(ledger),
+                DeletableNote note => await ReloadAsync(note),
+                DeletableLedger ledger => await ReloadAsync(ledger),
                 _ => throw new ArgumentOutOfRangeException(nameof(entity)),
             };
         }
@@ -265,10 +437,7 @@ public sealed class AuditedBaseStampingTests : TestBase
         {
             await using var db = CreateContext();
 
-            return await db.Set<TEntity>()
-                .IgnoreNotDeletedFilter()
-                .IgnoreNotSuspendedFilter()
-                .SingleAsync(x => x.Id == entity.Id, AbortToken);
+            return await db.Set<TEntity>().IgnoreNotDeletedFilter().SingleAsync(x => x.Id == entity.Id, AbortToken);
         }
 
         public async ValueTask DisposeAsync()
@@ -285,9 +454,13 @@ public sealed class AuditedBaseStampingTests : TestBase
 
     private sealed class AuditedDbContext(DbContextOptions options) : HeadlessDbContext(options)
     {
-        public DbSet<AuditedNote> Notes => Set<AuditedNote>();
+        public DbSet<AuditedNote> AuditedNotes => Set<AuditedNote>();
 
-        public DbSet<AuditedLedger> Ledgers => Set<AuditedLedger>();
+        public DbSet<AuditedLedger> AuditedLedgers => Set<AuditedLedger>();
+
+        public DbSet<DeletableNote> DeletableNotes => Set<DeletableNote>();
+
+        public DbSet<DeletableLedger> DeletableLedgers => Set<DeletableLedger>();
 
         public DbSet<AuditedDocument> Documents => Set<AuditedDocument>();
 
@@ -297,22 +470,16 @@ public sealed class AuditedBaseStampingTests : TestBase
     }
 
     // Behavior the tests drive through each base's protected setters, as a consuming entity would.
-    public interface IAuditedRow
-        : IEntity<Guid>,
-            ICreateAudit<UserId>,
-            IUpdateAudit<UserId>,
-            IDeleteAudit<UserId>,
-            ISuspendAudit<UserId>
+    public interface IAuditedRow : IEntity<Guid>, ICreateAudit<UserId>, IUpdateAudit<UserId>
     {
         void Rename(string name);
+    }
 
+    public interface IDeletableRow : IAuditedRow, IDeleteAudit<UserId>
+    {
         void SoftDelete();
 
         void Undelete();
-
-        void Freeze();
-
-        void Unfreeze();
     }
 
     public sealed class AuditedNote : AuditedEntity<Guid, UserId>, IAuditedRow
@@ -320,17 +487,16 @@ public sealed class AuditedBaseStampingTests : TestBase
         public required string Name { get; set; }
 
         public void Rename(string name) => Name = name;
-
-        public void SoftDelete() => IsDeleted = true;
-
-        public void Undelete() => IsDeleted = false;
-
-        public void Freeze() => IsSuspended = true;
-
-        public void Unfreeze() => IsSuspended = false;
     }
 
     public sealed class AuditedLedger : AuditedAggregateRoot<Guid, UserId>, IAuditedRow
+    {
+        public required string Name { get; set; }
+
+        public void Rename(string name) => Name = name;
+    }
+
+    public sealed class DeletableNote : SoftDeletableEntity<Guid, UserId>, IDeletableRow
     {
         public required string Name { get; set; }
 
@@ -339,13 +505,20 @@ public sealed class AuditedBaseStampingTests : TestBase
         public void SoftDelete() => IsDeleted = true;
 
         public void Undelete() => IsDeleted = false;
-
-        public void Freeze() => IsSuspended = true;
-
-        public void Unfreeze() => IsSuspended = false;
     }
 
-    public sealed class AuditedDocument : AuditedAggregateRoot<Guid, UserId, TestAccount>
+    public sealed class DeletableLedger : SoftDeletableAggregateRoot<Guid, UserId>, IDeletableRow
+    {
+        public required string Name { get; set; }
+
+        public void Rename(string name) => Name = name;
+
+        public void SoftDelete() => IsDeleted = true;
+
+        public void Undelete() => IsDeleted = false;
+    }
+
+    public sealed class AuditedDocument : SoftDeletableAggregateRoot<Guid, UserId, TestAccount>
     {
         public required string Name { get; set; }
     }

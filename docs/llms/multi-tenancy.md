@@ -55,7 +55,7 @@ app.UseAuthorization();
 
 `UseHeadlessTenancy()` must run after app-owned `UseAuthentication()` and before app-owned `UseAuthorization()`. Headless tenancy APIs do not call either middleware internally.
 
-`AddHeadless()` registers base API infrastructure only. It does not enable tenant posture. It also requires `Headless:StringEncryption` and `Headless:LookupHasher` to be configured.
+`AddHeadless()` registers base API infrastructure only. It does not enable tenant posture.
 
 ## Agent Rules
 
@@ -159,8 +159,8 @@ app.UseAuthorization();
 
 `.Authorization(auth => auth.RequireTenant())` delegates to the API package and:
 
-- Registers `TenantRequirementHandler`
-- Decorates ASP.NET Core's effective authorization result handler with a wrapper that only intercepts tenant failures
+- Registers `TenantRequirementHandler`, which fails `TenantRequirement` when no tenant is ambient and flags the request so `UseStatusCodesRewriter()` writes the `g:tenant_required` 403 body. It hands the rejection over through a request feature instead of decorating the authorization result handler, so an application's own `IAuthorizationMiddlewareResultHandler` composes with it in any registration order
+- Does not add `TenantRequirement` to any policy: put it in `FallbackPolicy` or `DefaultPolicy` yourself, and in any named policy that must also require a tenant
 - Records an `Authorization` seam with the `require-tenant` capability
 - Adds startup validation that fails fast when neither `DefaultPolicy` nor `FallbackPolicy` includes `TenantRequirement`
 
@@ -757,7 +757,7 @@ builder.AddHeadlessTenancy(tenancy =>
 - **Fail closed.** A scoped operation with no ambient tenant throws `MissingTenantContextException` (HTTP 403 `g:tenant_required`) before reaching the provider.
 - **Tenant ids must be one safe storage segment.** Under `PathPrefix` a tenant id must start and end with a lowercase ASCII letter or digit and contain only lowercase ASCII letters, digits, `.`, `_`, and `-`. Under `ContainerPerTenant`, `ContainerPrefix` plus the tenant id must be 3-63 characters of lowercase ASCII letters, digits, and single hyphens, and a container used as a key segment cannot contain `/` or `\`. Any other id is refused with `InvalidOperationException`, because provider normalizers lowercase, strip, and truncate names and would otherwise land one tenant inside another's scope. Uppercase is refused rather than folded: a FileSystem store on a case-insensitive disk (macOS, Windows) treats `Acme` and `acme` as one directory, and folding would merge the two tenants the same way. Lowercase GUIDs (`Guid.ToString()`) and DNS-slug ids pass unchanged; lowercase any other id before it becomes the ambient tenant.
 - **Host-level shared blobs.** Put blobs every tenant shares in a named store listed in `UnscopedStores`, which is never wrapped. Cross-tenant work, such as a cleanup job, runs once per tenant inside `currentTenant.Change(tenantId)`. A scoped store implements `IScopedBlobStorage`; its `Unscoped` property is the wrapped store, which addresses physical keys (`acme/1.png`) with no tenant. Reach for it only for infrastructure that holds physical locations, as the two consumers below do. Under `PathPrefix`, do not write host blobs at the top level of a container tenants use: a host folder named like a tenant id would sit inside that tenant's prefix.
-- **Data-protection key ring.** `PersistKeysToBlobStorage()` from `Headless.Api.DataProtection` reads and writes the key ring through `IScopedBlobStorage.Unscoped`, so on a scoped store it stays at the physical `DataProtection` container root, shared by every tenant, whichever request first touches data protection. The key XML sits at the top level of that container, where no tenant's `DataProtection/{tenantId}/` prefix reaches it.
+- **Data-protection key ring.** `PersistKeysToBlobStorage()` from `Headless.DataProtection.Blobs` reads and writes the key ring through `IScopedBlobStorage.Unscoped`, so on a scoped store it stays at the physical `DataProtection` container root, shared by every tenant, whichever request first touches data protection. The key XML sits at the top level of that container, where no tenant's `DataProtection/{tenantId}/` prefix reaches it.
 - **Presigned URLs.** A URL is minted for the tenant's physical location. The `Headless.Blobs.SignedUrlEndpoint` endpoint serves a grant through `IScopedBlobStorage.Unscoped`, because the grant already carries the physical location and its signature is the authorization, so an anonymous request redeems a tenant's URL.
 - **Not scoped.** `IBlobContainerManager` is never wrapped. Under `ContainerPerTenant`, provision each tenant's container (`{ContainerPrefix}{tenantId}`) at onboarding with `EnsureContainerAsync`. A store registered directly as `IBlobStorage`, outside `AddHeadlessBlobs`, is not wrapped either; when the seam wraps no store at all, startup fails with `HEADLESS_TENANCY_BLOBS_NO_SCOPED_STORE`.
 

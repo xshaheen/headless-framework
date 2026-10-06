@@ -227,7 +227,7 @@ builder.Services.AddHeadlessIdempotency(setup => setup.UseInMemory());
 - `PeekAsync` reads the committed record without the lock and never sees a unit's uncommitted writes. `RenewAsync` takes the lock and commits at once.
 - There is no deadlock detection. Units that lock several keys must lock them in one consistent order, and callers should pass a cancellation token that bounds the wait.
 - The retention purge skips a record a unit holds and keeps a record whose lease is still live, like the relational providers.
-- `Headless.Api.Idempotency` works on it unchanged: `AddHeadlessIdempotency(setup => setup.UseInMemory())` plus `AddIdempotency(...)` needs no database.
+- `Headless.Api.Idempotency` works on it unchanged: `AddHeadlessIdempotency(setup => setup.UseInMemory())` plus `AddHeadlessHttpIdempotency(...)` needs no database.
 
 ---
 

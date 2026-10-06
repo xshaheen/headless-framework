@@ -133,7 +133,7 @@ public sealed class SharedHostIsolationTests(SharedHarnessFixture fixture)
 
         // First round: publish Alpha
         await _harness.Publisher.PublishAsync(new AlphaEvent("A1"), cancellationToken: AbortToken);
-        await _harness.WaitForConsumed<AlphaEvent>(TimeSpan.FromSeconds(5), AbortToken);
+        await _harness.WaitForConsumedAsync<AlphaEvent>(TimeSpan.FromSeconds(5), AbortToken);
 
         _harness.Published.Should().ContainSingle();
         _harness.Consumed.Should().ContainSingle();
@@ -143,7 +143,7 @@ public sealed class SharedHostIsolationTests(SharedHarnessFixture fixture)
 
         // Second round: publish Beta
         await _harness.Publisher.PublishAsync(new BetaEvent("B1"), cancellationToken: AbortToken);
-        await _harness.WaitForConsumed<BetaEvent>(TimeSpan.FromSeconds(5), AbortToken);
+        await _harness.WaitForConsumedAsync<BetaEvent>(TimeSpan.FromSeconds(5), AbortToken);
 
         // Should see only Beta, not Alpha
         _harness.Published.Should().ContainSingle();
@@ -166,7 +166,7 @@ public sealed class SharedHostIsolationTests(SharedHarnessFixture fixture)
         await _harness.ResetAsync(cancellationToken: AbortToken);
 
         await _harness.Publisher.PublishAsync(new BetaEvent("B1"), cancellationToken: AbortToken);
-        await _harness.WaitForConsumed<BetaEvent>(TimeSpan.FromSeconds(5), AbortToken);
+        await _harness.WaitForConsumedAsync<BetaEvent>(TimeSpan.FromSeconds(5), AbortToken);
 
         _harness.Published.Should().ContainSingle().Which.Message.Should().BeOfType<BetaEvent>();
         _harness.Consumed.Should().ContainSingle().Which.Message.Should().BeOfType<BetaEvent>();
@@ -253,7 +253,7 @@ public sealed class SharedHostIsolationTests(SharedHarnessFixture fixture)
 
         // Publish and consume to populate storage
         await _harness.Publisher.PublishAsync(new AlphaEvent("S1"), cancellationToken: AbortToken);
-        await _harness.WaitForConsumed<AlphaEvent>(TimeSpan.FromSeconds(5), AbortToken);
+        await _harness.WaitForConsumedAsync<AlphaEvent>(TimeSpan.FromSeconds(5), AbortToken);
 
         // Verify storage has received-message data before clear
         // (test harness uses IBus which bypasses outbox storage,
@@ -284,13 +284,13 @@ public sealed class SharedHostIsolationTests(SharedHarnessFixture fixture)
 
         // First cycle
         await _harness.Publisher.PublishAsync(new AlphaEvent("A3"), cancellationToken: AbortToken);
-        await _harness.WaitForConsumed<AlphaEvent>(TimeSpan.FromSeconds(5), AbortToken);
+        await _harness.WaitForConsumedAsync<AlphaEvent>(TimeSpan.FromSeconds(5), AbortToken);
 
         await _harness.ResetAsync(cancellationToken: AbortToken);
 
         // Second cycle — should work identically
         await _harness.Publisher.PublishAsync(new AlphaEvent("A4"), cancellationToken: AbortToken);
-        var recorded = await _harness.WaitForConsumed<AlphaEvent>(TimeSpan.FromSeconds(5), AbortToken);
+        var recorded = await _harness.WaitForConsumedAsync<AlphaEvent>(TimeSpan.FromSeconds(5), AbortToken);
 
         recorded.Message.Should().BeOfType<AlphaEvent>().Which.Id.Should().Be("A4");
         _harness.Consumed.Should().ContainSingle();

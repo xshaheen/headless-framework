@@ -147,7 +147,7 @@ public sealed class TenantPropagationE2ETests : TestBase
             await harness.Publisher.PublishAsync(new TenantOrderEvent("ORD-1"), cancellationToken: AbortToken);
         }
 
-        await harness.WaitForConsumed<TenantOrderEvent>(TimeSpan.FromSeconds(5), AbortToken);
+        await harness.WaitForConsumedAsync<TenantOrderEvent>(TimeSpan.FromSeconds(5), AbortToken);
 
         // then — consumer body observed the ambient tenant via both the envelope and ICurrentTenant
         var (_, envelopeTenant, ambientTenant) = capture.Records.Single(r =>
@@ -177,7 +177,7 @@ public sealed class TenantPropagationE2ETests : TestBase
         );
         // when — no ambient tenant; publish without explicit options
         await harness.Publisher.PublishAsync(new TenantOrderEvent("ORD-SYS"), cancellationToken: AbortToken);
-        await harness.WaitForConsumed<TenantOrderEvent>(TimeSpan.FromSeconds(5), AbortToken);
+        await harness.WaitForConsumedAsync<TenantOrderEvent>(TimeSpan.FromSeconds(5), AbortToken);
 
         // then — envelope carries no tenant; consumer observes no ambient tenant
         var (_, envelopeTenant, ambientTenant) = capture.Records.Single(r =>
@@ -214,7 +214,7 @@ public sealed class TenantPropagationE2ETests : TestBase
             );
         }
 
-        await harness.WaitForConsumed<TenantOrderEvent>(TimeSpan.FromSeconds(5), AbortToken);
+        await harness.WaitForConsumedAsync<TenantOrderEvent>(TimeSpan.FromSeconds(5), AbortToken);
 
         // then — explicit value wins over ambient
         var (_, envelopeTenant, ambientTenant) = capture.Records.Single(r =>
@@ -248,11 +248,11 @@ public sealed class TenantPropagationE2ETests : TestBase
             await harness.Publisher.PublishAsync(new TenantOrderEvent("ORD-RETRY"), cancellationToken: AbortToken);
         }
 
-        await harness.WaitForFaulted<TenantOrderEvent>(TimeSpan.FromSeconds(5), AbortToken);
+        await harness.WaitForFaultedAsync<TenantOrderEvent>(TimeSpan.FromSeconds(5), AbortToken);
 
         // and — wait for the second (successful) attempt so we can assert that the retry
         //       observed the same tenant context, not just the first faulted invocation.
-        await harness.WaitForConsumed<TenantOrderEvent>(
+        await harness.WaitForConsumedAsync<TenantOrderEvent>(
             msg => string.Equals(msg.OrderId, "ORD-RETRY", StringComparison.Ordinal),
             TimeSpan.FromSeconds(10),
             AbortToken
@@ -321,7 +321,7 @@ public sealed class TenantPropagationE2ETests : TestBase
         // and — wait for all to be consumed
         foreach (var tenantId in tenants)
         {
-            await harness.WaitForConsumed<TenantOrderEvent>(
+            await harness.WaitForConsumedAsync<TenantOrderEvent>(
                 msg => string.Equals(msg.OrderId, tenantId, StringComparison.Ordinal),
                 TimeSpan.FromSeconds(10),
                 AbortToken
@@ -375,7 +375,7 @@ public sealed class TenantPropagationE2ETests : TestBase
             await harness.Publisher.PublishAsync(new TenantOrderUpstream("HOP-1"), cancellationToken: AbortToken);
         }
 
-        await harness.WaitForConsumed<TenantOrderEvent>(
+        await harness.WaitForConsumedAsync<TenantOrderEvent>(
             msg => string.Equals(msg.OrderId, "chained-HOP-1", StringComparison.Ordinal),
             TimeSpan.FromSeconds(10),
             AbortToken
@@ -418,7 +418,7 @@ public sealed class TenantPropagationE2ETests : TestBase
             );
         }
 
-        await harness.WaitForConsumed<TenantOrderEvent>(TimeSpan.FromSeconds(10), AbortToken);
+        await harness.WaitForConsumedAsync<TenantOrderEvent>(TimeSpan.FromSeconds(10), AbortToken);
 
         // then — envelope and ambient both reflect the publishing tenant on the consume side
         var (_, envelopeTenant, ambientTenant) = capture.Records.Single(r =>

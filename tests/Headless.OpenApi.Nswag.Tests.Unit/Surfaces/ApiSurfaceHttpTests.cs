@@ -80,7 +80,7 @@ public sealed class ApiSurfaceHttpTests : TestBase
         portal.MapGet("minimal/optional", () => "optional").AllowMissingTenant();
         portal.MapGet("minimal/anonymous", () => "anonymous").AllowAnonymous();
         app.MapApiSurface("console").MapGet("minimal", () => new ConsoleSurfacePayload("private"));
-        app.MapNswagApiSurfaceDocuments();
+        app.UseNswagApiSurfaceDocuments();
         await app.StartAsync(AbortToken);
         try
         {

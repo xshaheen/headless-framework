@@ -54,7 +54,6 @@ public sealed class ApiSurfaceOpenApiTests : TestBase
         }
         if (customize)
         {
-            _ConfigureEncryption(builder);
             builder.AddHeadless(configureServices: options =>
             {
                 options.Validation.RequireUseHeadless = false;
@@ -155,7 +154,6 @@ public sealed class ApiSurfaceOpenApiTests : TestBase
         var builder = WebApplication.CreateBuilder();
         if (serviceDefaults)
         {
-            _ConfigureEncryption(builder);
             builder.AddHeadless();
         }
         else
@@ -176,7 +174,6 @@ public sealed class ApiSurfaceOpenApiTests : TestBase
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseUrls("http://127.0.0.1:0");
         builder.Logging.ClearProviders();
-        _ConfigureEncryption(builder);
         if (surfaces)
         {
             builder.Services.AddHeadlessApiSurface("portal").AddHeadlessApiSurface("console");
@@ -210,17 +207,6 @@ public sealed class ApiSurfaceOpenApiTests : TestBase
             await app.StopAsync(AbortToken);
         }
     }
-
-    private static void _ConfigureEncryption(WebApplicationBuilder builder) =>
-        builder.Configuration.AddInMemoryCollection(
-            new Dictionary<string, string?>(StringComparer.Ordinal)
-            {
-                ["Headless:StringEncryption:DefaultPassPhrase"] = "TestPassPhrase123456",
-                ["Headless:StringEncryption:InitVectorBytes"] = "VGVzdElWMDEyMzQ1Njc4OQ==",
-                ["Headless:StringEncryption:DefaultSalt"] = "VGVzdFNhbHQ=",
-                ["Headless:LookupHasher:DefaultSalt"] = "TestSalt",
-            }
-        );
 
     private sealed record SurfaceMetadata(string SurfaceName) : IApiSurfaceMetadata;
 

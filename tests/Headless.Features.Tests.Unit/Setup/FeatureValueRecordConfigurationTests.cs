@@ -97,7 +97,7 @@ public sealed class FeatureValueRecordConfigurationTests
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
-            modelBuilder.AddHeadlessFeatures(new FeaturesStorageOptions(), style);
+            modelBuilder.ConfigureHeadlessFeatures(new FeaturesStorageOptions(), style);
         }
     }
 

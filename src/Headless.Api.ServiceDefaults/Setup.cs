@@ -7,7 +7,6 @@ using System.Reflection;
 using FileSignatures;
 using FluentValidation;
 using Headless.Api;
-using Headless.Api.Identity;
 using Headless.Api.Security;
 using Headless.Checks;
 using Headless.Context;
@@ -31,7 +30,6 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Microsoft.IdentityModel.JsonWebTokens;
 using OpenTelemetry;
 using OpenTelemetry.Instrumentation.AspNetCore;
 using OpenTelemetry.Metrics;
@@ -45,13 +43,11 @@ namespace Headless.Api.ServiceDefaults;
 [PublicAPI]
 public static class SetupApi
 {
-    private const string _StringEncryptionSectionName = "Headless:StringEncryption";
-    private const string _LookupHasherSectionName = "Headless:LookupHasher";
     private const string _HeadlessWildcardSourceName = "Headless.*";
     private static int _globalSettingsConfigured;
 
     /// <summary>
-    /// Applies one-time process-wide defaults: regex timeout, FluentValidation cascade mode, and JWT claim mapping.
+    /// Applies one-time process-wide defaults: regex timeout and FluentValidation cascade mode.
     /// Idempotent — subsequent calls are no-ops.
     /// </summary>
     public static void ConfigureGlobalSettings()
@@ -64,8 +60,6 @@ public static class SetupApi
         AppDomain.CurrentDomain.SetData("REGEX_DEFAULT_MATCH_TIMEOUT", TimeSpan.FromSeconds(1));
         ValidatorOptions.Global.LanguageManager.Enabled = true;
         ValidatorOptions.Global.DefaultRuleLevelCascadeMode = CascadeMode.Stop;
-        JsonWebTokenHandler.DefaultMapInboundClaims = false;
-        JsonWebTokenHandler.DefaultInboundClaimTypeMap.Clear();
     }
 
     /// <summary>
@@ -82,8 +76,8 @@ public static class SetupApi
     {
         /// <summary>
         /// Registers all Headless service defaults (OpenTelemetry, OpenAPI, HttpClient, service discovery,
-        /// problem details, multi-tenancy stubs, etc.) and reads encryption/hash secrets from the default
-        /// <c>Headless:StringEncryption</c> and <c>Headless:LookupHasher</c> configuration sections.
+        /// problem details, multi-tenancy stubs, etc.). String encryption and the lookup hasher are opt-in: call
+        /// <c>AddStringEncryptionService(...)</c> and <c>AddLookupHasher(...)</c> when the app uses them.
         /// </summary>
         /// <param name="configureServices">Optional callback to tune <see cref="HeadlessServiceDefaultsOptions"/> before registration.</param>
         /// <returns><paramref name="builder"/> for chaining.</returns>
@@ -92,114 +86,7 @@ public static class SetupApi
         {
             Argument.IsNotNull(builder);
 
-            builder._AddDefaultStringEncryptionService();
-            builder._AddDefaultLookupHasher();
-
             return builder._AddApiCore(configureServices);
-        }
-
-        /// <summary>
-        /// Registers all Headless service defaults, binding encryption and hash options from the
-        /// supplied <see cref="IConfiguration"/> sections instead of the default
-        /// <c>Headless:StringEncryption</c> / <c>Headless:LookupHasher</c> paths.
-        /// </summary>
-        /// <param name="stringEncryptionConfig">Configuration section for string-encryption options.</param>
-        /// <param name="lookupHasherConfig">Configuration section for lookup-hasher options.</param>
-        /// <param name="configureServices">Optional callback to tune <see cref="HeadlessServiceDefaultsOptions"/>.</param>
-        /// <returns><paramref name="builder"/> for chaining.</returns>
-        /// <exception cref="ArgumentNullException"><paramref name="builder"/>, <paramref name="stringEncryptionConfig"/>, or <paramref name="lookupHasherConfig"/> is <see langword="null"/>.</exception>
-        public WebApplicationBuilder AddHeadless(
-            IConfiguration stringEncryptionConfig,
-            IConfiguration lookupHasherConfig,
-            Action<HeadlessServiceDefaultsOptions>? configureServices = null
-        )
-        {
-            Argument.IsNotNull(builder);
-            Argument.IsNotNull(stringEncryptionConfig);
-            Argument.IsNotNull(lookupHasherConfig);
-
-            builder.Services.AddStringEncryptionService(stringEncryptionConfig);
-            builder.Services.AddLookupHasher(lookupHasherConfig);
-
-            return builder._AddApiCore(configureServices);
-        }
-
-        /// <summary>
-        /// Registers all Headless service defaults, configuring encryption options via a delegate.
-        /// Hash options default to the <c>Headless:LookupHasher</c> configuration section when
-        /// <paramref name="configureLookupHasher"/> is <see langword="null"/>.
-        /// </summary>
-        /// <param name="configureEncryption">Required callback to configure string-encryption options.</param>
-        /// <param name="configureLookupHasher">Optional callback to configure lookup-hasher options.</param>
-        /// <param name="configureServices">Optional callback to tune <see cref="HeadlessServiceDefaultsOptions"/>.</param>
-        /// <returns><paramref name="builder"/> for chaining.</returns>
-        /// <exception cref="ArgumentNullException"><paramref name="builder"/> or <paramref name="configureEncryption"/> is <see langword="null"/>.</exception>
-        public WebApplicationBuilder AddHeadless(
-            Action<StringEncryptionOptions> configureEncryption,
-            Action<LookupHasherOptions>? configureLookupHasher = null,
-            Action<HeadlessServiceDefaultsOptions>? configureServices = null
-        )
-        {
-            Argument.IsNotNull(builder);
-            Argument.IsNotNull(configureEncryption);
-
-            builder.Services.AddStringEncryptionService(configureEncryption);
-
-            if (configureLookupHasher is null)
-            {
-                builder._AddDefaultLookupHasher();
-            }
-            else
-            {
-                builder.Services.AddLookupHasher(configureLookupHasher);
-            }
-
-            return builder._AddApiCore(configureServices);
-        }
-
-        /// <summary>
-        /// Registers all Headless service defaults, configuring encryption options via a service-provider
-        /// delegate. Hash options default to the <c>Headless:LookupHasher</c> configuration section when
-        /// <paramref name="configureLookupHasher"/> is <see langword="null"/>.
-        /// </summary>
-        /// <param name="configureEncryption">Required callback (with <see cref="IServiceProvider"/>) to configure encryption options.</param>
-        /// <param name="configureLookupHasher">Optional callback (with <see cref="IServiceProvider"/>) to configure hash options.</param>
-        /// <param name="configureServices">Optional callback to tune <see cref="HeadlessServiceDefaultsOptions"/>.</param>
-        /// <returns><paramref name="builder"/> for chaining.</returns>
-        /// <exception cref="ArgumentNullException"><paramref name="builder"/> or <paramref name="configureEncryption"/> is <see langword="null"/>.</exception>
-        public WebApplicationBuilder AddHeadless(
-            Action<StringEncryptionOptions, IServiceProvider> configureEncryption,
-            Action<LookupHasherOptions, IServiceProvider>? configureLookupHasher = null,
-            Action<HeadlessServiceDefaultsOptions>? configureServices = null
-        )
-        {
-            Argument.IsNotNull(builder);
-            Argument.IsNotNull(configureEncryption);
-
-            builder.Services.AddStringEncryptionService(configureEncryption);
-
-            if (configureLookupHasher is null)
-            {
-                builder._AddDefaultLookupHasher();
-            }
-            else
-            {
-                builder.Services.AddLookupHasher(configureLookupHasher);
-            }
-
-            return builder._AddApiCore(configureServices);
-        }
-
-        private void _AddDefaultStringEncryptionService()
-        {
-            builder.Services.AddStringEncryptionService(
-                builder.Configuration.GetRequiredSection(_StringEncryptionSectionName)
-            );
-        }
-
-        private void _AddDefaultLookupHasher()
-        {
-            builder.Services.AddLookupHasher(builder.Configuration.GetRequiredSection(_LookupHasherSectionName));
         }
 
         private WebApplicationBuilder _AddApiCore(Action<HeadlessServiceDefaultsOptions>? configureServices)
@@ -263,7 +150,6 @@ public static class SetupApi
             builder.Services.TryAddSingleton<IContentTypeProvider, ExtendedFileExtensionContentTypeProvider>();
 
             builder.Services.TryAddSingleton<IClaimsPrincipalFactory, ClaimsPrincipalFactory>();
-            builder.Services.TryAddSingleton<IJwtTokenFactory, JwtTokenFactory>();
 
             builder.Services.TryAddSingleton<ICurrentLocale, CurrentCultureCurrentLocale>();
             builder.Services.TryAddSingleton<ICurrentPrincipalAccessor, HttpContextCurrentPrincipalAccessor>();
@@ -272,19 +158,12 @@ public static class SetupApi
             builder.Services.TryAddSingleton<ICurrentTenantAccessor>(AsyncLocalCurrentTenantAccessor.Instance);
             // Removes NullCurrentTenant fallback; preserves consumer-supplied ICurrentTenant.
             builder.Services.AddOrReplaceFallbackSingleton<ICurrentTenant, NullCurrentTenant, CurrentTenant>();
-            builder.Services.AddOptions<UserAgentParserOptions, UserAgentParserOptionsValidator>();
-            builder.Services.TryAddSingleton<IUserAgentParser, UserAgentParser>();
+            builder.Services.TryAddSingleton<IUserAgentParser>(NullUserAgentParser.Instance);
             builder.Services.TryAddSingleton<IWebClientInfoProvider, HttpWebClientInfoProvider>();
 
             builder.Services.TryAddScoped<IRequestContext, HttpRequestContext>();
             builder.Services.TryAddScoped<IAbsoluteUrlFactory, HttpAbsoluteUrlFactory>();
             builder.Services.TryAddScoped<IRequestedApiVersion, HttpContextRequestedApiVersion>();
-
-            builder.Services.AddOrReplaceSingleton<ILookupNormalizer, HeadlessLookupNormalizer>();
-            builder.Services.AddOrReplaceSingleton<
-                IAuthenticationSchemeProvider,
-                DynamicAuthenticationSchemeProvider
-            >();
 
             // Aspire-style service defaults (OpenTelemetry, OpenAPI, service discovery, HttpClient resilience)
             builder._ConfigureOpenTelemetry(options);
@@ -452,15 +331,21 @@ public static class SetupApi
     /// </summary>
     /// <param name="app">The <see cref="WebApplication"/> to configure.</param>
     /// <param name="configure">
-    /// Optional callback to tune <see cref="HeadlessApiDefaultsOptions"/> — forwarded headers,
-    /// response compression, status-code pages, exception handling, HTTPS redirection, HSTS,
-    /// and no-cache injection.
+    /// Optional callback to tune <see cref="HeadlessApiDefaultsOptions"/>, for example to drop a step.
     /// </param>
     /// <returns><paramref name="app"/> for chaining.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="app"/> is <see langword="null"/>.</exception>
     /// <remarks>
+    /// <para>
+    /// The steps run in a fixed order as the outer block of the pipeline: forwarded headers, response compression,
+    /// status-code pages with the status-codes rewriter, the exception handler, HTTPS redirection, HSTS, and the
+    /// no-cache header. HTTPS redirection and HSTS never run in the Development or Test environment. Call it first,
+    /// then add the application's own middleware (CORS, authentication, authorization, endpoints) after it.
+    /// </para>
+    /// <para>
     /// Must be called before the application starts for startup validation to pass when
     /// <see cref="HeadlessServiceDefaultsValidationOptions.RequireUseHeadless"/> is <see langword="true"/> (the default).
+    /// </para>
     /// </remarks>
     public static WebApplication UseHeadless(
         this WebApplication app,
@@ -481,18 +366,16 @@ public static class SetupApi
 
         applicationBuilder.Properties[HeadlessApiDefaultsOptions.AppliedKey] = true;
 
+        // Development and Test hosts usually serve plain HTTP (local Kestrel, TestServer); redirecting them breaks
+        // clients, and HSTS would pin HTTPS for a shared local host name in the browser.
+        var enforceHttps = !app.Environment.IsDevelopmentOrTest();
+
+        // A fixed order: each step runs outside the ones after it, so it sees the request first and the response
+        // last. Forwarded headers come first so every later step sees the client's scheme, host, and IP; compression
+        // wraps everything that writes a body; the error steps wrap the rest.
         if (options.UseForwardedHeaders)
         {
-            var forwardedHeadersOptions = new ForwardedHeadersOptions { ForwardedHeaders = options.ForwardedHeaders };
-
-            if (options.TrustForwardedHeadersFromAnyProxy)
-            {
-                forwardedHeadersOptions.KnownIPNetworks.Clear();
-                forwardedHeadersOptions.KnownProxies.Clear();
-            }
-
-            options.ConfigureForwardedHeaders?.Invoke(forwardedHeadersOptions);
-            app.UseForwardedHeaders(forwardedHeadersOptions);
+            _UseForwardedHeaders(app, options);
         }
 
         if (options.UseResponseCompression)
@@ -508,22 +391,15 @@ public static class SetupApi
 
         if (options.UseExceptionHandler)
         {
-            if (string.IsNullOrWhiteSpace(options.ExceptionHandlerPath))
-            {
-                app.UseExceptionHandler();
-            }
-            else
-            {
-                app.UseExceptionHandler(options.ExceptionHandlerPath, options.CreateScopeForErrors);
-            }
+            _UseExceptionHandler(app, options);
         }
 
-        if (options.UseHttpsRedirection)
+        if (options.UseHttpsRedirection && enforceHttps)
         {
             app.UseHttpsRedirection();
         }
 
-        if (options.UseHsts && !app.Environment.IsDevelopment())
+        if (options.UseHsts && enforceHttps)
         {
             app.UseHsts();
         }
@@ -539,6 +415,32 @@ public static class SetupApi
         }
 
         return app;
+    }
+
+    private static void _UseForwardedHeaders(IApplicationBuilder app, HeadlessApiDefaultsOptions options)
+    {
+        var forwardedHeadersOptions = new ForwardedHeadersOptions { ForwardedHeaders = options.ForwardedHeaders };
+
+        if (options.TrustForwardedHeadersFromAnyProxy)
+        {
+            forwardedHeadersOptions.KnownIPNetworks.Clear();
+            forwardedHeadersOptions.KnownProxies.Clear();
+        }
+
+        options.ConfigureForwardedHeaders?.Invoke(forwardedHeadersOptions);
+        app.UseForwardedHeaders(forwardedHeadersOptions);
+    }
+
+    private static void _UseExceptionHandler(IApplicationBuilder app, HeadlessApiDefaultsOptions options)
+    {
+        if (string.IsNullOrWhiteSpace(options.ExceptionHandlerPath))
+        {
+            app.UseExceptionHandler();
+        }
+        else
+        {
+            app.UseExceptionHandler(options.ExceptionHandlerPath, options.CreateScopeForErrors);
+        }
     }
 
     /// <summary>

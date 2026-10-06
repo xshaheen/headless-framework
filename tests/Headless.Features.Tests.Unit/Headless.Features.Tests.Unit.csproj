@@ -12,14 +12,18 @@
     <ExcludeByAttribute>CompilerGenerated,GeneratedCode,ExcludeFromCodeCoverage</ExcludeByAttribute>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
     <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
     <PackageReference Include="xunit.v3.mtp-v2" />
   </ItemGroup>
   <ItemGroup>
+    <!-- The feature gate's HTTP behavior (409 rewrite, composition with a permission policy) is asserted end to end. -->
+    <ProjectReference Include="..\..\src\Headless.Api\Headless.Api.csproj" />
     <ProjectReference Include="..\..\src\Headless.Features\Headless.Features.csproj" />
     <ProjectReference Include="..\..\src\Headless.Features.Storage.EntityFramework\Headless.Features.Storage.EntityFramework.csproj" />
     <ProjectReference Include="..\..\src\Headless.Messaging.Testing\Headless.Messaging.Testing.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Permissions\Headless.Permissions.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
     <ProjectReference
       Include="..\..\src\Headless.Messaging.SourceGenerator\Headless.Messaging.SourceGenerator.csproj"

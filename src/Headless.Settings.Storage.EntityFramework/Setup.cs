@@ -24,7 +24,7 @@ public static class SetupSettingsEntityFramework
         /// </summary>
         /// <typeparam name="TContext">
         /// The <see cref="DbContext"/> type that has been configured with
-        /// <c>modelBuilder.AddHeadlessSettings(…)</c> in its <c>OnModelCreating</c> override.
+        /// <c>modelBuilder.ConfigureHeadlessSettings(…)</c> in its <c>OnModelCreating</c> override.
         /// </typeparam>
         /// <returns>The same <see cref="HeadlessSettingsSetupBuilder"/> to allow chaining.</returns>
         public HeadlessSettingsSetupBuilder UseEntityFramework<TContext>()

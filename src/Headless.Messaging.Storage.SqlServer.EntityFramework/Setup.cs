@@ -102,7 +102,7 @@ public static class SetupSqlServerEntityFrameworkMessaging
 
             services.AddSingleton<IConfigureOptions<SqlServerOptions>, ConfigureSqlServerOptions<TContext>>();
 
-            if (options.EnableTransactionalOutbox)
+            if (options.EnableTransactionalInbox)
             {
                 services.AddEntityFrameworkUnitOfWork();
                 _PromoteStorageCapability(services, "SqlServer");

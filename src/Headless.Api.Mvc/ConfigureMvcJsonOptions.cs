@@ -12,7 +12,7 @@ namespace Headless.Api.Options;
 /// Configures <see cref="JsonOptions"/> for MVC with Headless JSON serialization defaults.
 /// </summary>
 /// <remarks>
-/// Applied automatically by <see cref="SetupMvc.ConfigureMvc(Microsoft.Extensions.DependencyInjection.IServiceCollection)"/>.
+/// Applied automatically by <see cref="SetupMvc.ConfigureHeadlessMvc(Microsoft.Extensions.DependencyInjection.IServiceCollection)"/>.
 /// Delegates to <c>JsonConstants.ConfigureWebJsonOptions</c> (camel-case property names, string enum
 /// serialization, etc.) and additionally enables indented JSON output in Development and Test environments
 /// for easier debugging.

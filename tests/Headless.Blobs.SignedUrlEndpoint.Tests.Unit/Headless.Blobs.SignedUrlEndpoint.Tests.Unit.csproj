@@ -13,7 +13,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.MultiTenancy\Headless.MultiTenancy.csproj" />
-    <ProjectReference Include="..\..\src\Headless.Api.DataProtection\Headless.Api.DataProtection.csproj" />
+    <ProjectReference Include="..\..\src\Headless.DataProtection.Blobs\Headless.DataProtection.Blobs.csproj" />
     <ProjectReference Include="..\..\src\Headless.Blobs.FileSystem\Headless.Blobs.FileSystem.csproj" />
     <ProjectReference Include="..\..\src\Headless.Blobs.MultiTenancy\Headless.Blobs.MultiTenancy.csproj" />
     <ProjectReference Include="..\..\src\Headless.Blobs.SignedUrlEndpoint\Headless.Blobs.SignedUrlEndpoint.csproj" />

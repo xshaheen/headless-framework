@@ -4,6 +4,7 @@ using System.ComponentModel;
 using Headless.Context;
 using Headless.MultiTenancy;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization.Policy;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -18,30 +19,6 @@ public static class SetupMiddlewares
     // internal, so its value is mirrored here. Its presence when the rewriter is added means authorization
     // already sits ahead of it in the pipeline.
     private const string _AuthorizationMiddlewareSetKey = "__AuthorizationMiddlewareSet";
-
-    /// <summary>
-    /// Registers <c>ServerTimingMiddleware</c> as a singleton in the DI container.
-    /// Call <see cref="UseServerTiming"/> after this to add it to the pipeline.
-    /// </summary>
-    /// <param name="services">The service collection to register into.</param>
-    /// <returns>The same service collection.</returns>
-    public static IServiceCollection AddServerTimingMiddleware(this IServiceCollection services)
-    {
-        services.TryAddSingleton<ServerTimingMiddleware>();
-        return services;
-    }
-
-    /// <summary>
-    /// Adds the server-timing middleware to the pipeline. It measures end-to-end request processing
-    /// time and appends a <c>Server-Timing</c> trailer header so browser DevTools can surface the
-    /// duration. Only appended when the response supports trailers; silently no-ops otherwise.
-    /// </summary>
-    /// <param name="application">The application builder.</param>
-    /// <returns>The same application builder.</returns>
-    public static IApplicationBuilder UseServerTiming(this IApplicationBuilder application)
-    {
-        return application.UseMiddleware<ServerTimingMiddleware>();
-    }
 
     /// <summary>
     /// Adds the no-cache headers middleware to the pipeline. When the response completes without
@@ -59,13 +36,34 @@ public static class SetupMiddlewares
     /// Registers <c>StatusCodesRewriterMiddleware</c> as a singleton in the DI container.
     /// Call <see cref="UseStatusCodesRewriter"/> after this to add it to the pipeline.
     /// </summary>
+    /// <remarks>
+    /// Also wraps the registered <see cref="IAuthorizationMiddlewareResultHandler"/>: when authorization forbids a
+    /// request and its handlers called <c>Fail(new AuthorizationFailureReason(...))</c>, the 403 problem response
+    /// carries the reasons' messages as its <c>detail</c>. Those messages reach the caller, so keep internal detail out
+    /// of them. A handler that set its own rejection keeps it, and a challenge (401) is unchanged. A result handler
+    /// registered after this call replaces the wrapper.
+    /// </remarks>
     /// <param name="services">The service collection to register into.</param>
     /// <returns>The same service collection.</returns>
     public static IServiceCollection AddStatusCodesRewriterMiddleware(this IServiceCollection services)
     {
         services.TryAddSingleton<StatusCodesRewriterMiddleware>();
+
+        // The rewriter writes the 403 with the authorization failure reasons as its detail; the result-handler
+        // decorator is what hands it that rejection. AddAuthorization registers the default result handler with
+        // TryAdd, so registering it first keeps one registration whichever call runs first and gives the decorator
+        // something to wrap. The marker keeps a repeated call from wrapping twice.
+        if (!services.IsAdded<AuthorizationFailureReasonMarker>())
+        {
+            services.AddSingleton(new AuthorizationFailureReasonMarker());
+            services.TryAddSingleton<IAuthorizationMiddlewareResultHandler, AuthorizationMiddlewareResultHandler>();
+            services.TryDecorate<IAuthorizationMiddlewareResultHandler, AuthorizationFailureReasonResultHandler>();
+        }
+
         return services;
     }
+
+    private sealed class AuthorizationFailureReasonMarker;
 
     /// <summary>
     /// Adds the status-codes rewriter middleware to the ASP.NET Core request pipeline.

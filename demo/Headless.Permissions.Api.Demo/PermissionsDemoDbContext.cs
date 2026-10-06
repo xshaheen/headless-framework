@@ -9,6 +9,6 @@ internal sealed class PermissionsDemoDbContext(DbContextOptions<PermissionsDemoD
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
-        modelBuilder.AddHeadlessPermissions(this);
+        modelBuilder.ConfigureHeadlessPermissions(this);
     }
 }

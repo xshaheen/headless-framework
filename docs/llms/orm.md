@@ -34,6 +34,9 @@ Use these packages for ORM-level persistence primitives. For raw SQL connection 
 - **Choose pooled or per-scope registration.** `AddHeadlessDbContextPool<TDbContext>` leases contexts from an EF pool and saves per-request context construction and service resolution; prefer it for high-throughput services. Use `AddHeadlessDbContext<TDbContext>` when the context constructor takes scoped services or the options callback needs scoped services. See [Registration modes and scope binding](#registration-modes-and-scope-binding).
 - `HeadlessDbContext` has one constructor parameter: `protected HeadlessDbContext(DbContextOptions options)`. Declare subclasses as `AppDbContext(DbContextOptions<AppDbContext> options) : HeadlessDbContext(options)`. Subclasses must override `public abstract string? DefaultSchema { get; }` — an empty string or `null` means use the provider default, a non-empty string sets `modelBuilder.HasDefaultSchema`.
 - Always call `base.OnModelCreating(modelBuilder)` in `HeadlessDbContext` subclasses before applying your own entity configurations. Skipping it omits global filter wiring, convention configuration, and model processing from `HeadlessDbContextRuntime`.
+- Soft delete is filtered by default. Load a row to restore with `IgnoreNotDeletedFilter()`, then call `Restore(...)` or set `IsDeleted = false`.
+- The framework has no suspension audit or filter. **Migration:** model suspension as your own domain state, and add an explicit filter where you relied on `NotSuspendedFilter`.
+- A required navigation to a filtered principal becomes an inner join and drops the dependent row as well. Make the navigation optional or bypass the filter on that query.
 - Configure automatic audit capture in the EF model with `IsAudited()`, entity/property `ExcludeFromAudit()`, and `IsAuditSensitive(...)`. Domain entities carry no audit marker or attributes; unconfigured entities follow `AuditLogOptions.AuditByDefault`.
 - **A pooled context keeps no per-request state in its own fields.** The pool reuses the instance across scopes; the Headless scoped collaborators are resolved from the bound scope on each use, but a field you add to the subclass is not reset. A pooled context declares exactly one public constructor taking its `DbContextOptions` plus, optionally, singleton services.
 - Declare third-party roots with `IsTenantOwned()` after `base.OnModelCreating(modelBuilder)`. Finalized metadata drives tenant filters, the optional write guard, and SQL concurrency predicates. `IMultiTenant` remains the default ownership signal; `IsNotTenantOwned()` explicitly excludes a root.
@@ -45,7 +48,7 @@ Use these packages for ORM-level persistence primitives. For raw SQL connection 
 - `AddHeadlessDbContextServices(...)` returns `IHeadlessDbContextBuilder`; chain `.AddDomainEvents()` and `.AddIntegrationEventOutbox()` off it to opt in to each event tier. `.AddDomainEvents()` lives in `Headless.EntityFramework`; `.AddIntegrationEventOutbox()` lives in `Headless.EntityFramework.Messaging` and is parameterless.
 - **There is no startup validation for event tiers.** A runtime guard throws `InvalidOperationException` at save time, only when an entity actually emits an event for a tier that is not registered. The guard message names the exact registration to add.
 - Customize the save pipeline through `options.AddSaveEntryProcessor<TProcessor>(ServiceLifetime)` on `HeadlessDbContextOptions`; use `options.RemoveSaveEntryProcessor<TProcessor>()` to opt out of a built-in processor. Replace `IHeadlessSaveChangesPipeline` only when you need full orchestration control.
-- Apply module-specific EF mappings explicitly through `ModelBuilder` extensions inside `OnModelCreating`: `modelBuilder.AddHeadlessAuditLog(...)`, `modelBuilder.AddHeadlessFeatures(...)`, `modelBuilder.AddHeadlessPermissions(...)`, `modelBuilder.AddHeadlessSettings(...)`. These read schema and table names from validated `*StorageOptions`.
+- Apply module-specific EF mappings explicitly through `ModelBuilder` extensions inside `OnModelCreating`: `modelBuilder.AddHeadlessAuditLog(...)`, `modelBuilder.ConfigureHeadlessFeatures(...)`, `modelBuilder.ConfigureHeadlessPermissions(...)`, `modelBuilder.ConfigureHeadlessSettings(...)`. These read schema and table names from validated `*StorageOptions`.
 - **Completed local drains survive persistence retry.** The pipeline retains captured occurrence IDs and skips a completed local drain on subsequent persistence retries. Handler failures have no per-handler checkpoint and can repeat handler entry. Local handlers must remain replay-safe and keep external effects out of the transaction. The transactional outbox can commit atomically with application state; delivery and external effects remain at-least-once and require idempotency.
 - **Enlisted write retry boundary.** A Jobs write or a `unit.Outbox` publish enlisted in a *pipeline-owned* save (observed mode, from a domain-event handler) calls `IUnitOfWork.PreventRetry()`, which prevents automatic retries of that save because the handler is not re-run on replay and the row is not retained in the business change tracker. A later failure propagates unchanged; recover with a fresh context and aggregate graph after a known rollback, or reconcile an unknown commit first. The same writes issued directly inside a caller's own `RunAsync(db, …)` block leave it replayable, because the replay re-runs the block. A caller-owned save that dispatched domain or integration events ends replay of that block instead: the save clears the emitters, so a replayed block would find nothing to re-dispatch. Saves whose only enlisted writes are entity-emitted integration events retain their existing retry behavior.
 - Raw SQL commands and stored procedures bypass query filters and the write guard. Supply explicit tenant predicates and authorization. `BeginBypass()` has no effect on raw SQL. Bulk `ExecuteUpdate` and `ExecuteDelete` consume query filters but skip the save guard.
@@ -92,13 +95,12 @@ So plain EF registrations (`AddDbContext<TDbContext>()`, `AddDbContextFactory<TD
 
 ### Global query filters
 
-Three named global filters apply according to finalized tenant metadata and the audit interfaces:
+Two named global filters apply according to finalized tenant metadata and the audit interfaces:
 
 | Interface | Filter name constant | Bypass extension |
 |---|---|---|
 | `IsTenantOwned()` or default `IMultiTenant` ownership | `HeadlessQueryFilters.MultiTenancyFilter` | `IgnoreMultiTenancyFilter()` |
 | `IDeleteAudit` | `HeadlessQueryFilters.NotDeletedFilter` | `IgnoreNotDeletedFilter()` |
-| `ISuspendAudit` | `HeadlessQueryFilters.NotSuspendedFilter` | `IgnoreNotSuspendedFilter()` |
 
 Filter names are string constants (e.g. `"MultiTenantFilter"`) used by EF Core's named-filter API. `IQueryable<T>.ExecuteUpdate(...)` and `IQueryable<T>.ExecuteDelete(...)` consume the same query filters, so bulk operations are tenant-scoped by default. They bypass `SaveChanges`, including its guard and automatic tenant concurrency predicates.
 
@@ -109,7 +111,7 @@ Bypasses emit a `[SECURITY AUDIT]` trace through `Debug.WriteLine` with the call
 `HeadlessDbContext.SaveChanges` / `SaveChangesAsync` delegate to `IHeadlessSaveChangesPipeline`, which orchestrates a fixed default chain of `IHeadlessSaveEntryProcessor` instances before the underlying EF save:
 
 1. `HeadlessEntitySaveEntryProcessor` — stamps tenant IDs and concurrency stamps. Guid keys are produced earlier (at `Add` time) by the EF Core value generators, not here.
-2. `HeadlessAuditSaveEntryProcessor` — stamps create/update/delete/suspend audit fields for `ICreateAudit`, `IUpdateAudit`, `IDeleteAudit`, `ISuspendAudit` entities.
+2. `HeadlessAuditSaveEntryProcessor` — stamps create/update/delete audit fields for `ICreateAudit`, `IUpdateAudit`, `IDeleteAudit` entities. Every modified save restamps `UpdatedAt`/`UpdatedById`. An `IsDeleted` transition stamps the delete or restore pair and keeps the opposite pair as history. A non-null value the save set explicitly wins. A delete, restore, or update with no actor, neither given nor resolved from `ICurrentUser`, records a null actor id rather than the previous actor; a same-save `Update(now, byId, by)` still wins.
 3. `HeadlessLocalEventSaveEntryProcessor` — emits `EntityCreated`, `EntityUpdated`, `EntityDeleted`, `EntityChanged` lifecycle domain events on `IDomainEventEmitter` entities.
 4. `HeadlessMessageCollectorSaveEntryProcessor` — collects pending domain + integration events onto the save context.
 
@@ -139,7 +141,7 @@ The full save-transaction order within a `HeadlessDbContext` pipeline-owned tran
 2. The `OutboxIntegrationEventDispatcher` publishes each integration event through that unit's `Outbox` (`OutboxOptions`, always durable), so the outbox writer buffers the row inside the unit's transaction — not sent to the broker in-band. It deliberately does not use `IBus`: that publisher is autonomous, and its rows would survive the save's rollback.
 3. `IUnitOfWork.CompleteAsync` drains the buffered dispatch after the transaction commits; a rollback (explicit or abandoned) discards it.
 
-On a transactional messaging consume path, the same compatible local transaction also owns the current fenced inbox completion. This atomic boundary covers enlisted EF state and captured durable Bus/Queue rows, not handler entry, `Direct`, or external effects.
+On a transactional messaging consume path, the same compatible local transaction also owns the current fenced inbox completion. This atomic boundary covers enlisted EF state and rows the handler publishes through `context.UnitOfWork.Outbox`, not handler entry, `IBus`/`IQueue` publishes (which never join the unit), `Direct`, or external effects.
 4. The background messaging relay sweeps committed rows independently for crash recovery. On PostgreSQL the relay is the primary latency-bounded path; pick the outbox storage provider on `AddHeadlessMessaging` with that trade-off in mind.
 
 Change Data Capture (e.g. Debezium) is an advanced alternative that bypasses this bridge entirely — it reads the database transaction log and is a host-infrastructure decision, not a package option.
@@ -151,8 +153,8 @@ Change Data Capture (e.g. Debezium) is an advanced alternative that bypasses thi
 | **Storage model** | Relational (PostgreSQL, SQL Server, SQLite, …) | Document (Couchbase bucket + collections) |
 | **Use when** | Strong consistency, rich queries, schema-enforced invariants, auditing, multi-tenancy, DDD aggregates, outbox integration events | Flexible schema, horizontal scaling, KV-first access patterns, Couchbase N1QL queries |
 | **Avoid when** | Schema-less or flexible-schema documents; extreme horizontal write scale | ACID transactions across multiple entities/tables; when strong relational queries or auditing conventions are needed |
-| **Global filters** | `IMultiTenant`, `IDeleteAudit`, `ISuspendAudit` — automatic | None; consumers implement their own query predicates |
-| **Auditing** | Automatic via `ICreateAudit`, `IUpdateAudit`, `IDeleteAudit`, `ISuspendAudit` | None |
+| **Global filters** | `IMultiTenant`, `IDeleteAudit` — automatic | None; consumers implement their own query predicates |
+| **Auditing** | Automatic via `ICreateAudit`, `IUpdateAudit`, `IDeleteAudit` | None |
 | **Events** | Domain events (in-process) + integration events (outbox) | None |
 | **Transactions** | EF Core execution strategy + `IUnitOfWorkFactory.RunAsync(db, …)` (always unit-of-work-aware) | Couchbase Transactions via `ExecuteTransactionAsync(Func<AttemptContext, Task<bool>>)` |
 | **DI** | `AddHeadlessDbContext<TDbContext>(...)` | `AddHeadlessCouchbase()` for the framework providers; the consumer supplies `ICouchbaseClusterOptionsProvider` + `ICouchbaseTransactionConfigProvider` |
@@ -167,6 +169,7 @@ Change Data Capture (e.g. Debezium) is an advanced alternative that bypasses thi
 
 - Provider-neutral converters and comparers for dates, JSON-backed values, locales, extra properties, and Headless primitives.
 - Money and phone model configuration plus pagination, ordering, data-grid, date aggregation, entity lookup, and asynchronous lookup helpers.
+- `FirstByIdAsync(id, ct)` loads an `IEntity<TKey>` by key, and `FirstOrNotFoundAsync(entity, key, ct)` returns the first element of any query, typically a projection. Both throw `EntityNotFoundException` (404 through the API exception handler) naming the entity type and key when nothing matches. `FirstOrNotFoundAsync` requires a reference-type element, because a default value type cannot be told apart from a match.
 - Generic model/configuration helpers that do not require `HeadlessDbContext` or runtime policy.
 - The audit capture policy for the EF model: `IsAudited()`, `ExcludeFromAudit()`, and `IsAuditSensitive(...)` (`HeadlessAuditPolicyExtensions`, namespace `Microsoft.EntityFrameworkCore`). They only write model annotations; `Headless.EntityFramework`'s audit capture reads them. A storage package that maps its own tables, such as Jobs, uses them to keep its rows out of an application context's audit log.
 - `DateTimeKind.Unspecified` is treated as an already-UTC relational value and stamped without shifting its clock value.
@@ -224,11 +227,12 @@ Entity Framework Core integration with framework conventions and save pipeline o
 - `HeadlessDbContext` base context — single `protected HeadlessDbContext(DbContextOptions options)` constructor and a `public abstract string? DefaultSchema { get; }` override
 - `IHeadlessDbContext` interface implemented by `HeadlessDbContext` and `HeadlessIdentityDbContext` — shared seam for the unit-of-work-aware transaction helpers and the factory
 - DI registration via `AddHeadlessDbContext<TDbContext>(...)` (one instance per scope) or `AddHeadlessDbContextPool<TDbContext>(...)` (pooled); both register the context, `IDbContextFactory<TDbContext>`, DI-registered interceptor auto-attachment, and the Headless services
+- Both registrations contribute the `dbcontext-{TDbContext full name}` readiness health check (tags `ready`, `headless`, `database`), which is Microsoft's `AddDbContextCheck<TDbContext>` (`Database.CanConnectAsync` on the context of the check's own scope), wrapped so a failure reports fixed text instead of the driver message. See [Health checks](utilities.md#health-checks).
 - Application-generated Guid keys: every `IEntity<Guid>` is configured `ValueGenerated.Never`; key is produced client-side at add time via a provider-keyed `IGuidGenerator` (`SqlServer` comb, `Version7` for others). Numeric keys are not generated by Headless.
-- Automatic audit fields for `ICreateAudit` / `IUpdateAudit` / `IDeleteAudit` / `ISuspendAudit` entities
+- Automatic audit fields for `ICreateAudit` / `IUpdateAudit` / `IDeleteAudit` entities
 - EF-native automatic audit-log policy via `IsAudited()`, entity/property `ExcludeFromAudit()`, and `IsAuditSensitive(...)`; `EfAuditChangeCapture` reads the finalized model without reflecting over domain attributes
 - Finalized tenant ownership via `IsTenantOwned()` and `IsNotTenantOwned()`, with mapped or shadow string properties and `IMultiTenant` defaults
-- Three named global query filters: `MultiTenancyFilter` (tenant-owned metadata), `NotDeletedFilter` (`IDeleteAudit`), `NotSuspendedFilter` (`ISuspendAudit`); per-query bypass via `IgnoreMultiTenancyFilter()` / `IgnoreNotDeletedFilter()` / `IgnoreNotSuspendedFilter()`
+- Two named global query filters: `MultiTenancyFilter` (tenant-owned metadata) and `NotDeletedFilter` (`IDeleteAudit`); per-query bypass via `IgnoreMultiTenancyFilter()` / `IgnoreNotDeletedFilter()`
 - Selected unique indexes gain tenant scope through `IsTenantScoped()` without changing primary keys
 - Composable save pipeline driven by `HeadlessDbContextOptions` and an ordered chain of `IHeadlessSaveEntryProcessor` instances
 - `AddSaveEntryProcessor<TProcessor>(ServiceLifetime)` / `RemoveSaveEntryProcessor<TProcessor>()` for custom pipeline extension
@@ -330,11 +334,22 @@ var productId = await unitOfWork.RunAsync(
 
 #### Global Filters
 
-The tenant filter follows finalized ownership metadata. Soft-delete and suspension filters follow their corresponding interfaces. Existing application filters are preserved. Bypass per-query with the matching extension method:
+The tenant filter follows finalized ownership metadata. The soft-delete filter follows `IDeleteAudit`. Existing application filters are preserved. Bypass per-query with the matching extension method:
 
 ```csharp
 // Read soft-deleted entities for admin purposes
 var all = await dbContext.Products.IgnoreNotDeletedFilter().ToListAsync(ct);
+
+// Restore a soft-deleted entity: the filter hides it, so bypass it to load the row
+var product = await dbContext.Products.IgnoreNotDeletedFilter().FirstByIdAsync(id, ct);
+product.Restore(now, byId);
+await dbContext.SaveChangesAsync(ct);
+
+// Project a single row, with the same not-found failure as FirstByIdAsync
+var view = await dbContext.Products
+    .Where(x => x.Id == id)
+    .Select(x => new ProductView { Id = x.Id, Name = x.Name })
+    .FirstOrNotFoundAsync(nameof(Product), id, ct);
 
 // Read across tenants (host/admin path only)
 var allTenants = await dbContext.Products.IgnoreMultiTenancyFilter().IgnoreNotDeletedFilter().ToListAsync(ct);
@@ -460,9 +475,9 @@ protected override void OnModelCreating(ModelBuilder modelBuilder)
 {
     base.OnModelCreating(modelBuilder);
     modelBuilder.AddHeadlessAuditLog(_auditLogStorage.Value);
-    modelBuilder.AddHeadlessFeatures(_featuresStorage.Value);
-    modelBuilder.AddHeadlessPermissions(_permissionsStorage.Value);
-    modelBuilder.AddHeadlessSettings(_settingsStorage.Value);
+    modelBuilder.ConfigureHeadlessFeatures(_featuresStorage.Value);
+    modelBuilder.ConfigureHeadlessPermissions(_permissionsStorage.Value);
+    modelBuilder.ConfigureHeadlessSettings(_settingsStorage.Value);
 }
 ```
 

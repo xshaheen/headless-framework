@@ -24,7 +24,6 @@ public sealed class SetupApiTests
     {
         // given
         var builder = WebApplication.CreateBuilder();
-        _AddDefaultHeadlessSecurityConfiguration(builder.Configuration);
 
         // when
         builder.AddHeadless();
@@ -43,7 +42,6 @@ public sealed class SetupApiTests
     {
         // given
         var builder = WebApplication.CreateBuilder();
-        _AddDefaultHeadlessSecurityConfiguration(builder.Configuration);
         builder.Services.AddSingleton<ICurrentTenant, NullCurrentTenant>();
 
         // when
@@ -60,7 +58,6 @@ public sealed class SetupApiTests
     {
         // given
         var builder = WebApplication.CreateBuilder();
-        _AddDefaultHeadlessSecurityConfiguration(builder.Configuration);
         var customTenant = new ApiCustomCurrentTenant();
         builder.Services.AddSingleton<ICurrentTenant>(customTenant);
 
@@ -78,7 +75,6 @@ public sealed class SetupApiTests
     {
         // given
         var builder = WebApplication.CreateBuilder();
-        _AddDefaultHeadlessSecurityConfiguration(builder.Configuration);
 
         // when
         builder.AddHeadless();
@@ -102,83 +98,19 @@ public sealed class SetupApiTests
     }
 
     [Fact]
-    public void should_allow_configuration_sections_when_add_headless_api()
+    public void should_register_no_string_encryption_or_lookup_hasher_when_add_headless_without_security_configuration()
     {
         // given
         var builder = WebApplication.CreateBuilder();
-        var configuration = _CreateSecuritySectionConfiguration();
 
         // when
-        builder.AddHeadless(
-            configuration.GetRequiredSection("Security:StringEncryption"),
-            configuration.GetRequiredSection("Security:LookupHasher")
-        );
+        builder.AddHeadless();
 
         using var serviceProvider = builder.Services.BuildServiceProvider();
-        var encryptionOptions = serviceProvider.GetRequiredService<IOptions<StringEncryptionOptions>>().Value;
-        var hashOptions = serviceProvider.GetRequiredService<IOptions<LookupHasherOptions>>().Value;
 
         // then
-        encryptionOptions.DefaultPassPhrase.Should().Be("SectionPassPhrase123");
-        encryptionOptions.DefaultSalt.Should().BeEquivalentTo("SectionSalt"u8.ToArray());
-        hashOptions.DefaultSalt.Should().Be("SectionSalt");
-        hashOptions.Iterations.Should().Be(700000);
-    }
-
-    [Fact]
-    public void should_allow_configuration_callbacks_when_add_headless_api()
-    {
-        // given
-        var builder = WebApplication.CreateBuilder();
-        _AddDefaultHeadlessSecurityConfiguration(builder.Configuration);
-
-        // when
-        builder.AddHeadless(
-            encryption =>
-            {
-                encryption.DefaultPassPhrase = "ActionPassPhrase123";
-                encryption.DefaultSalt = "ActionSalt"u8.ToArray();
-            },
-            hash =>
-            {
-                hash.DefaultSalt = "ActionSalt";
-                hash.Iterations = 800000;
-            }
-        );
-
-        using var serviceProvider = builder.Services.BuildServiceProvider();
-        var encryptionOptions = serviceProvider.GetRequiredService<IOptions<StringEncryptionOptions>>().Value;
-        var hashOptions = serviceProvider.GetRequiredService<IOptions<LookupHasherOptions>>().Value;
-
-        // then
-        encryptionOptions.DefaultPassPhrase.Should().Be("ActionPassPhrase123");
-        encryptionOptions.DefaultSalt.Should().BeEquivalentTo("ActionSalt"u8.ToArray());
-        hashOptions.DefaultSalt.Should().Be("ActionSalt");
-        hashOptions.Iterations.Should().Be(800000);
-    }
-
-    [Fact]
-    public void should_use_default_hash_configuration_when_add_headless_api_hash_callback_is_omitted()
-    {
-        // given
-        var builder = WebApplication.CreateBuilder();
-        _AddDefaultHeadlessSecurityConfiguration(builder.Configuration);
-
-        // when
-        builder.AddHeadless(encryption =>
-        {
-            encryption.DefaultPassPhrase = "ActionPassPhrase123";
-            encryption.DefaultSalt = "ActionSalt"u8.ToArray();
-        });
-
-        using var serviceProvider = builder.Services.BuildServiceProvider();
-        var encryptionOptions = serviceProvider.GetRequiredService<IOptions<StringEncryptionOptions>>().Value;
-        var hashOptions = serviceProvider.GetRequiredService<IOptions<LookupHasherOptions>>().Value;
-
-        // then
-        encryptionOptions.DefaultPassPhrase.Should().Be("ActionPassPhrase123");
-        encryptionOptions.DefaultSalt.Should().BeEquivalentTo("ActionSalt"u8.ToArray());
-        hashOptions.DefaultSalt.Should().Be("TestSalt");
+        serviceProvider.GetService<IStringEncryptionService>().Should().BeNull();
+        serviceProvider.GetService<ILookupHasher>().Should().BeNull();
     }
 
     [Fact]
@@ -186,7 +118,6 @@ public sealed class SetupApiTests
     {
         // given
         var builder = WebApplication.CreateBuilder();
-        _AddDefaultHeadlessSecurityConfiguration(builder.Configuration);
 
         // when
         builder.AddHeadless(configureServices: options =>
@@ -223,7 +154,6 @@ public sealed class SetupApiTests
     {
         // given
         var builder = WebApplication.CreateBuilder();
-        _AddDefaultHeadlessSecurityConfiguration(builder.Configuration);
 
         // when
         builder.AddHeadless(configureServices: options =>
@@ -237,48 +167,6 @@ public sealed class SetupApiTests
 
         // then
         serviceProvider.GetRequiredService<IAntiforgery>().Should().NotBeNull();
-    }
-
-    [Fact]
-    public void should_allow_service_provider_callbacks_when_add_headless_api()
-    {
-        // given
-        var builder = WebApplication.CreateBuilder();
-        _AddDefaultHeadlessSecurityConfiguration(builder.Configuration);
-        builder.Services.AddSingleton(
-            new SecurityTestValues
-            {
-                PassPhrase = "ProviderPassPhrase123",
-                EncryptionSalt = "ProviderSalt"u8.ToArray(),
-                HashSalt = "ProviderHashSalt",
-            }
-        );
-
-        // when
-        builder.AddHeadless(
-            (encryption, serviceProvider) =>
-            {
-                var values = serviceProvider.GetRequiredService<SecurityTestValues>();
-                encryption.DefaultPassPhrase = values.PassPhrase;
-                encryption.DefaultSalt = values.EncryptionSalt;
-            },
-            (hash, serviceProvider) =>
-            {
-                var values = serviceProvider.GetRequiredService<SecurityTestValues>();
-                hash.DefaultSalt = values.HashSalt;
-                hash.Iterations = 900000;
-            }
-        );
-
-        using var serviceProvider = builder.Services.BuildServiceProvider();
-        var encryptionOptions = serviceProvider.GetRequiredService<IOptions<StringEncryptionOptions>>().Value;
-        var hashOptions = serviceProvider.GetRequiredService<IOptions<LookupHasherOptions>>().Value;
-
-        // then
-        encryptionOptions.DefaultPassPhrase.Should().Be("ProviderPassPhrase123");
-        encryptionOptions.DefaultSalt.Should().BeEquivalentTo("ProviderSalt"u8.ToArray());
-        hashOptions.DefaultSalt.Should().Be("ProviderHashSalt");
-        hashOptions.Iterations.Should().Be(900000);
     }
 
     [Fact]
@@ -398,43 +286,5 @@ public sealed class SetupApiTests
     private sealed class ApiCurrentTenantScope : IDisposable
     {
         public void Dispose() { }
-    }
-
-    private sealed class SecurityTestValues
-    {
-        public required string PassPhrase { get; init; }
-
-        public required byte[] EncryptionSalt { get; init; }
-
-        public required string HashSalt { get; init; }
-    }
-
-    private static void _AddDefaultHeadlessSecurityConfiguration(IConfigurationBuilder configuration)
-    {
-        configuration.AddInMemoryCollection([
-            new KeyValuePair<string, string?>("Headless:StringEncryption:DefaultPassPhrase", "TestPassPhrase123456"),
-            new KeyValuePair<string, string?>("Headless:StringEncryption:InitVectorBytes", "VGVzdElWMDEyMzQ1Njc4OQ=="),
-            new KeyValuePair<string, string?>("Headless:StringEncryption:DefaultSalt", "VGVzdFNhbHQ="),
-            new KeyValuePair<string, string?>("Headless:LookupHasher:DefaultSalt", "TestSalt"),
-        ]);
-    }
-
-    private static IConfiguration _CreateSecuritySectionConfiguration()
-    {
-        return new ConfigurationBuilder()
-            .AddInMemoryCollection([
-                new KeyValuePair<string, string?>(
-                    "Security:StringEncryption:DefaultPassPhrase",
-                    "SectionPassPhrase123"
-                ),
-                new KeyValuePair<string, string?>(
-                    "Security:StringEncryption:InitVectorBytes",
-                    "VGVzdElWMDEyMzQ1Njc4OQ=="
-                ),
-                new KeyValuePair<string, string?>("Security:StringEncryption:DefaultSalt", "U2VjdGlvblNhbHQ="),
-                new KeyValuePair<string, string?>("Security:LookupHasher:DefaultSalt", "SectionSalt"),
-                new KeyValuePair<string, string?>("Security:LookupHasher:Iterations", "700000"),
-            ])
-            .Build();
     }
 }

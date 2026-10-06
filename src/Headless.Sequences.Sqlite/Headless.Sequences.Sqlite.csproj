@@ -14,6 +14,5 @@
     <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
     <ProjectReference Include="..\Headless.Sequences\Headless.Sequences.csproj" />
     <ProjectReference Include="..\Headless.Sql.Sqlite\Headless.Sql.Sqlite.csproj" />
-    <ProjectReference Include="..\Headless.UnitOfWork\Headless.UnitOfWork.csproj" />
   </ItemGroup>
 </Project>

@@ -46,8 +46,8 @@ public sealed class LockReleasedContractTests : TestBase
         await locks.ReleaseAsync(resource, lease!.LeaseId, AbortToken);
 
         // then
-        var published = await harness.WaitForPublished<DistributedLockReleased>(cancellationToken: AbortToken);
-        var consumed = await harness.WaitForConsumed<DistributedLockReleased>(cancellationToken: AbortToken);
+        var published = await harness.WaitForPublishedAsync<DistributedLockReleased>(cancellationToken: AbortToken);
+        var consumed = await harness.WaitForConsumedAsync<DistributedLockReleased>(cancellationToken: AbortToken);
         published.MessageName.Should().Be("headless.locks.released");
         consumed.MessageName.Should().Be("headless.locks.released");
         harness

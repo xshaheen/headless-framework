@@ -6,17 +6,16 @@
     <RootNamespace>Headless.EntityFramework</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="EFCore.CheckConstraints" />
     <PackageReference Include="Microsoft.EntityFrameworkCore" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
-    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.AuditLog.Abstractions\Headless.AuditLog.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Context.Abstractions\Headless.Context.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Context\Headless.Context.csproj" />
     <ProjectReference Include="..\Headless.Domain\Headless.Domain.csproj" />
-    <ProjectReference Include="..\Headless.Domain.LocalEventBus\Headless.Domain.LocalEventBus.csproj" />
+    <ProjectReference Include="..\Headless.Domain.EventDispatcher\Headless.Domain.EventDispatcher.csproj" />
     <ProjectReference Include="..\Headless.EntityFramework.Primitives\Headless.EntityFramework.Primitives.csproj" />
     <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
     <ProjectReference Include="..\Headless.MultiTenancy.Abstractions\Headless.MultiTenancy.Abstractions.csproj" />

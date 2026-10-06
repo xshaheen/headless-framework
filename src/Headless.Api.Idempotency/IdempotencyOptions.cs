@@ -10,7 +10,7 @@ namespace Headless.Api.Idempotency;
 /// <summary>
 /// Configures the behavior of the idempotency middleware: key derivation, retention, in-flight
 /// concurrency strategy and lease, body-fingerprinting limits, response header allowlisting, and
-/// store-error handling. All options can be set globally via <c>AddIdempotency()</c> and
+/// store-error handling. All options can be set globally via <c>AddHeadlessHttpIdempotency()</c> and
 /// overridden per endpoint via <c>WithIdempotency()</c>.
 /// </summary>
 [PublicAPI]

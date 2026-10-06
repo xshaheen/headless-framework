@@ -19,6 +19,7 @@ Package READMEs are discovery pages. They explain why a package exists and link 
 - Install only the packages the host uses: normally an abstractions package, the domain runtime/core package, and one provider. Some domains have a different shape; the domain guide owns that exception.
 - Register each feature through its `AddHeadless*` setup builder and select providers there. Do not create a second registration path around the framework.
 - Relational storage features share one connection and one schema by default: register the database once with `AddPostgreSqlSql` or `AddSqlServerSql`, call each feature's parameterless `UsePostgreSql()` or `UseSqlServer()`, and every feature creates its tables in the `headless` schema. [SQL](sql.md#shared-connection-and-schema-for-storage-features) owns the override rules.
+- Provider packages with an external dependency contribute a readiness health check tagged `ready` and `headless` when registered; it never runs at registration and stays off the liveness endpoint. Remove one with `RemoveHealthChecks`. [Utilities](utilities.md#health-checks) owns the list and the opt-out.
 - Preserve explicit durability boundaries. In-memory and `*.Dev` providers are for tests, development, or intentionally ephemeral workloads; they are not production substitutes for durable providers.
 - Keep cancellation tokens end-to-end and use the injected `TimeProvider` for application time. Store-backed leases, locks, and coordination use the store's clock where their guide says so.
 - Treat tenancy, authorization, transactions, retries, ordering, and external side effects as domain contracts. Read every affected guide when a change crosses those boundaries.
@@ -30,7 +31,7 @@ Package READMEs are discovery pages. They explain why a package exists and link 
 
 | Task | Read |
 | --- | --- |
-| Bootstrap an ASP.NET Core host; Problem Details; validation; idempotency; Minimal API or MVC | [API & Web](api.md) |
+| Bootstrap an ASP.NET Core host; Problem Details; validation; idempotency; Minimal API or MVC; JWT, ASP.NET Core Identity, or User-Agent parsing | [API & Web](api.md) |
 | Generate OpenAPI or expose Scalar UI | [OpenAPI](openapi.md) |
 | Use ASP.NET Core Identity with the Headless EF pipeline | [Identity](identity.md) |
 | Resolve tenants from claims, host, route, or catalog; enforce tenant reads/writes | [Multi-tenancy](multi-tenancy.md) |
@@ -49,6 +50,7 @@ Package READMEs are discovery pages. They explain why a package exists and link 
 | Store blobs in S3, MinIO or another S3-compatible server, Azure, R2, filesystem, Redis, or SFTP | [Blob Storage](blobs.md) |
 | Persist dynamic settings | [Settings](settings.md) |
 | Evaluate feature flags | [Features](features.md) |
+| Gate a controller action or Minimal API endpoint on a feature flag | [Features](features.md#gating-http-endpoints) |
 | React when a setting, feature, or permission grant changes instead of polling | [Settings](settings.md), [Features](features.md), [Permissions](permissions.md) — each has a "Reacting to a change" section |
 | Record entity changes or explicit audit events | [Audit Log](audit-log.md) |
 | Issue per-tenant consecutive numbers (receipts, invoices, case numbers), gap-free when audited | [Sequences](sequences.md) |

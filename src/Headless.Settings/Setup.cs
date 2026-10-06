@@ -203,6 +203,11 @@ public static class SetupSettings
 
         if (registerStartupInitializer)
         {
+            // Registered first so the initializer below reuses this instance: its retry back-off runs on the system clock,
+            // never on a faked app TimeProvider that a test host does not advance.
+            services.TryAddSingleton(static sp =>
+                ActivatorUtilities.CreateInstance<SettingsInitializationBackgroundService>(sp, TimeProvider.System)
+            );
             services.AddInitializerHostedService<SettingsInitializationBackgroundService>();
         }
 

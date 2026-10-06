@@ -119,7 +119,7 @@ public sealed class EntityFrameworkSettingsFactoryLifetimeTests : TestBase
     {
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
-            modelBuilder.AddHeadlessSettings(this);
+            modelBuilder.ConfigureHeadlessSettings(this);
         }
     }
 }

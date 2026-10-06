@@ -32,6 +32,47 @@ public sealed class SchemaRunnerTests : TestBase
     }
 
     [Fact]
+    public void should_default_to_no_host_state_tables()
+    {
+        var contribution = _Contribution("A", "public", [new("1", "a", "x")]);
+
+        contribution.HostStateTables.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void should_keep_declared_host_state_tables()
+    {
+        var contribution = new SchemaContribution(
+            "A",
+            FakeDialect.Instance,
+            () => throw new NotSupportedException("No connection is opened."),
+            "public",
+            [new("1", "a", "x")],
+            hostStateTables: ["definitions", "groups"]
+        );
+
+        contribution.HostStateTables.Should().Equal("definitions", "groups");
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(" ")]
+    public void should_reject_a_blank_host_state_table(string name)
+    {
+        var act = () =>
+            new SchemaContribution(
+                "A",
+                FakeDialect.Instance,
+                () => throw new NotSupportedException("No connection is opened."),
+                "public",
+                [new("1", "a", "x")],
+                hostStateTables: [name]
+            );
+
+        act.Should().Throw<ArgumentException>().WithMessage("*host-state table*");
+    }
+
+    [Fact]
     public void should_reject_a_contribution_without_steps()
     {
         var act = () => _Contribution("A", "public", []);

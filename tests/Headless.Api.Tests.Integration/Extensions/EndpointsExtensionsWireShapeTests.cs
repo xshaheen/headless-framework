@@ -6,6 +6,7 @@ using Headless.Api;
 using Headless.Api.Resources;
 using Headless.Context;
 using Headless.Testing.Tests;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -48,6 +49,43 @@ public sealed class EndpointsExtensionsWireShapeTests : TestBase
         root.GetProperty("detail").GetString().Should().Be(Messages.problem_bad_request);
         root.GetProperty("traceId").GetString().Should().NotBeNullOrWhiteSpace();
         root.GetProperty("instance").GetString().Should().Be("/redirect-mismatch");
+    }
+
+    [Fact]
+    public async Task should_redirect_anonymous_request_when_fallback_policy_requires_authentication()
+    {
+        // given
+        var builder = WebApplication.CreateBuilder(
+            new WebApplicationOptions { EnvironmentName = EnvironmentNames.Test }
+        );
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        builder.Services.AddHttpContextAccessor();
+        builder.Services.TryAddSingleton(TimeProvider.System);
+        builder.Services.TryAddSingleton<IBuildInformationAccessor, BuildInformationAccessor>();
+        builder.Services.AddHeadlessProblemDetails();
+        builder.Services.AddAuthentication();
+        builder
+            .Services.AddAuthorizationBuilder()
+            .SetFallbackPolicy(new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build());
+
+        await using var app = builder.Build();
+        app.UseRouting();
+        app.UseAuthentication();
+        app.UseAuthorization();
+        app.MapHostRedirects("https://main.example.com", ["old.example.com"]);
+        await app.StartAsync(AbortToken);
+
+        using var handler = new HttpClientHandler { AllowAutoRedirect = false, CheckCertificateRevocationList = true };
+        using var client = new HttpClient(handler) { BaseAddress = new Uri(app.Urls.Single()) };
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/docs?page=2");
+        request.Headers.Host = "old.example.com";
+
+        // when
+        using var response = await client.SendAsync(request, AbortToken);
+
+        // then
+        response.StatusCode.Should().Be(HttpStatusCode.MovedPermanently);
+        response.Headers.Location.Should().Be(new Uri("https://main.example.com/docs?page=2"));
     }
 
     private async Task<WebApplication> _CreateAppAsync(Uri mainHost, Uri synthesizedRedirectUri)

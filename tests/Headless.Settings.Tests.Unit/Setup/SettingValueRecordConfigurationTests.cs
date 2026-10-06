@@ -96,7 +96,7 @@ public sealed class SettingValueRecordConfigurationTests
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
-            modelBuilder.AddHeadlessSettings(new SettingsStorageOptions(), style);
+            modelBuilder.ConfigureHeadlessSettings(new SettingsStorageOptions(), style);
         }
     }
 

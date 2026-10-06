@@ -29,7 +29,6 @@ public sealed class TenantCatalogRegistrationTests : TestBase
         var builder = WebApplication.CreateBuilder(
             new WebApplicationOptions { EnvironmentName = EnvironmentNames.Test }
         );
-        HttpTenancyTestHarness.AddDefaultHeadlessSecurityConfiguration(builder.Configuration);
 
         // Validation is deliberately not configured here: ValidateServiceProviderOnStartup defaults to
         // true, which is what a real host gets, and it is the only reason Build() below exercises

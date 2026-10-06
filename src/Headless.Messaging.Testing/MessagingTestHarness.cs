@@ -29,7 +29,7 @@ namespace Headless.Messaging.Testing;
 /// });
 ///
 /// await harness.Publisher.PublishAsync(new MyMessage { ... });
-/// var recorded = await harness.WaitForConsumed&lt;MyMessage&gt;();
+/// var recorded = await harness.WaitForConsumedAsync&lt;MyMessage&gt;();
 /// </code>
 /// </para>
 /// <para>
@@ -178,7 +178,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     /// Waits until a message of type <typeparamref name="T"/> is published,
     /// or throws <see cref="MessageObservationTimeoutException"/> if <paramref name="timeout"/> elapses.
     /// </summary>
-    public Task<RecordedMessage> WaitForPublished<T>(
+    public Task<RecordedMessage> WaitForPublishedAsync<T>(
         TimeSpan? timeout = null,
         CancellationToken cancellationToken = default
     )
@@ -197,7 +197,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     /// Waits until a published message of type <typeparamref name="T"/> satisfies <paramref name="predicate"/>,
     /// or throws <see cref="MessageObservationTimeoutException"/> if <paramref name="timeout"/> elapses.
     /// </summary>
-    public Task<RecordedMessage> WaitForPublished<T>(
+    public Task<RecordedMessage> WaitForPublishedAsync<T>(
         Func<T, bool> predicate,
         TimeSpan? timeout = null,
         CancellationToken cancellationToken = default
@@ -218,7 +218,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     /// <paramref name="lane"/> (Bus vs Queue), or throws
     /// <see cref="MessageObservationTimeoutException"/> if <paramref name="timeout"/> elapses.
     /// </summary>
-    public Task<RecordedMessage> WaitForPublished<T>(
+    public Task<RecordedMessage> WaitForPublishedAsync<T>(
         MessageLane lane,
         TimeSpan? timeout = null,
         CancellationToken cancellationToken = default
@@ -242,7 +242,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     /// Waits until a message of type <typeparamref name="T"/> is consumed successfully,
     /// or throws <see cref="MessageObservationTimeoutException"/> if <paramref name="timeout"/> elapses.
     /// </summary>
-    public Task<RecordedMessage> WaitForConsumed<T>(
+    public Task<RecordedMessage> WaitForConsumedAsync<T>(
         TimeSpan? timeout = null,
         CancellationToken cancellationToken = default
     )
@@ -261,7 +261,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     /// Waits until a consumed message of type <typeparamref name="T"/> satisfies <paramref name="predicate"/>,
     /// or throws <see cref="MessageObservationTimeoutException"/> if <paramref name="timeout"/> elapses.
     /// </summary>
-    public Task<RecordedMessage> WaitForConsumed<T>(
+    public Task<RecordedMessage> WaitForConsumedAsync<T>(
         Func<T, bool> predicate,
         TimeSpan? timeout = null,
         CancellationToken cancellationToken = default
@@ -282,7 +282,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     /// <paramref name="lane"/> (Bus vs Queue), or throws
     /// <see cref="MessageObservationTimeoutException"/> if <paramref name="timeout"/> elapses.
     /// </summary>
-    public Task<RecordedMessage> WaitForConsumed<T>(
+    public Task<RecordedMessage> WaitForConsumedAsync<T>(
         MessageLane lane,
         TimeSpan? timeout = null,
         CancellationToken cancellationToken = default
@@ -306,7 +306,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     /// Waits until processing of a message of type <typeparamref name="T"/> faults,
     /// or throws <see cref="MessageObservationTimeoutException"/> if <paramref name="timeout"/> elapses.
     /// </summary>
-    public Task<RecordedMessage> WaitForFaulted<T>(
+    public Task<RecordedMessage> WaitForFaultedAsync<T>(
         TimeSpan? timeout = null,
         CancellationToken cancellationToken = default
     )
@@ -325,7 +325,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     /// Waits until a faulted message of type <typeparamref name="T"/> satisfies <paramref name="predicate"/>,
     /// or throws <see cref="MessageObservationTimeoutException"/> if <paramref name="timeout"/> elapses.
     /// </summary>
-    public Task<RecordedMessage> WaitForFaulted<T>(
+    public Task<RecordedMessage> WaitForFaultedAsync<T>(
         Func<T, bool> predicate,
         TimeSpan? timeout = null,
         CancellationToken cancellationToken = default
@@ -346,7 +346,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     /// <paramref name="lane"/> (Bus vs Queue), or throws
     /// <see cref="MessageObservationTimeoutException"/> if <paramref name="timeout"/> elapses.
     /// </summary>
-    public Task<RecordedMessage> WaitForFaulted<T>(
+    public Task<RecordedMessage> WaitForFaultedAsync<T>(
         MessageLane lane,
         TimeSpan? timeout = null,
         CancellationToken cancellationToken = default
@@ -371,7 +371,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     /// <c>RetryPolicy.OnExhausted</c>; see <see cref="Exhausted"/> for every terminal path), or throws
     /// <see cref="MessageObservationTimeoutException"/> if <paramref name="timeout"/> elapses.
     /// </summary>
-    public Task<RecordedMessage> WaitForExhausted<T>(
+    public Task<RecordedMessage> WaitForExhaustedAsync<T>(
         TimeSpan? timeout = null,
         CancellationToken cancellationToken = default
     )
@@ -390,7 +390,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     /// Waits until a message of type <typeparamref name="T"/> that failed for good satisfies <paramref name="predicate"/>,
     /// or throws <see cref="MessageObservationTimeoutException"/> if <paramref name="timeout"/> elapses.
     /// </summary>
-    public Task<RecordedMessage> WaitForExhausted<T>(
+    public Task<RecordedMessage> WaitForExhaustedAsync<T>(
         Func<T, bool> predicate,
         TimeSpan? timeout = null,
         CancellationToken cancellationToken = default
@@ -411,7 +411,7 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     /// for the given <paramref name="lane"/> (Bus vs Queue), or throws
     /// <see cref="MessageObservationTimeoutException"/> if <paramref name="timeout"/> elapses.
     /// </summary>
-    public Task<RecordedMessage> WaitForExhausted<T>(
+    public Task<RecordedMessage> WaitForExhaustedAsync<T>(
         MessageLane lane,
         TimeSpan? timeout = null,
         CancellationToken cancellationToken = default
@@ -503,8 +503,8 @@ public sealed class MessagingTestHarness : IAsyncDisposable
     /// <see cref="IBus"/> or <see cref="IQueue"/>, which publish autonomously from any scope and whose rows
     /// survive a rollback. In-memory storage captures every enlisted publish on the unit; completion stores the
     /// captured rows and hands them to the dispatcher, so they surface through
-    /// <see cref="WaitForPublished{T}(TimeSpan?, CancellationToken)"/> and
-    /// <see cref="WaitForConsumed{T}(TimeSpan?, CancellationToken)"/>, while rollback discards them and nothing
+    /// <see cref="WaitForPublishedAsync{T}(TimeSpan?, CancellationToken)"/> and
+    /// <see cref="WaitForConsumedAsync{T}(TimeSpan?, CancellationToken)"/>, while rollback discards them and nothing
     /// is recorded.
     /// </para>
     /// <para>

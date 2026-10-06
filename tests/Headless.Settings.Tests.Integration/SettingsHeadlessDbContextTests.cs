@@ -81,7 +81,7 @@ public sealed class SettingsHeadlessDbContextTests(SettingsTestFixture fixture) 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
-            modelBuilder.AddHeadlessSettings(
+            modelBuilder.ConfigureHeadlessSettings(
                 storageOptions.Value,
                 HeadlessStorageNaming.ForProvider(Database.ProviderName)
             );

@@ -58,8 +58,8 @@ public sealed class SettingChangedMessageContractTests : TestBase
         await harness.Publisher.PublishAsync(message, cancellationToken: AbortToken);
 
         // then
-        var published = await harness.WaitForPublished<SettingChangedMessage>(cancellationToken: AbortToken);
-        var consumed = await harness.WaitForConsumed<SettingChangedMessage>(cancellationToken: AbortToken);
+        var published = await harness.WaitForPublishedAsync<SettingChangedMessage>(cancellationToken: AbortToken);
+        var consumed = await harness.WaitForConsumedAsync<SettingChangedMessage>(cancellationToken: AbortToken);
         published.MessageName.Should().Be("headless.settings.changed");
         consumed.MessageName.Should().Be("headless.settings.changed");
         harness

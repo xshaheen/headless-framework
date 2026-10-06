@@ -18,7 +18,7 @@ public static class HeadlessSettingsModelBuilderExtensions
         /// Applies the Headless settings entity configurations, resolving <see cref="SettingsStorageOptions"/>
         /// from the <paramref name="context"/>'s service provider and the naming style from its database provider
         /// (snake_case on PostgreSQL, PascalCase elsewhere). Call from <c>OnModelCreating</c> with
-        /// <c>modelBuilder.AddHeadlessSettings(this)</c> to avoid injecting the options into the context.
+        /// <c>modelBuilder.ConfigureHeadlessSettings(this)</c> to avoid injecting the options into the context.
         /// </summary>
         /// <param name="context">
         /// The <see cref="DbContext"/> whose service provider is used to resolve
@@ -28,7 +28,7 @@ public static class HeadlessSettingsModelBuilderExtensions
         /// <exception cref="ArgumentNullException">
         /// <paramref name="context"/> is <see langword="null"/>.
         /// </exception>
-        public ModelBuilder AddHeadlessSettings(DbContext context)
+        public ModelBuilder ConfigureHeadlessSettings(DbContext context)
         {
             Argument.IsNotNull(modelBuilder);
             Argument.IsNotNull(context);
@@ -36,7 +36,7 @@ public static class HeadlessSettingsModelBuilderExtensions
             var options = context.GetService<IOptions<SettingsStorageOptions>>().Value;
             var style = HeadlessStorageNaming.ForProvider(context.Database.ProviderName);
 
-            return modelBuilder.AddHeadlessSettings(options, style);
+            return modelBuilder.ConfigureHeadlessSettings(options, style);
         }
 
         /// <summary>
@@ -46,7 +46,7 @@ public static class HeadlessSettingsModelBuilderExtensions
         /// <param name="options">Storage options that control table names and the schema.</param>
         /// <param name="style">
         /// The naming style of the database the model targets. It must match the database: the raw providers and
-        /// <c>AddHeadlessSettings(DbContext)</c> use <see cref="StorageNamingStyle.SnakeCase"/> on
+        /// <c>ConfigureHeadlessSettings(DbContext)</c> use <see cref="StorageNamingStyle.SnakeCase"/> on
         /// PostgreSQL and <see cref="StorageNamingStyle.PascalCase"/> elsewhere; pass
         /// <c>HeadlessStorageNaming.ForProvider(Database.ProviderName)</c> to derive it.
         /// </param>
@@ -54,7 +54,7 @@ public static class HeadlessSettingsModelBuilderExtensions
         /// <exception cref="ArgumentNullException">
         /// <paramref name="options"/> is <see langword="null"/>.
         /// </exception>
-        public ModelBuilder AddHeadlessSettings(SettingsStorageOptions options, StorageNamingStyle style)
+        public ModelBuilder ConfigureHeadlessSettings(SettingsStorageOptions options, StorageNamingStyle style)
         {
             Argument.IsNotNull(modelBuilder);
             Argument.IsNotNull(options);

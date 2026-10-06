@@ -72,7 +72,7 @@ internal static class IdempotencyTestApp
         }
 
         // Idempotency
-        builder.Services.AddIdempotency(o =>
+        builder.Services.AddHeadlessHttpIdempotency(o =>
         {
             o.InFlightStrategy = InFlightStrategy.Reject;
             configure?.Invoke(o);
@@ -100,7 +100,7 @@ internal static class IdempotencyTestApp
             );
         }
 
-        app.UseIdempotency();
+        app.UseHeadlessHttpIdempotency();
 
         // Default endpoints used by most tests
         app.MapPost(

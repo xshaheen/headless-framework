@@ -33,7 +33,7 @@ public sealed class PermissionsEntityStartupValidatorTests(PermissionsTestFixtur
         await action
             .Should()
             .ThrowAsync<InvalidOperationException>()
-            .WithMessage("*PermissionGrantRecord*modelBuilder.AddHeadlessPermissions*");
+            .WithMessage("*PermissionGrantRecord*modelBuilder.ConfigureHeadlessPermissions*");
     }
 
     private sealed class MissingPermissionsEntityDbContext(DbContextOptions<MissingPermissionsEntityDbContext> options)

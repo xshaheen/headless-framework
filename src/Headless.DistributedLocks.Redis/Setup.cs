@@ -21,6 +21,8 @@ namespace Headless.DistributedLocks;
 /// Requires <see cref="IConnectionMultiplexer"/> to be registered in the service collection.
 /// Messaging is optional; when an <see cref="IBus"/> registration exists before lock setup,
 /// release notifications use push wake-ups. Otherwise, waiters fall back to polling backoff.
+/// <c>UseRedis</c> also contributes the <c>distributed-locks-redis</c> readiness health check, which pings Redis
+/// through the registered multiplexer.
 /// </remarks>
 [PublicAPI]
 public static class SetupRedisDistributedLocks
@@ -187,6 +189,15 @@ public static class SetupRedisDistributedLocks
                 services,
                 static s => s.AddDistributedSemaphoreCore<RedisDistributedSemaphoreStorage>(),
                 _SemaphoreScripts
+            );
+            services.AddHeadlessHealthCheck(
+                "distributed-locks-redis",
+                static async (provider, cancellationToken) =>
+                    await provider
+                        .GetRequiredService<IConnectionMultiplexer>()
+                        .ProbeEndpointsAsync(cancellationToken)
+                        .ConfigureAwait(false),
+                HeadlessHealthCheckTags.Redis
             );
         }
     }

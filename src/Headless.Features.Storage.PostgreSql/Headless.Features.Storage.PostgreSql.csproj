@@ -6,9 +6,6 @@
     <RootNamespace>Headless.Features.PostgreSql</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Npgsql" />
-  </ItemGroup>
-  <ItemGroup>
     <ProjectReference Include="..\Headless.Features\Headless.Features.csproj" />
     <ProjectReference Include="..\Headless.Sql.PostgreSql\Headless.Sql.PostgreSql.csproj" />
   </ItemGroup>

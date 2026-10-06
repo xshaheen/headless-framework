@@ -122,7 +122,7 @@ public sealed class EndToEndTests : TestBase
 
         // when
         await harness.Publisher.PublishAsync(new OrderCreatedEvent("ORD-001", 99.99m), cancellationToken: AbortToken);
-        var recorded = await harness.WaitForConsumed<OrderCreatedEvent>(TimeSpan.FromSeconds(5), AbortToken);
+        var recorded = await harness.WaitForConsumedAsync<OrderCreatedEvent>(TimeSpan.FromSeconds(5), AbortToken);
 
         // then
         recorded.MessageId.Should().NotBeNullOrWhiteSpace();
@@ -158,7 +158,7 @@ public sealed class EndToEndTests : TestBase
 
         // when
         await harness.Publisher.PublishAsync(new OrderCreatedEvent("ORD-002", 50m), cancellationToken: AbortToken);
-        var faulted = await harness.WaitForFaulted<OrderCreatedEvent>(TimeSpan.FromSeconds(5), AbortToken);
+        var faulted = await harness.WaitForFaultedAsync<OrderCreatedEvent>(TimeSpan.FromSeconds(5), AbortToken);
 
         // then
         faulted.Exception.Should().NotBeNull();
@@ -168,7 +168,7 @@ public sealed class EndToEndTests : TestBase
         harness.Consumed.Should().BeEmpty();
     }
 
-    // ─── Test 3: WaitForConsumed with predicate filters correctly ─────────────
+    // ─── Test 3: WaitForConsumedAsync with predicate filters correctly ─────────────
 
     [Fact]
     public async Task wait_for_consumed_with_predicate_filters_correctly()
@@ -200,7 +200,7 @@ public sealed class EndToEndTests : TestBase
         await harness.Publisher.PublishAsync(new OrderCreatedEvent("target", 200m), cancellationToken: AbortToken);
 
         // when — wait for specifically the "target" order
-        var recorded = await harness.WaitForConsumed<OrderCreatedEvent>(
+        var recorded = await harness.WaitForConsumedAsync<OrderCreatedEvent>(
             msg => string.Equals(msg.OrderId, "target", StringComparison.Ordinal),
             TimeSpan.FromSeconds(5),
             AbortToken
@@ -221,7 +221,7 @@ public sealed class EndToEndTests : TestBase
 
         // when
         var act = async () =>
-            await harness.WaitForConsumed<OrderCreatedEvent>(TimeSpan.FromMilliseconds(100), AbortToken);
+            await harness.WaitForConsumedAsync<OrderCreatedEvent>(TimeSpan.FromMilliseconds(100), AbortToken);
 
         // then
         var ex = await act.Should().ThrowAsync<MessageObservationTimeoutException>();
@@ -261,7 +261,7 @@ public sealed class EndToEndTests : TestBase
 
         // when — publish only in harness1
         await harness1.Publisher.PublishAsync(new OrderCreatedEvent("H1-ORD", 10m), cancellationToken: AbortToken);
-        await harness1.WaitForConsumed<OrderCreatedEvent>(TimeSpan.FromSeconds(5), AbortToken);
+        await harness1.WaitForConsumedAsync<OrderCreatedEvent>(TimeSpan.FromSeconds(5), AbortToken);
 
         // then — harness2 should be untouched
         harness2.Published.Should().BeEmpty();
@@ -298,7 +298,7 @@ public sealed class EndToEndTests : TestBase
 
         // when
         await harness.Publisher.PublishAsync(new OrderCreatedEvent("ORD-INJ", 75m), cancellationToken: AbortToken);
-        await harness.WaitForConsumed<OrderCreatedEvent>(TimeSpan.FromSeconds(5), AbortToken);
+        await harness.WaitForConsumedAsync<OrderCreatedEvent>(TimeSpan.FromSeconds(5), AbortToken);
 
         // then — the mock was invoked with the correct order ID
         notifier.Received(1).Notify("ORD-INJ");
@@ -352,22 +352,22 @@ public sealed class EndToEndTests : TestBase
             AbortToken
         );
 
-        var busPublished = await harness.WaitForPublished<OrderCreatedEvent>(
+        var busPublished = await harness.WaitForPublishedAsync<OrderCreatedEvent>(
             MessageLane.Bus,
             TimeSpan.FromSeconds(5),
             AbortToken
         );
-        var queuePublished = await harness.WaitForPublished<OrderCreatedEvent>(
+        var queuePublished = await harness.WaitForPublishedAsync<OrderCreatedEvent>(
             MessageLane.Queue,
             TimeSpan.FromSeconds(5),
             AbortToken
         );
-        var busConsumed = await harness.WaitForConsumed<OrderCreatedEvent>(
+        var busConsumed = await harness.WaitForConsumedAsync<OrderCreatedEvent>(
             MessageLane.Bus,
             TimeSpan.FromSeconds(5),
             AbortToken
         );
-        var queueConsumed = await harness.WaitForConsumed<OrderCreatedEvent>(
+        var queueConsumed = await harness.WaitForConsumedAsync<OrderCreatedEvent>(
             MessageLane.Queue,
             TimeSpan.FromSeconds(5),
             AbortToken
@@ -420,22 +420,22 @@ public sealed class EndToEndTests : TestBase
             AbortToken
         );
 
-        var busPublished = await harness.WaitForPublished<OrderCreatedEvent>(
+        var busPublished = await harness.WaitForPublishedAsync<OrderCreatedEvent>(
             MessageLane.Bus,
             TimeSpan.FromSeconds(5),
             AbortToken
         );
-        var queuePublished = await harness.WaitForPublished<OrderCreatedEvent>(
+        var queuePublished = await harness.WaitForPublishedAsync<OrderCreatedEvent>(
             MessageLane.Queue,
             TimeSpan.FromSeconds(5),
             AbortToken
         );
-        var busConsumed = await harness.WaitForConsumed<OrderCreatedEvent>(
+        var busConsumed = await harness.WaitForConsumedAsync<OrderCreatedEvent>(
             message => string.Equals(message.OrderId, "durable-bus", StringComparison.Ordinal),
             TimeSpan.FromSeconds(5),
             AbortToken
         );
-        var queueConsumed = await harness.WaitForConsumed<OrderCreatedEvent>(
+        var queueConsumed = await harness.WaitForConsumedAsync<OrderCreatedEvent>(
             message => string.Equals(message.OrderId, "durable-queue", StringComparison.Ordinal),
             TimeSpan.FromSeconds(5),
             AbortToken
@@ -480,7 +480,7 @@ public sealed class EndToEndTests : TestBase
         );
 
         // then
-        var published = await harness.WaitForPublished<OrderCreatedEvent>(
+        var published = await harness.WaitForPublishedAsync<OrderCreatedEvent>(
             MessageLane.Queue,
             TimeSpan.FromSeconds(5),
             AbortToken
@@ -576,7 +576,7 @@ public sealed class EndToEndTests : TestBase
         // when
         var publisher = sp.GetRequiredService<IBus>();
         await publisher.PublishAsync(new OrderCreatedEvent("HOSTED-1", 42m), cancellationToken: AbortToken);
-        var recorded = await harness.WaitForConsumed<OrderCreatedEvent>(TimeSpan.FromSeconds(5), AbortToken);
+        var recorded = await harness.WaitForConsumedAsync<OrderCreatedEvent>(TimeSpan.FromSeconds(5), AbortToken);
 
         // then — harness observes messages through the same container
         recorded.Message.Should().BeOfType<OrderCreatedEvent>().Which.OrderId.Should().Be("HOSTED-1");
@@ -584,7 +584,7 @@ public sealed class EndToEndTests : TestBase
         harness.Consumed.Should().ContainSingle();
     }
 
-    // ─── Test 8: WaitForExhausted observes user OnExhausted callback ──────────
+    // ─── Test 8: WaitForExhaustedAsync observes user OnExhausted callback ──────────
 
     [Fact]
     public async Task wait_for_exhausted_observes_user_callback_invocation()
@@ -612,7 +612,7 @@ public sealed class EndToEndTests : TestBase
 
         // when
         await harness.Publisher.PublishAsync(new OrderCreatedEvent("ORD-EXH", 1m), cancellationToken: AbortToken);
-        var recorded = await harness.WaitForExhausted<OrderCreatedEvent>(TimeSpan.FromSeconds(5), AbortToken);
+        var recorded = await harness.WaitForExhaustedAsync<OrderCreatedEvent>(TimeSpan.FromSeconds(5), AbortToken);
 
         // then — observation captures the exhausted message and its exception
         recorded.MessageType.Should().Be<OrderCreatedEvent>();
@@ -654,7 +654,7 @@ public sealed class EndToEndTests : TestBase
 
         // when
         await harness.Publisher.PublishAsync(new OrderCreatedEvent("ORD-RULE", 1m), cancellationToken: AbortToken);
-        var recorded = await harness.WaitForExhausted<OrderCreatedEvent>(TimeSpan.FromSeconds(5), AbortToken);
+        var recorded = await harness.WaitForExhaustedAsync<OrderCreatedEvent>(TimeSpan.FromSeconds(5), AbortToken);
 
         // then — one attempt, recorded as the terminal-failure outcome.
         recorded.Message.Should().BeOfType<OrderCreatedEvent>().Which.OrderId.Should().Be("ORD-RULE");
@@ -663,7 +663,7 @@ public sealed class EndToEndTests : TestBase
         harness.Faulted.Should().ContainSingle("the matched fail rule skips the immediate retries");
     }
 
-    // ─── Test 9: WaitForExhausted survives a hanging user callback ───────────
+    // ─── Test 9: WaitForExhaustedAsync survives a hanging user callback ───────────
 
     [Fact]
     public async Task wait_for_exhausted_records_before_user_callback_runs()
@@ -694,7 +694,7 @@ public sealed class EndToEndTests : TestBase
         {
             // when
             await harness.Publisher.PublishAsync(new OrderCreatedEvent("ORD-HANG", 1m), cancellationToken: AbortToken);
-            var recorded = await harness.WaitForExhausted<OrderCreatedEvent>(TimeSpan.FromSeconds(5), AbortToken);
+            var recorded = await harness.WaitForExhaustedAsync<OrderCreatedEvent>(TimeSpan.FromSeconds(5), AbortToken);
 
             // then — the observation arrived even though the user callback is still parked
             recorded.Message.Should().BeOfType<OrderCreatedEvent>().Which.OrderId.Should().Be("ORD-HANG");

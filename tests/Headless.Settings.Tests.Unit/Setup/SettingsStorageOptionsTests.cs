@@ -252,7 +252,7 @@ public sealed class SettingsStorageOptionsTests
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
-            modelBuilder.AddHeadlessSettings(storageOptions, StorageNamingStyle.PascalCase);
+            modelBuilder.ConfigureHeadlessSettings(storageOptions, StorageNamingStyle.PascalCase);
         }
     }
 }

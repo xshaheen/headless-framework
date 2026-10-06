@@ -12,7 +12,7 @@ internal static partial class RecordingTransportLog
         EventId = 1,
         EventName = "DeserializeObservedPayloadFailed",
         Level = LogLevel.Warning,
-        Message = "RecordingTransport failed to deserialize observed payload as {MessageType}; falling back to TransportMessage. WaitForPublished<{MessageType}> will time out."
+        Message = "RecordingTransport failed to deserialize observed payload as {MessageType}; falling back to TransportMessage. WaitForPublishedAsync<{MessageType}> will time out."
     )]
     public static partial void LogDeserializeObservedPayloadFailed(
         this ILogger logger,

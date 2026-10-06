@@ -13,7 +13,7 @@ packages: Testing, Testing.AspNetCore, Testing.Testcontainers, EntityFramework.T
 - `Headless.Testing.AspNetCore` -- `HeadlessTestServer<TProgram>`, a `WebApplicationFactory<TProgram>` wrapper with deterministic time, DI-scope helpers, readiness polling, and Respawner-based database reset. Used for ASP.NET Core integration tests.
 - `Headless.Testing.Testcontainers` -- pre-configured Docker container fixtures (e.g., `HeadlessRedisFixture`). Used for integration tests requiring real infrastructure.
 - `Headless.EntityFramework.Testing` -- `TenantIsolationDbAssertions`, which prove a tenant-owned EF Core entity is invisible and unwritable to another tenant. Pairs with `TenantWorld` and `TenantIsolationHttpAssertions` from `Headless.Testing`; see [Tenant isolation](#tenant-isolation).
-- `Headless.Messaging.Testing` -- `MessagingTestHarness` that records messages at the transport boundary (covers outboxed and direct-published) and exposes typed `WaitForPublished`/`Consumed`/`Faulted`/`Exhausted` APIs.
+- `Headless.Messaging.Testing` -- `MessagingTestHarness` that records messages at the transport boundary (covers outboxed and direct-published) and exposes typed `WaitForPublishedAsync`/`WaitForConsumedAsync`/`WaitForFaultedAsync`/`WaitForExhaustedAsync` APIs.
 
 Typical unit test inherits from `TestBase`, which provides `Logger`, `Faker`, and `AbortToken` out of the box. Integration tests typically build a shared xUnit collection fixture around `HeadlessTestServer<TProgram>` plus any required Testcontainers fixtures, then derive per-test classes from an `IntegrationTestBase : TestBase` that resets fixture state per test.
 
@@ -33,6 +33,7 @@ Typical unit test inherits from `TestBase`, which provides `Logger`, `Faker`, an
 - Use `MessagingTestHarness` from `Headless.Messaging.Testing` to assert published, consumed, faulted, and exhausted messages. Do not query the outbox table directly -- direct-published messages bypass it.
 - When asserting EF-persisted timestamps, use `Should().BeCloseTo(expected, TimeSpan.FromMicroseconds(1))` rather than exact equality to absorb storage-precision truncation.
 - Remember what Respawner-based DB reset does **not** clear: distributed caches, in-process singletons, `MessagingTestHarness` observation buffers, ambient tenant/user scopes. Reset those explicitly per test.
+- To run a test against a host configured differently (another cache provider, a feature flag, an extra controller), call `await using var variant = await App.DeriveAsync(...)`. Never call `App.Factory.WithWebHostBuilder(...)`: that host skips the initializer wait, readiness checks, shared clock, and database reset, and stays alive until the fixture is disposed.
 - Use `Headless.Testing.Testcontainers` only for integration tests. It requires Docker to be running.
 - `HeadlessRedisFixture` provides a Redis 7 Alpine container. Access connection string via `_redis.Container.GetConnectionString()`.
 - Test lifecycle: override `InitializeAsync()` for setup and `DisposeAsyncCore()` for teardown in `TestBase` subclasses.
@@ -159,7 +160,8 @@ ASP.NET Core integration-test host wrapper with controllable time, DI-scope help
 - `AdvanceTime(TimeSpan)` and `SetTime(DateTimeOffset)` move it and return the resulting UTC time.
 - `ExecuteScopeAsync(...)` opens a DI scope (optionally with a `ClaimsPrincipal`) for scoped operations.
 - `WaitForReadiness(...)` polls a host-readiness predicate before tests run.
-- `ConfigureDatabaseReset(...)` + `ResetDatabaseAsync()` integrate Respawner with retry.
+- `ConfigureDatabaseReset(...)` + `ResetDatabaseAsync()` integrate Respawner with retry. The reset keeps framework bookkeeping: both history tables always, and the host-state tables framework features declare by default (see [Tables a Reset Preserves](#tables-a-reset-preserves)).
+- `DeriveAsync(configureTestServices, configureWebHost)` starts an initialized variant of the server with extra settings layered on its own (see [Varying Host Settings per Test](#varying-host-settings-per-test)).
 - Database reset APIs default to the active xUnit test's cancellation token. The server retries
   database, I/O, socket, and broken-connection failures up to three times, replacing the reset
   connection between attempts.
@@ -269,17 +271,16 @@ This controls the **app clock** only -- the authority for "when did this happen?
 
 #### Auto-Applied EF Query Filters in Tests
 
-`HeadlessEntityModelProcessor` (from `Headless.EntityFramework`) auto-applies global query filters for three interfaces. They apply in integration tests exactly as in production:
+`HeadlessEntityModelProcessor` (from `Headless.EntityFramework`) auto-applies global query filters for two interfaces. They apply in integration tests exactly as in production:
 
 | Interface | Filter predicate | Effect |
 |-----------|------------------|--------|
 | `IMultiTenant` | `TenantId == ICurrentTenant.Id` | Rows scoped to current tenant |
 | `IDeleteAudit` | `IsDeleted == false` | Soft-deleted rows hidden |
-| `ISuspendAudit` | `IsSuspended == false` | Suspended rows hidden |
 
-`IgnoreQueryFilters()` is rarely needed in tests because seeded data uses default flag values (`IsDeleted = false`, `IsSuspended = false`) and runs under whatever tenant scope the test established. Reach for it only when:
+`IgnoreQueryFilters()` is rarely needed in tests because seeded data uses default flag values (`IsDeleted = false`) and runs under whatever tenant scope the test established. Reach for it only when:
 
-- The test explicitly seeds `IsDeleted = true` or `IsSuspended = true` and needs to read the row back.
+- The test explicitly seeds `IsDeleted = true` and needs to read the row back.
 - The test is verifying the filter's own behavior (bypass, cross-tenant isolation, etc.).
 
 For multi-tenant assertions, change the current tenant inside a `using` scope rather than bypassing the filter:
@@ -294,13 +295,59 @@ using (tenant.Change(tenantId, "Test Tenant"))
 
 `ICurrentTenant.Change(...)` returns a disposable that restores the previous tenant on exit. See [multi-tenancy.md](multi-tenancy.md) for the full ownership and bypass model, including the `// MULTI-TENANCY-BYPASS:` comment convention for legitimate `IgnoreMultiTenancyFilter()` use.
 
-#### State That DB Reset Doesn't Clear
+#### Tables a Reset Preserves
 
+`ResetDatabaseAsync()` clears application data, not the bookkeeping the running host depends on. Three groups of tables survive a reset:
+
+| Tables | Kept | Why |
+|---|---|---|
+| `__EFMigrationsHistory`, `headless_schema_history` (every schema) | Always, also by standalone `DatabaseReset` | They record work done to a schema that the reset leaves in place. Wiping `headless_schema_history` makes the next host (a reused container, a `DeriveAsync` variant) replay every schema step against tables that already exist. |
+| Host-state tables that framework features declare through `SchemaContribution.HostStateTables` | By default (`PreserveHostStateTables = true`) | The host writes them once at startup or keeps them live, and never rewrites them while it runs. Today: the feature, permission, and setting definition tables (including the feature and permission group tables), which the definition initializers write at startup, and the coordination membership tables (on PostgreSQL `coordination_node_generation`, `coordination_descriptor`, and `coordination_liveness`), whose rows the host keeps heartbeating; a reset that deletes them makes the next heartbeat report the membership as lost. |
+| `TablesToPreserve` | Always | Your own tables that hold data the application seeds once at startup, such as reference data. A `Table` without a schema matches the name in every schema. |
+
+Everything else is cleared, including Messaging's outbox and inbox, Jobs, idempotency, audit, and sequence tables: they hold the work a test produces. Jobs keeps its tables in your `DbContext` and declares none, so the cron definitions its startup seeder writes from `[Job(Cron = ...)]` are cleared too; a test that relies on them adds the cron-job table to `TablesToPreserve`.
+
+The host-state declarations are read from the PostgreSQL and SQL Server feature registrations, using their configured table names, so renamed tables stay preserved. SQLite storage has no schemas and prefixes table names instead, so on SQLite list the prefixed history and host-state tables in `TablesToPreserve` yourself. Set `PreserveHostStateTables = false` only for a test that re-runs the startup work that writes those tables.
+
+```csharp
+App.ConfigureDatabaseReset(options =>
+{
+    options.ConnectionProvider = _ => new NpgsqlConnection(connectionString);
+    options.TablesToPreserve.Add(new Table("app", "countries")); // seeded once at startup
+});
+```
+
+#### Varying Host Settings per Test
+
+A test that needs the host configured differently, such as another cache provider or an extra test-only controller, derives a variant from the shared server instead of reaching into `App.Factory`:
+
+```csharp
+[Fact]
+public async Task should_limit_attempts_with_redis_cache()
+{
+    await using var variant = await App.DeriveAsync(
+        configureWebHost: builder => builder.UseSetting("App:Cache:Type", "Redis")
+    );
+
+    using var client = variant.CreateClient();
+    // ...
+}
+```
+
+- The variant runs the server's own `configureTestServices` and `configureWebHost` first, then the delegates you pass, so it reaches the same containers and your settings win.
+- It awaits every `IInitializer`, runs the server's readiness checks, and supports `ResetDatabaseAsync()` with the server's reset configuration.
+- It shares the server's `FakeTimeProvider`, so `App.AdvanceTime(...)` moves both hosts' clocks.
+- It is a separate host with its own background services and connection pools. Dispose it at the end of the test; disposing it never stops the shared server. Settings that are additive, such as an extra controller, belong in the shared server's own configuration instead, because every variant costs a host startup.
+- The server must be initialized first; `DeriveAsync` throws `InvalidOperationException` otherwise.
+
+`App.Factory.WithWebHostBuilder(...)` is not supported for this. Its host skips the initializer wait, the readiness checks, the shared clock, and database reset, and `WebApplicationFactory` keeps every derived host alive until the parent is disposed, so a suite that derives one per test exhausts database connections.
+
+#### State That DB Reset Doesn't Clear
 `App.ResetDatabaseAsync()` (Respawner) truncates configured database tables only. Tests that touch state outside the database must clear it themselves, otherwise observations from a previous test bleed into the next:
 
 - **Distributed caches.** Redis / hybrid caches are not touched by Respawner. Prefer registering `Headless.Caching.InMemory` (or the in-memory hybrid L1) for integration tests so the cache lives for the test run and dies with the host. When a test genuinely needs a distributed cache, clear it explicitly in `ResetStateAsync()`.
 - **In-process singletons.** Any state held on singleton services (caches, registries, schedulers) survives DB reset. Either reset them explicitly or design the test to seed them via the public API rather than relying on a pristine state.
-- **`MessagingTestHarness` observation buffers.** Call `await App.ResetMessagingHarnessAsync()` in `ResetStateAsync()` -- otherwise `WaitForPublished<T>()` may match a message from a prior test, or a store-first publish still in flight from the prior test lands in this one.
+- **`MessagingTestHarness` observation buffers.** Call `await App.ResetMessagingHarnessAsync()` in `ResetStateAsync()` -- otherwise `WaitForPublishedAsync<T>()` may match a message from a prior test, or a store-first publish still in flight from the prior test lands in this one.
 - **Ambient `ICurrentTenant` / `ICurrentUser` scopes.** Disposable scopes opened by one test must not leak into the next; close them inside the test's own `using` block or reset them in `ResetStateAsync()`.
 - **External fakes** (WireMock, Stripe test server, etc.). Reset their recorded requests and reconfigure their stubs as part of `ResetStateAsync()`.
 
@@ -345,13 +392,15 @@ The same caveat applies to other databases with sub-tick storage precision (MySQ
 | `WaitForReadiness(check, timeout)` | fluent | 30 s per check | Registers a post-startup readiness probe. Must be called before `InitializeAsync()`. |
 | `ConfigureDatabaseReset(configure)` | fluent | (disabled) | Opts into Respawner-based DB reset. Must be called before `InitializeAsync()`. |
 | `ResetDatabaseAsync(cancellationToken)` | `Task` | active xUnit test token | Resets database state and retries transient database or transport failures up to three times. |
+| `DeriveAsync(configureTestServices, configureWebHost)` | `Task<HeadlessTestServer<TProgram>>` | — | Starts an initialized variant with extra settings layered on this server's, sharing its clock and reset configuration. Requires an initialized server; the caller disposes the variant. |
 
 `DatabaseResetOptions` properties (passed to `ConfigureDatabaseReset`):
 
 | Property | Type | Default | Description |
 |---|---|---|---|
 | `DbAdapter` | `IDbAdapter` | `DbAdapter.Postgres` | Respawner adapter matching the target database engine. |
-| `TablesToIgnore` | `List<Table>` | `[]` | Additional tables to skip during reset. `__EFMigrationsHistory` is always excluded automatically. |
+| `TablesToPreserve` | `List<Table>` | `[]` | Additional tables whose rows survive a reset. `__EFMigrationsHistory` and `headless_schema_history` are always preserved in every schema. |
+| `PreserveHostStateTables` | `bool` | `true` | Also preserves the host-state tables framework features declare (definitions, coordination membership). Read by `ResetDatabaseAsync()` only. |
 | `ConnectionProvider` | `Func<IServiceProvider, DbConnection>?` | `null` | **Required** when using `ResetDatabaseAsync()`. Factory for an unopened `DbConnection` to the test database. |
 | `AdditionalTransientExceptionFilter` | `Func<Exception, bool>?` | `null` | Adds provider-specific transient exception shapes to the built-in database and transport retry set. |
 
@@ -359,7 +408,7 @@ The same caveat applies to other databases with sub-tick storage precision (MySQ
 
 - Starts the application host under test for the lifetime of the fixture.
 - Replaces `TimeProvider` in DI with a deterministic `FakeTimeProvider`.
-- (Optional) Truncates configured database tables between tests when `ConfigureDatabaseReset(...)` is wired.
+- (Optional) Clears application data between tests when `ConfigureDatabaseReset(...)` is wired, keeping the history and host-state tables.
 ---
 ## Headless.Testing.Testcontainers
 

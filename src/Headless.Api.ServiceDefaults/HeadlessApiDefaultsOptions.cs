@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.HttpOverrides;
 namespace Headless.Api.ServiceDefaults;
 
 /// <summary>Options for <see cref="SetupApi.UseHeadless(WebApplication, Action{HeadlessApiDefaultsOptions}?)"/>.</summary>
+/// <remarks>Each <c>Use*</c> switch drops one step of the fixed pipeline; the order itself is not configurable.</remarks>
 [PublicAPI]
 public sealed class HeadlessApiDefaultsOptions
 {
@@ -47,10 +48,16 @@ public sealed class HeadlessApiDefaultsOptions
     /// <summary>Whether exception-handler middleware should create a scope for errors when a path is configured.</summary>
     public bool CreateScopeForErrors { get; set; } = true;
 
-    /// <summary>Whether to run HTTPS redirection middleware.</summary>
+    /// <summary>
+    /// Whether to run HTTPS redirection middleware. It never runs in the Development or Test environment, where the
+    /// host usually serves plain HTTP and a redirect breaks local clients and in-memory test servers.
+    /// </summary>
     public bool UseHttpsRedirection { get; set; } = true;
 
-    /// <summary>Whether to run HSTS middleware outside Development.</summary>
+    /// <summary>
+    /// Whether to run HSTS middleware. It never runs in the Development or Test environment, so a browser does not
+    /// pin HTTPS for a local host name.
+    /// </summary>
     public bool UseHsts { get; set; } = true;
 
     /// <summary>Whether to add a no-cache header when the response did not set cache headers.</summary>

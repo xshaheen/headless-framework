@@ -67,21 +67,25 @@
         "resolved": "8.0.0",
         "contentHash": "AJy/KVjXgUbgjf6HiI8wAk4DSSq0SCmvXQF8aU6IB+pnIQq+YJvofvMczug2hqO8yEvnQY557ryew66KPpyCsA=="
       },
-      "NATS.Net": {
+      "NATS.Client.Core": {
         "type": "Direct",
         "requested": "[3.2.0, )",
         "resolved": "3.2.0",
-        "contentHash": "P6x6rzFkS9rjorAh20BgIYB03SOPLjWwTzMrO2d/0XNkS7EHIkhaJLlkwf6ifHAFmyN4E5/gkgHMcMfwtI4Mlw==",
+        "contentHash": "HskgUlBdy2iYt2C0wQPrE/sZbntCQrSOLG4dTR5qqyxVC14J9H8O5IyzUMJTpHrGnkexPzFheimbg0YFsJqFVw==",
         "dependencies": {
-          "NATS.Client.Core": "3.2.0",
-          "NATS.Client.Hosting": "3.2.0",
-          "NATS.Client.JetStream": "3.2.0",
-          "NATS.Client.KeyValueStore": "3.2.0",
-          "NATS.Client.ObjectStore": "3.2.0",
-          "NATS.Client.Serializers.Json": "3.2.0",
-          "NATS.Client.Services": "3.2.0",
-          "NATS.Client.Simplified": "3.2.0",
-          "NATS.Extensions.Microsoft.DependencyInjection": "3.2.0"
+          "Microsoft.Extensions.Logging.Abstractions": "6.0.1",
+          "Microsoft.Extensions.Primitives": "6.0.0",
+          "NATS.Client.Abstractions": "3.2.0",
+          "NATS.NKeys": "1.0.1"
+        }
+      },
+      "NATS.Client.JetStream": {
+        "type": "Direct",
+        "requested": "[3.2.0, )",
+        "resolved": "3.2.0",
+        "contentHash": "0fG1BbsmGhqpJajwTbbRz9LXvjnNGhCsklM5+y5RyOqrvAT5MoPzDoMphs9GPMNAf6YuPqmfhOIlQt78t1/7oQ==",
+        "dependencies": {
+          "NATS.Client.Core": "3.2.0"
         }
       },
       "ReflectionAnalyzers": {
@@ -149,6 +153,11 @@
           "Microsoft.Extensions.Options": "10.0.12"
         }
       },
+      "Microsoft.Extensions.Diagnostics.HealthChecks.Abstractions": {
+        "type": "Transitive",
+        "resolved": "10.0.12",
+        "contentHash": "oN4AYFq+50m7a65GgRxRqjdynWS6kVQAH6gHKRTfsrLP/aH7RvxIQ7139fjbnrxBwzfZQtZRhlcjvEIiRzihrg=="
+      },
       "Microsoft.Extensions.FileProviders.Abstractions": {
         "type": "Transitive",
         "resolved": "10.0.12",
@@ -173,85 +182,6 @@
         "contentHash": "Yp45BL3HOmFO7hTyV0ZV5LV3WalvwgGXv7Czr8P38tc3/i6fmd/oWir/4N/8D/5jc3ch0O1Nx3Fik5/djva0Fw==",
         "dependencies": {
           "Microsoft.Extensions.Primitives": "6.0.0"
-        }
-      },
-      "NATS.Client.Core": {
-        "type": "Transitive",
-        "resolved": "3.2.0",
-        "contentHash": "HskgUlBdy2iYt2C0wQPrE/sZbntCQrSOLG4dTR5qqyxVC14J9H8O5IyzUMJTpHrGnkexPzFheimbg0YFsJqFVw==",
-        "dependencies": {
-          "Microsoft.Extensions.Logging.Abstractions": "6.0.1",
-          "Microsoft.Extensions.Primitives": "6.0.0",
-          "NATS.Client.Abstractions": "3.2.0",
-          "NATS.NKeys": "1.0.1"
-        }
-      },
-      "NATS.Client.Hosting": {
-        "type": "Transitive",
-        "resolved": "3.2.0",
-        "contentHash": "rRDCOFc2OE3ku/pAhYXSniXjl/3MaavashGtjMfGm7xqaeVTWNuY3EZTbPFLd/0ueCkKHduCIb4MJf7owD8sRQ==",
-        "dependencies": {
-          "Microsoft.Extensions.Hosting.Abstractions": "8.0.0",
-          "NATS.Client.Core": "3.2.0"
-        }
-      },
-      "NATS.Client.JetStream": {
-        "type": "Transitive",
-        "resolved": "3.2.0",
-        "contentHash": "0fG1BbsmGhqpJajwTbbRz9LXvjnNGhCsklM5+y5RyOqrvAT5MoPzDoMphs9GPMNAf6YuPqmfhOIlQt78t1/7oQ==",
-        "dependencies": {
-          "NATS.Client.Core": "3.2.0"
-        }
-      },
-      "NATS.Client.KeyValueStore": {
-        "type": "Transitive",
-        "resolved": "3.2.0",
-        "contentHash": "+6d9i0KIjceAJdVL29NAcfvTUiqyvYRoteFLIx0xpu2+8Z9mng0WlAF6QTbvNlotYR99ZvbCeSyd2OLYy7DIJQ==",
-        "dependencies": {
-          "NATS.Client.JetStream": "3.2.0"
-        }
-      },
-      "NATS.Client.ObjectStore": {
-        "type": "Transitive",
-        "resolved": "3.2.0",
-        "contentHash": "/G/6ZKuaTi/zbtjOWoWEWPvdKO3cKfp8nQ27Fk3dRzJ6F7GoTP+VoJzc9pnHlEUZCIg2R75AvHIi1B3vNlT2Qw==",
-        "dependencies": {
-          "NATS.Client.JetStream": "3.2.0"
-        }
-      },
-      "NATS.Client.Serializers.Json": {
-        "type": "Transitive",
-        "resolved": "3.2.0",
-        "contentHash": "NbiluU7LlW+xpObo8AGnPYwC0EebjqQraBZxpiXyKq2J/tvfantXICD7+IPRpdbbBBuR0RGMxa0rc+r6mYePEw==",
-        "dependencies": {
-          "NATS.Client.Abstractions": "3.2.0"
-        }
-      },
-      "NATS.Client.Services": {
-        "type": "Transitive",
-        "resolved": "3.2.0",
-        "contentHash": "J4lsR4bOA6m5OhgWW+We+JxB0GBb+i4C40NXcTT3zj/3svw45jCf04jRAPDb++GNZ8CWd4jkzupARMupNE9DsQ==",
-        "dependencies": {
-          "NATS.Client.Core": "3.2.0"
-        }
-      },
-      "NATS.Client.Simplified": {
-        "type": "Transitive",
-        "resolved": "3.2.0",
-        "contentHash": "fTuleGwhCEhQyzGc/e08H1pqVgHMk/puZehs3LPTZ5T3I5uMtN8ASVXoVODPKYJxB3Jv+w/jI9nO/lB7+m5GUw==",
-        "dependencies": {
-          "NATS.Client.Core": "3.2.0",
-          "NATS.Client.Serializers.Json": "3.2.0"
-        }
-      },
-      "NATS.Extensions.Microsoft.DependencyInjection": {
-        "type": "Transitive",
-        "resolved": "3.2.0",
-        "contentHash": "NzqnT2R1gyjHpjNSle1v2WyVwtWo2D2bXge+vE/Sq9BGFWTeQbvKVd2yeLHt6klVGZooZo4Oghxpw5NOffJ6xA==",
-        "dependencies": {
-          "Microsoft.Extensions.Hosting.Abstractions": "8.0.0",
-          "Microsoft.Extensions.Options": "8.0.2",
-          "NATS.Client.Simplified": "3.2.0"
         }
       },
       "NATS.NKeys": {
@@ -373,9 +303,7 @@
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
-          "Headless.Generator.Primitives.Abstractions": "[1.0.0, )",
           "Headless.Primitives": "[1.0.0, )",
-          "Headless.Urls": "[1.0.0, )",
           "Nito.AsyncEx": "[5.1.2, )",
           "Nito.Disposables": "[2.5.0, )"
         }
@@ -398,6 +326,7 @@
           "Headless.FluentValidation": "[1.0.0, )",
           "Microsoft.Extensions.Configuration.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
+          "Microsoft.Extensions.Diagnostics.HealthChecks": "[10.0.12, )",
           "Microsoft.Extensions.Hosting.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.Options.ConfigurationExtensions": "[10.0.12, )",
           "Microsoft.Extensions.Options.DataAnnotations": "[10.0.12, )",
@@ -510,12 +439,6 @@
           "Headless.Checks": "[1.0.0, )"
         }
       },
-      "headless.urls": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )"
-        }
-      },
       "FastExpressionCompiler": {
         "type": "CentralTransitive",
         "requested": "[5.4.1, )",
@@ -552,6 +475,18 @@
           "Microsoft.Extensions.Configuration": "10.0.12",
           "Microsoft.Extensions.Diagnostics.Abstractions": "10.0.12",
           "Microsoft.Extensions.Options.ConfigurationExtensions": "10.0.12"
+        }
+      },
+      "Microsoft.Extensions.Diagnostics.HealthChecks": {
+        "type": "CentralTransitive",
+        "requested": "[10.0.12, )",
+        "resolved": "10.0.12",
+        "contentHash": "Ck8nkBxEYPOGtUCp0whKwfE4qAHBnsK0DY1kgZLKvzf7s9xyr4lASa4K4AKNN1VHy7r3Z1Z57U6C0TMzFjD8ig==",
+        "dependencies": {
+          "Microsoft.Extensions.Diagnostics.HealthChecks.Abstractions": "10.0.12",
+          "Microsoft.Extensions.Hosting.Abstractions": "10.0.12",
+          "Microsoft.Extensions.Logging.Abstractions": "10.0.12",
+          "Microsoft.Extensions.Options": "10.0.12"
         }
       },
       "Microsoft.Extensions.Hosting.Abstractions": {

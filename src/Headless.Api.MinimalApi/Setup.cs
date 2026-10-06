@@ -40,7 +40,7 @@ public static class SetupMinimalApi
     /// <param name="services">The service collection to configure.</param>
     /// <returns><paramref name="services"/> for chaining.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="services"/> is <see langword="null"/>.</exception>
-    public static IServiceCollection ConfigureMinimalApi(this IServiceCollection services)
+    public static IServiceCollection ConfigureHeadlessMinimalApi(this IServiceCollection services)
     {
         services.ConfigureOptions<ConfigureMinimalApiJsonOptions>();
 
@@ -54,7 +54,7 @@ public static class SetupMinimalApi
     /// </summary>
     /// <param name="builder">The <see cref="WebApplicationBuilder"/> to configure.</param>
     /// <exception cref="ArgumentNullException"><paramref name="builder"/> is <see langword="null"/>.</exception>
-    public static void ConfigureMinimalApi(this WebApplicationBuilder builder)
+    public static void ConfigureHeadlessMinimalApi(this WebApplicationBuilder builder)
     {
         builder.Services.ConfigureOptions<ConfigureMinimalApiJsonOptions>();
     }

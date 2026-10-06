@@ -59,8 +59,8 @@ public sealed class HybridCacheInvalidationContractTests : TestBase
             .UpsertAsync("key", "value", TimeSpan.FromMinutes(5), AbortToken);
 
         // then
-        var published = await harness.WaitForPublished<CacheInvalidationMessage>(cancellationToken: AbortToken);
-        var consumed = await harness.WaitForConsumed<CacheInvalidationMessage>(cancellationToken: AbortToken);
+        var published = await harness.WaitForPublishedAsync<CacheInvalidationMessage>(cancellationToken: AbortToken);
+        var consumed = await harness.WaitForConsumedAsync<CacheInvalidationMessage>(cancellationToken: AbortToken);
         published.MessageName.Should().Be("headless.caching.hybrid.invalidation");
         consumed.MessageName.Should().Be("headless.caching.hybrid.invalidation");
         harness

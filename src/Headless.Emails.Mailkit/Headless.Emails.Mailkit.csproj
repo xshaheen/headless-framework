@@ -5,6 +5,7 @@
     <PackageTags>headless;emails;mailkit;dotnet</PackageTags>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="MailKit" />
     <PackageReference Include="Microsoft.Extensions.ObjectPool" />
   </ItemGroup>
   <ItemGroup>

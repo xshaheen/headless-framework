@@ -827,6 +827,7 @@ Redis-backed storage and setup helpers for distributed locks, reader-writer lock
 - `UseRedis()` registers Redis-backed mutex, reader-writer lock, and semaphore providers through `AddHeadlessDistributedLocks(...)`.
 - Uses `HeadlessRedisScriptsLoader` for atomic Lua script operations.
 - Mutex compare-and-swap uses Redis `KEEPTTL`, preserving the existing expiration when `ReplaceIfEqualAsync(..., newTtl: null)` is used.
+- Contributes the `distributed-locks-redis` readiness health check (tags `ready`, `headless`, `redis`), which sends `PING` through the registered `IConnectionMultiplexer`. See [Health checks](utilities.md#health-checks).
 
 ### Install
 

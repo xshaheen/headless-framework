@@ -112,7 +112,7 @@ public sealed class EntityFrameworkPermissionsFactoryLifetimeTests : TestBase
     {
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
-            modelBuilder.AddHeadlessPermissions(this);
+            modelBuilder.ConfigureHeadlessPermissions(this);
         }
     }
 }

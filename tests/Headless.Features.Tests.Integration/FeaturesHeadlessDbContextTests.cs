@@ -81,7 +81,7 @@ public sealed class FeaturesHeadlessDbContextTests(FeaturesTestFixture fixture) 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
-            modelBuilder.AddHeadlessFeatures(
+            modelBuilder.ConfigureHeadlessFeatures(
                 storageOptions.Value,
                 HeadlessStorageNaming.ForProvider(Database.ProviderName)
             );

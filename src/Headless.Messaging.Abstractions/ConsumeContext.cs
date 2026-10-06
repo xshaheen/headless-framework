@@ -46,6 +46,8 @@ public record ConsumeContext
     /// <c>context.UnitOfWork.Outbox.PublishAsync(…)</c> — and the unit a callback response is published
     /// through, so a rolled-back attempt discards both. A consumer that also holds the inbox's
     /// <c>DbContext</c> reaches the same unit through <c>db.UnitOfWork()</c>.
+    /// <c>IBus</c> and <c>IQueue</c> never join this unit: a message published through them from the handler is sent
+    /// immediately, survives a rolled-back attempt, and is published again on retry.
     /// </remarks>
     public IUnitOfWork? UnitOfWork { get; internal set; }
 

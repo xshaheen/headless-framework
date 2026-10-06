@@ -11,7 +11,7 @@ namespace Tests.Tests;
 
 /// <summary>
 /// Abstract base class for testing HeadlessDbContext global query filter behavior.
-/// Tests multi-tenancy, soft-delete, and suspend filters.
+/// Tests multi-tenancy and soft-delete filters.
 /// </summary>
 /// <typeparam name="TFixture">The fixture type providing database infrastructure.</typeparam>
 /// <typeparam name="TContext">The DbContext type implementing IHarnessDbContext.</typeparam>
@@ -79,30 +79,6 @@ public abstract class HeadlessDbContextGlobalFiltersTestBase<TFixture, TContext>
     }
 
     [Fact]
-    public virtual async Task global_filters_should_filter_suspended_entities()
-    {
-        // given
-        await using var scope = Fixture.ServiceProvider.CreateAsyncScope();
-        await using var db = scope.ServiceProvider.GetRequiredService<TContext>();
-
-        var active = new HarnessTestEntity { Name = "active", TenantId = "TENANT-1" };
-        var suspended = new HarnessTestEntity { Name = "suspended", TenantId = "TENANT-1" };
-        await db.TestEntities.AddRangeAsync(active, suspended);
-        await db.SaveChangesAsync(AbortToken);
-
-        suspended.MarkSuspended();
-        db.Update(suspended);
-        await db.SaveChangesAsync(AbortToken);
-
-        // when/then
-        using (Fixture.CurrentTenant.Change("TENANT-1"))
-        {
-            var items = await db.TestEntities.Select(x => x.Name).ToListAsync(AbortToken);
-            items.Should().BeEquivalentTo("active");
-        }
-    }
-
-    [Fact]
     public virtual async Task should_ignore_multi_tenancy_filter()
     {
         // given
@@ -115,7 +91,7 @@ public abstract class HeadlessDbContextGlobalFiltersTestBase<TFixture, TContext>
         await db.TestEntities.AddRangeAsync(t1, t2, noTenant);
         await db.SaveChangesAsync(AbortToken);
 
-        // when/then - ignoring multi-tenancy should show all non-deleted/non-suspended entities
+        // when/then - ignoring multi-tenancy should show all non-deleted entities
         using (Fixture.CurrentTenant.Change("TENANT-1"))
         {
             var items = await db.TestEntities.IgnoreMultiTenancyFilter().Select(x => x.Name).ToListAsync(AbortToken);
@@ -150,31 +126,6 @@ public abstract class HeadlessDbContextGlobalFiltersTestBase<TFixture, TContext>
     }
 
     [Fact]
-    public virtual async Task should_ignore_not_suspended_filter()
-    {
-        // given
-        await using var scope = Fixture.ServiceProvider.CreateAsyncScope();
-        await using var db = scope.ServiceProvider.GetRequiredService<TContext>();
-
-        var active = new HarnessTestEntity { Name = "active", TenantId = "TENANT-1" };
-        var suspended = new HarnessTestEntity { Name = "suspended", TenantId = "TENANT-1" };
-        await db.TestEntities.AddRangeAsync(active, suspended);
-        await db.SaveChangesAsync(AbortToken);
-
-        suspended.MarkSuspended();
-        db.Update(suspended);
-        await db.SaveChangesAsync(AbortToken);
-
-        // when/then - ignoring suspended filter should show both active and suspended
-        using (Fixture.CurrentTenant.Change("TENANT-1"))
-        {
-            var items = await db.TestEntities.IgnoreNotSuspendedFilter().Select(x => x.Name).ToListAsync(AbortToken);
-
-            items.Should().BeEquivalentTo("active", "suspended");
-        }
-    }
-
-    [Fact]
     public virtual async Task should_combine_multiple_filter_ignores()
     {
         // given
@@ -184,24 +135,21 @@ public abstract class HeadlessDbContextGlobalFiltersTestBase<TFixture, TContext>
         var activeT1 = new HarnessTestEntity { Name = "active-t1", TenantId = "TENANT-1" };
         var activeT2 = new HarnessTestEntity { Name = "active-t2", TenantId = "TENANT-2" };
         var deletedT1 = new HarnessTestEntity { Name = "deleted-t1", TenantId = "TENANT-1" };
-        var suspendedT1 = new HarnessTestEntity { Name = "suspended-t1", TenantId = "TENANT-1" };
         var noTenant = new HarnessTestEntity { Name = "no-tenant", TenantId = null };
-        await db.TestEntities.AddRangeAsync(activeT1, activeT2, deletedT1, suspendedT1, noTenant);
+        await db.TestEntities.AddRangeAsync(activeT1, activeT2, deletedT1, noTenant);
         await db.SaveChangesAsync(AbortToken);
 
         deletedT1.MarkDeleted();
-        suspendedT1.MarkSuspended();
-        db.UpdateRange(deletedT1, suspendedT1);
+        db.Update(deletedT1);
         await db.SaveChangesAsync(AbortToken);
 
         // when/then - disabling all filters should show all entities
         var items = await db
             .TestEntities.IgnoreMultiTenancyFilter()
             .IgnoreNotDeletedFilter()
-            .IgnoreNotSuspendedFilter()
             .Select(x => x.Name)
             .ToListAsync(AbortToken);
 
-        items.Should().BeEquivalentTo("active-t1", "active-t2", "deleted-t1", "suspended-t1", "no-tenant");
+        items.Should().BeEquivalentTo("active-t1", "active-t2", "deleted-t1", "no-tenant");
     }
 }

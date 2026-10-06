@@ -138,7 +138,10 @@ public sealed class SqlServerPermissionsModelParityTests(SqlServerPermissionsFix
     {
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
-            modelBuilder.AddHeadlessPermissions(storage, HeadlessStorageNaming.ForProvider(Database.ProviderName));
+            modelBuilder.ConfigureHeadlessPermissions(
+                storage,
+                HeadlessStorageNaming.ForProvider(Database.ProviderName)
+            );
         }
     }
 }

@@ -202,7 +202,7 @@ public sealed class SettingsCustomSchemaTests(SettingsTestFixture fixture) : Set
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
-            modelBuilder.AddHeadlessSettings(
+            modelBuilder.ConfigureHeadlessSettings(
                 storageOptions.Value,
                 HeadlessStorageNaming.ForProvider(Database.ProviderName)
             );
@@ -217,7 +217,7 @@ public sealed class SettingsCustomSchemaTests(SettingsTestFixture fixture) : Set
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
-            modelBuilder.AddHeadlessSettings(
+            modelBuilder.ConfigureHeadlessSettings(
                 storageOptions.Value,
                 HeadlessStorageNaming.ForProvider(Database.ProviderName)
             );

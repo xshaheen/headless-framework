@@ -96,7 +96,7 @@ public abstract class FeaturesTestBase(FeaturesTestFixture fixture) : TestBase
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
-            modelBuilder.AddHeadlessFeatures(
+            modelBuilder.ConfigureHeadlessFeatures(
                 storageOptions.Value,
                 HeadlessStorageNaming.ForProvider(Database.ProviderName)
             );

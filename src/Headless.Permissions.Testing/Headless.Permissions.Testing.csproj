@@ -10,6 +10,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
-    <ProjectReference Include="..\Headless.Permissions\Headless.Permissions.csproj" />
+    <!-- TreatAsUsed: supplies the Headless.Context and authorization types the test doubles implement. -->
+    <ProjectReference Include="..\Headless.Permissions\Headless.Permissions.csproj" TreatAsUsed="true" />
   </ItemGroup>
 </Project>
