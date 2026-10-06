@@ -18,7 +18,7 @@ public enum SandboxStore
 /// </summary>
 public sealed class SandboxSettings
 {
-    /// <summary>Jobs storage. Messaging always runs in memory.</summary>
+    /// <summary>Jobs and Messaging storage. The messaging transport stays in memory either way.</summary>
     public SandboxStore Store { get; set; } = SandboxStore.Memory;
 
     /// <summary>PostgreSQL connection string, required when <see cref="Store"/> is <see cref="SandboxStore.Postgres"/>.</summary>

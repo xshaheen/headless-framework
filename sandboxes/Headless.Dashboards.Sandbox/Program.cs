@@ -55,7 +55,17 @@ builder.Services.AddHeadlessMessaging(setup =>
     // it governs publishing, not consuming.
     setup.DefaultFailurePolicy(policy => policy.FailOn<InvalidOperationException>());
     setup.Options.MinimumInboxGuarantee = InboxGuarantee.ProcessLocal;
-    setup.UseInMemoryStorage();
+    // Messages stay on the in-memory transport; their storage follows the sandbox store, so with STORE=postgres the
+    // published and received rows survive a restart and `make db-q` can read them.
+    if (postgres is not null)
+    {
+        setup.UsePostgreSql(postgres);
+    }
+    else
+    {
+        setup.UseInMemoryStorage();
+    }
+
     setup.UseInMemory();
     // Inbox and scheduled operations refuse an anonymous operator, so Basic auth makes them reachable; without a
     // password the dashboard stays open for read-only checks.

@@ -396,6 +396,14 @@
           "Headless.Messaging": "[1.0.0, )"
         }
       },
+      "headless.messaging.storage.postgresql": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Messaging": "[1.0.0, )",
+          "Headless.Sql.PostgreSql": "[1.0.0, )",
+          "Npgsql": "[10.0.3, )"
+        }
+      },
       "headless.multitenancy.abstractions": {
         "type": "Project",
         "dependencies": {

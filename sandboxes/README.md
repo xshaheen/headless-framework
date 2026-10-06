@@ -29,4 +29,6 @@ call creates new rows, so running a scenario again is safe. Jobs run with short 
 
 `STORE=memory` (the default) forgets everything when the process stops. `STORE=postgres` keeps Jobs state in a
 per-checkout PostgreSQL volume, built with `EnsureCreated` instead of migrations; after a Jobs schema change, run
-`make sandbox-reset CONFIRM=1` to drop it. Messaging always runs in memory.
+`make sandbox-reset CONFIRM=1` to drop it. With `STORE=postgres` Messaging stores its rows there too; its transport is always in memory.
+
+The sandbox consumer's failures are deliberate, so a `FailOn<InvalidOperationException>()` default failure policy makes them terminal at once. Inbox operations such as Force reprocess act only on terminal generations.
