@@ -9,7 +9,6 @@ public sealed class TestEntity
         ICreateAudit<UserId>,
         IUpdateAudit<UserId>,
         IDeleteAudit<UserId>,
-        ISuspendAudit<UserId>,
         IHasConcurrencyStamp,
         IMultiTenant
 {
@@ -38,16 +37,6 @@ public sealed class TestEntity
 
     public UserId? RestoredById { get; private init; }
 
-    public bool IsSuspended { get; private set; }
-
-    public DateTimeOffset? SuspendedAt { get; private init; }
-
-    public UserId? SuspendedById { get; private init; }
-
-    public DateTimeOffset? UnsuspendedAt { get; private init; }
-
-    public UserId? UnsuspendedById { get; private init; }
-
     // Concurrency
     public string? ConcurrencyStamp { get; private init; }
 
@@ -55,11 +44,6 @@ public sealed class TestEntity
     public void MarkDeleted()
     {
         IsDeleted = true;
-    }
-
-    public void MarkSuspended()
-    {
-        IsSuspended = true;
     }
 
     // Domain behavior that raises events through the encapsulated (protected) aggregate mutators.

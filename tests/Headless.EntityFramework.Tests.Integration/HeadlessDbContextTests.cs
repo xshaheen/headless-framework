@@ -69,9 +69,6 @@ public sealed class HeadlessDbContextTests(HeadlessDbContextTestFixture fixture)
         entity.IsDeleted.Should().BeFalse();
         entity.DeletedAt.Should().BeNull();
         entity.DeletedById.Should().BeNull();
-        entity.IsSuspended.Should().BeFalse();
-        entity.SuspendedAt.Should().BeNull();
-        entity.SuspendedById.Should().BeNull();
 
         // Local domain events: Created + Changed
         db.EmittedLocalMessages.Should().HaveCount(2);
@@ -200,30 +197,6 @@ public sealed class HeadlessDbContextTests(HeadlessDbContextTestFixture fixture)
         updatedMessage.Entity.Should().Be(entity);
         var changedMessage = db.EmittedLocalMessages.OfType<EntityChangedEventData<TestEntity>>().Single();
         changedMessage.Entity.Should().Be(entity);
-    }
-
-    // Suspend
-
-    [Fact]
-    public async Task should_set_suspend_audit_when_save_changes_suspend()
-    {
-        // given
-        await using var scope = fixture.ServiceProvider.CreateAsyncScope();
-        await using var db = scope.ServiceProvider.GetRequiredService<TestHeadlessDbContext>();
-
-        var entity = new TestEntity { Name = "to-suspend", TenantId = "T1" };
-        db.Tests.Add(entity);
-        await db.SaveChangesAsync(AbortToken);
-
-        // when
-        entity.MarkSuspended();
-        db.Update(entity);
-        await db.SaveChangesAsync(AbortToken);
-
-        // then
-        entity.IsSuspended.Should().BeTrue();
-        entity.SuspendedAt.Should().Be(fixture.Now);
-        entity.SuspendedById.Should().Be(fixture.UserId);
     }
 
     // Publish messages
@@ -381,7 +354,7 @@ public sealed class HeadlessDbContextTests(HeadlessDbContextTestFixture fixture)
     // Global filters
 
     [Fact]
-    public async Task should_filter_by_tenant_delete_and_suspend_flags_and_can_be_disabled_when_global_filters()
+    public async Task should_filter_by_tenant_and_delete_flags_and_can_be_disabled_when_global_filters()
     {
         // given
         await using var scope = fixture.ServiceProvider.CreateAsyncScope();
@@ -390,16 +363,13 @@ public sealed class HeadlessDbContextTests(HeadlessDbContextTestFixture fixture)
         var a = new TestEntity { Name = "a", TenantId = "TENANT-1" };
         var b = new TestEntity { Name = "b", TenantId = "TENANT-2" };
         var c = new TestEntity { Name = "c", TenantId = "TENANT-1" };
-        var d = new TestEntity { Name = "d", TenantId = "TENANT-1" };
         var e = new TestEntity { Name = "e", TenantId = null };
-        await db.Tests.AddRangeAsync(a, b, c, d, e);
+        await db.Tests.AddRangeAsync(a, b, c, e);
         await db.SaveChangesAsync(AbortToken);
 
         // soft delete c
         c.MarkDeleted();
-        // suspend d
-        d.MarkSuspended();
-        db.UpdateRange(c, d);
+        db.Update(c);
         await db.SaveChangesAsync(AbortToken);
 
         // when/then: default filters on
@@ -450,11 +420,10 @@ public sealed class HeadlessDbContextTests(HeadlessDbContextTestFixture fixture)
             var items = await db
                 .Tests.IgnoreMultiTenancyFilter()
                 .IgnoreNotDeletedFilter()
-                .IgnoreNotSuspendedFilter()
                 .Select(x => x.Name)
                 .ToArrayAsync(AbortToken);
 
-            items.Should().BeEquivalentTo("a", "b", "c", "d", "e");
+            items.Should().BeEquivalentTo("a", "b", "c", "e");
         }
     }
 }

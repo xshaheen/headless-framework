@@ -26,7 +26,6 @@ public class Order
 
     public DateTime LastComputedAt { get; set; }
     public bool IsDeleted { get; set; }
-    public bool IsSuspended { get; set; }
     public decimal Amount { get; set; }
 }
 
@@ -790,70 +789,6 @@ public sealed partial class EfAuditChangeCaptureTests : TestBase
     }
 
     [Fact]
-    public async Task suspend_produces_suspended_action()
-    {
-        // given
-        var (db, conn) = _CreateDb();
-        await using (conn)
-        await using (db)
-        {
-            var order = new Order
-            {
-                Id = Guid.NewGuid(),
-                CustomerName = "Alice",
-                Email = "a@b.com",
-                Phone = "555",
-                IsSuspended = false,
-            };
-            db.Orders.Add(order);
-            await db.SaveChangesAsync(AbortToken);
-
-            // when
-            order.IsSuspended = true;
-            db.ChangeTracker.DetectChanges();
-
-            var sut = _CreateSut();
-            var result = _Capture(sut, db);
-
-            // then
-            result.Should().ContainSingle();
-            result[0].Action.Should().Be(AuditActionNames.Suspended);
-        }
-    }
-
-    [Fact]
-    public async Task unsuspend_produces_unsuspended_action()
-    {
-        // given
-        var (db, conn) = _CreateDb();
-        await using (conn)
-        await using (db)
-        {
-            var order = new Order
-            {
-                Id = Guid.NewGuid(),
-                CustomerName = "Alice",
-                Email = "a@b.com",
-                Phone = "555",
-                IsSuspended = true,
-            };
-            db.Orders.Add(order);
-            await db.SaveChangesAsync(AbortToken);
-
-            // when
-            order.IsSuspended = false;
-            db.ChangeTracker.DetectChanges();
-
-            var sut = _CreateSut();
-            var result = _Capture(sut, db);
-
-            // then
-            result.Should().ContainSingle();
-            result[0].Action.Should().Be(AuditActionNames.Unsuspended);
-        }
-    }
-
-    [Fact]
     public async Task audit_log_entry_class_not_captured_in_all_entities_mode()
     {
         // given - use the real storage entity and its finalized model configuration.
@@ -1052,7 +987,7 @@ public sealed partial class EfAuditChangeCaptureTests : TestBase
             _ = _Capture(sut, db);
 
             // then
-            filterCalls.Should().Be(7);
+            filterCalls.Should().Be(6);
         }
     }
 

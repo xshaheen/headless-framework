@@ -13,7 +13,7 @@ public static class HeadlessEntityConventionExtensions
     /// <summary>
     /// Configures all headless conventions for the given entity type builder.
     /// Applies concurrency stamp, extra properties, delete audit, create audit,
-    /// update audit, and suspend audit configurations.
+    /// and update audit configurations.
     /// </summary>
     public static void ConfigureHeadlessConvention(this EntityTypeBuilder builder)
     {
@@ -22,7 +22,6 @@ public static class HeadlessEntityConventionExtensions
         builder.TryConfigureDeleteAudit();
         builder.TryConfigureCreateAudit();
         builder.TryConfigureUpdateAudit();
-        builder.TryConfigureSuspendAudit();
     }
 
     #region Configure ICreateAudit
@@ -307,92 +306,6 @@ public static class HeadlessEntityConventionExtensions
             .HasForeignKey(x => x.DeletedById)
             .IsRequired(false)
             .OnDelete(DeleteBehavior.Restrict);
-    }
-
-    #endregion
-
-    #region Configure ISuspendAudit
-
-    /// <summary>
-    /// Applies suspend-audit column configuration if the entity type implements <c>ISuspendAudit</c>.
-    /// No-ops silently when the entity does not implement the interface.
-    /// </summary>
-    public static void TryConfigureSuspendAudit(this EntityTypeBuilder builder)
-    {
-        if (!builder.Metadata.ClrType.IsAssignableTo<ISuspendAudit>())
-        {
-            return;
-        }
-
-        const string isSuspended = nameof(ISuspendAudit.IsSuspended);
-        const string suspendedAtName = nameof(ISuspendAudit.SuspendedAt);
-        const string unsuspendedAtName = nameof(ISuspendAudit.UnsuspendedAt);
-        const string suspendedByIdName = nameof(ISuspendAudit<>.SuspendedById);
-        const string unsuspendedByIdName = nameof(ISuspendAudit<>.UnsuspendedById);
-        const string suspendedByName = nameof(ISuspendAudit<,>.SuspendedBy);
-        const string unsuspendedByName = nameof(ISuspendAudit<,>.UnsuspendedBy);
-
-        builder.Property(isSuspended).IsRequired().HasDefaultValue(value: false).HasColumnName(isSuspended);
-        builder.Property(suspendedAtName).IsRequired(false).HasColumnName(suspendedAtName);
-        builder.Property(unsuspendedAtName).IsRequired(false).HasColumnName(unsuspendedAtName);
-
-        if (
-            builder
-                .Metadata.ClrType.GetInterfaces()
-                .Any(x => x.IsGenericType && x.GetGenericTypeDefinition() == typeof(ISuspendAudit<,>))
-        )
-        {
-            builder
-                .Property(suspendedByIdName)
-                .IsRequired(false)
-                .HasColumnName(suspendedByIdName)
-                .HasMaxLength(DomainConstants.IdMaxLength);
-
-            builder
-                .Property(unsuspendedByIdName)
-                .IsRequired(false)
-                .HasColumnName(unsuspendedByIdName)
-                .HasMaxLength(DomainConstants.IdMaxLength);
-
-            builder
-                .HasOne(suspendedByName)
-                .WithMany()
-                .HasForeignKey(suspendedByIdName)
-                .IsRequired(false)
-                .OnDelete(DeleteBehavior.Restrict);
-
-            builder
-                .HasOne(unsuspendedByName)
-                .WithMany()
-                .HasForeignKey(unsuspendedByIdName)
-                .IsRequired(false)
-                .OnDelete(DeleteBehavior.Restrict);
-        }
-        else if (
-            builder
-                .Metadata.ClrType.GetInterfaces()
-                .Any(x => x.IsGenericType && x.GetGenericTypeDefinition() == typeof(ISuspendAudit<>))
-        )
-        {
-            builder
-                .Property(suspendedByIdName)
-                .IsRequired(false)
-                .HasColumnName(suspendedByIdName)
-                .HasMaxLength(DomainConstants.IdMaxLength);
-
-            builder
-                .Property(unsuspendedByIdName)
-                .IsRequired(false)
-                .HasColumnName(unsuspendedByIdName)
-                .HasMaxLength(DomainConstants.IdMaxLength);
-        }
-    }
-
-    /// <summary>Applies suspend-audit column configuration for a strongly-typed entity builder.</summary>
-    public static void ConfigureSuspendAudit<T>(this EntityTypeBuilder<T> builder)
-        where T : class, ISuspendAudit
-    {
-        builder.Cast<EntityTypeBuilder>().TryConfigureSuspendAudit();
     }
 
     #endregion

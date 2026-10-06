@@ -134,15 +134,12 @@ public abstract class HeadlessDbContextSaveChangesTestBase<TFixture, TContext> :
         // then - concurrency stamp set
         entity.ConcurrencyStamp.Should().NotBeNullOrEmpty();
 
-        // then - update/delete/suspend not set
+        // then - update/delete not set
         entity.UpdatedAt.Should().BeNull();
         entity.UpdatedById.Should().BeNull();
         entity.IsDeleted.Should().BeFalse();
         entity.DeletedAt.Should().BeNull();
         entity.DeletedById.Should().BeNull();
-        entity.IsSuspended.Should().BeFalse();
-        entity.SuspendedAt.Should().BeNull();
-        entity.SuspendedById.Should().BeNull();
 
         // then - local domain events emitted (Created + Changed)
         db.EmittedLocalMessages.Should().HaveCount(2);
@@ -221,32 +218,6 @@ public abstract class HeadlessDbContextSaveChangesTestBase<TFixture, TContext> :
         updatedMessage.Entity.Should().Be(entity);
         var changedMessage = db.EmittedLocalMessages.OfType<EntityChangedEventData<HarnessTestEntity>>().Single();
         changedMessage.Entity.Should().Be(entity);
-    }
-
-    #endregion
-
-    #region Suspend - Audit
-
-    [Fact]
-    public virtual async Task save_changes_suspend_should_set_suspend_audit()
-    {
-        // given
-        await using var scope = Fixture.ServiceProvider.CreateAsyncScope();
-        await using var db = scope.ServiceProvider.GetRequiredService<TContext>();
-
-        var entity = new HarnessTestEntity { Name = "to-suspend", TenantId = "T1" };
-        db.TestEntities.Add(entity);
-        await db.SaveChangesAsync(AbortToken);
-
-        // when
-        entity.MarkSuspended();
-        db.Update(entity);
-        await db.SaveChangesAsync(AbortToken);
-
-        // then - suspend audit set
-        entity.IsSuspended.Should().BeTrue();
-        entity.SuspendedAt.Should().Be(Fixture.Now);
-        entity.SuspendedById.Should().Be(Fixture.UserId);
     }
 
     #endregion

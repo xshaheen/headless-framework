@@ -15,7 +15,7 @@ public sealed class AuditedBaseTests
     }
 
     // Both bases implement the same transition contracts; each test runs against both through these interfaces.
-    private interface IAuditedSubject : ISuspendAudit<string, Account>, IDeleteAudit<string, Account>;
+    private interface IAuditedSubject : IDeleteAudit<string, Account>;
 
     private sealed class AuditedThing : AuditedEntity<Guid, string, Account>, IAuditedSubject;
 
@@ -52,78 +52,6 @@ public sealed class AuditedBaseTests
         root.Should().BeAssignableTo<IDomainEventEmitter>();
         root.Should().BeAssignableTo<ICreateAudit<string, Account>>();
         root.Should().BeAssignableTo<IUpdateAudit<string, Account>>();
-    }
-
-    [Theory]
-    [MemberData(nameof(Subjects))]
-    public void should_record_suspension_when_suspend(string kind)
-    {
-        // given
-        var subject = _Create(kind);
-        var by = new Account { Id = "admin" };
-
-        // when
-        subject.Suspend(_Earlier, "admin", by);
-
-        // then
-        subject.IsSuspended.Should().BeTrue();
-        subject.SuspendedAt.Should().Be(_Earlier);
-        subject.SuspendedById.Should().Be("admin");
-        subject.SuspendedBy.Should().BeSameAs(by);
-    }
-
-    [Theory]
-    [MemberData(nameof(Subjects))]
-    public void should_keep_original_suspension_when_suspend_twice(string kind)
-    {
-        // given
-        var subject = _Create(kind);
-        subject.Suspend(_Earlier, "first");
-
-        // when
-        subject.Suspend(_Later, "second");
-
-        // then
-        subject.SuspendedAt.Should().Be(_Earlier);
-        subject.SuspendedById.Should().Be("first");
-    }
-
-    [Theory]
-    [MemberData(nameof(Subjects))]
-    public void should_clear_suspension_and_record_unsuspension_when_unsuspend(string kind)
-    {
-        // given
-        var subject = _Create(kind);
-        var by = new Account { Id = "support" };
-        subject.Suspend(_Earlier, "admin", new Account { Id = "admin" });
-
-        // when
-        subject.Unsuspend(_Later, "support", by);
-
-        // then
-        subject.IsSuspended.Should().BeFalse();
-        subject.SuspendedAt.Should().BeNull();
-        subject.SuspendedById.Should().BeNull();
-        subject.SuspendedBy.Should().BeNull();
-        subject.UnsuspendedAt.Should().Be(_Later);
-        subject.UnsuspendedById.Should().Be("support");
-        subject.UnsuspendedBy.Should().BeSameAs(by);
-    }
-
-    [Theory]
-    [MemberData(nameof(Subjects))]
-    public void should_do_nothing_when_unsuspend_not_suspended(string kind)
-    {
-        // given
-        var subject = _Create(kind);
-
-        // when
-        subject.Unsuspend(_Later, "support");
-
-        // then
-        subject.IsSuspended.Should().BeFalse();
-        subject.UnsuspendedAt.Should().BeNull();
-        subject.UnsuspendedById.Should().BeNull();
     }
 
     [Theory]

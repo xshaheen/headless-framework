@@ -21,8 +21,8 @@ namespace Headless.EntityFramework;
 /// On <c>Added</c> entries it sets <c>ICreateAudit.CreatedAt</c> (if not already set) and
 /// <c>CreatedById</c> (resolved from <c>ICurrentUser</c>, skipped if already set or the user is
 /// anonymous). On <c>Modified</c> entries it updates <c>IUpdateAudit.UpdatedAt</c> and
-/// <c>UpdatedById</c>, and reconciles delete/suspend audit fields when <c>IsDeleted</c> or
-/// <c>IsSuspended</c> transitions are detected.
+/// <c>UpdatedById</c>, and reconciles delete audit fields when an <c>IsDeleted</c>
+/// transition is detected.
 /// </remarks>
 [PublicAPI]
 public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, ICurrentUser currentUser)
@@ -55,16 +55,15 @@ public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, I
                 break;
             case EntityState.Modified:
                 // ICurrentUser implementations re-scan and re-parse claims on every UserId/AccountId read, so the
-                // stampers share one at-most-once resolution instead of paying for up to three. Resolution stays
+                // stampers share one at-most-once resolution instead of paying for up to two. Resolution stays
                 // lazy inside the id stampers: an audited entity whose branches do not fire (an IDeleteAudit
                 // modified on an unrelated property, a non-generic IUpdateAudit) performs zero claim scans.
-                if (entry.Entity is IUpdateAudit or IDeleteAudit or ISuspendAudit)
+                if (entry.Entity is IUpdateAudit or IDeleteAudit)
                 {
                     var actor = new ActorPair(currentUser);
 
                     _TrySetUpdateAudit(entry, ref actor);
                     _TrySetDeleteAudit(entry, ref actor);
-                    _TrySetSuspendAudit(entry, ref actor);
                 }
 
                 break;
@@ -269,79 +268,6 @@ public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, I
         if (byAccount is not null && byAccount.DeletedById is null && currentAccountId is not null)
         {
             ObjectPropertiesHelper.TrySetPropertyValue(byAccount, nameof(IDeleteAudit<>.DeletedById), currentAccountId);
-        }
-    }
-
-    private void _TrySetSuspendAudit(EntityEntry entry, ref ActorPair actor)
-    {
-        if (
-            entry.Entity is not ISuspendAudit suspendAudit
-            || !entry.Property(nameof(ISuspendAudit.IsSuspended)).IsModified
-        )
-        {
-            return;
-        }
-
-        if (suspendAudit.IsSuspended)
-        {
-            _TrySetSuspendAuditDate(entry, suspendAudit);
-            _TrySetSuspendAuditId(entry, ref actor);
-
-            return;
-        }
-
-        ObjectPropertiesHelper.TrySetPropertyToNull(suspendAudit, nameof(ISuspendAudit.SuspendedAt));
-
-        if (_ImplementsGenericInterface(entry.Entity.GetType(), typeof(ISuspendAudit<>)))
-        {
-            ObjectPropertiesHelper.TrySetPropertyToNull(suspendAudit, nameof(ISuspendAudit<>.SuspendedById));
-        }
-    }
-
-    private void _TrySetSuspendAuditDate(EntityEntry entry, ISuspendAudit entity)
-    {
-        if (entity.SuspendedAt == null || !entry.Property(nameof(ISuspendAudit.SuspendedAt)).IsModified)
-        {
-            ObjectPropertiesHelper.TrySetProperty(entity, nameof(ISuspendAudit.SuspendedAt), _getUtcNow);
-        }
-    }
-
-    private static void _TrySetSuspendAuditId(EntityEntry entry, ref ActorPair actor)
-    {
-        var byUser = entry.Entity as ISuspendAudit<UserId>;
-        var byAccount = entry.Entity as ISuspendAudit<AccountId>;
-
-        if (byUser is null && byAccount is null)
-        {
-            return;
-        }
-
-        var (currentUserId, currentAccountId) = actor.Resolve();
-
-        if (currentUserId is null && currentAccountId is null)
-        {
-            return;
-        }
-
-        var propertyEntry = entry.Property(nameof(ISuspendAudit<>.SuspendedById));
-
-        if (propertyEntry.IsModified && !Equals(propertyEntry.CurrentValue, propertyEntry.OriginalValue))
-        {
-            return;
-        }
-
-        if (byUser is not null && byUser.SuspendedById is null && currentUserId is not null)
-        {
-            ObjectPropertiesHelper.TrySetPropertyValue(byUser, nameof(ISuspendAudit<>.SuspendedById), currentUserId);
-        }
-
-        if (byAccount is not null && byAccount.SuspendedById is null && currentAccountId is not null)
-        {
-            ObjectPropertiesHelper.TrySetPropertyValue(
-                byAccount,
-                nameof(ISuspendAudit<>.SuspendedById),
-                currentAccountId
-            );
         }
     }
 

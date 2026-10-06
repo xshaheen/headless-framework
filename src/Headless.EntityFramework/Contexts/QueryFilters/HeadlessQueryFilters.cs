@@ -7,8 +7,8 @@ using Microsoft.EntityFrameworkCore;
 namespace Headless.EntityFramework;
 
 /// <summary>
-/// Named global-query-filter constants and bypass extensions for the three Headless EF Core query
-/// filters: multi-tenancy, soft-delete, and suspend.
+/// Named global-query-filter constants and bypass extensions for the two Headless EF Core query
+/// filters: multi-tenancy and soft-delete.
 /// </summary>
 /// <remarks>
 /// The bypass extensions emit a debug-level security audit trace before calling
@@ -23,9 +23,6 @@ public static class HeadlessQueryFilters
 
     /// <summary>Named tag for the <c>IDeleteAudit.IsDeleted == false</c> soft-delete filter.</summary>
     public const string NotDeletedFilter = "NotDeletedFilter";
-
-    /// <summary>Named tag for the <c>ISuspendAudit.IsSuspended == false</c> suspend filter.</summary>
-    public const string NotSuspendedFilter = "NotSuspendedFilter";
 
     extension<TEntity>(IQueryable<TEntity> source)
         where TEntity : class
@@ -54,19 +51,6 @@ public static class HeadlessQueryFilters
         {
             _LogFilterBypassed(NotDeletedFilter, typeof(TEntity).Name, callerMember, callerFile);
             return source.IgnoreQueryFilters([NotDeletedFilter]);
-        }
-
-        /// <summary>
-        /// Returns the query with the suspend (<c>IsSuspended == false</c>) filter suppressed for this
-        /// query only. Emits a debug-level security audit trace containing the call site.
-        /// </summary>
-        public IQueryable<TEntity> IgnoreNotSuspendedFilter(
-            [CallerMemberName] string callerMember = "",
-            [CallerFilePath] string callerFile = ""
-        )
-        {
-            _LogFilterBypassed(NotSuspendedFilter, typeof(TEntity).Name, callerMember, callerFile);
-            return source.IgnoreQueryFilters([NotSuspendedFilter]);
         }
     }
 

@@ -59,11 +59,9 @@ public sealed class AuditLogOptions
             "CreatedAt",
             "UpdatedAt",
             "DeletedAt",
-            "SuspendedAt",
             "CreatedById",
             "UpdatedById",
             "DeletedById",
-            "SuspendedById",
         };
 
     /// <summary>

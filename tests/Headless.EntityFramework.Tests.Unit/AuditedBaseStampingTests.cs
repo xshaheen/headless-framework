@@ -116,53 +116,6 @@ public sealed class AuditedBaseStampingTests : TestBase
         saved.DeletedById.Should().BeNull();
     }
 
-    [Theory]
-    [MemberData(nameof(Bases))]
-    public async Task should_stamp_suspend_audit_when_audited_base_suspended(string kind)
-    {
-        // given
-        await using var harness = await _CreateHarnessAsync();
-        await using var db = harness.CreateContext();
-        var entity = _Create(kind);
-        db.Add(entity);
-        await db.SaveChangesAsync(AbortToken);
-        _clock.Advance(TimeSpan.FromMinutes(5));
-
-        // when
-        entity.Freeze();
-        await db.SaveChangesAsync(AbortToken);
-
-        // then
-        var saved = await harness.ReloadAsync(entity);
-        saved.IsSuspended.Should().BeTrue();
-        saved.SuspendedAt.Should().Be(_Start.AddMinutes(5));
-        saved.SuspendedById.Should().Be(_currentUser.UserId);
-    }
-
-    [Theory]
-    [MemberData(nameof(Bases))]
-    public async Task should_clear_suspend_audit_when_audited_base_unsuspended(string kind)
-    {
-        // given
-        await using var harness = await _CreateHarnessAsync();
-        await using var db = harness.CreateContext();
-        var entity = _Create(kind);
-        db.Add(entity);
-        await db.SaveChangesAsync(AbortToken);
-        entity.Freeze();
-        await db.SaveChangesAsync(AbortToken);
-
-        // when
-        entity.Unfreeze();
-        await db.SaveChangesAsync(AbortToken);
-
-        // then
-        var saved = await harness.ReloadAsync(entity);
-        saved.IsSuspended.Should().BeFalse();
-        saved.SuspendedAt.Should().BeNull();
-        saved.SuspendedById.Should().BeNull();
-    }
-
     [Fact]
     public async Task should_keep_transition_time_and_stamp_actor_when_navigation_base_deleted_without_actor()
     {
@@ -265,10 +218,7 @@ public sealed class AuditedBaseStampingTests : TestBase
         {
             await using var db = CreateContext();
 
-            return await db.Set<TEntity>()
-                .IgnoreNotDeletedFilter()
-                .IgnoreNotSuspendedFilter()
-                .SingleAsync(x => x.Id == entity.Id, AbortToken);
+            return await db.Set<TEntity>().IgnoreNotDeletedFilter().SingleAsync(x => x.Id == entity.Id, AbortToken);
         }
 
         public async ValueTask DisposeAsync()
@@ -297,22 +247,13 @@ public sealed class AuditedBaseStampingTests : TestBase
     }
 
     // Behavior the tests drive through each base's protected setters, as a consuming entity would.
-    public interface IAuditedRow
-        : IEntity<Guid>,
-            ICreateAudit<UserId>,
-            IUpdateAudit<UserId>,
-            IDeleteAudit<UserId>,
-            ISuspendAudit<UserId>
+    public interface IAuditedRow : IEntity<Guid>, ICreateAudit<UserId>, IUpdateAudit<UserId>, IDeleteAudit<UserId>
     {
         void Rename(string name);
 
         void SoftDelete();
 
         void Undelete();
-
-        void Freeze();
-
-        void Unfreeze();
     }
 
     public sealed class AuditedNote : AuditedEntity<Guid, UserId>, IAuditedRow
@@ -324,10 +265,6 @@ public sealed class AuditedBaseStampingTests : TestBase
         public void SoftDelete() => IsDeleted = true;
 
         public void Undelete() => IsDeleted = false;
-
-        public void Freeze() => IsSuspended = true;
-
-        public void Unfreeze() => IsSuspended = false;
     }
 
     public sealed class AuditedLedger : AuditedAggregateRoot<Guid, UserId>, IAuditedRow
@@ -339,10 +276,6 @@ public sealed class AuditedBaseStampingTests : TestBase
         public void SoftDelete() => IsDeleted = true;
 
         public void Undelete() => IsDeleted = false;
-
-        public void Freeze() => IsSuspended = true;
-
-        public void Unfreeze() => IsSuspended = false;
     }
 
     public sealed class AuditedDocument : AuditedAggregateRoot<Guid, UserId, TestAccount>

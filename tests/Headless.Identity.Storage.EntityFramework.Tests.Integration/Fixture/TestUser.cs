@@ -15,7 +15,6 @@ public sealed class TestUser
         ICreateAudit<UserId>,
         IUpdateAudit<UserId>,
         IDeleteAudit<UserId>,
-        ISuspendAudit<UserId>,
         IHasConcurrencyStamp,
         IMultiTenant
 {
@@ -42,17 +41,6 @@ public sealed class TestUser
 
     public UserId? RestoredById { get; private init; }
 
-    // Suspend audit
-    public bool IsSuspended { get; private set; }
-
-    public DateTimeOffset? SuspendedAt { get; private init; }
-
-    public UserId? SuspendedById { get; private init; }
-
-    public DateTimeOffset? UnsuspendedAt { get; private init; }
-
-    public UserId? UnsuspendedById { get; private init; }
-
     // Domain helpers to toggle flags so EF tracks modifications
     public void MarkDeleted()
     {
@@ -62,16 +50,6 @@ public sealed class TestUser
     public void MarkRestored()
     {
         IsDeleted = false;
-    }
-
-    public void MarkSuspended()
-    {
-        IsSuspended = true;
-    }
-
-    public void MarkUnsuspended()
-    {
-        IsSuspended = false;
     }
 
     public IReadOnlyList<object> GetKeys()
