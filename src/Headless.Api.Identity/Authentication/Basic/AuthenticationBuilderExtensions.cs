@@ -2,6 +2,7 @@
 
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Api.Identity;
 
@@ -32,6 +33,9 @@ public static class AuthenticationBuilderExtensions
         where TUser : IdentityUser<TUserId>
         where TUserId : IEquatable<TUserId>
     {
+        builder.Services.AddHttpContextAccessor();
+        builder.Services.AddOrReplaceSingleton<IAuthenticationSchemeProvider, DynamicAuthenticationSchemeProvider>();
+
         return builder.AddScheme<BasicAuthenticationOptions, BasicAuthenticationHandler<TUser, TUserId>>(
             authenticationScheme ?? BasicAuthenticationOptions.DefaultScheme,
             displayName ?? BasicAuthenticationOptions.DefaultScheme,

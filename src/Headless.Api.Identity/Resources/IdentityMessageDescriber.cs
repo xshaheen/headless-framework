@@ -4,7 +4,7 @@ using Headless.Primitives;
 using Humanizer;
 
 #pragma warning disable CA1863 // Use 'CompositeFormat'
-namespace Headless.Api.Resources;
+namespace Headless.Api.Identity.Resources;
 
 /// <summary>
 /// Factory methods that create <see cref="ErrorDescriptor"/> instances for identity-related error responses.

@@ -18,7 +18,10 @@
         <Project Path="src\Headless.Api.Mvc\Headless.Api.Mvc.csproj" />
         <Project Path="src\Headless.Api\Headless.Api.csproj" />
         <Project Path="src\Headless.Api.Idempotency\Headless.Api.Idempotency.csproj" />
+        <Project Path="src\Headless.Api.Identity\Headless.Api.Identity.csproj" />
+        <Project Path="src\Headless.Api.Jwt\Headless.Api.Jwt.csproj" />
         <Project Path="src\Headless.Api.ServiceDefaults\Headless.Api.ServiceDefaults.csproj" />
+        <Project Path="src\Headless.Api.UserAgent\Headless.Api.UserAgent.csproj" />
     </Folder>
     <Folder Name="/Api/Tests/">
         <Project Path="benchmarks/Headless.Api.Idempotency.Benchmarks/Headless.Api.Idempotency.Benchmarks.csproj" />

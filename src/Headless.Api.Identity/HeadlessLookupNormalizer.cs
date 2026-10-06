@@ -8,7 +8,7 @@ namespace Headless.Api.Identity;
 /// <summary>
 /// <see cref="ILookupNormalizer"/> that delegates to <c>Headless.Text.LookupNormalizer</c>
 /// for consistent username and email normalization across the framework.
-/// Register via <c>builder.AddUserStore&lt;…&gt;().AddLookupNormalizer&lt;HeadlessLookupNormalizer&gt;()</c>.
+/// Register with <see cref="IdentityBuilderExtensions.AddHeadlessLookupNormalizer"/>.
 /// </summary>
 [PublicAPI]
 public sealed class HeadlessLookupNormalizer : ILookupNormalizer

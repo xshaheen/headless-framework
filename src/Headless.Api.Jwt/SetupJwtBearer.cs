@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 
 namespace Headless.Api;
@@ -125,6 +126,8 @@ public static class SetupJwtBearer
             Action<JwtBearerOptions>? configureBearer
         )
         {
+            builder.Services.TryAddSingleton<IJwtTokenFactory, JwtTokenFactory>();
+
             // Registered before AddJwtBearer so the consumer's configureBearer callback runs after these rules.
             builder
                 .Services.AddOptions<JwtBearerOptions>(authenticationScheme)

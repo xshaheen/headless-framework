@@ -10,6 +10,19 @@ namespace Headless.Api.Identity;
 [PublicAPI]
 public static class IdentityBuilderExtensions
 {
+    /// <summary>
+    /// Replaces ASP.NET Core Identity's upper-invariant <see cref="ILookupNormalizer"/> with
+    /// <see cref="HeadlessLookupNormalizer"/>, so stored usernames and emails normalize the same way as the rest of the framework.
+    /// </summary>
+    /// <param name="builder">The Identity builder.</param>
+    /// <returns>The same <see cref="IdentityBuilder"/>.</returns>
+    public static IdentityBuilder AddHeadlessLookupNormalizer(this IdentityBuilder builder)
+    {
+        builder.Services.AddOrReplaceSingleton<ILookupNormalizer, HeadlessLookupNormalizer>();
+
+        return builder;
+    }
+
     #region Password Reset
 
     /// <summary>

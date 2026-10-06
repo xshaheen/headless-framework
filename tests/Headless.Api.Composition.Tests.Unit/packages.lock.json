@@ -613,7 +613,6 @@
         "dependencies": {
           "Asp.Versioning.Abstractions": "[10.2.1, )",
           "Asp.Versioning.Http": "[10.2.3, )",
-          "DeviceDetector.NET": "[6.5.2, )",
           "Headless.Api.Abstractions": "[1.0.0, )",
           "Headless.AuditLog.Abstractions": "[1.0.0, )",
           "Headless.Context": "[1.0.0, )",
@@ -622,12 +621,8 @@
           "Headless.Hosting": "[1.0.0, )",
           "Headless.MultiTenancy": "[1.0.0, )",
           "Headless.Serializer.Json": "[1.0.0, )",
-          "Humanizer.Core": "[3.0.10, )",
-          "Humanizer.Core.ar": "[3.0.10, )",
-          "Microsoft.AspNetCore.Authentication.JwtBearer": "[10.0.12, )",
           "Microsoft.AspNetCore.MiddlewareAnalysis": "[10.0.12, )",
           "Microsoft.Extensions.Telemetry.Abstractions": "[10.10.0, )",
-          "Microsoft.IdentityModel.JsonWebTokens": "[8.22.0, )",
           "TimeZoneConverter": "[7.2.0, )"
         }
       },
@@ -636,6 +631,23 @@
         "dependencies": {
           "Headless.Context.Abstractions": "[1.0.0, )",
           "Headless.MultiTenancy.Abstractions": "[1.0.0, )"
+        }
+      },
+      "headless.api.identity": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Api": "[1.0.0, )",
+          "Headless.Security.Abstractions": "[1.0.0, )",
+          "Humanizer.Core": "[3.0.10, )",
+          "Humanizer.Core.ar": "[3.0.10, )"
+        }
+      },
+      "headless.api.jwt": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Api": "[1.0.0, )",
+          "Microsoft.AspNetCore.Authentication.JwtBearer": "[10.0.12, )",
+          "Microsoft.IdentityModel.JsonWebTokens": "[8.22.0, )"
         }
       },
       "headless.api.servicedefaults": {
@@ -654,6 +666,14 @@
           "OpenTelemetry.Instrumentation.AspNetCore": "[1.18.0, )",
           "OpenTelemetry.Instrumentation.Http": "[1.18.0, )",
           "OpenTelemetry.Instrumentation.Runtime": "[1.18.0, )"
+        }
+      },
+      "headless.api.useragent": {
+        "type": "Project",
+        "dependencies": {
+          "DeviceDetector.NET": "[6.5.2, )",
+          "Headless.Api.Abstractions": "[1.0.0, )",
+          "Headless.Hosting": "[1.0.0, )"
         }
       },
       "headless.auditlog.abstractions": {
