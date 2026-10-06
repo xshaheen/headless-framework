@@ -339,6 +339,28 @@ public sealed class UnitScopeTests : TestBase
     }
 
     [Fact]
+    public async Task should_not_report_inside_a_local_function_registered_as_a_failure_callback()
+    {
+        var diagnostics = await _AnalyzeAsync(
+            """
+            public sealed class Handler(IBus bus, IUnitOfWorkFactory factory)
+            {
+                public Task Handle(DbContext db, CancellationToken ct) =>
+                    factory.RunAsync(db, (unit, token) =>
+                    {
+                        unit.OnFailed(AlertAsync);
+                        return Task.CompletedTask;
+
+                        async ValueTask AlertAsync(UnitOfWorkFailure failure) => await bus.PublishAsync(new OrderPlaced(1));
+                    }, cancellationToken: ct);
+            }
+            """
+        );
+
+        diagnostics.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task should_not_report_inside_a_callback_cast_or_stored_before_registration()
     {
         var diagnostics = await _AnalyzeAsync(
@@ -430,6 +452,27 @@ public sealed class UnitScopeTests : TestBase
     }
 
     [Fact]
+    public async Task should_not_name_an_outer_unit_inside_a_static_local_function()
+    {
+        var diagnostics = await _AnalyzeAsync(
+            """
+            public sealed class Handler(IBus bus, IUnitOfWorkFactory factory)
+            {
+                public Task Handle(DbContext db, CancellationToken ct) =>
+                    factory.RunAsync(db, async (unit, token) =>
+                    {
+                        await PublishAsync(bus, token);
+
+                        static Task PublishAsync(IBus b, CancellationToken t) => b.PublishAsync(new OrderPlaced(1), t);
+                    }, cancellationToken: ct);
+            }
+            """
+        );
+
+        diagnostics.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task should_not_report_after_the_unit_completes_or_rolls_back()
     {
         var diagnostics = await _AnalyzeAsync(
@@ -454,6 +497,55 @@ public sealed class UnitScopeTests : TestBase
         );
 
         diagnostics.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_not_report_after_a_synchronous_dispose()
+    {
+        var diagnostics = await _AnalyzeAsync(
+            """
+            public sealed class Handler(IBus bus, IUnitOfWorkFactory factory)
+            {
+                public async Task Handle(CancellationToken ct)
+                {
+                    var unit = await factory.BeginAsync(ct);
+                    unit.Dispose();
+                    await bus.PublishAsync(new OrderPlaced(1), ct);
+                }
+            }
+            """
+        );
+
+        diagnostics.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_see_completion_earlier_in_the_same_switch_section_only()
+    {
+        var diagnostics = await _AnalyzeAsync(
+            """
+            public sealed class Handler(IBus bus, IUnitOfWorkFactory factory)
+            {
+                public async Task Handle(int kind, CancellationToken ct)
+                {
+                    await using var unit = await factory.BeginAsync(ct);
+                    switch (kind)
+                    {
+                        case 1:
+                            await unit.CompleteAsync(ct);
+                            await bus.PublishAsync(new OrderPlaced(1), ct);
+                            break;
+                        case 2:
+                            await bus.PublishAsync(new OrderPlaced(2), ct);
+                            break;
+                    }
+                }
+            }
+            """
+        );
+
+        diagnostics.Should().ContainSingle();
+        _ReportedCall(diagnostics[0]).Should().Contain("OrderPlaced(2)");
     }
 
     [Fact]
