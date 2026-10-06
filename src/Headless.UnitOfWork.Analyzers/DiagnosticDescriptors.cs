@@ -64,26 +64,26 @@ internal static class DiagnosticDescriptors
     );
 
     public static readonly DiagnosticDescriptor LeasesReceiver = new(
-        "HF2005",
+        "HF2004",
         _Resource("LeasesReceiverTitle"),
         _Resource("LeasesReceiverMessage"),
         _Category,
         DiagnosticSeverity.Info,
         isEnabledByDefault: true,
         description: _Resource("LeasesReceiverDescription"),
-        helpLinkUri: _HelpLinkBase + "hf2005",
+        helpLinkUri: _HelpLinkBase + "hf2004",
         customTags: _CustomTags
     );
 
     public static readonly DiagnosticDescriptor IdempotencyReceiver = new(
-        "HF2006",
+        "HF2005",
         _Resource("IdempotencyReceiverTitle"),
         _Resource("IdempotencyReceiverMessage"),
         _Category,
         DiagnosticSeverity.Info,
         isEnabledByDefault: true,
         description: _Resource("IdempotencyReceiverDescription"),
-        helpLinkUri: _HelpLinkBase + "hf2006",
+        helpLinkUri: _HelpLinkBase + "hf2005",
         customTags: _CustomTags
     );
 

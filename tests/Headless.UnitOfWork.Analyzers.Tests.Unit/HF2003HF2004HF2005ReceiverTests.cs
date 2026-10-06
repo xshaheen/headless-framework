@@ -5,10 +5,10 @@ using Headless.Testing.Tests;
 namespace Tests;
 
 /// <summary>
-/// HF2003 (distributed locks), HF2005 (fenced leases), and HF2006 (idempotency), plus the members of those receivers and
+/// HF2003 (distributed locks), HF2004 (fenced leases), and HF2005 (idempotency), plus the members of those receivers and
 /// of sequences that have no enlisted counterpart and are never reported.
 /// </summary>
-public sealed class HF2003HF2005HF2006ReceiverTests : TestBase
+public sealed class HF2003HF2004HF2005ReceiverTests : TestBase
 {
     private const string _Prelude = """
         using System;
