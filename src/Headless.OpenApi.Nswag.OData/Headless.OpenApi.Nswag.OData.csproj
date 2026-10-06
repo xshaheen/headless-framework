@@ -9,6 +9,7 @@
     <PackageReference Include="Microsoft.AspNetCore.OData" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Headless.OpenApi.Nswag\Headless.OpenApi.Nswag.csproj" />
+    <!-- TreatAsUsed: supplies the NSwag processor types this package implements. -->
+    <ProjectReference Include="..\Headless.OpenApi.Nswag\Headless.OpenApi.Nswag.csproj" TreatAsUsed="true" />
   </ItemGroup>
 </Project>

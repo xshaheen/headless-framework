@@ -223,6 +223,13 @@
     <PackageVersion Include="ZiggyCreatures.FusionCache" Version="2.7.2" />
     <PackageVersion Include="ZiggyCreatures.FusionCache.Serialization.SystemTextJson" Version="2.7.2" />
   </ItemGroup>
+  <!--
+    `make quality-references` sets HeadlessReferenceTrimmer to report removable references. An ordinary restore never
+    sees this package, so the committed lock files stay unchanged.
+  -->
+  <ItemGroup Label="Reference trimming" Condition="'$(HeadlessReferenceTrimmer)' == 'true'">
+    <GlobalPackageReference Include="ReferenceTrimmer" Version="3.5.9" />
+  </ItemGroup>
   <ItemGroup Label="Analyzers" Condition="'$(MSBuildProjectExtension)' == '.csproj'">
     <GlobalPackageReference Include="SerilogAnalyzer" Version="0.15.0" />
     <GlobalPackageReference Include="Microsoft.CodeAnalysis.ResxSourceGenerator" Version="5.0.0-1.25277.114">
