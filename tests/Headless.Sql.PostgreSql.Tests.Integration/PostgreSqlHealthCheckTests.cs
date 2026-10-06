@@ -47,4 +47,48 @@ public sealed class PostgreSqlHealthCheckTests(NpgsqlTestFixture fixture) : Test
         entry.Status.Should().Be(HealthStatus.Unhealthy);
         entry.Exception.Should().NotBeNull();
     }
+
+    [Fact]
+    public async Task should_run_the_configured_test_command()
+    {
+        // given - a query against a table that does not exist proves the probe runs the command, not SELECT 1
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddPostgreSqlSql(fixture.Container.GetConnectionString());
+        services.ConfigureHeadlessHealthCheck(
+            "sql-postgresql",
+            options =>
+            {
+                options.TestCommand = "SELECT count(*) FROM headless_missing_table";
+                options.FailureStatus = HealthStatus.Degraded;
+            }
+        );
+        await using var provider = services.BuildServiceProvider();
+
+        // when
+        var report = await provider.GetRequiredService<HealthCheckService>().CheckHealthAsync(AbortToken);
+
+        // then - the driver message names the table; the description must not
+        var entry = report.Entries["sql-postgresql"];
+        entry.Status.Should().Be(HealthStatus.Degraded);
+        entry.Description.Should().Be("The 'sql-postgresql' dependency probe failed.");
+        entry.Exception.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task should_report_healthy_when_the_configured_test_command_succeeds()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddPostgreSqlSql(fixture.Container.GetConnectionString());
+        services.ConfigureHeadlessHealthCheck("sql-postgresql", options => options.TestCommand = "SELECT version()");
+        await using var provider = services.BuildServiceProvider();
+
+        // when
+        var report = await provider.GetRequiredService<HealthCheckService>().CheckHealthAsync(AbortToken);
+
+        // then
+        report.Entries["sql-postgresql"].Status.Should().Be(HealthStatus.Healthy);
+    }
 }

@@ -207,7 +207,7 @@ public static class SetupRedisCache
                 await provider
                     .GetRequiredService<IOptionsMonitor<RedisCacheOptions>>()
                     .Get(name)
-                    .ConnectionMultiplexer.PingAsync(cancellationToken)
+                    .ConnectionMultiplexer.ProbeEndpointsAsync(cancellationToken)
                     .ConfigureAwait(false),
             HeadlessHealthCheckTags.Redis
         );
@@ -267,7 +267,7 @@ public static class SetupRedisCache
             static async (provider, cancellationToken) =>
                 await provider
                     .GetRequiredService<RedisCacheOptions>()
-                    .ConnectionMultiplexer.PingAsync(cancellationToken)
+                    .ConnectionMultiplexer.ProbeEndpointsAsync(cancellationToken)
                     .ConfigureAwait(false),
             HeadlessHealthCheckTags.Redis
         );

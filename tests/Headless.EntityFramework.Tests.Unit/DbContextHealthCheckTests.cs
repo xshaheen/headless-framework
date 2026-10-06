@@ -116,6 +116,38 @@ public sealed class DbContextHealthCheckTests : TestBase
         registrations.Should().NotContain(r => r.Name == _Name);
     }
 
+    [Theory]
+    [InlineData("SELECT 1", HealthStatus.Healthy)]
+    [InlineData("SELECT * FROM headless_missing_table", HealthStatus.Degraded)]
+    public async Task should_run_the_configured_test_command(string testCommand, HealthStatus expected)
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddHeadlessDbContext<ProbeDbContext>(options => options.UseSqlite("Data Source=:memory:"));
+        services.ConfigureHeadlessHealthCheck(
+            _Name,
+            options =>
+            {
+                options.TestCommand = testCommand;
+                options.FailureStatus = HealthStatus.Degraded;
+            }
+        );
+        await using var provider = services.BuildServiceProvider();
+
+        // when
+        var report = await provider.GetRequiredService<HealthCheckService>().CheckHealthAsync(AbortToken);
+
+        // then
+        var entry = report.Entries[_Name];
+        entry.Status.Should().Be(expected);
+
+        if (expected != HealthStatus.Healthy)
+        {
+            entry.Description.Should().Be($"The '{_Name}' dependency probe failed.");
+        }
+    }
+
     private sealed class ProbeDbContext(DbContextOptions<ProbeDbContext> options) : HeadlessDbContext(options)
     {
         public override string DefaultSchema => "";

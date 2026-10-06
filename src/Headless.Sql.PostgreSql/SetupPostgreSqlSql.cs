@@ -5,6 +5,7 @@ using Headless.Hosting;
 using Headless.Sql.PostgreSql;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 
 namespace Headless.Sql;
 
@@ -71,7 +72,16 @@ public static class SetupPostgreSqlSql
         services.AddHeadlessHealthCheck(
             "sql-postgresql",
             static (provider, cancellationToken) =>
-                provider.GetRequiredService<ISqlConnectionFactory>().PingAsync(cancellationToken),
+                provider
+                    .GetRequiredService<ISqlConnectionFactory>()
+                    .PingAsync(
+                        provider
+                            .GetRequiredService<IOptionsMonitor<HeadlessHealthCheckOptions>>()
+                            .Get("sql-postgresql")
+                            .TestCommand
+                            ?? "SELECT 1",
+                        cancellationToken
+                    ),
             HeadlessHealthCheckTags.Database
         );
 

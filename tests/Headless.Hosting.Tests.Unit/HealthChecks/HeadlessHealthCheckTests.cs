@@ -148,6 +148,140 @@ public sealed class HeadlessHealthCheckTests : TestBase
         _Registrations(provider).Should().ContainSingle().Which.Name.Should().Be("self");
     }
 
+    [Fact]
+    public async Task should_apply_the_configured_failure_status_timeout_and_tags()
+    {
+        // given - configured before the contribution, which must not matter
+        var services = _CreateServices();
+        services.ConfigureHeadlessHealthCheck(
+            "db",
+            options =>
+            {
+                options.FailureStatus = HealthStatus.Degraded;
+                options.Timeout = TimeSpan.FromSeconds(3);
+                options.Tags.Add("critical");
+            }
+        );
+        services.AddHeadlessHealthCheck("db", (_, _) => throw new InvalidOperationException("down"));
+        await using var provider = services.BuildServiceProvider();
+
+        // when
+        var registration = _Registrations(provider).Should().ContainSingle().Subject;
+        var report = await provider.GetRequiredService<HealthCheckService>().CheckHealthAsync(AbortToken);
+
+        // then
+        registration.FailureStatus.Should().Be(HealthStatus.Degraded);
+        registration.Timeout.Should().Be(TimeSpan.FromSeconds(3));
+        registration.Tags.Should().Contain(["critical", HeadlessHealthCheckTags.Ready]);
+        report.Entries["db"].Status.Should().Be(HealthStatus.Degraded);
+    }
+
+    [Fact]
+    public async Task should_report_the_failure_status_with_fixed_text_when_the_probe_times_out()
+    {
+        // given
+        var services = _CreateServices();
+        services.ConfigureHeadlessHealthCheck("slow", options => options.Timeout = TimeSpan.FromMilliseconds(50));
+        services.AddHeadlessHealthCheck(
+            "slow",
+            static (_, cancellationToken) => Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken)
+        );
+        await using var provider = services.BuildServiceProvider();
+
+        // when
+        var report = await provider.GetRequiredService<HealthCheckService>().CheckHealthAsync(AbortToken);
+
+        // then
+        var entry = report.Entries["slow"];
+        entry.Status.Should().Be(HealthStatus.Unhealthy);
+        entry.Description.Should().Be("A timeout occurred while running check.");
+    }
+
+    [Fact]
+    public void should_reject_healthy_as_a_failure_status()
+    {
+        // given
+        var services = _CreateServices();
+        services.ConfigureHeadlessHealthCheck("db", options => options.FailureStatus = HealthStatus.Healthy);
+        using var provider = services.BuildServiceProvider();
+
+        // when
+        var act = () => provider.GetRequiredService<IOptionsMonitor<HeadlessHealthCheckOptions>>().Get("db");
+
+        // then
+        act.Should().Throw<OptionsValidationException>();
+    }
+
+    [Fact]
+    public async Task should_report_a_third_party_check_failure_with_fixed_text_and_the_configured_status()
+    {
+        // given - the wrapped check returns the driver message, and its dependencies can throw while resolving
+        var services = _CreateServices();
+        services.ConfigureHeadlessHealthCheck("leaky", options => options.FailureStatus = HealthStatus.Degraded);
+        services.ConfigureHeadlessHealthCheck("broken", options => options.FailureStatus = HealthStatus.Degraded);
+        services.AddHeadlessHealthCheck(
+            "leaky",
+            static (builder, name, tags) =>
+                builder.AddCheck(
+                    name,
+                    () => HealthCheckResult.Unhealthy("host=secret-db", new InvalidOperationException()),
+                    tags
+                )
+        );
+        services.AddHeadlessHealthCheck(
+            "broken",
+            static (builder, name, tags) =>
+                builder.Add(
+                    new HealthCheckRegistration(
+                        name,
+                        _ => throw new InvalidOperationException("host=secret-db"),
+                        failureStatus: null,
+                        tags
+                    )
+                )
+        );
+        await using var provider = services.BuildServiceProvider();
+
+        // when
+        var report = await provider.GetRequiredService<HealthCheckService>().CheckHealthAsync(AbortToken);
+
+        // then
+        foreach (var name in new[] { "leaky", "broken" })
+        {
+            var entry = report.Entries[name];
+            entry.Status.Should().Be(HealthStatus.Degraded);
+            entry.Description.Should().Be($"The '{name}' dependency probe failed.");
+            entry.Exception.Should().BeOfType<InvalidOperationException>();
+        }
+    }
+
+    [Fact]
+    public void should_register_a_third_party_check_once_per_name()
+    {
+        // given
+        var services = _CreateServices();
+        var calls = 0;
+
+        // when
+        for (var i = 0; i < 2; i++)
+        {
+            services.AddHeadlessHealthCheck(
+                "db",
+                (builder, name, tags) =>
+                {
+                    calls++;
+                    builder.AddCheck(name, () => HealthCheckResult.Healthy(), tags);
+                }
+            );
+        }
+
+        using var provider = services.BuildServiceProvider();
+
+        // then
+        calls.Should().Be(1);
+        _Registrations(provider).Should().ContainSingle();
+    }
+
     private static ServiceCollection _CreateServices()
     {
         var services = new ServiceCollection();

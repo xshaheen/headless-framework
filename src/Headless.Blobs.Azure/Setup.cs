@@ -173,7 +173,8 @@ public static class SetupAzureBlob
 
         services.AddHeadlessHealthCheck(
             "blobs-azure",
-            (provider, cancellationToken) => _PingAsync(provider, clientFactory, cancellationToken),
+            (provider, cancellationToken) =>
+                _PingAsync(provider, clientFactory, Options.DefaultName, cancellationToken),
             HeadlessHealthCheckTags.Blobs
         );
 
@@ -231,7 +232,7 @@ public static class SetupAzureBlob
 
         services.AddHeadlessHealthCheck(
             "blobs-azure-" + name,
-            (provider, cancellationToken) => _PingAsync(provider, clientFactory, cancellationToken),
+            (provider, cancellationToken) => _PingAsync(provider, clientFactory, name, cancellationToken),
             HeadlessHealthCheckTags.Blobs
         );
 
@@ -241,12 +242,29 @@ public static class SetupAzureBlob
     private static async Task _PingAsync(
         IServiceProvider services,
         Func<IServiceProvider, BlobServiceClient>? clientFactory,
+        string optionsName,
         CancellationToken cancellationToken
     )
     {
         var client = clientFactory is not null
             ? clientFactory(services)
             : services.GetRequiredService<BlobServiceClient>();
+
+        var containerName = services
+            .GetRequiredService<IOptionsMonitor<AzureStorageOptions>>()
+            .Get(optionsName)
+            .HealthCheckContainerName;
+
+        if (containerName is not null)
+        {
+            // Least privilege: reading one container's properties needs only a container-scoped reader role.
+            await client
+                .GetBlobContainerClient(containerName)
+                .GetPropertiesAsync(cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+
+            return;
+        }
 
         // Reading one page of the container list is an authenticated round trip that needs no container name. Its
         // permission (containers/read) is part of the Storage Blob Data Reader role, unlike Get Account Information,

@@ -3,6 +3,7 @@
 using Headless.Checks;
 using Headless.Hosting;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Options;
 
 namespace Microsoft.Extensions.DependencyInjection;
 
@@ -52,11 +53,17 @@ public static class HeadlessHealthCheckExtensions
             Argument.IsNotNull(probe);
             Argument.IsNotNull(tags);
 
+            if (!_GetNames(services).Add(name))
+            {
+                return services;
+            }
+
             string[] allTags = [HeadlessHealthCheckTags.Ready, HeadlessHealthCheckTags.Headless, .. tags];
 
             services.AddHealthChecks();
             services.Configure<HealthCheckServiceOptions>(options =>
             {
+                // An application check registered under the same name first keeps the name.
                 foreach (var registration in options.Registrations)
                 {
                     if (string.Equals(registration.Name, name, StringComparison.Ordinal))
@@ -74,6 +81,8 @@ public static class HeadlessHealthCheckExtensions
                     )
                 );
             });
+
+            _ApplyOptions(services, name, sanitize: false);
 
             return services;
         }
@@ -105,18 +114,7 @@ public static class HeadlessHealthCheckExtensions
 
             // Tracked at registration time: the third-party method adds its registration unconditionally, and the
             // health check service rejects two registrations with one name.
-            if (
-                services
-                    .FirstOrDefault(static descriptor => descriptor.ServiceType == typeof(HeadlessHealthCheckNames))
-                    ?.ImplementationInstance
-                is not HeadlessHealthCheckNames names
-            )
-            {
-                names = new HeadlessHealthCheckNames();
-                services.AddSingleton(names);
-            }
-
-            if (!names.Add(name))
+            if (!_GetNames(services).Add(name))
             {
                 return services;
             }
@@ -125,22 +123,35 @@ public static class HeadlessHealthCheckExtensions
 
             register(services.AddHealthChecks(), name, allTags);
 
-            // Runs after the registration method's own Configure call, so the registration exists to wrap.
-            services.Configure<HealthCheckServiceOptions>(options =>
-            {
-                foreach (var registration in options.Registrations)
-                {
-                    if (
-                        string.Equals(registration.Name, name, StringComparison.Ordinal)
-                        && registration.Factory.Target is not HeadlessSanitizedFactory
-                    )
-                    {
-                        registration.Factory = new HeadlessSanitizedFactory(registration.Factory).Create;
-                    }
-                }
-            });
+            // Runs after the registration method's own Configure call, so the registration exists to adjust.
+            _ApplyOptions(services, name, sanitize: true);
 
             return services;
+        }
+
+        /// <summary>
+        /// Configures the health check a Headless provider package contributes under <paramref name="name" />: its
+        /// failure status, timeout, extra tags, and test command (see <see cref="HeadlessHealthCheckOptions" />).
+        /// </summary>
+        /// <param name="name">The contributed check's name, such as <c>sql-postgresql</c> or <c>cache-redis</c>.</param>
+        /// <param name="configure">Changes the options.</param>
+        /// <returns>The same <see cref="IServiceCollection" /> for chaining.</returns>
+        /// <remarks>
+        /// The options are named options, validated at startup. Calling this before or after the provider's
+        /// registration has the same effect. A name no provider contributes changes nothing.
+        /// </remarks>
+        /// <exception cref="ArgumentNullException"><paramref name="configure" /> is <see langword="null" />.</exception>
+        /// <exception cref="ArgumentException"><paramref name="name" /> is <see langword="null" />, empty, or whitespace.</exception>
+        public IServiceCollection ConfigureHeadlessHealthCheck(
+            string name,
+            Action<HeadlessHealthCheckOptions> configure
+        )
+        {
+            Argument.IsNotNull(services);
+            Argument.IsNotNullOrWhiteSpace(name);
+            Argument.IsNotNull(configure);
+
+            return services.Configure<HeadlessHealthCheckOptions, HeadlessHealthCheckOptionsValidator>(configure, name);
         }
 
         /// <summary>
@@ -174,6 +185,63 @@ public static class HeadlessHealthCheckExtensions
         }
     }
 
+    private static HeadlessHealthCheckNames _GetNames(IServiceCollection services)
+    {
+        if (
+            services
+                .FirstOrDefault(static descriptor => descriptor.ServiceType == typeof(HeadlessHealthCheckNames))
+                ?.ImplementationInstance
+            is not HeadlessHealthCheckNames names
+        )
+        {
+            names = new HeadlessHealthCheckNames();
+            services.AddSingleton(names);
+        }
+
+        return names;
+    }
+
+    /// <summary>
+    /// Applies the check's <see cref="HeadlessHealthCheckOptions" /> to its registration, and wraps a third-party
+    /// check so its failures follow the Headless reporting rules.
+    /// </summary>
+    private static void _ApplyOptions(IServiceCollection services, string name, bool sanitize)
+    {
+        services
+            .AddOptions<HealthCheckServiceOptions>()
+            .Configure<IOptionsMonitor<HeadlessHealthCheckOptions>>(
+                (options, monitor) =>
+                {
+                    var settings = monitor.Get(name);
+
+                    foreach (var registration in options.Registrations)
+                    {
+                        if (!string.Equals(registration.Name, name, StringComparison.Ordinal))
+                        {
+                            continue;
+                        }
+
+                        registration.FailureStatus = settings.FailureStatus;
+
+                        if (settings.Timeout is { } timeout)
+                        {
+                            registration.Timeout = timeout;
+                        }
+
+                        foreach (var tag in settings.Tags)
+                        {
+                            registration.Tags.Add(tag);
+                        }
+
+                        if (sanitize && registration.Factory.Target is not HeadlessSanitizedFactory)
+                        {
+                            registration.Factory = new HeadlessSanitizedFactory(registration.Factory).Create;
+                        }
+                    }
+                }
+            );
+    }
+
     private sealed class HeadlessHealthCheckNames : HashSet<string>
     {
         public HeadlessHealthCheckNames()
@@ -182,7 +250,7 @@ public static class HeadlessHealthCheckExtensions
 
     private sealed class HeadlessSanitizedFactory(Func<IServiceProvider, IHealthCheck> inner)
     {
-        public IHealthCheck Create(IServiceProvider provider)
+        public HeadlessSanitizedHealthCheck Create(IServiceProvider provider)
         {
             return new HeadlessSanitizedHealthCheck(() => inner(provider));
         }

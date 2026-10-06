@@ -30,4 +30,33 @@ public sealed class NatsHealthCheckRegistrationTests : TestBase
             .Which.Tags.Should()
             .Contain([HeadlessHealthCheckTags.Ready, HeadlessHealthCheckTags.Messaging]);
     }
+
+    [Fact]
+    public async Task should_apply_the_configured_options_to_the_nats_check()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.ConfigureHeadlessHealthCheck(
+            "messaging-nats",
+            options =>
+            {
+                options.FailureStatus = HealthStatus.Degraded;
+                options.Timeout = TimeSpan.FromSeconds(2);
+            }
+        );
+
+        // when
+        services.AddHeadlessMessaging(setup => setup.UseNats("nats://localhost:4222"));
+        await using var provider = services.BuildServiceProvider();
+
+        // then
+        var registration = provider
+            .GetRequiredService<IOptions<HealthCheckServiceOptions>>()
+            .Value.Registrations.Should()
+            .ContainSingle(registration => registration.Name == "messaging-nats")
+            .Subject;
+        registration.FailureStatus.Should().Be(HealthStatus.Degraded);
+        registration.Timeout.Should().Be(TimeSpan.FromSeconds(2));
+    }
 }

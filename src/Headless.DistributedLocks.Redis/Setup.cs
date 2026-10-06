@@ -195,7 +195,7 @@ public static class SetupRedisDistributedLocks
                 static async (provider, cancellationToken) =>
                     await provider
                         .GetRequiredService<IConnectionMultiplexer>()
-                        .PingAsync(cancellationToken)
+                        .ProbeEndpointsAsync(cancellationToken)
                         .ConfigureAwait(false),
                 HeadlessHealthCheckTags.Redis
             );

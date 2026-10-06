@@ -41,4 +41,41 @@ public sealed class AzureBlobsHealthCheckTests(AzureBlobStorageFixture fixture) 
         report.Entries["blobs-azure-archive"].Status.Should().Be(HealthStatus.Healthy);
         report.Entries["blobs-azure"].Tags.Should().Contain(HeadlessHealthCheckTags.Blobs);
     }
+
+    [Fact]
+    public async Task should_probe_the_configured_container_instead_of_listing_containers()
+    {
+        // given - one store probes a container that exists, the other one that does not
+        var client = new BlobServiceClient(
+            fixture.Container.GetConnectionString(),
+            new BlobClientOptions(BlobClientOptions.ServiceVersion.V2024_11_04)
+        );
+        var existing = "health-" + Guid.NewGuid().ToString("N")[..8];
+        await client.CreateBlobContainerAsync(existing, cancellationToken: AbortToken);
+
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IMimeTypeProvider, MimeTypeProvider>();
+        services.AddSingleton(client);
+        services.AddHeadlessBlobs(blobs =>
+        {
+            blobs.UseAzure(options => options.HealthCheckContainerName = existing);
+            blobs.AddNamed(
+                "archive",
+                instance => instance.UseAzure(options => options.HealthCheckContainerName = "missing-container")
+            );
+        });
+        await using var provider = services.BuildServiceProvider();
+
+        // when
+        var report = await provider.GetRequiredService<HealthCheckService>().CheckHealthAsync(AbortToken);
+
+        // then
+        report.Entries["blobs-azure"].Status.Should().Be(HealthStatus.Healthy);
+        report.Entries["blobs-azure-archive"].Status.Should().Be(HealthStatus.Unhealthy);
+        report
+            .Entries["blobs-azure-archive"]
+            .Description.Should()
+            .Be("The 'blobs-azure-archive' dependency probe failed.");
+    }
 }
