@@ -15,7 +15,6 @@
     <PackageReference Include="Testcontainers.LocalStack" />
     <PackageReference Include="Testcontainers.Minio" />
     <PackageReference Include="Testcontainers.Kafka" />
-    <PackageReference Include="Testcontainers.MsSql" />
     <PackageReference Include="Testcontainers.Nats" />
     <PackageReference Include="Testcontainers.PostgreSql" />
     <PackageReference Include="Testcontainers.Pulsar" />
@@ -25,6 +24,6 @@
     <PackageReference Include="xunit.v3.extensibility.core" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Headless.Testing\Headless.Testing.csproj" />
+    <ProjectReference Include="..\Headless.Extensions\Headless.Extensions.csproj" />
   </ItemGroup>
 </Project>

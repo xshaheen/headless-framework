@@ -16,6 +16,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Headless.AuditLog.Abstractions\Headless.AuditLog.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.AuditLog\Headless.AuditLog.csproj" />
-    <ProjectReference Include="..\Headless.EntityFramework\Headless.EntityFramework.csproj" />
+    <!-- TreatAsUsed: the entity configuration calls its EF extensions (ExcludeFromAudit, JsonValueComparer) and the relational APIs it brings; ReferenceTrimmer misses extension-method use here. -->
+    <ProjectReference Include="..\Headless.EntityFramework\Headless.EntityFramework.csproj" TreatAsUsed="true" />
   </ItemGroup>
 </Project>
