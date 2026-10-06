@@ -169,6 +169,8 @@ help: ## Show available commands.
 	@printf "  make quality-analyzers-affected\n"
 	@printf "  make bench-compare BENCH_AREA=Caching BENCH_FILTER='*Memory*' BASE=origin/main\n"
 	@printf "  make coverage-json\n"
+	@printf "  make up && make ready && make seed SCENARIO=progress-running   # dashboard sandbox; make down stops it\n"
+	@printf "  make db-q Q=\"select status, progress_percent from headless.time_jobs\"   # after make up STORE=postgres\n"
 	@printf "  make pack CONFIGURATION=Release\n"
 	@printf "  make doctor JSON=1              # prerequisites per capability group as the project CLI contract report\n\n"
 	@printf "Scoping notes:\n"
@@ -210,11 +212,11 @@ define doctor_tool
 tool() { if command -v "$$3" >/dev/null 2>&1; then echo "$$1|$$2|$$3|ok|$$("$$3" --version 2>/dev/null | head -n 1 | tr -d '|')|"; else echo "$$1|$$2|$$3|missing|$$3 is not on PATH|$$4"; fi; }
 endef
 
-# This repository is a library: nothing for `make up` to start, so run and data report `library, no
-# runtime` (the phrase a caller matches to tell a library from a broken stack) and no up/ready/down/db-q
-# target exists. Docker gets no row on purpose: the integration suites are opt-in (CI runs none) and one
-# gated row would gate the whole quality group, which `make check` does not need; test-integration's help
-# line names the requirement. npm is probed by PATH only because a wrapper such as Socket's rejects
+# The repository is a library; its runtime is the dashboard sandbox (`make up`). `run` needs the SDK, curl, and the
+# Node the dashboard SPAs build with. `data` is the sandbox PostgreSQL, so Docker gates it rather than failing
+# doctor: STORE=memory and every quality gate run without it. The quality group still has no Docker row: the
+# integration suites are opt-in (CI runs none) and test-integration's help line names the requirement. The Docker
+# probe is bounded to three seconds (perl's alarm, which macOS ships) so a hung daemon cannot stall doctor. npm is probed by PATH only because a wrapper such as Socket's rejects
 # --version. Every probe is a PATH lookup, a --version, or a file test, so doctor answers in about a
 # second with no build, restore, or network call.
 .PHONY: doctor
@@ -233,8 +235,14 @@ doctor: ## Check prerequisites per capability group with a fix for each; JSON=1 
 	  p="$$(git config core.hooksPath || true)"; p="$${p/#\~/$$HOME}"; \
 	  if [ "$$p" = .githooks ] || { [ -n "$$p" ] && grep -qs '\.githooks/' "$$p/pre-commit" "$$p/pre-push"; }; then echo "quality|git|hooks|ok|$$p runs .githooks|"; else echo "quality|git|hooks|fail|core.hooksPath does not run .githooks|make hooks"; fi; \
 	  if command -v $(PYTHON) >/dev/null 2>&1 && [ -f scripts/project-graph.py ]; then echo "invariants|layering|check-layering|ok|make check-layering|"; else echo "invariants|layering|check-layering|unavailable|needs $(PYTHON) and scripts/project-graph.py|brew install python3"; fi; \
-	  echo "run|runtime|library|unavailable|library, no runtime|"; \
-	  echo "data|runtime|library|unavailable|library, no runtime|"; \
+	  if [ -f "$(SANDBOX_PROJECT)" ]; then echo "run|sandbox|project|ok|$(SANDBOX_PROJECT)|"; else echo "run|sandbox|project|fail|$(SANDBOX_PROJECT) not found|make SANDBOX_PROJECT=<path>.csproj"; fi; \
+	  if command -v $(DOTNET) >/dev/null 2>&1; then echo "run|sandbox|dotnet|ok|$$(command -v $(DOTNET))|"; else echo "run|sandbox|dotnet|missing|$(DOTNET) is not on PATH|https://dot.net"; fi; \
+	  if command -v node >/dev/null 2>&1; then echo "run|sandbox|node|ok|$$(node --version 2>/dev/null)|"; else echo "run|sandbox|node|missing|the sandbox build embeds the dashboard SPAs, built with Node 22+|https://nodejs.org"; fi; \
+	  tool run sandbox curl 'brew install curl'; \
+	  if ! command -v docker >/dev/null 2>&1; then echo "data|sandbox|docker|gated|docker is not installed; only STORE=postgres and db-q need it|https://docs.docker.com/get-docker/"; \
+	  elif perl -e 'alarm 3; exec @ARGV' docker info >/dev/null 2>&1; then echo "data|sandbox|docker|ok|daemon reachable|"; \
+	  else echo "data|sandbox|docker|gated|docker daemon not reachable; only STORE=postgres and db-q need it|start Docker Desktop"; fi; \
+	  echo "observe|sandbox|logs|ok|make logs reads $(SANDBOX_LOG)|"; \
 	} | $(doctor_report)
 
 .PHONY: bootstrap
@@ -482,6 +490,119 @@ dashboard-jobs: _node-check ## Rebuild the Jobs dashboard SPA (npm ci + vite bui
 .PHONY: dashboard-messaging
 dashboard-messaging: _node-check ## Rebuild the Messaging dashboard SPA (npm ci + vite build into wwwroot/dist).
 	cd "$(MESSAGING_DASHBOARD_DIR)" && $(NPM) ci --no-audit --no-fund && $(NPM) run $(DASHBOARD_BUILD_SCRIPT)
+
+# ---- Dashboard sandbox ---------------------------------------------------------------------------------------------
+# The repository ships no app, but the Jobs and Messaging dashboards are UI that has to be driven to be tested.
+# sandboxes/Headless.Dashboards.Sandbox hosts both on loopback with named scenario fixtures, and these targets own
+# its lifecycle: `up` builds and starts it in the background, `ready` waits for it, `seed` creates dashboard states,
+# `down` stops only what `up` started. STORE=memory (default) needs nothing beyond the SDK; STORE=postgres also
+# starts sandboxes/compose.yaml so stored state survives a restart and `db-q` can read it. The process, its log, and
+# the generated messaging-dashboard password live under .context/cli/, which git ignores.
+SANDBOX_PROJECT ?= sandboxes/Headless.Dashboards.Sandbox/Headless.Dashboards.Sandbox.csproj
+SANDBOX_DLL ?= sandboxes/Headless.Dashboards.Sandbox/bin/$(CONFIGURATION)/net10.0/Headless.Dashboards.Sandbox.dll
+SANDBOX_PORT ?= 5300
+SANDBOX_URL ?= http://127.0.0.1:$(SANDBOX_PORT)
+SANDBOX_DIR ?= .context/cli
+SANDBOX_PID ?= $(SANDBOX_DIR)/sandbox.pid
+SANDBOX_LOG ?= $(SANDBOX_DIR)/sandbox.log
+SANDBOX_STATE ?= $(SANDBOX_DIR)/sandbox.state
+SANDBOX_ENV ?= $(SANDBOX_DIR)/sandbox.env
+SANDBOX_COMPOSE ?= sandboxes/compose.yaml
+# One compose project per checkout, so sandboxes in two worktrees never share a database.
+SANDBOX_COMPOSE_PROJECT ?= headless-sandbox-$(shell printf '%s' "$(CURDIR)" | cksum | cut -d' ' -f1)
+SANDBOX_PG_PORT ?= 55432
+SANDBOX_PG_DATABASE ?= headless_sandbox
+STORE ?= memory
+TIMEOUT ?= 120
+LINES ?= 200
+SCENARIO ?=
+Q ?=
+SANDBOX_COMPOSE_CMD = SANDBOX_COMPOSE_PROJECT="$(SANDBOX_COMPOSE_PROJECT)" SANDBOX_PG_PORT="$(SANDBOX_PG_PORT)" docker compose -f "$(SANDBOX_COMPOSE)"
+
+.PHONY: up
+up: ## Build and start the dashboard sandbox in the background (STORE=memory|postgres, SANDBOX_PORT=5300); prints the dashboard URLs.
+	@set -e; mkdir -p "$(SANDBOX_DIR)"; \
+	if [ -f "$(SANDBOX_PID)" ] && kill -0 "$$(cat "$(SANDBOX_PID)")" 2>/dev/null; then \
+	  echo "Sandbox already running (pid $$(cat "$(SANDBOX_PID)"), $$(cat "$(SANDBOX_STATE)" 2>/dev/null)). Run: make down"; exit 0; fi; \
+	case "$(STORE)" in memory|postgres) ;; *) echo "STORE must be memory or postgres. Example: make up STORE=postgres"; exit 2;; esac; \
+	if lsof -nP -iTCP:"$(SANDBOX_PORT)" -sTCP:LISTEN >/dev/null 2>&1; then \
+	  echo "Port $(SANDBOX_PORT) is in use by another process. Run: make up SANDBOX_PORT=<free port>"; exit 1; fi; \
+	if [ ! -f "$(SANDBOX_ENV)" ]; then umask 077; \
+	  printf 'Sandbox__MessagingDashboardPassword=%s\n' "$$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 24)" > "$(SANDBOX_ENV)"; fi; \
+	if [ "$(STORE)" = postgres ]; then \
+	  command -v docker >/dev/null 2>&1 || { echo "STORE=postgres needs Docker. Install it or run: make up STORE=memory"; exit 4; }; \
+	  $(SANDBOX_COMPOSE_CMD) up -d --wait; fi; \
+	$(DOTNET) build "$(SANDBOX_PROJECT)" -c "$(CONFIGURATION)" -nologo -v:q -clp:ErrorsOnly -clp:NoSummary; \
+	set -a; . "$(SANDBOX_ENV)"; set +a; \
+	export ASPNETCORE_URLS="$(SANDBOX_URL)" ASPNETCORE_ENVIRONMENT=Development Sandbox__Store="$(STORE)"; \
+	if [ "$(STORE)" = postgres ]; then \
+	  export Sandbox__PostgresConnectionString="Host=127.0.0.1;Port=$(SANDBOX_PG_PORT);Username=postgres;Database=$(SANDBOX_PG_DATABASE)"; fi; \
+	nohup $(DOTNET) "$(SANDBOX_DLL)" > "$(SANDBOX_LOG)" 2>&1 & echo $$! > "$(SANDBOX_PID)"; \
+	printf 'store=%s url=%s compose=%s\n' "$(STORE)" "$(SANDBOX_URL)" "$$([ "$(STORE)" = postgres ] && echo "$(SANDBOX_COMPOSE_PROJECT)" || echo none)" > "$(SANDBOX_STATE)"; \
+	echo "Sandbox starting (pid $$(cat "$(SANDBOX_PID)"), STORE=$(STORE)). Run: make ready"; \
+	echo "  Jobs dashboard:      $(SANDBOX_URL)/jobs/dashboard"; \
+	echo "  Messaging dashboard: $(SANDBOX_URL)/messaging (Basic auth: user sandbox, password in $(SANDBOX_ENV))"; \
+	echo "  Scenarios:           make seed SCENARIO=<name>; list them at $(SANDBOX_URL)/sandbox/scenarios"
+
+.PHONY: ready
+ready: ## Wait until the sandbox and both dashboards answer (TIMEOUT=120 seconds); names what did not come up.
+	@url="$$(sed -n 's/.*url=\([^ ]*\).*/\1/p' "$(SANDBOX_STATE)" 2>/dev/null)"; url="$${url:-$(SANDBOX_URL)}"; \
+	deadline=$$(( $$(date +%s) + $(TIMEOUT) )); \
+	for path in /healthz /jobs/dashboard/ /messaging/; do \
+	  until curl -fsS -o /dev/null "$$url$$path" 2>/dev/null; do \
+	    if [ -f "$(SANDBOX_PID)" ] && ! kill -0 "$$(cat "$(SANDBOX_PID)")" 2>/dev/null; then \
+	      echo "Sandbox exited before $$path answered. Last log lines:"; tail -n 20 "$(SANDBOX_LOG)" 2>/dev/null || true; exit 1; fi; \
+	    if [ $$(date +%s) -ge $$deadline ]; then \
+	      echo "$$url$$path did not answer within $(TIMEOUT)s. Last log lines:"; tail -n 20 "$(SANDBOX_LOG)" 2>/dev/null || true; exit 1; fi; \
+	    sleep 1; done; \
+	done; echo "Sandbox ready at $$url"
+
+.PHONY: down
+down: ## Stop the sandbox `up` started, and its PostgreSQL when it started one (data kept; see sandbox-reset).
+	@if [ -f "$(SANDBOX_PID)" ]; then pid="$$(cat "$(SANDBOX_PID)")"; \
+	  if kill -0 "$$pid" 2>/dev/null; then kill "$$pid"; \
+	    for i in 1 2 3 4 5 6 7 8 9 10; do kill -0 "$$pid" 2>/dev/null || break; sleep 1; done; \
+	    kill -0 "$$pid" 2>/dev/null && kill -9 "$$pid" || true; echo "Stopped sandbox (pid $$pid)."; \
+	  else echo "Sandbox pid $$pid was not running."; fi; rm -f "$(SANDBOX_PID)"; \
+	else echo "No sandbox started by make up in this checkout."; fi; \
+	compose="$$(sed -n 's/.*compose=\([^ ]*\).*/\1/p' "$(SANDBOX_STATE)" 2>/dev/null)"; \
+	if [ -n "$$compose" ] && [ "$$compose" != none ]; then SANDBOX_COMPOSE_PROJECT="$$compose" SANDBOX_PG_PORT="$(SANDBOX_PG_PORT)" docker compose -f "$(SANDBOX_COMPOSE)" down; fi; \
+	rm -f "$(SANDBOX_STATE)"
+
+.PHONY: status
+status: ## Report whether this checkout's sandbox is running; JSON=1 prints {running, pid, store, url}.
+	@running=false; pid=""; state="$$(cat "$(SANDBOX_STATE)" 2>/dev/null || true)"; \
+	if [ -f "$(SANDBOX_PID)" ] && kill -0 "$$(cat "$(SANDBOX_PID)")" 2>/dev/null; then running=true; pid="$$(cat "$(SANDBOX_PID)")"; fi; \
+	store="$$(printf '%s' "$$state" | sed -n 's/.*store=\([^ ]*\).*/\1/p')"; url="$$(printf '%s' "$$state" | sed -n 's/.*url=\([^ ]*\).*/\1/p')"; \
+	if [ "$(JSON)" = 1 ]; then printf '{"running": %s, "pid": "%s", "store": "%s", "url": "%s"}\n' "$$running" "$$pid" "$$store" "$$url"; \
+	elif [ "$$running" = true ]; then echo "Sandbox running: pid $$pid, STORE=$$store, $$url"; else echo "Sandbox not running. Run: make up"; fi
+
+.PHONY: seed
+seed: ## Create dashboard states in the running sandbox: make seed SCENARIO=progress-running (SCENARIO=all runs every one).
+	@test -n "$(SCENARIO)" || { echo "SCENARIO is required. Example: make seed SCENARIO=progress-running (list: curl $(SANDBOX_URL)/sandbox/scenarios)"; exit 2; }
+	@url="$$(sed -n 's/.*url=\([^ ]*\).*/\1/p' "$(SANDBOX_STATE)" 2>/dev/null)"; url="$${url:-$(SANDBOX_URL)}"; \
+	curl -sS --fail-with-body -X POST "$$url/sandbox/scenarios/$(SCENARIO)" || { echo; echo "Seeding failed. Is the sandbox up? Run: make status"; exit 1; }; echo
+
+.PHONY: db-q
+db-q: ## Read-only SQL against the sandbox PostgreSQL (STORE=postgres): make db-q Q="select status, progress_percent from headless.time_jobs" (WRITE=1 allows writes).
+	@test -n "$(Q)" || { echo 'Q is required. Example: make db-q Q="select status, progress_percent from headless.time_jobs"'; exit 2; }
+	@compose="$$(sed -n 's/.*compose=\([^ ]*\).*/\1/p' "$(SANDBOX_STATE)" 2>/dev/null)"; \
+	if [ -z "$$compose" ] || [ "$$compose" = none ]; then echo "No sandbox PostgreSQL is running. Run: make up STORE=postgres"; exit 1; fi; \
+	pgoptions="-c default_transaction_read_only=on"; [ "$(WRITE)" = 1 ] && pgoptions=""; \
+	SANDBOX_COMPOSE_PROJECT="$$compose" SANDBOX_PG_PORT="$(SANDBOX_PG_PORT)" docker compose -f "$(SANDBOX_COMPOSE)" exec -T -e PGOPTIONS="$$pgoptions" postgres \
+	  psql -U postgres -d "$(SANDBOX_PG_DATABASE)" -v ON_ERROR_STOP=1 -X -P pager=off -c "$(Q)"
+
+.PHONY: logs
+logs: ## Print the sandbox log (LINES=200); FOLLOW=1 keeps following it.
+	@test -f "$(SANDBOX_LOG)" || { echo "No sandbox log yet. Run: make up"; exit 1; }
+	@if [ "$(FOLLOW)" = 1 ]; then tail -n "$(LINES)" -f "$(SANDBOX_LOG)"; else tail -n "$(LINES)" "$(SANDBOX_LOG)"; fi
+
+.PHONY: sandbox-reset
+sandbox-reset: ## Stop the sandbox and delete its PostgreSQL volume and generated password; requires CONFIRM=1.
+	@test "$(CONFIRM)" = 1 || { echo "sandbox-reset deletes the sandbox database volume and password. Re-run: make sandbox-reset CONFIRM=1"; exit 2; }
+	@if [ -f "$(SANDBOX_PID)" ]; then kill "$$(cat "$(SANDBOX_PID)")" 2>/dev/null || true; rm -f "$(SANDBOX_PID)"; fi
+	@if command -v docker >/dev/null 2>&1; then $(SANDBOX_COMPOSE_CMD) down -v; fi
+	@rm -f "$(SANDBOX_STATE)" "$(SANDBOX_ENV)" "$(SANDBOX_LOG)"; echo "Sandbox reset."
 
 .PHONY: format
 format: tools ## Format C# code with CSharpier.
