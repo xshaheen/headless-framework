@@ -32,7 +32,7 @@ Additional packages:
 
 - Default install for any new Headless API: `Headless.Api.ServiceDefaults`. It transitively pulls in `Headless.Api`. Only reach for `Headless.Api` directly when you specifically want primitives without the orchestrator.
 - Use `AddHeadless()` on `WebApplicationBuilder` for bootstrapping; do not manually register compression, security headers, JSON defaults, OpenTelemetry, OpenAPI, or problem details. `AddHeadless(configureServices: options => ...)` accepts a `HeadlessServiceDefaultsOptions` callback for Aspire-style toggles (OTel, OpenAPI, service discovery, validation, antiforgery). Antiforgery is opt-in — set `options.Antiforgery.Enabled = true` for cookie-auth apps and wire `app.UseAntiforgery()` yourself after `UseAuthentication()`/`UseAuthorization()`; bearer-token APIs leave it disabled.
-- Use `UseHeadless()` for the edge of the pipeline (forwarded headers, compression, status-code pages, exception handler, HTTPS redirection, HSTS, no-cache header), then routing, CORS, authentication, tenancy, and authorization, then map endpoints. To add your own middleware inside that edge, call `options.InsertBefore(HeadlessPipelineStage.X, app => ...)` or `options.InsertAfter(...)`; to drop a stage, turn off its `Use*` switch. Do not turn stages off and re-add them by hand: that loses the order (for example, the exception handler must stay inside status-code pages). HTTPS redirection and HSTS never run in the Development or Test environment. `UseHeadless` and `MapHeadlessEndpoints` are idempotent. See [Standard middleware order](#standard-middleware-order).
+- Use `UseHeadless()` for the edge of the pipeline (forwarded headers, compression, status-code pages, exception handler, HTTPS redirection, HSTS, no-cache header), then routing, CORS, authentication, tenancy, and authorization, then map endpoints. Call `UseHeadless()` first: its order is fixed, and the app's own middleware goes after it, inside the edge. To drop a step, turn off its `Use*` switch. Do not turn steps off and re-add them by hand: that loses the order (for example, the exception handler must stay inside status-code pages). HTTPS redirection and HSTS never run in the Development or Test environment. `UseHeadless` and `MapHeadlessEndpoints` are idempotent. See [Standard middleware order](#standard-middleware-order).
 - For tenant-aware HTTP apps, configure `builder.AddHeadlessTenancy(tenancy => tenancy.Http(http => http.ResolveFromClaims()))` and place `app.UseHeadlessTenancy()` after app-owned `UseAuthentication()` and before app-owned `UseAuthorization()`.
 - For identifier-based (pre-auth) tenant resolution, add a `.Catalog(...)` store and `.Http(http => http.ResolveFromCatalog(sources => sources.AddHostSource("{tenant}.example.com")))` — or `AddRouteSource()`, `AddHeaderSource()`, `AddSource(context => ...)` — and place `app.UseHeadlessTenantCatalogResolution()` after `UseRouting()` and before `UseAuthentication()`, with `UseForwardedHeaders()` (behind a proxy), host filtering, and `UseCors()` ahead of it. Sources run in registration order; register the host source before a header source where hostnames carry perimeter controls. See [multi-tenancy.md](multi-tenancy.md#tenant-catalog).
 - For idempotent-replay middleware, register `services.AddHeadlessIdempotency(...)` with a provider (relational; `UseCache()` over a shared Redis cache for replicas without SQL, autonomous calls only; or `UseInMemory()` for tests and single-instance hosts), then `services.AddHeadlessHttpIdempotency(o => { ... })`, and place `app.UseHeadlessHttpIdempotency()` AFTER `UseAuthorization()` and AFTER `UseHeadlessTenancy()`. The durable store scopes every admission by the authenticated principal's tenant claim, never by the ambient pre-auth tenant (anonymous requests share one host-scope namespace); auth must be resolved first so unauthenticated/unauthorized requests do not admit a key. `InFlightStrategy = WaitAndReplay` polls the durable store with a bounded backoff — it has no `IDistributedLock` dependency.
@@ -81,36 +81,23 @@ The exception table (see `# Headless.Api` below) covers MVC actions and Minimal-
 
 ### Standard middleware order
 
-`UseHeadless()` applies the edge of the pipeline as ordered stages, the `HeadlessPipelineStage` values. An earlier stage runs outside a later one: it sees the request first and the response last.
+`UseHeadless()` applies the edge of the pipeline in a fixed order. An earlier step runs outside a later one: it sees the request first and the response last.
 
-| Stage | Middleware | Switch |
+| Step | Middleware | Switch |
 | --- | --- | --- |
-| `ForwardedHeaders` | `UseForwardedHeaders()`, tuned by `ForwardedHeaders`, `TrustForwardedHeadersFromAnyProxy`, and `ConfigureForwardedHeaders` | `UseForwardedHeaders` |
-| `ResponseCompression` | `UseResponseCompression()` | `UseResponseCompression` |
-| `StatusCodePages` | `UseStatusCodePages()`, then `UseStatusCodesRewriter()`, which writes bare 401, 403, and 404 responses as `application/problem+json` | `UseStatusCodePages` |
-| `ExceptionHandler` | `UseExceptionHandler()`, which runs `HeadlessApiExceptionHandler` for framework-known exceptions | `UseExceptionHandler` |
-| `HttpsRedirection` | `UseHttpsRedirection()`, never in Development or Test | `UseHttpsRedirection` |
-| `Hsts` | `UseHsts()`, never in Development or Test | `UseHsts` |
-| `NoCacheHeaders` | Adds `Cache-Control: no-cache,no-store,must-revalidate` when the response sets no `Cache-Control` | `SetNoCacheWhenMissingCacheHeaders` |
+| 1 | `UseForwardedHeaders()`, tuned by `ForwardedHeaders`, `TrustForwardedHeadersFromAnyProxy`, and `ConfigureForwardedHeaders` | `UseForwardedHeaders` |
+| 2 | `UseResponseCompression()` | `UseResponseCompression` |
+| 3 | `UseStatusCodePages()`, then `UseStatusCodesRewriter()`, which writes bare 401, 403, and 404 responses as `application/problem+json` | `UseStatusCodePages` |
+| 4 | `UseExceptionHandler()`, which runs `HeadlessApiExceptionHandler` for framework-known exceptions | `UseExceptionHandler` |
+| 5 | `UseHttpsRedirection()`, never in Development or Test | `UseHttpsRedirection` |
+| 6 | `UseHsts()`, never in Development or Test | `UseHsts` |
+| 7 | Adds `Cache-Control: no-cache,no-store,must-revalidate` when the response sets no `Cache-Control` | `SetNoCacheWhenMissingCacheHeaders` |
 
 `UseStatusCodePages()` runs outside `UseExceptionHandler()`, so bare status responses from middleware, including the 408s that ASP.NET Core's `RequestTimeoutsMiddleware` issues, are normalized through `IProblemDetailsCreator.Normalize`.
 
 HTTPS redirection and HSTS are skipped in the Development and Test environments because those hosts usually serve plain HTTP: a redirect breaks local clients and `TestServer`, and HSTS would pin HTTPS for a local host name in the browser.
 
-Compose the edge instead of rebuilding it. `InsertBefore(stage, configure)` adds middleware immediately outside a stage, and `InsertAfter(stage, configure)` immediately inside it. An insertion keeps its position when its stage is turned off, and insertions at one anchor run in the order you add them:
-
-```csharp
-app.UseHeadless(options =>
-{
-    options.ConfigureForwardedHeaders = forwarded => forwarded.ForwardLimit = 1;
-
-    // Logs every request, including the ones the exception handler answers.
-    options.InsertAfter(HeadlessPipelineStage.ForwardedHeaders, pipeline => pipeline.UseHttpLogging());
-
-    // Resolves the request culture before the exception handler localizes its ProblemDetails.
-    options.InsertBefore(HeadlessPipelineStage.ExceptionHandler, pipeline => pipeline.UseRequestLocalization());
-});
-```
+The order is not configurable. Middleware the app adds after `UseHeadless()` runs inside every step, so the exception handler and the status-code rewriter cover it. Middleware that must see every request and response before the edge, such as `UseHttpLogging()`, goes before `UseHeadless()`; it then sees the proxy's address rather than the forwarded client's.
 
 The application owns everything after the edge. A typical host continues in this order:
 
@@ -612,7 +599,7 @@ app.Run();
 
 #### Pipeline and Endpoint Behavior
 
-`UseHeadless()` applies Headless' standard edge middleware as ordered `HeadlessPipelineStage` stages:
+`UseHeadless()` applies Headless' standard edge middleware in this fixed order:
 
 - `UseForwardedHeaders()`
 - `UseResponseCompression()`
@@ -623,7 +610,7 @@ app.Run();
 - `UseHsts()` outside Development and Test
 - no-cache response header when the response did not set `Cache-Control`
 
-`HeadlessApiDefaultsOptions` turns each stage off with its `Use*` switch, and `InsertBefore` / `InsertAfter` add application middleware at a stage's position. See [Standard middleware order](#standard-middleware-order) for the stage table and a full host pipeline.
+`HeadlessApiDefaultsOptions` turns each step off with its `Use*` switch; the order is fixed. See [Standard middleware order](#standard-middleware-order) for the step table and a full host pipeline.
 
 Antiforgery is **opt-in and consumer-owned**: `AddHeadless()` does not register the antiforgery service unless `options.Antiforgery.Enabled = true`, and `UseHeadless()` never wires `app.UseAntiforgery()` (cookie-auth consumers call it themselves after auth/authz so the middleware sees the authenticated principal). Bearer-token APIs have no CSRF surface and leave the flag false.
 

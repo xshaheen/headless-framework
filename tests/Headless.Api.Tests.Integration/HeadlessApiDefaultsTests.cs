@@ -321,49 +321,14 @@ public sealed class HeadlessApiDefaultsTests : TestBase
     }
 
     [Fact]
-    public async Task should_run_inserted_middleware_at_its_stage_position_when_stage_is_disabled()
+    public async Task should_handle_exception_thrown_by_application_middleware_added_after_use_headless()
     {
-        // given
-        var order = new List<string>();
-        await using var app = await _CreateAppAsync(
-            application => application.MapGet("/data", () => Results.Ok()),
-            options =>
-            {
-                options.UseHsts = false;
-                options
-                    .InsertAfter(HeadlessPipelineStage.Hsts, _Record(order, "after-hsts"))
-                    .InsertAfter(HeadlessPipelineStage.ExceptionHandler, _Record(order, "after-exception-handler"))
-                    .InsertBefore(HeadlessPipelineStage.ForwardedHeaders, _Record(order, "before-forwarded-headers"))
-                    .InsertAfter(HeadlessPipelineStage.ExceptionHandler, _Record(order, "after-exception-handler-2"));
-            }
-        );
-        using var client = _CreateClient(app);
-
-        // when
-        using var response = await client.GetAsync("/data", AbortToken);
-
-        // then
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        order
-            .Should()
-            .Equal("before-forwarded-headers", "after-exception-handler", "after-exception-handler-2", "after-hsts");
-    }
-
-    [Fact]
-    public async Task should_handle_exception_thrown_by_middleware_inserted_after_exception_handler()
-    {
-        // given
-        await using var app = await _CreateAppAsync(
-            application => application.MapGet("/data", () => Results.Ok()),
-            options =>
-                options.InsertAfter(
-                    HeadlessPipelineStage.ExceptionHandler,
-                    pipeline =>
-                        pipeline.Use(
-                            (HttpContext _, RequestDelegate _) => throw new InvalidOperationException("inserted")
-                        )
-                )
-        );
+        // given - UseHeadless is the outer block, so middleware the app adds after it runs inside the exception handler
+        await using var app = await _CreateAppAsync(application =>
+        {
+            application.Use((HttpContext _, RequestDelegate _) => throw new InvalidOperationException("app"));
+            application.MapGet("/data", () => Results.Ok());
+        });
         using var client = _CreateClient(app);
 
         // when
@@ -372,31 +337,6 @@ public sealed class HeadlessApiDefaultsTests : TestBase
         // then
         response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
         response.Content.Headers.ContentType!.MediaType.Should().Be(ContentTypes.Applications.ProblemJson);
-    }
-
-    [Fact]
-    public void should_throw_when_inserting_at_undefined_stage()
-    {
-        // given
-        var options = new HeadlessApiDefaultsOptions();
-
-        // when
-        var act = () => options.InsertBefore((HeadlessPipelineStage)99, _ => { });
-
-        // then
-        act.Should().Throw<System.ComponentModel.InvalidEnumArgumentException>();
-    }
-
-    private static Action<IApplicationBuilder> _Record(List<string> order, string name)
-    {
-        return pipeline =>
-            pipeline.Use(
-                (context, next) =>
-                {
-                    order.Add(name);
-                    return next(context);
-                }
-            );
     }
 
     private async Task<WebApplication> _CreateAppAsync(

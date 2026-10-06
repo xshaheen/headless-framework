@@ -452,17 +452,21 @@ public static class SetupApi
     /// </summary>
     /// <param name="app">The <see cref="WebApplication"/> to configure.</param>
     /// <param name="configure">
-    /// Optional callback to tune <see cref="HeadlessApiDefaultsOptions"/>: turn a stage off, or insert application
-    /// middleware before or after a stage with <see cref="HeadlessApiDefaultsOptions.InsertBefore"/> and
-    /// <see cref="HeadlessApiDefaultsOptions.InsertAfter"/>.
+    /// Optional callback to tune <see cref="HeadlessApiDefaultsOptions"/>, for example to drop a step.
     /// </param>
     /// <returns><paramref name="app"/> for chaining.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="app"/> is <see langword="null"/>.</exception>
     /// <remarks>
-    /// The stages run in <see cref="HeadlessPipelineStage"/> order. HTTPS redirection and HSTS never run in the
-    /// Development or Test environment.
+    /// <para>
+    /// The steps run in a fixed order as the outer block of the pipeline: forwarded headers, response compression,
+    /// status-code pages with the status-codes rewriter, the exception handler, HTTPS redirection, HSTS, and the
+    /// no-cache header. HTTPS redirection and HSTS never run in the Development or Test environment. Call it first,
+    /// then add the application's own middleware (CORS, authentication, authorization, endpoints) after it.
+    /// </para>
+    /// <para>
     /// Must be called before the application starts for startup validation to pass when
     /// <see cref="HeadlessServiceDefaultsValidationOptions.RequireUseHeadless"/> is <see langword="true"/> (the default).
+    /// </para>
     /// </remarks>
     public static WebApplication UseHeadless(
         this WebApplication app,
@@ -487,59 +491,44 @@ public static class SetupApi
         // clients, and HSTS would pin HTTPS for a shared local host name in the browser.
         var enforceHttps = !app.Environment.IsDevelopmentOrTest();
 
-        _ApplyStage(
-            app,
-            options,
-            HeadlessPipelineStage.ForwardedHeaders,
-            options.UseForwardedHeaders,
-            _UseForwardedHeaders
-        );
-        _ApplyStage(
-            app,
-            options,
-            HeadlessPipelineStage.ResponseCompression,
-            options.UseResponseCompression,
-            static (a, _) => a.UseResponseCompression()
-        );
-        _ApplyStage(
-            app,
-            options,
-            HeadlessPipelineStage.StatusCodePages,
-            options.UseStatusCodePages,
-            static (a, _) =>
-            {
-                a.UseStatusCodePages();
-                a.UseStatusCodesRewriter();
-            }
-        );
-        _ApplyStage(
-            app,
-            options,
-            HeadlessPipelineStage.ExceptionHandler,
-            options.UseExceptionHandler,
-            _UseExceptionHandler
-        );
-        _ApplyStage(
-            app,
-            options,
-            HeadlessPipelineStage.HttpsRedirection,
-            options.UseHttpsRedirection && enforceHttps,
-            static (a, _) => a.UseHttpsRedirection()
-        );
-        _ApplyStage(
-            app,
-            options,
-            HeadlessPipelineStage.Hsts,
-            options.UseHsts && enforceHttps,
-            static (a, _) => a.UseHsts()
-        );
-        _ApplyStage(
-            app,
-            options,
-            HeadlessPipelineStage.NoCacheHeaders,
-            options.SetNoCacheWhenMissingCacheHeaders,
-            static (a, _) => a.UseNoCacheWhenMissingCacheHeaders()
-        );
+        // A fixed order: each step runs outside the ones after it, so it sees the request first and the response
+        // last. Forwarded headers come first so every later step sees the client's scheme, host, and IP; compression
+        // wraps everything that writes a body; the error steps wrap the rest.
+        if (options.UseForwardedHeaders)
+        {
+            _UseForwardedHeaders(app, options);
+        }
+
+        if (options.UseResponseCompression)
+        {
+            app.UseResponseCompression();
+        }
+
+        if (options.UseStatusCodePages)
+        {
+            app.UseStatusCodePages();
+            app.UseStatusCodesRewriter();
+        }
+
+        if (options.UseExceptionHandler)
+        {
+            _UseExceptionHandler(app, options);
+        }
+
+        if (options.UseHttpsRedirection && enforceHttps)
+        {
+            app.UseHttpsRedirection();
+        }
+
+        if (options.UseHsts && enforceHttps)
+        {
+            app.UseHsts();
+        }
+
+        if (options.SetNoCacheWhenMissingCacheHeaders)
+        {
+            app.UseNoCacheWhenMissingCacheHeaders();
+        }
 
         if (app.Services.GetService<HeadlessStartupState>() is { } startupState)
         {
@@ -547,24 +536,6 @@ public static class SetupApi
         }
 
         return app;
-    }
-
-    private static void _ApplyStage(
-        IApplicationBuilder app,
-        HeadlessApiDefaultsOptions options,
-        HeadlessPipelineStage stage,
-        bool enabled,
-        Action<IApplicationBuilder, HeadlessApiDefaultsOptions> use
-    )
-    {
-        options.ApplyInsertions(stage, after: false, app);
-
-        if (enabled)
-        {
-            use(app, options);
-        }
-
-        options.ApplyInsertions(stage, after: true, app);
     }
 
     private static void _UseForwardedHeaders(IApplicationBuilder app, HeadlessApiDefaultsOptions options)
