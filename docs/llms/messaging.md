@@ -1907,7 +1907,7 @@ Configured through `MessagingDashboardOptionsBuilder` inside `UseDashboard(...)`
 | `WithCustomAuth(validator)` | — | Custom `(token, services) => bool` validation. |
 | `WithSessionTimeout(minutes)` | `60` | Auth session lifetime. |
 | `SetBasePath(path)` | `/messaging` | Dashboard URL path. |
-| `SetStatsPollingInterval(ms)` | `2000` | `/stats` endpoint polling interval. |
+| `SetStatsPollingInterval(ms)` | `2000` | How often the overview polls `/stats` and the real-time metrics; a non-positive value falls back to 2000. |
 | `SetCorsPolicy(builder)` | none | CORS policy for cross-origin access. |
 
 ### Runtime behavior

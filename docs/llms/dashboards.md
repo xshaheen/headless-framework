@@ -82,3 +82,5 @@ The dashboard builders expose `WithNoAuth()`, `WithBasicAuth(...)`, `WithApiKey(
 - `IAuthService` is scoped. `AuthConfig` and validated options are singleton configuration.
 - The middleware protects dashboard API paths while allowing the static application shell and authentication metadata needed to render the login flow.
 - `AuthInfo` exposes mode, enabled state, and session timeout to the frontend; it never exposes credentials.
+- Both dashboard SPAs enforce `WithSessionTimeout(minutes)` in the browser: the sign-in time is stored with the credentials, and once it is older than the timeout the SPA clears them and returns to the login page with "Session expired. Please log in again." It checks at load, on every navigation, and before every API request. Mode `None` and a non-positive timeout never expire. The timeout is a client-side convenience, not a server credential lifetime: a credential copied out of the browser stays valid until the host changes it.
+- With `WithCustomAuth(...)`, the login page asks for one credential and sends it unchanged as the `Authorization` header (and as the Jobs hub's `access_token`); the validator receives that header value.
