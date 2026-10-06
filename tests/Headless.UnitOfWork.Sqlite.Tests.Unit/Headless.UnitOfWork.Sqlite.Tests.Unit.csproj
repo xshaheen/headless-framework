@@ -12,6 +12,9 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.UnitOfWork.Sqlite\Headless.UnitOfWork.Sqlite.csproj" />
     <!-- TreatAsUsed: supplies TestBase and the shared fixtures the tests use. -->
-    <ProjectReference Include="..\Headless.UnitOfWork.Tests.Harness\Headless.UnitOfWork.Tests.Harness.csproj" TreatAsUsed="true" />
+    <ProjectReference
+      Include="..\Headless.UnitOfWork.Tests.Harness\Headless.UnitOfWork.Tests.Harness.csproj"
+      TreatAsUsed="true"
+    />
   </ItemGroup>
 </Project>
