@@ -39,6 +39,8 @@ public static class ApiKeyAuthenticationExtensions
         where TApiKeyStore : class, IApiKeyStore<TUser, TUserId>
     {
         builder.Services.AddTransient<IApiKeyStore<TUser, TUserId>, TApiKeyStore>();
+        builder.Services.AddHttpContextAccessor();
+        builder.Services.AddOrReplaceSingleton<IAuthenticationSchemeProvider, DynamicAuthenticationSchemeProvider>();
 
         return builder.AddScheme<ApiKeyAuthenticationSchemeOptions, ApiKeyAuthenticationHandler<TUser, TUserId>>(
             authenticationScheme ?? ApiKeyAuthenticationSchemeOptions.DefaultScheme,

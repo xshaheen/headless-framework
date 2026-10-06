@@ -7,7 +7,6 @@ using System.Reflection;
 using FileSignatures;
 using FluentValidation;
 using Headless.Api;
-using Headless.Api.Identity;
 using Headless.Api.Security;
 using Headless.Checks;
 using Headless.Context;
@@ -31,7 +30,6 @@ using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Microsoft.IdentityModel.JsonWebTokens;
 using OpenTelemetry;
 using OpenTelemetry.Instrumentation.AspNetCore;
 using OpenTelemetry.Metrics;
@@ -51,7 +49,7 @@ public static class SetupApi
     private static int _globalSettingsConfigured;
 
     /// <summary>
-    /// Applies one-time process-wide defaults: regex timeout, FluentValidation cascade mode, and JWT claim mapping.
+    /// Applies one-time process-wide defaults: regex timeout and FluentValidation cascade mode.
     /// Idempotent — subsequent calls are no-ops.
     /// </summary>
     public static void ConfigureGlobalSettings()
@@ -64,8 +62,6 @@ public static class SetupApi
         AppDomain.CurrentDomain.SetData("REGEX_DEFAULT_MATCH_TIMEOUT", TimeSpan.FromSeconds(1));
         ValidatorOptions.Global.LanguageManager.Enabled = true;
         ValidatorOptions.Global.DefaultRuleLevelCascadeMode = CascadeMode.Stop;
-        JsonWebTokenHandler.DefaultMapInboundClaims = false;
-        JsonWebTokenHandler.DefaultInboundClaimTypeMap.Clear();
     }
 
     /// <summary>
@@ -263,7 +259,6 @@ public static class SetupApi
             builder.Services.TryAddSingleton<IContentTypeProvider, ExtendedFileExtensionContentTypeProvider>();
 
             builder.Services.TryAddSingleton<IClaimsPrincipalFactory, ClaimsPrincipalFactory>();
-            builder.Services.TryAddSingleton<IJwtTokenFactory, JwtTokenFactory>();
 
             builder.Services.TryAddSingleton<ICurrentLocale, CurrentCultureCurrentLocale>();
             builder.Services.TryAddSingleton<ICurrentPrincipalAccessor, HttpContextCurrentPrincipalAccessor>();
@@ -272,19 +267,12 @@ public static class SetupApi
             builder.Services.TryAddSingleton<ICurrentTenantAccessor>(AsyncLocalCurrentTenantAccessor.Instance);
             // Removes NullCurrentTenant fallback; preserves consumer-supplied ICurrentTenant.
             builder.Services.AddOrReplaceFallbackSingleton<ICurrentTenant, NullCurrentTenant, CurrentTenant>();
-            builder.Services.AddOptions<UserAgentParserOptions, UserAgentParserOptionsValidator>();
-            builder.Services.TryAddSingleton<IUserAgentParser, UserAgentParser>();
+            builder.Services.TryAddSingleton<IUserAgentParser>(NullUserAgentParser.Instance);
             builder.Services.TryAddSingleton<IWebClientInfoProvider, HttpWebClientInfoProvider>();
 
             builder.Services.TryAddScoped<IRequestContext, HttpRequestContext>();
             builder.Services.TryAddScoped<IAbsoluteUrlFactory, HttpAbsoluteUrlFactory>();
             builder.Services.TryAddScoped<IRequestedApiVersion, HttpContextRequestedApiVersion>();
-
-            builder.Services.AddOrReplaceSingleton<ILookupNormalizer, HeadlessLookupNormalizer>();
-            builder.Services.AddOrReplaceSingleton<
-                IAuthenticationSchemeProvider,
-                DynamicAuthenticationSchemeProvider
-            >();
 
             // Aspire-style service defaults (OpenTelemetry, OpenAPI, service discovery, HttpClient resilience)
             builder._ConfigureOpenTelemetry(options);

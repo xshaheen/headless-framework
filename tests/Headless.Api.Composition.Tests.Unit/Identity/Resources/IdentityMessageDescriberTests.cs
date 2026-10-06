@@ -1,11 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Globalization;
-using Headless.Api.Resources;
+using Headless.Api.Identity.Resources;
 using Headless.Testing.Tests;
 using Humanizer;
 
-namespace Tests.Resources;
+namespace Tests.Identity.Resources;
 
 public sealed class IdentityMessageDescriberTests : TestBase
 {

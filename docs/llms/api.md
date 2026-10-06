@@ -1,6 +1,6 @@
 ---
 domain: API & Web
-packages: Api.Abstractions, Api, Api.ServiceDefaults, Api.DataProtection, Api.FluentValidation, Api.Idempotency, Api.Logging.Serilog, Api.MinimalApi, Api.Mvc
+packages: Api.Abstractions, Api, Api.ServiceDefaults, Api.DataProtection, Api.FluentValidation, Api.Idempotency, Api.Identity, Api.Jwt, Api.Logging.Serilog, Api.MinimalApi, Api.Mvc, Api.UserAgent
 ---
 
 # API & Web
@@ -11,7 +11,7 @@ packages: Api.Abstractions, Api, Api.ServiceDefaults, Api.DataProtection, Api.Fl
 
 The package split:
 
-- **`Headless.Api.ServiceDefaults`** — the one-line bootstrap. Call `AddHeadless()` to register compression, health checks, problem details, JWT, identity, validation, JSON defaults, OpenTelemetry, OpenAPI, service discovery, and HttpClient resilience in one shot. Antiforgery is opt-in (`options.Antiforgery.Enabled = true`) and the middleware is consumer-owned. Use `UseHeadless()` for the standard middleware order and `MapHeadlessEndpoints()` for `/health`, `/alive`, OpenAPI JSON, and static assets. Pull this for the happy path — it transitively brings in `Headless.Api`.
+- **`Headless.Api.ServiceDefaults`** — the one-line bootstrap. Call `AddHeadless()` to register compression, health checks, problem details, validation, JSON defaults, OpenTelemetry, OpenAPI, service discovery, and HttpClient resilience in one shot. Antiforgery is opt-in (`options.Antiforgery.Enabled = true`) and the middleware is consumer-owned. Use `UseHeadless()` for the standard middleware order and `MapHeadlessEndpoints()` for `/health`, `/alive`, OpenAPI JSON, and static assets. Pull this for the happy path — it transitively brings in `Headless.Api`.
 - **`Headless.Api`** — the building blocks only. Pull this when composing your own pipeline without the framework orchestrator, or when you only need individual primitives like `AddHeadlessProblemDetails()`, `AddHeadlessAntiforgery()`, or `AddHeadlessApiResponseCompression()`.
 
 Choose an endpoint style:
@@ -25,6 +25,9 @@ Additional packages:
 
 - `Headless.Api.FluentValidation` — validators for `IFormFile` uploads (size, content type, magic bytes) plus API request contracts (`PhoneNumberRequest`, `GeoCoordinateRequest`, `PageMetadataRequest`).
 - `Headless.Api.DataProtection` — persist ASP.NET Core Data Protection keys to any `IBlobStorage` provider.
+- `Headless.Api.Jwt` — issue and parse JWTs with `IJwtTokenFactory`, and validate them with the matching `AddHeadlessJwtBearer()` scheme.
+- `Headless.Api.Identity` — ASP.NET Core Identity helpers: token providers, localized `auth:`/`user:` errors, `HeadlessLookupNormalizer`, and the Identity-backed `AddBasicSchema()` and `AddApiKey()` schemes.
+- `Headless.Api.UserAgent` — the DeviceDetector.NET-backed `IUserAgentParser`. Without it, `IWebClientInfoProvider.DeviceInfo` is `null`.
 - `Headless.Api.Logging.Serilog` — enrich Serilog logs with per-request context (IP, user agent, user ID, tenant ID, correlation ID).
 - `Headless.Api.Idempotency` — Stripe-style idempotency middleware: admits each key through the durable `Headless.Idempotency` store and replays the captured HTTP response byte-equivalent on identical retries. See [idempotency.md](idempotency.md) for the durable admission contract and [mediator.md](mediator.md) for why idempotency is HTTP middleware and not a Mediator behavior.
 
@@ -43,7 +46,7 @@ Additional packages:
 - Write a CORS policy in code with ASP.NET Core's `AddCors`; use `services.AddHeadlessCors(configuration.GetSection("Cors"))` when the origins come from configuration, which registers `HeadlessCorsConstants.RestrictedCors` and validates it at startup. Do not hand-write a policy with `SetIsOriginAllowed(_ => true)` plus `AllowCredentials()`, which reflects every origin and hands it the user's session; origins known only at request time (tenant custom domains) go through an `ICorsOriginSource`, which works over either kind of policy. `AddHeadlessAllowAnyCors()` is for development: it never allows credentials and fails startup outside Development unless `AllowAnyOriginOutsideDevelopment` confirms a public API. A cookie-authenticated SPA on `http://localhost:5173` belongs in `AllowedOrigins` instead.
 - CORS governs browsers only. A native mobile client (React Native on iOS or Android, Flutter, a native SDK) sends no `Origin` header, so no policy applies and its requests pass unchanged; authenticate it like any client and never treat CORS as protection against non-browser callers. Its browser-hosted variants do need origins: an Expo or React Native Web dev server (`http://localhost:8081`, `http://localhost:19006`), the deployed web build, and Capacitor or Ionic webviews (`capacitor://localhost`, `ionic://localhost`).
 - `Headless.Api.ServiceDefaults` validates by default that `UseHeadless()`, `UseStatusCodesRewriter()`, and `MapHeadlessEndpoints()` were applied at startup. For custom/manual pipelines, disable via `options.Validation.RequireUseHeadless = false`, `options.Validation.RequireStatusCodesRewriter = false`, and `options.Validation.RequireMapHeadlessEndpoints = false`.
-- `AddHeadless()` invokes `SetupApi.ConfigureGlobalSettings()` automatically (idempotent) to set regex timeout, FluentValidation, and JWT defaults. Call it manually only if you need those defaults applied before `AddHeadless()` runs.
+- `AddHeadless()` invokes `SetupApi.ConfigureGlobalSettings()` automatically (idempotent) to set the regex timeout and FluentValidation defaults. It no longer changes the `JsonWebTokenHandler` statics: the Headless token factory and bearer scheme turn off inbound claim mapping on their own handlers. Call it manually only if you need those defaults applied before `AddHeadless()` runs.
 - Prefer `Headless.Api.MinimalApi` over `Headless.Api.Mvc` for new projects. Use `.Validate<T>()` on endpoints for FluentValidation integration.
 - For MVC, inherit from `ApiControllerBase` — it provides common utilities. Use `ConfigureHeadlessMvc()` not manual `MvcOptions` configuration.
 - Use `Headless.Api.FluentValidation` validators (`FileNotEmpty()`, `LessThanOrEqualTo()`, `ContentTypes()`, `HaveSignatures()`, `PhoneNumber()`, `GeoCoordinate()`, `PageMetadata()`) for API-boundary validation — do not write manual file or request-contract validation logic.
@@ -161,7 +164,7 @@ Defines core interfaces and contracts for HTTP request context, user identity, w
 
 - `IRequestContext` — unified access to request-scoped information (user, tenant, locale, timezone, correlation ID)
 - `IWebClientInfoProvider` — client detection (IP address, user agent, device info)
-- `IUserAgentParser` — parses a raw `User-Agent` header (implemented in `Headless.Api` over DeviceDetector.NET). `Parse(userAgent)` returns a `UserAgentInfo?` carrying everything identifiable: `IsBot`, a coarse `DeviceType` (`Desktop`/`Phone`/`Tablet`/`Bot`/…), device brand and model, OS name/version/platform, client name/version/type/engine, and bot name/category. Unidentified fields are `null`, never `""`. `GetDeviceInfo(userAgent)` is the display shorthand for `UserAgentInfo.Summary` — the `"Windows Chrome"` string behind `IWebClientInfoProvider.DeviceInfo` — so call `Parse` when any individual field is wanted rather than string-splitting the summary. Both return `null` for a blank agent or one nothing could be identified from, and both share a single memoized parse. **A User-Agent is self-reported and trivially forged: use it for diagnostics, session display, and analytics, never as an authorization input.** A consumer persisting `DeviceType` should store the name rather than the number so the set can gain members without rewriting rows. Substitute the interface to stub device detection in tests, or to swap the parser entirely. The default implementation owns a bounded private `MemoryCache`: parsing is local CPU work, entries come from untrusted request headers, and neither the keys nor results need to cross a process boundary or consume the host application's cache budget. Negatives (unidentifiable agents) are cached too, so subsequent calls reuse the memoized result while it remains valid. `UserAgentParserOptions`: `MaxEntries` 1,000, `SlidingExpiration` 6h, `Duration` (absolute cap) 24h, and `MaxUserAgentLength` 512 — longer values are truncated before parsing and keying, and `UserAgentInfo.UserAgent` reports the truncated value, so a caller persisting it is never handed an unbounded string. The singleton parser disposes its cache with its own lifetime and never registers or consumes the shared `IMemoryCache`.
+- `IUserAgentParser` — parses a raw `User-Agent` header (implemented over DeviceDetector.NET in `Headless.Api.UserAgent`; without that package `AddHeadless()` registers a parser that identifies nothing, so both methods return `null`). `Parse(userAgent)` returns a `UserAgentInfo?` carrying everything identifiable: `IsBot`, a coarse `DeviceType` (`Desktop`/`Phone`/`Tablet`/`Bot`/…), device brand and model, OS name/version/platform, client name/version/type/engine, and bot name/category. Unidentified fields are `null`, never `""`. `GetDeviceInfo(userAgent)` is the display shorthand for `UserAgentInfo.Summary` — the `"Windows Chrome"` string behind `IWebClientInfoProvider.DeviceInfo` — so call `Parse` when any individual field is wanted rather than string-splitting the summary. Both return `null` for a blank agent or one nothing could be identified from, and both share a single memoized parse. **A User-Agent is self-reported and trivially forged: use it for diagnostics, session display, and analytics, never as an authorization input.** A consumer persisting `DeviceType` should store the name rather than the number so the set can gain members without rewriting rows. Substitute the interface to stub device detection in tests, or to swap the parser entirely. The default implementation owns a bounded private `MemoryCache`: parsing is local CPU work, entries come from untrusted request headers, and neither the keys nor results need to cross a process boundary or consume the host application's cache budget. Negatives (unidentifiable agents) are cached too, so subsequent calls reuse the memoized result while it remains valid. `UserAgentParserOptions`: `MaxEntries` 1,000, `SlidingExpiration` 6h, `Duration` (absolute cap) 24h, and `MaxUserAgentLength` 512 — longer values are truncated before parsing and keying, and `UserAgentInfo.UserAgent` reports the truncated value, so a caller persisting it is never handed an unbounded string. The singleton parser disposes its cache with its own lifetime and never registers or consumes the shared `IMemoryCache`.
 - `IRequestedApiVersion` — API versioning abstraction
 - `ITimezoneProvider` / `TimezoneOption` — time-zone enumeration and conversion (implemented in `Headless.Api`)
 - `IEnumLocaleAccessor` — localized enum display names (implemented in `Headless.Api` as `DefaultEnumLocaleAccessor`)
@@ -224,7 +227,7 @@ None. This is an abstractions-only package.
 
 ## Headless.Api
 
-Building blocks for ASP.NET Core APIs — primitives only. Provides service registration helpers, middleware, problem details, JWT, identity, security headers, and request-context abstractions. `Headless.Api.ServiceDefaults` is the orchestrator that composes these into a single `AddHeadless()` call.
+Building blocks for ASP.NET Core APIs — primitives only. Provides service registration helpers, middleware, problem details, tenancy, and request-context abstractions. JWT, ASP.NET Core Identity, and user-agent parsing ship in `Headless.Api.Jwt`, `Headless.Api.Identity`, and `Headless.Api.UserAgent`. `Headless.Api.ServiceDefaults` is the orchestrator that composes these into a single `AddHeadless()` call.
 
 ### API and behavior
 
@@ -238,12 +241,9 @@ Building blocks for ASP.NET Core APIs — primitives only. Provides service regi
 - `AddHeadlessJsonService()` — `IJsonOptionsProvider`, `IJsonSerializer`, `ITextSerializer`, `ISerializer` (all `TryAddSingleton` — safe to override)
 - `AddHeadlessTimeService()` — `TimeProvider.System`, `ITimezoneProvider` as `TzConvertTimezoneProvider` (all `TryAddSingleton`). The provider's Windows/IANA ID lists and mapping come from the TimeZoneConverter package's embedded CLDR data; offsets and DST rules come from the host OS time-zone database
 - `DefaultEnumLocaleAccessor` — the `IEnumLocaleAccessor` implementation
-- `AuthenticationBuilder.AddHeadlessJwtBearer(IConfiguration | Action<HeadlessJwtBearerOptions> | Action<HeadlessJwtBearerOptions, IServiceProvider>, authenticationScheme = "Bearer", configureBearer = null)` — adds a JWT bearer scheme that validates the tokens `IJwtTokenFactory` issues with the factory's own rules. `HeadlessJwtBearerOptions` carries `SigningKey`, `EncryptingKey`, `Issuer`, `Audience`, `ValidateIssuer`, and `ValidateAudience`, validated at startup
 - `MapHostRedirects(mainHost, redirectHosts)` — maps an anonymous catch-all `GET` that answers 301 to the same path and query under `mainHost` for requests whose host is in `redirectHosts`. The entries are host names (`www.example.com`, `example.net:8080`), not URLs
-- JWT request contracts — `JwtTokenRequest` groups token creation values, while `JwtTokenValidationRequest` uses required initializers for the token, signing key, issuer, and audience and groups the validation switches for `IJwtTokenFactory.ParseJwtTokenAsync(...)`
 - `Server-Timing` is not provided; an app that wants the header uses the community [`Lib.AspNetCore.ServerTiming`](https://www.nuget.org/packages/Lib.AspNetCore.ServerTiming) package
 - `UseNoCacheWhenMissingCacheHeaders()` — injects `Cache-Control: no-cache,no-store,must-revalidate` when response omits the header
-- Basic/API-key authentication helpers — `AddBasicSchema()` and `AddApiKey()` register the canonical `Basic` and `ApiKey` schemes; handlers only authenticate credentials supplied for their own scheme
 - HTTP tenant resolution: `ResolveFromClaims()`, `UseHeadlessTenancy()`, `[SkipTenantResolution]`, `.SkipTenantResolution()`
 - HTTP tenant catalog resolution (pre-authentication): `ResolveFromCatalog(...)`, `UseHeadlessTenantCatalogResolution()`, `ITenantIdentifierSource` returning `TenantIdentifierSourceResult` (`None` / `Found` / `Invalid`), and the `HeadlessTenantCatalogResolutionBuilder` members `AddHostSource(...)`, `AddRouteSource(...)`, `AddHeaderSource(...)`, `AddSource<T>()`, `AddSource(instance)`, `AddSource(Func<HttpContext, string?>)` with options `HostTenantIdentifierSourceOptions` (`Templates`), `RouteTenantIdentifierSourceOptions` (`RouteValueName`, `PromoteAmbientRouteValue`), and `HeaderTenantIdentifierSourceOptions` (`HeaderNames`, `DefaultHeaderName` = `X-Tenant`)
 - HTTP tenant authorization: `TenantRequirement`, `[AllowMissingTenant]`, `.AllowMissingTenant()`, `[RequireTenant]`, `.RequireTenant()`
@@ -257,13 +257,11 @@ Building blocks for ASP.NET Core APIs — primitives only. Provides service regi
 
 - `IProblemDetailsCreator` factory methods normalize Headless fields (`traceId`, build metadata, `instance`, timestamp) but leave consumer `ProblemDetailsOptions.CustomizeProblemDetails` callbacks to the final response writer. Exception-handler and status-code-rewriter responses run consumer customization once through ASP.NET Core's `IProblemDetailsService`; MVC direct `ObjectResult` responses built from Headless-normalized ProblemDetails are customized once by `Headless.Api.Mvc`.
 - `HeadlessApiExceptionHandler` honors `Accept` quality values when deciding whether to write JSON ProblemDetails. A request that rejects JSON, or explicitly rejects `application/problem+json`, with `q=0` is left for downstream/default handlers instead of receiving a JSON body.
-- Basic authentication delegates password validation to `SignInManager.CheckPasswordSignInAsync(..., lockoutOnFailure: true)`, so configured ASP.NET Core Identity lockout policies apply to failed Basic credentials.
 - Batch `IFormFile.SaveAsync(...)` preserves result ordering while bounding concurrent file stream copies to `Environment.ProcessorCount` to avoid unbounded file-handle and disk pressure on large multipart requests.
 - `IFormFile.GetAllBytesAsync(CancellationToken cancellationToken = default)` propagates optional cancellation through asynchronous upload buffering; callers can omit the token.
 - Tenant identifier sources run in first-registration order and the first `Found` result wins; `AddSource<T>()` and the built-in `AddHostSource` / `AddRouteSource` / `AddHeaderSource` registrations deduplicate by type (the first call fixes the position, every call's options contribution still applies), while `AddSource(instance)` and the delegate overload always append. A source result of `Invalid` (present but ambiguous input, such as two `X-Tenant` values) rejects with 400 `g:tenant_identifier_invalid` before any catalog call; `Found` with a blank value normalizes to `None`. Sources never trim, lowercase, or shape-validate — the catalog does.
 - The header source (default `X-Tenant`) can only select an existing enabled tenant, and the identifier/claim mismatch check still rejects an authenticated caller whose tenant claim disagrees, but it bypasses any WAF rule, mTLS policy, IP allowlist, or CDN configuration bound to a tenant's hostname — register the host source first where hostnames carry such controls, or strip/overwrite the header at the edge. A requested header name replaces the untouched default and appends afterwards (`AddHeaderSource("X-Legacy")` reads only `X-Legacy`); any second value across the configured names is `Invalid`, a single line `a,b` is one value, and every consult appends the configured names to `Vary`.
 - `AddRouteSource` (every overload) wraps the routing `LinkGenerator` once so `Url.Action`, `GetPathByAction`, and `GetPathByName` keep the current request's `{tenant}` segment, which ASP.NET Core would otherwise drop (required-value invalidation; the endpoint-name scheme passes no ambient values — only `GetPathByRouteValues` kept it). An explicit `tenant` value always wins; `RouteTenantIdentifierSourceOptions.PromoteAmbientRouteValue = false` opts out per call. A link from a tenant request to an endpoint without a `{tenant}` segment carries the value as a query string (`/plain?tenant=acme`); a link from a request with no tenant segment to a tenant endpoint returns `null` without an explicit value.
-- `IdentityMessageDescriber`'s password-reset and email-verification throttling messages format their durations with Humanizer's `TimeSpan.Humanize()` in the current UI culture. The package ships `Humanizer.Core.ar` beside its Arabic `Messages.ar.resx`, so an Arabic request gets Arabic durations; any other culture falls back to English unless the application references the matching `Humanizer.Core.<culture>` package.
 - The diagnostic listeners subscribe typed `IObserver<KeyValuePair<string, object?>>` observers with an `IsEnabled` filter, so the listener reports only the bad-request and middleware-analysis events as enabled. The bad-request observer reads the `IFeatureCollection` Kestrel writes as the event payload. The middleware-analysis observer reads the anonymous payload's `name`, `httpContext`, `timestamp`, `duration`, and `exception` properties by name and ignores an event missing one of them.
 - Every catalog rejection carries `Cache-Control: no-store`, and no tenancy log event carries a raw host, route value, header value, or identifier. The host source reads the post-forwarding `Request.Host`, never `X-Forwarded-Host`; a host template match timeout (practically unreachable with the non-backtracking compiled templates) maps to `Invalid` plus a once-per-process warning naming the template only.
 
@@ -374,62 +372,6 @@ app.UseAuthorization();
 ```
 
 A custom source implements `ITenantIdentifierSource` and returns `TenantIdentifierSourceResult.None`, `.Found(value)`, or `.Invalid`; a source written against the earlier `string?` contract migrates by returning `Found(value)` / `None` instead of the string / `null`. The delegate overload cannot express `Invalid`.
-
-Validate bearer tokens the factory issued with `AddHeadlessJwtBearer`, configured with the same keys, issuer, and audience the host passes in `JwtTokenRequest`:
-
-```csharp
-builder.Services
-    .AddAuthentication(AuthenticationConstants.Schemas.Bearer)
-    .AddHeadlessJwtBearer(
-        builder.Configuration.GetSection("Jwt"), // SigningKey, EncryptingKey, Issuer, Audience
-        configureBearer: bearer =>
-            bearer.Events = new JwtBearerEvents
-            {
-                // WebSocket clients cannot send headers; read the token from the query string on the hub path only.
-                OnMessageReceived = context =>
-                {
-                    if (context.HttpContext.Request.Path.StartsWithSegments("/hubs"))
-                    {
-                        context.Token = context.Request.Query["access_token"];
-                    }
-
-                    return Task.CompletedTask;
-                },
-            }
-    );
-```
-
-The scheme and `IJwtTokenFactory.ParseJwtTokenAsync` share one rule set: HMAC-SHA256 signature from the UTF-8 signing key (at least 32 bytes), optional decryption with `EncryptingKey`, a required `exp` with zero clock skew, `UserClaimTypes.UserName` and `UserClaimTypes.Roles` as the name and role claim types, and no inbound claim mapping. `configureBearer` runs after those rules; use it for events, and leave `TokenValidationParameters` alone, or the scheme stops accepting exactly what the factory issues. The options are named by scheme, so two `AddHeadlessJwtBearer` calls with different scheme names keep separate keys.
-
-JWT validation outside the authentication middleware uses a request object instead of positional token, key, issuer, audience, and validation arguments:
-
-```csharp
-using System.Security.Claims;
-using Headless.Api.Security;
-
-public sealed class TokenValidator(IJwtTokenFactory tokens)
-{
-    public Task<ClaimsPrincipal?> ValidateAsync(
-        string token,
-        string signingKey,
-        string issuer,
-        string audience,
-        CancellationToken cancellationToken
-    ) =>
-        tokens.ParseJwtTokenAsync(
-            new JwtTokenValidationRequest
-            {
-                Token = token,
-                SigningKey = signingKey,
-                Issuer = issuer,
-                Audience = audience,
-                ValidateIssuer = true,
-                ValidateAudience = true,
-            },
-            cancellationToken
-        );
-}
-```
 
 ### Configuration
 
@@ -561,8 +503,6 @@ All other exceptions return `false`; the host default or a downstream handler re
 
 `StatusCodesRewriterMiddleware` is required for the `g:tenant_required` discriminator on 403 authorization rejections. It is wired by ServiceDefaults; apps that skip ServiceDefaults must call `UseStatusCodesRewriter()` themselves. `TenantRequirement` must live in `DefaultPolicy` or `FallbackPolicy` — the startup validator does not inspect named policies. `UseHeadlessTenancy()` must run after `UseRouting()` so endpoint metadata is available when `[SkipTenantResolution]` is evaluated. `UseHeadlessTenantCatalogResolution()` runs after `UseRouting()` and before `UseAuthentication()`; placed before `UseRouting()` it still resolves host, header, and delegate sources and only loses the `[SkipTenantResolution]` opt-out (a once-per-process warning), but a registered route source then finds nothing and every request runs as host context, logged once per process at Error level as `HEADLESS_TENANT_CATALOG_ROUTE_SOURCE_MISORDERED` — best-effort, since a host whose requests all 404 or all reject never logs. Behind a proxy, `UseForwardedHeaders()` with `KnownProxies`/`KnownNetworks` and host filtering (`AllowedHosts` scoped to the tenant suffix) must precede it, and `UseCors()` must precede it so preflights short-circuit. CDN caveats: a cache key that omits the host breaks host tenancy, and many CDNs refuse to cache on unknown `Vary` values. Mismatch-check limits: a principal with no tenant claim, or an endpoint where authorization never runs (`[AllowAnonymous]`, policy-less without a fallback policy), passes a source-selected tenant unchecked — map such credentials to a tenant claim so the check applies, and never derive authorization on such endpoints from the ambient tenant.
 
-`AddBasicSchema()` defaults to the canonical `Basic` authentication scheme and `AddApiKey()` defaults to `ApiKey`. `DynamicAuthenticationSchemeProvider` selects those same canonical names. API keys are read from the configured header by default; query-string keys are routed and accepted only when `ApiKeyAuthenticationSchemeOptions.AllowApiKeyInQueryString` is `true`.
-
 ### Runtime behavior
 
 - Opt-in surface registration validates options at startup and registers the immutable singleton registry; middleware sets the request feature and activity tag.
@@ -609,7 +549,7 @@ dotnet add package Headless.Api.ServiceDefaults
 var builder = WebApplication.CreateBuilder(args);
 
 // Register all framework API services + Aspire conventions.
-// Also applies global defaults (regex timeout, FluentValidation, JWT) via ConfigureGlobalSettings().
+// Also applies global defaults (regex timeout, FluentValidation) via ConfigureGlobalSettings().
 builder.AddHeadless();
 
 var app = builder.Build();
@@ -728,7 +668,9 @@ Surface filtering runs before schema generation and is independent of API Explor
 ### Runtime behavior
 
 - Enables service-provider validation on startup (`ValidateOnBuild`, `ValidateScopes`).
-- Registers all core primitives from `Headless.Api` including problem details, response compression, JWT, identity, status-code rewriting, and default API conventions.
+- Registers all core primitives from `Headless.Api` including problem details, response compression, status-code rewriting, and default API conventions.
+- Registers no JWT, Identity, or authentication-scheme services; add `Headless.Api.Jwt` or `Headless.Api.Identity` and call their registration methods.
+- Registers a fallback `IUserAgentParser` that identifies nothing (`TryAddSingleton`); `AddHeadlessUserAgentParser()` from `Headless.Api.UserAgent` replaces it in either call order.
 - Registers antiforgery services only when `options.Antiforgery.Enabled` is `true`.
 - Configures MVC and Minimal API JSON serializer defaults.
 - Registers ASP.NET Core source-generated input validation (`services.AddValidation()`).
@@ -1012,6 +954,134 @@ app.MapPost("/disbursements", async (HttpContext http, IUnitOfWorkFactory factor
 
 ---
 
+## Headless.Api.Identity
+
+ASP.NET Core Identity integration for Headless APIs. Apps that do not use ASP.NET Core Identity do not need it.
+
+### API and behavior
+
+- `IdentityBuilder.AddHeadlessLookupNormalizer()` — replaces Identity's upper-invariant `ILookupNormalizer` with `HeadlessLookupNormalizer`, so stored usernames and emails normalize the same way as `Headless.Text.LookupNormalizer`
+- `IdentityBuilder.AddPasswordResetTokenProvider<TUser>()`, `AddPasswordResetCodeProvider<TUser>()`, `AddEmailConfirmationTokenProvider<TUser>()`, `AddEmailConfirmationCodeProvider<TUser>()` — register the provider and make it Identity's password-reset or email-confirmation provider; the code providers share one RFC 6238 `TotpRfc6238Generator`
+- `HeadlessIdentityErrorDescriber`, `IdentityResultExtensions`, and `IdentityMessageDescriber` / `IdentityErrorCodes` (`Headless.Api.Identity.Resources`) — localized `auth:` and `user:` error descriptors
+- `ConfigureApiApplicationCookie()` — answers the Identity cookie's login and access-denied redirects with 401 and 403 instead of a redirect
+- Basic/API-key authentication helpers — `AddBasicSchema()` and `AddApiKey()` register the canonical `Basic` and `ApiKey` schemes; handlers only authenticate credentials supplied for their own scheme. Both also register `DynamicAuthenticationSchemeProvider`, which picks `ApiKey`, `Basic`, or `Bearer` per request from the credentials it carries
+
+### Design constraints
+
+- Basic authentication delegates password validation to `SignInManager.CheckPasswordSignInAsync(..., lockoutOnFailure: true)`, so configured ASP.NET Core Identity lockout policies apply to failed Basic credentials.
+- `IdentityMessageDescriber`'s password-reset and email-verification throttling messages format their durations with Humanizer's `TimeSpan.Humanize()` in the current UI culture. The package ships `Humanizer.Core.ar` beside its Arabic `Messages.ar.resx`, so an Arabic request gets Arabic durations; any other culture falls back to English unless the application references the matching `Humanizer.Core.<culture>` package.
+
+### Install
+
+```bash
+dotnet add package Headless.Api.Identity
+```
+
+### Setup and use
+
+```csharp
+builder.Services
+    .AddIdentityCore<AppUser>()
+    .AddHeadlessLookupNormalizer()
+    .AddPasswordResetCodeProvider<AppUser>(configureOptions: null)
+    .AddEmailConfirmationCodeProvider<AppUser>(configureOptions: null);
+
+builder.Services
+    .AddAuthentication(AuthenticationConstants.Schemas.Bearer)
+    .AddApiKey<AppUser, Guid, AppApiKeyStore>()
+    .AddBasicSchema<AppUser, Guid>();
+```
+
+`AddBasicSchema()` defaults to the canonical `Basic` authentication scheme and `AddApiKey()` defaults to `ApiKey`. `DynamicAuthenticationSchemeProvider` selects those same canonical names. API keys are read from the configured header by default; query-string keys are routed and accepted only when `ApiKeyAuthenticationSchemeOptions.AllowApiKeyInQueryString` is `true`.
+
+### Runtime behavior
+
+- `AddHeadless()` registers none of these services. `AddHeadlessLookupNormalizer()` removes any earlier `ILookupNormalizer` registration, so it wins whether it runs before or after `AddIdentityCore`.
+- `AddApiKey()` and `AddBasicSchema()` replace `IAuthenticationSchemeProvider` with `DynamicAuthenticationSchemeProvider` and register `IHttpContextAccessor`, which it reads. A host that uses only a bearer scheme keeps ASP.NET Core's provider and selects the scheme through `AddAuthentication(defaultScheme)`.
+
+---
+
+## Headless.Api.Jwt
+
+JWT issuing, parsing, and bearer authentication for Headless APIs.
+
+### API and behavior
+
+- `IJwtTokenFactory` / `JwtTokenFactory` — creates HMAC-SHA256 tokens, optionally encrypted, and parses them back into a `ClaimsPrincipal`
+- `AuthenticationBuilder.AddHeadlessJwtBearer(IConfiguration | Action<HeadlessJwtBearerOptions> | Action<HeadlessJwtBearerOptions, IServiceProvider>, authenticationScheme = "Bearer", configureBearer = null)` — adds a JWT bearer scheme that validates the tokens `IJwtTokenFactory` issues with the factory's own rules. `HeadlessJwtBearerOptions` carries `SigningKey`, `EncryptingKey`, `Issuer`, `Audience`, `ValidateIssuer`, and `ValidateAudience`, validated at startup
+- JWT request contracts — `JwtTokenRequest` groups token creation values, while `JwtTokenValidationRequest` uses required initializers for the token, signing key, issuer, and audience and groups the validation switches for `IJwtTokenFactory.ParseJwtTokenAsync(...)`
+
+### Install
+
+```bash
+dotnet add package Headless.Api.Jwt
+```
+
+### Setup and use
+
+Validate bearer tokens the factory issued with `AddHeadlessJwtBearer`, configured with the same keys, issuer, and audience the host passes in `JwtTokenRequest`:
+
+```csharp
+builder.Services
+    .AddAuthentication(AuthenticationConstants.Schemas.Bearer)
+    .AddHeadlessJwtBearer(
+        builder.Configuration.GetSection("Jwt"), // SigningKey, EncryptingKey, Issuer, Audience
+        configureBearer: bearer =>
+            bearer.Events = new JwtBearerEvents
+            {
+                // WebSocket clients cannot send headers; read the token from the query string on the hub path only.
+                OnMessageReceived = context =>
+                {
+                    if (context.HttpContext.Request.Path.StartsWithSegments("/hubs"))
+                    {
+                        context.Token = context.Request.Query["access_token"];
+                    }
+
+                    return Task.CompletedTask;
+                },
+            }
+    );
+```
+
+The scheme and `IJwtTokenFactory.ParseJwtTokenAsync` share one rule set: HMAC-SHA256 signature from the UTF-8 signing key (at least 32 bytes), optional decryption with `EncryptingKey`, a required `exp` with zero clock skew, `UserClaimTypes.UserName` and `UserClaimTypes.Roles` as the name and role claim types, and no inbound claim mapping. `configureBearer` runs after those rules; use it for events, and leave `TokenValidationParameters` alone, or the scheme stops accepting exactly what the factory issues. The options are named by scheme, so two `AddHeadlessJwtBearer` calls with different scheme names keep separate keys.
+
+JWT validation outside the authentication middleware uses a request object instead of positional token, key, issuer, audience, and validation arguments:
+
+```csharp
+using System.Security.Claims;
+using Headless.Api.Security;
+
+public sealed class TokenValidator(IJwtTokenFactory tokens)
+{
+    public Task<ClaimsPrincipal?> ValidateAsync(
+        string token,
+        string signingKey,
+        string issuer,
+        string audience,
+        CancellationToken cancellationToken
+    ) =>
+        tokens.ParseJwtTokenAsync(
+            new JwtTokenValidationRequest
+            {
+                Token = token,
+                SigningKey = signingKey,
+                Issuer = issuer,
+                Audience = audience,
+                ValidateIssuer = true,
+                ValidateAudience = true,
+            },
+            cancellationToken
+        );
+}
+```
+
+### Runtime behavior
+
+- `AddHeadlessJwtBearer(...)` registers `IJwtTokenFactory` (`TryAddSingleton`), so the scheme and the factory share one rule set. A host that only issues tokens and validates none registers `JwtTokenFactory` itself.
+- `AddHeadless()` registers no JWT services and leaves the `JsonWebTokenHandler` statics alone.
+
+---
+
 ## Headless.Api.Logging.Serilog
 
 Serilog integration for ASP.NET Core APIs with custom enrichers for request context.
@@ -1236,3 +1306,28 @@ Other MVC features require no additional configuration.
 - Configures `MvcOptions` and `JsonOptions` for controllers
 - Adds a result filter that applies ProblemDetails customization to Headless-generated MVC object results
 - When opted in, emits ETags for `IHasEntityTag` responses
+
+---
+
+## Headless.Api.UserAgent
+
+The DeviceDetector.NET-backed `IUserAgentParser`. DeviceDetector.NET ships a large regex database, so it lives in its own package. The parser contract, `UserAgentInfo`, and the options are described under [Headless.Api.Abstractions](#headlessapiabstractions).
+
+### Install
+
+```bash
+dotnet add package Headless.Api.UserAgent
+```
+
+### Setup and use
+
+```csharp
+builder.AddHeadless();
+builder.Services.AddHeadlessUserAgentParser(builder.Configuration.GetSection("UserAgent"));
+```
+
+`AddHeadlessUserAgentParser()` has parameterless, `IConfiguration`, `Action<UserAgentParserOptions>`, and `Action<UserAgentParserOptions, IServiceProvider>` overloads. The options are validated at startup.
+
+### Runtime behavior
+
+- Replaces any registered `IUserAgentParser`, including the identify-nothing fallback `AddHeadless()` registers, whichever call runs first.

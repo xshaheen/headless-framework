@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Api.Resources;
+namespace Headless.Api.Identity.Resources;
 
 /// <summary>
 /// Compile-time constants for identity-related <c>errors[].code</c> values in ProblemDetails responses.
