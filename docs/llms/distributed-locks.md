@@ -752,6 +752,8 @@ Every helper on both engines treats the transaction as the lock's owner: asking 
 
 Inside a unit of work the transaction is the unit's, so the lock is taken through the unit rather than through a transaction object the caller has to dig out. `unit.TransactionLocks` is an accessor `Headless.DistributedLocks.Abstractions` adds to `IUnitOfWork`; `UsePostgreSql` and `UseSqlServer` register the feature behind it, and it needs no reference to the driver from the calling code.
 
+With `Headless.UnitOfWork.Analyzers` referenced, [HF2003](unit-of-work.md#hf2003) reports an `IDistributedLock.AcquireAsync` or `TryAcquireAsync` call made while a unit of work is in scope and names `unit.TransactionLocks`. It is a suggestion with no code fix: keep the autonomous lock when it must outlive the transaction.
+
 ```csharp
 await factory.RunAsync(
     connection, // or a DbContext through Headless.UnitOfWork.EntityFramework

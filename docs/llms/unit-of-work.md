@@ -1,6 +1,6 @@
 ---
 domain: Unit of Work
-packages: UnitOfWork.Abstractions, UnitOfWork, UnitOfWork.EntityFramework, UnitOfWork.PostgreSql, UnitOfWork.SqlServer, UnitOfWork.Sqlite
+packages: UnitOfWork.Abstractions, UnitOfWork, UnitOfWork.EntityFramework, UnitOfWork.PostgreSql, UnitOfWork.SqlServer, UnitOfWork.Sqlite, UnitOfWork.Analyzers
 ---
 
 # Unit of Work
@@ -32,6 +32,7 @@ See [Choosing a Provider](#choosing-a-provider) for the package-selection table.
 
 - Inject `IUnitOfWorkFactory` anywhere — it is a singleton with no scope-bound state, so a hosted service or a framework singleton depends on it directly and needs no `IServiceScopeFactory` dance. The same is true of `IBus`, `IQueue`, `IJobScheduler`, and the Jobs managers: all singletons, all autonomous.
 - To enlist a write, call it on the handle you hold: `unit.Outbox.PublishAsync(...)`, `unit.Jobs.ScheduleAsync(...)`, `unit.TimeJobs<T>().AddAsync(...)`. The injected publishers and schedulers never enlist, whatever scope they came from. The accessors are free to read at each call site — each binds once per unit and is kept as unit-local state — and refuse a unit that already reached a terminal state; a binding retained past that point throws on its next use, before anything is stored.
+- To catch an injected call made while you hold a unit, reference `Headless.UnitOfWork.Analyzers`. Its rules (HF2001–HF2005) report the call and name the enlisted receiver on your unit, and a code fix rewrites the one-to-one calls. See [Headless.UnitOfWork.Analyzers](#headlessunitofworkanalyzers).
 - Reach the unit through the handle or the object it was begun on. Nothing ambient carries it, so a callee that must enlist takes the `IUnitOfWork` as a parameter, reads it from the `DbContext` or `DbConnection` it was begun on (`db.UnitOfWork()`, `connection.UnitOfWork()`), reads `context.UnitOfWork` in a transactional consumer, or wraps its own work in `RunAsync(db, …)` / `RunAsync(connection, …)` on that object — which joins the live unit. Do not `BeginAsync` a second unit inside a callee to "get one": on a context or connection that already carries a live unit, `BeginAsync` and `Enlist` throw and name the join.
 - Never end the unit inside a `RunAsync` block (`CompleteAsync`, `RollbackAsync`, or a dispose): `RunAsync` completes it when the block returns and rolls it back when the block throws. An owned block that completed its own unit gets its result back with a warning and is never replayed, one that rolled it back or disposed it and then returned is refused with `InvalidOperationException`, and a joined block that ends the owner's unit is refused once it returns.
 - Open the unit of work explicitly, on the line you choose. Nothing in this framework opens one on your behalf — no mediator behavior, no endpoint filter, no consumer-runtime wrapper. If a handler needs one, call `factory.BeginAsync(...)` or `factory.RunAsync(...)` yourself.
@@ -617,3 +618,61 @@ None.
 
 Registers the singleton `IUnitOfWorkFactory` only.
 
+## Headless.UnitOfWork.Analyzers
+
+Roslyn analyzers that report a write made through an autonomous service while a unit of work is in scope, and name the enlisted receiver on that unit. A code fix rewrites the call where the enlisted call is one-to-one.
+
+### Install
+
+```bash
+dotnet add package Headless.UnitOfWork.Analyzers
+```
+
+The package is a development dependency: it adds analyzers to the project that references it and flows to no consumer. It needs a .NET 10 SDK or Visual Studio 2026 (Roslyn 5.0), the same floor the C# 14 accessors it suggests already set.
+
+### When a unit is in scope
+
+A call is reported only when an `IUnitOfWork` local or parameter is visible at the call. There is no ambient unit, so the analyzer reads the same explicit handle the code would write through.
+
+- The unit is a lambda or method parameter (the `RunAsync(db, (unit, ct) => …)` block), or a local such as `var unit = db.UnitOfWork()`, `connection.UnitOfWork()`, `context.UnitOfWork` in a consumer, or `await factory.BeginAsync(ct)`. A unit captured from an enclosing method or lambda counts at any depth.
+- The unit is declared before the call and definitely assigned there.
+- The compiler's nullable flow state for the unit at the call is not-null. `db.UnitOfWork()`, `connection.UnitOfWork()`, and `context.UnitOfWork` return `IUnitOfWork?`, so the call counts only after a check such as `if (unit is null) return;`, `?? throw`, or `is { } unit`. Where nullable analysis is off, the unit counts.
+- Inside a callback passed to `OnCompleted` or `OnFailed` (a lambda, or a local function passed as a method group), a unit declared outside the callback does not count: the callback runs after the transaction ends, where the autonomous call is the right one and the enlisted receiver refuses the write.
+- Inside a `static` lambda or local function, an outer unit does not count, because the code cannot capture it.
+- After a statement that always runs before the call and completes, rolls back, or disposes the unit, the unit does not count. A rollback inside an early-exit branch (`if (!valid) { await unit.RollbackAsync(); return; }`) leaves the unit live on the path that reaches the call, so the call is still reported.
+- Fields, properties, and primary-constructor parameters are not units in scope.
+- When several units are eligible, the message names the one declared last.
+
+### Known limits
+
+- An enlisted Jobs receiver that reaches the call through a parameter, or a local assigned more than once, is reported, because the analyzer cannot trace it back to `unit.Jobs`. Suppress that call with a reason.
+- A unit completed in one branch and rolled back in the other (`if (ok) await unit.CompleteAsync(); else await unit.RollbackAsync();`) still counts after the `if`, because only a statement that sits directly in a block enclosing the call ends scope. Do not apply the fix there; suppress the call with a reason.
+- A unit declared as a `foreach` iteration variable is not counted, so calls in the loop body are not reported.
+- A local function declared before the unit cannot capture it, so a call inside it is not reported even when the function runs later.
+- The analyzer cannot see provider topology. Where a provider refuses enlistment, the enlisted receiver throws: the cache idempotency provider refuses every `unit.Idempotency` call, SQLite idempotency refuses enlisted admission, and `unit.Outbox` refuses a unit on a different database from the messaging storage. On such a host, do not apply the fix: set that rule's severity to `none`, or suppress the call with a reason.
+- Where nullable analysis is off, the code fix can write `unit.Outbox` in a branch where the unit is null at run time.
+
+### Severity and suppression
+
+Every rule is a suggestion by default, because some autonomous calls inside a unit are correct: a lock that must outlive the transaction, a notification that must go out even if the unit rolls back. Raise each rule on its own in `.editorconfig`:
+
+```ini
+[*.cs]
+dotnet_diagnostic.HF2001.severity = error
+dotnet_diagnostic.HF2002.severity = warning
+dotnet_diagnostic.HF2003.severity = suggestion
+```
+
+Keep a deliberate autonomous call with an inline reason, for example `#pragma warning disable HF2001 // The alert must go out even when the order rolls back.`. There is no attribute or option that marks a call site or a message type as autonomous: the receiver at the call site is the declaration.
+
+### Diagnostics
+
+Every rule is reported in category `Headless.UnitOfWork.Analyzers` and is a suggestion (`info`) by default. The table below is each rule's help link target.
+
+| Rule | Reported when | Fix |
+| --- | --- | --- |
+| <a id="hf2001"></a>HF2001 | `IBus.PublishAsync` or `IQueue.EnqueueAsync` is called while a unit of work is in scope. | Call `unit.Outbox.PublishAsync` or `unit.Outbox.EnqueueAsync`. The code fix rewrites the `(content, cancellationToken)` overload; the options and builder overloads take options the outbox does not, so they get no fix. |
+| <a id="hf2002"></a>HF2002 | An `IJobScheduler`, `ITimeJobManager<T>`, or `ICronJobManager<T>` member that enlists (enqueue, schedule, schedule-after, recurring, keyed schedule, replace, and cancel, and the managers' add members) is called on an injected receiver while a unit of work is in scope. Calls through `unit.Jobs`, `unit.TimeJobs<T>()`, or `unit.CronJobs<T>()`, or through a local initialized once from one, are not reported. Cancel, pause, resume, requeue, update, and delete never enlist and are not reported. | Call the same member on `unit.Jobs`, `unit.TimeJobs<T>()`, or `unit.CronJobs<T>()`. The code fix swaps the receiver and keeps `T`; it offers nothing when `T` has no public parameterless constructor or has `required` members, which the accessors' `new()` constraint rejects. |
+| <a id="hf2003"></a>HF2003 | `IDistributedLock.AcquireAsync` or `TryAcquireAsync` is called while a unit of work is in scope. | When the lock should end with the transaction, take it with `unit.TransactionLocks.AcquireAsync` or `TryAcquireAsync`. Keep the autonomous lock when it must outlive the transaction. No code fix: the transaction lock takes an acquire timeout and returns a different handle. |
+| <a id="hf2004"></a>HF2004 | `IFencedLeases.GrantAsync`, `RenewAsync`, `SettleAsync`, or `ReleaseAsync` is called while a unit of work is in scope. `SweepExpiredAsync` and `PurgeAsync` have no enlisted counterpart and are not reported. | Call the same member on `unit.Leases`. The code fix swaps the receiver. |
+| <a id="hf2005"></a>HF2005 | `IIdempotentOperations.AdmitAsync`, `CompleteAsync`, `SetRecoveryPointAsync`, or `ReleaseAsync`, including the JSON overloads, is called while a unit of work is in scope. `RenewAsync` and `PeekAsync` have no enlisted counterpart and are not reported. | Call the same member on `unit.Idempotency`. The code fix swaps the receiver. |
