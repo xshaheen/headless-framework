@@ -99,6 +99,76 @@ public sealed class DashboardEndpointMetadataTests : TestBase
         endpoint.Metadata.GetMetadata<IHttpMethodMetadata>()!.HttpMethods.Should().Equal("POST");
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("?timeZoneId=UTC")]
+    public async Task should_create_a_chain_with_or_without_a_time_zone_query_parameter(string query)
+    {
+        // The chain wizard posts without timeZoneId; binding it as required rejected every chain with 400 before
+        // the handler, which already treats a missing zone as "the time is UTC", could run.
+        await using var app = _CreateApp(new DashboardOptionsBuilder().WithNoAuth());
+        var manager = app.Services.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
+        manager
+            .AddAsync(Arg.Any<TimeJobEntity>(), Arg.Any<CancellationToken>())
+            .Returns(call => Task.FromResult(call.Arg<TimeJobEntity>()));
+        var body = System.Text.Encoding.UTF8.GetBytes("""{"function":"sandbox.quiet"}""");
+        var context = new DefaultHttpContext { RequestServices = app.Services };
+        context.Request.Method = HttpMethods.Post;
+        context.Request.QueryString = new QueryString(query);
+        context.Request.ContentType = "application/json";
+        context.Request.ContentLength = body.Length;
+        context.Request.Body = new MemoryStream(body);
+        context.Response.Body = new MemoryStream();
+
+        await _GetEndpoint(app, "CreateChainJobs").RequestDelegate!(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        await manager.Received(1).AddAsync(Arg.Any<TimeJobEntity>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_read_every_zone_less_chain_time_in_the_requested_zone_and_keep_explicit_instants()
+    {
+        // The same case-insensitive camelCase options the dashboard registration installs.
+        await using var app = _CreateApp(
+            new DashboardOptionsBuilder()
+                .WithNoAuth()
+                .ConfigureDashboardJsonOptions(json =>
+                {
+                    json.PropertyNameCaseInsensitive = true;
+                    json.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
+                })
+        );
+        var manager = app.Services.GetRequiredService<ITimeJobManager<TimeJobEntity>>();
+        TimeJobEntity? added = null;
+        manager
+            .AddAsync(Arg.Any<TimeJobEntity>(), Arg.Any<CancellationToken>())
+            .Returns(call => Task.FromResult(added = call.Arg<TimeJobEntity>()));
+        // Asia/Tokyo has no daylight saving time, so +09:00 holds for any date.
+        var body = System.Text.Encoding.UTF8.GetBytes(
+            """
+            {"function":"root","executionTime":"2026-03-01T09:00:00","children":[
+              {"function":"child","executionTime":"2026-03-01T10:00:00","runCondition":0,"children":[
+                {"function":"grandchild","executionTime":"2026-03-01T11:00:00Z","runCondition":0}]}]}
+            """
+        );
+        var context = new DefaultHttpContext { RequestServices = app.Services };
+        context.Request.Method = HttpMethods.Post;
+        context.Request.QueryString = new QueryString("?timeZoneId=Asia/Tokyo");
+        context.Request.ContentType = "application/json";
+        context.Request.ContentLength = body.Length;
+        context.Request.Body = new MemoryStream(body);
+        context.Response.Body = new MemoryStream();
+
+        await _GetEndpoint(app, "CreateChainJobs").RequestDelegate!(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        added!.ExecutionTime.Should().Be(new DateTime(2026, 3, 1, 0, 0, 0, DateTimeKind.Utc));
+        var child = added.Children.Single();
+        child.ExecutionTime.Should().Be(new DateTime(2026, 3, 1, 1, 0, 0, DateTimeKind.Utc));
+        child.Children.Single().ExecutionTime.Should().Be(new DateTime(2026, 3, 1, 11, 0, 0, DateTimeKind.Utc));
+    }
+
     private static WebApplication _CreateApp(DashboardOptionsBuilder config)
     {
         var builder = WebApplication.CreateSlimBuilder();
