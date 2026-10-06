@@ -396,7 +396,6 @@
           "Asp.Versioning.Abstractions": "[10.2.1, )",
           "Asp.Versioning.Http": "[10.2.3, )",
           "DeviceDetector.NET": "[6.5.2, )",
-          "FluentValidation.DependencyInjectionExtensions": "[12.1.1, )",
           "Headless.Api.Abstractions": "[1.0.0, )",
           "Headless.AuditLog.Abstractions": "[1.0.0, )",
           "Headless.Context": "[1.0.0, )",
@@ -404,15 +403,13 @@
           "Headless.FluentValidation": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Headless.MultiTenancy": "[1.0.0, )",
-          "Headless.Security": "[1.0.0, )",
           "Headless.Serializer.Json": "[1.0.0, )",
           "Humanizer.Core": "[3.0.10, )",
           "Humanizer.Core.ar": "[3.0.10, )",
           "Microsoft.AspNetCore.Authentication.JwtBearer": "[10.0.12, )",
           "Microsoft.AspNetCore.MiddlewareAnalysis": "[10.0.12, )",
-          "Microsoft.Extensions.Http.Resilience": "[10.10.0, )",
+          "Microsoft.Extensions.Telemetry.Abstractions": "[10.10.0, )",
           "Microsoft.IdentityModel.JsonWebTokens": "[8.22.0, )",
-          "NetEscapades.AspNetCore.SecurityHeaders": "[1.3.1, )",
           "TimeZoneConverter": "[7.2.0, )"
         }
       },
@@ -447,28 +444,11 @@
           "Headless.Extensions": "[1.0.0, )"
         }
       },
-      "headless.caching": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Caching.Abstractions": "[1.0.0, )",
-          "Headless.Extensions": "[1.0.0, )",
-          "Headless.Serializer.Abstractions": "[1.0.0, )",
-          "OpenTelemetry.Api": "[1.18.0, )"
-        }
-      },
       "headless.caching.abstractions": {
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
           "Headless.Primitives": "[1.0.0, )"
-        }
-      },
-      "headless.caching.inmemory": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Caching": "[1.0.0, )",
-          "Headless.Caching.Abstractions": "[1.0.0, )",
-          "Headless.Hosting": "[1.0.0, )"
         }
       },
       "headless.checks": {
@@ -547,13 +527,12 @@
         "type": "Project",
         "dependencies": {
           "Headless.Domain": "[1.0.0, )",
-          "Headless.Hosting": "[1.0.0, )"
+          "Headless.Extensions": "[1.0.0, )"
         }
       },
       "headless.entityframework": {
         "type": "Project",
         "dependencies": {
-          "EFCore.CheckConstraints": "[10.0.0, )",
           "Headless.AuditLog.Abstractions": "[1.0.0, )",
           "Headless.Context": "[1.0.0, )",
           "Headless.Context.Abstractions": "[1.0.0, )",
@@ -586,9 +565,7 @@
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
-          "Headless.Generator.Primitives.Abstractions": "[1.0.0, )",
           "Headless.Primitives": "[1.0.0, )",
-          "Headless.Urls": "[1.0.0, )",
           "Nito.AsyncEx": "[5.1.2, )",
           "Nito.Disposables": "[2.5.0, )"
         }
@@ -863,12 +840,6 @@
           "Microsoft.EntityFrameworkCore.Relational": "[10.0.12, )"
         }
       },
-      "headless.urls": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )"
-        }
-      },
       "Asp.Versioning.Abstractions": {
         "type": "CentralTransitive",
         "requested": "[10.2.1, )",
@@ -894,16 +865,6 @@
           "YamlDotNet": "18.1.0"
         }
       },
-      "EFCore.CheckConstraints": {
-        "type": "CentralTransitive",
-        "requested": "[10.0.0, )",
-        "resolved": "10.0.0",
-        "contentHash": "O6dAN5TlBvn0NKZ/At9iE3fMBZ89N83nlqnROSuH6W3EIoYIiXohklsIWfTh2iHomPAC9IKGi34D3FpdNbCXxg==",
-        "dependencies": {
-          "Microsoft.EntityFrameworkCore": "[10.0.0, 11.0.0)",
-          "Microsoft.EntityFrameworkCore.Relational": "[10.0.0, 11.0.0)"
-        }
-      },
       "FastExpressionCompiler": {
         "type": "CentralTransitive",
         "requested": "[5.4.1, )",
@@ -924,15 +885,6 @@
         "requested": "[12.1.1, )",
         "resolved": "12.1.1",
         "contentHash": "EPpkIe1yh1a0OXyC100oOA8WMbZvqUu5plwhvYcb7oSELfyUZzfxV48BLhvs3kKo4NwG7MGLNgy1RJiYtT8Dpw=="
-      },
-      "FluentValidation.DependencyInjectionExtensions": {
-        "type": "CentralTransitive",
-        "requested": "[12.1.1, )",
-        "resolved": "12.1.1",
-        "contentHash": "D0VXh4dtjjX2aQizuaa0g6R8X3U1JaVqJPfGCvLwZX9t/O2h7tkpbitbadQMfwcgSPdDbI2vDxuwRMv/Uf9dHA==",
-        "dependencies": {
-          "FluentValidation": "12.1.1"
-        }
       },
       "Humanizer.Core": {
         "type": "CentralTransitive",
@@ -1093,12 +1045,6 @@
         "requested": "[2.12.2, )",
         "resolved": "2.12.2",
         "contentHash": "ZkT7qiJe0Kj0+DTZOZo+xrDy1kNmdsWFQVPIQLNx9ZJ0T9cB2LG7r+Bi60so8/+yg1nkS7QCPadrzsTG4VPKrA=="
-      },
-      "NetEscapades.AspNetCore.SecurityHeaders": {
-        "type": "CentralTransitive",
-        "requested": "[1.3.1, )",
-        "resolved": "1.3.1",
-        "contentHash": "wccVMVSGq9nQ43SjJl1s/VaAo+iWauJYWiZy/Hkvszk2vCQdq7aRn7GL3LTBMsnHuI13JRMfCi9Lk8747+njUg=="
       },
       "Newtonsoft.Json": {
         "type": "CentralTransitive",

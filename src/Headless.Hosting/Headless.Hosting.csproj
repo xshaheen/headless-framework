@@ -17,6 +17,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
     <ProjectReference Include="..\Headless.Extensions\Headless.Extensions.csproj" />
-    <ProjectReference Include="..\Headless.FluentValidation\Headless.FluentValidation.csproj" />
+    <!-- TreatAsUsed: the storage and SMS providers use its validators through this package. -->
+    <ProjectReference Include="..\Headless.FluentValidation\Headless.FluentValidation.csproj" TreatAsUsed="true" />
   </ItemGroup>
 </Project>

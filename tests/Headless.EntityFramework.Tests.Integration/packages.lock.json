@@ -36,15 +36,6 @@
         "resolved": "35.6.5",
         "contentHash": "2FGZn+aAVHjmCgClgmGkTDBVZk0zkLvAKGaxEf5JL6b3i9JbHTE4wnuY4vHCuzlCmJdU6VZjgDfHwmYkQF8VAA=="
       },
-      "DeepCloner": {
-        "type": "Direct",
-        "requested": "[0.10.4, )",
-        "resolved": "0.10.4",
-        "contentHash": "z8ASd9bjXkVjcnIrwUKrxb/bPi/gvG5NX3nv7MHK/5QrlYwbK7N5ZTDNaYXQ5qunaUCMGN0UHdgkNARIEBTEyA==",
-        "dependencies": {
-          "NETStandard.Library": "1.6.1"
-        }
-      },
       "ErrorProne.NET.CoreAnalyzers": {
         "type": "Direct",
         "requested": "[0.1.2, )",
@@ -603,11 +594,6 @@
           "Microsoft.IdentityModel.Logging": "8.22.0"
         }
       },
-      "Microsoft.NETCore.Platforms": {
-        "type": "Transitive",
-        "resolved": "1.1.0",
-        "contentHash": "kz0PEW2lhqygehI/d6XsPCQzD7ff7gUJaVGPVETX611eadGsA3A877GdSlU0LRVMCTH/+P3o2iDTak+S08V2+A=="
-      },
       "Microsoft.SqlServer.Server": {
         "type": "Transitive",
         "resolved": "1.0.0",
@@ -647,14 +633,6 @@
         "type": "Transitive",
         "resolved": "5.0.0",
         "contentHash": "dDoKi0PnDz31yAyETfRntsLArTlVAVzUzCIvvEDsDsucrl33Dl8pIJG06ePTJTI3tGpeyHS9Cq7Foc/s4EeKcg=="
-      },
-      "NETStandard.Library": {
-        "type": "Transitive",
-        "resolved": "1.6.1",
-        "contentHash": "WcSp3+vP+yHNgS8EV5J7pZ9IRpeDuARBPN28by8zqff1wJQXm26PVU8L3/fYLBJVU7BtDyqNVWq2KlCVvSSR4A==",
-        "dependencies": {
-          "Microsoft.NETCore.Platforms": "1.1.0"
-        }
       },
       "Nito.AsyncEx.Context": {
         "type": "Transitive",
@@ -846,13 +824,13 @@
         "type": "Project",
         "dependencies": {
           "Headless.Domain": "[1.0.0, )",
-          "Headless.Hosting": "[1.0.0, )"
+          "Headless.Extensions": "[1.0.0, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )"
         }
       },
       "headless.entityframework": {
         "type": "Project",
         "dependencies": {
-          "EFCore.CheckConstraints": "[10.0.0, )",
           "Headless.AuditLog.Abstractions": "[1.0.0, )",
           "Headless.Context": "[1.0.0, )",
           "Headless.Context.Abstractions": "[1.0.0, )",
@@ -864,8 +842,7 @@
           "Headless.UnitOfWork.EntityFramework": "[1.0.0, )",
           "Microsoft.EntityFrameworkCore": "[10.0.12, )",
           "Microsoft.EntityFrameworkCore.Relational": "[10.0.12, )",
-          "Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore": "[10.0.12, )",
-          "Microsoft.Extensions.Hosting.Abstractions": "[10.0.12, )"
+          "Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore": "[10.0.12, )"
         }
       },
       "headless.entityframework.primitives": {
@@ -896,7 +873,6 @@
           "AwesomeAssertions": "[9.6.0, )",
           "AwesomeAssertions.Json": "[9.0.0, )",
           "Bogus": "[35.6.5, )",
-          "DeepCloner": "[0.10.4, )",
           "Headless.EntityFramework": "[1.0.0, )",
           "Headless.EntityFramework.Testing": "[1.0.0, )",
           "Headless.MultiTenancy": "[1.0.0, )",
@@ -906,7 +882,7 @@
           "Microsoft.Extensions.Hosting": "[10.0.12, )",
           "NSubstitute": "[5.3.0, )",
           "Npgsql.EntityFrameworkCore.PostgreSQL": "[10.0.3, )",
-          "xunit.v3.assert": "[4.0.0, )",
+          "Testcontainers.MsSql": "[4.15.0, )",
           "xunit.v3.extensibility.core": "[4.0.0, )"
         }
       },
@@ -914,9 +890,7 @@
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
-          "Headless.Generator.Primitives.Abstractions": "[1.0.0, )",
           "Headless.Primitives": "[1.0.0, )",
-          "Headless.Urls": "[1.0.0, )",
           "Nito.AsyncEx": "[5.1.2, )",
           "Nito.Disposables": "[2.5.0, )"
         }
@@ -990,32 +964,6 @@
           "Headless.Serializer.Abstractions": "[1.0.0, )"
         }
       },
-      "headless.sql": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.Extensions": "[1.0.0, )",
-          "Headless.Sql.Abstractions": "[1.0.0, )",
-          "Headless.UnitOfWork": "[1.0.0, )",
-          "Nito.AsyncEx": "[5.1.2, )",
-          "OpenTelemetry.Api": "[1.18.0, )"
-        }
-      },
-      "headless.sql.abstractions": {
-        "type": "Project"
-      },
-      "headless.sql.sqlite": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.Hosting": "[1.0.0, )",
-          "Headless.Sql": "[1.0.0, )",
-          "Headless.Sql.Abstractions": "[1.0.0, )",
-          "Microsoft.Data.Sqlite": "[10.0.12, )",
-          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
-          "Microsoft.Extensions.Logging.Abstractions": "[10.0.12, )"
-        }
-      },
       "headless.testing": {
         "type": "Project",
         "dependencies": {
@@ -1035,14 +983,13 @@
       "headless.testing.testcontainers": {
         "type": "Project",
         "dependencies": {
-          "Headless.Testing": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
           "Microsoft.Data.SqlClient": "[7.0.2, )",
           "Testcontainers": "[4.15.0, )",
           "Testcontainers.Azurite": "[4.15.0, )",
           "Testcontainers.Kafka": "[4.15.0, )",
           "Testcontainers.LocalStack": "[4.15.0, )",
           "Testcontainers.Minio": "[4.15.0, )",
-          "Testcontainers.MsSql": "[4.15.0, )",
           "Testcontainers.Nats": "[4.15.0, )",
           "Testcontainers.PostgreSql": "[4.15.0, )",
           "Testcontainers.Pulsar": "[4.15.0, )",
@@ -1078,23 +1025,6 @@
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )"
         }
       },
-      "headless.urls": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )"
-        }
-      },
-      "EFCore.CheckConstraints": {
-        "type": "CentralTransitive",
-        "requested": "[10.0.0, )",
-        "resolved": "10.0.0",
-        "contentHash": "O6dAN5TlBvn0NKZ/At9iE3fMBZ89N83nlqnROSuH6W3EIoYIiXohklsIWfTh2iHomPAC9IKGi34D3FpdNbCXxg==",
-        "dependencies": {
-          "Microsoft.EntityFrameworkCore": "[10.0.0, 11.0.0)",
-          "Microsoft.EntityFrameworkCore.Relational": "[10.0.0, 11.0.0)",
-          "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.0"
-        }
-      },
       "FluentValidation": {
         "type": "CentralTransitive",
         "requested": "[12.1.1, )",
@@ -1127,17 +1057,6 @@
           "Microsoft.SqlServer.Server": "[1.0.0, 2.0.0)",
           "System.Configuration.ConfigurationManager": "9.0.13",
           "System.Security.Cryptography.Pkcs": "9.0.13"
-        }
-      },
-      "Microsoft.Data.Sqlite": {
-        "type": "CentralTransitive",
-        "requested": "[10.0.12, )",
-        "resolved": "10.0.12",
-        "contentHash": "xUq9xUc653ue7ac2rMfCaf8UQN+U3zS8poWYlugycpvJllplMM0Mk7v/+MM0CTlu9zGvbGML4BPH8YWhrUOfGw==",
-        "dependencies": {
-          "Microsoft.Data.Sqlite.Core": "10.0.12",
-          "SQLitePCLRaw.bundle_e_sqlite3": "2.1.12",
-          "SQLitePCLRaw.core": "2.1.12"
         }
       },
       "Microsoft.EntityFrameworkCore": {

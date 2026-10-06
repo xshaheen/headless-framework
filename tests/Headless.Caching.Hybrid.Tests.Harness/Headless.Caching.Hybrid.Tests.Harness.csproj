@@ -9,6 +9,7 @@
     <ProjectReference Include="..\..\src\Headless.Caching.Hybrid\Headless.Caching.Hybrid.csproj" />
     <ProjectReference Include="..\..\src\Headless.Caching.InMemory\Headless.Caching.InMemory.csproj" />
     <ProjectReference Include="..\..\src\Headless.Messaging.Bus.Abstractions\Headless.Messaging.Bus.Abstractions.csproj" />
-    <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
+    <!-- TreatAsUsed: supplies the xunit types the harness uses. -->
+    <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" TreatAsUsed="true" />
   </ItemGroup>
 </Project>

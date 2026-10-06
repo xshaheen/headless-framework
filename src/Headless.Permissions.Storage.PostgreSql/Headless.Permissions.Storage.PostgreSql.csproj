@@ -6,9 +6,6 @@
     <RootNamespace>Headless.Permissions.PostgreSql</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Npgsql" />
-  </ItemGroup>
-  <ItemGroup>
     <ProjectReference Include="..\Headless.Permissions\Headless.Permissions.csproj" />
     <ProjectReference Include="..\Headless.Sql.PostgreSql\Headless.Sql.PostgreSql.csproj" />
   </ItemGroup>

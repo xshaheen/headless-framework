@@ -11,6 +11,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
     <ProjectReference Include="..\Headless.Http.Resilience\Headless.Http.Resilience.csproj" />
+    <ProjectReference Include="..\Headless.Urls\Headless.Urls.csproj" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Http.Resilience" />

@@ -12,6 +12,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.Sms.Abstractions\Headless.Sms.Abstractions.csproj" />
-    <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
+    <!-- TreatAsUsed: supplies the xunit types the harness uses. -->
+    <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" TreatAsUsed="true" />
   </ItemGroup>
 </Project>

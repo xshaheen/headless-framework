@@ -46,15 +46,6 @@
         "resolved": "35.6.5",
         "contentHash": "2FGZn+aAVHjmCgClgmGkTDBVZk0zkLvAKGaxEf5JL6b3i9JbHTE4wnuY4vHCuzlCmJdU6VZjgDfHwmYkQF8VAA=="
       },
-      "DeepCloner": {
-        "type": "Direct",
-        "requested": "[0.10.4, )",
-        "resolved": "0.10.4",
-        "contentHash": "z8ASd9bjXkVjcnIrwUKrxb/bPi/gvG5NX3nv7MHK/5QrlYwbK7N5ZTDNaYXQ5qunaUCMGN0UHdgkNARIEBTEyA==",
-        "dependencies": {
-          "NETStandard.Library": "1.6.1"
-        }
-      },
       "ErrorProne.NET.CoreAnalyzers": {
         "type": "Direct",
         "requested": "[0.1.2, )",
@@ -1082,11 +1073,6 @@
           "Microsoft.Extensions.Primitives": "8.0.0"
         }
       },
-      "Microsoft.NETCore.Platforms": {
-        "type": "Transitive",
-        "resolved": "1.1.0",
-        "contentHash": "kz0PEW2lhqygehI/d6XsPCQzD7ff7gUJaVGPVETX611eadGsA3A877GdSlU0LRVMCTH/+P3o2iDTak+S08V2+A=="
-      },
       "Microsoft.Testing.Extensions.Telemetry": {
         "type": "Transitive",
         "resolved": "2.3.3",
@@ -1126,14 +1112,6 @@
         "type": "Transitive",
         "resolved": "3.5.0",
         "contentHash": "FnASiAaTGSmB4SaSroIwnK4ph9noFIXZpPOMezDqWw5S/TNakzSnawPeM7u0Auq1/EqJXeqG4s6UjfrGBH33Ow=="
-      },
-      "NETStandard.Library": {
-        "type": "Transitive",
-        "resolved": "1.6.1",
-        "contentHash": "WcSp3+vP+yHNgS8EV5J7pZ9IRpeDuARBPN28by8zqff1wJQXm26PVU8L3/fYLBJVU7BtDyqNVWq2KlCVvSSR4A==",
-        "dependencies": {
-          "Microsoft.NETCore.Platforms": "1.1.0"
-        }
       },
       "Nito.AsyncEx.Context": {
         "type": "Transitive",
@@ -1486,9 +1464,7 @@
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
-          "Headless.Generator.Primitives.Abstractions": "[1.0.0, )",
           "Headless.Primitives": "[1.0.0, )",
-          "Headless.Urls": "[1.0.0, )",
           "Nito.AsyncEx": "[5.1.2, )",
           "Nito.Disposables": "[2.5.0, )"
         }
@@ -1539,6 +1515,7 @@
         "dependencies": {
           "Headless.Hosting": "[1.0.0, )",
           "Headless.Http.Resilience": "[1.0.0, )",
+          "Headless.Urls": "[1.0.0, )",
           "Microsoft.Extensions.Http.Resilience": "[10.10.0, )"
         }
       },
@@ -1547,6 +1524,7 @@
         "dependencies": {
           "Headless.Hosting": "[1.0.0, )",
           "Headless.Http.Resilience": "[1.0.0, )",
+          "Headless.Urls": "[1.0.0, )",
           "Microsoft.Extensions.Http.Resilience": "[10.10.0, )"
         }
       },

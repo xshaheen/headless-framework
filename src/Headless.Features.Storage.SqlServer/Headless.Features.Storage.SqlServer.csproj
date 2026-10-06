@@ -6,9 +6,6 @@
     <RootNamespace>Headless.Features.SqlServer</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Microsoft.Data.SqlClient" />
-  </ItemGroup>
-  <ItemGroup>
     <ProjectReference Include="..\Headless.Features\Headless.Features.csproj" />
     <ProjectReference Include="..\Headless.Sql.SqlServer\Headless.Sql.SqlServer.csproj" />
   </ItemGroup>
