@@ -988,6 +988,10 @@ const headersWithoutReadable = computed(() => {
 const activeChart = ref('line') // Default to line chart (Time Series Analysis)
 
 // Helper functions for enhanced functionality
+// The chart button toggles the charts between this job and all jobs, so its name says which one a click shows.
+const occurrenceChartLabel = (id: string) =>
+  selectedCronJobGraphData.value === id ? 'Show chart for all cron jobs' : 'Show occurrence chart'
+
 const resetRange = () => {
   range.value = [-3, 3]
 }
@@ -1024,6 +1028,8 @@ const refreshData = async () => {
               variant="elevated"
               density="compact"
               class="chart-btn-vertical"
+              aria-label="Show time chart"
+              :aria-pressed="activeChart === 'line' ? 'true' : 'false'"
               @click="activeChart = 'line'"
             >
               <v-icon class="mb-1 chart-icon">mdi-chart-line</v-icon>
@@ -1034,6 +1040,8 @@ const refreshData = async () => {
               variant="elevated"
               density="compact"
               class="chart-btn-vertical"
+              aria-label="Show status chart"
+              :aria-pressed="activeChart === 'pie' ? 'true' : 'false'"
               @click="activeChart = 'pie'"
             >
               <v-icon class="mb-1 chart-icon">mdi-chart-pie</v-icon>
@@ -1058,6 +1066,7 @@ const refreshData = async () => {
                   color="primary"
                   @click="resetRange"
                   class="reset-btn"
+                  aria-label="Reset chart range"
                   density="compact"
                 >
                   <v-icon size="x-small">mdi-refresh</v-icon>
@@ -1112,6 +1121,7 @@ const refreshData = async () => {
                 color="primary"
                 @click="getTimeJobsGraphDataAndParseToGraph"
                 class="refresh-chart-btn"
+                aria-label="Refresh status chart"
               >
                 <v-icon size="small">mdi-refresh</v-icon>
               </v-btn>
@@ -1184,6 +1194,7 @@ const refreshData = async () => {
                 color="primary"
                 @click="refreshData"
                 class="refresh-btn utility-btn"
+                aria-label="Refresh"
               >
                 <v-icon>mdi-refresh</v-icon>
               </v-btn>
@@ -1239,13 +1250,15 @@ const refreshData = async () => {
                         @click="ShowCronJobOccurrenceGraphData(item.function, item.id, -3, 3)"
                         class="modern-action-btn chart-btn"
                         :class="{ active: selectedCronJobGraphData === item.id }"
+                        :aria-label="occurrenceChartLabel(item.id)"
+                        :aria-pressed="selectedCronJobGraphData === item.id ? 'true' : 'false'"
                         :disabled="chartLoading"
                       >
                         <v-icon v-if="chartLoading" size="16" class="loading-spin">mdi-loading</v-icon>
                         <v-icon v-else size="16">mdi-chart-areaspline</v-icon>
                       </button>
                     </template>
-                    <span>View Occurrences</span>
+                    <span>{{ occurrenceChartLabel(item.id) }}</span>
                   </v-tooltip>
                 </div>
 
@@ -1265,6 +1278,7 @@ const refreshData = async () => {
                           }
                         "
                         class="modern-action-btn occurrences-btn"
+                        aria-label="View occurrences"
                       >
                         <v-icon size="16">mdi-folder-open</v-icon>
                       </button>
@@ -1281,6 +1295,7 @@ const refreshData = async () => {
                         v-bind="props"
                         @click="crudCronJobDialog.open({ ...item, isFromDuplicate: false })"
                         class="modern-action-btn edit-btn"
+                        aria-label="Edit cron job"
                       >
                         <v-icon size="16">mdi-pencil</v-icon>
                       </button>
@@ -1297,6 +1312,7 @@ const refreshData = async () => {
                         v-bind="props"
                         @click="RunCronJobOnDemand(item.id)"
                         class="modern-action-btn run-btn"
+                        aria-label="Run now"
                       >
                         <v-icon size="16">mdi-play-outline</v-icon>
                       </button>
@@ -1321,6 +1337,7 @@ const refreshData = async () => {
                           })
                         "
                         class="modern-action-btn delete-btn"
+                        aria-label="Delete cron job"
                       >
                         <v-icon size="16">mdi-trash-can</v-icon>
                       </button>

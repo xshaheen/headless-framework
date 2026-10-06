@@ -34,6 +34,50 @@ export interface LoginCredentials {
   password?: string;
   apiKey?: string;
   hostAccessKey?: string;
+  customCredential?: string;
+}
+
+const BASIC_AUTH_KEY = 'jobs_basic_auth';
+const API_KEY_KEY = 'jobs_api_key';
+const HOST_ACCESS_KEY_KEY = 'jobs_host_access_key';
+// Custom mode hands the Authorization header value to the host's validator untouched, so the credential is stored
+// and sent verbatim with no scheme prefix.
+const CUSTOM_CREDENTIAL_KEY = 'jobs_custom_credential';
+const SIGNED_IN_AT_KEY = 'jobs_signed_in_at';
+
+export const SESSION_EXPIRED_MESSAGE = 'Session expired. Please log in again.';
+
+const CREDENTIAL_KEYS = [BASIC_AUTH_KEY, API_KEY_KEY, HOST_ACCESS_KEY_KEY, CUSTOM_CREDENTIAL_KEY];
+
+const hasAnyStoredCredential = (): boolean => CREDENTIAL_KEYS.some((key) => !!localStorage.getItem(key));
+
+/**
+ * Whether the stored sign-in is older than the server's session timeout (window.JobsConfig.auth.sessionTimeout, in
+ * minutes). Reads the injected config directly so it works before the auth service is initialized, which is when
+ * the first API requests can fire. Mode none, disabled auth, and a non-positive timeout never expire. Stored
+ * credentials without a readable sign-in time count as expired, so a session of unknown age is not trusted.
+ */
+export function isSessionExpired(now: number = Date.now()): boolean {
+  const auth = window.JobsConfig?.auth;
+  if (!auth || !auth.enabled || auth.mode === 'none') {
+    return false;
+  }
+
+  const timeoutMinutes = Number(auth.sessionTimeout);
+  if (!Number.isFinite(timeoutMinutes) || timeoutMinutes <= 0) {
+    return false;
+  }
+
+  if (!hasAnyStoredCredential()) {
+    return false;
+  }
+
+  const signedInAt = Number(localStorage.getItem(SIGNED_IN_AT_KEY));
+  if (!Number.isFinite(signedInAt) || signedInAt <= 0) {
+    return true;
+  }
+
+  return now - signedInAt >= timeoutMinutes * 60_000;
 }
 
 class AuthService {
@@ -128,6 +172,20 @@ class AuthService {
   }
 
   /**
+   * Clears stored credentials when the session has outlived the configured timeout.
+   * @returns true when the session was expired and cleared.
+   */
+  expireStaleSession(now: number = Date.now()): boolean {
+    if (!isSessionExpired(now)) {
+      return false;
+    }
+
+    this.clearCredentials();
+    this.status = { authenticated: false, message: SESSION_EXPIRED_MESSAGE };
+    return true;
+  }
+
+  /**
    * Get current authentication status
    */
   getStatus(): AuthStatus {
@@ -168,6 +226,9 @@ class AuthService {
       case 'host':
         const hostAccessKey = localStorage.getItem('jobs_host_access_key');
         return hostAccessKey || null;
+
+      case 'custom':
+        return localStorage.getItem(CUSTOM_CREDENTIAL_KEY) || null;
       
       default:
         return null;
@@ -193,6 +254,9 @@ class AuthService {
       case 'host':
         const hostToken = localStorage.getItem('jobs_host_access_key');
         return hostToken || null;
+
+      case 'custom':
+        return localStorage.getItem(CUSTOM_CREDENTIAL_KEY) || null;
       
       default:
         return null;
@@ -250,9 +314,7 @@ class AuthService {
   }
 
   private hasStoredCredentials(): boolean {
-    return !!(localStorage.getItem('jobs_basic_auth') || 
-              localStorage.getItem('jobs_api_key') ||
-              localStorage.getItem('jobs_host_access_key'));
+    return hasAnyStoredCredential();
   }
 
   private getStoredUsername(): string | null {
@@ -290,13 +352,25 @@ class AuthService {
           localStorage.setItem('jobs_host_access_key', credentials.hostAccessKey);
         }
         break;
+
+      case 'custom':
+        if (credentials.customCredential) {
+          localStorage.setItem(CUSTOM_CREDENTIAL_KEY, credentials.customCredential);
+        }
+        break;
+    }
+
+    // The session timeout counts from here, the moment the credential is stored.
+    if (hasAnyStoredCredential()) {
+      localStorage.setItem(SIGNED_IN_AT_KEY, String(Date.now()));
     }
   }
 
   private clearCredentials(): void {
-    localStorage.removeItem('jobs_basic_auth');
-    localStorage.removeItem('jobs_api_key');
-    localStorage.removeItem('jobs_host_access_key');
+    for (const key of CREDENTIAL_KEYS) {
+      localStorage.removeItem(key);
+    }
+    localStorage.removeItem(SIGNED_IN_AT_KEY);
   }
 }
 

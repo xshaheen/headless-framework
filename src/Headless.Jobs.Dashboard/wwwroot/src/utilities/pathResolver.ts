@@ -129,11 +129,11 @@ export function requiresAuthentication(): boolean {
   return config?.auth?.enabled || false;
 }
 
-export function getAuthMode(): 'basic' | 'apikey' | 'host' | 'none' {
+export function getAuthMode(): 'basic' | 'apikey' | 'host' | 'custom' | 'none' {
   const config = window.JobsConfig;
   if (!config?.auth) return 'none';
   
-  return config.auth.mode as 'basic' | 'apikey' | 'host' | 'none';
+  return config.auth.mode as 'basic' | 'apikey' | 'host' | 'custom' | 'none';
 }
 
 /**
@@ -141,7 +141,7 @@ export function getAuthMode(): 'basic' | 'apikey' | 'host' | 'none' {
  * The fragment is removed before the token is returned so it does not remain in browser history.
  */
 export function consumeHostAccessTokenFromFragment(
-  authMode: 'basic' | 'apikey' | 'host' | 'none' = getAuthMode(),
+  authMode: 'basic' | 'apikey' | 'host' | 'custom' | 'none' = getAuthMode(),
 ): string | null {
   const fragment = new URLSearchParams(window.location.hash.slice(1));
 

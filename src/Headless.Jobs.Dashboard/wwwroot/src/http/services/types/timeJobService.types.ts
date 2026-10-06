@@ -69,6 +69,6 @@ export class AddChainJobsRequest {
   retries!: number;
   request!: string | null; // string that gets converted to bytes by custom converter, or null if not set
   intervals?: number[];
-  runCondition?: number;
+  runCondition?: number | null;
   children?: AddChainJobsRequest[];
 }

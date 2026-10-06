@@ -165,6 +165,50 @@
         </v-form>
       </div>
 
+      <!-- Custom Auth Form: the credential is sent verbatim as the Authorization header to the host's validator -->
+      <v-form
+        v-else-if="authMode === 'custom'"
+        ref="form"
+        @submit.prevent="handleLogin"
+        class="login-form custom-auth-form"
+      >
+        <v-text-field
+          v-model="authStore.credentials.customCredential"
+          :type="showPassword ? 'text' : 'password'"
+          label="Credential"
+          placeholder="Enter your credential"
+          prepend-inner-icon="mdi-key-variant"
+          :append-inner-icon="showPassword ? 'mdi-eye' : 'mdi-eye-off'"
+          :rules="rules.customCredential"
+          variant="outlined"
+          class="mb-4"
+          :disabled="authStore.isLoading"
+          autocomplete="current-password"
+          @click:append-inner="showPassword = !showPassword"
+          @input="clearError"
+          autofocus
+        />
+
+        <v-btn
+          type="submit"
+          color="primary"
+          size="large"
+          block
+          :loading="authStore.isLoading"
+          :disabled="!isFormValid"
+          class="login-btn"
+          elevation="0"
+        >
+          <v-icon start>mdi-shield-key</v-icon>
+          {{ authStore.isLoading ? 'Authenticating...' : 'Authenticate' }}
+        </v-btn>
+
+        <div class="auth-help-text">
+          <v-icon size="small" class="mr-1">mdi-information-outline</v-icon>
+          Enter the credential your administrator gave you, exactly as issued
+        </div>
+      </v-form>
+
       <!-- No Auth Message -->
       <div v-else class="no-auth-message">
         <v-icon size="48" color="success" class="mb-3">mdi-check-circle</v-icon>
@@ -212,6 +256,9 @@ const rules = {
   hostAccessKey: [
     (v: string) => !!v || 'Access key is required',
     (v: string) => v.length >= 10 || 'Access key must be at least 10 characters'
+  ],
+  customCredential: [
+    (v: string) => !!v || 'Credential is required'
   ]
 }
 
@@ -224,6 +271,8 @@ const isFormValid = computed(() => {
     return (authStore.credentials.apiKey?.length || 0) >= 10
   } else if (authMode.value === 'host') {
     return (authStore.credentials.hostAccessKey?.length || 0) >= 10
+  } else if (authMode.value === 'custom') {
+    return (authStore.credentials.customCredential?.length || 0) >= 1
   }
   return false
 })

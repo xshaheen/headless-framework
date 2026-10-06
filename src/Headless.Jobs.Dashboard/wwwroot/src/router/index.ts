@@ -63,6 +63,12 @@ router.beforeEach(async (to, from, next) => {
     }
   }
   
+  // Covers app start (the first navigation) and every later route change.
+  if (authStore.enforceSessionTimeout()) {
+    next({ name: 'Login', query: { redirect: to.fullPath } });
+    return;
+  }
+
   // Check authentication status
   const isAuthenticated = authStore.isLoggedIn;
   

@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia';
 import { ref, computed, reactive } from 'vue';
-import { authService, type AuthStatus, type LoginCredentials } from '@/services/auth';
+import { authService, SESSION_EXPIRED_MESSAGE, type AuthStatus, type LoginCredentials } from '@/services/auth';
 
 export const useAuthStore = defineStore('auth', () => {
   // State
@@ -19,7 +19,8 @@ export const useAuthStore = defineStore('auth', () => {
     username: '',
     password: '',
     apiKey: '',
-    hostAccessKey: ''
+    hostAccessKey: '',
+    customCredential: ''
   });
 
   // Computed properties
@@ -73,6 +74,7 @@ export const useAuthStore = defineStore('auth', () => {
         credentials.username = '';
         credentials.password = '';
         credentials.apiKey = '';
+        credentials.customCredential = '';
         
         return true;
       } else {
@@ -106,6 +108,7 @@ export const useAuthStore = defineStore('auth', () => {
       credentials.username = '';
       credentials.password = '';
       credentials.apiKey = '';
+      credentials.customCredential = '';
       errorMessage.value = '';
       
       console.log('✅ Logout successful');
@@ -132,25 +135,44 @@ export const useAuthStore = defineStore('auth', () => {
     }
   };
 
+  // Signs the user out and leaves the expiry message for the login page to show.
+  const markSessionExpired = () => {
+    authStatus.value = {
+      authenticated: false,
+      username: '',
+      message: SESSION_EXPIRED_MESSAGE
+    };
+
+    // Clear form
+    credentials.username = '';
+    credentials.password = '';
+    credentials.apiKey = '';
+    credentials.customCredential = '';
+    errorMessage.value = SESSION_EXPIRED_MESSAGE;
+
+    // Force reactivity update
+    forceUpdate.value++;
+  };
+
   const handle401Error = () => {
     console.log('🚨 Handling 401 error - clearing credentials');
     
     // Clear credentials and status
     authService.logout();
-    authStatus.value = {
-      authenticated: false,
-      username: '',
-      message: 'Session expired. Please log in again.'
-    };
-    
-    // Clear form
-    credentials.username = '';
-    credentials.password = '';
-    credentials.apiKey = '';
-    errorMessage.value = 'Session expired. Please log in again.';
-    
-    // Force reactivity update
-    forceUpdate.value++;
+    markSessionExpired();
+  };
+
+  /**
+   * Ends the session when the stored sign-in has outlived the configured session timeout.
+   * @returns true when the session expired; the caller sends the user to the login page.
+   */
+  const enforceSessionTimeout = (): boolean => {
+    if (!authService.expireStaleSession()) {
+      return false;
+    }
+
+    markSessionExpired();
+    return true;
   };
 
   const clearError = () => {
@@ -175,6 +197,7 @@ export const useAuthStore = defineStore('auth', () => {
     logout,
     revalidate,
     handle401Error,
+    enforceSessionTimeout,
     clearError
   };
 });

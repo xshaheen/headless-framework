@@ -118,6 +118,21 @@ export function formatTime(time: number, inputInMilliseconds = false): string {
         : days + 'd ' + remainingHours + 'h';
 }
 
+/**
+ * Formats a local wall-clock date and time without a zone suffix. The server reads it as "unspecified" and interprets
+ * it in the time zone sent alongside it (the timeZoneId query parameter).
+ */
+export function formatLocalDateTimeWithoutZ(date: Date): string {
+    const yyyy = date.getFullYear()
+    const MM = String(date.getMonth() + 1).padStart(2, '0')
+    const dd = String(date.getDate()).padStart(2, '0')
+    const hh = String(date.getHours()).padStart(2, '0')
+    const mm = String(date.getMinutes()).padStart(2, '0')
+    const ss = String(date.getSeconds()).padStart(2, '0')
+
+    return `${yyyy}-${MM}-${dd}T${hh}:${mm}:${ss}`
+}
+
 export function formatDateToUtc(date: string): string {
     // Parse string manually as local time
     const [year, month, day, hour, minute] = date.split(/[-T:]/).map(Number)
