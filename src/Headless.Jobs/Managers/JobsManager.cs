@@ -634,6 +634,12 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             _jobsHostScheduler.Restart();
         }
 
+        if (affectedRows > 0)
+        {
+            await _NotifyRemovedAsync([id], "Cron job", notificationHubSender.RemoveCronJobNotifyAsync)
+                .ConfigureAwait(false);
+        }
+
         return new JobResult<TCronJob>(affectedRows);
     }
 
@@ -654,6 +660,12 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         if (affectedRows > 0 && _executionContext.Functions.Any(x => x.JobId == id))
         {
             _jobsHostScheduler.Restart();
+        }
+
+        if (affectedRows > 0)
+        {
+            await _NotifyRemovedAsync([id], "Time job", notificationHubSender.RemoveTimeJobNotifyAsync)
+                .ConfigureAwait(false);
         }
 
         return new JobResult<TTimeJob>(affectedRows);
@@ -1629,6 +1641,12 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             _jobsHostScheduler.Restart();
         }
 
+        if (affectedRows > 0)
+        {
+            await _NotifyRemovedAsync(ids, "Time job", notificationHubSender.RemoveTimeJobNotifyAsync)
+                .ConfigureAwait(false);
+        }
+
         return new JobResult<TTimeJob>(affectedRows);
     }
 
@@ -1646,12 +1664,50 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             _jobsHostScheduler.Restart();
         }
 
+        if (affectedRows > 0)
+        {
+            await _NotifyRemovedAsync(ids, "Cron job", notificationHubSender.RemoveCronJobNotifyAsync)
+                .ConfigureAwait(false);
+        }
+
         return new JobResult<TCronJob>(affectedRows);
+    }
+
+    // Tells open dashboards a delete committed, so every client drops the rows instead of showing them until its next
+    // reload. The delete is already durable: a failed notification is logged and never turns it into an error.
+    // RemoveTimeJobsAsync and RemoveCronJobsAsync report a count, not ids, so every requested id is announced; a
+    // client holding none of them just refreshes.
+    private async Task _NotifyRemovedAsync(IReadOnlyList<Guid> ids, string kind, Func<Guid, Task> notify)
+    {
+        foreach (var id in ids)
+        {
+            try
+            {
+                await notify(id).ConfigureAwait(false);
+            }
+            catch (Exception exception)
+            {
+                _logger.LogRemovalNotificationFailed(exception, kind, id);
+            }
+        }
     }
 }
 
 internal static partial class JobsManagerTenancyLog
 {
+    [LoggerMessage(
+        EventId = 3239,
+        EventName = "JobRemovalNotificationFailed",
+        Level = LogLevel.Warning,
+        Message = "{Kind} {JobId} was deleted, but the dashboard removal notification failed."
+    )]
+    public static partial void LogRemovalNotificationFailed(
+        this ILogger logger,
+        Exception exception,
+        string kind,
+        Guid jobId
+    );
+
     [LoggerMessage(
         EventId = 3235,
         EventName = "IdempotentEnqueueHit",

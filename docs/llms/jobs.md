@@ -1356,6 +1356,7 @@ Auth detection is automatic: explicit `WithNoAuth()` → public; basic auth → 
 
 - Mounts dashboard HTTP API and SignalR hub under `SetBasePath` path via `IStartupFilter` (no explicit `app.Use…` call needed).
 - Subscribes to `Headless.Coordination` membership events for live-node push updates.
+- A committed time-job or cron-job delete, single or batch, pushes `RemoveTimeJobNotification` or `RemoveCronJobNotification` for each requested id, so every open dashboard drops the rows; the dashboard that issued the delete also reloads its list itself. A failed notification is logged (event 3239) and never fails the delete.
 - Serves embedded frontend SPA assets; requires Node 22 on `PATH` when building from source (build target `make dashboards`).
 - Exposes mutating operational endpoints; configure authentication and CORS before exposing the dashboard outside an isolated development environment.
 

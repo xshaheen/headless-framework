@@ -106,13 +106,10 @@ const onSubmitConfirmDialog = async () => {
       return
     }
 
-    // Immediately remove from UI for better UX
-    // Reload page after deletion
-
-    // Perform the actual deletion
     await deleteCronJob.requestAsync(deletedId)
-    
-    // Update charts to reflect the deletion
+
+    // Reload here rather than waiting for the hub's removal notification, which a dropped connection never delivers.
+    await loadPageData()
     await updateChartsAfterDeletion(deletedId)
     
   } catch (error: unknown) {
