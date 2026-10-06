@@ -55,6 +55,11 @@ QUALITY_FORMAT_ARGS = --no-restore --verify-no-changes --severity "$(QUALITY_SEV
 # for sites the report lists as info. QUALITY_DIAGNOSTICS is what bounds the blast radius, not severity.
 QUALITY_FIX_SEVERITY ?= hidden
 QUALITY_FIX_ARGS = --no-restore --severity "$(QUALITY_FIX_SEVERITY)" -v minimal --diagnostics $(QUALITY_DIAGNOSTICS)
+# HeadlessReferenceTrimmer turns on ReferenceTrimmer and, through Directory.Build.props, builds under artifacts/reftrim
+# with its own lock file, so the run leaves the regular outputs and the committed packages.lock.json files untouched.
+REFERENCES_LOG ?= $(ARTIFACTS_DIR)/quality-references.log
+REFERENCES_REPORT ?= $(ARTIFACTS_DIR)/quality-references.txt
+REFERENCES_BUILD_ARGS = --configuration "$(CONFIGURATION)" -v:q -nologo /clp:ErrorsOnly -p:HeadlessReferenceTrimmer=true "-flp:warningsonly;logfile=$(REFERENCES_LOG)" $(MSBUILD_ARGS)
 QUALITY_BUILD_ARGS = --configuration "$(CONFIGURATION)" --no-restore --no-incremental -v:q -nologo /clp:NoSummary $(MSBUILD_ARGS)
 TEST_MAX_PARALLEL ?= 3
 # Local unit-test runs only. The full unit suite (128 modules, 15k tests) measured 142 s at 3, 91 s at 6
@@ -459,6 +464,16 @@ quality-analyzers-affected: ## Analyze the projects changed vs AFFECTED_BASE; wr
 	$(AFFECTED_ANALYZER_STAGE) \
 	$(PROOF) summarize --dir "$$run" > /dev/null || status=1; \
 	$(PROOF_REPORT) "$$run"; exit $$status
+
+.PHONY: quality-references
+quality-references: ## Report package and project references nothing uses (ReferenceTrimmer) in PROJECT, else the solution; exits 3 on findings.
+	@mkdir -p "$(ARTIFACTS_DIR)"; target="$(if $(PROJECT),$(PROJECT),$(SOLUTION))"; \
+	$(DOTNET) build "$$target" $(REFERENCES_BUILD_ARGS) || { echo "quality-references: the build failed, so no reference was analyzed. Run: make build" >&2; exit 1; }; \
+	ROOT="$(CURDIR)/" perl -ne 'if (/warning (RT000[0-3]): (.*) \[(.*)\]$$/) { my ($$code, $$what, $$project) = ($$1, $$2, $$3); $$project =~ s/^\Q$$ENV{ROOT}\E//; print "$$code\t$$project\t$$what\n" }' "$(REFERENCES_LOG)" | sort -u > "$(REFERENCES_REPORT)"; \
+	count=$$(wc -l < "$(REFERENCES_REPORT)" | tr -d ' '); \
+	if [ "$$count" = 0 ]; then printf '\033[32m[quality-references]\033[0m no removable reference in %s.\n' "$$target"; exit 0; fi; \
+	column -t -s "$$(printf '\t')" "$(REFERENCES_REPORT)"; \
+	printf '\033[33m[quality-references]\033[0m %s finding(s); remove each reference, or mark a deliberate one TreatAsUsed="true" with the reason. Report: %s\n' "$$count" "$(REFERENCES_REPORT)"; exit 3
 
 .PHONY: quality-fix
 quality-fix: ## Apply analyzer fixes for QUALITY_DIAGNOSTICS, then reformat. Rebuild afterwards to verify.

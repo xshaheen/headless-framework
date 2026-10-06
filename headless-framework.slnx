@@ -11,14 +11,17 @@
     <Folder Name="/Api/">
         <Project Path="demo\Headless.Api.Demo\Headless.Api.Demo.csproj" />
         <Project Path="src\Headless.Api.Abstractions\Headless.Api.Abstractions.csproj" />
-        <Project Path="src\Headless.Api.DataProtection\Headless.Api.DataProtection.csproj" />
+        <Project Path="src\Headless.DataProtection.Blobs\Headless.DataProtection.Blobs.csproj" />
         <Project Path="src\Headless.Api.FluentValidation\Headless.Api.FluentValidation.csproj" />
         <Project Path="src\Headless.Api.Logging.Serilog\Headless.Api.Logging.Serilog.csproj" />
         <Project Path="src\Headless.Api.MinimalApi\Headless.Api.MinimalApi.csproj" />
         <Project Path="src\Headless.Api.Mvc\Headless.Api.Mvc.csproj" />
         <Project Path="src\Headless.Api\Headless.Api.csproj" />
         <Project Path="src\Headless.Api.Idempotency\Headless.Api.Idempotency.csproj" />
+        <Project Path="src\Headless.Api.Identity\Headless.Api.Identity.csproj" />
+        <Project Path="src\Headless.Api.Jwt\Headless.Api.Jwt.csproj" />
         <Project Path="src\Headless.Api.ServiceDefaults\Headless.Api.ServiceDefaults.csproj" />
+        <Project Path="src\Headless.Api.UserAgent\Headless.Api.UserAgent.csproj" />
     </Folder>
     <Folder Name="/Api/Tests/">
         <Project Path="benchmarks/Headless.Api.Idempotency.Benchmarks/Headless.Api.Idempotency.Benchmarks.csproj" />
@@ -26,8 +29,8 @@
         <Project Path="tests/Headless.Api.MinimalApi.Tests.Unit/Headless.Api.MinimalApi.Tests.Unit.csproj" />
         <Project Path="tests/Headless.Api.Mvc.Tests.Unit/Headless.Api.Mvc.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Api.Composition.Tests.Unit\Headless.Api.Composition.Tests.Unit.csproj" />
-        <Project Path="tests\Headless.Api.DataProtection.Tests.Integration\Headless.Api.DataProtection.Tests.Integration.csproj" />
-        <Project Path="tests\Headless.Api.DataProtection.Tests.Unit\Headless.Api.DataProtection.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.DataProtection.Blobs.Tests.Integration\Headless.DataProtection.Blobs.Tests.Integration.csproj" />
+        <Project Path="tests\Headless.DataProtection.Blobs.Tests.Unit\Headless.DataProtection.Blobs.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Api.FluentValidation.Tests.Unit\Headless.Api.FluentValidation.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Api.Idempotency.Tests.Integration\Headless.Api.Idempotency.Tests.Integration.csproj" />
         <Project Path="tests\Headless.Api.Idempotency.Tests.Unit\Headless.Api.Idempotency.Tests.Unit.csproj" />
@@ -327,7 +330,7 @@
         <Project Path="src\Headless.Context.Abstractions\Headless.Context.Abstractions.csproj" />
         <Project Path="src/Headless.FluentValidation/Headless.FluentValidation.csproj" />
         <Project Path="src\Headless.Checks\Headless.Checks.csproj" />
-        <Project Path="src\Headless.Domain.LocalEventBus\Headless.Domain.LocalEventBus.csproj" />
+        <Project Path="src\Headless.Domain.EventDispatcher\Headless.Domain.EventDispatcher.csproj" />
         <Project Path="src\Headless.Domain\Headless.Domain.csproj" />
         <Project Path="src\Headless.Hosting\Headless.Hosting.csproj" />
         <Project Path="src\Headless.Security.Abstractions\Headless.Security.Abstractions.csproj" />
@@ -343,7 +346,7 @@
         <Project Path="tests\Headless.Http.Resilience.Tests.Unit\Headless.Http.Resilience.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Checks.Tests.Unit\Headless.Checks.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Context.Tests.Unit\Headless.Context.Tests.Unit.csproj" />
-        <Project Path="tests\Headless.Domain.LocalEventBus.Tests.Unit\Headless.Domain.LocalEventBus.Tests.Unit.csproj" />
+        <Project Path="tests\Headless.Domain.EventDispatcher.Tests.Unit\Headless.Domain.EventDispatcher.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Domain.Tests.Unit\Headless.Domain.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Extensions.Tests.Unit\Headless.Extensions.Tests.Unit.csproj" />
         <Project Path="tests\Headless.Hosting.Tests.Unit\Headless.Hosting.Tests.Unit.csproj" />
@@ -609,6 +612,8 @@
     </Folder>
     <Folder Name="/UnitOfWork/">
         <Project Path="src/Headless.UnitOfWork.Abstractions/Headless.UnitOfWork.Abstractions.csproj" />
+        <Project Path="src/Headless.UnitOfWork.Analyzers/Headless.UnitOfWork.Analyzers.csproj" />
+        <Project Path="src/Headless.UnitOfWork.Analyzers.CodeFixes/Headless.UnitOfWork.Analyzers.CodeFixes.csproj" />
         <Project Path="src/Headless.UnitOfWork/Headless.UnitOfWork.csproj" />
         <Project Path="src/Headless.UnitOfWork.EntityFramework/Headless.UnitOfWork.EntityFramework.csproj" />
         <Project Path="src/Headless.UnitOfWork.PostgreSql/Headless.UnitOfWork.PostgreSql.csproj" />
@@ -616,6 +621,7 @@
         <Project Path="src/Headless.UnitOfWork.SqlServer/Headless.UnitOfWork.SqlServer.csproj" />
     </Folder>
     <Folder Name="/UnitOfWork/Tests/">
+        <Project Path="tests/Headless.UnitOfWork.Analyzers.Tests.Unit/Headless.UnitOfWork.Analyzers.Tests.Unit.csproj" />
         <Project Path="tests/Headless.UnitOfWork.EntityFramework.Tests.Unit/Headless.UnitOfWork.EntityFramework.Tests.Unit.csproj" />
         <Project Path="tests/Headless.UnitOfWork.PostgreSql.Tests.Integration/Headless.UnitOfWork.PostgreSql.Tests.Integration.csproj" />
         <Project Path="tests/Headless.UnitOfWork.PostgreSql.Tests.Unit/Headless.UnitOfWork.PostgreSql.Tests.Unit.csproj" />

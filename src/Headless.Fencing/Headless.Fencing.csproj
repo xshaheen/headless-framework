@@ -23,7 +23,6 @@
     <ProjectReference Include="..\Headless.Fencing.Abstractions\Headless.Fencing.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />
     <ProjectReference Include="..\Headless.MultiTenancy.Abstractions\Headless.MultiTenancy.Abstractions.csproj" />
-    <ProjectReference Include="..\Headless.Extensions\Headless.Extensions.csproj" />
     <ProjectReference Include="..\Headless.Sql.Abstractions\Headless.Sql.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Sql\Headless.Sql.csproj" />
     <ProjectReference Include="..\Headless.UnitOfWork\Headless.UnitOfWork.csproj" />

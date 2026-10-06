@@ -14,6 +14,5 @@
     <ProjectReference Include="..\..\src\Headless.Idempotency\Headless.Idempotency.csproj" />
     <ProjectReference Include="..\..\src\Headless.Idempotency.InMemory\Headless.Idempotency.InMemory.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
-    <ProjectReference Include="..\..\src\Headless.Testing.Testcontainers\Headless.Testing.Testcontainers.csproj" />
   </ItemGroup>
 </Project>

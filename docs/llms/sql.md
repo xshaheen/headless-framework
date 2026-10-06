@@ -55,6 +55,8 @@ public interface ISqlConnectionFactory
 
 Each provider implementation's public `CreateNewConnectionAsync` returns a covariant, strongly-typed connection (e.g. `NpgsqlConnection`, `SqlConnection`, `SqliteConnection`) so provider-aware code can access driver-specific APIs without an extra cast. The `ISqlConnectionFactory` explicit implementation returns `DbConnection` for abstraction consumers.
 
+`factory.PingAsync(cancellationToken)` (`Headless.Sql`) opens a new connection and runs `SELECT 1` on it; `PingAsync(commandText, cancellationToken)` runs a query of your own instead, as the health checks do for a configured `TestCommand`. It sends a query because opening a pooled connection can return an idle one without a round trip. The provider health checks use it as their probe.
+
 ### Ambient connection (`ISqlCurrentConnection`)
 
 `ISqlCurrentConnection` is for unit-of-work scenarios where multiple repositories must share the same underlying connection within a request:
@@ -144,6 +146,7 @@ Rules that change how you operate a database:
 - **Features with configurable object names keep one history per name.** `Sequences` with the default table records `Sequences/1`; with `TableName = "counters"` it records `Sequences:counters/1`, so two hosts naming the table differently in one schema never collide.
 - **`InitializeOnStartup = false`** on a feature keeps its steps out of `Apply` mode. `Verify` mode and `ExportScript` still include them.
 - **An export-only contribution** (`SchemaContribution.ExportOnly`) is in `ExportScript` and nowhere else: the runner neither applies nor verifies it. A feature that applies a database's steps with a runner of its own, such as a Messaging additional outbox, registers one so the host's deploy script still creates those objects.
+- **Host-state tables** (`SchemaContribution.HostStateTables`) name the tables whose rows a feature writes at startup from code or keeps live while the host runs, rather than application data: the Features, Permissions, and Settings definition tables and the Coordination membership tables, on PostgreSQL and SQL Server. The runner ignores the list; test tooling reads it so a data reset between tests keeps those rows (see [testing.md](testing.md#tables-a-reset-preserves)). A feature contributing a table of that kind declares it.
 - History rows of features a host does not register are ignored, so hosts with different feature sets can share one schema. A row for a registered feature whose step this host does not know, such as a newer replica's step during a rolling deploy, is logged, not fatal.
 
 #### Schema runner observability
@@ -314,6 +317,7 @@ Default implementation package for provider-agnostic SQL helpers.
 - Lazily opens one connection per scope and reuses it until disposal.
 - Reopens the underlying connection if it is observed closed.
 - `SqlAutonomousTransaction` and `SqlAutonomousAttempt` — the store kit's autonomous-call retry (see [Store statement kit](#store-statement-kit-for-provider-authors)). They classify faults through `RelationalTransientFaults`, so the package depends on `Headless.UnitOfWork`.
+- `PingAsync(CancellationToken)` / `PingAsync(string commandText, CancellationToken)` on `ISqlConnectionFactory` — opens a new connection and runs `SELECT 1` or the given query; throws the driver's `DbException` when the server is unreachable or rejects the query.
 - `SqlDiagnostics` and the `AddSqlInstrumentation()` extensions on `TracerProviderBuilder` and `MeterProviderBuilder` — the autonomous-call telemetry (see [Store kit observability](#store-kit-observability)).
 
 ### Install
@@ -407,7 +411,7 @@ services.AddPostgreSqlSql(sp =>
 
 ### Runtime behavior
 
-`AddPostgreSqlSql` registers `ISqlConnectionFactory` and `IConnectionStringChecker` as singletons and `ISqlCurrentConnection` (`DefaultSqlCurrentConnection`) as scoped.
+`AddPostgreSqlSql` registers `ISqlConnectionFactory` and `IConnectionStringChecker` as singletons and `ISqlCurrentConnection` (`DefaultSqlCurrentConnection`) as scoped. It also contributes the `sql-postgresql` readiness health check (tags `ready`, `headless`, `database`), which runs `PingAsync` each time health is checked; storage features that reuse the shared connection are covered by it. See [Health checks](utilities.md#health-checks).
 
 ---
 ## Headless.Sql.SqlServer
@@ -473,7 +477,7 @@ services.AddSqlServerSql(sp =>
 
 ### Runtime behavior
 
-`AddSqlServerSql` registers `ISqlConnectionFactory` and `IConnectionStringChecker` as singletons and `ISqlCurrentConnection` (`DefaultSqlCurrentConnection`) as scoped.
+`AddSqlServerSql` registers `ISqlConnectionFactory` and `IConnectionStringChecker` as singletons and `ISqlCurrentConnection` (`DefaultSqlCurrentConnection`) as scoped. It also contributes the `sql-sqlserver` readiness health check (tags `ready`, `headless`, `database`), which runs `PingAsync` each time health is checked. See [Health checks](utilities.md#health-checks).
 
 ---
 ## Headless.Sql.Sqlite

@@ -61,7 +61,7 @@ var app = builder.Build();
 
 app.UseAuthentication();
 app.UseAuthorization();
-app.MapNswagOpenApi();
+app.UseNswagOpenApi();
 app.MapScalarOpenApi();
 app.MapControllers();
 

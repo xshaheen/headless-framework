@@ -1,15 +1,21 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Hosting;
 using Headless.Sql.SqlServer;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 
 namespace Headless.Sql;
 
 /// <summary>
 /// Registration extensions for the SQL Server SQL data-access provider.
 /// </summary>
+/// <remarks>
+/// Both overloads also contribute the <c>sql-sqlserver</c> readiness health check, which runs <c>SELECT 1</c> on a new
+/// connection each time health is checked. Remove it with <c>services.RemoveHealthChecks(...)</c>.
+/// </remarks>
 [PublicAPI]
 public static class SetupSqlServerSql
 {
@@ -63,6 +69,21 @@ public static class SetupSqlServerSql
     {
         services.TryAddSingleton<IConnectionStringChecker, SqlServerConnectionStringChecker>();
         services.TryAddScoped<ISqlCurrentConnection, DefaultSqlCurrentConnection>();
+        services.AddHeadlessHealthCheck(
+            "sql-sqlserver",
+            static (provider, cancellationToken) =>
+                provider
+                    .GetRequiredService<ISqlConnectionFactory>()
+                    .PingAsync(
+                        provider
+                            .GetRequiredService<IOptionsMonitor<HeadlessHealthCheckOptions>>()
+                            .Get("sql-sqlserver")
+                            .TestCommand
+                            ?? "SELECT 1",
+                        cancellationToken
+                    ),
+            HeadlessHealthCheckTags.Database
+        );
 
         return services;
     }

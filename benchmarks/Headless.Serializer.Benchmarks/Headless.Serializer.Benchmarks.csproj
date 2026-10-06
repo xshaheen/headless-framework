@@ -11,6 +11,5 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.Serializer.Abstractions\Headless.Serializer.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\Headless.Serializer.Json\Headless.Serializer.Json.csproj" />
-    <ProjectReference Include="..\..\src\Headless.Serializer.MessagePack\Headless.Serializer.MessagePack.csproj" />
   </ItemGroup>
 </Project>

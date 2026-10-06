@@ -1,0 +1,32 @@
+<Project Sdk="Headless.NET.Sdk.Test">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Tests</RootNamespace>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" PrivateAssets="all" />
+    <PackageReference Include="xunit.v3.mtp-v2" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Headless.UnitOfWork.Analyzers\Headless.UnitOfWork.Analyzers.csproj" />
+    <ProjectReference Include="..\..\src\Headless.UnitOfWork.Analyzers.CodeFixes\Headless.UnitOfWork.Analyzers.CodeFixes.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
+    <ProjectReference Include="..\Headless.SourceGenerators.Tests.Harness\Headless.SourceGenerators.Tests.Harness.csproj" />
+  </ItemGroup>
+  <ItemGroup Label="Receivers the test sources compile against, so the rules match real metadata names">
+    <ProjectReference Include="..\..\src\Headless.DistributedLocks.Abstractions\Headless.DistributedLocks.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\Headless.DistributedLocks\Headless.DistributedLocks.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Fencing.Abstractions\Headless.Fencing.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Idempotency.Abstractions\Headless.Idempotency.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Jobs.Abstractions\Headless.Jobs.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Messaging.Abstractions\Headless.Messaging.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Messaging.Bus.Abstractions\Headless.Messaging.Bus.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Messaging.Queue.Abstractions\Headless.Messaging.Queue.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\Headless.Sequences.Abstractions\Headless.Sequences.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\Headless.UnitOfWork.Abstractions\Headless.UnitOfWork.Abstractions.csproj" />
+    <ProjectReference Include="..\..\src\Headless.UnitOfWork\Headless.UnitOfWork.csproj" />
+    <ProjectReference Include="..\..\src\Headless.UnitOfWork.EntityFramework\Headless.UnitOfWork.EntityFramework.csproj" />
+  </ItemGroup>
+</Project>

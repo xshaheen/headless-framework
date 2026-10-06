@@ -8,6 +8,7 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" />
     <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
     <PackageReference Include="Microsoft.Extensions.Options.DataAnnotations" />
@@ -16,6 +17,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Headless.Checks\Headless.Checks.csproj" />
     <ProjectReference Include="..\Headless.Extensions\Headless.Extensions.csproj" />
-    <ProjectReference Include="..\Headless.FluentValidation\Headless.FluentValidation.csproj" />
+    <!-- TreatAsUsed: the storage and SMS providers use its validators through this package. -->
+    <ProjectReference Include="..\Headless.FluentValidation\Headless.FluentValidation.csproj" TreatAsUsed="true" />
   </ItemGroup>
 </Project>

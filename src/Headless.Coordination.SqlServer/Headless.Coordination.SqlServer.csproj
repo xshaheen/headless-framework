@@ -6,9 +6,6 @@
     <RootNamespace>Headless.Coordination.SqlServer</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Microsoft.Data.SqlClient" />
-  </ItemGroup>
-  <ItemGroup>
     <ProjectReference Include="..\Headless.Coordination.Database\Headless.Coordination.Database.csproj" />
     <ProjectReference Include="..\Headless.Extensions\Headless.Extensions.csproj" />
     <ProjectReference Include="..\Headless.Hosting\Headless.Hosting.csproj" />

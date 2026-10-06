@@ -38,7 +38,7 @@ internal sealed class PermissionsEntityStartupValidator<TContext>(IServiceProvid
 
         throw new InvalidOperationException(
             $"Headless.Permissions: the registered DbContext `{context.GetType().FullName}` does not contain `{entityName}`. "
-                + "Call `modelBuilder.AddHeadlessPermissions(this)` in your `OnModelCreating`."
+                + "Call `modelBuilder.ConfigureHeadlessPermissions(this)` in your `OnModelCreating`."
         );
     }
 }

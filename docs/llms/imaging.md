@@ -12,22 +12,21 @@ packages: Imaging.Abstractions, Imaging, Imaging.ImageSharp
 Install all three packages for a complete imaging pipeline:
 
 - `Headless.Imaging.Abstractions` — interfaces (`IImageResizer`, `IImageCompressor`) and argument/result types
-- `Headless.Imaging` — orchestration layer, `ImagingOptions`, DI registration via `AddImaging()`
-- `Headless.Imaging.ImageSharp` — SixLabors.ImageSharp-backed contributor registered by `AddImageSharpContributors()`
+- `Headless.Imaging` — orchestration layer, `ImagingOptions`, DI registration via `AddHeadlessImaging(imaging => …)`
+- `Headless.Imaging.ImageSharp` — SixLabors.ImageSharp-backed contributors chosen with `imaging.UseImageSharp()`
 
 Typical registration:
 
 ```csharp
-builder
-    .Services.AddImaging(options =>
-    {
-        options.DefaultResizeMode = ImageResizeMode.Max;
-    })
-    .AddImageSharpContributors(options =>
-    {
-        options.JpegCompressEncoder = new JpegEncoder { Quality = 80 };
-        options.WebpCompressEncoder = new WebpEncoder { Quality = 80 };
-    });
+builder.Services.AddHeadlessImaging(imaging =>
+    imaging
+        .Configure(options => options.DefaultResizeMode = ImageResizeMode.Max)
+        .UseImageSharp(options =>
+        {
+            options.JpegCompressEncoder = new JpegEncoder { Quality = 80 };
+            options.WebpCompressEncoder = new WebpEncoder { Quality = 80 };
+        })
+);
 ```
 
 Supports JPEG, PNG, WebP, and GIF formats for resize; JPEG, PNG, and WebP for compression.
@@ -43,11 +42,11 @@ Supports JPEG, PNG, WebP, and GIF formats for resize; JPEG, PNG, and WebP for co
 - `ImageResizeMode.Default` is the zero/unset value (`default(ImageResizeMode)`) and acts as the sentinel meaning "use the pipeline default". It is resolved at runtime to `ImagingOptions.DefaultResizeMode`. If `DefaultResizeMode` is also `None` (the default), the image is returned unchanged.
 - `ImageResizeMode.None` is an explicit, distinct value that skips resizing entirely and returns the original stream. Use `Max`, `Crop`, `Pad`, `BoxPad`, `Min`, or `Stretch` for actual resizing.
 - The compressor returns `ImageProcessState.Failed` when the compressed output is larger than the original — it never bloats a file. Check `result.IsDone` to detect this case.
-- Contributors are iterated in **reverse registration order**. The last-registered contributor is tried first. If you add a custom contributor after `AddImageSharpContributors()`, it takes priority over ImageSharp.
+- Contributors are iterated in **reverse registration order**. The last-registered contributor is tried first. A custom contributor registered after `AddHeadlessImaging(...)` takes priority over ImageSharp.
 - Non-seekable input streams are automatically buffered into a `MemoryStream` by the resize and compress pipelines (the internal `IImageResizer`/`IImageCompressor` implementations). Callers do not need to buffer first.
 - Returned `Stream` objects in results are owned by the caller. Dispose them when done.
 - GIF and BMP are supported for resize but not for compression. Passing a GIF/BMP stream to `IImageCompressor` returns `ImageProcessState.Unsupported`.
-- Call `.AddImageSharpContributors()` on the `AddImagingBuilder` returned by `.AddImaging()`. The ImageSharp contributor implementations are internal — register them only through `AddImageSharpContributors()`, never by type.
+- Register imaging once, with `services.AddHeadlessImaging(imaging => imaging.UseImageSharp())`. `AddHeadlessImaging` throws `InvalidOperationException` when no provider is chosen or when it is called a second time on the same service collection. The ImageSharp contributor implementations are internal — register them only through `UseImageSharp()`, never by type.
 
 ---
 
@@ -165,13 +164,15 @@ Orchestration layer that routes image processing calls to registered contributor
 - `IImageResizerContributor` — contributor interface: `TryResizeAsync(Stream, ImageResizeArgs, CancellationToken)`
 - `IImageCompressorContributor` — contributor interface: `TryCompressAsync(Stream, ImageCompressArgs, CancellationToken)`
 - `ImagingOptions` — `DefaultResizeMode` applied when args carry `ImageResizeMode.Default`
-- `AddImagingBuilder` — fluent builder returned by `AddImaging()` for chaining provider registrations
+- `AddHeadlessImaging(Action<HeadlessImagingSetupBuilder>)` — registers the pipeline and the providers chosen on the builder
+- `HeadlessImagingSetupBuilder` — `Configure(...)` binds `ImagingOptions` (`IConfiguration`, `Action<ImagingOptions>`, or `Action<ImagingOptions, IServiceProvider>`); provider packages add `Use…` members
+- `IImagingProviderOptionsExtension` — the hook a provider's `Use…` member registers through `RegisterExtension`; `AddHeadlessImaging` calls its `AddServices` after the core services
 - Automatic MemoryStream buffering for non-seekable input streams
 - Options validation via FluentValidation at startup
 
 ### Design constraints
 
-Contributors are enumerated in reverse order of DI registration. This mirrors the last-in-wins overriding model: a contributor added after `AddImageSharpContributors()` takes precedence over ImageSharp without requiring any removal. A contributor signals non-support by returning `ImageProcessState.Unsupported`; the orchestrator seeks the stream back to the start and tries the next contributor.
+Contributors are enumerated in reverse order of DI registration. This mirrors the last-in-wins overriding model: a contributor registered after `AddHeadlessImaging(...)` takes precedence over ImageSharp without requiring any removal. A contributor signals non-support by returning `ImageProcessState.Unsupported`; the orchestrator seeks the stream back to the start and tries the next contributor.
 
 ### Install
 
@@ -182,25 +183,24 @@ dotnet add package Headless.Imaging
 ### Setup and use
 
 ```csharp
-builder
-    .Services.AddImaging(options =>
-    {
-        options.DefaultResizeMode = ImageResizeMode.Max;
-    })
-    .AddImageSharpContributors(); // from Headless.Imaging.ImageSharp
+builder.Services.AddHeadlessImaging(imaging =>
+    imaging
+        .Configure(options => options.DefaultResizeMode = ImageResizeMode.Max)
+        .UseImageSharp() // from Headless.Imaging.ImageSharp
+);
 ```
 
-Three `AddImaging` overloads are available:
+`Configure` has three overloads, and repeated calls apply in order:
 
 ```csharp
 // Bind from IConfiguration section
-services.AddImaging(config.GetSection("Headless:Imaging"));
+imaging.Configure(config.GetSection("Headless:Imaging"));
 
 // Configure with action
-services.AddImaging(options => options.DefaultResizeMode = ImageResizeMode.Crop);
+imaging.Configure(options => options.DefaultResizeMode = ImageResizeMode.Crop);
 
 // Configure with action + IServiceProvider
-services.AddImaging((options, sp) => options.DefaultResizeMode = ImageResizeMode.Max);
+imaging.Configure((options, sp) => options.DefaultResizeMode = ImageResizeMode.Max);
 ```
 
 ### Configuration
@@ -215,6 +215,8 @@ services.AddImaging((options, sp) => options.DefaultResizeMode = ImageResizeMode
 
 - Registers `IImageResizer` as singleton (internal default implementation)
 - Registers `IImageCompressor` as singleton (internal default implementation)
+- Validates `ImagingOptions` with FluentValidation when the options are first resolved
+- Runs each chosen provider's registration after the core services, in the order of the `Use…` calls
 
 ---
 
@@ -224,8 +226,8 @@ SixLabors.ImageSharp-backed contributors for image resizing and compression.
 
 ### API and behavior
 
-- Internal ImageSharp-backed `IImageResizerContributor` (registered by `AddImageSharpContributors`) — resize via `SixLabors.ImageSharp`; supports JPEG, PNG, GIF, BMP, TIFF, WebP
-- Internal ImageSharp-backed `IImageCompressorContributor` (registered by `AddImageSharpContributors`) — compression via configurable `IImageEncoder` per format; supports JPEG, PNG, WebP
+- Internal ImageSharp-backed `IImageResizerContributor` (registered by `UseImageSharp`) — resize via `SixLabors.ImageSharp`; supports JPEG, PNG, GIF, BMP, TIFF, WebP
+- Internal ImageSharp-backed `IImageCompressorContributor` (registered by `UseImageSharp`) — compression via configurable `IImageEncoder` per format; supports JPEG, PNG, WebP
 - `ImageSharpOptions` — encoder settings with per-format encoder instances
 - Compression skips output if compressed size exceeds original (returns `Failed`)
 - Format is auto-detected from stream metadata when `args.MimeType` is not provided
@@ -243,38 +245,43 @@ dotnet add package Headless.Imaging.ImageSharp
 ### Setup and use
 
 ```csharp
-builder
-    .Services.AddImaging()
-    .AddImageSharpContributors(options =>
+builder.Services.AddHeadlessImaging(imaging =>
+    imaging.UseImageSharp(options =>
     {
         // DefaultCompressQuality only seeds the default encoders when the options object is constructed,
         // so set quality on the encoder instances.
         options.JpegCompressEncoder = new JpegEncoder { Quality = 80 };
         options.WebpCompressEncoder = new WebpEncoder { Quality = 80 };
-    });
+    })
+);
 ```
 
 To override a specific encoder:
 
 ```csharp
-builder.Services.AddImaging().AddImageSharpContributors(options =>
-{
-    options.JpegCompressEncoder = new JpegEncoder { Quality = 90 };
-    options.PngCompressEncoder  = new PngEncoder  { CompressionLevel = PngCompressionLevel.BestCompression, SkipMetadata = true };
-});
+builder.Services.AddHeadlessImaging(imaging =>
+    imaging.UseImageSharp(options =>
+    {
+        options.JpegCompressEncoder = new JpegEncoder { Quality = 90 };
+        options.PngCompressEncoder  = new PngEncoder  { CompressionLevel = PngCompressionLevel.BestCompression, SkipMetadata = true };
+    })
+);
 ```
 
-Three `AddImageSharpContributors` overloads are available (mirrors `AddImaging`):
+`UseImageSharp` has four overloads:
 
 ```csharp
+// Default options
+imaging.UseImageSharp();
+
 // Bind from IConfiguration section
-services.AddImaging().AddImageSharpContributors(config.GetSection("Headless:ImageSharp"));
+imaging.UseImageSharp(config.GetSection("Headless:ImageSharp"));
 
 // Configure with action
-services.AddImaging().AddImageSharpContributors(options => options.JpegCompressEncoder = new JpegEncoder { Quality = 85 });
+imaging.UseImageSharp(options => options.JpegCompressEncoder = new JpegEncoder { Quality = 85 });
 
 // Configure with action + IServiceProvider
-services.AddImaging().AddImageSharpContributors((options, sp) => options.JpegCompressEncoder = new JpegEncoder { Quality = 85 });
+imaging.UseImageSharp((options, sp) => options.JpegCompressEncoder = new JpegEncoder { Quality = 85 });
 ```
 
 ### Configuration
@@ -294,3 +301,4 @@ Validation (applied at startup): `DefaultCompressQuality` must be between 1 and 
 
 - Registers `IImageResizerContributor` as singleton (internal ImageSharp resize contributor)
 - Registers `IImageCompressorContributor` as singleton (internal ImageSharp compress contributor)
+- Registers each contributor once, however many times `UseImageSharp` is called

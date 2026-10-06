@@ -215,7 +215,7 @@ public sealed class FeaturesCustomSchemaTests(FeaturesTestFixture fixture) : Fea
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
-            modelBuilder.AddHeadlessFeatures(
+            modelBuilder.ConfigureHeadlessFeatures(
                 storageOptions.Value,
                 HeadlessStorageNaming.ForProvider(Database.ProviderName)
             );
@@ -230,7 +230,7 @@ public sealed class FeaturesCustomSchemaTests(FeaturesTestFixture fixture) : Fea
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
-            modelBuilder.AddHeadlessFeatures(
+            modelBuilder.ConfigureHeadlessFeatures(
                 storageOptions.Value,
                 HeadlessStorageNaming.ForProvider(Database.ProviderName)
             );
@@ -245,7 +245,7 @@ public sealed class FeaturesCustomSchemaTests(FeaturesTestFixture fixture) : Fea
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
-            modelBuilder.AddHeadlessFeatures(
+            modelBuilder.ConfigureHeadlessFeatures(
                 storageOptions.Value,
                 HeadlessStorageNaming.ForProvider(Database.ProviderName)
             );

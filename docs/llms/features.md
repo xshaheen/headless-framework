@@ -17,6 +17,8 @@ Install `Headless.Features.Abstractions` plus `Headless.Features` and exactly on
 - `Headless.Features.Storage.PostgreSql` — raw ADO.NET persistence for PostgreSQL (no EF dependency)
 - `Headless.Features.Storage.SqlServer` — raw ADO.NET persistence for SQL Server (no EF dependency)
 
+Feature gates on HTTP endpoints are ASP.NET Core authorization requirements (see [Gating HTTP endpoints](#gating-http-endpoints)), so `AddHeadlessFeatures` alone enforces them. `Headless.Features.Abstractions` references no ASP.NET Core package; `Headless.Features`, which owns the gate types, references only the host-agnostic `Microsoft.AspNetCore.Authorization` package, so console and worker hosts run every package above without the ASP.NET runtime.
+
 Typical registration:
 
 ```csharp
@@ -42,12 +44,12 @@ builder.Services.AddHeadlessFeatures(setup => setup.UseEntityFramework<AppDbCont
 - `AddHeadlessFeatures(configure)` is the single entry point — it registers the management core automatically alongside the selected storage provider. Only one storage provider (EF / PostgreSQL / SqlServer) can be registered per application.
 - To tune management options, call `setup.ConfigureManagement(options => ...)` inside the `AddHeadlessFeatures` block. An `(options, IServiceProvider)` overload is available for late-bound configuration. `services.Configure<FeatureManagementOptions>(...)` also works and composes regardless of call order.
 - To tune storage options (schema, table names), call `setup.ConfigureStorage(o => ...)` inside the `AddHeadlessFeatures` block. The `IConfiguration` overload binds the `Headless:Features:Storage` section instead.
-- For EF storage: register a singleton `IDbContextFactory<TContext>` (`AddDbContextFactory<TContext>()` or `AddPooledDbContextFactory<TContext>()` for a plain `DbContext`, or `AddHeadlessDbContext<TContext>()` or `AddHeadlessDbContextPool<TContext>()` for a `HeadlessDbContext`; both Headless registrations add the factory) and call `modelBuilder.AddHeadlessFeatures(this)` in `OnModelCreating` before calling `setup.UseEntityFramework<TContext>()`. The factory must be a singleton (the default lifetime of all four registrations): the EF repositories are singletons that would capture a scoped or transient factory for the life of the host, so startup refuses one with `InvalidServiceLifetimeException`.
+- For EF storage: register a singleton `IDbContextFactory<TContext>` (`AddDbContextFactory<TContext>()` or `AddPooledDbContextFactory<TContext>()` for a plain `DbContext`, or `AddHeadlessDbContext<TContext>()` or `AddHeadlessDbContextPool<TContext>()` for a `HeadlessDbContext`; both Headless registrations add the factory) and call `modelBuilder.ConfigureHeadlessFeatures(this)` in `OnModelCreating` before calling `setup.UseEntityFramework<TContext>()`. The factory must be a singleton (the default lifetime of all four registrations): the EF repositories are singletons that would capture a scoped or transient factory for the life of the host, so startup refuses one with `InvalidServiceLifetimeException`.
 - `FeaturesInitializationBackgroundService` runs at startup — do NOT manually initialize features or call `IDynamicFeatureDefinitionStore.SaveAsync` directly. A host that must not touch the store at startup (a test host, a read-only replica) calls `setup.DisableStartupInitialization()`; static definitions stay available in memory and nothing else changes.
 - Feature value caching is automatic. Both `IFeatureManager` writes and direct `IFeatureValueRecordRepository` writes invalidate the affected cache entry (the repository removes it after `SaveChangesAsync`), and a distributed cache propagates the eviction across nodes. Only writes that bypass the repository entirely (raw SQL, direct `DbContext`) leave the cache stale.
 - Custom value providers must implement `IFeatureValueReadProvider` (read-only) or `IFeatureValueProvider` (read-write). Register with `services.AddFeatureValueProvider<T>()`. The last-registered provider has the highest resolution priority. `FeatureManager` writes through `IFeatureValueProvider.SetAllAsync`; its default implementation calls `SetAsync` / `ClearAsync` once per entry, so a custom provider overrides it when its source can apply a batch atomically.
 - `FeatureDefinition.Providers` restricts which providers can read/write a feature. An empty list means all providers are allowed — the most common case.
-- Gate HTTP access with `[RequiresFeature("FeatureName")]` on controllers or actions. Use `[DisableFeatureCheck]` on individual action methods to bypass a class-level gate.
+- Gate HTTP access with `[RequiresFeature("FeatureName")]` on controllers, actions, or Minimal API handlers, with `.RequireAuthorization(policy => policy.RequireFeatures("FeatureName"))` on endpoints or route groups, or with `.WithMetadata(new RequiresFeatureAttribute("FeatureName"))`. The attribute is authorization data that ASP.NET Core's authorization middleware enforces through the handler `AddHeadlessFeatures` registers; no other registration exists. Use `[DisableFeatureCheck]` or `.WithMetadata(new DisableFeatureCheckAttribute())` to bypass a controller-level or group-level gate. A disabled feature fails authorization like a missing permission: 403, or 401 for an anonymous caller, with `Headless.Api` putting the localized "feature currently unavailable" text in the 403 `detail`; see [Gating HTTP endpoints](#gating-http-endpoints).
 - `SetAsync` with `forceToSet: false` (default) skips the write when the supplied value equals the fallback value of the next lower-priority provider. Set `forceToSet: true` when you must persist the value explicitly (e.g., `GrantAsync`/`RevokeAsync` always use `forceToSet: true`).
 - To write several features at once, call `SetAsync(values, providerName, providerKey)` with an `IReadOnlyDictionary<string, string?>` keyed by feature name; a `null` value clears that feature. It checks every name, the provider, and its writability before writing anything, so an undefined name or a read-only provider rejects the whole batch with `ConflictException` and changes nothing. The built-in stores (EF, PostgreSQL, SQL Server) then write the batch in one transaction, so a failed write leaves every value as it was, and a successful one publishes a single `FeatureChangedMessage` listing every name. `forceToSet` applies to each value as it does for the single-name call. An empty dictionary writes and announces nothing. The single-name `SetAsync` is the one-entry case of this call. Clearing a value removes only the row stored under the exact provider key the provider resolves, not that feature under every key of the provider. Atomicity holds per provider: when several registered providers share `providerName`, each writes the batch in its own transaction. The store-backed providers open their own connection and transaction, so the write does not join a unit of work the caller has open, and rolling that unit back does not undo it. When a concurrent writer inserts or deletes one of the batch's rows between the store's read and its save, the store reads again and retries (up to three attempts); the last writer's value wins.
 - `DeleteAsync` removes all feature values for a given provider and key (e.g., all tenant overrides for a deleted tenant). It silently skips read-only providers.
@@ -126,7 +128,7 @@ The two messages travel on separate subscriptions, and nothing orders them. With
 
 ### Startup Initialization
 
-`FeaturesInitializationBackgroundService` runs after the application starts. It saves static feature definitions to the database (idempotent and guarded by a distributed lock), with up to 10 jittered exponential-back-off retries capped at 30 seconds, then pre-caches the dynamic feature definitions if `IsDynamicFeatureStoreEnabled` is true. Cancellation, `ArgumentException`, and `NotSupportedException` fail immediately without retry; other terminal failures surface through `WaitForInitializationAsync()`. Both tasks are skipped when their governing option flags are disabled — in that case the service signals completion immediately.
+`FeaturesInitializationBackgroundService` runs after the application starts. It saves static feature definitions to the database (idempotent and guarded by a distributed lock), with up to 10 jittered exponential-back-off retries capped at 30 seconds, then pre-caches the dynamic feature definitions if `IsDynamicFeatureStoreEnabled` is true. Cancellation, `ArgumentException`, and `NotSupportedException` fail immediately without retry; other terminal failures surface through `WaitForInitializationAsync()`. Both tasks are skipped when their governing option flags are disabled — in that case the service signals completion immediately. The back-off waits run on the system clock, not the registered `TimeProvider`, so a host that registers a `FakeTimeProvider` (a test host) still retries in real time; skip seeding entirely with `setup.DisableStartupInitialization()`.
 
 ## Choosing a Provider
 
@@ -157,8 +159,8 @@ Defines the unified interface for feature management and feature flags across di
 - `FeatureValueProviderNames` — constants `Tenant`, `Edition`, `DefaultValue` for targeting built-in providers
 - Extension methods on `IFeatureManager`: `IsEnabledAsync`, `GetAsync<T>`, `EnsureEnabledAsync`, `GrantAsync`, `RevokeAsync`
 - Scoped extension methods: `GetForTenantAsync`, `SetForTenantAsync`, `GrantToTenantAsync`, `RevokeFromTenantAsync`, `DeleteForTenantAsync` (tenant); equivalent `*ForEditionAsync` / `*ToEditionAsync` set (edition); `GetDefaultAsync`, `GetAllDefaultAsync` (default provider)
-- `RequiresFeatureAttribute` — gates a controller class or action on one or more features; `IsAnd` property controls AND vs. OR policy (default: OR)
-- `DisableFeatureCheckAttribute` — bypasses a class-level `[RequiresFeature]` gate on individual action methods
+
+This package references no ASP.NET Core package. The HTTP gate types (`RequiresFeatureAttribute`, `DisableFeatureCheckAttribute`, `FeatureRequirement`) live in `Headless.Features`, the same split `Headless.Permissions` uses.
 
 ### Install
 
@@ -250,6 +252,11 @@ Core implementation of feature management with caching, value providers, and def
 - `HeadlessFeaturesSetupBuilder` — fluent builder returned to `AddHeadlessFeatures`; exposes `ConfigureManagement`, `ConfigureStorage`, and `RegisterExtension`
 - `services.AddFeatureDefinitionProvider<T>()` — registers a custom `IFeatureDefinitionProvider`
 - `services.AddFeatureValueProvider<T>()` — registers a custom `IFeatureValueReadProvider` (idempotent by type)
+- `RequiresFeatureAttribute` — gates a controller class, action, or Minimal API handler on one or more features; `IsAnd` property controls AND vs. OR policy (default: OR). It implements `IAuthorizationRequirementData`, so on HTTP the authorization middleware adds a `FeatureRequirement` to the endpoint's policy; other call sites evaluate it through `IMethodInvocationFeatureCheckerService`. An attribute with no feature names adds no requirement
+- `DisableFeatureCheckAttribute` — bypasses every feature requirement on one action or endpoint, including a controller-level, route-group, or route-convention gate; other policies still apply. On Minimal APIs, put it on the handler or add it with `.WithMetadata(new DisableFeatureCheckAttribute())`
+- `FeatureRequirement(string[] featureNames, bool requiresAll)` — the authorization requirement behind the attribute. Its handler fails a disabled feature with the localized "feature currently unavailable" text as the `AuthorizationFailureReason`. An empty list throws `ArgumentException`
+- `AuthorizationPolicyBuilder.RequireFeatures(params string[] features)` / `RequireFeatures(bool requiresAll, params string[] features)` (namespace `Microsoft.AspNetCore.Authorization`) — adds a `FeatureRequirement` to a policy: `.RequireAuthorization(policy => policy.RequireFeatures("Reports"))` or `options.AddPolicy("Reports", policy => policy.RequireFeatures("Reports"))`
+- `IMethodInvocationFeatureCheckerService.CheckAsync(context, cancellationToken)` — evaluates the `[RequiresFeature]` attributes of a `MethodInfo` (method plus, for a public method, its declaring type); for interceptors and other non-HTTP call sites
 - `IClientVisibleFeaturesReader` (`Headless.Features`) — `GetAsync(PrincipalContext, …)` returns the effective value of every feature whose definition is `IsVisibleToClients`, keyed by name, for example to include in the configuration an application returns to its front end. Headless ships no endpoint; see the client-config recipe in `docs/llms/permissions.md`
 
 ### Design constraints
@@ -357,6 +364,59 @@ Every object follows its database's naming convention. On PostgreSQL the tables,
 - Registers `DefaultValueFeatureValueProvider`, `EditionFeatureValueProvider`, `TenantFeatureValueProvider` as singletons
 - Starts `FeaturesInitializationBackgroundService` as a hosted service
 - Registers `IMethodInvocationFeatureCheckerService` as singleton
+- Registers the feature authorization handler (transient, once however often `AddHeadlessFeatures` runs) and calls `AddAuthorizationCore()`, which only adds services the host has not registered
+
+### Gating HTTP endpoints
+
+A feature gate is an ASP.NET Core authorization requirement, so `AddHeadlessFeatures` plus the host's ordinary `AddAuthorization()` / `UseAuthorization()` enforce it. No HTTP-specific registration exists to forget.
+
+- **Declaring a gate.** `[RequiresFeature]` on a controller, an action, or a Minimal API handler; `.WithMetadata(new RequiresFeatureAttribute(...))` on an endpoint, a route group, or `MapControllers()`; or a policy, `.RequireAuthorization(policy => policy.RequireFeatures(...))`. Each attribute or policy adds its own `FeatureRequirement`, so a controller and an action requirement, or a group and an endpoint requirement, must both pass. `[DisableFeatureCheck]` on an action or handler, or `.WithMetadata(new DisableFeatureCheckAttribute())`, skips every feature requirement on that endpoint, whichever shape declared it.
+- **Which shape.** The attribute and metadata shapes add only the feature requirement, so the fallback policy still applies to the endpoint. `RequireAuthorization(policy => policy.RequireFeatures(...))` adds no user requirement either, but like any `RequireAuthorization` call it gives the endpoint its own authorization data, so the fallback policy no longer applies there; prefer the metadata shape when the fallback policy matters.
+- **Composition.** The requirement joins the endpoint's other authorization data in one policy: a `[Authorize("Reports.View")]` permission and a `[RequiresFeature("Reports")]` both apply. A feature gate is not `[Authorize]`, so on an endpoint without `[Authorize]` the fallback policy still applies, and the gate adds no authenticated-user requirement of its own.
+- **Anonymous callers.** A feature is the tenant's or edition's state, not a right of the caller, so the gate applies to anonymous callers too: with the feature off they get ASP.NET Core's challenge (401), as any failed authorization does for an anonymous caller; with it on they pass unless another policy requires a user. `[AllowAnonymous]` skips ASP.NET Core authorization entirely, feature requirements included, so never combine it with a feature gate; an endpoint that must serve anonymous callers behind a gate needs no `[Authorize]` and no fallback policy that requires a user.
+- **Failure.** A disabled feature fails the evaluation with `Fail(new AuthorizationFailureReason(...))`, its message the localized "feature currently unavailable" text resolved in the request culture (so `UseRequestLocalization()` must run before `UseAuthorization()`). An authenticated caller gets 403; with `Headless.Api`'s status-codes rewriter (`AddStatusCodesRewriterMiddleware()` + `UseStatusCodesRewriter()`, wired by `AddHeadless()` / `UseHeadless()`) the 403 is the standard forbidden problem with the failure reasons as `detail`, so a caller missing both a permission and a feature still learns about the feature. An anonymous caller is challenged (401). Without `Headless.Api`, ASP.NET Core's bare 403 applies.
+- **403 at the endpoint, 409 in code.** The endpoint gate is authorization: it decides whether this request may reach the endpoint, so it fails the way every authorization requirement does. `IFeatureManager.EnsureEnabledAsync` in application code is a business rule: it throws `ConflictException`, which the Headless exception handler returns as 409 with the `g:feature_currently_not_available` error code, the response a domain operation gives when the current state forbids it.
+- **Fail-closed wiring.** `AddHeadlessFeatures` registers the authorization handler services, so `WebApplication` adds the authorization middleware itself when the host never calls `UseAuthorization()`, and a host that never calls `AddAuthorization()` fails at startup instead of serving gated endpoints unchecked (MVC's `AddControllers()` calls `AddAuthorization()` for you). The gate needs `UseAuthorization()` after routing: a host that calls `UseRouting()` without it, or with the implicit middleware ahead of routing, skips feature requirements, as ASP.NET Core does for its own requirement attributes. Call `UseAuthorization()` after `UseRouting()`, and `UseStatusCodesRewriter()` before it so the rewriter wraps authorization.
+- Code outside HTTP, such as an interceptor or a job, checks the same attributes through `IMethodInvocationFeatureCheckerService`, or calls `IFeatureManager.EnsureEnabledAsync` directly.
+
+```csharp
+builder.AddHeadless();
+builder.Services.AddHeadlessFeatures(setup => setup.UsePostgreSql());
+builder.Services.AddControllers();
+
+var app = builder.Build();
+app.UseHeadless(); // includes UseStatusCodesRewriter()
+app.UseRouting();
+app.UseAuthentication();
+app.UseAuthorization();
+app.MapControllers();
+
+var reports = app.MapGroup("/api/reports")
+    .RequireAuthorization("Reports.View")
+    .RequireAuthorization(policy => policy.RequireFeatures("Reports"));
+reports.MapGet("/", () => Results.Ok());
+reports.MapGet("/export", () => Results.Ok())
+    .RequireAuthorization(policy => policy.RequireFeatures(requiresAll: true, "Reports.Export", "Exports"));
+app.MapGet("/api/catalog", () => Results.Ok()).WithMetadata(new RequiresFeatureAttribute("Catalog")); // keeps the fallback policy
+reports.MapGet("/status", () => Results.Ok()).WithMetadata(new DisableFeatureCheckAttribute()); // reachable while "Reports" is off
+
+[ApiController]
+[Route("reports")]
+[RequiresFeature("Reports")]
+public sealed class ReportsController : ControllerBase
+{
+    [HttpGet]
+    public IActionResult List() => Ok();
+
+    [HttpGet("export")]
+    [RequiresFeature("Reports.Export")] // checked in addition to "Reports"
+    public IActionResult Export() => Ok();
+
+    [HttpGet("status")]
+    [DisableFeatureCheck] // reachable while "Reports" is off
+    public IActionResult Status() => Ok();
+}
+```
 
 ---
 
@@ -367,8 +427,8 @@ Entity Framework Core storage implementation for feature management.
 ### API and behavior
 
 - `setup.UseEntityFramework<TContext>()` — registers the EF storage provider via the `HeadlessFeaturesSetupBuilder`
-- `modelBuilder.AddHeadlessFeatures(DbContext context)` — applies entity configurations by resolving `FeaturesStorageOptions` from the context's service provider (no constructor injection required) and the naming style from `context.Database.ProviderName`: snake_case on Npgsql, PascalCase on every other provider
-- `modelBuilder.AddHeadlessFeatures(FeaturesStorageOptions options, StorageNamingStyle style)` — overload for when you already hold the options; pass `HeadlessStorageNaming.ForProvider(Database.ProviderName)` (namespace `Headless.Hosting`) so the style matches the database
+- `modelBuilder.ConfigureHeadlessFeatures(DbContext context)` — applies entity configurations by resolving `FeaturesStorageOptions` from the context's service provider (no constructor injection required) and the naming style from `context.Database.ProviderName`: snake_case on Npgsql, PascalCase on every other provider
+- `modelBuilder.ConfigureHeadlessFeatures(FeaturesStorageOptions options, StorageNamingStyle style)` — overload for when you already hold the options; pass `HeadlessStorageNaming.ForProvider(Database.ProviderName)` (namespace `Headless.Hosting`) so the style matches the database
 - EF repositories for `IFeatureValueRecordRepository` and `IFeatureDefinitionRecordRepository`
 - `FeatureValueRecord` maps `CreatedAt` / `UpdatedAt` audit columns (via `ConfigureHeadlessConvention`); the Headless audit save-processor stamps them on `SaveChanges`
 - `FeaturesStorageOptions` for schema and table-name configuration (shared with raw-DDL providers)
@@ -391,7 +451,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         base.OnModelCreating(modelBuilder);
         // Resolves FeaturesStorageOptions from the context's service provider —
         // no need to inject IOptions<FeaturesStorageOptions> into the constructor.
-        modelBuilder.AddHeadlessFeatures(this);
+        modelBuilder.ConfigureHeadlessFeatures(this);
     }
 }
 

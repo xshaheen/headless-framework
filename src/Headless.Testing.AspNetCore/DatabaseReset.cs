@@ -3,6 +3,7 @@
 using System.Data;
 using System.Data.Common;
 using Headless.Checks;
+using Headless.Hosting.Initialization.Schema;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Respawn;
 using Respawn.Graph;
@@ -10,8 +11,9 @@ using Respawn.Graph;
 namespace Headless.Testing.AspNetCore;
 
 /// <summary>
-/// Respawner-based database reset helper. Wraps <see cref="Respawner"/> with automatic exclusion
-/// of the EF Core migrations history table and configurable additional exclusions.
+/// Respawner-based database reset helper. Wraps <see cref="Respawner"/>, always preserving the EF Core migrations
+/// history table and the Headless schema history table, plus any tables listed in
+/// <see cref="DatabaseResetOptions.TablesToPreserve"/>.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -37,8 +39,8 @@ public sealed class DatabaseReset
     /// </summary>
     /// <param name="connection">An <b>open</b> <see cref="DbConnection"/>.</param>
     /// <param name="options">
-    /// Optional configuration. When <see langword="null"/>, defaults to Postgres adapter with only the
-    /// EF migrations history table excluded.
+    /// Optional configuration. When <see langword="null"/>, defaults to the Postgres adapter with only the two history
+    /// tables preserved.
     /// </param>
     /// <param name="cancellationToken">
     /// Token used to cancel Respawn by closing the active connection. When omitted,
@@ -57,11 +59,14 @@ public sealed class DatabaseReset
 
         options ??= new DatabaseResetOptions();
 
-        var tablesToIgnore = new List<Table>(options.TablesToIgnore.Count + 1)
+        // Schema-less entries match the name in every schema. Both history tables record work done to a schema that a
+        // data reset leaves in place, so wiping them makes the next startup replay that work.
+        var tablesToIgnore = new List<Table>(options.TablesToPreserve.Count + 2)
         {
             new(HistoryRepository.DefaultTableName),
+            new(SchemaRunner.HistoryTableName),
         };
-        tablesToIgnore.AddRange(options.TablesToIgnore);
+        tablesToIgnore.AddRange(options.TablesToPreserve);
 
         var respawner = await DatabaseResetOperation
             .RunAsync(

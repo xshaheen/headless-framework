@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Context;
-
 namespace Headless.Settings;
 
 /// <summary>

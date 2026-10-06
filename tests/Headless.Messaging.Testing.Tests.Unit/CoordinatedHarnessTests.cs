@@ -85,7 +85,10 @@ public sealed class CoordinatedHarnessTests : TestBase
             (_, unit) => unit.Outbox.PublishAsync(new CoordinatedOrderPlaced("C1"), AbortToken)
         );
 
-        var published = await harness.WaitForPublished<CoordinatedOrderPlaced>(TimeSpan.FromSeconds(5), AbortToken);
+        var published = await harness.WaitForPublishedAsync<CoordinatedOrderPlaced>(
+            TimeSpan.FromSeconds(5),
+            AbortToken
+        );
 
         published.Message.Should().BeOfType<CoordinatedOrderPlaced>().Which.Id.Should().Be("C1");
         published.RequestedDeliveryMode.Should().Be(DeliveryMode.Durable);
@@ -115,7 +118,7 @@ public sealed class CoordinatedHarnessTests : TestBase
         await harness.RunInUnitOfWorkAsync(
             (_, unit) => unit.Outbox.PublishAsync(new CoordinatedOrderPlaced("C3"), AbortToken)
         );
-        await harness.WaitForPublished<CoordinatedOrderPlaced>(
+        await harness.WaitForPublishedAsync<CoordinatedOrderPlaced>(
             m => string.Equals(m.Id, "C3", StringComparison.Ordinal),
             TimeSpan.FromSeconds(5),
             AbortToken
@@ -156,7 +159,7 @@ public sealed class CoordinatedHarnessTests : TestBase
         );
 
         result.Should().Be(42);
-        await harness.WaitForPublished<CoordinatedOrderPlaced>(TimeSpan.FromSeconds(5), AbortToken);
+        await harness.WaitForPublishedAsync<CoordinatedOrderPlaced>(TimeSpan.FromSeconds(5), AbortToken);
     }
 
     [Fact]
@@ -168,7 +171,10 @@ public sealed class CoordinatedHarnessTests : TestBase
         // counterpart to the coordinated recording above, and distinct from a row that recorded no answer.
         await harness.Publisher.PublishAsync(new CoordinatedOrderPlaced("C5"), cancellationToken: AbortToken);
 
-        var published = await harness.WaitForPublished<CoordinatedOrderPlaced>(TimeSpan.FromSeconds(5), AbortToken);
+        var published = await harness.WaitForPublishedAsync<CoordinatedOrderPlaced>(
+            TimeSpan.FromSeconds(5),
+            AbortToken
+        );
 
         published.IsCoordinated.Should().BeFalse();
     }
@@ -201,7 +207,7 @@ public sealed class CoordinatedHarnessTests : TestBase
             (_, unit) => unit.Outbox.PublishAsync(new CoordinatedOrderPlaced("C6"), AbortToken)
         );
 
-        var consumed = await harness.WaitForConsumed<CoordinatedOrderPlaced>(TimeSpan.FromSeconds(5), AbortToken);
+        var consumed = await harness.WaitForConsumedAsync<CoordinatedOrderPlaced>(TimeSpan.FromSeconds(5), AbortToken);
         consumed.Message.Should().BeOfType<CoordinatedOrderPlaced>().Which.Id.Should().Be("C6");
     }
 
@@ -224,7 +230,7 @@ public sealed class CoordinatedHarnessTests : TestBase
         await harness.RunInUnitOfWorkAsync(
             (_, unit) => unit.Outbox.PublishAsync(new StandaloneOrderPlaced("S2"), AbortToken)
         );
-        var consumed = await harness.WaitForConsumed<StandaloneOrderPlaced>(TimeSpan.FromSeconds(5), AbortToken);
+        var consumed = await harness.WaitForConsumedAsync<StandaloneOrderPlaced>(TimeSpan.FromSeconds(5), AbortToken);
 
         consumed.Message.Should().BeOfType<StandaloneOrderPlaced>().Which.Id.Should().Be("S2");
         consumed.RequestedDeliveryMode.Should().Be(DeliveryMode.Durable);

@@ -1,0 +1,33 @@
+<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <Description>Roslyn analyzers and code fixes that flag autonomous writes made while a Headless unit of work is in scope.</Description>
+    <PackageTags>headless;unit-of-work;analyzers;roslyn;dotnet</PackageTags>
+    <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);_PackCodeFixesAssembly</TargetsForTfmSpecificContentInPackage>
+  </PropertyGroup>
+  <Import Project="..\Headless.SourceGenerators.Shared\Headless.SourceGenerators.Shared.props" />
+  <ItemGroup>
+    <!--
+      The code fix references Workspaces, which a compiler-loaded analyzer assembly must not (RS1038), so it is a
+      separate assembly. This reference only orders the build and makes the edge visible to the affected-project graph;
+      the fix's DLL is packed beside the analyzer by _PackCodeFixesAssembly.
+    -->
+    <ProjectReference
+      Include="..\Headless.UnitOfWork.Analyzers.CodeFixes\Headless.UnitOfWork.Analyzers.CodeFixes.csproj"
+      ReferenceOutputAssembly="false"
+      PrivateAssets="all"
+    />
+  </ItemGroup>
+  <Target Name="_PackCodeFixesAssembly">
+    <MSBuild
+      Projects="..\Headless.UnitOfWork.Analyzers.CodeFixes\Headless.UnitOfWork.Analyzers.CodeFixes.csproj"
+      Targets="GetTargetPath"
+      Properties="Configuration=$(Configuration)"
+    >
+      <Output TaskParameter="TargetOutputs" ItemName="_CodeFixesAssembly" />
+    </MSBuild>
+    <ItemGroup>
+      <TfmSpecificPackageFile Include="@(_CodeFixesAssembly)" PackagePath="analyzers/dotnet/cs" />
+    </ItemGroup>
+  </Target>
+</Project>

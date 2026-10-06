@@ -1,0 +1,7 @@
+<Project>
+  <Import Project="../Directory.Build.props" />
+  <PropertyGroup>
+    <!-- Fixtures that tests build, load, or launch; they never ship. -->
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+</Project>

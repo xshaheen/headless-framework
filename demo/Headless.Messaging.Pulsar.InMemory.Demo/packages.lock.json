@@ -104,8 +104,8 @@
       },
       "FSharp.Core": {
         "type": "Transitive",
-        "resolved": "10.1.400",
-        "contentHash": "H9wlZ/tWgNp+Q4WQ5aUSi3XOBXrL6z+UkR0PNeyDFyoZR3c3PbtA21B9FqlthrhEwQ6f5AtQV0JLhBBDqjjscw=="
+        "resolved": "10.1.401",
+        "contentHash": "/lvOK51KD8IangBYkfDVna3/HrE/r4VUnX3dI01KDspctoYXmind3POeoYkqWKeXHwiKlf6Hc9TxwSnoSCWcjw=="
       },
       "FSharp.UMX": {
         "type": "Transitive",
@@ -300,9 +300,7 @@
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
-          "Headless.Generator.Primitives.Abstractions": "[1.0.0, )",
           "Headless.Primitives": "[1.0.0, )",
-          "Headless.Urls": "[1.0.0, )",
           "Nito.AsyncEx": "[5.1.2, )",
           "Nito.Disposables": "[2.5.0, )"
         }
@@ -323,7 +321,7 @@
           "Headless.Checks": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
           "Headless.FluentValidation": "[1.0.0, )",
-          "OpenTelemetry.Api": "[1.18.0, )"
+          "OpenTelemetry.Api": "[1.19.1, )"
         }
       },
       "headless.messaging": {
@@ -342,8 +340,8 @@
           "Headless.Sql": "[1.0.0, )",
           "Headless.Sql.Abstractions": "[1.0.0, )",
           "Headless.UnitOfWork": "[1.0.0, )",
-          "OpenTelemetry.Api": "[1.18.0, )",
-          "Polly.Core": "[8.7.0, )"
+          "OpenTelemetry.Api": "[1.19.1, )",
+          "Polly.Core": "[8.8.0, )"
         }
       },
       "headless.messaging.abstractions": {
@@ -374,7 +372,7 @@
           "Headless.Messaging": "[1.0.0, )",
           "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
           "Headless.Messaging.Queue.Abstractions": "[1.0.0, )",
-          "Pulsar.Client": "[3.19.1, )"
+          "Pulsar.Client": "[3.19.4, )"
         }
       },
       "headless.messaging.queue.abstractions": {
@@ -427,7 +425,7 @@
           "Headless.Sql.Abstractions": "[1.0.0, )",
           "Headless.UnitOfWork": "[1.0.0, )",
           "Nito.AsyncEx": "[5.1.2, )",
-          "OpenTelemetry.Api": "[1.18.0, )"
+          "OpenTelemetry.Api": "[1.19.1, )"
         }
       },
       "headless.sql.abstractions": {
@@ -438,16 +436,10 @@
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
           "Headless.UnitOfWork.Abstractions": "[1.0.0, )",
-          "Polly.Core": "[8.7.0, )"
+          "Polly.Core": "[8.8.0, )"
         }
       },
       "headless.unitofwork.abstractions": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )"
-        }
-      },
-      "headless.urls": {
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )"
@@ -511,25 +503,25 @@
       },
       "OpenTelemetry.Api": {
         "type": "CentralTransitive",
-        "requested": "[1.18.0, )",
-        "resolved": "1.18.0",
-        "contentHash": "Dhzm5oughIY9EWckt2J1yXcEbXpki5WCL2q7prJoYxzH6C7jdkfGtPMTkUVZZ4AhjJKzQnlC+kLSIlmIVwC4Vw=="
+        "requested": "[1.19.1, )",
+        "resolved": "1.19.1",
+        "contentHash": "9JKIH+xrV0HNTFjQC8zrx9gZpDOMEljN5Htg/U0VE2IvO3N+7bKALCCsGy5tp09marX5dd8UkrgQFoLaulIBRw=="
       },
       "Polly.Core": {
         "type": "CentralTransitive",
-        "requested": "[8.7.0, )",
-        "resolved": "8.7.0",
-        "contentHash": "BS2t+nsBer16PIebCEPNBK5fgMisADQyRCd7K+BgkMWpFmSaiYE+rVVNpFhGRqUkJmNSLmw0uCNzHHWfgml28Q=="
+        "requested": "[8.8.0, )",
+        "resolved": "8.8.0",
+        "contentHash": "TewV9uNFsoRFggoFbTAGFwsMYPuckA+wTIpQPyhLL9BANRPQRENz2S4bwATrB3HBOakN5oKLFIllPiDnVecmJg=="
       },
       "Pulsar.Client": {
         "type": "CentralTransitive",
-        "requested": "[3.19.1, )",
-        "resolved": "3.19.1",
-        "contentHash": "EAauyrH3WYQPWcJlZCPyTjSTny+Js7Ll+2F4XEhPxPeZ5Dye67F2ENw8FscP2laSWqEdvP31mme6VIPjwG5SYw==",
+        "requested": "[3.19.4, )",
+        "resolved": "3.19.4",
+        "contentHash": "o4s1mntRj34r/StC/Ia91WZeyri56fmWzo75ihNLHJGT7PIHPvXCg5cOtq6I7EpOXYuFdEdyexL99lGmAdVKww==",
         "dependencies": {
           "Apache.Avro": "1.12.1",
           "AvroSchemaGenerator": "2.9.2",
-          "FSharp.Core": "10.1.400",
+          "FSharp.Core": "10.1.401",
           "FSharp.UMX": "1.1.0",
           "K4os.Compression.LZ4": "1.3.6",
           "Microsoft.IO.RecyclableMemoryStream": "3.0.0",

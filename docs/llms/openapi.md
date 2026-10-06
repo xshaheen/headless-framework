@@ -28,23 +28,27 @@ builder.Services.AddNswagOpenApi(options =>
 });
 
 // Middleware — Nswag for the spec, Scalar for the UI
-app.MapNswagOpenApi();
+app.UseRouting();
+app.UseAuthentication();
+app.UseNswagOpenApi(); // middleware: before UseAuthorization
+app.UseAuthorization();
 app.MapScalarOpenApi();
 ```
 
-For versioned APIs, replace `app.MapNswagOpenApi()` with `app.MapNswagOpenApiVersions()`.
+For versioned APIs, replace `app.UseNswagOpenApi()` with `app.UseNswagOpenApiVersions()`.
 
 ## Agent Rules
 
+- `UseNswagOpenApi()`, `UseNswagOpenApiVersions()`, and `UseNswagApiSurfaceDocuments()` add path-matched middleware, not endpoints. Call them before `UseAuthorization()`. Placed after it, or after mapping endpoints, a fallback authorization policy rejects the documents and Swagger UI with 401, and `AllowAnonymous()` cannot exempt them because they have no endpoint.
 - Call `AddNswagOpenApi()` to register OpenAPI document generation. Do NOT call NSwag's `AddOpenApiDocument()` directly — the framework wires all processors in the correct order.
 - **Processor registration order matters**: `GenericNullabilitySchemaProcessor` is registered before `NullabilityAsRequiredSchemaProcessor` intentionally. If you inject processors via `setupGeneratorActions`, add them after the framework processors (they run last) unless the intent is to override defaults.
 - `AddNswagOpenApi` takes an optional `setupGeneratorActions` callback that receives the NSwag `AspNetCoreOpenApiDocumentGeneratorSettings`. The framework processors are added first (in `_ConfigureGeneratorSettings`), then your callback runs, then security/primitive-mapping finalisation runs. Use this ordering to avoid conflicts.
 - For OData endpoints: add `ODataOperationProcessor` inside `setupGeneratorActions`, not as a standalone service. Detection is automatic — any endpoint with an `ODataQueryOptions` parameter or `[EnableQuery]` attribute will have the seven OData parameters injected.
-- Do NOT call `app.UseSwaggerUi()` separately — `MapNswagOpenApi()` and `MapNswagOpenApiVersions()` both call it internally. If you also call `MapScalarOpenApi()`, Swagger UI and Scalar UI will both be served; pick one or the other unless you explicitly want both.
+- Do NOT call `app.UseSwaggerUi()` separately — `UseNswagOpenApi()` and `UseNswagOpenApiVersions()` both call it internally. If you also call `MapScalarOpenApi()`, Swagger UI and Scalar UI will both be served; pick one or the other unless you explicitly want both.
 - `HeadlessNswagOptions.AddBearerSecurity` defaults to `true`. If your API uses no auth, set it to `false` to remove the security scheme from the spec.
 - `HeadlessNswagOptions.AddPrimitiveMappings` defaults to `true`. It maps `Money`, `Month`, `AccountId`, and `UserId` from `Headless.Primitives`. Disable only if your API does not expose those types.
 - `HeadlessNswagOptions.ThrowOnSchemaProcessingError` defaults to `false` — schema errors are logged and skipped. Set to `true` in development to surface FluentValidation configuration mistakes early.
-- `MapScalarOpenApi` sets `OpenApiRoutePattern` to `/openapi/{documentName}.json` which matches the path that `MapNswagOpenApi`/`MapNswagOpenApiVersions` expose. If you change the NSwag document path, update Scalar's `OpenApiRoutePattern` accordingly via the `setupAction` callback.
+- `MapScalarOpenApi` sets `OpenApiRoutePattern` to `/openapi/{documentName}.json` which matches the path that `UseNswagOpenApi`/`UseNswagOpenApiVersions` expose. If you change the NSwag document path, update Scalar's `OpenApiRoutePattern` accordingly via the `setupAction` callback.
 - The `ApiKeyHeaderName` default is `"X-API-Key"` (note: the old docs showed `"X-Api-Key"` — the actual default is `"X-API-Key"`).
 
 ## Core Concepts
@@ -69,8 +73,8 @@ NSwag OpenAPI document generation with framework processors, FluentValidation sc
 
 - `AddNswagOpenApi(Action<HeadlessNswagOptions>?, Action<AspNetCoreOpenApiDocumentGeneratorSettings>?)` — registers NSwag with all framework processors; accepts optional per-doc generator customisation
 - `AddNswagOpenApi(Action<HeadlessNswagOptions>?, Action<AspNetCoreOpenApiDocumentGeneratorSettings, IServiceProvider>?)` — same with service-provider access in the generator callback
-- `MapNswagOpenApi(...)` — maps the OpenAPI JSON endpoint (`/openapi/{documentName}.json`) and Swagger UI (`/swagger`)
-- `MapNswagOpenApiVersions(...)` — maps a versioned set of OpenAPI endpoints (one per API version) and a unified Swagger UI
+- `UseNswagOpenApi(...)` — adds middleware serving the OpenAPI JSON (`/openapi/{documentName}.json`) and Swagger UI (`/swagger`)
+- `UseNswagOpenApiVersions(...)` — adds middleware serving one OpenAPI JSON document per API version and a unified Swagger UI
 - `AddBuildingBlocksPrimitiveMappings(JsonSchemaGeneratorSettings)` — extension on `JsonSchemaGeneratorSettings` to add `Money`, `Month`, `AccountId`, `UserId` type mappers
 - `AddPrimitivesSwaggerMappings(JsonSchemaGeneratorSettings, Assembly[])` — discovers and applies primitive mappings from specific assemblies via `[PrimitiveAssembly]`
 - `AddAllPrimitivesSwaggerMappings(JsonSchemaGeneratorSettings)` — discovers and applies primitive mappings from all loaded assemblies marked with `[PrimitiveAssembly]`
@@ -83,7 +87,7 @@ NSwag OpenAPI document generation with framework processors, FluentValidation sc
 
 **User `setupGeneratorActions` runs between the two framework configuration passes** (see `_ConfigureGeneratorSettings` then user callback then `_ConfigureHeadlessGeneratorSettings`). Security scheme registration and primitive mappings are applied after the user callback, so custom processors added in `setupGeneratorActions` run before security scope processors but after the core schema/operation processors.
 
-**`MapNswagOpenApi` also mounts Swagger UI.** If you call `MapScalarOpenApi()` from `Headless.OpenApi.Scalar` on the same app, both UIs are served. This is intentional (you may want Swagger UI for internal tooling and Scalar for external docs), but if you want only Scalar, you can use NSwag's lower-level `app.UseOpenApi(...)` to expose only the JSON endpoint without the Swagger UI.
+**`UseNswagOpenApi` also mounts Swagger UI.** If you call `MapScalarOpenApi()` from `Headless.OpenApi.Scalar` on the same app, both UIs are served. This is intentional (you may want Swagger UI for internal tooling and Scalar for external docs), but if you want only Scalar, you can use NSwag's lower-level `app.UseOpenApi(...)` to expose only the JSON endpoint without the Swagger UI.
 
 **Exclusive numeric bounds are written in the OpenAPI 3.0 form, never the JSON Schema draft-6 one.** NSwag emits `openapi: 3.0.0`, where `exclusiveMinimum`/`exclusiveMaximum` are *booleans* that modify `minimum`/`maximum`. NJsonSchema exposes both dialects on the same `JsonSchema` object — `ExclusiveMinimum` (draft-6 numeric) alongside `IsExclusiveMinimum` (the boolean 3.0 adopted) — and writing the numeric form leaves the document with no `minimum` at all, so 3.0 tooling drops the bound and strict client generators reject the schema. `ComparisonRule` and `BetweenRule` go through `SetMinimum`/`SetMaximum`, which always write the boolean form and clear the numeric one. Custom rules that set bounds should use those helpers rather than assigning the NJsonSchema properties directly.
 
@@ -110,10 +114,10 @@ builder.Services.AddNswagOpenApi(options =>
 
 var app = builder.Build();
 
-app.MapNswagOpenApi();
+app.UseNswagOpenApi(); // before UseAuthorization()
 
 // or for versioned APIs:
-app.MapNswagOpenApiVersions();
+app.UseNswagOpenApiVersions();
 ```
 
 Custom generator settings (e.g., add a custom operation processor):
@@ -144,13 +148,13 @@ builder.Services.AddNswagOpenApi(
 builder.Services.AddNswagApiSurfaceDocuments(
     setupGeneratorActions: (settings, surface) => settings.Version = "v1"
 );
-// After building the application and mapping MVC / Minimal API endpoints:
-app.MapNswagApiSurfaceDocuments();
+// After building the application, before UseAuthorization():
+app.UseNswagApiSurfaceDocuments();
 ```
 
 Configure document identity through `surface.OpenApi.DocumentName` and `.Title`. The generator callback cannot rename the document. Surface metadata filters operations before schema generation, excluding other surfaces' paths and schemas. API Explorer groups remain available independently through `settings.ApiGroupNames`; surface registration does not overwrite version groups.
 
-Extra documents can use either `AddNswagOpenApi(...)` or native NSwag `AddOpenApiDocument(...)`. Surface documents use ordinary NSwag registrations without replacing its services. Register each document once across calls. `MapNswagApiSurfaceDocuments()` serves `/openapi/{documentName}.json` and the shared Swagger UI at `/swagger`.
+Extra documents can use either `AddNswagOpenApi(...)` or native NSwag `AddOpenApiDocument(...)`. Surface documents use ordinary NSwag registrations without replacing its services. Register each document once across calls. `UseNswagApiSurfaceDocuments()` serves `/openapi/{documentName}.json` and the shared Swagger UI at `/swagger`.
 
 `TenantRequiredExampleOperationProcessor` adds the `tenantRequired` 403 example only for effective `RequireTenant` endpoint metadata. Optional-tenant and anonymous endpoints do not receive it. It also runs for ordinary documents. Authorization responses are created per operation so examples and schemas cannot leak between documents.
 
@@ -170,8 +174,8 @@ Operation IDs use named MVC HTTP attributes and native Minimal API route-name me
 
 - Surface registration supplies a singleton aggregate NSwag document collection from the finalized surface registry.
 - Registers NSwag OpenAPI document generator via `services.AddOpenApiDocument(...)`
-- `MapNswagOpenApi()` mounts the OpenAPI JSON endpoint at `/openapi/{documentName}.json` and Swagger UI at `/swagger`
-- `MapNswagOpenApiVersions()` mounts one OpenAPI JSON endpoint per API version at `/openapi/{groupName}.json` and a single Swagger UI at `/swagger`
+- `UseNswagOpenApi()` serves the OpenAPI JSON at `/openapi/{documentName}.json` and Swagger UI at `/swagger` as middleware, ahead of authorization
+- `UseNswagOpenApiVersions()` serves one OpenAPI JSON document per API version at `/openapi/{groupName}.json` and a single Swagger UI at `/swagger` as middleware, ahead of authorization
 
 ---
 ## Headless.OpenApi.Nswag.OData
@@ -243,7 +247,7 @@ Scalar API documentation UI integration — renders the OpenAPI document generat
 
 ### Design constraints
 
-**Route pattern coupling.** `MapScalarOpenApi` hard-codes `options.OpenApiRoutePattern = "/openapi/{documentName}.json"` before passing control to the user callback. This matches what `MapNswagOpenApi` and `MapNswagOpenApiVersions` expose. If you change the NSwag JSON path (via `documentSettings` on those methods), you must override `OpenApiRoutePattern` in the Scalar `setupAction` or the UI will point at a 404.
+**Route pattern coupling.** `MapScalarOpenApi` hard-codes `options.OpenApiRoutePattern = "/openapi/{documentName}.json"` before passing control to the user callback. This matches what `UseNswagOpenApi` and `UseNswagOpenApiVersions` expose. If you change the NSwag JSON path (via `documentSettings` on those methods), you must override `OpenApiRoutePattern` in the Scalar `setupAction` or the UI will point at a 404.
 
 **No `AddNswagOpenApi` dependency at runtime.** The `Headless.OpenApi.Scalar` package does not reference `Headless.OpenApi.Nswag`. It calls `Scalar.AspNetCore`'s `MapScalarApiReference` which works with any OpenAPI JSON source. You can pair it with a different generator as long as the JSON endpoint path matches.
 
@@ -258,8 +262,8 @@ dotnet add package Headless.OpenApi.Scalar
 ```csharp
 var app = builder.Build();
 
-// Serve the OpenAPI JSON (from Headless.OpenApi.Nswag)
-app.MapNswagOpenApi();
+// Serve the OpenAPI JSON (from Headless.OpenApi.Nswag); middleware, so before UseAuthorization()
+app.UseNswagOpenApi();
 
 // Serve the Scalar UI
 app.MapScalarOpenApi();

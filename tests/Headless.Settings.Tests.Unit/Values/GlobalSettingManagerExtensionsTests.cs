@@ -285,6 +285,38 @@ public sealed class GlobalSettingManagerExtensionsTests : TestBase
 
     #endregion
 
+    #region SetAllGlobalAsync
+
+    [Fact]
+    public async Task should_set_all_values_in_one_batch_for_global_provider()
+    {
+        // given
+        var values = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            ["Quota.Limit"] = "10",
+            ["Quota.Window"] = "\"00:10:00\"",
+            ["Quota.Note"] = null,
+        };
+
+        // when
+        await _settingManager.SetAllGlobalAsync(values, AbortToken);
+
+        // then - one batch call, never per-name writes
+        await _settingManager.Received(1).SetAsync(values, SettingValueProviderNames.Global, null, false, AbortToken);
+        await _settingManager
+            .DidNotReceive()
+            .SetAsync(
+                Arg.Any<string>(),
+                Arg.Any<string?>(),
+                Arg.Any<string>(),
+                Arg.Any<string?>(),
+                Arg.Any<bool>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    #endregion
+
     private sealed class TestSettings
     {
         public string Value { get; init; } = "";

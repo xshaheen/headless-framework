@@ -12,6 +12,9 @@
     <InternalsVisibleTo Include="Headless.Features.Tests.Unit" />
   </ItemGroup>
   <ItemGroup>
+    <!-- The host-agnostic authorization package, not the ASP.NET Core shared framework: feature gates are
+         authorization requirements, and worker hosts still run without the ASP.NET runtime. -->
+    <PackageReference Include="Microsoft.AspNetCore.Authorization" />
     <PackageReference Include="Polly.Core" />
   </ItemGroup>
   <ItemGroup>

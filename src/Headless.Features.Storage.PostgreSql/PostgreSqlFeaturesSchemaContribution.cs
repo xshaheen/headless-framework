@@ -94,7 +94,8 @@ internal static class PostgreSqlFeaturesSchemaContribution
                 new SchemaStep(TablesStepVersion, "Create the value, definition, and group tables.", tablesSql),
                 new SchemaStep(IndexesStepVersion, "Create the value, definition, and group indexes.", indexesSql),
             ],
-            applyOnStartup: applyOnStartup
+            applyOnStartup: applyOnStartup,
+            hostStateTables: [definitionsName, groupsName]
         );
     }
 }

@@ -448,16 +448,6 @@ internal sealed class HeadlessDbContextRuntime(DbContext db)
                 x => !EF.Property<bool>(x, isDeletedName)
             );
         }
-
-        if (entityType.IsAssignableTo<ISuspendAudit>())
-        {
-            var isSuspendedName = _GetColumnName(entityBuilder.Metadata, nameof(ISuspendAudit.IsSuspended));
-
-            entityBuilder.HasQueryFilter(
-                HeadlessQueryFilters.NotSuspendedFilter,
-                x => !EF.Property<bool>(x, isSuspendedName)
-            );
-        }
     }
 
     private static string _GetColumnName(IMutableEntityType type, string name)

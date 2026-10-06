@@ -151,5 +151,37 @@ public static class GlobalSettingManagerExtensions
                 cancellationToken: cancellationToken
             );
         }
+
+        /// <summary>
+        /// Persists several string setting values at the global scope as one batch, announced in one
+        /// <see cref="SettingChangedMessage"/>.
+        /// </summary>
+        /// <param name="values">
+        /// The new values keyed by setting name. A <see langword="null"/> value clears that setting. An empty dictionary
+        /// writes nothing and announces nothing.
+        /// </param>
+        /// <param name="cancellationToken">The abort token.</param>
+        /// <remarks>
+        /// Use it instead of consecutive <c>SetGlobalAsync</c> calls when the values form one policy: every name is
+        /// checked before anything is written, the built-in stores commit the batch in one transaction, and readers
+        /// never observe a mix of old and new values. To store a typed value the way <c>SetGlobalAsync&lt;T&gt;</c>
+        /// does, serialize it with <c>JsonSerializer.Serialize(value, JsonConstants.DefaultInternalJsonOptions)</c>.
+        /// </remarks>
+        /// <exception cref="ArgumentNullException"><paramref name="values"/> is <see langword="null"/>.</exception>
+        /// <exception cref="Headless.ConflictException">
+        /// A setting in <paramref name="values"/> is not defined, or no writable global provider is registered.
+        /// </exception>
+        public Task SetAllGlobalAsync(
+            IReadOnlyDictionary<string, string?> values,
+            CancellationToken cancellationToken = default
+        )
+        {
+            return settingManager.SetAsync(
+                values,
+                SettingValueProviderNames.Global,
+                providerKey: null,
+                cancellationToken: cancellationToken
+            );
+        }
     }
 }

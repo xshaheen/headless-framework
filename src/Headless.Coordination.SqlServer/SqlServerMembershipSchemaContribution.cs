@@ -103,7 +103,8 @@ internal static class SqlServerMembershipSchemaContribution
                     tablesSql
                 ),
             ],
-            applyOnStartup: providerOptions.InitializeOnStartup
+            applyOnStartup: providerOptions.InitializeOnStartup,
+            hostStateTables: [t.GenerationTableName, t.DescriptorTableName, t.LivenessTableName]
         );
     }
 }

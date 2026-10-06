@@ -6,6 +6,7 @@ using Headless.Context;
 using Headless.Features.Resources;
 using Headless.Hosting;
 using Headless.Messaging;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
@@ -134,6 +135,11 @@ public static class SetupFeatures
 
         if (registerStartupInitializer)
         {
+            // Registered first so the initializer below reuses this instance: its retry back-off runs on the system clock,
+            // never on a faked app TimeProvider that a test host does not advance.
+            services.TryAddSingleton(static sp =>
+                ActivatorUtilities.CreateInstance<FeaturesInitializationBackgroundService>(sp, TimeProvider.System)
+            );
             services.AddInitializerHostedService<FeaturesInitializationBackgroundService>();
         }
 
@@ -192,6 +198,15 @@ public static class SetupFeatures
         services.TryAddTransient<IClientVisibleFeaturesReader, ClientVisibleFeaturesReader>();
 
         services.AddSingleton<IMethodInvocationFeatureCheckerService, MethodInvocationFeatureCheckerService>();
+
+        // [RequiresFeature] is authorization data, so this handler is the gate: no HTTP-specific registration
+        // exists to forget. Transient because IFeatureManager is transient; TryAddEnumerable keeps one handler.
+        services.TryAddEnumerable(ServiceDescriptor.Transient<IAuthorizationHandler, FeatureRequirementHandler>());
+
+        // Registers the authorization services the handler runs under, and lets WebApplication add the
+        // authorization middleware on its own when the host never calls UseAuthorization(). TryAdd-only, so a
+        // host's own registrations win.
+        services.AddAuthorizationCore();
 
         return services;
     }

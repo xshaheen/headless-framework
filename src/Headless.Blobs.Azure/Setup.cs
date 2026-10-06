@@ -3,6 +3,7 @@
 using Azure.Storage.Blobs;
 using Headless.Blobs.Azure;
 using Headless.Checks;
+using Headless.Hosting;
 using Headless.IO;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -39,6 +40,10 @@ namespace Headless.Blobs;
 /// <para>
 /// Named stores also expose keyed <see cref="IPresignedUrlBlobStorage"/> forwards. Default presigned support is
 /// discovered by casting the resolved <see cref="IBlobStorage"/>.
+/// </para>
+/// <para>
+/// Each store contributes a readiness health check, <c>blobs-azure</c> for the default store and
+/// <c>blobs-azure-{name}</c> for a named one, which reads one page of the account's container list.
 /// </para>
 /// </remarks>
 [PublicAPI]
@@ -166,6 +171,13 @@ public static class SetupAzureBlob
             );
         });
 
+        services.AddHeadlessHealthCheck(
+            "blobs-azure",
+            (provider, cancellationToken) =>
+                _PingAsync(provider, clientFactory, Options.DefaultName, cancellationToken),
+            HeadlessHealthCheckTags.Blobs
+        );
+
         return services;
     }
 
@@ -218,7 +230,51 @@ public static class SetupAzureBlob
             }
         );
 
+        services.AddHeadlessHealthCheck(
+            "blobs-azure-" + name,
+            (provider, cancellationToken) => _PingAsync(provider, clientFactory, name, cancellationToken),
+            HeadlessHealthCheckTags.Blobs
+        );
+
         return services;
+    }
+
+    private static async Task _PingAsync(
+        IServiceProvider services,
+        Func<IServiceProvider, BlobServiceClient>? clientFactory,
+        string optionsName,
+        CancellationToken cancellationToken
+    )
+    {
+        var client = clientFactory is not null
+            ? clientFactory(services)
+            : services.GetRequiredService<BlobServiceClient>();
+
+        var containerName = services
+            .GetRequiredService<IOptionsMonitor<AzureStorageOptions>>()
+            .Get(optionsName)
+            .HealthCheckContainerName;
+
+        if (containerName is not null)
+        {
+            // Least privilege: reading one container's properties needs only a container-scoped reader role.
+            await client
+                .GetBlobContainerClient(containerName)
+                .GetPropertiesAsync(cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+
+            return;
+        }
+
+        // Reading one page of the container list is an authenticated round trip that needs no container name. Its
+        // permission (containers/read) is part of the Storage Blob Data Reader role, unlike Get Account Information,
+        // which needs an action only the Owner role carries.
+        await using var pages = client
+            .GetBlobContainersAsync(cancellationToken: cancellationToken)
+            .AsPages(pageSizeHint: 1)
+            .GetAsyncEnumerator(cancellationToken);
+
+        await pages.MoveNextAsync().ConfigureAwait(false);
     }
 }
 

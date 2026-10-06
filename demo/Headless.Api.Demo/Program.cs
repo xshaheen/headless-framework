@@ -19,9 +19,9 @@ builder
         options.OpenTelemetry.Enabled = false;
         options.OpenApi.Enabled = false;
     })
-    .ConfigureMinimalApi();
+    .ConfigureHeadlessMinimalApi();
 builder.Services.AddNswagOpenApi();
-builder.Services.ConfigureMvc();
+builder.Services.ConfigureHeadlessMvc();
 builder.Services.AddStatusCodesRewriterMiddleware();
 builder.Services.AddControllers();
 
@@ -57,7 +57,7 @@ app.UseExceptionHandler();
 app.UseStatusCodesRewriter();
 app.UseAuthentication();
 app.UseAuthorization();
-app.MapNswagOpenApi();
+app.UseNswagOpenApi();
 app.MapControllers();
 app.MapProblemsEndpoints();
 

@@ -5,8 +5,20 @@
     <EmitCompilerGeneratedFiles>false</EmitCompilerGeneratedFiles>
     <GenerateSBOM Condition="'$(GenerateSBOM)' == ''">true</GenerateSBOM>
   </PropertyGroup>
+  <!-- ReferenceTrimmer findings are a report, not a build break: `make quality-references` lists them after the build. -->
+  <PropertyGroup Condition="'$(HeadlessReferenceTrimmer)' == 'true'">
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);RT0000;RT0001;RT0002;RT0003</WarningsNotAsErrors>
+    <!-- Build outside the project folders, with its own lock file, so the run never touches bin/, obj/, or the committed lock files. -->
+    <BaseIntermediateOutputPath>$(MSBuildThisFileDirectory)artifacts/reftrim/obj/$(MSBuildProjectName)/</BaseIntermediateOutputPath>
+    <BaseOutputPath>$(MSBuildThisFileDirectory)artifacts/reftrim/bin/$(MSBuildProjectName)/</BaseOutputPath>
+    <NuGetLockFilePath>$(BaseIntermediateOutputPath)packages.lock.json</NuGetLockFilePath>
+    <RestoreLockedMode>false</RestoreLockedMode>
+    <!-- The regular bin/ and obj/ stay out of the default globs once the build no longer writes there. -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);bin/**;obj/**</DefaultItemExcludes>
+  </PropertyGroup>
   <ItemGroup Label="Package References">
-    <PackageReference Include="JetBrains.Annotations" PrivateAssets="all" />
+    <!-- TreatAsUsed: the annotation attributes are [Conditional], so the compiler drops them and sees the assembly as unused. -->
+    <PackageReference Include="JetBrains.Annotations" PrivateAssets="all" TreatAsUsed="true" />
     <Using Include="JetBrains.Annotations" />
   </ItemGroup>
 </Project>

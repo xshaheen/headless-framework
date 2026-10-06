@@ -14,7 +14,7 @@
 
 [اللغة: العربية](README.ar.md)
 
-199 packages &bull; One setup grammar &bull; Swap any provider in one line
+203 packages &bull; One setup grammar &bull; Swap any provider in one line
 
 [Why Headless](#why-headless) &bull; [60-second start](#60-second-start) &bull; [One grammar, every domain](#one-grammar-every-domain) &bull; [What is in the box](#what-is-in-the-box) &bull; [Package catalog](#package-catalog)
 
@@ -44,7 +44,7 @@ builder.Services.AddHeadlessCaching(setup => setup.UseRedis(...)); // production
 
 Every service, repository, and handler that injects `ICache` is untouched by that edit. The same holds for `IBlobStorage` across S3, Azure, Cloudflare R2, the file system, Redis, and SFTP; for `IEmailSender` across SES, Azure Communication Services, and SMTP; and for messaging across eight transports.
 
-**You install three packages, not 199.** The catalog is large because the provider matrix is large. A service that needs caching installs `Headless.Caching.Abstractions`, `Headless.Caching`, and one provider. Domain and application libraries reference the abstraction package alone. `Headless.Caching.Abstractions` pulls in two packages with no third-party dependencies: `Headless.Checks` and `Headless.Primitives`.
+**You install three packages, not 203.** The catalog is large because the provider matrix is large. A service that needs caching installs `Headless.Caching.Abstractions`, `Headless.Caching`, and one provider. Domain and application libraries reference the abstraction package alone. `Headless.Caching.Abstractions` pulls in two packages with no third-party dependencies: `Headless.Checks` and `Headless.Primitives`.
 
 **Tests do not need Docker to be fast.** Caching, distributed locks, and messaging ship in-memory providers; email, SMS, and push notifications ship dev providers that send nothing; blob storage runs against the local file system. Unit tests exercise the real contract with no containers. When you want the real backend, `Headless.Testing.Testcontainers` supplies the fixtures. The repository itself runs 122 unit-test projects and 63 integration-test projects on that split.
 
@@ -252,7 +252,7 @@ Provider packages are ordinary NuGet packages. To add a custom backend, implemen
 ## Package catalog
 
 <details>
-<summary><strong>All 199 packages, grouped by domain</strong> — expand to browse</summary>
+<summary><strong>All 203 packages, grouped by domain</strong> — expand to browse</summary>
 
 ### API & Web
 
@@ -260,15 +260,18 @@ Production ASP.NET Core APIs: request and response conventions, validation pipel
 
 | Package | Description |
 |---------|-------------|
-| [Headless.Api](src/Headless.Api/README.md) | ASP.NET Core API building blocks (problem details, JWT, identity, middleware) |
+| [Headless.Api](src/Headless.Api/README.md) | ASP.NET Core API building blocks (problem details, tenancy, middleware) |
 | [Headless.Api.ServiceDefaults](src/Headless.Api.ServiceDefaults/README.md) | `AddHeadless()` orchestrator plus Aspire-style defaults (OpenTelemetry, OpenAPI, service discovery) |
 | [Headless.Api.Abstractions](src/Headless.Api.Abstractions/README.md) | API abstractions and contracts |
-| [Headless.Api.DataProtection](src/Headless.Api.DataProtection/README.md) | Data protection key storage |
+| [Headless.DataProtection.Blobs](src/Headless.DataProtection.Blobs/README.md) | Data protection key storage |
 | [Headless.Api.FluentValidation](src/Headless.Api.FluentValidation/README.md) | FluentValidation integration for APIs |
 | [Headless.Api.Logging.Serilog](src/Headless.Api.Logging.Serilog/README.md) | Serilog logging integration |
 | [Headless.Api.MinimalApi](src/Headless.Api.MinimalApi/README.md) | Minimal API utilities |
 | [Headless.Api.Mvc](src/Headless.Api.Mvc/README.md) | MVC-specific utilities |
 | [Headless.Api.Idempotency](src/Headless.Api.Idempotency/README.md) | Stripe-style HTTP idempotency middleware — cache and replay responses on retries |
+| [Headless.Api.Identity](src/Headless.Api.Identity/README.md) | ASP.NET Core Identity helpers: token providers, localized identity errors, Basic and API-key schemes |
+| [Headless.Api.Jwt](src/Headless.Api.Jwt/README.md) | JWT issuing and parsing, with a matching bearer scheme |
+| [Headless.Api.UserAgent](src/Headless.Api.UserAgent/README.md) | User-Agent parsing backed by DeviceDetector.NET |
 
 ### Core
 
@@ -284,7 +287,7 @@ Foundational building blocks shared across the framework — domain primitives, 
 | [Headless.Security.Argon2](src/Headless.Security.Argon2/README.md) | Argon2id secret hashing, the default `ISecretHasher` algorithm |
 | [Headless.Checks](src/Headless.Checks/README.md) | Guard clauses and argument validation |
 | [Headless.Domain](src/Headless.Domain/README.md) | Domain entities and events |
-| [Headless.Domain.LocalEventBus](src/Headless.Domain.LocalEventBus/README.md) | DI-based `ILocalEventBus` for in-process domain event publishing |
+| [Headless.Domain.EventDispatcher](src/Headless.Domain.EventDispatcher/README.md) | DI-based `IDomainEventDispatcher` that runs in-process domain event handlers |
 | [Headless.Mediator](src/Headless.Mediator/README.md) | Mediator pipeline behaviors (FluentValidation, request/response logging) |
 | [Headless.MultiTenancy.Abstractions](src/Headless.MultiTenancy.Abstractions/README.md) | Tenant-context contracts plus the optional tenant catalog's store SPI and models |
 | [Headless.MultiTenancy](src/Headless.MultiTenancy/README.md) | Composition surface for tenant posture across Headless packages |
@@ -608,6 +611,7 @@ Explicit unit of work: begin it on the line you choose from a singleton factory,
 | [Headless.UnitOfWork.PostgreSql](src/Headless.UnitOfWork.PostgreSql/README.md) | Raw-ADO `NpgsqlConnection` provider with the same shape |
 | [Headless.UnitOfWork.SqlServer](src/Headless.UnitOfWork.SqlServer/README.md) | Raw-ADO `SqlConnection` provider with the same shape |
 | [Headless.UnitOfWork.Sqlite](src/Headless.UnitOfWork.Sqlite/README.md) | Raw-ADO `SqliteConnection` provider with the same shape |
+| [Headless.UnitOfWork.Analyzers](src/Headless.UnitOfWork.Analyzers/README.md) | Roslyn analyzers and code fixes that flag an autonomous write made while a unit of work is in scope and name the enlisted receiver (`unit.Outbox`, `unit.Jobs`) |
 
 ### Serialization
 

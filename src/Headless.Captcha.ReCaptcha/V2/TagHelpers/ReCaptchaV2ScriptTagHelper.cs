@@ -16,7 +16,7 @@ public sealed class ReCaptchaV2ScriptTagHelper(
     ICaptchaLanguageCodeProvider languageCodeProvider
 ) : TagHelper
 {
-    /// <summary>Gets or sets a value indicating whether to add the <c>async</c> attribute to the script tag.</summary>
+    /// <summary>Gets or sets a value indicating whether to add the <see langword="async"/> attribute to the script tag.</summary>
     public bool ScriptAsync { get; set; } = true;
 
     /// <summary>Gets or sets a value indicating whether to add the <c>defer</c> attribute to the script tag.</summary>

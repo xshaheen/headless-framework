@@ -7,7 +7,7 @@ namespace Headless.Messaging.Testing;
 /// <summary>
 /// A test double for <see cref="IConsume{TMessage}"/> that captures every
 /// <see cref="ConsumeContext{TMessage}"/> it receives for assertion.
-/// Use <c>harness.WaitForConsumed&lt;T&gt;</c> for awaitable signal-based assertions;
+/// Use <c>harness.WaitForConsumedAsync&lt;T&gt;</c> for awaitable signal-based assertions;
 /// use <see cref="ReceivedContexts"/> when you need the full <see cref="ConsumeContext{TMessage}"/>.
 /// </summary>
 /// <typeparam name="TMessage">The type of message to consume. Must be a reference type.</typeparam>

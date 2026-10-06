@@ -21,7 +21,7 @@ public static class SetupMvc
     /// </summary>
     /// <param name="services">The service collection to configure.</param>
     /// <returns><paramref name="services"/> for chaining.</returns>
-    public static IServiceCollection ConfigureMvc(this IServiceCollection services)
+    public static IServiceCollection ConfigureHeadlessMvc(this IServiceCollection services)
     {
         services.ConfigureOptions<ConfigureMvcJsonOptions>();
         services.ConfigureOptions<ConfigureMvcApiOptions>();
@@ -31,11 +31,11 @@ public static class SetupMvc
 
     /// <summary>
     /// Registers Headless MVC defaults on <paramref name="builder"/>: same JSON and API behavior
-    /// options as <see cref="ConfigureMvc(IServiceCollection)"/>.
+    /// options as <see cref="ConfigureHeadlessMvc(IServiceCollection)"/>.
     /// </summary>
     /// <param name="builder">The <see cref="WebApplicationBuilder"/> to configure.</param>
     /// <returns><paramref name="builder"/> for chaining.</returns>
-    public static WebApplicationBuilder ConfigureMvc(this WebApplicationBuilder builder)
+    public static WebApplicationBuilder ConfigureHeadlessMvc(this WebApplicationBuilder builder)
     {
         builder.Services.ConfigureOptions<ConfigureMvcJsonOptions>();
         builder.Services.ConfigureOptions<ConfigureMvcApiOptions>();

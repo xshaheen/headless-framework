@@ -289,6 +289,7 @@ Core hosting utilities and extensions for ASP.NET Core applications.
 - `AddHeadlessGuidGenerator()` — registers keyed `IGuidGenerator` strategies for `SequentialGuidType.Version7` and `SequentialGuidType.SqlServer`, plus an unkeyed backend-agnostic default. The `IGuidGenerator` / `SequentialGuidType` contracts live in `Headless.Extensions` (see [extensions.md](extensions.md))
 - `LogState` / `HeadlessLoggerExtensions` — structured-logging scope builder with fluent property/tag methods and level-gated `Log*` overloads that build the scope inline
 - Startup validators (`IHeadlessStartupValidator`, `AddStartupValidator`) that run before any hosted service starts and report every failure together
+- Dependency health checks: provider packages contribute readiness checks through `AddHeadlessHealthCheck`, tagged with `HeadlessHealthCheckTags`; applications drop any of them with `RemoveHealthChecks`. See [Health checks](#health-checks)
 - Required-service declarations (`RequireRegisteredService<T>`) that fail the host at startup instead of at first use
 - Options validation with FluentValidation
 - Configuration binding extensions
@@ -409,6 +410,81 @@ services.AddStartupValidator<OrdersModelValidator>();
 - **Registration.** `AddStartupValidator<T>()` and `AddStartupValidator(Type)` are idempotent per validator type; `AddStartupValidator(Func<IServiceProvider, IHeadlessStartupValidator>)` adds a validator on every call, for one validator per named instance.
 - **Cheap checks only.** Validators run on every instance on every start and have no switch to turn them off. Keep them to in-memory checks (options, EF model metadata, DI registrations, wiring flags). A diagnostic that does network I/O or measures cost belongs in its own hosted service with a mode.
 - **Advisory findings.** A validator that should only warn logs through an injected logger and returns normally.
+
+#### Health Checks
+
+A provider package that talks to an external dependency contributes a readiness health check when it is registered, so `/health` reports the database, Redis, broker, or blob store the host depends on instead of only the process. Nothing is resolved and no connection opens at registration: each check probes its dependency only when a health check runs.
+
+| Registered by | Check name | Dependency tag | Probe |
+| --- | --- | --- | --- |
+| `AddPostgreSqlSql` | `sql-postgresql` | `database` | `SELECT 1`, or the configured `TestCommand`, on a new connection (`ISqlConnectionFactory.PingAsync`) |
+| `AddSqlServerSql` | `sql-sqlserver` | `database` | `SELECT 1`, or the configured `TestCommand`, on a new connection |
+| `AddHeadlessDbContext<T>`, `AddHeadlessDbContextPool<T>` | `dbcontext-{T full name}` | `database` | Microsoft's `AddDbContextCheck<T>`: `Database.CanConnectAsync`, or the configured `TestCommand` through `ExecuteSqlRawAsync`, on the context of the check's scope |
+| Caching `UseRedis` / `AddRedisTier` | `cache-redis` (named: `cache-redis-{name}`) | `redis` | `PING` to every configured endpoint of the options' multiplexer, `CLUSTER INFO` = `cluster_state:ok` on cluster nodes (`ProbeEndpointsAsync`) |
+| Distributed locks `UseRedis` | `distributed-locks-redis` | `redis` | The same endpoint probe through the registered `IConnectionMultiplexer` |
+| Messaging `UseNats` | `messaging-nats` | `messaging` | NATS `PING` on a pooled connection |
+| Blobs `UseAzure` | `blobs-azure` (named: `blobs-azure-{name}`) | `blobs` | Reads one page of the account's container list, or the properties of `AzureStorageOptions.HealthCheckContainerName` when set |
+
+- **Tags.** Every contributed check carries `ready` (`HeadlessHealthCheckTags.Ready`), `headless` (`HeadlessHealthCheckTags.Headless`), and its dependency tag. None carries the liveness tag, so `MapHeadlessEndpoints()` shows them on `/health` and keeps them off `/alive`: a database outage never makes an orchestrator restart a healthy process. Map a readiness endpoint by tag when the platform probes readiness separately:
+
+  ```csharp
+  app.MapHealthChecks("/ready", new HealthCheckOptions
+  {
+      Predicate = registration => registration.Tags.Contains(HeadlessHealthCheckTags.Ready),
+  });
+  ```
+
+- **Opting out.** `RemoveHealthChecks(predicate)` removes matching registrations after every other configuration runs, so its position in `Program.cs` does not matter:
+
+  ```csharp
+  // Drop one contributed check.
+  builder.Services.RemoveHealthChecks(registration => registration.Name == "messaging-nats");
+
+  // Drop every check Headless contributed, for example to use your own checks instead.
+  builder.Services.RemoveHealthChecks(registration => registration.Tags.Contains(HeadlessHealthCheckTags.Headless));
+  ```
+
+- **Configuring one.** `services.ConfigureHeadlessHealthCheck(name, options => ...)` changes a contributed check through `HeadlessHealthCheckOptions`, named options validated at startup; the call's position relative to the provider registration does not matter:
+
+  ```csharp
+  builder.Services.ConfigureHeadlessHealthCheck("cache-redis", options =>
+  {
+      options.FailureStatus = HealthStatus.Degraded; // a cache outage degrades, it does not fail readiness
+      options.Timeout = TimeSpan.FromSeconds(2);
+      options.Tags.Add("cache");
+  });
+  builder.Services.ConfigureHeadlessHealthCheck("sql-postgresql", options =>
+      options.TestCommand = "SELECT 1 FROM orders LIMIT 1"); // prove the schema, not just the server
+  ```
+
+  `FailureStatus` (default `Unhealthy`; `Healthy` is rejected) is what a failed or timed-out probe reports. `Timeout` (default none) bounds the probe; the health check service cancels it and reports `FailureStatus` with `A timeout occurred while running check.`. Without one, a probe runs until its driver gives up or the health request is cancelled. `Tags` adds tags. `TestCommand` replaces the query of the SQL and DbContext checks and is ignored by the others; the Azure blob check takes a container through `AzureStorageOptions.HealthCheckContainerName` instead. For anything else, mutate the registration in `services.PostConfigure<HealthCheckServiceOptions>(...)`.
+- **Failure reporting.** A probe that throws reports the registration's failure status (`Unhealthy` by default) with the fixed description `The '{name}' dependency probe failed.` and the exception attached for the health-check log. The driver's message stays out of the description because health endpoints are usually anonymous. A cancelled health request cancels the probe and reports nothing, rather than reporting the dependency as down. The report entry's `Duration` carries the probe latency; checks add no result data, because server versions and endpoint names do not belong on an anonymous endpoint.
+- **One check per name.** A second contribution with the same name adds nothing, so a provider registered twice keeps one check. A named cache or blob store gets its own check.
+- **Not covered.** A storage feature configured with its own connection string, instead of the shared `AddPostgreSqlSql` / `AddSqlServerSql` connection or a `HeadlessDbContext`, contributes no check; add one with `AddHeadlessHealthCheck`. SQLite and in-memory providers contribute none. The data-protection key-ring check stays opt-in through `AddDataProtectionKeyRing()`, because its default probe writes to the store (see [api.md](api.md)).
+- **Wrapping a third-party check.** `services.AddHeadlessHealthCheck(name, (builder, name, tags) => builder.AddXxxCheck(name, failureStatus: null, tags), dependencyTag)` contributes a check that another package's `IHealthChecksBuilder` method registers, under the same conventions: the `ready` and `headless` tags, one registration per name, and failures (thrown or returned) reported with the registration's failure status and the fixed description. The DbContext check uses it to run Microsoft's `AddDbContextCheck<T>`, whose own failures put the driver message in the description.
+- **Writing one.** A provider package contributes its own check with `services.AddHeadlessHealthCheck(name, probe, tags)`. The probe receives the services of the check's scope and a cancellation token; completing means healthy and throwing means unhealthy:
+
+  ```csharp
+  services.AddHeadlessHealthCheck(
+      "search-elastic",
+      static async (provider, cancellationToken) =>
+          await provider.GetRequiredService<ISearchClient>().PingAsync(cancellationToken),
+      "search"
+  );
+  ```
+
+- **Compared with the community checks.** The [Xabaril `AspNetCore.HealthChecks.*`](https://github.com/Xabaril/AspNetCore.Diagnostics.HealthChecks) packages and Microsoft's [`AddDbContextCheck`](https://github.com/dotnet/aspnetcore/blob/55d77e1e0349aa2a079a516f6ecb7c79b56bf85c/src/Middleware/HealthChecks.EntityFrameworkCore/src/DbContextHealthCheck.cs), read at the commits linked here:
+
+  | Dependency | Community check | Headless check |
+  | --- | --- | --- |
+  | PostgreSQL | [`NpgSqlHealthCheck`](https://github.com/Xabaril/AspNetCore.Diagnostics.HealthChecks/blob/3b6abbd374a5d7bc8d209ff48bc38df947266054/src/HealthChecks.NpgSql/NpgSqlHealthCheck.cs): `SELECT 1` or a custom command on a connection from its own connection string or an `NpgsqlDataSource`; a result builder can turn the scalar into a status; the exception message becomes the description | The connection factory the app already registered; `SELECT 1` or `TestCommand`; fixed description |
+  | SQL Server | [`SqlServerHealthCheck`](https://github.com/Xabaril/AspNetCore.Diagnostics.HealthChecks/blob/3b6abbd374a5d7bc8d209ff48bc38df947266054/src/HealthChecks.SqlServer/SqlServerHealthCheck.cs): the same shape over a connection string; no description | The registered factory; `SELECT 1` or `TestCommand` |
+  | DbContext | Microsoft's check: `CanConnectAsync` or a custom test query; any exception is `Unhealthy` with its message, whatever the failure status | Microsoft's check, wrapped: the configured failure status and fixed text; `TestCommand` as the query |
+  | Redis | [`RedisHealthCheck`](https://github.com/Xabaril/AspNetCore.Diagnostics.HealthChecks/blob/3b6abbd374a5d7bc8d209ff48bc38df947266054/src/HealthChecks.Redis/RedisHealthCheck.cs): pings each configured endpoint and checks `cluster_state:ok`; can create and cache its own multiplexer from a connection string; endpoint names in the description | The provider's multiplexer; the same endpoint and cluster probe; fixed text |
+  | NATS | [`NatsHealthCheck`](https://github.com/Xabaril/AspNetCore.Diagnostics.HealthChecks/blob/3b6abbd374a5d7bc8d209ff48bc38df947266054/src/HealthChecks.Nats/NatsHealthCheck.cs): `ConnectAsync` on the registered connection, always `Unhealthy`, no cancellation | A `PING` round trip on the transport's pooled connection, honoring cancellation and the failure status |
+  | Azure blobs | [`AzureBlobStorageHealthCheck`](https://github.com/Xabaril/AspNetCore.Diagnostics.HealthChecks/blob/3b6abbd374a5d7bc8d209ff48bc38df947266054/src/HealthChecks.Azure.Storage.Blobs/AzureBlobStorageHealthCheck.cs): one page of containers, or a named container's properties | The provider's client; the same two probes |
+
+  Every community check above takes `failureStatus`, `tags`, and `timeout` at registration; `HeadlessHealthCheckOptions` covers the same three. Prefer a community package when the app needs what these checks deliberately leave out: deciding health from a query's result (`HealthCheckResultBuilder`, for example replication lag), a check for a dependency no Headless provider owns, or a check against a connection string the app does not otherwise use. Register it next to the contributed checks under another name, or drop the contributed one with `RemoveHealthChecks`.
 
 #### Required Services
 
@@ -611,7 +687,7 @@ Redis utilities and Lua script management for StackExchange.Redis.
 
 ### API and behavior
 
-- `HeadlessConnectionMultiplexerExtensions` - Helper extensions for Redis connections; `CountAllKeysAsync` accepts an optional trailing `CancellationToken`, checks it before endpoint discovery and between endpoint queries, and cannot interrupt an in-flight `DBSIZE` because StackExchange.Redis exposes no cancellation for that command
+- `HeadlessConnectionMultiplexerExtensions` - Helper extensions for Redis connections; `PingAsync` sends `PING` through the default database and returns the round-trip time (its token abandons the wait; the command itself ends through the multiplexer timeout), `ProbeEndpointsAsync` sends `PING` to every configured endpoint and checks `CLUSTER INFO` reports `cluster_state:ok` on cluster nodes (the Redis readiness checks use it), and `CountAllKeysAsync` accepts an optional trailing `CancellationToken`, checks it before endpoint discovery and between endpoint queries, and cannot interrupt an in-flight `DBSIZE` because StackExchange.Redis exposes no cancellation for that command
 - `RedisScriptDefinition` - Base type for named Lua script definitions
 - `HeadlessRedisScriptsLoader` - Generic Lua script loader and evaluator
 - Repository integration tests retain an internal destructive `FlushAllAsync` helper; it is not part of the package's supported public API

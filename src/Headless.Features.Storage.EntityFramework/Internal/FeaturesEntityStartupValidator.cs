@@ -8,7 +8,7 @@ namespace Headless.Features.Internal;
 
 /// <summary>
 /// Startup validator that checks, at startup, that the registered <typeparamref name="TContext"/>
-/// has mapped all required Headless feature entities. Fails fast if <c>modelBuilder.AddHeadlessFeatures</c>
+/// has mapped all required Headless feature entities. Fails fast if <c>modelBuilder.ConfigureHeadlessFeatures</c>
 /// was not called in <c>OnModelCreating</c>.
 /// </summary>
 /// <typeparam name="TContext">The <see cref="DbContext"/> type to validate.</typeparam>
@@ -24,7 +24,7 @@ internal sealed class FeaturesEntityStartupValidator<TContext>(IServiceProvider 
     /// <exception cref="InvalidOperationException">
     /// The <typeparamref name="TContext"/> does not contain one of the required feature entity types
     /// (<see cref="FeatureValueRecord"/>, <see cref="FeatureDefinitionRecord"/>, or
-    /// <see cref="FeatureGroupDefinitionRecord"/>). Ensure <c>modelBuilder.AddHeadlessFeatures(...)</c>
+    /// <see cref="FeatureGroupDefinitionRecord"/>). Ensure <c>modelBuilder.ConfigureHeadlessFeatures(...)</c>
     /// is called in <c>OnModelCreating</c>.
     /// </exception>
     public async Task ValidateAsync(CancellationToken cancellationToken)
@@ -57,7 +57,7 @@ internal sealed class FeaturesEntityStartupValidator<TContext>(IServiceProvider 
 
         throw new InvalidOperationException(
             $"Headless.Features: the registered DbContext `{context.GetType().FullName}` does not contain `{entityName}`. "
-                + "Call `modelBuilder.AddHeadlessFeatures(this)` in your `OnModelCreating`."
+                + "Call `modelBuilder.ConfigureHeadlessFeatures(this)` in your `OnModelCreating`."
         );
     }
 }

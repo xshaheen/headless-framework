@@ -4,6 +4,8 @@
     <RootNamespace>Tests</RootNamespace>
     <IsTestProject>false</IsTestProject>
     <IsTestHarnessProject>true</IsTestHarnessProject>
+    <!-- ReferenceTrimmer sees only what the compiler marks used; this project builds generator compilations at run time from the loaded assemblies. -->
+    <EnableReferenceTrimmer>false</EnableReferenceTrimmer>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />

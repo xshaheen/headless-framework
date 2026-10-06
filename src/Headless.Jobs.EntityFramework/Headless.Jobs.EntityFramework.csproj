@@ -14,7 +14,6 @@
     <InternalsVisibleTo Include="Headless.Jobs.EntityFramework.SqlServer.Tests.Integration" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="FlexLabs.EntityFrameworkCore.Upsert" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" />
     <PackageReference Include="Polly.Core" />
   </ItemGroup>

@@ -108,7 +108,8 @@ internal static class SqlServerFeaturesSchemaContribution
             [
                 new SchemaStep(StepVersion, "Create the value, definition, and group tables and their indexes.", sql),
             ],
-            applyOnStartup: applyOnStartup
+            applyOnStartup: applyOnStartup,
+            hostStateTables: [definitionsName, groupsName]
         );
     }
 }

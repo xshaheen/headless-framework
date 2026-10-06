@@ -280,7 +280,7 @@ public sealed class PermissionsStorageOptionsTests
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
-            modelBuilder.AddHeadlessPermissions(storageOptions, StorageNamingStyle.PascalCase);
+            modelBuilder.ConfigureHeadlessPermissions(storageOptions, StorageNamingStyle.PascalCase);
         }
     }
 }

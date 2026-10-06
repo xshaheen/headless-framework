@@ -49,6 +49,7 @@ Formatting stays in the application. The framework returns a `long`. Prefixes (`
 ## Agent Rules
 
 - Choose the mode per name, and use only that name's entry point. A gap-free name called through `ISequenceGenerator`, or a fast name called through `unit.Sequences`, throws `InvalidOperationException` before any SQL runs. Mixing the two would let a fast caller's rollback leave a gap in a gap-free counter, or make a flow wait on its own row lock.
+- No `Headless.UnitOfWork.Analyzers` rule covers sequences. The name's configured mode, not the call site, decides which entry point is right, and a call through the wrong one already throws on its first run, so a call-site rule could only report correct code.
 - Use the gap-free mode only for numbers that must have no gaps. It serializes every writer of one counter until each writer's unit commits or rolls back, so its throughput is bounded by transaction length. Take the number as late in the unit as possible.
 - When one unit takes several gap-free counters, take them in a fixed order everywhere. Two units taking the same counters in opposite orders deadlock. The gap-free mode never retries inside the caller's transaction, so the unit's owner receives the deadlock.
 - Calls on one unit must be sequential. Do not issue two `unit.Sequences` calls on the same unit concurrently (`Task.WhenAll`): they share one connection, which neither Npgsql nor SqlClient allows.

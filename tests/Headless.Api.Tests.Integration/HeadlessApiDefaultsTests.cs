@@ -67,7 +67,6 @@ public sealed class HeadlessApiDefaultsTests : TestBase
             new WebApplicationOptions { EnvironmentName = EnvironmentNames.Test }
         );
         builder.WebHost.UseUrls("http://127.0.0.1:0");
-        _AddDefaultHeadlessSecurityConfiguration(builder.Configuration);
         builder.AddHeadless(configureServices: options =>
         {
             options.Validation.ValidateServiceProviderOnStartup = false;
@@ -222,7 +221,6 @@ public sealed class HeadlessApiDefaultsTests : TestBase
             new WebApplicationOptions { EnvironmentName = EnvironmentNames.Test }
         );
         builder.WebHost.UseUrls("http://127.0.0.1:0");
-        _AddDefaultHeadlessSecurityConfiguration(builder.Configuration);
         builder.AddHeadless(configureServices: options =>
         {
             options.Validation.ValidateServiceProviderOnStartup = false;
@@ -244,7 +242,6 @@ public sealed class HeadlessApiDefaultsTests : TestBase
             new WebApplicationOptions { EnvironmentName = EnvironmentNames.Test }
         );
         builder.WebHost.UseUrls("http://127.0.0.1:0");
-        _AddDefaultHeadlessSecurityConfiguration(builder.Configuration);
         builder.AddHeadless(configureServices: options =>
         {
             options.Validation.ValidateServiceProviderOnStartup = false;
@@ -283,6 +280,61 @@ public sealed class HeadlessApiDefaultsTests : TestBase
         data.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
+    [Theory]
+    [InlineData(EnvironmentNames.Test, HttpStatusCode.OK)]
+    [InlineData(EnvironmentNames.Development, HttpStatusCode.OK)]
+    [InlineData(EnvironmentNames.Production, HttpStatusCode.TemporaryRedirect)]
+    public async Task should_redirect_to_https_only_outside_development_and_test(
+        string environmentName,
+        HttpStatusCode expectedStatus
+    )
+    {
+        // given - an explicit HTTPS port, so the redirection middleware would redirect whenever it runs
+        var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = environmentName });
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        builder.AddHeadless(configureServices: options =>
+        {
+            options.Validation.ValidateServiceProviderOnStartup = false;
+            options.OpenTelemetry.Enabled = false;
+        });
+        builder.Services.AddAuthentication();
+        builder.Services.AddHttpsRedirection(options => options.HttpsPort = 443);
+
+        await using var app = builder.Build();
+        app.UseHeadless();
+        app.MapHeadlessEndpoints();
+        app.MapGet("/data", () => Results.Ok());
+        await app.StartAsync(AbortToken);
+
+        using var handler = new HttpClientHandler { AllowAutoRedirect = false, CheckCertificateRevocationList = true };
+        using var client = new HttpClient(handler) { BaseAddress = new Uri(app.Urls.Single()) };
+
+        // when
+        using var response = await client.GetAsync("/data", AbortToken);
+
+        // then
+        response.StatusCode.Should().Be(expectedStatus);
+    }
+
+    [Fact]
+    public async Task should_handle_exception_thrown_by_application_middleware_added_after_use_headless()
+    {
+        // given - UseHeadless is the outer block, so middleware the app adds after it runs inside the exception handler
+        await using var app = await _CreateAppAsync(application =>
+        {
+            application.Use((HttpContext _, RequestDelegate _) => throw new InvalidOperationException("app"));
+            application.MapGet("/data", () => Results.Ok());
+        });
+        using var client = _CreateClient(app);
+
+        // when
+        using var response = await client.GetAsync("/data", AbortToken);
+
+        // then
+        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+        response.Content.Headers.ContentType!.MediaType.Should().Be(ContentTypes.Applications.ProblemJson);
+    }
+
     private async Task<WebApplication> _CreateAppAsync(
         Action<WebApplication> map,
         Action<HeadlessApiDefaultsOptions>? configure = null,
@@ -293,7 +345,6 @@ public sealed class HeadlessApiDefaultsTests : TestBase
             new WebApplicationOptions { EnvironmentName = EnvironmentNames.Test }
         );
         builder.WebHost.UseUrls("http://127.0.0.1:0");
-        _AddDefaultHeadlessSecurityConfiguration(builder.Configuration);
         builder.AddHeadless(configureServices: options =>
         {
             options.Validation.ValidateServiceProviderOnStartup = false;
@@ -319,15 +370,5 @@ public sealed class HeadlessApiDefaultsTests : TestBase
     private static HttpClient _CreateClient(WebApplication app)
     {
         return new HttpClient { BaseAddress = new Uri(app.Urls.Single()) };
-    }
-
-    private static void _AddDefaultHeadlessSecurityConfiguration(IConfigurationBuilder configuration)
-    {
-        configuration.AddInMemoryCollection([
-            new KeyValuePair<string, string?>("Headless:StringEncryption:DefaultPassPhrase", "TestPassPhrase123456"),
-            new KeyValuePair<string, string?>("Headless:StringEncryption:InitVectorBytes", "VGVzdElWMDEyMzQ1Njc4OQ=="),
-            new KeyValuePair<string, string?>("Headless:StringEncryption:DefaultSalt", "VGVzdFNhbHQ="),
-            new KeyValuePair<string, string?>("Headless:LookupHasher:DefaultSalt", "TestSalt"),
-        ]);
     }
 }

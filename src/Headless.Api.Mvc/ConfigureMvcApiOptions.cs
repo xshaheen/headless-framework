@@ -11,7 +11,7 @@ namespace Headless.Api.Options;
 /// Configures <see cref="MvcOptions"/> and <see cref="ApiBehaviorOptions"/> with Headless API defaults.
 /// </summary>
 /// <remarks>
-/// Applied automatically by <see cref="SetupMvc.ConfigureMvc(Microsoft.Extensions.DependencyInjection.IServiceCollection)"/>.
+/// Applied automatically by <see cref="SetupMvc.ConfigureHeadlessMvc(Microsoft.Extensions.DependencyInjection.IServiceCollection)"/>.
 /// Behavior applied to <see cref="MvcOptions"/>:
 /// <list type="bullet">
 ///   <item>Disables <c>HttpNoContentOutputFormatter.TreatNullValueAsNoContent</c> so that <c>Ok(null)</c> serializes normally instead of emitting 204.</item>

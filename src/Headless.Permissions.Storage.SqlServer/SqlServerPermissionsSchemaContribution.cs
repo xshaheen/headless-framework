@@ -109,7 +109,8 @@ internal static class SqlServerPermissionsSchemaContribution
             [
                 new SchemaStep(StepVersion, "Create the grant, definition, and group tables and their indexes.", sql),
             ],
-            applyOnStartup: applyOnStartup
+            applyOnStartup: applyOnStartup,
+            hostStateTables: [definitionsName, groupsName]
         );
     }
 }

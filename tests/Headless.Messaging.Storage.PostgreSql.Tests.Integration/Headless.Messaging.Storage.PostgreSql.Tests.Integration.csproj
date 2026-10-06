@@ -14,7 +14,5 @@
     <ProjectReference Include="..\..\src\Headless.Messaging.Storage.PostgreSql.EntityFramework\Headless.Messaging.Storage.PostgreSql.EntityFramework.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing.Testcontainers\Headless.Testing.Testcontainers.csproj" />
     <ProjectReference Include="..\Headless.Messaging.Tests.Harness\Headless.Messaging.Tests.Harness.csproj" />
-    <ProjectReference Include="..\..\src\Headless.DistributedLocks\Headless.DistributedLocks.csproj" />
-    <ProjectReference Include="..\..\src\Headless.Caching.InMemory\Headless.Caching.InMemory.csproj" />
   </ItemGroup>
 </Project>
