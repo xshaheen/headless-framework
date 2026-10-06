@@ -32,11 +32,22 @@ internal sealed class HeadlessProbeHealthCheck(
         {
             // The description is fixed text because health endpoints are often anonymous, and a driver's exception
             // message can carry host names or account details. The exception still reaches the health check logs.
-            return new HealthCheckResult(
-                context.Registration.FailureStatus,
-                $"The '{context.Registration.Name}' dependency probe failed.",
-                exception
-            );
+            return Failed(context, exception);
         }
+    }
+
+    /// <summary>The failure every contributed check reports: the registration's status and fixed text.</summary>
+    internal static HealthCheckResult Failed(
+        HealthCheckContext context,
+        Exception? exception,
+        IReadOnlyDictionary<string, object>? data = null
+    )
+    {
+        return new HealthCheckResult(
+            context.Registration.FailureStatus,
+            $"The '{context.Registration.Name}' dependency probe failed.",
+            exception,
+            data
+        );
     }
 }

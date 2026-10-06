@@ -419,7 +419,7 @@ A provider package that talks to an external dependency contributes a readiness 
 | --- | --- | --- | --- |
 | `AddPostgreSqlSql` | `sql-postgresql` | `database` | `SELECT 1` on a new connection (`ISqlConnectionFactory.PingAsync`) |
 | `AddSqlServerSql` | `sql-sqlserver` | `database` | `SELECT 1` on a new connection |
-| `AddHeadlessDbContext<T>`, `AddHeadlessDbContextPool<T>` | `dbcontext-{T full name}` | `database` | `Database.CanConnectAsync` on the context of the check's scope |
+| `AddHeadlessDbContext<T>`, `AddHeadlessDbContextPool<T>` | `dbcontext-{T full name}` | `database` | Microsoft's `AddDbContextCheck<T>`: `Database.CanConnectAsync` on the context of the check's scope |
 | Caching `UseRedis` / `AddRedisTier` | `cache-redis` (named: `cache-redis-{name}`) | `redis` | `PING` through the options' multiplexer |
 | Distributed locks `UseRedis` | `distributed-locks-redis` | `redis` | `PING` through the registered `IConnectionMultiplexer` |
 | Messaging `UseNats` | `messaging-nats` | `messaging` | NATS `PING` on a pooled connection |
@@ -448,6 +448,7 @@ A provider package that talks to an external dependency contributes a readiness 
 - **Failure reporting.** A probe that throws reports the registration's failure status (`Unhealthy` by default) with the fixed description `The '{name}' dependency probe failed.` and the exception attached for the health-check log. The driver's message stays out of the description because health endpoints are usually anonymous.
 - **One check per name.** A second contribution with the same name adds nothing, so a provider registered twice keeps one check. A named cache or blob store gets its own check.
 - **Not covered.** A storage feature configured with its own connection string, instead of the shared `AddPostgreSqlSql` / `AddSqlServerSql` connection or a `HeadlessDbContext`, contributes no check; add one with `AddHeadlessHealthCheck`. SQLite and in-memory providers contribute none. The data-protection key-ring check stays opt-in through `AddDataProtectionKeyRing()`, because its default probe writes to the store (see [api.md](api.md)).
+- **Wrapping a third-party check.** `services.AddHeadlessHealthCheck(name, (builder, name, tags) => builder.AddXxxCheck(name, failureStatus: null, tags), dependencyTag)` contributes a check that another package's `IHealthChecksBuilder` method registers, under the same conventions: the `ready` and `headless` tags, one registration per name, and failures (thrown or returned) reported with the registration's failure status and the fixed description. The DbContext check uses it to run Microsoft's `AddDbContextCheck<T>`, whose own failures put the driver message in the description.
 - **Writing one.** A provider package contributes its own check with `services.AddHeadlessHealthCheck(name, probe, tags)`. The probe receives the services of the check's scope and a cancellation token; completing means healthy and throwing means unhealthy:
 
   ```csharp

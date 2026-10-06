@@ -1,12 +1,17 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Hosting;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.EntityFramework;
 
 /// <summary>Contributes the readiness health check of a registered <see cref="HeadlessDbContext" />.</summary>
+/// <remarks>
+/// The check is Microsoft's first-party <c>AddDbContextCheck&lt;TContext&gt;</c>, which runs
+/// <c>Database.CanConnectAsync</c> (or a <c>DbContextHealthCheckOptions&lt;TContext&gt;.CustomTestQuery</c> the app
+/// configures under the check's name) on a context from the check's own scope. The Headless registration wraps it so a
+/// failure keeps the registration's failure status and fixed text instead of the driver's exception message.
+/// </remarks>
 internal static class HeadlessDbContextHealthCheck
 {
     /// <summary>The registration name of the check for <typeparamref name="TDbContext" />.</summary>
@@ -21,21 +26,8 @@ internal static class HeadlessDbContextHealthCheck
     {
         services.AddHeadlessHealthCheck(
             NameOf<TDbContext>(),
-            static (provider, cancellationToken) => _ProbeAsync<TDbContext>(provider, cancellationToken),
+            static (builder, name, tags) => builder.AddDbContextCheck<TDbContext>(name, failureStatus: null, tags),
             HeadlessHealthCheckTags.Database
         );
-    }
-
-    private static async Task _ProbeAsync<TDbContext>(IServiceProvider provider, CancellationToken cancellationToken)
-        where TDbContext : HeadlessDbContext
-    {
-        // The health check runs in its own scope, so the context comes from that scope (or its pool) and is
-        // released with it. CanConnectAsync reports a refused connection as false rather than throwing.
-        var context = provider.GetRequiredService<TDbContext>();
-
-        if (!await context.Database.CanConnectAsync(cancellationToken).ConfigureAwait(false))
-        {
-            throw new InvalidOperationException($"{typeof(TDbContext).Name} cannot connect to its database.");
-        }
     }
 }

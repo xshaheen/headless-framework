@@ -79,6 +79,71 @@ public static class HeadlessHealthCheckExtensions
         }
 
         /// <summary>
+        /// Contributes a readiness health check that a third-party registration method adds, such as
+        /// <c>AddDbContextCheck&lt;TContext&gt;</c>, under the same conventions as the probe overload: the
+        /// <see cref="HeadlessHealthCheckTags.Ready" /> and <see cref="HeadlessHealthCheckTags.Headless" /> tags, one
+        /// registration per name, and failures reported with the registration's failure status and fixed description text.
+        /// </summary>
+        /// <param name="name">The registration name, unique in the host. A second contribution with the same name adds nothing.</param>
+        /// <param name="register">
+        /// Adds the check to the builder under the name and tags it receives. It runs at most once per name.
+        /// </param>
+        /// <param name="tags">Tags added to <see cref="HeadlessHealthCheckTags.Ready" /> and <see cref="HeadlessHealthCheckTags.Headless" />.</param>
+        /// <returns>The same <see cref="IServiceCollection" /> for chaining.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="register" /> is <see langword="null" />.</exception>
+        /// <exception cref="ArgumentException"><paramref name="name" /> is <see langword="null" />, empty, or whitespace.</exception>
+        public IServiceCollection AddHeadlessHealthCheck(
+            string name,
+            Action<IHealthChecksBuilder, string, IReadOnlyList<string>> register,
+            params IEnumerable<string> tags
+        )
+        {
+            Argument.IsNotNull(services);
+            Argument.IsNotNullOrWhiteSpace(name);
+            Argument.IsNotNull(register);
+            Argument.IsNotNull(tags);
+
+            // Tracked at registration time: the third-party method adds its registration unconditionally, and the
+            // health check service rejects two registrations with one name.
+            if (
+                services
+                    .FirstOrDefault(static descriptor => descriptor.ServiceType == typeof(HeadlessHealthCheckNames))
+                    ?.ImplementationInstance
+                is not HeadlessHealthCheckNames names
+            )
+            {
+                names = new HeadlessHealthCheckNames();
+                services.AddSingleton(names);
+            }
+
+            if (!names.Add(name))
+            {
+                return services;
+            }
+
+            string[] allTags = [HeadlessHealthCheckTags.Ready, HeadlessHealthCheckTags.Headless, .. tags];
+
+            register(services.AddHealthChecks(), name, allTags);
+
+            // Runs after the registration method's own Configure call, so the registration exists to wrap.
+            services.Configure<HealthCheckServiceOptions>(options =>
+            {
+                foreach (var registration in options.Registrations)
+                {
+                    if (
+                        string.Equals(registration.Name, name, StringComparison.Ordinal)
+                        && registration.Factory.Target is not HeadlessSanitizedFactory
+                    )
+                    {
+                        registration.Factory = new HeadlessSanitizedFactory(registration.Factory).Create;
+                    }
+                }
+            });
+
+            return services;
+        }
+
+        /// <summary>
         /// Removes every health check registration that matches <paramref name="predicate" />, including checks that
         /// Headless provider packages contribute.
         /// </summary>
@@ -106,6 +171,20 @@ public static class HeadlessHealthCheckExtensions
             });
 
             return services;
+        }
+    }
+
+    private sealed class HeadlessHealthCheckNames : HashSet<string>
+    {
+        public HeadlessHealthCheckNames()
+            : base(StringComparer.Ordinal) { }
+    }
+
+    private sealed class HeadlessSanitizedFactory(Func<IServiceProvider, IHealthCheck> inner)
+    {
+        public IHealthCheck Create(IServiceProvider provider)
+        {
+            return new HeadlessSanitizedHealthCheck(() => inner(provider));
         }
     }
 }
