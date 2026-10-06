@@ -22,7 +22,8 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
     IJobsOwnerIdentity ownerIdentity,
     SchedulerOptionsBuilder optionsBuilder,
     ILogger<PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob>> logger,
-    JobsRunFilter? runFilter = null
+    JobsRunFilter? runFilter = null,
+    JobsClusterConcurrency? clusterConcurrency = null
 ) : IJobsClaimStrategy<TTimeJob, TCronJob>
     where TDbContext : DbContext
     where TTimeJob : TimeJobEntity<TTimeJob>, new()
@@ -42,6 +43,9 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
     // never depends on its caller having filtered.
     private readonly JobsRunFilter _runFilter = runFilter ?? JobsRunFilter.All;
 
+    // Caps every root claim and occurrence lease of a cluster-limited function at its free slots.
+    private readonly JobsClusterConcurrency _clusterConcurrency = clusterConcurrency ?? JobsClusterConcurrency.None;
+
     public async IAsyncEnumerable<TimeJobEntity> ClaimTimeJobsAsync(
         TimeJobEntity[] timeJobs,
         [EnumeratorCancellation] CancellationToken cancellationToken
@@ -56,7 +60,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
             timeJobs.Length <= JobsClaimStrategyDefaults.MaxCandidatePageSize
                 ? timeJobs
                 : [.. timeJobs.Take(JobsClaimStrategyDefaults.MaxCandidatePageSize)];
-        var (claim, leasedDescendantIds) = await _ExecuteWithRetryAsync(
+        var claim = await _ExecuteWithRetryAsync(
                 JobsClaimRetry.ClaimTimeJobs,
                 async (attempt, ct) =>
                 {
@@ -66,38 +70,24 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                         ct
                     );
                     var dbContext = claimTransaction.DbContext;
-                    var transaction = claimTransaction.Transaction;
                     var mapping = TimeJobRelationalMapping.Create<TDbContext, TTimeJob>(dbContext);
-                    var attemptClaim = await _ClaimRootsAsync(
+                    var attemptClaim = await _ClaimTreesAsync(
                             dbContext,
-                            transaction,
+                            claimTransaction.Transaction,
                             mapping,
                             _DirectCandidateFilter(mapping) + _RunnableClause(_runFilter, mapping.Function),
                             // Unscheduled roots first, as the CAS path visits them; PostgreSQL sorts NULL last by
                             // default.
                             [$"{mapping.ExecutionTime} NULLS FIRST", mapping.Id],
                             owner,
-                            _leaseDuration,
-                            ct,
-                            [.. _DirectCandidateParameters(batch), .. _RunnableParameters(_runFilter)]
-                        )
-                        .ConfigureAwait(false);
-
-                    var attemptLeasedDescendantIds = await _StampDescendantsAsync(
-                            dbContext,
-                            transaction,
-                            mapping,
-                            attemptClaim.Ids,
-                            owner,
-                            attemptClaim.ClaimedAt,
-                            _leaseDuration,
-                            _maxChainDepth,
+                            batch.Select(x => x.Function),
+                            () => [.. _DirectCandidateParameters(batch), .. _RunnableParameters(_runFilter)],
                             ct
                         )
                         .ConfigureAwait(false);
                     await claimTransaction.CommitAsync(ct).ConfigureAwait(false);
 
-                    return (attemptClaim, attemptLeasedDescendantIds);
+                    return attemptClaim;
                 },
                 cancellationToken
             )
@@ -105,18 +95,17 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
 
         // The peek-hydrated tree may include non-idle nodes (and their tails) the claim did not lease; prune to
         // the claimed set (root + leased non-timed descendants) so nothing runs unclaimed — parity with the CAS path.
-        var claimedIds = leasedDescendantIds.ToHashSet();
-        var won = claim.Ids.ToHashSet();
+        var claimedIds = claim.LeasedIds.ToHashSet();
         foreach (var timeJob in timeJobs)
         {
-            if (!won.Contains(timeJob.Id))
+            if (!claim.Roots.TryGetValue(timeJob.Id, out var claimedAt))
             {
                 continue;
             }
 
             timeJob.OwnerId = owner;
-            timeJob.LockedUntil = claim.ClaimedAt.UtcDateTime.Add(_leaseDuration);
-            timeJob.UpdatedAt = claim.ClaimedAt;
+            timeJob.LockedUntil = claimedAt.UtcDateTime.Add(_leaseDuration);
+            timeJob.UpdatedAt = claimedAt;
             timeJob.Status = JobStatus.Queued;
             TimeJobSubtreeOperations.PruneToClaimedSet(timeJob, claimedIds);
             yield return timeJob;
@@ -133,7 +122,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
         }
 
         TimeJobEntity[] claimed;
-        var (claim, leasedDescendantIds) = await _ExecuteWithRetryAsync(
+        var claim = await _ExecuteWithRetryAsync(
                 JobsClaimRetry.ClaimTimedOutTimeJobs,
                 async (attempt, ct) =>
                 {
@@ -143,7 +132,6 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                         ct
                     );
                     var dbContext = claimTransaction.DbContext;
-                    var transaction = claimTransaction.Transaction;
                     var mapping = TimeJobRelationalMapping.Create<TDbContext, TTimeJob>(dbContext);
                     // The fallback selects timed rows directly, so the parent gate is mirrored in its WHERE
                     // clause — a timed descendant is a candidate only once its parent reached its matching terminal
@@ -159,50 +147,39 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                           {TimedChildGateSql.Build(mapping)}
                           {_RunnableClause(_runFilter, mapping.Function)}
                         """;
-                    var attemptClaim = await _ClaimRootsAsync(
+                    var attemptClaim = await _ClaimTreesAsync(
                             dbContext,
-                            transaction,
+                            claimTransaction.Transaction,
                             mapping,
                             filter,
                             [mapping.ExecutionTime, mapping.Id],
                             owner,
-                            _leaseDuration,
-                            ct,
-                            [
-                                new NpgsqlParameter("idle", nameof(JobStatus.Idle)),
-                                new NpgsqlParameter("queued", nameof(JobStatus.Queued)),
-                                new NpgsqlParameter("retry", nameof(NodeDeathPolicy.Retry)),
-                                .. _RunnableParameters(_runFilter),
-                            ]
-                        )
-                        .ConfigureAwait(false);
-
-                    var attemptLeasedDescendantIds = await _StampDescendantsAsync(
-                            dbContext,
-                            transaction,
-                            mapping,
-                            attemptClaim.Ids,
-                            owner,
-                            attemptClaim.ClaimedAt,
-                            _leaseDuration,
-                            _maxChainDepth,
+                            candidateFunctions: null,
+                            () =>
+                                [
+                                    new NpgsqlParameter("idle", nameof(JobStatus.Idle)),
+                                    new NpgsqlParameter("queued", nameof(JobStatus.Queued)),
+                                    new NpgsqlParameter("retry", nameof(NodeDeathPolicy.Retry)),
+                                    .. _RunnableParameters(_runFilter),
+                                ],
                             ct
                         )
                         .ConfigureAwait(false);
                     await claimTransaction.CommitAsync(ct).ConfigureAwait(false);
 
-                    return (attemptClaim, attemptLeasedDescendantIds);
+                    return attemptClaim;
                 },
                 cancellationToken
             )
             .ConfigureAwait(false);
 
-        if (claim.Ids.Length == 0)
+        if (claim.Roots.Count == 0)
         {
             claimed = [];
         }
         else
         {
+            var rootIds = claim.Roots.Keys.ToArray();
             await using var dbContext = await dbContextFactory
                 .CreateDbContextAsync(cancellationToken)
                 .ConfigureAwait(false);
@@ -215,7 +192,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
             var roots = await dbContext
                 .Set<TTimeJob>()
                 .AsNoTracking()
-                .Where(x => claim.Ids.Contains(x.Id) && x.OwnerId == owner)
+                .Where(x => rootIds.Contains(x.Id) && x.OwnerId == owner)
                 .Select(MappingExtensions.ForFlatTimeJob<TTimeJob>())
                 .ToArrayAsync(cancellationToken)
                 .ConfigureAwait(false);
@@ -229,7 +206,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                 )
                 .ConfigureAwait(false);
 
-            var claimedIds = leasedDescendantIds.ToHashSet();
+            var claimedIds = claim.LeasedIds.ToHashSet();
             foreach (var root in roots)
             {
                 TimeJobSubtreeOperations.PruneToClaimedSet(root, claimedIds);
@@ -270,6 +247,16 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                     var transaction = claimTransaction.Transaction;
                     var mapping = CronOccurrenceRelationalMapping.Create<TDbContext, TCronJob>(dbContext);
                     var definitionMapping = CronDefinitionRelationalMapping.Create<TDbContext, TCronJob>(dbContext);
+                    // Cluster locks are taken before the definition locks, as every claim takes them before any row
+                    // lock, so two claims never wait on each other in a cycle.
+                    var freeSlots = await JobsClusterClaim
+                        .ReserveAsync<TTimeJob, TCronJob>(
+                            dbContext,
+                            _clusterConcurrency,
+                            _LimitedFunctions(cronJobOccurrences.Items),
+                            ct
+                        )
+                        .ConfigureAwait(false);
                     var activeItems = new HashSet<JobManagerDispatchContext>();
                     // All batches take definition locks in the same order, even when dispatch order differs.
                     foreach (var item in cronJobOccurrences.Items.OrderBy(x => x.Id))
@@ -303,34 +290,45 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                     var claimedIds = new List<Guid>();
                     foreach (var item in cronJobOccurrences.Items.Where(activeItems.Contains))
                     {
-                        var occurrenceId = item.NextCronOccurrence is null
-                            ? await _InsertCronOccurrenceAsync(
-                                    dbContext,
-                                    transaction,
-                                    mapping,
-                                    item,
-                                    definitions[item.Id],
-                                    cronJobOccurrences.Key,
-                                    owner,
-                                    _leaseDuration,
-                                    ct
-                                )
-                                .ConfigureAwait(false)
-                            : await _ClaimExistingCronOccurrenceAsync(
-                                    dbContext,
-                                    transaction,
-                                    mapping,
-                                    item,
-                                    cronJobOccurrences.Key,
-                                    owner,
-                                    _leaseDuration,
-                                    ct
-                                )
-                                .ConfigureAwait(false);
+                        // A limited function with no free slot still materializes its occurrence, unleased, so the
+                        // fallback sweep runs it once a slot frees; an existing occurrence is left for that sweep.
+                        var limited = freeSlots.TryGetValue(item.FunctionName, out var slots);
+                        var lease = !limited || slots > 0;
+                        var occurrenceId =
+                            item.NextCronOccurrence is null
+                                ? await _InsertCronOccurrenceAsync(
+                                        dbContext,
+                                        transaction,
+                                        mapping,
+                                        item,
+                                        definitions[item.Id],
+                                        cronJobOccurrences.Key,
+                                        lease ? owner : null,
+                                        _leaseDuration,
+                                        ct
+                                    )
+                                    .ConfigureAwait(false)
+                            : lease
+                                ? await _ClaimExistingCronOccurrenceAsync(
+                                        dbContext,
+                                        transaction,
+                                        mapping,
+                                        item,
+                                        cronJobOccurrences.Key,
+                                        owner,
+                                        _leaseDuration,
+                                        ct
+                                    )
+                                    .ConfigureAwait(false)
+                            : null;
 
-                        if (occurrenceId is { } id)
+                        if (lease && occurrenceId is { } id)
                         {
                             claimedIds.Add(id);
+                            if (limited)
+                            {
+                                freeSlots[item.FunctionName] = slots - 1;
+                            }
                         }
                     }
 
@@ -423,16 +421,35 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                     var dbContext = claimTransaction.DbContext;
                     var transaction = claimTransaction.Transaction;
                     var mapping = CronOccurrenceRelationalMapping.Create<TDbContext, TCronJob>(dbContext);
-                    var wonIds = await _ClaimFallbackCronOccurrencesAsync(
+                    var parts = await JobsClusterClaim
+                        .PlanAsync<TTimeJob, TCronJob>(
                             dbContext,
-                            transaction,
-                            mapping,
+                            PostgreSqlDialect.Instance,
+                            _clusterConcurrency,
                             _runFilter,
-                            owner,
-                            _leaseDuration,
+                            mapping.Function,
+                            candidateFunctions: null,
+                            JobsClaimStrategyDefaults.MaxClaimBatchSize,
                             ct
                         )
                         .ConfigureAwait(false);
+                    var wonIds = new List<Guid>();
+                    foreach (var part in parts)
+                    {
+                        wonIds.AddRange(
+                            await _ClaimFallbackCronOccurrencesAsync(
+                                    dbContext,
+                                    transaction,
+                                    mapping,
+                                    _runFilter,
+                                    owner,
+                                    _leaseDuration,
+                                    part,
+                                    ct
+                                )
+                                .ConfigureAwait(false)
+                        );
+                    }
 
                     var attemptClaimed = await dbContext
                         .Set<CronJobOccurrenceEntity<TCronJob>>()
@@ -502,13 +519,15 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
         JobManagerDispatchContext item,
         TCronJob definition,
         DateTime executionTime,
-        string owner,
+        string? owner,
         TimeSpan leaseDuration,
         CancellationToken cancellationToken
     )
     {
+        // A null owner materializes the occurrence Idle and unleased, for the fallback sweep to claim later.
         var dialect = PostgreSqlDialect.Instance;
         var id = guidGenerator.Create();
+        var lockedUntil = owner is null ? "NULL" : dialect.ShiftByDuration(SqlDialectTokens.Now, "lease");
         var snapshot = new CronJobOccurrenceEntity<TCronJob> { Id = id };
         snapshot.SnapshotContract(definition);
         await using var command = _CreateCommand(dbContext, transaction);
@@ -525,7 +544,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                      {mapping.Function}, {mapping.ContractVersion}, {mapping.Request}, {mapping.CorrelationId}, {mapping.CausationId})
                 SELECT
                     @id, @status, @owner, @executionTime, @cronJobId,
-                    {dialect.ShiftByDuration(SqlDialectTokens.Now, "lease")}, @onNodeDeath,
+                    {lockedUntil}, @onNodeDeath,
                     @elapsedTime, @retryCount, {SqlDialectTokens.Now}, {SqlDialectTokens.Now}, @disposition,
                     @function, @contractVersion, @request, @correlationId, @causationId
                 WHERE NOT EXISTS (
@@ -567,7 +586,9 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                 Value = (object?)snapshot.CausationId ?? DBNull.Value,
             }
         );
-        command.Parameters.Add(new NpgsqlParameter("status", nameof(JobStatus.Queued)));
+        command.Parameters.Add(
+            new NpgsqlParameter("status", owner is null ? nameof(JobStatus.Idle) : nameof(JobStatus.Queued))
+        );
         // This is the occupied-instant ACCOUNTING matrix, not the live-only filter this statement used to carry. A
         // terminal row at the instant means the instant ran (or was deliberately retired) and must not fire again;
         // only the seeding migration's ReplacementOwed retirement still owes one, and only it falls through. The
@@ -582,10 +603,16 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
             new NpgsqlParameter("unaccountedDisposition", CronOccurrenceRelationalMapping.UnaccountedDispositionValue)
         );
         command.Parameters.Add(new NpgsqlParameter("disposition", nameof(CronOccurrenceDisposition.Accounted)));
-        command.Parameters.Add(new NpgsqlParameter("owner", owner));
+        command.Parameters.Add(
+            new NpgsqlParameter("owner", NpgsqlDbType.Text) { Value = (object?)owner ?? DBNull.Value }
+        );
         command.Parameters.Add(new NpgsqlParameter("executionTime", executionTime));
         command.Parameters.Add(new NpgsqlParameter("cronJobId", item.Id));
-        dialect.AddDuration(command, "lease", leaseDuration);
+        if (owner is not null)
+        {
+            dialect.AddDuration(command, "lease", leaseDuration);
+        }
+
         command.Parameters.Add(new NpgsqlParameter("onNodeDeath", item.OnNodeDeath.ToString()));
         command.Parameters.Add(new NpgsqlParameter("elapsedTime", NpgsqlDbType.Bigint) { Value = 0L });
         command.Parameters.Add(new NpgsqlParameter("retryCount", NpgsqlDbType.Integer) { Value = 0 });
@@ -653,6 +680,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
         JobsRunFilter runFilter,
         string owner,
         TimeSpan leaseDuration,
+        JobsClusterClaimPart part,
         CancellationToken cancellationToken
     )
     {
@@ -671,7 +699,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
                            AND ({mapping.LockedUntil} IS NULL
                                 OR ({mapping.LockedUntil} <= {SqlDialectTokens.Now}
                                     AND {mapping.OnNodeDeath} = @retry))))
-                  {_RunnableClause(runFilter, mapping.Function)}
+                  {_RunnableClause(runFilter, mapping.Function)}{part.Filter}
                 """,
                 [mapping.ExecutionTime, mapping.Id],
                 $"""
@@ -691,8 +719,9 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
         command.Parameters.Add(new NpgsqlParameter("retry", nameof(NodeDeathPolicy.Retry)));
         command.Parameters.Add(new NpgsqlParameter("owner", owner));
         dialect.AddDuration(command, "lease", leaseDuration);
-        command.Parameters.Add(_BatchSizeParameter());
+        command.Parameters.Add(_BatchSizeParameter(part.BatchSize));
         command.Parameters.AddRange(_RunnableParameters(runFilter));
+        command.Parameters.AddRange(part.Parameters());
 
         var ids = new List<Guid>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -724,6 +753,75 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
         ];
     }
 
+    /// <summary>
+    /// Claims the roots <paramref name="filter"/> selects and leases their non-timed subtrees, in one statement per
+    /// cluster claim part so a limited function is never leased past its free slots.
+    /// </summary>
+    private async Task<TreeClaim> _ClaimTreesAsync(
+        TDbContext dbContext,
+        IDbContextTransaction transaction,
+        TimeJobRelationalMapping mapping,
+        string filter,
+        IReadOnlyList<string> orderBy,
+        string owner,
+        IEnumerable<string>? candidateFunctions,
+        Func<DbParameter[]> filterParameters,
+        CancellationToken cancellationToken
+    )
+    {
+        var parts = await JobsClusterClaim
+            .PlanAsync<TTimeJob, TCronJob>(
+                dbContext,
+                PostgreSqlDialect.Instance,
+                _clusterConcurrency,
+                _runFilter,
+                mapping.Function,
+                candidateFunctions,
+                JobsClaimStrategyDefaults.MaxClaimBatchSize,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+        var roots = new Dictionary<Guid, DateTimeOffset>();
+        var leasedIds = new List<Guid>();
+        foreach (var part in parts)
+        {
+            var claim = await _ClaimRootsAsync(
+                    dbContext,
+                    transaction,
+                    mapping,
+                    filter + part.Filter,
+                    orderBy,
+                    owner,
+                    _leaseDuration,
+                    part.BatchSize,
+                    cancellationToken,
+                    [.. filterParameters(), .. part.Parameters()]
+                )
+                .ConfigureAwait(false);
+            foreach (var id in claim.Ids)
+            {
+                roots[id] = claim.ClaimedAt;
+            }
+
+            leasedIds.AddRange(
+                await _StampDescendantsAsync(
+                        dbContext,
+                        transaction,
+                        mapping,
+                        claim.Ids,
+                        owner,
+                        claim.ClaimedAt,
+                        _leaseDuration,
+                        _maxChainDepth,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false)
+            );
+        }
+
+        return new TreeClaim(roots, [.. leasedIds]);
+    }
+
     private static async Task<ClaimResult> _ClaimRootsAsync(
         TDbContext dbContext,
         IDbContextTransaction transaction,
@@ -732,6 +830,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
         IReadOnlyList<string> orderBy,
         string owner,
         TimeSpan leaseDuration,
+        int batchSize,
         CancellationToken cancellationToken,
         params DbParameter[] filterParameters
     )
@@ -762,7 +861,7 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
         command.Parameters.Add(new NpgsqlParameter("owner", owner));
         dialect.AddDuration(command, "lease", leaseDuration);
         command.Parameters.Add(new NpgsqlParameter("queuedStatus", nameof(JobStatus.Queued)));
-        command.Parameters.Add(_BatchSizeParameter());
+        command.Parameters.Add(_BatchSizeParameter(batchSize));
         command.Parameters.AddRange(filterParameters);
 
         var ids = new List<Guid>();
@@ -859,6 +958,9 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
 
     private readonly record struct ClaimResult(Guid[] Ids, DateTimeOffset ClaimedAt);
 
+    /// <summary>The claimed roots with each one's claim instant, and every leased id (roots and descendants).</summary>
+    private readonly record struct TreeClaim(Dictionary<Guid, DateTimeOffset> Roots, Guid[] LeasedIds);
+
     private static NpgsqlCommand _CreateCommand(TDbContext dbContext, IDbContextTransaction transaction)
     {
         var connection =
@@ -882,8 +984,17 @@ internal sealed class PostgreSqlJobsClaimStrategy<TDbContext, TTimeJob, TCronJob
             ? [PostgreSqlDialect.Instance.CreateListParameter("runnableFunctions", _FunctionType, runnable)]
             : [];
 
-    private static NpgsqlParameter<int> _BatchSizeParameter()
+    private static NpgsqlParameter<int> _BatchSizeParameter(int batchSize)
     {
-        return new NpgsqlParameter<int>("batchSize", JobsClaimStrategyDefaults.MaxClaimBatchSize);
+        return new NpgsqlParameter<int>("batchSize", batchSize);
     }
+
+    private string[] _LimitedFunctions(JobManagerDispatchContext[] items) =>
+        [
+            .. items
+                .Select(x => x.FunctionName)
+                .Where(_clusterConcurrency.IsLimited)
+                .Distinct(StringComparer.Ordinal)
+                .Order(StringComparer.Ordinal),
+        ];
 }

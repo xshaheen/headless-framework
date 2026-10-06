@@ -20,7 +20,7 @@ public sealed class SetupTests : TestBase
 
         services.AddHeadlessMessaging(setup =>
         {
-            setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.DurableDedupeOnly;
+            setup.Options.MinimumInboxGuarantee = InboxGuarantee.Durable;
             setup.UseSqlServer("Server=localhost;Database=test;TrustServerCertificate=True");
         });
 
@@ -41,7 +41,7 @@ public sealed class SetupTests : TestBase
 
         services.AddHeadlessMessaging(setup =>
         {
-            setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.DurableDedupeOnly;
+            setup.Options.MinimumInboxGuarantee = InboxGuarantee.Durable;
             setup.UseSqlServer();
         });
 
@@ -60,7 +60,7 @@ public sealed class SetupTests : TestBase
 
         services.AddHeadlessMessaging(setup =>
         {
-            setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.DurableDedupeOnly;
+            setup.Options.MinimumInboxGuarantee = InboxGuarantee.Durable;
             setup.UseSqlServer(ownConnectionString);
         });
 
@@ -80,7 +80,7 @@ public sealed class SetupTests : TestBase
 
         services.AddHeadlessMessaging(setup =>
         {
-            setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.DurableDedupeOnly;
+            setup.Options.MinimumInboxGuarantee = InboxGuarantee.Durable;
             setup.UseSqlServer();
         });
 

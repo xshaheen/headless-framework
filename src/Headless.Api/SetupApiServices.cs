@@ -62,7 +62,8 @@ public static class SetupApiServices
         }
 
         /// <summary>
-        /// Registers <see cref="IProblemDetailsCreator"/>, ASP.NET Core's
+        /// Registers <see cref="IProblemDetailsCreator"/>, a no-op <see cref="IErrorDescriptionLocalizer"/>
+        /// (register your own before or after this call to localize application error codes), ASP.NET Core's
         /// <see cref="Microsoft.AspNetCore.Http.IProblemDetailsService"/> with a
         /// <c>CustomizeProblemDetails</c> hook that normalizes the response through the creator, and
         /// <see cref="HeadlessApiExceptionHandler"/> as a singleton
@@ -88,6 +89,7 @@ public static class SetupApiServices
         /// <returns>The same service collection.</returns>
         public IServiceCollection AddHeadlessProblemDetails()
         {
+            services.TryAddSingleton<IErrorDescriptionLocalizer>(NullErrorDescriptionLocalizer.Instance);
             services.TryAddSingleton<IProblemDetailsCreator, ProblemDetailsCreator>();
             services.AddProblemDetails();
 

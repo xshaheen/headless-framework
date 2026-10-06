@@ -9,7 +9,7 @@ public sealed class PostgreSqlInboxStorageConformanceTests(PostgreSqlTestFixture
 {
     protected override void ConfigureStorage(MessagingSetupBuilder setup)
     {
-        setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.DurableDedupeOnly;
+        setup.Options.MinimumInboxGuarantee = InboxGuarantee.Durable;
         setup.ConfigureStorage(storage => storage.Schema = $"inbox_conformance_{Guid.NewGuid():N}");
         setup.UsePostgreSql(fixture.ConnectionString);
     }

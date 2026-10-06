@@ -224,7 +224,7 @@ public sealed class RabbitMqReplyTransportTests(RabbitMqFixture fixture) : TestB
                 options.ExchangeName = $"reply-{Guid.NewGuid():N}";
             });
             setup.UseInMemoryStorage();
-            setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
+            setup.Options.MinimumInboxGuarantee = InboxGuarantee.ProcessLocal;
             setup.AddRequestReply();
         });
 

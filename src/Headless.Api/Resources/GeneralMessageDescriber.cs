@@ -8,6 +8,11 @@ namespace Headless.Api.Resources;
 /// Factory methods that create <see cref="ErrorDescriptor"/> instances for general cross-cutting
 /// error responses. Codes follow the <c>g:snake_case</c> shape.
 /// </summary>
+/// <remarks>
+/// Every call returns a new descriptor whose description resolves under
+/// <see cref="System.Globalization.CultureInfo.CurrentUICulture"/>. Call the factory per response;
+/// a descriptor cached in a static keeps the culture of its first caller.
+/// </remarks>
 [PublicAPI]
 public static class GeneralMessageDescriber
 {
@@ -83,5 +88,32 @@ public static class GeneralMessageDescriber
     public static ErrorDescriptor InvalidRecaptcha()
     {
         return new ErrorDescriptor(code: GeneralErrorCodes.InvalidRecaptcha, description: Messages.g_invalid_recaptcha);
+    }
+
+    /// <summary>
+    /// Returns a descriptor for an endpoint whose validation filter received no argument of its
+    /// configured request type (<c>g:invalid_request_type</c>).
+    /// </summary>
+    public static ErrorDescriptor InvalidRequestType()
+    {
+        return new(code: GeneralErrorCodes.InvalidRequestType, description: Messages.g_invalid_request_type);
+    }
+
+    /// <summary>
+    /// Returns a descriptor for an operation that required an ambient tenant context when none was set
+    /// (<c>g:tenant_required</c>).
+    /// </summary>
+    public static ErrorDescriptor TenantRequired()
+    {
+        return new(code: GeneralErrorCodes.TenantRequired, description: Messages.g_tenant_required);
+    }
+
+    /// <summary>
+    /// Returns a descriptor for a tenant-owned write that does not match the current tenant context
+    /// (<c>g:cross_tenant_write</c>).
+    /// </summary>
+    public static ErrorDescriptor CrossTenantWrite()
+    {
+        return new(code: GeneralErrorCodes.CrossTenantWrite, description: Messages.g_cross_tenant_write);
     }
 }

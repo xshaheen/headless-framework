@@ -18,6 +18,10 @@ internal sealed class AmazonSnsBusTransport(
     private IAmazonSimpleNotificationService? _snsClient;
     private ConcurrentDictionary<string, string>? _topicArnMaps;
 
+    // One create per topic: concurrent first sends share it instead of each calling CreateTopic for the same name.
+    // Lazy starts the create once even when GetOrAdd races; a failed create is removed so a later send retries.
+    private readonly ConcurrentDictionary<string, Lazy<Task<string?>>> _topicCreations = new(StringComparer.Ordinal);
+
     // Set once DisposeAsync runs: a later send fails instead of reaching the broker.
     private int _disposed;
 
@@ -138,7 +142,9 @@ internal sealed class AmazonSnsBusTransport(
 
             if (_topicArnMaps == null)
             {
-                _topicArnMaps = new ConcurrentDictionary<string, string>(StringComparer.Ordinal);
+                // Publish the cache only once the listing completes: a sender that sees it skips the lock, so a cache
+                // published early sends against a partial listing, and a failed listing would never be retried.
+                var topicArnMaps = new ConcurrentDictionary<string, string>(StringComparer.Ordinal);
 
                 string? nextToken = null;
                 do
@@ -147,13 +153,17 @@ internal sealed class AmazonSnsBusTransport(
                         nextToken == null
                             ? await _snsClient.ListTopicsAsync(cancellationToken).ConfigureAwait(false)
                             : await _snsClient.ListTopicsAsync(nextToken, cancellationToken).ConfigureAwait(false);
-                    topics.Topics.ForEach(x =>
+
+                    // The SDK leaves Topics null for a page with no topics, such as an account with none yet.
+                    foreach (var topic in topics.Topics ?? [])
                     {
-                        var name = x.TopicArn.Split(':')[^1];
-                        _topicArnMaps[name] = x.TopicArn;
-                    });
+                        topicArnMaps[topic.TopicArn.Split(':')[^1]] = topic.TopicArn;
+                    }
+
                     nextToken = topics.NextToken;
                 } while (!string.IsNullOrEmpty(nextToken));
+
+                _topicArnMaps = topicArnMaps;
             }
         }
         finally
@@ -172,23 +182,50 @@ internal sealed class AmazonSnsBusTransport(
             return (true, topicArn);
         }
 
-        var response = topicName.IsAwsFifoName()
-            ? await _snsClient!
-                .CreateTopicAsync(topicName.ToSnsCreateTopicRequest(), cancellationToken)
-                .ConfigureAwait(false)
-            : await _snsClient!.CreateTopicAsync(topicName, cancellationToken).ConfigureAwait(false);
+        var creation = _topicCreations.GetOrAdd(
+            topicName,
+            static (name, state) => new Lazy<Task<string?>>(() => state._CreateTopicAsync(name)),
+            this
+        );
 
-        if (string.IsNullOrEmpty(response.TopicArn))
+        try
         {
+            // The shared create outlives one caller's cancellation, so a cancelled send stops waiting without
+            // failing the other senders that wait on the same create.
+            topicArn = await creation.Value.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch when (!cancellationToken.IsCancellationRequested)
+        {
+            // Drop the failed create so the next send retries instead of rethrowing a cached failure.
+            _topicCreations.TryRemove(KeyValuePair.Create(topicName, creation));
+            throw;
+        }
+
+        if (topicArn is null)
+        {
+            _topicCreations.TryRemove(KeyValuePair.Create(topicName, creation));
             return (false, null);
         }
 
-        // TryAdd is thread-safe and returns false if key exists (handles race condition)
-        _topicArnMaps.TryAdd(topicName, response.TopicArn);
-
-        // Get the actual value from dict in case another thread won the race
-        topicArn = _topicArnMaps[topicName];
         return (true, topicArn);
+    }
+
+    private async Task<string?> _CreateTopicAsync(string topicName)
+    {
+        var response = topicName.IsAwsFifoName()
+            ? await _snsClient!
+                .CreateTopicAsync(topicName.ToSnsCreateTopicRequest(), CancellationToken.None)
+                .ConfigureAwait(false)
+            : await _snsClient!.CreateTopicAsync(topicName, CancellationToken.None).ConfigureAwait(false);
+
+        if (string.IsNullOrEmpty(response.TopicArn))
+        {
+            return null;
+        }
+
+        _topicArnMaps?.TryAdd(topicName, response.TopicArn);
+
+        return response.TopicArn;
     }
 
     public async ValueTask DisposeAsync()

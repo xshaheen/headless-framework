@@ -160,7 +160,14 @@ public sealed class JobsCatalogBuilder
                 continue;
             }
 
-            _Apply(functions, descriptors, tuning.Identity, tuning.MaxConcurrency, tuning.Priority);
+            _Apply(
+                functions,
+                descriptors,
+                tuning.Identity,
+                tuning.MaxConcurrency,
+                tuning.ClusterMaxConcurrency,
+                tuning.Priority
+            );
             if (tuning.Options is { } tunedOptions)
             {
                 options[tuning.Identity] = tunedOptions;
@@ -211,6 +218,7 @@ public sealed class JobsCatalogBuilder
             Middleware = JobMiddlewarePipeline.Create(schedule, execute),
             // Resolved against every registered identity, so a filter never makes a job unschedulable.
             RunFilter = JobsRunFilter.Create(runOnly, frozenFunctions.Keys),
+            ClusterConcurrency = JobsClusterConcurrency.Create(frozenFunctions),
             OptionsByFunction = options.ToFrozenDictionary(StringComparer.Ordinal),
             FailurePolicies = failurePolicies.ToFrozenDictionary(StringComparer.Ordinal),
             DefaultFailurePolicy = hostDefaultFailurePolicy,
@@ -306,22 +314,17 @@ public sealed class JobsCatalogBuilder
             }
 
             int? maxConcurrency = null;
+            int? clusterMaxConcurrency = null;
             JobPriority? priority = null;
             foreach (var setting in job.GetChildren())
             {
                 if (string.Equals(setting.Key, "Concurrency", StringComparison.OrdinalIgnoreCase))
                 {
-                    if (
-                        int.TryParse(setting.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value)
-                        && value >= 0
-                    )
-                    {
-                        maxConcurrency = value;
-                    }
-                    else
-                    {
-                        errors.Add($"Configuration '{setting.Path}' must be a non-negative integer.");
-                    }
+                    maxConcurrency = _ReadConcurrency(setting, errors) ?? maxConcurrency;
+                }
+                else if (string.Equals(setting.Key, "ClusterConcurrency", StringComparison.OrdinalIgnoreCase))
+                {
+                    clusterMaxConcurrency = _ReadConcurrency(setting, errors) ?? clusterMaxConcurrency;
                 }
                 else if (string.Equals(setting.Key, "Priority", StringComparison.OrdinalIgnoreCase))
                 {
@@ -350,13 +353,27 @@ public sealed class JobsCatalogBuilder
                 else
                 {
                     errors.Add(
-                        $"Configuration '{setting.Path}' is not a job setting. Supported settings are Concurrency, Priority, and FailurePolicy."
+                        $"Configuration '{setting.Path}' is not a job setting. Supported settings are Concurrency, ClusterConcurrency, Priority, and FailurePolicy."
                     );
                 }
             }
 
-            _Apply(functions, descriptors, job.Key, maxConcurrency, priority);
+            _Apply(functions, descriptors, job.Key, maxConcurrency, clusterMaxConcurrency, priority);
         }
+    }
+
+    private static int? _ReadConcurrency(IConfigurationSection setting, List<string> errors)
+    {
+        if (
+            int.TryParse(setting.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value)
+            && value >= 0
+        )
+        {
+            return value;
+        }
+
+        errors.Add($"Configuration '{setting.Path}' must be a non-negative integer.");
+        return null;
     }
 
     // Only the numbers are configurable: fail rules are code, so they always come from the resolved policy.
@@ -372,10 +389,11 @@ public sealed class JobsCatalogBuilder
         Dictionary<string, JobFunctionDescriptor> descriptors,
         string identity,
         int? maxConcurrency,
+        int? clusterMaxConcurrency,
         JobPriority? priority
     )
     {
-        if (maxConcurrency is null && priority is null)
+        if (maxConcurrency is null && clusterMaxConcurrency is null && priority is null)
         {
             return;
         }
@@ -384,6 +402,7 @@ public sealed class JobsCatalogBuilder
         functions[identity] = registration with
         {
             MaxConcurrency = maxConcurrency ?? registration.MaxConcurrency,
+            ClusterMaxConcurrency = clusterMaxConcurrency ?? registration.ClusterMaxConcurrency,
             Priority = priority ?? registration.Priority,
         };
 

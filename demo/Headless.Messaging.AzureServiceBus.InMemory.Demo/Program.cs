@@ -13,7 +13,7 @@ builder.Services.ConfigureMessaging(messaging => messaging.Message<SampleMessage
 builder.Services.AddHeadlessMessaging(setup =>
 {
     setup.AddModule<Headless.Messaging.AzureServiceBus.InMemory.Demo.MessagingModule>();
-    setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
+    setup.Options.MinimumInboxGuarantee = InboxGuarantee.ProcessLocal;
     setup.UseInMemoryStorage();
     setup.UseAzureServiceBus(asb =>
     {

@@ -88,7 +88,7 @@
                 <th>Consumer</th>
                 <th>Lane</th>
                 <th>Outcome</th>
-                <th>Tier</th>
+                <th>Guarantee</th>
                 <th>Generation</th>
                 <th>Provenance</th>
                 <th>Hold</th>
@@ -109,7 +109,7 @@
                 <td>{{ generation.consumerIdentity }}</td>
                 <td>{{ generation.lane }}</td>
                 <td>{{ generation.status }}</td>
-                <td>{{ inboxTier }}</td>
+                <td>{{ inboxGuarantee }}</td>
                 <td>{{ generation.generation }}</td>
                 <td>{{ generation.replayParentIncarnationId ? 'Replay' : 'Original' }}</td>
                 <td>{{ generation.isHeld ? 'Held' : 'Released' }}</td>
@@ -279,7 +279,7 @@ interface ReceivedMessage {
 }
 
 interface DashboardMeta {
-  providerCapabilities: Array<{ role: string; inboxCapability: string | null }>
+  providerCapabilities: Array<{ role: string; inboxGuarantee: string | null }>
 }
 
 const inboxActions = {
@@ -369,7 +369,7 @@ const contentFilter = ref('')
 const isLoading = ref(false)
 const messages = ref<ReceivedMessage[]>([])
 const inboxGenerations = ref<InboxGeneration[]>([])
-const inboxTier = ref('Unavailable')
+const inboxGuarantee = ref('Unavailable')
 const canLoadInbox = window.MessagingConfig?.auth?.enabled === true
 const detailDialogOpen = ref(false)
 const detailMessage = ref<MessageDetail | null>(null)
@@ -430,9 +430,9 @@ async function loadMessages(page?: number, pageSize?: number) {
     if (generation !== loadGeneration) return
     messages.value = data.items || []
     inboxGenerations.value = inbox.items || []
-    inboxTier.value =
+    inboxGuarantee.value =
       meta.providerCapabilities.find((capability) => capability.role === 'Storage')
-        ?.inboxCapability ?? 'Unavailable'
+        ?.inboxGuarantee ?? 'Unavailable'
     pagination.totalCount.value = data.totals || 0
   } catch (error) {
     if (generation !== loadGeneration) return

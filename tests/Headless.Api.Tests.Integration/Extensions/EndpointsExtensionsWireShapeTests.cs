@@ -3,6 +3,7 @@
 using System.Net;
 using Headless;
 using Headless.Api;
+using Headless.Api.Resources;
 using Headless.Context;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Authorization;
@@ -45,7 +46,7 @@ public sealed class EndpointsExtensionsWireShapeTests : TestBase
         root.GetProperty("type").GetString().Should().Be(HeadlessProblemDetailsConstants.Types.BadRequest);
         root.GetProperty("title").GetString().Should().Be(HeadlessProblemDetailsConstants.Titles.BadRequest);
         root.GetProperty("status").GetInt32().Should().Be(StatusCodes.Status400BadRequest);
-        root.GetProperty("detail").GetString().Should().Be(HeadlessProblemDetailsConstants.Details.BadRequest);
+        root.GetProperty("detail").GetString().Should().Be(Messages.problem_bad_request);
         root.GetProperty("traceId").GetString().Should().NotBeNullOrWhiteSpace();
         root.GetProperty("instance").GetString().Should().Be("/redirect-mismatch");
     }

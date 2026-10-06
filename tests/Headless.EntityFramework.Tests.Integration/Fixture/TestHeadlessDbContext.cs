@@ -20,11 +20,4 @@ public sealed class TestHeadlessDbContext(
     public List<object> EmittedLocalMessages => messageDispatcher.EmittedLocalMessages;
 
     public override string DefaultSchema => "";
-
-    // The harness filter suites verify the opt-in suspend filter, so the shared test entity opts in.
-    protected override void OnModelCreating(ModelBuilder modelBuilder)
-    {
-        base.OnModelCreating(modelBuilder);
-        modelBuilder.Entity<TestEntity>().HasNotSuspendedFilter();
-    }
 }

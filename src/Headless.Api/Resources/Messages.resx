@@ -195,4 +195,55 @@
   <data name="user:phone_number_already_linked" xml:space="preserve">
     <value>Phone number is already linked to the user.</value>
   </data>
+  <data name="g:tenant_required" xml:space="preserve">
+    <value>An operation required an ambient tenant context but none was set.</value>
+  </data>
+  <data name="g:cross_tenant_write" xml:space="preserve">
+    <value>Tenant-owned write does not match the current tenant context.</value>
+  </data>
+  <data name="g:invalid_request_type" xml:space="preserve">
+    <value>Invalid request type configured for this endpoint.</value>
+  </data>
+  <data name="problem:endpoint_not_found" xml:space="preserve">
+    <value>The requested endpoint '{0}' was not found.</value>
+  </data>
+  <data name="problem:entity_not_found" xml:space="preserve">
+    <value>The requested resource was not found.</value>
+  </data>
+  <data name="problem:bad_request" xml:space="preserve">
+    <value>Failed to parse. The request body is empty or could not be understood by the server due to malformed syntax.</value>
+  </data>
+  <data name="problem:unauthorized" xml:space="preserve">
+    <value>You are unauthenticated to access this resource.</value>
+  </data>
+  <data name="problem:forbidden" xml:space="preserve">
+    <value>You are forbidden from accessing this resource.</value>
+  </data>
+  <data name="problem:conflict" xml:space="preserve">
+    <value>Conflict - one or more business rules violated.</value>
+  </data>
+  <data name="problem:unprocessable_entity" xml:space="preserve">
+    <value>One or more validation errors occurred.</value>
+  </data>
+  <data name="problem:internal_error" xml:space="preserve">
+    <value>An error occurred while processing your request.</value>
+  </data>
+  <data name="problem:too_many_requests" xml:space="preserve">
+    <value>Too many requests - please try again later.</value>
+  </data>
+  <data name="problem:request_timeout" xml:space="preserve">
+    <value>The request timed out.</value>
+  </data>
+  <data name="problem:not_implemented" xml:space="preserve">
+    <value>This functionality is not implemented.</value>
+  </data>
+  <data name="problem:payload_too_large" xml:space="preserve">
+    <value>The request payload is too large to process.</value>
+  </data>
+  <data name="problem:service_unavailable" xml:space="preserve">
+    <value>The service is temporarily unavailable - please try again later.</value>
+  </data>
+  <data name="problem:if_match_unsupported" xml:space="preserve">
+    <value>If-Match contains an entity tag that is not supported by this API.</value>
+  </data>
 </root>

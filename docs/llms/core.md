@@ -23,7 +23,8 @@ packages: Checks, Domain, Domain.EventDispatcher
 - Use `ApiResult<T>` / `ApiResult` from `Headless.Extensions` for service return types instead of throwing exceptions for expected failures. Use `Result<TValue, TError>` when you need custom error types.
 - For local (in-process) domain events, register `AddHeadlessDomainEventDispatcher()` and implement `IDomainEventHandler<T>`. Use `DomainEventHandlerOrderAttribute` to control handler execution order. For integration (distributed) events, emit integration payloads via `AddIntegrationEvent()` on the aggregate; dispatch is handled by the ORM/messaging layer (see [orm.md](orm.md)), not by this package.
 - For strongly-typed IDs, use the primitives from `Headless.Extensions` (`UserId`, `AccountId`) — they have source-generated JSON and TypeConverter support.
-- Auditing interfaces (`ICreateAudit`, `IUpdateAudit`, `IDeleteAudit`, `ISuspendAudit`) are marker interfaces — the ORM layer fills the properties automatically. Inherit an audited base instead of re-declaring the properties: `Audited*` for create and update, `Suspendable*` to add suspension, `SoftDeletable*` to add soft delete. An entity that needs both suspension and soft delete inherits one of the latter and implements the other interface by hand. When implementing the interfaces by hand, give each property a `private` or `protected` setter: the ORM writes non-public setters, but a `private` setter declared on a base class is invisible to it, so a hand-written base class needs `protected`.
+- Auditing interfaces (`ICreateAudit`, `IUpdateAudit`, `IDeleteAudit`) are marker interfaces — the ORM layer fills the properties automatically. Inherit an audited base instead of re-declaring the properties: `Audited*` for create and update, `SoftDeletable*` to add soft delete. When implementing the interfaces by hand, give each property a `private` or `protected` setter: the ORM writes non-public setters, but a `private` setter declared on a base class is invisible to it, so a hand-written base class needs `protected`.
+- Soft delete is the only lifecycle state the framework audits and filters. Model other states, such as suspension or blocking, as your own entity properties and filter them with explicit query predicates.
 
 ---
 
@@ -117,8 +118,8 @@ Core domain-driven design abstractions including entities, aggregate roots, valu
 - **Aggregate Roots**: `IAggregateRoot`, `AggregateRoot` with built-in message emission
 - **Value Objects**: `ValueObject<TSelf>` base class with equality over the components it compares and hashes
 
-- **Auditing**: `ICreateAudit`, `IUpdateAudit`, `IDeleteAudit`, `ISuspendAudit`, each in three arities: timestamps only, `<TAccountId>` adding actor ids, and `<TAccountId, TAccount>` adding actor navigations plus `Update`, `Suspend`/`Unsuspend`, and `Delete`/`Restore`
-- **Audited bases**, split by capability, each over `Entity<TId>` or `AggregateRoot<TId>` with `protected` setters: `AuditedEntity` / `AuditedAggregateRoot` (create + update), `SuspendableEntity` / `SuspendableAggregateRoot` (create + update + suspend), `SoftDeletableEntity` / `SoftDeletableAggregateRoot` (create + update + soft delete). Each comes in `<TId>`, `<TId, TAccountId>`, and `<TId, TAccountId, TAccount>` forms matching the interface arity; only the last form exposes the public transition methods (`Update`, plus `Suspend`/`Unsuspend` or `Delete`/`Restore`)
+- **Auditing**: `ICreateAudit`, `IUpdateAudit`, `IDeleteAudit`, each in three arities: timestamps only, `<TAccountId>` adding actor ids, and `<TAccountId, TAccount>` adding actor navigations plus `Update` on `IUpdateAudit` and `Delete`/`Restore` on `IDeleteAudit`
+- **Audited bases**, split by capability, each over `Entity<TId>` or `AggregateRoot<TId>` with `protected` setters: `AuditedEntity` / `AuditedAggregateRoot` (create + update) and `SoftDeletableEntity` / `SoftDeletableAggregateRoot` (create + update + soft delete). Each comes in `<TId>`, `<TId, TAccountId>`, and `<TId, TAccountId, TAccount>` forms matching the interface arity; only the last form exposes the public transition methods (`Update`, plus `Delete`/`Restore`)
 - **Concurrency**: `IHasConcurrencyStamp`
 - **Multi-tenancy**: `IMultiTenant`
 - **Domain Events (in-process)**: `IDomainEventEmitter`, `IDomainEventHandler<T>`, `DomainEventHandlerOrderAttribute`. An aggregate raises its own events through the `protected AddDomainEvent`; the readers/clearers (`GetDomainEvents`, `ClearDomainEvents`) and the `IDomainEventEmitter` contract stay public for infrastructure that collects and dispatches them. Dispatch is provided by `Headless.Domain.EventDispatcher`.
@@ -200,22 +201,20 @@ Or inherit the audited base that carries only the capabilities the entity needs:
 | Base | Capabilities |
 | --- | --- |
 | `AuditedEntity<…>` / `AuditedAggregateRoot<…>` | create, update |
-| `SuspendableEntity<…>` / `SuspendableAggregateRoot<…>` | create, update, suspend |
 | `SoftDeletableEntity<…>` / `SoftDeletableAggregateRoot<…>` | create, update, soft delete |
 
-An entity that needs both suspension and soft delete inherits one of the last two and implements the other interface by hand. A create-only entity implements `ICreateAudit<…>` directly.
+A create-only entity implements `ICreateAudit<…>` directly.
 
 The `HeadlessDbContext` save pipeline stamps the audit fields, and it stamps the matching `*ById` from `ICurrentUser` when `TAccountId` is `UserId` or `AccountId`:
 
 - Every modified save stamps `UpdatedAt` and `UpdatedById` with the current time and actor.
 - `IsDeleted` false → true stamps `DeletedAt`/`DeletedById`; true → false stamps `RestoredAt`/`RestoredById`.
-- `IsSuspended` false → true stamps `SuspendedAt`/`SuspendedById`; true → false stamps `UnsuspendedAt`/`UnsuspendedById`.
-- Each pair holds the most recent transition of its kind. A reversal keeps the opposite pair as history, so read `IsDeleted` / `IsSuspended`, not the timestamps, for the current state.
+- Each pair holds the most recent transition of its kind. A restore keeps the deletion pair as history, and a later delete keeps the restore pair, so read `IsDeleted`, not the timestamps, for the current state.
 - A non-null value the save already set explicitly wins over the stamp.
-- A delete, restore, suspend, or unsuspend with no actor records a null actor id, never the previous transition's actor. "No actor" means none was passed to the transition method and none resolved from `ICurrentUser`. The transition methods likewise write `byId` and `by` exactly as given, including `null`.
+- A delete or restore with no actor records a null actor id, never the previous transition's actor. "No actor" means none was passed to the transition method and none resolved from `ICurrentUser`. The transition methods likewise write `byId` and `by` exactly as given, including `null`.
 - A modified save with no resolved current user records a null `UpdatedById` and clears a loaded `UpdatedBy`. An anonymous flow that knows the actor passes it to `Update(now, byId, by)` in the same save, which wins.
 
-The entity changes `IsSuspended` / `IsDeleted` through its own behavior:
+The entity changes `IsDeleted` through its own behavior:
 
 ```csharp
 public sealed class Invoice : SoftDeletableAggregateRoot<Guid, UserId>
@@ -226,9 +225,11 @@ public sealed class Invoice : SoftDeletableAggregateRoot<Guid, UserId>
 }
 ```
 
-The `<TId, TAccountId, TAccount>` form also implements the public transition methods: `Update` on every base, `Suspend`/`Unsuspend` on the suspendable bases, and `Delete`/`Restore` on the soft-deletable bases. Each records the given time and actor. `Suspend`, `Unsuspend`, `Delete`, and `Restore` do nothing when the entity is already in the target state. Call `Update` only when the recorded time or actor must differ from the pipeline's clock and current user, for example an anonymous flow acting for a known account: the pipeline stamps every modified save by itself.
+The `<TId, TAccountId, TAccount>` form also implements the public transition methods: `Update` on every base, and `Delete`/`Restore` on the soft-deletable bases. Each records the given time and actor. `Delete` and `Restore` do nothing when the entity is already in the target state. Call `Update` only when the recorded time or actor must differ from the pipeline's clock and current user, for example an anonymous flow acting for a known account: the pipeline stamps every modified save by itself.
 
-Suspension is a business state. Suspended rows stay visible to queries unless the entity type opts into the suspend filter with `HasNotSuspendedFilter()` (see [ORM](orm.md)). Soft-deleted rows are hidden by the default not-deleted filter; load one to restore it with `IgnoreNotDeletedFilter()`.
+Soft-deleted rows are hidden by the default not-deleted filter; load one to restore it with `IgnoreNotDeletedFilter()`.
+
+**Migrating from suspension audit:** model suspension as your own domain state, and add an explicit filter where you relied on `NotSuspendedFilter`.
 
 #### Value Objects
 

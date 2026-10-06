@@ -471,6 +471,125 @@ public sealed class SettingsSnapshotTests : TestBase
         _CurrentOf(sut).Should().Be(new Policy(20, 200));
     }
 
+    [Fact]
+    public async Task should_re_read_at_most_once_per_settle_delay_for_a_burst_of_missed_announcements()
+    {
+        // given
+        using var sut = _CreateSut();
+        await sut.EnsureLoadedAsync(AbortToken);
+        const int burst = 5;
+
+        // when - every announcement misses its value, and the later ones arrive while the first chain waits
+        for (var i = 0; i < burst; i++)
+        {
+            await sut.ReloadAsync(
+                SettingsSnapshotReloadReason.Message,
+                [i % 2 == 0 ? _PublicLimit : _UserLimit],
+                AbortToken
+            );
+        }
+
+        for (var i = 0; i < SettingsSnapshot<Policy>.SettleDelays.Length; i++)
+        {
+            await _AdvanceSettleAsync(i);
+        }
+
+        // then - one startup read, one read per announcement, and one shared read per settle delay
+        var expected = 1 + burst + SettingsSnapshot<Policy>.SettleDelays.Length;
+        await TimerCountingTimeProvider.WaitUntilAsync(() => Volatile.Read(ref _reads) == expected, AbortToken);
+        _timeProvider.TimersCreated.Should().Be(SettingsSnapshot<Policy>.SettleDelays.Length);
+        sut.Revision.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_pick_up_the_value_of_an_announcement_that_joined_a_running_settle_chain()
+    {
+        // given
+        using var sut = _CreateSut();
+        await sut.EnsureLoadedAsync(AbortToken);
+        await sut.ReloadAsync(SettingsSnapshotReloadReason.Message, [_PublicLimit], AbortToken);
+        await sut.ReloadAsync(SettingsSnapshotReloadReason.Message, [_UserLimit], AbortToken);
+        _timeProvider.TimersCreated.Should().Be(1);
+        _stored[_UserLimit] = "200";
+
+        // when
+        await _AdvanceSettleAsync(0);
+        await TimerCountingTimeProvider.WaitUntilAsync(() => sut.Revision == 2, AbortToken);
+
+        // then
+        _CurrentOf(sut).Should().Be(new Policy(10, 200));
+    }
+
+    [Fact]
+    public async Task should_keep_settling_for_a_joined_announcement_after_another_announcement_was_seen()
+    {
+        // given - two announcements share one chain; the first one's value shows up first
+        using var sut = _CreateSut();
+        await sut.EnsureLoadedAsync(AbortToken);
+        await sut.ReloadAsync(SettingsSnapshotReloadReason.Message, [_PublicLimit], AbortToken);
+        await sut.ReloadAsync(SettingsSnapshotReloadReason.Message, [_UserLimit], AbortToken);
+        _stored[_PublicLimit] = "20";
+        await _AdvanceSettleAsync(0);
+        await TimerCountingTimeProvider.WaitUntilAsync(() => sut.Revision == 2, AbortToken);
+        _stored[_UserLimit] = "200";
+
+        // when
+        await _AdvanceSettleAsync(1);
+        await TimerCountingTimeProvider.WaitUntilAsync(() => sut.Revision == 3, AbortToken);
+
+        // then
+        _CurrentOf(sut).Should().Be(new Policy(20, 200));
+    }
+
+    [Fact]
+    public async Task should_stop_the_shared_settle_chain_once_every_announcement_was_seen()
+    {
+        // given
+        using var sut = _CreateSut();
+        await sut.EnsureLoadedAsync(AbortToken);
+        await sut.ReloadAsync(SettingsSnapshotReloadReason.Message, [_PublicLimit], AbortToken);
+        await sut.ReloadAsync(SettingsSnapshotReloadReason.Message, [_UserLimit], AbortToken);
+        _stored[_PublicLimit] = "20";
+        _stored[_UserLimit] = "200";
+
+        // when
+        await _AdvanceSettleAsync(0);
+        await TimerCountingTimeProvider.WaitUntilAsync(() => Volatile.Read(ref _reads) == 4, AbortToken);
+        _timeProvider.Advance(TimeSpan.FromMinutes(1));
+
+        // then - no further delay was scheduled and nothing re-read
+        _timeProvider.TimersCreated.Should().Be(1);
+        _reads.Should().Be(4);
+        _CurrentOf(sut).Should().Be(new Policy(20, 200));
+    }
+
+    [Fact]
+    public async Task should_start_a_new_settle_chain_after_the_previous_one_finished()
+    {
+        // given - a chain that ran all its re-reads
+        using var sut = _CreateSut();
+        await sut.EnsureLoadedAsync(AbortToken);
+        await sut.ReloadAsync(SettingsSnapshotReloadReason.Message, [_PublicLimit], AbortToken);
+
+        for (var i = 0; i < SettingsSnapshot<Policy>.SettleDelays.Length; i++)
+        {
+            await _AdvanceSettleAsync(i);
+        }
+
+        var settled = 2 + SettingsSnapshot<Policy>.SettleDelays.Length;
+        await TimerCountingTimeProvider.WaitUntilAsync(() => Volatile.Read(ref _reads) == settled, AbortToken);
+
+        // when
+        await sut.ReloadAsync(SettingsSnapshotReloadReason.Message, [_PublicLimit], AbortToken);
+        _stored[_PublicLimit] = "20";
+        await _timeProvider.WaitForTimersAsync(SettingsSnapshot<Policy>.SettleDelays.Length + 1, AbortToken);
+        _timeProvider.Advance(SettingsSnapshot<Policy>.SettleDelays[0]);
+
+        // then
+        await TimerCountingTimeProvider.WaitUntilAsync(() => sut.Revision == 2, AbortToken);
+        _CurrentOf(sut).Should().Be(new Policy(20, 100));
+    }
+
     #endregion
 
     #region Failures and disposal

@@ -330,10 +330,7 @@ internal sealed class SubscribeExecutor(
 
             var sp = Stopwatch.StartNew();
 
-            if (
-                message.InboxKey is not null
-                && _options.RequiredInboxCapability is MessagingInboxCapabilityTier.Transactional
-            )
+            if (message.InboxKey is not null && _options.MinimumInboxGuarantee is InboxGuarantee.Transactional)
             {
                 message.ExpiresAt = timeProvider.GetUtcNow().AddSeconds(_options.SucceedMessageExpiredAfter);
                 // The runner and consumer must share the same DbContext, alive until commit or rollback.
@@ -915,7 +912,7 @@ internal sealed class SubscribeExecutor(
         var storageCapability = _capabilityModel.Providers.FirstOrDefault(capability =>
             capability.Role is MessagingProviderRole.Storage
         );
-        if (storageCapability?.InboxCapability is not { } tier)
+        if (storageCapability?.InboxGuarantee is not { } guarantee)
         {
             return;
         }
@@ -925,7 +922,7 @@ internal sealed class SubscribeExecutor(
             key.ConsumerIdentity,
             key.Lane,
             outcome,
-            tier,
+            guarantee,
             storageCapability.Provider,
             message.Origin.Headers.TryGetValue(Headers.TenantId, out var tenantId) ? tenantId : null,
             _inboxMetricPolicy.TenantTagName

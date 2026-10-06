@@ -13,9 +13,20 @@ namespace Headless.Api;
 /// handlers, middleware, endpoint code).
 /// </summary>
 /// <remarks>
-/// Most factories accept an optional <see cref="ErrorDescriptor"/> that is written to
-/// <c>Extensions["error"]</c> as a machine-readable discriminator. Clients should branch on that
-/// code rather than parse the human-readable <c>Detail</c>.
+/// <para>
+/// Every single-error factory takes its type-specific arguments first, then an optional
+/// <c>detail</c> that overrides the default <c>Detail</c> text, then an optional
+/// <see cref="ErrorDescriptor"/> written to <c>Extensions["error"]</c> as a machine-readable
+/// discriminator. <see cref="Conflict"/> and <see cref="UnprocessableEntity"/> carry a collection
+/// of descriptors instead and keep the default <c>Detail</c>.
+/// </para>
+/// <para>
+/// The default <c>Detail</c> is resolved per call under
+/// <see cref="System.Globalization.CultureInfo.CurrentUICulture"/> (English and Arabic ship with the
+/// framework; an application without request localization gets English). A caller-supplied
+/// <c>detail</c> is written exactly as given. <c>Type</c>, <c>Status</c>, <c>Title</c>, and error
+/// codes never vary by culture: clients branch on those, never on <c>Detail</c>.
+/// </para>
 /// </remarks>
 public interface IProblemDetailsCreator
 {
@@ -24,24 +35,32 @@ public interface IProblemDetailsCreator
     /// by <c>StatusCodesRewriterMiddleware</c> when ASP.NET Core's routing produces a bare 404).
     /// The current request path is embedded in <c>Detail</c>.
     /// </summary>
+    /// <param name="detail">
+    /// Optional detail message. Defaults to the framework's endpoint-not-found message, which names the request path when <see langword="null"/>.
+    /// </param>
     /// <param name="error">
     /// Optional <see cref="ErrorDescriptor"/> stamped into <c>Extensions["error"]</c>.
     /// </param>
-    ProblemDetails EndpointNotFound(ErrorDescriptor? error = null);
+    ProblemDetails EndpointNotFound(string? detail = null, ErrorDescriptor? error = null);
 
     /// <summary>
     /// Builds a normalized 404 <see cref="ProblemDetails"/> for entity-not-found responses
     /// (typically mapped from <see cref="Headless.EntityNotFoundException"/>).
     /// </summary>
+    /// <param name="detail">
+    /// Optional detail message. Defaults to the framework's generic entity-not-found message when
+    /// <see langword="null"/>. Never put the entity name or key here: they belong in server logs,
+    /// not the HTTP response.
+    /// </param>
     /// <param name="error">
     /// Optional <see cref="ErrorDescriptor"/> stamped into <c>Extensions["error"]</c>. Omit to
     /// emit a 404 carrying no machine-readable discriminator.
     /// </param>
     /// <returns>
-    /// A <see cref="ProblemDetails"/> already passed through <see cref="Normalize"/>. Deliberately
-    /// surfaces no entity name or key — those belong in server logs, not the HTTP response.
+    /// A <see cref="ProblemDetails"/> already passed through <see cref="Normalize"/>. The default
+    /// detail deliberately surfaces no entity name or key.
     /// </returns>
-    ProblemDetails EntityNotFound(ErrorDescriptor? error = null);
+    ProblemDetails EntityNotFound(string? detail = null, ErrorDescriptor? error = null);
 
     /// <summary>
     /// Builds a normalized 400 <see cref="ProblemDetails"/>. Callers attach a stable
@@ -64,10 +83,13 @@ public interface IProblemDetailsCreator
     /// Seconds the client should wait before retrying. Written to <c>Extensions["retryAfter"]</c>.
     /// Callers are responsible for setting the matching <c>Retry-After</c> response header.
     /// </param>
+    /// <param name="detail">
+    /// Optional detail message. Defaults to the framework's generic rate-limit message when <see langword="null"/>.
+    /// </param>
     /// <param name="error">
     /// Optional <see cref="ErrorDescriptor"/> stamped into <c>Extensions["error"]</c>.
     /// </param>
-    ProblemDetails TooManyRequests(int retryAfterSeconds, ErrorDescriptor? error = null);
+    ProblemDetails TooManyRequests(int retryAfterSeconds, string? detail = null, ErrorDescriptor? error = null);
 
     /// <summary>
     /// Builds a normalized 503 <see cref="ProblemDetails"/> for a dependency the request cannot
@@ -79,6 +101,9 @@ public interface IProblemDetailsCreator
     /// matching <c>Retry-After</c> response header. Pass <see langword="null"/> when the outage has
     /// no known duration.
     /// </param>
+    /// <param name="detail">
+    /// Optional detail message. Defaults to the framework's generic service-unavailable message when <see langword="null"/>.
+    /// </param>
     /// <param name="error">
     /// Optional <see cref="ErrorDescriptor"/> stamped into <c>Extensions["error"]</c>. Describe the
     /// failed capability, never the provider or its connection details.
@@ -88,7 +113,11 @@ public interface IProblemDetailsCreator
     /// unreachable, or a guard that cannot reach the state it guards. Returning it says the request
     /// was not processed, which is the opposite of the 200 a fail-open control would return.
     /// </remarks>
-    ProblemDetails ServiceUnavailable(int? retryAfterSeconds = null, ErrorDescriptor? error = null);
+    ProblemDetails ServiceUnavailable(
+        int? retryAfterSeconds = null,
+        string? detail = null,
+        ErrorDescriptor? error = null
+    );
 
     /// <summary>
     /// Builds a normalized 422 <see cref="ProblemDetails"/> for validation failures (typically
@@ -133,28 +162,37 @@ public interface IProblemDetailsCreator
     /// emitted by <c>StatusCodesRewriterMiddleware</c> when the authentication pipeline produces a
     /// bare 401). Callers are responsible for any <c>WWW-Authenticate</c> response header.
     /// </summary>
+    /// <param name="detail">
+    /// Optional detail message. Defaults to the framework's generic unauthorized message when <see langword="null"/>.
+    /// </param>
     /// <param name="error">
     /// Optional <see cref="ErrorDescriptor"/> stamped into <c>Extensions["error"]</c>.
     /// </param>
-    ProblemDetails Unauthorized(ErrorDescriptor? error = null);
+    ProblemDetails Unauthorized(string? detail = null, ErrorDescriptor? error = null);
 
     /// <summary>
     /// Builds a normalized 408 <see cref="ProblemDetails"/> for request-timeout responses
     /// (typically mapped from <see cref="System.TimeoutException"/>).
     /// </summary>
+    /// <param name="detail">
+    /// Optional detail message. Defaults to the framework's generic request-timeout message when <see langword="null"/>.
+    /// </param>
     /// <param name="error">
     /// Optional <see cref="ErrorDescriptor"/> stamped into <c>Extensions["error"]</c>.
     /// </param>
-    ProblemDetails RequestTimeout(ErrorDescriptor? error = null);
+    ProblemDetails RequestTimeout(string? detail = null, ErrorDescriptor? error = null);
 
     /// <summary>
     /// Builds a normalized 501 <see cref="ProblemDetails"/> for unimplemented-functionality
     /// responses (typically mapped from <see cref="System.NotImplementedException"/>).
     /// </summary>
+    /// <param name="detail">
+    /// Optional detail message. Defaults to the framework's generic not-implemented message when <see langword="null"/>.
+    /// </param>
     /// <param name="error">
     /// Optional <see cref="ErrorDescriptor"/> stamped into <c>Extensions["error"]</c>.
     /// </param>
-    ProblemDetails NotImplemented(ErrorDescriptor? error = null);
+    ProblemDetails NotImplemented(string? detail = null, ErrorDescriptor? error = null);
 
     /// <summary>
     /// Backfills the framework's standard fields on an externally-produced <see cref="ProblemDetails"/>
@@ -168,8 +206,11 @@ public interface IProblemDetailsCreator
     /// </param>
     /// <remarks>
     /// Resolves <c>Title</c>/<c>Type</c> from <see cref="Microsoft.AspNetCore.Mvc.ApiBehaviorOptions.ClientErrorMapping"/>,
-    /// then fills missing <c>Title</c>/<c>Type</c>/<c>Detail</c> for status codes the framework
-    /// cares about (404, 408, 413, 500, 501) from <see cref="HeadlessProblemDetailsConstants"/>.
+    /// then fills missing <c>Title</c>/<c>Type</c> for status codes the framework cares about
+    /// (404, 408, 413, 500, 501) from <see cref="HeadlessProblemDetailsConstants"/> and a missing
+    /// <c>Detail</c> from the localized defaults. Passes every <see cref="ErrorDescriptor"/> in the
+    /// <c>error</c> and <c>errors</c> extensions through <see cref="IErrorDescriptionLocalizer"/>,
+    /// replacing a descriptor with a localized copy rather than mutating it.
     /// Always stamps <c>traceId</c>, <c>buildNumber</c>, <c>commitNumber</c>, and <c>timestamp</c>
     /// extensions, plus <c>Instance</c> from the current request path. Idempotent: existing values
     /// are preserved.

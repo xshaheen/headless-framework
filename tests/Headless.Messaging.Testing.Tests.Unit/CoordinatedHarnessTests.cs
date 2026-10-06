@@ -66,7 +66,7 @@ public sealed class CoordinatedHarnessTests : TestBase
             {
                 setup.UseInMemory();
                 setup.UseInMemoryStorage();
-                setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
+                setup.Options.MinimumInboxGuarantee = InboxGuarantee.ProcessLocal;
                 services.ConfigureMessaging(messaging =>
                 {
                     messaging.Message<StandaloneOrderPlaced>("standalone-order-placed");
@@ -182,8 +182,8 @@ public sealed class CoordinatedHarnessTests : TestBase
     [Fact]
     public async Task should_allow_coordinated_publish_beside_consumers_on_process_local_inbox()
     {
-        // Transaction coordination is independent of the consumer inbox tier: the registration boots fine next to
-        // a durable consumer even though in-memory storage only offers the ProcessLocal inbox tier, and the
+        // Transaction coordination is independent of the consumer inbox guarantee: the registration boots fine next to
+        // a durable consumer even though in-memory storage only offers the ProcessLocal inbox guarantee, and the
         // message consumes normally once published inside a unit of work.
         await using var harness = await MessagingTestHarness.CreateAsync(
             services =>
@@ -192,7 +192,7 @@ public sealed class CoordinatedHarnessTests : TestBase
                 {
                     setup.UseInMemory();
                     setup.UseInMemoryStorage();
-                    setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
+                    setup.Options.MinimumInboxGuarantee = InboxGuarantee.ProcessLocal;
                     services.ConfigureMessaging(messaging =>
                     {
                         messaging.Message<CoordinatedOrderPlaced>("coordinated-order-placed");

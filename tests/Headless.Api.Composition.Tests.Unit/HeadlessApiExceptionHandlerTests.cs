@@ -4,6 +4,7 @@ using System.Diagnostics;
 using FluentValidation.Results;
 using Headless;
 using Headless.Api;
+using Headless.Api.Resources;
 using Headless.Context;
 using Headless.MultiTenancy;
 using Headless.Primitives;
@@ -59,7 +60,6 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         // then
         result.Should().BeTrue();
         httpContext.Response.StatusCode.Should().Be(StatusCodes.Status403Forbidden);
-        var expectedError = HeadlessProblemDetailsConstants.Errors.TenantContextRequired;
 
         await problemDetailsService
             .Received(1)
@@ -67,9 +67,51 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
                 Arg.Is<ProblemDetailsContext>(c =>
                     c.ProblemDetails.Status == 403
                     && c.ProblemDetails.Title == HeadlessProblemDetailsConstants.Titles.Forbidden
-                    && expectedError.Equals(c.ProblemDetails.Extensions["error"])
+                    && ((ErrorDescriptor)c.ProblemDetails.Extensions["error"]!).Code == GeneralErrorCodes.TenantRequired
                 )
             );
+    }
+
+    [Fact]
+    public async Task should_describe_missing_tenant_context_in_the_culture_of_each_request()
+    {
+        // given
+        var written = new List<ProblemDetails>();
+        var problemDetailsService = Substitute.For<IProblemDetailsService>();
+        problemDetailsService
+            .TryWriteAsync(Arg.Do<ProblemDetailsContext>(c => written.Add(c.ProblemDetails)))
+            .Returns(true);
+        var handler = _CreateHandler(problemDetailsService, _CreateRealCreator());
+        var originalUiCulture = CultureInfo.CurrentUICulture;
+
+        // when: the first request runs under English, the next under Arabic
+        try
+        {
+            CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("en");
+            await handler.TryHandleAsync(new DefaultHttpContext(), new MissingTenantContextException(), AbortToken);
+
+            CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("ar");
+            await handler.TryHandleAsync(new DefaultHttpContext(), new MissingTenantContextException(), AbortToken);
+        }
+        finally
+        {
+            CultureInfo.CurrentUICulture = originalUiCulture;
+        }
+
+        // then
+        written.Should().HaveCount(2);
+        var arabicDescription = Messages.ResourceManager.GetString(
+            GeneralErrorCodes.TenantRequired,
+            CultureInfo.GetCultureInfo("ar")
+        );
+        written[1].Detail.Should().Be(arabicDescription);
+        written[1]
+            .Extensions["error"]
+            .Should()
+            .BeOfType<ErrorDescriptor>()
+            .Which.Description.Should()
+            .Be(arabicDescription);
+        written[1].Detail.Should().NotBe(written[0].Detail);
     }
 
     [Fact]
@@ -517,7 +559,7 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
             .GetProperty("code")
             .GetString()
             .Should()
-            .Be(HeadlessProblemDetailsConstants.Errors.TenantContextRequired.Code);
+            .Be(GeneralErrorCodes.TenantRequired);
     }
 
     [Fact]
@@ -566,7 +608,7 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         body.Should().NotContain("CUSTOM_OUTER_MESSAGE");
         body.Should().NotContain("SENSITIVE_LAYER_TAG");
         body.Should().NotContain("Sensitive.Layer.Tag");
-        body.Should().Contain(HeadlessProblemDetailsConstants.Errors.TenantContextRequired.Code);
+        body.Should().Contain(GeneralErrorCodes.TenantRequired);
     }
 
     [Fact]
@@ -695,8 +737,8 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         var creator = Substitute.For<IProblemDetailsCreator>();
         creator
             .Forbidden(
-                detail: HeadlessProblemDetailsConstants.Details.TenantContextRequired,
-                error: HeadlessProblemDetailsConstants.Errors.TenantContextRequired
+                detail: Arg.Any<string?>(),
+                error: Arg.Is<ErrorDescriptor?>(e => e != null && e.Code == GeneralErrorCodes.TenantRequired)
             )
             .Returns(_ => throw new InvalidOperationException("creator failure"));
         var logger = new CapturingLogger<HeadlessApiExceptionHandler>();
@@ -848,7 +890,13 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
         buildInfo.GetCommitNumber().Returns("abc123");
         var httpContextAccessor = Substitute.For<IHttpContextAccessor>();
         var apiBehaviorOptions = Options.Create(new ApiBehaviorOptions());
-        return new ProblemDetailsCreator(timeProvider, buildInfo, httpContextAccessor, apiBehaviorOptions);
+        return new ProblemDetailsCreator(
+            timeProvider,
+            buildInfo,
+            httpContextAccessor,
+            apiBehaviorOptions,
+            NullErrorDescriptionLocalizer.Instance
+        );
     }
 
     private sealed class StartedResponseFeature : IHttpResponseFeature

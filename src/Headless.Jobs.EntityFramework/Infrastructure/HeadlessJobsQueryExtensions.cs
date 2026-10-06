@@ -26,6 +26,31 @@ public static class HeadlessJobsQueryExtensions
         return filter.RunnableFunctions is { } runnable ? q.Where(e => runnable.Contains(e.Function)) : q;
     }
 
+    /// <summary>
+    /// Drops rows of cluster-limited functions. Immediate acquisition applies it so a limited run is always leased by
+    /// the scheduler's claim, the one path that counts it against the limit.
+    /// </summary>
+    internal static IQueryable<TTimeJob> WhereNotClusterLimited<TTimeJob>(
+        this IQueryable<TTimeJob> q,
+        JobsClusterConcurrency limits
+    )
+        where TTimeJob : TimeJobEntity<TTimeJob>
+    {
+        var limited = limits.LimitedFunctions;
+        return limited.Length != 0 ? q.Where(e => !limited.Contains(e.Function)) : q;
+    }
+
+    /// <inheritdoc cref="WhereNotClusterLimited{TTimeJob}(IQueryable{TTimeJob},JobsClusterConcurrency)"/>
+    internal static IQueryable<CronJobOccurrenceEntity<TCronJob>> WhereNotClusterLimited<TCronJob>(
+        this IQueryable<CronJobOccurrenceEntity<TCronJob>> q,
+        JobsClusterConcurrency limits
+    )
+        where TCronJob : CronJobEntity
+    {
+        var limited = limits.LimitedFunctions;
+        return limited.Length != 0 ? q.Where(e => !limited.Contains(e.Function)) : q;
+    }
+
     /// <summary>Keeps only cron definitions whose function this host runs.</summary>
     internal static IQueryable<TCronJob> WhereDefinitionRunnable<TCronJob>(
         this IQueryable<TCronJob> q,

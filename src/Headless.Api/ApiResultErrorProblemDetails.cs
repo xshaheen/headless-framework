@@ -25,7 +25,7 @@ internal static class ApiResultErrorProblemDetails
             NotFoundError => creator.EntityNotFound(),
             ValidationError e => creator.UnprocessableEntity(e.Errors),
             ForbiddenError e => creator.Forbidden(error: e.Error),
-            UnauthorizedError e => creator.Unauthorized(e.Error),
+            UnauthorizedError e => creator.Unauthorized(error: e.Error),
             AggregateError e when e.TryGetValidationErrors(out var validationErrors) => creator.UnprocessableEntity(
                 validationErrors
             ),

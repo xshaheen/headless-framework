@@ -34,7 +34,7 @@ Code against `IAuditLog<TContext>`, `IAuditLogWriter<TContext>`, and `IReadAudit
 - Use `IReadAuditLog<TContext>` to query audit history. Do not couple callers to `AuditLogEntry` or EF types directly.
 - Page audit history with the continuation token, never with offsets: pass the previous page's `ContinuationPage<AuditLogEntryData>.ContinuationToken` as `AuditLogQuery.ContinuationToken`, with the same filters and `Direction`, until it comes back `null`. The token is opaque; do not parse or build it.
 - Use `IAuditLogWriter<TContext>` for an explicit event that must persist even though no `SaveChanges` follows, such as a denied request. Use `IAuditLog<TContext>` when the entry must commit or roll back with the caller's entity changes. On EF storage the writer needs `IDbContextFactory<TContext>`.
-- Soft-delete and suspend transitions are detected automatically and emit `entity.soft_deleted` / `entity.restored` / `entity.suspended` / `entity.unsuspended` actions instead of `entity.updated`.
+- Soft-delete transitions are detected automatically and emit `entity.soft_deleted` / `entity.restored` actions instead of `entity.updated`.
 - `EntityFilter` and `PropertyFilter` predicates are cached after first evaluation per `(Type, propertyName)`. Keep them pure and deterministic.
 - `IpAddress` and `UserAgent` are not auto-populated by EF change capture — set them explicitly through `IAuditLog<TContext>.LogAsync` when relevant.
 - On SQLite, override the default composite primary key `(CreatedAt, Id)` with a single-column key on `Id` — SQLite cannot autoincrement composite keys.
@@ -228,7 +228,7 @@ var page = await readAuditLog.QueryAsync(
 | `SensitiveValueTransformer` | `null` | Required when effective strategy is `Transform`; must be pure and synchronous. |
 | `EntityFilter` | `null` | Predicate returning `true` to exclude a type; result cached per type. |
 | `PropertyFilter` | `null` | Predicate returning `true` to exclude a property; result cached per `(Type, propertyName)`. |
-| `DefaultExcludedProperties` | Framework-managed set | Property names skipped during change capture; consumers can add/remove entries. Default set includes `ConcurrencyStamp`, `CreatedAt`, `UpdatedAt`, `DeletedAt`, `RestoredAt`, `SuspendedAt`, `UnsuspendedAt`, `CreatedById`, `UpdatedById`, `DeletedById`, `RestoredById`, `SuspendedById`, `UnsuspendedById`. |
+| `DefaultExcludedProperties` | Framework-managed set | Property names skipped during change capture; consumers can add/remove entries. Default set includes `ConcurrencyStamp`, `CreatedAt`, `UpdatedAt`, `DeletedAt`, `RestoredAt`, `CreatedById`, `UpdatedById`, `DeletedById`, `RestoredById`. |
 | `CaptureErrorStrategy` | `Continue` | `Continue` logs an error and proceeds; `Throw` aborts the save. |
 
 ### Runtime behavior

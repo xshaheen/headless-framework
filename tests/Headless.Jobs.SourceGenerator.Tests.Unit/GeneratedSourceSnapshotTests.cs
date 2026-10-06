@@ -118,6 +118,7 @@ public sealed class GeneratedSourceSnapshotTests
                 TimeZone = "Africa/Cairo",
                 Priority = JobPriority.LongRunning,
                 MaxConcurrency = 4,
+                ClusterMaxConcurrency = 6,
                 ContractVersion = "v7",
                 OnMissedRun = MissedRunPolicy.Skip,
                 MissedRunGraceSeconds = 90,

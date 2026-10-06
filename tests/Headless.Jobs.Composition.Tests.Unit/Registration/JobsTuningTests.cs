@@ -192,7 +192,50 @@ public sealed class JobsTuningTests : TestBase
         registration.Priority.Should().Be(JobPriority.LongRunning);
     }
 
+    [Fact]
+    public async Task should_set_the_cluster_limit_from_tuning_and_let_configuration_override_it()
+    {
+        // given
+        var services = _Services(options =>
+            options.Tune(TestJobs.BillingCloseDay, job => job.ClusterConcurrency(2).Concurrency(1))
+        );
+        services.AddSingleton<IConfiguration>(
+            _Configuration(("Headless:Jobs:Jobs:billing.close-day:ClusterConcurrency", "4"))
+        );
+        await using var provider = services.BuildServiceProvider();
+
+        // when
+        var registry = provider.GetRequiredService<JobFunctionRegistry>();
+        var limits = provider.GetRequiredService<JobsClusterConcurrency>();
+
+        // then
+        registry.Functions[TestJobs.BillingCloseDay].ClusterMaxConcurrency.Should().Be(4);
+        registry.Functions[TestJobs.BillingCloseDay].MaxConcurrency.Should().Be(1);
+        limits.LimitedFunctions.Should().Equal(TestJobs.BillingCloseDay);
+        limits.LimitOf(TestJobs.BillingCloseDay).Should().Be(4);
+        limits.IsLimited(TestJobs.BillingSendInvoice).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_remove_the_cluster_limit_when_tuned_to_zero()
+    {
+        // given
+        var services = _Services(options =>
+            options
+                .Tune(TestJobs.BillingCloseDay, job => job.ClusterConcurrency(3))
+                .Tune(TestJobs.BillingCloseDay, job => job.ClusterConcurrency(0))
+        );
+        await using var provider = services.BuildServiceProvider();
+
+        // when
+        var limits = provider.GetRequiredService<JobsClusterConcurrency>();
+
+        // then
+        limits.HasLimits.Should().BeFalse();
+    }
+
     [Theory]
+    [InlineData("Headless:Jobs:Jobs:billing.close-day:ClusterConcurrency", "-1", "ClusterConcurrency")]
     [InlineData("Headless:Jobs:Jobs:billing.unknown:Concurrency", "3", "billing.unknown")]
     [InlineData("Headless:Jobs:Jobs:billing.close-day:Concurrency", "-1", "Concurrency")]
     [InlineData("Headless:Jobs:Jobs:billing.close-day:Concurrency", "many", "Concurrency")]
@@ -220,9 +263,12 @@ public sealed class JobsTuningTests : TestBase
 
         var negative = () =>
             services.ConfigureJobs(jobs => jobs.Tune(TestJobs.BillingCloseDay, job => job.Concurrency(-1)));
+        var negativeCluster = () =>
+            services.ConfigureJobs(jobs => jobs.Tune(TestJobs.BillingCloseDay, job => job.ClusterConcurrency(-1)));
         var blank = () => services.ConfigureJobs(jobs => jobs.Tune(" ", job => job.Concurrency(1)));
 
         negative.Should().Throw<ArgumentOutOfRangeException>();
+        negativeCluster.Should().Throw<ArgumentOutOfRangeException>();
         blank.Should().Throw<ArgumentException>();
     }
 

@@ -19,25 +19,12 @@ public sealed class AuditedBaseTests
 
     private sealed class AuditedRoot : AuditedAggregateRoot<Guid, string, Account>;
 
-    private sealed class SuspendableThing : SuspendableEntity<Guid, string, Account>;
-
-    private sealed class SuspendableRoot : SuspendableAggregateRoot<Guid, string, Account>;
-
     private sealed class SoftDeletableThing : SoftDeletableEntity<Guid, string, Account>;
 
     private sealed class SoftDeletableRoot : SoftDeletableAggregateRoot<Guid, string, Account>;
 
     public static TheoryData<string> Updatables =>
-        [
-            nameof(AuditedThing),
-            nameof(AuditedRoot),
-            nameof(SuspendableThing),
-            nameof(SuspendableRoot),
-            nameof(SoftDeletableThing),
-            nameof(SoftDeletableRoot),
-        ];
-
-    public static TheoryData<string> Suspendables => [nameof(SuspendableThing), nameof(SuspendableRoot)];
+        [nameof(AuditedThing), nameof(AuditedRoot), nameof(SoftDeletableThing), nameof(SoftDeletableRoot)];
 
     public static TheoryData<string> SoftDeletables => [nameof(SoftDeletableThing), nameof(SoftDeletableRoot)];
 
@@ -47,8 +34,6 @@ public sealed class AuditedBaseTests
         {
             nameof(AuditedThing) => new AuditedThing { Id = Guid.NewGuid() },
             nameof(AuditedRoot) => new AuditedRoot { Id = Guid.NewGuid() },
-            nameof(SuspendableThing) => new SuspendableThing { Id = Guid.NewGuid() },
-            nameof(SuspendableRoot) => new SuspendableRoot { Id = Guid.NewGuid() },
             nameof(SoftDeletableThing) => new SoftDeletableThing { Id = Guid.NewGuid() },
             nameof(SoftDeletableRoot) => new SoftDeletableRoot { Id = Guid.NewGuid() },
             _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, message: null),
@@ -75,34 +60,12 @@ public sealed class AuditedBaseTests
         {
             subject.Should().BeAssignableTo<ICreateAudit<string, Account>>();
             subject.Should().BeAssignableTo<IUpdateAudit<string, Account>>();
-            subject.Should().NotBeAssignableTo<ISuspendAudit>();
             subject.Should().NotBeAssignableTo<IDeleteAudit>();
         }
     }
 
     [Fact]
-    public void should_add_only_suspension_when_suspendable_base()
-    {
-        new SuspendableRoot { Id = Guid.NewGuid() }
-            .Should()
-            .BeAssignableTo<IDomainEventEmitter>();
-
-        foreach (
-            var subject in new object[]
-            {
-                new SuspendableThing { Id = Guid.NewGuid() },
-                new SuspendableRoot { Id = Guid.NewGuid() },
-            }
-        )
-        {
-            subject.Should().BeAssignableTo<IUpdateAudit<string, Account>>();
-            subject.Should().BeAssignableTo<ISuspendAudit<string, Account>>();
-            subject.Should().NotBeAssignableTo<IDeleteAudit>();
-        }
-    }
-
-    [Fact]
-    public void should_add_only_soft_delete_when_soft_deletable_base()
+    public void should_add_soft_delete_when_soft_deletable_base()
     {
         new SoftDeletableRoot { Id = Guid.NewGuid() }
             .Should()
@@ -118,7 +81,6 @@ public sealed class AuditedBaseTests
         {
             subject.Should().BeAssignableTo<IUpdateAudit<string, Account>>();
             subject.Should().BeAssignableTo<IDeleteAudit<string, Account>>();
-            subject.Should().NotBeAssignableTo<ISuspendAudit>();
         }
     }
 
@@ -154,121 +116,6 @@ public sealed class AuditedBaseTests
         subject.UpdatedAt.Should().Be(_Later);
         subject.UpdatedById.Should().Be("second");
         subject.UpdatedBy.Should().BeNull();
-    }
-
-    [Theory]
-    [MemberData(nameof(Suspendables))]
-    public void should_record_suspension_when_suspend(string kind)
-    {
-        // given
-        var subject = (ISuspendAudit<string, Account>)_Create(kind);
-        var by = new Account { Id = "admin" };
-
-        // when
-        subject.Suspend(_Earlier, "admin", by);
-
-        // then
-        subject.IsSuspended.Should().BeTrue();
-        subject.SuspendedAt.Should().Be(_Earlier);
-        subject.SuspendedById.Should().Be("admin");
-        subject.SuspendedBy.Should().BeSameAs(by);
-    }
-
-    [Theory]
-    [MemberData(nameof(Suspendables))]
-    public void should_keep_original_suspension_when_suspend_twice(string kind)
-    {
-        // given
-        var subject = (ISuspendAudit<string, Account>)_Create(kind);
-        subject.Suspend(_Earlier, "first");
-
-        // when
-        subject.Suspend(_Later, "second");
-
-        // then
-        subject.SuspendedAt.Should().Be(_Earlier);
-        subject.SuspendedById.Should().Be("first");
-    }
-
-    [Theory]
-    [MemberData(nameof(Suspendables))]
-    public void should_keep_suspension_history_and_record_unsuspension_when_unsuspend(string kind)
-    {
-        // given
-        var subject = (ISuspendAudit<string, Account>)_Create(kind);
-        var admin = new Account { Id = "admin" };
-        var support = new Account { Id = "support" };
-        subject.Suspend(_Earlier, "admin", admin);
-
-        // when
-        subject.Unsuspend(_Later, "support", support);
-
-        // then
-        subject.IsSuspended.Should().BeFalse();
-        subject.SuspendedAt.Should().Be(_Earlier);
-        subject.SuspendedById.Should().Be("admin");
-        subject.SuspendedBy.Should().BeSameAs(admin);
-        subject.UnsuspendedAt.Should().Be(_Later);
-        subject.UnsuspendedById.Should().Be("support");
-        subject.UnsuspendedBy.Should().BeSameAs(support);
-    }
-
-    [Theory]
-    [MemberData(nameof(Suspendables))]
-    public void should_record_new_suspension_and_keep_last_unsuspension_when_suspend_again(string kind)
-    {
-        // given
-        var subject = (ISuspendAudit<string, Account>)_Create(kind);
-        subject.Suspend(_Earlier, "admin");
-        subject.Unsuspend(_Later, "support");
-
-        // when
-        subject.Suspend(_Latest, "auditor");
-
-        // then
-        subject.IsSuspended.Should().BeTrue();
-        subject.SuspendedAt.Should().Be(_Latest);
-        subject.SuspendedById.Should().Be("auditor");
-        subject.UnsuspendedAt.Should().Be(_Later);
-        subject.UnsuspendedById.Should().Be("support");
-    }
-
-    [Theory]
-    [MemberData(nameof(Suspendables))]
-    public void should_record_null_actor_when_unsuspend_and_resuspend_without_actor(string kind)
-    {
-        // given
-        var subject = (ISuspendAudit<string, Account>)_Create(kind);
-        subject.Suspend(_Earlier, "user-a", new Account { Id = "user-a" });
-
-        // when
-        subject.Unsuspend(_Later);
-        var unsuspendedById = subject.UnsuspendedById;
-        var unsuspendedBy = subject.UnsuspendedBy;
-        subject.Suspend(_Latest);
-
-        // then
-        unsuspendedById.Should().BeNull();
-        unsuspendedBy.Should().BeNull();
-        subject.SuspendedAt.Should().Be(_Latest);
-        subject.SuspendedById.Should().BeNull();
-        subject.SuspendedBy.Should().BeNull();
-    }
-
-    [Theory]
-    [MemberData(nameof(Suspendables))]
-    public void should_do_nothing_when_unsuspend_not_suspended(string kind)
-    {
-        // given
-        var subject = (ISuspendAudit<string, Account>)_Create(kind);
-
-        // when
-        subject.Unsuspend(_Later, "support");
-
-        // then
-        subject.IsSuspended.Should().BeFalse();
-        subject.UnsuspendedAt.Should().BeNull();
-        subject.UnsuspendedById.Should().BeNull();
     }
 
     [Theory]

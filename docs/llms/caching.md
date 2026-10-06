@@ -709,8 +709,8 @@ services.AddHeadlessMessaging(messaging =>
 {
     messaging.UseRedis("localhost:6379");
     // Messaging needs one storage. The invalidation consumer is every-instance and keeps no inbox, so this host
-    // needs no inbox tier; a host that also runs durable consumers on raw PostgreSQL storage opts down with
-    // Options.RequiredInboxCapability = MessagingInboxCapabilityTier.DurableDedupeOnly.
+    // needs no inbox guarantee; a host that also runs durable consumers on raw PostgreSQL storage opts down with
+    // Options.MinimumInboxGuarantee = InboxGuarantee.Durable.
     messaging.UsePostgreSql(configuration.GetConnectionString("Messaging")!);
 });
 services.AddHeadlessCaching(setup =>

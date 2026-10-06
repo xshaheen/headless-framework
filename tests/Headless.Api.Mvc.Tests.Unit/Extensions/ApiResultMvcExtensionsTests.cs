@@ -1,15 +1,48 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Api;
+using Headless.Context;
 using Headless.Primitives;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests.Extensions;
 
 public sealed class ApiResultMvcExtensionsTests : TestBase
 {
+    #region Error description localization
+
+    [Fact]
+    public void should_apply_error_description_localizer_when_converting_errors()
+    {
+        // given
+        var controller = _CreateController();
+        var creator = _CreateLocalizingCreator(new OutOfStockLocalizer());
+        var result = ApiResult<string>.Fail(new ConflictError("app:out_of_stock", "Out of stock."));
+
+        // when
+        var actionResult = result.ToActionResult(controller, creator);
+
+        // then
+        var body = actionResult
+            .Result.Should()
+            .BeOfType<ConflictObjectResult>()
+            .Which.Value.Should()
+            .BeOfType<ProblemDetails>()
+            .Subject;
+        body.Extensions["errors"]
+            .Should()
+            .BeAssignableTo<IReadOnlyCollection<ErrorDescriptor>>()
+            .Which.Should()
+            .ContainSingle()
+            .Which.Description.Should()
+            .Be("نفدت الكمية");
+    }
+
+    #endregion
+
     #region ApiResult<T> Tests
 
     [Fact]
@@ -183,7 +216,7 @@ public sealed class ApiResultMvcExtensionsTests : TestBase
         _ = new UnauthorizedError(descriptor).ToActionResult(controller, creator);
 
         // then
-        creator.Received(1).Unauthorized(descriptor);
+        creator.Received(1).Unauthorized(error: descriptor);
     }
 
     [Fact]
@@ -402,7 +435,7 @@ public sealed class ApiResultMvcExtensionsTests : TestBase
             .Returns(ci => new ProblemDetails { Status = StatusCodes.Status403Forbidden, Title = "Forbidden" });
 
         creator
-            .Unauthorized(Arg.Any<ErrorDescriptor?>())
+            .Unauthorized(Arg.Any<string?>(), Arg.Any<ErrorDescriptor?>())
             .Returns(new ProblemDetails { Status = StatusCodes.Status401Unauthorized, Title = "Unauthorized" });
 
         creator
@@ -410,6 +443,26 @@ public sealed class ApiResultMvcExtensionsTests : TestBase
             .Returns(ci => new ProblemDetails { Status = StatusCodes.Status409Conflict, Title = "Conflict" });
 
         return creator;
+    }
+
+    // Resolves the real creator through the public registration so the test also proves that a
+    // localizer registered by the application replaces the framework's no-op default.
+    private static IProblemDetailsCreator _CreateLocalizingCreator(IErrorDescriptionLocalizer localizer)
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(TimeProvider.System);
+        services.AddSingleton(Substitute.For<IBuildInformationAccessor>());
+        services.AddHttpContextAccessor();
+        services.AddSingleton(localizer);
+        services.AddHeadlessProblemDetails();
+
+        return services.BuildServiceProvider().GetRequiredService<IProblemDetailsCreator>();
+    }
+
+    private sealed class OutOfStockLocalizer : IErrorDescriptionLocalizer
+    {
+        public string? Localize(ErrorDescriptor error) =>
+            string.Equals(error.Code, "app:out_of_stock", StringComparison.Ordinal) ? "نفدت الكمية" : null;
     }
 
     private static TestController _CreateController()

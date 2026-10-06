@@ -148,7 +148,8 @@ public sealed class BlockInEnvironmentAttributeTests : TestBase
             timeProvider,
             buildInformationAccessor,
             httpContextAccessor,
-            apiBehaviorOptions
+            apiBehaviorOptions,
+            NullErrorDescriptionLocalizer.Instance
         );
     }
 

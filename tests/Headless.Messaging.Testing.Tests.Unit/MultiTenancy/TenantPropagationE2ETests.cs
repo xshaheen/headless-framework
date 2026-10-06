@@ -117,7 +117,7 @@ public sealed class TenantPropagationE2ETests : TestBase
             {
                 setup.UseInMemory();
                 setup.UseInMemoryStorage();
-                setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
+                setup.Options.MinimumInboxGuarantee = InboxGuarantee.ProcessLocal;
                 configureMessaging(services, setup);
             });
             messagingBuilder.AddTenantPropagationServices();

@@ -215,7 +215,7 @@ public sealed class MessagingTelemetryTests : TestBase
                 consumerIdentity,
                 MessageLane.Queue,
                 InboxMetricOutcome.Winner,
-                MessagingInboxCapabilityTier.Transactional,
+                InboxGuarantee.Transactional,
                 "PostgreSql",
                 tenantId: "tenant-unbounded",
                 tenantTagName: null
@@ -252,7 +252,7 @@ public sealed class MessagingTelemetryTests : TestBase
             consumerIdentity,
             MessageLane.Bus,
             InboxMetricOutcome.SucceededDuplicate,
-            MessagingInboxCapabilityTier.DurableDedupeOnly,
+            InboxGuarantee.Durable,
             "PostgreSql",
             tenantId: "tenant-7",
             tenantTagName: TenantTelemetryOptions.DefaultAttributeName
@@ -483,7 +483,7 @@ public sealed class MessagingTelemetryTests : TestBase
         return tagKeys.Contains(MessagingTags.InboxConsumer, StringComparer.Ordinal)
             && tagKeys.Contains(MessagingTags.Lane, StringComparer.Ordinal)
             && tagKeys.Contains(MessagingTags.InboxOutcome, StringComparer.Ordinal)
-            && tagKeys.Contains(MessagingTags.InboxTier, StringComparer.Ordinal)
+            && tagKeys.Contains(MessagingTags.InboxGuarantee, StringComparer.Ordinal)
             && tagKeys.Contains(MessagingTags.InboxProvider, StringComparer.Ordinal)
             && !tagKeys.Contains(TenantTelemetryOptions.DefaultAttributeName, StringComparer.Ordinal)
             && !tagKeys.Any(key =>

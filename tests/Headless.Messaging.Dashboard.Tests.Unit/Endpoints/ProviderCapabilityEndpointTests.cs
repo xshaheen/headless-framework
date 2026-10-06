@@ -68,16 +68,16 @@ public sealed class ProviderCapabilityEndpointTests : TestBase
     }
 
     [Theory]
-    [InlineData(MessagingInboxCapabilityTier.ProcessLocal)]
-    [InlineData(MessagingInboxCapabilityTier.DurableDedupeOnly)]
-    [InlineData(MessagingInboxCapabilityTier.Transactional)]
-    public async Task should_report_each_declared_inbox_tier(MessagingInboxCapabilityTier tier)
+    [InlineData(InboxGuarantee.ProcessLocal)]
+    [InlineData(InboxGuarantee.Durable)]
+    [InlineData(InboxGuarantee.Transactional)]
+    public async Task should_report_each_declared_inbox_guarantee(InboxGuarantee guarantee)
     {
         var storage = MessagingProviderCapabilities.Storage(
-            $"Storage {tier}",
+            $"Storage {guarantee}",
             [MessageLane.Bus, MessageLane.Queue],
             supportsDelayedScheduling: true,
-            tier
+            guarantee
         );
         await using var app = _CreateTestApp(storage);
         await app.StartAsync(AbortToken);
@@ -89,10 +89,10 @@ public sealed class ProviderCapabilityEndpointTests : TestBase
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(AbortToken));
         document
             .RootElement.GetProperty("providerCapabilities")[0]
-            .GetProperty("inboxCapability")
+            .GetProperty("inboxGuarantee")
             .GetString()
             .Should()
-            .Be(tier.ToString("G"));
+            .Be(guarantee.ToString("G"));
     }
 
     private static WebApplication _CreateTestApp(

@@ -40,7 +40,7 @@ public sealed class HeadlessSaveChangesPipelineSharedConnectionTests : TestBase
         var sibling = scope.ServiceProvider.GetRequiredService<SiblingDbContext>();
         var factory = scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>();
 
-        await using (var unitOfWork = await factory.BeginAsync(owner, cancellationToken: AbortToken))
+        await using (var unitOfWork = await factory.BeginAsync(owner, AbortToken))
         {
             owner.Owners.Add(new OwnerRow { Name = "owner" });
             await _SaveAsync(owner, sync, AbortToken);

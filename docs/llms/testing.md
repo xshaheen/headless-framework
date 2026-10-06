@@ -271,17 +271,16 @@ This controls the **app clock** only -- the authority for "when did this happen?
 
 #### Auto-Applied EF Query Filters in Tests
 
-`HeadlessEntityModelProcessor` (from `Headless.EntityFramework`) auto-applies global query filters for `IMultiTenant` and `IDeleteAudit`, plus `ISuspendAudit` on entity types that opt in. They apply in integration tests exactly as in production:
+`HeadlessEntityModelProcessor` (from `Headless.EntityFramework`) auto-applies global query filters for two interfaces. They apply in integration tests exactly as in production:
 
 | Interface | Filter predicate | Effect |
 |-----------|------------------|--------|
 | `IMultiTenant` | `TenantId == ICurrentTenant.Id` | Rows scoped to current tenant |
 | `IDeleteAudit` | `IsDeleted == false` | Soft-deleted rows hidden |
-| `ISuspendAudit` configured with `HasNotSuspendedFilter()` | `IsSuspended == false` | Suspended rows hidden; without the opt-in they stay visible |
 
-`IgnoreQueryFilters()` is rarely needed in tests because seeded data uses default flag values (`IsDeleted = false`, `IsSuspended = false`) and runs under whatever tenant scope the test established. Reach for it only when:
+`IgnoreQueryFilters()` is rarely needed in tests because seeded data uses default flag values (`IsDeleted = false`) and runs under whatever tenant scope the test established. Reach for it only when:
 
-- The test explicitly seeds `IsDeleted = true` or `IsSuspended = true` and needs to read the row back.
+- The test explicitly seeds `IsDeleted = true` and needs to read the row back.
 - The test is verifying the filter's own behavior (bypass, cross-tenant isolation, etc.).
 
 For multi-tenant assertions, change the current tenant inside a `using` scope rather than bypassing the filter:

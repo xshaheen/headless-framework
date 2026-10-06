@@ -97,7 +97,7 @@ public sealed class EndToEndTests : TestBase
             {
                 setup.UseInMemory();
                 setup.UseInMemoryStorage();
-                setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
+                setup.Options.MinimumInboxGuarantee = InboxGuarantee.ProcessLocal;
                 configure(services, setup);
             });
         });
@@ -182,7 +182,7 @@ public sealed class EndToEndTests : TestBase
                 {
                     options.UseInMemory();
                     options.UseInMemoryStorage();
-                    options.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
+                    options.Options.MinimumInboxGuarantee = InboxGuarantee.ProcessLocal;
                     services.ConfigureMessaging(messaging =>
                     {
                         messaging.Message<OrderCreatedEvent>("order-created");
@@ -285,7 +285,7 @@ public sealed class EndToEndTests : TestBase
                 {
                     options.UseInMemory();
                     options.UseInMemoryStorage();
-                    options.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
+                    options.Options.MinimumInboxGuarantee = InboxGuarantee.ProcessLocal;
                     services.ConfigureMessaging(messaging =>
                     {
                         messaging.Message<OrderCreatedEvent>("order-created");
@@ -316,7 +316,7 @@ public sealed class EndToEndTests : TestBase
                 {
                     options.UseInMemory();
                     options.UseInMemoryStorage();
-                    options.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
+                    options.Options.MinimumInboxGuarantee = InboxGuarantee.ProcessLocal;
                 });
                 services.ConfigureMessaging(messaging =>
                 {
@@ -393,7 +393,7 @@ public sealed class EndToEndTests : TestBase
                 {
                     options.UseInMemory();
                     options.UseInMemoryStorage();
-                    options.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
+                    options.Options.MinimumInboxGuarantee = InboxGuarantee.ProcessLocal;
                 });
                 services.ConfigureMessaging(messaging =>
                 {
@@ -463,7 +463,7 @@ public sealed class EndToEndTests : TestBase
                 services.AddHeadlessMessaging(options =>
                 {
                     options.UseInMemoryStorage();
-                    options.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
+                    options.Options.MinimumInboxGuarantee = InboxGuarantee.ProcessLocal;
                     options.RegisterExtension(new QueueOnlyTransportExtension());
                 });
             },
@@ -554,7 +554,7 @@ public sealed class EndToEndTests : TestBase
         {
             options.UseInMemory();
             options.UseInMemoryStorage();
-            options.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
+            options.Options.MinimumInboxGuarantee = InboxGuarantee.ProcessLocal;
             services.ConfigureMessaging(messaging =>
             {
                 messaging.Message<OrderCreatedEvent>("order-created");

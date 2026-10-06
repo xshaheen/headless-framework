@@ -51,6 +51,22 @@ internal static class JobsKeyLock
         return _AcquireAsync(context, [identity], cancellationToken);
     }
 
+    /// <summary>
+    /// Acquires the cluster-concurrency lock of each function, in the order given. Every caller passes the functions in
+    /// ordinal order and takes these locks before any row lock, so two claims never wait on each other in a cycle.
+    /// </summary>
+    internal static Task AcquireClusterSlotsAsync(
+        DbContext context,
+        IReadOnlyList<string> functions,
+        CancellationToken cancellationToken
+    )
+    {
+        var identities = functions
+            .Select(function => string.Create(CultureInfo.InvariantCulture, $"jobs:slots:{function.Length}:{function}"))
+            .ToArray();
+        return _AcquireAsync(context, identities, cancellationToken);
+    }
+
     internal static async Task AcquireRunsAsync(
         DbContext context,
         IEnumerable<Guid> runIds,

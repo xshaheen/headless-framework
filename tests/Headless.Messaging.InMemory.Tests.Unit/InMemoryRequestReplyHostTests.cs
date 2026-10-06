@@ -81,7 +81,7 @@ public sealed class InMemoryRequestReplyHostTests : TestBase
         {
             setup.UseInMemory();
             setup.UseInMemoryStorage();
-            setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
+            setup.Options.MinimumInboxGuarantee = InboxGuarantee.ProcessLocal;
         });
 
         // Registered last, so the host resolves the shared transport and, when given, the skewed clock.
@@ -105,7 +105,7 @@ public sealed class InMemoryRequestReplyHostTests : TestBase
         {
             setup.UseInMemory();
             setup.UseInMemoryStorage();
-            setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
+            setup.Options.MinimumInboxGuarantee = InboxGuarantee.ProcessLocal;
             setup.AddRequestReply();
         });
         services.AddSingleton(transport);

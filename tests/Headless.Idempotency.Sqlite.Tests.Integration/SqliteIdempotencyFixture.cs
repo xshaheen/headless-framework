@@ -55,7 +55,7 @@ public sealed class SqliteIdempotencyFixture
         CancellationToken cancellationToken
     )
     {
-        return factory.BeginAsync((SqliteConnection)connection, cancellationToken: cancellationToken);
+        return factory.BeginAsync((SqliteConnection)connection, cancellationToken);
     }
 
     public async Task<StoredRecord?> ReadRecordAsync(IdempotencyRecordKey key, CancellationToken cancellationToken)

@@ -47,7 +47,7 @@ public sealed class UnitOfWorkFactorySqlServerExtensionsTests : TestBase
             "Server=localhost;Database=unused;Integrated Security=false;User Id=x;Password=y;TrustServerCertificate=true"
         );
 
-        var beginAct = () => manager.BeginAsync((SqlConnection)null!, cancellationToken: AbortToken).AsTask();
+        var beginAct = () => manager.BeginAsync((SqlConnection)null!, AbortToken).AsTask();
         var beginNull = (await beginAct.Should().ThrowAsync<ArgumentNullException>()).Which;
 
         var enlistAct = () => manager.Enlist(connection, null!);

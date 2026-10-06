@@ -8,7 +8,7 @@ var pulsarUri = builder.Configuration.GetValue("AppSettings:PulsarUri", "pulsar:
 builder.Services.AddHeadlessMessaging(setup =>
 {
     setup.AddModule<Headless.Messaging.Pulsar.InMemory.Demo.MessagingModule>();
-    setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
+    setup.Options.MinimumInboxGuarantee = InboxGuarantee.ProcessLocal;
     setup.UseInMemoryStorage();
     setup.UsePulsar(pulsarUri);
     setup.UseDashboard(d => d.WithNoAuth());

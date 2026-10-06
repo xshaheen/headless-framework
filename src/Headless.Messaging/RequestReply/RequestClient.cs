@@ -39,7 +39,7 @@ internal sealed class RequestClient(
             throw new InvalidOperationException(
                 "A request cannot be sent from inside a transactional inbox unit: waiting for the reply would hold the "
                     + "database transaction and the inbox lease for the whole timeout. Send it after the unit completes, "
-                    + "or from a consumer on the non-transactional tier."
+                    + "or from a consumer under a weaker inbox guarantee than Transactional."
             );
         }
 
@@ -141,9 +141,18 @@ internal sealed class RequestClient(
             timeProvider
         );
 
-        if (!pending.TryRegister(call, remaining, cancellationToken))
+        switch (pending.TryRegister(call, remaining, cancellationToken))
         {
-            throw ReplyListenerHost.Stopping(requestId);
+            case PendingRegistration.Closed:
+                throw ReplyListenerHost.Stopping(requestId);
+            case PendingRegistration.Full:
+                throw new RequestNotSentException(
+                    string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"{pending.MaxPending} requests are already waiting for a reply, the limit set by RequestReply.MaxPendingRequests, so the request was not sent."
+                    ),
+                    requestId
+                );
         }
 
         var stamp = new RequestStamp(

@@ -19,10 +19,10 @@ namespace Headless.EntityFramework;
 /// On <c>Added</c> entries it sets <c>ICreateAudit.CreatedAt</c> (if not already set) and
 /// <c>CreatedById</c> (resolved from <c>ICurrentUser</c>, skipped if already set or the user is
 /// anonymous). On <c>Modified</c> entries it stamps <c>IUpdateAudit.UpdatedAt</c> and <c>UpdatedById</c>, and
-/// on an <c>IsDeleted</c> or <c>IsSuspended</c> transition it stamps the matching delete, restore, suspend, or
-/// unsuspend fields. Fields of the opposite transition are kept as history. A non-null value the save already set
-/// explicitly (for example through a transition method) wins over the stamp. An update or transition with no actor,
-/// given or resolved from <c>ICurrentUser</c>, records a null actor id rather than keep the previous actor.
+/// on an <c>IsDeleted</c> transition it stamps the matching delete or restore fields. Fields of the opposite
+/// transition are kept as history. A non-null value the save already set explicitly (for example through a
+/// transition method) wins over the stamp. An update or transition with no actor, given or resolved from
+/// <c>ICurrentUser</c>, records a null actor id rather than keep the previous actor.
 /// </remarks>
 [PublicAPI]
 public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, ICurrentUser currentUser)
@@ -45,16 +45,15 @@ public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, I
                 break;
             case EntityState.Modified:
                 // ICurrentUser implementations re-scan and re-parse claims on every UserId/AccountId read, so the
-                // stampers share one at-most-once resolution instead of paying for up to three. Resolution stays
+                // stampers share one at-most-once resolution instead of paying for up to two. Resolution stays
                 // lazy inside the id stampers: an audited entity whose branches do not fire (an IDeleteAudit
                 // modified on an unrelated property, a non-generic IUpdateAudit) performs zero claim scans.
-                if (entry.Entity is IUpdateAudit or IDeleteAudit or ISuspendAudit)
+                if (entry.Entity is IUpdateAudit or IDeleteAudit)
                 {
                     var actor = new ActorPair(currentUser);
 
                     _TrySetUpdateAudit(entry, ref actor);
                     _TrySetDeleteAudit(entry, ref actor);
-                    _TrySetSuspendAudit(entry, ref actor);
                 }
 
                 break;
@@ -180,50 +179,6 @@ public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, I
         }
     }
 
-    private void _TrySetSuspendAudit(EntityEntry entry, ref ActorPair actor)
-    {
-        if (entry.Entity is not ISuspendAudit)
-        {
-            return;
-        }
-
-        var kind = new ActorKind(entry.Entity is ISuspendAudit<UserId>, entry.Entity is ISuspendAudit<AccountId>);
-
-        switch (_GetTransition(entry.Property(nameof(ISuspendAudit.IsSuspended))))
-        {
-            case FlagTransition.Raised:
-                _StampTransition(
-                    entry,
-                    nameof(ISuspendAudit.SuspendedAt),
-                    nameof(ISuspendAudit<>.SuspendedById),
-                    kind,
-                    StampMode.Transition,
-                    ref actor
-                );
-                break;
-            case FlagTransition.Lowered:
-                _StampTransition(
-                    entry,
-                    nameof(ISuspendAudit.UnsuspendedAt),
-                    nameof(ISuspendAudit<>.UnsuspendedById),
-                    kind,
-                    StampMode.Transition,
-                    ref actor
-                );
-                break;
-            case FlagTransition.MarkedWhileRaised:
-                _StampTransition(
-                    entry,
-                    nameof(ISuspendAudit.SuspendedAt),
-                    nameof(ISuspendAudit<>.SuspendedById),
-                    kind,
-                    StampMode.FillMissing,
-                    ref actor
-                );
-                break;
-        }
-    }
-
     private static FlagTransition _GetTransition(PropertyEntry flag)
     {
         if (!flag.IsModified)
@@ -338,8 +293,7 @@ public sealed class HeadlessAuditSaveEntryProcessor(TimeProvider timeProvider, I
 
     private enum StampMode
     {
-        // An update, delete, restore, suspend, or unsuspend: replace leftovers, and record null when no actor
-        // resolves.
+        // An update, delete, or restore: replace leftovers, and record null when no actor resolves.
         Transition = 0,
 
         // A flag already raised with no known transition: fill only missing values.

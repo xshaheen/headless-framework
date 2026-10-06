@@ -39,7 +39,7 @@ public record ConsumeContext
 
     /// <summary>
     /// Gets the unit of work the inbox transaction runner enlisted this attempt in, or <see langword="null" />
-    /// on the non-transactional tier, where the handler runs outside any transaction.
+    /// under a weaker inbox guarantee than Transactional, where the handler runs outside any transaction.
     /// </summary>
     /// <remarks>
     /// On the transactional tier this is the unit the consumer's own enlisted writes join —

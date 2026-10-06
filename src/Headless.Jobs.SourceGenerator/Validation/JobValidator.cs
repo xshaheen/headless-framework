@@ -105,6 +105,17 @@ internal static class JobValidator
             );
         }
 
+        if (values.ClusterMaxConcurrency < 0)
+        {
+            diagnostics.Add(
+                DiagnosticInfo.Create(
+                    DiagnosticDescriptors.InvalidMaxConcurrency,
+                    attributeLocation,
+                    values.ClusterMaxConcurrency
+                )
+            );
+        }
+
         if (
             values.OnMissedRun
             is not null

@@ -10,8 +10,7 @@ namespace Headless.Domain;
 /// </summary>
 /// <remarks>
 /// Setters are <see langword="protected"/> so only entity domain methods and the persistence layer can mutate audit
-/// state. Derive from <see cref="SuspendableEntity{TId}"/> or <see cref="SoftDeletableEntity{TId}"/>
-/// instead when the entity also needs suspension or soft delete.
+/// state. Derive from <see cref="SoftDeletableEntity{TId}"/> instead when the entity also needs soft delete.
 /// </remarks>
 /// <typeparam name="TId">The primary key type.</typeparam>
 [PublicAPI]

@@ -77,6 +77,7 @@ internal static class JobParser
                     values.TimeZone,
                     values.Priority,
                     values.MaxConcurrency,
+                    values.ClusterMaxConcurrency,
                     values.OnMissedRun,
                     values.MissedRunGraceSeconds,
                     values.OnOverlap,
@@ -129,6 +130,7 @@ internal sealed record JobAttributeValues(
     string? TimeZone,
     int Priority,
     int MaxConcurrency,
+    int ClusterMaxConcurrency,
     int? OnMissedRun,
     int? MissedRunGraceSeconds,
     int? OnOverlap,
@@ -144,6 +146,7 @@ internal sealed record JobAttributeValues(
         string? timeZone = null;
         var priority = SourceGeneratorConstants.NormalJobPriority;
         var maxConcurrency = 0;
+        var clusterMaxConcurrency = 0;
         var contractVersion = SourceGeneratorConstants.InitialContractVersion;
 
         // The recovery knobs are read only when actually written. That distinguishes "unset" (fall through to the
@@ -171,6 +174,9 @@ internal sealed record JobAttributeValues(
                 case "MaxConcurrency" when value is int concurrencyValue:
                     maxConcurrency = concurrencyValue;
                     break;
+                case "ClusterMaxConcurrency" when value is int clusterConcurrencyValue:
+                    clusterMaxConcurrency = clusterConcurrencyValue;
+                    break;
                 case "ContractVersion":
                     contractVersion = value as string ?? string.Empty;
                     break;
@@ -196,6 +202,7 @@ internal sealed record JobAttributeValues(
             timeZone,
             priority,
             maxConcurrency,
+            clusterMaxConcurrency,
             onMissedRun,
             missedRunGraceSeconds,
             onOverlap,

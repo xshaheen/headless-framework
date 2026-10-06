@@ -448,9 +448,6 @@ internal sealed class HeadlessDbContextRuntime(DbContext db)
                 x => !EF.Property<bool>(x, isDeletedName)
             );
         }
-
-        // No default filter for ISuspendAudit: suspension is a business state that admin views and the commands that
-        // lift it must see. An entity type opts in with HasNotSuspendedFilter() when suspended rows should be hidden.
     }
 
     private static string _GetColumnName(IMutableEntityType type, string name)

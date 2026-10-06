@@ -223,7 +223,7 @@ public sealed class IsTransactionalPropagationTests : TestBase
                 "TestStorage",
                 [MessageLane.Bus],
                 supportsDelayedScheduling: true,
-                inboxCapability: MessagingInboxCapabilityTier.Transactional
+                inboxGuarantee: InboxGuarantee.Transactional
             ),
         ]);
 

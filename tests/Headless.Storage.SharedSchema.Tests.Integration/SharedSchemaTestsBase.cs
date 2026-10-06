@@ -421,7 +421,7 @@ public abstract class SharedSchemaTestsBase : TestBase
         services.AddHeadlessMessaging(setup =>
         {
             setup.Options.Version = "v1";
-            setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.DurableDedupeOnly;
+            setup.Options.MinimumInboxGuarantee = InboxGuarantee.Durable;
             UseMessagingStorage(setup);
         });
 

@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Data;
 using Headless.Checks;
 using Headless.Idempotency.SqlServer;
 using Headless.Sql;
@@ -124,7 +123,7 @@ public static class SetupIdempotencySqlServer
         SqlServerDialect.Instance,
         "Headless.Idempotency.SqlServer",
         static (factory, connection, cancellationToken) =>
-            factory.BeginAsync((SqlConnection)connection, IsolationLevel.ReadCommitted, cancellationToken),
+            factory.BeginAsync((SqlConnection)connection, cancellationToken),
         static services => services.AddSqlServerUnitOfWork(),
         SqlServerIdempotencySchemaContribution.Create
     );

@@ -96,7 +96,7 @@ public sealed class PostgreSqlFencingFixture
         CancellationToken cancellationToken
     )
     {
-        return factory.BeginAsync((NpgsqlConnection)connection, cancellationToken: cancellationToken);
+        return factory.BeginAsync((NpgsqlConnection)connection, cancellationToken);
     }
 
     public IUnitOfWork Enlist(IUnitOfWorkFactory factory, DbConnection connection, DbTransaction transaction)

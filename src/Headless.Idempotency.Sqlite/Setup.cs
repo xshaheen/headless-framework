@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Data;
 using System.Data.Common;
 using Headless.Checks;
 using Headless.Idempotency.Sqlite;
@@ -123,7 +122,7 @@ public static class SetupIdempotencySqlite
         SqliteDialect.Instance,
         "Headless.Idempotency.Sqlite",
         static (factory, connection, cancellationToken) =>
-            factory.BeginAsync((SqliteConnection)connection, IsolationLevel.ReadCommitted, cancellationToken),
+            factory.BeginAsync((SqliteConnection)connection, cancellationToken),
         static services => services.AddSqliteUnitOfWork(),
         SqliteIdempotencySchemaContribution.Create,
         // Deferred: a peek takes no write lock, so it reads the last committed record while a unit holds the database.

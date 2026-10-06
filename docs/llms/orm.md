@@ -34,7 +34,8 @@ Use these packages for ORM-level persistence primitives. For raw SQL connection 
 - **Choose pooled or per-scope registration.** `AddHeadlessDbContextPool<TDbContext>` leases contexts from an EF pool and saves per-request context construction and service resolution; prefer it for high-throughput services. Use `AddHeadlessDbContext<TDbContext>` when the context constructor takes scoped services or the options callback needs scoped services. See [Registration modes and scope binding](#registration-modes-and-scope-binding).
 - `HeadlessDbContext` has one constructor parameter: `protected HeadlessDbContext(DbContextOptions options)`. Declare subclasses as `AppDbContext(DbContextOptions<AppDbContext> options) : HeadlessDbContext(options)`. Subclasses must override `public abstract string? DefaultSchema { get; }` — an empty string or `null` means use the provider default, a non-empty string sets `modelBuilder.HasDefaultSchema`.
 - Always call `base.OnModelCreating(modelBuilder)` in `HeadlessDbContext` subclasses before applying your own entity configurations. Skipping it omits global filter wiring, convention configuration, and model processing from `HeadlessDbContextRuntime`.
-- **Suspension is not a visibility rule.** No `ISuspendAudit` entity is filtered by default, so admin views and the command that lifts a suspension load suspended rows normally. Call `modelBuilder.Entity<T>().HasNotSuspendedFilter()` after `base.OnModelCreating` only for an entity whose suspended rows must never reach ordinary reads. Soft delete stays filtered by default; load a row to restore with `IgnoreNotDeletedFilter()`, then call `Restore(...)` or set `IsDeleted = false`.
+- Soft delete is filtered by default. Load a row to restore with `IgnoreNotDeletedFilter()`, then call `Restore(...)` or set `IsDeleted = false`.
+- The framework has no suspension audit or filter. **Migration:** model suspension as your own domain state, and add an explicit filter where you relied on `NotSuspendedFilter`.
 - A required navigation to a filtered principal becomes an inner join and drops the dependent row as well. Make the navigation optional or bypass the filter on that query.
 - Configure automatic audit capture in the EF model with `IsAudited()`, entity/property `ExcludeFromAudit()`, and `IsAuditSensitive(...)`. Domain entities carry no audit marker or attributes; unconfigured entities follow `AuditLogOptions.AuditByDefault`.
 - **A pooled context keeps no per-request state in its own fields.** The pool reuses the instance across scopes; the Headless scoped collaborators are resolved from the bound scope on each use, but a field you add to the subclass is not reset. A pooled context declares exactly one public constructor taking its `DbContextOptions` plus, optionally, singleton services.
@@ -94,15 +95,12 @@ So plain EF registrations (`AddDbContext<TDbContext>()`, `AddDbContextFactory<TD
 
 ### Global query filters
 
-Three named global filters exist. Two apply by default from finalized tenant metadata and the audit interfaces; the suspend filter applies only to entity types that opt in:
+Two named global filters apply according to finalized tenant metadata and the audit interfaces:
 
-| Applies to | Default | Filter name constant | Bypass extension |
-|---|---|---|---|
-| `IsTenantOwned()` or default `IMultiTenant` ownership | On | `HeadlessQueryFilters.MultiTenancyFilter` | `IgnoreMultiTenancyFilter()` |
-| `IDeleteAudit` | On | `HeadlessQueryFilters.NotDeletedFilter` | `IgnoreNotDeletedFilter()` |
-| `ISuspendAudit` entity types configured with `HasNotSuspendedFilter()` | Off | `HeadlessQueryFilters.NotSuspendedFilter` | `IgnoreNotSuspendedFilter()` |
-
-Soft delete means "treat the row as gone", so hiding it is the default. Suspension is a business state that the application reads and changes, so hiding it is a per-entity decision.
+| Interface | Filter name constant | Bypass extension |
+|---|---|---|
+| `IsTenantOwned()` or default `IMultiTenant` ownership | `HeadlessQueryFilters.MultiTenancyFilter` | `IgnoreMultiTenancyFilter()` |
+| `IDeleteAudit` | `HeadlessQueryFilters.NotDeletedFilter` | `IgnoreNotDeletedFilter()` |
 
 Filter names are string constants (e.g. `"MultiTenantFilter"`) used by EF Core's named-filter API. `IQueryable<T>.ExecuteUpdate(...)` and `IQueryable<T>.ExecuteDelete(...)` consume the same query filters, so bulk operations are tenant-scoped by default. They bypass `SaveChanges`, including its guard and automatic tenant concurrency predicates.
 
@@ -113,7 +111,7 @@ Bypasses emit a `[SECURITY AUDIT]` trace through `Debug.WriteLine` with the call
 `HeadlessDbContext.SaveChanges` / `SaveChangesAsync` delegate to `IHeadlessSaveChangesPipeline`, which orchestrates a fixed default chain of `IHeadlessSaveEntryProcessor` instances before the underlying EF save:
 
 1. `HeadlessEntitySaveEntryProcessor` — stamps tenant IDs and concurrency stamps. Guid keys are produced earlier (at `Add` time) by the EF Core value generators, not here.
-2. `HeadlessAuditSaveEntryProcessor` — stamps create/update/delete/suspend audit fields for `ICreateAudit`, `IUpdateAudit`, `IDeleteAudit`, `ISuspendAudit` entities. Every modified save restamps `UpdatedAt`/`UpdatedById`. An `IsDeleted` or `IsSuspended` transition stamps the delete, restore, suspend, or unsuspend pair and keeps the opposite pair as history. A non-null value the save set explicitly wins. A transition with no actor, neither given nor resolved from `ICurrentUser`, records a null actor id rather than the previous transition's actor. An update with no resolved user records a null `UpdatedById`, unless the same save called `Update(now, byId, by)`.
+2. `HeadlessAuditSaveEntryProcessor` — stamps create/update/delete audit fields for `ICreateAudit`, `IUpdateAudit`, `IDeleteAudit` entities. Every modified save restamps `UpdatedAt`/`UpdatedById`. An `IsDeleted` transition stamps the delete or restore pair and keeps the opposite pair as history. A non-null value the save set explicitly wins. A delete, restore, or update with no actor, neither given nor resolved from `ICurrentUser`, records a null actor id rather than the previous actor; a same-save `Update(now, byId, by)` still wins.
 3. `HeadlessLocalEventSaveEntryProcessor` — emits `EntityCreated`, `EntityUpdated`, `EntityDeleted`, `EntityChanged` lifecycle domain events on `IDomainEventEmitter` entities.
 4. `HeadlessMessageCollectorSaveEntryProcessor` — collects pending domain + integration events onto the save context.
 
@@ -155,8 +153,8 @@ Change Data Capture (e.g. Debezium) is an advanced alternative that bypasses thi
 | **Storage model** | Relational (PostgreSQL, SQL Server, SQLite, …) | Document (Couchbase bucket + collections) |
 | **Use when** | Strong consistency, rich queries, schema-enforced invariants, auditing, multi-tenancy, DDD aggregates, outbox integration events | Flexible schema, horizontal scaling, KV-first access patterns, Couchbase N1QL queries |
 | **Avoid when** | Schema-less or flexible-schema documents; extreme horizontal write scale | ACID transactions across multiple entities/tables; when strong relational queries or auditing conventions are needed |
-| **Global filters** | `IMultiTenant`, `IDeleteAudit` automatic; `ISuspendAudit` opt-in | None; consumers implement their own query predicates |
-| **Auditing** | Automatic via `ICreateAudit`, `IUpdateAudit`, `IDeleteAudit`, `ISuspendAudit` | None |
+| **Global filters** | `IMultiTenant`, `IDeleteAudit` — automatic | None; consumers implement their own query predicates |
+| **Auditing** | Automatic via `ICreateAudit`, `IUpdateAudit`, `IDeleteAudit` | None |
 | **Events** | Domain events (in-process) + integration events (outbox) | None |
 | **Transactions** | EF Core execution strategy + `IUnitOfWorkFactory.RunAsync(db, …)` (always unit-of-work-aware) | Couchbase Transactions via `ExecuteTransactionAsync(Func<AttemptContext, Task<bool>>)` |
 | **DI** | `AddHeadlessDbContext<TDbContext>(...)` | `AddHeadlessCouchbase()` for the framework providers; the consumer supplies `ICouchbaseClusterOptionsProvider` + `ICouchbaseTransactionConfigProvider` |
@@ -231,10 +229,10 @@ Entity Framework Core integration with framework conventions and save pipeline o
 - DI registration via `AddHeadlessDbContext<TDbContext>(...)` (one instance per scope) or `AddHeadlessDbContextPool<TDbContext>(...)` (pooled); both register the context, `IDbContextFactory<TDbContext>`, DI-registered interceptor auto-attachment, and the Headless services
 - Both registrations contribute the `dbcontext-{TDbContext full name}` readiness health check (tags `ready`, `headless`, `database`), which is Microsoft's `AddDbContextCheck<TDbContext>` (`Database.CanConnectAsync` on the context of the check's own scope), wrapped so a failure reports fixed text instead of the driver message. See [Health checks](utilities.md#health-checks).
 - Application-generated Guid keys: every `IEntity<Guid>` is configured `ValueGenerated.Never`; key is produced client-side at add time via a provider-keyed `IGuidGenerator` (`SqlServer` comb, `Version7` for others). Numeric keys are not generated by Headless.
-- Automatic audit fields for `ICreateAudit` / `IUpdateAudit` / `IDeleteAudit` / `ISuspendAudit` entities
+- Automatic audit fields for `ICreateAudit` / `IUpdateAudit` / `IDeleteAudit` entities
 - EF-native automatic audit-log policy via `IsAudited()`, entity/property `ExcludeFromAudit()`, and `IsAuditSensitive(...)`; `EfAuditChangeCapture` reads the finalized model without reflecting over domain attributes
 - Finalized tenant ownership via `IsTenantOwned()` and `IsNotTenantOwned()`, with mapped or shadow string properties and `IMultiTenant` defaults
-- Three named global query filters: `MultiTenancyFilter` (tenant-owned metadata) and `NotDeletedFilter` (`IDeleteAudit`) by default, plus `NotSuspendedFilter` for `ISuspendAudit` entity types that opt in with `HasNotSuspendedFilter()`; per-query bypass via `IgnoreMultiTenancyFilter()` / `IgnoreNotDeletedFilter()` / `IgnoreNotSuspendedFilter()`
+- Two named global query filters: `MultiTenancyFilter` (tenant-owned metadata) and `NotDeletedFilter` (`IDeleteAudit`); per-query bypass via `IgnoreMultiTenancyFilter()` / `IgnoreNotDeletedFilter()`
 - Selected unique indexes gain tenant scope through `IsTenantScoped()` without changing primary keys
 - Composable save pipeline driven by `HeadlessDbContextOptions` and an ordered chain of `IHeadlessSaveEntryProcessor` instances
 - `AddSaveEntryProcessor<TProcessor>(ServiceLifetime)` / `RemoveSaveEntryProcessor<TProcessor>()` for custom pipeline extension
@@ -336,12 +334,9 @@ var productId = await unitOfWork.RunAsync(
 
 #### Global Filters
 
-The tenant filter follows finalized ownership metadata. The soft-delete filter follows `IDeleteAudit`. The suspend filter applies only where configured. Existing application filters are preserved. Bypass per-query with the matching extension method:
+The tenant filter follows finalized ownership metadata. The soft-delete filter follows `IDeleteAudit`. Existing application filters are preserved. Bypass per-query with the matching extension method:
 
 ```csharp
-// Opt one entity type into the suspend filter (inside OnModelCreating, after base.OnModelCreating)
-modelBuilder.Entity<Account>().HasNotSuspendedFilter();
-
 // Read soft-deleted entities for admin purposes
 var all = await dbContext.Products.IgnoreNotDeletedFilter().ToListAsync(ct);
 

@@ -707,7 +707,7 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
         var storageCapability = _capabilityModel.Providers.FirstOrDefault(capability =>
             capability.Role is MessagingProviderRole.Storage
         );
-        if (storageCapability?.InboxCapability is not { } tier)
+        if (storageCapability?.InboxGuarantee is not { } guarantee)
         {
             return;
         }
@@ -717,7 +717,7 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
             key.ConsumerIdentity,
             key.Lane,
             outcome,
-            tier,
+            guarantee,
             storageCapability.Provider,
             message.Origin.Headers.TryGetValue(Headers.TenantId, out var tenantId) ? tenantId : null,
             _inboxMetricPolicy.TenantTagName

@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Data;
 using Headless.Checks;
 using Headless.Idempotency.PostgreSql;
 using Headless.Sql;
@@ -124,7 +123,7 @@ public static class SetupIdempotencyPostgreSql
         PostgreSqlDialect.Instance,
         "Headless.Idempotency.PostgreSql",
         static (factory, connection, cancellationToken) =>
-            factory.BeginAsync((NpgsqlConnection)connection, IsolationLevel.ReadCommitted, cancellationToken),
+            factory.BeginAsync((NpgsqlConnection)connection, cancellationToken),
         static services => services.AddPostgreSqlUnitOfWork(),
         PostgreSqlIdempotencySchemaContribution.Create
     );

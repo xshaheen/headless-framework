@@ -61,4 +61,10 @@ public static class GeneralErrorCodes
 
     /// <summary>The supplied reCAPTCHA token is missing or failed verification. Maps to 409.</summary>
     public const string InvalidRecaptcha = "g:invalid_recaptcha";
+
+    /// <summary>The operation required an ambient tenant context and none was set. Maps to 403.</summary>
+    public const string TenantRequired = "g:tenant_required";
+
+    /// <summary>A tenant-owned write targeted a tenant other than the current tenant context. Maps to 409.</summary>
+    public const string CrossTenantWrite = "g:cross_tenant_write";
 }

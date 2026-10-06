@@ -849,6 +849,57 @@ public sealed class RequestClientTests : TestBase
         act.Should().Throw<OptionsValidationException>().WithMessage("*RequestReply.DefaultTimeout*");
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void should_reject_a_pending_request_limit_below_one_at_startup(int limit)
+    {
+        // given
+        using var provider = _BuildHost(requests => requests.MaxPendingRequests = limit);
+
+        // when
+        var act = () => provider.GetRequiredService<IOptions<MessagingOptions>>().Value;
+
+        // then
+        act.Should().Throw<OptionsValidationException>().WithMessage("*RequestReply.MaxPendingRequests*");
+    }
+
+    [Fact]
+    public async Task should_refuse_a_request_over_the_pending_limit_without_sending_it()
+    {
+        // given — the only slot is held by a call waiting for its reply
+        await using var provider = await _StartHostAsync(configureRequests: requests =>
+            requests.MaxPendingRequests = 1
+        );
+        var waiting = _Client(provider)
+            .RequestAsync<PriceQuoteRequest, PriceQuote>(new PriceQuoteRequest("sku-1"), cancellationToken: AbortToken);
+        var held = await _responder.NextRequestAsync(AbortToken);
+
+        // when
+        var act = () =>
+            _Client(provider)
+                .RequestAsync<PriceQuoteRequest, PriceQuote>(
+                    new PriceQuoteRequest("sku-2"),
+                    cancellationToken: AbortToken
+                );
+
+        // then
+        var thrown = await act.Should().ThrowExactlyAsync<RequestNotSentException>();
+        thrown.Which.Message.Should().Contain("RequestReply.MaxPendingRequests");
+        thrown.Which.RequestId.Should().NotBeNullOrWhiteSpace();
+        _responder.Sent.Should().ContainSingle();
+        _Pending(provider).PendingCount.Should().Be(1);
+
+        // and the reply to the waiting call frees its slot for the next request
+        await Replies.SendOkAsync(provider, held, new PriceQuote(1m));
+        (await waiting).Should().Be(new PriceQuote(1m));
+        _Pending(provider).PendingCount.Should().Be(0);
+        _responder.OnRequest = request => new ValueTask(Replies.SendOkAsync(provider, request, new PriceQuote(2m)));
+        var next = await _Client(provider)
+            .RequestAsync<PriceQuoteRequest, PriceQuote>(new PriceQuoteRequest("sku-3"), cancellationToken: AbortToken);
+        next.Should().Be(new PriceQuote(2m));
+    }
+
     [Fact]
     public void should_bound_the_default_timeout_by_the_same_limit_as_a_call()
     {

@@ -70,7 +70,7 @@ public sealed class IdempotencyRecoveryPointPostgreSqlEndToEndTests(ApiIdempoten
 
                 return await services
                     .GetRequiredService<IUnitOfWorkFactory>()
-                    .BeginAsync(connection, cancellationToken: cancellationToken);
+                    .BeginAsync(connection, cancellationToken);
             },
             async (key, cancellationToken) =>
             {

@@ -128,15 +128,16 @@ internal sealed partial class HeadlessApiExceptionHandler(
                         _LogTenantResolutionMiddlewareMissing(logger, httpContext.Request.Path);
                     }
 
+                    var tenantRequired = GeneralMessageDescriber.TenantRequired();
                     problemDetails = problemDetailsCreator.Forbidden(
-                        detail: HeadlessProblemDetailsConstants.Details.TenantContextRequired,
-                        error: HeadlessProblemDetailsConstants.Errors.TenantContextRequired
+                        detail: tenantRequired.Description,
+                        error: tenantRequired
                     );
                     statusCode = StatusCodes.Status403Forbidden;
                     break;
 
                 case UnauthorizedException unauthorized:
-                    problemDetails = problemDetailsCreator.Unauthorized(unauthorized.Error);
+                    problemDetails = problemDetailsCreator.Unauthorized(error: unauthorized.Error);
                     statusCode = StatusCodes.Status401Unauthorized;
                     break;
 
@@ -149,7 +150,7 @@ internal sealed partial class HeadlessApiExceptionHandler(
                     retryAfterSeconds = RetryAfterSeconds.From(tooManyRequests.RetryAfter);
                     problemDetails = problemDetailsCreator.TooManyRequests(
                         retryAfterSeconds.Value,
-                        tooManyRequests.Error
+                        error: tooManyRequests.Error
                     );
                     statusCode = StatusCodes.Status429TooManyRequests;
                     break;
@@ -166,9 +167,7 @@ internal sealed partial class HeadlessApiExceptionHandler(
 
                 case CrossTenantWriteException:
                     _LogCrossTenantWriteException(logger, exception);
-                    problemDetails = problemDetailsCreator.Conflict([
-                        HeadlessProblemDetailsConstants.Errors.CrossTenantWrite,
-                    ]);
+                    problemDetails = problemDetailsCreator.Conflict([GeneralMessageDescriber.CrossTenantWrite()]);
                     statusCode = StatusCodes.Status409Conflict;
                     break;
 

@@ -280,5 +280,174 @@ public sealed class TransientRetryTests : TestBase
         attempts.Should().Be(0);
     }
 
+    [Fact]
+    public async Task should_retry_a_result_free_operation_after_the_jittered_delay()
+    {
+        // given
+        var clock = new FakeTimeProvider();
+        var attempts = 0;
+
+        // when
+        var task = TransientRetry
+            .RunAsync(
+                _ =>
+                {
+                    attempts++;
+                    return attempts == 1 ? throw new TransientException() : ValueTask.CompletedTask;
+                },
+                _IsTransient,
+                clock,
+                AbortToken
+            )
+            .AsTask();
+
+        // then: the first retry waits at least 10 ms and at most 50 ms
+        clock.Advance(TimeSpan.FromMilliseconds(9));
+        attempts.Should().Be(1);
+        task.IsCompleted.Should().BeFalse();
+        clock.Advance(TimeSpan.FromMilliseconds(41));
+        await task;
+        attempts.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task should_stop_a_result_free_operation_after_three_attempts_and_rethrow_the_last_exception()
+    {
+        // given
+        var clock = new FakeTimeProvider();
+        var thrown = new List<TransientException>();
+
+        var task = TransientRetry
+            .RunAsync(
+                ValueTask (_) =>
+                {
+                    var ex = new TransientException();
+                    thrown.Add(ex);
+                    throw ex;
+                },
+                _IsTransient,
+                clock,
+                AbortToken
+            )
+            .AsTask();
+
+        // when
+        clock.Advance(TimeSpan.FromMilliseconds(50));
+        clock.Advance(TimeSpan.FromMilliseconds(100));
+
+        // then
+        var assertion = await FluentActions.Awaiting(() => task).Should().ThrowExactlyAsync<TransientException>();
+        assertion.Which.Should().BeSameAs(thrown[^1]);
+        thrown.Should().HaveCount(TransientRetry.MaxAttempts);
+    }
+
+    [Fact]
+    public async Task should_use_the_supplied_schedule_for_a_result_free_operation()
+    {
+        // given
+        var clock = new FakeTimeProvider();
+        var attempts = 0;
+
+        var task = TransientRetry
+            .RunAsync(
+                _ =>
+                {
+                    attempts++;
+                    return attempts < 4 ? throw new TransientException() : ValueTask.CompletedTask;
+                },
+                _IsTransient,
+                maxAttempts: 4,
+                retryDelay: failedAttempt => TimeSpan.FromMilliseconds(100) * failedAttempt,
+                clock,
+                AbortToken
+            )
+            .AsTask();
+
+        // when
+        clock.Advance(TimeSpan.FromMilliseconds(99));
+        var attemptsBeforeFirstDelay = attempts;
+        clock.Advance(TimeSpan.FromMilliseconds(1));
+        clock.Advance(TimeSpan.FromMilliseconds(200));
+        clock.Advance(TimeSpan.FromMilliseconds(300));
+
+        // then
+        await task;
+        attemptsBeforeFirstDelay.Should().Be(1);
+        attempts.Should().Be(4);
+    }
+
+    [Fact]
+    public async Task should_not_retry_a_result_free_failure_the_predicate_rejects()
+    {
+        // given
+        var attempts = 0;
+        var original = new InvalidOperationException("permanent");
+
+        // when
+        var act = () =>
+            TransientRetry
+                .RunAsync(
+                    ValueTask (_) =>
+                    {
+                        attempts++;
+                        throw original;
+                    },
+                    _IsTransient,
+                    new FakeTimeProvider(),
+                    AbortToken
+                )
+                .AsTask();
+
+        // then
+        (await act.Should().ThrowExactlyAsync<InvalidOperationException>())
+            .Which.Should()
+            .BeSameAs(original);
+        attempts.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_not_start_a_result_free_attempt_when_already_cancelled()
+    {
+        // given
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+        var attempts = 0;
+
+        // when
+        var act = () =>
+            TransientRetry
+                .RunAsync(
+                    _ =>
+                    {
+                        attempts++;
+                        return ValueTask.CompletedTask;
+                    },
+                    _IsTransient,
+                    TimeProvider.System,
+                    cts.Token
+                )
+                .AsTask();
+
+        // then
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        attempts.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_reject_a_null_result_free_operation()
+    {
+        // when
+        var act = async () =>
+            await TransientRetry.RunAsync(
+                (Func<CancellationToken, ValueTask>)null!,
+                _IsTransient,
+                TimeProvider.System,
+                AbortToken
+            );
+
+        // then
+        await act.Should().ThrowAsync<ArgumentNullException>();
+    }
+
     private sealed class TransientException : Exception;
 }

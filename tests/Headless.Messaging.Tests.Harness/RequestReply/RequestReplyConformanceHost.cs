@@ -106,7 +106,7 @@ internal sealed class RequestReplyConformanceHost : IAsyncDisposable
         {
             driver.ConfigureRequestReplyTransport(setup);
             setup.UseInMemoryStorage();
-            setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
+            setup.Options.MinimumInboxGuarantee = InboxGuarantee.ProcessLocal;
 
             if (isCaller)
             {

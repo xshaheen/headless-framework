@@ -39,6 +39,7 @@ internal sealed class PermissionsInitializationBackgroundService(
     private readonly PermissionManagementOptions _options = optionsAccessor.Value;
     private CancellationTokenSource? _linkedCts;
     private Task? _initializeDynamicPermissionsTask;
+    private int _disposed;
 
     /// <summary>
     /// <see langword="true"/> once the startup sync has completed successfully;
@@ -73,6 +74,13 @@ internal sealed class PermissionsInitializationBackgroundService(
 
     public async Task StopAsync(CancellationToken cancellationToken)
     {
+        // A host can stop its services again after disposing them (WebApplicationFactory does when the app's own
+        // RunAsync already shut the host down); Dispose has cancelled initialization, so there is nothing left to stop.
+        if (Volatile.Read(ref _disposed) != 0)
+        {
+            return;
+        }
+
         await _cancellationTokenSource.CancelAsync().ConfigureAwait(false);
 
         if (_initializeDynamicPermissionsTask is not null)
@@ -87,6 +95,13 @@ internal sealed class PermissionsInitializationBackgroundService(
 
     public void Dispose()
     {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        {
+            return;
+        }
+
+        // Cancel before disposing so an initialization still running when the host skips StopAsync stops promptly.
+        _cancellationTokenSource.Cancel();
         _linkedCts?.Dispose();
         _cancellationTokenSource.Dispose();
     }

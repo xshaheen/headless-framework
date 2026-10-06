@@ -267,7 +267,7 @@ public sealed class SubscribeExecutorCallbackPublishTests : TestBase
         var executor = _CreateExecutor(
             host,
             _InvokerReturningCallback(inScope: true),
-            new MessagingOptions { RequiredInboxCapability = MessagingInboxCapabilityTier.Transactional }
+            new MessagingOptions { MinimumInboxGuarantee = InboxGuarantee.Transactional }
         );
 
         // when
@@ -292,7 +292,7 @@ public sealed class SubscribeExecutorCallbackPublishTests : TestBase
         var executor = _CreateExecutor(
             host,
             _InvokerReturningCallback(inScope: true),
-            new MessagingOptions { RequiredInboxCapability = MessagingInboxCapabilityTier.Transactional }
+            new MessagingOptions { MinimumInboxGuarantee = InboxGuarantee.Transactional }
         );
 
         // when
@@ -314,7 +314,7 @@ public sealed class SubscribeExecutorCallbackPublishTests : TestBase
         var executor = _CreateExecutor(
             countingProvider,
             _InvokerReturningCallback(inScope: false),
-            new MessagingOptions { RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal }
+            new MessagingOptions { MinimumInboxGuarantee = InboxGuarantee.ProcessLocal }
         );
 
         // when — no inbox key and a non-transactional tier: the executor invokes the consumer without a scope

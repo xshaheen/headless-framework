@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Checks;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Logging;
 using RabbitMQ.Client;
@@ -32,14 +31,10 @@ internal sealed class RabbitMqReplyListener : IReplyListener
 {
     private readonly IConnectionChannelPool _connectionChannelPool;
     private readonly Func<TransportMessage, CancellationToken, ValueTask> _onReply;
-    private readonly ReplyListenerBackoff _backoff;
     private readonly ILogger _logger;
-    private readonly CancellationTokenSource _closing = new();
-    private readonly Task _maintain;
 
-    // Unresolved while the listener connects; resolved with the address its current queue is consumed under.
-    private readonly ReplyAddressGate _address = new();
-    private int _disposed;
+    // Reopens the connection after every loss and hands out the address its current queue is consumed under.
+    private readonly ReplyListenerSupervisor _supervisor;
 
     public RabbitMqReplyListener(
         IConnectionChannelPool connectionChannelPool,
@@ -50,12 +45,12 @@ internal sealed class RabbitMqReplyListener : IReplyListener
     {
         _connectionChannelPool = connectionChannelPool;
         _onReply = onReply;
-        _backoff = new ReplyListenerBackoff(timeProvider);
         _logger = logger;
+        _supervisor = new ReplyListenerSupervisor("RabbitMQ", this, _ServeOnceAsync, timeProvider, logger);
 
         // Connecting runs in the background so a broker that is briefly unreachable at startup delays calls, which
         // wait for the address inside their own timeout, instead of failing the host.
-        _maintain = Task.Run(_MaintainAsync);
+        _supervisor.Start();
     }
 
     /// <inheritdoc />
@@ -65,98 +60,63 @@ internal sealed class RabbitMqReplyListener : IReplyListener
     /// </remarks>
     public ValueTask<string> WaitForAddressAsync(CancellationToken cancellationToken = default)
     {
-        Ensure.NotDisposed(Volatile.Read(ref _disposed) != 0, this);
-
-        return _address.WaitAsync(cancellationToken);
+        return _supervisor.WaitForAddressAsync(cancellationToken);
     }
 
-    public async ValueTask DisposeAsync()
+    // The pass closes the connection on its way out, which deletes the exclusive queue.
+    public ValueTask DisposeAsync()
     {
-        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        return _supervisor.DisposeAsync();
+    }
+
+    // Each pass declares its queue under a new address: until the broker notices a lost connection is dead, it still
+    // holds that connection's exclusive queue and refuses to declare the name again.
+    private async Task<string> _ServeOnceAsync(CancellationToken closingToken)
+    {
+        var lost = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        IConnection? connection = null;
+        IChannel? channel = null;
+        string? address = null;
+
+        try
         {
-            return;
+            connection = await _connectionChannelPool
+                .CreateNonRecoveringConnectionAsync(closingToken)
+                .ConfigureAwait(false);
+            connection.ConnectionShutdownAsync += (_, args) =>
+            {
+                lost.TrySetResult($"the connection shut down: {args.ReplyText}");
+                return Task.CompletedTask;
+            };
+
+            channel = await connection.CreateChannelAsync(cancellationToken: closingToken).ConfigureAwait(false);
+            address = ReplyAddresses.Create();
+            await channel
+                .QueueDeclareAsync(
+                    address,
+                    durable: false,
+                    exclusive: true,
+                    autoDelete: false,
+                    arguments: null,
+                    cancellationToken: closingToken
+                )
+                .ConfigureAwait(false);
+            await channel
+                .BasicConsumeAsync(
+                    address,
+                    autoAck: true,
+                    new ReplyConsumer(channel, this, address, lost),
+                    closingToken
+                )
+                .ConfigureAwait(false);
+
+            _supervisor.Ready(address);
+
+            return await lost.Task.WaitAsync(closingToken).ConfigureAwait(false);
         }
-
-        // A call still waiting for the first address learns that the listener closed.
-        _address.FailOnDispose(nameof(RabbitMqReplyListener));
-
-        await _closing.CancelAsync().ConfigureAwait(false);
-
-        // The loop closes the connection on its way out, which deletes the exclusive queue.
-        await _maintain.ConfigureAwait(false);
-        _closing.Dispose();
-    }
-
-    private async Task _MaintainAsync()
-    {
-        while (!_closing.IsCancellationRequested)
+        finally
         {
-            var lost = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
-            IConnection? connection = null;
-            IChannel? channel = null;
-            string? address = null;
-
-            try
-            {
-                connection = await _connectionChannelPool
-                    .CreateNonRecoveringConnectionAsync(_closing.Token)
-                    .ConfigureAwait(false);
-                connection.ConnectionShutdownAsync += (_, args) =>
-                {
-                    lost.TrySetResult($"the connection shut down: {args.ReplyText}");
-                    return Task.CompletedTask;
-                };
-
-                channel = await connection.CreateChannelAsync(cancellationToken: _closing.Token).ConfigureAwait(false);
-                address = ReplyAddresses.Create();
-                await channel
-                    .QueueDeclareAsync(
-                        address,
-                        durable: false,
-                        exclusive: true,
-                        autoDelete: false,
-                        arguments: null,
-                        cancellationToken: _closing.Token
-                    )
-                    .ConfigureAwait(false);
-                await channel
-                    .BasicConsumeAsync(
-                        address,
-                        autoAck: true,
-                        new ReplyConsumer(channel, this, address, lost),
-                        _closing.Token
-                    )
-                    .ConfigureAwait(false);
-
-                _address.Publish(address);
-                _backoff.Reset();
-                _logger.ReplyListenerReady(address);
-
-                var reason = await lost.Task.WaitAsync(_closing.Token).ConfigureAwait(false);
-                // Makes callers wait for the next address instead of stamping one whose queue is gone.
-                _address.Retract();
-                _logger.ReplyListenerLost(address, reason);
-            }
-            catch (OperationCanceledException) when (_closing.IsCancellationRequested)
-            {
-                return;
-            }
-            catch (Exception e)
-            {
-                _address.Retract();
-                _logger.ReplyListenerOpenFailed(e, _backoff.Delay);
-            }
-            finally
-            {
-                await _CloseAsync(channel, connection, address).ConfigureAwait(false);
-            }
-
-            // A lost listener backs off too, not only a failed reconnect: a broker that keeps accepting the connection
-            // and then dropping it would otherwise drive a tight reconnect loop. A successful open resets the delay.
-            if (!await _backoff.WaitAsync(_closing.Token).ConfigureAwait(false))
-            {
-                return;
-            }
+            await _CloseAsync(channel, connection, address).ConfigureAwait(false);
         }
     }
 
@@ -208,7 +168,7 @@ internal sealed class RabbitMqReplyListener : IReplyListener
                 reply,
                 (Logger: _logger, Address: address),
                 static (state, e) => state.Logger.ReplyHandlerFailed(e, state.Address),
-                _closing.Token
+                _supervisor.ClosingToken
             )
             .ConfigureAwait(false);
     }
@@ -259,27 +219,6 @@ internal sealed class RabbitMqReplyListener : IReplyListener
 
 internal static partial class RabbitMqReplyListenerLog
 {
-    [LoggerMessage(
-        EventId = 3009,
-        Level = LogLevel.Debug,
-        Message = "RabbitMQ reply listener is consuming reply queue '{ReplyAddress}'."
-    )]
-    public static partial void ReplyListenerReady(this ILogger logger, string replyAddress);
-
-    [LoggerMessage(
-        EventId = 3010,
-        Level = LogLevel.Warning,
-        Message = "RabbitMQ reply queue '{ReplyAddress}' was lost ({Reason}); the listener re-declares under a new address, and calls sent with the old one time out."
-    )]
-    public static partial void ReplyListenerLost(this ILogger logger, string replyAddress, string reason);
-
-    [LoggerMessage(
-        EventId = 3011,
-        Level = LogLevel.Error,
-        Message = "RabbitMQ reply listener failed to open its reply queue; retrying in {RetryDelay}."
-    )]
-    public static partial void ReplyListenerOpenFailed(this ILogger logger, Exception exception, TimeSpan retryDelay);
-
     [LoggerMessage(
         EventId = 3012,
         Level = LogLevel.Debug,

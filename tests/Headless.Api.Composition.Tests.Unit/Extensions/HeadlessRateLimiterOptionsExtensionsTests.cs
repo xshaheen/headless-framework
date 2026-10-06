@@ -59,6 +59,7 @@ public sealed class HeadlessRateLimiterOptionsExtensionsTests : TestBase
             .Received(1)
             .TooManyRequests(
                 expectedSeconds,
+                Arg.Any<string?>(),
                 Arg.Is<ErrorDescriptor>(error => error.Code == GeneralErrorCodes.RateLimitExceeded)
             );
 
@@ -84,7 +85,7 @@ public sealed class HeadlessRateLimiterOptionsExtensionsTests : TestBase
         // then
         rejected.IsAcquired.Should().BeFalse();
         context.Response.Headers.RetryAfter.ToString().Should().Be("1");
-        creator.Received(1).TooManyRequests(1, Arg.Any<ErrorDescriptor>());
+        creator.Received(1).TooManyRequests(1, Arg.Any<string?>(), Arg.Any<ErrorDescriptor>());
     }
 
     [Fact]
@@ -142,7 +143,7 @@ public sealed class HeadlessRateLimiterOptionsExtensionsTests : TestBase
         var creator = Substitute.For<IProblemDetailsCreator>();
 
         creator
-            .TooManyRequests(Arg.Any<int>(), Arg.Any<ErrorDescriptor?>())
+            .TooManyRequests(Arg.Any<int>(), Arg.Any<string?>(), Arg.Any<ErrorDescriptor?>())
             .Returns(call => new ProblemDetails
             {
                 Status = StatusCodes.Status429TooManyRequests,

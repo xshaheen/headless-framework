@@ -262,7 +262,7 @@ public sealed class ReplyDispatcherTests : TestBase
     private PendingRequest _Register(string requestId, string? tenantId, bool prepared = true)
     {
         var call = new PendingRequest(requestId, typeof(PriceQuote), _ResponseName, _ResponseVersion, _Timeout, _time);
-        _pending.TryRegister(call, _Timeout, AbortToken).Should().BeTrue();
+        _pending.TryRegister(call, _Timeout, AbortToken).Should().Be(PendingRegistration.Registered);
 
         if (prepared)
         {

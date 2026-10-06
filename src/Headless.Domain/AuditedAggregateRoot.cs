@@ -10,8 +10,7 @@ namespace Headless.Domain;
 /// </summary>
 /// <remarks>
 /// Setters are <see langword="protected"/> so only aggregate domain methods and the persistence layer can mutate audit
-/// state. Derive from <see cref="SuspendableAggregateRoot{TId}"/> or <see cref="SoftDeletableAggregateRoot{TId}"/>
-/// instead when the aggregate also needs suspension or soft delete.
+/// state. Derive from <see cref="SoftDeletableAggregateRoot{TId}"/> instead when the aggregate also needs soft delete.
 /// </remarks>
 /// <typeparam name="TId">The primary key type.</typeparam>
 [PublicAPI]

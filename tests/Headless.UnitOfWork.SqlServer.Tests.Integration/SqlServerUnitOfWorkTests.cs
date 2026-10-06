@@ -29,7 +29,7 @@ public sealed class SqlServerUnitOfWorkTests(SqlServerUnitOfWorkFixture fixture)
         await using var connection = new SqlConnection(fixture.ConnectionString);
         var calls = 0;
 
-        await using (var unitOfWork = await manager.BeginAsync(connection, cancellationToken: AbortToken))
+        await using (var unitOfWork = await manager.BeginAsync(connection, AbortToken))
         {
             unitOfWork.OnCompleted(() =>
             {
@@ -64,7 +64,7 @@ public sealed class SqlServerUnitOfWorkTests(SqlServerUnitOfWorkFixture fixture)
         await using var connection = new SqlConnection(fixture.ConnectionString);
         UnitOfWorkFailure? failure = null;
 
-        await using (var unitOfWork = await manager.BeginAsync(connection, cancellationToken: AbortToken))
+        await using (var unitOfWork = await manager.BeginAsync(connection, AbortToken))
         {
             unitOfWork.OnFailed(f =>
             {

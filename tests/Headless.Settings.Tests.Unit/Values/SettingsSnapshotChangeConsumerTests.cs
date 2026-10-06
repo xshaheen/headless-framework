@@ -198,7 +198,7 @@ public sealed class SettingsSnapshotChangeConsumerTests : TestBase
                 {
                     setup.UseInMemory();
                     setup.UseInMemoryStorage();
-                    setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
+                    setup.Options.MinimumInboxGuarantee = InboxGuarantee.ProcessLocal;
                 });
             },
             AbortToken

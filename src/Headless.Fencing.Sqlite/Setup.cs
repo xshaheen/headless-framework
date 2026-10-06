@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Data;
 using Headless.Checks;
 using Headless.Fencing.Sqlite;
 using Headless.Sql;
@@ -120,7 +119,7 @@ public static class SetupFencingSqlite
         SqliteDialect.Instance,
         "Headless.Fencing.Sqlite",
         static (factory, connection, cancellationToken) =>
-            factory.BeginAsync((SqliteConnection)connection, IsolationLevel.ReadCommitted, cancellationToken),
+            factory.BeginAsync((SqliteConnection)connection, cancellationToken),
         static services => services.AddSqliteUnitOfWork(),
         SqliteFencingSchemaContribution.Create,
         EnlistedGrantRefusal

@@ -262,7 +262,7 @@ Prerequisites:
 - Call `app.UseExceptionHandler()` yourself to wire the `IExceptionHandler` chain into the pipeline.
 - Handler-chain ordering matters: the tenancy handler is registered by `AddHeadlessProblemDetails()`, so it wins against any catch-all registered after that call. If a consumer needs their own catch-all to win, they must register it **before** `AddHeadlessProblemDetails()` (or before `AddHeadless()`, which calls it).
 
-The same shape is reachable without going through the handler via `IProblemDetailsCreator.Forbidden(detail: HeadlessProblemDetailsConstants.Details.TenantContextRequired, error: HeadlessProblemDetailsConstants.Errors.TenantContextRequired)` for direct callers — e.g., a request-pipeline pre-check that returns `Results.Problem(...)` without throwing.
+The same shape is reachable without going through the handler via `IProblemDetailsCreator.Forbidden(detail: error.Description, error: error)` with `var error = GeneralMessageDescriber.TenantRequired();` (`Headless.Api.Resources`; call it per response so the description follows the request culture) for direct callers — e.g., a request-pipeline pre-check that returns `Results.Problem(...)` without throwing.
 
 ## HTTP Authorization Requirement
 

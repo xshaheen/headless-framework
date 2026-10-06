@@ -190,4 +190,55 @@
   <data name="user:phone_number_already_linked" xml:space="preserve">
     <value>رقم الهاتف مرتبط بالفعل بهذا المستخدم.</value>
   </data>
+  <data name="g:tenant_required" xml:space="preserve">
+    <value>تتطلب هذه العملية تحديد المستأجر، ولكن لم يتم تحديده.</value>
+  </data>
+  <data name="g:cross_tenant_write" xml:space="preserve">
+    <value>عملية الكتابة على بيانات المستأجر لا تطابق المستأجر الحالي.</value>
+  </data>
+  <data name="g:invalid_request_type" xml:space="preserve">
+    <value>نوع الطلب المُعد لنقطة النهاية هذه غير صالح.</value>
+  </data>
+  <data name="problem:endpoint_not_found" xml:space="preserve">
+    <value>لم يتم العثور على نقطة النهاية المطلوبة '{0}'.</value>
+  </data>
+  <data name="problem:entity_not_found" xml:space="preserve">
+    <value>لم يتم العثور على المورد المطلوب.</value>
+  </data>
+  <data name="problem:bad_request" xml:space="preserve">
+    <value>تعذر تحليل الطلب. نص الطلب فارغ أو تعذر على الخادم فهمه بسبب صياغة غير صحيحة.</value>
+  </data>
+  <data name="problem:unauthorized" xml:space="preserve">
+    <value>يجب تسجيل الدخول للوصول إلى هذا المورد.</value>
+  </data>
+  <data name="problem:forbidden" xml:space="preserve">
+    <value>ليس لديك صلاحية الوصول إلى هذا المورد.</value>
+  </data>
+  <data name="problem:conflict" xml:space="preserve">
+    <value>تعارض - تم انتهاك قاعدة عمل واحدة أو أكثر.</value>
+  </data>
+  <data name="problem:unprocessable_entity" xml:space="preserve">
+    <value>حدث خطأ واحد أو أكثر في التحقق من صحة البيانات.</value>
+  </data>
+  <data name="problem:internal_error" xml:space="preserve">
+    <value>حدث خطأ أثناء معالجة طلبك.</value>
+  </data>
+  <data name="problem:too_many_requests" xml:space="preserve">
+    <value>عدد كبير جدًا من الطلبات - يرجى المحاولة مرة أخرى لاحقًا.</value>
+  </data>
+  <data name="problem:request_timeout" xml:space="preserve">
+    <value>انتهت مهلة الطلب.</value>
+  </data>
+  <data name="problem:not_implemented" xml:space="preserve">
+    <value>هذه الوظيفة غير متاحة بعد.</value>
+  </data>
+  <data name="problem:payload_too_large" xml:space="preserve">
+    <value>حجم بيانات الطلب أكبر من أن تتم معالجته.</value>
+  </data>
+  <data name="problem:service_unavailable" xml:space="preserve">
+    <value>الخدمة غير متاحة مؤقتًا - يرجى المحاولة مرة أخرى لاحقًا.</value>
+  </data>
+  <data name="problem:if_match_unsupported" xml:space="preserve">
+    <value>تحتوي قيمة If-Match على ETag غير مدعومة في هذه الواجهة.</value>
+  </data>
 </root>

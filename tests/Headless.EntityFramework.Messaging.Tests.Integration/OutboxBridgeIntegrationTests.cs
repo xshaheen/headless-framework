@@ -513,7 +513,7 @@ public sealed partial class OutboxBridgeIntegrationTests(OutboxBridgeTestFixture
 
         services.AddHeadlessMessaging(setup =>
         {
-            setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.DurableDedupeOnly;
+            setup.Options.MinimumInboxGuarantee = InboxGuarantee.Durable;
             setup.UseInMemory();
             setup.UsePostgreSql(fixture.ConnectionString);
         });
