@@ -16,7 +16,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Api\Headless.Api.csproj" />
-    <ProjectReference Include="..\Headless.Security.Abstractions\Headless.Security.Abstractions.csproj" />
   </ItemGroup>
   <ItemGroup Label="Resources">
     <EmbeddedResource Update="Resources\Messages.resx" />
