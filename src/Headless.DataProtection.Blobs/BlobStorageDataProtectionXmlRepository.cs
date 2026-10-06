@@ -10,7 +10,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Polly;
 
-namespace Headless.Api.DataProtection;
+namespace Headless.DataProtection;
 
 /// <summary>An <see cref="IXmlRepository"/> implementation that persists ASP.NET Core Data Protection keys as XML blobs in an <see cref="IBlobStorage"/> backend.</summary>
 /// <remarks>

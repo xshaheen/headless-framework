@@ -8,7 +8,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
-namespace Headless.Api.DataProtection;
+namespace Headless.DataProtection;
 
 /// <summary>
 /// Opt-in startup probe that forces the data-protection key ring through its persistence path at host start,
@@ -45,7 +45,7 @@ internal sealed class DataProtectionStartupValidationService(
 ) : IHostedLifecycleService
 {
     /// <summary>The protector purpose the startup round-trip probe uses.</summary>
-    internal const string ValidationPurpose = "Headless.Api.DataProtection.StartupValidation";
+    internal const string ValidationPurpose = "Headless.DataProtection.StartupValidation";
 
     /// <inheritdoc />
     /// <exception cref="InvalidOperationException">

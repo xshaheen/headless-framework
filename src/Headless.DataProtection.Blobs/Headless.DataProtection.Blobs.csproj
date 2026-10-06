@@ -1,9 +1,9 @@
 ﻿<Project Sdk="Headless.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
-    <Description>ASP.NET Core Data Protection integration for Headless API.</Description>
-    <PackageTags>headless;api;data-protection;dotnet</PackageTags>
-    <RootNamespace>Headless.Api.DataProtection</RootNamespace>
+    <Description>Stores ASP.NET Core Data Protection keys in any Headless blob storage provider.</Description>
+    <PackageTags>headless;data-protection;blobs;dotnet</PackageTags>
+    <RootNamespace>Headless.DataProtection</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.DataProtection" />

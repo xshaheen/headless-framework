@@ -1,6 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-namespace Headless.Api.DataProtection;
+namespace Headless.DataProtection;
 
 /// <summary>
 /// Options for <c>ValidateKeyRingAtStartup</c>, the opt-in hosted service that exercises the data-protection key

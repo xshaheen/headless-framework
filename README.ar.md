@@ -302,7 +302,7 @@ APIs جاهزة للـ production على ASP.NET Core: conventions للـ reques
 | [Headless.Api](src/Headless.Api/README.md) | Building blocks لبناء ASP.NET Core APIs (Problem Details، tenancy، middleware) |
 | [Headless.Api.ServiceDefaults](src/Headless.Api.ServiceDefaults/README.md) | نقطة دخول `AddHeadless()` مع defaults بأسلوب Aspire (OpenTelemetry، OpenAPI، service discovery) |
 | [Headless.Api.Abstractions](src/Headless.Api.Abstractions/README.md) | الـ abstractions والـ contracts بتاعة الـ API |
-| [Headless.Api.DataProtection](src/Headless.Api.DataProtection/README.md) | تخزين مفاتيح الـ Data Protection على أي `IBlobStorage` |
+| [Headless.DataProtection.Blobs](src/Headless.DataProtection.Blobs/README.md) | تخزين مفاتيح الـ Data Protection على أي `IBlobStorage` |
 | [Headless.Api.FluentValidation](src/Headless.Api.FluentValidation/README.md) | ربط FluentValidation بطبقة الـ API |
 | [Headless.Api.Logging.Serilog](src/Headless.Api.Logging.Serilog/README.md) | Enrichers لـ Serilog على مستوى كل request |
 | [Headless.Api.MinimalApi](src/Headless.Api.MinimalApi/README.md) | أدوات للـ Minimal API |

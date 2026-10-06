@@ -386,14 +386,6 @@
           "xunit.v3.runner.common": "[4.0.0]"
         }
       },
-      "headless.api.dataprotection": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Blobs.Abstractions": "[1.0.0, )",
-          "Headless.Checks": "[1.0.0, )",
-          "Polly.Core": "[8.7.0, )"
-        }
-      },
       "headless.blobs": {
         "type": "Project",
         "dependencies": {
@@ -449,6 +441,14 @@
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
           "Headless.Primitives": "[1.0.0, )"
+        }
+      },
+      "headless.dataprotection.blobs": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Blobs.Abstractions": "[1.0.0, )",
+          "Headless.Checks": "[1.0.0, )",
+          "Polly.Core": "[8.7.0, )"
         }
       },
       "headless.extensions": {
