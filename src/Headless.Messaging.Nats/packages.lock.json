@@ -69,18 +69,19 @@
       },
       "NATS.Net": {
         "type": "Direct",
-        "requested": "[2.8.2, )",
-        "resolved": "2.8.2",
-        "contentHash": "aDeKcnk4y3ZYSHnudVlWmo/59IgLBO7YRt23W9cYDVQbxonCOaRZWQ7q5XcDuOooBG7JipFjKcZC9y9YANwIww==",
+        "requested": "[3.2.0, )",
+        "resolved": "3.2.0",
+        "contentHash": "P6x6rzFkS9rjorAh20BgIYB03SOPLjWwTzMrO2d/0XNkS7EHIkhaJLlkwf6ifHAFmyN4E5/gkgHMcMfwtI4Mlw==",
         "dependencies": {
-          "NATS.Client.Core": "2.8.2",
-          "NATS.Client.Hosting": "2.8.2",
-          "NATS.Client.JetStream": "2.8.2",
-          "NATS.Client.KeyValueStore": "2.8.2",
-          "NATS.Client.ObjectStore": "2.8.2",
-          "NATS.Client.Serializers.Json": "2.8.2",
-          "NATS.Client.Services": "2.8.2",
-          "NATS.Client.Simplified": "2.8.2"
+          "NATS.Client.Core": "3.2.0",
+          "NATS.Client.Hosting": "3.2.0",
+          "NATS.Client.JetStream": "3.2.0",
+          "NATS.Client.KeyValueStore": "3.2.0",
+          "NATS.Client.ObjectStore": "3.2.0",
+          "NATS.Client.Serializers.Json": "3.2.0",
+          "NATS.Client.Services": "3.2.0",
+          "NATS.Client.Simplified": "3.2.0",
+          "NATS.Extensions.Microsoft.DependencyInjection": "3.2.0"
         }
       },
       "ReflectionAnalyzers": {
@@ -168,76 +169,89 @@
       },
       "NATS.Client.Abstractions": {
         "type": "Transitive",
-        "resolved": "2.8.2",
-        "contentHash": "yzYxLYvNaVy4p1Pxm0q2RtVmHi1Ijzdl0Hnw4E4sT0KWhVYQuOCF7PiuJ1EHR/0yBEwKfPjzpl6cS4A/2NdsTA=="
+        "resolved": "3.2.0",
+        "contentHash": "Yp45BL3HOmFO7hTyV0ZV5LV3WalvwgGXv7Czr8P38tc3/i6fmd/oWir/4N/8D/5jc3ch0O1Nx3Fik5/djva0Fw==",
+        "dependencies": {
+          "Microsoft.Extensions.Primitives": "6.0.0"
+        }
       },
       "NATS.Client.Core": {
         "type": "Transitive",
-        "resolved": "2.8.2",
-        "contentHash": "w3ijnp07CrILhYp2Hkyi1u8hNN9czdhwYGxTf9bi23jMEQoYh7X3y1NDA2VkQW3UAq7bYMq3hr403wCdzj+YaA==",
+        "resolved": "3.2.0",
+        "contentHash": "HskgUlBdy2iYt2C0wQPrE/sZbntCQrSOLG4dTR5qqyxVC14J9H8O5IyzUMJTpHrGnkexPzFheimbg0YFsJqFVw==",
         "dependencies": {
           "Microsoft.Extensions.Logging.Abstractions": "6.0.1",
           "Microsoft.Extensions.Primitives": "6.0.0",
-          "NATS.Client.Abstractions": "2.8.2",
+          "NATS.Client.Abstractions": "3.2.0",
           "NATS.NKeys": "1.0.1"
         }
       },
       "NATS.Client.Hosting": {
         "type": "Transitive",
-        "resolved": "2.8.2",
-        "contentHash": "2UeW1YUEOxDlyYau9JQQpXrpjFy+818UeOrBbQPP+l9Y0KMxd2oE4MoaVoNu/bAYibNCuIJqj0yhIBykvPO8wQ==",
+        "resolved": "3.2.0",
+        "contentHash": "rRDCOFc2OE3ku/pAhYXSniXjl/3MaavashGtjMfGm7xqaeVTWNuY3EZTbPFLd/0ueCkKHduCIb4MJf7owD8sRQ==",
         "dependencies": {
           "Microsoft.Extensions.Hosting.Abstractions": "8.0.0",
-          "NATS.Client.Core": "2.8.2"
+          "NATS.Client.Core": "3.2.0"
         }
       },
       "NATS.Client.JetStream": {
         "type": "Transitive",
-        "resolved": "2.8.2",
-        "contentHash": "aL3916K5JboqTuUFHyG+OmIZgeUYaLASSkHaKDxRiLKbRWeKCbH/lqvqFEJOPHpKkFa46CXEXAD+iuZ5txko3w==",
+        "resolved": "3.2.0",
+        "contentHash": "0fG1BbsmGhqpJajwTbbRz9LXvjnNGhCsklM5+y5RyOqrvAT5MoPzDoMphs9GPMNAf6YuPqmfhOIlQt78t1/7oQ==",
         "dependencies": {
-          "NATS.Client.Core": "2.8.2"
+          "NATS.Client.Core": "3.2.0"
         }
       },
       "NATS.Client.KeyValueStore": {
         "type": "Transitive",
-        "resolved": "2.8.2",
-        "contentHash": "IyMOmkagPQf94vtf3Q/5HyiAm5tN8tv1TVp/k0GcH6i5K7uXaOK3uz94RtbUmVzEvGtrsJ+hzbycxOPh0dk7CA==",
+        "resolved": "3.2.0",
+        "contentHash": "+6d9i0KIjceAJdVL29NAcfvTUiqyvYRoteFLIx0xpu2+8Z9mng0WlAF6QTbvNlotYR99ZvbCeSyd2OLYy7DIJQ==",
         "dependencies": {
-          "NATS.Client.JetStream": "2.8.2"
+          "NATS.Client.JetStream": "3.2.0"
         }
       },
       "NATS.Client.ObjectStore": {
         "type": "Transitive",
-        "resolved": "2.8.2",
-        "contentHash": "RSArUdK9sZ0bh97eVIJJ5T9aR1MiRdP8SY90b0v0umEzcmI0hE/LnkkoWritC/vAOGNa1ybYmoFfA4z2UNtPQA==",
+        "resolved": "3.2.0",
+        "contentHash": "/G/6ZKuaTi/zbtjOWoWEWPvdKO3cKfp8nQ27Fk3dRzJ6F7GoTP+VoJzc9pnHlEUZCIg2R75AvHIi1B3vNlT2Qw==",
         "dependencies": {
-          "NATS.Client.JetStream": "2.8.2"
+          "NATS.Client.JetStream": "3.2.0"
         }
       },
       "NATS.Client.Serializers.Json": {
         "type": "Transitive",
-        "resolved": "2.8.2",
-        "contentHash": "Cd+4OkKFpgzfRUYhY3OkJ/IpMNvveSWcyWSMliwnGnLvnFIXTKtV22PwOFKDrZgPifsesggYfoDjzq5LeGUmrQ==",
+        "resolved": "3.2.0",
+        "contentHash": "NbiluU7LlW+xpObo8AGnPYwC0EebjqQraBZxpiXyKq2J/tvfantXICD7+IPRpdbbBBuR0RGMxa0rc+r6mYePEw==",
         "dependencies": {
-          "NATS.Client.Abstractions": "2.8.2"
+          "NATS.Client.Abstractions": "3.2.0"
         }
       },
       "NATS.Client.Services": {
         "type": "Transitive",
-        "resolved": "2.8.2",
-        "contentHash": "2zV306iSkyWoF2Zy+AFIzIb+NJ0SttBJuQzxkMasuNuHQlayEuWLiytLAfecdF7URgXIKgU2XVjrFMToTYVYzQ==",
+        "resolved": "3.2.0",
+        "contentHash": "J4lsR4bOA6m5OhgWW+We+JxB0GBb+i4C40NXcTT3zj/3svw45jCf04jRAPDb++GNZ8CWd4jkzupARMupNE9DsQ==",
         "dependencies": {
-          "NATS.Client.Core": "2.8.2"
+          "NATS.Client.Core": "3.2.0"
         }
       },
       "NATS.Client.Simplified": {
         "type": "Transitive",
-        "resolved": "2.8.2",
-        "contentHash": "JUJCIZ+IQzIhyE8uCSSRWkhp2BBk6O6GMAkRVo8gfbyKRelStt8tpBUMfYYR6Ru3tfAOCiVDOYSnXsJnilOiww==",
+        "resolved": "3.2.0",
+        "contentHash": "fTuleGwhCEhQyzGc/e08H1pqVgHMk/puZehs3LPTZ5T3I5uMtN8ASVXoVODPKYJxB3Jv+w/jI9nO/lB7+m5GUw==",
         "dependencies": {
-          "NATS.Client.Core": "2.8.2",
-          "NATS.Client.Serializers.Json": "2.8.2"
+          "NATS.Client.Core": "3.2.0",
+          "NATS.Client.Serializers.Json": "3.2.0"
+        }
+      },
+      "NATS.Extensions.Microsoft.DependencyInjection": {
+        "type": "Transitive",
+        "resolved": "3.2.0",
+        "contentHash": "NzqnT2R1gyjHpjNSle1v2WyVwtWo2D2bXge+vE/Sq9BGFWTeQbvKVd2yeLHt6klVGZooZo4Oghxpw5NOffJ6xA==",
+        "dependencies": {
+          "Microsoft.Extensions.Hosting.Abstractions": "8.0.0",
+          "Microsoft.Extensions.Options": "8.0.2",
+          "NATS.Client.Simplified": "3.2.0"
         }
       },
       "NATS.NKeys": {
@@ -387,7 +401,7 @@
           "Microsoft.Extensions.Hosting.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.Options.ConfigurationExtensions": "[10.0.12, )",
           "Microsoft.Extensions.Options.DataAnnotations": "[10.0.12, )",
-          "OpenTelemetry.Api": "[1.18.0, )"
+          "OpenTelemetry.Api": "[1.19.1, )"
         }
       },
       "headless.messaging": {
@@ -408,8 +422,8 @@
           "Headless.UnitOfWork": "[1.0.0, )",
           "Microsoft.Extensions.Diagnostics": "[10.0.12, )",
           "Microsoft.Extensions.Options": "[10.0.12, )",
-          "OpenTelemetry.Api": "[1.18.0, )",
-          "Polly.Core": "[8.7.0, )"
+          "OpenTelemetry.Api": "[1.19.1, )",
+          "Polly.Core": "[8.8.0, )"
         }
       },
       "headless.messaging.abstractions": {
@@ -473,7 +487,7 @@
           "Headless.Sql.Abstractions": "[1.0.0, )",
           "Headless.UnitOfWork": "[1.0.0, )",
           "Nito.AsyncEx": "[5.1.2, )",
-          "OpenTelemetry.Api": "[1.18.0, )"
+          "OpenTelemetry.Api": "[1.19.1, )"
         }
       },
       "headless.sql.abstractions": {
@@ -487,7 +501,7 @@
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.Options": "[10.0.12, )",
-          "Polly.Core": "[8.7.0, )"
+          "Polly.Core": "[8.8.0, )"
         }
       },
       "headless.unitofwork.abstractions": {
@@ -617,15 +631,15 @@
       },
       "OpenTelemetry.Api": {
         "type": "CentralTransitive",
-        "requested": "[1.18.0, )",
-        "resolved": "1.18.0",
-        "contentHash": "Dhzm5oughIY9EWckt2J1yXcEbXpki5WCL2q7prJoYxzH6C7jdkfGtPMTkUVZZ4AhjJKzQnlC+kLSIlmIVwC4Vw=="
+        "requested": "[1.19.1, )",
+        "resolved": "1.19.1",
+        "contentHash": "9JKIH+xrV0HNTFjQC8zrx9gZpDOMEljN5Htg/U0VE2IvO3N+7bKALCCsGy5tp09marX5dd8UkrgQFoLaulIBRw=="
       },
       "Polly.Core": {
         "type": "CentralTransitive",
-        "requested": "[8.7.0, )",
-        "resolved": "8.7.0",
-        "contentHash": "BS2t+nsBer16PIebCEPNBK5fgMisADQyRCd7K+BgkMWpFmSaiYE+rVVNpFhGRqUkJmNSLmw0uCNzHHWfgml28Q=="
+        "requested": "[8.8.0, )",
+        "resolved": "8.8.0",
+        "contentHash": "TewV9uNFsoRFggoFbTAGFwsMYPuckA+wTIpQPyhLL9BANRPQRENz2S4bwATrB3HBOakN5oKLFIllPiDnVecmJg=="
       }
     }
   }
