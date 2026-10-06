@@ -33,11 +33,12 @@ public sealed class ApnsConnectionBoundTests : TestBase
     [Fact]
     public async Task should_open_many_connections_for_a_cold_burst_when_unbounded()
     {
-        // given - a one-stream server and no effective bound. A cold burst at a small concurrency (inside the
-        // runtime's three-retry budget for cold-start refused streams) opens one connection per concurrent
-        // request, because each connection carries one stream at a time.
+        // given - a one-stream server and no effective bound. The server holds the first two requests until both
+        // have arrived, so the two concurrent sends are in flight at the same time by construction, and on a
+        // one-stream server that takes two open connections. Without the gate, overlap depends on timing.
         await using var server = await FakeApnsServer.StartOneStreamAsync(AbortToken);
-        server.ResponseDelay = TimeSpan.FromMilliseconds(20);
+        var rendezvous = new Rendezvous(participants: 2);
+        server.ReplyGate = (_, token) => rendezvous.ArriveAsync(token);
         await using var provider = server.CreateProvider(o =>
         {
             o.MaxConnections = 1000;
@@ -52,29 +53,41 @@ public sealed class ApnsConnectionBoundTests : TestBase
             AbortToken
         );
 
-        // then - everything was delivered, and the unbounded pool opened one connection per concurrent request
-        // (a refused-stream retry may dial one more) rather than serializing on one: the bound exists to cap
-        // exactly this growth.
+        // then - everything was delivered once, and the unbounded pool served both concurrent requests on separate
+        // connections at the same time rather than serializing on one: the bound exists to cap exactly this
+        // growth. The total number of connections opened is not asserted: each request the server refuses for
+        // exceeding its one-stream limit is retried by the runtime, which may dial another connection for it, and
+        // how many are refused depends on thread scheduling. This burst opens 2 to 4 connections under parallel
+        // load, so a fixed upper limit fails intermittently.
         result.SuccessCount.Should().Be(8);
-        server.OpenedConnections.Should().BeInRange(2, 3);
-        server.MaxConcurrentConnections.Should().BeGreaterThan(1);
+        server.Requests.Should().HaveCount(8);
+        server.MaxInFlight.Should().Be(2);
+        server.MaxConcurrentConnections.Should().BeGreaterThanOrEqualTo(2);
     }
 
     [Fact]
     public async Task should_never_exceed_max_connections_and_complete_every_send_when_bounded()
     {
         // given - the bound is 4 and the pool is pre-warmed to it, so the multicast's requests queue on streams
-        // the connections advertised instead of racing cold connections' SETTINGS frames.
+        // the connections advertised instead of racing cold connections' SETTINGS frames. The warm-up sends are
+        // concurrent and the server holds them until all 4 have arrived: sequential sends would all reuse the
+        // first connection and leave 3 cold dials to race inside the multicast.
         await using var server = await FakeApnsServer.StartOneStreamAsync(AbortToken);
         server.ResponseDelay = TimeSpan.FromMilliseconds(5);
+        var rendezvous = new Rendezvous(participants: 4);
+        server.ReplyGate = (_, token) => rendezvous.ArriveAsync(token);
         await using var provider = server.CreateProvider(o => o.MaxConnections = 4);
         var service = provider.GetRequiredService<IPushNotificationService>();
 
-        for (var i = 0; i < 4; i++)
-        {
-            var warm = await service.SendToDeviceAsync($"warm-{i}", PushNotificationRequests.Valid(), AbortToken);
-            warm.IsSucceeded().Should().BeTrue();
-        }
+        var warm = await Task.WhenAll(
+            Enumerable
+                .Range(0, 4)
+                .Select(i =>
+                    service.SendToDeviceAsync($"warm-{i}", PushNotificationRequests.Valid(), AbortToken).AsTask()
+                )
+        );
+        warm.Should().OnlyContain(r => r.IsSucceeded());
+        server.OpenedConnections.Should().Be(4);
 
         var tokens = Enumerable.Range(0, 100).Select(i => $"device-{i:D3}").ToArray();
 
@@ -192,18 +205,40 @@ public sealed class ApnsConnectionBoundTests : TestBase
     private sealed class DialRefuser(int failures)
     {
         private int _dials;
+        private int _failedDials;
 
-        public int FailedDials { get; private set; }
+        public int FailedDials => Volatile.Read(ref _failedDials);
 
         public async Task GateAsync()
         {
             if (Interlocked.Increment(ref _dials) <= failures)
             {
-                FailedDials++;
-                await Task.Delay(10, AbortToken);
+                Interlocked.Increment(ref _failedDials);
+                // Fault after an await, as a refused connect does, without a wall-clock delay.
+                await Task.Yield();
 
                 throw new HttpRequestException(HttpRequestError.ConnectionError, "Connection refused.");
             }
+        }
+    }
+
+    /// <summary>
+    /// Holds the first <paramref name="participants"/> arrivals until all of them have arrived, then lets them and
+    /// every later arrival through, so a test controls exactly when overlapping requests are answered.
+    /// </summary>
+    private sealed class Rendezvous(int participants)
+    {
+        private readonly TaskCompletionSource _allArrived = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _arrived;
+
+        public Task ArriveAsync(CancellationToken cancellationToken)
+        {
+            if (Interlocked.Increment(ref _arrived) >= participants)
+            {
+                _allArrived.TrySetResult();
+            }
+
+            return _allArrived.Task.WaitAsync(cancellationToken);
         }
     }
 }
