@@ -187,6 +187,40 @@ public sealed class HF2002JobsTests : TestBase
     }
 
     [Fact]
+    public async Task should_report_a_local_passed_by_ref_or_out_after_its_accessor_initializer()
+    {
+        var diagnostics = await _AnalyzeAsync(
+            """
+            public sealed class Handler(IJobScheduler scheduler, IUnitOfWorkFactory factory)
+            {
+                public Task ByRef(DbContext db, CancellationToken ct) =>
+                    factory.RunAsync(db, async (unit, token) =>
+                    {
+                        var jobs = unit.Jobs;
+                        Swap(ref jobs);
+                        await jobs.EnqueueAsync(new ReindexOrder(1), token);
+                    }, cancellationToken: ct);
+
+                public Task ByOut(DbContext db, CancellationToken ct) =>
+                    factory.RunAsync(db, async (unit, token) =>
+                    {
+                        var jobs = unit.Jobs;
+                        Replace(out jobs);
+                        await jobs.EnqueueAsync(new ReindexOrder(2), token);
+                    }, cancellationToken: ct);
+
+                private void Swap(ref IJobScheduler jobs) => jobs = scheduler;
+
+                private void Replace(out IJobScheduler jobs) => jobs = scheduler;
+            }
+            """
+        );
+
+        diagnostics.Should().HaveCount(2);
+        diagnostics.Should().AllSatisfy(diagnostic => diagnostic.Id.Should().Be("HF2002"));
+    }
+
+    [Fact]
     public async Task should_report_a_top_level_local_reassigned_in_a_later_statement()
     {
         var diagnostics = await AnalyzerHarness.AnalyzeAsync(
