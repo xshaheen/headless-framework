@@ -71,7 +71,7 @@ public sealed class EndpointsExtensionsWireShapeTests : TestBase
         app.UseRouting();
         app.UseAuthentication();
         app.UseAuthorization();
-        app.MapHeadlessHostRedirects("https://main.example.com", ["old.example.com"]);
+        app.MapHostRedirects("https://main.example.com", ["old.example.com"]);
         await app.StartAsync(AbortToken);
 
         using var handler = new HttpClientHandler { AllowAutoRedirect = false, CheckCertificateRevocationList = true };

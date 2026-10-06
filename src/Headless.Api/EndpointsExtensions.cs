@@ -31,7 +31,7 @@ public static class EndpointsExtensions
     /// with a scheme never matches.
     /// </param>
     /// <exception cref="UriFormatException"><paramref name="mainHost"/> is not a well-formed absolute URI.</exception>
-    public static void MapHeadlessHostRedirects(this WebApplication app, string mainHost, string[]? redirectHosts)
+    public static void MapHostRedirects(this WebApplication app, string mainHost, string[]? redirectHosts)
     {
         if (redirectHosts is not { Length: > 0 })
         {
