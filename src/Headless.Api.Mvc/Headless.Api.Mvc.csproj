@@ -9,8 +9,6 @@
     <InternalsVisibleTo Include="Headless.Api.Mvc.Tests.Unit" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Asp.Versioning.Mvc" />
-    <PackageReference Include="Asp.Versioning.Mvc.ApiExplorer" />
     <PackageReference Include="Mediator.Abstractions" />
   </ItemGroup>
   <ItemGroup>

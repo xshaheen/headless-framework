@@ -12,7 +12,6 @@
   <ItemGroup>
     <PackageReference Include="Azure.Storage.Blobs" />
     <PackageReference Include="Azure.Storage.Blobs.Batch" />
-    <PackageReference Include="Microsoft.Extensions.Azure" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Blobs.Abstractions\Headless.Blobs.Abstractions.csproj" />

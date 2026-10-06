@@ -197,8 +197,8 @@
         "type": "Project",
         "dependencies": {
           "Headless.Captcha": "[1.0.0, )",
-          "Headless.Extensions": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
+          "Headless.Urls": "[1.0.0, )",
           "Microsoft.Extensions.Http.Resilience": "[10.10.0, )"
         }
       },
@@ -206,8 +206,8 @@
         "type": "Project",
         "dependencies": {
           "Headless.Captcha": "[1.0.0, )",
-          "Headless.Extensions": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
+          "Headless.Urls": "[1.0.0, )",
           "Microsoft.Extensions.Http.Resilience": "[10.10.0, )"
         }
       },
@@ -218,9 +218,7 @@
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )",
-          "Headless.Generator.Primitives.Abstractions": "[1.0.0, )",
           "Headless.Primitives": "[1.0.0, )",
-          "Headless.Urls": "[1.0.0, )",
           "Nito.AsyncEx": "[5.1.2, )",
           "Nito.Disposables": "[2.5.0, )"
         }

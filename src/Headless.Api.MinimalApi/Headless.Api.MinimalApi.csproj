@@ -9,9 +9,6 @@
     <InternalsVisibleTo Include="Headless.Api.MinimalApi.Tests.Unit" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Asp.Versioning.Http" />
-  </ItemGroup>
-  <ItemGroup>
     <ProjectReference Include="..\Headless.Api\Headless.Api.csproj" />
   </ItemGroup>
 </Project>

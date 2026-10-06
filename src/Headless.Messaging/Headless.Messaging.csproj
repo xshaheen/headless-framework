@@ -15,8 +15,6 @@
     <InternalsVisibleTo Include="Headless.Messaging.Pulsar" />
     <InternalsVisibleTo Include="Headless.Messaging.RabbitMq" />
     <InternalsVisibleTo Include="Headless.Messaging.Redis" />
-    <InternalsVisibleTo Include="Headless.Messaging.PostgreSql" />
-    <InternalsVisibleTo Include="Headless.Messaging.SqlServer" />
     <InternalsVisibleTo Include="Headless.Messaging.Storage.PostgreSql" />
     <InternalsVisibleTo Include="Headless.Messaging.Storage.SqlServer" />
     <InternalsVisibleTo Include="Headless.Messaging.Storage.PostgreSql.EntityFramework" />
@@ -33,8 +31,6 @@
     <InternalsVisibleTo Include="Headless.Messaging.Dashboard.K8s.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.Messaging.InMemory.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.Messaging.Storage.InMemory.Tests.Unit" />
-    <InternalsVisibleTo Include="Headless.Messaging.PostgreSql.Tests.Unit" />
-    <InternalsVisibleTo Include="Headless.Messaging.PostgreSql.Tests.Integration" />
     <InternalsVisibleTo Include="Headless.Messaging.Storage.PostgreSql.Tests.Unit" />
     <InternalsVisibleTo Include="Headless.Messaging.Storage.PostgreSql.Tests.Integration" />
     <InternalsVisibleTo Include="Headless.Messaging.Storage.SqlServer.Tests.Unit" />

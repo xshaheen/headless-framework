@@ -6,9 +6,6 @@
     <RootNamespace>Headless.Permissions.SqlServer</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Microsoft.Data.SqlClient" />
-  </ItemGroup>
-  <ItemGroup>
     <ProjectReference Include="..\Headless.Permissions\Headless.Permissions.csproj" />
     <ProjectReference Include="..\Headless.Sql.SqlServer\Headless.Sql.SqlServer.csproj" />
   </ItemGroup>

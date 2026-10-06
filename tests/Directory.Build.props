@@ -18,7 +18,6 @@
   </ItemGroup>
   <ItemGroup Label="Global Packages">
     <PackageReference Include="Bogus" />
-    <PackageReference Include="DeepCloner" />
     <PackageReference Include="AwesomeAssertions" />
     <PackageReference Include="AwesomeAssertions.Json" />
     <PackageReference Include="Microsoft.Testing.Extensions.GitHubActionsReport" PrivateAssets="all" />

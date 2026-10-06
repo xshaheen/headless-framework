@@ -12,6 +12,5 @@
     <ProjectReference Include="..\..\src\Headless.PushNotifications\Headless.PushNotifications.csproj" />
     <ProjectReference Include="..\..\src\Headless.PushNotifications.Dev\Headless.PushNotifications.Dev.csproj" />
     <ProjectReference Include="..\..\src\Headless.PushNotifications.Firebase\Headless.PushNotifications.Firebase.csproj" />
-    <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
   </ItemGroup>
 </Project>
