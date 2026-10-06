@@ -78,12 +78,6 @@ public sealed class HeadlessRateLimitingTests : TestBase
             new WebApplicationOptions { EnvironmentName = EnvironmentNames.Test }
         );
         builder.WebHost.UseUrls("http://127.0.0.1:0");
-        builder.Configuration.AddInMemoryCollection([
-            new KeyValuePair<string, string?>("Headless:StringEncryption:DefaultPassPhrase", "TestPassPhrase123456"),
-            new KeyValuePair<string, string?>("Headless:StringEncryption:InitVectorBytes", "VGVzdElWMDEyMzQ1Njc4OQ=="),
-            new KeyValuePair<string, string?>("Headless:StringEncryption:DefaultSalt", "VGVzdFNhbHQ="),
-            new KeyValuePair<string, string?>("Headless:LookupHasher:DefaultSalt", "TestSalt"),
-        ]);
         builder.AddHeadless(configureServices: options =>
         {
             options.Validation.ValidateServiceProviderOnStartup = false;

@@ -117,7 +117,6 @@ public sealed class TenantCatalogRewriterPostureTests : TestBase
             new WebApplicationOptions { EnvironmentName = EnvironmentNames.Test }
         );
         builder.WebHost.UseUrls("http://127.0.0.1:0");
-        HttpTenancyTestHarness.AddDefaultHeadlessSecurityConfiguration(builder.Configuration);
 
         builder.AddHeadless(configureServices: options =>
         {

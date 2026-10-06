@@ -131,16 +131,6 @@ public sealed class ServiceDefaultsStackingTests : TestBase
     {
         var builder = WebApplication.CreateBuilder();
 
-        builder.Configuration.AddInMemoryCollection(
-            new Dictionary<string, string?>(StringComparer.Ordinal)
-            {
-                ["Headless:StringEncryption:DefaultPassPhrase"] = "TestPassPhrase123456",
-                ["Headless:StringEncryption:InitVectorBytes"] = "VGVzdElWMDEyMzQ1Njc4OQ==",
-                ["Headless:StringEncryption:DefaultSalt"] = "VGVzdFNhbHQ=",
-                ["Headless:LookupHasher:DefaultSalt"] = "TestSalt",
-            }
-        );
-
         builder.Services.ConfigureHttpClientDefaults(http => http.ConfigurePrimaryHttpMessageHandler(() => counter));
 
         return builder;

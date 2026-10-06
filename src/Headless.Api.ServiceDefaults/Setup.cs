@@ -43,8 +43,6 @@ namespace Headless.Api.ServiceDefaults;
 [PublicAPI]
 public static class SetupApi
 {
-    private const string _StringEncryptionSectionName = "Headless:StringEncryption";
-    private const string _LookupHasherSectionName = "Headless:LookupHasher";
     private const string _HeadlessWildcardSourceName = "Headless.*";
     private static int _globalSettingsConfigured;
 
@@ -78,8 +76,8 @@ public static class SetupApi
     {
         /// <summary>
         /// Registers all Headless service defaults (OpenTelemetry, OpenAPI, HttpClient, service discovery,
-        /// problem details, multi-tenancy stubs, etc.) and reads encryption/hash secrets from the default
-        /// <c>Headless:StringEncryption</c> and <c>Headless:LookupHasher</c> configuration sections.
+        /// problem details, multi-tenancy stubs, etc.). String encryption and the lookup hasher are opt-in: call
+        /// <c>AddStringEncryptionService(...)</c> and <c>AddLookupHasher(...)</c> when the app uses them.
         /// </summary>
         /// <param name="configureServices">Optional callback to tune <see cref="HeadlessServiceDefaultsOptions"/> before registration.</param>
         /// <returns><paramref name="builder"/> for chaining.</returns>
@@ -88,114 +86,7 @@ public static class SetupApi
         {
             Argument.IsNotNull(builder);
 
-            builder._AddDefaultStringEncryptionService();
-            builder._AddDefaultLookupHasher();
-
             return builder._AddApiCore(configureServices);
-        }
-
-        /// <summary>
-        /// Registers all Headless service defaults, binding encryption and hash options from the
-        /// supplied <see cref="IConfiguration"/> sections instead of the default
-        /// <c>Headless:StringEncryption</c> / <c>Headless:LookupHasher</c> paths.
-        /// </summary>
-        /// <param name="stringEncryptionConfig">Configuration section for string-encryption options.</param>
-        /// <param name="lookupHasherConfig">Configuration section for lookup-hasher options.</param>
-        /// <param name="configureServices">Optional callback to tune <see cref="HeadlessServiceDefaultsOptions"/>.</param>
-        /// <returns><paramref name="builder"/> for chaining.</returns>
-        /// <exception cref="ArgumentNullException"><paramref name="builder"/>, <paramref name="stringEncryptionConfig"/>, or <paramref name="lookupHasherConfig"/> is <see langword="null"/>.</exception>
-        public WebApplicationBuilder AddHeadless(
-            IConfiguration stringEncryptionConfig,
-            IConfiguration lookupHasherConfig,
-            Action<HeadlessServiceDefaultsOptions>? configureServices = null
-        )
-        {
-            Argument.IsNotNull(builder);
-            Argument.IsNotNull(stringEncryptionConfig);
-            Argument.IsNotNull(lookupHasherConfig);
-
-            builder.Services.AddStringEncryptionService(stringEncryptionConfig);
-            builder.Services.AddLookupHasher(lookupHasherConfig);
-
-            return builder._AddApiCore(configureServices);
-        }
-
-        /// <summary>
-        /// Registers all Headless service defaults, configuring encryption options via a delegate.
-        /// Hash options default to the <c>Headless:LookupHasher</c> configuration section when
-        /// <paramref name="configureLookupHasher"/> is <see langword="null"/>.
-        /// </summary>
-        /// <param name="configureEncryption">Required callback to configure string-encryption options.</param>
-        /// <param name="configureLookupHasher">Optional callback to configure lookup-hasher options.</param>
-        /// <param name="configureServices">Optional callback to tune <see cref="HeadlessServiceDefaultsOptions"/>.</param>
-        /// <returns><paramref name="builder"/> for chaining.</returns>
-        /// <exception cref="ArgumentNullException"><paramref name="builder"/> or <paramref name="configureEncryption"/> is <see langword="null"/>.</exception>
-        public WebApplicationBuilder AddHeadless(
-            Action<StringEncryptionOptions> configureEncryption,
-            Action<LookupHasherOptions>? configureLookupHasher = null,
-            Action<HeadlessServiceDefaultsOptions>? configureServices = null
-        )
-        {
-            Argument.IsNotNull(builder);
-            Argument.IsNotNull(configureEncryption);
-
-            builder.Services.AddStringEncryptionService(configureEncryption);
-
-            if (configureLookupHasher is null)
-            {
-                builder._AddDefaultLookupHasher();
-            }
-            else
-            {
-                builder.Services.AddLookupHasher(configureLookupHasher);
-            }
-
-            return builder._AddApiCore(configureServices);
-        }
-
-        /// <summary>
-        /// Registers all Headless service defaults, configuring encryption options via a service-provider
-        /// delegate. Hash options default to the <c>Headless:LookupHasher</c> configuration section when
-        /// <paramref name="configureLookupHasher"/> is <see langword="null"/>.
-        /// </summary>
-        /// <param name="configureEncryption">Required callback (with <see cref="IServiceProvider"/>) to configure encryption options.</param>
-        /// <param name="configureLookupHasher">Optional callback (with <see cref="IServiceProvider"/>) to configure hash options.</param>
-        /// <param name="configureServices">Optional callback to tune <see cref="HeadlessServiceDefaultsOptions"/>.</param>
-        /// <returns><paramref name="builder"/> for chaining.</returns>
-        /// <exception cref="ArgumentNullException"><paramref name="builder"/> or <paramref name="configureEncryption"/> is <see langword="null"/>.</exception>
-        public WebApplicationBuilder AddHeadless(
-            Action<StringEncryptionOptions, IServiceProvider> configureEncryption,
-            Action<LookupHasherOptions, IServiceProvider>? configureLookupHasher = null,
-            Action<HeadlessServiceDefaultsOptions>? configureServices = null
-        )
-        {
-            Argument.IsNotNull(builder);
-            Argument.IsNotNull(configureEncryption);
-
-            builder.Services.AddStringEncryptionService(configureEncryption);
-
-            if (configureLookupHasher is null)
-            {
-                builder._AddDefaultLookupHasher();
-            }
-            else
-            {
-                builder.Services.AddLookupHasher(configureLookupHasher);
-            }
-
-            return builder._AddApiCore(configureServices);
-        }
-
-        private void _AddDefaultStringEncryptionService()
-        {
-            builder.Services.AddStringEncryptionService(
-                builder.Configuration.GetRequiredSection(_StringEncryptionSectionName)
-            );
-        }
-
-        private void _AddDefaultLookupHasher()
-        {
-            builder.Services.AddLookupHasher(builder.Configuration.GetRequiredSection(_LookupHasherSectionName));
         }
 
         private WebApplicationBuilder _AddApiCore(Action<HeadlessServiceDefaultsOptions>? configureServices)
