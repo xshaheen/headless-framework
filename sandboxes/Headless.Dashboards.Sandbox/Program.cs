@@ -6,7 +6,6 @@ using Headless.Jobs;
 using Headless.Messaging;
 using Headless.Messaging.Dashboard;
 using Microsoft.EntityFrameworkCore;
-using Polly.Retry;
 
 // A local test host for the Jobs and Messaging dashboards, started and stopped by the project CLI (`make up`,
 // `make down`). It binds to loopback only and exists so a person or an agent can drive every dashboard state on
@@ -50,14 +49,11 @@ builder.Services.AddHeadlessJobs(options =>
 builder.Services.AddHeadlessMessaging(setup =>
 {
     setup.AddModule<Headless.Dashboards.Sandbox.MessagingModule>();
-    // A failing consumer lands in Failed at once instead of retrying, so the failed rows a scenario asks for are
-    // there to inspect and re-execute.
-    setup.Options.RetryPolicy.MaxPersistedRetries = 0;
-    setup.Options.RetryPolicy.RetryStrategy = new RetryStrategyOptions
-    {
-        MaxRetryAttempts = 0,
-        ShouldHandle = static _ => ValueTask.FromResult(true),
-    };
+    // The sandbox consumer's failures are deliberate, so they fail terminally instead of following the default
+    // consume policy (immediate, then delayed retries). A terminal Failed generation is what inbox operations such
+    // as Force reprocess act on; one still waiting for a retry is refused as Active. RetryPolicy would not do this:
+    // it governs publishing, not consuming.
+    setup.DefaultFailurePolicy(policy => policy.FailOn<InvalidOperationException>());
     setup.Options.MinimumInboxGuarantee = InboxGuarantee.ProcessLocal;
     setup.UseInMemoryStorage();
     setup.UseInMemory();
