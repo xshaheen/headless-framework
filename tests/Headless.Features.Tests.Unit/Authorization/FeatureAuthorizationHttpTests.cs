@@ -8,7 +8,6 @@ using Headless.Caching;
 using Headless.Context;
 using Headless.Features;
 using Headless.Permissions;
-using Headless.Primitives;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
@@ -30,13 +29,13 @@ public sealed class FeatureAuthorizationHttpTests : TestBase
     private const string _Reports = "Reports";
     private const string _Exports = "Exports";
     private const string _ReportsView = "Reports.View";
-    private const string _FeatureUnavailableCode = "g:feature_currently_not_available";
-    private const string _LockedCode = "g:test_locked";
+    private const string _FeatureUnavailableReason = "This feature is currently unavailable.";
+    private const string _LockedReason = "The account is locked.";
 
     #region MVC
 
     [Fact]
-    public async Task should_return_409_when_the_controller_feature_is_disabled()
+    public async Task should_return_403_with_the_reason_when_the_controller_feature_is_disabled()
     {
         // given
         await using var app = await _StartAsync(new HostOptions());
@@ -45,7 +44,7 @@ public sealed class FeatureAuthorizationHttpTests : TestBase
         using var response = await _GetAsync(app, "/reports", authenticated: true);
 
         // then
-        await _AssertFeatureUnavailableAsync(response, _Reports);
+        await _AssertFeatureForbiddenAsync(response);
     }
 
     [Fact]
@@ -71,7 +70,7 @@ public sealed class FeatureAuthorizationHttpTests : TestBase
         using var response = await _GetAsync(app, "/reports/export", authenticated: true);
 
         // then
-        await _AssertFeatureUnavailableAsync(response, _Exports);
+        await _AssertFeatureForbiddenAsync(response);
     }
 
     [Fact]
@@ -99,7 +98,7 @@ public sealed class FeatureAuthorizationHttpTests : TestBase
         using var response = await _GetAsync(app, "/reports", authenticated: true);
 
         // then
-        await _AssertFeatureUnavailableAsync(response, _Exports);
+        await _AssertFeatureForbiddenAsync(response);
     }
 
     #endregion
@@ -107,7 +106,7 @@ public sealed class FeatureAuthorizationHttpTests : TestBase
     #region Minimal API
 
     [Fact]
-    public async Task should_return_409_when_a_minimal_api_feature_is_disabled()
+    public async Task should_return_403_with_the_reason_when_a_minimal_api_feature_is_disabled()
     {
         // given
         await using var app = await _StartAsync(new HostOptions());
@@ -116,7 +115,7 @@ public sealed class FeatureAuthorizationHttpTests : TestBase
         using var response = await _GetAsync(app, "/minimal", authenticated: true);
 
         // then
-        await _AssertFeatureUnavailableAsync(response, _Reports);
+        await _AssertFeatureForbiddenAsync(response);
     }
 
     [Fact]
@@ -142,7 +141,7 @@ public sealed class FeatureAuthorizationHttpTests : TestBase
         using var response = await _GetAsync(app, "/minimal/attribute", authenticated: true);
 
         // then
-        await _AssertFeatureUnavailableAsync(response, _Reports);
+        await _AssertFeatureForbiddenAsync(response);
     }
 
     [Fact]
@@ -155,7 +154,7 @@ public sealed class FeatureAuthorizationHttpTests : TestBase
         using var response = await _GetAsync(app, "/minimal/all", authenticated: true);
 
         // then
-        await _AssertFeatureUnavailableAsync(response, _Reports, _Exports);
+        await _AssertFeatureForbiddenAsync(response);
     }
 
     [Theory]
@@ -170,7 +169,7 @@ public sealed class FeatureAuthorizationHttpTests : TestBase
         using var response = await _GetAsync(app, path, authenticated: true);
 
         // then
-        await _AssertFeatureUnavailableAsync(response, _Reports);
+        await _AssertFeatureForbiddenAsync(response);
     }
 
     [Theory]
@@ -210,16 +209,16 @@ public sealed class FeatureAuthorizationHttpTests : TestBase
     [InlineData("/minimal")]
     [InlineData("/minimal/metadata")]
     [InlineData("/minimal/attribute")]
-    public async Task should_gate_an_anonymous_caller_on_a_disabled_feature(string path)
+    public async Task should_challenge_an_anonymous_caller_on_a_disabled_feature(string path)
     {
-        // given
+        // given - like any failed authorization, an anonymous caller is challenged: signing in is its next step
         await using var app = await _StartAsync(new HostOptions());
 
         // when
         using var response = await _GetAsync(app, path, authenticated: false);
 
         // then
-        await _AssertFeatureUnavailableAsync(response, _Reports);
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
     [Theory]
@@ -265,7 +264,7 @@ public sealed class FeatureAuthorizationHttpTests : TestBase
         using var response = await _GetAsync(app, "/minimal/metadata", authenticated: true);
 
         // then
-        await _AssertFeatureUnavailableAsync(response, _Reports);
+        await _AssertFeatureForbiddenAsync(response);
     }
 
     #endregion
@@ -274,7 +273,7 @@ public sealed class FeatureAuthorizationHttpTests : TestBase
 
     [Theory]
     [InlineData(true, true, HttpStatusCode.OK)]
-    [InlineData(true, false, HttpStatusCode.Conflict)]
+    [InlineData(true, false, HttpStatusCode.Forbidden)]
     [InlineData(false, true, HttpStatusCode.Forbidden)]
     [InlineData(false, false, HttpStatusCode.Forbidden)]
     public async Task should_compose_the_feature_gate_with_a_permission_policy(
@@ -283,7 +282,7 @@ public sealed class FeatureAuthorizationHttpTests : TestBase
         HttpStatusCode expected
     )
     {
-        // given - a missing grant is a 403 whatever the feature state; only a feature-only failure is a 409
+        // given - either a missing grant or a disabled feature forbids the request
         await using var app = await _StartAsync(
             new HostOptions { EnabledFeatures = featureEnabled ? [_Reports] : [], Granted = granted }
         );
@@ -297,35 +296,52 @@ public sealed class FeatureAuthorizationHttpTests : TestBase
 
     #endregion
 
-    #region Described requirements
+    #region Failure reasons
 
     [Fact]
-    public async Task should_answer_with_the_error_any_described_requirement_reports()
+    public async Task should_include_the_feature_reason_when_both_the_grant_and_the_feature_are_missing()
     {
-        // given - the rewriter maps the contract, not the feature type, so another gate can reuse it
+        // given
+        await using var app = await _StartAsync(new HostOptions { Granted = false });
+
+        // when
+        using var response = await _GetAsync(app, "/permission-and-feature", authenticated: true);
+
+        // then - the permission handler gives no reason; the feature handler's reason is the detail
+        await _AssertFeatureForbiddenAsync(response);
+    }
+
+    [Fact]
+    public async Task should_show_an_application_handler_reason_in_the_detail()
+    {
+        // given - the generic path: any handler that fails with a reason, not only the feature gate
         await using var app = await _StartAsync(new HostOptions());
 
         // when
-        using var response = await _GetAsync(app, "/described/forbidden", authenticated: false);
+        using var response = await _GetAsync(app, "/locked", authenticated: true);
 
         // then
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(AbortToken));
-        document.RootElement.GetProperty("error").GetProperty("code").GetString().Should().Be(_LockedCode);
+        document.RootElement.GetProperty("detail").GetString().Should().Be(_LockedReason);
     }
 
     [Fact]
-    public async Task should_keep_the_default_failure_when_described_requirements_disagree_on_the_kind()
+    public async Task should_localize_the_feature_reason_to_the_request_culture()
     {
-        // given - a disabled feature (conflict) and a forbidden described requirement have no single honest status
+        // given
         await using var app = await _StartAsync(new HostOptions());
+        using var request = new HttpRequestMessage(HttpMethod.Get, new Uri("/minimal", UriKind.Relative));
+        request.Headers.Add(TestAuthenticationHandler.UserHeader, "alice");
+        request.Headers.AcceptLanguage.ParseAdd("ar");
 
         // when
-        using var response = await _GetAsync(app, "/described/mixed", authenticated: true);
+        using var response = await app.GetTestClient().SendAsync(request, AbortToken);
 
         // then
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
-        (await response.Content.ReadAsStringAsync(AbortToken)).Should().NotContain(_FeatureUnavailableCode);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(AbortToken));
+        document.RootElement.GetProperty("detail").GetString().Should().Be("هذه الميزة غير متوفرة حاليا.");
     }
 
     #endregion
@@ -394,49 +410,6 @@ public sealed class FeatureAuthorizationHttpTests : TestBase
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*AddAuthorization*");
     }
 
-    [Theory]
-    [InlineData("/reports")]
-    [InlineData("/minimal")]
-    [InlineData("/minimal/attribute")]
-    [InlineData("/minimal/metadata")]
-    public async Task should_refuse_a_gated_endpoint_when_routing_runs_after_the_implicit_authorization(string path)
-    {
-        // given - the host calls UseRouting() but never UseAuthorization(), and the feature is enabled, so only the
-        // guard can stop the request: ASP.NET Core's own check ignores endpoints without [Authorize]
-        await using var app = await _StartAsync(
-            new HostOptions
-            {
-                EnabledFeatures = [_Reports],
-                CallUseAuthorization = false,
-                CallUseRoutingWithoutAuthorization = true,
-            }
-        );
-
-        // when
-        var act = async () =>
-        {
-            using var response = await _GetAsync(app, path, authenticated: true);
-        };
-
-        // then
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*UseAuthorization()*");
-    }
-
-    [Fact]
-    public async Task should_run_an_ungated_endpoint_when_routing_runs_after_the_implicit_authorization()
-    {
-        // given
-        await using var app = await _StartAsync(
-            new HostOptions { CallUseAuthorization = false, CallUseRoutingWithoutAuthorization = true }
-        );
-
-        // when
-        using var response = await _GetAsync(app, "/open", authenticated: false);
-
-        // then
-        await _AssertOkAsync(response, "open");
-    }
-
     #endregion
 
     #region Helpers
@@ -458,8 +431,6 @@ public sealed class FeatureAuthorizationHttpTests : TestBase
         public bool CallUseAuthorization { get; init; } = true;
 
         public bool AddControllers { get; init; } = true;
-
-        public bool CallUseRoutingWithoutAuthorization { get; init; }
     }
 
     private static async Task<WebApplication> _StartAsync(HostOptions options)
@@ -479,6 +450,7 @@ public sealed class FeatureAuthorizationHttpTests : TestBase
 
         builder.Services.AddSingleton(_CreatePermissionManager(options.Granted));
         builder.Services.AddSingleton<IAuthorizationHandler, PermissionRequirementHandler>();
+        builder.Services.AddSingleton<IAuthorizationHandler, LockedRequirementHandler>();
 
         builder
             .Services.AddAuthentication(TestAuthenticationHandler.SchemeName)
@@ -522,6 +494,11 @@ public sealed class FeatureAuthorizationHttpTests : TestBase
             app.UseStatusCodesRewriter();
         }
 
+        // The failure reason is resolved during authorization, so the request culture must be set before it.
+        app.UseRequestLocalization(localization =>
+            localization.AddSupportedUICultures("en", "ar").SetDefaultCulture("en")
+        );
+
         if (options.CallUseAuthorization)
         {
             // An explicit UseRouting would place routing after the authorization middleware WebApplication adds on
@@ -530,14 +507,6 @@ public sealed class FeatureAuthorizationHttpTests : TestBase
             app.UseAuthentication();
             app.UseAuthorization();
         }
-        else if (options.CallUseRoutingWithoutAuthorization)
-        {
-            // Routing now runs after the authorization middleware WebApplication adds on its own, so that middleware
-            // sees no endpoint and never evaluates the gate.
-            app.UseRouting();
-        }
-
-        app.MapGet("/open", () => "open");
 
         if (options.AddControllers)
         {
@@ -565,10 +534,8 @@ public sealed class FeatureAuthorizationHttpTests : TestBase
         group.MapGet("/open-attribute", [DisableFeatureCheck] () => "open");
         group.MapGet("/open-metadata", () => "open").WithMetadata(new DisableFeatureCheckAttribute());
 
-        app.MapGet("/described/forbidden", () => "forbidden")
+        app.MapGet("/locked", () => "locked")
             .RequireAuthorization(policy => policy.AddRequirements(new LockedRequirement()));
-        app.MapGet("/described/mixed", () => "mixed")
-            .RequireAuthorization(policy => policy.AddRequirements(new LockedRequirement()).RequireFeatures(_Reports));
 
         var metadataGroup = app.MapGroup("/metadata-group").WithMetadata(new RequiresFeatureAttribute(_Reports));
         metadataGroup.MapGet("/gated", () => "gated");
@@ -637,30 +604,28 @@ public sealed class FeatureAuthorizationHttpTests : TestBase
         (await response.Content.ReadAsStringAsync(AbortToken)).Should().Be(expectedBody);
     }
 
-    private static async Task _AssertFeatureUnavailableAsync(HttpResponseMessage response, params string[] features)
+    private static async Task _AssertFeatureForbiddenAsync(HttpResponseMessage response)
     {
-        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
-        response.Headers.WwwAuthenticate.Should().BeEmpty();
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
         response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
 
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(AbortToken));
-        var error = document.RootElement.GetProperty("errors").EnumerateArray().Should().ContainSingle().Subject;
-        error.GetProperty("code").GetString().Should().Be(_FeatureUnavailableCode);
-        error
-            .GetProperty("params")
-            .GetProperty("FeatureNames")
-            .EnumerateArray()
-            .Select(name => name.GetString())
-            .Should()
-            .Equal(features);
+        document.RootElement.GetProperty("detail").GetString().Should().Be(_FeatureUnavailableReason);
     }
 
-    /// <summary>A gate no handler satisfies, describing its failure as a forbidden error.</summary>
-    private sealed class LockedRequirement : IAuthorizationRequirement, IDescribedRequirement
+    /// <summary>A gate whose handler fails with a reason the caller should see.</summary>
+    private sealed class LockedRequirement : IAuthorizationRequirement;
+
+    private sealed class LockedRequirementHandler : AuthorizationHandler<LockedRequirement>
     {
-        public ApiResultError DescribeFailure()
+        protected override Task HandleRequirementAsync(
+            AuthorizationHandlerContext context,
+            LockedRequirement requirement
+        )
         {
-            return new ForbiddenError(new ErrorDescriptor(_LockedCode, "Locked."));
+            context.Fail(new AuthorizationFailureReason(this, _LockedReason));
+
+            return Task.CompletedTask;
         }
     }
 
