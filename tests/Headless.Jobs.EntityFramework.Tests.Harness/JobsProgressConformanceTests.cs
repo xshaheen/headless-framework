@@ -1,8 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data.Common;
 using Headless.Coordination;
 using Headless.Jobs;
 using Headless.Testing.Tests;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Time.Testing;
@@ -13,7 +15,7 @@ namespace Tests;
 /// Stored job progress on a relational store: a progress write lands only on the running row its node owns, is stamped
 /// with the database clock, and is read back by any node, as a dashboard refresh does. The terminal write carries the
 /// report the throttle had not written yet, crash recovery keeps progress for the next attempt, and a requeue clears it.
-/// The throttle itself is provider-independent and is proved by the in-memory unit tests.
+/// A job the real scheduler runs proves the throttle against the store: hundreds of reports cost at most two writes.
 /// </summary>
 public abstract class JobsProgressConformanceTests<TFixture>(TFixture fixture) : TestBase
     where TFixture : class, IJobsCoordinationFixture
@@ -310,6 +312,58 @@ public abstract class JobsProgressConformanceTests<TFixture>(TFixture fixture) :
         }
     }
 
+    public virtual async Task frequent_reports_from_a_running_job_cost_at_most_two_progress_writes()
+    {
+        var ct = AbortToken;
+        await fixture.ResetDatabaseAsync(ct);
+        var writes = new ProgressWriteCounter();
+        // A one-minute interval makes the bound exact: the run finishes long before a second interval write is due,
+        // so only the leading write and the terminal write may touch the progress columns.
+        using var host = fixture.BuildHost(
+            "progress-runner",
+            interceptor: writes,
+            configureJobs: jobs => jobs.ConfigureScheduler(s => s.ProgressReportInterval = TimeSpan.FromMinutes(1)),
+            runBackgroundServices: true
+        );
+        await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
+        await host.StartAsync(ct);
+
+        try
+        {
+            var store = _Store(host);
+            var id = Guid.NewGuid();
+            await store.AddTimeJobsAsync(
+                [
+                    new TimeJobEntity
+                    {
+                        Id = id,
+                        Function = JobsCoordinationFixtureExtensions.CoordinatedProgressFunctionName,
+                        ExecutionTime = DateTime.UtcNow,
+                    },
+                ],
+                ct
+            );
+
+            var stored = await _WaitForTerminalAsync(store, id, ct);
+
+            // DueDone is the success status of a run picked up after its due time, as this one may be.
+            stored.Status.Should().BeOneOf(JobStatus.Succeeded, JobStatus.DueDone);
+            stored.ProgressPercent.Should().Be(100);
+            stored
+                .ProgressMessage.Should()
+                .Be(
+                    $"report {JobsCoordinationFixtureExtensions.ProgressReports.ToString(System.Globalization.CultureInfo.InvariantCulture)}"
+                );
+            writes
+                .Count.Should()
+                .BeInRange(1, 2, "the throttle coalesces the reports into the leading write and the terminal write");
+        }
+        finally
+        {
+            await host.StopAsync(ct);
+        }
+    }
+
     public virtual async Task a_requeued_cron_occurrence_clears_its_progress()
     {
         var ct = AbortToken;
@@ -391,4 +445,78 @@ public abstract class JobsProgressConformanceTests<TFixture>(TFixture fixture) :
 
     private static IJobPersistenceProvider<TimeJobEntity, CronJobEntity> _Store(IHost host) =>
         host.Services.GetRequiredService<IJobPersistenceProvider<TimeJobEntity, CronJobEntity>>();
+
+    private static async Task<TimeJobEntity> _WaitForTerminalAsync(
+        IJobPersistenceProvider<TimeJobEntity, CronJobEntity> store,
+        Guid id,
+        CancellationToken cancellationToken
+    )
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(60);
+        TimeJobEntity? job = null;
+        while (DateTime.UtcNow < deadline)
+        {
+            job = await store.GetTimeJobByIdAsync(id, cancellationToken);
+            if (
+                job?.Status
+                is JobStatus.Succeeded
+                    or JobStatus.DueDone
+                    or JobStatus.Failed
+                    or JobStatus.Cancelled
+                    or JobStatus.Skipped
+            )
+            {
+                return job;
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(250), cancellationToken);
+        }
+
+        throw new TimeoutException(
+            $"Job {id} did not finish within 60 s; last state: status={job?.Status}, owner={job?.OwnerId}, "
+                + $"lockedUntil={job?.LockedUntil:O}, executionTime={job?.ExecutionTime:O}, progress={job?.ProgressPercent}, "
+                + $"exception={job?.ExceptionMessage}"
+        );
+    }
+
+    /// <summary>Counts the statements that write the progress columns, whatever the provider's column naming.</summary>
+    private sealed class ProgressWriteCounter : DbCommandInterceptor
+    {
+        private int _count;
+
+        public int Count => Volatile.Read(ref _count);
+
+        public override InterceptionResult<int> NonQueryExecuting(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<int> result
+        )
+        {
+            _Count(command);
+            return base.NonQueryExecuting(command, eventData, result);
+        }
+
+        public override ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(
+            DbCommand command,
+            CommandEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default
+        )
+        {
+            _Count(command);
+            return base.NonQueryExecutingAsync(command, eventData, result, cancellationToken);
+        }
+
+        private void _Count(DbCommand command)
+        {
+            var text = command.CommandText.Replace("_", "", StringComparison.Ordinal);
+            if (
+                text.TrimStart().StartsWith("UPDATE", StringComparison.OrdinalIgnoreCase)
+                && text.Contains("progresspercent", StringComparison.OrdinalIgnoreCase)
+            )
+            {
+                Interlocked.Increment(ref _count);
+            }
+        }
+    }
 }
