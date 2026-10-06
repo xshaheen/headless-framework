@@ -27,6 +27,8 @@ namespace Tests;
 /// </summary>
 internal static class AnalyzerHarness
 {
+    private static readonly EnlistedReceiverCodeFixProvider _Provider = new();
+
     private static readonly ImmutableArray<MetadataReference> _References =
         GeneratorCompilation.LoadedAssemblyReferences(
             typeof(IUnitOfWork).Assembly,
@@ -50,10 +52,11 @@ internal static class AnalyzerHarness
     public static async Task<ImmutableArray<Diagnostic>> AnalyzeAsync(
         string source,
         CancellationToken cancellationToken,
-        NullableContextOptions nullable = NullableContextOptions.Enable
+        NullableContextOptions nullable = NullableContextOptions.Enable,
+        OutputKind outputKind = OutputKind.DynamicallyLinkedLibrary
     )
     {
-        var document = _CreateDocument(source, nullable);
+        var document = _CreateDocument(source, nullable, outputKind);
         return await _AnalyzeAsync(document, cancellationToken);
     }
 
@@ -67,7 +70,7 @@ internal static class AnalyzerHarness
         int diagnosticIndex = 0
     )
     {
-        var document = _CreateDocument(source, NullableContextOptions.Enable);
+        var document = _CreateDocument(source, NullableContextOptions.Enable, OutputKind.DynamicallyLinkedLibrary);
         var diagnostics = await _AnalyzeAsync(document, cancellationToken);
         var actions = await _RegisterFixesAsync(document, diagnostics[diagnosticIndex], cancellationToken);
 
@@ -80,9 +83,9 @@ internal static class AnalyzerHarness
     /// <summary>Applies Fix All to every diagnostic in the document and returns the fixed source.</summary>
     public static async Task<string> FixAllAsync(string source, CancellationToken cancellationToken)
     {
-        var document = _CreateDocument(source, NullableContextOptions.Enable);
+        var document = _CreateDocument(source, NullableContextOptions.Enable, OutputKind.DynamicallyLinkedLibrary);
         var diagnostics = await _AnalyzeAsync(document, cancellationToken);
-        var provider = new EnlistedReceiverCodeFixProvider();
+        var provider = _Provider;
         var actions = await _RegisterFixesAsync(document, diagnostics[0], cancellationToken);
         var fixAllContext = new FixAllContext(
             document,
@@ -107,7 +110,7 @@ internal static class AnalyzerHarness
         CancellationToken cancellationToken
     )
     {
-        var document = _CreateDocument(source, NullableContextOptions.Enable);
+        var document = _CreateDocument(source, NullableContextOptions.Enable, OutputKind.DynamicallyLinkedLibrary);
         var diagnostics = await _AnalyzeAsync(document, cancellationToken);
 
         diagnostics.Should().NotBeEmpty();
@@ -115,7 +118,7 @@ internal static class AnalyzerHarness
         return await _RegisterFixesAsync(document, diagnostics[0], cancellationToken);
     }
 
-    private static Document _CreateDocument(string source, NullableContextOptions nullable)
+    private static Document _CreateDocument(string source, NullableContextOptions nullable, OutputKind outputKind)
     {
 #pragma warning disable CA2000 // False positive: the returned document uses this workspace's services for the rest of the test, so it must outlive this method.
         var workspace = new AdhocWorkspace();
@@ -127,10 +130,7 @@ internal static class AnalyzerHarness
                 "Tests.Sources",
                 "Tests.Sources",
                 LanguageNames.CSharp,
-                compilationOptions: new CSharpCompilationOptions(
-                    OutputKind.DynamicallyLinkedLibrary,
-                    nullableContextOptions: nullable
-                ),
+                compilationOptions: new CSharpCompilationOptions(outputKind, nullableContextOptions: nullable),
                 parseOptions: GeneratorCompilation.ParseOptions,
                 metadataReferences: _References
             )
@@ -169,7 +169,7 @@ internal static class AnalyzerHarness
         var actions = ImmutableArray.CreateBuilder<CodeAction>();
         var context = new CodeFixContext(document, diagnostic, (action, _) => actions.Add(action), cancellationToken);
 
-        await new EnlistedReceiverCodeFixProvider().RegisterCodeFixesAsync(context);
+        await _Provider.RegisterCodeFixesAsync(context);
         return actions.ToImmutable();
     }
 

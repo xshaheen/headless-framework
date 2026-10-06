@@ -43,7 +43,10 @@ internal static class UnitScope
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (!_IsUnitOfWork(symbol, unitOfWorkType, out var declaration) || declaration.SpanStart <= chosenPosition)
+            if (
+                _UnitDeclaration(symbol, unitOfWorkType, cancellationToken) is not { } declaration
+                || declaration.SpanStart <= chosenPosition
+            )
             {
                 continue;
             }
@@ -58,39 +61,30 @@ internal static class UnitScope
         return chosen;
     }
 
-    private static bool _IsUnitOfWork(ISymbol symbol, INamedTypeSymbol unitOfWorkType, out SyntaxNode declaration)
-    {
-        declaration = null!;
+    /// <summary>Whether <paramref name="type"/> is <c>IUnitOfWork</c>, whatever its nullable annotation.</summary>
+    public static bool IsUnitOfWork(ITypeSymbol type, INamedTypeSymbol unitOfWorkType) =>
+        SymbolEqualityComparer.Default.Equals(
+            type.WithNullableAnnotation(NullableAnnotation.NotAnnotated),
+            unitOfWorkType
+        );
 
-        var type = symbol switch
+    /// <summary>The declaration of a unit-of-work local or parameter, or <see langword="null"/> when the symbol is not one.</summary>
+    private static SyntaxNode? _UnitDeclaration(
+        ISymbol symbol,
+        INamedTypeSymbol unitOfWorkType,
+        CancellationToken cancellationToken
+    )
+    {
+        var isUnit = symbol switch
         {
-            ILocalSymbol local => local.Type,
+            ILocalSymbol local => IsUnitOfWork(local.Type, unitOfWorkType),
             // An out parameter is unassigned on entry, and a primary-constructor parameter is type state, like a field.
-            IParameterSymbol { RefKind: not RefKind.Out } parameter when !_IsPrimaryConstructorParameter(parameter) =>
-                parameter.Type,
-            _ => null,
+            IParameterSymbol { RefKind: not RefKind.Out } parameter => IsUnitOfWork(parameter.Type, unitOfWorkType)
+                && !_IsPrimaryConstructorParameter(parameter),
+            _ => false,
         };
 
-        if (
-            type is null
-            || !SymbolEqualityComparer.Default.Equals(
-                type.WithNullableAnnotation(NullableAnnotation.NotAnnotated),
-                unitOfWorkType
-            )
-        )
-        {
-            return false;
-        }
-
-        var reference = symbol.DeclaringSyntaxReferences.FirstOrDefault();
-
-        if (reference is null)
-        {
-            return false;
-        }
-
-        declaration = reference.GetSyntax();
-        return true;
+        return isUnit ? symbol.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax(cancellationToken) : null;
     }
 
     private static bool _IsEligible(
@@ -113,12 +107,13 @@ internal static class UnitScope
             return false;
         }
 
-        if (unit is ILocalSymbol && !_IsDefinitelyAssigned(model, call, declaration, unit))
+        // The syntactic completion check runs before data-flow analysis, which costs more.
+        if (_CompletedBefore(model, call, unit, cancellationToken))
         {
             return false;
         }
 
-        if (_CompletedBefore(model, call, unit, cancellationToken))
+        if (unit is ILocalSymbol && !_IsDefinitelyAssigned(model, call, declaration, unit))
         {
             return false;
         }
@@ -186,36 +181,65 @@ internal static class UnitScope
     {
         if (function is AnonymousFunctionExpressionSyntax)
         {
-            return function.Parent is ArgumentSyntax argument
-                && _IsCallbackRegistration(model, argument, unitOfWorkType, cancellationToken);
-        }
+            // A cast or parentheses around the lambda, as in unit.OnCompleted((Func<ValueTask>)(async () => ...)),
+            // still passes it straight to the registration.
+            var outer = function.Parent;
 
-        if (function is not LocalFunctionStatementSyntax localFunction)
-        {
-            return false;
-        }
+            while (outer is ParenthesizedExpressionSyntax or CastExpressionSyntax)
+            {
+                outer = outer.Parent;
+            }
 
-        var localSymbol = model.GetDeclaredSymbol(localFunction, cancellationToken);
-        var member = localFunction.Ancestors().FirstOrDefault(node => node is MemberDeclarationSyntax);
+            if (outer is ArgumentSyntax argument)
+            {
+                return _IsCallbackRegistration(model, argument, unitOfWorkType, cancellationToken);
+            }
 
-        if (localSymbol is null || member is null)
-        {
-            return false;
+            // A lambda stored in a local first, as in var notify = async () => ...; unit.OnCompleted(notify), is a
+            // callback when that local is what gets registered.
+            return outer is EqualsValueClauseSyntax { Parent: VariableDeclaratorSyntax declarator }
+                && model.GetDeclaredSymbol(declarator, cancellationToken) is ILocalSymbol delegateLocal
+                && _IsRegisteredByName(
+                    model,
+                    declarator,
+                    declarator.Identifier.ValueText,
+                    delegateLocal,
+                    unitOfWorkType,
+                    cancellationToken
+                );
         }
 
         // A local function registered as a method group, such as unit.OnCompleted(NotifyAsync), is a callback too.
-        foreach (var identifier in member.DescendantNodes().OfType<IdentifierNameSyntax>())
+        return function is LocalFunctionStatementSyntax localFunction
+            && model.GetDeclaredSymbol(localFunction, cancellationToken) is { } localSymbol
+            && _IsRegisteredByName(
+                model,
+                localFunction,
+                localFunction.Identifier.ValueText,
+                localSymbol,
+                unitOfWorkType,
+                cancellationToken
+            );
+    }
+
+    /// <summary>Whether a name bound to <paramref name="symbol"/> is passed to <c>OnCompleted</c> or <c>OnFailed</c>.</summary>
+    private static bool _IsRegisteredByName(
+        SemanticModel model,
+        SyntaxNode declaration,
+        string name,
+        ISymbol symbol,
+        INamedTypeSymbol unitOfWorkType,
+        CancellationToken cancellationToken
+    )
+    {
+        foreach (var identifier in EnclosingScope(declaration).DescendantNodes().OfType<IdentifierNameSyntax>())
         {
             if (
                 identifier.Parent is ArgumentSyntax argument
-                && string.Equals(
-                    identifier.Identifier.ValueText,
-                    localFunction.Identifier.ValueText,
-                    StringComparison.Ordinal
-                )
+                && string.Equals(identifier.Identifier.ValueText, name, StringComparison.Ordinal)
                 && SymbolEqualityComparer.Default.Equals(
                     model.GetSymbolInfo(identifier, cancellationToken).Symbol,
-                    localSymbol
+                    symbol
                 )
                 && _IsCallbackRegistration(model, argument, unitOfWorkType, cancellationToken)
             )
@@ -226,6 +250,14 @@ internal static class UnitScope
 
         return false;
     }
+
+    /// <summary>
+    /// The member that bounds a local's uses: the enclosing method, property, or other member, or the whole file for
+    /// top-level statements, whose locals span every global statement.
+    /// </summary>
+    public static SyntaxNode EnclosingScope(SyntaxNode node) =>
+        node.Ancestors().FirstOrDefault(ancestor => ancestor is MemberDeclarationSyntax and not GlobalStatementSyntax)
+        ?? node.SyntaxTree.GetRoot();
 
     private static bool _IsCallbackRegistration(
         SemanticModel model,
@@ -286,7 +318,8 @@ internal static class UnitScope
     /// <summary>
     /// Whether a statement that runs on every path to the call has already completed, rolled back, or disposed the unit.
     /// Only statements that sit directly in a block enclosing the call count; a rollback inside an early-exit branch
-    /// leaves the unit live on the path that reaches the call.
+    /// leaves the unit live on the path that reaches the call. The walk continues out of a lambda, because its body
+    /// cannot run before the lambda is created, but stops at a local function, which can be called from anywhere.
     /// </summary>
     private static bool _CompletedBefore(
         SemanticModel model,
@@ -299,23 +332,25 @@ internal static class UnitScope
 
         foreach (var ancestor in call.Ancestors())
         {
-            if (
-                ancestor is AnonymousFunctionExpressionSyntax or LocalFunctionStatementSyntax or MemberDeclarationSyntax
-            )
+            if (ancestor is LocalFunctionStatementSyntax or (MemberDeclarationSyntax and not GlobalStatementSyntax))
             {
                 return false;
             }
 
-            var siblings = ancestor switch
+            IEnumerable<StatementSyntax>? siblings = ancestor switch
             {
                 BlockSyntax block => block.Statements,
                 SwitchSectionSyntax section => section.Statements,
-                _ => default(SyntaxList<StatementSyntax>?),
+                // Top-level statements are global statements of the file, not a block.
+                CompilationUnitSyntax root => root
+                    .Members.OfType<GlobalStatementSyntax>()
+                    .Select(global => global.Statement),
+                _ => null,
             };
 
-            if (siblings is { } statements)
+            if (siblings is not null)
             {
-                foreach (var statement in statements)
+                foreach (var statement in siblings)
                 {
                     if (statement.SpanStart >= current.SpanStart)
                     {

@@ -136,6 +136,29 @@ public sealed class HF2003HF2005HF2006ReceiverTests : TestBase
     }
 
     [Fact]
+    public async Task should_not_report_calls_already_made_through_the_unit()
+    {
+        var diagnostics = await AnalyzerHarness.AnalyzeAsync(
+            _Prelude
+                + """
+                public sealed class Handler(IUnitOfWorkFactory factory)
+                {
+                    public Task Handle(DbContext db, FencedLease lease, IdempotentAdmission admission, CancellationToken ct) =>
+                        factory.RunAsync(db, async (unit, token) =>
+                        {
+                            await unit.TransactionLocks.AcquireAsync("orders:1", TimeSpan.FromSeconds(5), token);
+                            await unit.Leases.SettleAsync(lease, token);
+                            await unit.Idempotency.ReleaseAsync(admission, token);
+                        }, cancellationToken: ct);
+                }
+                """,
+            AbortToken
+        );
+
+        diagnostics.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task should_not_report_members_without_an_enlisted_counterpart()
     {
         var diagnostics = await AnalyzerHarness.AnalyzeAsync(

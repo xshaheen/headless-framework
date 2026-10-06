@@ -17,13 +17,13 @@ namespace Headless.UnitOfWork.Analyzers;
 public sealed class AutonomousReceiverAnalyzer : DiagnosticAnalyzer
 {
     /// <summary>Diagnostic property holding the name of the unit of work in scope.</summary>
-    public const string UnitProperty = "Unit";
+    internal const string UnitProperty = "Unit";
 
     /// <summary>
     /// Diagnostic property holding the enlisted receiver to write after <c>unit.</c>, such as <c>Outbox</c>. Present only
     /// when the rewritten call binds, so the code fix offers itself exactly when the swap is one-to-one.
     /// </summary>
-    public const string ReceiverProperty = "Receiver";
+    internal const string ReceiverProperty = "Receiver";
 
     private const string _UnitOfWorkMetadataName = "Headless.UnitOfWork.IUnitOfWork";
 
@@ -46,14 +46,22 @@ public sealed class AutonomousReceiverAnalyzer : DiagnosticAnalyzer
             return;
         }
 
-        var rules = ImmutableArray.CreateBuilder<(ReceiverRule Rule, INamedTypeSymbol Receiver)>();
+        var rules = ImmutableArray.CreateBuilder<ResolvedRule>();
 
         foreach (var rule in ReceiverRule.All)
         {
-            if (context.Compilation.GetTypeByMetadataName(rule.ReceiverMetadataName) is { } receiver)
+            if (context.Compilation.GetTypeByMetadataName(rule.ReceiverMetadataName) is not { } receiver)
             {
-                rules.Add((rule, receiver));
+                continue;
             }
+
+            // The Jobs accessors return the receiver interface itself, constructed per call, so it is resolved there.
+            var enlisted =
+                rule.EnlistedMetadataName is null || rule.EnlistedIsReceiver
+                    ? null
+                    : context.Compilation.GetTypeByMetadataName(rule.EnlistedMetadataName);
+
+            rules.Add(new ResolvedRule(rule, receiver, enlisted));
         }
 
         if (rules.Count == 0)
@@ -62,35 +70,41 @@ public sealed class AutonomousReceiverAnalyzer : DiagnosticAnalyzer
         }
 
         var resolved = rules.ToImmutable();
+        var memberNames = resolved.SelectMany(entry => entry.Rule.Members).ToImmutableHashSet(StringComparer.Ordinal);
 
         context.RegisterOperationAction(
-            operationContext => _AnalyzeInvocation(operationContext, resolved, unitOfWorkType),
+            operationContext => _AnalyzeInvocation(operationContext, resolved, memberNames, unitOfWorkType),
             OperationKind.Invocation
         );
     }
 
     private static void _AnalyzeInvocation(
         OperationAnalysisContext context,
-        ImmutableArray<(ReceiverRule Rule, INamedTypeSymbol Receiver)> rules,
+        ImmutableArray<ResolvedRule> rules,
+        ImmutableHashSet<string> memberNames,
         INamedTypeSymbol unitOfWorkType
     )
     {
         var invocation = (IInvocationOperation)context.Operation;
 
+        // Every invocation in the compilation reaches this point, so reject on the member name before any symbol work.
         if (
-            invocation.Syntax is not InvocationExpressionSyntax syntax
+            !memberNames.Contains(invocation.TargetMethod.Name)
+            || invocation.Syntax is not InvocationExpressionSyntax syntax
             || _ExtendedType(invocation.TargetMethod) is not INamedTypeSymbol extendedType
         )
         {
             return;
         }
 
-        var rule = _Match(rules, invocation.TargetMethod.Name, extendedType);
+        var match = _Match(rules, invocation.TargetMethod.Name, extendedType);
 
-        if (rule is null || invocation.SemanticModel is not { } model)
+        if (match is null || invocation.SemanticModel is not { } model)
         {
             return;
         }
+
+        var rule = match.Rule;
 
         if (
             rule.EnlistedIsReceiver
@@ -111,7 +125,9 @@ public sealed class AutonomousReceiverAnalyzer : DiagnosticAnalyzer
         var properties = ImmutableDictionary.CreateBuilder<string, string?>(StringComparer.Ordinal);
         properties[UnitProperty] = unit.Name;
 
-        if (_CanRewrite(rule, extendedType, model, syntax))
+        var enlistedType = rule.EnlistedIsReceiver ? extendedType : match.Enlisted;
+
+        if (enlistedType is not null && _CanRewrite(rule, enlistedType, extendedType, model, syntax))
         {
             properties[ReceiverProperty] = receiverDisplay;
         }
@@ -127,20 +143,20 @@ public sealed class AutonomousReceiverAnalyzer : DiagnosticAnalyzer
         );
     }
 
-    private static ReceiverRule? _Match(
-        ImmutableArray<(ReceiverRule Rule, INamedTypeSymbol Receiver)> rules,
+    private static ResolvedRule? _Match(
+        ImmutableArray<ResolvedRule> rules,
         string memberName,
         INamedTypeSymbol extendedType
     )
     {
-        foreach (var (rule, receiver) in rules)
+        foreach (var entry in rules)
         {
             if (
-                rule.Members.Contains(memberName)
-                && SymbolEqualityComparer.Default.Equals(extendedType.OriginalDefinition, receiver)
+                entry.Rule.Members.Contains(memberName)
+                && SymbolEqualityComparer.Default.Equals(extendedType.OriginalDefinition, entry.Receiver)
             )
             {
-                return rule;
+                return entry;
             }
         }
 
@@ -190,6 +206,7 @@ public sealed class AutonomousReceiverAnalyzer : DiagnosticAnalyzer
     /// </summary>
     private static bool _CanRewrite(
         ReceiverRule rule,
+        ITypeSymbol enlistedType,
         INamedTypeSymbol extendedType,
         SemanticModel model,
         InvocationExpressionSyntax call
@@ -204,15 +221,6 @@ public sealed class AutonomousReceiverAnalyzer : DiagnosticAnalyzer
             rule.AccessorShape == AccessorShape.GenericMethod
             && (extendedType.TypeArguments.Length == 0 || !_SatisfiesNewConstraint(extendedType.TypeArguments[0]))
         )
-        {
-            return false;
-        }
-
-        var enlistedType = rule.EnlistedIsReceiver
-            ? extendedType
-            : model.Compilation.GetTypeByMetadataName(rule.EnlistedMetadataName);
-
-        if (enlistedType is null)
         {
             return false;
         }
@@ -267,7 +275,11 @@ public sealed class AutonomousReceiverAnalyzer : DiagnosticAnalyzer
             return true;
         }
 
-        for (ITypeSymbol? current = named; current is not null; current = current.BaseType)
+        for (
+            ITypeSymbol? current = named;
+            current is not null && current.SpecialType != SpecialType.System_Object;
+            current = current.BaseType
+        )
         {
             if (
                 current
@@ -281,4 +293,7 @@ public sealed class AutonomousReceiverAnalyzer : DiagnosticAnalyzer
 
         return true;
     }
+
+    /// <summary>A rule with its receiver type, and its enlisted type when that differs from the receiver.</summary>
+    private sealed record ResolvedRule(ReceiverRule Rule, INamedTypeSymbol Receiver, INamedTypeSymbol? Enlisted);
 }

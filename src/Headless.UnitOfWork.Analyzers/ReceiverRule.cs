@@ -9,35 +9,24 @@ namespace Headless.UnitOfWork.Analyzers;
 /// One autonomous receiver the analyzer watches, the members it flags, and the enlisted receiver on the unit of work
 /// that replaces it. Receivers are matched by metadata name so the analyzer references none of their packages.
 /// </summary>
-internal sealed class ReceiverRule(
-    DiagnosticDescriptor descriptor,
-    string receiverMetadataName,
-    ImmutableHashSet<string> members,
-    string accessor,
-    AccessorShape accessorShape,
-    string? enlistedMetadataName
+/// <param name="Descriptor">The rule reported for a flagged call.</param>
+/// <param name="ReceiverMetadataName">Metadata name of the autonomous receiver type, such as <c>Headless.Messaging.IBus</c>.</param>
+/// <param name="Members">Names of the flagged members, matched on interface members and on extension members of the receiver.</param>
+/// <param name="Accessor">Name of the unit-of-work extension member that returns the enlisted receiver, such as <c>Outbox</c>.</param>
+/// <param name="AccessorShape">How the accessor is written after the unit's name.</param>
+/// <param name="EnlistedMetadataName">
+/// Metadata name of the type the accessor returns, used to check that a rewritten call binds. <see langword="null"/> when
+/// the enlisted call has a different shape and no fix is offered.
+/// </param>
+internal sealed record ReceiverRule(
+    DiagnosticDescriptor Descriptor,
+    string ReceiverMetadataName,
+    ImmutableHashSet<string> Members,
+    string Accessor,
+    AccessorShape AccessorShape,
+    string? EnlistedMetadataName
 )
 {
-    public DiagnosticDescriptor Descriptor { get; } = descriptor;
-
-    /// <summary>Metadata name of the autonomous receiver type, such as <c>Headless.Messaging.IBus</c>.</summary>
-    public string ReceiverMetadataName { get; } = receiverMetadataName;
-
-    /// <summary>Names of the flagged members, matched on interface members and on extension members of the receiver.</summary>
-    public ImmutableHashSet<string> Members { get; } = members;
-
-    /// <summary>Name of the unit-of-work extension member that returns the enlisted receiver, such as <c>Outbox</c>.</summary>
-    public string Accessor { get; } = accessor;
-
-    public AccessorShape AccessorShape { get; } = accessorShape;
-
-    /// <summary>
-    /// Metadata name of the type the accessor returns, used to check that a rewritten call binds. <see langword="null"/>
-    /// when the enlisted call has a different shape and no fix is offered; the receiver's own type is used when the
-    /// enlisted receiver is the same interface.
-    /// </summary>
-    public string? EnlistedMetadataName { get; } = enlistedMetadataName;
-
     /// <summary>Whether the enlisted receiver is the autonomous interface itself, as it is for the Jobs accessors.</summary>
     public bool EnlistedIsReceiver =>
         string.Equals(EnlistedMetadataName, ReceiverMetadataName, StringComparison.Ordinal);
@@ -101,7 +90,7 @@ internal sealed class ReceiverRule(
             ["AcquireAsync", "TryAcquireAsync"],
             "TransactionLocks",
             AccessorShape.Property,
-            enlistedMetadataName: null
+            EnlistedMetadataName: null
         ),
         new(
             DiagnosticDescriptors.LeasesReceiver,

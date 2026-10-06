@@ -339,6 +339,77 @@ public sealed class UnitScopeTests : TestBase
     }
 
     [Fact]
+    public async Task should_not_report_inside_a_callback_cast_or_stored_before_registration()
+    {
+        var diagnostics = await _AnalyzeAsync(
+            """
+            public sealed class Handler(IBus bus, IUnitOfWorkFactory factory)
+            {
+                public Task Handle(DbContext db, CancellationToken ct) =>
+                    factory.RunAsync(db, (unit, token) =>
+                    {
+                        unit.OnCompleted((Func<ValueTask>)(async () => await bus.PublishAsync(new OrderPlaced(1))));
+
+                        Func<UnitOfWorkFailure, ValueTask> onFailed = async failure => await bus.PublishAsync(new OrderPlaced(2));
+                        unit.OnFailed(onFailed);
+
+                        return Task.CompletedTask;
+                    }, cancellationToken: ct);
+            }
+            """
+        );
+
+        diagnostics.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_not_report_inside_a_lambda_created_after_the_unit_completes()
+    {
+        var diagnostics = await _AnalyzeAsync(
+            """
+            public sealed class Handler(IBus bus, IUnitOfWorkFactory factory)
+            {
+                public async Task Handle(CancellationToken ct)
+                {
+                    await using var unit = await factory.BeginAsync(ct);
+                    await unit.CompleteAsync(ct);
+                    await Task.Run(() => bus.PublishAsync(new OrderPlaced(1), ct));
+                }
+            }
+            """
+        );
+
+        diagnostics.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_see_completion_across_top_level_statements()
+    {
+        var diagnostics = await AnalyzerHarness.AnalyzeAsync(
+            """
+            using System.Threading.Tasks;
+            using Headless.Messaging;
+            using Headless.UnitOfWork;
+
+            IBus bus = null!;
+            IUnitOfWorkFactory factory = null!;
+
+            await using var unit = await factory.BeginAsync();
+            await bus.PublishAsync(new OrderPlaced(1));
+            await unit.CompleteAsync();
+            await bus.PublishAsync(new OrderPlaced(2));
+
+            public sealed record OrderPlaced(int Id);
+            """,
+            AbortToken,
+            outputKind: OutputKind.ConsoleApplication
+        );
+
+        _ShouldReport(diagnostics, "unit");
+        _ReportedCall(diagnostics[0]).Should().Contain("OrderPlaced(1)");
+    }
+
+    [Fact]
     public async Task should_not_name_an_outer_unit_inside_a_static_lambda()
     {
         var diagnostics = await _AnalyzeAsync(

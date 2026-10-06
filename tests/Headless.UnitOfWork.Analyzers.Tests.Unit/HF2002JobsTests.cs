@@ -149,6 +149,8 @@ public sealed class HF2002JobsTests : TestBase
 
                         var jobs = unit.Jobs;
                         await jobs.EnqueueAsync(new ReindexOrder(2), token);
+
+                        await (unit.Jobs?.EnqueueAsync(new ReindexOrder(4), token) ?? Task.FromResult(Guid.Empty));
                     }, cancellationToken: ct);
 
                 public async Task Guarded(DbContext db)
@@ -179,6 +181,32 @@ public sealed class HF2002JobsTests : TestBase
                     }, cancellationToken: ct);
             }
             """
+        );
+
+        _ShouldReport(diagnostics, "unit.Jobs");
+    }
+
+    [Fact]
+    public async Task should_report_a_top_level_local_reassigned_in_a_later_statement()
+    {
+        var diagnostics = await AnalyzerHarness.AnalyzeAsync(
+            """
+            using System.Threading.Tasks;
+            using Headless.Jobs;
+            using Headless.UnitOfWork;
+
+            IJobScheduler scheduler = null!;
+            IUnitOfWorkFactory factory = null!;
+
+            await using var unit = await factory.BeginAsync();
+            var jobs = unit.Jobs;
+            jobs = scheduler;
+            await jobs.EnqueueAsync(new ReindexOrder(1));
+
+            public sealed record ReindexOrder(int Id);
+            """,
+            AbortToken,
+            outputKind: Microsoft.CodeAnalysis.OutputKind.ConsoleApplication
         );
 
         _ShouldReport(diagnostics, "unit.Jobs");

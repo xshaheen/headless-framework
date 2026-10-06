@@ -646,7 +646,8 @@ A call is reported only when an `IUnitOfWork` local or parameter is visible at t
 ### Known limits
 
 - An enlisted Jobs receiver that reaches the call through a parameter, or a local assigned more than once, is reported, because the analyzer cannot trace it back to `unit.Jobs`. Suppress that call with a reason.
-- A delegate stored in a variable first and then passed to `OnCompleted` is not recognized as a callback, so a call inside it is reported. Suppress it, or pass the lambda or local function directly.
+- A unit completed in one branch and rolled back in the other (`if (ok) await unit.CompleteAsync(); else await unit.RollbackAsync();`) still counts after the `if`, because only a statement that sits directly in a block enclosing the call ends scope. Do not apply the fix there; suppress the call with a reason.
+- A unit declared as a `foreach` iteration variable is not counted, so calls in the loop body are not reported.
 - A local function declared before the unit cannot capture it, so a call inside it is not reported even when the function runs later.
 - The analyzer cannot see provider topology. Where a provider refuses enlistment, the enlisted receiver throws: the cache idempotency provider refuses every `unit.Idempotency` call, SQLite idempotency refuses enlisted admission, and `unit.Outbox` refuses a unit on a different database from the messaging storage. On such a host, do not apply the fix: set that rule's severity to `none`, or suppress the call with a reason.
 - Where nullable analysis is off, the code fix can write `unit.Outbox` in a branch where the unit is null at run time.

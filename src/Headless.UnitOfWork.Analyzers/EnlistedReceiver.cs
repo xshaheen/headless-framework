@@ -88,10 +88,7 @@ internal static class EnlistedReceiver
         return member is not null
             && string.Equals(member.Name, rule.Accessor, StringComparison.Ordinal)
             && member.ContainingType is { IsExtension: true, ExtensionParameter.Type: var extended }
-            && SymbolEqualityComparer.Default.Equals(
-                extended.WithNullableAnnotation(NullableAnnotation.NotAnnotated),
-                unitOfWorkType
-            );
+            && UnitScope.IsUnitOfWork(extended, unitOfWorkType);
     }
 
     private static bool _IsInitializedOnceFromAccessor(
@@ -115,9 +112,7 @@ internal static class EnlistedReceiver
             return false;
         }
 
-        var scope =
-            declarator.Ancestors().FirstOrDefault(node => node is MemberDeclarationSyntax)
-            ?? declarator.SyntaxTree.GetRoot(cancellationToken);
+        var scope = UnitScope.EnclosingScope(declarator);
 
         foreach (var identifier in scope.DescendantNodes().OfType<IdentifierNameSyntax>())
         {
