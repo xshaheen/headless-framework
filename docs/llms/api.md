@@ -211,7 +211,7 @@ Building blocks for ASP.NET Core APIs — primitives only. Provides service regi
 - `AuthenticationBuilder.AddHeadlessJwtBearer(IConfiguration | Action<HeadlessJwtBearerOptions> | Action<HeadlessJwtBearerOptions, IServiceProvider>, authenticationScheme = "Bearer", configureBearer = null)` — adds a JWT bearer scheme that validates the tokens `IJwtTokenFactory` issues with the factory's own rules. `HeadlessJwtBearerOptions` carries `SigningKey`, `EncryptingKey`, `Issuer`, `Audience`, `ValidateIssuer`, and `ValidateAudience`, validated at startup
 - `MapHostRedirects(mainHost, redirectHosts)` — maps an anonymous catch-all `GET` that answers 301 to the same path and query under `mainHost` for requests whose host is in `redirectHosts`. The entries are host names (`www.example.com`, `example.net:8080`), not URLs
 - JWT request contracts — `JwtTokenRequest` groups token creation values, while `JwtTokenValidationRequest` uses required initializers for the token, signing key, issuer, and audience and groups the validation switches for `IJwtTokenFactory.ParseJwtTokenAsync(...)`
-- `AddHeadlessServerTiming()` + `UseHeadlessServerTiming()` — appends `Server-Timing` trailer when response supports trailers
+- `Server-Timing` is not provided; an app that wants the header uses the community [`Lib.AspNetCore.ServerTiming`](https://www.nuget.org/packages/Lib.AspNetCore.ServerTiming) package
 - `UseNoCacheWhenMissingCacheHeaders()` — injects `Cache-Control: no-cache,no-store,must-revalidate` when response omits the header
 - Basic/API-key authentication helpers — `AddBasicSchema()` and `AddApiKey()` register the canonical `Basic` and `ApiKey` schemes; handlers only authenticate credentials supplied for their own scheme
 - HTTP tenant resolution: `ResolveFromClaims()`, `UseHeadlessTenancy()`, `[SkipTenantResolution]`, `.SkipTenantResolution()`
@@ -258,13 +258,11 @@ builder.Services.AddHeadlessProblemDetails();
 builder.Services.AddHeadlessApiResponseCompression();
 builder.Services.ConfigureHeadlessDefaultApi(); // Kestrel limits + HSTS + health check + routing
 builder.Services.AddStatusCodesRewriterMiddleware();
-builder.Services.AddHeadlessServerTiming();
 
 var app = builder.Build();
 app.UseResponseCompression();
 app.UseStatusCodesRewriter(); // before UseExceptionHandler
 app.UseExceptionHandler();
-app.UseHeadlessServerTiming();
 app.MapHealthChecks("/health");
 app.Run();
 ```

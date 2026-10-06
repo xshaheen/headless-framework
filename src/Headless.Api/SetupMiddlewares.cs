@@ -21,40 +21,6 @@ public static class SetupMiddlewares
     private const string _AuthorizationMiddlewareSetKey = "__AuthorizationMiddlewareSet";
 
     /// <summary>
-    /// Registers <c>ServerTimingMiddleware</c> as a singleton in the DI container.
-    /// Call <see cref="UseHeadlessServerTiming"/> after this to add it to the pipeline.
-    /// </summary>
-    /// <remarks>
-    /// Keeps the <c>Headless</c> prefix, unlike the other generic HTTP utilities here: the widely used
-    /// <c>Lib.AspNetCore.ServerTiming</c> package already declares <c>AddServerTiming()</c> and <c>UseServerTiming()</c>
-    /// in the <c>Microsoft.AspNetCore.Builder</c> namespace, and a host referencing both would hit an ambiguous call.
-    /// </remarks>
-    /// <param name="services">The service collection to register into.</param>
-    /// <returns>The same service collection.</returns>
-    public static IServiceCollection AddHeadlessServerTiming(this IServiceCollection services)
-    {
-        services.TryAddSingleton<ServerTimingMiddleware>();
-        return services;
-    }
-
-    /// <summary>
-    /// Adds the server-timing middleware to the pipeline. It measures end-to-end request processing
-    /// time and appends a <c>Server-Timing</c> trailer header so browser DevTools can surface the
-    /// duration. Only appended when the response supports trailers; silently no-ops otherwise.
-    /// </summary>
-    /// <remarks>
-    /// Keeps the <c>Headless</c> prefix, unlike the other generic HTTP utilities here: the widely used
-    /// <c>Lib.AspNetCore.ServerTiming</c> package already declares <c>AddServerTiming()</c> and <c>UseServerTiming()</c>
-    /// in the <c>Microsoft.AspNetCore.Builder</c> namespace, and a host referencing both would hit an ambiguous call.
-    /// </remarks>
-    /// <param name="application">The application builder.</param>
-    /// <returns>The same application builder.</returns>
-    public static IApplicationBuilder UseHeadlessServerTiming(this IApplicationBuilder application)
-    {
-        return application.UseMiddleware<ServerTimingMiddleware>();
-    }
-
-    /// <summary>
     /// Adds the no-cache headers middleware to the pipeline. When the response completes without
     /// an explicit <c>Cache-Control</c> header, the middleware injects
     /// <c>Cache-Control: no-cache,no-store,must-revalidate</c>.
