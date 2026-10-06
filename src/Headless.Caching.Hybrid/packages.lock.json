@@ -217,7 +217,7 @@
           "Headless.Serializer.Abstractions": "[1.0.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.12, )",
-          "OpenTelemetry.Api": "[1.18.0, )"
+          "OpenTelemetry.Api": "[1.19.1, )"
         }
       },
       "headless.caching.abstractions": {
@@ -262,7 +262,7 @@
           "Microsoft.Extensions.Hosting.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.Options.ConfigurationExtensions": "[10.0.12, )",
           "Microsoft.Extensions.Options.DataAnnotations": "[10.0.12, )",
-          "OpenTelemetry.Api": "[1.18.0, )"
+          "OpenTelemetry.Api": "[1.19.1, )"
         }
       },
       "headless.messaging.abstractions": {
@@ -406,9 +406,9 @@
       },
       "OpenTelemetry.Api": {
         "type": "CentralTransitive",
-        "requested": "[1.18.0, )",
-        "resolved": "1.18.0",
-        "contentHash": "Dhzm5oughIY9EWckt2J1yXcEbXpki5WCL2q7prJoYxzH6C7jdkfGtPMTkUVZZ4AhjJKzQnlC+kLSIlmIVwC4Vw=="
+        "requested": "[1.19.1, )",
+        "resolved": "1.19.1",
+        "contentHash": "9JKIH+xrV0HNTFjQC8zrx9gZpDOMEljN5Htg/U0VE2IvO3N+7bKALCCsGy5tp09marX5dd8UkrgQFoLaulIBRw=="
       }
     }
   }

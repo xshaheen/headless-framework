@@ -382,28 +382,28 @@
       },
       "Polly.Core": {
         "type": "CentralTransitive",
-        "requested": "[8.7.0, )",
-        "resolved": "8.7.0",
-        "contentHash": "BS2t+nsBer16PIebCEPNBK5fgMisADQyRCd7K+BgkMWpFmSaiYE+rVVNpFhGRqUkJmNSLmw0uCNzHHWfgml28Q=="
+        "requested": "[8.8.0, )",
+        "resolved": "8.8.0",
+        "contentHash": "TewV9uNFsoRFggoFbTAGFwsMYPuckA+wTIpQPyhLL9BANRPQRENz2S4bwATrB3HBOakN5oKLFIllPiDnVecmJg=="
       },
       "Polly.Extensions": {
         "type": "CentralTransitive",
-        "requested": "[8.7.0, )",
-        "resolved": "8.7.0",
-        "contentHash": "qWLAolrrRkkmDRhQTWZRAxUWxoCmOvcTeFAb8DLEr/nroroq7zypWYvefX9W8h+gGIxRphB+DS0bXOohK8/rpA==",
+        "requested": "[8.8.0, )",
+        "resolved": "8.8.0",
+        "contentHash": "Xfdb9l/IcEXoWzJAMTfiWM20Cp2+/Kn/BmIEkDXwhy+DdEmdEt778xEkQsmDqXFoR15cA7aKamSHjbDQvcdUXg==",
         "dependencies": {
           "Microsoft.Extensions.Logging.Abstractions": "8.0.0",
           "Microsoft.Extensions.Options": "8.0.0",
-          "Polly.Core": "8.7.0"
+          "Polly.Core": "8.8.0"
         }
       },
       "Polly.RateLimiting": {
         "type": "CentralTransitive",
-        "requested": "[8.7.0, )",
-        "resolved": "8.7.0",
-        "contentHash": "PjbRSHNc0nCKYW26tXRuvj6gNny4HJOa2MHm5cZocyULYaNoGXnl5Q8Q1qKZB25d82E95B5pFvL2Kz6Yjh27GA==",
+        "requested": "[8.8.0, )",
+        "resolved": "8.8.0",
+        "contentHash": "XRXXqK7x6lxZDzVriM4hzLFdSmt0yvCo1QB5zv0mvBo3qDS5yFdtiG4EB+xodRUUaFG1hFk0hnVi3K45wD+/kA==",
         "dependencies": {
-          "Polly.Core": "8.7.0",
+          "Polly.Core": "8.8.0",
           "System.Threading.RateLimiting": "8.0.0"
         }
       }
