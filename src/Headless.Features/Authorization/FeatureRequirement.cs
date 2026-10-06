@@ -1,8 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
-using Headless.Features.Resources;
-using Headless.Primitives;
 using Microsoft.AspNetCore.Authorization;
 
 namespace Headless.Features;
@@ -21,14 +19,13 @@ namespace Headless.Features;
 /// </para>
 /// <para>
 /// The requirement is about the tenant's or edition's state, not about the caller: it does not need an authenticated
-/// user. It describes its failure through <see cref="IDescribedRequirement"/> as a <see cref="ConflictError"/>, so
-/// when it is the only kind of requirement left unmet, <c>Headless.Api</c> answers 409 with the
-/// <c>g:feature_currently_not_available</c> error instead of a challenge or forbid. Without <c>Headless.Api</c>,
-/// ASP.NET Core's default failure applies: 401 for an anonymous caller, 403 for an authenticated one.
+/// user. A disabled feature fails it like any other authorization requirement: 403 for an authenticated caller, 401
+/// for an anonymous one. The handler fails with the localized "feature currently unavailable" text as its
+/// <see cref="AuthorizationFailureReason"/>, which <c>Headless.Api</c> shows as the 403 problem's <c>detail</c>.
 /// </para>
 /// </remarks>
 [PublicAPI]
-public sealed class FeatureRequirement : IAuthorizationRequirement, IDescribedRequirement
+public sealed class FeatureRequirement : IAuthorizationRequirement
 {
     /// <summary>Initializes the requirement.</summary>
     /// <param name="featureNames">The feature names to evaluate, at least one.</param>
@@ -53,22 +50,6 @@ public sealed class FeatureRequirement : IAuthorizationRequirement, IDescribedRe
     /// When <see langword="false"/>, any single enabled feature satisfies the requirement (OR).
     /// </summary>
     public bool RequiresAll { get; }
-
-    /// <summary>
-    /// Describes the disabled feature(s) with the same descriptor and parameters
-    /// <c>IFeatureManager.EnsureEnabledAsync</c> puts on its <c>ConflictException</c>, so a client sees one error shape
-    /// whether the gate ran in authorization or in application code.
-    /// </summary>
-    /// <returns>A <see cref="ConflictError"/> carrying <c>g:feature_currently_not_available</c>.</returns>
-    public ApiResultError DescribeFailure()
-    {
-        return new ConflictError(
-            MessageDescriber
-                .FeatureCurrentlyUnavailable()
-                .WithParam("Type", RequiresAll ? "And" : "Or")
-                .WithParam("FeatureNames", FeatureNames)
-        );
-    }
 
     public override string ToString()
     {
