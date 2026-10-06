@@ -149,6 +149,29 @@ public sealed class TenantRequirementTests : TestBase
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
         var body = await response.Content.ReadAsStringAsync(AbortToken);
         body.Should().NotContain(GeneralErrorCodes.TenantRequired);
+
+        // The other handler's failure reason is shown to the caller as the 403 detail.
+        using var doc = JsonDocument.Parse(body);
+        doc.RootElement.GetProperty("detail").GetString().Should().Be("AlwaysFail");
+    }
+
+    [Fact]
+    public async Task should_keep_the_tenant_response_when_another_handler_also_fails_with_a_reason()
+    {
+        // given - both handlers fail with reasons; the tenant handler set its own rejection first, so neither its
+        // machine token nor the other reason replaces the g:tenant_required response
+        await using var app = await _CreateAppAsync();
+        using var client = HttpTenancyTestHarness.CreateClient(app);
+
+        // when
+        using var response = await _SendAsync(client, "/tenant-and-denied", user: "alice");
+
+        // then
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        var body = await response.Content.ReadAsStringAsync(AbortToken);
+        body.Should().NotContain(_TenantRequirementFailureReason).And.NotContain("AlwaysFail");
+        using var doc = JsonDocument.Parse(body);
+        doc.RootElement.GetProperty("detail").GetString().Should().Be(Messages.g_tenant_required);
     }
 
     [Fact]
@@ -357,6 +380,8 @@ public sealed class TenantRequirementTests : TestBase
         root.GetProperty("detail").GetString().Should().Be(Messages.g_tenant_required);
         root.GetProperty("error").GetProperty("code").GetString().Should().Be(GeneralErrorCodes.TenantRequired);
     }
+
+    private const string _TenantRequirementFailureReason = "TenantContextRequired";
 
     private sealed record TenantRequiredResponse(string? TenantId);
 
