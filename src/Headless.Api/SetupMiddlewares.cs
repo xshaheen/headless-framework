@@ -4,8 +4,8 @@ using System.ComponentModel;
 using Headless.Context;
 using Headless.MultiTenancy;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization.Policy;
 using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 
@@ -37,14 +37,11 @@ public static class SetupMiddlewares
     /// Call <see cref="UseStatusCodesRewriter"/> after this to add it to the pipeline.
     /// </summary>
     /// <remarks>
-    /// Also wraps the registered <see cref="IAuthorizationEvaluator"/> so an HTTP authorization that failed only on
-    /// requirements implementing <c>Headless.Primitives.IDescribedRequirement</c> (such as the feature requirement behind
-    /// <c>[RequiresFeature]</c>) is rewritten from the challenge or forbid into the problem response the requirements
-    /// describe: 409 <c>g:feature_currently_not_available</c> for a disabled feature. An evaluator registered after this
-    /// call replaces the wrapper, and those failures then keep ASP.NET Core's 401 or 403.
-    /// It also refuses, with <see cref="InvalidOperationException"/>, to run an endpoint that carries authorization
-    /// requirement data (<c>[RequiresFeature]</c>) when the authorization middleware never saw it, as ASP.NET Core
-    /// already does for <c>[Authorize]</c>; <c>RouteOptions.SuppressCheckForUnhandledSecurityMetadata</c> turns both off.
+    /// Also wraps the registered <see cref="IAuthorizationMiddlewareResultHandler"/>: when authorization forbids a
+    /// request and its handlers called <c>Fail(new AuthorizationFailureReason(...))</c>, the 403 problem response
+    /// carries the reasons' messages as its <c>detail</c>. Those messages reach the caller, so keep internal detail out
+    /// of them. A handler that set its own rejection keeps it, and a challenge (401) is unchanged. A result handler
+    /// registered after this call replaces the wrapper.
     /// </remarks>
     /// <param name="services">The service collection to register into.</param>
     /// <returns>The same service collection.</returns>
@@ -52,27 +49,21 @@ public static class SetupMiddlewares
     {
         services.TryAddSingleton<StatusCodesRewriterMiddleware>();
 
-        // The rewriter writes the described error (409 for a disabled feature) for an authorization that failed only on
-        // IDescribedRequirements; the evaluator decorator is what hands it that rejection. AddAuthorizationCore
-        // registers the default evaluator with TryAdd, so registering it first keeps one registration whichever call
-        // runs first and gives the decorator something to wrap. The marker keeps a repeated call from wrapping twice.
-        if (!services.IsAdded<DescribedRequirementRejectionMarker>())
+        // The rewriter writes the 403 with the authorization failure reasons as its detail; the result-handler
+        // decorator is what hands it that rejection. AddAuthorization registers the default result handler with
+        // TryAdd, so registering it first keeps one registration whichever call runs first and gives the decorator
+        // something to wrap. The marker keeps a repeated call from wrapping twice.
+        if (!services.IsAdded<AuthorizationFailureReasonMarker>())
         {
-            services.AddSingleton(new DescribedRequirementRejectionMarker());
-            services.TryAddTransient<IAuthorizationEvaluator, DefaultAuthorizationEvaluator>();
-            services.TryDecorate<IAuthorizationEvaluator, DescribedRequirementRejectionEvaluator>();
+            services.AddSingleton(new AuthorizationFailureReasonMarker());
+            services.TryAddSingleton<IAuthorizationMiddlewareResultHandler, AuthorizationMiddlewareResultHandler>();
+            services.TryDecorate<IAuthorizationMiddlewareResultHandler, AuthorizationFailureReasonResultHandler>();
         }
-
-        // ASP.NET Core refuses an [Authorize] endpoint the authorization middleware never saw, but runs a
-        // [RequiresFeature] endpoint unchecked; this guard closes that gap for every requirement-data endpoint.
-        services.TryAddEnumerable(
-            ServiceDescriptor.Singleton<MatcherPolicy, AuthorizationRequirementDataGuardMatcherPolicy>()
-        );
 
         return services;
     }
 
-    private sealed class DescribedRequirementRejectionMarker;
+    private sealed class AuthorizationFailureReasonMarker;
 
     /// <summary>
     /// Adds the status-codes rewriter middleware to the ASP.NET Core request pipeline.

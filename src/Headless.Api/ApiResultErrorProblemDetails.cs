@@ -7,8 +7,7 @@ namespace Headless.Api;
 
 /// <summary>
 /// The one mapping from an <see cref="ApiResultError"/> to its problem-details response, shared by the Minimal API and
-/// MVC result conversions and by the authorization rejection of described requirements, so the three never disagree
-/// on which status an error kind gets.
+/// MVC result conversions, so the two never disagree on which status an error kind gets.
 /// </summary>
 /// <remarks>
 /// <see cref="NotFoundError"/> 404, <see cref="ValidationError"/> 422, <see cref="ForbiddenError"/> 403,

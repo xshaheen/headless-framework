@@ -1,16 +1,16 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Features.Resources;
 using Microsoft.AspNetCore.Authorization;
 
 namespace Headless.Features;
 
 /// <summary>
 /// Satisfies each <see cref="FeatureRequirement"/> whose features are enabled for the ambient tenant, and every one
-/// of them when the policy carries the <see cref="DisableFeatureCheckAttribute"/> marker. A disabled feature leaves
-/// its requirement pending without calling <c>Fail</c>, as the permission handlers do, so ASP.NET Core still reports
-/// the requirement in <see cref="AuthorizationFailure.FailedRequirements"/> and the HTTP host can tell a feature
-/// failure from any other.
+/// of them when the policy carries the <see cref="DisableFeatureCheckAttribute"/> marker. A disabled feature fails the
+/// evaluation with the localized "feature currently unavailable" text as its <see cref="AuthorizationFailureReason"/>,
+/// so the caller learns why the request was refused; the reason names no feature, because it reaches the caller.
 /// </summary>
 internal sealed class FeatureRequirementHandler(IFeatureManager featureManager) : IAuthorizationHandler
 {
@@ -53,6 +53,13 @@ internal sealed class FeatureRequirementHandler(IFeatureManager featureManager) 
             )
             {
                 context.Succeed(requirement);
+            }
+            else
+            {
+                // Resolved here, during the request, so the text follows the request culture.
+                context.Fail(
+                    new AuthorizationFailureReason(this, MessageDescriber.FeatureCurrentlyUnavailable().Description)
+                );
             }
         }
     }

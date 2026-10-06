@@ -32,7 +32,7 @@ public sealed class FeatureRequirementHandlerTests : TestBase
     }
 
     [Fact]
-    public async Task should_leave_the_requirement_pending_without_an_explicit_fail_when_the_feature_is_disabled()
+    public async Task should_fail_with_the_feature_unavailable_reason_when_the_feature_is_disabled()
     {
         // given
         await using var provider = _CreateProvider();
@@ -42,10 +42,15 @@ public sealed class FeatureRequirementHandlerTests : TestBase
         // when
         var result = await _AuthorizeAsync(provider, policy);
 
-        // then - the HTTP host relies on both facts to tell a feature failure from any other
+        // then - the reason is caller-facing text, never the feature name
         result.Succeeded.Should().BeFalse();
-        result.Failure!.FailCalled.Should().BeFalse();
-        result.Failure.FailedRequirements.Should().ContainSingle().Which.Should().BeSameAs(requirement);
+        result.Failure!.FailCalled.Should().BeTrue();
+        result
+            .Failure.FailureReasons.Should()
+            .ContainSingle()
+            .Which.Message.Should()
+            .Be("This feature is currently unavailable.")
+            .And.NotContain(_Reports);
     }
 
     [Theory]
