@@ -55,7 +55,7 @@ app.UseAuthorization();
 
 `UseHeadlessTenancy()` must run after app-owned `UseAuthentication()` and before app-owned `UseAuthorization()`. Headless tenancy APIs do not call either middleware internally.
 
-`AddHeadless()` registers base API infrastructure only. It does not enable tenant posture. It also requires `Headless:StringEncryption` and `Headless:LookupHasher` to be configured.
+`AddHeadless()` registers base API infrastructure only. It does not enable tenant posture.
 
 ## Agent Rules
 

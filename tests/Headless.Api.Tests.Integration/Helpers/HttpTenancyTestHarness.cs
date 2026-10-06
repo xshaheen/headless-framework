@@ -27,16 +27,6 @@ internal static class HttpTenancyTestHarness
     public const string UnauthenticatedHeader = "X-Test-Unauthenticated";
     public const string CustomTenantClaimType = "custom_tenant_id";
 
-    public static void AddDefaultHeadlessSecurityConfiguration(IConfigurationBuilder configuration)
-    {
-        configuration.AddInMemoryCollection([
-            new KeyValuePair<string, string?>("Headless:StringEncryption:DefaultPassPhrase", "TestPassPhrase123456"),
-            new KeyValuePair<string, string?>("Headless:StringEncryption:InitVectorBytes", "VGVzdElWMDEyMzQ1Njc4OQ=="),
-            new KeyValuePair<string, string?>("Headless:StringEncryption:DefaultSalt", "VGVzdFNhbHQ="),
-            new KeyValuePair<string, string?>("Headless:LookupHasher:DefaultSalt", "TestSalt"),
-        ]);
-    }
-
     public static AuthenticationBuilder AddTestAuthentication(
         this IServiceCollection services,
         bool registerForbidScheme = false

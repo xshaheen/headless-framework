@@ -67,7 +67,6 @@ public sealed class HeadlessApiDefaultsTests : TestBase
             new WebApplicationOptions { EnvironmentName = EnvironmentNames.Test }
         );
         builder.WebHost.UseUrls("http://127.0.0.1:0");
-        _AddDefaultHeadlessSecurityConfiguration(builder.Configuration);
         builder.AddHeadless(configureServices: options =>
         {
             options.Validation.ValidateServiceProviderOnStartup = false;
@@ -222,7 +221,6 @@ public sealed class HeadlessApiDefaultsTests : TestBase
             new WebApplicationOptions { EnvironmentName = EnvironmentNames.Test }
         );
         builder.WebHost.UseUrls("http://127.0.0.1:0");
-        _AddDefaultHeadlessSecurityConfiguration(builder.Configuration);
         builder.AddHeadless(configureServices: options =>
         {
             options.Validation.ValidateServiceProviderOnStartup = false;
@@ -244,7 +242,6 @@ public sealed class HeadlessApiDefaultsTests : TestBase
             new WebApplicationOptions { EnvironmentName = EnvironmentNames.Test }
         );
         builder.WebHost.UseUrls("http://127.0.0.1:0");
-        _AddDefaultHeadlessSecurityConfiguration(builder.Configuration);
         builder.AddHeadless(configureServices: options =>
         {
             options.Validation.ValidateServiceProviderOnStartup = false;
@@ -295,7 +292,6 @@ public sealed class HeadlessApiDefaultsTests : TestBase
         // given - an explicit HTTPS port, so the redirection middleware would redirect whenever it runs
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = environmentName });
         builder.WebHost.UseUrls("http://127.0.0.1:0");
-        _AddDefaultHeadlessSecurityConfiguration(builder.Configuration);
         builder.AddHeadless(configureServices: options =>
         {
             options.Validation.ValidateServiceProviderOnStartup = false;
@@ -349,7 +345,6 @@ public sealed class HeadlessApiDefaultsTests : TestBase
             new WebApplicationOptions { EnvironmentName = EnvironmentNames.Test }
         );
         builder.WebHost.UseUrls("http://127.0.0.1:0");
-        _AddDefaultHeadlessSecurityConfiguration(builder.Configuration);
         builder.AddHeadless(configureServices: options =>
         {
             options.Validation.ValidateServiceProviderOnStartup = false;
@@ -375,15 +370,5 @@ public sealed class HeadlessApiDefaultsTests : TestBase
     private static HttpClient _CreateClient(WebApplication app)
     {
         return new HttpClient { BaseAddress = new Uri(app.Urls.Single()) };
-    }
-
-    private static void _AddDefaultHeadlessSecurityConfiguration(IConfigurationBuilder configuration)
-    {
-        configuration.AddInMemoryCollection([
-            new KeyValuePair<string, string?>("Headless:StringEncryption:DefaultPassPhrase", "TestPassPhrase123456"),
-            new KeyValuePair<string, string?>("Headless:StringEncryption:InitVectorBytes", "VGVzdElWMDEyMzQ1Njc4OQ=="),
-            new KeyValuePair<string, string?>("Headless:StringEncryption:DefaultSalt", "VGVzdFNhbHQ="),
-            new KeyValuePair<string, string?>("Headless:LookupHasher:DefaultSalt", "TestSalt"),
-        ]);
     }
 }
