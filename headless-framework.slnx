@@ -297,6 +297,9 @@
         <Project Path="src/Headless.Jobs.EntityFramework.SqlServer/Headless.Jobs.EntityFramework.SqlServer.csproj" />
         <Project Path="src/Headless.Jobs.SourceGenerator/Headless.Jobs.SourceGenerator.csproj" />
     </Folder>
+    <Folder Name="/Sandboxes/">
+        <Project Path="sandboxes/Headless.Dashboards.Sandbox/Headless.Dashboards.Sandbox.csproj" />
+    </Folder>
     <Folder Name="/Jobs/Demo/">
         <Project Path="demo/Headless.Jobs.Api.Demo/Headless.Jobs.Api.Demo.csproj" />
         <Project Path="demo/Headless.Jobs.Console.Demo/Headless.Jobs.Console.Demo.csproj" />
