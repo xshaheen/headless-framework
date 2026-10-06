@@ -263,7 +263,7 @@ Production ASP.NET Core APIs: request and response conventions, validation pipel
 | [Headless.Api](src/Headless.Api/README.md) | ASP.NET Core API building blocks (problem details, tenancy, middleware) |
 | [Headless.Api.ServiceDefaults](src/Headless.Api.ServiceDefaults/README.md) | `AddHeadless()` orchestrator plus Aspire-style defaults (OpenTelemetry, OpenAPI, service discovery) |
 | [Headless.Api.Abstractions](src/Headless.Api.Abstractions/README.md) | API abstractions and contracts |
-| [Headless.Api.DataProtection](src/Headless.Api.DataProtection/README.md) | Data protection key storage |
+| [Headless.DataProtection.Blobs](src/Headless.DataProtection.Blobs/README.md) | Data protection key storage |
 | [Headless.Api.FluentValidation](src/Headless.Api.FluentValidation/README.md) | FluentValidation integration for APIs |
 | [Headless.Api.Logging.Serilog](src/Headless.Api.Logging.Serilog/README.md) | Serilog logging integration |
 | [Headless.Api.MinimalApi](src/Headless.Api.MinimalApi/README.md) | Minimal API utilities |

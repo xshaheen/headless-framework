@@ -1,6 +1,6 @@
 ---
 domain: API & Web
-packages: Api.Abstractions, Api, Api.ServiceDefaults, Api.DataProtection, Api.FluentValidation, Api.Idempotency, Api.Identity, Api.Jwt, Api.Logging.Serilog, Api.MinimalApi, Api.Mvc, Api.UserAgent
+packages: Api.Abstractions, Api, Api.ServiceDefaults, DataProtection.Blobs, Api.FluentValidation, Api.Idempotency, Api.Identity, Api.Jwt, Api.Logging.Serilog, Api.MinimalApi, Api.Mvc, Api.UserAgent
 ---
 
 # API & Web
@@ -24,7 +24,7 @@ Use `Headless.Api.Abstractions` when you only need interfaces (`IRequestContext`
 Additional packages:
 
 - `Headless.Api.FluentValidation` — validators for `IFormFile` uploads (size, content type, magic bytes) plus API request contracts (`PhoneNumberRequest`, `GeoCoordinateRequest`, `PageMetadataRequest`).
-- `Headless.Api.DataProtection` — persist ASP.NET Core Data Protection keys to any `IBlobStorage` provider.
+- `Headless.DataProtection.Blobs` — persist ASP.NET Core Data Protection keys to any `IBlobStorage` provider.
 - `Headless.Api.Jwt` — issue and parse JWTs with `IJwtTokenFactory`, and validate them with the matching `AddHeadlessJwtBearer()` scheme.
 - `Headless.Api.Identity` — ASP.NET Core Identity helpers: token providers, localized `auth:`/`user:` errors, `HeadlessLookupNormalizer`, and the Identity-backed `AddBasicSchema()` and `AddApiKey()` schemes.
 - `Headless.Api.UserAgent` — the DeviceDetector.NET-backed `IUserAgentParser`. Without it, `IWebClientInfoProvider.DeviceInfo` is `null`.
@@ -50,7 +50,7 @@ Additional packages:
 - Prefer `Headless.Api.MinimalApi` over `Headless.Api.Mvc` for new projects. Use `.Validate<T>()` on endpoints for FluentValidation integration.
 - For MVC, inherit from `ApiControllerBase` — it provides common utilities. Use `ConfigureHeadlessMvc()` not manual `MvcOptions` configuration.
 - Use `Headless.Api.FluentValidation` validators (`FileNotEmpty()`, `LessThanOrEqualTo()`, `ContentTypes()`, `HaveSignatures()`, `PhoneNumber()`, `GeoCoordinate()`, `PageMetadata()`) for API-boundary validation — do not write manual file or request-contract validation logic.
-- Use `PersistKeysToBlobStorage()` from `Headless.Api.DataProtection` to persist Data Protection keys in distributed/containerized environments.
+- Use `PersistKeysToBlobStorage()` from `Headless.DataProtection.Blobs` to persist Data Protection keys in distributed/containerized environments.
 - For Serilog enrichment, call `AddHeadlessSerilogEnrichers()` on services and `UseHeadlessSerilogEnrichers()` on the app, after `UseAuthentication()` so the enrichers can read the user.
 - Inject `IRequestContext` (from Abstractions) for request-scoped user, tenant, locale, timezone, and correlation ID — never access `HttpContext` directly in service code.
 - `AddHeadless()` registers neither `IStringEncryptionService` nor `ILookupHasher` and reads no security configuration. An app that encrypts values (including any app using `Headless.Settings`) or builds lookup digests calls `AddStringEncryptionService(...)` and `AddLookupHasher(...)` from `Headless.Security` itself; see [Security](security.md).
@@ -687,7 +687,7 @@ Bind with `builder.Services.AddLookupHasher(builder.Configuration.GetRequiredSec
 
 ---
 
-## Headless.Api.DataProtection
+## Headless.DataProtection.Blobs
 
 Extends ASP.NET Core Data Protection to persist encryption keys to blob storage providers.
 
@@ -706,7 +706,7 @@ Extends ASP.NET Core Data Protection to persist encryption keys to blob storage 
 ### Install
 
 ```bash
-dotnet add package Headless.Api.DataProtection
+dotnet add package Headless.DataProtection.Blobs
 ```
 
 ### Setup and use

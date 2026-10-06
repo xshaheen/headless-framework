@@ -1,4 +1,4 @@
-# Headless.Api.DataProtection
+# Headless.DataProtection.Blobs
 
 Extends ASP.NET Core Data Protection to persist encryption keys to blob storage providers.
 
@@ -9,10 +9,10 @@ In distributed/containerized environments, ASP.NET Core Data Protection keys mus
 ## Install
 
 ```bash
-dotnet add package Headless.Api.DataProtection
+dotnet add package Headless.DataProtection.Blobs
 ```
 
 ## Documentation
 
 - [Headless Framework](https://github.com/xshaheen/headless-framework#readme)
-- [API & Web guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/api.md#headlessapidataprotection)
+- [API & Web guide](https://github.com/xshaheen/headless-framework/blob/main/docs/llms/api.md#headlessdataprotectionblobs)

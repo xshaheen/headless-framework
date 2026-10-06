@@ -1,7 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Api.DataProtection;
 using Headless.Blobs;
+using Headless.DataProtection;
 using Headless.MultiTenancy;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.DataProtection;
