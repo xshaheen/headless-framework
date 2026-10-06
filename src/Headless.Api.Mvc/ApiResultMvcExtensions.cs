@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Api;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Headless.Primitives;
@@ -75,26 +76,16 @@ public static class ApiResultMvcExtensions
         IProblemDetailsCreator creator
     )
     {
-        return error switch
+        var problemDetails = ApiResultErrorProblemDetails.Create(error, creator);
+
+        // The controller helpers keep the typed results (ConflictObjectResult, ...) callers and filters may match on.
+        return problemDetails.Status switch
         {
-            NotFoundError => controller.NotFound(creator.EntityNotFound()),
-
-            ValidationError e => controller.UnprocessableEntity(creator.UnprocessableEntity(e.Errors)),
-
-            ForbiddenError e => new ObjectResult(creator.Forbidden(error: e.Error)) { StatusCode = 403 },
-
-            UnauthorizedError e => controller.Unauthorized(creator.Unauthorized(e.Error)),
-
-            AggregateError e when e.TryGetValidationErrors(out var validationErrors) => controller.UnprocessableEntity(
-                creator.UnprocessableEntity(validationErrors)
-            ),
-
-            AggregateError e => controller.Conflict(creator.Conflict(e.ToErrorDescriptors())),
-
-            ConflictError e => controller.Conflict(creator.Conflict(e.Errors)),
-
-            // Default: treat as conflict
-            _ => controller.Conflict(creator.Conflict([error.ToErrorDescriptor()])),
+            StatusCodes.Status404NotFound => controller.NotFound(problemDetails),
+            StatusCodes.Status422UnprocessableEntity => controller.UnprocessableEntity(problemDetails),
+            StatusCodes.Status401Unauthorized => controller.Unauthorized(problemDetails),
+            StatusCodes.Status409Conflict => controller.Conflict(problemDetails),
+            _ => new ObjectResult(problemDetails) { StatusCode = problemDetails.Status },
         };
     }
 }

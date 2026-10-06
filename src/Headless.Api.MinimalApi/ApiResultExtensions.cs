@@ -57,26 +57,6 @@ public static class ApiResultExtensions
     /// <returns>A problem HTTP result with the appropriate status code and body.</returns>
     public static ProblemHttpResult ToHttpResult(this ApiResultError error, IProblemDetailsCreator creator)
     {
-        return error switch
-        {
-            NotFoundError => TypedResults.Problem(creator.EntityNotFound()),
-
-            ValidationError e => TypedResults.Problem(creator.UnprocessableEntity(e.Errors)),
-
-            ForbiddenError e => TypedResults.Problem(creator.Forbidden(error: e.Error)),
-
-            UnauthorizedError e => TypedResults.Problem(creator.Unauthorized(e.Error)),
-
-            AggregateError e when e.TryGetValidationErrors(out var validationErrors) => TypedResults.Problem(
-                creator.UnprocessableEntity(validationErrors)
-            ),
-
-            AggregateError e => TypedResults.Problem(creator.Conflict(e.ToErrorDescriptors())),
-
-            ConflictError e => TypedResults.Problem(creator.Conflict(e.Errors)),
-
-            // Default: treat as conflict
-            _ => TypedResults.Problem(creator.Conflict([error.ToErrorDescriptor()])),
-        };
+        return TypedResults.Problem(ApiResultErrorProblemDetails.Create(error, creator));
     }
 }

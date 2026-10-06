@@ -4,7 +4,6 @@ using Headless.Checks;
 using Headless.Primitives;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Api;
@@ -82,54 +81,35 @@ internal sealed class DescribedRequirementRejection(IReadOnlyList<IDescribedRequ
 
         // Described here rather than at evaluation, so localized messages follow the request's culture at write time.
         var errors = requirements.Select(requirement => requirement.DescribeFailure()).ToList();
-        var statusCode = _GetStatusCode(errors[0]);
+        var creator = context.RequestServices.GetRequiredService<IProblemDetailsCreator>();
+        var problemDetails = ApiResultErrorProblemDetails.Create(errors[0], creator);
 
-        // Requirements that disagree on the kind of failure have no single honest status; the default 401/403 stays.
-        if (errors.Exists(error => _GetStatusCode(error) != statusCode))
+        if (errors.Count > 1)
         {
-            return false;
+            // Requirements that disagree on the kind of failure have no single honest status; the default 401/403 stays.
+            if (
+                errors.Exists(error =>
+                    ApiResultErrorProblemDetails.Create(error, creator).Status != problemDetails.Status
+                )
+            )
+            {
+                return false;
+            }
+
+            // Conflicts merge into one response listing every error; other kinds report the first.
+            if (problemDetails.Status == StatusCodes.Status409Conflict)
+            {
+                problemDetails = ApiResultErrorProblemDetails.Create(new AggregateError { Errors = errors }, creator);
+            }
         }
 
         // Drops the challenge headers too: the described error is not a request to authenticate.
         context.Response.Clear();
 
-        var creator = context.RequestServices.GetRequiredService<IProblemDetailsCreator>();
-        var problemDetails = _CreateProblemDetails(creator, statusCode, errors);
-
-        await TenantCatalogRejectionWriter.WriteAsync(context, statusCode, problemDetails).ConfigureAwait(false);
+        await TenantCatalogRejectionWriter
+            .WriteAsync(context, problemDetails.Status ?? StatusCodes.Status409Conflict, problemDetails)
+            .ConfigureAwait(false);
 
         return true;
-    }
-
-    // The same error-kind to status mapping ApiResult errors use on the Minimal API and MVC response paths.
-    private static int _GetStatusCode(ApiResultError error)
-    {
-        return error switch
-        {
-            ForbiddenError => StatusCodes.Status403Forbidden,
-            UnauthorizedError => StatusCodes.Status401Unauthorized,
-            NotFoundError => StatusCodes.Status404NotFound,
-            _ => StatusCodes.Status409Conflict,
-        };
-    }
-
-    private static ProblemDetails _CreateProblemDetails(
-        IProblemDetailsCreator creator,
-        int statusCode,
-        List<ApiResultError> errors
-    )
-    {
-        return statusCode switch
-        {
-            StatusCodes.Status403Forbidden => creator.Forbidden(error: ((ForbiddenError)errors[0]).Error),
-            StatusCodes.Status401Unauthorized => creator.Unauthorized(((UnauthorizedError)errors[0]).Error),
-            StatusCodes.Status404NotFound => creator.EntityNotFound(),
-            _ => creator.Conflict([.. errors.SelectMany(_ToDescriptors)]),
-        };
-    }
-
-    private static IEnumerable<ErrorDescriptor> _ToDescriptors(ApiResultError error)
-    {
-        return error is ConflictError conflict ? conflict.Errors : [error.ToErrorDescriptor()];
     }
 }
