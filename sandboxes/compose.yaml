@@ -1,0 +1,23 @@
+# PostgreSQL for the dashboard sandbox's durable Jobs store (`make up STORE=postgres`). Loopback only, trust auth,
+# a disposable database: there is no credential to keep. `make sandbox-reset CONFIRM=1` drops the volume.
+name: ${SANDBOX_COMPOSE_PROJECT:-headless-sandbox}
+
+services:
+  postgres:
+    # Same pinned image the Testcontainers fixtures use (src/Headless.Testing.Testcontainers/TestImages.cs).
+    image: postgres:18.1-alpine3.23@sha256:aa6eb304ddb6dd26df23d05db4e5cb05af8951cda3e0dc57731b771e0ef4ab29
+    environment:
+      POSTGRES_HOST_AUTH_METHOD: trust
+      POSTGRES_DB: headless_sandbox
+    ports:
+      - "127.0.0.1:${SANDBOX_PG_PORT:-55432}:5432"
+    volumes:
+      - sandbox-postgres:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d headless_sandbox"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  sandbox-postgres:

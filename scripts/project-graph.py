@@ -26,7 +26,7 @@ from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-PROJECT_ROOTS = ("src", "tests", "demo", "benchmarks", "test-assets")
+PROJECT_ROOTS = ("src", "tests", "demo", "sandboxes", "benchmarks", "test-assets")
 
 # A change to one of these reaches every project, so the affected set becomes the whole graph.
 GLOBAL_FILES = {"global.json", "dotnet-tools.json", "nuget.config"}
@@ -69,7 +69,7 @@ class Project:
             return "integration"
         if self.name.endswith(".Tests.Harness"):
             return "harness"
-        return {"tests": "test-other", "demo": "demo", "benchmarks": "benchmark"}.get(top, "other")
+        return {"tests": "test-other", "demo": "demo", "sandboxes": "demo", "benchmarks": "benchmark"}.get(top, "other")
 
 
 def git_lines(*args: str) -> list[str]:
