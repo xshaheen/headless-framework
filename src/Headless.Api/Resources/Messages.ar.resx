@@ -20,7 +20,7 @@
     <value>فشل التزامن لا يمكن إجراء عمليتين في نفس الوقت.</value>
   </data>
   <data name="g:unique_violation" xml:space="preserve">
-    <value>يوجد سجل آخر بنفس القيمة التي يجب ألا تتكرر.</value>
+    <value>يوجد سجل آخر بالقيمة نفسها، ويجب أن تكون هذه القيمة فريدة.</value>
   </data>
   <data name="g:if_match_required" xml:space="preserve">
     <value>يجب إرسال قيمة ETag الحالية باستخدام If-Match.</value>
@@ -59,7 +59,7 @@
     <value>عملية الكتابة على بيانات المستأجر لا تطابق المستأجر الحالي.</value>
   </data>
   <data name="g:invalid_request_type" xml:space="preserve">
-    <value>نوع الطلب المُعد لنقطة النهاية هذه غير صالح.</value>
+    <value>نوع الطلب المُهيّأ لنقطة النهاية هذه غير صالح.</value>
   </data>
   <data name="problem:endpoint_not_found" xml:space="preserve">
     <value>لم يتم العثور على نقطة النهاية المطلوبة '{0}'.</value>
@@ -68,7 +68,7 @@
     <value>لم يتم العثور على المورد المطلوب.</value>
   </data>
   <data name="problem:bad_request" xml:space="preserve">
-    <value>تعذر تحليل الطلب. نص الطلب فارغ أو تعذر على الخادم فهمه بسبب صياغة غير صحيحة.</value>
+    <value>تعذّرت قراءة الطلب. محتوى الطلب فارغ، أو صيغته غير صحيحة فلم يتمكن الخادم من فهمه.</value>
   </data>
   <data name="problem:unauthorized" xml:space="preserve">
     <value>يجب تسجيل الدخول للوصول إلى هذا المورد.</value>
@@ -77,7 +77,7 @@
     <value>ليس لديك صلاحية الوصول إلى هذا المورد.</value>
   </data>
   <data name="problem:conflict" xml:space="preserve">
-    <value>تعارض - تم انتهاك قاعدة عمل واحدة أو أكثر.</value>
+    <value>تعارض - تمت مخالفة قاعدة أو أكثر من قواعد العمل.</value>
   </data>
   <data name="problem:unprocessable_entity" xml:space="preserve">
     <value>حدث خطأ واحد أو أكثر في التحقق من صحة البيانات.</value>
@@ -92,15 +92,15 @@
     <value>انتهت مهلة الطلب.</value>
   </data>
   <data name="problem:not_implemented" xml:space="preserve">
-    <value>هذه الوظيفة غير متاحة بعد.</value>
+    <value>هذه الوظيفة غير مُنفَّذة.</value>
   </data>
   <data name="problem:payload_too_large" xml:space="preserve">
-    <value>حجم بيانات الطلب أكبر من أن تتم معالجته.</value>
+    <value>حجم بيانات الطلب كبير جدًا ولا يمكن معالجته.</value>
   </data>
   <data name="problem:service_unavailable" xml:space="preserve">
     <value>الخدمة غير متاحة مؤقتًا - يرجى المحاولة مرة أخرى لاحقًا.</value>
   </data>
   <data name="problem:if_match_unsupported" xml:space="preserve">
-    <value>تحتوي قيمة If-Match على ETag غير مدعومة في هذه الواجهة.</value>
+    <value>تحتوي قيمة If-Match على وسم كيان (ETag) لا تدعمه هذه الواجهة البرمجية.</value>
   </data>
 </root>
