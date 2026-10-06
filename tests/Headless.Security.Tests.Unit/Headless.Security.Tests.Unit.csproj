@@ -10,6 +10,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.Security\Headless.Security.csproj" />
-    <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
+    <!-- TreatAsUsed: supplies FakeTimeProvider, which the tests use. -->
+    <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" TreatAsUsed="true" />
   </ItemGroup>
 </Project>

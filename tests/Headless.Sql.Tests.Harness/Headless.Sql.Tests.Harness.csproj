@@ -8,7 +8,8 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.Sql.Abstractions\Headless.Sql.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\Headless.Sql\Headless.Sql.csproj" />
-    <ProjectReference Include="..\..\src\Headless.Sql.Sqlite\Headless.Sql.Sqlite.csproj" />
+    <!-- TreatAsUsed: supplies Microsoft.Data.Sqlite, which the harness uses. -->
+    <ProjectReference Include="..\..\src\Headless.Sql.Sqlite\Headless.Sql.Sqlite.csproj" TreatAsUsed="true" />
     <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
   </ItemGroup>
 </Project>

@@ -868,6 +868,7 @@
           "Microsoft.Extensions.Hosting": "[10.0.12, )",
           "NSubstitute": "[5.3.0, )",
           "Npgsql.EntityFrameworkCore.PostgreSQL": "[10.0.3, )",
+          "Testcontainers.MsSql": "[4.15.0, )",
           "xunit.v3.extensibility.core": "[4.0.0, )"
         }
       },
@@ -987,14 +988,13 @@
       "headless.testing.testcontainers": {
         "type": "Project",
         "dependencies": {
-          "Headless.Testing": "[1.0.0, )",
+          "Headless.Extensions": "[1.0.0, )",
           "Microsoft.Data.SqlClient": "[7.0.2, )",
           "Testcontainers": "[4.15.0, )",
           "Testcontainers.Azurite": "[4.15.0, )",
           "Testcontainers.Kafka": "[4.15.0, )",
           "Testcontainers.LocalStack": "[4.15.0, )",
           "Testcontainers.Minio": "[4.15.0, )",
-          "Testcontainers.MsSql": "[4.15.0, )",
           "Testcontainers.Nats": "[4.15.0, )",
           "Testcontainers.PostgreSql": "[4.15.0, )",
           "Testcontainers.Pulsar": "[4.15.0, )",

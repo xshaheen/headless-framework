@@ -71,6 +71,7 @@ Use the affected and project-scoped targets: `verify-affected`, `build-affected`
   - Suppress each invalid finding with an inline reason, as the analyzer-suppression convention in [Conventions](#conventions) describes.
 
   Then run `make verify-affected` again. `make quality-analyzers-affected` runs the analyzer stage alone and checks only the projects you changed. `make quality-analyzers` is the whole-solution version. It is stricter than CI: CI's `Lint · .NET analyzers` job runs only `make rebuild`, so it fails on warnings and errors but not on info-level suggestions. To narrow a noisy run, set `QUALITY_SEVERITY=warn` or `QUALITY_DIAGNOSTICS=MA0154`. To check one dependent project, use `make quality-analyzers-project PROJECT=<csproj>`.
+- **Run `make quality-references` after you add or change a reference.** It builds with ReferenceTrimmer, under `artifacts/reftrim` and with its own lock files, and lists every `PackageReference` or `ProjectReference` the compiled code does not use. It exits 3 on findings. Remove each finding, or mark a deliberate reference `TreatAsUsed="true"` with the reason in a comment. Turn the tool off for a project that compiles code at run time (`<EnableReferenceTrimmer>false</EnableReferenceTrimmer>`). Pass `PROJECT=<csproj>` to check one project. CI does not run it.
 - **`make quality-fix` refuses to run without a filter.** Pass one rule at a time in `QUALITY_DIAGNOSTICS`, and run `make rebuild` between rules, because four fixers emit code that does not compile.
 
 ### CI

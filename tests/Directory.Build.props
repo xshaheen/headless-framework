@@ -16,12 +16,13 @@
     <Using Include="AwesomeAssertions" />
     <Using Include="Xunit" />
   </ItemGroup>
+  <!-- TreatAsUsed: a shared default for every test project, so ReferenceTrimmer would flag each project that does not use it. -->
   <ItemGroup Label="Global Packages">
-    <PackageReference Include="Bogus" />
-    <PackageReference Include="AwesomeAssertions" />
-    <PackageReference Include="AwesomeAssertions.Json" />
+    <PackageReference Include="Bogus" TreatAsUsed="true" />
+    <PackageReference Include="AwesomeAssertions" TreatAsUsed="true" />
+    <PackageReference Include="AwesomeAssertions.Json" TreatAsUsed="true" />
     <PackageReference Include="Microsoft.Testing.Extensions.GitHubActionsReport" PrivateAssets="all" />
-    <PackageReference Include="NSubstitute" />
+    <PackageReference Include="NSubstitute" TreatAsUsed="true" />
   </ItemGroup>
   <ItemGroup Label="Global Analyzers">
     <PackageReference Include="AwesomeAssertions.Analyzers">
