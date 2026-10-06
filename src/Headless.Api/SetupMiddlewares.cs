@@ -62,9 +62,10 @@ public static class SetupMiddlewares
     /// </summary>
     /// <remarks>
     /// Also wraps the registered <see cref="IAuthorizationEvaluator"/> so an HTTP authorization that failed only on
-    /// <c>FeatureRequirement</c>s (<c>[RequiresFeature]</c>, <c>RequireFeatures(...)</c>) is rewritten from the
-    /// challenge or forbid into a 409 <c>g:feature_currently_not_available</c> problem response. An evaluator
-    /// registered after this call replaces the wrapper, and feature failures then keep ASP.NET Core's 401 or 403.
+    /// requirements implementing <c>Headless.Primitives.IDescribedRequirement</c> (such as the feature requirement behind
+    /// <c>[RequiresFeature]</c>) is rewritten from the challenge or forbid into the problem response the requirements
+    /// describe: 409 <c>g:feature_currently_not_available</c> for a disabled feature. An evaluator registered after this
+    /// call replaces the wrapper, and those failures then keep ASP.NET Core's 401 or 403.
     /// It also refuses, with <see cref="InvalidOperationException"/>, to run an endpoint that carries authorization
     /// requirement data (<c>[RequiresFeature]</c>) when the authorization middleware never saw it, as ASP.NET Core
     /// already does for <c>[Authorize]</c>; <c>RouteOptions.SuppressCheckForUnhandledSecurityMetadata</c> turns both off.
@@ -75,15 +76,15 @@ public static class SetupMiddlewares
     {
         services.TryAddSingleton<StatusCodesRewriterMiddleware>();
 
-        // The rewriter writes the 409 for an authorization that failed only on a disabled feature; the evaluator
-        // decorator is what hands it that rejection. AddAuthorizationCore registers the default evaluator with
-        // TryAdd, so registering it first keeps one registration whichever call runs first and gives the decorator
-        // something to wrap. The marker keeps a repeated call from wrapping it twice.
-        if (!services.IsAdded<FeatureRejectionEvaluatorMarker>())
+        // The rewriter writes the described error (409 for a disabled feature) for an authorization that failed only on
+        // IDescribedRequirements; the evaluator decorator is what hands it that rejection. AddAuthorizationCore
+        // registers the default evaluator with TryAdd, so registering it first keeps one registration whichever call
+        // runs first and gives the decorator something to wrap. The marker keeps a repeated call from wrapping twice.
+        if (!services.IsAdded<DescribedRequirementRejectionMarker>())
         {
-            services.AddSingleton(new FeatureRejectionEvaluatorMarker());
+            services.AddSingleton(new DescribedRequirementRejectionMarker());
             services.TryAddTransient<IAuthorizationEvaluator, DefaultAuthorizationEvaluator>();
-            services.TryDecorate<IAuthorizationEvaluator, FeatureRejectionAuthorizationEvaluator>();
+            services.TryDecorate<IAuthorizationEvaluator, DescribedRequirementRejectionEvaluator>();
         }
 
         // ASP.NET Core refuses an [Authorize] endpoint the authorization middleware never saw, but runs a
@@ -95,7 +96,7 @@ public static class SetupMiddlewares
         return services;
     }
 
-    private sealed class FeatureRejectionEvaluatorMarker;
+    private sealed class DescribedRequirementRejectionMarker;
 
     /// <summary>
     /// Adds the status-codes rewriter middleware to the ASP.NET Core request pipeline.

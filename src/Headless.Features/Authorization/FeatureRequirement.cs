@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Features.Resources;
+using Headless.Primitives;
 using Microsoft.AspNetCore.Authorization;
 
 namespace Headless.Features;
@@ -13,18 +15,20 @@ namespace Headless.Features;
 /// <remarks>
 /// <para>
 /// <see cref="RequiresFeatureAttribute"/> adds this requirement to an endpoint's policy; add it to a named policy
-/// (<c>AddRequirements(new FeatureRequirement(...))</c>) to gate a policy on features directly. The handler that
+/// (<c>policy.RequireFeatures(...)</c> or <c>AddRequirements(new FeatureRequirement(...))</c>) to gate a policy on
+/// features directly. The handler that
 /// <c>AddHeadlessFeatures</c> registers evaluates it through <see cref="IFeatureManager"/>, for the ambient tenant.
 /// </para>
 /// <para>
 /// The requirement is about the tenant's or edition's state, not about the caller: it does not need an authenticated
-/// user. When it is the only requirement left unmet, <c>Headless.Api</c> answers 409 with the
+/// user. It describes its failure through <see cref="IDescribedRequirement"/> as a <see cref="ConflictError"/>, so
+/// when it is the only kind of requirement left unmet, <c>Headless.Api</c> answers 409 with the
 /// <c>g:feature_currently_not_available</c> error instead of a challenge or forbid. Without <c>Headless.Api</c>,
 /// ASP.NET Core's default failure applies: 401 for an anonymous caller, 403 for an authenticated one.
 /// </para>
 /// </remarks>
 [PublicAPI]
-public sealed class FeatureRequirement : IAuthorizationRequirement
+public sealed class FeatureRequirement : IAuthorizationRequirement, IDescribedRequirement
 {
     /// <summary>Initializes the requirement.</summary>
     /// <param name="featureNames">The feature names to evaluate, at least one.</param>
@@ -49,6 +53,22 @@ public sealed class FeatureRequirement : IAuthorizationRequirement
     /// When <see langword="false"/>, any single enabled feature satisfies the requirement (OR).
     /// </summary>
     public bool RequiresAll { get; }
+
+    /// <summary>
+    /// Describes the disabled feature(s) with the same descriptor and parameters
+    /// <c>IFeatureManager.EnsureEnabledAsync</c> puts on its <c>ConflictException</c>, so a client sees one error shape
+    /// whether the gate ran in authorization or in application code.
+    /// </summary>
+    /// <returns>A <see cref="ConflictError"/> carrying <c>g:feature_currently_not_available</c>.</returns>
+    public ApiResultError DescribeFailure()
+    {
+        return new ConflictError(
+            MessageDescriber
+                .FeatureCurrentlyUnavailable()
+                .WithParam("Type", RequiresAll ? "And" : "Or")
+                .WithParam("FeatureNames", FeatureNames)
+        );
+    }
 
     public override string ToString()
     {

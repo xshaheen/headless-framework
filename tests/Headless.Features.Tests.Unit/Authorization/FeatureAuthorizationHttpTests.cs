@@ -8,6 +8,7 @@ using Headless.Caching;
 using Headless.Context;
 using Headless.Features;
 using Headless.Permissions;
+using Headless.Primitives;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
@@ -30,6 +31,7 @@ public sealed class FeatureAuthorizationHttpTests : TestBase
     private const string _Exports = "Exports";
     private const string _ReportsView = "Reports.View";
     private const string _FeatureUnavailableCode = "g:feature_currently_not_available";
+    private const string _LockedCode = "g:test_locked";
 
     #region MVC
 
@@ -156,14 +158,16 @@ public sealed class FeatureAuthorizationHttpTests : TestBase
         await _AssertFeatureUnavailableAsync(response, _Reports, _Exports);
     }
 
-    [Fact]
-    public async Task should_gate_every_endpoint_of_a_route_group()
+    [Theory]
+    [InlineData("/group/gated")]
+    [InlineData("/metadata-group/gated")]
+    public async Task should_gate_every_endpoint_of_a_route_group(string path)
     {
         // given
         await using var app = await _StartAsync(new HostOptions());
 
         // when
-        using var response = await _GetAsync(app, "/group/gated", authenticated: true);
+        using var response = await _GetAsync(app, path, authenticated: true);
 
         // then
         await _AssertFeatureUnavailableAsync(response, _Reports);
@@ -171,7 +175,8 @@ public sealed class FeatureAuthorizationHttpTests : TestBase
 
     [Theory]
     [InlineData("/group/open-attribute")]
-    [InlineData("/group/open-convention")]
+    [InlineData("/group/open-metadata")]
+    [InlineData("/metadata-group/open")]
     public async Task should_let_a_group_endpoint_opt_out_of_the_feature_check(string path)
     {
         // given
@@ -188,13 +193,10 @@ public sealed class FeatureAuthorizationHttpTests : TestBase
     public void should_reject_an_empty_feature_list()
     {
         // given
-        var builder = WebApplication.CreateSlimBuilder();
-        builder.WebHost.UseTestServer();
-        using var app = builder.Build();
-        var endpoint = app.MapGet("/empty", () => "empty");
+        var builder = new AuthorizationPolicyBuilder();
 
         // when
-        var act = () => endpoint.RequireFeatures();
+        var act = () => builder.RequireFeatures();
 
         // then
         act.Should().Throw<ArgumentException>();
@@ -204,30 +206,36 @@ public sealed class FeatureAuthorizationHttpTests : TestBase
 
     #region Anonymous callers
 
-    [Fact]
-    public async Task should_gate_an_anonymous_caller_on_a_disabled_feature()
+    [Theory]
+    [InlineData("/minimal")]
+    [InlineData("/minimal/metadata")]
+    [InlineData("/minimal/attribute")]
+    public async Task should_gate_an_anonymous_caller_on_a_disabled_feature(string path)
     {
         // given
         await using var app = await _StartAsync(new HostOptions());
 
         // when
-        using var response = await _GetAsync(app, "/minimal", authenticated: false);
+        using var response = await _GetAsync(app, path, authenticated: false);
 
         // then
         await _AssertFeatureUnavailableAsync(response, _Reports);
     }
 
-    [Fact]
-    public async Task should_let_an_anonymous_caller_through_an_enabled_feature_gate()
+    [Theory]
+    [InlineData("/minimal", "minimal")]
+    [InlineData("/minimal/metadata", "metadata")]
+    [InlineData("/minimal/attribute", "attribute")]
+    public async Task should_let_an_anonymous_caller_through_an_enabled_feature_gate(string path, string body)
     {
         // given - a feature gate is about the tenant's state, so it adds no authenticated-user requirement
         await using var app = await _StartAsync(new HostOptions { EnabledFeatures = [_Reports] });
 
         // when
-        using var response = await _GetAsync(app, "/minimal", authenticated: false);
+        using var response = await _GetAsync(app, path, authenticated: false);
 
         // then
-        await _AssertOkAsync(response, "minimal");
+        await _AssertOkAsync(response, body);
     }
 
     [Theory]
@@ -241,7 +249,7 @@ public sealed class FeatureAuthorizationHttpTests : TestBase
         );
 
         // when
-        using var response = await _GetAsync(app, "/minimal", authenticated: false);
+        using var response = await _GetAsync(app, "/minimal/metadata", authenticated: false);
 
         // then - the challenge wins: an anonymous caller learns nothing about the feature
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
@@ -254,7 +262,7 @@ public sealed class FeatureAuthorizationHttpTests : TestBase
         await using var app = await _StartAsync(new HostOptions { RequireUserByDefault = true });
 
         // when
-        using var response = await _GetAsync(app, "/minimal", authenticated: true);
+        using var response = await _GetAsync(app, "/minimal/metadata", authenticated: true);
 
         // then
         await _AssertFeatureUnavailableAsync(response, _Reports);
@@ -285,6 +293,39 @@ public sealed class FeatureAuthorizationHttpTests : TestBase
 
         // then
         response.StatusCode.Should().Be(expected);
+    }
+
+    #endregion
+
+    #region Described requirements
+
+    [Fact]
+    public async Task should_answer_with_the_error_any_described_requirement_reports()
+    {
+        // given - the rewriter maps the contract, not the feature type, so another gate can reuse it
+        await using var app = await _StartAsync(new HostOptions());
+
+        // when
+        using var response = await _GetAsync(app, "/described/forbidden", authenticated: false);
+
+        // then
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync(AbortToken));
+        document.RootElement.GetProperty("error").GetProperty("code").GetString().Should().Be(_LockedCode);
+    }
+
+    [Fact]
+    public async Task should_keep_the_default_failure_when_described_requirements_disagree_on_the_kind()
+    {
+        // given - a disabled feature (conflict) and a forbidden described requirement have no single honest status
+        await using var app = await _StartAsync(new HostOptions());
+
+        // when
+        using var response = await _GetAsync(app, "/described/mixed", authenticated: true);
+
+        // then
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        (await response.Content.ReadAsStringAsync(AbortToken)).Should().NotContain(_FeatureUnavailableCode);
     }
 
     #endregion
@@ -357,6 +398,7 @@ public sealed class FeatureAuthorizationHttpTests : TestBase
     [InlineData("/reports")]
     [InlineData("/minimal")]
     [InlineData("/minimal/attribute")]
+    [InlineData("/minimal/metadata")]
     public async Task should_refuse_a_gated_endpoint_when_routing_runs_after_the_implicit_authorization(string path)
     {
         // given - the host calls UseRouting() but never UseAuthorization(), and the feature is enabled, so only the
@@ -503,21 +545,34 @@ public sealed class FeatureAuthorizationHttpTests : TestBase
 
             if (options.GateControllersOn is not null)
             {
-                controllers.RequireFeatures(options.GateControllersOn);
+                controllers.RequireAuthorization(policy => policy.RequireFeatures(options.GateControllersOn));
             }
         }
 
-        app.MapGet("/minimal", () => "minimal").RequireFeatures(_Reports);
+        // RequireAuthorization with a policy adds no user requirement, but it replaces the fallback policy; the
+        // metadata and attribute shapes below add the feature requirement alone and keep the fallback in force.
+        app.MapGet("/minimal", () => "minimal").RequireAuthorization(policy => policy.RequireFeatures(_Reports));
+        app.MapGet("/minimal/metadata", () => "metadata").WithMetadata(new RequiresFeatureAttribute(_Reports));
         app.MapGet("/minimal/attribute", [RequiresFeature(_Reports)] () => "attribute");
-        app.MapGet("/minimal/all", () => "all").RequireFeatures(requiresAll: true, _Reports, _Exports);
+        app.MapGet("/minimal/all", () => "all")
+            .RequireAuthorization(policy => policy.RequireFeatures(requiresAll: true, _Reports, _Exports));
         app.MapGet("/permission-and-feature", () => "both")
             .RequireAuthorization(_ReportsView)
-            .RequireFeatures(_Reports);
+            .RequireAuthorization(policy => policy.RequireFeatures(_Reports));
 
-        var group = app.MapGroup("/group").RequireFeatures(_Reports);
+        var group = app.MapGroup("/group").RequireAuthorization(policy => policy.RequireFeatures(_Reports));
         group.MapGet("/gated", () => "gated");
         group.MapGet("/open-attribute", [DisableFeatureCheck] () => "open");
-        group.MapGet("/open-convention", () => "open").DisableFeatureCheck();
+        group.MapGet("/open-metadata", () => "open").WithMetadata(new DisableFeatureCheckAttribute());
+
+        app.MapGet("/described/forbidden", () => "forbidden")
+            .RequireAuthorization(policy => policy.AddRequirements(new LockedRequirement()));
+        app.MapGet("/described/mixed", () => "mixed")
+            .RequireAuthorization(policy => policy.AddRequirements(new LockedRequirement()).RequireFeatures(_Reports));
+
+        var metadataGroup = app.MapGroup("/metadata-group").WithMetadata(new RequiresFeatureAttribute(_Reports));
+        metadataGroup.MapGet("/gated", () => "gated");
+        metadataGroup.MapGet("/open", () => "open").WithMetadata(new DisableFeatureCheckAttribute());
 
         try
         {
@@ -598,6 +653,15 @@ public sealed class FeatureAuthorizationHttpTests : TestBase
             .Select(name => name.GetString())
             .Should()
             .Equal(features);
+    }
+
+    /// <summary>A gate no handler satisfies, describing its failure as a forbidden error.</summary>
+    private sealed class LockedRequirement : IAuthorizationRequirement, IDescribedRequirement
+    {
+        public ApiResultError DescribeFailure()
+        {
+            return new ForbiddenError(new ErrorDescriptor(_LockedCode, "Locked."));
+        }
     }
 
     private sealed class FeaturesDbContext(DbContextOptions<FeaturesDbContext> options) : DbContext(options)

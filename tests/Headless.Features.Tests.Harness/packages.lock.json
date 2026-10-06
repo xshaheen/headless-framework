@@ -662,6 +662,7 @@
           "Headless.Messaging.Bus.Abstractions": "[1.0.0, )",
           "Headless.MultiTenancy.Abstractions": "[1.0.0, )",
           "Headless.Sql.Abstractions": "[1.0.0, )",
+          "Microsoft.AspNetCore.Authorization": "[10.0.12, )",
           "Polly.Core": "[8.7.0, )"
         }
       },
@@ -670,8 +671,7 @@
         "dependencies": {
           "Headless.Context.Abstractions": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
-          "Headless.Serializer.Json": "[1.0.0, )",
-          "Microsoft.AspNetCore.Authorization": "[10.0.12, )"
+          "Headless.Serializer.Json": "[1.0.0, )"
         }
       },
       "headless.features.storage.entityframework": {

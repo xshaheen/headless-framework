@@ -6,11 +6,6 @@
     <RootNamespace>Headless.Features</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
-    <!-- The host-agnostic authorization package, not the ASP.NET Core shared framework: feature gates are
-         authorization requirements, and worker hosts must still use the abstractions without the ASP.NET runtime. -->
-    <PackageReference Include="Microsoft.AspNetCore.Authorization" />
-  </ItemGroup>
-  <ItemGroup>
     <ProjectReference Include="..\Headless.Context.Abstractions\Headless.Context.Abstractions.csproj" />
     <ProjectReference Include="..\Headless.Extensions\Headless.Extensions.csproj" />
     <ProjectReference Include="..\Headless.Serializer.Json\Headless.Serializer.Json.csproj" />
