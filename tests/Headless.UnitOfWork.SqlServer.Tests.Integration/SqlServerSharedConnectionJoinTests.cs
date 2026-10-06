@@ -29,7 +29,7 @@ public sealed class SqlServerSharedConnectionJoinTests(SqlServerUnitOfWorkFixtur
         var owner = scope.ServiceProvider.GetRequiredService<SqlServerCrossProviderJoinTests.ProbeDbContext>();
         await using var sibling = _CreateSibling((SqlConnection)owner.Database.GetDbConnection());
 
-        await using (var unit = await factory.BeginAsync(owner, cancellationToken: AbortToken))
+        await using (var unit = await factory.BeginAsync(owner, AbortToken))
         {
             owner.Probes.Add(new SqlServerCrossProviderJoinTests.ProbeRow { Name = "owner" });
             await owner.SaveChangesAsync(AbortToken);
@@ -70,7 +70,7 @@ public sealed class SqlServerSharedConnectionJoinTests(SqlServerUnitOfWorkFixtur
         var owner = scope.ServiceProvider.GetRequiredService<SqlServerCrossProviderJoinTests.ProbeDbContext>();
         await using var sibling = _CreateSibling((SqlConnection)owner.Database.GetDbConnection());
 
-        await using (var unit = await factory.BeginAsync(owner, cancellationToken: AbortToken))
+        await using (var unit = await factory.BeginAsync(owner, AbortToken))
         {
             // A plain save on the sibling, after reading the unit the way a repository would.
             sibling.UnitOfWork().Should().BeSameAs(unit);

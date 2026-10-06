@@ -1303,7 +1303,7 @@ public sealed class MessagePublisherDeliveryTests : TestBase
                 "TestStorage",
                 [MessageLane.Bus, MessageLane.Queue],
                 supportsDelayedScheduling: true,
-                inboxCapability: MessagingInboxCapabilityTier.Transactional
+                inboxGuarantee: InboxGuarantee.Transactional
             ),
         ]);
         var requestFactory = new MessagePublishRequestFactory(

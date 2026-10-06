@@ -69,7 +69,7 @@ public sealed class PostgreSqlIdempotencyFixture
         CancellationToken cancellationToken
     )
     {
-        return factory.BeginAsync((NpgsqlConnection)connection, cancellationToken: cancellationToken);
+        return factory.BeginAsync((NpgsqlConnection)connection, cancellationToken);
     }
 
     public async Task<StoredRecord?> ReadRecordAsync(IdempotencyRecordKey key, CancellationToken cancellationToken)

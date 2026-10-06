@@ -7,7 +7,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddHeadlessMessaging(setup =>
 {
     setup.AddModule<Headless.Messaging.Aws.InMemory.Demo.MessagingModule>();
-    setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
+    setup.Options.MinimumInboxGuarantee = InboxGuarantee.ProcessLocal;
     setup.UseInMemoryStorage();
     setup.UseAws(RegionEndpoint.CNNorthWest1);
     setup.UseDashboard(d => d.WithNoAuth());

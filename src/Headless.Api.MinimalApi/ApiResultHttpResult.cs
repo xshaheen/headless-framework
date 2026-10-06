@@ -1,15 +1,15 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Reflection;
-using Headless.Api;
 using Headless.Checks;
+using Headless.Primitives;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Metadata;
 using Microsoft.AspNetCore.Mvc;
 
 #pragma warning disable CA1000 // IEndpointMetadataProvider requires a static member on the returned generic type.
-namespace Headless.Primitives;
+namespace Headless.Api;
 
 /// <summary>
 /// Executes a valued <see cref="ApiResult{T}"/> and publishes its success and ProblemDetails response

@@ -18,7 +18,7 @@ public sealed record MessagingProviderCapabilities
         IEnumerable<MessageLane> lanes,
         bool supportsIndependentLaneTopology,
         bool supportsDelayedScheduling,
-        MessagingInboxCapabilityTier? inboxCapability,
+        InboxGuarantee? inboxGuarantee,
         IReadOnlyCollection<MessagingRoutingAffinityRoute>? routingAffinityRoutes = null,
         bool supportsEveryInstance = false,
         bool supportsRequestReply = false
@@ -30,7 +30,7 @@ public sealed record MessagingProviderCapabilities
         Lanes = lanes.Select(_EnsureDefinedLane).ToFrozenSet();
         SupportsIndependentLaneTopology = supportsIndependentLaneTopology;
         SupportsDelayedScheduling = supportsDelayedScheduling;
-        InboxCapability = inboxCapability;
+        InboxGuarantee = inboxGuarantee;
         RoutingAffinityRoutes = Array.AsReadOnly((routingAffinityRoutes ?? []).ToArray());
         SupportsEveryInstance = supportsEveryInstance;
         SupportsRequestReply = supportsRequestReply;
@@ -62,13 +62,13 @@ public sealed record MessagingProviderCapabilities
 
         if (role is MessagingProviderRole.Storage)
         {
-            Argument.IsInEnum(inboxCapability!.Value);
+            Argument.IsInEnum(inboxGuarantee!.Value);
         }
-        else if (inboxCapability is not null)
+        else if (inboxGuarantee is not null)
         {
             throw new ArgumentException(
-                "Only storage capability descriptors may declare an inbox tier.",
-                nameof(inboxCapability)
+                "Only storage capability descriptors may declare an inbox guarantee.",
+                nameof(inboxGuarantee)
             );
         }
     }
@@ -93,7 +93,7 @@ public sealed record MessagingProviderCapabilities
     /// <summary>
     /// Strongest inbox guarantee supplied by this provider, or <see langword="null"/> for non-storage roles.
     /// </summary>
-    public MessagingInboxCapabilityTier? InboxCapability { get; }
+    public InboxGuarantee? InboxGuarantee { get; }
 
     /// <summary>Locally verified registered destinations with native affinity mappings; empty means unsupported.</summary>
     public IReadOnlyList<MessagingRoutingAffinityRoute> RoutingAffinityRoutes { get; }
@@ -146,7 +146,7 @@ public sealed record MessagingProviderCapabilities
             lanes,
             supportsIndependentLaneTopology,
             supportsDelayedScheduling: false,
-            inboxCapability: null,
+            inboxGuarantee: null,
             routingAffinityRoutes,
             supportsEveryInstance,
             supportsRequestReply
@@ -158,7 +158,7 @@ public sealed record MessagingProviderCapabilities
         string provider,
         IReadOnlyCollection<MessageLane> lanes,
         bool supportsDelayedScheduling,
-        MessagingInboxCapabilityTier inboxCapability
+        InboxGuarantee inboxGuarantee
     )
     {
         Argument.IsNotNull(lanes);
@@ -168,7 +168,7 @@ public sealed record MessagingProviderCapabilities
             lanes,
             supportsIndependentLaneTopology: true,
             supportsDelayedScheduling,
-            inboxCapability
+            inboxGuarantee
         );
     }
 
@@ -181,7 +181,7 @@ public sealed record MessagingProviderCapabilities
             [],
             supportsIndependentLaneTopology: true,
             supportsDelayedScheduling: false,
-            inboxCapability: null
+            inboxGuarantee: null
         );
     }
 
@@ -200,15 +200,19 @@ public enum MessagingProviderRole
     Coordination = 2,
 }
 
-/// <summary>Describes the strongest inbox guarantee a storage provider can enforce.</summary>
+/// <summary>
+/// An inbox guarantee, from weakest to strongest. A storage provider declares the strongest one it enforces, and
+/// <see cref="MessagingOptions.MinimumInboxGuarantee"/> names the weakest one durable consumers accept.
+/// </summary>
+/// <remarks>Each member implies every weaker one, and the numeric values follow that order.</remarks>
 [PublicAPI]
-public enum MessagingInboxCapabilityTier
+public enum InboxGuarantee
 {
     /// <summary>State and duplicate suppression are process-local and do not survive restart.</summary>
     ProcessLocal = 0,
 
     /// <summary>Inbox state is durable, but its outcome cannot commit atomically with application state.</summary>
-    DurableDedupeOnly = 1,
+    Durable = 1,
 
     /// <summary>
     /// Inbox outcome, compatible enlisted application state, and captured outgoing work can commit atomically.

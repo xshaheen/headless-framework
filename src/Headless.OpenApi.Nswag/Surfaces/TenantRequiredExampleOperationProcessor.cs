@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Api;
+using Headless.Api.Resources;
 using Headless.Checks;
 using Microsoft.AspNetCore.Authorization;
 using NSwag;
@@ -75,6 +76,11 @@ public sealed class TenantRequiredExampleOperationProcessor : IOperationProcesso
         return true;
     }
 
+    // English on purpose: NSwag caches the generated document, so text resolved under the culture of
+    // whichever request generated it first would be served to every reader.
+    private const string _TenantRequiredDescription =
+        "An operation required an ambient tenant context but none was set.";
+
     private static Dictionary<string, object?> _CreateTenantRequiredExample()
     {
         return new(StringComparer.Ordinal)
@@ -82,12 +88,12 @@ public sealed class TenantRequiredExampleOperationProcessor : IOperationProcesso
             ["type"] = HeadlessProblemDetailsConstants.Types.Forbidden,
             ["title"] = HeadlessProblemDetailsConstants.Titles.Forbidden,
             ["status"] = 403,
-            ["detail"] = HeadlessProblemDetailsConstants.Details.TenantContextRequired,
+            ["detail"] = _TenantRequiredDescription,
             ["instance"] = "/some-endpoint",
             ["error"] = new Dictionary<string, object?>(StringComparer.Ordinal)
             {
-                ["code"] = HeadlessProblemDetailsConstants.Errors.TenantContextRequired.Code,
-                ["description"] = HeadlessProblemDetailsConstants.Details.TenantContextRequired,
+                ["code"] = GeneralErrorCodes.TenantRequired,
+                ["description"] = _TenantRequiredDescription,
             },
             ["traceId"] = "<trace-id>",
             ["buildNumber"] = "<version>",

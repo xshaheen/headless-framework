@@ -5,6 +5,7 @@ using System.Net.Mime;
 using FluentValidation.Results;
 using Headless;
 using Headless.Api;
+using Headless.Api.Resources;
 using Headless.Context;
 using Headless.MultiTenancy;
 using Headless.Primitives;
@@ -47,15 +48,8 @@ public sealed class HeadlessApiExceptionHandlerEndToEndTests : TestBase
 
         root.GetProperty("status").GetInt32().Should().Be(403);
         root.GetProperty("title").GetString().Should().Be(HeadlessProblemDetailsConstants.Titles.Forbidden);
-        root.GetProperty("detail")
-            .GetString()
-            .Should()
-            .Be(HeadlessProblemDetailsConstants.Details.TenantContextRequired);
-        root.GetProperty("error")
-            .GetProperty("code")
-            .GetString()
-            .Should()
-            .Be(HeadlessProblemDetailsConstants.Errors.TenantContextRequired.Code);
+        root.GetProperty("detail").GetString().Should().Be(Messages.g_tenant_required);
+        root.GetProperty("error").GetProperty("code").GetString().Should().Be(GeneralErrorCodes.TenantRequired);
         root.GetProperty("traceId").GetString().Should().NotBeNullOrWhiteSpace();
         root.GetProperty("instance").GetString().Should().Be("/throw");
     }
@@ -80,7 +74,7 @@ public sealed class HeadlessApiExceptionHandlerEndToEndTests : TestBase
         body.Should().NotContain("CUSTOM_OUTER_MESSAGE");
         body.Should().NotContain("SENSITIVE_LAYER_TAG");
         body.Should().NotContain("Sensitive.Layer.Tag");
-        body.Should().Contain(HeadlessProblemDetailsConstants.Errors.TenantContextRequired.Code);
+        body.Should().Contain(GeneralErrorCodes.TenantRequired);
     }
 
     [Fact]
@@ -143,9 +137,7 @@ public sealed class HeadlessApiExceptionHandlerEndToEndTests : TestBase
         root.GetProperty("errors")
             .EnumerateArray()
             .Should()
-            .Contain(error =>
-                error.GetProperty("code").GetString() == HeadlessProblemDetailsConstants.Errors.CrossTenantWrite.Code
-            );
+            .Contain(error => error.GetProperty("code").GetString() == GeneralErrorCodes.CrossTenantWrite);
     }
 
     [Fact]
@@ -197,7 +189,7 @@ public sealed class HeadlessApiExceptionHandlerEndToEndTests : TestBase
         // Negative assertion: response is not the tenancy 403 shape — the unique tenancy code
         // is the identifier; title is shared `forbidden` so it can't be used to distinguish.
         var body = await response.Content.ReadAsStringAsync(AbortToken);
-        body.Should().NotContain(HeadlessProblemDetailsConstants.Errors.TenantContextRequired.Code);
+        body.Should().NotContain(GeneralErrorCodes.TenantRequired);
     }
 
     [Theory]
@@ -268,11 +260,7 @@ public sealed class HeadlessApiExceptionHandlerEndToEndTests : TestBase
         using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;
         root.GetProperty("status").GetInt32().Should().Be(403);
-        root.GetProperty("error")
-            .GetProperty("code")
-            .GetString()
-            .Should()
-            .Be(HeadlessProblemDetailsConstants.Errors.TenantContextRequired.Code);
+        root.GetProperty("error").GetProperty("code").GetString().Should().Be(GeneralErrorCodes.TenantRequired);
     }
 
     [Fact]

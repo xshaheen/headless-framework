@@ -50,9 +50,9 @@ public sealed class MessagingCapabilityModel : IMessageCapabilityGate
     public bool IsFrozen => true;
 
     /// <inheritdoc />
-    public MessagingInboxCapabilityTier? InboxCapability =>
+    public InboxGuarantee? StorageInboxGuarantee =>
         _providersByRole.TryGetValue(MessagingProviderRole.Storage, out var storageProviders)
-            ? storageProviders.Single().InboxCapability
+            ? storageProviders.Single().InboxGuarantee
             : null;
 
     /// <summary>Composes and freezes a deterministic capability model.</summary>
@@ -88,15 +88,15 @@ public sealed class MessagingCapabilityModel : IMessageCapabilityGate
     /// <summary>Validates the frozen model against every registered semantic route.</summary>
     /// <param name="routes">Every registered semantic route.</param>
     /// <param name="hasDurableConsumers">Whether any durable consumer is registered.</param>
-    /// <param name="requiredInboxCapability">The inbox tier the host requires from storage.</param>
+    /// <param name="minimumInboxGuarantee">The inbox guarantee the host requires from storage.</param>
     internal void ValidateStartup(
         IEnumerable<MessageRouteKey> routes,
         bool hasDurableConsumers = false,
-        MessagingInboxCapabilityTier requiredInboxCapability = MessagingInboxCapabilityTier.Transactional
+        InboxGuarantee minimumInboxGuarantee = InboxGuarantee.Transactional
     )
     {
         Argument.IsNotNull(routes);
-        Argument.IsInEnum(requiredInboxCapability);
+        Argument.IsInEnum(minimumInboxGuarantee);
 
         var routeArray = routes.ToArray();
         _RequireRole(MessagingProviderRole.Transport, "Messaging requires a transport provider contribution.");
@@ -104,7 +104,7 @@ public sealed class MessagingCapabilityModel : IMessageCapabilityGate
 
         if (hasDurableConsumers)
         {
-            _EnsureInboxSupported(requiredInboxCapability);
+            _EnsureInboxSupported(minimumInboxGuarantee);
         }
 
         foreach (var route in routeArray)
@@ -139,21 +139,19 @@ public sealed class MessagingCapabilityModel : IMessageCapabilityGate
         }
     }
 
-    private void _EnsureInboxSupported(MessagingInboxCapabilityTier requiredInboxCapability)
+    private void _EnsureInboxSupported(InboxGuarantee minimumInboxGuarantee)
     {
         var storage = _providersByRole[MessagingProviderRole.Storage].Single();
-        var available = storage.InboxCapability!.Value;
+        var available = storage.InboxGuarantee!.Value;
 
-        var isSupported = requiredInboxCapability switch
+        var isSupported = minimumInboxGuarantee switch
         {
-            MessagingInboxCapabilityTier.ProcessLocal => available
-                is MessagingInboxCapabilityTier.ProcessLocal
-                    or MessagingInboxCapabilityTier.DurableDedupeOnly
-                    or MessagingInboxCapabilityTier.Transactional,
-            MessagingInboxCapabilityTier.DurableDedupeOnly => available
-                is MessagingInboxCapabilityTier.DurableDedupeOnly
-                    or MessagingInboxCapabilityTier.Transactional,
-            MessagingInboxCapabilityTier.Transactional => available is MessagingInboxCapabilityTier.Transactional,
+            InboxGuarantee.ProcessLocal => available
+                is InboxGuarantee.ProcessLocal
+                    or InboxGuarantee.Durable
+                    or InboxGuarantee.Transactional,
+            InboxGuarantee.Durable => available is InboxGuarantee.Durable or InboxGuarantee.Transactional,
+            InboxGuarantee.Transactional => available is InboxGuarantee.Transactional,
             _ => throw new UnreachableException(),
         };
 
@@ -163,10 +161,10 @@ public sealed class MessagingCapabilityModel : IMessageCapabilityGate
         }
 
         throw new MessagingConfigurationException(
-            $"Durable consumers require the {requiredInboxCapability} inbox tier, but storage provider "
-                + $"'{storage.Provider}' declares {available}. Select {nameof(MessagingInboxCapabilityTier.DurableDedupeOnly)} "
+            $"Durable consumers require the {minimumInboxGuarantee} inbox guarantee, but storage provider "
+                + $"'{storage.Provider}' declares {available}. Select {nameof(InboxGuarantee.Durable)} "
                 + "explicitly when durable duplicate suppression without atomic application-state coordination is acceptable, "
-                + $"or select {nameof(MessagingInboxCapabilityTier.ProcessLocal)} explicitly for process-local development storage."
+                + $"or select {nameof(InboxGuarantee.ProcessLocal)} explicitly for process-local development storage."
         );
     }
 
@@ -419,8 +417,8 @@ public sealed class MessagingCapabilityModel : IMessageCapabilityGate
     void IMessageCapabilityGate.ValidateStartup(
         IEnumerable<MessageRouteKey> routes,
         bool hasDurableConsumers,
-        MessagingInboxCapabilityTier requiredInboxCapability
-    ) => ValidateStartup(routes, hasDurableConsumers, requiredInboxCapability);
+        InboxGuarantee minimumInboxGuarantee
+    ) => ValidateStartup(routes, hasDurableConsumers, minimumInboxGuarantee);
 
     void IMessageCapabilityGate.EnsureDirectSupported(MessageLane lane) => EnsureDirectSupported(lane);
 
@@ -454,8 +452,8 @@ public interface IMessagingCapabilityModel
     /// <summary>Always true for a composed model.</summary>
     bool IsFrozen { get; }
 
-    /// <summary>The inbox tier declared by the configured storage provider, when one is present.</summary>
-    MessagingInboxCapabilityTier? InboxCapability { get; }
+    /// <summary>The inbox guarantee declared by the configured storage provider, when one is present.</summary>
+    InboxGuarantee? StorageInboxGuarantee { get; }
 
     /// <summary>Returns whether a role supports a semantic lane.</summary>
     bool Supports(MessageLane lane, MessagingProviderRole role);
@@ -466,7 +464,7 @@ internal interface IMessageCapabilityGate : IMessagingCapabilityModel
     void ValidateStartup(
         IEnumerable<MessageRouteKey> routes,
         bool hasDurableConsumers,
-        MessagingInboxCapabilityTier requiredInboxCapability
+        InboxGuarantee minimumInboxGuarantee
     );
 
     void EnsureDirectSupported(MessageLane lane);

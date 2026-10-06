@@ -45,7 +45,7 @@ public sealed class UnitOfWorkFactorySqliteExtensionsTests : TestBase
         var manager = scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>();
         await using var connection = new SqliteConnection("Data Source=unused.db");
 
-        var beginAct = () => manager.BeginAsync((SqliteConnection)null!, cancellationToken: AbortToken).AsTask();
+        var beginAct = () => manager.BeginAsync((SqliteConnection)null!, AbortToken).AsTask();
         var beginNull = (await beginAct.Should().ThrowAsync<ArgumentNullException>()).Which;
 
         var enlistAct = () => manager.Enlist(connection, null!);

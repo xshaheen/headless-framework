@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data;
 using Headless.UnitOfWork;
 using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
@@ -171,13 +172,14 @@ public sealed class SqlServerConnectionFactoryReplayFixture(SqlServerUnitOfWorkF
             _ => ValueTask.FromResult(new SqlConnection(container.ConnectionString)),
             (unitOfWork, connection, ct) =>
                 operation(new SqlServerReplayContext(factory, connection, unitOfWork, container.ConnectionString), ct),
-            retry: new RetryStrategyOptions
+            IsolationLevel.ReadCommitted,
+            new RetryStrategyOptions
             {
                 MaxRetryAttempts = 1,
                 Delay = TimeSpan.Zero,
                 ShouldHandle = static args => ValueTask.FromResult(args.Outcome.Exception is not null),
             },
-            cancellationToken: cancellationToken
+            cancellationToken
         );
     }
 
@@ -263,7 +265,7 @@ public sealed class SqlServerReplayContext(
         CancellationToken cancellationToken
     )
     {
-        return factory.RunAsync(connection, operation, cancellationToken: cancellationToken);
+        return factory.RunAsync(connection, operation, cancellationToken);
     }
 
     private SqlTransaction _Transaction()

@@ -94,7 +94,7 @@ public sealed class HeadlessSaveChangesPipelineUnitOfWorkTests(HeadlessDbContext
         var db = scope.ServiceProvider.GetRequiredService<PipelineTestDbContext>();
         var factory = scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>();
 
-        await using (var unitOfWork = await factory.BeginAsync(db, cancellationToken: AbortToken))
+        await using (var unitOfWork = await factory.BeginAsync(db, AbortToken))
         {
             db.Probes.Add(_ProbeWithEvents("caller-owned"));
 
@@ -271,7 +271,7 @@ public sealed class HeadlessSaveChangesPipelineUnitOfWorkTests(HeadlessDbContext
         var factory = provider.GetRequiredService<IUnitOfWorkFactory>();
         await using var db = await contextFactory.CreateDbContextAsync(AbortToken);
 
-        await using var unitOfWork = await factory.BeginAsync(db, cancellationToken: AbortToken);
+        await using var unitOfWork = await factory.BeginAsync(db, AbortToken);
         db.Probes.Add(_ProbeWithEvents("factory"));
 
         // when
@@ -324,7 +324,7 @@ public sealed class HeadlessSaveChangesPipelineUnitOfWorkTests(HeadlessDbContext
                 .GetRequiredService<IDbContextFactory<PipelineTestDbContext>>()
                 .CreateDbContextAsync(AbortToken)
             : scope.ServiceProvider.GetRequiredService<PipelineTestDbContext>();
-        var unitOfWork = viaFactory ? await factory.BeginAsync(db, cancellationToken: AbortToken) : null;
+        var unitOfWork = viaFactory ? await factory.BeginAsync(db, AbortToken) : null;
         db.Probes.Add(_ProbeWithEvents("outer"));
 
         // when

@@ -87,7 +87,7 @@ public sealed class SqlServerSequencesFixture
         CancellationToken cancellationToken
     )
     {
-        return factory.BeginAsync((SqlConnection)connection, cancellationToken: cancellationToken);
+        return factory.BeginAsync((SqlConnection)connection, cancellationToken);
     }
 
     public IUnitOfWork Enlist(IUnitOfWorkFactory factory, DbConnection connection, DbTransaction transaction)

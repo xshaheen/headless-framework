@@ -96,7 +96,7 @@ public sealed class PostgreSqlFencingEntityFrameworkTests(PostgreSqlFencingFixtu
         var db = scope.ServiceProvider.GetRequiredService<ShipmentDbContext>();
         var factory = scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>();
 
-        await factory.RunAsync(db, (_, ct) => operation(db, ct), cancellationToken: AbortToken);
+        await factory.RunAsync(db, (_, ct) => operation(db, ct), AbortToken);
     }
 
     private Task<int> _CountShipmentsAsync(string resource)

@@ -24,7 +24,7 @@ public sealed class EfUnitOfWorkJoinTests : TestBase
     {
         await using var host = await EfUnitOfWorkHost.CreateAsync();
         await using var session = host.CreateSession();
-        await using var owner = await session.Factory.BeginAsync(session.Db, cancellationToken: AbortToken);
+        await using var owner = await session.Factory.BeginAsync(session.Db, AbortToken);
         IUnitOfWork? joined = null;
 
         // when — a callee wraps its own write the way it would if it had opened the transaction itself
@@ -95,7 +95,7 @@ public sealed class EfUnitOfWorkJoinTests : TestBase
         // discards the joined block's row with everything else.
         await using var host = await EfUnitOfWorkHost.CreateAsync();
         await using var session = host.CreateSession();
-        await using var owner = await session.Factory.BeginAsync(session.Db, cancellationToken: AbortToken);
+        await using var owner = await session.Factory.BeginAsync(session.Db, AbortToken);
 
         var act = () =>
             session.Factory.RunAsync(
@@ -126,7 +126,7 @@ public sealed class EfUnitOfWorkJoinTests : TestBase
         await using var session = host.CreateSession();
         var connection = session.Db.Database.GetDbConnection();
 
-        var unitOfWork = await session.Factory.BeginAsync(session.Db, cancellationToken: AbortToken);
+        var unitOfWork = await session.Factory.BeginAsync(session.Db, AbortToken);
 
         connection.UnitOfWork().Should().BeSameAs(unitOfWork);
         connection.UnitOfWork().Should().BeSameAs(session.Db.UnitOfWork());
@@ -145,7 +145,7 @@ public sealed class EfUnitOfWorkJoinTests : TestBase
         // its retained handle refuses registrations, and the next entry point begins fresh.
         await using var host = await EfUnitOfWorkHost.CreateAsync();
         await using var session = host.CreateSession();
-        var stale = await session.Factory.BeginAsync(session.Db, cancellationToken: AbortToken);
+        var stale = await session.Factory.BeginAsync(session.Db, AbortToken);
         var connection = session.Db.Database.GetDbConnection();
 
         await session.Db.Database.CurrentTransaction!.DisposeAsync();
@@ -181,7 +181,7 @@ public sealed class EfUnitOfWorkJoinTests : TestBase
         // undo it.
         await using var host = await EfUnitOfWorkHost.CreateAsync();
         await using var session = host.CreateSession();
-        await using var owner = await session.Factory.BeginAsync(session.Db, cancellationToken: AbortToken);
+        await using var owner = await session.Factory.BeginAsync(session.Db, AbortToken);
 
         var act = () =>
             session.Factory.RunAsync(
@@ -207,7 +207,7 @@ public sealed class EfUnitOfWorkJoinTests : TestBase
     {
         await using var host = await EfUnitOfWorkHost.CreateAsync();
         await using var session = host.CreateSession();
-        await using var owner = await session.Factory.BeginAsync(session.Db, cancellationToken: AbortToken);
+        await using var owner = await session.Factory.BeginAsync(session.Db, AbortToken);
 
         var act = () =>
             session.Factory.RunAsync(
@@ -235,7 +235,7 @@ public sealed class EfUnitOfWorkJoinTests : TestBase
         await begin.Should().ThrowAsync<ArgumentException>("the test needs a level the provider refuses on begin");
         session.Db.UnitOfWork().Should().BeNull("a refused begin binds nothing");
 
-        await using var owner = await session.Factory.BeginAsync(session.Db, cancellationToken: AbortToken);
+        await using var owner = await session.Factory.BeginAsync(session.Db, AbortToken);
         IUnitOfWork? joined = null;
 
         await session.Factory.RunAsync(

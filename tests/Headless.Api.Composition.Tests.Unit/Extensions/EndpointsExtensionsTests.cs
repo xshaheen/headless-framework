@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Api;
+using Headless.Api.Resources;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
@@ -75,7 +76,7 @@ public sealed class EndpointsExtensionsTests : TestBase
             Status = StatusCodes.Status400BadRequest,
             Title = HeadlessProblemDetailsConstants.Titles.BadRequest,
             Type = HeadlessProblemDetailsConstants.Types.BadRequest,
-            Detail = HeadlessProblemDetailsConstants.Details.BadRequest,
+            Detail = Messages.problem_bad_request,
         };
         creator.BadRequest().Returns(canonicalBadRequest);
 

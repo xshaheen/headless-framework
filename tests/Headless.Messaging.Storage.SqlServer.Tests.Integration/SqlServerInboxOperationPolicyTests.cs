@@ -360,7 +360,7 @@ public sealed class SqlServerInboxOperationPolicyTests(SqlServerTestFixture fixt
 
     protected override void ConfigureStorage(MessagingSetupBuilder setup)
     {
-        setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.DurableDedupeOnly;
+        setup.Options.MinimumInboxGuarantee = InboxGuarantee.Durable;
         setup.ConfigureStorage(storage => storage.Schema = $"inbox_policy_{Guid.NewGuid():N}");
         setup.UseSqlServer(fixture.ConnectionString);
     }

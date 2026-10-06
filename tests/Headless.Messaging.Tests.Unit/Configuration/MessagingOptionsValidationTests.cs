@@ -504,18 +504,18 @@ public sealed class MessagingOptionsValidationTests : TestBase
     [Fact]
     public void should_require_transactional_inbox_capability_by_default()
     {
-        new MessagingOptions().RequiredInboxCapability.Should().Be(MessagingInboxCapabilityTier.Transactional);
+        new MessagingOptions().MinimumInboxGuarantee.Should().Be(InboxGuarantee.Transactional);
     }
 
     [Fact]
     public void should_reject_unknown_required_inbox_capability()
     {
         var result = new MessagingOptionsValidator().Validate(
-            new MessagingOptions { RequiredInboxCapability = (MessagingInboxCapabilityTier)999 }
+            new MessagingOptions { MinimumInboxGuarantee = (InboxGuarantee)999 }
         );
 
         result.IsValid.Should().BeFalse();
-        result.Errors.Should().Contain(error => error.PropertyName == nameof(MessagingOptions.RequiredInboxCapability));
+        result.Errors.Should().Contain(error => error.PropertyName == nameof(MessagingOptions.MinimumInboxGuarantee));
     }
 
     [Theory]

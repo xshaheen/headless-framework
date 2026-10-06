@@ -56,7 +56,26 @@ public static class UnitOfWorkFactorySqliteExtensions
         /// <c>CompleteAsync</c> commits it, then drains.
         /// </summary>
         /// <param name="connection">The connection whose transaction the unit owns; opened when closed.</param>
-        /// <param name="isolation">Transaction isolation level. Defaults to <see cref="IsolationLevel.ReadCommitted" />.</param>
+        /// <param name="cancellationToken">Propagates the caller's cancellation to the open and begin.</param>
+        /// <returns>The begun unit of work; the caller completes or disposes it.</returns>
+        /// <exception cref="InvalidOperationException">
+        /// The connection already carries an active unit of work: join it with <c>RunAsync</c> or pass it along.
+        /// </exception>
+        /// <remarks>Begins every unit at <see cref="IsolationLevel.ReadCommitted" />.</remarks>
+        public ValueTask<IUnitOfWork> BeginAsync(
+            SqliteConnection connection,
+            CancellationToken cancellationToken = default
+        )
+        {
+            return factory.BeginAsync(connection, IsolationLevel.ReadCommitted, cancellationToken);
+        }
+
+        /// <summary>
+        /// Begins an owned unit of work on <paramref name="connection" />: the transaction starts on this line and
+        /// <c>CompleteAsync</c> commits it, then drains.
+        /// </summary>
+        /// <param name="connection">The connection whose transaction the unit owns; opened when closed.</param>
+        /// <param name="isolation">Transaction isolation level.</param>
         /// <param name="cancellationToken">Propagates the caller's cancellation to the open and begin.</param>
         /// <returns>The begun unit of work; the caller completes or disposes it.</returns>
         /// <exception cref="InvalidOperationException">
@@ -64,7 +83,7 @@ public static class UnitOfWorkFactorySqliteExtensions
         /// </exception>
         public ValueTask<IUnitOfWork> BeginAsync(
             SqliteConnection connection,
-            IsolationLevel isolation = IsolationLevel.ReadCommitted,
+            IsolationLevel isolation,
             CancellationToken cancellationToken = default
         )
         {
@@ -102,8 +121,31 @@ public static class UnitOfWorkFactorySqliteExtensions
         /// </summary>
         /// <param name="connection">The connection to operate on; opened when closed.</param>
         /// <param name="operation">The block receiving the unit and the caller's cancellation token.</param>
+        /// <param name="cancellationToken">Cancellation token forwarded to begin, the operation, and commit.</param>
+        /// <exception cref="InvalidOperationException">A joined block completed, rolled back, or disposed the owner's unit.</exception>
+        /// <remarks>Begins every unit at <see cref="IsolationLevel.ReadCommitted" />.</remarks>
+        public Task RunAsync(
+            SqliteConnection connection,
+            Func<IUnitOfWork, CancellationToken, Task> operation,
+            CancellationToken cancellationToken = default
+        )
+        {
+            return factory.RunAsync(connection, operation, IsolationLevel.ReadCommitted, cancellationToken);
+        }
+
+        /// <summary>
+        /// Runs <paramref name="operation" /> as an owned unit of work on <paramref name="connection" />:
+        /// begin → operation → <c>CompleteAsync</c>. A throwing operation rolls the unit back and rethrows; a
+        /// drain fault after a durable commit is logged, never surfaced. When the connection already carries a
+        /// live unit, the block joins it instead: it receives that unit, and commit or rollback stay with its
+        /// owner; a block that ends the unit itself is refused once it returns. Never replays: the caller owns the
+        /// connection, and replaying on a connection that just failed is pointless. Use
+        /// <c>RunAsync(Func&lt;CancellationToken, ValueTask&lt;SqliteConnection&gt;&gt;, …)</c> for a replayable block.
+        /// </summary>
+        /// <param name="connection">The connection to operate on; opened when closed.</param>
+        /// <param name="operation">The block receiving the unit and the caller's cancellation token.</param>
         /// <param name="isolation">
-        /// Transaction isolation level for a unit this call begins. Defaults to <see cref="IsolationLevel.ReadCommitted" />.
+        /// Transaction isolation level for a unit this call begins.
         /// Ignored when the call joins an already-bound unit: the block runs at the owner's isolation level.
         /// </param>
         /// <param name="cancellationToken">Cancellation token forwarded to begin, the operation, and commit.</param>
@@ -111,7 +153,7 @@ public static class UnitOfWorkFactorySqliteExtensions
         public Task RunAsync(
             SqliteConnection connection,
             Func<IUnitOfWork, CancellationToken, Task> operation,
-            IsolationLevel isolation = IsolationLevel.ReadCommitted,
+            IsolationLevel isolation,
             CancellationToken cancellationToken = default
         )
         {
@@ -129,8 +171,28 @@ public static class UnitOfWorkFactorySqliteExtensions
         /// <typeparam name="TResult">Type of the value returned by <paramref name="operation" />.</typeparam>
         /// <param name="connection">The connection to operate on; opened when closed.</param>
         /// <param name="operation">The block receiving the unit and the caller's cancellation token, returning a result.</param>
+        /// <param name="cancellationToken">Cancellation token forwarded to begin, the operation, and commit.</param>
+        /// <returns>The result produced by <paramref name="operation" />.</returns>
+        /// <exception cref="InvalidOperationException">A joined block completed, rolled back, or disposed the owner's unit.</exception>
+        /// <remarks>Begins every unit at <see cref="IsolationLevel.ReadCommitted" />.</remarks>
+        public Task<TResult> RunAsync<TResult>(
+            SqliteConnection connection,
+            Func<IUnitOfWork, CancellationToken, Task<TResult>> operation,
+            CancellationToken cancellationToken = default
+        )
+        {
+            return factory.RunAsync(connection, operation, IsolationLevel.ReadCommitted, cancellationToken);
+        }
+
+        /// <summary>
+        /// Runs <paramref name="operation" /> as an owned unit of work on <paramref name="connection" /> and returns
+        /// its result, with the same semantics as the result-less <c>RunAsync</c> overload. Never replays.
+        /// </summary>
+        /// <typeparam name="TResult">Type of the value returned by <paramref name="operation" />.</typeparam>
+        /// <param name="connection">The connection to operate on; opened when closed.</param>
+        /// <param name="operation">The block receiving the unit and the caller's cancellation token, returning a result.</param>
         /// <param name="isolation">
-        /// Transaction isolation level for a unit this call begins. Defaults to <see cref="IsolationLevel.ReadCommitted" />.
+        /// Transaction isolation level for a unit this call begins.
         /// Ignored when the call joins an already-bound unit: the block runs at the owner's isolation level.
         /// </param>
         /// <param name="cancellationToken">Cancellation token forwarded to begin, the operation, and commit.</param>
@@ -139,7 +201,7 @@ public static class UnitOfWorkFactorySqliteExtensions
         public Task<TResult> RunAsync<TResult>(
             SqliteConnection connection,
             Func<IUnitOfWork, CancellationToken, Task<TResult>> operation,
-            IsolationLevel isolation = IsolationLevel.ReadCommitted,
+            IsolationLevel isolation,
             CancellationToken cancellationToken = default
         )
         {
@@ -167,7 +229,79 @@ public static class UnitOfWorkFactorySqliteExtensions
         /// token. Issue every command on that connection, inside the unit's transaction. Do not keep the connection
         /// beyond the block: it is disposed when the attempt ends.
         /// </param>
-        /// <param name="isolation">Transaction isolation level for every attempt. Defaults to <see cref="IsolationLevel.ReadCommitted" />.</param>
+        /// <param name="cancellationToken">Cancellation token forwarded to connect, begin, the operation, commit, and replay delays.</param>
+        /// <exception cref="InvalidOperationException"><paramref name="connectionFactory" /> returned <see langword="null" />.</exception>
+        /// <remarks>
+        /// Begins every unit at <see cref="IsolationLevel.ReadCommitted" /> and replays under the host's
+        /// <see cref="UnitOfWorkRetryOptions.RetryStrategy" />; replay is off when it is <see langword="null" />.
+        /// </remarks>
+        public Task RunAsync(
+            Func<CancellationToken, ValueTask<SqliteConnection>> connectionFactory,
+            Func<IUnitOfWork, SqliteConnection, CancellationToken, Task> operation,
+            CancellationToken cancellationToken = default
+        )
+        {
+            return factory.RunAsync(
+                connectionFactory,
+                operation,
+                IsolationLevel.ReadCommitted,
+                retry: null,
+                cancellationToken
+            );
+        }
+
+        /// <summary>
+        /// Runs <paramref name="operation" /> as an owned unit of work on a connection taken from
+        /// <paramref name="connectionFactory" /> for this call: connect → begin → operation → <c>CompleteAsync</c> →
+        /// dispose the connection. A fault before the commit starts that the replay policy classifies as transient
+        /// replays the whole block on a fresh connection, transaction, and unit; a fault once the commit has started,
+        /// or after <see cref="IUnitOfWork.PreventRetry" />, is never replayed and surfaces to the caller. A drain
+        /// fault after a durable commit is logged, never surfaced.
+        /// </summary>
+        /// <param name="connectionFactory">
+        /// Returns a NEW connection for each attempt, open or closed; a closed one is opened. The attempt owns and
+        /// disposes it, so never return a shared or pooled-by-hand instance.
+        /// </param>
+        /// <param name="operation">
+        /// The block receiving the attempt's unit, the attempt's open connection, and the caller's cancellation
+        /// token. Issue every command on that connection, inside the unit's transaction. Do not keep the connection
+        /// beyond the block: it is disposed when the attempt ends.
+        /// </param>
+        /// <param name="isolation">Transaction isolation level for every attempt.</param>
+        /// <param name="cancellationToken">Cancellation token forwarded to connect, begin, the operation, commit, and replay delays.</param>
+        /// <exception cref="InvalidOperationException"><paramref name="connectionFactory" /> returned <see langword="null" />.</exception>
+        /// <remarks>
+        /// Replays under the host's <see cref="UnitOfWorkRetryOptions.RetryStrategy" />; replay is off when it is
+        /// <see langword="null" />.
+        /// </remarks>
+        public Task RunAsync(
+            Func<CancellationToken, ValueTask<SqliteConnection>> connectionFactory,
+            Func<IUnitOfWork, SqliteConnection, CancellationToken, Task> operation,
+            IsolationLevel isolation,
+            CancellationToken cancellationToken = default
+        )
+        {
+            return factory.RunAsync(connectionFactory, operation, isolation, retry: null, cancellationToken);
+        }
+
+        /// <summary>
+        /// Runs <paramref name="operation" /> as an owned unit of work on a connection taken from
+        /// <paramref name="connectionFactory" /> for this call: connect → begin → operation → <c>CompleteAsync</c> →
+        /// dispose the connection. A fault before the commit starts that the replay policy classifies as transient
+        /// replays the whole block on a fresh connection, transaction, and unit; a fault once the commit has started,
+        /// or after <see cref="IUnitOfWork.PreventRetry" />, is never replayed and surfaces to the caller. A drain
+        /// fault after a durable commit is logged, never surfaced.
+        /// </summary>
+        /// <param name="connectionFactory">
+        /// Returns a NEW connection for each attempt, open or closed; a closed one is opened. The attempt owns and
+        /// disposes it, so never return a shared or pooled-by-hand instance.
+        /// </param>
+        /// <param name="operation">
+        /// The block receiving the attempt's unit, the attempt's open connection, and the caller's cancellation
+        /// token. Issue every command on that connection, inside the unit's transaction. Do not keep the connection
+        /// beyond the block: it is disposed when the attempt ends.
+        /// </param>
+        /// <param name="isolation">Transaction isolation level for every attempt.</param>
         /// <param name="retry">
         /// This call's replay policy; <see langword="null" /> uses the host's
         /// <see cref="UnitOfWorkRetryOptions.RetryStrategy" />, and replay is off when both are <see langword="null" />.
@@ -177,8 +311,8 @@ public static class UnitOfWorkFactorySqliteExtensions
         public Task RunAsync(
             Func<CancellationToken, ValueTask<SqliteConnection>> connectionFactory,
             Func<IUnitOfWork, SqliteConnection, CancellationToken, Task> operation,
-            IsolationLevel isolation = IsolationLevel.ReadCommitted,
-            RetryStrategyOptions? retry = null,
+            IsolationLevel isolation,
+            RetryStrategyOptions? retry,
             CancellationToken cancellationToken = default
         )
         {
@@ -207,7 +341,69 @@ public static class UnitOfWorkFactorySqliteExtensions
         /// The block receiving the attempt's unit, the attempt's open connection, and the caller's cancellation
         /// token, returning a result. Do not keep the connection beyond the block.
         /// </param>
-        /// <param name="isolation">Transaction isolation level for every attempt. Defaults to <see cref="IsolationLevel.ReadCommitted" />.</param>
+        /// <param name="cancellationToken">Cancellation token forwarded to connect, begin, the operation, commit, and replay delays.</param>
+        /// <returns>The result produced by the attempt that committed.</returns>
+        /// <exception cref="InvalidOperationException"><paramref name="connectionFactory" /> returned <see langword="null" />.</exception>
+        /// <remarks>
+        /// Begins every unit at <see cref="IsolationLevel.ReadCommitted" /> and replays under the host's
+        /// <see cref="UnitOfWorkRetryOptions.RetryStrategy" />; replay is off when it is <see langword="null" />.
+        /// </remarks>
+        public Task<TResult> RunAsync<TResult>(
+            Func<CancellationToken, ValueTask<SqliteConnection>> connectionFactory,
+            Func<IUnitOfWork, SqliteConnection, CancellationToken, Task<TResult>> operation,
+            CancellationToken cancellationToken = default
+        )
+        {
+            return factory.RunAsync(
+                connectionFactory,
+                operation,
+                IsolationLevel.ReadCommitted,
+                retry: null,
+                cancellationToken
+            );
+        }
+
+        /// <summary>
+        /// Runs <paramref name="operation" /> as an owned unit of work on a connection taken from
+        /// <paramref name="connectionFactory" /> and returns its result, with the same replay semantics as the
+        /// result-less <c>RunAsync(Func&lt;CancellationToken, ValueTask&lt;SqliteConnection&gt;&gt;, …)</c> overload.
+        /// </summary>
+        /// <typeparam name="TResult">Type of the value returned by <paramref name="operation" />.</typeparam>
+        /// <param name="connectionFactory">Returns a NEW connection for each attempt, open or closed; a closed one is opened.</param>
+        /// <param name="operation">
+        /// The block receiving the attempt's unit, the attempt's open connection, and the caller's cancellation
+        /// token, returning a result. Do not keep the connection beyond the block.
+        /// </param>
+        /// <param name="isolation">Transaction isolation level for every attempt.</param>
+        /// <param name="cancellationToken">Cancellation token forwarded to connect, begin, the operation, commit, and replay delays.</param>
+        /// <returns>The result produced by the attempt that committed.</returns>
+        /// <exception cref="InvalidOperationException"><paramref name="connectionFactory" /> returned <see langword="null" />.</exception>
+        /// <remarks>
+        /// Replays under the host's <see cref="UnitOfWorkRetryOptions.RetryStrategy" />; replay is off when it is
+        /// <see langword="null" />.
+        /// </remarks>
+        public Task<TResult> RunAsync<TResult>(
+            Func<CancellationToken, ValueTask<SqliteConnection>> connectionFactory,
+            Func<IUnitOfWork, SqliteConnection, CancellationToken, Task<TResult>> operation,
+            IsolationLevel isolation,
+            CancellationToken cancellationToken = default
+        )
+        {
+            return factory.RunAsync(connectionFactory, operation, isolation, retry: null, cancellationToken);
+        }
+
+        /// <summary>
+        /// Runs <paramref name="operation" /> as an owned unit of work on a connection taken from
+        /// <paramref name="connectionFactory" /> and returns its result, with the same replay semantics as the
+        /// result-less <c>RunAsync(Func&lt;CancellationToken, ValueTask&lt;SqliteConnection&gt;&gt;, …)</c> overload.
+        /// </summary>
+        /// <typeparam name="TResult">Type of the value returned by <paramref name="operation" />.</typeparam>
+        /// <param name="connectionFactory">Returns a NEW connection for each attempt, open or closed; a closed one is opened.</param>
+        /// <param name="operation">
+        /// The block receiving the attempt's unit, the attempt's open connection, and the caller's cancellation
+        /// token, returning a result. Do not keep the connection beyond the block.
+        /// </param>
+        /// <param name="isolation">Transaction isolation level for every attempt.</param>
         /// <param name="retry">
         /// This call's replay policy; <see langword="null" /> uses the host's
         /// <see cref="UnitOfWorkRetryOptions.RetryStrategy" />, and replay is off when both are <see langword="null" />.
@@ -218,8 +414,8 @@ public static class UnitOfWorkFactorySqliteExtensions
         public Task<TResult> RunAsync<TResult>(
             Func<CancellationToken, ValueTask<SqliteConnection>> connectionFactory,
             Func<IUnitOfWork, SqliteConnection, CancellationToken, Task<TResult>> operation,
-            IsolationLevel isolation = IsolationLevel.ReadCommitted,
-            RetryStrategyOptions? retry = null,
+            IsolationLevel isolation,
+            RetryStrategyOptions? retry,
             CancellationToken cancellationToken = default
         )
         {

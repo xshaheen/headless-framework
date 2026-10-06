@@ -27,7 +27,7 @@ public sealed class PostgreSqlSharedConnectionJoinTests(PostgreSqlUnitOfWorkFixt
         var owner = scope.ServiceProvider.GetRequiredService<PostgreSqlCrossProviderJoinTests.ProbeDbContext>();
         await using var sibling = _CreateSibling((NpgsqlConnection)owner.Database.GetDbConnection());
 
-        await using (var unit = await factory.BeginAsync(owner, cancellationToken: AbortToken))
+        await using (var unit = await factory.BeginAsync(owner, AbortToken))
         {
             owner.Probes.Add(new PostgreSqlCrossProviderJoinTests.ProbeRow { Name = "owner" });
             await owner.SaveChangesAsync(AbortToken);
@@ -66,7 +66,7 @@ public sealed class PostgreSqlSharedConnectionJoinTests(PostgreSqlUnitOfWorkFixt
         var owner = scope.ServiceProvider.GetRequiredService<PostgreSqlCrossProviderJoinTests.ProbeDbContext>();
         await using var sibling = _CreateSibling((NpgsqlConnection)owner.Database.GetDbConnection());
 
-        await using (var unit = await factory.BeginAsync(owner, cancellationToken: AbortToken))
+        await using (var unit = await factory.BeginAsync(owner, AbortToken))
         {
             // A plain save on the sibling, after reading the unit the way a repository would.
             sibling.UnitOfWork().Should().BeSameAs(unit);

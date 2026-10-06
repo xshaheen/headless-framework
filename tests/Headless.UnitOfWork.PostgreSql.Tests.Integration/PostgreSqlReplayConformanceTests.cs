@@ -286,7 +286,7 @@ public sealed class PostgreSqlReplayContext(
         CancellationToken cancellationToken
     )
     {
-        return factory.RunAsync(connection, operation, cancellationToken: cancellationToken);
+        return factory.RunAsync(connection, operation, cancellationToken);
     }
 
     private NpgsqlTransaction _Transaction()

@@ -393,7 +393,7 @@ internal sealed partial class InMemoryDataStorage
                         MessagingOperationType.Purge => InboxMetricOutcome.Purged,
                         _ => throw new ArgumentOutOfRangeException(nameof(operationType), operationType, message: null),
                     },
-                    MessagingInboxCapabilityTier.ProcessLocal,
+                    InboxGuarantee.ProcessLocal,
                     "InMemory"
                 );
             }

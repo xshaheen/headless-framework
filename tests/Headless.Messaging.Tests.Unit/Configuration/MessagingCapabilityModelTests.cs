@@ -152,12 +152,12 @@ public sealed class MessagingCapabilityModelTests : TestBase
     }
 
     [Theory]
-    [InlineData(MessagingInboxCapabilityTier.ProcessLocal, MessagingInboxCapabilityTier.DurableDedupeOnly)]
-    [InlineData(MessagingInboxCapabilityTier.ProcessLocal, MessagingInboxCapabilityTier.Transactional)]
-    [InlineData(MessagingInboxCapabilityTier.DurableDedupeOnly, MessagingInboxCapabilityTier.Transactional)]
-    public void should_reject_storage_weaker_than_required_inbox_tier(
-        MessagingInboxCapabilityTier available,
-        MessagingInboxCapabilityTier required
+    [InlineData(InboxGuarantee.ProcessLocal, InboxGuarantee.Durable)]
+    [InlineData(InboxGuarantee.ProcessLocal, InboxGuarantee.Transactional)]
+    [InlineData(InboxGuarantee.Durable, InboxGuarantee.Transactional)]
+    public void should_reject_storage_weaker_than_required_inbox_guarantee(
+        InboxGuarantee available,
+        InboxGuarantee required
     )
     {
         var model = MessagingCapabilityModel.Compose([
@@ -169,25 +169,25 @@ public sealed class MessagingCapabilityModelTests : TestBase
             model.ValidateStartup(
                 [new MessageRouteKey(typeof(SharedContract), "orders.changed", MessageLane.Bus)],
                 hasDurableConsumers: true,
-                requiredInboxCapability: required
+                minimumInboxGuarantee: required
             );
 
         act.Should()
             .Throw<MessagingConfigurationException>()
             .WithMessage($"*{required}*TestStorage*{available}*explicitly*");
-        model.InboxCapability.Should().Be(available);
+        model.StorageInboxGuarantee.Should().Be(available);
     }
 
     [Theory]
-    [InlineData(MessagingInboxCapabilityTier.ProcessLocal, MessagingInboxCapabilityTier.ProcessLocal)]
-    [InlineData(MessagingInboxCapabilityTier.DurableDedupeOnly, MessagingInboxCapabilityTier.ProcessLocal)]
-    [InlineData(MessagingInboxCapabilityTier.Transactional, MessagingInboxCapabilityTier.ProcessLocal)]
-    [InlineData(MessagingInboxCapabilityTier.DurableDedupeOnly, MessagingInboxCapabilityTier.DurableDedupeOnly)]
-    [InlineData(MessagingInboxCapabilityTier.Transactional, MessagingInboxCapabilityTier.DurableDedupeOnly)]
-    [InlineData(MessagingInboxCapabilityTier.Transactional, MessagingInboxCapabilityTier.Transactional)]
-    public void should_accept_storage_at_or_above_required_inbox_tier_and_preserve_declared_capability(
-        MessagingInboxCapabilityTier available,
-        MessagingInboxCapabilityTier required
+    [InlineData(InboxGuarantee.ProcessLocal, InboxGuarantee.ProcessLocal)]
+    [InlineData(InboxGuarantee.Durable, InboxGuarantee.ProcessLocal)]
+    [InlineData(InboxGuarantee.Transactional, InboxGuarantee.ProcessLocal)]
+    [InlineData(InboxGuarantee.Durable, InboxGuarantee.Durable)]
+    [InlineData(InboxGuarantee.Transactional, InboxGuarantee.Durable)]
+    [InlineData(InboxGuarantee.Transactional, InboxGuarantee.Transactional)]
+    public void should_accept_storage_at_or_above_required_inbox_guarantee_and_preserve_declared_capability(
+        InboxGuarantee available,
+        InboxGuarantee required
     )
     {
         var model = MessagingCapabilityModel.Compose([
@@ -198,10 +198,10 @@ public sealed class MessagingCapabilityModelTests : TestBase
         model.ValidateStartup(
             [new MessageRouteKey(typeof(SharedContract), "orders.changed", MessageLane.Bus)],
             hasDurableConsumers: true,
-            requiredInboxCapability: required
+            minimumInboxGuarantee: required
         );
 
-        model.InboxCapability.Should().Be(available);
+        model.StorageInboxGuarantee.Should().Be(available);
     }
 
     [Theory]
@@ -210,30 +210,30 @@ public sealed class MessagingCapabilityModelTests : TestBase
     [InlineData(3, false)]
     [InlineData(3, true)]
     [InlineData(int.MaxValue, true)]
-    public void should_reject_undefined_required_inbox_tier(int required, bool hasDurableConsumers)
+    public void should_reject_undefined_required_inbox_guarantee(int required, bool hasDurableConsumers)
     {
         var model = MessagingCapabilityModel.Compose([
             _Transport("Transport", [MessageLane.Bus], independentLaneTopology: true),
-            _Storage("TestStorage", MessagingInboxCapabilityTier.Transactional),
+            _Storage("TestStorage", InboxGuarantee.Transactional),
         ]);
 
         var act = () =>
             model.ValidateStartup(
                 [new MessageRouteKey(typeof(SharedContract), "orders.changed", MessageLane.Bus)],
                 hasDurableConsumers: hasDurableConsumers,
-                requiredInboxCapability: (MessagingInboxCapabilityTier)required
+                minimumInboxGuarantee: (InboxGuarantee)required
             );
 
-        act.Should().Throw<ArgumentException>().WithMessage("*requiredInboxCapability*");
+        act.Should().Throw<ArgumentException>().WithMessage("*minimumInboxGuarantee*");
     }
 
     [Theory]
     [InlineData(-1)]
     [InlineData(3)]
     [InlineData(int.MaxValue)]
-    public void should_reject_undefined_declared_inbox_tier(int available)
+    public void should_reject_undefined_declared_inbox_guarantee(int available)
     {
-        var act = () => _Storage("TestStorage", (MessagingInboxCapabilityTier)available);
+        var act = () => _Storage("TestStorage", (InboxGuarantee)available);
 
         act.Should().Throw<ArgumentException>();
     }
@@ -245,15 +245,13 @@ public sealed class MessagingCapabilityModelTests : TestBase
         services.AddLogging();
         services.AddHeadlessMessaging(setup =>
         {
-            setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.DurableDedupeOnly;
+            setup.Options.MinimumInboxGuarantee = InboxGuarantee.Durable;
             setup.AddConsumer<SharedConsumer>();
         });
         services.AddMessagingProviderCapabilities(
             _Transport("Transport", [MessageLane.Bus], independentLaneTopology: true)
         );
-        services.AddMessagingProviderCapabilities(
-            _Storage("PostgreSql", MessagingInboxCapabilityTier.DurableDedupeOnly)
-        );
+        services.AddMessagingProviderCapabilities(_Storage("PostgreSql", InboxGuarantee.Durable));
         services.RemoveAll<IProcessingServer>();
         services.AddSingleton(Substitute.For<IStorageTableNames>());
 
@@ -265,8 +263,8 @@ public sealed class MessagingCapabilityModelTests : TestBase
         bootstrapper.IsStarted.Should().BeTrue();
         provider
             .GetRequiredService<IMessagingCapabilityModel>()
-            .InboxCapability.Should()
-            .Be(MessagingInboxCapabilityTier.DurableDedupeOnly);
+            .StorageInboxGuarantee.Should()
+            .Be(InboxGuarantee.Durable);
     }
 
     [Theory]
@@ -463,7 +461,7 @@ public sealed class MessagingCapabilityModelTests : TestBase
                 "NoDelayStorage",
                 [lane],
                 supportsDelayedScheduling: false,
-                inboxCapability: MessagingInboxCapabilityTier.Transactional
+                inboxGuarantee: InboxGuarantee.Transactional
             )
         );
         services.AddSingleton<IDataStorage>(_ =>
@@ -628,14 +626,14 @@ public sealed class MessagingCapabilityModelTests : TestBase
 
     private static MessagingProviderCapabilities _Storage(
         string provider,
-        MessagingInboxCapabilityTier inboxCapability = MessagingInboxCapabilityTier.Transactional
+        InboxGuarantee inboxGuarantee = InboxGuarantee.Transactional
     )
     {
         return MessagingProviderCapabilities.Storage(
             provider,
             [MessageLane.Bus, MessageLane.Queue],
             supportsDelayedScheduling: true,
-            inboxCapability: inboxCapability
+            inboxGuarantee: inboxGuarantee
         );
     }
 

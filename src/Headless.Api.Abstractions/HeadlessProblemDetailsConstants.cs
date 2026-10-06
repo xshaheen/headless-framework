@@ -1,20 +1,24 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Primitives;
-
 namespace Headless.Api;
 
 /// <summary>
 /// Well-known <c>ProblemDetails</c> constants (RFC 9457) used across Headless API error responses.
 /// </summary>
 /// <remarks>
-/// The nested classes mirror the fields of a <c>ProblemDetails</c> document:
+/// <para>
+/// These are the machine-readable parts of a <c>ProblemDetails</c> document, and they never vary by
+/// culture:
+/// </para>
 /// <list type="bullet">
 ///   <item><description><see cref="Types"/> — RFC-anchored <c>type</c> URIs identifying the problem category.</description></item>
-///   <item><description><see cref="Titles"/> — short human-readable <c>title</c> strings (kebab-case, stable across responses).</description></item>
-///   <item><description><see cref="Details"/> — default human-readable <c>detail</c> strings (may be localised).</description></item>
-///   <item><description><see cref="Errors"/> — framework-level <c>ErrorDescriptor</c> instances for structured error payloads.</description></item>
+///   <item><description><see cref="Titles"/> — kebab-case <c>title</c> identifiers, stable across responses and releases.</description></item>
 /// </list>
+/// <para>
+/// The default <c>detail</c> text is not a constant: <c>IProblemDetailsCreator</c> resolves it per
+/// response under the current UI culture. Clients branch on <c>type</c>, <c>title</c>, and the error
+/// <c>code</c>, never on <c>detail</c>.
+/// </para>
 /// </remarks>
 [PublicAPI]
 public static class HeadlessProblemDetailsConstants
@@ -62,32 +66,6 @@ public static class HeadlessProblemDetailsConstants
         public const string ServiceUnavailable = "https://tools.ietf.org/html/rfc9110#section-15.6.4";
     }
 
-    /// <summary>Pre-built <c>ErrorDescriptor</c> instances for framework-level error conditions.</summary>
-    public static class Errors
-    {
-        /// <summary>
-        /// Error descriptor for operations that require an ambient tenant context when none has been set.
-        /// Error code: <c>g:tenant_required</c>.
-        /// </summary>
-        public static ErrorDescriptor TenantContextRequired { get; } =
-            new(
-                code: "g:tenant_required",
-                description: Details.TenantContextRequired,
-                severity: ValidationSeverity.Error
-            );
-
-        /// <summary>
-        /// Error descriptor for writes where the target entity's tenant does not match the current tenant context.
-        /// Error code: <c>g:cross_tenant_write</c>.
-        /// </summary>
-        public static ErrorDescriptor CrossTenantWrite { get; } =
-            new(
-                code: "g:cross_tenant_write",
-                description: Details.CrossTenantWrite,
-                severity: ValidationSeverity.Error
-            );
-    }
-
     /// <summary>Short, stable <c>title</c> strings (kebab-case) for <c>ProblemDetails</c> responses.</summary>
     /// <remarks>Titles are intended to be stable across releases; do not localise them.</remarks>
     public static class Titles
@@ -130,61 +108,5 @@ public static class HeadlessProblemDetailsConstants
 
         /// <summary>Title for 503 Service Unavailable responses.</summary>
         public const string ServiceUnavailable = "service-unavailable";
-    }
-
-    /// <summary>Default human-readable <c>detail</c> strings for <c>ProblemDetails</c> responses.</summary>
-    /// <remarks>These strings may be localised or overridden by the hosting application.</remarks>
-    public static class Details
-    {
-        /// <summary>Returns a detail message indicating the named endpoint was not found.</summary>
-        /// <param name="endpoint">The endpoint path or name that was requested.</param>
-        /// <returns>A formatted detail string including <paramref name="endpoint"/>.</returns>
-        public static string EndpointNotFound(string endpoint)
-        {
-            return $"The requested endpoint '{endpoint}' was not found.";
-        }
-
-        /// <summary>Detail for 404 responses when the requested resource does not exist.</summary>
-        public const string EntityNotFound = "The requested resource was not found.";
-
-        /// <summary>Detail for 400 responses when the request body is absent or malformed.</summary>
-        public const string BadRequest =
-            "Failed to parse. The request body is empty or could not be understood by the server due to malformed syntax.";
-
-        /// <summary>Detail for 401 responses when the caller is not authenticated.</summary>
-        public const string Unauthorized = "You are unauthenticated to access this resource.";
-
-        /// <summary>Detail for 403 responses when the caller lacks permission.</summary>
-        public const string Forbidden = "You are forbidden from accessing this resource.";
-
-        /// <summary>Detail for 409 responses when a business rule is violated.</summary>
-        public const string Conflict = "Conflict - one or more business rules violated.";
-
-        /// <summary>Detail for 422 responses when input validation fails.</summary>
-        public const string UnprocessableEntity = "One or more validation errors occurred.";
-
-        /// <summary>Detail for 500 responses for unhandled exceptions.</summary>
-        public const string InternalError = "An error occurred while processing your request.";
-
-        /// <summary>Detail for 429 responses when rate limits are exceeded.</summary>
-        public const string TooManyRequests = "Too many requests - please try again later.";
-
-        /// <summary>Detail for 408 responses when the request exceeded the allowed time.</summary>
-        public const string RequestTimeout = "The request timed out.";
-
-        /// <summary>Detail for 501 responses when the feature is not implemented.</summary>
-        public const string NotImplemented = "This functionality is not implemented.";
-
-        /// <summary>Detail for 413 responses when the request body exceeds the size limit.</summary>
-        public const string PayloadTooLarge = "The request payload is too large to process.";
-
-        /// <summary>Detail for 503 responses when a required dependency is unreachable.</summary>
-        public const string ServiceUnavailable = "The service is temporarily unavailable - please try again later.";
-
-        /// <summary>Detail for operations that required a tenant context that was not set.</summary>
-        public const string TenantContextRequired = "An operation required an ambient tenant context but none was set.";
-
-        /// <summary>Detail for writes where the target entity's tenant does not match the current tenant context.</summary>
-        public const string CrossTenantWrite = "Tenant-owned write does not match the current tenant context.";
     }
 }

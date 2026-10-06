@@ -1,8 +1,11 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data;
+using System.Data.Common;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Logging;
 
@@ -21,7 +24,7 @@ public sealed class EfUnitOfWorkOwnedModeTests : TestBase
         await using var session = host.CreateSession();
 
         var drained = 0;
-        await using (var unitOfWork = await session.Factory.BeginAsync(session.Db, cancellationToken: AbortToken))
+        await using (var unitOfWork = await session.Factory.BeginAsync(session.Db, AbortToken))
         {
             unitOfWork.Resource.Should().BeAssignableTo<IRelationalUnitOfWorkResource>();
             unitOfWork.State.Should().Be(UnitOfWorkState.Active);
@@ -43,13 +46,53 @@ public sealed class EfUnitOfWorkOwnedModeTests : TestBase
         session.Db.Database.CurrentTransaction.Should().BeNull("the owned transaction is disposed with the unit");
     }
 
+    [Theory]
+    [InlineData("begin", null, IsolationLevel.ReadCommitted)]
+    [InlineData("begin", IsolationLevel.Serializable, IsolationLevel.Serializable)]
+    [InlineData("run", null, IsolationLevel.ReadCommitted)]
+    [InlineData("run", IsolationLevel.Serializable, IsolationLevel.Serializable)]
+    public async Task should_begin_at_read_committed_unless_the_caller_passes_an_isolation_level(
+        string entryPoint,
+        IsolationLevel? passed,
+        IsolationLevel expected
+    )
+    {
+        // SQLite reports Serializable for every transaction it opens, so the level EF was asked for is read at the
+        // transaction-starting interception point instead of from the opened transaction.
+        var requested = new List<IsolationLevel>();
+        await using var host = await EfUnitOfWorkHost.CreateAsync(configureOptions: options =>
+            options.AddInterceptors(new IsolationLevelRecorder(requested))
+        );
+        await using var session = host.CreateSession();
+        requested.Clear(); // Schema creation in the host opens a transaction of its own.
+
+        if (string.Equals(entryPoint, "begin", StringComparison.Ordinal))
+        {
+            await using var unitOfWork = passed is { } level
+                ? await session.Factory.BeginAsync(session.Db, level, AbortToken)
+                : await session.Factory.BeginAsync(session.Db, AbortToken);
+        }
+        else
+        {
+            Func<IUnitOfWork, CancellationToken, Task> operation = static (_, _) => Task.CompletedTask;
+
+            await (
+                passed is { } level
+                    ? session.Factory.RunAsync(session.Db, operation, level, AbortToken)
+                    : session.Factory.RunAsync(session.Db, operation, AbortToken)
+            );
+        }
+
+        requested.Should().Equal(expected);
+    }
+
     [Fact]
     public async Task should_roll_back_when_the_owned_unit_is_disposed_without_complete()
     {
         await using var host = await EfUnitOfWorkHost.CreateAsync();
         await using var session = host.CreateSession();
 
-        var unitOfWork = await session.Factory.BeginAsync(session.Db, cancellationToken: AbortToken);
+        var unitOfWork = await session.Factory.BeginAsync(session.Db, AbortToken);
         await session.Db.Probes.AddAsync(new ProbeRow { Name = "rolled-back" }, AbortToken);
         await session.Db.SaveChangesAsync(AbortToken);
 
@@ -64,7 +107,7 @@ public sealed class EfUnitOfWorkOwnedModeTests : TestBase
         await using var host = await EfUnitOfWorkHost.CreateAsync();
         await using var session = host.CreateSession();
 
-        await using var unitOfWork = await session.Factory.BeginAsync(session.Db, cancellationToken: AbortToken);
+        await using var unitOfWork = await session.Factory.BeginAsync(session.Db, AbortToken);
         await session.Db.Probes.AddAsync(new ProbeRow { Name = "discarded" }, AbortToken);
         await session.Db.SaveChangesAsync(AbortToken);
         UnitOfWorkFailure? failure = null;
@@ -91,7 +134,7 @@ public sealed class EfUnitOfWorkOwnedModeTests : TestBase
 
         await using var transaction = await session.Db.Database.BeginTransactionAsync(AbortToken);
 
-        var act = () => session.Factory.BeginAsync(session.Db, cancellationToken: AbortToken).AsTask();
+        var act = () => session.Factory.BeginAsync(session.Db, AbortToken).AsTask();
 
         (await act.Should().ThrowAsync<InvalidOperationException>())
             .Which.Message.Should()
@@ -107,7 +150,7 @@ public sealed class EfUnitOfWorkOwnedModeTests : TestBase
         );
         await using var session = host.CreateSession();
 
-        var act = () => session.Factory.BeginAsync(session.Db, cancellationToken: AbortToken).AsTask();
+        var act = () => session.Factory.BeginAsync(session.Db, AbortToken).AsTask();
 
         (await act.Should().ThrowAsync<InvalidOperationException>())
             .Which.Message.Should()
@@ -121,7 +164,7 @@ public sealed class EfUnitOfWorkOwnedModeTests : TestBase
         await using var host = await EfUnitOfWorkHost.CreateAsync();
         await using var session = host.CreateSession();
 
-        var unitOfWork = await session.Factory.BeginAsync(session.Db, cancellationToken: AbortToken);
+        var unitOfWork = await session.Factory.BeginAsync(session.Db, AbortToken);
 
         session.Db.UnitOfWork().Should().BeSameAs(unitOfWork, "BeginAsync(db) records the binding");
 
@@ -139,9 +182,9 @@ public sealed class EfUnitOfWorkOwnedModeTests : TestBase
         await using var host = await EfUnitOfWorkHost.CreateAsync();
         await using var session = host.CreateSession();
 
-        await using var first = await session.Factory.BeginAsync(session.Db, cancellationToken: AbortToken);
+        await using var first = await session.Factory.BeginAsync(session.Db, AbortToken);
 
-        var act = () => session.Factory.BeginAsync(session.Db, cancellationToken: AbortToken).AsTask();
+        var act = () => session.Factory.BeginAsync(session.Db, AbortToken).AsTask();
 
         await act.Should()
             .ThrowAsync<InvalidOperationException>()
@@ -156,13 +199,28 @@ public sealed class EfUnitOfWorkOwnedModeTests : TestBase
         await using var host = await EfUnitOfWorkHost.CreateAsync();
         await using var session = host.CreateSession();
 
-        var first = await session.Factory.BeginAsync(session.Db, cancellationToken: AbortToken);
+        var first = await session.Factory.BeginAsync(session.Db, AbortToken);
         await first.RollbackAsync();
         await first.DisposeAsync();
 
-        await using var second = await session.Factory.BeginAsync(session.Db, cancellationToken: AbortToken);
+        await using var second = await session.Factory.BeginAsync(session.Db, AbortToken);
 
         second.Should().NotBeSameAs(first);
         session.Db.UnitOfWork().Should().BeSameAs(second, "the binding follows the live unit");
+    }
+
+    private sealed class IsolationLevelRecorder(List<IsolationLevel> requested) : DbTransactionInterceptor
+    {
+        public override ValueTask<InterceptionResult<DbTransaction>> TransactionStartingAsync(
+            DbConnection connection,
+            TransactionStartingEventData eventData,
+            InterceptionResult<DbTransaction> result,
+            CancellationToken cancellationToken = default
+        )
+        {
+            requested.Add(eventData.IsolationLevel);
+
+            return base.TransactionStartingAsync(connection, eventData, result, cancellationToken);
+        }
     }
 }

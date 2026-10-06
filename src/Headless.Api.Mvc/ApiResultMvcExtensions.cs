@@ -1,9 +1,9 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Api;
+using Headless.Primitives;
 using Microsoft.AspNetCore.Mvc;
 
-namespace Headless.Primitives;
+namespace Headless.Api;
 
 /// <summary>
 /// Extensions to convert <see cref="ApiResult{T}"/> and <see cref="ApiResult"/> discriminated unions
@@ -83,7 +83,7 @@ public static class ApiResultMvcExtensions
 
             ForbiddenError e => new ObjectResult(creator.Forbidden(error: e.Error)) { StatusCode = 403 },
 
-            UnauthorizedError e => controller.Unauthorized(creator.Unauthorized(e.Error)),
+            UnauthorizedError e => controller.Unauthorized(creator.Unauthorized(error: e.Error)),
 
             AggregateError e when e.TryGetValidationErrors(out var validationErrors) => controller.UnprocessableEntity(
                 creator.UnprocessableEntity(validationErrors)

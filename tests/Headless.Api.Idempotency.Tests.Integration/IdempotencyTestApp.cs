@@ -46,6 +46,7 @@ internal static class IdempotencyTestApp
         builder.Services.TryAddSingleton<ICancellationTokenProvider, HttpContextCancellationTokenProvider>();
         builder.Services.TryAddSingleton<IBuildInformationAccessor, NullBuildInformationAccessor>();
         builder.Services.AddHttpContextAccessor();
+        builder.Services.AddSingleton<IErrorDescriptionLocalizer>(NullErrorDescriptionLocalizer.Instance);
         builder.Services.AddSingleton<IProblemDetailsCreator, ProblemDetailsCreator>();
 
         // Tenant: the framework's AsyncLocal-backed tenant, so a per-request Change reaches the durable store the

@@ -27,7 +27,7 @@ public sealed class SqlServerCustomSchemaTests(SqlServerTestFixture fixture) : T
         services.AddHeadlessMessaging(setup =>
         {
             setup.Options.Version = "v1";
-            setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.DurableDedupeOnly;
+            setup.Options.MinimumInboxGuarantee = InboxGuarantee.Durable;
             setup.ConfigureStorage(storage => storage.Schema = _Schema);
             setup.UseSqlServer(fixture.ConnectionString);
         });

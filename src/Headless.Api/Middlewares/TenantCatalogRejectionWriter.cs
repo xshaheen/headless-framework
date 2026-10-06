@@ -74,7 +74,7 @@ internal static class TenantCatalogRejectionWriter
             ),
             TenantResolutionKind.Unknown when detailed => (
                 StatusCodes.Status404NotFound,
-                problemDetailsCreator.EntityNotFound(TenancyMessageDescriber.Unknown())
+                problemDetailsCreator.EntityNotFound(error: TenancyMessageDescriber.Unknown())
             ),
             TenantResolutionKind.Disabled when detailed => (
                 StatusCodes.Status403Forbidden,
@@ -85,7 +85,7 @@ internal static class TenantCatalogRejectionWriter
             // their status from response differences.
             TenantResolutionKind.Unknown or TenantResolutionKind.Disabled => (
                 StatusCodes.Status404NotFound,
-                problemDetailsCreator.EntityNotFound(TenancyMessageDescriber.ResolutionFailed())
+                problemDetailsCreator.EntityNotFound(error: TenancyMessageDescriber.ResolutionFailed())
             ),
             _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "Not a rejection outcome."),
         };
@@ -104,7 +104,7 @@ internal static class TenantCatalogRejectionWriter
             )
             : (
                 StatusCodes.Status404NotFound,
-                problemDetailsCreator.EntityNotFound(TenancyMessageDescriber.ResolutionFailed())
+                problemDetailsCreator.EntityNotFound(error: TenancyMessageDescriber.ResolutionFailed())
             );
     }
 

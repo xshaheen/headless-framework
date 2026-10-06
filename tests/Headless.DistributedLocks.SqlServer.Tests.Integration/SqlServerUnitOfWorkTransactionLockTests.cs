@@ -22,7 +22,7 @@ public sealed class SqlServerUnitOfWorkTransactionLockTests(SqlServerDistributed
         var resource = _CreateResourceName();
 
         await using var connection = new SqlConnection(fixture.ConnectionString);
-        await using var unit = await factory.BeginAsync(connection, cancellationToken: AbortToken);
+        await using var unit = await factory.BeginAsync(connection, AbortToken);
 
         // when
         var handle = await unit.TransactionLocks.AcquireAsync(resource, cancellationToken: AbortToken);
@@ -47,11 +47,11 @@ public sealed class SqlServerUnitOfWorkTransactionLockTests(SqlServerDistributed
         await using var holderConnection = new SqlConnection(fixture.ConnectionString);
         await using var contenderConnection = new SqlConnection(fixture.ConnectionString);
 
-        await using var holder = await factory.BeginAsync(holderConnection, cancellationToken: AbortToken);
+        await using var holder = await factory.BeginAsync(holderConnection, AbortToken);
         await holder.TransactionLocks.AcquireAsync(resource, cancellationToken: AbortToken);
 
         // when / then
-        await using var contender = await factory.BeginAsync(contenderConnection, cancellationToken: AbortToken);
+        await using var contender = await factory.BeginAsync(contenderConnection, AbortToken);
         (await contender.TransactionLocks.TryAcquireAsync(resource, cancellationToken: AbortToken)).Should().BeNull();
 
         await holder.CompleteAsync(AbortToken);
@@ -72,9 +72,9 @@ public sealed class SqlServerUnitOfWorkTransactionLockTests(SqlServerDistributed
         await using var holderConnection = new SqlConnection(fixture.ConnectionString);
         await using var contenderConnection = new SqlConnection(fixture.ConnectionString);
 
-        await using var holder = await factory.BeginAsync(holderConnection, cancellationToken: AbortToken);
+        await using var holder = await factory.BeginAsync(holderConnection, AbortToken);
         await holder.TransactionLocks.AcquireAsync(resource, cancellationToken: AbortToken);
-        await using var contender = await factory.BeginAsync(contenderConnection, cancellationToken: AbortToken);
+        await using var contender = await factory.BeginAsync(contenderConnection, AbortToken);
 
         // when
         var stopwatch = Stopwatch.StartNew();
@@ -98,7 +98,7 @@ public sealed class SqlServerUnitOfWorkTransactionLockTests(SqlServerDistributed
         var resource = _CreateResourceName();
 
         await using var connection = new SqlConnection(fixture.ConnectionString);
-        await using var unit = await factory.BeginAsync(connection, cancellationToken: AbortToken);
+        await using var unit = await factory.BeginAsync(connection, AbortToken);
         await unit.TransactionLocks.AcquireAsync(resource, cancellationToken: AbortToken);
 
         // when — the unit's transaction is the owner, so acquiring again is granted instead of reported as contention
@@ -126,9 +126,9 @@ public sealed class SqlServerUnitOfWorkTransactionLockTests(SqlServerDistributed
         await using var holderConnection = new SqlConnection(fixture.ConnectionString);
         await using var contenderConnection = new SqlConnection(fixture.ConnectionString);
 
-        await using var holder = await factory.BeginAsync(holderConnection, cancellationToken: AbortToken);
+        await using var holder = await factory.BeginAsync(holderConnection, AbortToken);
         await holder.TransactionLocks.AcquireAsync(resource, cancellationToken: AbortToken);
-        await using var contender = await factory.BeginAsync(contenderConnection, cancellationToken: AbortToken);
+        await using var contender = await factory.BeginAsync(contenderConnection, AbortToken);
 
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
         cancellation.CancelAfter(TimeSpan.FromMilliseconds(300));
@@ -156,7 +156,7 @@ public sealed class SqlServerUnitOfWorkTransactionLockTests(SqlServerDistributed
         await using var connection = new SqlConnection(fixture.ConnectionString);
 
         // when — dispose without complete is an implicit rollback
-        await using (var unit = await factory.BeginAsync(connection, cancellationToken: AbortToken))
+        await using (var unit = await factory.BeginAsync(connection, AbortToken))
         {
             await unit.TransactionLocks.AcquireAsync(resource, cancellationToken: AbortToken);
             (await _TryContendAsync(resource)).Should().BeFalse();

@@ -126,7 +126,7 @@ public sealed class HybridCacheTwoReplicaInvalidationTests : TestBase
         {
             setup.UseInMemory();
             setup.UseInMemoryStorage();
-            setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
+            setup.Options.MinimumInboxGuarantee = InboxGuarantee.ProcessLocal;
         });
 
         // Registered last, so both replicas resolve the one transport instead of their own.

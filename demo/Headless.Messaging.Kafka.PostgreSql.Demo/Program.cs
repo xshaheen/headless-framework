@@ -16,7 +16,7 @@ builder.Services.AddHeadlessMessaging(setup =>
 
     //setup.UseEntityFramework<AppDbContext>();
     //docker run --name postgres -p 5432:5432 -e POSTGRES_PASSWORD=mysecretpassword -d postgres
-    setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.DurableDedupeOnly;
+    setup.Options.MinimumInboxGuarantee = InboxGuarantee.Durable;
     setup.UsePostgreSql(AppConstants.DbConnectionString);
 
     /* //Run Kafka Docker Container (Powershell)

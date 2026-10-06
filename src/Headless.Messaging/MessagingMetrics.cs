@@ -242,7 +242,7 @@ internal static class MessagingMetrics
         string consumerIdentity,
         MessageLane lane,
         InboxMetricOutcome outcome,
-        MessagingInboxCapabilityTier tier,
+        InboxGuarantee guarantee,
         string provider,
         string? tenantId = null,
         string? tenantTagName = null
@@ -269,7 +269,7 @@ internal static class MessagingMetrics
             { MessagingTags.InboxConsumer, consumerIdentity },
             { MessagingTags.Lane, LaneTagEnricher.ToTagValues(lane).Lane },
             { MessagingTags.InboxOutcome, outcome.ToString("G") },
-            { MessagingTags.InboxTier, tier.ToString("G") },
+            { MessagingTags.InboxGuarantee, guarantee.ToString("G") },
             { MessagingTags.InboxProvider, provider },
         };
         if (tenantTagName is not null && tenantId is not null)

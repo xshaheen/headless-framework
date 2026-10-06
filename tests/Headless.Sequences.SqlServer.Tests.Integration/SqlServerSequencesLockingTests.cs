@@ -56,7 +56,7 @@ public sealed class SqlServerSequencesLockingTests(SqlServerSequencesFixture fix
         var name = $"xact-{Guid.NewGuid():N}";
         await using var host = await _CreateGapFreeHostAsync(name);
         await using var connection = await _OpenWithXactAbortAsync();
-        await using var unit = await host.Factory.BeginAsync(connection, cancellationToken: AbortToken);
+        await using var unit = await host.Factory.BeginAsync(connection, AbortToken);
 
         (await unit.Sequences.NextAsync(name, cancellationToken: AbortToken)).Should().Be(1);
         (await unit.Sequences.NextAsync(name, cancellationToken: AbortToken)).Should().Be(2);

@@ -16,12 +16,13 @@ internal static class IfMatchRequestValidator
         var value = context.Request.Headers[HeaderNames.IfMatch];
         if (value.Count == 0)
         {
+            var required = GeneralMessageDescriber.IfMatchRequired();
             var problem = new ProblemDetails
             {
                 Status = StatusCodes.Status428PreconditionRequired,
                 Title = "Precondition Required",
-                Detail = "A strong If-Match entity tag is required.",
-                Extensions = { ["error"] = GeneralMessageDescriber.IfMatchRequired() },
+                Detail = required.Description,
+                Extensions = { ["error"] = required },
             };
             context.RequestServices.GetRequiredService<IProblemDetailsCreator>().Normalize(problem);
             return problem;
@@ -29,12 +30,11 @@ internal static class IfMatchRequestValidator
 
         if (value.Count != 1 || !EntityTag.TryParse(value[0], out var entityTag) || entityTag.IsWeak)
         {
+            var invalid = GeneralMessageDescriber.IfMatchInvalid();
+
             return context
                 .RequestServices.GetRequiredService<IProblemDetailsCreator>()
-                .BadRequest(
-                    "If-Match must contain exactly one strong entity tag.",
-                    GeneralMessageDescriber.IfMatchInvalid()
-                );
+                .BadRequest(invalid.Description, invalid);
         }
 
         var options = context.RequestServices.GetRequiredService<IOptions<EntityTagConcurrencyOptions>>().Value;
@@ -42,10 +42,7 @@ internal static class IfMatchRequestValidator
         {
             return context
                 .RequestServices.GetRequiredService<IProblemDetailsCreator>()
-                .BadRequest(
-                    "If-Match contains an entity tag that is not supported by this API.",
-                    GeneralMessageDescriber.IfMatchInvalid()
-                );
+                .BadRequest(Messages.problem_if_match_unsupported, GeneralMessageDescriber.IfMatchInvalid());
         }
 
         context.RequestServices.GetRequiredService<IfMatchContext>().EntityTag = entityTag;

@@ -372,12 +372,12 @@ internal sealed class Bootstrapper(
         var consumers = serviceProvider.GetRequiredService<ConsumerRegistry>().GetAll();
         var gate = serviceProvider.GetRequiredService<IMessageCapabilityGate>();
 
-        // Every-instance consumers keep no inbox state, so they alone never require an inbox tier from storage.
+        // Every-instance consumers keep no inbox state, so they alone never require an inbox guarantee from storage.
         var hasDurableConsumers = consumers.Any(static consumer => !consumer.EveryInstance);
         gate.ValidateStartup(
             _GetRegisteredRoutes(capabilities),
             hasDurableConsumers,
-            options.Value.RequiredInboxCapability
+            options.Value.MinimumInboxGuarantee
         );
 
         // Runs before any processor starts, so a transport without every-instance subscriptions rejects the consumer

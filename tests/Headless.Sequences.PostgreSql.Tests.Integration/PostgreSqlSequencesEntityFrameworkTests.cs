@@ -106,7 +106,7 @@ public sealed class PostgreSqlSequencesEntityFrameworkTests(PostgreSqlSequencesF
         var db = scope.ServiceProvider.GetRequiredService<InvoiceDbContext>();
         var factory = scope.ServiceProvider.GetRequiredService<IUnitOfWorkFactory>();
 
-        await factory.RunAsync(db, (unit, ct) => operation(db, unit, ct), cancellationToken: AbortToken);
+        await factory.RunAsync(db, (unit, ct) => operation(db, unit, ct), AbortToken);
     }
 
     private Task<int> _CountInvoicesAsync(string name)

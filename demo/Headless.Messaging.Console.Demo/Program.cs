@@ -15,7 +15,7 @@ container
     {
         setup.AddModule<Headless.Messaging.Console.Demo.MessagingModule>();
         // Console app does not support dashboard
-        setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
+        setup.Options.MinimumInboxGuarantee = InboxGuarantee.ProcessLocal;
         setup.UseInMemoryStorage();
         setup.UseInMemory();
     })

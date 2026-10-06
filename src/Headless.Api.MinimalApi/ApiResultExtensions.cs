@@ -1,10 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Api;
+using Headless.Primitives;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 
-namespace Headless.Primitives;
+namespace Headless.Api;
 
 /// <summary>
 /// Extensions to convert <see cref="ApiResult{T}"/> and <see cref="ApiResult"/> discriminated unions
@@ -65,7 +65,7 @@ public static class ApiResultExtensions
 
             ForbiddenError e => TypedResults.Problem(creator.Forbidden(error: e.Error)),
 
-            UnauthorizedError e => TypedResults.Problem(creator.Unauthorized(e.Error)),
+            UnauthorizedError e => TypedResults.Problem(creator.Unauthorized(error: e.Error)),
 
             AggregateError e when e.TryGetValidationErrors(out var validationErrors) => TypedResults.Problem(
                 creator.UnprocessableEntity(validationErrors)

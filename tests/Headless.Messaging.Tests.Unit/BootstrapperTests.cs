@@ -501,7 +501,7 @@ public sealed class BootstrapperTests : TestBase
                     "OtherStorage",
                     [MessageLane.Bus, MessageLane.Queue],
                     supportsDelayedScheduling: true,
-                    inboxCapability: MessagingInboxCapabilityTier.Transactional
+                    inboxGuarantee: InboxGuarantee.Transactional
                 )
             )
         );

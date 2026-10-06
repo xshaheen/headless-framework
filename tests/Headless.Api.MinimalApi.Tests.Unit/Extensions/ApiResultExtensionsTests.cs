@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Api;
+using Headless.Context;
 using Headless.Primitives;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Http;
@@ -9,6 +10,7 @@ using Microsoft.AspNetCore.Http.Metadata;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.Routing.Patterns;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests.Extensions;
 
@@ -79,6 +81,42 @@ public sealed class ApiResultExtensionsTests : TestBase
             .Should()
             .BeEquivalentTo([200, 401, 403, 404, 409, 422]);
     }
+
+    #region Error description localization
+
+    [Fact]
+    public void should_apply_error_description_localizer_when_converting_errors()
+    {
+        // given
+        var creator = _CreateLocalizingCreator(new OutOfStockLocalizer());
+        var conflict = ApiResult<string>.Fail(new ConflictError("app:out_of_stock", "Out of stock."));
+        var forbidden = new ForbiddenError(new ErrorDescriptor("app:no_access", "No access."));
+
+        // when
+        var conflictResult = (IValueHttpResult)conflict.ToHttpResult(creator);
+        var forbiddenResult = forbidden.ToHttpResult(creator);
+
+        // then
+        var conflictBody = conflictResult.Value.Should().BeOfType<ProblemDetails>().Subject;
+        conflictBody
+            .Extensions["errors"]
+            .Should()
+            .BeAssignableTo<IReadOnlyCollection<ErrorDescriptor>>()
+            .Which.Should()
+            .ContainSingle()
+            .Which.Description.Should()
+            .Be("نفدت الكمية");
+
+        // a code the localizer does not know keeps its original description
+        forbiddenResult
+            .ProblemDetails.Extensions["error"]
+            .Should()
+            .BeOfType<ErrorDescriptor>()
+            .Which.Description.Should()
+            .Be("No access.");
+    }
+
+    #endregion
 
     #region ApiResult<T> Tests
 
@@ -237,7 +275,7 @@ public sealed class ApiResultExtensionsTests : TestBase
         _ = new UnauthorizedError(descriptor).ToHttpResult(creator);
 
         // then
-        creator.Received(1).Unauthorized(descriptor);
+        creator.Received(1).Unauthorized(error: descriptor);
     }
 
     [Fact]
@@ -516,6 +554,26 @@ public sealed class ApiResultExtensionsTests : TestBase
 
     #region Helper Methods
 
+    // Resolves the real creator through the public registration so the test also proves that a
+    // localizer registered by the application replaces the framework's no-op default.
+    private static IProblemDetailsCreator _CreateLocalizingCreator(IErrorDescriptionLocalizer localizer)
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(TimeProvider.System);
+        services.AddSingleton(Substitute.For<IBuildInformationAccessor>());
+        services.AddHttpContextAccessor();
+        services.AddSingleton(localizer);
+        services.AddHeadlessProblemDetails();
+
+        return services.BuildServiceProvider().GetRequiredService<IProblemDetailsCreator>();
+    }
+
+    private sealed class OutOfStockLocalizer : IErrorDescriptionLocalizer
+    {
+        public string? Localize(ErrorDescriptor error) =>
+            string.Equals(error.Code, "app:out_of_stock", StringComparison.Ordinal) ? "نفدت الكمية" : null;
+    }
+
     private static IProblemDetailsCreator _CreateProblemDetailsCreator()
     {
         var creator = Substitute.For<IProblemDetailsCreator>();
@@ -537,7 +595,7 @@ public sealed class ApiResultExtensionsTests : TestBase
             .Returns(ci => new ProblemDetails { Status = StatusCodes.Status403Forbidden, Title = "Forbidden" });
 
         creator
-            .Unauthorized(Arg.Any<ErrorDescriptor?>())
+            .Unauthorized(Arg.Any<string?>(), Arg.Any<ErrorDescriptor?>())
             .Returns(new ProblemDetails { Status = StatusCodes.Status401Unauthorized, Title = "Unauthorized" });
 
         creator

@@ -40,11 +40,34 @@ public static class UnitOfWorkFactoryEntityFrameworkExtensions
     extension(IUnitOfWorkFactory factory)
     {
         /// <summary>
-        /// Begins an owned unit of work on <paramref name="db" />: the transaction is started on this line
-        /// and <c>CompleteAsync</c> commits it, then drains.
+        /// Begins an owned unit of work on <paramref name="db" /> at <see cref="IsolationLevel.ReadCommitted" />:
+        /// the transaction is started on this line and <c>CompleteAsync</c> commits it, then drains.
         /// </summary>
         /// <param name="db">The context whose database transaction the unit owns.</param>
-        /// <param name="isolation">Transaction isolation level. Defaults to <see cref="IsolationLevel.ReadCommitted" />.</param>
+        /// <param name="cancellationToken">Propagates the caller's cancellation to the transaction begin.</param>
+        /// <returns>The begun unit of work; the caller completes or disposes it.</returns>
+        /// <exception cref="InvalidOperationException">
+        /// The context or its connection already carries an active unit of work (join it with <c>RunAsync</c>
+        /// or pass it along), the context already has an active transaction (use <c>Enlist</c> instead), or the
+        /// configured execution strategy retries (use <c>RunAsync</c> instead).
+        /// </exception>
+        public ValueTask<IUnitOfWork> BeginAsync(DbContext db, CancellationToken cancellationToken = default)
+        {
+            return _BeginAsync(
+                factory,
+                db,
+                IsolationLevel.ReadCommitted,
+                rejectRetryingStrategy: true,
+                cancellationToken
+            );
+        }
+
+        /// <summary>
+        /// Begins an owned unit of work on <paramref name="db" /> at <paramref name="isolation" />: the transaction
+        /// is started on this line and <c>CompleteAsync</c> commits it, then drains.
+        /// </summary>
+        /// <param name="db">The context whose database transaction the unit owns.</param>
+        /// <param name="isolation">Transaction isolation level.</param>
         /// <param name="cancellationToken">Propagates the caller's cancellation to the transaction begin.</param>
         /// <returns>The begun unit of work; the caller completes or disposes it.</returns>
         /// <exception cref="InvalidOperationException">
@@ -54,7 +77,7 @@ public static class UnitOfWorkFactoryEntityFrameworkExtensions
         /// </exception>
         public ValueTask<IUnitOfWork> BeginAsync(
             DbContext db,
-            IsolationLevel isolation = IsolationLevel.ReadCommitted,
+            IsolationLevel isolation,
             CancellationToken cancellationToken = default
         )
         {
@@ -89,6 +112,28 @@ public static class UnitOfWorkFactoryEntityFrameworkExtensions
 
         /// <summary>
         /// Runs <paramref name="operation" /> as a unit of work inside <paramref name="db" />'s execution
+        /// strategy, beginning it at <see cref="IsolationLevel.ReadCommitted" />, with the replay and join semantics
+        /// of the overload that takes an <see cref="IsolationLevel" />.
+        /// </summary>
+        /// <param name="db">The context to operate on.</param>
+        /// <param name="operation">The block receiving the unit and the caller's cancellation token.</param>
+        /// <param name="cancellationToken">Cancellation token forwarded to begin, commit, and the operation.</param>
+        /// <exception cref="InvalidOperationException">
+        /// The context's connection is owned by a raw-ADO unit (begin the EF unit first and join it from the ADO
+        /// side), the context uses a transaction other than the unit's on that connection, or a joined block
+        /// completed, rolled back, or disposed the owner's unit.
+        /// </exception>
+        public Task RunAsync(
+            DbContext db,
+            Func<IUnitOfWork, CancellationToken, Task> operation,
+            CancellationToken cancellationToken = default
+        )
+        {
+            return factory.RunAsync(db, operation, IsolationLevel.ReadCommitted, cancellationToken);
+        }
+
+        /// <summary>
+        /// Runs <paramref name="operation" /> as a unit of work inside <paramref name="db" />'s execution
         /// strategy: begin (owned) → operation → <c>CompleteAsync</c>. A retriable failure before the commit
         /// starts replays the whole block with a fresh transaction and a fresh unit; once the commit has
         /// started, or after <see cref="IUnitOfWork.PreventRetry" />, the fault is surfaced outside the
@@ -102,8 +147,8 @@ public static class UnitOfWorkFactoryEntityFrameworkExtensions
         /// <param name="db">The context to operate on.</param>
         /// <param name="operation">The block receiving the unit and the caller's cancellation token.</param>
         /// <param name="isolation">
-        /// Transaction isolation level for a unit this call begins. Defaults to <see cref="IsolationLevel.ReadCommitted" />.
-        /// Ignored when the call joins an already-bound unit: the block runs at the owner's isolation level.
+        /// Transaction isolation level for a unit this call begins. Ignored when the call joins an already-bound
+        /// unit: the block runs at the owner's isolation level.
         /// </param>
         /// <param name="cancellationToken">Cancellation token forwarded to begin, commit, and the operation.</param>
         /// <exception cref="InvalidOperationException">
@@ -114,7 +159,7 @@ public static class UnitOfWorkFactoryEntityFrameworkExtensions
         public Task RunAsync(
             DbContext db,
             Func<IUnitOfWork, CancellationToken, Task> operation,
-            IsolationLevel isolation = IsolationLevel.ReadCommitted,
+            IsolationLevel isolation,
             CancellationToken cancellationToken = default
         )
         {
@@ -136,6 +181,30 @@ public static class UnitOfWorkFactoryEntityFrameworkExtensions
 
         /// <summary>
         /// Runs <paramref name="operation" /> as a unit of work inside <paramref name="db" />'s execution
+        /// strategy, beginning it at <see cref="IsolationLevel.ReadCommitted" />, and returns its result, with the
+        /// same replay semantics as the result-less <c>RunAsync</c> overload.
+        /// </summary>
+        /// <typeparam name="TResult">Type of the value returned by <paramref name="operation" />.</typeparam>
+        /// <param name="db">The context to operate on.</param>
+        /// <param name="operation">The block receiving the unit and the caller's cancellation token, returning a result.</param>
+        /// <param name="cancellationToken">Cancellation token forwarded to begin, commit, and the operation.</param>
+        /// <returns>The result produced by <paramref name="operation" />.</returns>
+        /// <exception cref="InvalidOperationException">
+        /// The context's connection is owned by a raw-ADO unit (begin the EF unit first and join it from the ADO
+        /// side), the context uses a transaction other than the unit's on that connection, or a joined block
+        /// completed, rolled back, or disposed the owner's unit.
+        /// </exception>
+        public Task<TResult> RunAsync<TResult>(
+            DbContext db,
+            Func<IUnitOfWork, CancellationToken, Task<TResult>> operation,
+            CancellationToken cancellationToken = default
+        )
+        {
+            return factory.RunAsync(db, operation, IsolationLevel.ReadCommitted, cancellationToken);
+        }
+
+        /// <summary>
+        /// Runs <paramref name="operation" /> as a unit of work inside <paramref name="db" />'s execution
         /// strategy and returns its result, with the same replay semantics as the result-less
         /// <c>RunAsync</c> overload.
         /// </summary>
@@ -143,8 +212,8 @@ public static class UnitOfWorkFactoryEntityFrameworkExtensions
         /// <param name="db">The context to operate on.</param>
         /// <param name="operation">The block receiving the unit and the caller's cancellation token, returning a result.</param>
         /// <param name="isolation">
-        /// Transaction isolation level for a unit this call begins. Defaults to <see cref="IsolationLevel.ReadCommitted" />.
-        /// Ignored when the call joins an already-bound unit: the block runs at the owner's isolation level.
+        /// Transaction isolation level for a unit this call begins. Ignored when the call joins an already-bound
+        /// unit: the block runs at the owner's isolation level.
         /// </param>
         /// <param name="cancellationToken">Cancellation token forwarded to begin, commit, and the operation.</param>
         /// <exception cref="InvalidOperationException">
@@ -155,7 +224,7 @@ public static class UnitOfWorkFactoryEntityFrameworkExtensions
         public Task<TResult> RunAsync<TResult>(
             DbContext db,
             Func<IUnitOfWork, CancellationToken, Task<TResult>> operation,
-            IsolationLevel isolation = IsolationLevel.ReadCommitted,
+            IsolationLevel isolation,
             CancellationToken cancellationToken = default
         )
         {

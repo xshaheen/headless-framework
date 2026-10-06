@@ -234,7 +234,7 @@ public static class SetupPostgreSqlMessaging
                     "PostgreSql",
                     [MessageLane.Bus, MessageLane.Queue],
                     supportsDelayedScheduling: true,
-                    inboxCapability: MessagingInboxCapabilityTier.DurableDedupeOnly
+                    inboxGuarantee: InboxGuarantee.Durable
                 )
             );
             // The schema is feature-owned, so this provider only validates it, once, against PostgreSQL's

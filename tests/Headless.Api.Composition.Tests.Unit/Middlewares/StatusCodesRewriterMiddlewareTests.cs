@@ -3,6 +3,7 @@
 #pragma warning disable IDE0062 // Local functions can be made static - closures needed for capturing test state
 
 using Headless.Api;
+using Headless.Api.Resources;
 using Headless.Primitives;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Http;
@@ -31,7 +32,7 @@ public sealed class StatusCodesRewriterMiddlewareTests : TestBase
                 {
                     Status = StatusCodes.Status401Unauthorized,
                     Title = HeadlessProblemDetailsConstants.Titles.Unauthorized,
-                    Detail = HeadlessProblemDetailsConstants.Details.Unauthorized,
+                    Detail = Messages.problem_unauthorized,
                 }
             );
 
@@ -42,7 +43,7 @@ public sealed class StatusCodesRewriterMiddlewareTests : TestBase
                 {
                     Status = StatusCodes.Status403Forbidden,
                     Title = HeadlessProblemDetailsConstants.Titles.Forbidden,
-                    Detail = HeadlessProblemDetailsConstants.Details.Forbidden,
+                    Detail = Messages.problem_forbidden,
                 }
             );
 
@@ -53,7 +54,7 @@ public sealed class StatusCodesRewriterMiddlewareTests : TestBase
                 {
                     Status = StatusCodes.Status404NotFound,
                     Title = HeadlessProblemDetailsConstants.Titles.EndpointNotFound,
-                    Detail = HeadlessProblemDetailsConstants.Details.EndpointNotFound("/test"),
+                    Detail = Messages.problem_endpoint_not_found.Replace("{0}", "/test", StringComparison.Ordinal),
                 }
             );
 
@@ -261,19 +262,16 @@ public sealed class StatusCodesRewriterMiddlewareTests : TestBase
         var problemCreator = Substitute.For<IProblemDetailsCreator>();
         problemCreator
             .Forbidden(
-                detail: HeadlessProblemDetailsConstants.Details.TenantContextRequired,
-                error: HeadlessProblemDetailsConstants.Errors.TenantContextRequired
+                detail: Messages.g_tenant_required,
+                error: Arg.Is<ErrorDescriptor?>(e => e != null && e.Code == GeneralErrorCodes.TenantRequired)
             )
             .Returns(
                 new ProblemDetails
                 {
                     Status = StatusCodes.Status403Forbidden,
                     Title = HeadlessProblemDetailsConstants.Titles.Forbidden,
-                    Detail = HeadlessProblemDetailsConstants.Details.TenantContextRequired,
-                    Extensions =
-                    {
-                        ["error"] = new { code = HeadlessProblemDetailsConstants.Errors.TenantContextRequired.Code },
-                    },
+                    Detail = Messages.g_tenant_required,
+                    Extensions = { ["error"] = new { code = GeneralErrorCodes.TenantRequired } },
                 }
             );
         var middleware = _CreateMiddleware(problemCreator);
@@ -299,16 +297,12 @@ public sealed class StatusCodesRewriterMiddlewareTests : TestBase
         using var doc = JsonDocument.Parse(body);
         var root = doc.RootElement;
         root.GetProperty("status").GetInt32().Should().Be(StatusCodes.Status403Forbidden);
-        root.GetProperty("error")
-            .GetProperty("code")
-            .GetString()
-            .Should()
-            .Be(HeadlessProblemDetailsConstants.Errors.TenantContextRequired.Code);
+        root.GetProperty("error").GetProperty("code").GetString().Should().Be(GeneralErrorCodes.TenantRequired);
         problemCreator
             .Received(1)
             .Forbidden(
-                detail: HeadlessProblemDetailsConstants.Details.TenantContextRequired,
-                error: HeadlessProblemDetailsConstants.Errors.TenantContextRequired
+                detail: Messages.g_tenant_required,
+                error: Arg.Is<ErrorDescriptor?>(e => e != null && e.Code == GeneralErrorCodes.TenantRequired)
             );
         problemCreator.DidNotReceive().Forbidden();
     }
@@ -378,8 +372,8 @@ public sealed class StatusCodesRewriterMiddlewareTests : TestBase
         var problemCreator = Substitute.For<IProblemDetailsCreator>();
         problemCreator
             .Forbidden(
-                detail: HeadlessProblemDetailsConstants.Details.TenantContextRequired,
-                error: HeadlessProblemDetailsConstants.Errors.TenantContextRequired
+                detail: Messages.g_tenant_required,
+                error: Arg.Is<ErrorDescriptor?>(e => e != null && e.Code == GeneralErrorCodes.TenantRequired)
             )
             .Returns(
                 new ProblemDetails
@@ -406,8 +400,8 @@ public sealed class StatusCodesRewriterMiddlewareTests : TestBase
         problemCreator
             .Received(1)
             .Forbidden(
-                detail: HeadlessProblemDetailsConstants.Details.TenantContextRequired,
-                error: HeadlessProblemDetailsConstants.Errors.TenantContextRequired
+                detail: Messages.g_tenant_required,
+                error: Arg.Is<ErrorDescriptor?>(e => e != null && e.Code == GeneralErrorCodes.TenantRequired)
             );
     }
 

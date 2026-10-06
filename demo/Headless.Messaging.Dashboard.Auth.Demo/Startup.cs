@@ -67,7 +67,7 @@ public class Startup
         services.AddHeadlessMessaging(setup =>
         {
             setup.AddModule<Headless.Messaging.Dashboard.Auth.Demo.MessagingModule>();
-            setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
+            setup.Options.MinimumInboxGuarantee = InboxGuarantee.ProcessLocal;
             setup.UseInMemoryStorage();
             setup.UseInMemory();
 
@@ -101,7 +101,7 @@ public class Startup
         services.AddHeadlessMessaging(setup =>
         {
             setup.AddModule<Headless.Messaging.Dashboard.Auth.Demo.MessagingModule>();
-            setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
+            setup.Options.MinimumInboxGuarantee = InboxGuarantee.ProcessLocal;
             setup.UseInMemoryStorage();
             setup.UseInMemory();
 
@@ -153,7 +153,7 @@ public class Startup
         {
             setup.AddModule<Headless.Messaging.Dashboard.Auth.Demo.MessagingModule>();
             setup.UseDashboard(d => d.WithHostAuthentication(dashboardAuthorizationPolicy));
-            setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
+            setup.Options.MinimumInboxGuarantee = InboxGuarantee.ProcessLocal;
             setup.UseInMemoryStorage();
             setup.UseInMemory();
         });
@@ -167,7 +167,7 @@ public class Startup
         {
             setup.AddModule<Headless.Messaging.Dashboard.Auth.Demo.MessagingModule>();
             setup.UseDashboard(d => d.WithNoAuth());
-            setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
+            setup.Options.MinimumInboxGuarantee = InboxGuarantee.ProcessLocal;
             setup.UseInMemoryStorage();
             setup.UseInMemory();
         });

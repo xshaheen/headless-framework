@@ -22,7 +22,7 @@ builder.Services.AddHeadlessMessaging(setup =>
         redis.OnConsumeError = context => throw new InvalidOperationException("Redis consume error", context.Exception);
     });
 
-    setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.DurableDedupeOnly;
+    setup.Options.MinimumInboxGuarantee = InboxGuarantee.Durable;
     setup.UseSqlServer("Server=db;Database=master;User=sa;Password=P@ssw0rd;Encrypt=False");
 
     setup.UseDashboard(d => d.WithNoAuth());

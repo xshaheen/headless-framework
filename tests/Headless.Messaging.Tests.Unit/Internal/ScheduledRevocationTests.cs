@@ -24,7 +24,7 @@ public sealed class ScheduledRevocationTests : TestBase
         {
             setup.UseInMemory();
             setup.UseInMemoryStorage();
-            setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
+            setup.Options.MinimumInboxGuarantee = InboxGuarantee.ProcessLocal;
         });
         await using var provider = services.BuildServiceProvider();
         var storage = provider.GetRequiredService<IDataStorage>();

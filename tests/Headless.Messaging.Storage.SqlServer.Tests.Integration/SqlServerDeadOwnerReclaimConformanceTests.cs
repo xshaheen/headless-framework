@@ -17,7 +17,7 @@ public sealed class SqlServerDeadOwnerReclaimConformanceTests(SqlServerTestFixtu
 {
     protected override void ConfigureStorage(MessagingSetupBuilder setup)
     {
-        setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.DurableDedupeOnly;
+        setup.Options.MinimumInboxGuarantee = InboxGuarantee.Durable;
         setup.UseSqlServer(fixture.ConnectionString);
     }
 

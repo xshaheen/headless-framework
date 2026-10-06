@@ -43,7 +43,7 @@ builder.Services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer
 builder.Services.AddHeadlessMessaging(setup =>
 {
     setup.UseInMemory();
-    setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
+    setup.Options.MinimumInboxGuarantee = InboxGuarantee.ProcessLocal;
     setup.UseInMemoryStorage();
 });
 

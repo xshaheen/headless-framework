@@ -54,7 +54,7 @@ builder.Services.AddHeadlessMessaging(setup =>
         MaxRetryAttempts = 0,
         ShouldHandle = static _ => ValueTask.FromResult(true),
     };
-    setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
+    setup.Options.MinimumInboxGuarantee = InboxGuarantee.ProcessLocal;
     setup.UseInMemoryStorage();
     setup.UseInMemory();
     setup.UseDashboard(d => d.WithHostAuthentication(dashboardPolicy));

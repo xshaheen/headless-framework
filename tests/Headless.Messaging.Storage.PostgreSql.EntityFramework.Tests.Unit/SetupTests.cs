@@ -84,8 +84,8 @@ public sealed class SetupTests : TestBase
         provider
             .GetServices<MessagingProviderCapabilities>()
             .Single(capability => string.Equals(capability.Provider, "PostgreSql", StringComparison.Ordinal))
-            .InboxCapability.Should()
-            .Be(MessagingInboxCapabilityTier.Transactional);
+            .InboxGuarantee.Should()
+            .Be(InboxGuarantee.Transactional);
     }
 
     [Fact]
@@ -109,8 +109,8 @@ public sealed class SetupTests : TestBase
         provider
             .GetServices<MessagingProviderCapabilities>()
             .Single(capability => string.Equals(capability.Provider, "PostgreSql", StringComparison.Ordinal))
-            .InboxCapability.Should()
-            .Be(MessagingInboxCapabilityTier.DurableDedupeOnly);
+            .InboxGuarantee.Should()
+            .Be(InboxGuarantee.Durable);
     }
 
     [Fact]

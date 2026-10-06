@@ -521,7 +521,7 @@ public sealed class MessagingLaneSplitTests : TestBase
             "TestStorage",
             [MessageLane.Bus, MessageLane.Queue],
             supportsDelayedScheduling: true,
-            inboxCapability: MessagingInboxCapabilityTier.Transactional
+            inboxGuarantee: InboxGuarantee.Transactional
         );
     }
 

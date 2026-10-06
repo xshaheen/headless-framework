@@ -55,7 +55,7 @@ public sealed class InMemoryEveryInstanceHostTests : TestBase
         {
             setup.UseInMemory();
             setup.UseInMemoryStorage();
-            setup.Options.RequiredInboxCapability = MessagingInboxCapabilityTier.ProcessLocal;
+            setup.Options.MinimumInboxGuarantee = InboxGuarantee.ProcessLocal;
         });
 
         // Registered last, so both hosts resolve the one transport instead of their own.

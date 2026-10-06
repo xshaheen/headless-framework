@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Data;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;
 using Microsoft.Data.Sqlite;
@@ -51,14 +52,15 @@ public sealed class SqliteConnectionFactoryReplayTests(SqliteUnitOfWorkFixture f
                     "replayed",
                     ct
                 ),
-            retry: new RetryStrategyOptions
+            IsolationLevel.ReadCommitted,
+            new RetryStrategyOptions
             {
                 ShouldHandle = UnitOfWorkRetryOptions.DefaultShouldHandle,
                 MaxRetryAttempts = 3,
                 Delay = TimeSpan.FromMilliseconds(500),
                 BackoffType = DelayBackoffType.Constant,
             },
-            cancellationToken: AbortToken
+            AbortToken
         );
         await release;
 
@@ -84,13 +86,14 @@ public sealed class SqliteConnectionFactoryReplayTests(SqliteUnitOfWorkFixture f
                     command.CommandText = "SELECT * FROM missing_table";
                     await command.ExecuteNonQueryAsync(ct);
                 },
-                retry: new RetryStrategyOptions
+                IsolationLevel.ReadCommitted,
+                new RetryStrategyOptions
                 {
                     ShouldHandle = UnitOfWorkRetryOptions.DefaultShouldHandle,
                     MaxRetryAttempts = 3,
                     Delay = TimeSpan.Zero,
                 },
-                cancellationToken: AbortToken
+                AbortToken
             );
 
         await act.Should().ThrowAsync<SqliteException>();

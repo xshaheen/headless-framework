@@ -23,7 +23,7 @@ public sealed class PostgresUnitOfWorkTransactionLockTests(PostgreSqlDistributed
         var key = _KeyFor(resource);
 
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
-        await using var unit = await factory.BeginAsync(connection, cancellationToken: AbortToken);
+        await using var unit = await factory.BeginAsync(connection, AbortToken);
 
         // when
         var handle = await unit.TransactionLocks.AcquireAsync(resource, cancellationToken: AbortToken);
@@ -51,7 +51,7 @@ public sealed class PostgresUnitOfWorkTransactionLockTests(PostgreSqlDistributed
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
 
         // when — dispose without complete is an implicit rollback
-        await using (var unit = await factory.BeginAsync(connection, cancellationToken: AbortToken))
+        await using (var unit = await factory.BeginAsync(connection, AbortToken))
         {
             await unit.TransactionLocks.AcquireAsync(resource, cancellationToken: AbortToken);
             (await _CountAdvisoryLocksAsync(key)).Should().BePositive();
@@ -74,11 +74,11 @@ public sealed class PostgresUnitOfWorkTransactionLockTests(PostgreSqlDistributed
         await using var holderConnection = new NpgsqlConnection(fixture.ConnectionString);
         await using var contenderConnection = new NpgsqlConnection(fixture.ConnectionString);
 
-        await using var holder = await factory.BeginAsync(holderConnection, cancellationToken: AbortToken);
+        await using var holder = await factory.BeginAsync(holderConnection, AbortToken);
         await holder.TransactionLocks.AcquireAsync(resource, cancellationToken: AbortToken);
 
         // when / then
-        await using var contender = await factory.BeginAsync(contenderConnection, cancellationToken: AbortToken);
+        await using var contender = await factory.BeginAsync(contenderConnection, AbortToken);
         (await contender.TransactionLocks.TryAcquireAsync(resource, cancellationToken: AbortToken)).Should().BeNull();
 
         await holder.CompleteAsync(AbortToken);
@@ -99,9 +99,9 @@ public sealed class PostgresUnitOfWorkTransactionLockTests(PostgreSqlDistributed
         await using var holderConnection = new NpgsqlConnection(fixture.ConnectionString);
         await using var contenderConnection = new NpgsqlConnection(fixture.ConnectionString);
 
-        await using var holder = await factory.BeginAsync(holderConnection, cancellationToken: AbortToken);
+        await using var holder = await factory.BeginAsync(holderConnection, AbortToken);
         await holder.TransactionLocks.AcquireAsync(resource, cancellationToken: AbortToken);
-        await using var contender = await factory.BeginAsync(contenderConnection, cancellationToken: AbortToken);
+        await using var contender = await factory.BeginAsync(contenderConnection, AbortToken);
 
         // when
         var stopwatch = Stopwatch.StartNew();
@@ -128,7 +128,7 @@ public sealed class PostgresUnitOfWorkTransactionLockTests(PostgreSqlDistributed
         await using var provider = _BuildProvider();
         var factory = provider.GetRequiredService<IUnitOfWorkFactory>();
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
-        await using var unit = await factory.BeginAsync(connection, cancellationToken: AbortToken);
+        await using var unit = await factory.BeginAsync(connection, AbortToken);
 
         // when
         await unit.TransactionLocks.AcquireAsync(_CreateResourceName(), TimeSpan.FromSeconds(5), AbortToken);
@@ -150,9 +150,9 @@ public sealed class PostgresUnitOfWorkTransactionLockTests(PostgreSqlDistributed
         await using var holderConnection = new NpgsqlConnection(fixture.ConnectionString);
         await using var contenderConnection = new NpgsqlConnection(fixture.ConnectionString);
 
-        await using var holder = await factory.BeginAsync(holderConnection, cancellationToken: AbortToken);
+        await using var holder = await factory.BeginAsync(holderConnection, AbortToken);
         await holder.TransactionLocks.AcquireAsync(resource, cancellationToken: AbortToken);
-        await using var contender = await factory.BeginAsync(contenderConnection, cancellationToken: AbortToken);
+        await using var contender = await factory.BeginAsync(contenderConnection, AbortToken);
 
         using var cancellation = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
         cancellation.CancelAfter(TimeSpan.FromMilliseconds(300));
@@ -180,7 +180,7 @@ public sealed class PostgresUnitOfWorkTransactionLockTests(PostgreSqlDistributed
         var key = _KeyFor(resource);
 
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
-        await using var unit = await factory.BeginAsync(connection, cancellationToken: AbortToken);
+        await using var unit = await factory.BeginAsync(connection, AbortToken);
         await unit.TransactionLocks.AcquireAsync(resource, cancellationToken: AbortToken);
 
         // when — the unit's transaction is the owner, so acquiring again is granted on every wait shape
@@ -208,9 +208,9 @@ public sealed class PostgresUnitOfWorkTransactionLockTests(PostgreSqlDistributed
         await using var holderConnection = new NpgsqlConnection(fixture.ConnectionString);
         await using var contenderConnection = new NpgsqlConnection(fixture.ConnectionString);
 
-        await using var holder = await factory.BeginAsync(holderConnection, cancellationToken: AbortToken);
+        await using var holder = await factory.BeginAsync(holderConnection, AbortToken);
         await holder.TransactionLocks.AcquireAsync(resource, cancellationToken: AbortToken);
-        await using var contender = await factory.BeginAsync(contenderConnection, cancellationToken: AbortToken);
+        await using var contender = await factory.BeginAsync(contenderConnection, AbortToken);
 
         // when — release the holder while the contender is inside its bounded wait
         var release = Task.Run(
@@ -279,7 +279,7 @@ public sealed class PostgresUnitOfWorkTransactionLockTests(PostgreSqlDistributed
         await using var provider = _BuildProvider();
         var factory = provider.GetRequiredService<IUnitOfWorkFactory>();
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
-        await using var unit = await factory.BeginAsync(connection, cancellationToken: AbortToken);
+        await using var unit = await factory.BeginAsync(connection, AbortToken);
         await unit.CompleteAsync(AbortToken);
 
         // when
@@ -296,7 +296,7 @@ public sealed class PostgresUnitOfWorkTransactionLockTests(PostgreSqlDistributed
         await using var provider = _BuildProvider();
         var factory = provider.GetRequiredService<IUnitOfWorkFactory>();
         await using var connection = new NpgsqlConnection(fixture.ConnectionString);
-        await using var unit = await factory.BeginAsync(connection, cancellationToken: AbortToken);
+        await using var unit = await factory.BeginAsync(connection, AbortToken);
         var locks = unit.TransactionLocks;
         await unit.CompleteAsync(AbortToken);
 

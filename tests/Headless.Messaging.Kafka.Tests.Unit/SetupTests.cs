@@ -76,7 +76,7 @@ public sealed class SetupTests : TestBase
                 "TestStorage",
                 [MessageLane.Bus, MessageLane.Queue],
                 supportsDelayedScheduling: true,
-                inboxCapability: MessagingInboxCapabilityTier.Transactional
+                inboxGuarantee: InboxGuarantee.Transactional
             )
         );
         services.AddSingleton<IStorageTableNames>(_ =>
@@ -109,7 +109,7 @@ public sealed class SetupTests : TestBase
                 "TestStorage",
                 [MessageLane.Bus, MessageLane.Queue],
                 supportsDelayedScheduling: true,
-                inboxCapability: MessagingInboxCapabilityTier.Transactional
+                inboxGuarantee: InboxGuarantee.Transactional
             )
         );
         services.AddSingleton(Substitute.For<IDataStorage>());

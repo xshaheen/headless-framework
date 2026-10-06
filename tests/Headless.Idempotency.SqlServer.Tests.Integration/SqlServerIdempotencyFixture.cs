@@ -126,7 +126,7 @@ public abstract class SqlServerIdempotencyFixtureBase : HeadlessSqlServerFixture
         CancellationToken cancellationToken
     )
     {
-        return factory.BeginAsync((SqlConnection)connection, cancellationToken: cancellationToken);
+        return factory.BeginAsync((SqlConnection)connection, cancellationToken);
     }
 
     public async Task<StoredRecord?> ReadRecordAsync(IdempotencyRecordKey key, CancellationToken cancellationToken)

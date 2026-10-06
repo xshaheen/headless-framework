@@ -136,7 +136,7 @@ public abstract class SqlServerFencingFixtureBase : HeadlessSqlServerFixture, IA
         CancellationToken cancellationToken
     )
     {
-        return factory.BeginAsync((SqlConnection)connection, cancellationToken: cancellationToken);
+        return factory.BeginAsync((SqlConnection)connection, cancellationToken);
     }
 
     public IUnitOfWork Enlist(IUnitOfWorkFactory factory, DbConnection connection, DbTransaction transaction)
