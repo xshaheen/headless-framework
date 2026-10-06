@@ -26,6 +26,9 @@ export class GetTimeJobResponse {
     batchParent?:string;
     batchRunCondition?:string|number;
     children?:GetTimeJobResponse[];
+    progressPercent?:number|null;
+    progressMessage?:string|null;
+    progressUpdatedAt?:string|null;
 }
 
 export class GetTimeJobGraphDataRangeResponse{

@@ -100,6 +100,21 @@ public class TimeJobEntity<TTicker> : BaseJobEntity
     /// <summary>Wall-clock execution duration in milliseconds, set after the function completes.</summary>
     public virtual long ElapsedTime { get; internal set; }
 
+    /// <summary>
+    /// Completion percentage (<c>0</c>–<c>100</c>) the run last reported, or <see langword="null"/> when it never
+    /// reported. Kept through in-process retries, crash-recovery re-runs, and terminal states; cleared by a requeue.
+    /// </summary>
+    public virtual double? ProgressPercent { get; internal set; }
+
+    /// <summary>Message the run last reported with <see cref="ProgressPercent"/>, or <see langword="null"/>.</summary>
+    public virtual string? ProgressMessage { get; internal set; }
+
+    /// <summary>
+    /// UTC time the stored progress was written, stamped by the store's clock; <see langword="null"/> when the run
+    /// never reported.
+    /// </summary>
+    public virtual DateTimeOffset? ProgressUpdatedAt { get; internal set; }
+
     /// <summary>Maximum number of retry attempts when the job fails. <c>0</c> means no retries.</summary>
     public virtual int Retries { get; set; }
 

@@ -12,15 +12,15 @@
     <PackageVersion Include="Asp.Versioning.Mvc" Version="10.2.1" />
     <PackageVersion Include="Asp.Versioning.Mvc.ApiExplorer" Version="10.2.1" />
     <PackageVersion Include="AwesomeAssertions" Version="9.6.0" />
-    <PackageVersion Include="AWSSDK.Extensions.NETCore.Setup" Version="4.0.101.3" />
-    <PackageVersion Include="AWSSDK.S3" Version="4.0.103.1" />
-    <PackageVersion Include="AWSSDK.SimpleEmailV2" Version="4.0.104.2" />
-    <PackageVersion Include="AWSSDK.SimpleNotificationService" Version="4.0.100.13" />
-    <PackageVersion Include="AWSSDK.SQS" Version="4.0.100.13" />
+    <PackageVersion Include="AWSSDK.Extensions.NETCore.Setup" Version="4.0.101.4" />
+    <PackageVersion Include="AWSSDK.S3" Version="4.0.103.4" />
+    <PackageVersion Include="AWSSDK.SimpleEmailV2" Version="4.0.105.1" />
+    <PackageVersion Include="AWSSDK.SimpleNotificationService" Version="4.0.100.15" />
+    <PackageVersion Include="AWSSDK.SQS" Version="4.0.100.14" />
     <PackageVersion Include="Azure.Communication.Email" Version="1.1.0" />
-    <PackageVersion Include="Azure.Messaging.ServiceBus" Version="7.20.2" />
+    <PackageVersion Include="Azure.Messaging.ServiceBus" Version="7.21.0" />
     <PackageVersion Include="Azure.Storage.Blobs" Version="12.29.2" />
-    <PackageVersion Include="Azure.Storage.Blobs.Batch" Version="12.26.0" />
+    <PackageVersion Include="Azure.Storage.Blobs.Batch" Version="12.26.1" />
     <PackageVersion Include="Bogus" Version="35.6.5" />
     <PackageVersion Include="Confluent.Kafka" Version="2.15.1" />
     <PackageVersion Include="Consul" Version="1.8.0" />
@@ -31,7 +31,7 @@
     <PackageVersion Include="DocumentFormat.OpenXml" Version="3.5.1" />
     <PackageVersion Include="FileSignatures" Version="7.3.0" />
     <PackageVersion Include="FastExpressionCompiler" Version="5.4.1" />
-    <PackageVersion Include="FirebaseAdmin" Version="3.6.0" />
+    <PackageVersion Include="FirebaseAdmin" Version="3.7.0" />
     <PackageVersion Include="FluentValidation" Version="12.1.1" />
     <!-- Transitive-only pin: never referenced directly; WireMock.Net pulls the Humanizer meta-package through Handlebars.Net.Helpers.Humanizer, and this keeps it on the Humanizer.Core line Headless.Api.Identity uses. -->
     <PackageVersion Include="Humanizer" Version="3.0.10" />
@@ -41,13 +41,13 @@
     <PackageVersion Include="Infobip.Api.Client" Version="4.0.2" />
     <PackageVersion Include="JetBrains.Annotations" Version="2026.2.0" />
     <PackageVersion Include="KubernetesClient" Version="19.0.2" />
-    <PackageVersion Include="libphonenumber-csharp" Version="9.0.39" />
+    <PackageVersion Include="libphonenumber-csharp" Version="9.0.40" />
     <PackageVersion Include="Linq2Couchbase" Version="2.2.0" />
-    <PackageVersion Include="MailKit" Version="4.17.0" />
-    <PackageVersion Include="MimeKit" Version="4.17.0" />
+    <PackageVersion Include="MailKit" Version="4.18.1" />
+    <PackageVersion Include="MimeKit" Version="4.18.1" />
     <PackageVersion Include="Mediator.Abstractions" Version="3.0.2" />
-    <PackageVersion Include="MessagePack" Version="3.1.8" />
-    <PackageVersion Include="Meziantou.Extensions.Logging.Xunit.v3" Version="3.0.6" />
+    <PackageVersion Include="MessagePack" Version="3.1.10" />
+    <PackageVersion Include="Meziantou.Extensions.Logging.Xunit.v3" Version="3.0.7" />
     <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.12" />
     <PackageVersion Include="Microsoft.AspNetCore.Authorization" Version="10.0.12" />
     <PackageVersion Include="Microsoft.AspNetCore.DataProtection" Version="10.0.12" />
@@ -55,9 +55,13 @@
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.12" />
     <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.12" />
     <PackageVersion Include="Microsoft.CodeAnalysis.Analyzers" Version="5.9.0" />
-    <!-- Pinned: must match SDK's Roslyn version. Source generators fail silently if higher. -->
+    <!--
+      Pinned: must match SDK's Roslyn version. Source generators fail silently if higher, and an analyzer or code fix
+      built against a newer Roslyn does not load in an older host. Workspaces 5.0.0 also pins Common to 5.0.0 exactly.
+    -->
     <PackageVersion Include="Microsoft.CodeAnalysis.Common" Version="[5.0.0]" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="[5.0.0]" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="[5.0.0]" />
     <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.12" />
     <!-- Transitive-pin the SQLitePCLRaw chain to the patched 3.x line: EF/Data.Sqlite 10.0.x still requests the 2.1.x
          bundle, whose SQLitePCLRaw.lib.e_sqlite3 2.1.11 carries GHSA-2m69-gcr7-jv3q (NU1903). No 2.1.x patch exists; the
@@ -88,20 +92,20 @@
     <PackageVersion Include="Microsoft.Extensions.ObjectPool" Version="10.0.12" />
     <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.12" />
     <PackageVersion Include="Microsoft.Extensions.ServiceDiscovery" Version="10.10.0" />
-    <PackageVersion Include="Microsoft.Data.SqlClient" Version="7.0.2" />
+    <PackageVersion Include="Microsoft.Data.SqlClient" Version="7.1.0" />
     <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.10.0" />
-    <PackageVersion Include="Microsoft.IdentityModel.JsonWebTokens" Version="8.22.0" />
+    <PackageVersion Include="Microsoft.IdentityModel.JsonWebTokens" Version="8.23.0" />
     <!-- Transitive-only pins: Microsoft.AspNetCore.Authentication.JwtBearer and Microsoft.Identity.Client bring these at older versions than JsonWebTokens, and IdentityModel assemblies from different versions fail at run time (MissingMethodException, IDX errors). Keep the whole family on one version. -->
-    <PackageVersion Include="Microsoft.IdentityModel.Abstractions" Version="8.22.0" />
-    <PackageVersion Include="Microsoft.IdentityModel.Protocols" Version="8.22.0" />
-    <PackageVersion Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" Version="8.22.0" />
+    <PackageVersion Include="Microsoft.IdentityModel.Abstractions" Version="8.23.0" />
+    <PackageVersion Include="Microsoft.IdentityModel.Protocols" Version="8.23.0" />
+    <PackageVersion Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" Version="8.23.0" />
     <!-- Transitive-only pin: never referenced directly; sets the version under Microsoft.AspNetCore.OpenApi and Swashbuckle.AspNetCore. -->
     <PackageVersion Include="Microsoft.OpenApi" Version="2.12.2" />
     <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="10.0.401" />
     <PackageVersion Include="MimeTypes" Version="2.5.2" />
     <PackageVersion Include="MinVer" Version="8.0.0" />
-    <PackageVersion Include="NATS.Client.Core" Version="2.8.2" />
-    <PackageVersion Include="NATS.Client.JetStream" Version="2.8.2" />
+    <PackageVersion Include="NATS.Client.Core" Version="3.2.0" />
+    <PackageVersion Include="NATS.Client.JetStream" Version="3.2.0" />
     <PackageVersion Include="NCrontab.Signed" Version="3.4.0" />
     <PackageVersion Include="NetTopologySuite" Version="2.6.0" />
     <PackageVersion Include="NetTopologySuite.IO.GeoJSON4STJ" Version="4.0.0" />
@@ -122,26 +126,26 @@
     <PackageVersion Include="Nito.AsyncEx" Version="5.1.2" />
     <!-- Transitive override (NSwag -> SkiaSharp dependency chain): pinned to clear GHSA-jxpf-xq2m-q525 (OpenMcdf < 3.1.3 DoS). -->
     <PackageVersion Include="OpenMcdf" Version="3.3.0" />
-    <PackageVersion Include="OpenTelemetry.Api" Version="1.18.0" />
+    <PackageVersion Include="OpenTelemetry.Api" Version="1.19.1" />
     <!-- Transitive override: pinned to clear GHSA-4625-4j76-fww9, GHSA-mr8r-92fq-pj8p, GHSA-q834-8qmm-v933 in OpenTelemetry OTLP exporter < 1.15.3. -->
-    <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.18.0" />
-    <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.18.0" />
-    <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.18.0" />
-    <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.18.0" />
-    <PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.18.0" />
+    <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.19.1" />
+    <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.19.1" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.19.0" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.19.0" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.19.0" />
     <PackageVersion Include="PdfPig" Version="0.1.16" />
     <!-- Legacy Polly pinned only for the Infobip SDK (referenced with an alias); everything else uses Polly.Core -->
     <PackageVersion Include="Polly" Version="7.2.4" />
-    <PackageVersion Include="Polly.Core" Version="8.7.0" />
+    <PackageVersion Include="Polly.Core" Version="8.8.0" />
     <!-- Transitive-only pin: never referenced directly; keeps Microsoft.Extensions.Resilience on the same Polly 8 line as Polly.Core. -->
-    <PackageVersion Include="Polly.Extensions" Version="8.7.0" />
-    <PackageVersion Include="Polly.RateLimiting" Version="8.7.0" />
-    <PackageVersion Include="Pulsar.Client" Version="3.19.1" />
+    <PackageVersion Include="Polly.Extensions" Version="8.8.0" />
+    <PackageVersion Include="Polly.RateLimiting" Version="8.8.0" />
+    <PackageVersion Include="Pulsar.Client" Version="3.19.4" />
     <PackageVersion Include="RabbitMQ.Client" Version="7.2.2" />
     <PackageVersion Include="Respawn" Version="7.0.0" />
-    <PackageVersion Include="Scalar.AspNetCore" Version="2.17.3" />
+    <PackageVersion Include="Scalar.AspNetCore" Version="2.17.11" />
     <!-- Transitive via WireMock.Net; pinned to the patched release for GHSA-24c8-4792-22hx (NU1903) -->
-    <PackageVersion Include="Scriban.Signed" Version="7.4.0" />
+    <PackageVersion Include="Scriban.Signed" Version="7.5.0" />
     <PackageVersion Include="Serilog" Version="4.4.0" />
     <PackageVersion Include="Serilog.Enrichers.ClientInfo" Version="2.9.0" />
     <PackageVersion Include="Serilog.Enrichers.Environment" Version="3.0.1" />
@@ -158,10 +162,10 @@
          bound (vs an exact pin) lets package consumers take 3.1.x patches without a re-release. -->
     <PackageVersion Include="SixLabors.ImageSharp" Version="[3.1.12, 4.0.0)" />
     <PackageVersion Include="SSH.NET" Version="2026.0.0" />
-    <PackageVersion Include="StackExchange.Redis" Version="3.2.0" />
+    <PackageVersion Include="StackExchange.Redis" Version="3.3.1" />
     <PackageVersion Include="System.Buffers" Version="4.6.1" />
     <!-- Transitive-only pin: keeps the IdentityModel family on one version; see Microsoft.IdentityModel.Protocols above. -->
-    <PackageVersion Include="System.IdentityModel.Tokens.Jwt" Version="8.22.0" />
+    <PackageVersion Include="System.IdentityModel.Tokens.Jwt" Version="8.23.0" />
     <PackageVersion Include="System.Memory" Version="4.6.3" />
     <PackageVersion Include="System.Numerics.Vectors" Version="4.6.1" />
     <PackageVersion Include="System.Runtime.CompilerServices.Unsafe" Version="6.1.2" />
@@ -182,7 +186,7 @@
     <PackageVersion Include="TimeZoneConverter" Version="7.2.0" />
     <PackageVersion Include="tusdotnet" Version="2.12.0" />
     <PackageVersion Include="Twilio" Version="7.14.9" />
-    <PackageVersion Include="xunit.v3.extensibility.core" Version="4.0.0" />
+    <PackageVersion Include="xunit.v3.extensibility.core" Version="4.0.1" />
   </ItemGroup>
   <!--
     Versions only tests, demos, and benchmarks reference. Transitive pinning writes every pin a project can see into
@@ -195,7 +199,7 @@
     <PackageVersion Include="AwesomeAssertions.Analyzers" Version="9.0.8" />
     <PackageVersion Include="AwesomeAssertions.Json" Version="9.0.0" />
     <PackageVersion Include="BenchmarkDotNet" Version="0.15.8" />
-    <PackageVersion Include="Dapper" Version="2.1.79" />
+    <PackageVersion Include="Dapper" Version="2.1.89" />
     <PackageVersion Include="Foundatio" Version="13.0.4" />
     <PackageVersion Include="Foundatio.Redis" Version="13.0.4" />
     <PackageVersion Include="Invio.Extensions.Authentication.JwtBearer" Version="2.0.1" />
@@ -207,21 +211,21 @@
     <PackageVersion Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="10.0.12" />
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.12" />
     <PackageVersion Include="Microsoft.Extensions.Logging.Console" Version="10.0.12" />
-    <PackageVersion Include="Microsoft.Testing.Extensions.GitHubActionsReport" Version="2.4.0" />
+    <PackageVersion Include="Microsoft.Testing.Extensions.GitHubActionsReport" Version="2.4.1" />
     <PackageVersion Include="NameGenerator" Version="2.0.4" />
-    <PackageVersion Include="NSubstitute" Version="5.3.0" />
+    <PackageVersion Include="NSubstitute" Version="6.2.0" />
     <PackageVersion Include="NSubstitute.Analyzers.CSharp" Version="1.0.17" />
-    <PackageVersion Include="OpenTelemetry" Version="1.18.0" />
-    <PackageVersion Include="OpenTelemetry.Exporter.InMemory" Version="1.18.0" />
+    <PackageVersion Include="OpenTelemetry" Version="1.19.1" />
+    <PackageVersion Include="OpenTelemetry.Exporter.InMemory" Version="1.19.1" />
     <PackageVersion Include="Swashbuckle.AspNetCore" Version="10.2.3" />
     <PackageVersion Include="Verify.SourceGenerators" Version="2.5.0" />
-    <PackageVersion Include="Verify.XunitV3" Version="31.28.0" />
-    <PackageVersion Include="WireMock.Net" Version="2.15.0" />
-    <PackageVersion Include="WireMock.Net.AwesomeAssertions" Version="2.15.0" />
-    <PackageVersion Include="xunit.v3.assert" Version="4.0.0" />
-    <PackageVersion Include="xunit.v3.mtp-v2" Version="4.0.0" />
-    <PackageVersion Include="ZiggyCreatures.FusionCache" Version="2.7.2" />
-    <PackageVersion Include="ZiggyCreatures.FusionCache.Serialization.SystemTextJson" Version="2.7.2" />
+    <PackageVersion Include="Verify.XunitV3" Version="32.0.0" />
+    <PackageVersion Include="WireMock.Net" Version="2.18.0" />
+    <PackageVersion Include="WireMock.Net.AwesomeAssertions" Version="2.18.0" />
+    <PackageVersion Include="xunit.v3.assert" Version="4.0.1" />
+    <PackageVersion Include="xunit.v3.mtp-v2" Version="4.0.1" />
+    <PackageVersion Include="ZiggyCreatures.FusionCache" Version="2.9.0" />
+    <PackageVersion Include="ZiggyCreatures.FusionCache.Serialization.SystemTextJson" Version="2.9.0" />
   </ItemGroup>
   <!--
     `make quality-references` sets HeadlessReferenceTrimmer to report removable references. An ordinary restore never

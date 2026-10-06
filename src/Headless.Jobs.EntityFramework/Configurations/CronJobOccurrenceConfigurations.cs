@@ -48,6 +48,7 @@ public class CronJobOccurrenceConfigurations<TCronJob>(
         }
 
         builder.Property(x => x.TenantId).HasMaxLength(JobsTenancyOptions.TenantIdMaxLength);
+        builder.Property(x => x.ProgressMessage).HasMaxLength(JobProgress.MessageMaxLength);
 
         var table = JobsStorageNaming.Table(style, JobsStorageNaming.CronJobOccurrences);
 

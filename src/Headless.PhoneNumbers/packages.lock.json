@@ -22,9 +22,9 @@
       },
       "libphonenumber-csharp": {
         "type": "Direct",
-        "requested": "[9.0.39, )",
-        "resolved": "9.0.39",
-        "contentHash": "NiBrwzjHgtBj1XxTVQrWrxn+XOUmiDRcpqxBG5/DtZn8c2vm29FS9aBaCPG5+hBTDYXEid1r0SAZd7a063oGWg=="
+        "requested": "[9.0.40, )",
+        "resolved": "9.0.40",
+        "contentHash": "ywU5vgr+Q7bX+MSU2oxXfYDQDsrUCDfpkSae8PEd1t2L6e+nNIQtmsk/FHV9IIoMGEuuoxOZNQetFJTvTPcyOA=="
       },
       "Meziantou.Analyzer": {
         "type": "Direct",

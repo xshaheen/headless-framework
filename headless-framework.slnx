@@ -609,6 +609,8 @@
     </Folder>
     <Folder Name="/UnitOfWork/">
         <Project Path="src/Headless.UnitOfWork.Abstractions/Headless.UnitOfWork.Abstractions.csproj" />
+        <Project Path="src/Headless.UnitOfWork.Analyzers/Headless.UnitOfWork.Analyzers.csproj" />
+        <Project Path="src/Headless.UnitOfWork.Analyzers.CodeFixes/Headless.UnitOfWork.Analyzers.CodeFixes.csproj" />
         <Project Path="src/Headless.UnitOfWork/Headless.UnitOfWork.csproj" />
         <Project Path="src/Headless.UnitOfWork.EntityFramework/Headless.UnitOfWork.EntityFramework.csproj" />
         <Project Path="src/Headless.UnitOfWork.PostgreSql/Headless.UnitOfWork.PostgreSql.csproj" />
@@ -616,6 +618,7 @@
         <Project Path="src/Headless.UnitOfWork.SqlServer/Headless.UnitOfWork.SqlServer.csproj" />
     </Folder>
     <Folder Name="/UnitOfWork/Tests/">
+        <Project Path="tests/Headless.UnitOfWork.Analyzers.Tests.Unit/Headless.UnitOfWork.Analyzers.Tests.Unit.csproj" />
         <Project Path="tests/Headless.UnitOfWork.EntityFramework.Tests.Unit/Headless.UnitOfWork.EntityFramework.Tests.Unit.csproj" />
         <Project Path="tests/Headless.UnitOfWork.PostgreSql.Tests.Integration/Headless.UnitOfWork.PostgreSql.Tests.Integration.csproj" />
         <Project Path="tests/Headless.UnitOfWork.PostgreSql.Tests.Unit/Headless.UnitOfWork.PostgreSql.Tests.Unit.csproj" />

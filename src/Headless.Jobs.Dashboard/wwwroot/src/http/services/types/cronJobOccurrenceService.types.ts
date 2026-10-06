@@ -21,6 +21,9 @@ export class GetCronJobOccurrenceResponse {
     elapsedTime!:string|number;
     retryCount!:number;
     actions:string|undefined = undefined;
+    progressPercent?:number|null;
+    progressMessage?:string|null;
+    progressUpdatedAt?:string|null;
 }
 
 

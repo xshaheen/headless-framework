@@ -630,6 +630,15 @@ public sealed class SchedulerOptionsBuilder
     public TimeSpan? CancellationObservationInterval { get; set; }
 
     /// <summary>
+    /// The least time between two progress writes for one running job. <c>JobContext.ReportProgress</c> only records
+    /// the latest value; the first report is written at once, then at most one write per interval carries the latest
+    /// value, and a report still unwritten when the run ends is written with its final status. Lower values make the
+    /// dashboard livelier at the cost of one store write per interval per reporting job. Must be finite and positive.
+    /// Defaults to two seconds.
+    /// </summary>
+    public TimeSpan ProgressReportInterval { get; set; } = TimeSpan.FromSeconds(2);
+
+    /// <summary>
     /// How often the fallback background service wakes up to poll for due jobs and reclaim stalled
     /// leases when no scheduler event triggered an earlier wake-up. Defaults to 30 seconds. Should be
     /// less than or equal to <see cref="LeaseDuration"/> so a stalled job is reclaimed within one

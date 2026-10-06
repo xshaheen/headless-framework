@@ -78,4 +78,6 @@ internal sealed class NoOpJobsNotificationHubSender : IJobsNotificationHubSender
     {
         return Task.CompletedTask;
     }
+
+    public void UpdateJobProgress(JobExecutionState executionState, JobProgress progress) { }
 }

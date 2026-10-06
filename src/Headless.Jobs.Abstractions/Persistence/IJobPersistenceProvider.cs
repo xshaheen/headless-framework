@@ -394,6 +394,25 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     Task<int> RenewTimeJobLeaseAsync(Guid jobId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Stores the running time job's latest progress report, stamping <c>ProgressUpdatedAt</c> with the store's clock.
+    /// Fenced like <see cref="RenewTimeJobLeaseAsync"/>: only an <c>InProgress</c> row this node owns is written, so a
+    /// node that lost the lease cannot overwrite the new owner's progress.
+    /// </summary>
+    /// <param name="jobId">Identifier of the running time job.</param>
+    /// <param name="progress">The report to store; it replaces the stored percent and message whole.</param>
+    /// <param name="cancellationToken">Token that aborts the write.</param>
+    /// <returns>
+    /// <see langword="true"/> when the row was written; <see langword="false"/> when this node does not own it while
+    /// it runs, or coordination membership is not established.
+    /// </returns>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    Task<bool> UpdateTimeJobProgressAsync(
+        Guid jobId,
+        JobProgress progress,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
     /// Reclaims time jobs stuck <c>InProgress</c> whose lease lapsed (<c>LockedUntil &lt;= now</c>), independent of
     /// node death (#316 — the gap-closer). Applies the same per-<c>OnNodeDeath</c> transitions as the dead-node
     /// sweep: <c>Retry</c> → released to <c>Idle</c> (re-claimable), <c>MarkFailed</c> → <c>Failed</c>, <c>Skip</c> →
@@ -862,6 +881,24 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// </remarks>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
     Task<int> RenewCronJobOccurrenceLeaseAsync(Guid occurrenceId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Stores the running cron occurrence's latest progress report. The cron mirror of
+    /// <see cref="UpdateTimeJobProgressAsync"/>, with the same ownership fence.
+    /// </summary>
+    /// <param name="occurrenceId">Identifier of the running cron occurrence.</param>
+    /// <param name="progress">The report to store; it replaces the stored percent and message whole.</param>
+    /// <param name="cancellationToken">Token that aborts the write.</param>
+    /// <returns>
+    /// <see langword="true"/> when the row was written; <see langword="false"/> when this node does not own it while
+    /// it runs, or coordination membership is not established.
+    /// </returns>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    Task<bool> UpdateCronJobOccurrenceProgressAsync(
+        Guid occurrenceId,
+        JobProgress progress,
+        CancellationToken cancellationToken = default
+    );
 
     /// <summary>
     /// Reclaims cron occurrences stuck <c>InProgress</c> whose lease lapsed (#316) — the cron mirror of

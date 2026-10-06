@@ -20,9 +20,9 @@
       },
       "Azure.Storage.Blobs.Batch": {
         "type": "Direct",
-        "requested": "[12.26.0, )",
-        "resolved": "12.26.0",
-        "contentHash": "40u4LRCFfPsEGSwin//tgzG9l/WuADJ8J4ZzER4sQzqXA/29e7gY+dCu3uyj8hOLVerGcVWXS2mwPpEygNom4Q==",
+        "requested": "[12.26.1, )",
+        "resolved": "12.26.1",
+        "contentHash": "yI6zedODVpExB1WZ1ijW3NkEv0/mBpjDQF1NzZ65BN9bBbNyjzjq5qxSqfWd/Vkx25/iPEZIfUB4jBaU12xa7g==",
         "dependencies": {
           "Azure.Core": "1.55.0",
           "Azure.Storage.Blobs": "12.29.0",
@@ -350,7 +350,7 @@
           "Microsoft.Extensions.Hosting.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.Options.ConfigurationExtensions": "[10.0.12, )",
           "Microsoft.Extensions.Options.DataAnnotations": "[10.0.12, )",
-          "OpenTelemetry.Api": "[1.18.0, )"
+          "OpenTelemetry.Api": "[1.19.1, )"
         }
       },
       "headless.primitives": {
@@ -460,9 +460,9 @@
       },
       "Microsoft.IdentityModel.Abstractions": {
         "type": "CentralTransitive",
-        "requested": "[8.22.0, )",
-        "resolved": "8.22.0",
-        "contentHash": "LU3V3owsu4vGpCg2kyL7SsQEuHwcoJ8FSNBqzLADzCf3/PcKUTcx5Plsd51DoTJMfK/WigXV/03UhaN5JXE6uQ=="
+        "requested": "[8.23.0, )",
+        "resolved": "8.23.0",
+        "contentHash": "JjiBkKj12OKvuWr+kB5sQwb7fmWW5bi03Mq/rd2Fu/7YwZ1RWQO9KhI9lBxki4o1VvY0wzqny8c7nwx1uuZzVg=="
       },
       "Nito.AsyncEx": {
         "type": "CentralTransitive",
@@ -486,9 +486,9 @@
       },
       "OpenTelemetry.Api": {
         "type": "CentralTransitive",
-        "requested": "[1.18.0, )",
-        "resolved": "1.18.0",
-        "contentHash": "Dhzm5oughIY9EWckt2J1yXcEbXpki5WCL2q7prJoYxzH6C7jdkfGtPMTkUVZZ4AhjJKzQnlC+kLSIlmIVwC4Vw=="
+        "requested": "[1.19.1, )",
+        "resolved": "1.19.1",
+        "contentHash": "9JKIH+xrV0HNTFjQC8zrx9gZpDOMEljN5Htg/U0VE2IvO3N+7bKALCCsGy5tp09marX5dd8UkrgQFoLaulIBRw=="
       }
     }
   }

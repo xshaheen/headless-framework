@@ -44,7 +44,7 @@ Package READMEs are discovery pages. They explain why a package exists and link 
 | Task | Read |
 | --- | --- |
 | Use EF Core conventions, save pipelines, Couchbase, or the messaging outbox bridge | [ORM](orm.md) |
-| Open and enlist an explicit transaction across EF, messaging, or jobs | [Unit of Work](unit-of-work.md) |
+| Open and enlist an explicit transaction across EF, messaging, or jobs, or flag at build time a write made outside the unit in scope | [Unit of Work](unit-of-work.md) |
 | Use provider-neutral SQL connections, or share one connection and schema across storage features | [SQL](sql.md) |
 | Cache data in memory, Redis, or hybrid L1/L2; use output cache or factory locks | [Caching](caching.md) |
 | Store blobs in S3, MinIO or another S3-compatible server, Azure, R2, filesystem, Redis, or SFTP | [Blob Storage](blobs.md) |
@@ -62,7 +62,7 @@ Package READMEs are discovery pages. They explain why a package exists and link 
 | Task | Read |
 | --- | --- |
 | Publish or consume messages; declare consumers and message contracts; tune consumers; configure transports, outbox/inbox, retries, or ordering | [Messaging](messaging.md) |
-| Schedule or execute background jobs and recurring work; set job retries or requeue failed jobs | [Jobs](jobs.md) |
+| Schedule or execute background jobs and recurring work; set job retries, report job progress, or requeue failed jobs | [Jobs](jobs.md) |
 | Define a failure policy: immediate and delayed retries, backoff, and exceptions that end a failure at once | [Reliability](reliability.md) |
 | Acquire distributed locks, reader/writer locks, or semaphores, or fence stale writes with fencing tokens | [Distributed Locks](distributed-locks.md) |
 | Cap attempts per phone, email, IP, or card across replicas (OTP delivery, password reset, PIN verification) | [Rate Limiting](rate-limiting.md) |

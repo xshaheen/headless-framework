@@ -15,7 +15,8 @@ export const methodName = {
   onReceiveNextOccurrence: "GetNextOccurrenceNotification",
   onReceiveHostStatus: "GetHostStatusNotification",
   onReceiveHostExceptionMessage: "UpdateHostExceptionNotification",
-  onReceiveNodesUpdate: "UpdateNodesNotification"
+  onReceiveNodesUpdate: "UpdateNodesNotification",
+  onReceiveJobProgress: "JobProgressNotification"
 }
 // Define a SignalR service class
 class JobNotificationHub extends BaseHub {  
@@ -120,6 +121,13 @@ class JobNotificationHub extends BaseHub {
   // Live-nodes delta pushed by the membership dashboard bridge (one node-state change per event).
   onReceiveNodesUpdate<T>(callback: (response: T) => void): void {
     this.onReceiveMessageAsSingle<T>(methodName.onReceiveNodesUpdate, (responseFromHub: T) => {
+      callback(responseFromHub);
+    });
+  }
+
+  // Throttled progress of one running job; views patch the matching row in place instead of reloading the page.
+  onReceiveJobProgress<T>(callback: (response: T) => void): void {
+    this.onReceiveMessageAsSingle<T>(methodName.onReceiveJobProgress, (responseFromHub: T) => {
       callback(responseFromHub);
     });
   }

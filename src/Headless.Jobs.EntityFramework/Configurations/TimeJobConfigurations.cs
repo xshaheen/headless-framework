@@ -49,6 +49,7 @@ public class TimeJobConfigurations<TTimeJob>(string schema, StorageNamingStyle s
         builder.Property(x => x.ExecutionTime).IsRequired(false);
 
         builder.Property(x => x.TenantId).IsRequired(false).HasMaxLength(JobsTenancyOptions.TenantIdMaxLength);
+        builder.Property(x => x.ProgressMessage).HasMaxLength(JobProgress.MessageMaxLength);
 
         builder.Property(x => x.BusinessKey).HasMaxLength(JobKey.MaxLength);
         builder.Property(x => x.IntentFingerprint).HasMaxLength(64);

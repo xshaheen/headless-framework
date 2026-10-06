@@ -484,6 +484,10 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                         .SetProperty(x => x.LockedUntil, _ => null)
                         .SetProperty(x => x.ExecutedAt, _ => null)
                         .SetProperty(x => x.ElapsedTime, 0L)
+                        // A requeue is a new run, so the old run's progress would misreport it.
+                        .SetProperty(x => x.ProgressPercent, _ => null)
+                        .SetProperty(x => x.ProgressMessage, _ => null)
+                        .SetProperty(x => x.ProgressUpdatedAt, _ => null)
                         .SetProperty(x => x.CancelRequested, valueExpression: false)
                         .SetProperty(x => x.ExecutionTime, _ => DateTime.UtcNow)
                         .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
@@ -1117,6 +1121,43 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
         }
 
         return acquired;
+    }
+
+    public async Task<bool> UpdateTimeJobProgressAsync(
+        Guid jobId,
+        JobProgress progress,
+        CancellationToken cancellationToken = default
+    )
+    {
+        // Same fence as RenewTimeJobLeaseAsync: only the running row this node owns, so a node that lost the lease
+        // cannot overwrite the new owner's progress. Without membership there is no owner to fence on.
+        if (!OwnerIdentity.TryGetStampOwner(out var owner))
+        {
+            return false;
+        }
+
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var affected = await dbContext
+            .Set<TTimeJob>()
+            .Where(x => x.Id == jobId)
+            .Where(x => x.Status == JobStatus.InProgress)
+            .WhereOwnedBy(owner)
+            .ExecuteUpdateAsync(
+                setter =>
+                    setter
+                        .SetProperty(x => x.ProgressPercent, progress.Percent)
+                        .SetProperty(x => x.ProgressMessage, progress.Message)
+                        // Database clock, like UpdatedAt, so every node's writes share one time authority.
+                        .SetProperty(x => x.ProgressUpdatedAt, _ => DateTime.UtcNow)
+                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return affected > 0;
     }
 
     public async Task<int> RenewTimeJobLeaseAsync(Guid jobId, CancellationToken cancellationToken = default)
@@ -2697,6 +2738,43 @@ internal abstract class BasePersistenceProvider<TDbContext, TTimeJob, TCronJob>(
                 CancellationToken.None
             )
             .ConfigureAwait(false);
+    }
+
+    public async Task<bool> UpdateCronJobOccurrenceProgressAsync(
+        Guid occurrenceId,
+        JobProgress progress,
+        CancellationToken cancellationToken = default
+    )
+    {
+        // Same fence as RenewCronJobOccurrenceLeaseAsync: only the running row this node owns, so a node that lost the lease
+        // cannot overwrite the new owner's progress. Without membership there is no owner to fence on.
+        if (!OwnerIdentity.TryGetStampOwner(out var owner))
+        {
+            return false;
+        }
+
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var affected = await dbContext
+            .Set<CronJobOccurrenceEntity<TCronJob>>()
+            .Where(x => x.Id == occurrenceId)
+            .Where(x => x.Status == JobStatus.InProgress)
+            .WhereOwnedBy(owner)
+            .ExecuteUpdateAsync(
+                setter =>
+                    setter
+                        .SetProperty(x => x.ProgressPercent, progress.Percent)
+                        .SetProperty(x => x.ProgressMessage, progress.Message)
+                        // Database clock, like UpdatedAt, so every node's writes share one time authority.
+                        .SetProperty(x => x.ProgressUpdatedAt, _ => DateTime.UtcNow)
+                        .SetProperty(x => x.UpdatedAt, _ => DateTime.UtcNow),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return affected > 0;
     }
 
     public async Task<int> RenewCronJobOccurrenceLeaseAsync(
