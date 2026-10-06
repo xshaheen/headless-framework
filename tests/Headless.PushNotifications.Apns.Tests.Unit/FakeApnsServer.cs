@@ -121,6 +121,13 @@ public sealed class FakeApnsServer : IAsyncDisposable
     public TimeSpan ResponseDelay { get; set; }
 
     /// <summary>
+    /// Awaited after the request is recorded and before it is answered, so a test can hold requests open until a
+    /// condition it controls is met instead of relying on a wall-clock <see cref="ResponseDelay"/> to make them
+    /// overlap.
+    /// </summary>
+    public Func<FakeApnsRequest, CancellationToken, Task>? ReplyGate { get; set; }
+
+    /// <summary>
     /// Serves exactly one stream per connection, the way APNs starts a token-authenticated connection until it has
     /// seen a valid provider token: <c>Http2.MaxStreamsPerConnection = 1</c>. A second concurrent request on the
     /// same connection is refused with <c>REFUSED_STREAM</c>, which the client must retry on another connection.
@@ -538,6 +545,11 @@ public sealed class FakeApnsServer : IAsyncDisposable
             if (ResponseDelay > TimeSpan.Zero)
             {
                 await Task.Delay(ResponseDelay, context.RequestAborted);
+            }
+
+            if (ReplyGate is { } gate)
+            {
+                await gate(recorded, context.RequestAborted);
             }
 
             var reply = Responder(recorded);
