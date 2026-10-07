@@ -28,6 +28,13 @@ internal sealed class TenantCatalogService(
     {
         Argument.IsNotNull(identifier);
 
+        // Reject oversized raw identifiers before normalizing: this input is unauthenticated and pre-auth
+        // (hostname/header-derived), and Trim + ToLowerInvariant used to copy arbitrarily long strings first.
+        if (identifier.Length > TenantCatalogOptions.MaxIdentifierLengthLimit)
+        {
+            return TenantResolutionOutcome.Invalid;
+        }
+
         var normalized = identifier.Trim().ToLowerInvariant();
 
         if (

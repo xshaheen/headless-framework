@@ -247,11 +247,17 @@ internal sealed class PostgresConnectionScopedLockStorage : IConnectionScopedLoc
     public ValueTask<string?> GetLocalLeaseIdAsync(string resource, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var leaseId = _heldByLockId
-            .Values.FirstOrDefault(x => string.Equals(x.Resource, resource, StringComparison.Ordinal))
-            ?.LeaseId;
 
-        return ValueTask.FromResult(leaseId);
+        // Direct enumeration instead of .Values.FirstOrDefault's dictionary snapshot per call.
+        foreach (var held in _heldByLockId)
+        {
+            if (string.Equals(held.Value.Resource, resource, StringComparison.Ordinal))
+            {
+                return ValueTask.FromResult<string?>(held.Value.LeaseId);
+            }
+        }
+
+        return ValueTask.FromResult<string?>(null);
     }
 
     /// <inheritdoc/>

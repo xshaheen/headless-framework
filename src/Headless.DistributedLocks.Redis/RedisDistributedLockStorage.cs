@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using Headless.Checks;
 using Headless.DistributedLocks.Redis.Scripts;
 using Headless.Redis;
@@ -36,6 +37,12 @@ internal sealed class RedisDistributedLockStorage(
     private const string _PhysicalLockKeyPrefix = "{hflock:";
     private const string _PhysicalLockKeySuffix = "}:value";
     private const string _PhysicalLockKeyPattern = _PhysicalLockKeyPrefix + "*" + _PhysicalLockKeySuffix;
+
+    // Hex-encoding the same logical key (UTF8 bytes + hex string) on every release/extend/validate re-pays two
+    // allocations per call, and the mapping never changes; memoized with a cap like PostgreSqlAdvisoryLock's
+    // _HashedKeyCache so unbounded key spaces cannot grow it forever.
+    private static readonly ConcurrentDictionary<string, string> _EncodedKeyCache = new(StringComparer.Ordinal);
+    private const int _MaxEncodedKeyCacheEntries = 4096;
 
     private IDatabase Db => multiplexer.GetDatabase();
 
@@ -463,7 +470,19 @@ internal sealed class RedisDistributedLockStorage(
 
     private static string _GetEncodedKey(string key)
     {
-        return Convert.ToHexString(Encoding.UTF8.GetBytes(key));
+        if (_EncodedKeyCache.TryGetValue(key, out var encoded))
+        {
+            return encoded;
+        }
+
+        encoded = Convert.ToHexString(Encoding.UTF8.GetBytes(key));
+
+        if (_EncodedKeyCache.Count < _MaxEncodedKeyCacheEntries)
+        {
+            _EncodedKeyCache[key] = encoded;
+        }
+
+        return encoded;
     }
 
     private static string? _TryGetLogicalKey(RedisKey key)

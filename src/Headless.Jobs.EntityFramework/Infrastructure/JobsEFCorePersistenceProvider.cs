@@ -244,6 +244,89 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         return await baseQuery.ToPaginatedListAsync(pageNumber, pageSize, cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task<IList<(JobStatus Status, int Count)>> GetTimeJobStatusCountsAsync(
+        CancellationToken cancellationToken = default
+    )
+    {
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
+        var timeJobs = dbContext.Set<TTimeJob>().AsNoTracking();
+
+        var statusRows = await timeJobs
+            .Where(x => x.ParentId == null)
+            .GroupBy(x => x.Status)
+            .Select(group => new
+            {
+                Status = group.Key,
+                Count = group.Count(),
+                LastSeen = group.Max(x => x.ExecutionTime),
+            })
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        // Recency ordering mirrors the first-appearance order the dashboard used to get from materializing
+        // rows ordered by execution time, so merged multi-source counts keep a stable status order.
+        return [.. statusRows.OrderByDescending(x => x.LastSeen ?? DateTime.MinValue).Select(x => (x.Status, x.Count))];
+    }
+
+    public async Task<IList<(DateTime Date, JobStatus Status, int Count)>> GetTimeJobDailyStatusCountsAsync(
+        DateTime startDate,
+        DateTime endDate,
+        CancellationToken cancellationToken = default
+    )
+    {
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
+        var timeJobs = dbContext.Set<TTimeJob>().AsNoTracking();
+        // Half-open bound is the exact translation of the inclusive .Date window the dashboard used to pass as
+        // a predicate, and keeps the range sargable against an execution-time index.
+        var exclusiveEnd = endDate.AddDays(1);
+
+        var aggregateRows = await timeJobs
+            .Where(x => x.ParentId == null)
+            .Where(x => x.ExecutionTime != null && x.ExecutionTime >= startDate && x.ExecutionTime < exclusiveEnd)
+            .GroupBy(x => new { x.ExecutionTime!.Value.Date, x.Status })
+            .Select(group => new
+            {
+                group.Key.Date,
+                group.Key.Status,
+                Count = group.Count(),
+            })
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        return aggregateRows.ConvertAll(x => (x.Date, x.Status, x.Count));
+    }
+
+    public async Task<IList<(string OwnerId, int Count)>> GetTimeJobLockedOwnerCountsAsync(
+        CancellationToken cancellationToken = default
+    )
+    {
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
+        var timeJobs = dbContext.Set<TTimeJob>().AsNoTracking();
+
+        var ownerRows = await timeJobs
+            .Where(x => x.ParentId == null && x.LockedUntil != null && x.OwnerId != null)
+            .GroupBy(x => x.OwnerId!)
+            .Select(group => new
+            {
+                group.Key,
+                Count = group.Count(),
+                LastSeen = group.Max(x => x.ExecutionTime),
+            })
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        return
+        [
+            .. ownerRows.OrderByDescending(x => x.LastSeen ?? DateTime.MinValue).Select(x => (OwnerId: x.Key, x.Count)),
+        ];
+    }
+
     public async Task<int> AddTimeJobsAsync(TTimeJob[] jobs, CancellationToken cancellationToken = default)
     {
         foreach (var job in jobs)
@@ -1241,6 +1324,84 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         });
 
         return CronOccurrenceGraphRangeSelector.AddRangeBoundaries(counts, range);
+    }
+
+    public async Task<IList<(JobStatus Status, int Count)>> GetCronOccurrenceStatusCountsAsync(
+        CancellationToken cancellationToken = default
+    )
+    {
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
+        var occurrences = dbContext.Set<CronJobOccurrenceEntity<TCronJob>>().AsNoTracking();
+
+        var statusRows = await occurrences
+            .GroupBy(x => x.Status)
+            .Select(group => new
+            {
+                Status = group.Key,
+                Count = group.Count(),
+                LastSeen = group.Max(x => x.ExecutionTime),
+            })
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        // Recency ordering mirrors the first-appearance order the dashboard used to get from materializing
+        // rows ordered by execution time, so merged multi-source counts keep a stable status order.
+        return [.. statusRows.OrderByDescending(x => x.LastSeen).Select(x => (x.Status, x.Count))];
+    }
+
+    public async Task<IList<(DateTime Date, JobStatus Status, int Count)>> GetCronOccurrenceDailyStatusCountsAsync(
+        DateTime startDate,
+        DateTime endDate,
+        CancellationToken cancellationToken = default
+    )
+    {
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
+        var occurrences = dbContext.Set<CronJobOccurrenceEntity<TCronJob>>().AsNoTracking();
+        // Half-open bound is the exact translation of the inclusive .Date window the dashboard used to pass as
+        // a predicate, and keeps the range sargable against an execution-time index.
+        var exclusiveEnd = endDate.AddDays(1);
+
+        var aggregateRows = await occurrences
+            .Where(x => x.ExecutionTime >= startDate && x.ExecutionTime < exclusiveEnd)
+            .GroupBy(x => new { x.ExecutionTime.Date, x.Status })
+            .Select(group => new
+            {
+                group.Key.Date,
+                group.Key.Status,
+                Count = group.Count(),
+            })
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        return aggregateRows.ConvertAll(x => (x.Date, x.Status, x.Count));
+    }
+
+    public async Task<IList<(string OwnerId, int Count)>> GetCronOccurrenceLockedOwnerCountsAsync(
+        CancellationToken cancellationToken = default
+    )
+    {
+        await using var dbContext = await DbContextFactory
+            .CreateDbContextAsync(cancellationToken)
+            .ConfigureAwait(false);
+        var occurrences = dbContext.Set<CronJobOccurrenceEntity<TCronJob>>().AsNoTracking();
+
+        var ownerRows = await occurrences
+            .Where(x => x.LockedUntil != null && x.OwnerId != null)
+            .GroupBy(x => x.OwnerId!)
+            .Select(group => new
+            {
+                group.Key,
+                Count = group.Count(),
+                LastSeen = group.Max(x => x.ExecutionTime),
+            })
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        return [.. ownerRows.OrderByDescending(x => x.LastSeen).Select(x => (OwnerId: x.Key, x.Count))];
     }
 
     public async Task<PaginationResult<CronJobOccurrenceEntity<TCronJob>>> GetAllCronJobOccurrencesPaginatedAsync(

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Runtime.CompilerServices;
 using Headless.Domain;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
@@ -171,6 +172,13 @@ internal sealed class HeadlessEntityFrameworkNavigationModifiedTracker
         // Related: https://github.com/dotnet/efcore/issues/24076
         // -----------------------------------------------------------------------------
 #pragma warning disable EF1001 // Internal EF Core API usage.
+        // Fast path: with nothing tracked through this tracker yet (the common case for most contexts),
+        // every scan below is dead work — it can only mark trackers that do not exist.
+        if (_trackers.Count == 0)
+        {
+            return;
+        }
+
         var stateManager = entry.Context.GetDependencies().StateManager;
 
         var internalEntityEntry = stateManager.TryGetEntry(entry.Entity, throwOnNonUniqueness: false);
@@ -282,6 +290,14 @@ internal sealed class HeadlessEntityFrameworkNavigationModifiedTracker
     {
         if (entry.Entity is IEntity entity)
         {
+            // The identity string is a pure function of (ClrType, keys), so cache it per entity instance:
+            // the same entity rebuilds the identical FullName + joined-keys string on each of its Tracked/
+            // StateChanged events and once per FK principal on every _DetectChanges pass.
+            if (_IdentityCache.TryGetValue(entity, out var cached))
+            {
+                return cached;
+            }
+
             var keys = entity.GetKeys();
 
             if (keys.Count == 0)
@@ -289,11 +305,18 @@ internal sealed class HeadlessEntityFrameworkNavigationModifiedTracker
                 return null;
             }
 
-            return $"{entry.Metadata.ClrType.FullName}:{keys.JoinAsString("|")}";
+            var identity = $"{entry.Metadata.ClrType.FullName}:{keys.JoinAsString("|")}";
+            _IdentityCache.Add(entity, identity);
+
+            return identity;
         }
 
         return null;
     }
+
+    // Weak references let collected entities drop their cache entries; the table holds only live entities,
+    // so it needs no size cap.
+    private static readonly ConditionalWeakTable<object, string> _IdentityCache = [];
 
     private static bool _IsEntityEntryChanged(EntityEntry entry)
     {

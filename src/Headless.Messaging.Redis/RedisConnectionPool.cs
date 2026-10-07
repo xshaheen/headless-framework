@@ -31,10 +31,30 @@ internal sealed class RedisConnectionPool : IRedisConnectionPool, IDisposable, I
         }
     }
 
-    private AsyncLazyRedisConnection? QuietConnection =>
-        _poolAlreadyConfigured
-            ? _connections.OrderBy(static c => c.CreatedConnection?.ConnectionCapacity ?? int.MaxValue).FirstOrDefault()
-            : null;
+    private AsyncLazyRedisConnection? QuietConnection => _poolAlreadyConfigured ? _ConnectionsByLeastCapacity() : null;
+
+    // Manual min-scan: OrderBy + FirstOrDefault allocated a key-buffer array and ran O(n log n) comparisons
+    // on every ConnectAsync (publish and poll paths).
+    private AsyncLazyRedisConnection? _ConnectionsByLeastCapacity()
+    {
+        AsyncLazyRedisConnection? best = null;
+        long bestCapacity = long.MaxValue;
+
+        foreach (var connection in _connections)
+        {
+            var capacity = connection.CreatedConnection?.ConnectionCapacity ?? long.MaxValue;
+
+            if (capacity >= bestCapacity)
+            {
+                continue;
+            }
+
+            best = connection;
+            bestCapacity = capacity;
+        }
+
+        return best;
+    }
 
     public void Dispose()
     {

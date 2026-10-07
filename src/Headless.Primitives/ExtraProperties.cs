@@ -87,11 +87,11 @@ public static class ExtraPropertyExtensions
                 return false;
             }
 
-            foreach (var key in extraProperties.Keys)
+            foreach (var (key, value) in extraProperties)
             {
                 if (
-                    !otherDictionary.TryGetValue(key, out var value)
-                    || !EqualityComparer<object?>.Default.Equals(extraProperties[key], value)
+                    !otherDictionary.TryGetValue(key, out var otherValue)
+                    || !EqualityComparer<object?>.Default.Equals(value, otherValue)
                 )
                 {
                     return false;

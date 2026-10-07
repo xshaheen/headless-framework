@@ -116,9 +116,14 @@ public sealed class TotpRfc6238Generator(TimeProvider timeProvider)
 
         var modifierCombinedBytes = timestepAsBytes;
 
+        // Combined input stays on the stack: HMACSHA*.TryHashData consumes spans, so the small timestep+modifier
+        // buffer need not hit the heap (validation with variance re-hashes this up to 2*variance+1 times).
         if (modifierBytes is not null)
         {
-            modifierCombinedBytes = _ApplyModifier(timestepAsBytes, modifierBytes);
+            Span<byte> combined = stackalloc byte[checked(timestepAsBytes.Length + modifierBytes.Length)];
+            timestepAsBytes.CopyTo(combined);
+            modifierBytes.AsSpan().CopyTo(combined[timestepAsBytes.Length..]);
+            modifierCombinedBytes = combined;
         }
 
         const int mod = 1000000; // # of 0's = length of pin
@@ -159,15 +164,5 @@ public sealed class TotpRfc6238Generator(TimeProvider timeProvider)
             _ => HMACSHA1.TryHashData(key, data, destination, out _),
 #pragma warning restore CA5350
         };
-    }
-
-    private static byte[] _ApplyModifier(Span<byte> input, byte[] modifierBytes)
-    {
-        var combined = new byte[checked(input.Length + modifierBytes.Length)];
-
-        input.CopyTo(combined);
-        Buffer.BlockCopy(modifierBytes, 0, combined, input.Length, modifierBytes.Length);
-
-        return combined;
     }
 }

@@ -36,43 +36,49 @@ public sealed class HeadlessMessageCollectorSaveEntryProcessor : IHeadlessSaveEn
 
         if (entry.Entity is IIntegrationEventEmitter integrationEmitter)
         {
-            if (!context.CapturedIntegrationIdsByEmitter.TryGetValue(integrationEmitter, out var captured))
-            {
-                captured = new(StringComparer.Ordinal);
-                context.CapturedIntegrationIdsByEmitter.Add(integrationEmitter, captured);
-            }
+            // Most emitters carry no events on a given save pass; read the raw list first so the common case
+            // pays neither the dedup set lookup nor the Where/ToArray machinery.
+            var integrationEvents = integrationEmitter.GetIntegrationEvents();
 
-            var events = integrationEmitter
-                .GetIntegrationEvents()
-                .Where(occurrence => captured.Add(occurrence.EventId))
-                .ToArray();
-
-            if (events.Length > 0)
+            if (integrationEvents.Count > 0)
             {
-                context.IntegrationEventEmitters.Add(new(integrationEmitter, events));
+                if (!context.CapturedIntegrationIdsByEmitter.TryGetValue(integrationEmitter, out var captured))
+                {
+                    captured = new(StringComparer.Ordinal);
+                    context.CapturedIntegrationIdsByEmitter.Add(integrationEmitter, captured);
+                }
+
+                var events = integrationEvents.Where(occurrence => captured.Add(occurrence.EventId)).ToArray();
+
+                if (events.Length > 0)
+                {
+                    context.IntegrationEventEmitters.Add(new(integrationEmitter, events));
+                }
             }
         }
 
         if (entry.Entity is IDomainEventEmitter domainEmitter)
         {
-            if (!context.CapturedDomainIdsByEmitter.TryGetValue(domainEmitter, out var captured))
-            {
-                captured = new(StringComparer.Ordinal);
-                context.CapturedDomainIdsByEmitter.Add(domainEmitter, captured);
-            }
+            var domainEvents = domainEmitter.GetDomainEvents();
 
-            var events = domainEmitter
-                .GetDomainEvents()
-                .Where(occurrence => captured.Add(occurrence.EventId))
-                .ToArray();
-
-            if (events.Length > 0)
+            if (domainEvents.Count > 0)
             {
-                context.DomainEventEmitters.Add(new(domainEmitter, events));
-                // Every emitter retains its saved membership, while one shared occurrence is dispatched only once.
-                context.PendingDomainEvents.AddRange(
-                    events.Where(occurrence => context.QueuedDomainIds.Add(occurrence.EventId))
-                );
+                if (!context.CapturedDomainIdsByEmitter.TryGetValue(domainEmitter, out var captured))
+                {
+                    captured = new(StringComparer.Ordinal);
+                    context.CapturedDomainIdsByEmitter.Add(domainEmitter, captured);
+                }
+
+                var events = domainEvents.Where(occurrence => captured.Add(occurrence.EventId)).ToArray();
+
+                if (events.Length > 0)
+                {
+                    context.DomainEventEmitters.Add(new(domainEmitter, events));
+                    // Every emitter retains its saved membership, while one shared occurrence is dispatched only once.
+                    context.PendingDomainEvents.AddRange(
+                        events.Where(occurrence => context.QueuedDomainIds.Add(occurrence.EventId))
+                    );
+                }
             }
         }
     }

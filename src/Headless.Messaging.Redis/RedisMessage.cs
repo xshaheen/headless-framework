@@ -55,16 +55,31 @@ internal static class RedisMessage
         Dictionary<string, string?> headers;
         byte[]? body;
 
-        var streamDict = streamEntry.Values.ToDictionary(c => c.Name, c => c.Value);
+        // The entry always carries exactly the two fields written by AsStreamEntries; a per-entry
+        // ToDictionary allocated a Dictionary (plus boxing) just to look them up by name.
+        RedisValue headersRaw = RedisValue.Null;
+        RedisValue bodyRaw = RedisValue.Null;
+
+        foreach (var field in streamEntry.Values)
+        {
+            if (field.Name == _Headers)
+            {
+                headersRaw = field.Value;
+            }
+            else if (field.Name == _Body)
+            {
+                bodyRaw = field.Value;
+            }
+        }
 
         var entryId = streamEntry.Id.ToString();
 
-        if (!streamDict.TryGetValue(_Headers, out var headersRaw) || headersRaw.IsNullOrEmpty)
+        if (headersRaw.IsNullOrEmpty)
         {
             throw new RedisConsumeMissingHeadersException(entryId);
         }
 
-        if (!streamDict.TryGetValue(_Body, out var bodyRaw))
+        if (bodyRaw.IsNull)
         {
             throw new RedisConsumeMissingBodyException(entryId);
         }

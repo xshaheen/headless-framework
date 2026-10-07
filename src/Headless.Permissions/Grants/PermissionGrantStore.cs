@@ -545,12 +545,10 @@ public sealed class PermissionGrantStore(
             .GetPermissionsAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        return
-        [
-            .. definitions.Where(definition =>
-                names.Exists(name => string.Equals(name, definition.Name, StringComparison.Ordinal))
-            ),
-        ];
+        // HashSet lookup instead of a names.Exists scan per definition (O(D x N) -> O(D + N)).
+        var nameSet = names.ToHashSet(StringComparer.Ordinal);
+
+        return [.. definitions.Where(definition => nameSet.Contains(definition.Name))];
     }
 
     private static string _GetPermissionNameFormCacheKey(string key)

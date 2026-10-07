@@ -15,6 +15,12 @@ public sealed class PermissionDefinitionManager(
     IDynamicPermissionDefinitionStore dynamicStore
 ) : IPermissionDefinitionManager
 {
+    // Volatile: the manager is a singleton and the snapshots are published without a lock, matching
+    // FeatureDefinitionManager's identical pattern. Racing recomputes are benign (same inputs produce an
+    // equivalent merge); unordered publication of a fresh object is not.
+    private volatile MergedSnapshot<PermissionDefinition>? _permissionsSnapshot;
+    private volatile MergedSnapshot<PermissionGroupDefinition>? _groupsSnapshot;
+
     public async Task<PermissionDefinition?> FindAsync(string name, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNull(name);
@@ -28,12 +34,23 @@ public sealed class PermissionDefinitionManager(
     )
     {
         var staticPermissions = await staticStore.GetAllPermissionsAsync(cancellationToken).ConfigureAwait(false);
+        var dynamicPermissions = await dynamicStore.GetPermissionsAsync(cancellationToken).ConfigureAwait(false);
+
+        var snapshot = _permissionsSnapshot;
+
+        if (snapshot?.Matches(staticPermissions, dynamicPermissions) == true)
+        {
+            return snapshot.Merged;
+        }
+
         var staticPermissionNames = staticPermissions.Select(p => p.Name).ToImmutableHashSet(StringComparer.Ordinal);
         // Prefer static permissions over dynamics
-        var dynamicPermissions = await dynamicStore.GetPermissionsAsync(cancellationToken).ConfigureAwait(false);
         var uniqueDynamicPermissions = dynamicPermissions.Where(d => !staticPermissionNames.Contains(d.Name));
+        var merged = staticPermissions.Concat(uniqueDynamicPermissions).ToImmutableList();
 
-        return staticPermissions.Concat(uniqueDynamicPermissions).ToImmutableList();
+        _permissionsSnapshot = new MergedSnapshot<PermissionDefinition>(staticPermissions, dynamicPermissions, merged);
+
+        return merged;
     }
 
     public async Task<IReadOnlyList<PermissionGroupDefinition>> GetGroupsAsync(
@@ -41,11 +58,43 @@ public sealed class PermissionDefinitionManager(
     )
     {
         var staticGroups = await staticStore.GetGroupsAsync(cancellationToken).ConfigureAwait(false);
+        var dynamicGroups = await dynamicStore.GetGroupsAsync(cancellationToken).ConfigureAwait(false);
+
+        var snapshot = _groupsSnapshot;
+
+        if (snapshot?.Matches(staticGroups, dynamicGroups) == true)
+        {
+            return snapshot.Merged;
+        }
+
         var staticGroupNames = staticGroups.Select(p => p.Name).ToImmutableHashSet(StringComparer.Ordinal);
         // Prefer static groups over dynamics
-        var dynamicGroups = await dynamicStore.GetGroupsAsync(cancellationToken).ConfigureAwait(false);
         var uniqueDynamicGroups = dynamicGroups.Where(d => !staticGroupNames.Contains(d.Name));
+        var mergedGroups = staticGroups.Concat(uniqueDynamicGroups).ToImmutableList();
 
-        return staticGroups.Concat(uniqueDynamicGroups).ToImmutableList();
+        _groupsSnapshot = new MergedSnapshot<PermissionGroupDefinition>(staticGroups, dynamicGroups, mergedGroups);
+
+        return mergedGroups;
+    }
+
+    /// <summary>
+    /// A merged view together with the two source references it was built from (FeatureDefinitionManager's
+    /// shape). Both stores hand out immutable snapshots that are swapped wholesale on refresh, so reference
+    /// equality on the sources proves the merge is current; without it the whole catalog was re-hashed and
+    /// re-concatenated on every batch permission check.
+    /// </summary>
+    private sealed class MergedSnapshot<T>(
+        IReadOnlyCollection<T> staticDefinitions,
+        IReadOnlyCollection<T> dynamicDefinitions,
+        IReadOnlyList<T> merged
+    )
+    {
+        public IReadOnlyList<T> Merged => merged;
+
+        public bool Matches(IReadOnlyCollection<T> currentStatic, IReadOnlyCollection<T> currentDynamic)
+        {
+            return ReferenceEquals(staticDefinitions, currentStatic)
+                && ReferenceEquals(dynamicDefinitions, currentDynamic);
+        }
     }
 }

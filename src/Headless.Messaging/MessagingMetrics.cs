@@ -314,6 +314,13 @@ internal static class MessagingMetrics
         long? elapsedMs = null
     )
     {
+        // Guard before building tags: with no listener attached, tag construction (TagList array + DeliveryMetadata
+        // read) is pure per-publish waste. RecordPublishError/RecordConsumeError already early-return this way.
+        if (!_MessagesPublished.Enabled && (!_PublishDuration.Enabled || !elapsedMs.HasValue))
+        {
+            return;
+        }
+
         var tags = _CreateDeliveryTags(operation, brokerName, lane, delivery);
 
         if (_MessagesPublished.Enabled)

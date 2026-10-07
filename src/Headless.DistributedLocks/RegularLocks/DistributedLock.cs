@@ -3,6 +3,7 @@
 using System.Collections.Concurrent;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using Headless.Checks;
 using Headless.Messaging;
 using Microsoft.Extensions.Logging;
@@ -585,13 +586,13 @@ public sealed class DistributedLock(
         // we read the response, the retry's `RemoveIfEqualAsync` will return `false` (the
         // record is gone). Without latching `true`, the final attempt's `false` would suppress
         // the wake-up publish and force waiters to fall back to polling backoff. We track
-        // whether ANY attempt observed `true` and treat it as authoritative; the lambda mutates
-        // `observedAttemptSucceeded` so success survives subsequent retries returning `false`.
-        var observedAttemptSucceeded = false;
+        // whether ANY attempt observed `true` and treat it as authoritative; the callback mutates
+        // the latch so success survives subsequent retries returning `false`.
+        var successLatch = new StrongBox<bool>();
 
-        var storageRef = _storage;
-        var resourceRef = resource;
-        var lockIdRef = leaseId;
+        // Static lambda + state tuple (RenewAsync's shape): a capturing closure here allocated a
+        // display class on every release.
+        var state = (_storage, resource, leaseId, successLatch);
 
         // Cap the release pipeline at DisposeTimeout so application shutdown is not blocked by
         // sustained storage unavailability. On timeout the pipeline continues in the background
@@ -601,19 +602,19 @@ public sealed class DistributedLock(
         {
             var lastResult = await _releasePipeline
                 .ExecuteAsync(
-                    async ct =>
+                    static async (state, ct) =>
                     {
-                        var result = await storageRef
-                            .RemoveIfEqualAsync(resourceRef, lockIdRef, ct)
-                            .ConfigureAwait(false);
+                        var (storage, resource, leaseId, latch) = state;
+                        var result = await storage.RemoveIfEqualAsync(resource, leaseId, ct).ConfigureAwait(false);
 
                         if (result)
                         {
-                            observedAttemptSucceeded = true;
+                            latch.Value = true;
                         }
 
                         return result;
                     },
+                    state,
                     // Release is a terminal-state write: pass CancellationToken.None so caller
                     // cancellation cannot abandon a half-completed release and strand the lock until
                     // its TTL. Matches the reader-writer provider's release convention.
@@ -623,7 +624,7 @@ public sealed class DistributedLock(
                 .WaitAsync(_disposeTimeout, timeProvider, CancellationToken.None)
                 .ConfigureAwait(false);
 
-            removed = observedAttemptSucceeded || lastResult;
+            removed = successLatch.Value || lastResult;
         }
         catch (TimeoutException)
         {

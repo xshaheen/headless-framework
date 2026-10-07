@@ -21,6 +21,10 @@ public sealed class StaticSettingDefinitionStore : IStaticSettingDefinitionStore
     private readonly SettingManagementProvidersOptions _options;
     private readonly Lazy<Dictionary<string, SettingDefinition>> _settingDefinitions;
 
+    // Materialized once alongside the dictionary: GetAllAsync used to copy the (immutable after lazy build)
+    // dictionary into a fresh ImmutableList per call, and it runs on every settings batch read.
+    private readonly Lazy<IReadOnlyList<SettingDefinition>> _orderedDefinitions;
+
     /// <summary>Initializes a new instance of <see cref="StaticSettingDefinitionStore"/>.</summary>
     /// <param name="serviceProvider">Used to resolve <see cref="ISettingDefinitionProvider"/> instances.</param>
     /// <param name="optionsAccessor">Options that list the registered definition providers.</param>
@@ -32,15 +36,15 @@ public sealed class StaticSettingDefinitionStore : IStaticSettingDefinitionStore
         _serviceProvider = serviceProvider;
         _options = optionsAccessor.Value;
         _settingDefinitions = new(_CreateSettingDefinitions, isThreadSafe: true);
+        _orderedDefinitions = new(() => _settingDefinitions.Value.Values.ToImmutableList(), isThreadSafe: true);
     }
 
     /// <inheritdoc/>
     public Task<IReadOnlyList<SettingDefinition>> GetAllAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var settingDefinitions = _settingDefinitions.Value.Values.ToImmutableList();
 
-        return Task.FromResult<IReadOnlyList<SettingDefinition>>(settingDefinitions);
+        return Task.FromResult(_orderedDefinitions.Value);
     }
 
     /// <inheritdoc/>

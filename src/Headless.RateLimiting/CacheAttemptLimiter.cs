@@ -69,7 +69,18 @@ internal sealed class CacheAttemptLimiter(
     {
         // The purpose is in the MAC as well as the key, so one subject's fingerprint differs across purposes and a
         // leaked key for one flow does not identify the same person in another.
-        var payload = Encoding.UTF8.GetBytes($"{_KeyVersion}\n{purpose}\n{subject}");
+        // Stackalloc: purpose and subject are rate-limit identifiers (short, bounded strings); the payload used to
+        // allocate an interpolated string plus its UTF-8 array on every rate-limited request.
+        var keyVersionLength = Encoding.UTF8.GetByteCount(_KeyVersion);
+        var purposeLength = Encoding.UTF8.GetByteCount(purpose);
+        var subjectLength = Encoding.UTF8.GetByteCount(subject);
+
+        Span<byte> payload = stackalloc byte[keyVersionLength + purposeLength + subjectLength + 2];
+        var written = Encoding.UTF8.GetBytes(_KeyVersion, payload);
+        payload[written++] = (byte)'\n';
+        written += Encoding.UTF8.GetBytes(purpose, payload[written..]);
+        payload[written++] = (byte)'\n';
+        _ = Encoding.UTF8.GetBytes(subject, payload[written..]);
 
         return Base64Url.EncodeToString(HMACSHA256.HashData(_subjectKey, payload));
     }

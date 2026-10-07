@@ -54,6 +54,9 @@ public static class HeadlessQueryFilters
         }
     }
 
+    // DEBUG-only: the audit line's file-name extraction and interpolation ran per bypass call in release
+    // builds too, paying allocations for a Debug.WriteLine the build discards.
+    [Conditional("DEBUG")]
     private static void _LogFilterBypassed(string filterName, string entityType, string callerMember, string callerFile)
     {
         var fileName = Path.GetFileName(callerFile);

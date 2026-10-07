@@ -27,6 +27,19 @@ internal sealed class RedisMembershipStore(
 
     private RedisCoordinationOptions RedisOptions => redisOptions.Value;
 
+    // KeyPrefix and ClusterName are fixed once options bind, but IOptions<T>.Value must not be read in a field
+    // initializer before the options pipeline has run; these lazily cache the invariant Redis keys (and the
+    // brace validation) that every heartbeat and membership read used to rebuild per call.
+    private RedisKey? _knownKey;
+    private RedisKey? _liveKey;
+    private string? _genKeyPrefix;
+
+    private RedisKey _KnownKeyCached() => _knownKey ??= _ClusterKey("known");
+
+    private RedisKey _LiveKeyCached() => _liveKey ??= _ClusterKey("live");
+
+    private string _GenKeyPrefixCached() => _genKeyPrefix ??= $"{Options.KeyPrefix}{{{Options.ClusterName}}}:gen:";
+
     private IDatabase Db => multiplexer.GetDatabase();
 
     public async ValueTask<NodeIncarnation> AllocateIncarnationAsync(
@@ -295,17 +308,17 @@ internal sealed class RedisMembershipStore(
 
     private RedisKey _LiveKey()
     {
-        return _ClusterKey("live");
+        return _LiveKeyCached();
     }
 
     private RedisKey _KnownKey()
     {
-        return _ClusterKey("known");
+        return _KnownKeyCached();
     }
 
     private RedisKey _GenKey(NodeId nodeId)
     {
-        return _GenKeyPrefix() + nodeId.Value;
+        return _GenKeyPrefixCached() + nodeId.Value;
     }
 
     private const string _GenerationFieldPrefix = "__gen:";
@@ -317,7 +330,7 @@ internal sealed class RedisMembershipStore(
 
     private string _GenKeyPrefix()
     {
-        return $"{Options.KeyPrefix}{{{Options.ClusterName}}}:gen:";
+        return _GenKeyPrefixCached();
     }
 
     private RedisKey _ClusterKey(string suffix)

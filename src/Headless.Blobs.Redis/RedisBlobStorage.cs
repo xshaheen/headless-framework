@@ -103,7 +103,11 @@ internal sealed class RedisBlobStorage : IBlobStorage
         "return redis.call('HSCAN', KEYS[1], ARGV[1], 'MATCH', ARGV[2], 'COUNT', ARGV[3])";
 
     /// <summary>The Redis database obtained from the configured <see cref="IConnectionMultiplexer"/>.</summary>
-    private IDatabase Database => _options.ConnectionMultiplexer.GetDatabase();
+    /// <remarks>
+    /// Captured once (Headless.Caching.Redis's convention): GetDatabase allocates a wrapper per call, and this
+    /// property sat on every blob operation.
+    /// </remarks>
+    private IDatabase Database { get; init; }
 
     // Redis has no physical container: the backing hash is created lazily by the first write (see type remarks).
     public bool RequiresContainerProvisioning => false;
@@ -120,6 +124,7 @@ internal sealed class RedisBlobStorage : IBlobStorage
         _serializer = _options.Serializer ?? defaultSerializer;
         _timeProvider = timeProvider ?? TimeProvider.System;
         _normalizer = normalizer;
+        Database = _options.ConnectionMultiplexer.GetDatabase();
 
         var pipelineLogger = _logger;
 

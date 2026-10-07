@@ -151,25 +151,49 @@ internal sealed record ApnsRequestHeaders(
             _ => 0L,
         };
 
-        return new ApnsRequestHeaders(pushType, topic, priority, expiration, notification.CollapseId);
+        return new ApnsRequestHeaders(pushType, topic, priority, expiration, notification.CollapseId)
+        {
+            // Formatted once: a multicast re-enumerates these identical pairs per device token, and the
+            // iterator + int/long ToString allocations used to repeat for every one of N sends.
+            Materialized = _BuildHeaders(pushType, topic, priority, expiration, notification.CollapseId),
+        };
     }
 
+    // Set by Create; null only for instances built outside it, where Enumerate formats on demand.
+    public KeyValuePair<string, string>[]? Materialized { get; init; }
+
     /// <summary>Returns the headers as name and value pairs in wire order, omitting the unset optional headers.</summary>
-    public IEnumerable<KeyValuePair<string, string>> Enumerate()
+    public IReadOnlyList<KeyValuePair<string, string>> Enumerate()
     {
-        yield return new("apns-push-type", PushType);
-        yield return new("apns-topic", Topic);
-        yield return new("apns-priority", ((int)Priority).ToString(CultureInfo.InvariantCulture));
+        return Materialized ?? _BuildHeaders(PushType, Topic, Priority, Expiration, CollapseId);
+    }
 
-        if (Expiration is { } expiration)
+    private static KeyValuePair<string, string>[] _BuildHeaders(
+        string pushType,
+        string topic,
+        ApnsPriority priority,
+        long? expiration,
+        string? collapseId
+    )
+    {
+        var count = 3 + (expiration.HasValue ? 1 : 0) + (collapseId is not null ? 1 : 0);
+        var headers = new KeyValuePair<string, string>[count];
+        headers[0] = new("apns-push-type", pushType);
+        headers[1] = new("apns-topic", topic);
+        headers[2] = new("apns-priority", ((int)priority).ToString(CultureInfo.InvariantCulture));
+        var index = 3;
+
+        if (expiration.HasValue)
         {
-            yield return new("apns-expiration", expiration.ToString(CultureInfo.InvariantCulture));
+            headers[index++] = new("apns-expiration", expiration.Value.ToString(CultureInfo.InvariantCulture));
         }
 
-        if (CollapseId is not null)
+        if (collapseId is not null)
         {
-            yield return new("apns-collapse-id", CollapseId);
+            headers[index] = new("apns-collapse-id", collapseId);
         }
+
+        return headers;
     }
 
     private static (string PushType, string Topic, ApnsPriority Priority) _NotVoip(

@@ -67,6 +67,11 @@ internal sealed class SubscribeExecutor(
     private readonly IMessagingCapabilityModel? _capabilityModel = provider.GetService<IMessagingCapabilityModel>();
     private readonly RetryPolicyOptions _retryPolicy = options.Value.RetryPolicy;
 
+    // Singleton cache resolved once instead of per descriptor-less dispatch (the common retry-pickup shape):
+    // MethodMatcherCache never changes over the executor's lifetime, so the per-message GetRequiredService was a
+    // dictionary lookup repeated on every dispatch.
+    private readonly MethodMatcherCache _methodMatcherCache = provider.GetRequiredService<MethodMatcherCache>();
+
     // Consume retries follow each consumer's failure policy, not RetryPolicyOptions.RetryStrategy: one pipeline with no
     // inline delay serves every consumer, and each execution supplies its consumer's classifier.
     private readonly MessagingConsumeRetryPipeline _retryPipeline = new(timeProvider);
@@ -120,7 +125,7 @@ internal sealed class SubscribeExecutor(
 
         if (descriptor == null)
         {
-            var selector = provider.GetRequiredService<MethodMatcherCache>();
+            var selector = _methodMatcherCache;
             var found = message.InboxKey is { } inboxKey
                 ? selector.TryGetInboxExecutor(
                     inboxKey.ConsumerIdentity,
@@ -909,9 +914,7 @@ internal sealed class SubscribeExecutor(
             return;
         }
 
-        var storageCapability = _capabilityModel.Providers.FirstOrDefault(capability =>
-            capability.Role is MessagingProviderRole.Storage
-        );
+        var storageCapability = _capabilityModel.StorageProvider;
         if (storageCapability?.InboxGuarantee is not { } guarantee)
         {
             return;

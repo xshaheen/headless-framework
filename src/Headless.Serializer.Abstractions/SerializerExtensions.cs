@@ -54,16 +54,20 @@ public static class SerializerExtensions
             // allocating a throwaway array per call, then read in place from the written span.
             var maxByteCount = Encoding.UTF8.GetMaxByteCount(data.Length);
             var rented = ArrayPool<byte>.Shared.Rent(maxByteCount);
+            int written = 0;
 
             try
             {
-                var written = Encoding.UTF8.GetBytes(data, rented);
+                written = Encoding.UTF8.GetBytes(data, rented);
                 return serializer.Deserialize<T>(rented.AsMemory(0, written));
             }
             finally
             {
-                // Clear the transcoded payload before the rental rejoins the shared pool (see PooledByteBufferWriter).
-                ArrayPool<byte>.Shared.Return(rented, clearArray: true);
+                // Clear only the written span before the rental rejoins the pool (matching
+                // PooledByteBufferWriter): Return(clearArray: true) zeroes the whole rental, which pool
+                // bucketing often rounds up well past the payload size.
+                rented.AsSpan(0, written).Clear();
+                ArrayPool<byte>.Shared.Return(rented);
             }
         }
 

@@ -24,9 +24,13 @@ internal sealed partial class CronScheduleCache(TimeZoneInfo timeZoneInfo)
 
     public CrontabSchedule Get(string expression)
     {
-        var key = _Normalize(expression);
+        Argument.IsNotNull(expression);
 
-        return _cache.GetOrAdd(key, static exp => CrontabSchedule.TryParse(exp, _Opts)!);
+        // Key by the raw expression so normalization (Trim + regex replace) runs once per distinct expression
+        // inside the factory, not on every evaluation — the scheduler's dispatch loop calls this per pending
+        // instant at up to ~kHz cadence. Differently-spaced variants of one expression cache separately; they
+        // parse to the same schedule, so only cache size is affected.
+        return _cache.GetOrAdd(expression, static exp => CrontabSchedule.TryParse(_Normalize(exp), _Opts)!);
     }
 
     public DateTime? GetNextOccurrenceOrDefault(string expression, DateTime dateTime)
@@ -262,7 +266,10 @@ internal sealed partial class CronScheduleCache(TimeZoneInfo timeZoneInfo)
 
     public bool Invalidate(string expression)
     {
-        return _cache.TryRemove(_Normalize(expression), out _);
+        // Remove both the raw key (post-change cache layout) and the normalized key (pre-change entries), so
+        // invalidation also clears anything cached before the keying change within a running process.
+        var removed = _cache.TryRemove(expression, out _);
+        return _cache.TryRemove(_Normalize(expression), out _) || removed;
     }
 
     [GeneratedRegex(@"\s+", RegexOptions.None, matchTimeoutMilliseconds: 1000)]

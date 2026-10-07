@@ -704,9 +704,7 @@ internal sealed partial class MessageNeedToRetryProcessor : IProcessor, IRetryPr
             return;
         }
 
-        var storageCapability = _capabilityModel.Providers.FirstOrDefault(capability =>
-            capability.Role is MessagingProviderRole.Storage
-        );
+        var storageCapability = _capabilityModel.StorageProvider;
         if (storageCapability?.InboxGuarantee is not { } guarantee)
         {
             return;

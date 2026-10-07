@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Collections;
+using System.Collections.Concurrent;
 
 namespace Headless.Jobs.Infrastructure.Dashboard;
 
@@ -100,7 +101,25 @@ internal static class JsonExampleGenerator
         return JsonSerializer.Serialize(_GenerateExample(type), _JsonOptions);
     }
 
+    // Example JSON depends only on the request Type's shape, so it is computed once per process instead of once
+    // per dashboard HTTP request. An empty string is never a successful serialization, so it doubles as the
+    // cached failure marker and a Type that cannot be exemplified is not retried per request.
+    private static readonly ConcurrentDictionary<Type, string> _ExampleJsonCache = new();
+
     public static bool TryGenerateExampleJson(Type type, out string json)
+    {
+        json = _ExampleJsonCache.GetOrAdd(
+            type,
+            static t =>
+            {
+                return _TryGenerateExampleJson(t, out var example) ? example : string.Empty;
+            }
+        );
+
+        return json.Length != 0;
+    }
+
+    private static bool _TryGenerateExampleJson(Type type, out string json)
     {
         try
         {

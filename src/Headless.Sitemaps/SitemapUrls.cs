@@ -56,16 +56,30 @@ public static class SitemapUrls
         [EnumeratorCancellation] CancellationToken cancellationToken = default
     )
     {
-        // split URLs into separate lists based on the max size
-        var sitemaps = sitemapUrls
-            .Select((url, index) => new { Index = index, Value = url })
-            .GroupBy(group => group.Index / SitemapConstants.MaxSitemapUrls)
-            .Select(group => group.Select(url => url.Value).ToArray());
+        // Shard by walking the collection once into a reusable list, instead of the old
+        // Select-index + GroupBy chain that allocated an anonymous object per URL and a grouping per shard.
+        var shard = new List<SitemapUrl>(Math.Min(sitemapUrls.Count, SitemapConstants.MaxSitemapUrls));
 
-        foreach (var sitemap in sitemaps)
+        foreach (var url in sitemapUrls)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (shard.Count == SitemapConstants.MaxSitemapUrls)
+            {
+                var full = new MemoryStream();
+                await shard.WriteToAsync(full, cancellationToken).ConfigureAwait(false);
+                full.Position = 0;
+                yield return full;
+                shard.Clear();
+            }
+
+            shard.Add(url);
+        }
+
+        if (shard.Count > 0)
         {
             var stream = new MemoryStream();
-            await sitemap.WriteToAsync(stream, cancellationToken).ConfigureAwait(false);
+            await shard.WriteToAsync(stream, cancellationToken).ConfigureAwait(false);
             stream.Position = 0;
             yield return stream;
         }
