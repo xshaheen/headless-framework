@@ -31,6 +31,12 @@ public abstract class SqlServerChainConformanceTestsBase<TFixture>(TFixture fixt
     }
 
     [Fact]
+    public override Task deleting_a_chain_retries_a_conflict_without_advancing_a_faked_app_clock()
+    {
+        return base.deleting_a_chain_retries_a_conflict_without_advancing_a_faked_app_clock();
+    }
+
+    [Fact]
     public override Task appending_to_a_chain_after_delete_fails_without_creating_a_row()
     {
         return base.appending_to_a_chain_after_delete_fails_without_creating_a_row();

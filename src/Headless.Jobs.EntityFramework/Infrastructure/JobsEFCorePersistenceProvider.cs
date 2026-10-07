@@ -72,7 +72,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
         )
     {
         _coordinatedWriteOptions = coordinatedWriteOptions;
-        _treeDeleteRetryPipeline = _BuildTreeDeleteRetryPipeline(timeProvider, logger);
+        _treeDeleteRetryPipeline = _BuildTreeDeleteRetryPipeline(logger);
     }
 
     private static Func<DbContextOptions<TDbContext>, TDbContext> _BuildContextFactory()
@@ -507,9 +507,11 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
             .ConfigureAwait(false);
     }
 
-    private ResiliencePipeline _BuildTreeDeleteRetryPipeline(TimeProvider timeProvider, ILogger logger)
+    private ResiliencePipeline _BuildTreeDeleteRetryPipeline(ILogger logger)
     {
-        return new ResiliencePipelineBuilder { TimeProvider = timeProvider }
+        // The back-off waits out a concurrent writer's lock in real time. On the app clock, a host that fakes it (a test)
+        // never advances past the first delay, so one conflict would stall the delete until the caller gave up.
+        return new ResiliencePipelineBuilder { TimeProvider = TimeProvider.System }
             .AddRetry(
                 new RetryStrategyOptions
                 {
