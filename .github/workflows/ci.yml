@@ -586,7 +586,10 @@ jobs:
     name: "Release · Publish to NuGet.org"
     needs: publish-github-packages
     runs-on: ubuntu-latest
-    if: github.event_name == 'release'
+    # Set the repository variable PUBLISH_NUGET_ORG to "false" to release to GitHub Packages only. The
+    # "NuGet Release" environment forbids self-review, so the person who published the release cannot
+    # reject this gate; a skipped job is the only clean way to stop at GitHub Packages.
+    if: github.event_name == 'release' && vars.PUBLISH_NUGET_ORG != 'false'
 
     permissions:
       contents: read

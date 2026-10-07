@@ -16,12 +16,12 @@ categories:
     labels:
       - maintenance
 version-resolver:
-  major:
-    labels:
-      - major
+  # Before 1.0, SemVer reserves the major number: a breaking change bumps the minor version, so the
+  # `major` label resolves to a minor bump. Move `major` back under its own key when 1.0 ships.
   minor:
     labels:
       - minor
+      - major
   patch:
     labels:
       - patch
