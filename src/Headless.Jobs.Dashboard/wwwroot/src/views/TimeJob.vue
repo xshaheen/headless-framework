@@ -1299,6 +1299,7 @@ const canBeForceDeleted = ref<string[]>([])
                 class="custom-icon"
               >
                 <button
+                  v-if="item.requestType"
                   type="button"
                   class="blue-underline mr-2 text-caption"
                   :aria-label="`View request payload for ${item.requestType}`"
