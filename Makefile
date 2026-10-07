@@ -699,7 +699,10 @@ up: ## Build and start the dashboard sandbox in the background (STORE=memory|pos
 	printf 'store=%s url=%s compose=%s\n' "$(STORE)" "$(SANDBOX_URL)" "$$([ "$(STORE)" = postgres ] && echo "$(SANDBOX_COMPOSE_PROJECT)" || echo none)" > "$(SANDBOX_STATE)"; \
 	echo "Sandbox starting (pid $$(cat "$(SANDBOX_PID)"), STORE=$(STORE)). Run: make ready"; \
 	echo "  Jobs dashboard:      $(SANDBOX_URL)/jobs/dashboard"; \
-	echo "  Messaging dashboard: $(SANDBOX_URL)/messaging (Basic auth: user sandbox, password in $(SANDBOX_ENV))"; \
+	if [ -n "$${Sandbox__MessagingDashboardPassword:-}" ]; then \
+	  echo "  Messaging dashboard: $(SANDBOX_URL)/messaging (Basic auth: user sandbox, password in $(SANDBOX_ENV))"; \
+	else \
+	  echo "  Messaging dashboard: $(SANDBOX_URL)/messaging (no auth: the password in $(SANDBOX_ENV) is empty, so inbox and scheduled operations return 403; delete the file and rerun make up for Basic auth)"; fi; \
 	echo "  Scenarios:           make seed SCENARIO=<name>; list them at $(SANDBOX_URL)/sandbox/scenarios"
 
 .PHONY: ready
