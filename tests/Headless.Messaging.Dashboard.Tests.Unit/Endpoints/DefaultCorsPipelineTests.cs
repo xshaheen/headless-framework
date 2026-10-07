@@ -6,6 +6,7 @@ using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Tests.Endpoints;
 
@@ -30,8 +31,10 @@ public sealed class DefaultCorsPipelineTests : TestBase
         builder.WebHost.UseTestServer();
 
         builder.Services.AddSingleton(config);
-        builder.Services.AddSingleton(config.Auth);
-        builder.Services.AddScoped<IAuthService, AuthService>();
+        builder.Services.AddKeyedScoped<IAuthService>(
+            MessagingDashboardOptionsBuilder.AuthenticationName,
+            (sp, _) => new AuthService(config.Auth, sp.GetRequiredService<ILogger<AuthService>>())
+        );
 
         // The endpoint data source eagerly binds every mapped endpoint's metadata (not just the one under
         // test) the first time authorization/routing initializes, so the other endpoints' DI dependencies

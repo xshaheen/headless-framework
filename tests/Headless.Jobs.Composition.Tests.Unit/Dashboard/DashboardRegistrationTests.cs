@@ -97,7 +97,11 @@ public sealed class DashboardRegistrationTests : TestBase
         var dashboard = provider.GetRequiredService<DashboardOptionsBuilder>();
         dashboard.Auth.Mode.Should().Be(AuthMode.Host);
         dashboard.Auth.HostAuthorizationPolicy.Should().Be("Operators");
-        provider.GetRequiredService<IAuthService>().Should().NotBeNull();
+        provider
+            .GetRequiredKeyedService<IAuthService>(DashboardOptionsBuilder.AuthenticationName)
+            .GetAuthInfo()
+            .Mode.Should()
+            .Be(AuthMode.Host);
         provider
             .GetRequiredService<IOptions<CorsOptions>>()
             .Value.GetPolicy("HeadlessJobsDashboardCORS")!

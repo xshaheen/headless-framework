@@ -196,7 +196,9 @@ public static partial class MessagingDashboardEndpoints
 
     #region Endpoint Handlers
 
-    private static IResult _GetAuthInfo([FromServices] IAuthService authService)
+    private static IResult _GetAuthInfo(
+        [FromKeyedServices(MessagingDashboardOptionsBuilder.AuthenticationName)] IAuthService authService
+    )
     {
         var authInfo = authService.GetAuthInfo();
         return Results.Json(
@@ -209,7 +211,10 @@ public static partial class MessagingDashboardEndpoints
         );
     }
 
-    private static async Task<IResult> _ValidateAuth(HttpContext context, [FromServices] IAuthService authService)
+    private static async Task<IResult> _ValidateAuth(
+        HttpContext context,
+        [FromKeyedServices(MessagingDashboardOptionsBuilder.AuthenticationName)] IAuthService authService
+    )
     {
         var authResult = await authService.AuthenticateAsync(context).ConfigureAwait(false);
 

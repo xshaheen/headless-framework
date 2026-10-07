@@ -17,7 +17,7 @@ namespace Tests.Dashboard;
 public sealed class DashboardEndpointMetadataTests : TestBase
 {
     [Fact]
-    public async Task should_apply_the_configured_host_policy_only_to_dashboard_api_endpoints()
+    public async Task should_apply_the_configured_host_policy_to_dashboard_api_and_hub_endpoints()
     {
         await using var app = _CreateApp(new DashboardOptionsBuilder().WithHostAuthentication("DashboardAdmin"));
 
@@ -27,7 +27,20 @@ public sealed class DashboardEndpointMetadataTests : TestBase
             .Metadata.GetOrderedMetadata<IAuthorizeData>()
             .Should()
             .ContainSingle(data => data.Policy == "DashboardAdmin");
+        _GetHubEndpoint(app).Metadata.GetMetadata<IAllowAnonymous>().Should().BeNull();
+        _GetHubEndpoint(app)
+            .Metadata.GetOrderedMetadata<IAuthorizeData>()
+            .Should()
+            .ContainSingle(data => data.Policy == "DashboardAdmin");
+    }
+
+    [Fact]
+    public async Task should_leave_the_hub_anonymous_when_the_hub_authenticates_the_dashboard_credential_itself()
+    {
+        await using var app = _CreateApp(new DashboardOptionsBuilder().WithApiKey("secret"));
+
         _GetHubEndpoint(app).Metadata.GetMetadata<IAllowAnonymous>().Should().NotBeNull();
+        _GetHubEndpoint(app).Metadata.GetOrderedMetadata<IAuthorizeData>().Should().BeEmpty();
     }
 
     [Fact]
@@ -176,7 +189,7 @@ public sealed class DashboardEndpointMetadataTests : TestBase
         builder.Services.AddSignalR();
         builder.Services.AddCors();
         builder.Services.AddSingleton(config);
-        builder.Services.AddSingleton(Substitute.For<IAuthService>());
+        builder.Services.AddKeyedSingleton(DashboardOptionsBuilder.AuthenticationName, Substitute.For<IAuthService>());
         builder.Services.AddSingleton(new JobsExecutionContext());
         builder.Services.AddSingleton(JobFunctionRegistryBuilder.Build([], [], []));
         builder.Services.AddSingleton(new SchedulerOptionsBuilder());

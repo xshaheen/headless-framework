@@ -1,5 +1,6 @@
 import * as signalR from "@microsoft/signalr";
 import { getBasePath, getBackendUrl } from '@/utilities/pathResolver';
+import { getHubAccessToken } from '@/services/auth';
 
 class BaseHub {
     public connection: signalR.HubConnection;
@@ -13,51 +14,6 @@ class BaseHub {
         const basePath = getBasePath();
         const backendUrl = getBackendUrl();
 
-        // Get auth token and type lazily when building the connection
-        const getAuthInfo = () => {
-            try {
-                // Check window config to determine auth mode
-                const config = window.JobsConfig;
-                
-                if (config?.auth?.mode === 'bearer') {
-                    const bearerToken = localStorage.getItem('jobs_bearer_token');
-                    if (bearerToken) {
-                        return {
-                            type: 'Bearer',
-                            token: bearerToken
-                        };
-                    }
-                }
-                
-                if (config?.auth?.mode === 'basic') {
-                    const basicAuth = localStorage.getItem('jobs_basic_auth');
-                    if (basicAuth) {
-                        return {
-                            type: 'Basic',
-                            token: basicAuth
-                        };
-                    }
-                }
-                
-                // The custom validator receives this value verbatim, as it does the API's Authorization header.
-                if (config?.auth?.mode === 'custom') {
-                    const customCredential = localStorage.getItem('jobs_custom_credential');
-                    if (customCredential) {
-                        return {
-                            type: 'Custom',
-                            token: customCredential
-                        };
-                    }
-                }
-                
-                // No auth configured or no token available
-                return null;
-            } catch {
-                // Could not access auth token
-                return null;
-            }
-        };
-
         // Use backend domain for WebSocket if configured, otherwise use base path
         let hubUrl: string;
         if (backendUrl) {
@@ -69,7 +25,7 @@ class BaseHub {
                 : `${basePath}/job-notification-hub`;
         }
 
-        const authInfo = getAuthInfo();
+        const accessToken = getHubAccessToken();
         
         // WebSockets cannot send custom headers, so we need to use query parameters
         // For other transports (ServerSentEvents, LongPolling), we can use headers
@@ -83,12 +39,8 @@ class BaseHub {
             
             let finalHubUrl = hubUrl;
             
-            if (authInfo) {
-                const authQuery =
-                    authInfo.type === 'Basic' || authInfo.type === 'Custom'
-                        ? authInfo.token
-                        : `Bearer:${authInfo.token}`;
-                finalHubUrl = `${hubUrl}?access_token=${encodeURIComponent(authQuery)}`;
+            if (accessToken) {
+                finalHubUrl = `${hubUrl}?access_token=${encodeURIComponent(accessToken)}`;
             }
             
             return new signalR.HubConnectionBuilder()
@@ -111,11 +63,8 @@ class BaseHub {
             // Allow fallback transports - use headers for auth
             const connectionOptions: signalR.IHttpConnectionOptions = {};
             
-            if (authInfo) {
-                connectionOptions.headers = {
-                    'Authorization':
-                        authInfo.type === 'Custom' ? authInfo.token : `${authInfo.type} ${authInfo.token}`
-                };
+            if (accessToken) {
+                connectionOptions.headers = { 'Authorization': accessToken };
             }
             
             return new signalR.HubConnectionBuilder()

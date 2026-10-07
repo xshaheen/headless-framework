@@ -13,11 +13,18 @@ namespace Headless.Messaging.Dashboard;
 /// </summary>
 public sealed class MessagingDashboardOptionsBuilder
 {
+    /// <summary>
+    /// The Messaging dashboard's authentication name: the name of its <see cref="AuthConfig"/> options instance and
+    /// the key of its scoped <see cref="IAuthService"/>. Resolve or replace this dashboard's auth service by this key;
+    /// it is independent of any other dashboard's authentication in the same host.
+    /// </summary>
+    public const string AuthenticationName = "Headless.Messaging.Dashboard";
+
     internal string BasePath { get; set; } = "/messaging";
     internal Action<CorsPolicyBuilder>? CorsPolicyBuilder { get; set; }
 
     /// <summary>
-    /// Authentication configuration (shared with Jobs Dashboard).
+    /// Authentication configuration, registered under <see cref="AuthenticationName"/>.
     /// </summary>
     internal AuthConfig Auth { get; set; } = new();
 

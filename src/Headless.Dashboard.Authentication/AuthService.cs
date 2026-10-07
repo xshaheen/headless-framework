@@ -2,6 +2,7 @@
 
 using System.Security.Cryptography;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging;
 
 namespace Headless.Dashboard.Authentication;
@@ -12,7 +13,8 @@ namespace Headless.Dashboard.Authentication;
 /// <remarks>
 /// The service does not re-validate <paramref name="config"/>. Credential completeness is enforced
 /// by the FluentValidation validator registered in the options pipeline with validation on start in
-/// <see cref="SetupDashboardAuthentication"/>.
+/// <see cref="SetupDashboardAuthentication"/>. The <c>access_token</c> query parameter is read only on
+/// requests routed to a SignalR hub endpoint.
 /// </remarks>
 /// <param name="config">The authentication configuration, including mode and credentials.</param>
 /// <param name="logger">The logger used to record authentication errors.</param>
@@ -86,14 +88,10 @@ public sealed class AuthService(AuthConfig config, ILogger<AuthService> logger) 
             return authHeader;
         }
 
-        // Try access_token query parameter only for SignalR paths.
-        // Query strings leak to server logs, browser history, and Referer headers,
-        // so we restrict this to SignalR endpoints where WebSocket auth requires it.
-        var path = context.Request.Path.Value ?? "";
-        if (
-            path.Contains("/hub", StringComparison.OrdinalIgnoreCase)
-            || path.Contains("/negotiate", StringComparison.OrdinalIgnoreCase)
-        )
+        // Browsers cannot set headers on a WebSocket, so a SignalR hub client sends its credential as the
+        // access_token query parameter. Query strings leak to server logs, browser history, and Referer headers,
+        // so it is read only on hub endpoints, which routing marks with HubMetadata whatever their path.
+        if (_IsHubRequest(context))
         {
             var accessToken = context.Request.Query["access_token"].FirstOrDefault();
             if (!string.IsNullOrEmpty(accessToken))
@@ -103,6 +101,12 @@ public sealed class AuthService(AuthConfig config, ILogger<AuthService> logger) 
         }
 
         return null;
+    }
+
+    /// <summary>Whether the request was routed to a SignalR hub endpoint, its negotiate endpoint included.</summary>
+    private static bool _IsHubRequest(HttpContext context)
+    {
+        return context.GetEndpoint()?.Metadata.GetMetadata<HubMetadata>() is not null;
     }
 
     private Task<AuthResult> _AuthenticateBasicAsync(string authHeader)
