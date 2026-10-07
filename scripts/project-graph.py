@@ -394,6 +394,23 @@ SPA_PROJECTS = (
 )
 
 
+def builds_spa(build: list[str], projects: dict[str, Project]) -> bool:
+    """Whether building `build` compiles a dashboard, which needs its SPA output on disk.
+
+    MSBuild builds every project a filtered project references, in the filter or not, so a dashboard that only a
+    test project references (the docs-example tests reference both) is still compiled.
+    """
+    seen: set[str] = set()
+    pending = list(build)
+    while pending:
+        key = pending.pop()
+        if key in seen or key not in projects:
+            continue
+        seen.add(key)
+        pending.extend(projects[key].references)
+    return bool(seen & set(SPA_PROJECTS))
+
+
 def diff_files(base: str, head: str) -> list[str] | None:
     """Paths changed between the merge base of BASE and HEAD, or None when the history cannot answer."""
     if not base or set(base) == {"0"}:
@@ -464,7 +481,7 @@ def ci_scope(event: str, base: str, head: str, out_dir: Path, solution: str, pro
         "unit_solution": (out_dir / "unit.slnf").as_posix() if unit else "",
         "build_projects": str(len(build)),
         "unit_tests": str(len(unit)),
-        "spa": "true" if set(SPA_PROJECTS) & set(build) else "false",
+        "spa": "true" if builds_spa(build, projects) else "false",
     }
 
 
