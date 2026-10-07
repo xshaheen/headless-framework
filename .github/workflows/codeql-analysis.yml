@@ -64,20 +64,21 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
+      # Build-mode none reads the project.assets.json files a restore leaves when it resolves dependencies, so
+      # restoring with the token first lets it find the private Headless SDK packages instead of guessing.
       - name: "Restore"
         env:
           GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: make restore
 
+      # A traced build of the whole solution took 25-41 minutes, so most runs were cancelled by the next push
+      # before they finished. Build-mode none extracts the sources without compiling them. It does not see code
+      # that source generators emit, which leaves calls into generated members without a resolved target.
       - name: Initialize CodeQL
         uses: github/codeql-action/init@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
         with:
           languages: ${{ matrix.language }}
-          build-mode: manual
-
-      - name: "Build"
-        # CI owns Roslyn diagnostics; CodeQL still extracts the full compiled solution and source generators.
-        run: make rebuild-no-restore MSBUILD_ARGS=-p:RunAnalyzers=false
+          build-mode: none
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2

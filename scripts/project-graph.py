@@ -7,8 +7,10 @@ names, because a name match misses every project that depends on the changed one
 library only, so it runs on a bare CI runner and in git hooks without a virtual environment.
 
 Commands:
-  affected  Print the projects a change affects (changed projects plus their direct dependents)
-            and the test projects that cover them.
+  affected  Print the projects a change affects (changed projects plus their direct dependents, or
+            every transitive dependent with --transitive) and the test projects that cover them.
+  ci-scope  Decide how much of the .NET solution a CI run builds and tests: everything, the
+            transitively affected set, or nothing. Prints key=value lines for $GITHUB_OUTPUT.
   layering  Check package dependency direction and public namespace names under src/, and exit 3
             on a violation.
 """
@@ -19,6 +21,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
@@ -157,7 +160,13 @@ def owning_projects(file: str, by_directory: dict[str, list[str]]) -> set[str]:
     return owners
 
 
-def select_affected(base: str, projects: dict[str, Project], files: list[str] | None = None) -> dict[str, object]:
+def select_affected(
+    base: str,
+    projects: dict[str, Project],
+    files: list[str] | None = None,
+    *,
+    transitive: bool = False,
+) -> dict[str, object]:
     if files is None:
         files = changed_files(base)
     changed: set[str] = set()
@@ -188,8 +197,18 @@ def select_affected(base: str, projects: dict[str, Project], files: list[str] | 
             unmapped.append(file)
 
     affected = set(changed)
-    for key in changed:
-        affected.update(projects[key].dependents)
+    if transitive:
+        # A gate must see every project that can stop compiling or behave differently, and that includes a
+        # dependent's dependents: a changed signature in an Abstractions package breaks the providers' tests too.
+        pending = list(changed)
+        while pending:
+            for dependent in projects[pending.pop()].dependents:
+                if dependent not in affected:
+                    affected.add(dependent)
+                    pending.append(dependent)
+    else:
+        for key in changed:
+            affected.update(projects[key].dependents)
 
     # A test project covers the affected set when it is in it or references a member directly.
     covering = {
@@ -203,6 +222,7 @@ def select_affected(base: str, projects: dict[str, Project], files: list[str] | 
 
     return {
         "base": base,
+        "transitive": transitive,
         "changed_files": len(files),
         "global_triggers": global_triggers,
         "unmapped_files": unmapped,
@@ -359,6 +379,95 @@ def folder_violations() -> list[str]:
     return violations
 
 
+# Paths that only document the project. CI already skips the .NET jobs for a change made only of these
+# (scripts/ci-changes.sh), so they never widen the scope; any other path outside a project does.
+def is_documentation(file: str) -> bool:
+    path = PurePosixPath(file)
+    if file.startswith(("docs/", ".github/ISSUE_TEMPLATE/")):
+        return True
+    return path.suffix == ".md" and path.parent.as_posix() in (".", ".github")
+
+
+SPA_PROJECTS = (
+    "src/Headless.Jobs.Dashboard/Headless.Jobs.Dashboard.csproj",
+    "src/Headless.Messaging.Dashboard/Headless.Messaging.Dashboard.csproj",
+)
+
+
+def diff_files(base: str, head: str) -> list[str] | None:
+    """Paths changed between the merge base of BASE and HEAD, or None when the history cannot answer."""
+    if not base or set(base) == {"0"}:
+        return None
+    try:
+        merge_base = git_lines("merge-base", base, head)[0]
+        result = subprocess.run(
+            ["git", "-c", "core.quotePath=false", "diff", "--no-renames", "--name-only", "-z", merge_base, head, "--"],
+            cwd=REPO_ROOT,
+            check=True,
+            capture_output=True,
+        )
+    except (subprocess.CalledProcessError, IndexError):
+        return None
+    return sorted({item for item in result.stdout.decode("utf-8").split("\0") if item})
+
+
+def write_category_files(out_dir: Path, report: dict[str, object], solution: Path) -> None:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "affected.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    for category, key in CATEGORIES.items():
+        if category == "affected":
+            continue
+        items: list[str] = report[key]  # type: ignore[assignment]
+        (out_dir / f"{category}.txt").write_text("".join(f"{item}\n" for item in items), encoding="utf-8")
+        missing = write_solution_filter(out_dir / f"{category}.slnf", solution, items)
+        for project in missing:
+            print(f"[affected] not in {solution.name}, left out of {category}.slnf: {project}", file=sys.stderr)
+
+
+def ci_scope(event: str, base: str, head: str, out_dir: Path, solution: str, projects: dict[str, Project]) -> dict[str, str]:
+    """Choose the CI scope. Only a pull request narrows it; pushes, releases and dispatches build everything.
+
+    The narrowed scope is the transitive affected set, so a pull request gate never misses a project that the
+    change breaks through a chain of references. Anything the project graph cannot attribute to a project, such
+    as a workflow, a script, the Makefile, a build-wide props file or package versions, runs everything.
+    """
+    full = {"scope": "full", "solution": solution, "unit_solution": "", "build_projects": "all", "unit_tests": "all", "spa": "true"}
+
+    def fall_back(reason: str) -> dict[str, str]:
+        print(f"[ci-scope] full run: {reason}", file=sys.stderr)
+        return full
+
+    if event != "pull_request":
+        return fall_back(f"event {event or '(none)'} always builds the whole solution")
+    files = diff_files(base, head)
+    if files is None:
+        return fall_back(f"cannot diff {base or '(no base)'}..{head}")
+    report = select_affected(base, projects, files, transitive=True)
+    triggers: list[str] = report["global_triggers"]  # type: ignore[assignment]
+    if triggers:
+        return fall_back("build-wide file changed: " + ", ".join(triggers))
+    outside = [file for file in report["unmapped_files"] if not is_documentation(file)]  # type: ignore[union-attr]
+    if outside:
+        return fall_back("path outside every project: " + ", ".join(outside[:10]) + (" ..." if len(outside) > 10 else ""))
+
+    build: list[str] = report["build_projects"]  # type: ignore[assignment]
+    unit: list[str] = report["unit_tests"]  # type: ignore[assignment]
+    write_category_files(out_dir, report, REPO_ROOT / solution)
+    print(
+        f"[ci-scope] affected run: {len(report['changed_projects'])} changed, {len(build)} to build, "  # type: ignore[arg-type]
+        f"{len(unit)} unit-test project(s)",
+        file=sys.stderr,
+    )
+    return {
+        "scope": "affected" if build else "empty",
+        "solution": (out_dir / "build.slnf").as_posix() if build else "",
+        "unit_solution": (out_dir / "unit.slnf").as_posix() if unit else "",
+        "build_projects": str(len(build)),
+        "unit_tests": str(len(unit)),
+        "spa": "true" if set(SPA_PROJECTS) & set(build) else "false",
+    }
+
+
 CATEGORIES = {
     "changed": "changed_projects",
     "affected": "affected_projects",
@@ -396,6 +505,18 @@ def main() -> int:
         default="json",
         help="print one category as newline-separated paths instead of the JSON report",
     )
+    affected.add_argument(
+        "--transitive",
+        action="store_true",
+        help="select every transitive dependent of a changed project, not only its direct dependents",
+    )
+
+    scope = commands.add_parser("ci-scope", help="choose the CI build and test scope; prints key=value lines")
+    scope.add_argument("--event", default="", help="GitHub event name; only pull_request narrows the scope")
+    scope.add_argument("--base", default="", help="base commit of the change; empty or all zeros runs everything")
+    scope.add_argument("--head", default="HEAD", help="head commit of the change")
+    scope.add_argument("--out-dir", required=True, metavar="DIR", help="where the solution filters and project lists go")
+    scope.add_argument("--solution", default="headless-framework.slnx", help="solution the filters point at")
 
     commands.add_parser("layering", help="check package dependency direction and public namespace names under src/")
 
@@ -409,24 +530,22 @@ def main() -> int:
         print(f"[layering] {len(violations)} violation(s) across {sum(p.kind == 'src' for p in projects.values())} src projects", file=sys.stderr)
         return 3 if violations else 0
 
+    if args.command == "ci-scope":
+        out_dir = Path(args.out_dir)
+        if out_dir.exists():
+            shutil.rmtree(out_dir)
+        for key, value in ci_scope(args.event, args.base, args.head, out_dir, args.solution, projects).items():
+            print(f"{key}={value}")
+        return 0
+
     files = None
     if args.files_from:
         stream = sys.stdin if args.files_from == "-" else open(args.files_from, encoding="utf-8")
         with stream:
             files = sorted({line.strip() for line in stream if line.strip()})
-    report = select_affected(args.base, projects, files)
+    report = select_affected(args.base, projects, files, transitive=args.transitive)
     if args.out_dir:
-        out_dir = Path(args.out_dir)
-        out_dir.mkdir(parents=True, exist_ok=True)
-        (out_dir / "affected.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
-        for category, key in CATEGORIES.items():
-            if category == "affected":
-                continue
-            items: list[str] = report[key]  # type: ignore[assignment]
-            (out_dir / f"{category}.txt").write_text("".join(f"{item}\n" for item in items), encoding="utf-8")
-            missing = write_solution_filter(out_dir / f"{category}.slnf", REPO_ROOT / args.solution, items)
-            for project in missing:
-                print(f"[affected] not in {args.solution}, left out of {category}.slnf: {project}", file=sys.stderr)
+        write_category_files(Path(args.out_dir), report, REPO_ROOT / args.solution)
         print(
             f"[affected] vs {args.base}: {len(report['changed_projects'])} changed, "  # type: ignore[arg-type]
             f"{len(report['build_projects'])} to build, {len(report['unit_tests'])} unit-test and "  # type: ignore[arg-type]

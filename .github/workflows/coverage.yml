@@ -1,0 +1,117 @@
+name: "Coverage"
+
+# Coverage is reported, never gated, so it runs beside CI instead of inside the required "CI status" check:
+# instrumenting every unit-test module slowed the main-push suite by about four minutes. Each push to main still
+# gets a report; a newer push cancels an older run because only the latest main matters.
+on:
+  push:
+    branches: [ main ]
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+      - '.github/ISSUE_TEMPLATE/**'
+      - '.github/*.md'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  CONFIGURATION: Release
+  TEST_RESULTS_DIR: ./artifacts/test-results
+
+jobs:
+  coverage:
+    name: ".NET · Unit-test coverage"
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: "Check out repository"
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          lfs: false
+          # MinVer derives the version from tags and commit height.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: "Set up .NET SDK"
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: "./global.json"
+
+      - name: "Set up Node.js"
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            src/Headless.Jobs.Dashboard/wwwroot/package-lock.json
+            src/Headless.Messaging.Dashboard/wwwroot/package-lock.json
+
+      # CI's primary build leg owns the cache writes; this workflow only reads.
+      - name: "Restore NuGet cache"
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/packages.lock.json', 'global.json', 'dotnet-tools.json') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      # Built before the NuGet token exists, so an npm lifecycle script cannot read it.
+      - name: "Build dashboard SPAs"
+        run: make -j2 --output-sync=target dashboards DASHBOARD_BUILD_SCRIPT=build-only
+
+      - name: "Build solution"
+        env:
+          BuildDashboardSpa: "false"
+          GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: make rebuild MSBUILD_ARGS=-p:RunAnalyzers=false
+
+      - name: "Run unit tests with coverage"
+        env:
+          CI_COVERAGE: "true"
+        run: make ci-test
+
+      - name: "Generate coverage report"
+        if: always()
+        run: |
+          set -euo pipefail
+
+          if [ -z "$(find "${TEST_RESULTS_DIR}" -name '*.cobertura.xml' -print -quit 2>/dev/null)" ]; then
+            echo "::warning::No Cobertura coverage files were found under ${TEST_RESULTS_DIR}."
+            exit 0
+          fi
+
+          dotnet tool restore
+          dotnet reportgenerator \
+            -reports:"${TEST_RESULTS_DIR}/**/*.cobertura.xml" \
+            -targetdir:"./artifacts/coverage/report" \
+            -reporttypes:"Html;JsonSummary;MarkdownAssembliesSummary"
+          # MarkdownAssembliesSummary writes Summary.md: one line/branch row per assembly (~8 KB).
+          cat ./artifacts/coverage/report/Summary.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: "Upload coverage report"
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-results
+          path: |
+            artifacts/test-results/**/*.cobertura.xml
+            artifacts/test-results/**/*.coverage
+            artifacts/coverage/report/**
+          if-no-files-found: warn
+          retention-days: 14

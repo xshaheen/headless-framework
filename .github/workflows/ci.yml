@@ -49,6 +49,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       dotnet: ${{ steps.changes.outputs.dotnet }}
+      dotnet-scope: ${{ steps.scope.outputs.scope }}
       dashboards: ${{ steps.changes.outputs.dashboards }}
       tus: ${{ steps.changes.outputs.tus }}
     steps:
@@ -77,6 +78,15 @@ jobs:
           HEAD_SHA: ${{ github.sha }}
         run: bash scripts/ci-changes.sh >> "$GITHUB_OUTPUT"
 
+      # The .NET jobs recompute the same scope from the same commits for their solution filters; this copy
+      # only lets them skip outright when a pull request touches no project.
+      - name: "Select .NET scope"
+        id: scope
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: make ci-scope >> "$GITHUB_OUTPUT"
+
   format:
     name: "Lint · C# formatting"
     needs: changes
@@ -104,7 +114,7 @@ jobs:
   analyzers:
     name: "Lint · .NET analyzers"
     needs: changes
-    if: needs.changes.outputs.dotnet == 'true'
+    if: needs.changes.outputs.dotnet == 'true' && needs.changes.outputs.dotnet-scope != 'empty'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -141,15 +151,27 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
+      # A pull request analyzes the projects it changed and every transitive dependent; other events, and
+      # changes outside any project, analyze the whole solution (see `make ci-scope`).
+      - name: "Select .NET scope"
+        id: scope
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: make ci-scope >> "$GITHUB_OUTPUT"
+
       # Same token isolation as the build job: npm lifecycle scripts run before the NuGet token exists.
       - name: "Build dashboard SPAs"
+        if: steps.scope.outputs.spa == 'true'
         run: make -j2 --output-sync=target dashboards DASHBOARD_BUILD_SCRIPT=build-only
 
       - name: "Build solution with analyzers"
+        if: steps.scope.outputs.scope != 'empty'
         env:
           BuildDashboardSpa: "false"
           GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: make rebuild
+          SCOPE_SOLUTION: ${{ steps.scope.outputs.solution }}
+        run: make rebuild SOLUTION="$SCOPE_SOLUTION"
 
       # The build above fails on warnings and errors only. Info-level suggestions are gated here, on
       # the projects the pull request changed, so the local `make verify-affected` gate and CI agree
@@ -228,7 +250,7 @@ jobs:
   build:
     name: ".NET · Build & unit tests (${{ matrix.tz }})"
     needs: changes
-    if: needs.changes.outputs.dotnet == 'true'
+    if: needs.changes.outputs.dotnet == 'true' && needs.changes.outputs.dotnet-scope != 'empty'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -237,9 +259,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # UTC is the primary leg: it is the only NuGet cache writer and collects coverage on ordinary main pushes.
-        # Coverage instrumentation adds start-up cost to every test module (~0.4s each serially, roughly a minute
-        # per run on this runner) and nothing on a pull request or release path gates on it, so those paths skip it.
+        # UTC is the primary leg and the only NuGet cache writer. No leg collects coverage: instrumentation slowed
+        # the main-push suite by about four minutes and nothing gates on it, so coverage.yml measures it off the
+        # path to the required check.
         #
         # Africa/Cairo is a release-only leg. GitHub runners are UTC, so a UTC-only pipeline structurally cannot
         # catch a local-offset bug: code that trusts DateTime.Kind, calls ToUniversalTime() on an Unspecified
@@ -253,7 +275,6 @@ jobs:
         tz: ${{ fromJSON((github.event_name == 'release' || inputs.release_checks) && '["UTC", "Africa/Cairo"]' || '["UTC"]') }}
     env:
       PRIMARY: ${{ matrix.tz == 'UTC' }}
-      COVERAGE: ${{ matrix.tz == 'UTC' && github.event_name != 'pull_request' && !(github.event_name == 'release' || inputs.release_checks == true) }}
     steps:
       - name: "Check out repository"
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -289,23 +310,37 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nuget-
 
+      # A pull request builds and tests the projects it changed, every transitive dependent, and their test
+      # projects; pushes, releases, dispatches, and changes outside any project build everything.
+      - name: "Select .NET scope"
+        id: scope
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: make ci-scope >> "$GITHUB_OUTPUT"
+
       # Build the dashboard SPAs BEFORE the NuGet token is present, so a malicious dependency lifecycle script
       # run by `npm ci` cannot read it. The token-bearing build below runs with BuildDashboardSpa=false and
       # only embeds the already-built wwwroot/dist.
       - name: "Build dashboard SPAs"
+        if: steps.scope.outputs.spa == 'true'
         run: make -j2 --output-sync=target dashboards DASHBOARD_BUILD_SCRIPT=build-only
 
       - name: "Build solution"
+        if: steps.scope.outputs.scope != 'empty'
         # Analyzers run in the parallel "Lint · .NET analyzers" job, so they are skipped on the path to the tests.
         # GITHUB_PACKAGES_TOKEN is scoped to this restore/build step only and is expanded from nuget.config's
         # %GITHUB_PACKAGES_TOKEN% credential entry.
         env:
           BuildDashboardSpa: "false"
           GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: make rebuild MSBUILD_ARGS=-p:RunAnalyzers=false
+          SCOPE_SOLUTION: ${{ steps.scope.outputs.solution }}
+        run: make rebuild SOLUTION="$SCOPE_SOLUTION" MSBUILD_ARGS=-p:RunAnalyzers=false
 
+      # Only a full run saves: a scoped restore downloads only its projects' packages, and a partial cache saved
+      # under a new lock-file key would be the exact-key hit every later full run restores from.
       - name: "Save NuGet cache"
-        if: env.PRIMARY == 'true' && steps.nuget-cache.outputs.cache-hit != 'true'
+        if: env.PRIMARY == 'true' && steps.scope.outputs.scope == 'full' && steps.nuget-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
         with:
           path: ~/.nuget/packages
@@ -313,28 +348,12 @@ jobs:
 
       # A static name: GitHub shows a step-name expression unevaluated until the step starts.
       - name: "Run unit tests"
+        if: steps.scope.outputs.scope == 'full' || steps.scope.outputs.unit_solution != ''
         env:
           TZ: ${{ matrix.tz }}
-          CI_COVERAGE: ${{ env.COVERAGE }}
+          CI_COVERAGE: "false"
+          CI_TEST_SOLUTION: ${{ steps.scope.outputs.unit_solution }}
         run: make ci-test
-
-      - name: "Generate coverage report"
-        if: always() && env.COVERAGE == 'true'
-        run: |
-          set -euo pipefail
-
-          if [ -z "$(find "${TEST_RESULTS_DIR}" -name '*.cobertura.xml' -print -quit 2>/dev/null)" ]; then
-            echo "::warning::No Cobertura coverage files were found under ${TEST_RESULTS_DIR}."
-            exit 0
-          fi
-
-          dotnet tool restore
-          dotnet reportgenerator \
-            -reports:"${TEST_RESULTS_DIR}/**/*.cobertura.xml" \
-            -targetdir:"./artifacts/coverage/report" \
-            -reporttypes:"Html;JsonSummary;MarkdownAssembliesSummary"
-          # MarkdownAssembliesSummary writes Summary.md: one line/branch row per assembly (~8 KB).
-          cat ./artifacts/coverage/report/Summary.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: "Upload test results"
         if: always()
@@ -345,18 +364,6 @@ jobs:
             artifacts/test-results/**/*.trx
             artifacts/test-results/**/*.dmp
             artifacts/test-results/**/*.crash.sequence.log
-          if-no-files-found: warn
-          retention-days: 14
-
-      - name: "Upload coverage report"
-        if: always() && env.COVERAGE == 'true'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: coverage-results
-          path: |
-            artifacts/test-results/**/*.cobertura.xml
-            artifacts/test-results/**/*.coverage
-            artifacts/coverage/report/**
           if-no-files-found: warn
           retention-days: 14
 
