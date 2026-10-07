@@ -878,6 +878,7 @@ Registered via `AddHeadlessBlobs(b => b.UseRedis(...))` or `AddNamed("name", i =
 - Default (`UseRedis`): registers `IBlobStorage` as unkeyed singleton and `IBlobContainerManager` as unkeyed singleton (`RedisBlobContainerManager`); registers `TimeProvider`, `IJsonOptionsProvider`, and `IJsonSerializer` as singletons (each via `TryAdd`, so existing registrations are kept).
 - Named (`AddNamed ... UseRedis`): registers `IBlobStorage` and `IBlobContainerManager` each as keyed singleton (`name`); same `TryAdd` registrations for shared services.
 - No native presigned URL support. `IPresignedUrlBlobStorage` is registered for Redis stores only by `UseSignedUrlEndpoint` from `Headless.Blobs.SignedUrlEndpoint`.
+- A connection or timeout failure is retried up to 3 times with a jittered back-off from 50 ms up to 500 ms. The back-off runs on the system clock; the registered `TimeProvider` stamps blob times only, so a faked clock never stalls a retry.
 
 ---
 

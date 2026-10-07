@@ -123,7 +123,9 @@ internal sealed class RedisBlobStorage : IBlobStorage
 
         var pipelineLogger = _logger;
 
-        _retryPipeline = new ResiliencePipelineBuilder { TimeProvider = timeProvider ?? TimeProvider.System }
+        // The back-off waits out a transient Redis failure in real time. The app clock stamps blob times only: a host
+        // that fakes it (a test) never advances past the first delay, so one failure would stall the operation.
+        _retryPipeline = new ResiliencePipelineBuilder { TimeProvider = TimeProvider.System }
             .AddRetry(
                 new RetryStrategyOptions
                 {
