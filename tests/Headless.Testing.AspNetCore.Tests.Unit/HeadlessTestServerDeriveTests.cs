@@ -6,6 +6,9 @@ using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Time.Testing;
 
 namespace Tests;
 
@@ -65,6 +68,86 @@ public sealed class HeadlessTestServerDeriveTests : TestBase
         // then
         variant.TimeProvider.Should().BeSameAs(_server.TimeProvider);
         variant.Services.GetRequiredService<TimeProvider>().GetUtcNow().Should().Be(advanced);
+    }
+
+    [Fact]
+    public async Task should_share_the_clock_when_the_base_services_construct_their_own()
+    {
+        // given
+        _server = new HeadlessTestServer<Program>(configureTestServices: services =>
+            services.AddSingleton<TimeProvider>(new FakeTimeProvider())
+        );
+        await _server.InitializeAsync();
+
+        // when
+        await using var variant = await _server.DeriveAsync();
+        var advanced = _server.AdvanceTime(TimeSpan.FromHours(1));
+
+        // then
+        variant.TimeProvider.Should().BeSameAs(_server.TimeProvider);
+        variant.Services.GetRequiredService<TimeProvider>().GetUtcNow().Should().Be(advanced);
+    }
+
+    [Fact]
+    public async Task should_share_a_clock_that_is_not_fake_with_the_variant()
+    {
+        // given
+        _server = new HeadlessTestServer<Program>(configureTestServices: services =>
+            services.AddSingleton(TimeProvider.System)
+        );
+        await _server.InitializeAsync();
+
+        // when
+        await using var variant = await _server.DeriveAsync();
+
+        // then
+        variant.TimeProvider.Should().BeSameAs(TimeProvider.System);
+    }
+
+    [Fact]
+    public async Task should_layer_variant_host_configuration_over_base_host_configuration()
+    {
+        // given
+        var baseMarker = new BaseMarker();
+        _server = new HeadlessTestServer<Program>(configureHost: builder =>
+            builder
+                .ConfigureServices(services => services.AddSingleton(baseMarker))
+                .ConfigureHostOptions(options => options.ShutdownTimeout = TimeSpan.FromSeconds(10))
+        );
+        await _server.InitializeAsync();
+        var variantMarker = new VariantMarker();
+
+        // when
+        await using var variant = await _server.DeriveAsync(configureHost: builder =>
+            builder
+                .ConfigureServices(services => services.AddSingleton(variantMarker))
+                .ConfigureHostOptions(options => options.ShutdownTimeout = TimeSpan.FromSeconds(20))
+        );
+
+        // then
+        variant.Services.GetRequiredService<BaseMarker>().Should().BeSameAs(baseMarker);
+        variant.Services.GetRequiredService<VariantMarker>().Should().BeSameAs(variantMarker);
+        variant
+            .Services.GetRequiredService<IOptions<HostOptions>>()
+            .Value.ShutdownTimeout.Should()
+            .Be(TimeSpan.FromSeconds(20));
+        _server.Services.GetService<VariantMarker>().Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_share_the_base_clock_when_base_host_configuration_registers_its_own_clock()
+    {
+        // given - the delegate builds a new clock each time it runs, and the variant re-runs it
+        _server = new HeadlessTestServer<Program>(configureHost: builder =>
+            builder.ConfigureServices(services => services.AddSingleton<TimeProvider>(new FakeTimeProvider()))
+        );
+        await _server.InitializeAsync();
+
+        // when
+        await using var variant = await _server.DeriveAsync();
+
+        // then
+        variant.Services.GetRequiredService<TimeProvider>().Should().BeSameAs(_server.TimeProvider);
     }
 
     [Fact]

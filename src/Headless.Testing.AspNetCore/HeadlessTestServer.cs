@@ -5,7 +5,6 @@ using System.Net.Sockets;
 using System.Security.Claims;
 using Headless.Checks;
 using Headless.Hosting;
-using Headless.Hosting.Initialization.Schema;
 using Headless.Messaging.Testing;
 using Headless.Testing.DependencyInjection;
 using Microsoft.AspNetCore.Hosting;
@@ -13,8 +12,8 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Time.Testing;
-using Respawn.Graph;
 using Xunit;
 
 namespace Headless.Testing.AspNetCore;
@@ -24,20 +23,38 @@ namespace Headless.Testing.AspNetCore;
 /// <see cref="FakeTimeProvider"/>, DI scope management, readiness waiting, and time advancement helpers.
 /// </summary>
 /// <remarks>
+/// <para>
 /// Designed as a building block for collection fixtures. Implements both <see cref="IAsyncLifetime"/>
 /// (for xUnit fixture support) and <see cref="IAsyncDisposable"/> (for <c>await using</c> patterns).
 /// Dispose is idempotent — safe to call from both xUnit lifecycle and consumer code.
+/// </para>
+/// <para>
+/// The server registers a <see cref="FakeTimeProvider"/> before <c>configureTestServices</c> runs, so a host that
+/// must run on another clock replaces the <see cref="System.TimeProvider"/> registration there. The server then
+/// starts on that clock; only <see cref="AdvanceTime"/> and <see cref="SetTime"/> need the fake one.
+/// </para>
 /// </remarks>
+/// <param name="configureTestServices">DI registrations applied after the application's own.</param>
+/// <param name="configureWebHost">Web host configuration, such as settings and the environment.</param>
+/// <param name="configureHost">
+/// Generic host configuration that has no web host equivalent, such as
+/// <see cref="HostingHostBuilderExtensions.UseDefaultServiceProvider(IHostBuilder, Action{ServiceProviderOptions})"/>,
+/// host options, or a logging provider that plugs into <see cref="IHostBuilder"/>. Runs after
+/// <paramref name="configureWebHost"/>, just before the host is built.
+/// </param>
+/// <param name="initializerTimeout">How long each <see cref="IInitializer"/> may take. Defaults to 60 seconds.</param>
 [PublicAPI]
 public sealed class HeadlessTestServer<TProgram>(
     Action<IServiceCollection>? configureTestServices = null,
     Action<IWebHostBuilder>? configureWebHost = null,
+    Action<IHostBuilder>? configureHost = null,
     TimeSpan? initializerTimeout = null
 ) : IAsyncLifetime
     where TProgram : class
 {
     private readonly Action<IServiceCollection>? _configureTestServices = configureTestServices;
     private readonly Action<IWebHostBuilder>? _configureWebHost = configureWebHost;
+    private readonly Action<IHostBuilder>? _configureHost = configureHost;
     private readonly TimeSpan _initializerTimeout = initializerTimeout ?? TimeSpan.FromSeconds(60);
     private readonly List<(Func<IServiceProvider, Task> Check, TimeSpan Timeout)> _readinessChecks = [];
     private Action<DatabaseResetOptions>? _configureDatabaseReset;
@@ -50,13 +67,16 @@ public sealed class HeadlessTestServer<TProgram>(
     private Func<IServiceProvider, DbConnection>? _resetConnectionProvider;
     private Func<Exception, bool>? _additionalTransientExceptionFilter;
     private volatile bool _disposed;
-    private FakeTimeProvider? _sharedClock;
+    private TimeProvider? _sharedClock;
 
     internal Func<DatabaseReset, DbConnection, CancellationToken, Task> ResetAction { get; set; } =
         (reset, connection, cancellationToken) => reset.ResetAsync(connection, cancellationToken);
 
-    /// <summary>The fake time provider registered in the test host.</summary>
-    public FakeTimeProvider TimeProvider { get; private set; } = null!;
+    /// <summary>
+    /// The <see cref="System.TimeProvider"/> the test host resolves: the <see cref="FakeTimeProvider"/> the server
+    /// registers, unless <c>configureTestServices</c> replaced it.
+    /// </summary>
+    public TimeProvider TimeProvider { get; private set; } = null!;
 
     /// <summary>The underlying <see cref="WebApplicationFactory{TEntryPoint}"/> for advanced scenarios.</summary>
     /// <remarks>
@@ -93,18 +113,42 @@ public sealed class HeadlessTestServer<TProgram>(
 
     /// <summary>Advances <see cref="TimeProvider"/> by the specified duration.</summary>
     /// <returns>The new UTC time after advancement.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when the server is not initialized, or when the host's <see cref="TimeProvider"/> is not a
+    /// <see cref="FakeTimeProvider"/>.
+    /// </exception>
     public DateTimeOffset AdvanceTime(TimeSpan delta)
     {
-        TimeProvider.Advance(delta);
-        return TimeProvider.GetUtcNow();
+        var clock = _GetFakeClock();
+        clock.Advance(delta);
+        return clock.GetUtcNow();
     }
 
     /// <summary>Sets <see cref="TimeProvider"/> to the specified UTC time.</summary>
     /// <returns>The new UTC time.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when the server is not initialized, or when the host's <see cref="TimeProvider"/> is not a
+    /// <see cref="FakeTimeProvider"/>.
+    /// </exception>
     public DateTimeOffset SetTime(DateTimeOffset value)
     {
-        TimeProvider.SetUtcNow(value);
-        return TimeProvider.GetUtcNow();
+        var clock = _GetFakeClock();
+        clock.SetUtcNow(value);
+        return clock.GetUtcNow();
+    }
+
+    private FakeTimeProvider _GetFakeClock()
+    {
+        return TimeProvider switch
+        {
+            FakeTimeProvider fake => fake,
+            null => throw new InvalidOperationException("Server not initialized. Call InitializeAsync() first."),
+            var other => throw new InvalidOperationException(
+                $"Moving time needs a {nameof(FakeTimeProvider)}, but the test host resolves "
+                    + $"{nameof(System.TimeProvider)} as '{other.GetType().FullName}'. Register a {nameof(FakeTimeProvider)} "
+                    + "in configureTestServices, or drive time through the clock you registered."
+            ),
+        };
     }
 
     /// <summary>
@@ -145,10 +189,12 @@ public sealed class HeadlessTestServer<TProgram>(
     /// </summary>
     /// <remarks>
     /// <para>
-    /// The variant runs this server's <c>configureTestServices</c> and <c>configureWebHost</c> delegates first, then
-    /// <paramref name="configureTestServices"/> and <paramref name="configureWebHost"/>, so the extra settings win and
-    /// the variant reaches the same containers and databases. It shares this server's <see cref="TimeProvider"/>:
-    /// advancing either clock advances both, so rows one host writes and the other reads agree on the time.
+    /// The variant runs this server's <c>configureTestServices</c>, <c>configureWebHost</c>, and <c>configureHost</c>
+    /// delegates first, then <paramref name="configureTestServices"/>, <paramref name="configureWebHost"/>, and
+    /// <paramref name="configureHost"/>, so the extra settings win and the variant reaches the same containers and
+    /// databases. It shares this server's <see cref="TimeProvider"/>, registered after both service delegates so
+    /// neither can replace it: advancing either clock advances both, so rows one host writes and the other reads
+    /// agree on the time.
     /// </para>
     /// <para>
     /// The variant is a separate host with its own background services, connection pools, and DI container. The
@@ -158,6 +204,7 @@ public sealed class HeadlessTestServer<TProgram>(
     /// </remarks>
     /// <param name="configureTestServices">DI registrations applied after this server's own.</param>
     /// <param name="configureWebHost">Web host configuration applied after this server's own.</param>
+    /// <param name="configureHost">Generic host configuration applied after this server's own.</param>
     /// <returns>The initialized variant.</returns>
     /// <exception cref="InvalidOperationException">
     /// Thrown when this server is not initialized, or when the variant's initialization fails (see
@@ -169,7 +216,8 @@ public sealed class HeadlessTestServer<TProgram>(
     /// </exception>
     public async Task<HeadlessTestServer<TProgram>> DeriveAsync(
         Action<IServiceCollection>? configureTestServices = null,
-        Action<IWebHostBuilder>? configureWebHost = null
+        Action<IWebHostBuilder>? configureWebHost = null,
+        Action<IHostBuilder>? configureHost = null
     )
     {
         Ensure.NotDisposed(_disposed, this);
@@ -181,6 +229,7 @@ public sealed class HeadlessTestServer<TProgram>(
 
         var baseConfigureTestServices = _configureTestServices;
         var baseConfigureWebHost = _configureWebHost;
+        var baseConfigureHost = _configureHost;
 
         var variant = new HeadlessTestServer<TProgram>(
             services =>
@@ -192,6 +241,11 @@ public sealed class HeadlessTestServer<TProgram>(
             {
                 baseConfigureWebHost?.Invoke(builder);
                 configureWebHost?.Invoke(builder);
+            },
+            builder =>
+            {
+                baseConfigureHost?.Invoke(builder);
+                configureHost?.Invoke(builder);
             },
             _initializerTimeout
         )
@@ -272,11 +326,6 @@ public sealed class HeadlessTestServer<TProgram>(
                 var options = new DatabaseResetOptions();
                 _configureDatabaseReset(options);
 
-                if (options.PreserveHostStateTables)
-                {
-                    _AddHostStateTables(options);
-                }
-
                 _resetConnectionProvider =
                     options.ConnectionProvider
                     ?? throw new InvalidOperationException(
@@ -290,7 +339,7 @@ public sealed class HeadlessTestServer<TProgram>(
                     await _resetConnection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
                     _databaseReset = await DatabaseReset
-                        .CreateAsync(_resetConnection, options, cancellationToken)
+                        .CreateAsync(_resetConnection, Services, options, cancellationToken)
                         .ConfigureAwait(false);
                 }
                 catch (Exception initializationException)
@@ -345,19 +394,6 @@ public sealed class HeadlessTestServer<TProgram>(
         finally
         {
             _resetGate.Release();
-        }
-    }
-
-    private void _AddHostStateTables(DatabaseResetOptions options)
-    {
-        // Features declare the tables they write once at startup or keep live while the host runs; the running host
-        // never rewrites them, so wiping them breaks every later test.
-        foreach (var contribution in Services.GetServices<SchemaContribution>())
-        {
-            foreach (var table in contribution.HostStateTables)
-            {
-                options.TablesToPreserve.Add(new Table(contribution.Schema, table));
-            }
         }
     }
 
@@ -435,8 +471,7 @@ public sealed class HeadlessTestServer<TProgram>(
 
     /// <summary>Starts the test host, registers the fake time provider, and runs readiness checks.</summary>
     /// <exception cref="InvalidOperationException">
-    /// Thrown when the host does not register a <see cref="FakeTimeProvider"/>, when an
-    /// <c>IInitializer</c> faults, or when <see cref="DisposeAsync"/> has already been called.
+    /// Thrown when an <c>IInitializer</c> faults, or when <see cref="DisposeAsync"/> has already been called.
     /// </exception>
     /// <exception cref="TimeoutException">
     /// Thrown when an <c>IInitializer</c> or a registered readiness check does not complete
@@ -467,17 +502,13 @@ public sealed class HeadlessTestServer<TProgram>(
             }
 
 #pragma warning disable CA2000 // Ownership transferred to _factory on success; finally disposes on failure
-            factory = new ServerFactory(_configureTestServices, _configureWebHost, _sharedClock);
+            factory = new ServerFactory(_configureTestServices, _configureWebHost, _configureHost, _sharedClock);
 #pragma warning restore CA2000
 
             // Force host startup — triggers ConfigureTestServices
             _ = factory.Services;
 
-            TimeProvider =
-                factory.Services.GetRequiredService<TimeProvider>() as FakeTimeProvider
-                ?? throw new InvalidOperationException(
-                    "Expected a FakeTimeProvider to be registered. Ensure AddTestTimeProvider() was not overridden by configureTestServices."
-                );
+            TimeProvider = factory.Services.GetRequiredService<TimeProvider>();
 
             // Await all IInitializer services (e.g. settings/permissions/features sync)
             var initializers = factory.Services.GetServices<IInitializer>();
@@ -589,27 +620,50 @@ public sealed class HeadlessTestServer<TProgram>(
     private sealed class ServerFactory(
         Action<IServiceCollection>? configureTestServices,
         Action<IWebHostBuilder>? configureWebHost,
-        FakeTimeProvider? sharedClock
+        Action<IHostBuilder>? configureHost,
+        TimeProvider? sharedClock
     ) : WebApplicationFactory<TProgram>
     {
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.ConfigureTestServices(services =>
             {
+                // The fake clock goes first so configureTestServices can replace it.
                 if (sharedClock is null)
                 {
                     services.AddTestTimeProvider();
                 }
-                else
-                {
-                    services.RemoveAll<TimeProvider>();
-                    services.AddSingleton<TimeProvider>(sharedClock);
-                }
 
                 configureTestServices?.Invoke(services);
+
+                // A derived server re-runs the base delegates, and a delegate that constructs its clock inline would
+                // otherwise give the variant a second clock that advancing the base server never moves.
+                if (sharedClock is not null)
+                {
+                    services.RemoveAll<TimeProvider>();
+                    services.AddSingleton(sharedClock);
+                }
             });
 
             configureWebHost?.Invoke(builder);
+        }
+
+        protected override IHost CreateHost(IHostBuilder builder)
+        {
+            configureHost?.Invoke(builder);
+
+            // Service callbacks a configureHost delegate adds run after the test services above, so a clock it
+            // registers would otherwise replace the shared one in a derived server.
+            if (sharedClock is not null)
+            {
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<TimeProvider>();
+                    services.AddSingleton(sharedClock);
+                });
+            }
+
+            return base.CreateHost(builder);
         }
     }
 }

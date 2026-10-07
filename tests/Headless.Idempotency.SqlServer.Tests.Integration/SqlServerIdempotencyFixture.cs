@@ -42,7 +42,7 @@ public sealed class SqlServerRcsiIdempotencyFixture
     public override bool ReadCommittedSnapshot => true;
 }
 
-public abstract class SqlServerIdempotencyFixtureBase : HeadlessSqlServerFixture, IAsyncLifetime, IIdempotencyFixture
+public abstract class SqlServerIdempotencyFixtureBase : HeadlessSqlServerFixture, IIdempotencyFixture
 {
     private const string _Records = $"[{HeadlessStorageDefaults.Schema}].[IdempotencyRecords]";
 
@@ -55,9 +55,8 @@ public abstract class SqlServerIdempotencyFixtureBase : HeadlessSqlServerFixture
     public string DatabaseConnectionString =>
         new SqlConnectionStringBuilder(ConnectionString) { InitialCatalog = Database }.ToString();
 
-    // Re-implemented rather than overridden: the base fixture's InitializeAsync is not virtual, and the database can
-    // only be created once its container accepts logins.
-    public new async ValueTask InitializeAsync()
+    // The database can only be created once the container accepts logins.
+    protected override async ValueTask InitializeAsync()
     {
         await base.InitializeAsync();
 

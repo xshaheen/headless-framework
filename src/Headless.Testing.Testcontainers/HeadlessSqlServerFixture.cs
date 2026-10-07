@@ -26,6 +26,12 @@ namespace Headless.Testing.Testcontainers;
 /// for the SQL Server integration suites. CI leaves reuse disabled, so reuse becomes a no-op and Ryuk
 /// reaps the container as usual.
 /// </para>
+/// <para>
+/// The lifecycle has the same shape as the <c>ContainerFixture</c>-based fixtures: xUnit calls
+/// <see cref="IAsyncLifetime.InitializeAsync"/> explicitly, and a subclass overrides <see cref="InitializeAsync"/> to
+/// create its own database or clear what a reused container left, after <c>base.InitializeAsync()</c> returns, and
+/// overrides <see cref="DisposeAsyncCore"/> for teardown.
+/// </para>
 /// </remarks>
 [PublicAPI]
 public class HeadlessSqlServerFixture : IAsyncLifetime
@@ -91,10 +97,22 @@ public class HeadlessSqlServerFixture : IAsyncLifetime
     /// <exception cref="TimeoutException">
     /// Thrown when no login succeeds within the startup timeout.
     /// </exception>
-    public async ValueTask InitializeAsync()
+    protected virtual async ValueTask InitializeAsync()
     {
         await _container.StartAsync().ConfigureAwait(false);
         await _WaitUntilLoginSucceedsAsync().ConfigureAwait(false);
+    }
+
+    ValueTask IAsyncLifetime.InitializeAsync()
+    {
+        return InitializeAsync();
+    }
+
+    /// <summary>Disposes the fixture through <see cref="DisposeAsyncCore"/>.</summary>
+    public async ValueTask DisposeAsync()
+    {
+        await DisposeAsyncCore().ConfigureAwait(false);
+        GC.SuppressFinalize(this);
     }
 
     /// <summary>Disposes the SQL Server container.</summary>
@@ -104,10 +122,9 @@ public class HeadlessSqlServerFixture : IAsyncLifetime
     /// with reuse disabled (CI) the same call removes it (and Ryuk backstops). An explicit <c>StopAsync</c>
     /// before dispose is redundant and only adds teardown latency.
     /// </remarks>
-    public async ValueTask DisposeAsync()
+    protected virtual async ValueTask DisposeAsyncCore()
     {
         await _container.DisposeAsync().ConfigureAwait(false);
-        GC.SuppressFinalize(this);
     }
 
     private async Task _WaitUntilLoginSucceedsAsync()

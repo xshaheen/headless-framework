@@ -17,14 +17,11 @@ namespace Tests;
 /// </remarks>
 [UsedImplicitly]
 [CollectionDefinition(DisableParallelization = true)]
-public sealed class SqlServerTestFixture
-    : HeadlessSqlServerFixture,
-        ICollectionFixture<SqlServerTestFixture>,
-        IAsyncLifetime
+public sealed class SqlServerTestFixture : HeadlessSqlServerFixture, ICollectionFixture<SqlServerTestFixture>
 {
-    async ValueTask IAsyncLifetime.InitializeAsync()
+    protected override async ValueTask InitializeAsync()
     {
-        await InitializeAsync();
+        await base.InitializeAsync();
         await using var connection = new SqlConnection(ConnectionString);
         await connection.OpenAsync();
         await using var command = new SqlCommand(

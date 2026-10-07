@@ -17,12 +17,11 @@ namespace Tests;
 [CollectionDefinition(DisableParallelization = true)]
 public sealed class SqlServerDistributedLockFixture
     : HeadlessSqlServerFixture,
-        ICollectionFixture<SqlServerDistributedLockFixture>,
-        IAsyncLifetime
+        ICollectionFixture<SqlServerDistributedLockFixture>
 {
-    async ValueTask IAsyncLifetime.InitializeAsync()
+    protected override async ValueTask InitializeAsync()
     {
-        await InitializeAsync();
+        await base.InitializeAsync();
         await using var connection = new SqlConnection(ConnectionString);
         await connection.OpenAsync();
         await using var command = new SqlCommand(

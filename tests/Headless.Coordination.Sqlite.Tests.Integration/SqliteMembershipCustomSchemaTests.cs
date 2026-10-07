@@ -1,6 +1,8 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Hosting.Initialization.Schema;
 using Headless.Testing.Tests;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
 
@@ -38,5 +40,34 @@ public sealed class SqliteMembershipCustomSchemaTests(SqliteMembershipFixture fi
                 $"{schema}_headless_schema_history",
             ]);
         tables.Should().NotContain(name => name.StartsWith("coordination_", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task should_declare_the_prefixed_membership_tables_as_host_state()
+    {
+        // given
+        var schema = $"coord_{Faker.Random.AlphaNumeric(8).ToLowerInvariant()}";
+        await using var node = await fixture.CreateNodeInSchemaAsync(
+            Faker.Random.AlphaNumeric(10),
+            "node-a",
+            schema,
+            AbortToken
+        );
+        await node.Membership.RegisterAsync(AbortToken);
+
+        // when
+        var contribution = node
+            .Services.GetServices<SchemaContribution>()
+            .Single(c => string.Equals(c.Feature, "Coordination", StringComparison.Ordinal));
+
+        // then: a test data reset matches these names against the stored tables, so they carry the schema prefix.
+        contribution
+            .HostStateTables.Should()
+            .BeEquivalentTo(
+                $"{schema}_coordination_node_generation",
+                $"{schema}_coordination_descriptor",
+                $"{schema}_coordination_liveness"
+            );
+        (await fixture.ListTablesAsync(AbortToken)).Should().Contain(contribution.HostStateTables);
     }
 }

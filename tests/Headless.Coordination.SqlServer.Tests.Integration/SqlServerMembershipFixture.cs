@@ -11,14 +11,12 @@ namespace Tests;
 [CollectionDefinition(DisableParallelization = true)]
 public sealed class SqlServerMembershipFixture
     : HeadlessSqlServerFixture,
-        IAsyncLifetime,
         ICollectionFixture<SqlServerMembershipFixture>,
         ICoordinationOracleFixture
 {
-    // Re-implemented rather than overridden: the base fixture's InitializeAsync is not virtual. The container is reused
-    // across runs, and the schema runner trusts its history, so a run that dropped the tables but not the history would
-    // leave the next run believing the tables exist; start every run from neither.
-    public new async ValueTask InitializeAsync()
+    // The container is reused across runs, and the schema runner trusts its history, so a run that dropped the tables
+    // but not the history would leave the next run believing the tables exist; start every run from neither.
+    protected override async ValueTask InitializeAsync()
     {
         await base.InitializeAsync();
         await using var connection = new SqlConnection(ConnectionString);

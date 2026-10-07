@@ -17,7 +17,6 @@ namespace Tests;
 [CollectionDefinition(DisableParallelization = true)]
 public sealed class ApiIdempotencySqlServerFixture
     : HeadlessSqlServerFixture,
-        IAsyncLifetime,
         ICollectionFixture<ApiIdempotencySqlServerFixture>
 {
     private const string _Database = "api_idempotency_test";
@@ -31,9 +30,8 @@ public sealed class ApiIdempotencySqlServerFixture
     private string PooledConnectionString =>
         new SqlConnectionStringBuilder(DatabaseConnectionString) { MaxPoolSize = 30 }.ToString();
 
-    // Re-implemented rather than overridden: the base fixture's InitializeAsync is not virtual, and the database can
-    // only be created once its container accepts logins.
-    public new async ValueTask InitializeAsync()
+    // The database can only be created once the container accepts logins.
+    protected override async ValueTask InitializeAsync()
     {
         await base.InitializeAsync();
 

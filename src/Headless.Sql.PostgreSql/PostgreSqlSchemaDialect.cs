@@ -77,6 +77,12 @@ public sealed class PostgreSqlSchemaDialect : ISchemaDialect
     }
 
     /// <inheritdoc />
+    public string HistoryTableName(string schema)
+    {
+        return SchemaRunner.HistoryTableName;
+    }
+
+    /// <inheritdoc />
     public string ReadHistorySql(string schema)
     {
         return $"""
