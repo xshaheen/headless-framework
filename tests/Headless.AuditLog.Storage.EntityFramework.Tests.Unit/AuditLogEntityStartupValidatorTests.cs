@@ -24,7 +24,7 @@ public sealed class AuditLogEntityStartupValidatorTests : TestBase
         var act = () => validator.ValidateAsync(AbortToken);
 
         // then
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*AddHeadlessAuditLog*");
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*ConfigureHeadlessAuditLog*");
     }
 
     [Fact]
@@ -98,7 +98,7 @@ public sealed class AuditLogEntityStartupValidatorTests : TestBase
     {
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
-            modelBuilder.AddHeadlessAuditLog(new AuditLogStorageOptions(), StorageNamingStyle.PascalCase);
+            modelBuilder.ConfigureHeadlessAuditLog(new AuditLogStorageOptions(), StorageNamingStyle.PascalCase);
         }
     }
 }

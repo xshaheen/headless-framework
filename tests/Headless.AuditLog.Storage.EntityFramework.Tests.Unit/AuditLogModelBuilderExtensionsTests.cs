@@ -176,7 +176,7 @@ public sealed class HeadlessAuditLogModelBuilderExtensionsTests : TestBase
     {
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
-            modelBuilder.AddHeadlessAuditLog(new AuditLogStorageOptions(), StorageNamingStyle.PascalCase);
+            modelBuilder.ConfigureHeadlessAuditLog(new AuditLogStorageOptions(), StorageNamingStyle.PascalCase);
         }
     }
 
@@ -185,7 +185,7 @@ public sealed class HeadlessAuditLogModelBuilderExtensionsTests : TestBase
     {
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
-            modelBuilder.AddHeadlessAuditLog(new AuditLogStorageOptions(), StorageNamingStyle.SnakeCase);
+            modelBuilder.ConfigureHeadlessAuditLog(new AuditLogStorageOptions(), StorageNamingStyle.SnakeCase);
         }
     }
 
@@ -195,7 +195,7 @@ public sealed class HeadlessAuditLogModelBuilderExtensionsTests : TestBase
     {
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
-            modelBuilder.AddHeadlessAuditLog(
+            modelBuilder.ConfigureHeadlessAuditLog(
                 new AuditLogStorageOptions { TableName = "TenantAudit" },
                 StorageNamingStyle.SnakeCase
             );
@@ -208,7 +208,7 @@ public sealed class HeadlessAuditLogModelBuilderExtensionsTests : TestBase
     {
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
-            modelBuilder.AddHeadlessAuditLog(this);
+            modelBuilder.ConfigureHeadlessAuditLog(this);
         }
     }
 
@@ -218,7 +218,7 @@ public sealed class HeadlessAuditLogModelBuilderExtensionsTests : TestBase
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             modelBuilder.Entity<AuditLogEntry>();
-            modelBuilder.AddHeadlessAuditLog(
+            modelBuilder.ConfigureHeadlessAuditLog(
                 new AuditLogStorageOptions { TableName = "pre_registered_audit" },
                 StorageNamingStyle.PascalCase
             );
@@ -230,11 +230,11 @@ public sealed class HeadlessAuditLogModelBuilderExtensionsTests : TestBase
     {
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
-            modelBuilder.AddHeadlessAuditLog(
+            modelBuilder.ConfigureHeadlessAuditLog(
                 new AuditLogStorageOptions { TableName = "first_audit", Schema = "first_schema" },
                 StorageNamingStyle.PascalCase
             );
-            modelBuilder.AddHeadlessAuditLog(
+            modelBuilder.ConfigureHeadlessAuditLog(
                 new AuditLogStorageOptions { TableName = "second_audit", Schema = "second_schema" },
                 StorageNamingStyle.SnakeCase
             );
@@ -247,7 +247,7 @@ public sealed class HeadlessAuditLogModelBuilderExtensionsTests : TestBase
     {
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
-            modelBuilder.AddHeadlessAuditLog(new AuditLogStorageOptions(), StorageNamingStyle.PascalCase);
+            modelBuilder.ConfigureHeadlessAuditLog(new AuditLogStorageOptions(), StorageNamingStyle.PascalCase);
             modelBuilder.Entity<AuditLogEntry>().IsAudited();
         }
     }

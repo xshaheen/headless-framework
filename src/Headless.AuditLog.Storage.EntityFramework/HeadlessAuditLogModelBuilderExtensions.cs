@@ -18,7 +18,7 @@ public static class HeadlessAuditLogModelBuilderExtensions
         /// Registers and configures the <see cref="AuditLogEntry"/> entity type, resolving
         /// <see cref="AuditLogStorageOptions"/> from the <paramref name="context"/>'s service provider and the naming
         /// style from its database provider (snake_case on PostgreSQL, PascalCase elsewhere). Call from
-        /// <c>OnModelCreating</c> with <c>modelBuilder.AddHeadlessAuditLog(this)</c> to avoid injecting the options
+        /// <c>OnModelCreating</c> with <c>modelBuilder.ConfigureHeadlessAuditLog(this)</c> to avoid injecting the options
         /// into the context.
         /// </summary>
         /// <param name="context">
@@ -29,7 +29,7 @@ public static class HeadlessAuditLogModelBuilderExtensions
         /// This method is idempotent. If the audit log entity is already configured, subsequent calls are no-ops.
         /// </remarks>
         /// <exception cref="ArgumentNullException"><paramref name="context"/> is <see langword="null"/>.</exception>
-        public ModelBuilder AddHeadlessAuditLog(DbContext context)
+        public ModelBuilder ConfigureHeadlessAuditLog(DbContext context)
         {
             Argument.IsNotNull(modelBuilder);
             Argument.IsNotNull(context);
@@ -37,7 +37,7 @@ public static class HeadlessAuditLogModelBuilderExtensions
             var options = context.GetService<IOptions<AuditLogStorageOptions>>().Value;
             var style = HeadlessStorageNaming.ForProvider(context.Database.ProviderName);
 
-            return modelBuilder.AddHeadlessAuditLog(options, style);
+            return modelBuilder.ConfigureHeadlessAuditLog(options, style);
         }
 
         /// <summary>
@@ -47,7 +47,7 @@ public static class HeadlessAuditLogModelBuilderExtensions
         /// <param name="options">Audit log storage options.</param>
         /// <param name="style">
         /// The naming style of the database the model targets. It must match the database: the raw providers and
-        /// <c>AddHeadlessAuditLog(DbContext)</c> use <see cref="StorageNamingStyle.SnakeCase"/> on PostgreSQL and
+        /// <c>ConfigureHeadlessAuditLog(DbContext)</c> use <see cref="StorageNamingStyle.SnakeCase"/> on PostgreSQL and
         /// <see cref="StorageNamingStyle.PascalCase"/> elsewhere; pass
         /// <c>HeadlessStorageNaming.ForProvider(Database.ProviderName)</c> to derive it.
         /// </param>
@@ -56,7 +56,7 @@ public static class HeadlessAuditLogModelBuilderExtensions
         /// This method is idempotent. If the audit log entity is already configured, subsequent calls are no-ops.
         /// </remarks>
         /// <exception cref="ArgumentNullException"><paramref name="options"/> is <see langword="null"/>.</exception>
-        public ModelBuilder AddHeadlessAuditLog(AuditLogStorageOptions options, StorageNamingStyle style)
+        public ModelBuilder ConfigureHeadlessAuditLog(AuditLogStorageOptions options, StorageNamingStyle style)
         {
             Argument.IsNotNull(modelBuilder);
             Argument.IsNotNull(options);

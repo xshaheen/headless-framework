@@ -23,7 +23,7 @@ public sealed class TenantCatalogEntityStartupValidatorTests : TestBase
         var act = () => validator.ValidateAsync(AbortToken);
 
         // then
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*AddHeadlessTenancyCatalog*");
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*ConfigureHeadlessTenancyCatalog*");
     }
 
     [Fact]
@@ -96,7 +96,7 @@ public sealed class TenantCatalogEntityStartupValidatorTests : TestBase
     {
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
-            // Registers the entity directly, bypassing AddHeadlessTenancyCatalog, to simulate a consumer
+            // Registers the entity directly, bypassing ConfigureHeadlessTenancyCatalog, to simulate a consumer
             // who mapped TenantRecord by hand and forgot the Headless configuration call.
             modelBuilder.Entity<TenantRecord>().Ignore(x => x.ExtraProperties);
         }
@@ -107,7 +107,7 @@ public sealed class TenantCatalogEntityStartupValidatorTests : TestBase
     {
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
-            modelBuilder.AddHeadlessTenancyCatalog(this);
+            modelBuilder.ConfigureHeadlessTenancyCatalog(this);
         }
     }
 }

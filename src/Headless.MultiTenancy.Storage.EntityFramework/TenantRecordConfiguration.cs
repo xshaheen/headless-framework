@@ -19,7 +19,7 @@ namespace Headless.MultiTenancy;
 /// <see langword="null"/>, for example the in-memory provider or a third-party relational provider such as
 /// MySQL or Oracle) gets no <c>UseCollation</c> call — the index still enforces uniqueness, just under that
 /// provider's default collation, which is often case-insensitive. Pin a binary collation for such a provider
-/// after <c>AddHeadlessTenancyCatalog(this)</c> with
+/// after <c>ConfigureHeadlessTenancyCatalog(this)</c> with
 /// <c>modelBuilder.Entity&lt;TenantRecord&gt;().Property(x =&gt; x.NormalizedIdentifier).UseCollation(...)</c>.
 /// </param>
 internal sealed class TenantRecordConfiguration(string? providerName) : IEntityTypeConfiguration<TenantRecord>

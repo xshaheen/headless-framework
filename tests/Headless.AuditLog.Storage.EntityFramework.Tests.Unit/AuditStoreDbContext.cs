@@ -16,7 +16,7 @@ public sealed class AuditStoreDbContext(DbContextOptions<AuditStoreDbContext> op
 {
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.AddHeadlessAuditLog(new AuditLogStorageOptions(), StorageNamingStyle.PascalCase);
+        modelBuilder.ConfigureHeadlessAuditLog(new AuditLogStorageOptions(), StorageNamingStyle.PascalCase);
         modelBuilder.Entity<AuditLogEntry>().HasKey(e => e.Id);
     }
 

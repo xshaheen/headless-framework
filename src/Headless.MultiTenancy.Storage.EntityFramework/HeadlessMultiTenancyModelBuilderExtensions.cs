@@ -14,7 +14,7 @@ public static class HeadlessMultiTenancyModelBuilderExtensions
         /// <summary>
         /// Applies the <see cref="TenantRecord"/> entity configuration, including the provider-specific
         /// unique-identifier collation. Call from <c>OnModelCreating</c> with
-        /// <c>modelBuilder.AddHeadlessTenancyCatalog(this)</c>.
+        /// <c>modelBuilder.ConfigureHeadlessTenancyCatalog(this)</c>.
         /// </summary>
         /// <param name="context">
         /// The <see cref="DbContext"/> being configured — used only to read
@@ -29,7 +29,7 @@ public static class HeadlessMultiTenancyModelBuilderExtensions
         /// calls are no-ops.
         /// </remarks>
         /// <exception cref="ArgumentNullException"><paramref name="context"/> is <see langword="null"/>.</exception>
-        public ModelBuilder AddHeadlessTenancyCatalog(DbContext context)
+        public ModelBuilder ConfigureHeadlessTenancyCatalog(DbContext context)
         {
             Argument.IsNotNull(modelBuilder);
             Argument.IsNotNull(context);

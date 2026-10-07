@@ -108,7 +108,7 @@ public sealed class PostgreSqlAuditLogModelParityTests(PostgreSqlAuditLogFixture
     {
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
-            modelBuilder.AddHeadlessAuditLog(storage, HeadlessStorageNaming.ForProvider(Database.ProviderName));
+            modelBuilder.ConfigureHeadlessAuditLog(storage, HeadlessStorageNaming.ForProvider(Database.ProviderName));
         }
     }
 }

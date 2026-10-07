@@ -14,6 +14,6 @@ public sealed class TenantCatalogDbContext(DbContextOptions<TenantCatalogDbConte
 {
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        modelBuilder.AddHeadlessTenancyCatalog(this);
+        modelBuilder.ConfigureHeadlessTenancyCatalog(this);
     }
 }

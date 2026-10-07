@@ -1209,11 +1209,11 @@ Custom validators implement `IHeadlessTenancyValidator` and register themselves 
 
 ### API and behavior
 
-- `setup.UseEntityFramework<TContext>()` — registers the EF storage provider via `HeadlessTenancyCatalogSetupBuilder`. It also registers a startup gate (`IHostedLifecycleService`) that validates `TContext`'s model was configured through `modelBuilder.AddHeadlessTenancyCatalog(this)`; a `DbContext` missing that call fails host startup with an actionable message instead of failing lazily the first time the catalog resolves a tenant.
-- `modelBuilder.AddHeadlessTenancyCatalog(DbContext context)` — applies the `TenantRecord` entity configuration, reading the active EF Core provider so the unique identifier index can be pinned to a deterministic collation
+- `setup.UseEntityFramework<TContext>()` — registers the EF storage provider via `HeadlessTenancyCatalogSetupBuilder`. It also registers a startup gate (`IHostedLifecycleService`) that validates `TContext`'s model was configured through `modelBuilder.ConfigureHeadlessTenancyCatalog(this)`; a `DbContext` missing that call fails host startup with an actionable message instead of failing lazily the first time the catalog resolves a tenant.
+- `modelBuilder.ConfigureHeadlessTenancyCatalog(DbContext context)` — applies the `TenantRecord` entity configuration, reading the active EF Core provider so the unique identifier index can be pinned to a deterministic collation
 - `TenantRecord` — the single-table entity: `Id`, `Identifier`, `NormalizedIdentifier`, `Name`, `IsEnabled`, `ExtraProperties`
 - Unique index on `NormalizedIdentifier`, pinned to a case- and accent-sensitive collation (`Latin1_General_100_BIN2` on SQL Server, `C` on PostgreSQL, `BINARY` on SQLite) so a lookup never matches a row differing only by case — SQL Server's default collation is case-insensitive and would otherwise break the catalog service's ordinal lookup contract
-- Other relational providers (MySQL, Oracle, and any third-party provider) get no collation pin and keep their default, which is often case-insensitive. Pin a binary collation yourself after the catalog configuration: `modelBuilder.AddHeadlessTenancyCatalog(this); modelBuilder.Entity<TenantRecord>().Property(x => x.NormalizedIdentifier).UseCollation("utf8mb4_bin");` (`utf8mb4_bin` on MySQL, `BINARY` on Oracle)
+- Other relational providers (MySQL, Oracle, and any third-party provider) get no collation pin and keep their default, which is often case-insensitive. Pin a binary collation yourself after the catalog configuration: `modelBuilder.ConfigureHeadlessTenancyCatalog(this); modelBuilder.Entity<TenantRecord>().Property(x => x.NormalizedIdentifier).UseCollation("utf8mb4_bin");` (`utf8mb4_bin` on MySQL, `BINARY` on Oracle)
 
 ### Design constraints
 
@@ -1239,7 +1239,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
-        modelBuilder.AddHeadlessTenancyCatalog(this);
+        modelBuilder.ConfigureHeadlessTenancyCatalog(this);
     }
 }
 
