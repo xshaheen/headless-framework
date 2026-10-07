@@ -39,14 +39,13 @@ internal sealed class RabbitMqReplyListener : IReplyListener
     public RabbitMqReplyListener(
         IConnectionChannelPool connectionChannelPool,
         Func<TransportMessage, CancellationToken, ValueTask> onReply,
-        TimeProvider timeProvider,
         ILogger logger
     )
     {
         _connectionChannelPool = connectionChannelPool;
         _onReply = onReply;
         _logger = logger;
-        _supervisor = new ReplyListenerSupervisor("RabbitMQ", this, _ServeOnceAsync, timeProvider, logger);
+        _supervisor = new ReplyListenerSupervisor("RabbitMQ", this, _ServeOnceAsync, logger);
 
         // Connecting runs in the background so a broker that is briefly unreachable at startup delays calls, which
         // wait for the address inside their own timeout, instead of failing the host.

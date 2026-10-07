@@ -149,7 +149,9 @@ internal sealed class FeaturesInitializationBackgroundService(
             ),
         };
 
+#pragma warning disable RS0030 // Fix makes code worse: registration feeds this TimeProvider.System; the seam lets the seeder's unit tests step through its ten-attempt back-off instead of waiting it out.
         var builder = new ResiliencePipelineBuilder { TimeProvider = retryTimeProvider };
+#pragma warning restore RS0030
         var pipeline = builder.AddRetry(options).Build();
 
         await pipeline

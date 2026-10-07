@@ -29,11 +29,8 @@ namespace Headless.Messaging.Redis;
 /// either side is connected to; each reply then crosses the cluster bus once per node.
 /// </para>
 /// </remarks>
-internal sealed class RedisReplyTransport(
-    IRedisConnectionPool connectionPool,
-    TimeProvider timeProvider,
-    ILogger<RedisReplyTransport> logger
-) : IReplyTransport
+internal sealed class RedisReplyTransport(IRedisConnectionPool connectionPool, ILogger<RedisReplyTransport> logger)
+    : IReplyTransport
 {
     public ValueTask<IReplyListener> OpenListenerAsync(
         Func<TransportMessage, CancellationToken, ValueTask> onReply,
@@ -44,9 +41,7 @@ internal sealed class RedisReplyTransport(
         cancellationToken.ThrowIfCancellationRequested();
 
 #pragma warning disable CA2000 // False positive: the returned listener is owned and disposed by the caller.
-        return ValueTask.FromResult<IReplyListener>(
-            new RedisReplyListener(connectionPool, onReply, timeProvider, logger)
-        );
+        return ValueTask.FromResult<IReplyListener>(new RedisReplyListener(connectionPool, onReply, logger));
 #pragma warning restore CA2000
     }
 

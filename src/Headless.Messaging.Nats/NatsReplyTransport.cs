@@ -24,11 +24,8 @@ namespace Headless.Messaging.Nats;
 /// discarded by the server without an error, which is what a reply to a caller that has gone needs.
 /// </para>
 /// </remarks>
-internal sealed class NatsReplyTransport(
-    INatsConnectionPool connectionPool,
-    TimeProvider timeProvider,
-    ILogger<NatsReplyTransport> logger
-) : IReplyTransport
+internal sealed class NatsReplyTransport(INatsConnectionPool connectionPool, ILogger<NatsReplyTransport> logger)
+    : IReplyTransport
 {
     /// <inheritdoc />
     /// <remarks>
@@ -52,7 +49,7 @@ internal sealed class NatsReplyTransport(
 
 #pragma warning disable CA2000 // False positive: the returned listener is owned and disposed by the caller.
         return ValueTask.FromResult<IReplyListener>(
-            new NatsReplyListener(connectionPool.GetConnection(), onReply, timeProvider, logger)
+            new NatsReplyListener(connectionPool.GetConnection(), onReply, logger)
         );
 #pragma warning restore CA2000
     }

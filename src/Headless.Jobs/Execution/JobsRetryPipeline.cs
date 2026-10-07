@@ -30,7 +30,9 @@ internal sealed class JobsRetryPipeline
 
         // Polly only sequences the attempts: the retry count is bounded by the row budget in ShouldHandle and every
         // delay comes from DelayGenerator, so the attempt cap and base delay here are deliberately inert.
+#pragma warning disable RS0030 // Fix makes code worse: these delays are the job's own retry schedule, paced on the app clock with its due times, leases and cancellation checks so a test drives them; a system-clock wait would put one step of the job lifecycle on a second clock.
         _pipeline = new ResiliencePipelineBuilder { TimeProvider = timeProvider }
+#pragma warning restore RS0030
             .AddRetry(
                 new RetryStrategyOptions
                 {

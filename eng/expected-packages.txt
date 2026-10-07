@@ -171,6 +171,7 @@ Headless.Settings.Abstractions
 Headless.Settings.Storage.EntityFramework
 Headless.Settings.Storage.PostgreSql
 Headless.Settings.Storage.SqlServer
+Headless.Settings.Testing
 Headless.Sitemaps
 Headless.Slugs
 Headless.Sms

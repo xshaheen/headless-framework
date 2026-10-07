@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Threading;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -32,9 +33,7 @@ namespace Headless.DistributedLocks.PostgreSql;
 internal sealed class PostgresReleaseSignal : IReleaseSignal, IAsyncDisposable
 {
     private const string _Channel = "headless_distributed_locks_release";
-    private static readonly TimeSpan _MaxReconnectBackoff = TimeSpan.FromSeconds(30);
     private readonly PollingReleaseSignal _local;
-    private readonly TimeProvider _timeProvider;
     private readonly ILogger<PostgresReleaseSignal> _logger;
     private readonly NpgsqlDataSource _dataSource;
     private readonly CancellationTokenSource _disposeTokenSource = new();
@@ -50,7 +49,10 @@ internal sealed class PostgresReleaseSignal : IReleaseSignal, IAsyncDisposable
     /// <param name="dataSource">
     /// The shared <see cref="NpgsqlDataSource"/> injected by the DI registration. Not disposed here.
     /// </param>
-    /// <param name="timeProvider">Time source used for reconnect backoff delays.</param>
+    /// <param name="timeProvider">
+    /// The app clock, which paces the local polling fallback alongside the waiter's acquire timeout. The reconnect
+    /// back-off (<see cref="ReconnectBackoff"/>) does not use it: it waits for the database to come back in real time.
+    /// </param>
     /// <param name="logger">Logger for listener reconnect and fanout-failure warnings.</param>
     public PostgresReleaseSignal(
         IOptions<PostgreSqlDistributedLockOptions> options,
@@ -60,7 +62,6 @@ internal sealed class PostgresReleaseSignal : IReleaseSignal, IAsyncDisposable
     )
     {
         Options = options.Value;
-        _timeProvider = timeProvider;
         _logger = logger;
         _local = new PollingReleaseSignal(timeProvider);
         _commandTimeoutSeconds = (int)Options.CommandTimeout.TotalSeconds;
@@ -138,6 +139,7 @@ internal sealed class PostgresReleaseSignal : IReleaseSignal, IAsyncDisposable
     private async Task _ListenAsync()
     {
         var cancellationToken = _disposeTokenSource.Token;
+        var backoff = new ReconnectBackoff();
         var consecutiveFailures = 0;
 
         while (!cancellationToken.IsCancellationRequested)
@@ -158,6 +160,7 @@ internal sealed class PostgresReleaseSignal : IReleaseSignal, IAsyncDisposable
 
                 // Listener is established; clear the backoff so a future transient failure restarts
                 // from the base delay rather than the previous (possibly capped) interval.
+                backoff.Reset();
                 consecutiveFailures = 0;
 
                 while (!cancellationToken.IsCancellationRequested)
@@ -174,18 +177,14 @@ internal sealed class PostgresReleaseSignal : IReleaseSignal, IAsyncDisposable
             catch (Exception exception)
             {
                 _logger.LogReleaseListenerReconnecting(exception, consecutiveFailures + 1);
-
-                // Exponential backoff with jitter so a PG restart does not trigger a synchronized
-                // reconnect storm across every instance: min(1s * 2^n, 30s) * [0.8, 1.2).
-                var exponential = TimeSpan.FromSeconds(
-                    Math.Min(Math.Pow(2, consecutiveFailures), _MaxReconnectBackoff.TotalSeconds)
-                );
                 consecutiveFailures++;
-#pragma warning disable CA5394 // Random is an insecure random number generator.
-                var jitter = 0.8 + (Random.Shared.NextDouble() * 0.4);
-#pragma warning restore CA5394
-                var delay = TimeSpan.FromMilliseconds(exponential.TotalMilliseconds * jitter);
-                await _timeProvider.Delay(delay, cancellationToken).ConfigureAwait(false);
+
+                // Jittered, so a PostgreSQL restart does not set off a synchronized reconnect storm across every
+                // instance; the wait runs on the system clock.
+                if (!await backoff.WaitAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    return;
+                }
             }
         }
 

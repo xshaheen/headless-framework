@@ -17,7 +17,7 @@
 [![GitHub Stars](https://img.shields.io/github/stars/xshaheen/headless-framework?style=social)](https://github.com/xshaheen/headless-framework)
 [![English](https://img.shields.io/badge/lang-English-2563EB?style=flat-square)](README.md)
 
-203 package &bull; نفس الـ setup في كل حتة &bull; بدّل أي provider بسطر واحد
+204 package &bull; نفس الـ setup في كل حتة &bull; بدّل أي provider بسطر واحد
 
 [ليه Headless](#ليه-headless) &bull; [ابدأ في 60 ثانية](#ابدأ-في-60-ثانية) &bull; [Setup واحد لكل المجالات](#setup-واحد-لكل-المجالات) &bull; [إيه اللي في الصندوق](#إيه-اللي-في-الصندوق) &bull; [فهرس الحزم](#فهرس-الحزم)
 
@@ -291,7 +291,7 @@ packages الـ providers دي packages عادية على NuGet. عشان تضي
 </div>
 
 <details dir="rtl" align="right">
-<summary><strong>كل الـ 203 package، مرتّبة حسب الـ domain</strong> — اضغط للعرض</summary>
+<summary><strong>كل الـ 204 package، مرتّبة حسب الـ domain</strong> — اضغط للعرض</summary>
 
 ### API & Web
 
@@ -672,6 +672,7 @@ Application settings ديناميكية متخزّنة في database. غيّر �
 | [Headless.Settings.Storage.EntityFramework](src/Headless.Settings.Storage.EntityFramework/README.md) | تخزين الـ settings على EF Core |
 | [Headless.Settings.Storage.PostgreSql](src/Headless.Settings.Storage.PostgreSql/README.md) | تخزين الـ settings في PostgreSQL |
 | [Headless.Settings.Storage.SqlServer](src/Headless.Settings.Storage.SqlServer/README.md) | تخزين الـ settings في SQL Server |
+| [Headless.Settings.Testing](src/Headless.Settings.Testing/README.md) | Settings snapshot في الـ memory للـ tests بس |
 
 ### SMS
 

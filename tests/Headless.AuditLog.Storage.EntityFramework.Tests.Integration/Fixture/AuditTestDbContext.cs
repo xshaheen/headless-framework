@@ -37,7 +37,7 @@ public class AuditTestDbContext(DbContextOptions options, IOptions<AuditLogStora
             b.Property(e => e.Id).ValueGeneratedOnAdd();
             b.HasOne(e => e.Order).WithMany().HasForeignKey(e => e.GeneratedOrderId);
         });
-        modelBuilder.AddHeadlessAuditLog(
+        modelBuilder.ConfigureHeadlessAuditLog(
             auditLogStorage.Value,
             HeadlessStorageNaming.ForProvider(Database.ProviderName)
         );

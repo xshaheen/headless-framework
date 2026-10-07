@@ -27,7 +27,7 @@ Code against `IAuditLog<TContext>`, `IAuditLogWriter<TContext>`, and `IReadAudit
 - Treat entity policy as tri-state. Explicit inclusion or exclusion wins; an unconfigured entity follows `AuditLogOptions.AuditByDefault`. Owned entries inherit eligibility from their root owner, and derived types inherit the nearest configured base policy unless overridden.
 - Apply property policy in this order: framework default exclusions, explicit `ExcludeFromAudit()`, and `PropertyFilter` veto before sensitive handling. A strategy passed to `IsAuditSensitive(...)` overrides the global `AuditLogOptions.SensitiveDataStrategy`.
 - Register the audit log with exactly one `services.AddHeadlessAuditLog(setup => setup.Use...)` call. Put global audit options in `setup.ConfigureOptions(...)` and storage-table options in `setup.ConfigureStorage(...)`.
-- For EF storage, call `setup.UseEntityFramework<TContext>()`, register the same context with EF Core, register a singleton `IDbContextFactory<TContext>` (`AddDbContextFactory<TContext>()` or `AddPooledDbContextFactory<TContext>()` for a plain `DbContext`, or `AddHeadlessDbContext<TContext>()` or `AddHeadlessDbContextPool<TContext>()` for a `HeadlessDbContext`; both Headless registrations add the factory) for read-back, and call `modelBuilder.AddHeadlessAuditLog(this)` inside `OnModelCreating`, which reads the storage options from the context's services and names every object in the database's convention (snake_case on PostgreSQL, PascalCase elsewhere). A startup gate validates this at boot and throws if it is missing. The factory must be a singleton (the default lifetime of all four registrations): the EF reader and startup gate are singletons that would capture a scoped or transient factory for the life of the host, so startup refuses one with `InvalidServiceLifetimeException`.
+- For EF storage, call `setup.UseEntityFramework<TContext>()`, register the same context with EF Core, register a singleton `IDbContextFactory<TContext>` (`AddDbContextFactory<TContext>()` or `AddPooledDbContextFactory<TContext>()` for a plain `DbContext`, or `AddHeadlessDbContext<TContext>()` or `AddHeadlessDbContextPool<TContext>()` for a `HeadlessDbContext`; both Headless registrations add the factory) for read-back, and call `modelBuilder.ConfigureHeadlessAuditLog(this)` inside `OnModelCreating`, which reads the storage options from the context's services and names every object in the database's convention (snake_case on PostgreSQL, PascalCase elsewhere). A startup gate validates this at boot and throws if it is missing. The factory must be a singleton (the default lifetime of all four registrations): the EF reader and startup gate are singletons that would capture a scoped or transient factory for the life of the host, so startup refuses one with `InvalidServiceLifetimeException`.
 - For raw storage, call `setup.UsePostgreSql(connectionString)` or `setup.UseSqlServer(connectionString)`, or the parameterless `UsePostgreSql()` / `UseSqlServer()` to reuse the connection registered by `AddPostgreSqlSql` / `AddSqlServerSql`; the provider creates the audit table at host startup and writes over its own connection.
 - Raw PostgreSQL and SQL Server packages provide storage only. Automatic change capture and the fluent metadata policy are EF-specific; there is no parallel provider-neutral policy registry.
 - Use `IAuditLog<TContext>` for explicit events (reads, reveals, failures) — do not insert `AuditLogEntry` rows directly. Multi-context applications resolve a distinct logger per owning context via the `TContext` type parameter.
@@ -311,10 +311,10 @@ EF Core storage provider for automatic audit entries and explicit event logging.
 - `EfAuditLogWriter<TContext>` — implements `IAuditLogWriter<TContext>`; saves each entry through a new context from `IDbContextFactory<TContext>`.
 - `EfReadAuditLog<TContext>` — implements `IReadAuditLog<TContext>` using `IDbContextFactory<TContext>` (no-tracking queries).
 - `AuditLogEntry` — EF entity excluded from automatic capture through EF model metadata, preventing recursion when `AuditByDefault` is enabled.
-- `HeadlessAuditLogModelBuilderExtensions.AddHeadlessAuditLog(DbContext)` — registers and configures the `AuditLogEntry` entity type, resolving `AuditLogStorageOptions` from the context's services and the naming style from `Database.ProviderName`; idempotent. The `(AuditLogStorageOptions, StorageNamingStyle)` overload takes both explicitly; pass `HeadlessStorageNaming.ForProvider(Database.ProviderName)` so the mapping matches the raw providers.
+- `HeadlessAuditLogModelBuilderExtensions.ConfigureHeadlessAuditLog(DbContext)` — registers and configures the `AuditLogEntry` entity type, resolving `AuditLogStorageOptions` from the context's services and the naming style from `Database.ProviderName`; idempotent. The `(AuditLogStorageOptions, StorageNamingStyle)` overload takes both explicitly; pass `HeadlessStorageNaming.ForProvider(Database.ProviderName)` so the mapping matches the raw providers.
 - Object names follow the database: on PostgreSQL the table is `audit_log_entries` with snake_case columns (`created_at`, `tenant_id`, …), key `pk_audit_log_entries`, and indexes `ix_audit_log_entries_tenant_time` and siblings; elsewhere the table is `AuditLogEntries` with PascalCase columns, key `PK_AuditLogEntries`, and indexes `IX_AuditLogEntries_TenantTime` and siblings.
 - Composite primary key `(CreatedAt, Id)` for partition-readiness; index set covers tenant+time, tenant+action+time, tenant+entity+time, tenant+actor+time, tenant+account+time, and correlation ID, each ending in `(CreatedAt, Id)` for keyset paging.
-- A startup validator (`AuditLogEntityStartupValidator`) checks that `AuditLogEntry` was fully configured through `modelBuilder.AddHeadlessAuditLog` and throws with a clear message if the call was omitted, even when the entity was pre-registered.
+- A startup validator (`AuditLogEntityStartupValidator`) checks that `AuditLogEntry` was fully configured through `modelBuilder.ConfigureHeadlessAuditLog` and throws with a clear message if the call was omitted, even when the entity was pre-registered.
 
 ### Design constraints
 
@@ -322,7 +322,7 @@ The composite primary key `(CreatedAt, Id)` is a deliberate time-partitioning ch
 
 `EfAuditLogStore` intentionally does not call `SaveChanges` — audit entries are tracked in the same `DbContext` and commit when the entity save runs. This requires that `AuditLogEntry` is in the same model as the audited entities. If you need to write audit entries to a different database or schema, use the raw ADO.NET providers instead.
 
-`AddHeadlessAuditLog` applies `ExcludeFromAudit()` to `AuditLogEntry`, including when the entity was pre-registered. Calling `IsAudited()` for `AuditLogEntry` later overrides that policy deterministically, but this is unsupported because it can recursively create audit rows.
+`ConfigureHeadlessAuditLog` applies `ExcludeFromAudit()` to `AuditLogEntry`, including when the entity was pre-registered. Calling `IsAudited()` for `AuditLogEntry` later overrides that policy deterministically, but this is unsupported because it can recursively create audit rows.
 
 JSON columns default to string columns (via value converters), universally portable across all EF-supported databases. Override to a native type via `AuditLogStorageOptions.JsonColumnType = AuditLogJsonColumnType.Jsonb` when targeting PostgreSQL for native `jsonb` semantics.
 
@@ -369,7 +369,7 @@ public sealed class AppDbContext : DbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
-        modelBuilder.AddHeadlessAuditLog(_auditLogStorage.Value);
+        modelBuilder.ConfigureHeadlessAuditLog(_auditLogStorage.Value);
 
         modelBuilder.Entity<Patient>(patient =>
         {
@@ -436,7 +436,7 @@ Entity policy is tri-state: `IsAudited()` and `ExcludeFromAudit()` override `Aud
 SQLite key override (required when targeting SQLite):
 
 ```csharp
-// After AddHeadlessAuditLog, so it replaces the default composite key.
+// After ConfigureHeadlessAuditLog, so it replaces the default composite key.
 modelBuilder.Entity<AuditLogEntry>().HasKey(e => e.Id); // single-column PK for SQLite
 ```
 

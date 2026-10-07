@@ -76,7 +76,7 @@ public sealed class NatsReplyTransportTests : TestBase
 
     private NatsReplyTransport _CreateTransport()
     {
-        return new NatsReplyTransport(_pool, TimeProvider.System, NullLogger<NatsReplyTransport>.Instance);
+        return new NatsReplyTransport(_pool, NullLogger<NatsReplyTransport>.Instance);
     }
 
     private static TransportMessage _Reply()

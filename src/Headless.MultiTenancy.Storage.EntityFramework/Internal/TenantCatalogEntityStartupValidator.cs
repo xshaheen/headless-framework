@@ -29,7 +29,7 @@ internal sealed class TenantCatalogEntityStartupValidator<TContext>(IServiceProv
         {
             throw new InvalidOperationException(
                 $"Headless.MultiTenancy: the registered DbContext `{context.GetType().FullName}` has not fully configured `{nameof(TenantRecord)}`. "
-                    + "Call `modelBuilder.AddHeadlessTenancyCatalog(this)` in your `OnModelCreating`."
+                    + "Call `modelBuilder.ConfigureHeadlessTenancyCatalog(this)` in your `OnModelCreating`."
             );
         }
     }

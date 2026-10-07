@@ -1062,9 +1062,9 @@ public sealed class DistributedLockTests : TestBase
     }
 
     [Fact]
-    public async Task should_retry_release_on_transient_error()
+    public async Task should_retry_release_on_transient_error_without_advancing_the_app_clock()
     {
-        // given
+        // given — the provider's app clock is a FakeTimeProvider this test never advances
         var storage = Substitute.For<IDistributedLockStorage>();
         var callCount = 0;
 
@@ -1081,29 +1081,43 @@ public sealed class DistributedLockTests : TestBase
                 return ValueTask.FromResult(true);
             });
 
-        var provider = new DistributedLock(
-            storage,
-            _bus,
-            new DistributedLockOptions(),
-            _guidGenerator,
-            _timeProvider,
-            LoggerFactory.CreateLogger<DistributedLock>()
-        );
+        var provider = _CreateProvider(storage: storage);
 
-        // when - run release task and advance time through backoff delays
-        var releaseTask = provider.ReleaseAsync("resource", "lock-id", AbortToken);
-
-        // Advance time to handle backoff delays
-        for (var i = 0; i < 10; i++)
-        {
-            await Task.Yield();
-            _timeProvider.Advance(TimeSpan.FromSeconds(1));
-        }
-
-        await releaseTask.Bounded();
+        // when — the back-off waits real time, so the release completes on its own
+        await provider.ReleaseAsync("resource", "lock-id", AbortToken).Bounded();
 
         // then
-        callCount.Should().BeGreaterThanOrEqualTo(3);
+        callCount.Should().Be(3);
+    }
+
+    [Fact]
+    public async Task should_retry_a_query_on_transient_error_without_advancing_the_app_clock()
+    {
+        // given — the provider's app clock is a FakeTimeProvider this test never advances
+        var storage = Substitute.For<IDistributedLockStorage>();
+        var callCount = 0;
+
+        storage
+            .ExistsAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                callCount++;
+                if (callCount < 2)
+                {
+                    throw new TimeoutException("Transient error");
+                }
+
+                return ValueTask.FromResult(true);
+            });
+
+        var provider = _CreateProvider(storage: storage);
+
+        // when
+        var isLocked = await provider.IsLockedAsync("resource", AbortToken).Bounded();
+
+        // then
+        isLocked.Should().BeTrue();
+        callCount.Should().Be(2);
     }
 
     [Fact]

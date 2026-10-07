@@ -28,7 +28,7 @@ internal sealed class AuditLogEntityStartupValidator<TContext>(IServiceProvider 
         {
             throw new InvalidOperationException(
                 $"Headless.AuditLog: the registered DbContext `{context.GetType().FullName}` has not fully configured `{nameof(AuditLogEntry)}`. "
-                    + "Call `modelBuilder.AddHeadlessAuditLog(this)` in your `OnModelCreating`."
+                    + "Call `modelBuilder.ConfigureHeadlessAuditLog(this)` in your `OnModelCreating`."
             );
         }
     }

@@ -1,16 +1,16 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
+using Headless.Threading;
 using Microsoft.Extensions.Time.Testing;
 
-namespace Tests.Transport;
+namespace Tests.Threading;
 
 /// <summary>
-/// A reply listener waits before each reconnect: about one second at first, doubling up to thirty, back to about one
-/// second once its channel opens, and jittered so a fleet that loses the broker at once does not reconnect in step.
+/// A reconnect loop waits before each attempt: about one second at first, doubling up to thirty, back to about one
+/// second once its connection is up, and jittered so a fleet that loses its server at once does not reconnect in step.
 /// </summary>
-public sealed class ReplyListenerBackoffTests : TestBase
+public sealed class ReconnectBackoffTests : TestBase
 {
     private static readonly TimeSpan _Floor = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan _Cap = TimeSpan.FromSeconds(30);
@@ -20,7 +20,7 @@ public sealed class ReplyListenerBackoffTests : TestBase
     {
         // given
         var clock = new FakeTimeProvider();
-        var backoff = new ReplyListenerBackoff(clock, new Random(1234));
+        var backoff = new ReconnectBackoff(clock, new Random(1234));
         double[] nominalSeconds = [1, 2, 4, 8, 16, 30, 30, 30];
 
         foreach (var nominal in nominalSeconds.Select(TimeSpan.FromSeconds))
@@ -81,9 +81,9 @@ public sealed class ReplyListenerBackoffTests : TestBase
     [Fact]
     public async Task should_start_over_at_the_floor_band_after_a_reset()
     {
-        // given — a listener that backed off several times before its channel opened
+        // given — a loop that backed off several times before its connection came up
         var clock = new FakeTimeProvider();
-        var backoff = new ReplyListenerBackoff(clock, new PinnedRandom(drawMaximum: false));
+        var backoff = new ReconnectBackoff(clock, new PinnedRandom(drawMaximum: false));
         for (var i = 0; i < 4; i++)
         {
             (await _WaitExactlyAsync(clock, backoff)).Should().BeTrue();
@@ -99,11 +99,11 @@ public sealed class ReplyListenerBackoffTests : TestBase
     }
 
     [Fact]
-    public async Task should_return_false_and_keep_the_delay_when_the_listener_closes_during_the_wait()
+    public async Task should_return_false_and_keep_the_delay_when_the_loop_stops_during_the_wait()
     {
         // given
         var clock = new FakeTimeProvider();
-        var backoff = new ReplyListenerBackoff(clock, new PinnedRandom(drawMaximum: false));
+        var backoff = new ReconnectBackoff(clock, new PinnedRandom(drawMaximum: false));
         using var closing = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
         var wait = backoff.WaitAsync(closing.Token).AsTask();
         wait.IsCompleted.Should().BeFalse();
@@ -146,8 +146,22 @@ public sealed class ReplyListenerBackoffTests : TestBase
         delay.Should().Be(_Cap);
     }
 
+    [Fact]
+    public async Task should_wait_real_time_when_no_clock_is_given()
+    {
+        // given — no clock, as a reconnect loop builds it; nothing advances any clock in this test
+        var backoff = new ReconnectBackoff(jitter: new PinnedRandom(drawMaximum: false));
+
+        // when
+        var waited = await backoff.WaitAsync(AbortToken).AsTask().WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+
+        // then
+        waited.Should().BeTrue();
+        backoff.Delay.Should().Be(TimeSpan.FromSeconds(1.5));
+    }
+
     // Waits the backoff's current delay on the fake clock and proves the wait ends exactly then, not a tick earlier.
-    private static async Task<bool> _WaitExactlyAsync(FakeTimeProvider clock, ReplyListenerBackoff backoff)
+    private static async Task<bool> _WaitExactlyAsync(FakeTimeProvider clock, ReconnectBackoff backoff)
     {
         var delay = backoff.Delay;
         var wait = backoff.WaitAsync(AbortToken).AsTask();
@@ -163,7 +177,7 @@ public sealed class ReplyListenerBackoffTests : TestBase
     private static async Task<List<TimeSpan>> _WaitSequenceAsync(bool drawMaximum, int count)
     {
         var clock = new FakeTimeProvider();
-        var backoff = new ReplyListenerBackoff(clock, new PinnedRandom(drawMaximum));
+        var backoff = new ReconnectBackoff(clock, new PinnedRandom(drawMaximum));
         var delays = new List<TimeSpan>(count);
         for (var i = 0; i < count; i++)
         {

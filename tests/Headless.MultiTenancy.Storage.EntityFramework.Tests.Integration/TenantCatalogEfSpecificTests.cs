@@ -236,7 +236,7 @@ public abstract class TenantCatalogEfSpecificTests<TFixture>(TFixture fixture) :
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
-            modelBuilder.AddHeadlessTenancyCatalog(this);
+            modelBuilder.ConfigureHeadlessTenancyCatalog(this);
         }
     }
 }

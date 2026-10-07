@@ -206,7 +206,7 @@ public sealed class RabbitMqReplyTransportTests(RabbitMqFixture fixture) : TestB
         );
         _pools.Add(pool);
 
-        return new RabbitMqReplyTransport(pool, TimeProvider.System, NullLogger<RabbitMqReplyTransport>.Instance);
+        return new RabbitMqReplyTransport(pool, NullLogger<RabbitMqReplyTransport>.Instance);
     }
 
     private ServiceProvider _BuildCaller()

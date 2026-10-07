@@ -128,7 +128,7 @@ internal sealed class RedisBlobStorage : IBlobStorage
 
         var pipelineLogger = _logger;
 
-        _retryPipeline = new ResiliencePipelineBuilder { TimeProvider = timeProvider ?? TimeProvider.System }
+        _retryPipeline = new ResiliencePipelineBuilder()
             .AddRetry(
                 new RetryStrategyOptions
                 {

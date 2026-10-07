@@ -48,8 +48,41 @@ public record ConsumeContext
     /// <c>DbContext</c> reaches the same unit through <c>db.UnitOfWork()</c>.
     /// <c>IBus</c> and <c>IQueue</c> never join this unit: a message published through them from the handler is sent
     /// immediately, survives a rolled-back attempt, and is published again on retry.
+    /// A consumer that depends on the unit calls <see cref="GetRequiredUnitOfWork"/> instead of checking for
+    /// <see langword="null" /> itself.
     /// </remarks>
     public IUnitOfWork? UnitOfWork { get; internal set; }
+
+    /// <summary>
+    /// Gets the unit of work the inbox transaction runner enlisted this attempt in, and throws when the attempt has
+    /// none.
+    /// </summary>
+    /// <remarks>
+    /// Use it in a consumer whose follow-up messages must commit with the inbox row:
+    /// <c>context.GetRequiredUnitOfWork().Outbox.PublishAsync(…)</c>. A rolled-back attempt then discards them, so a
+    /// retried attempt does not send duplicates the way an <c>IBus</c> or <c>IQueue</c> publish would. The unit is
+    /// present on every attempt of a durable consumer under the default <c>Transactional</c> inbox guarantee; the
+    /// exception names the configuration that removed it.
+    /// </remarks>
+    /// <returns>The attempt's unit of work.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// The attempt runs outside an inbox transaction: the host's minimum inbox guarantee or its storage provider is
+    /// weaker than <c>Transactional</c> (for EF Core storage, <c>EnableTransactionalInbox</c> is off), or the consumer is
+    /// an every-instance consumer, which has no durable inbox row.
+    /// </exception>
+#pragma warning disable CA1024 // False positive: it throws when the unit is absent, and a throwing getter would also throw whenever a debugger shows the context.
+    public IUnitOfWork GetRequiredUnitOfWork()
+#pragma warning restore CA1024
+    {
+        return UnitOfWork
+            ?? throw new InvalidOperationException(
+                $"The consume attempt for message '{MessageName}' has no unit of work: it runs outside an inbox "
+                    + "transaction. A unit exists only for a durable consumer under the Transactional inbox guarantee; "
+                    + "check that MessagingOptions.MinimumInboxGuarantee is Transactional and that the storage provider "
+                    + "enforces it (for EF Core storage, keep EnableTransactionalInbox on). An every-instance consumer "
+                    + "never has one; open a unit of work in the handler when it must publish atomically."
+            );
+    }
 
     internal object? Response { get; private set; }
 

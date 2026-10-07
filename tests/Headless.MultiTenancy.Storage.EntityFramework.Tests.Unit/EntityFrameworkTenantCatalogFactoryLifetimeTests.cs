@@ -54,7 +54,7 @@ public sealed class EntityFrameworkTenantCatalogFactoryLifetimeTests : TestBase
             .SelectMany(missing => missing.MissingServices)
             .Should()
             .NotContain(missing => missing.ServiceType == typeof(IDbContextFactory<CatalogDbContext>));
-        failures.Should().NotContain(failure => failure.Message.Contains("AddHeadlessTenancyCatalog"));
+        failures.Should().NotContain(failure => failure.Message.Contains("ConfigureHeadlessTenancyCatalog"));
     }
 
     [Fact]
@@ -119,7 +119,7 @@ public sealed class EntityFrameworkTenantCatalogFactoryLifetimeTests : TestBase
     {
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
-            modelBuilder.AddHeadlessTenancyCatalog(this);
+            modelBuilder.ConfigureHeadlessTenancyCatalog(this);
         }
     }
 }

@@ -31,10 +31,33 @@ public sealed class ReplyListenerSupervisorTests : TestBase
             "Test",
             _listener,
             _passes.ServeOnceAsync,
-            _clock,
             _logger,
-            new MinimumRandom()
+            backoffClock: _clock,
+            jitter: new MinimumRandom()
         );
+    }
+
+    [Fact]
+    public async Task should_reopen_on_the_system_clock_when_no_backoff_clock_is_given()
+    {
+        // given — built the way the providers build it: no clock, so no faked app clock can reach the backoff
+        var passes = new ScriptedPasses();
+        await using var supervisor = new ReplyListenerSupervisor(
+            "Test",
+            _listener,
+            passes.ServeOnceAsync,
+            _logger,
+            jitter: new MinimumRandom()
+        );
+        supervisor.Start();
+        var first = await passes.NextAsync();
+
+        // when — the pass fails, and nothing advances any clock
+        first.Outcome.SetException(new InvalidOperationException("broker unreachable"));
+
+        // then — the backoff waits real time and the next pass starts on its own
+        await passes.NextAsync().WaitAsync(_Wait, AbortToken);
+        passes.Started.Should().Be(2);
     }
 
     [Fact]

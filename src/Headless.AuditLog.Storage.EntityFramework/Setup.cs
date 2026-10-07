@@ -22,7 +22,7 @@ public static class SetupAuditLogEntityFramework
         /// </summary>
         /// <typeparam name="TContext">
         /// The <c>DbContext</c> subclass that owns the audit log table. The context must call
-        /// <c>modelBuilder.AddHeadlessAuditLog(this)</c> inside <c>OnModelCreating</c>, which is validated at
+        /// <c>modelBuilder.ConfigureHeadlessAuditLog(this)</c> inside <c>OnModelCreating</c>, which is validated at
         /// application startup.
         /// </typeparam>
         /// <remarks>
@@ -30,7 +30,7 @@ public static class SetupAuditLogEntityFramework
         /// initializer (<see cref="AuditLogStorageOptions.InitializeOnStartup"/>) has no effect
         /// in EF mode. A startup gate validates that the registered
         /// <typeparamref name="TContext"/> fully configured <c>AuditLogEntry</c> through
-        /// <c>modelBuilder.AddHeadlessAuditLog(...)</c> and throws <see cref="InvalidOperationException"/>
+        /// <c>modelBuilder.ConfigureHeadlessAuditLog(...)</c> and throws <see cref="InvalidOperationException"/>
         /// when the model did not run that configuration.
         /// </remarks>
         public HeadlessAuditLogSetupBuilder UseEntityFramework<TContext>()

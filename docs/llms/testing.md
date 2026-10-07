@@ -159,7 +159,7 @@ ASP.NET Core integration-test host wrapper with controllable time, DI-scope help
 - Replaces the host's `TimeProvider` with a `FakeTimeProvider` so tests control the app clock end-to-end.
 - `AdvanceTime(TimeSpan)` and `SetTime(DateTimeOffset)` move it and return the resulting UTC time.
 - `ExecuteScopeAsync(...)` opens a DI scope (optionally with a `ClaimsPrincipal`) for scoped operations.
-- `WaitForReadiness(...)` polls a host-readiness predicate before tests run.
+- `AddReadinessCheck(...)` registers a readiness check; `InitializeAsync()` runs the registered checks in order after host startup, each under its own timeout, before tests run.
 - `ConfigureDatabaseReset(...)` + `ResetDatabaseAsync()` integrate Respawner with retry. The reset keeps framework bookkeeping: both history tables always, and the host-state tables framework features declare by default (see [Tables a Reset Preserves](#tables-a-reset-preserves)).
 - `DeriveAsync(configureTestServices, configureWebHost)` starts an initialized variant of the server with extra settings layered on its own (see [Varying Host Settings per Test](#varying-host-settings-per-test)).
 - Database reset APIs default to the active xUnit test's cancellation token. The server retries
@@ -197,7 +197,7 @@ public sealed class TestFixture : IAsyncLifetime
 
     public async ValueTask InitializeAsync()
     {
-        App.WaitForReadiness(async sp =>
+        App.AddReadinessCheck(async sp =>
         {
             var bootstrapper = sp.GetRequiredService<IBootstrapper>();
             await bootstrapper.BootstrapAsync(); // joins the in-flight startup; returns once it completes
@@ -389,7 +389,7 @@ The same caveat applies to other databases with sub-tick storage precision (MySQ
 | `configureTestServices` | `Action<IServiceCollection>?` | `null` | Additional DI registrations layered on top of the application's own `ConfigureTestServices`. |
 | `configureWebHost` | `Action<IWebHostBuilder>?` | `null` | Additional web host configuration (e.g., environment, configuration sources). |
 | `initializerTimeout` | `TimeSpan?` | 60 s | Per-`IInitializer` wait budget before a `TimeoutException` is thrown. |
-| `WaitForReadiness(check, timeout)` | fluent | 30 s per check | Registers a post-startup readiness probe. Must be called before `InitializeAsync()`. |
+| `AddReadinessCheck(check, timeout)` | fluent | 30 s per check | Registers a post-startup readiness probe. Must be called before `InitializeAsync()`. |
 | `ConfigureDatabaseReset(configure)` | fluent | (disabled) | Opts into Respawner-based DB reset. Must be called before `InitializeAsync()`. |
 | `ResetDatabaseAsync(cancellationToken)` | `Task` | active xUnit test token | Resets database state and retries transient database or transport failures up to three times. |
 | `DeriveAsync(configureTestServices, configureWebHost)` | `Task<HeadlessTestServer<TProgram>>` | — | Starts an initialized variant with extra settings layered on this server's, sharing its clock and reset configuration. Requires an initialized server; the caller disposes the variant. |

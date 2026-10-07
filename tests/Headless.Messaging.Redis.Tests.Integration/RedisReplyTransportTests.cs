@@ -223,7 +223,7 @@ public sealed class RedisReplyTransportTests(RedisMessagingFixture fixture) : Te
 
     private static RedisReplyTransport _CreateTransport(IRedisConnectionPool pool)
     {
-        return new RedisReplyTransport(pool, TimeProvider.System, NullLogger<RedisReplyTransport>.Instance);
+        return new RedisReplyTransport(pool, NullLogger<RedisReplyTransport>.Instance);
     }
 
     private static TransportMessage _Reply(string inReplyTo, byte[]? body = null)

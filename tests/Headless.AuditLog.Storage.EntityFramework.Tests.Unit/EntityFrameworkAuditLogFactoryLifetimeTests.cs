@@ -52,7 +52,7 @@ public sealed class EntityFrameworkAuditLogFactoryLifetimeTests : TestBase
             .SelectMany(missing => missing.MissingServices)
             .Should()
             .NotContain(missing => missing.ServiceType == typeof(IDbContextFactory<AuditLogDbContext>));
-        failures.Should().NotContain(failure => failure.Message.Contains("AddHeadlessAuditLog"));
+        failures.Should().NotContain(failure => failure.Message.Contains("ConfigureHeadlessAuditLog"));
     }
 
     [Fact]
@@ -110,7 +110,7 @@ public sealed class EntityFrameworkAuditLogFactoryLifetimeTests : TestBase
     {
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
-            modelBuilder.AddHeadlessAuditLog(new AuditLogStorageOptions(), StorageNamingStyle.PascalCase);
+            modelBuilder.ConfigureHeadlessAuditLog(new AuditLogStorageOptions(), StorageNamingStyle.PascalCase);
         }
     }
 }

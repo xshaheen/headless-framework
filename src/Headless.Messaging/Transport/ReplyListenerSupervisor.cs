@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Checks;
+using Headless.Threading;
 using Microsoft.Extensions.Logging;
 
 namespace Headless.Messaging.Transport;
@@ -28,7 +29,7 @@ internal sealed class ReplyListenerSupervisor : IAsyncDisposable
     private readonly string _transport;
     private readonly IReplyListener _listener;
     private readonly Func<CancellationToken, Task<string>> _serveOnce;
-    private readonly ReplyListenerBackoff _backoff;
+    private readonly ReconnectBackoff _backoff;
     private readonly ILogger _logger;
     private readonly CancellationTokenSource _closing = new();
     private Task? _loop;
@@ -42,22 +43,26 @@ internal sealed class ReplyListenerSupervisor : IAsyncDisposable
     /// One pass of the channel, given the listener's closing token: opens it, calls <see cref="Ready(string)"/>, pumps
     /// replies until the channel ends, and returns why it ended.
     /// </param>
-    /// <param name="timeProvider">The clock the backoff runs on.</param>
     /// <param name="logger">The provider's logger, which the shared events are written to.</param>
+    /// <param name="backoffClock">
+    /// The clock the backoff runs on; <see cref="TimeProvider.System"/> when omitted. The providers omit it: the backoff
+    /// waits for a broker to come back in real time, and on a faked app clock that a test host never advances, a lost
+    /// channel would never reopen. Tests of the supervisor itself pass a fake to step through the delays.
+    /// </param>
     /// <param name="jitter">The backoff's jitter source; <see cref="Random.Shared"/> when omitted.</param>
     public ReplyListenerSupervisor(
         string transport,
         IReplyListener listener,
         Func<CancellationToken, Task<string>> serveOnce,
-        TimeProvider timeProvider,
         ILogger logger,
+        TimeProvider? backoffClock = null,
         Random? jitter = null
     )
     {
         _transport = transport;
         _listener = listener;
         _serveOnce = serveOnce;
-        _backoff = new ReplyListenerBackoff(timeProvider, jitter);
+        _backoff = new ReconnectBackoff(backoffClock, jitter);
         _logger = logger;
 
         // Cached, so a connection event that fires after disposal still reads a cancelled token instead of throwing.

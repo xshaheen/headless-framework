@@ -118,7 +118,7 @@ public sealed class RedisReplyTransportTests : TestBase
 
     private RedisReplyTransport _CreateTransport()
     {
-        return new RedisReplyTransport(_pool, TimeProvider.System, NullLogger<RedisReplyTransport>.Instance);
+        return new RedisReplyTransport(_pool, NullLogger<RedisReplyTransport>.Instance);
     }
 
     private static TransportMessage _Reply()

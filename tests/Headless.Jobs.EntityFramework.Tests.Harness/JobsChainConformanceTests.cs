@@ -11,6 +11,7 @@ using Headless.UnitOfWork;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Time.Testing;
 
 namespace Tests;
 
@@ -126,11 +127,23 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
 
     // An append that commits after discovery invalidates the first delete attempt through the NoAction FK.
     // The retry must discard that attempt, rediscover the new depth-three row, and report only the committed count.
-    public virtual async Task deleting_a_chain_retries_when_append_commits_after_discovery()
+    public virtual Task deleting_a_chain_retries_when_append_commits_after_discovery()
+    {
+        return _DeleteRetriesWhenAppendCommitsAfterDiscoveryAsync(timeProvider: null);
+    }
+
+    // The conflict back-off waits real time: a host whose app clock is faked and never advanced must still finish the
+    // retry instead of stalling at the first delay.
+    public virtual Task deleting_a_chain_retries_a_conflict_without_advancing_a_faked_app_clock()
+    {
+        return _DeleteRetriesWhenAppendCommitsAfterDiscoveryAsync(new FakeTimeProvider(DateTimeOffset.UtcNow));
+    }
+
+    private async Task _DeleteRetriesWhenAppendCommitsAfterDiscoveryAsync(TimeProvider? timeProvider)
     {
         var ct = AbortToken;
         await fixture.ResetDatabaseAsync(ct);
-        using var host = fixture.BuildHost("chain-delete-append");
+        using var host = fixture.BuildHost("chain-delete-append", timeProvider: timeProvider);
         await JobsCoordinationFixtureExtensions.CreateJobsSchemaAsync(host, ct);
         await host.StartAsync(ct);
 
@@ -169,7 +182,7 @@ public abstract class JobsChainConformanceTests<TFixture>(TFixture fixture) : Te
                 );
             };
 
-            var deleted = await persistence.RemoveTimeJobsAsync([rootId], ct);
+            var deleted = await persistence.RemoveTimeJobsAsync([rootId], ct).WaitAsync(TimeSpan.FromSeconds(30), ct);
 
             deleted.Should().Be(6);
             seamCalls.Should().Be(2, "the committed append must force one fresh-discovery retry");

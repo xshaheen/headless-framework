@@ -189,7 +189,7 @@ public sealed class HeadlessTestServerTests : TestBase
     {
         var checkRan = false;
         _server = new HeadlessTestServer<Program>();
-        _server.WaitForReadiness(_ =>
+        _server.AddReadinessCheck(_ =>
         {
             checkRan = true;
             return Task.CompletedTask;
@@ -203,7 +203,7 @@ public sealed class HeadlessTestServerTests : TestBase
     public async Task should_throw_timeout_when_readiness_check_exceeds_timeout()
     {
         _server = new HeadlessTestServer<Program>();
-        _server.WaitForReadiness(_ => Task.Delay(TimeSpan.FromSeconds(30)), timeout: TimeSpan.FromMilliseconds(50));
+        _server.AddReadinessCheck(_ => Task.Delay(TimeSpan.FromSeconds(30)), timeout: TimeSpan.FromMilliseconds(50));
 
         var act = async () => await _server.InitializeAsync();
 
@@ -225,7 +225,7 @@ public sealed class HeadlessTestServerTests : TestBase
     {
         _server = new HeadlessTestServer<Program>();
 
-        _server.WaitForReadiness(
+        _server.AddReadinessCheck(
             _ => Task.Delay(TimeSpan.FromSeconds(30), AbortToken),
             timeout: TimeSpan.FromMilliseconds(50)
         );

@@ -164,9 +164,9 @@ internal static class DistributedLockCoreHelpers
     /// <see cref="DistributedReadWriteLock"/>'s release path so both flows get the
     /// same retry budget and jitter.
     /// </summary>
-    public static ResiliencePipeline BuildReleasePipeline(TimeProvider timeProvider, ILogger logger)
+    public static ResiliencePipeline BuildReleasePipeline(ILogger logger)
     {
-        return new ResiliencePipelineBuilder { TimeProvider = timeProvider }
+        return new ResiliencePipelineBuilder()
             .AddRetry(
                 new RetryStrategyOptions
                 {

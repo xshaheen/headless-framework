@@ -28,7 +28,6 @@ namespace Headless.Messaging.RabbitMq;
 /// </remarks>
 internal sealed class RabbitMqReplyTransport(
     IConnectionChannelPool connectionChannelPool,
-    TimeProvider timeProvider,
     ILogger<RabbitMqReplyTransport> logger
 ) : IReplyTransport
 {
@@ -41,9 +40,7 @@ internal sealed class RabbitMqReplyTransport(
         cancellationToken.ThrowIfCancellationRequested();
 
 #pragma warning disable CA2000 // False positive: the returned listener is owned and disposed by the caller.
-        return ValueTask.FromResult<IReplyListener>(
-            new RabbitMqReplyListener(connectionChannelPool, onReply, timeProvider, logger)
-        );
+        return ValueTask.FromResult<IReplyListener>(new RabbitMqReplyListener(connectionChannelPool, onReply, logger));
 #pragma warning restore CA2000
     }
 
