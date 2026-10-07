@@ -14,6 +14,9 @@ internal sealed class FakeMembershipStore : IMembershipStore
 
     public bool ThrowOnRegister { get; set; }
 
+    /// <summary>The number of registration attempts that fail before allocation succeeds.</summary>
+    public int FailingRegistrations { get; set; }
+
     public bool ThrowOnHeartbeat { get; set; }
 
     public bool BlockOnHeartbeat { get; set; }
@@ -52,7 +55,7 @@ internal sealed class FakeMembershipStore : IMembershipStore
         cancellationToken.ThrowIfCancellationRequested();
         AllocateIncarnationCalls++;
 
-        if (ThrowOnRegister)
+        if (ThrowOnRegister || FailingRegistrations-- > 0)
         {
             throw new InvalidOperationException("registration unavailable");
         }

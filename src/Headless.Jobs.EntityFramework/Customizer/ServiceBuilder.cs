@@ -158,6 +158,7 @@ internal static class ServiceBuilder
             remedy: "Remove the application's IDbContextFactory<TContext> registration so Jobs registers its pooled singleton factory, or register it at the default singleton lifetime: AddDbContextFactory<TContext>() or AddPooledDbContextFactory<TContext>() for a plain DbContext, or AddHeadlessDbContext<TContext>() or AddHeadlessDbContextPool<TContext>() for a HeadlessDbContext."
         );
         services.AddHeadlessGuidGenerator();
+        services.AddStartupValidator<JobsClusterConcurrencyStartupValidator<TContext, TTimeJob, TCronJob>>();
         // Fail loud at DI-build time when the context cannot back coordinated writes, rather than at first
         // coordinated write where the provider's static factory would surface it as a TypeInitializationException.
         CoordinatedWriteContextFactory.RequireOptionsConstructor<TContext>();

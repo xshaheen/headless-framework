@@ -281,6 +281,12 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     internal bool RegisterBackgroundServices { get; set; } = true;
 
     /// <summary>
+    /// Controls whether the startup work that touches the store runs: cron seeding, the seeder delegates, the
+    /// fingerprint activation drain, and, on the durable store, registering this node with coordination before start.
+    /// </summary>
+    internal bool RegisterStartupInitializer { get; set; } = true;
+
+    /// <summary>
     /// Set by the durable operational-store provider to opt into coordinated membership: the node owner
     /// becomes <c>node@incarnation</c> and dead-node recovery flows through Headless.Coordination. The core
     /// pipeline reacts by requiring a coordination provider and wiring the recovery bridge + startup gate.
@@ -418,6 +424,25 @@ public sealed class JobsOptionsBuilder<TTimeJob, TCronJob> : IJobsOptionsSeeding
     public JobsOptionsBuilder<TTimeJob, TCronJob> DisableBackgroundServices()
     {
         RegisterBackgroundServices = false;
+        return this;
+    }
+
+    /// <summary>
+    /// Skips the startup work that touches the store: seeding code-defined cron jobs, the <c>UseJobsSeeder</c>
+    /// delegates, the cron fingerprint activation drain, and, on the durable store, registering this node with
+    /// coordination before the host starts. Use it on hosts that must not touch the store at startup, such as test
+    /// hosts. The managers stay available, and a startup validator still builds the job catalog and scheduling
+    /// policies, so a duplicate registration or an invalid policy fails startup rather than the first enqueue.
+    /// </summary>
+    /// <remarks>
+    /// Requires <see cref="DisableBackgroundServices"/>: the scheduler dispatches only after the activation drain, and
+    /// a durable claim stamps the node identity registered at startup. <c>AddHeadlessJobs</c> throws
+    /// <see cref="InvalidOperationException"/> when background services stay on.
+    /// </remarks>
+    /// <returns>This builder for method chaining.</returns>
+    public JobsOptionsBuilder<TTimeJob, TCronJob> DisableStartupInitialization()
+    {
+        RegisterStartupInitializer = false;
         return this;
     }
 

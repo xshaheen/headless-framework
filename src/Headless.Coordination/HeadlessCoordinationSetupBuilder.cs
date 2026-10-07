@@ -23,6 +23,23 @@ public sealed class HeadlessCoordinationSetupBuilder
 
     internal IList<ICoordinationProviderOptionsExtension> Extensions { get; } = [];
 
+    internal bool RegisterMembershipHeartbeat { get; private set; } = true;
+
+    /// <summary>
+    /// Skips the hosted service that registers this node at startup, heartbeats it, publishes membership events,
+    /// and leaves on shutdown. Use it on hosts that must not join the cluster on their own, such as test hosts that
+    /// drive <see cref="INodeMembership"/> directly; every other registration is unchanged. A node that keeps
+    /// running without heartbeats reads as dead to its peers once <see cref="CoordinationOptions.DeadThreshold"/>
+    /// passes, so a production node must keep the heartbeat.
+    /// </summary>
+    /// <returns>The same builder for chaining.</returns>
+    public HeadlessCoordinationSetupBuilder DisableMembershipHeartbeat()
+    {
+        RegisterMembershipHeartbeat = false;
+
+        return this;
+    }
+
     /// <summary>Binds <see cref="CoordinationOptions"/> from the supplied <see cref="IConfiguration"/> section.</summary>
     /// <param name="configuration">The configuration section to bind from.</param>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="configuration"/> is <see langword="null"/>.</exception>

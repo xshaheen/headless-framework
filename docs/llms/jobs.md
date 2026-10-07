@@ -62,10 +62,10 @@ Declare a job as a class that implements `IJob` (no arguments) or `IJob<TArgs>` 
 - Tune a declared job's deployment settings by identity with `Tune("billing.close-day", job => job.Concurrency(2))`, on `JobsOptionsBuilder` or `JobsContributionBuilder`. `JobTuningBuilder` sets `Concurrency(int)`, `ClusterConcurrency(int)`, `Priority(JobPriority)`, `FailurePolicy<TPolicy>()` or `FailurePolicy(p => ...)`, `Options(...)` (the node-death override for that job), and per-job `UseExecuteMiddleware<T>()` / `UseScheduleMiddleware<T>()` resolved from DI. Tuning never declares a job or changes its identity, argument type, or cron schedule. Configuration binds after every `Tune` call from `Headless:Jobs:Jobs:{identity}` (`Concurrency`, `ClusterConcurrency`, `Priority`, and the `FailurePolicy` section). An unknown identity, an unknown setting, or an invalid value fails startup.
 - Split execution between hosts that share modules with `RunOnly("orders.*", "billing.close-day")` on `JobsOptionsBuilder`. An entry is an exact identity or an `owner.*` pattern matching the text before the first `.`; calls accumulate, and an entry that matches no registered job fails startup. Filtered-out jobs stay registered: the host still schedules them, seeds their cron definitions, and shows them in the Dashboard, but its claim, acquire, timed-out sweep, and next-occurrence queries never lease their rows, so a host without the filter runs them. An in-tree chain step runs with the root that claimed it.
 - Use `Jobs.EntityFramework` for durable persistence. Without it, jobs live in memory and are lost on restart.
-- Prefer `jobs.UsePostgreSql<AppDbContext>(coordination => coordination.ClusterName = "orders")` or the SQL Server sibling after registering the application context (a plain `DbContext` or a `HeadlessDbContext`, pooled or per-scope). These configure models, native claims, same-database cluster membership, and the EF Core unit-of-work provider that gives coordinated writes a transaction to enlist in. For advanced composition, configure `UsePostgreSqlClaims()` or `UseSqlServerClaims()` inside the existing `UseEntityFramework` builder. Configure only one. Omitting both deliberately keeps the portable EF optimistic-CAS claim path. The selected package also fixes the GUID ordering every EF Jobs row is keyed with — SQL Server comb, PostgreSQL UUIDv7 — so occurrence ids stay index-friendly on the paths that do not run through the native claim strategy.
+- Prefer `jobs.UsePostgreSql<AppDbContext>(coordination => coordination.Configure(o => o.ClusterName = "orders"))` or the SQL Server sibling after registering the application context (a plain `DbContext` or a `HeadlessDbContext`, pooled or per-scope). These configure models, native claims, same-database cluster membership, and the EF Core unit-of-work provider that gives coordinated writes a transaction to enlist in. For advanced composition, configure `UsePostgreSqlClaims()` or `UseSqlServerClaims()` inside the existing `UseEntityFramework` builder. Configure only one. Omitting both deliberately keeps the portable EF optimistic-CAS claim path. The selected package also fixes the GUID ordering every EF Jobs row is keyed with — SQL Server comb, PostgreSQL UUIDv7 — so occurrence ids stay index-friendly on the paths that do not run through the native claim strategy.
 - The EF store creates a cron definition at runtime by reading the backend's **current statement** clock, and only PostgreSQL and SQL Server have one. On any other EF backend `ICronJobManager.AddAsync` / `AddBatchAsync` (coordinated or not) throws `NotSupportedException`; time jobs and the unseeded `IJobPersistenceProvider.InsertCronJobsAsync(jobs, ct)` overload still work. Seed cron definitions from `[Job(..., Cron = ...)]` attributes or position rows yourself on such a backend.
 - Custom `IJobPersistenceProvider` authors must not re-derive the coalesce-recovery decision. Snapshot `CronRecoveryPlanner.GetInspectionWindow(request)`, call `CronRecoveryPlanner.CreatePlan(...)`, and apply the returned `CronRecoveryPlan` with the store's own fenced writes. See [Applying a recovery pass](#applying-a-recovery-pass).
-- The application-context provider convenience methods register coordination themselves; do not register a second provider. For the advanced `UseEntityFramework` path, register `AddHeadlessCoordination(c => c.Use…(conn))` before `AddHeadlessJobs`. Without coordination, startup throws `InvalidOperationException` naming `AddHeadlessCoordination`.
+- The application-context provider convenience methods register coordination themselves and hand you its setup builder (`HeadlessCoordinationSetupBuilder`) for `Configure`, `ConfigureStorage`, and `DisableMembershipHeartbeat`; the provider is already selected, so do not call a `Use*` provider method on it or register a second `AddHeadlessCoordination`. For the advanced `UseEntityFramework` path, register `AddHeadlessCoordination(c => c.Use…(conn))` before `AddHeadlessJobs`. Without coordination, startup throws `InvalidOperationException` naming `AddHeadlessCoordination`.
 - On the durable path, node identity is `node@incarnation` (store-allocated by Coordination), not `Environment.MachineName`. `SchedulerOptionsBuilder.NodeId` is only a pre-registration display fallback — it is NOT the row owner on the durable path.
 - Running jobs slide their pickup lease forward on the `LeaseRenewalInterval` cadence (default ≈ `LeaseDuration / 3`), so `LeaseDuration` (default 5 min) no longer needs to exceed the longest job runtime. Keep `LeaseDuration` ≥ `FallbackIntervalChecker` to avoid spurious re-claims of rows that are claimed but not yet started.
 - Set `OnNodeDeath = NodeDeathPolicy.MarkFailed` or `Skip` on non-idempotent jobs — default `Retry` will re-run the job after a node crash.
@@ -83,7 +83,7 @@ Declare a job as a class that implements `IJob` (no arguments) or `IJob<TArgs>` 
 - Import `Headless.Jobs` for ordinary scheduling callbacks with the singular `JobOptionsBuilder`; the plural generic `JobsOptionsBuilder<TTimeJob, TCronJob>` configures Core. Callbacks must finish synchronously. Builders support sequential reuse with copied retry arrays; `Build()` alone does not validate or accept work. Nullable setters restore inheritance, and an unset atomic assertion cannot weaken an inherited requirement. `WithIdempotencyKey` / `WithIdempotencyTtl` author the enqueue idempotency window per call; startup policy callbacks reject them — the window is never inherited from host or function policy.
 - For multi-tenant hosts, enable Jobs tenancy through the root tenancy seam: `AddHeadlessTenancy(t => t.Jobs(jobs => jobs.PropagateTenant().RequireTenantOnEnqueue()))`. Time jobs then capture the ambient tenant at schedule time and restore it around every execution attempt. Pass `JobOptions.TenantId` to override capture, or `JobOptions.IsSystemJob = true` for a deliberate tenantless job. Cron is always system-scope — never give a cron definition a tenant; fan out explicit-tenant time jobs from application code. See [Tenant Propagation](#tenant-propagation).
 - `PauseCronAsync` / `ResumeCronAsync` control one durable cron definition by ID. Pause skips pending work but preserves `InProgress`; resume schedules one strictly-future occurrence and rebases the watermark to the resume instant, so the paused interval is never replayed as missed.
-- For testing, call `options.DisableBackgroundServices()` to suppress background scheduler execution.
+- For testing, call `options.DisableBackgroundServices()` to suppress background scheduler execution. Add `options.DisableStartupInitialization()` when the test host must not touch the store at startup either: it skips cron seeding, the seeders, the fingerprint activation drain, and, on the durable store, the node registration before start. It requires `DisableBackgroundServices()`; `AddHeadlessJobs` throws otherwise. A durable-store test host also calls `DisableMembershipHeartbeat()` on the coordination setup builder — inside `UsePostgreSql<TContext>(coordination => coordination.DisableMembershipHeartbeat())` or `UseSqlServer<TContext>(…)`, or on `AddHeadlessCoordination` on the advanced path (see [coordination.md](coordination.md)) — so the node neither registers nor beats, instead of removing hosted services from the collection. The host still runs `DeadOwnerRecoveryBridge`: it watches membership events and, on each reconcile tick of the registered clock, reads the liveness snapshot and releases rows owned by dead nodes. `DisableMembershipHeartbeat()` with background services on fails `AddHeadlessJobs`, because a node that claims rows without beating is declared dead by its peers, which release its in-flight rows while it still runs them. Without startup initialization, a startup validator still builds the job catalog and validates the scheduling policies.
 - To use `JobsStartMode.Manual`, set `scheduler.StartMode = JobsStartMode.Manual` inside `ConfigureScheduler`.
 - Managers remain supported: inject `ITimeJobManager<TTimeJob>` / `ICronJobManager<TCronJob>` for CRUD, batching, seeding, custom entities, chains, and advanced persistence workflows.
 
@@ -736,9 +736,13 @@ Limits and caveats:
   every node; during a rolling change each node enforces the value it has.
 - A non-timed chain descendant runs inside its root's execution under the root's claim, so it is neither counted when
   claimed nor gated when it starts. Once it runs, its `InProgress` lease counts against new claims.
-- The portable EF optimistic-CAS claim path cannot hold the lock and the lease in one transaction, so it throws
-  `NotSupportedException` naming the limited jobs. Use `UsePostgreSql`/`UsePostgreSqlClaims()` or
-  `UseSqlServer`/`UseSqlServerClaims()`.
+- The portable EF optimistic-CAS claim path cannot hold the lock and the lease in one transaction. A host that runs
+  background services and would claim through it fails at startup, before any hosted service starts, with an
+  `InvalidOperationException` naming the limited jobs and the reason: no native claim provider, or a jobs model the
+  native claim cannot serve (a global query filter, discriminator inheritance, or a shared table). Use
+  `UsePostgreSql`/`UsePostgreSqlClaims()` or `UseSqlServer`/`UseSqlServerClaims()`. A host with
+  `DisableBackgroundServices()` never claims and passes. The CAS path still throws `NotSupportedException` if a claim
+  reaches it.
 
 ## Progress reporting
 
@@ -994,7 +998,8 @@ Core implementation of the Jobs scheduler: in-memory persistence provider, execu
 - **Sliding lease renewal** (#316): jobs verify ownership immediately before user code starts, then extend `LockedUntil` on `LeaseRenewalInterval` cadence; cancel-on-loss if renewal affects zero rows or errors.
 - **Shared occupied-instant rule**: `CronOccurrenceAccounting` owns the single predicate deciding whether a `(CronJobId, ExecutionTime)` pair is already taken, plus the `CronOccurrenceInstantView` projection every provider reads it through. The raw persisted status is deliberately never materialized, so a status written by a newer binary lands on the fail-closed side instead of throwing. See [When a row already stands for the instant](#when-a-row-already-stands-for-the-instant).
 - **Storage-agnostic recovery planner**: `CronRecoveryPlanner` resolves the whole coalesce decision as a pure value (`CronRecoveryPlan`, `CronRecoveryWindow`, `CronRecoveryRunStep`, `CronRecoveryRunStepKind`, `CronRecoveryResolution`) that every provider — relational, in-memory, or third-party — applies with its own fenced writes. See [Applying a recovery pass](#applying-a-recovery-pass).
-- **`DisableBackgroundServices()`**: suppresses background execution; only the managers are registered (useful for worker-side-only nodes and test projects).
+- **`DisableBackgroundServices()`**: suppresses background execution; only the managers are registered (useful for enqueue-only nodes and test projects).
+- **`DisableStartupInitialization()`**: skips `JobsInitializationHostedService` (cron seeding, seeders, fingerprint activation drain) and, on the durable store, `JobsCoordinationStartupGate`. Requires `DisableBackgroundServices()`, because the scheduler dispatches only after the drain and a claim stamps the identity the gate registers.
 - **Seeder API**: `UseJobsSeeder(Func<ITimeJobManager<TTimeJob>, Task>)` and `UseJobsSeeder(Func<ICronJobManager<TCronJob>, Task>)` for startup data seeding; `IgnoreSeedDefinedCronJobs()` to skip auto-seeding of attribute-defined cron jobs.
 - **Feature-owned storage naming**: `ConfigureStorage(storage => storage.Schema = "…")` on `JobsOptionsBuilder` sets the database schema holding every Jobs table (default `"headless"`, the schema every Headless feature shares; see [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features)). The setting lives here rather than on a store provider's builder, so one value covers every table a provider maps — including non-generic ones like the idempotency reservation table — and cannot be honored by one registration path while another silently keeps the default. A second overload binds a configuration section directly: `ConfigureStorage(configuration.GetSection("Headless:Jobs:Storage"))`. Pass that section itself, so its keys are the option's property names. Using both is allowed — they compose as last call wins, the same rule the other features follow.
 - **GZip request payloads**: `UseGZipCompression()` on `JobsOptionsBuilder` compresses serialized request bytes. Decompression is capped at 64 MiB by default; use `UseGZipCompression(maxDecompressedBytes)` only when the application deliberately supports a different bounded payload size.
@@ -1226,6 +1231,7 @@ builder.Services.AddHeadlessJobs(options =>
 
     options.SetExceptionHandler<MyJobExceptionHandler>();
     options.DisableBackgroundServices(); // test / enqueue-only nodes
+    options.DisableStartupInitialization(); // test hosts: no store access at startup (requires the line above)
     options.UseGZipCompression(); // compress request payloads
     options.IgnoreSeedDefinedCronJobs(); // skip auto-seeding of attribute cron jobs
     options.UseJobsSeeder(async manager => // startup time-job seeder
@@ -1243,7 +1249,7 @@ builder.Services.AddHeadlessJobs(options =>
 
 - Registers `ITimeJobManager<TimeJobEntity>`, `ICronJobManager<CronJobEntity>`, and `IJobScheduler` as **singleton** autonomous facades over stateless singleton cores, plus the `IUnitOfWorkJobs` feature that binds the enlisted counterparts to a unit (`unit.Jobs`, `unit.TimeJobs<T>()`, `unit.CronJobs<T>()`; see [Unit of Work](unit-of-work.md)). A hosted service injects the autonomous ones directly.
 - Registers one non-generic `IJobScheduler` facade bound to the same configured time/cron entity pair.
-- Registers background hosted services: `JobsInitializationHostedService` and `JobsPostCommitSignalService` (always — the latter drains coordinated post-commit signals and is a harmless no-op on enqueue-only hosts), `JobsSchedulerBackgroundService`, `JobsFallbackBackgroundService`, and `JobsExecutionTaskHandler` (unless `DisableBackgroundServices()` is called).
+- Registers background hosted services: `JobsPostCommitSignalService` (always — it drains coordinated post-commit signals; on an enqueue-only host only its dashboard notification does anything), `JobsInitializationHostedService` (unless `DisableStartupInitialization()` is called), and `JobsSchedulerBackgroundService`, `JobsFallbackBackgroundService`, and `JobsExecutionTaskHandler` (unless `DisableBackgroundServices()` is called).
 - Registers `JobsTaskScheduler` (shared-thread-pool logical workers bounded by active async `MaxConcurrency`; dedicated threads only for `LongRunning`).
 - Registers a per-host `CronScheduleCache` (scheduler timezone) and the per-host `JobsRequestSerializationOptions` singleton (request JSON options, GZip, decompression cap) consumed by `JobsHelper` — no process-global serializer state.
 - Registers the Jobs tenancy primitives: `TenantPropagationScheduleMiddleware` / `TenantRestoreExecuteMiddleware` (`TryAddSingleton`), an `AsyncLocal`-backed `ICurrentTenantAccessor`, and the `ICurrentTenant` fallback (`NullCurrentTenant`, replaced by a real `CurrentTenant` once an HTTP / EF / consumer seam registers one). Inserts the schedule and execute tenancy middleware into the process-global registry once per process at `JobMiddlewarePriority.Tenancy`; both no-op until the tenancy seam enables `JobsTenancyOptions`.
@@ -1725,9 +1731,10 @@ builder.Services.AddHeadlessJobs(options =>
 
 - Replaces the in-memory `IJobPersistenceProvider` with `JobsEFCorePersistenceProvider`.
 - Registers `JobsOwnerIdentityAdapter` (overrides the default `DefaultJobsOwnerIdentity`).
-- Registers `JobsDeadOwnerReclaimer`, `DeadOwnerRecoveryBridge`, and `JobsCoordinationStartupGate` hosted services.
+- Registers `JobsDeadOwnerReclaimer`, `DeadOwnerRecoveryBridge`, and `JobsCoordinationStartupGate` hosted services. `DisableStartupInitialization()` drops the gate; the bridge stays, so an enqueue-only node still reclaims a dead node's work.
+- Registers a startup validator that fails when a job sets `ClusterMaxConcurrency` and a host running background services would claim through the portable CAS path (see [Cluster-wide concurrency](#cluster-wide-concurrency)).
 - Persists job rows in EF Core-mapped tables under the configured schema.
-- Never acquires a job with a `ClusterMaxConcurrency` through immediate dispatch; the native claim leases it against the limit. The portable optimistic-CAS claim path throws `NotSupportedException` when any registered job has a cluster limit (see [Cluster-wide concurrency](#cluster-wide-concurrency)).
+- Never acquires a job with a `ClusterMaxConcurrency` through immediate dispatch; the native claim leases it against the limit. A host that would claim a cluster-limited job through the portable optimistic-CAS path fails at startup (see [Cluster-wide concurrency](#cluster-wide-concurrency)).
 - Consumes the optional default `ICache` for cron-expression caching.
 - Fails fast at startup if no coordination provider is registered.
 
@@ -1977,7 +1984,7 @@ using Microsoft.EntityFrameworkCore;
 builder.Services.AddDbContext<AppDbContext>(options => options.UseNpgsql(connectionString));
 builder.Services.AddHeadlessJobs(jobs =>
 {
-    jobs.UsePostgreSql<AppDbContext>(coordination => coordination.ClusterName = "orders");
+    jobs.UsePostgreSql<AppDbContext>(coordination => coordination.Configure(o => o.ClusterName = "orders"));
     jobs.ConfigureJob<OrderReminderRequest>(new JobOptions { OnNodeDeath = NodeDeathPolicy.MarkFailed });
 });
 ```
@@ -2042,7 +2049,7 @@ using Microsoft.EntityFrameworkCore;
 builder.Services.AddDbContext<AppDbContext>(options => options.UseSqlServer(connectionString));
 builder.Services.AddHeadlessJobs(jobs =>
 {
-    jobs.UseSqlServer<AppDbContext>(coordination => coordination.ClusterName = "orders");
+    jobs.UseSqlServer<AppDbContext>(coordination => coordination.Configure(o => o.ClusterName = "orders"));
     jobs.ConfigureJob<OrderReminderRequest>(new JobOptions { OnNodeDeath = NodeDeathPolicy.MarkFailed });
 });
 ```

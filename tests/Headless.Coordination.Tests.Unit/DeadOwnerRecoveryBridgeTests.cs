@@ -44,8 +44,8 @@ public sealed class DeadOwnerRecoveryBridgeTests : TestBase
     {
         var membership = new FakeMembership();
         var reclaimer = Substitute.For<IDeadOwnerReclaimer>();
-        // A positive interval keeps the reconcile snapshot-read timeout from firing during direct calls; the fake
-        // clock only advances when a test asks it to, so the bounded read never times out under test.
+        // A one-minute interval keeps the reconcile snapshot-read timeout, which runs on the system clock, from
+        // firing during direct calls.
         reclaimer.ReconcileInterval.Returns(TimeSpan.FromMinutes(1));
         var bridge = new DeadOwnerRecoveryBridge<IDeadOwnerReclaimer>(
             membership,

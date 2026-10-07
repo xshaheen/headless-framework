@@ -103,6 +103,22 @@ internal sealed partial class CompatibleJobsClaimStrategy<TDbContext, TTimeJob, 
         }
     }
 
+    /// <summary>
+    /// Selects the strategy now and returns why the native claim cannot run against the model, or
+    /// <see langword="null"/> when it can.
+    /// </summary>
+    internal string? FindCasFallbackReason()
+    {
+        if (!ReferenceEquals(_GetStrategy(), casStrategy))
+        {
+            return null;
+        }
+
+        using var dbContext = dbContextFactory.CreateDbContext();
+
+        return NativeJobsClaimCompatibility.FindIncompatibility<TTimeJob, TCronJob>(dbContext.Model);
+    }
+
     private IJobsClaimStrategy<TTimeJob, TCronJob> _GetStrategy()
     {
         lock (_compatibilityLock)

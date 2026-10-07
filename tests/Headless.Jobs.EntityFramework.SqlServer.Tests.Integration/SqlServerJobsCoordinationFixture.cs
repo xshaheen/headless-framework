@@ -125,7 +125,7 @@ public class SqlServerJobsCoordinationFixture
     )
         where TContext : DbContext
     {
-        builder.UseSqlServer<TContext>(configureCoordination);
+        builder.UseSqlServer<TContext>(coordination => coordination.Configure(configureCoordination));
     }
 
     public DbConnection CreateConnection()
