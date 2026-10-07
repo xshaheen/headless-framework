@@ -11,6 +11,8 @@ Commands:
   run        Run one stage command, tee its output to <dir>/<name>.log, record its result, and
              exit with the command's status.
   summarize  Write <dir>/summary.json and <dir>/summary.md from what the stages left in <dir>.
+  failed     Print the test projects whose modules failed in a bundle (the latest verify or test
+             bundle by default), one per line, and name the other failed stages on stderr.
 """
 
 from __future__ import annotations
@@ -282,6 +284,63 @@ def render_markdown(summary: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
+# What to run to repeat a failed non-test stage on its own; the module rerun covers only unit-tests.
+STAGE_RERUN = {
+    "format": "make format-check-changed (make format writes the fix)",
+    "restore": "make build-affected",
+    "build": "make build-affected",
+    "analyzers": "make quality-analyzers-affected",
+    "coverage-merge": "make verify-affected",
+}
+
+
+def latest_bundle(root: Path) -> Path | None:
+    # Bundle names start with a UTC timestamp, so name order is run order.
+    bundles = sorted(
+        path for path in root.glob("*") if path.name.endswith(("-verify", "-test")) and (path / "summary.json").is_file()
+    )
+    return bundles[-1] if bundles else None
+
+
+def failed_projects(bundle: Path | None, root: Path) -> int:
+    """A narrow fix proves itself on the modules that failed; the full gate runs once at the end."""
+    if bundle is None:
+        bundle = latest_bundle(root)
+        if bundle is None:
+            print(f"[proof] no verify-affected or test-affected bundle under {root}. Run: make verify-affected", file=sys.stderr)
+            return 1
+    summary = json.loads((bundle / "summary.json").read_text(encoding="utf-8"))
+    unit_list = bundle / "unit.txt"
+    by_module = {Path(line).stem: line for line in unit_list.read_text(encoding="utf-8").split()} if unit_list.exists() else {}
+    projects: list[str] = []
+    for module in summary["tests"]["modules"]:
+        if not module["failed"]:
+            continue
+        name = module["module"]
+        project = by_module.get(name, f"tests/{name}/{name}.csproj")
+        if not (REPO_ROOT / project).is_file():
+            print(f"[proof] {name} failed, but no test project was found for it at {project}", file=sys.stderr)
+            return 1
+        projects.append(project)
+
+    stages = {stage["name"]: stage["exit_code"] for stage in summary["stages"]}
+    others = [name for name, code in stages.items() if code > 0 and name != "unit-tests"]
+    print(f"[proof] {bundle}: verdict {summary['verdict']}, {len(projects)} failed test module(s)", file=sys.stderr)
+    for name in others:
+        rerun = STAGE_RERUN.get(name, f"make {name}-test" if name.startswith("dashboard-") else "make verify-affected")
+        print(f"[proof]   stage {name} failed; re-run it with: {rerun}", file=sys.stderr)
+    if stages.get("unit-tests", 0) > 0 and not projects:
+        # A module that crashed or timed out leaves no failed result to select.
+        print("[proof]   unit-tests failed without a failed test result (crash or timeout); read unit-tests.log", file=sys.stderr)
+        return 1
+    if not projects:
+        if not others:
+            print("[proof]   nothing failed; nothing to re-run", file=sys.stderr)
+        return 1 if others else 0
+    print("\n".join(projects))
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest="command", required=True)
@@ -295,6 +354,9 @@ def main() -> int:
     skip.add_argument("--reason", required=True)
     summary = commands.add_parser("summarize", help="write summary.json and summary.md")
     summary.add_argument("--dir", required=True, type=Path)
+    failed = commands.add_parser("failed", help="print the test projects that failed in a bundle")
+    failed.add_argument("--dir", type=Path, help="bundle to read (default: the latest -verify or -test bundle under --root)")
+    failed.add_argument("--root", type=Path, default=REPO_ROOT / "artifacts" / "proof", help="where the bundles live")
     args = parser.parse_args()
 
     if args.command == "run":
@@ -304,6 +366,8 @@ def main() -> int:
         return run_stage(args.dir, args.name, command)
     if args.command == "skip":
         return skip_stage(args.dir, args.name, args.reason)
+    if args.command == "failed":
+        return failed_projects(args.dir, args.root)
     return summarize(args.dir)
 
 

@@ -83,6 +83,14 @@ AFFECTED_BASE := $(shell git rev-parse --abbrev-ref --symbolic-full-name '@{upst
 endif
 # Filter targets scope to one project when TEST_PROJECT is set and fall back to the whole solution.
 TEST_SCOPE_TARGET = $(if $(TEST_PROJECT),test-project,test)
+# repeated <cmd...>: run the command REPEAT times (a flake loop) and report how many runs failed; with REPEAT=1 it
+# runs once and keeps the command's own exit status. Every run builds incrementally, a no-op after the first.
+REPEAT ?= 1
+REPEATED = repeated() { \
+	local i=0 failed=""; if [ "$(REPEAT)" -eq 1 ]; then "$$@"; return; fi; \
+	while [ $$i -lt $(REPEAT) ]; do i=$$((i + 1)); echo "[repeat] run $$i of $(REPEAT)"; "$$@" || failed="$$failed $$i"; done; \
+	if [ -n "$$failed" ]; then echo "[repeat] failed run(s):$$failed of $(REPEAT)" >&2; return 3; fi; \
+	echo "[repeat] all $(REPEAT) runs passed"; }; repeated
 # Restore is the largest fixed cost in the scoped test loop and almost never has work to do: the
 # package graph moves only when Directory.Packages.props, the project file, or its lock file moves.
 # Assert the project is restored and current instead of restoring, and name the command that fixes
@@ -178,13 +186,15 @@ CI_COVERAGE ?= true
 .PHONY: help
 help: ## Show available commands.
 	@awk 'BEGIN {FS = ":.*##"; printf "\nCommands:\n"} /^[a-zA-Z0-9_.-]+:.*##/ { printf "  %-28s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
-	@printf "\nExamples:\n"
-	@printf "  make build\n"
+	@printf "\nExamples (inner loop first):\n"
+	@printf "  make test-class CLASS='*CultureHelperTests' TEST_PROJECT=tests/Headless.Extensions.Tests.Unit/Headless.Extensions.Tests.Unit.csproj   # seconds; add REPEAT=5 for a flake\n"
 	@printf "  make test-project TEST_PROJECT=tests/Headless.Api.Composition.Tests.Unit/Headless.Api.Composition.Tests.Unit.csproj\n"
-	@printf "  make test-class CLASS='*CultureHelperTests' TEST_PROJECT=tests/Headless.Extensions.Tests.Unit/Headless.Extensions.Tests.Unit.csproj\n"
-	@printf "  make verify-affected            # format + build + unit tests + analyzers + changed dashboards, with a proof bundle\n"
+	@printf "  make dashboard-jobs-test       # lint, type-check, unit-test, and build one dashboard SPA\n"
+	@printf "  make build-affected             # compile the change; the proof names each compiler error\n"
+	@printf "  make test-affected              # before the gate: every affected unit-test project, minutes when Jobs is in it\n"
+	@printf "  make verify-affected            # the pre-PR proof: format, build, unit tests, analyzers, changed dashboards\n"
+	@printf "  make test-failed                # after a narrow fix: only the modules the last proof failed; then verify-affected once\n"
 	@printf "  make check                      # the CI gate over the affected scope: check-layering, verify-affected\n"
-	@printf "  make test-affected\n"
 	@printf "  make quality-analyzers-affected\n"
 	@printf "  make bench-compare BENCH_AREA=Caching BENCH_FILTER='*Memory*' BASE=origin/main\n"
 	@printf "  make coverage-json\n"
@@ -263,6 +273,51 @@ doctor: ## Check prerequisites per capability group with a fix for each; JSON=1 
 	  else echo "data|sandbox|docker|gated|docker daemon not reachable; only STORE=postgres and db-q need it|start Docker Desktop"; fi; \
 	  echo "observe|sandbox|logs|ok|make logs reads $(SANDBOX_LOG)|"; \
 	} | $(doctor_report)
+
+# The five filter targets below select which tests RUN; on their own they do not narrow what gets
+# BUILT. Without TEST_PROJECT they delegate to `test`, which builds all ~430 projects and hands the
+# whole solution to the runner (integration modules included, so Docker is required) just to execute
+# the handful of matching tests. Add TEST_PROJECT=<csproj> and the same filter runs inside that one
+# project instead, which is what a scoped inner loop wants.
+.PHONY: test-class
+test-class: ## The inner loop: run tests matching CLASS (MTP --filter-class) inside TEST_PROJECT, else solution-wide; REPEAT=N runs it N times and counts the failed runs.
+	@test -n "$(CLASS)" || (echo "CLASS is required. Example: make test-class CLASS='*CultureHelperTests' TEST_PROJECT=tests/Headless.Extensions.Tests.Unit/Headless.Extensions.Tests.Unit.csproj" && exit 2)
+	@case "$(REPEAT)" in ''|*[!0-9]*|0) echo "REPEAT must be a positive whole number. Example: make test-class CLASS='*CultureHelperTests' TEST_PROJECT=<csproj> REPEAT=5" >&2; exit 2;; esac
+	@$(REPEATED) $(MAKE) --no-print-directory $(TEST_SCOPE_TARGET) TEST_FILTER='--filter-class "$(CLASS)"'
+
+.PHONY: test-method
+test-method: ## Run tests matching METHOD (MTP --filter-method). Solution-wide unless TEST_PROJECT is set.
+	@test -n "$(METHOD)" || (echo "METHOD is required. Example: make test-method METHOD='*utc_now_should_return_correct_utc_time'" && exit 2)
+	$(MAKE) $(TEST_SCOPE_TARGET) TEST_FILTER='--filter-method "$(METHOD)"'
+
+.PHONY: test-namespace
+test-namespace: ## Run tests matching NAMESPACE (MTP --filter-namespace). Solution-wide unless TEST_PROJECT is set.
+	@test -n "$(NAMESPACE)" || (echo "NAMESPACE is required. Example: make test-namespace NAMESPACE=Headless.Api.Tests" && exit 2)
+	$(MAKE) $(TEST_SCOPE_TARGET) TEST_FILTER='--filter-namespace "$(NAMESPACE)"'
+
+.PHONY: test-trait
+test-trait: ## Run tests matching TRAIT (MTP --filter-trait). Solution-wide unless TEST_PROJECT is set.
+	@test -n "$(TRAIT)" || (echo "TRAIT is required. Example: make test-trait TRAIT='Category=Unit'" && exit 2)
+	$(MAKE) $(TEST_SCOPE_TARGET) TEST_FILTER='--filter-trait "$(TRAIT)"'
+
+.PHONY: test-query
+test-query: ## Run tests matching QUERY (MTP --filter-query). Solution-wide unless TEST_PROJECT is set.
+	@test -n "$(QUERY)" || (echo "QUERY is required. Example: make test-query QUERY='/Headless.Extensions.Tests.Unit/Tests.Core/CultureHelperTests/*'" && exit 2)
+	$(MAKE) $(TEST_SCOPE_TARGET) TEST_FILTER='--filter-query "$(QUERY)"'
+
+# A narrow fix after a failed verify-affected proves itself on the modules that failed, in seconds to a minute,
+# instead of the whole gate again (one Jobs module alone takes ~4 min). It reads the latest -verify or -test
+# bundle's summary.json; the other failed stages are named with the target that repeats them. The final proof
+# is still one full verify-affected.
+.PHONY: test-failed
+test-failed: ## Re-run only the unit-test projects whose modules failed in the last verify-affected or test-affected proof (PROOF_BUNDLE=<dir> picks another).
+	@projects="$$($(PROOF) failed --root "$(ARTIFACTS_DIR)/proof" $(if $(PROOF_BUNDLE),--dir "$(PROOF_BUNDLE)",))"; \
+	if [ -z "$$projects" ]; then exit 0; fi; failed=""; \
+	for project in $$projects; do \
+		$(MAKE) --no-print-directory test-project TEST_PROJECT="$$project" || failed="$$failed $$project"; \
+	done; \
+	if [ -n "$$failed" ]; then printf '[test-failed] still failing:%s\n' "$$failed" >&2; exit 3; fi; \
+	echo "[test-failed] every previously failed module passes. Finish with: make verify-affected"
 
 .PHONY: bootstrap
 bootstrap: tools restore hooks ## Initialize a clone/worktree: restore tools, packages, and git hooks.
@@ -764,36 +819,6 @@ test-project-fast: ## Run one prebuilt test project without restore/build.
 	@test -n "$(TEST_PROJECT)" || (echo "TEST_PROJECT is required. Example: make test-project-fast TEST_PROJECT=tests/Headless.Api.Composition.Tests.Unit/Headless.Api.Composition.Tests.Unit.csproj" && exit 2)
 	@mkdir -p "$(TEST_RESULTS_DIR)"
 	$(DOTNET) test --project "$(TEST_PROJECT)" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$(TEST_RESULTS_DIR)" $(TEST_ARGS) $(TEST_FILTER)
-
-# The five filter targets below select which tests RUN; on their own they do not narrow what gets
-# BUILT. Without TEST_PROJECT they delegate to `test`, which builds all ~430 projects and hands the
-# whole solution to the runner (integration modules included, so Docker is required) just to execute
-# the handful of matching tests. Add TEST_PROJECT=<csproj> and the same filter runs inside that one
-# project instead, which is what a scoped inner loop wants.
-.PHONY: test-class
-test-class: ## Run tests matching CLASS (MTP --filter-class). Solution-wide unless TEST_PROJECT is set.
-	@test -n "$(CLASS)" || (echo "CLASS is required. Example: make test-class CLASS='*CultureHelperTests' TEST_PROJECT=tests/Headless.Extensions.Tests.Unit/Headless.Extensions.Tests.Unit.csproj" && exit 2)
-	$(MAKE) $(TEST_SCOPE_TARGET) TEST_FILTER='--filter-class "$(CLASS)"'
-
-.PHONY: test-method
-test-method: ## Run tests matching METHOD (MTP --filter-method). Solution-wide unless TEST_PROJECT is set.
-	@test -n "$(METHOD)" || (echo "METHOD is required. Example: make test-method METHOD='*utc_now_should_return_correct_utc_time'" && exit 2)
-	$(MAKE) $(TEST_SCOPE_TARGET) TEST_FILTER='--filter-method "$(METHOD)"'
-
-.PHONY: test-namespace
-test-namespace: ## Run tests matching NAMESPACE (MTP --filter-namespace). Solution-wide unless TEST_PROJECT is set.
-	@test -n "$(NAMESPACE)" || (echo "NAMESPACE is required. Example: make test-namespace NAMESPACE=Headless.Api.Tests" && exit 2)
-	$(MAKE) $(TEST_SCOPE_TARGET) TEST_FILTER='--filter-namespace "$(NAMESPACE)"'
-
-.PHONY: test-trait
-test-trait: ## Run tests matching TRAIT (MTP --filter-trait). Solution-wide unless TEST_PROJECT is set.
-	@test -n "$(TRAIT)" || (echo "TRAIT is required. Example: make test-trait TRAIT='Category=Unit'" && exit 2)
-	$(MAKE) $(TEST_SCOPE_TARGET) TEST_FILTER='--filter-trait "$(TRAIT)"'
-
-.PHONY: test-query
-test-query: ## Run tests matching QUERY (MTP --filter-query). Solution-wide unless TEST_PROJECT is set.
-	@test -n "$(QUERY)" || (echo "QUERY is required. Example: make test-query QUERY='/Headless.Extensions.Tests.Unit/Tests.Core/CultureHelperTests/*'" && exit 2)
-	$(MAKE) $(TEST_SCOPE_TARGET) TEST_FILTER='--filter-query "$(QUERY)"'
 
 # The affected set comes from the ProjectReference graph (scripts/project-graph.py), not from
 # directory names: changed projects plus their direct dependents, and every unit- or integration-test

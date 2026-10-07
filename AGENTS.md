@@ -41,19 +41,20 @@ The solution has ~430 projects. A full build takes a long time, and the integrat
 
 `make affected` prints that set, computed from the `ProjectReference` graph (`scripts/project-graph.py`) against `@{upstream}` (else `origin/main`), uncommitted and untracked files included. A change to a build-wide file (`global.json`, `Directory.*.props`, `.editorconfig`, `eng/DashboardSpa.targets`) selects every project below it.
 
-Use the affected and project-scoped targets: `verify-affected`, `build-affected`, `test-affected`, `test-affected-integration`, `quality-analyzers-affected`, `build-project`, and `test-project`. Run a solution-wide target (`build`, `rebuild`, `test`, `test-unit`, `test-integration`, `coverage`, `quality-analyzers`) only when the user asks for it, or when the change touches shared build files such as `Directory.Build.props`, `Directory.Packages.props`, or `eng/`.
+Use the affected and project-scoped targets: `test-class` with `TEST_PROJECT`, `test-project`, `build-project`, `build-affected`, `test-affected`, `test-failed`, `verify-affected`, `test-affected-integration`, and `quality-analyzers-affected`. Run a solution-wide target (`build`, `rebuild`, `test`, `test-unit`, `test-integration`, `coverage`, `quality-analyzers`) only when the user asks for it, or when the change touches shared build files such as `Directory.Build.props`, `Directory.Packages.props`, or `eng/`.
 
 ### Scope a run
 
-- **Start with `make test-affected`.** It builds the affected set in one solution-filter build, then runs every affected `*.Tests.Unit` project to completion: one failing project does not hide the rest. If the build fails, it skips the tests rather than run them against stale binaries.
-- **Run `make test-affected-integration` when you change provider behavior.** It runs the affected `*.Tests.Integration` projects and needs Docker. CI does not run them, so a local run is the only check.
-- **Set `TEST_PROJECT` to scope a filtered run.** `test-class`, `test-method`, `test-namespace`, `test-trait`, and `test-query` choose which tests run. Without `TEST_PROJECT`, they build all ~430 projects and pass the whole solution to the runner, integration modules included. With it, the filter applies inside that one project:
+- **Start with `make test-class` and `TEST_PROJECT`.** It runs the matching tests inside one project in seconds. Without `TEST_PROJECT`, `test-class`, `test-method`, `test-namespace`, `test-trait`, and `test-query` build all ~430 projects and pass the whole solution to the runner, integration modules included. Add `REPEAT=5` to chase a flaky test; it reports which runs failed:
 
   ```sh
   make test-class CLASS='*CultureHelperTests' TEST_PROJECT=tests/Headless.Extensions.Tests.Unit/Headless.Extensions.Tests.Unit.csproj
   ```
 
-  To scope a build, use `make build-project PROJECT=…`.
+  To scope a build, use `make build-project PROJECT=…` or `make build-affected`.
+- **Run `make test-affected` before the gate, not in the loop.** It builds the affected set in one solution-filter build, then runs every affected `*.Tests.Unit` project to completion: one failing project does not hide the rest. If the build fails, it skips the tests rather than run them against stale binaries. One module can dominate it: `Headless.Jobs.Composition.Tests.Unit` alone takes about four minutes.
+- **Run `make test-affected-integration` when you change provider behavior.** It runs the affected `*.Tests.Integration` projects and needs Docker. CI does not run them, so a local run is the only check.
+- **After a narrow fix, run `make test-failed`, not the whole gate.** It reads the latest `verify-affected` or `test-affected` proof bundle and re-runs only the test projects whose modules failed. It names any other failed stage with the target that repeats it. Finish with one full `make verify-affected`.
 - **Check a dashboard SPA with `make dashboard-jobs-test` or `make dashboard-messaging-test`.** They run the SPA's `lint:check`, `type-check`, `test:unit`, and `build-only` scripts through `npm run`, after `npm ci` when `node_modules` is missing or older than the lockfile. Do not call `npx`: a wrapper on `PATH` can hide the tool's output. CI's dashboard jobs run the same targets.
 
 ### Restore and build
