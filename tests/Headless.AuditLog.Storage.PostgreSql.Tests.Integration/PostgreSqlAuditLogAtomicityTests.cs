@@ -5,6 +5,7 @@ using Headless.AuditLog;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Npgsql;
 
 namespace Tests;
@@ -119,11 +120,172 @@ public sealed class PostgreSqlAuditLogAtomicityTests(PostgreSqlAuditLogFixture f
         rowCount.Should().Be(1);
     }
 
-    private IHost _CreateHost(IAmbientDbTransactionAccessor accessor)
+    [Fact]
+    public async Task should_throw_and_write_nothing_when_strategy_is_throw_and_accessor_returns_null()
     {
+        // given
+        await _DropSchemaAsync();
+        var accessor = new TestAmbientAccessor { Connection = null, Transaction = null };
+        using var host = _CreateHost(accessor, MissingTransactionStrategy.Throw);
+        await host.StartAsync(AbortToken);
+
+        await using var scope = host.Services.CreateAsyncScope();
+        var store = scope.ServiceProvider.GetRequiredService<IAuditLogStore>();
+
+        // when
+        var act = () =>
+            store.SaveAsync([_NewEntry(action: "atomicity.strict_missing")], savingContext: new object(), AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*has no active transaction*");
+        (await _CountRowsByActionAsync("atomicity.strict_missing")).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_throw_on_the_sync_path_when_strategy_is_throw_and_accessor_returns_null()
+    {
+        // given
+        await _DropSchemaAsync();
+        var accessor = new TestAmbientAccessor { Connection = null, Transaction = null };
+        using var host = _CreateHost(accessor, MissingTransactionStrategy.Throw);
+        await host.StartAsync(AbortToken);
+
+        await using var scope = host.Services.CreateAsyncScope();
+        var store = scope.ServiceProvider.GetRequiredService<IAuditLogStore>();
+
+        // when
+        var act = () => store.Save([_NewEntry(action: "atomicity.strict_sync")], savingContext: new object());
+
+        // then
+        act.Should().Throw<InvalidOperationException>().WithMessage("*has no active transaction*");
+        (await _CountRowsByActionAsync("atomicity.strict_sync")).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_throw_and_write_nothing_when_strategy_is_throw_and_driver_differs()
+    {
+        // given
+        await _DropSchemaAsync();
+        var fakeConnection = new NonNpgsqlConnectionStub();
+        var fakeTransaction = new NonNpgsqlTransactionStub(fakeConnection);
+        var accessor = new TestAmbientAccessor { Connection = fakeConnection, Transaction = fakeTransaction };
+        using var host = _CreateHost(accessor, MissingTransactionStrategy.Throw);
+        await host.StartAsync(AbortToken);
+
+        await using var scope = host.Services.CreateAsyncScope();
+        var store = scope.ServiceProvider.GetRequiredService<IAuditLogStore>();
+
+        // when
+        var act = () =>
+            store.SaveAsync([_NewEntry(action: "atomicity.strict_mismatch")], savingContext: new object(), AbortToken);
+
+        // then
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage($"*{nameof(NonNpgsqlConnectionStub)}*not NpgsqlConnection*");
+        (await _CountRowsByActionAsync("atomicity.strict_mismatch")).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_enroll_when_strategy_is_throw_and_rollback_removes_the_audit_row()
+    {
+        // given
+        await _DropSchemaAsync();
+        var accessor = new TestAmbientAccessor();
+        using var host = _CreateHost(accessor, MissingTransactionStrategy.Throw);
+        await host.StartAsync(AbortToken);
+
+        await using var sharedConnection = new NpgsqlConnection(fixture.ConnectionString);
+        await sharedConnection.OpenAsync(AbortToken);
+        await using var sharedTransaction = await sharedConnection.BeginTransactionAsync(AbortToken);
+        accessor.Connection = sharedConnection;
+        accessor.Transaction = sharedTransaction;
+
+        await using var scope = host.Services.CreateAsyncScope();
+        var store = scope.ServiceProvider.GetRequiredService<IAuditLogStore>();
+
+        // when
+        await store.SaveAsync(
+            [_NewEntry(action: "atomicity.strict_rollback")],
+            savingContext: new object(),
+            AbortToken
+        );
+        await sharedTransaction.RollbackAsync(AbortToken);
+
+        // then
+        (await _CountRowsByActionAsync("atomicity.strict_rollback"))
+            .Should()
+            .Be(0);
+    }
+
+    [Fact]
+    public async Task should_warn_once_per_context_type_when_strategy_is_continue_and_no_transaction()
+    {
+        // given — a context type no other test uses, because the warning is deduplicated process-wide
+        await _DropSchemaAsync();
+        var accessor = new TestAmbientAccessor { Connection = null, Transaction = null };
+        using var logs = new CapturingLoggerProvider();
+        using var host = _CreateHost(accessor, MissingTransactionStrategy.Continue, logs);
+        await host.StartAsync(AbortToken);
+
+        await using var scope = host.Services.CreateAsyncScope();
+        var store = scope.ServiceProvider.GetRequiredService<IAuditLogStore>();
+
+        // when
+        await store.SaveAsync([_NewEntry(action: "atomicity.warn_once")], new WarnOnceSavingContext(), AbortToken);
+        await store.SaveAsync([_NewEntry(action: "atomicity.warn_once")], new WarnOnceSavingContext(), AbortToken);
+
+        // then
+        (await _CountRowsByActionAsync("atomicity.warn_once"))
+            .Should()
+            .Be(2);
+        logs.Warnings.Should()
+            .ContainSingle(entry =>
+                entry.EventName == "AuditLogProviderMissingAmbientTransaction"
+                && entry.Message.Contains(typeof(WarnOnceSavingContext).FullName!, StringComparison.Ordinal)
+            );
+    }
+
+    [Fact]
+    public async Task should_fail_startup_when_strategy_is_throw_and_no_accessor_is_registered()
+    {
+        // given
         var builder = Host.CreateApplicationBuilder();
         builder.Services.AddHeadlessAuditLog(setup =>
         {
+            setup.ConfigureOptions(options => options.MissingTransactionStrategy = MissingTransactionStrategy.Throw);
+            setup.ConfigureStorage(options => options.Schema = _Schema);
+            setup.UsePostgreSql(fixture.ConnectionString);
+        });
+        using var host = builder.Build();
+
+        // when
+        var act = () => host.StartAsync(AbortToken);
+
+        // then
+        (await act.Should().ThrowAsync<Exception>())
+            .Which.ToString()
+            .Should()
+            .Contain(nameof(IAmbientDbTransactionAccessor))
+            .And.Contain(nameof(AuditLogOptions.MissingTransactionStrategy));
+    }
+
+    private IHost _CreateHost(
+        IAmbientDbTransactionAccessor accessor,
+        MissingTransactionStrategy strategy = MissingTransactionStrategy.Continue,
+        ILoggerProvider? loggerProvider = null
+    )
+    {
+        var builder = Host.CreateApplicationBuilder();
+
+        if (loggerProvider is not null)
+        {
+            builder.Logging.AddProvider(loggerProvider);
+        }
+
+        builder.Services.AddHeadlessAuditLog(setup =>
+        {
+            setup.ConfigureOptions(options => options.MissingTransactionStrategy = strategy);
             setup.ConfigureStorage(options => options.Schema = _Schema);
             setup.UsePostgreSql(fixture.ConnectionString);
         });
@@ -170,6 +332,8 @@ public sealed class PostgreSqlAuditLogAtomicityTests(PostgreSqlAuditLogFixture f
 
         return (long)(await command.ExecuteScalarAsync(AbortToken))!;
     }
+
+    private sealed class WarnOnceSavingContext;
 
     private sealed class TestAmbientAccessor : IAmbientDbTransactionAccessor
     {

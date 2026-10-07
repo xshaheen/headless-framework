@@ -58,9 +58,12 @@ internal static class RelationalAuditLogStorage
 
         services.TryAddSingleton<IJsonSerializer>(_ => new SystemJsonSerializer());
         services.TryAddSingleton<RelationalAuditLogWriter>();
+        services.TryAddSingleton<RelationalAuditLogEnlistment>();
+        services.AddStartupValidator<RelationalAuditLogEnlistmentStartupValidator>();
         services.TryAddScoped<IAuditLogStore, RelationalAuditLogStore>();
-        services.TryAddSingleton(typeof(IAuditLog<>), typeof(RelationalAuditLog<>));
-        services.TryAddSingleton(typeof(IAuditLogWriter<>), typeof(RelationalAuditLog<>));
+        // Scoped like the EF storage's, so an entry joins the transaction of the scope's TContext.
+        services.TryAddScoped(typeof(IAuditLog<>), typeof(RelationalAuditLog<>));
+        services.TryAddSingleton(typeof(IAuditLogWriter<>), typeof(RelationalStandaloneAuditLog<>));
         services.TryAddSingleton(typeof(IReadAuditLog<>), typeof(RelationalReadAuditLog<>));
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<ICurrentTenant, NullCurrentTenant>();

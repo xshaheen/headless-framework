@@ -18,11 +18,17 @@ namespace Headless.AuditLog;
 public interface IAuditLog<TContext>
 {
     /// <summary>
-    /// Records an explicit audit event. The entry is added to the current
-    /// DbContext and persists with the next <c>SaveChanges</c> call.
+    /// Records an explicit audit event that commits or rolls back with the caller's changes. Entity Framework storage
+    /// adds the entry to the scope's <typeparamref name="TContext"/>, and it persists with the next <c>SaveChanges</c>
+    /// call. PostgreSQL and SQL Server storage write it immediately, in the transaction of the scope's
+    /// <typeparamref name="TContext"/>.
     /// </summary>
     /// <param name="request">The action and optional event metadata to record.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <exception cref="ArgumentNullException"><paramref name="request"/> is <see langword="null"/>.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// PostgreSQL or SQL Server storage finds no transaction to join and
+    /// <see cref="AuditLogOptions.MissingTransactionStrategy"/> is <see cref="MissingTransactionStrategy.Throw"/>.
+    /// </exception>
     Task LogAsync(AuditLogWriteRequest request, CancellationToken cancellationToken = default);
 }

@@ -7,22 +7,22 @@ using Microsoft.Extensions.Options;
 
 namespace Headless.AuditLog;
 
-/// <summary>The relational <see cref="IAuditLog{TContext}"/>: stamps the ambient user, tenant, and correlation id on each entry.</summary>
+/// <summary>
+/// The relational <see cref="IAuditLog{TContext}"/>: writes each entry in the transaction of the scope's
+/// <typeparamref name="TContext"/>, so it commits or rolls back with the caller's changes. Without one, it writes on a
+/// separate connection or throws, as <see cref="AuditLogOptions.MissingTransactionStrategy"/> says.
+/// </summary>
 internal sealed class RelationalAuditLog<TContext>(
+    IServiceProvider services,
+    RelationalAuditLogEnlistment enlistment,
     RelationalAuditLogWriter writer,
     ICurrentUser currentUser,
     ICurrentTenant currentTenant,
     ICorrelationIdProvider correlationIdProvider,
     TimeProvider timeProvider,
     IOptions<AuditLogOptions> options
-) : IAuditLog<TContext>, IAuditLogWriter<TContext>
+) : IAuditLog<TContext>
 {
-    // The raw-SQL writer commits on its own connection, so the enlisted and standalone contracts behave the same.
-    public Task WriteAsync(AuditLogWriteRequest request, CancellationToken cancellationToken = default)
-    {
-        return LogAsync(request, cancellationToken);
-    }
-
     public Task LogAsync(AuditLogWriteRequest request, CancellationToken cancellationToken = default)
     {
         Argument.IsNotNull(request);
@@ -32,7 +32,66 @@ internal sealed class RelationalAuditLog<TContext>(
             return Task.CompletedTask;
         }
 
-        var entry = new AuditLogEntryData
+        // The scope's context is the one the caller saves through, the same instance the EF storage adds its entry to.
+        var (connection, transaction) = enlistment.Resolve(services.GetService(typeof(TContext)), typeof(TContext));
+        var entry = RelationalExplicitAuditLogEntry.Create(
+            request,
+            currentUser,
+            currentTenant,
+            correlationIdProvider,
+            timeProvider
+        );
+
+        return writer.WriteAsync([entry], connection, transaction, cancellationToken);
+    }
+}
+
+/// <summary>
+/// The relational <see cref="IAuditLogWriter{TContext}"/>: commits each entry on its own connection, whatever
+/// transaction the caller holds.
+/// </summary>
+internal sealed class RelationalStandaloneAuditLog<TContext>(
+    RelationalAuditLogWriter writer,
+    ICurrentUser currentUser,
+    ICurrentTenant currentTenant,
+    ICorrelationIdProvider correlationIdProvider,
+    TimeProvider timeProvider,
+    IOptions<AuditLogOptions> options
+) : IAuditLogWriter<TContext>
+{
+    public Task WriteAsync(AuditLogWriteRequest request, CancellationToken cancellationToken = default)
+    {
+        Argument.IsNotNull(request);
+
+        if (!options.Value.IsEnabled)
+        {
+            return Task.CompletedTask;
+        }
+
+        var entry = RelationalExplicitAuditLogEntry.Create(
+            request,
+            currentUser,
+            currentTenant,
+            correlationIdProvider,
+            timeProvider
+        );
+
+        return writer.WriteAsync([entry], cancellationToken: cancellationToken);
+    }
+}
+
+/// <summary>Builds the stored entry for an explicit event, stamped with the ambient user, tenant, and correlation id.</summary>
+internal static class RelationalExplicitAuditLogEntry
+{
+    public static AuditLogEntryData Create(
+        AuditLogWriteRequest request,
+        ICurrentUser currentUser,
+        ICurrentTenant currentTenant,
+        ICorrelationIdProvider correlationIdProvider,
+        TimeProvider timeProvider
+    )
+    {
+        return new AuditLogEntryData
         {
             CreatedAt = timeProvider.GetUtcNow(),
             UserId = AuditLogFieldLimits.Truncate(currentUser.UserId?.ToString(), AuditLogFieldLimits.UserId),
@@ -49,7 +108,5 @@ internal sealed class RelationalAuditLog<TContext>(
             Success = request.Success,
             ErrorCode = AuditLogFieldLimits.Truncate(request.ErrorCode, AuditLogFieldLimits.ErrorCode),
         };
-
-        return writer.WriteAsync([entry], cancellationToken: cancellationToken);
     }
 }
