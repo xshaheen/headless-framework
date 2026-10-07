@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildChainJobsRequest, type ChainChildForm } from '@/utilities/chain-jobs'
+import { buildChainJobsRequest, runConditionLabel, type ChainChildForm } from '@/utilities/chain-jobs'
 
 const form = (functionName: string, time: string | null): ChainChildForm => ({
   functionName,
@@ -37,5 +37,22 @@ describe('buildChainJobsRequest', () => {
     expect(request.children![0]!.executionTime).toBeUndefined()
     expect(request.children![0]!.children).toEqual([])
     expect(request.intervals).toEqual([30, 60])
+  })
+})
+
+describe('runConditionLabel', () => {
+  // On Success is the enum's zero value, so the review step must not treat it as unset.
+  it('names On Success, which is the zero value', () => {
+    expect(runConditionLabel(0)).toBe('On Success')
+  })
+
+  it('names other conditions instead of printing their number', () => {
+    expect(runConditionLabel(3)).toBe('On Failure or Cancelled')
+  })
+
+  it('reports an unset or unknown condition as None', () => {
+    expect(runConditionLabel(null)).toBe('None')
+    expect(runConditionLabel(undefined)).toBe('None')
+    expect(runConditionLabel(99)).toBe('None')
   })
 })

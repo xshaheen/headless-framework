@@ -488,7 +488,7 @@
                               </v-chip>
                             </div>
                             <div class="child-details ml-6">
-                              <div><strong>Condition:</strong> {{ child.runCondition || 'None' }}</div>
+                              <div><strong>Condition:</strong> {{ runConditionLabel(child.runCondition) }}</div>
                               <div><strong>Description:</strong> {{ child.description || 'No description' }}</div>
                               <div><strong>Retries:</strong> {{ child.retries }}</div>
                             </div>
@@ -752,7 +752,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useFunctionNameStore } from '@/stores/functionNames'
 import { timeJobService } from '@/http/services/timeJobService'
 import { formatJsonForDisplay } from '@/utilities/json-format'
-import { buildChainJobsRequest } from '@/utilities/chain-jobs'
+import { buildChainJobsRequest, chainRunConditions, runConditionLabel } from '@/utilities/chain-jobs'
 import { useTimeZoneStore } from '@/stores/timeZoneStore'
 
 // Domain types
@@ -854,14 +854,7 @@ const functionNames = computed(() => {
   return functionNamesStore.data || []
 })
 
-const runConditions = computed(() => [
-  { title: 'On Success', value: 0 },
-  { title: 'On Failure', value: 1 },
-  { title: 'On Cancelled', value: 2 },
-  { title: 'On Failure or Cancelled', value: 3 },
-  { title: 'On Any Completed Status', value: 4 },
-  { title: 'In Progress (Parallel)', value: 5 }
-])
+const runConditions = chainRunConditions
 
 const retryIntervalItems: RetryIntervalOption[] = [
   { header: true, title: 'Select suggested intervals or create one' },

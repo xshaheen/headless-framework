@@ -24,6 +24,21 @@ export interface ChainChildWithGrandChildrenForm extends ChainChildForm {
   grandChildren: ChainChildForm[]
 }
 
+/** The run conditions a chain child can wait on; each value is the server's `RunCondition` enum member. */
+export const chainRunConditions: ReadonlyArray<{ title: string; value: number }> = [
+  { title: 'On Success', value: 0 },
+  { title: 'On Failure', value: 1 },
+  { title: 'On Cancelled', value: 2 },
+  { title: 'On Failure or Cancelled', value: 3 },
+  { title: 'On Any Completed Status', value: 4 },
+  { title: 'In Progress (Parallel)', value: 5 },
+]
+
+/** Names a child's run condition for display. On Success is 0, so a falsy check would misreport it as unset. */
+export function runConditionLabel(runCondition: number | null | undefined): string {
+  return chainRunConditions.find((condition) => condition.value === runCondition)?.title ?? 'None'
+}
+
 const wallClock = (job: ChainJobForm): Date | null => {
   if (!job.executionDate || !job.executionTime) return null
   const [hours, minutes, seconds = 0] = job.executionTime.split(':').map(Number)
