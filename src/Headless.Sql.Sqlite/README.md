@@ -6,6 +6,8 @@ SQLite connection factory backed by `Microsoft.Data.Sqlite`.
 
 Provides the `ISqlConnectionFactory` and `IConnectionStringChecker` implementations for SQLite, enabling in-process integration tests with `:memory:` databases and lightweight embedded / edge deployments without a separate database server.
 
+It also runs raw-ADO `SqliteConnection` work as a unit of work (`BeginAsync`, `Enlist`, and `RunAsync` on `IUnitOfWorkFactory`), so rows that Headless stores write inside the transaction, such as a gap-free sequence value or a fenced lease, commit and roll back with it.
+
 ## Install
 
 ```bash

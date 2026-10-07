@@ -19,7 +19,7 @@ namespace Headless.Messaging;
 /// is wired automatically. AWS credentials are resolved through the standard AWS SDK credential
 /// chain unless <see cref="AmazonSqsMessagingOptions.Credentials"/> is provided explicitly.
 /// </remarks>
-public static class SetupAwsMessaging
+public static class SetupMessagingAws
 {
     extension(MessagingSetupBuilder setup)
     {

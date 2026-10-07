@@ -18,6 +18,5 @@
     <ProjectReference Include="..\..\src\Headless.Messaging.Kafka\Headless.Messaging.Kafka.csproj" />
     <ProjectReference Include="..\..\src\Headless.Messaging.Storage.PostgreSql\Headless.Messaging.Storage.PostgreSql.csproj" />
     <ProjectReference Include="..\..\src\Headless.UnitOfWork.EntityFramework\Headless.UnitOfWork.EntityFramework.csproj" />
-    <ProjectReference Include="..\..\src\Headless.UnitOfWork.PostgreSql\Headless.UnitOfWork.PostgreSql.csproj" />
   </ItemGroup>
 </Project>

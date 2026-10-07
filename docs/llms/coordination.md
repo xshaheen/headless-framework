@@ -1,6 +1,6 @@
 ---
 domain: Coordination
-packages: Coordination.Abstractions, Coordination, Coordination.Database, Coordination.PostgreSql, Coordination.Redis, Coordination.SqlServer, Coordination.Sqlite
+packages: Coordination.Abstractions, Coordination, Coordination.Sql, Coordination.PostgreSql, Coordination.Redis, Coordination.SqlServer, Coordination.Sqlite
 ---
 
 # Coordination
@@ -172,7 +172,7 @@ Registers `TimeProvider.System`, framework GUID generator defaults, `IHostIdenti
 
 ---
 
-## Headless.Coordination.Database
+## Headless.Coordination.Sql
 
 ### API and behavior
 
@@ -192,7 +192,7 @@ Table and column names come from the dialect, so PostgreSQL keeps snake_case and
 ### Install
 
 ```bash
-dotnet add package Headless.Coordination.Database
+dotnet add package Headless.Coordination.Sql
 ```
 
 ### Setup and use
@@ -213,7 +213,7 @@ None.
 
 ### API and behavior
 
-- Runs the shared relational store from `Headless.Coordination.Database` over the PostgreSQL dialect.
+- Runs the shared relational store from `Headless.Coordination.Sql` over the PostgreSQL dialect.
 - Heartbeat guard rejects stale, impossible, dead, gracefully left, and pruned incarnations.
 - Liveness classification uses `clock_timestamp()`.
 - The membership tables are one schema step (`Coordination/1`) applied by the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts).
@@ -322,7 +322,7 @@ Registers the core membership services, Redis membership store, keyed Lua script
 
 ### API and behavior
 
-- Runs the shared relational store from `Headless.Coordination.Database` over the SQL Server dialect.
+- Runs the shared relational store from `Headless.Coordination.Sql` over the SQL Server dialect.
 - Heartbeat guard rejects stale, impossible, dead, gracefully left, and pruned incarnations.
 - Liveness classification uses `SYSUTCDATETIME()`. Every instant is stored as `datetimeoffset(7)`.
 - The membership tables are one schema step (`Coordination/1`) applied by the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts).
@@ -373,7 +373,7 @@ Registers the core membership services, the SQL Server membership store, and the
 
 ### API and behavior
 
-- Runs the shared relational store from `Headless.Coordination.Database` over the SQLite dialect.
+- Runs the shared relational store from `Headless.Coordination.Sql` over the SQLite dialect.
 - Heartbeat guard rejects stale, impossible, dead, gracefully left, and pruned incarnations, as on the other relational providers.
 - Liveness classification uses SQLite's `'now'`: the clock of the host that runs the statement, at millisecond resolution. Every instant is stored as fixed-width UTC text.
 - The membership tables are one schema step (`Coordination/1`) applied by the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts).

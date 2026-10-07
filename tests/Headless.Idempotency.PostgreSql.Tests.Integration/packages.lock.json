@@ -671,7 +671,6 @@
           "Headless.Hosting": "[1.0.0, )",
           "Headless.Idempotency": "[1.0.0, )",
           "Headless.Sql.PostgreSql": "[1.0.0, )",
-          "Headless.UnitOfWork.PostgreSql": "[1.0.0, )",
           "Npgsql": "[10.0.3, )"
         }
       },
@@ -733,6 +732,7 @@
           "Headless.Hosting": "[1.0.0, )",
           "Headless.Sql": "[1.0.0, )",
           "Headless.Sql.Abstractions": "[1.0.0, )",
+          "Headless.UnitOfWork": "[1.0.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.12, )",
           "Npgsql": "[10.0.3, )"
@@ -788,15 +788,6 @@
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )"
-        }
-      },
-      "headless.unitofwork.postgresql": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.UnitOfWork": "[1.0.0, )",
-          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
-          "Npgsql": "[10.0.3, )"
         }
       },
       "FluentValidation": {

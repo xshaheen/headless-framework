@@ -27,7 +27,7 @@ namespace Headless.Messaging;
 /// <para/>
 /// The <c>messaging-nats</c> readiness health check is contributed too; it pings the server over a pooled connection.
 /// </remarks>
-public static class SetupNatsMessaging
+public static class SetupMessagingNats
 {
     extension(MessagingSetupBuilder setup)
     {

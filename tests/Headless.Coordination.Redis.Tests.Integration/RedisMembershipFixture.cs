@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Coordination;
-using Headless.Redis.Testing;
 using Headless.Testing.Testcontainers;
 using Microsoft.Extensions.DependencyInjection;
 using StackExchange.Redis;
@@ -21,7 +20,7 @@ public sealed class RedisMembershipFixture
         await base.InitializeAsync();
         var connectionString = Container.GetConnectionString() + ",allowAdmin=true";
         ConnectionMultiplexer = await ConnectionMultiplexer.ConnectAsync(connectionString);
-        await ConnectionMultiplexer.FlushAllAsync();
+        await FlushAllAsync();
     }
 
     protected override async ValueTask DisposeAsyncCore()

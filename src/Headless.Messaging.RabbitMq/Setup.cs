@@ -18,7 +18,7 @@ namespace Headless.Messaging;
 /// exchange. Each owned queue is bound with a lane-qualified routing key. Request/reply is supported: a requesting
 /// process receives replies on an exclusive queue of its own, named under the reserved <c>headless.reply.</c> prefix.
 /// </remarks>
-public static class SetupRabbitMqMessaging
+public static class SetupMessagingRabbitMq
 {
     extension(MessagingSetupBuilder setup)
     {

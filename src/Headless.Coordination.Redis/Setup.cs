@@ -22,7 +22,7 @@ namespace Headless.Coordination;
 /// allocation; scripts are loaded at startup by an initializer hosted service.
 /// </remarks>
 [PublicAPI]
-public static class SetupRedisCoordination
+public static class SetupCoordinationRedis
 {
     extension(HeadlessCoordinationSetupBuilder setup)
     {

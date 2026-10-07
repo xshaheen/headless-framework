@@ -18,7 +18,7 @@ namespace Headless.Coordination;
 /// coordination backing store.
 /// </summary>
 [PublicAPI]
-public static class SetupSqlServerCoordination
+public static class SetupCoordinationSqlServer
 {
     extension(HeadlessCoordinationSetupBuilder setup)
     {

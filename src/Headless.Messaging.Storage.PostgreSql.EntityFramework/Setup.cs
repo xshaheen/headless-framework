@@ -26,7 +26,7 @@ namespace Headless.Messaging;
     "CA1708:Identifiers should differ by more than case",
     Justification = "C# 14 extension member blocks emit compiler-generated marker members differing only by case."
 )]
-public static class SetupPostgreSqlEntityFrameworkMessaging
+public static class SetupMessagingPostgreSqlEntityFramework
 {
     extension(MessagingSetupBuilder setup)
     {
@@ -69,7 +69,7 @@ public static class SetupPostgreSqlEntityFrameworkMessaging
         public MessagingSetupBuilder UseEntityFramework<TContext>()
             where TContext : DbContext
         {
-            var setup = SetupPostgreSqlMessaging.AddPostgreSqlOutboxCore(
+            var setup = SetupMessagingPostgreSql.AddPostgreSqlOutboxCore(
                 outbox,
                 $"AddOutbox().UseEntityFramework<{typeof(TContext).Name}>()",
                 options =>
@@ -94,7 +94,7 @@ public static class SetupPostgreSqlEntityFrameworkMessaging
     {
         public void AddServices(IServiceCollection services)
         {
-            new SetupPostgreSqlMessaging.PostgreSqlMessagesOptionsExtension(storageServices =>
+            new SetupMessagingPostgreSql.PostgreSqlMessagesOptionsExtension(storageServices =>
                 storageServices.Configure<PostgreSqlOptions, PostgreSqlOptionsValidator>(storageOptions =>
                 {
                     storageOptions.OwnerColumnMaxLength = options.OwnerColumnMaxLength;

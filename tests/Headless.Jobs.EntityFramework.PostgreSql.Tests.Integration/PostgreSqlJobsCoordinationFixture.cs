@@ -105,7 +105,7 @@ public class PostgreSqlJobsCoordinationFixture
 
     public void ConfigureUnitOfWork(IServiceCollection services)
     {
-        services.AddPostgreSqlUnitOfWork();
+        services.AddUnitOfWork();
     }
 
     public void ConfigureMessagingStorage(MessagingSetupBuilder setup)

@@ -17,7 +17,7 @@
 [![GitHub Stars](https://img.shields.io/github/stars/xshaheen/headless-framework?style=social)](https://github.com/xshaheen/headless-framework)
 [![English](https://img.shields.io/badge/lang-English-2563EB?style=flat-square)](README.md)
 
-204 package &bull; نفس الـ setup في كل حتة &bull; بدّل أي provider بسطر واحد
+201 package &bull; نفس الـ setup في كل حتة &bull; بدّل أي provider بسطر واحد
 
 [ليه Headless](#ليه-headless) &bull; [ابدأ في 60 ثانية](#ابدأ-في-60-ثانية) &bull; [Setup واحد لكل المجالات](#setup-واحد-لكل-المجالات) &bull; [إيه اللي في الصندوق](#إيه-اللي-في-الصندوق) &bull; [فهرس الحزم](#فهرس-الحزم)
 
@@ -53,7 +53,7 @@ builder.Services.AddHeadlessCaching(setup => setup.UseRedis(...)); // production
 
 أي service أو repository أو handler بياخد `ICache` مش هيتأثر بالتعديل دا. ونفس الكلام على `IBlobStorage` بين S3 و Azure و Cloudflare R2 و FileSystem و Redis و SFTP، وعلى `IEmailSender` بين SES و Azure Communication Services و SMTP، وعلى الـ messaging بين 8 transports.
 
-**هتركّب 3 packages، مش 203.** الفهرس كبير عشان عدد الـ providers كبير. الخدمة اللي محتاجة caching بتركّب `Headless.Caching.Abstractions` و `Headless.Caching` وprovider واحد. والـ libraries بتاعة الـ domain والـ application بتعتمد على الـ Abstractions package لوحدها: `Headless.Caching.Abstractions` بتجرّ وراها package-ين بس، ومفيش فيهم أي dependency خارجية: `Headless.Checks` و `Headless.Primitives`.
+**هتركّب 3 packages، مش 201.** الفهرس كبير عشان عدد الـ providers كبير. الخدمة اللي محتاجة caching بتركّب `Headless.Caching.Abstractions` و `Headless.Caching` وprovider واحد. والـ libraries بتاعة الـ domain والـ application بتعتمد على الـ Abstractions package لوحدها: `Headless.Caching.Abstractions` بتجرّ وراها package-ين بس، ومفيش فيهم أي dependency خارجية: `Headless.Checks` و `Headless.Primitives`.
 
 **الـ tests مش محتاجة Docker عشان تبقى سريعة.** الـ caching والـ distributed locks والـ messaging فيهم in-memory providers؛ والـ emails والـ SMS والـ push notifications فيهم dev providers مش بتبعت حاجة؛ والـ blob storage بيشتغل على الـ file system المحلي. يعني الـ unit tests بتجرّب نفس الـ contract الحقيقي من غير containers. ولما تحتاج الـ backend الحقيقي، `Headless.Testing.Testcontainers` بتجهّزلك الـ fixtures. الـ repo نفسه ماشي على التقسيمة دي: 122 مشروع unit tests و 63 مشروع integration tests.
 
@@ -291,7 +291,7 @@ packages الـ providers دي packages عادية على NuGet. عشان تضي
 </div>
 
 <details dir="rtl" align="right">
-<summary><strong>كل الـ 204 package، مرتّبة حسب الـ domain</strong> — اضغط للعرض</summary>
+<summary><strong>كل الـ 201 package، مرتّبة حسب الـ domain</strong> — اضغط للعرض</summary>
 
 ### API & Web
 
@@ -592,7 +592,7 @@ Cluster membership وliveness tracking: اعرف مين من الـ nodes شغّ
 |---------|-------|
 | [Headless.Coordination.Abstractions](src/Headless.Coordination.Abstractions/README.md) | الـ contracts بتاعة الـ membership والـ liveness والـ lifecycle |
 | [Headless.Coordination](src/Headless.Coordination/README.md) | Membership engine من غير provider محدد |
-| [Headless.Coordination.Database](src/Headless.Coordination.Database/README.md) | أساس relational مشترك لـ providers الـ SQL |
+| [Headless.Coordination.Sql](src/Headless.Coordination.Sql/README.md) | أساس relational مشترك لـ providers الـ SQL |
 | [Headless.Coordination.PostgreSql](src/Headless.Coordination.PostgreSql/README.md) | Membership في PostgreSQL بـ liveness من ساعة الـ server |
 | [Headless.Coordination.Redis](src/Headless.Coordination.Redis/README.md) | Membership على Redis عن طريق Lua وساعة Redis |
 | [Headless.Coordination.SqlServer](src/Headless.Coordination.SqlServer/README.md) | Membership في SQL Server بـ writes محروسة |
@@ -646,10 +646,9 @@ Unit of work صريح: تبدأه من singleton factory في السطر الل�
 | [Headless.UnitOfWork.Abstractions](src/Headless.UnitOfWork.Abstractions/README.md) | الـ contracts بتاعة الـ unit of work: `IUnitOfWorkFactory` (singleton)، `IUnitOfWork`، `IUnitOfWorkResource`، `IUnitOfWorkFeature` (من غير dependencies) |
 | [Headless.UnitOfWork](src/Headless.UnitOfWork/README.md) | الـ singleton factory والـ engine وتسجيل `AddUnitOfWork()` |
 | [Headless.UnitOfWork.EntityFramework](src/Headless.UnitOfWork.EntityFramework/README.md) | Provider للـ EF Core: `BeginAsync(db)` / `Enlist(db, tx)` / `RunAsync(db, ...)` |
-| [Headless.UnitOfWork.PostgreSql](src/Headless.UnitOfWork.PostgreSql/README.md) | Provider لـ `NpgsqlConnection` بالـ ADO الخام، بنفس الشكل |
-| [Headless.UnitOfWork.SqlServer](src/Headless.UnitOfWork.SqlServer/README.md) | Provider لـ `SqlConnection` بالـ ADO الخام، بنفس الشكل |
-| [Headless.UnitOfWork.Sqlite](src/Headless.UnitOfWork.Sqlite/README.md) | Provider لـ `SqliteConnection` بالـ ADO الخام، بنفس الشكل |
 | [Headless.UnitOfWork.Analyzers](src/Headless.UnitOfWork.Analyzers/README.md) | Roslyn analyzers و code fixes بتنبّه لأي write autonomous بيحصل والـ unit of work موجود، وبتقولك الـ enlisted receiver اللي تستخدمه (`unit.Outbox`، `unit.Jobs`) |
+
+الـ providers بتاعة الـ ADO الخام (`NpgsqlConnection` و `SqlConnection` و `SqliteConnection`) موجودة في الـ `Headless.Sql.*` package المقابلة؛ شوف [SQL](#sql).
 
 ### Serialization
 
@@ -699,9 +698,9 @@ Connection factories للوصول لـ SQL خام لما تحتاج تنزل ت�
 |---------|-------|
 | [Headless.Sql.Abstractions](src/Headless.Sql.Abstractions/README.md) | الـ interfaces بتاعة الـ SQL connections |
 | [Headless.Sql](src/Headless.Sql/README.md) | Implementation للـ current connection على مستوى الـ scope |
-| [Headless.Sql.PostgreSql](src/Headless.Sql.PostgreSql/README.md) | Connection factory لـ PostgreSQL |
-| [Headless.Sql.SqlServer](src/Headless.Sql.SqlServer/README.md) | Connection factory لـ SQL Server |
-| [Headless.Sql.Sqlite](src/Headless.Sql.Sqlite/README.md) | Connection factory لـ SQLite |
+| [Headless.Sql.PostgreSql](src/Headless.Sql.PostgreSql/README.md) | Connection factory لـ PostgreSQL، والـ helpers بتاعة الـ unit of work على `NpgsqlConnection` بالـ ADO الخام |
+| [Headless.Sql.SqlServer](src/Headless.Sql.SqlServer/README.md) | Connection factory لـ SQL Server، والـ helpers بتاعة الـ unit of work على `SqlConnection` بالـ ADO الخام |
+| [Headless.Sql.Sqlite](src/Headless.Sql.Sqlite/README.md) | Connection factory لـ SQLite، والـ helpers بتاعة الـ unit of work على `SqliteConnection` بالـ ADO الخام |
 
 ### Testing
 

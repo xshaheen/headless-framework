@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Redis.Testing;
 using Headless.Testing.AspNetCore;
 using Headless.Testing.Testcontainers;
 using Npgsql;
@@ -65,7 +64,7 @@ public sealed class FeaturesTestFixture : ICollectionFixture<FeaturesTestFixture
 
     public async Task ResetAsync()
     {
-        await Task.WhenAll(DatabaseReset.ResetAsync(SqlConnection), Multiplexer.FlushAllAsync())
+        await Task.WhenAll(DatabaseReset.ResetAsync(SqlConnection), _redisContainer.FlushAllAsync())
             .WithAggregatedExceptions();
     }
 

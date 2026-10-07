@@ -23,7 +23,7 @@ namespace Headless.Messaging;
 /// Request/reply is supported on Redis pub/sub: a requesting process receives replies on a literal channel of its own
 /// under the reserved <c>headless.reply.</c> prefix, and a reply creates no key.
 /// </remarks>
-public static class SetupRedisMessaging
+public static class SetupMessagingRedis
 {
     extension(MessagingSetupBuilder setup)
     {

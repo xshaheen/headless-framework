@@ -2,7 +2,6 @@
 
 using Headless.DistributedLocks;
 using Headless.DistributedLocks.Redis;
-using Headless.Redis.Testing;
 
 namespace Tests;
 
@@ -14,7 +13,7 @@ public sealed class RedisDistributedSemaphoreStorageTests(RedisTestFixture fixtu
     public override async ValueTask InitializeAsync()
     {
         await base.InitializeAsync();
-        await fixture.ConnectionMultiplexer.FlushAllAsync();
+        await fixture.FlushAllAsync(AbortToken);
     }
 
     protected override IDistributedSemaphoreStorage SemaphoreStorage => fixture.SemaphoreStorage;

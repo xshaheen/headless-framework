@@ -12,7 +12,7 @@ packages: Sequences.Abstractions, Sequences, Sequences.PostgreSql, Sequences.Sql
 Register once with `AddHeadlessSequences` and exactly one provider:
 
 ```csharp
-builder.Services.AddPostgreSqlUnitOfWork(); // the gap-free mode needs a unit of work on the same database
+builder.Services.AddUnitOfWork(); // the gap-free mode needs a unit of work on the same database
 builder.Services.AddHeadlessSequences(setup =>
 {
     setup.UsePostgreSql(connectionString); // or setup.UseSqlServer(connectionString)
@@ -161,7 +161,7 @@ builder.Services.AddHeadlessSequences(setup => setup.UsePostgreSql(connectionStr
 
 The parameterless overloads and the shared `headless` schema are described in [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features).
 
-Gap-free units begin over a PostgreSQL connection or an EF `DbContext` (`AddPostgreSqlUnitOfWork()` or the EF unit-of-work package).
+Gap-free units begin over a PostgreSQL connection or an EF `DbContext` (`AddUnitOfWork()` or the EF unit-of-work package).
 
 ### Configuration
 
@@ -198,7 +198,7 @@ builder.Services.AddHeadlessSequences(setup => setup.UseSqlServer(connectionStri
 
 The parameterless overloads and the shared `headless` schema are described in [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features).
 
-Gap-free units begin over a SQL Server connection or an EF `DbContext` (`AddSqlServerUnitOfWork()` or the EF unit-of-work package).
+Gap-free units begin over a SQL Server connection or an EF `DbContext` (`AddUnitOfWork()` or the EF unit-of-work package).
 
 ### Configuration
 
@@ -236,7 +236,7 @@ builder.Services.AddHeadlessSequences(setup => setup.UseSqlite("Data Source=app.
 
 Give it a database file: every call and the schema runner open their own connections, so a private `:memory:` database would vanish between them.
 
-Gap-free units begin over a SQLite connection (`AddSqliteUnitOfWork()`).
+Gap-free units begin over a SQLite connection (`AddUnitOfWork()`).
 
 ### Configuration
 

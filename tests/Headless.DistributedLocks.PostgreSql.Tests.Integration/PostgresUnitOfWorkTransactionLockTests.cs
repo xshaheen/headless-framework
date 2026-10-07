@@ -312,7 +312,7 @@ public sealed class PostgresUnitOfWorkTransactionLockTests(PostgreSqlDistributed
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddHeadlessDistributedLocks(setup => setup.UsePostgreSql(fixture.ConnectionString));
-        services.AddPostgreSqlUnitOfWork();
+        services.AddUnitOfWork();
 
         return services.BuildServiceProvider();
     }

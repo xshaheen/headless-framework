@@ -19,7 +19,7 @@ namespace Headless.Messaging;
     "CA1708:Identifiers should differ by more than case",
     Justification = "C# 14 extension member blocks emit compiler-generated marker members differing only by case."
 )]
-public static class SetupSqlServerMessaging
+public static class SetupMessagingSqlServer
 {
     extension(MessagingSetupBuilder setup)
     {

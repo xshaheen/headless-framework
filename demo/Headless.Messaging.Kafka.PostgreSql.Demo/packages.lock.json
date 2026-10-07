@@ -362,6 +362,7 @@
           "Headless.Hosting": "[1.0.0, )",
           "Headless.Sql": "[1.0.0, )",
           "Headless.Sql.Abstractions": "[1.0.0, )",
+          "Headless.UnitOfWork": "[1.0.0, )",
           "Npgsql": "[10.0.3, )"
         }
       },
@@ -385,14 +386,6 @@
           "Headless.Checks": "[1.0.0, )",
           "Headless.UnitOfWork": "[1.0.0, )",
           "Microsoft.EntityFrameworkCore.Relational": "[10.0.12, )"
-        }
-      },
-      "headless.unitofwork.postgresql": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.UnitOfWork": "[1.0.0, )",
-          "Npgsql": "[10.0.3, )"
         }
       },
       "Confluent.Kafka": {

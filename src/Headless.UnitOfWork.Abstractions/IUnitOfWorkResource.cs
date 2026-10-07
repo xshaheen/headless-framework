@@ -6,7 +6,7 @@ namespace Headless.UnitOfWork;
 
 /// <summary>
 /// The transactional resource a unit of work coordinates. Supplied by provider packages
-/// (<c>Headless.UnitOfWork.EntityFramework</c>, <c>Headless.UnitOfWork.PostgreSql</c>, ...).
+/// (<c>Headless.UnitOfWork.EntityFramework</c>, <c>Headless.Sql.PostgreSql</c>, ...).
 /// </summary>
 /// <remarks>
 /// Owned vs observed is a flag on the resource instance, never a second handle type. An owned resource's

@@ -109,7 +109,7 @@ public interface IJobsCoordinationFixture
     /// <summary>Provider DDL that creates the atomicity probe table if absent and clears its rows.</summary>
     string CreateProbeTableSql { get; }
 
-    /// <summary>Registers this backend's unit-of-work provider (e.g. <c>services.AddPostgreSqlUnitOfWork()</c>).</summary>
+    /// <summary>Registers the unit-of-work services this backend enlists through (e.g. <c>services.AddUnitOfWork()</c>).</summary>
     void ConfigureUnitOfWork(IServiceCollection services);
 
     /// <summary>Wires this backend's relational messaging storage against <see cref="ConnectionString" />.</summary>

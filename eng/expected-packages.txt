@@ -42,9 +42,9 @@ Headless.Context
 Headless.Context.Abstractions
 Headless.Coordination
 Headless.Coordination.Abstractions
-Headless.Coordination.Database
 Headless.Coordination.PostgreSql
 Headless.Coordination.Redis
+Headless.Coordination.Sql
 Headless.Coordination.SqlServer
 Headless.Coordination.Sqlite
 Headless.Couchbase
@@ -199,7 +199,4 @@ Headless.UnitOfWork
 Headless.UnitOfWork.Abstractions
 Headless.UnitOfWork.Analyzers
 Headless.UnitOfWork.EntityFramework
-Headless.UnitOfWork.PostgreSql
-Headless.UnitOfWork.SqlServer
-Headless.UnitOfWork.Sqlite
 Headless.Urls

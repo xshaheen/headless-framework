@@ -19,7 +19,7 @@ namespace Headless.Messaging;
 /// Azure Service Bus administration API; set <see cref="AzureServiceBusMessagingOptions.AutoProvision"/>
 /// to <see langword="false"/> to skip auto-provisioning when entities are managed externally.
 /// </remarks>
-public static class SetupAzureServiceBusMessaging
+public static class SetupMessagingAzureServiceBus
 {
     extension(MessagingSetupBuilder setup)
     {

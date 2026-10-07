@@ -109,7 +109,7 @@ public sealed partial class SqlServerSharedSchemaTests(SqlServerSharedSchemaFixt
 
     protected override void AddRawFamilies(IServiceCollection services)
     {
-        services.AddSqlServerUnitOfWork();
+        services.AddUnitOfWork();
         services.AddHeadlessCoordination(setup => setup.UseSqlServer());
         services.AddHeadlessDistributedLocks(setup => setup.UseSqlServer());
         services.AddHeadlessAuditLog(setup => setup.UseSqlServer());

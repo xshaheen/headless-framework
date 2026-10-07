@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Redis.Testing;
 using Headless.Testing.Testcontainers;
 using StackExchange.Redis;
 
@@ -17,7 +16,7 @@ public sealed class BclRedisFixture : HeadlessRedisFixture, ICollectionFixture<B
 
         var connectionString = Container.GetConnectionString() + ",allowAdmin=true";
         ConnectionMultiplexer = await ConnectionMultiplexer.ConnectAsync(connectionString);
-        await ConnectionMultiplexer.FlushAllAsync();
+        await FlushAllAsync();
     }
 
     protected override async ValueTask DisposeAsyncCore()

@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Caching;
-using Headless.Redis.Testing;
 using Headless.Serializer;
 using Microsoft.Extensions.Logging;
 
@@ -33,7 +32,7 @@ public sealed class RedisCacheConformanceTests(RedisCacheFixture fixture) : Cach
 
     protected override async ValueTask ResetAsync()
     {
-        await fixture.ConnectionMultiplexer.FlushAllAsync();
+        await fixture.FlushAllAsync(AbortToken);
     }
 
     protected override async ValueTask AdvancePastExpirationAsync(TimeSpan expiration)

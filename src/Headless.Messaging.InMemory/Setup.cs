@@ -17,7 +17,7 @@ namespace Headless.Messaging;
 /// This transport does not persist messages: any message in transit at process shutdown is lost.
 /// Both a bus (fan-out) and a queue (point-to-point) transport are registered.
 /// </remarks>
-public static class SetupInMemory
+public static class SetupMessagingInMemory
 {
     extension(MessagingSetupBuilder setup)
     {

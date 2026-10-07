@@ -120,7 +120,7 @@ public static class SetupFencingPostgreSql
         "Headless.Fencing.PostgreSql",
         static (factory, connection, cancellationToken) =>
             factory.BeginAsync((NpgsqlConnection)connection, cancellationToken),
-        static services => services.AddPostgreSqlUnitOfWork(),
+        static services => services.AddUnitOfWork(),
         PostgreSqlFencingSchemaContribution.Create
     );
 }

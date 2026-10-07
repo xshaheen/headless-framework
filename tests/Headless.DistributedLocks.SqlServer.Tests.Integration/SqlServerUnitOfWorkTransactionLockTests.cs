@@ -189,7 +189,7 @@ public sealed class SqlServerUnitOfWorkTransactionLockTests(SqlServerDistributed
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddHeadlessDistributedLocks(setup => setup.UseSqlServer(fixture.ConnectionString));
-        services.AddSqlServerUnitOfWork();
+        services.AddUnitOfWork();
 
         return services.BuildServiceProvider();
     }

@@ -920,7 +920,6 @@
           "Headless.Hosting": "[1.0.0, )",
           "Headless.Idempotency": "[1.0.0, )",
           "Headless.Sql.PostgreSql": "[1.0.0, )",
-          "Headless.UnitOfWork.PostgreSql": "[1.0.0, )",
           "Npgsql": "[10.0.3, )"
         }
       },
@@ -932,7 +931,6 @@
           "Headless.Hosting": "[1.0.0, )",
           "Headless.Idempotency": "[1.0.0, )",
           "Headless.Sql.SqlServer": "[1.0.0, )",
-          "Headless.UnitOfWork.SqlServer": "[1.0.0, )",
           "Microsoft.Data.SqlClient": "[7.1.0, )"
         }
       },
@@ -1001,6 +999,7 @@
           "Headless.Hosting": "[1.0.0, )",
           "Headless.Sql": "[1.0.0, )",
           "Headless.Sql.Abstractions": "[1.0.0, )",
+          "Headless.UnitOfWork": "[1.0.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.12, )",
           "Npgsql": "[10.0.3, )"
@@ -1013,6 +1012,7 @@
           "Headless.Hosting": "[1.0.0, )",
           "Headless.Sql": "[1.0.0, )",
           "Headless.Sql.Abstractions": "[1.0.0, )",
+          "Headless.UnitOfWork": "[1.0.0, )",
           "Microsoft.Data.SqlClient": "[7.1.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.12, )"
@@ -1068,24 +1068,6 @@
         "type": "Project",
         "dependencies": {
           "Headless.Checks": "[1.0.0, )"
-        }
-      },
-      "headless.unitofwork.postgresql": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.UnitOfWork": "[1.0.0, )",
-          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
-          "Npgsql": "[10.0.3, )"
-        }
-      },
-      "headless.unitofwork.sqlserver": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.UnitOfWork": "[1.0.0, )",
-          "Microsoft.Data.SqlClient": "[7.1.0, )",
-          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )"
         }
       },
       "Asp.Versioning.Abstractions": {

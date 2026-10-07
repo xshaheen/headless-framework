@@ -6,6 +6,8 @@ SQL Server connection factory backed by `Microsoft.Data.SqlClient`.
 
 Provides the `ISqlConnectionFactory` and `IConnectionStringChecker` implementations for SQL Server and Azure SQL, wrapping `Microsoft.Data.SqlClient` so repositories can obtain open `SqlConnection` instances through the provider-agnostic interface.
 
+It also runs raw-ADO `SqlConnection` work as a unit of work (`BeginAsync`, `Enlist`, and `RunAsync` on `IUnitOfWorkFactory`), so outbox rows and job rows written inside the transaction commit with it, dispatch after it commits, and are discarded when it rolls back.
+
 ## Install
 
 ```bash

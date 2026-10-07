@@ -568,7 +568,7 @@ internal sealed class SqlServerNativeClaimsFixture(string connectionString) : IJ
 
     public void ConfigureUnitOfWork(IServiceCollection services)
     {
-        services.AddSqlServerUnitOfWork();
+        services.AddUnitOfWork();
     }
 
     public void ConfigureMessagingStorage(MessagingSetupBuilder setup)

@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.DistributedLocks;
-using Headless.Redis.Testing;
 using Headless.Testing.Tests;
 using StackExchange.Redis;
 
@@ -13,7 +12,7 @@ public sealed class RedisReaderWriterLockStorageTests(RedisTestFixture fixture) 
     public override async ValueTask InitializeAsync()
     {
         await base.InitializeAsync();
-        await fixture.ConnectionMultiplexer.FlushAllAsync();
+        await fixture.FlushAllAsync(AbortToken);
     }
 
     [Fact]

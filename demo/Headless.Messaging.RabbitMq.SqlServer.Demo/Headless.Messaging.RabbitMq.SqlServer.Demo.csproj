@@ -19,6 +19,5 @@
     <ProjectReference Include="..\..\src\Headless.Messaging.RabbitMq\Headless.Messaging.RabbitMq.csproj" />
     <ProjectReference Include="..\..\src\Headless.Messaging.Storage.SqlServer.EntityFramework\Headless.Messaging.Storage.SqlServer.EntityFramework.csproj" />
     <ProjectReference Include="..\..\src\Headless.UnitOfWork.EntityFramework\Headless.UnitOfWork.EntityFramework.csproj" />
-    <ProjectReference Include="..\..\src\Headless.UnitOfWork.SqlServer\Headless.UnitOfWork.SqlServer.csproj" />
   </ItemGroup>
 </Project>

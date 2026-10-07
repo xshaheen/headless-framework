@@ -19,7 +19,7 @@ namespace Headless.Messaging;
 /// A shared producer pool sized by <see cref="KafkaMessagingOptions.ConnectionPoolSize"/> is registered
 /// as a singleton.
 /// </remarks>
-public static class SetupKafkaMessaging
+public static class SetupMessagingKafka
 {
     extension(MessagingSetupBuilder setup)
     {

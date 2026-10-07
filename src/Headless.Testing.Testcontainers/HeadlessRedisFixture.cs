@@ -20,4 +20,11 @@ public class HeadlessRedisFixture() : ContainerFixture<RedisBuilder, RedisContai
             .WithLabel(ReuseLabel.Key, ReuseLabel.For(this))
             .WithLabel(ReuseLabel.CheckoutKey, ReuseLabel.Checkout);
     }
+
+    /// <summary>Deletes every key in every database of the shared container.</summary>
+    /// <remarks>The container is reused across test runs, so call this from setup or teardown to start clean.</remarks>
+    public Task FlushAllAsync(CancellationToken cancellationToken = default)
+    {
+        return Container.FlushAllAsync(cancellationToken);
+    }
 }

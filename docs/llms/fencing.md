@@ -314,7 +314,7 @@ builder.Services.AddHeadlessFencing(setup => setup.UsePostgreSql(connectionStrin
 
 The parameterless overloads and the shared `headless` schema are described in [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features).
 
-Enlisted calls need a unit begun over an Npgsql connection or an EF `DbContext` on this same database (`AddPostgreSqlUnitOfWork()`, added automatically, or the EF unit-of-work package).
+Enlisted calls need a unit begun over an Npgsql connection or an EF `DbContext` on this same database (`AddUnitOfWork()`, added automatically, or the EF unit-of-work package).
 
 ### Configuration
 
@@ -352,7 +352,7 @@ builder.Services.AddHeadlessFencing(setup => setup.UseSqlServer(connectionString
 
 The parameterless overloads and the shared `headless` schema are described in [sql.md § Shared connection and schema for storage features](sql.md#shared-connection-and-schema-for-storage-features).
 
-Enlisted calls need a unit begun over a SqlClient connection or an EF `DbContext` on this same database (`AddSqlServerUnitOfWork()`, added automatically, or the EF unit-of-work package). Name the database explicitly (`Initial Catalog`) in the connection string.
+Enlisted calls need a unit begun over a SqlClient connection or an EF `DbContext` on this same database (`AddUnitOfWork()`, added automatically, or the EF unit-of-work package). Name the database explicitly (`Initial Catalog`) in the connection string.
 
 The lease row stores progress as `Progress varbinary(max)` plus `ProgressContract nvarchar(256)` (both null or both set) and the count as `TakeoverCount int NOT NULL DEFAULT 0`.
 

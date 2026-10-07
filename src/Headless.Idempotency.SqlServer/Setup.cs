@@ -124,7 +124,7 @@ public static class SetupIdempotencySqlServer
         "Headless.Idempotency.SqlServer",
         static (factory, connection, cancellationToken) =>
             factory.BeginAsync((SqlConnection)connection, cancellationToken),
-        static services => services.AddSqlServerUnitOfWork(),
+        static services => services.AddUnitOfWork(),
         SqlServerIdempotencySchemaContribution.Create
     );
 }

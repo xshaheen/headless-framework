@@ -17,7 +17,7 @@ namespace Tests;
 /// </summary>
 public interface ISequencesFixture
 {
-    /// <summary>Registers the provider's unit-of-work services (for example <c>AddPostgreSqlUnitOfWork</c>).</summary>
+    /// <summary>Registers the unit-of-work services the provider enlists through (for example <c>AddUnitOfWork</c>).</summary>
     void ConfigureUnitOfWork(IServiceCollection services);
 
     /// <summary>Chooses the provider under test on the sequences builder, pointed at the counter database.</summary>

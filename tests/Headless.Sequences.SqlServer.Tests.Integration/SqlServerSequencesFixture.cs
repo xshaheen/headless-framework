@@ -63,7 +63,7 @@ public sealed class SqlServerSequencesFixture
 
     public void ConfigureUnitOfWork(IServiceCollection services)
     {
-        services.AddSqlServerUnitOfWork();
+        services.AddUnitOfWork();
     }
 
     public void ConfigureProvider(HeadlessSequencesSetupBuilder setup)

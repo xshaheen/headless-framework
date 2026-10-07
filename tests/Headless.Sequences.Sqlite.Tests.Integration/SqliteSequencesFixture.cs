@@ -41,7 +41,7 @@ public sealed class SqliteSequencesFixture
 
     public void ConfigureUnitOfWork(IServiceCollection services)
     {
-        services.AddSqliteUnitOfWork();
+        services.AddUnitOfWork();
     }
 
     public void ConfigureProvider(HeadlessSequencesSetupBuilder setup)
