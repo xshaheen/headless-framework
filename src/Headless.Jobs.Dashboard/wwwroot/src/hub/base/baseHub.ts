@@ -2,14 +2,22 @@ import * as signalR from "@microsoft/signalr";
 import { getBasePath, getBackendUrl } from '@/utilities/pathResolver';
 import { getHubAccessToken } from '@/services/auth';
 
+type HubHandler = (...args: unknown[]) => void;
+
 class BaseHub {
     public connection: signalR.HubConnection;
 
+    // The connection's URL carries the credential, so a token that changes (sign-in, sign-out, another user) needs a
+    // new connection. Handlers are kept here and replayed onto it, so subscriptions survive the rebuild.
+    private readonly handlers: Array<[string, HubHandler]> = [];
+    private builtWithToken: string | null;
+
     constructor() {
-        this.connection = this.createConnection();
+        this.builtWithToken = getHubAccessToken();
+        this.connection = this.createConnection(this.builtWithToken);
     }
 
-    private createConnection(): signalR.HubConnection {
+    private createConnection(accessToken: string | null): signalR.HubConnection {
 
         const basePath = getBasePath();
         const backendUrl = getBackendUrl();
@@ -25,8 +33,6 @@ class BaseHub {
                 : `${basePath}/job-notification-hub`;
         }
 
-        const accessToken = getHubAccessToken();
-        
         // WebSockets cannot send custom headers, so we need to use query parameters
         // For other transports (ServerSentEvents, LongPolling), we can use headers
         const useWebSocketsOnly = true; // Set to false if you want to allow fallback transports
@@ -91,7 +97,15 @@ class BaseHub {
         if (this.connection.state === signalR.HubConnectionState.Connected) {
             this.connection.stop();
         }
-        this.connection = this.createConnection();
+        this.replaceConnection(getHubAccessToken());
+    }
+
+    private replaceConnection(accessToken: string | null): void {
+        this.builtWithToken = accessToken;
+        this.connection = this.createConnection(accessToken);
+        for (const [methodName, handler] of this.handlers) {
+            this.connection.on(methodName, handler);
+        }
     }
 
     // Send a message to the server
@@ -115,6 +129,15 @@ class BaseHub {
         
         if (this.connection.state === signalR.HubConnectionState.Connecting) {
             return;
+        }
+
+        // Built before sign-in, or for a credential that has since changed: connect with the current one.
+        const accessToken = getHubAccessToken();
+        if (
+            this.connection.state === signalR.HubConnectionState.Disconnected &&
+            accessToken !== this.builtWithToken
+        ) {
+            this.replaceConnection(accessToken);
         }
         
         try {
@@ -157,7 +180,7 @@ class BaseHub {
 
     // Subscribe to messages from the server
     onReceiveMessageAsSingle<T>(methodName: string, callback: (response: T) => void): void {
-        this.connection.on(methodName, (responseFromHub: unknown) => {
+        const handler: HubHandler = (responseFromHub: unknown) => {
             if (Array.isArray(responseFromHub)) {
                 responseFromHub.forEach((response) => {
                     callback(response as T);
@@ -165,7 +188,9 @@ class BaseHub {
             } else {
                 callback(responseFromHub as T);
             }
-        });
+        };
+        this.handlers.push([methodName, handler]);
+        this.connection.on(methodName, handler);
     }
 }
 

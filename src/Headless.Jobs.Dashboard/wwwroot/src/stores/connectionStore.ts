@@ -1,6 +1,8 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import JobNotificationHub from '../hub/jobNotificationHub'
+import { useAuthStore } from './authStore'
+import { requiresAuthentication } from '@/utilities/pathResolver'
 
 export const useConnectionStore = defineStore('connection', () => {
   // State
@@ -11,6 +13,31 @@ export const useConnectionStore = defineStore('connection', () => {
   const _isInitialized = ref(false)
   const _connectionPromise = ref<Promise<void> | null>(null)
   const _healthCheckInterval = ref<ReturnType<typeof setInterval> | null>(null)
+  const authStore = useAuthStore()
+
+  // The hub authenticates the signed-in credential, so a connection opened before sign-in is refused by the server.
+  // It starts once there is a credential and stops when the session ends (sign-out or session timeout).
+  function _canConnect(): boolean {
+    return !requiresAuthentication() || authStore.isLoggedIn
+  }
+
+  watch(
+    () => authStore.isLoggedIn,
+    async (loggedIn) => {
+      if (!requiresAuthentication()) {
+        return
+      }
+
+      if (loggedIn) {
+        await initializeConnectionWithRetry()
+        return
+      }
+
+      _stopHealthCheck()
+      await JobNotificationHub.stopConnection()
+      resetConnection()
+    },
+  )
 
   // Getters
   const isConnecting = computed(() => _isConnecting.value)
@@ -82,7 +109,7 @@ export const useConnectionStore = defineStore('connection', () => {
 
   // Initialize connection once for the entire app
   async function initializeConnection(): Promise<void> {
-    if (_isInitialized.value) {
+    if (_isInitialized.value || !_canConnect()) {
       return
     }
 
@@ -102,7 +129,7 @@ export const useConnectionStore = defineStore('connection', () => {
 
   // Initialize connection with retry logic
   async function initializeConnectionWithRetry(maxRetries: number = 3): Promise<void> {
-    if (_isInitialized.value) {
+    if (_isInitialized.value || !_canConnect()) {
       return
     }
 
