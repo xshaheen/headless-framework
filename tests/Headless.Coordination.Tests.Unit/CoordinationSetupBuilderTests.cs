@@ -3,6 +3,7 @@
 using Headless.Coordination;
 using Headless.Messaging;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -93,6 +94,41 @@ public sealed class CoordinationSetupBuilderTests
         using var provider = services.BuildServiceProvider();
 
         // then
+        provider.GetRequiredService<INodeMembership>().Should().BeOfType<MembershipService>();
+    }
+
+    [Fact]
+    public void should_register_the_membership_heartbeat_by_default()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
+
+        // when
+        services.AddHeadlessCoordination(setup =>
+            setup.RegisterExtension(new FakeCoordinationProviderOptionsExtension())
+        );
+        using var provider = services.BuildServiceProvider();
+
+        // then
+        provider.GetServices<IHostedService>().Should().ContainSingle(x => x is MembershipHeartbeatBackgroundService);
+    }
+
+    [Fact]
+    public void should_not_register_the_membership_heartbeat_when_disabled()
+    {
+        // given
+        var services = new ServiceCollection();
+        services.AddSingleton(typeof(ILogger<>), typeof(NullLogger<>));
+
+        // when
+        services.AddHeadlessCoordination(setup =>
+            setup.DisableMembershipHeartbeat().RegisterExtension(new FakeCoordinationProviderOptionsExtension())
+        );
+        using var provider = services.BuildServiceProvider();
+
+        // then
+        provider.GetServices<IHostedService>().Should().NotContain(x => x is MembershipHeartbeatBackgroundService);
         provider.GetRequiredService<INodeMembership>().Should().BeOfType<MembershipService>();
     }
 

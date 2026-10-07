@@ -238,11 +238,55 @@ public sealed class MembershipHeartbeatBackgroundServiceTests : TestBase
         store.Leaves.Should().BeEmpty();
     }
 
+    [Fact]
+    public async Task should_retry_registration_on_the_real_clock_when_the_app_clock_never_advances()
+    {
+        // given
+        var store = new FakeMembershipStore { FailingRegistrations = 1 };
+        var (sut, _, membership) = _CreateSut(store, realTimeProvider: TimeProvider.System);
+        using var serviceLifetime = sut;
+
+        // when
+        await sut.StartAsync(AbortToken);
+
+        // then
+        var deadline = TimeProvider.System.GetTimestamp();
+        while (membership.Identity is null && TimeProvider.System.GetElapsedTime(deadline) < TimeSpan.FromSeconds(5))
+        {
+            await Task.Delay(20, AbortToken);
+        }
+
+        membership.Identity.Should().NotBeNull();
+        store.AllocateIncarnationCalls.Should().Be(2);
+        await sut.StopAsync(AbortToken);
+    }
+
+    [Fact]
+    public async Task should_bound_graceful_leave_on_the_real_clock_when_the_app_clock_never_advances()
+    {
+        // given
+        var store = new FakeMembershipStore { BlockOnLeave = true };
+        var (sut, _, membership) = _CreateSut(store, realTimeProvider: TimeProvider.System);
+        await membership.RegisterAsync(AbortToken);
+
+        // when
+        var stopTask = sut.StopAsync(AbortToken);
+
+        // then
+        await stopTask.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+        store.Leaves.Should().BeEmpty();
+    }
+
     private static (
         MembershipHeartbeatBackgroundService Sut,
         FakeTimeProvider TimeProvider,
         MembershipService Membership
-    ) _CreateSut(FakeMembershipStore store, CoordinationOptions? options = null, FakeTimeProvider? timeProvider = null)
+    ) _CreateSut(
+        FakeMembershipStore store,
+        CoordinationOptions? options = null,
+        FakeTimeProvider? timeProvider = null,
+        TimeProvider? realTimeProvider = null
+    )
     {
         var coordinationOptions = options ?? new CoordinationOptions();
         var source = new MembershipEventSource(NullLogger<MembershipEventSource>.Instance);
@@ -260,6 +304,7 @@ public sealed class MembershipHeartbeatBackgroundServiceTests : TestBase
             source,
             coordinationOptions,
             timeProvider,
+            realTimeProvider ?? timeProvider,
             NullLogger<MembershipHeartbeatBackgroundService>.Instance
         );
 

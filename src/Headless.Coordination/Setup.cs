@@ -67,7 +67,7 @@ public static class SetupCoordinationCore
         {
             services.Configure<CoordinationOptions, CoordinationOptionsValidator>(optionSetupAction);
 
-            return services._AddCoordinationCore<TStore>();
+            return services._AddCoordinationCore<TStore>()._AddMembershipHeartbeat();
         }
 
         /// <summary>
@@ -84,7 +84,7 @@ public static class SetupCoordinationCore
         {
             services.Configure<CoordinationOptions, CoordinationOptionsValidator>(optionSetupAction);
 
-            return services._AddCoordinationCore<TStore>();
+            return services._AddCoordinationCore<TStore>()._AddMembershipHeartbeat();
         }
 
         /// <summary>
@@ -101,7 +101,7 @@ public static class SetupCoordinationCore
         {
             services.Configure<CoordinationOptions, CoordinationOptionsValidator>(configuration);
 
-            return services._AddCoordinationCore<TStore>();
+            return services._AddCoordinationCore<TStore>()._AddMembershipHeartbeat();
         }
 
         private IServiceCollection _AddCoordinationCore<TStore>()
@@ -147,7 +147,23 @@ public static class SetupCoordinationCore
             // stronger, explicit provider and should always replace the null default. A custom INodeMembership must
             // therefore be registered AFTER AddHeadlessCoordination to take effect.
             services.AddSingleton<INodeMembership>(static sp => sp.GetRequiredService<MembershipService>());
-            services.TryAddSingleton<MembershipHeartbeatBackgroundService>();
+
+            return services;
+        }
+
+        private IServiceCollection _AddMembershipHeartbeat()
+        {
+            // The registration back-off and the bounded leave on stop ride out a store failure, so they wait real
+            // time: a test host that registers a FakeTimeProvider and never advances it must still register and stop.
+            // Beat cadence and the self-fence stay on the registered clock, which tests advance to drive liveness.
+            services.TryAddSingleton(static sp => new MembershipHeartbeatBackgroundService(
+                sp.GetRequiredService<MembershipService>(),
+                sp.GetRequiredService<MembershipEventSource>(),
+                sp.GetRequiredService<CoordinationOptions>(),
+                sp.GetRequiredService<TimeProvider>(),
+                TimeProvider.System,
+                sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<MembershipHeartbeatBackgroundService>>()
+            ));
 
             services.TryAddEnumerable(
                 ServiceDescriptor.Singleton<IHostedService, MembershipHeartbeatBackgroundService>(static sp =>
@@ -185,6 +201,11 @@ public static class SetupCoordinationCore
         services.AddSingleton(new CoordinationProviderRegistration(extensionTypeName));
 
         extension.AddServices(services);
+
+        if (setup.RegisterMembershipHeartbeat)
+        {
+            services._AddMembershipHeartbeat();
+        }
 
         return services;
     }

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Headless.Threading;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -26,9 +27,6 @@ internal sealed class DeadOwnerRecoveryBridge<TReclaimer>(
 ) : BackgroundService, IDeadOwnerRecoveryBridge
     where TReclaimer : IDeadOwnerReclaimer
 {
-    private static readonly TimeSpan _WatchRetryInitialBackoff = TimeSpan.FromSeconds(1);
-    private static readonly TimeSpan _WatchRetryMaxBackoff = TimeSpan.FromSeconds(30);
-
     private readonly Lock _gate = new();
     private readonly HashSet<string> _reclaimed = new(StringComparer.Ordinal);
 
@@ -41,8 +39,9 @@ internal sealed class DeadOwnerRecoveryBridge<TReclaimer>(
     {
         // Re-subscribe with bounded exponential backoff so a transient watch failure (store blip, dropped stream)
         // degrades to higher reconcile latency, not to a permanently-dead low-latency path for the process
-        // lifetime. The periodic reconcile remains the authoritative backstop throughout.
-        var backoff = _WatchRetryInitialBackoff;
+        // lifetime. The periodic reconcile remains the authoritative backstop throughout. The backoff waits real
+        // time, so a host on a faked clock that is never advanced still re-subscribes.
+        var backoff = new ReconnectBackoff();
 
         while (!stoppingToken.IsCancellationRequested)
         {
@@ -52,7 +51,7 @@ internal sealed class DeadOwnerRecoveryBridge<TReclaimer>(
                 await foreach (var membershipEvent in membership.WatchAsync(stoppingToken).ConfigureAwait(false))
                 {
                     await HandleEventAsync(membershipEvent).ConfigureAwait(false);
-                    backoff = _WatchRetryInitialBackoff; // a healthy stream resets the backoff
+                    backoff.Reset(); // a healthy stream resets the backoff
                 }
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -64,16 +63,10 @@ internal sealed class DeadOwnerRecoveryBridge<TReclaimer>(
                 logger.MembershipWatchFailed(ex);
             }
 
-            try
-            {
-                await timeProvider.Delay(backoff, stoppingToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            if (!await backoff.WaitAsync(stoppingToken).ConfigureAwait(false))
             {
                 return;
             }
-
-            backoff = backoff >= _WatchRetryMaxBackoff ? _WatchRetryMaxBackoff : backoff + backoff;
         }
     }
 
@@ -115,9 +108,10 @@ internal sealed class DeadOwnerRecoveryBridge<TReclaimer>(
     {
         // Bound the snapshot read so a hung membership store cannot block the reconcile loop indefinitely; on
         // timeout the read fails with OCE, the loop logs DeadNodeReconcileFailed, and the next tick retries. The
-        // reconcile interval is the natural cap — a snapshot read should never approach a whole tick.
+        // reconcile interval is the natural cap — a snapshot read should never approach a whole tick. The bound is
+        // an I/O timeout, so it runs on the system clock; only the reconcile cadence follows the registered clock.
         var timeout = reclaimer.ReconcileInterval;
-        using var timeoutCts = timeout > TimeSpan.Zero ? new CancellationTokenSource(timeout, timeProvider) : null;
+        using var timeoutCts = timeout > TimeSpan.Zero ? new CancellationTokenSource(timeout) : null;
         using var linkedCts = timeoutCts is null
             ? null
             : CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);

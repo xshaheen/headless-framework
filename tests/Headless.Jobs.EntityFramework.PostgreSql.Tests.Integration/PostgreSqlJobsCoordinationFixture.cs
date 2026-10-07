@@ -95,7 +95,7 @@ public class PostgreSqlJobsCoordinationFixture
     )
         where TContext : DbContext
     {
-        builder.UsePostgreSql<TContext>(configureCoordination);
+        builder.UsePostgreSql<TContext>(coordination => coordination.Configure(configureCoordination));
     }
 
     public DbConnection CreateConnection()

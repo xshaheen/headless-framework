@@ -5,11 +5,20 @@ using Microsoft.Extensions.Logging;
 
 namespace Headless.Coordination;
 
+/// <summary>Registers this node, heartbeats it, publishes membership events, and leaves on shutdown.</summary>
+/// <param name="timeProvider">
+/// The registered clock: paces beats and measures the self-fence against <see cref="CoordinationOptions.DeadThreshold"/>.
+/// </param>
+/// <param name="realTimeProvider">
+/// The clock for waits that ride out a store failure: the registration back-off and the bounded leave on stop.
+/// Registration passes <see cref="TimeProvider.System"/>; tests pass a fake to step through those waits.
+/// </param>
 internal sealed class MembershipHeartbeatBackgroundService(
     MembershipService membership,
     MembershipEventSource eventSource,
     CoordinationOptions options,
     TimeProvider timeProvider,
+    TimeProvider realTimeProvider,
     ILogger<MembershipHeartbeatBackgroundService> logger
 ) : BackgroundService
 {
@@ -53,7 +62,7 @@ internal sealed class MembershipHeartbeatBackgroundService(
         await base.StopAsync(cancellationToken).ConfigureAwait(false);
 
         // Best-effort graceful leave under a bounded budget so a store outage can't hang host shutdown.
-        using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(5), timeProvider);
+        using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(5), realTimeProvider);
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
 
         try
@@ -90,7 +99,7 @@ internal sealed class MembershipHeartbeatBackgroundService(
             catch (Exception ex) when (attempt < maxAttempts)
             {
                 logger.MembershipRegistrationRetry(ex, attempt, maxAttempts);
-                await timeProvider.Delay(delay, cancellationToken).ConfigureAwait(false);
+                await realTimeProvider.Delay(delay, cancellationToken).ConfigureAwait(false);
                 delay = TimeSpan.FromMilliseconds(Math.Min(delay.TotalMilliseconds * 2, 5000));
             }
             catch (Exception ex) when (options.MembershipLostBehavior == MembershipLostBehavior.StopMembershipOnly)

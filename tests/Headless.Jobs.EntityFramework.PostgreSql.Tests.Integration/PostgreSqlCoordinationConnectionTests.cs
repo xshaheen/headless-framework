@@ -42,7 +42,7 @@ public sealed class PostgreSqlCoordinationConnectionTests(PostgreSqlJobsCoordina
             jobs.DisableBackgroundServices();
             jobs.AddModule<CoordinatedJobsModule>();
             jobs.UsePostgreSql<DataSourceApplicationContext>(coordination =>
-                coordination.ClusterName = "application-data-source"
+                coordination.Configure(options => options.ClusterName = "application-data-source")
             );
         });
 

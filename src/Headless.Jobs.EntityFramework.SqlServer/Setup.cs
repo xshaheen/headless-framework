@@ -34,8 +34,15 @@ public static class SetupSqlServerJobsEntityFramework
         /// UseEntityFramework path when coordination
         /// is already configured separately. This method does not create the application schema.
         /// </remarks>
+        /// <param name="configureCoordination">
+        /// Configures the coordination this method registers, for example
+        /// <c>coordination =&gt; coordination.Configure(options =&gt; options.ClusterName = "orders")</c>, or
+        /// <c>DisableMembershipHeartbeat()</c> on a test host. The provider is selected here; do not call a
+        /// <c>Use*</c> provider method on it.
+        /// </param>
+        /// <param name="modelConfiguration">How the jobs model is added to the application context.</param>
         public JobsOptionsBuilder<TimeJobEntity, CronJobEntity> UseSqlServer<TContext>(
-            Action<CoordinationOptions> configureCoordination,
+            Action<HeadlessCoordinationSetupBuilder> configureCoordination,
             ConfigurationType modelConfiguration = ConfigurationType.UseModelCustomizer
         )
             where TContext : DbContext
@@ -52,7 +59,7 @@ public static class SetupSqlServerJobsEntityFramework
                     services.AddEntityFrameworkUnitOfWork();
                     services.AddHeadlessCoordination(coordination =>
                     {
-                        coordination.Configure(configureCoordination);
+                        configureCoordination(coordination);
                         coordination.UseSqlServer(
                             (options, provider) =>
                             {

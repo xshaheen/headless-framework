@@ -105,6 +105,11 @@ public static class SetupJobs
             "SchedulerOptionsBuilder.ProgressReportInterval must be finite and greater than TimeSpan.Zero."
         );
         Ensure.True(
+            optionInstance.RegisterStartupInitializer || !optionInstance.RegisterBackgroundServices,
+            "DisableStartupInitialization() requires DisableBackgroundServices(): the scheduler dispatches only after the "
+                + "startup fingerprint drain, and a durable claim stamps the node identity registered at startup."
+        );
+        Ensure.True(
             schedulerOptionsBuilder.MaxConcurrency > 0,
             "SchedulerOptionsBuilder.MaxConcurrency must be greater than zero."
         );
@@ -215,10 +220,25 @@ public static class SetupJobs
         // The activation gate itself — registered before every service that signals or waits on it. Registration order
         // of the hosted services below is a readability convention only; the barrier is the actual ordering guarantee,
         // because HostOptions.ServicesStartConcurrently lets a consuming host start all of them at once.
-        services.AddSingleton<JobsActivationBarrier>();
+        if (optionInstance.RegisterStartupInitializer)
+        {
+            services.AddSingleton<JobsActivationBarrier>();
 
-        // Core initialization — opens the activation barrier when its drain completes.
-        services.AddHostedService<JobsInitializationHostedService>();
+            // Core initialization — opens the activation barrier when its drain completes.
+            services.AddHostedService<JobsInitializationHostedService>();
+        }
+        else
+        {
+            // Background services are off (checked above), so no loop on this host selects or claims work and none
+            // needs the drain; the barrier opens at once so the post-commit worker still drains its signals.
+            var activationBarrier = new JobsActivationBarrier();
+            activationBarrier.MarkCompleted();
+            services.AddSingleton(activationBarrier);
+
+            // The initializer is what built the catalog and policies at startup; without it, keep that check at
+            // startup rather than at the first enqueue.
+            services.AddStartupValidator<JobsCatalogStartupValidator>();
+        }
 
         // Post-commit worker for coordinated enqueues — registered even with DisableBackgroundServices(): the
         // managers hand it a signal from the commit callback regardless, and on such hosts its side effects reduce to
@@ -287,7 +307,11 @@ public static class SetupJobs
         // services are registered so the require-provider check sees the coordination registration.
         if (optionInstance.RequiresCoordinatedMembership)
         {
-            _AddCoordinatedDurablePath(services);
+            _AddCoordinatedDurablePath(
+                services,
+                optionInstance.RegisterStartupInitializer,
+                optionInstance.RegisterBackgroundServices
+            );
         }
 
         if (optionInstance.JobExceptionHandlerType != null)
@@ -399,7 +423,11 @@ public static class SetupJobs
         services.AddOrReplaceFallbackSingleton<ICurrentTenant, NullCurrentTenant, CurrentTenant>();
     }
 
-    private static void _AddCoordinatedDurablePath(IServiceCollection services)
+    private static void _AddCoordinatedDurablePath(
+        IServiceCollection services,
+        bool registerStartupGate,
+        bool claimsWork
+    )
     {
         // Fail-fast: the durable path requires a real coordination provider. INodeMembership resolves by
         // last-wins registration (AddHeadlessCoordination uses AddSingleton, not TryAdd), so a consumer package may
@@ -423,12 +451,34 @@ public static class SetupJobs
             );
         }
 
+        // A node that claims rows must keep beating and self-fencing: without the heartbeat, peers classify it dead
+        // after DeadThreshold and release its in-flight rows while it keeps running them, so two nodes run one job.
+        // Only Coordination's own membership is checked; a custom INodeMembership owns its liveness.
+        if (
+            claimsWork
+            && services.Any(static d => d.ServiceType == typeof(MembershipService))
+            && !services.Any(static d => d.ServiceType == typeof(MembershipHeartbeatBackgroundService))
+        )
+        {
+            throw new InvalidOperationException(
+                "Jobs background services claim rows under this node's coordination identity, so the node must "
+                    + "heartbeat: remove DisableMembershipHeartbeat() from the coordination setup, or call "
+                    + "DisableBackgroundServices() on this host."
+            );
+        }
+
         // Override the default owner identity with the node@incarnation adapter over INodeMembership.
         services.AddSingleton<IJobsOwnerIdentity, JobsOwnerIdentityAdapter>();
 
-        // Event-driven dead-node recovery (shared bridge) and the registration startup gate.
+        // Event-driven dead-node recovery (shared bridge) and the registration startup gate. The gate only orders
+        // registration ahead of the first claim, so a host without startup initialization (and so without claims)
+        // leaves registration to the coordination heartbeat or to its own code.
         services.AddSingleton<JobsDeadOwnerReclaimer>();
         services.AddHostedService<DeadOwnerRecoveryBridge<JobsDeadOwnerReclaimer>>();
-        services.AddHostedService<JobsCoordinationStartupGate>();
+
+        if (registerStartupGate)
+        {
+            services.AddHostedService<JobsCoordinationStartupGate>();
+        }
     }
 }

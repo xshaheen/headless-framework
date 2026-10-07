@@ -26,7 +26,9 @@ public sealed class SqlServerCoordinationConnectionTests : TestBase
         {
             jobs.DisableBackgroundServices();
             jobs.AddModule<CoordinatedJobsModule>();
-            jobs.UseSqlServer<TokenApplicationContext>(coordination => coordination.ClusterName = "access-token");
+            jobs.UseSqlServer<TokenApplicationContext>(coordination =>
+                coordination.Configure(options => options.ClusterName = "access-token")
+            );
         });
 
         using var host = builder.Build();

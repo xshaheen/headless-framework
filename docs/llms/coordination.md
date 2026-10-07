@@ -115,7 +115,9 @@ None.
 ### API and behavior
 
 - An internal membership service implements `INodeMembership` (consumers resolve `INodeMembership`).
-- Background heartbeat service derives lifecycle events from authoritative snapshots, leaves gracefully on host shutdown under a bounded timeout, and stops beating once local membership is lost.
+- Background heartbeat service registers the node at start, derives lifecycle events from authoritative snapshots, leaves gracefully on host shutdown under a bounded timeout, and stops beating once local membership is lost.
+- `setup.DisableMembershipHeartbeat()` skips that hosted service. Use it on test hosts and tools that must not join the cluster on their own; `INodeMembership` stays registered, so a test can call `RegisterAsync` and `HeartbeatAsync` itself. A node that keeps running without heartbeats reads as `Dead` to its peers once `DeadThreshold` passes, so production nodes keep the heartbeat. `AddHeadlessJobs` on the durable store refuses the switch unless Jobs background services are off, since a node that claims work without beating would have that work released to peers while it still runs it.
+- Clocks: the registered `TimeProvider` paces beats, the dead-owner reconcile, and the local self-fence, so a test advances it to drive liveness. The registration retry back-off, the bounded leave on shutdown, the dead-owner watch re-subscribe back-off, and the reconcile's snapshot-read timeout wait real time, so a host that registers a `FakeTimeProvider` and never advances it still registers after a transient store failure and still stops.
 - Bounded per-subscriber event channels isolate slow consumers from heartbeats.
 - Default node-id provider resolves configured id, Kubernetes pod identity, hostname, then generated id.
 
@@ -166,7 +168,7 @@ Coordination owns the setting so the membership tables land in the same schema w
 
 ### Runtime behavior
 
-Registers `TimeProvider.System`, framework GUID generator defaults, `IHostIdentityAccessor` (from `Headless.Context`), `INodeIdProvider`, `INodeMembership`, `IMembershipEventSource`, and the heartbeat hosted service. The default `INodeIdProvider` returns `IHostIdentityAccessor.HostName`, so the node a membership store sees is the same host name that stamps message origins and logs. To pin it, set `HostIdentityOptions.HostName` through `services.AddHeadlessHostIdentity(o => o.HostName = "orders-worker-0")` before any feature registration; the discovery order (`POD_NAMESPACE/POD_NAME`, machine name, generated) is documented in [context.md](context.md).
+Registers `TimeProvider.System`, framework GUID generator defaults, `IHostIdentityAccessor` (from `Headless.Context`), `INodeIdProvider`, `INodeMembership`, `IMembershipEventSource`, and the heartbeat hosted service (unless `DisableMembershipHeartbeat()` is called; `AddCoordinationCore<TStore>` always registers it). The default `INodeIdProvider` returns `IHostIdentityAccessor.HostName`, so the node a membership store sees is the same host name that stamps message origins and logs. To pin it, set `HostIdentityOptions.HostName` through `services.AddHeadlessHostIdentity(o => o.HostName = "orders-worker-0")` before any feature registration; the discovery order (`POD_NAMESPACE/POD_NAME`, machine name, generated) is documented in [context.md](context.md).
 
 ---
 
