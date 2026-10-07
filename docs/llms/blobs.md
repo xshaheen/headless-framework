@@ -95,7 +95,7 @@ Whether that provisioning step is required at all is a data-plane fact, so it li
 
 Metadata uses one read-only dictionary shape — `IReadOnlyDictionary<string, string>?` with non-null values — across the `UploadAsync` parameter, `BlobInfo.Metadata`, and `BlobDownloadResult.Metadata`. All six providers round-trip it. S3, Azure, and Redis store it natively (Redis in a separate info hash, atomic via Lua). FileSystem and SFTP, which have no native blob-metadata concept, store it in a **sidecar companion file** beside each blob, named with the reserved `.hlmeta` suffix.
 
-The served media type is a separate `contentType` argument on `UploadAsync` and a `ContentType` member on `BlobUploadRequest`, not a metadata entry. When it is `null` the provider derives it from the key's extension, so an extension-less key is served as `application/octet-stream` unless the caller passes the type. S3 and Azure set it as the object's `Content-Type`, which every GET and presigned URL then carries; FileSystem, Redis, and SFTP do not store it, and the `Headless.Blobs.SignedUrlEndpoint` endpoint derives the served type from the key's extension instead.
+The served media type is a separate `contentType` argument on `UploadAsync` and a `ContentType` member on `BlobUploadRequest`, not a metadata entry. Both come right after the stream and before `metadata`. Never put a `content-type` key in `metadata`: S3 stores it as the user header `x-amz-meta-content-type` and still serves the type derived from the key. When it is `null` the provider derives it from the key's extension, so an extension-less key is served as `application/octet-stream` unless the caller passes the type. S3 and Azure set it as the object's `Content-Type`, which every GET and presigned URL then carries; FileSystem, Redis, and SFTP do not store it, and the `Headless.Blobs.SignedUrlEndpoint` endpoint derives the served type from the key's extension instead.
 
 Sidecar trade-offs the agent must know: write order is content-first then sidecar, and a missing sidecar reads as empty metadata, so reads stay safe across a crash window — but the pair is **non-atomic** on FileSystem/SFTP (no transaction). Sidecars are filtered from every listing, existence, count, and delete-all result, so they never surface as blobs or match a prefix/glob. Deleting a blob removes its sidecar, so re-uploading the same key without metadata cannot resurrect stale metadata. Any blob key segment that would collide with the reserved `.hlmeta` form is rejected at `BlobLocation` construction.
 
@@ -119,7 +119,7 @@ The operational contract changed wholesale (greenfield, no compatibility layer).
 
 | Old (`string[] container` + `blobName`) | New (`BlobLocation` contract) |
 | --- | --- |
-| `UploadAsync(container, blobName, stream, metadata, ct)` | `UploadAsync(new BlobLocation(container, path), stream, metadata, ct)` |
+| `UploadAsync(container, blobName, stream, metadata, ct)` | `UploadAsync(new BlobLocation(container, path), stream, contentType, metadata, ct)` |
 | `OpenReadStreamAsync(container, blobName, ct)` | `OpenReadStreamAsync(new BlobLocation(container, path), ct)` |
 | `GetBlobInfoAsync(container, blobName, ct)` | `GetBlobInfoAsync(new BlobLocation(container, path), ct)` |
 | `ExistsAsync(container, blobName, ct)` | `ExistsAsync(new BlobLocation(container, path), ct)` |
@@ -130,7 +130,7 @@ The operational contract changed wholesale (greenfield, no compatibility layer).
 | `GetBlobsAsync(container, pattern, ct)` (interface member) | `GetBlobsAsync(new BlobQuery(container, prefix))` (extension); glob via `GetBlobsAsync(query, globPattern)` |
 | `DeleteAllAsync(container, blobSearchPattern, ct)` | `DeleteAllAsync(new BlobQuery(container, prefix), ct)` — prefix-based; glob-delete is list + filter + bulk-delete |
 | `CreateContainerAsync(container, ct)` | `IBlobContainerManager.EnsureContainerAsync(container, ct)` — resolved from DI |
-| `new BlobUploadRequest(stream, fileName, metadata)` / named `FileName:` | `new BlobUploadRequest(path, stream, metadata)` / named `Path:` |
+| `new BlobUploadRequest(stream, fileName, metadata)` / named `FileName:` | `new BlobUploadRequest(path, stream, contentType, metadata)` / named `Path:` |
 | `BulkUploadAsync(...)` → `IReadOnlyList<Result<Exception>>` | `BulkUploadAsync(container, requests, ct)` → `IReadOnlyList<BlobBulkResult>` |
 | `BulkDeleteAsync(...)` → `IReadOnlyList<Result<bool, Exception>>` | `BulkDeleteAsync(container, paths, ct)` → `IReadOnlyList<BlobBulkResult>` |
 | metadata `Dictionary<string, string?>` | `IReadOnlyDictionary<string, string>?` (non-null values) everywhere |
@@ -189,13 +189,14 @@ dotnet add package Headless.Blobs.Abstractions
 ```csharp
 public sealed class FileService(IBlobStorage storage)
 {
-    public async Task UploadAsync(Stream file, string fileName, CancellationToken ct)
+    public async Task UploadAsync(Stream file, string fileName, string contentType, CancellationToken ct)
     {
         var location = new BlobLocation("uploads", "images", fileName); // container "uploads", key "images/<fileName>"
 
         await storage.UploadAsync(
             location,
             file,
+            contentType: contentType,
             metadata: new Dictionary<string, string> { ["uploaded-by"] = "user-123" },
             cancellationToken: ct
         );

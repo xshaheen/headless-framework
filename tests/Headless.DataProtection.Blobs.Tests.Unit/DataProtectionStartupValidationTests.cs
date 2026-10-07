@@ -37,8 +37,8 @@ public sealed class DataProtectionStartupValidationTests : TestBase
             .UploadAsync(
                 Arg.Is<BlobLocation>(l => l.Path != BlobStorageDataProtectionXmlRepository.WriteProbeBlobName),
                 Arg.Any<Stream>(),
-                Arg.Any<IReadOnlyDictionary<string, string>?>(),
                 Arg.Any<string?>(),
+                Arg.Any<IReadOnlyDictionary<string, string>?>(),
                 Arg.Any<CancellationToken>()
             );
         await storage
@@ -46,8 +46,8 @@ public sealed class DataProtectionStartupValidationTests : TestBase
             .UploadAsync(
                 Arg.Is<BlobLocation>(l => l.Path == BlobStorageDataProtectionXmlRepository.WriteProbeBlobName),
                 Arg.Any<Stream>(),
-                Arg.Any<IReadOnlyDictionary<string, string>?>(),
                 Arg.Any<string?>(),
+                Arg.Any<IReadOnlyDictionary<string, string>?>(),
                 Arg.Any<CancellationToken>()
             );
         await storage
@@ -188,8 +188,8 @@ public sealed class DataProtectionStartupValidationTests : TestBase
             .UploadAsync(
                 Arg.Is<BlobLocation>(l => l.Path == BlobStorageDataProtectionXmlRepository.WriteProbeBlobName),
                 Arg.Any<Stream>(),
-                Arg.Any<IReadOnlyDictionary<string, string>?>(),
                 Arg.Any<string?>(),
+                Arg.Any<IReadOnlyDictionary<string, string>?>(),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -241,8 +241,8 @@ public sealed class DataProtectionStartupValidationTests : TestBase
             .UploadAsync(
                 Arg.Is<BlobLocation>(l => l.Path == BlobStorageDataProtectionXmlRepository.WriteProbeBlobName),
                 Arg.Any<Stream>(),
-                Arg.Any<IReadOnlyDictionary<string, string>?>(),
                 Arg.Any<string?>(),
+                Arg.Any<IReadOnlyDictionary<string, string>?>(),
                 Arg.Any<CancellationToken>()
             );
         await storage.DidNotReceiveWithAnyArgs().DeleteAsync(default, CancellationToken.None);
@@ -375,8 +375,8 @@ public sealed class DataProtectionStartupValidationTests : TestBase
             .UploadAsync(
                 Arg.Any<BlobLocation>(),
                 Arg.Any<Stream>(),
-                Arg.Any<IReadOnlyDictionary<string, string>?>(),
                 Arg.Any<string?>(),
+                Arg.Any<IReadOnlyDictionary<string, string>?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(call => new ValueTask(captureAsync(call.Arg<BlobLocation>(), call.Arg<Stream>())));
@@ -408,8 +408,8 @@ public sealed class DataProtectionStartupValidationTests : TestBase
             .UploadAsync(
                 Arg.Any<BlobLocation>(),
                 Arg.Any<Stream>(),
-                Arg.Any<IReadOnlyDictionary<string, string>?>(),
                 Arg.Any<string?>(),
+                Arg.Any<IReadOnlyDictionary<string, string>?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(_ => throw new NotSupportedException("Simulated lost write access"));
@@ -463,8 +463,8 @@ public sealed class DataProtectionStartupValidationTests : TestBase
             .UploadAsync(
                 Arg.Any<BlobLocation>(),
                 Arg.Any<Stream>(),
-                Arg.Any<IReadOnlyDictionary<string, string>?>(),
                 Arg.Any<string?>(),
+                Arg.Any<IReadOnlyDictionary<string, string>?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(_ => throw new NotSupportedException("Simulated fresh-deployment write failure"));

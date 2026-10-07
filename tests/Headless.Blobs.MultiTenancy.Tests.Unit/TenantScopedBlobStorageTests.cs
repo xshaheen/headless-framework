@@ -45,7 +45,7 @@ public sealed class TenantScopedBlobStorageTests : TestBase
         }
 
         // then
-        await _inner.Received(1).UploadAsync(_ScopedAvatar, content, null, "image/png", AbortToken);
+        await _inner.Received(1).UploadAsync(_ScopedAvatar, content, "image/png", null, AbortToken);
     }
 
     [Fact]

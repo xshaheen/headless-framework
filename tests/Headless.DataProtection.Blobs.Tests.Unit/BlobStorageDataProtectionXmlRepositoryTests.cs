@@ -350,8 +350,8 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests : TestBase
             .UploadAsync(
                 Arg.Is<BlobLocation>(l => l.Path == "key-123.xml"),
                 Arg.Any<Stream>(),
-                Arg.Any<IReadOnlyDictionary<string, string>?>(),
                 Arg.Any<string?>(),
+                Arg.Any<IReadOnlyDictionary<string, string>?>(),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -367,8 +367,8 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests : TestBase
             .UploadAsync(
                 Arg.Do<BlobLocation>(l => capturedFileName = l.Path),
                 Arg.Any<Stream>(),
-                Arg.Any<IReadOnlyDictionary<string, string>?>(),
                 Arg.Any<string?>(),
+                Arg.Any<IReadOnlyDictionary<string, string>?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(ValueTask.CompletedTask);
@@ -400,8 +400,8 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests : TestBase
             .UploadAsync(
                 Arg.Is<BlobLocation>(l => l.Container == "DataProtection"),
                 Arg.Any<Stream>(),
-                Arg.Any<IReadOnlyDictionary<string, string>?>(),
                 Arg.Any<string?>(),
+                Arg.Any<IReadOnlyDictionary<string, string>?>(),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -425,8 +425,8 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests : TestBase
             .UploadAsync(
                 Arg.Any<BlobLocation>(),
                 Arg.Any<Stream>(),
-                Arg.Any<IReadOnlyDictionary<string, string>?>(),
                 Arg.Any<string?>(),
+                Arg.Any<IReadOnlyDictionary<string, string>?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(_ =>
@@ -460,8 +460,8 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests : TestBase
             .UploadAsync(
                 Arg.Any<BlobLocation>(),
                 Arg.Any<Stream>(),
-                Arg.Any<IReadOnlyDictionary<string, string>?>(),
                 Arg.Any<string?>(),
+                Arg.Any<IReadOnlyDictionary<string, string>?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(callInfo => captureUploadAsync(callInfo.ArgAt<Stream>(1)));
@@ -487,8 +487,8 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests : TestBase
             .UploadAsync(
                 Arg.Any<BlobLocation>(),
                 Arg.Any<Stream>(),
-                Arg.Any<IReadOnlyDictionary<string, string>?>(),
                 Arg.Any<string?>(),
+                Arg.Any<IReadOnlyDictionary<string, string>?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(_ =>
@@ -540,8 +540,8 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests : TestBase
             .UploadAsync(
                 Arg.Any<BlobLocation>(),
                 Arg.Any<Stream>(),
-                Arg.Any<IReadOnlyDictionary<string, string>?>(),
                 Arg.Any<string?>(),
+                Arg.Any<IReadOnlyDictionary<string, string>?>(),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -556,8 +556,8 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests : TestBase
             .UploadAsync(
                 Arg.Any<BlobLocation>(),
                 Arg.Any<Stream>(),
-                Arg.Any<IReadOnlyDictionary<string, string>?>(),
                 Arg.Any<string?>(),
+                Arg.Any<IReadOnlyDictionary<string, string>?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(_ => throw new IOException("Simulated persistent failure"));
@@ -583,8 +583,8 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests : TestBase
             .UploadAsync(
                 Arg.Any<BlobLocation>(),
                 Arg.Any<Stream>(),
-                Arg.Any<IReadOnlyDictionary<string, string>?>(),
                 Arg.Any<string?>(),
+                Arg.Any<IReadOnlyDictionary<string, string>?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(_ => throw new NotSupportedException("Simulated non-transient failure"));
@@ -604,8 +604,8 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests : TestBase
             .UploadAsync(
                 Arg.Any<BlobLocation>(),
                 Arg.Any<Stream>(),
-                Arg.Any<IReadOnlyDictionary<string, string>?>(),
                 Arg.Any<string?>(),
+                Arg.Any<IReadOnlyDictionary<string, string>?>(),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -652,8 +652,8 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests : TestBase
             .UploadAsync(
                 Arg.Any<BlobLocation>(),
                 Arg.Any<Stream>(),
-                Arg.Any<IReadOnlyDictionary<string, string>?>(),
                 Arg.Any<string?>(),
+                Arg.Any<IReadOnlyDictionary<string, string>?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(_ =>
@@ -682,8 +682,8 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests : TestBase
                     && l.Path == BlobStorageDataProtectionXmlRepository.WriteProbeBlobName
                 ),
                 Arg.Any<Stream>(),
-                Arg.Any<IReadOnlyDictionary<string, string>?>(),
                 Arg.Any<string?>(),
+                Arg.Any<IReadOnlyDictionary<string, string>?>(),
                 Arg.Any<CancellationToken>()
             );
         await storage
@@ -729,8 +729,8 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests : TestBase
             .UploadAsync(
                 Arg.Any<BlobLocation>(),
                 Arg.Any<Stream>(),
-                Arg.Any<IReadOnlyDictionary<string, string>?>(),
                 Arg.Any<string?>(),
+                Arg.Any<IReadOnlyDictionary<string, string>?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(_ => throw new NotSupportedException("Simulated lost write access"));
@@ -819,8 +819,8 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests : TestBase
             .UploadAsync(
                 Arg.Any<BlobLocation>(),
                 Arg.Any<Stream>(),
-                Arg.Any<IReadOnlyDictionary<string, string>?>(),
                 Arg.Any<string?>(),
+                Arg.Any<IReadOnlyDictionary<string, string>?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(ValueTask.CompletedTask);

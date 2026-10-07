@@ -101,8 +101,8 @@ internal static class BlobSignedUrlEndpoint
             await storage.UploadAsync(
                 grant.Location,
                 request.Body,
-                metadata: null,
                 contentType: grant.ContentType ?? request.ContentType,
+                metadata: null,
                 context.RequestAborted
             );
         }

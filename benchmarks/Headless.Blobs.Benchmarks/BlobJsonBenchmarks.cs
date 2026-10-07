@@ -78,8 +78,8 @@ internal sealed class BenchmarkBlobStorage(byte[] bytes) : IBlobStorage
     public ValueTask UploadAsync(
         BlobLocation location,
         Stream content,
-        IReadOnlyDictionary<string, string>? metadata = null,
         string? contentType = null,
+        IReadOnlyDictionary<string, string>? metadata = null,
         CancellationToken cancellationToken = default
     ) => throw new NotSupportedException();
 

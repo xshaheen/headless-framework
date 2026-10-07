@@ -290,8 +290,8 @@ public sealed class BlobStorageExtensionsTests : TestBase
             .UploadAsync(
                 location,
                 Arg.Any<Stream>(),
-                Arg.Is<IReadOnlyDictionary<string, string>>(m => m["type"] == "text"),
                 Arg.Any<string?>(),
+                Arg.Is<IReadOnlyDictionary<string, string>>(m => m["type"] == "text"),
                 AbortToken
             );
     }
@@ -697,8 +697,8 @@ file sealed class InMemoryBlobStorage : IBlobStorage
     public async ValueTask UploadAsync(
         BlobLocation location,
         Stream content,
-        IReadOnlyDictionary<string, string>? metadata = null,
         string? contentType = null,
+        IReadOnlyDictionary<string, string>? metadata = null,
         CancellationToken cancellationToken = default
     )
     {

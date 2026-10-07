@@ -151,10 +151,10 @@ public sealed class BlobStorageDecorationTests
         public ValueTask UploadAsync(
             BlobLocation location,
             Stream content,
-            IReadOnlyDictionary<string, string>? metadata = null,
             string? contentType = null,
+            IReadOnlyDictionary<string, string>? metadata = null,
             CancellationToken cancellationToken = default
-        ) => Inner.UploadAsync(location, content, metadata, contentType, cancellationToken);
+        ) => Inner.UploadAsync(location, content, contentType, metadata, cancellationToken);
 
         public ValueTask<IReadOnlyList<BlobBulkResult>> BulkUploadAsync(
             string container,
