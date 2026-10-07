@@ -26,6 +26,7 @@ const rows = [
   row('idle-1', 'Idle'),
   row('running-1', 'InProgress'),
   row('parent-1', 'Done', [row('child-1', 'Idle')]),
+  { ...row('untyped-1', 'Done'), requestType: '' },
 ]
 
 const listService = fakeService({ items: rows, totalCount: rows.length, pageNumber: 1, pageSize: 20 })
@@ -148,5 +149,11 @@ describe('TimeJob accessible names', () => {
     link.click()
     await flush()
     expect(document.querySelector('.request-dialog-stub')?.textContent).toBe('failed-1')
+  })
+
+  // A job registered without a request type has no payload to show; an empty button would be an invisible tab stop
+  // named only "View request payload for ".
+  it('renders no request-type button for a job without a request type', () => {
+    expect(rowOf('untyped-1')!.querySelector('.blue-underline')).toBeNull()
   })
 })
