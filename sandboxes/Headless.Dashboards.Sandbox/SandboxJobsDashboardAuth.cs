@@ -21,6 +21,36 @@ internal static class SandboxJobsDashboardAuth
             return;
         }
 
+        var secret = Secret(sandbox);
+
+        switch (sandbox.JobsDashboardAuth)
+        {
+            case SandboxJobsAuth.Basic:
+                dashboard.WithBasicAuth(sandbox.JobsDashboardUser, secret);
+                break;
+            case SandboxJobsAuth.ApiKey:
+                dashboard.WithApiKey(secret);
+                break;
+            case SandboxJobsAuth.Host:
+                dashboard.WithHostAuthentication(SandboxHostAuthentication.Policy);
+                break;
+            case SandboxJobsAuth.Custom:
+                var expected = Encoding.UTF8.GetBytes(secret);
+                dashboard.WithCustomAuth(
+                    (credential, _) =>
+                        CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(credential), expected)
+                );
+                break;
+            default:
+                throw new InvalidOperationException(
+                    $"Unknown Sandbox__JobsDashboardAuth '{sandbox.JobsDashboardAuth}'."
+                );
+        }
+    }
+
+    /// <summary>The Jobs secret, falling back to the Messaging password so one generated secret serves both.</summary>
+    public static string Secret(SandboxSettings sandbox)
+    {
         var secret = sandbox.JobsDashboardSecret;
         if (string.IsNullOrEmpty(secret))
         {
@@ -35,25 +65,6 @@ internal static class SandboxJobsDashboardAuth
             );
         }
 
-        switch (sandbox.JobsDashboardAuth)
-        {
-            case SandboxJobsAuth.Basic:
-                dashboard.WithBasicAuth(sandbox.JobsDashboardUser, secret);
-                break;
-            case SandboxJobsAuth.ApiKey:
-                dashboard.WithApiKey(secret);
-                break;
-            case SandboxJobsAuth.Custom:
-                var expected = Encoding.UTF8.GetBytes(secret);
-                dashboard.WithCustomAuth(
-                    (credential, _) =>
-                        CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(credential), expected)
-                );
-                break;
-            default:
-                throw new InvalidOperationException(
-                    $"Unknown Sandbox__JobsDashboardAuth '{sandbox.JobsDashboardAuth}'."
-                );
-        }
+        return secret;
     }
 }

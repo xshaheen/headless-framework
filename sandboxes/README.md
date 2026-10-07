@@ -28,11 +28,11 @@ journeys under auth, set these before `make up` (`make down` first if it is runn
 
 | Variable | Values |
 | --- | --- |
-| `Sandbox__JobsDashboardAuth` | `None` (default), `Basic`, `ApiKey`, or `Custom` |
+| `Sandbox__JobsDashboardAuth` | `None` (default), `Basic`, `ApiKey`, `Custom`, or `Host` |
 | `Sandbox__JobsDashboardSecret` | The password, API key, or custom credential. Defaults to the Messaging password in `sandbox.env`. |
 | `Sandbox__JobsDashboardSessionTimeoutMinutes` | Session timeout; set `1` to see the session expire within a minute |
 
-Basic uses the user `sandbox`. `GET /` reports both modes as `jobsAuth` and `messagingAuth`.
+Basic uses the user `sandbox`. `Host` stands in for an application's own sign-in with a fake scheme: on the Jobs login page, enter `Bearer <secret>` to sign in as `sandbox-operator`, whom the dashboard's `SandboxOperators` policy admits, or `Bearer viewer-<secret>` to sign in as `sandbox-viewer`, whom it refuses. `GET /` reports both modes as `jobsAuth` and `messagingAuth`.
 
 ```sh
 Sandbox__JobsDashboardAuth=Basic Sandbox__JobsDashboardSessionTimeoutMinutes=1 make up
