@@ -565,6 +565,138 @@ public abstract class SequencesConformanceTests<TFixture>(TFixture fixture) : Te
 
     #endregion
 
+    #region Reported counters and document numbers
+
+    public virtual async Task should_advance_a_reported_counter_and_report_next_skipped_and_stale_values()
+    {
+        var name = CreateName("pos-terminal");
+        await using var host = await Fixture.CreateHostAsync(
+            setup => setup.Policy(name, new SequencePolicy { Mode = SequenceMode.Reported }),
+            AbortToken
+        );
+
+        await using (var unit = await Fixture.BeginUnitAsync(host, AbortToken))
+        {
+            var sequences = unit.Unit.Sequences;
+
+            (await sequences.AdvanceToAsync(name, 1, "terminal-1", AbortToken))
+                .Should()
+                .Be(new SequenceAdvance(SequenceAdvanceStatus.Next, Previous: null));
+            (await sequences.AdvanceToAsync(name, 2, "terminal-1", AbortToken))
+                .Should()
+                .Be(new SequenceAdvance(SequenceAdvanceStatus.Next, 1));
+            (await sequences.AdvanceToAsync(name, 5, "terminal-1", AbortToken))
+                .Should()
+                .Be(new SequenceAdvance(SequenceAdvanceStatus.Skipped, 2));
+            (await sequences.AdvanceToAsync(name, 5, "terminal-1", AbortToken))
+                .Should()
+                .Be(new SequenceAdvance(SequenceAdvanceStatus.Stale, 5), "a replayed value changes nothing");
+            (await sequences.AdvanceToAsync(name, 3, "terminal-1", AbortToken))
+                .Should()
+                .Be(new SequenceAdvance(SequenceAdvanceStatus.Stale, 5), "an older value never lowers the counter");
+            (await sequences.AdvanceToAsync(name, 1, "terminal-2", AbortToken))
+                .Should()
+                .Be(new SequenceAdvance(SequenceAdvanceStatus.Next, Previous: null), "each partition counts alone");
+
+            await unit.CommitAsync(AbortToken);
+        }
+
+        (await Fixture.ReadValueAsync(new SequenceKey("", name, "terminal-1"), AbortToken)).Should().Be(5);
+        (await Fixture.ReadValueAsync(new SequenceKey("", name, "terminal-2"), AbortToken)).Should().Be(1);
+    }
+
+    public virtual async Task should_leave_a_reported_counter_where_it_was_when_the_unit_rolls_back()
+    {
+        var name = CreateName("pos-terminal");
+        await using var host = await Fixture.CreateHostAsync(
+            setup => setup.Policy(name, new SequencePolicy { Mode = SequenceMode.Reported }),
+            AbortToken
+        );
+
+        await using (var first = await Fixture.BeginUnitAsync(host, AbortToken))
+        {
+            await first.Unit.Sequences.AdvanceToAsync(name, 1, cancellationToken: AbortToken);
+            await first.CommitAsync(AbortToken);
+        }
+
+        await using (var rolledBack = await Fixture.BeginUnitAsync(host, AbortToken))
+        {
+            (await rolledBack.Unit.Sequences.AdvanceToAsync(name, 2, cancellationToken: AbortToken))
+                .Status.Should()
+                .Be(SequenceAdvanceStatus.Next);
+            await rolledBack.RollbackAsync();
+        }
+
+        (await Fixture.ReadValueAsync(new SequenceKey("", name, ""), AbortToken)).Should().Be(1);
+
+        await using var retry = await Fixture.BeginUnitAsync(host, AbortToken);
+        (await retry.Unit.Sequences.AdvanceToAsync(name, 2, cancellationToken: AbortToken))
+            .Should()
+            .Be(new SequenceAdvance(SequenceAdvanceStatus.Next, 1), "the device may send the same value again");
+        await retry.CommitAsync(AbortToken);
+    }
+
+    public virtual async Task should_take_gap_free_document_numbers_in_the_reset_period_with_the_template()
+    {
+        var name = CreateName("receipt");
+        await using var host = await Fixture.CreateHostAsync(
+            setup =>
+                setup.Policy(
+                    name,
+                    new SequencePolicy
+                    {
+                        Mode = SequenceMode.GapFree,
+                        Format = "REC-{yyyy}-{seq:D6}",
+                        Reset = SequenceReset.Year,
+                    }
+                ),
+            AbortToken
+        );
+
+        SequenceNumber first;
+        SequenceNumber second;
+
+        await using (var unit = await Fixture.BeginUnitAsync(host, AbortToken))
+        {
+            first = await unit.Unit.Sequences.NextNumberAsync(name, AbortToken);
+            second = await unit.Unit.Sequences.NextNumberAsync(name, AbortToken);
+            await unit.CommitAsync(AbortToken);
+        }
+
+        var year = first.IssuedOn.Year.ToString(CultureInfo.InvariantCulture);
+        first.Value.Should().Be(1);
+        first.Partition.Should().Be(year);
+        first.Text.Should().Be($"REC-{year}-000001");
+        second.Text.Should().Be($"REC-{year}-000002");
+        (await Fixture.ReadValueAsync(new SequenceKey("", name, year), AbortToken)).Should().Be(2);
+    }
+
+    public virtual async Task should_refuse_each_counter_through_the_entry_points_of_other_modes()
+    {
+        var (reported, gapFree) = (CreateName("pos-terminal"), CreateName("receipt"));
+        await using var host = await Fixture.CreateHostAsync(
+            setup =>
+                setup
+                    .Policy(reported, new SequencePolicy { Mode = SequenceMode.Reported })
+                    .Policy(gapFree, new SequencePolicy { Mode = SequenceMode.GapFree }),
+            AbortToken
+        );
+
+        var generated = async () => await host.Generator.NextNumberAsync(reported, AbortToken);
+        await generated.Should().ThrowAsync<InvalidOperationException>();
+
+        await using var unit = await Fixture.BeginUnitAsync(host, AbortToken);
+        var taken = async () => await unit.Unit.Sequences.NextAsync(reported, cancellationToken: AbortToken);
+        var advanced = async () => await unit.Unit.Sequences.AdvanceToAsync(gapFree, 1, cancellationToken: AbortToken);
+
+        await taken.Should().ThrowAsync<InvalidOperationException>();
+        await advanced.Should().ThrowAsync<InvalidOperationException>();
+        unit.Unit.IsRetryPrevented.Should().BeFalse("a refused call runs no statement");
+        await unit.RollbackAsync();
+    }
+
+    #endregion
+
     /// <summary>Builds a host on which <paramref name="name" /> is registered as a gap-free counter.</summary>
     protected ValueTask<SequencesHost> CreateGapFreeHostAsync(string name)
     {

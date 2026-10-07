@@ -5,7 +5,7 @@ packages: Sequences.Abstractions, Sequences, Sequences.PostgreSql, Sequences.Sql
 
 # Sequences
 
-> Tenant-scoped, named, monotonic counters in a relational table. The fast mode takes a number in its own short transaction. The gap-free mode takes it inside the caller's unit of work, so a rollback returns the number.
+> Tenant-scoped, named, monotonic counters in a relational table. The fast mode takes a number in its own short transaction. The gap-free mode takes it inside the caller's unit of work, so a rollback returns the number. Document numbers (`REC-2026-000042`) add a template and a yearly, monthly, daily, or fiscal-year reset. The reported mode follows numbers a device sends, as a replay guard.
 
 ## Orientation
 
@@ -25,6 +25,7 @@ A counter is identified by the current tenant (`ICurrentTenant.Id`), a name, and
 
 - **Fast** (the default): inject `ISequenceGenerator` and call `NextAsync` or `ReserveAsync`. The number is committed in its own transaction before it returns. If the caller's own transaction later rolls back, that number is simply never used, which leaves a gap.
 - **Gap-free**: register the name with `Mode = SequenceMode.GapFree` and call `unit.Sequences.NextAsync` on the unit of work that writes the number. The increment runs in the unit's transaction and holds the counter's row lock until the unit ends. A rolled-back unit returns its number to the next caller.
+- **Reported**: register the name with `Mode = SequenceMode.Reported` and call `unit.Sequences.AdvanceToAsync(name, value, partition)` with the number a device stamped on its request. The counter keeps the highest value accepted and reports each new one as `Next`, `Skipped` (a gap), or `Stale` (a replay). See [Reported counters](#reported-counters).
 
 ```csharp
 // Fast: receipts, batch ids, anything where a skipped number is acceptable.
@@ -44,7 +45,19 @@ await unitOfWorkFactory.RunAsync(
 );
 ```
 
-Formatting stays in the application. The framework returns a `long`. Prefixes (`INV-`), the year text, padding, and check digits are the caller's concern. So is the choice of partition: pass the year for a counter that restarts each year.
+`NextAsync` returns a `long`, and the caller chooses the partition (pass the year for a counter that restarts each year). For a document number, give the policy a `Format` and a `Reset` and call `NextNumberAsync` instead: the period picks the partition and the template formats the text. See [Document numbers](#document-numbers).
+
+```csharp
+setup.Policy("receipt", new SequencePolicy
+{
+    Mode = SequenceMode.GapFree,
+    Format = "REC-{yyyy}-{seq:D6}",
+    Reset = SequenceReset.Year,
+    TimeZone = TimeZoneInfo.FindSystemTimeZoneById("Africa/Cairo"),
+});
+
+SequenceNumber receipt = await unit.Sequences.NextNumberAsync("receipt", ct); // receipt.Text == "REC-2026-000042"
+```
 
 ## Agent Rules
 
@@ -71,6 +84,40 @@ The stored key is (tenant id, name, partition). The host tenant and "no partitio
 
 `Start` is read only when a key's row is created, so changing it never moves an existing counter. A changed `Step` applies from the next call, and the existing counter then mixes both steps.
 
+### Document numbers
+
+`ISequenceGenerator.NextNumberAsync(name)` (fast) and `unit.Sequences.NextNumberAsync(name)` (gap-free) return a `SequenceNumber(Value, Partition, IssuedOn, Text)`, whose `ToString()` is `Text`. The policy decides the rest:
+
+| Policy member | Default | Effect |
+| --- | --- | --- |
+| `Format` | `null` (the bare value) | Template. `{seq}` is the value and `{seq:D6}` pads it to six digits (widths 1 to 19). `{yyyy}`, `{yy}`, `{MM}`, `{dd}` are the issue date. `{fy}` is the year the fiscal year starts in. `{{` and `}}` write a brace. An unknown token fails options validation at startup. |
+| `Reset` | `Never` | `Year`, `Month`, `Day`, or `FiscalYear`. Each period is its own partition (`2026`, `2026-10`, `2026-10-08`, `FY2026`), so the counter starts again from `Start` in each one. |
+| `FiscalYearStartMonth` | 1 | The month (1 to 12) the fiscal year starts in, for `Reset = FiscalYear` and `{fy}`. With 7, 8 October 2026 is in `FY2026` and 8 March 2027 too. |
+| `TimeZone` | UTC | The zone the issue date and period are decided in, so a daily counter starts again at the business's local midnight. |
+
+The date comes from the registered `TimeProvider`, converted into the policy's zone. In the gap-free mode, a retry whose first attempt rolled back takes the same number again. A retry that replays a stored response through `Headless.Api.Idempotency` returns the number the first attempt committed. Voiding a document is the application's record: the number stays used.
+
+### Reported counters
+
+A device that numbers its own requests, such as a payment terminal's transaction counter, gives a second line of defense behind an idempotency key. When the terminal restarts and loses its keys, it sends a fresh key for a transaction it already sent, and only the device number shows the replay. Register the name with `Mode = SequenceMode.Reported`, and call `unit.Sequences.AdvanceToAsync(name, value, partition: terminalId)` in the unit that records the transaction:
+
+```csharp
+var advance = await unit.Sequences.AdvanceToAsync("pos-terminal", request.SequenceNumber, request.TerminalId, ct);
+
+if (advance.Status == SequenceAdvanceStatus.Stale)
+{
+    return Results.Conflict(); // the same physical transaction may already be recorded
+}
+
+if (advance.Status == SequenceAdvanceStatus.Skipped)
+{
+    logger.LogWarning("Terminal {Terminal} skipped from {Previous} to {Value}", request.TerminalId, advance.Previous, request.SequenceNumber);
+    // or throw here to refuse the gap and roll the unit back
+}
+```
+
+The counter stores the highest value accepted, starting one `Step` below `Start`, so the first expected value is `Start`. `Next` means the value was the next one expected. `Skipped` means it jumped ahead: the counter moves to it, and the caller decides whether a gap only alerts or refuses the request. `Stale` means it was at or below the stored value: nothing changes. `Previous` is the value accepted before, or `null` for a counter that had accepted none. The counter's row stays locked until the unit ends, so concurrent requests from one device run one at a time, and a rollback leaves the counter where it was, so the device can send the same value again. A reported name refuses `NextAsync`, `NextNumberAsync`, and `ReserveAsync`, and a non-reported name refuses `AdvanceToAsync`.
+
 ### Ranges
 
 `ReserveAsync(name, count)` atomically advances the counter by `count * step` and returns a `SequenceRange` with `First`, `Count`, `Step` and `Last`. Enumerating it yields `First, First + Step, …, Last` without allocating. `count` must be at least 1. A `count * step` that cannot fit in a `long` throws `OverflowException` before the database is called. Reserve is fast-mode only.
@@ -93,7 +140,7 @@ The provider must sit on the database the gap-free units run on. The counters ar
 
 ## Headless.Sequences.Abstractions
 
-Consumer contracts: `ISequenceGenerator`, `SequenceRange`, `SequenceMode`, and the `unit.Sequences` accessor on `IUnitOfWork`.
+Consumer contracts: `ISequenceGenerator`, `SequenceRange`, `SequenceNumber`, `SequenceAdvance`, `SequenceAdvanceStatus`, `SequenceMode`, and the `unit.Sequences` accessor on `IUnitOfWork`.
 
 ### Setup
 
@@ -105,8 +152,8 @@ Reference it from code that takes numbers. Registration lives in the Core and pr
 
 ### Design and runtime behavior
 
-- `ISequenceGenerator.NextAsync(name, partition, ct)` returns the counter's next value. `ReserveAsync(name, count, partition, ct)` returns a consecutive `SequenceRange`. Both are fast-mode only.
-- `unit.Sequences` (namespace `Headless.UnitOfWork`) returns a facade bound to the unit, and repeated reads on one unit return the same instance. Its `NextAsync(name, partition, ct)` is gap-free only.
+- `ISequenceGenerator.NextAsync(name, partition, ct)` returns the counter's next value. `ReserveAsync(name, count, partition, ct)` returns a consecutive `SequenceRange`. `NextNumberAsync(name, ct)` returns a `SequenceNumber`. All three are fast-mode only.
+- `unit.Sequences` (namespace `Headless.UnitOfWork`) returns a facade bound to the unit, and repeated reads on one unit return the same instance. Its `NextAsync(name, partition, ct)` and `NextNumberAsync(name, ct)` are gap-free only. Its `AdvanceToAsync(name, value, partition, ct)` → `SequenceAdvance(Status, Previous)` is reported-only.
 - `unit.Sequences` throws `InvalidOperationException` naming `AddHeadlessSequences` when no provider registered the feature.
 
 ---
@@ -127,18 +174,18 @@ Applications reach it through a provider package; call `AddHeadlessSequences` as
 
 | Builder member | Effect |
 | --- | --- |
-| `Policy(name, SequencePolicy)` | Sets one name's start, step, and mode |
+| `Policy(name, SequencePolicy)` | Sets one name's start, step, mode, and document-number format, reset, fiscal-year start month, and time zone |
 | `DefaultPolicy(SequencePolicy)` | Sets the policy of every unregistered name (default: fast, start 1, step 1) |
 | `ConfigureOptions(Action<SequencesOptions>)` | Mutates `SequencesOptions` (`DefaultPolicy`, `Policies`) directly |
 
-A policy with `Step` of 0 or less fails options validation at startup.
+A policy with `Step` of 0 or less, an unknown `Format` token or unbalanced brace, or a `FiscalYearStartMonth` outside 1 to 12 fails options validation at startup.
 
 ### Design and runtime behavior
 
 - `AddHeadlessSequences` requires exactly one `Use…` provider call and throws when there are none or several, or when it is called twice.
-- It registers `ISequenceGenerator` and the gap-free unit-of-work feature as singletons. It also registers the async-local `CurrentTenant` as the `ICurrentTenant` fallback, so `ICurrentTenant.Change(...)` works with no other tenancy registration. A real tenancy registration wins.
+- It registers `ISequenceGenerator` and the gap-free unit-of-work feature as singletons, and `TimeProvider.System` unless the host registered a `TimeProvider`. It also registers the async-local `CurrentTenant` as the `ICurrentTenant` fallback, so `ICurrentTenant.Change(...)` works with no other tenancy registration. A real tenancy registration wins.
 - The gap-free call checks, in order: the arguments, the name's mode, the unit's state and relational resource, then the provider's transaction type and database. Only after every check passes does it mark an observed unit non-retryable and run the increment. A refused call leaves the unit retryable and runs no statement.
-- `ISequenceStore` is the provider seam. Applications do not call it.
+- `ISequenceStore` is the provider seam. Applications do not call it. A reported advance creates the counter row if it is absent, then locks it and moves it forward with a fenced update, both in the caller's transaction, so the value read as `Previous` is the one the lock protects.
 
 ---
 
