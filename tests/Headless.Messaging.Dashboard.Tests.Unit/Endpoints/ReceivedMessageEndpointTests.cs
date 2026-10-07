@@ -14,6 +14,7 @@ using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Tests.Endpoints;
 
@@ -868,8 +869,10 @@ public sealed class ReceivedMessageEndpointTests : TestBase
         }
 
         appBuilder.Services.AddSingleton(config);
-        appBuilder.Services.AddSingleton(config.Auth);
-        appBuilder.Services.AddScoped<IAuthService, AuthService>();
+        appBuilder.Services.AddKeyedScoped<IAuthService>(
+            MessagingDashboardOptionsBuilder.AuthenticationName,
+            (sp, _) => new AuthService(config.Auth, sp.GetRequiredService<ILogger<AuthService>>())
+        );
         appBuilder.Services.AddSingleton(dataStorage);
         appBuilder.Services.AddSingleton<MessagingMetricsEventListener>();
 
@@ -928,7 +931,7 @@ public sealed class ReceivedMessageEndpointTests : TestBase
 
         if (useAuthenticationMiddleware)
         {
-            app.UseMiddleware<AuthMiddleware>();
+            app.UseMiddleware<AuthMiddleware>(MessagingDashboardOptionsBuilder.AuthenticationName);
         }
         else if (authenticate && principal is null)
         {

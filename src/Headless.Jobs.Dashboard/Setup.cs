@@ -65,19 +65,22 @@ public static class SetupJobsDashboard
             // Validate configuration
             dashboardConfig.Validate();
 
-            // Register authentication (AuthConfig + IAuthService) through the shared
-            // Headless.Dashboard.Authentication extension. The builder has already materialized the AuthConfig
-            // from WithBasicAuth / WithApiKey / WithHostAuthentication / WithCustomAuth, so mirror its fields
-            // into the options-bound instance instead of hand-registering the singleton and the auth service.
-            services.AddDashboardAuthentication(auth =>
-            {
-                auth.Mode = dashboardConfig.Auth.Mode;
-                auth.BasicCredentials = dashboardConfig.Auth.BasicCredentials;
-                auth.ApiKey = dashboardConfig.Auth.ApiKey;
-                auth.CustomValidator = dashboardConfig.Auth.CustomValidator;
-                auth.SessionTimeoutMinutes = dashboardConfig.Auth.SessionTimeoutMinutes;
-                auth.HostAuthorizationPolicy = dashboardConfig.Auth.HostAuthorizationPolicy;
-            });
+            // Register authentication (named AuthConfig + keyed IAuthService) through the shared
+            // Headless.Dashboard.Authentication extension under this dashboard's own name, so another dashboard in
+            // the host keeps its own mode. The builder has already materialized the AuthConfig from WithBasicAuth /
+            // WithApiKey / WithHostAuthentication / WithCustomAuth, so mirror its fields into the options instance.
+            services.AddDashboardAuthentication(
+                DashboardOptionsBuilder.AuthenticationName,
+                auth =>
+                {
+                    auth.Mode = dashboardConfig.Auth.Mode;
+                    auth.BasicCredentials = dashboardConfig.Auth.BasicCredentials;
+                    auth.ApiKey = dashboardConfig.Auth.ApiKey;
+                    auth.CustomValidator = dashboardConfig.Auth.CustomValidator;
+                    auth.SessionTimeoutMinutes = dashboardConfig.Auth.SessionTimeoutMinutes;
+                    auth.HostAuthorizationPolicy = dashboardConfig.Auth.HostAuthorizationPolicy;
+                }
+            );
 
             // Add authentication services if using host authentication
             if (dashboardConfig.Auth.Mode == AuthMode.Host)
@@ -110,9 +113,77 @@ public static class SetupJobsDashboard
             services.AddTransient<IStartupFilter>(_ => new JobsDashboardStartupFilter<TTimeJob, TCronJob>(
                 dashboardConfig
             ));
+
+            // A browser cannot put a header on a WebSocket, so under host auth the hub's credential arrives as
+            // access_token. It must become the Authorization header before the host's own authentication runs,
+            // which is ahead of the dashboard branch, so this filter prepends to the whole pipeline.
+            if (dashboardConfig.Auth.Mode == AuthMode.Host)
+            {
+                services.AddTransient<IStartupFilter>(_ => new HubAccessTokenStartupFilter(dashboardConfig.BasePath));
+            }
         };
 
         return jobsConfiguration;
+    }
+}
+
+/// <summary>
+/// Under host authentication, copies the Jobs hub's <c>access_token</c> query parameter into the
+/// <c>Authorization</c> header, ahead of the host's authentication middleware.
+/// </summary>
+/// <remarks>
+/// The dashboard SPA sends the host access key as the <c>Authorization</c> header on API calls and as
+/// <c>access_token</c> on the hub, because a browser cannot set headers on a WebSocket. Only requests to the hub and
+/// its negotiate endpoint that carry no <c>Authorization</c> header are changed. The host's scheme then signs the
+/// request in as it would an API call, and the hub's authorization policy evaluates that user. Cookie sign-in needs
+/// none of this.
+/// </remarks>
+internal sealed class HubAccessTokenStartupFilter(string basePath) : IStartupFilter
+{
+    private readonly string _hubPath =
+        DashboardSpaHelper.NormalizeBasePath(basePath).TrimEnd('/') + JobsNotificationHub.Path;
+
+    public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next)
+    {
+        return app =>
+        {
+            app.Use(
+                (context, nextMiddleware) =>
+                {
+                    if (
+                        string.IsNullOrEmpty(context.Request.Headers.Authorization)
+                        && _IsHubPath(context.Request.Path.Value)
+                        && context.Request.Query["access_token"].FirstOrDefault() is { Length: > 0 } accessToken
+                        && !_HasControlCharacter(accessToken)
+                    )
+                    {
+                        context.Request.Headers.Authorization = accessToken;
+                    }
+
+                    return nextMiddleware(context);
+                }
+            );
+
+            next(app);
+        };
+    }
+
+    // A header value never carries control characters, so a token with any (such as an encoded CR/LF) is left out
+    // rather than handed to the host's handlers and anything that logs or forwards request headers.
+    private static bool _HasControlCharacter(string value)
+    {
+        return value.AsSpan().ContainsAnyInRange('\u0000', '\u001f')
+            || value.Contains('\u007f', StringComparison.Ordinal);
+    }
+
+    // The host may add a path base later in its pipeline, so match the end of the path, not its start.
+    private bool _IsHubPath(string? path)
+    {
+        return path is not null
+            && (
+                path.EndsWith(_hubPath, StringComparison.OrdinalIgnoreCase)
+                || path.EndsWith(_hubPath + "/negotiate", StringComparison.OrdinalIgnoreCase)
+            );
     }
 }
 

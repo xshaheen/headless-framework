@@ -156,12 +156,14 @@ ASP.NET Core integration-test host wrapper with controllable time, DI-scope help
 ### API and behavior
 
 - `HeadlessTestServer<TProgram>` -- owns the `WebApplicationFactory<TProgram>` and lifts its surface to a deterministic-by-default API.
-- Replaces the host's `TimeProvider` with a `FakeTimeProvider` so tests control the app clock end-to-end.
-- `AdvanceTime(TimeSpan)` and `SetTime(DateTimeOffset)` move it and return the resulting UTC time.
+- Registers a `FakeTimeProvider` as the host's `TimeProvider` before `configureTestServices` runs, so tests control the app clock end-to-end. `App.TimeProvider` is whatever clock the host resolves.
+- `AdvanceTime(TimeSpan)` and `SetTime(DateTimeOffset)` move the fake clock and return the resulting UTC time.
+- A host that must run on another clock, such as `TimeProvider.System`, registers it in `configureTestServices`. The server starts on that clock; only `AdvanceTime` and `SetTime` throw `InvalidOperationException`, because they need a `FakeTimeProvider`.
+- `configureHost` (`Action<IHostBuilder>`) reaches generic-host settings that `IWebHostBuilder` cannot, such as `UseDefaultServiceProvider(...)`, `ConfigureHostOptions(...)`, or a logging provider that plugs into `IHostBuilder`. It runs after `configureWebHost`, just before the host is built.
 - `ExecuteScopeAsync(...)` opens a DI scope (optionally with a `ClaimsPrincipal`) for scoped operations.
 - `AddReadinessCheck(...)` registers a readiness check; `InitializeAsync()` runs the registered checks in order after host startup, each under its own timeout, before tests run.
 - `ConfigureDatabaseReset(...)` + `ResetDatabaseAsync()` integrate Respawner with retry. The reset keeps framework bookkeeping: both history tables always, and the host-state tables framework features declare by default (see [Tables a Reset Preserves](#tables-a-reset-preserves)).
-- `DeriveAsync(configureTestServices, configureWebHost)` starts an initialized variant of the server with extra settings layered on its own (see [Varying Host Settings per Test](#varying-host-settings-per-test)).
+- `DeriveAsync(configureTestServices, configureWebHost, configureHost)` starts an initialized variant of the server with extra settings layered on its own (see [Varying Host Settings per Test](#varying-host-settings-per-test)).
 - Database reset APIs default to the active xUnit test's cancellation token. The server retries
   database, I/O, socket, and broken-connection failures up to three times, replacing the reset
   connection between attempts.
@@ -265,7 +267,7 @@ var fake = (FakeTimeProvider)serviceProvider.GetRequiredService<TimeProvider>();
 var fake = serviceProvider.GetRequiredService<FakeTimeProvider>();
 ```
 
-Prefer `App.AdvanceTime(...)` / `App.SetTime(...)` over reaching into the provider directly; both return the resulting UTC time.
+Prefer `App.AdvanceTime(...)` / `App.SetTime(...)` over reaching into the provider directly; both return the resulting UTC time. `App.TimeProvider` is typed `TimeProvider`, so cast it to `FakeTimeProvider` for members the server does not lift, such as `AutoAdvanceAmount`.
 
 This controls the **app clock** only -- the authority for "when did this happen?" timestamps (audit fields, `CreatedAt`, logs). Lease, lock, and TTL expiry are owned by the store's clock (PostgreSQL, SQL Server, Redis) and are unaffected by advancing the fake, so those still need a real wall-clock wait. That separation is deliberate: because ownership time never passes through the app clock, a test can hold the `FakeTimeProvider` far from real time and correct behavior must not change. See [temporal-authority-standard](../solutions/design-patterns/temporal-authority-standard.md).
 
@@ -301,13 +303,22 @@ using (tenant.Change(tenantId, "Test Tenant"))
 
 | Tables | Kept | Why |
 |---|---|---|
-| `__EFMigrationsHistory`, `headless_schema_history` (every schema) | Always, also by standalone `DatabaseReset` | They record work done to a schema that the reset leaves in place. Wiping `headless_schema_history` makes the next host (a reused container, a `DeriveAsync` variant) replay every schema step against tables that already exist. |
-| Host-state tables that framework features declare through `SchemaContribution.HostStateTables` | By default (`PreserveHostStateTables = true`) | The host writes them once at startup or keeps them live, and never rewrites them while it runs. Today: the feature, permission, and setting definition tables (including the feature and permission group tables), which the definition initializers write at startup, and the coordination membership tables (on PostgreSQL `coordination_node_generation`, `coordination_descriptor`, and `coordination_liveness`), whose rows the host keeps heartbeating; a reset that deletes them makes the next heartbeat report the membership as lost. |
+| `__EFMigrationsHistory`, `headless_schema_history` (every schema), and each registered feature's history table under the name its dialect stores it by (on SQLite `<schema>_headless_schema_history`) | Always. Standalone `DatabaseReset` keeps the dialect-named history only when created with the host's `IServiceProvider` | They record work done to a schema that the reset leaves in place. Wiping `headless_schema_history` makes the next host (a reused container, a `DeriveAsync` variant) replay every schema step against tables that already exist. |
+| Host-state tables that framework features declare through `SchemaContribution.HostStateTables` | By default (`PreserveHostStateTables = true`), also by standalone `DatabaseReset` created with the host's `IServiceProvider` | The host writes them once at startup or keeps them live, and never rewrites them while it runs. Today: the feature, permission, and setting definition tables (including the feature and permission group tables), which the definition initializers write at startup, and the coordination membership tables (on PostgreSQL `coordination_node_generation`, `coordination_descriptor`, and `coordination_liveness`; on SQLite the same names with the schema prefix), whose rows the host keeps heartbeating; a reset that deletes them makes the next heartbeat report the membership as lost. |
 | `TablesToPreserve` | Always | Your own tables that hold data the application seeds once at startup, such as reference data. A `Table` without a schema matches the name in every schema. |
 
 Everything else is cleared, including Messaging's outbox and inbox, Jobs, idempotency, audit, and sequence tables: they hold the work a test produces. Jobs keeps its tables in your `DbContext` and declares none, so the cron definitions its startup seeder writes from `[Job(Cron = ...)]` are cleared too; a test that relies on them adds the cron-job table to `TablesToPreserve`.
 
-The host-state declarations are read from the PostgreSQL and SQL Server feature registrations, using their configured table names, so renamed tables stay preserved. SQLite storage has no schemas and prefixes table names instead, so on SQLite list the prefixed history and host-state tables in `TablesToPreserve` yourself. Set `PreserveHostStateTables = false` only for a test that re-runs the startup work that writes those tables.
+The host-state declarations are read from the feature registrations, using their configured table names, so renamed tables stay preserved. SQLite storage has no schemas and prefixes table names instead, so the reset asks each feature's schema dialect for the stored history table name (`ISchemaDialect.HistoryTableName(schema)`), and the SQLite coordination provider declares its prefixed host-state table names. Set `PreserveHostStateTables = false` only for a test that re-runs the startup work that writes those tables.
+
+A suite that drives its own `WebApplicationFactory` instead of `HeadlessTestServer` gets the same protection by passing the host's root service provider to `DatabaseReset.CreateAsync`. The overload without one cannot see the declarations or the schema each history table is named after, so it keeps only `__EFMigrationsHistory`, `headless_schema_history`, and `TablesToPreserve`, which on SQLite misses the prefixed history; use it only for a database no host runs against.
+
+```csharp
+await using var connection = new NpgsqlConnection(connectionString);
+await connection.OpenAsync();
+var reset = await DatabaseReset.CreateAsync(connection, factory.Services, new DatabaseResetOptions());
+await reset.ResetAsync(connection);
+```
 
 ```csharp
 App.ConfigureDatabaseReset(options =>
@@ -334,9 +345,9 @@ public async Task should_limit_attempts_with_redis_cache()
 }
 ```
 
-- The variant runs the server's own `configureTestServices` and `configureWebHost` first, then the delegates you pass, so it reaches the same containers and your settings win.
+- The variant runs the server's own `configureTestServices`, `configureWebHost`, and `configureHost` first, then the delegates you pass, so it reaches the same containers and your settings win.
 - It awaits every `IInitializer`, runs the server's readiness checks, and supports `ResetDatabaseAsync()` with the server's reset configuration.
-- It shares the server's `FakeTimeProvider`, so `App.AdvanceTime(...)` moves both hosts' clocks.
+- It shares the server's `TimeProvider`, registered after both sets of service delegates so neither replaces it, so `App.AdvanceTime(...)` moves both hosts' clocks.
 - It is a separate host with its own background services and connection pools. Dispose it at the end of the test; disposing it never stops the shared server. Settings that are additive, such as an extra controller, belong in the shared server's own configuration instead, because every variant costs a host startup.
 - The server must be initialized first; `DeriveAsync` throws `InvalidOperationException` otherwise.
 
@@ -388,11 +399,12 @@ The same caveat applies to other databases with sub-tick storage precision (MySQ
 |---|---|---|---|
 | `configureTestServices` | `Action<IServiceCollection>?` | `null` | Additional DI registrations layered on top of the application's own `ConfigureTestServices`. |
 | `configureWebHost` | `Action<IWebHostBuilder>?` | `null` | Additional web host configuration (e.g., environment, configuration sources). |
+| `configureHost` | `Action<IHostBuilder>?` | `null` | Generic host configuration with no web host equivalent (service provider options, host options, `IHostBuilder` logging providers). Runs just before the host is built. |
 | `initializerTimeout` | `TimeSpan?` | 60 s | Per-`IInitializer` wait budget before a `TimeoutException` is thrown. |
 | `AddReadinessCheck(check, timeout)` | fluent | 30 s per check | Registers a post-startup readiness probe. Must be called before `InitializeAsync()`. |
 | `ConfigureDatabaseReset(configure)` | fluent | (disabled) | Opts into Respawner-based DB reset. Must be called before `InitializeAsync()`. |
 | `ResetDatabaseAsync(cancellationToken)` | `Task` | active xUnit test token | Resets database state and retries transient database or transport failures up to three times. |
-| `DeriveAsync(configureTestServices, configureWebHost)` | `Task<HeadlessTestServer<TProgram>>` | — | Starts an initialized variant with extra settings layered on this server's, sharing its clock and reset configuration. Requires an initialized server; the caller disposes the variant. |
+| `DeriveAsync(configureTestServices, configureWebHost, configureHost)` | `Task<HeadlessTestServer<TProgram>>` | — | Starts an initialized variant with extra settings layered on this server's, sharing its clock and reset configuration. Requires an initialized server; the caller disposes the variant. |
 
 `DatabaseResetOptions` properties (passed to `ConfigureDatabaseReset`):
 
@@ -400,14 +412,14 @@ The same caveat applies to other databases with sub-tick storage precision (MySQ
 |---|---|---|---|
 | `DbAdapter` | `IDbAdapter` | `DbAdapter.Postgres` | Respawner adapter matching the target database engine. |
 | `TablesToPreserve` | `List<Table>` | `[]` | Additional tables whose rows survive a reset. `__EFMigrationsHistory` and `headless_schema_history` are always preserved in every schema. |
-| `PreserveHostStateTables` | `bool` | `true` | Also preserves the host-state tables framework features declare (definitions, coordination membership). Read by `ResetDatabaseAsync()` only. |
+| `PreserveHostStateTables` | `bool` | `true` | Also preserves the host-state tables framework features declare (definitions, coordination membership). Read by `ResetDatabaseAsync()` and by `DatabaseReset.CreateAsync(connection, services, ...)`. |
 | `ConnectionProvider` | `Func<IServiceProvider, DbConnection>?` | `null` | **Required** when using `ResetDatabaseAsync()`. Factory for an unopened `DbConnection` to the test database. |
 | `AdditionalTransientExceptionFilter` | `Func<Exception, bool>?` | `null` | Adds provider-specific transient exception shapes to the built-in database and transport retry set. |
 
 ### Runtime behavior
 
 - Starts the application host under test for the lifetime of the fixture.
-- Replaces `TimeProvider` in DI with a deterministic `FakeTimeProvider`.
+- Replaces `TimeProvider` in DI with a deterministic `FakeTimeProvider`, unless `configureTestServices` registers another clock.
 - (Optional) Clears application data between tests when `ConfigureDatabaseReset(...)` is wired, keeping the history and host-state tables.
 ---
 ## Headless.Testing.Testcontainers
@@ -431,6 +443,7 @@ Testcontainers fixtures for integration testing.
 - `HeadlessRedisFixture.FlushAllAsync(ct)` and the `RedisContainer.FlushAllAsync(ct)` extension (`HeadlessRedisContainerExtensions`, namespace `Testcontainers.Redis`) — delete every key in every database by running `redis-cli FLUSHALL` inside the container, so a reused container starts clean without a client connection or `allowAdmin`
 - `TestContextMessageSink` — xUnit v3 diagnostic-message forwarder
 - Automatic container lifecycle management via `Testcontainers.Xunit`
+- Every fixture has the same subclassing surface: xUnit calls `IAsyncLifetime` explicitly, and a subclass overrides `protected virtual ValueTask InitializeAsync()` (call `base.InitializeAsync()` first, then create its database or clear what a reused container left) and `protected virtual ValueTask DisposeAsyncCore()`. The `ContainerFixture`-based fixtures also take `protected override TBuilder Configure()` for the database name, credentials, or labels; `HeadlessSqlServerFixture` builds its own architecture-aware container, so a subclass creates its database in `InitializeAsync` instead.
 
 ### Design constraints
 

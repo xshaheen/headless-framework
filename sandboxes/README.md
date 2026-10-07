@@ -18,10 +18,25 @@ make down                                 # stop what `up` started
 
 | Dashboard | URL | Auth |
 | --- | --- | --- |
-| Jobs | `http://127.0.0.1:5300/jobs/dashboard` | none, so live SignalR updates work |
+| Jobs | `http://127.0.0.1:5300/jobs/dashboard` | none by default; `Sandbox__JobsDashboardAuth` picks another mode |
 | Messaging | `http://127.0.0.1:5300/messaging` | Basic: user `sandbox`, password `Sandbox__MessagingDashboardPassword` in `.context/cli/sandbox.env`, generated on the first `make up` |
 
 Messaging uses Basic auth because inbox and scheduled operations refuse an anonymous operator.
+
+Each dashboard has its own auth, so the two modes can differ. To walk the Jobs sign-in, session-timeout, or live-update
+journeys under auth, set these before `make up` (`make down` first if it is running):
+
+| Variable | Values |
+| --- | --- |
+| `Sandbox__JobsDashboardAuth` | `None` (default), `Basic`, `ApiKey`, or `Custom` |
+| `Sandbox__JobsDashboardSecret` | The password, API key, or custom credential. Defaults to the Messaging password in `sandbox.env`. |
+| `Sandbox__JobsDashboardSessionTimeoutMinutes` | Session timeout; set `1` to see the session expire within a minute |
+
+Basic uses the user `sandbox`. `GET /` reports both modes as `jobsAuth` and `messagingAuth`.
+
+```sh
+Sandbox__JobsDashboardAuth=Basic Sandbox__JobsDashboardSessionTimeoutMinutes=1 make up
+```
 
 `GET /sandbox/scenarios` lists the scenarios and what each creates; `POST /sandbox/scenarios/{name}` runs one. Each
 call creates new rows, so running a scenario again is safe. Jobs run with short cadences (progress writes every

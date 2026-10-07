@@ -2,16 +2,20 @@
 
 using Headless.Dashboard.Authentication;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace Headless.Jobs;
 
 public class JobsNotificationHub(
     ILogger<JobsNotificationHub> logger,
-    IAuthService authService,
+    [FromKeyedServices(DashboardOptionsBuilder.AuthenticationName)] IAuthService authService,
     TimeProvider timeProvider
 ) : Hub
 {
+    /// <summary>The hub's path below the dashboard base path.</summary>
+    internal const string Path = "/job-notification-hub";
+
     public override async Task OnConnectedAsync()
     {
         var connectionId = Context.ConnectionId;

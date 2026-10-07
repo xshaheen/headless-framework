@@ -68,7 +68,7 @@ public static class SetupMessagingDashboard
                 // Add authentication + authorization middleware
                 if (config.Auth.IsEnabled)
                 {
-                    dashboardApp.UseMiddleware<AuthMiddleware>();
+                    dashboardApp.UseMiddleware<AuthMiddleware>(MessagingDashboardOptionsBuilder.AuthenticationName);
                 }
 
                 dashboardApp.UseAuthorization();

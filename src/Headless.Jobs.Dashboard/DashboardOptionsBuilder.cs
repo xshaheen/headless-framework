@@ -14,6 +14,13 @@ namespace Headless.Jobs;
 /// </summary>
 public sealed class DashboardOptionsBuilder
 {
+    /// <summary>
+    /// The Jobs dashboard's authentication name: the name of its <see cref="AuthConfig"/> options instance and the
+    /// key of its scoped <see cref="IAuthService"/>. Resolve or replace this dashboard's auth service by this key; it
+    /// is independent of any other dashboard's authentication in the same host.
+    /// </summary>
+    public const string AuthenticationName = "Headless.Jobs.Dashboard";
+
     internal const int MaxPageSize = 100;
     internal const int MaxRequestBodyBytes = 1024 * 1024;
     internal const int MaxBatchDeleteIds = 500;

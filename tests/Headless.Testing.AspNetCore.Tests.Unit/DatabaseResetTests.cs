@@ -21,6 +21,16 @@ public sealed class DatabaseResetTests : TestBase
     }
 
     [Fact]
+    public async Task should_throw_when_services_are_null_on_create()
+    {
+        await using var connection = await TestSqliteConnection.CreateAsync(AbortToken);
+
+        var act = async () => await DatabaseReset.CreateAsync(connection, services: null!);
+
+        await act.Should().ThrowExactlyAsync<ArgumentNullException>();
+    }
+
+    [Fact]
     public async Task should_cancel_create_when_token_is_cancelled()
     {
         await using var connection = await TestSqliteConnection.CreateAsync(AbortToken);

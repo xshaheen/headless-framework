@@ -10,11 +10,17 @@ namespace Headless.Dashboard.Authentication;
 /// <summary>
 /// Authenticates requests to API endpoints, bypassing static files, negotiate, and auth endpoints.
 /// </summary>
-/// <remarks>Initializes a new instance of <see cref="AuthMiddleware"/>.</remarks>
+/// <remarks>
+/// Add it with <c>UseMiddleware&lt;AuthMiddleware&gt;(authenticationName)</c>. It authenticates through the
+/// <see cref="IAuthService"/> keyed by that name, so each dashboard enforces its own mode and credentials.
+/// </remarks>
 /// <param name="next">The next middleware delegate in the ASP.NET Core pipeline.</param>
+/// <param name="authenticationName">
+/// The name the dashboard passed to <c>AddDashboardAuthentication</c>; selects the keyed <see cref="IAuthService"/>.
+/// </param>
 /// <param name="logger">The logger used to record authentication failures.</param>
 [PublicAPI]
-public sealed class AuthMiddleware(RequestDelegate next, ILogger<AuthMiddleware> logger)
+public sealed class AuthMiddleware(RequestDelegate next, string authenticationName, ILogger<AuthMiddleware> logger)
 {
     /// <summary>Key used to store the authenticated username in <see cref="HttpContext.Items"/>.</summary>
     public const string UsernameKey = "auth.username";
@@ -56,8 +62,8 @@ public sealed class AuthMiddleware(RequestDelegate next, ILogger<AuthMiddleware>
             return;
         }
 
-        // Resolve auth service from request scope
-        var authService = context.RequestServices.GetRequiredService<IAuthService>();
+        // Resolve this dashboard's auth service from the request scope
+        var authService = context.RequestServices.GetRequiredKeyedService<IAuthService>(authenticationName);
 
         // Authenticate the request
         var authResult = await authService.AuthenticateAsync(context, context.RequestAborted);

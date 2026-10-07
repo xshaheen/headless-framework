@@ -5,6 +5,8 @@ using Headless.Hosting;
 using Headless.Testing.AspNetCore;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
 
 namespace Tests;
@@ -182,6 +184,79 @@ public sealed class HeadlessTestServerTests : TestBase
         var resolved = _server.Services.GetRequiredService<MarkerService>();
 
         resolved.Should().BeSameAs(marker);
+    }
+
+    [Fact]
+    public async Task should_apply_generic_host_configuration()
+    {
+        // given
+        var marker = new MarkerService();
+        var shutdownTimeout = TimeSpan.FromSeconds(42);
+        _server = new HeadlessTestServer<Program>(configureHost: builder =>
+            builder
+                .ConfigureHostOptions(options => options.ShutdownTimeout = shutdownTimeout)
+                .ConfigureServices(services => services.AddSingleton(marker))
+        );
+
+        // when
+        await _server.InitializeAsync();
+
+        // then
+        _server
+            .Services.GetRequiredService<IOptions<HostOptions>>()
+            .Value.ShutdownTimeout.Should()
+            .Be(shutdownTimeout);
+        _server.Services.GetRequiredService<MarkerService>().Should().BeSameAs(marker);
+    }
+
+    [Fact]
+    public async Task should_start_on_a_time_provider_registered_by_configure_test_services()
+    {
+        // given
+        _server = new HeadlessTestServer<Program>(configureTestServices: services =>
+            services.AddSingleton(TimeProvider.System)
+        );
+
+        // when
+        await _server.InitializeAsync();
+
+        // then
+        _server.TimeProvider.Should().BeSameAs(TimeProvider.System);
+        _server.Services.GetRequiredService<TimeProvider>().Should().BeSameAs(TimeProvider.System);
+    }
+
+    [Fact]
+    public async Task should_throw_when_moving_time_on_a_clock_that_is_not_fake()
+    {
+        // given
+        _server = new HeadlessTestServer<Program>(configureTestServices: services =>
+            services.AddSingleton(TimeProvider.System)
+        );
+        await _server.InitializeAsync();
+
+        // when
+        var advance = () => _server.AdvanceTime(TimeSpan.FromMinutes(1));
+        var set = () => _server.SetTime(DateTimeOffset.UnixEpoch);
+
+        // then
+        advance
+            .Should()
+            .ThrowExactly<InvalidOperationException>()
+            .WithMessage("*FakeTimeProvider*SystemTimeProvider*");
+        set.Should().ThrowExactly<InvalidOperationException>().WithMessage("*FakeTimeProvider*SystemTimeProvider*");
+    }
+
+    [Fact]
+    public void should_throw_when_moving_time_before_initialization()
+    {
+        // given
+        _server = new HeadlessTestServer<Program>();
+
+        // when
+        var act = () => _server.AdvanceTime(TimeSpan.FromMinutes(1));
+
+        // then
+        act.Should().ThrowExactly<InvalidOperationException>().WithMessage("*InitializeAsync*");
     }
 
     [Fact]

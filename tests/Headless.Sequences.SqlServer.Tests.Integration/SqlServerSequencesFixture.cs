@@ -20,7 +20,6 @@ namespace Tests;
 [CollectionDefinition(DisableParallelization = true)]
 public sealed class SqlServerSequencesFixture
     : HeadlessSqlServerFixture,
-        IAsyncLifetime,
         ICollectionFixture<SqlServerSequencesFixture>,
         ISequencesFixture
 {
@@ -34,9 +33,8 @@ public sealed class SqlServerSequencesFixture
     public string OtherDatabaseConnectionString =>
         new SqlConnectionStringBuilder(ConnectionString) { InitialCatalog = _OtherDatabase }.ToString();
 
-    // Re-implemented rather than overridden: the base fixture's InitializeAsync is not virtual, and the databases can
-    // only be created once its container accepts logins.
-    public new async ValueTask InitializeAsync()
+    // The databases can only be created once the container accepts logins.
+    protected override async ValueTask InitializeAsync()
     {
         await base.InitializeAsync();
 

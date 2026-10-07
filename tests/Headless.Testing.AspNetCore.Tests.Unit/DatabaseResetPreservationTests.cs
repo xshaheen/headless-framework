@@ -2,6 +2,7 @@
 
 using System.Data.Common;
 using Headless.Hosting.Initialization.Schema;
+using Headless.Sql.Sqlite;
 using Headless.Testing.AspNetCore;
 using Headless.Testing.Tests;
 using Microsoft.Data.Sqlite;
@@ -55,6 +56,98 @@ public sealed class DatabaseResetPreservationTests : TestBase
     }
 
     [Fact]
+    public async Task should_preserve_declared_host_state_tables_when_created_with_the_host_services()
+    {
+        // given
+        var connectionString = _CreateSharedDatabaseConnectionString();
+        await using var connection = await _CreateDatabaseAsync(connectionString);
+        await using var services = _CreateHostServices(connectionString);
+        var reset = await DatabaseReset.CreateAsync(
+            connection,
+            services,
+            new DatabaseResetOptions { DbAdapter = DbAdapter.Sqlite },
+            AbortToken
+        );
+
+        // when
+        await reset.ResetAsync(connection, AbortToken);
+
+        // then
+        (await _CountAsync(connection, _HostState))
+            .Should()
+            .Be(1);
+        (await _CountAsync(connection, SchemaRunner.HistoryTableName)).Should().Be(1);
+        (await _CountAsync(connection, _EfHistory)).Should().Be(1);
+        (await _CountAsync(connection, _AppData)).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_preserve_a_schema_prefixed_sqlite_history_table_when_created_with_the_host_services()
+    {
+        // given: SQLite has no schemas, so the runner stores the "app" schema's history as app_headless_schema_history,
+        // a name the always-kept headless_schema_history entry does not match.
+        const string schema = "app";
+        var dialect = SqliteSchemaDialect.Instance;
+        var history = dialect.HistoryTableName(schema);
+        var connectionString = _CreateSharedDatabaseConnectionString();
+        await using var connection = await _CreateDatabaseAsync(connectionString);
+        await _ExecuteAsync(connection, dialect.HistoryTableSql(schema));
+        await _ExecuteAsync(
+            connection,
+            $"INSERT INTO \"{history}\" (feature, step_version, description, checksum) VALUES ('Features', '1', 'd', 'c');"
+        );
+        await using var services = new ServiceCollection()
+            .AddSingleton(
+                new SchemaContribution(
+                    feature: "Features",
+                    dialect: dialect,
+                    createConnection: () => new SqliteConnection(connectionString),
+                    schema: schema,
+                    steps: [new SchemaStep("1", "Create the definition table.", "SELECT 1;")]
+                )
+            )
+            .BuildServiceProvider();
+        var reset = await DatabaseReset.CreateAsync(
+            connection,
+            services,
+            new DatabaseResetOptions { DbAdapter = DbAdapter.Sqlite, PreserveHostStateTables = false },
+            AbortToken
+        );
+
+        // when
+        await reset.ResetAsync(connection, AbortToken);
+
+        // then
+        history.Should().Be("app_headless_schema_history");
+        (await _CountAsync(connection, history)).Should().Be(1);
+        (await _CountAsync(connection, _AppData)).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_reset_declared_host_state_tables_when_created_with_the_host_services_and_preservation_disabled()
+    {
+        // given
+        var connectionString = _CreateSharedDatabaseConnectionString();
+        await using var connection = await _CreateDatabaseAsync(connectionString);
+        await using var services = _CreateHostServices(connectionString);
+        var reset = await DatabaseReset.CreateAsync(
+            connection,
+            services,
+            new DatabaseResetOptions { DbAdapter = DbAdapter.Sqlite, PreserveHostStateTables = false },
+            AbortToken
+        );
+
+        // when
+        await reset.ResetAsync(connection, AbortToken);
+
+        // then
+        (await _CountAsync(connection, _HostState))
+            .Should()
+            .Be(0);
+        (await _CountAsync(connection, SchemaRunner.HistoryTableName)).Should().Be(1);
+    }
+
+    [Fact]
     public async Task should_preserve_host_state_tables_declared_by_schema_contributions()
     {
         // given
@@ -96,16 +189,7 @@ public sealed class DatabaseResetPreservationTests : TestBase
     private static HeadlessTestServer<Program> _CreateServer(string connectionString, bool preserveHostStateTables)
     {
         var server = new HeadlessTestServer<Program>(configureTestServices: services =>
-            services.AddSingleton(
-                new SchemaContribution(
-                    feature: "Features",
-                    dialect: Substitute.For<ISchemaDialect>(),
-                    createConnection: () => new SqliteConnection(connectionString),
-                    schema: "main",
-                    steps: [new SchemaStep("1", "Create the definition table.", "SELECT 1;")],
-                    hostStateTables: [_HostState]
-                )
-            )
+            services.AddSingleton(_CreateContribution(connectionString))
         );
 
         server.ConfigureDatabaseReset(options =>
@@ -116,6 +200,23 @@ public sealed class DatabaseResetPreservationTests : TestBase
         });
 
         return server;
+    }
+
+    private static ServiceProvider _CreateHostServices(string connectionString)
+    {
+        return new ServiceCollection().AddSingleton(_CreateContribution(connectionString)).BuildServiceProvider();
+    }
+
+    private static SchemaContribution _CreateContribution(string connectionString)
+    {
+        return new SchemaContribution(
+            feature: "Features",
+            dialect: SqliteSchemaDialect.Instance,
+            createConnection: () => new SqliteConnection(connectionString),
+            schema: "main",
+            steps: [new SchemaStep("1", "Create the definition table.", "SELECT 1;")],
+            hostStateTables: [_HostState]
+        );
     }
 
     private static string _CreateSharedDatabaseConnectionString()
@@ -143,6 +244,13 @@ public sealed class DatabaseResetPreservationTests : TestBase
         }
 
         return connection;
+    }
+
+    private static async Task _ExecuteAsync(DbConnection connection, string sql)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        await command.ExecuteNonQueryAsync(AbortToken);
     }
 
     private static async Task<long> _CountAsync(DbConnection connection, string table)

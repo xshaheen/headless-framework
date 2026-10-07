@@ -80,6 +80,38 @@ export function isSessionExpired(now: number = Date.now()): boolean {
   return now - signedInAt >= timeoutMinutes * 60_000;
 }
 
+/**
+ * The credential the notification hub sends as its access_token query parameter, since a browser cannot set headers
+ * on a WebSocket. Reads the injected config directly, because the hub connection is built when its module loads,
+ * before the auth service is initialized. Each value is what the server accepts for the mode: the Base64 Basic
+ * credential, `Bearer:<key>` for an API key, and the host access key or custom credential verbatim.
+ */
+export function getHubAccessToken(): string | null {
+  const auth = window.JobsConfig?.auth;
+  if (!auth?.enabled) {
+    return null;
+  }
+
+  switch (auth.mode) {
+    case 'basic':
+      return localStorage.getItem(BASIC_AUTH_KEY) || null;
+
+    case 'apikey': {
+      const apiKey = localStorage.getItem(API_KEY_KEY);
+      return apiKey ? `Bearer:${apiKey}` : null;
+    }
+
+    case 'host':
+      return localStorage.getItem(HOST_ACCESS_KEY_KEY) || null;
+
+    case 'custom':
+      return localStorage.getItem(CUSTOM_CREDENTIAL_KEY) || null;
+
+    default:
+      return null;
+  }
+}
+
 class AuthService {
   private config: AuthConfig | null = null;
   private status: AuthStatus = { authenticated: false };
@@ -239,28 +271,7 @@ class AuthService {
    * Get access token for SignalR (WebSocket limitation)
    */
   getAccessToken(): string | null {
-    if (!this.config?.enabled) {
-      return null;
-    }
-
-    switch (this.config.mode) {
-      case 'basic':
-        return localStorage.getItem('jobs_basic_auth');
-      
-      case 'apikey':
-        const token = localStorage.getItem('jobs_api_key');
-        return token ? `Bearer:${token}` : null;
-      
-      case 'host':
-        const hostToken = localStorage.getItem('jobs_host_access_key');
-        return hostToken || null;
-
-      case 'custom':
-        return localStorage.getItem(CUSTOM_CREDENTIAL_KEY) || null;
-      
-      default:
-        return null;
-    }
+    return getHubAccessToken();
   }
 
 

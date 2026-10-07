@@ -141,6 +141,13 @@ public sealed class SqliteSchemaDialect : ISchemaDialect
     }
 
     /// <inheritdoc />
+    /// <remarks>The schema is a prefix of the name, as <see cref="SqliteDialect" /> qualifies names.</remarks>
+    public string HistoryTableName(string schema)
+    {
+        return SqliteDialect.QualifiedName(schema, SchemaRunner.HistoryTableName);
+    }
+
+    /// <inheritdoc />
     public string ReadHistorySql(string schema)
     {
         return $"""
@@ -178,8 +185,8 @@ public sealed class SqliteSchemaDialect : ISchemaDialect
             && e.Message.Contains("no such table", StringComparison.Ordinal);
     }
 
-    private static string _History(string schema)
+    private string _History(string schema)
     {
-        return SqliteDialect.Instance.Qualify(schema, SchemaRunner.HistoryTableName);
+        return SqliteDialect.Instance.Quote(HistoryTableName(schema));
     }
 }

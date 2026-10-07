@@ -9,6 +9,7 @@
     <PackageReference Include="Microsoft.Data.Sqlite" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\..\src\Headless.Sql.Sqlite\Headless.Sql.Sqlite.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing.AspNetCore\Headless.Testing.AspNetCore.csproj" />
     <ProjectReference Include="..\Headless.Testing.AspNetCore.Tests.TestHost\Headless.Testing.AspNetCore.Tests.TestHost.csproj" />
   </ItemGroup>
