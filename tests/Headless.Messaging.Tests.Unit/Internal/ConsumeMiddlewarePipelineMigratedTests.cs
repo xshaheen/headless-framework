@@ -4,12 +4,60 @@ using System.Collections.Concurrent;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
 using Headless.Testing.Tests;
+using Headless.UnitOfWork;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests.Internal;
 
 public sealed class ConsumeMiddlewarePipelineMigratedTests : TestBase
 {
+    [Fact]
+    public async Task should_return_the_inbox_unit_from_get_required_unit_of_work_on_a_transactional_attempt()
+    {
+        // given
+        var recorder = new MigratedConsumeRecorder();
+        var services = _CreateServices(recorder);
+        new MessagingBuilder(services).AddBusConsumeMiddleware<UnitOfWorkObservingConsumeMiddleware>();
+        var pipeline = _BuildPipeline(services);
+        var unitOfWork = Substitute.For<IUnitOfWork>();
+
+        // when
+        await pipeline.ExecuteAsync(
+            _BuildConsumerContext(unitOfWork: unitOfWork),
+            new MigratedConsumeMessage("order-1"),
+            typeof(MigratedConsumeMessage),
+            AbortToken
+        );
+
+        // then
+        recorder.UnitsOfWork.Should().ContainSingle().Which.Should().BeSameAs(unitOfWork);
+    }
+
+    [Fact]
+    public async Task should_throw_from_get_required_unit_of_work_when_the_attempt_has_no_inbox_transaction()
+    {
+        // given
+        var recorder = new MigratedConsumeRecorder();
+        var services = _CreateServices(recorder);
+        new MessagingBuilder(services).AddBusConsumeMiddleware<UnitOfWorkObservingConsumeMiddleware>();
+        var pipeline = _BuildPipeline(services);
+
+        // when
+        var act = () =>
+            pipeline.ExecuteAsync(
+                _BuildConsumerContext(),
+                new MigratedConsumeMessage("order-1"),
+                typeof(MigratedConsumeMessage),
+                AbortToken
+            );
+
+        // then
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*'orders'*no unit of work*Transactional*EnableTransactionalInbox*");
+        recorder.Calls.Should().NotContain("dispatcher");
+    }
+
     [Fact]
     public async Task should_invoke_dispatcher_when_no_middleware_registered()
     {
@@ -299,7 +347,8 @@ public sealed class ConsumeMiddlewarePipelineMigratedTests : TestBase
 
     private static ConsumerContext _BuildConsumerContext(
         string? tenantHeader = null,
-        MessageLane lane = MessageLane.Bus
+        MessageLane lane = MessageLane.Bus,
+        IUnitOfWork? unitOfWork = null
     )
     {
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
@@ -333,7 +382,8 @@ public sealed class ConsumeMiddlewarePipelineMigratedTests : TestBase
                 Content = "{}",
                 Lane = lane,
                 Added = DateTimeOffset.UtcNow,
-            }
+            },
+            unitOfWork
         );
     }
 
@@ -345,18 +395,36 @@ public sealed class ConsumeMiddlewarePipelineMigratedTests : TestBase
     {
         private readonly ConcurrentQueue<string> _calls = [];
         private readonly ConcurrentQueue<Guid> _instanceIds = [];
+        private readonly ConcurrentQueue<IUnitOfWork> _unitsOfWork = [];
 
         public IReadOnlyList<string> Calls => _calls.ToArray();
         public IReadOnlyList<Guid> InstanceIds => _instanceIds.ToArray();
+        public IReadOnlyList<IUnitOfWork> UnitsOfWork => _unitsOfWork.ToArray();
 
         public void Record(string call)
         {
             _calls.Enqueue(call);
         }
 
+        public void RecordUnitOfWork(IUnitOfWork unitOfWork)
+        {
+            _unitsOfWork.Enqueue(unitOfWork);
+        }
+
         public void RecordInstance(Guid id)
         {
             _instanceIds.Enqueue(id);
+        }
+    }
+
+    // Reads the unit the way a consumer does, so the test sees the context the handler receives.
+    private sealed class UnitOfWorkObservingConsumeMiddleware(MigratedConsumeRecorder recorder)
+        : IConsumeMiddleware<ConsumeContext>
+    {
+        public ValueTask InvokeAsync(ConsumeContext context, Func<ValueTask> next)
+        {
+            recorder.RecordUnitOfWork(context.GetRequiredUnitOfWork());
+            return next();
         }
     }
 

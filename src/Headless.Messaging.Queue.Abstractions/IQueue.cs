@@ -17,7 +17,8 @@ namespace Headless.Messaging;
 /// Inside a consumer this means an enqueue is not part of the inbox transaction: it is sent (or stored as its own
 /// row) immediately, survives a rolled-back attempt, and is enqueued again when the attempt is retried. To make
 /// the outgoing message commit atomically with the inbox row, publish through the attempt's unit instead:
-/// <c>context.UnitOfWork.Outbox.PublishAsync(…)</c> or <c>context.UnitOfWork.Outbox.EnqueueAsync(…)</c>.
+/// <c>context.GetRequiredUnitOfWork().Outbox.PublishAsync(…)</c> or
+/// <c>context.GetRequiredUnitOfWork().Outbox.EnqueueAsync(…)</c>.
 /// </para>
 /// <para>
 /// Delayed delivery is durable and cannot be combined with <c>Direct</c> delivery.
