@@ -126,7 +126,7 @@ public sealed class HeadlessTestServer<TProgram>(
     /// Thrown during <see cref="InitializeAsync"/> when the check does not complete within
     /// <paramref name="timeout"/>.
     /// </exception>
-    public HeadlessTestServer<TProgram> WaitForReadiness(Func<IServiceProvider, Task> check, TimeSpan? timeout = null)
+    public HeadlessTestServer<TProgram> AddReadinessCheck(Func<IServiceProvider, Task> check, TimeSpan? timeout = null)
     {
         if (_factory is not null || _initStarted)
         {

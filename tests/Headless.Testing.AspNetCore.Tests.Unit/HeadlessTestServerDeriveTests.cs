@@ -76,7 +76,7 @@ public sealed class HeadlessTestServerDeriveTests : TestBase
         _server = new HeadlessTestServer<Program>(configureTestServices: services =>
             services.AddSingleton<IInitializer>(initializer)
         );
-        _server.WaitForReadiness(_ =>
+        _server.AddReadinessCheck(_ =>
         {
             Interlocked.Increment(ref readinessRuns);
             return Task.CompletedTask;
