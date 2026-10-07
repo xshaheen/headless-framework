@@ -343,7 +343,7 @@ public sealed class NatsReplyTransportTests(NatsFixture fixture) : TestBase
 
     private static NatsReplyTransport _CreateTransport(INatsConnectionPool pool)
     {
-        return new NatsReplyTransport(pool, TimeProvider.System, NullLogger<NatsReplyTransport>.Instance);
+        return new NatsReplyTransport(pool, NullLogger<NatsReplyTransport>.Instance);
     }
 
     private NatsReplyTransport _CreateTransport(
@@ -357,7 +357,7 @@ public sealed class NatsReplyTransportTests(NatsFixture fixture) : TestBase
             logging.SetMinimumLevel(LogLevel.Trace).AddProvider(new CapturingLoggerProvider(log))
         );
         _loggerFactories.Add(factory);
-        return new NatsReplyTransport(pool, TimeProvider.System, factory.CreateLogger<NatsReplyTransport>());
+        return new NatsReplyTransport(pool, factory.CreateLogger<NatsReplyTransport>());
     }
 
     private static List<(LogLevel Level, EventId EventId, string Message)> _Entries(

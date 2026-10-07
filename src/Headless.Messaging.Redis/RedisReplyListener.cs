@@ -46,7 +46,6 @@ internal sealed class RedisReplyListener : IReplyListener
     public RedisReplyListener(
         IRedisConnectionPool connectionPool,
         Func<TransportMessage, CancellationToken, ValueTask> onReply,
-        TimeProvider timeProvider,
         ILogger logger
     )
     {
@@ -56,7 +55,7 @@ internal sealed class RedisReplyListener : IReplyListener
         _channel = RedisChannel.Literal(_replyAddress);
         _onReply = onReply;
         _logger = logger;
-        _supervisor = new ReplyListenerSupervisor("Redis", this, _ServeOnceAsync, timeProvider, logger);
+        _supervisor = new ReplyListenerSupervisor("Redis", this, _ServeOnceAsync, logger);
 
         _supervisor.Start();
     }

@@ -107,7 +107,7 @@ public sealed class RabbitMqReplyTransportTests : TestBase
 
     private RabbitMqReplyTransport _CreateTransport()
     {
-        return new RabbitMqReplyTransport(_pool, TimeProvider.System, NullLogger<RabbitMqReplyTransport>.Instance);
+        return new RabbitMqReplyTransport(_pool, NullLogger<RabbitMqReplyTransport>.Instance);
     }
 
     private static TransportMessage _Reply()

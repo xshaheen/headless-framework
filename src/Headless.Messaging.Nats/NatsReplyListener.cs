@@ -48,7 +48,6 @@ internal sealed class NatsReplyListener : IReplyListener
     public NatsReplyListener(
         NatsConnection connection,
         Func<TransportMessage, CancellationToken, ValueTask> onReply,
-        TimeProvider timeProvider,
         ILogger logger
     )
     {
@@ -56,7 +55,7 @@ internal sealed class NatsReplyListener : IReplyListener
         _subject = ReplyAddresses.Create();
         _onReply = onReply;
         _logger = logger;
-        _supervisor = new ReplyListenerSupervisor("NATS", this, _ServeOnceAsync, timeProvider, logger);
+        _supervisor = new ReplyListenerSupervisor("NATS", this, _ServeOnceAsync, logger);
 
         _connection.ConnectionDisconnected += _OnConnectionDisconnectedAsync;
         _connection.ConnectionOpened += _OnConnectionOpenedAsync;
