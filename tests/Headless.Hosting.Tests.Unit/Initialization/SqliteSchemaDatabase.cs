@@ -115,6 +115,8 @@ internal sealed class SqliteSchemaDatabase : IDisposable
         public string HistoryTableSql(string schema) =>
             $"CREATE TABLE IF NOT EXISTS {schema}_history (feature TEXT, version TEXT, checksum TEXT, description TEXT, PRIMARY KEY (feature, version))";
 
+        public string HistoryTableName(string schema) => $"{schema}_history";
+
         public string ReadHistorySql(string schema) =>
             $"SELECT feature, version, checksum, description FROM {schema}_history";
 

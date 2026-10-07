@@ -23,7 +23,6 @@ namespace Tests.TestSetup;
 [CollectionDefinition(DisableParallelization = true)]
 public sealed partial class SqlServerSchemaRunnerFixture
     : HeadlessSqlServerFixture,
-        IAsyncLifetime,
         ICollectionFixture<SqlServerSchemaRunnerFixture>,
         ISchemaRunnerFixture
 {
@@ -44,9 +43,8 @@ public sealed partial class SqlServerSchemaRunnerFixture
     private string DatabaseConnectionString =>
         new SqlConnectionStringBuilder(ConnectionString) { InitialCatalog = _Database, MaxPoolSize = 20 }.ToString();
 
-    // Re-implemented rather than overridden: the base fixture's InitializeAsync is not virtual, and the database can
-    // only be created once its container accepts logins.
-    public new async ValueTask InitializeAsync()
+    // The database can only be created once the container accepts logins.
+    protected override async ValueTask InitializeAsync()
     {
         await base.InitializeAsync();
         await using var master = new SqlConnection(ConnectionString);

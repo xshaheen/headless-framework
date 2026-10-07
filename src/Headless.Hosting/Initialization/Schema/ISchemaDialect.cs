@@ -46,6 +46,14 @@ public interface ISchemaDialect
     string HistoryTableSql(string schema);
 
     /// <summary>
+    /// Returns the unquoted name, within <paramref name="schema"/>, under which the history table of
+    /// <paramref name="schema"/> is stored: <see cref="SchemaRunner.HistoryTableName"/>, or that name with the schema
+    /// as a prefix on a database without schemas. A tool that clears data between tests keeps the table by this name,
+    /// because the runner trusts the history and never recreates a table whose step it records.
+    /// </summary>
+    string HistoryTableName(string schema);
+
+    /// <summary>
     /// Returns the query that reads the history table of <paramref name="schema"/>, projecting feature, step version,
     /// checksum, and description, in that order.
     /// </summary>

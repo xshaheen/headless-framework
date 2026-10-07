@@ -25,12 +25,13 @@ public sealed class DatabaseResetOptions
     public List<Table> TablesToPreserve { get; init; } = [];
 
     /// <summary>
-    /// Whether <see cref="HeadlessTestServer{TProgram}.ResetDatabaseAsync"/> also preserves the host-state tables that
-    /// framework features declare (<c>SchemaContribution.HostStateTables</c>): feature, permission, and setting
-    /// definitions, which the host writes once at startup, and cluster membership rows, which the running host keeps
-    /// heartbeating. Defaults to <see langword="true"/>. Set it to <see langword="false"/> only for a test that
-    /// re-runs the startup work that writes them. Standalone <see cref="DatabaseReset"/> usage ignores it, because it
-    /// has no service provider to read the declarations from.
+    /// Whether the reset also preserves the host-state tables that framework features declare
+    /// (<c>SchemaContribution.HostStateTables</c>): feature, permission, and setting definitions, which the host writes
+    /// once at startup, and cluster membership rows, which the running host keeps heartbeating. Defaults to
+    /// <see langword="true"/>. Set it to <see langword="false"/> only for a test that re-runs the startup work that
+    /// writes them. It applies to <see cref="HeadlessTestServer{TProgram}.ResetDatabaseAsync"/> and to the
+    /// <see cref="DatabaseReset.CreateAsync(DbConnection, IServiceProvider, DatabaseResetOptions?, CancellationToken)"/>
+    /// overload that takes the host's service provider; the overload without one has no declarations to read.
     /// </summary>
     public bool PreserveHostStateTables { get; set; } = true;
 

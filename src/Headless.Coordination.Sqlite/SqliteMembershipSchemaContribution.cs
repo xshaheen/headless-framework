@@ -76,7 +76,14 @@ internal static class SqliteMembershipSchemaContribution
                     tablesSql
                 ),
             ],
-            applyOnStartup: providerOptions.InitializeOnStartup
+            applyOnStartup: providerOptions.InitializeOnStartup,
+            // SQLite has no schemas: the schema is a prefix of each table's name, so the stored table is named with it.
+            hostStateTables:
+            [
+                SqliteDialect.QualifiedName(schema, t.GenerationTableName),
+                SqliteDialect.QualifiedName(schema, t.DescriptorTableName),
+                SqliteDialect.QualifiedName(schema, t.LivenessTableName),
+            ]
         );
     }
 }

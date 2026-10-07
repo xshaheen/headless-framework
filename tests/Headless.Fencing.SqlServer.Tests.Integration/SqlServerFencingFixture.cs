@@ -40,7 +40,7 @@ public sealed class SqlServerRcsiFencingFixture
     public override bool ReadCommittedSnapshot => true;
 }
 
-public abstract class SqlServerFencingFixtureBase : HeadlessSqlServerFixture, IAsyncLifetime, ILeasesFixture
+public abstract class SqlServerFencingFixtureBase : HeadlessSqlServerFixture, ILeasesFixture
 {
     private const string _OtherDatabase = "fencing_other";
     private const string _HandoffTable = "[dbo].[FencingHandoffs]";
@@ -57,9 +57,8 @@ public abstract class SqlServerFencingFixtureBase : HeadlessSqlServerFixture, IA
     public string OtherDatabaseConnectionString =>
         new SqlConnectionStringBuilder(ConnectionString) { InitialCatalog = _OtherDatabase }.ToString();
 
-    // Re-implemented rather than overridden: the base fixture's InitializeAsync is not virtual, and the databases can
-    // only be created once its container accepts logins.
-    public new async ValueTask InitializeAsync()
+    // The databases can only be created once the container accepts logins.
+    protected override async ValueTask InitializeAsync()
     {
         await base.InitializeAsync();
 
