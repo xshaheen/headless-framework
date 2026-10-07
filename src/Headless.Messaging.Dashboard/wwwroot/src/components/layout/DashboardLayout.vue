@@ -83,10 +83,24 @@ function onNodeSwitched() {
   switchedNode.value = getNodeCookie()
 }
 
-onMounted(() => window.addEventListener('messaging:node-switched', onNodeSwitched))
-onUnmounted(() => window.removeEventListener('messaging:node-switched', onNodeSwitched))
-
 const router = useRouter()
+let isUnmounted = false
+
+onMounted(async () => {
+  window.addEventListener('messaging:node-switched', onNodeSwitched)
+
+  // The footer shows provider capabilities on every page, not only the overview that starts polling. Wait for the
+  // first navigation so an unauthenticated start, which the guard redirects to the login page, sends no request.
+  await router.isReady()
+  if (!isUnmounted && router.currentRoute.value.name !== 'Login') {
+    void messagingStore.ensureMetaLoaded()
+  }
+})
+
+onUnmounted(() => {
+  isUnmounted = true
+  window.removeEventListener('messaging:node-switched', onNodeSwitched)
+})
 
 function navigateToDashboard() {
   router.push('/')

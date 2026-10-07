@@ -270,6 +270,9 @@ function handleAuthLogout() {
                 location="bottom"
                 :close-on-content-click="false"
               >
+                <!-- VMenu's aria-owns re-parents the open card into the button, which folds the card's text into the
+                     button's name and hides its select behind the button's presentational children; aria-controls
+                     still links the two. -->
                 <template #activator="{ props }">
                   <v-btn
                     v-bind="props"
@@ -278,6 +281,8 @@ function handleAuthLogout() {
                     density="comfortable"
                     class="timezone-button"
                     prepend-icon="mdi-earth"
+                    :aria-label="`Display time zone: ${timeZoneStore.effectiveTimeZone}`"
+                    :aria-owns="undefined"
                   >
                     <span class="d-none d-sm-inline">
                       {{ timeZoneStore.effectiveTimeZone }}

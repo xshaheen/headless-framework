@@ -197,7 +197,8 @@ public static partial class JobsCoordinationFixtureExtensions
         TimeSpan? leaseDuration = null,
         bool useNativeClaims = true,
         IInterceptor? interceptor = null,
-        Action<JobsOptionsBuilder<TimeJobEntity, CronJobEntity>>? configureJobs = null
+        Action<JobsOptionsBuilder<TimeJobEntity, CronJobEntity>>? configureJobs = null,
+        bool runBackgroundServices = false
     )
     {
         return _BuildHost<JobsDbContext>(
@@ -209,7 +210,8 @@ public static partial class JobsCoordinationFixtureExtensions
             leaseDuration,
             useNativeClaims,
             interceptor,
-            configureJobs
+            configureJobs,
+            runBackgroundServices: runBackgroundServices
         );
     }
 
@@ -263,7 +265,8 @@ public static partial class JobsCoordinationFixtureExtensions
         bool useNativeClaims = true,
         IInterceptor? interceptor = null,
         Action<JobsOptionsBuilder<TimeJobEntity, CronJobEntity>>? configureJobs = null,
-        (TimeSpan Heartbeat, TimeSpan Suspicion, TimeSpan Dead, TimeSpan DeadRetention)? membershipTimings = null
+        (TimeSpan Heartbeat, TimeSpan Suspicion, TimeSpan Dead, TimeSpan DeadRetention)? membershipTimings = null,
+        bool runBackgroundServices = false
     )
         where TDbContext : JobsDbContext<TimeJobEntity, CronJobEntity>
     {
@@ -293,8 +296,13 @@ public static partial class JobsCoordinationFixtureExtensions
         builder.Services.AddHeadlessJobs(options =>
         {
             // The scheduler is disabled so it never races the tests' direct persistence calls. Dead-node recovery
-            // is driven by the MembershipRecoveryBridge + coordination heartbeat, both of which still run.
-            options.DisableBackgroundServices();
+            // is driven by the MembershipRecoveryBridge + coordination heartbeat, both of which still run. A scenario
+            // that needs a job to actually execute opts in with runBackgroundServices.
+            if (!runBackgroundServices)
+            {
+                options.DisableBackgroundServices();
+            }
+
             options.AddModule<CoordinatedJobsModule>();
             configureJobs?.Invoke(options);
             options.ConfigureStorage(storage => storage.Schema = schema);
@@ -335,6 +343,12 @@ public static partial class JobsCoordinationFixtureExtensions
 
     /// <summary>The typed function scheduled through <see cref="IJobScheduler" /> by facade conformance scenarios.</summary>
     public const string CoordinatedFacadeFunctionName = "Coordinated_Facade_Enqueue_Sample";
+
+    /// <summary>A function that reports progress <see cref="ProgressReports" /> times in a tight loop, then succeeds.</summary>
+    public const string CoordinatedProgressFunctionName = "Coordinated_Progress_Sample";
+
+    /// <summary>How many progress reports <see cref="CoordinatedProgressFunctionName" /> makes.</summary>
+    public const int ProgressReports = 200;
 
     /// <summary>
     /// Builds (but does not start) a host wired like <see cref="BuildHost" /> plus the unit-of-work provider, so the
@@ -1165,6 +1179,24 @@ public sealed class CoordinatedJobsModule : IJobsModule
                     MaxConcurrency = 1,
                     JobType = typeof(CoordinatedJob),
                 },
+                [JobsCoordinationFixtureExtensions.CoordinatedProgressFunctionName] = new JobFunctionRegistration
+                {
+                    CronExpression = string.Empty,
+                    Priority = JobPriority.LongRunning,
+                    Delegate = async (_, context, cancellationToken) =>
+                    {
+                        // Far faster than the progress interval, so the throttle has to coalesce almost every report.
+                        for (var report = 1; report <= JobsCoordinationFixtureExtensions.ProgressReports; report++)
+                        {
+                            context.ReportProgress(
+                                100d * report / JobsCoordinationFixtureExtensions.ProgressReports,
+                                string.Create(CultureInfo.InvariantCulture, $"report {report}")
+                            );
+                            await Task.Delay(1, cancellationToken).ConfigureAwait(false);
+                        }
+                    },
+                    MaxConcurrency = 1,
+                },
                 [JobsCoordinationFixtureExtensions.CoordinatedFacadeFunctionName] = new JobFunctionRegistration
                 {
                     CronExpression = string.Empty,
@@ -1196,6 +1228,13 @@ public sealed class CoordinatedJobsModule : IJobsModule
             {
                 [JobsCoordinationFixtureExtensions.CoordinatedFunctionName] = new(
                     JobsCoordinationFixtureExtensions.CoordinatedFunctionName,
+                    null,
+                    string.Empty,
+                    JobPriority.LongRunning,
+                    1
+                ),
+                [JobsCoordinationFixtureExtensions.CoordinatedProgressFunctionName] = new(
+                    JobsCoordinationFixtureExtensions.CoordinatedProgressFunctionName,
                     null,
                     string.Empty,
                     JobPriority.LongRunning,

@@ -104,10 +104,18 @@ describe('polling interval', () => {
     expect(getStatsPollingInterval()).toBe(12000)
   })
 
-  it('defaults to 5000ms when unset', () => {
+  it('defaults to the 2000ms server default when unset', () => {
     window.MessagingConfig = { ...baseConfig }
-    expect(getStatsPollingInterval()).toBe(5000)
+    expect(getStatsPollingInterval()).toBe(2000)
   })
+
+  it.each([0, -500, Number.NaN, Number.POSITIVE_INFINITY])(
+    'falls back to 2000ms for the unusable interval %s',
+    (statsPollingInterval) => {
+      window.MessagingConfig = { ...baseConfig, statsPollingInterval }
+      expect(getStatsPollingInterval()).toBe(2000)
+    },
+  )
 })
 
 describe('without configuration', () => {

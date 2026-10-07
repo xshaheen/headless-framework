@@ -751,8 +751,9 @@
 import { ref, computed, onMounted } from 'vue'
 import { useFunctionNameStore } from '@/stores/functionNames'
 import { timeJobService } from '@/http/services/timeJobService'
-import type { AddChainJobsRequest } from '@/http/services/types/timeJobService.types'
 import { formatJsonForDisplay } from '@/utilities/json-format'
+import { buildChainJobsRequest } from '@/utilities/chain-jobs'
+import { useTimeZoneStore } from '@/stores/timeZoneStore'
 
 // Domain types
 interface RetryIntervalOption {
@@ -776,17 +777,6 @@ interface ScheduledJob {
   executionTime: string
 }
 
-interface ChainJobPayload {
-  function: string
-  description: string
-  runCondition?: number | null
-  executionTime: string | null | undefined
-  retries: number
-  request: string | null
-  intervals: Array<number | undefined>
-  children: ChainJobPayload[]
-}
-
 // Props
 interface Props {
   modelValue: boolean
@@ -804,6 +794,7 @@ const emit = defineEmits<Emits>()
 
 // Store
 const functionNamesStore = useFunctionNameStore()
+const timeZoneStore = useTimeZoneStore()
 
 // Reactive state
 const isOpen = computed({
@@ -1186,59 +1177,10 @@ const createChainJobs = async () => {
   isCreating.value = true
   
   try {
-    const getExecutionTime = (job: ScheduledJob) => {
-      if (job.ignoreDateTime) return undefined
-      if (job.executionDate && job.executionTime) {
-        const [hours, minutes, seconds = 0] = job.executionTime.split(':').map(Number)
-        const parsedExecutionDate = new Date(job.executionDate).setHours(hours, minutes, seconds, 0)
-        return new Date(parsedExecutionDate).toISOString()
-      }
-      return null
-    }
-
-    const chainRoot = {
-      function: parentJob.value.functionName,
-      description: parentJob.value.description,
-      executionTime: getExecutionTime(parentJob.value),
-      retries: parentJob.value.retries,
-      request: parentJob.value.requestData || null,
-      intervals: parentJob.value.retryIntervals?.map(item => typeof item === 'object' ? item.value : item) || [],
-      children: [] as ChainJobPayload[]
-    }
-
-    children.value.forEach((child) => {
-      if (child.functionName) {
-        const childEntity = {
-          function: child.functionName,
-          description: child.description,
-          runCondition: child.runCondition,
-          executionTime: getExecutionTime(child),
-          retries: child.retries,
-          request: child.requestData || null,
-          intervals: child.retryIntervals?.map(item => typeof item === 'object' ? item.value : item) || [],
-          children: [] as ChainJobPayload[]
-        }
-
-        child.grandChildren.forEach((grandChild) => {
-          if (grandChild.functionName) {
-            childEntity.children.push({
-              function: grandChild.functionName,
-              description: grandChild.description,
-              runCondition: grandChild.runCondition,
-              executionTime: getExecutionTime(grandChild),
-              retries: grandChild.retries,
-              request: grandChild.requestData || null,
-              intervals: grandChild.retryIntervals?.map(item => typeof item === 'object' ? item.value : item) || [],
-              children: []
-            })
-          }
-        })
-        chainRoot.children.push(childEntity)
-      }
-    })
+    const chainRoot = buildChainJobsRequest(parentJob.value, children.value)
 
     const addChainJobs = timeJobService.addChainJobs()
-    addChainJobs.requestAsync(chainRoot as AddChainJobsRequest)
+    addChainJobs.requestAsync(chainRoot, timeZoneStore.schedulingTimeZone)
         .then((result) => {
             emit('created', result)
             closeModal()

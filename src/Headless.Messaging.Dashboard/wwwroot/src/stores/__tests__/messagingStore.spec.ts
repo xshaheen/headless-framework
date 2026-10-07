@@ -190,3 +190,71 @@ describe('messaging metadata state', () => {
     })
   })
 })
+
+describe('stats polling', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.useFakeTimers()
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+  })
+
+  afterEach(() => {
+    useMessagingStore().stopPolling()
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+    delete window.MessagingConfig
+  })
+
+  it('polls stats at the configured interval instead of a hard-coded one', async () => {
+    window.MessagingConfig = {
+      basePath: '/messaging',
+      statsPollingInterval: 7000,
+      auth: { mode: 'none', enabled: false, sessionTimeout: 0 },
+    }
+    const get = vi.spyOn(httpService, 'get').mockResolvedValue({})
+    const statsCalls = () => get.mock.calls.filter(([endpoint]) => endpoint === '/stats').length
+    const store = useMessagingStore()
+
+    await store.startPolling()
+    expect(statsCalls()).toBe(1)
+
+    await vi.advanceTimersByTimeAsync(6999)
+    expect(statsCalls()).toBe(1)
+
+    await vi.advanceTimersByTimeAsync(1)
+    expect(statsCalls()).toBe(2)
+
+    await vi.advanceTimersByTimeAsync(7000)
+    expect(statsCalls()).toBe(3)
+  })
+})
+
+describe('metadata loading across pages', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+  })
+
+  afterEach(() => {
+    useMessagingStore().stopPolling()
+    vi.restoreAllMocks()
+  })
+
+  it('does not request metadata twice when the overview starts polling during the layout request', async () => {
+    const metaRequest = createDeferred<unknown>()
+    const get = vi
+      .spyOn(httpService, 'get')
+      .mockImplementation((endpoint: string) =>
+        endpoint === '/meta' ? metaRequest.promise : Promise.resolve({}),
+      )
+    const store = useMessagingStore()
+
+    const layoutLoad = store.ensureMetaLoaded()
+    const polling = store.startPolling()
+    metaRequest.resolve({ providerCapabilities: [] })
+    await Promise.all([layoutLoad, polling])
+    await store.ensureMetaLoaded()
+
+    expect(get.mock.calls.filter(([endpoint]) => endpoint === '/meta')).toHaveLength(1)
+  })
+})

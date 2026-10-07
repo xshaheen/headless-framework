@@ -38,7 +38,8 @@ export function useAuth() {
       const apiKey = localStorage.getItem('messaging_api_key')
       const basicAuth = localStorage.getItem('messaging_basic_auth')
       const hostAccessKey = localStorage.getItem('messaging_host_access_key')
-      return apiKey || basicAuth || hostAccessKey || ''
+      const customCredential = localStorage.getItem('messaging_custom_auth')
+      return apiKey || basicAuth || hostAccessKey || customCredential || ''
     } catch {
       return ''
     }

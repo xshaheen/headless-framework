@@ -1119,6 +1119,7 @@ const canBeForceDeleted = ref<string[]>([])
                 color="primary"
                 @click="refreshData"
                 class="refresh-btn utility-btn"
+                aria-label="Refresh"
               >
                 <v-icon>mdi-refresh</v-icon>
               </v-btn>
@@ -1216,6 +1217,8 @@ const canBeForceDeleted = ref<string[]>([])
                     variant="text"
                     @click="toggleParentExpansion(item.id)"
                     class="tree-expand-btn"
+                    :aria-label="item.isExpanded ? 'Collapse children' : 'Expand children'"
+                    :aria-expanded="item.isExpanded ? 'true' : 'false'"
                     color="primary"
                     density="compact"
                   >
@@ -1295,12 +1298,14 @@ const canBeForceDeleted = ref<string[]>([])
                 "
                 class="custom-icon"
               >
-                <p
+                <button
+                  type="button"
                   class="blue-underline mr-2 text-caption"
+                  :aria-label="`View request payload for ${item.requestType}`"
                   @click="tickerRequestDialog.open({ id: item.id })"
                 >
                   {{ item.requestType }}
-                </p>
+                </button>
               </v-badge>
             </template>
 
@@ -1371,6 +1376,7 @@ const canBeForceDeleted = ref<string[]>([])
                           canBeForceDeleted.includes(item.id)
                         "
                         class="modern-action-btn cancel-btn"
+                        aria-label="Cancel job"
                         :class="{ active: hasStatus(item.status, Status.InProgress) }"
                       >
                         <v-icon size="16">mdi-cancel</v-icon>
@@ -1389,6 +1395,7 @@ const canBeForceDeleted = ref<string[]>([])
                         @click="requeue(item.id)"
                         :disabled="requeueTimeJob.loader.value"
                         class="modern-action-btn requeue-btn"
+                        aria-label="Requeue job"
                       >
                         <v-icon size="16">mdi-restart</v-icon>
                       </button>
@@ -1415,6 +1422,7 @@ const canBeForceDeleted = ref<string[]>([])
                           })
                         "
                         class="modern-action-btn edit-btn"
+                        aria-label="Edit job"
                       >
                         <v-icon size="16">mdi-pencil</v-icon>
                       </button>
@@ -1429,6 +1437,7 @@ const canBeForceDeleted = ref<string[]>([])
                           })
                         "
                         class="modern-action-btn duplicate-btn"
+                        aria-label="Duplicate job"
                       >
                         <v-icon size="16">mdi-content-copy</v-icon>
                       </button>
@@ -1460,6 +1469,9 @@ const canBeForceDeleted = ref<string[]>([])
                           !canBeForceDeleted.includes(item.id)
                         "
                         class="modern-action-btn delete-btn"
+                        :aria-label="
+                          canBeForceDeleted.includes(item.id) ? 'Force delete job' : 'Delete job'
+                        "
                         :class="{
                           active:
                             !hasStatus(item.status, Status.InProgress) ||
@@ -2538,9 +2550,21 @@ const canBeForceDeleted = ref<string[]>([])
 
 /* Utility classes */
 .blue-underline {
+  /* A native button so the request type is keyboard-reachable; these resets keep the original inline-link look. */
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  font-family: inherit;
+  text-align: start;
   cursor: pointer;
   text-decoration: underline;
   transition: all 0.2s ease;
+}
+
+.blue-underline:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
 }
 
 :deep(.blue-badge .v-badge__badge) {

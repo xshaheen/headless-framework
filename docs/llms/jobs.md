@@ -1287,6 +1287,8 @@ Read [dashboards.md](dashboards.md) for the shared authentication modes and prod
   bar with its percent and message; the tooltip shows how long ago it was written. Each stored write also pushes a
   `JobProgressNotification` over SignalR that moves the bar in place without reloading the page. A finished row keeps
   its last progress, greyed out, so a failed job shows how far it got.
+- **Chain and add time zones**: `POST /api/time-job/add?timeZoneId=…` reads every execution time sent without an offset, on the root and on every chain step, as a wall-clock time in `timeZoneId`; a time sent with `Z` or an offset is kept as that instant. Without `timeZoneId`, times are taken as sent. The Add and Chain Jobs dialogs send the scheduler's time zone.
+- **Accessible actions**: every icon-only row and toolbar action has an accessible name (for example "Requeue job", "Delete cron job", "View occurrences"), so assistive technology and browser automation reach them by name.
 - **Requeue**: `Failed` time jobs and cron occurrences show a requeue button. `POST /api/job/requeue?id=…` and `POST /api/cron-job-occurrence/requeue?id=…` call `IJobScheduler.RequeueAsync` and `RequeueOccurrenceAsync`; HTTP 200 means the row was requeued, and HTTP 400 carries the refusal's `JobRequeueOutcome` name. See [Requeue a failed job](#requeue-a-failed-job).
 - **Storage-reduced cron graphs**: bundled providers select distinct UTC dates and aggregate status counts in storage;
   the dashboard does not load a cron job's lifetime occurrence entities to render its bounded history graph.

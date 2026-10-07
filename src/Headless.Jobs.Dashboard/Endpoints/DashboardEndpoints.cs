@@ -350,7 +350,7 @@ internal static class DashboardEndpoints
         HttpContext context,
         ITimeJobManager<TTimeJob> timeJobsManager,
         DashboardOptionsBuilder dashboardOptions,
-        string timeZoneId,
+        string? timeZoneId,
         CancellationToken cancellationToken
     )
         where TTimeJob : TimeJobEntity<TTimeJob>, new()
@@ -364,12 +364,9 @@ internal static class DashboardEndpoints
             return bodyError;
         }
 
-        if (chainRoot?.ExecutionTime is { } executionTime && !string.IsNullOrEmpty(timeZoneId))
+        if (chainRoot is not null && !string.IsNullOrEmpty(timeZoneId))
         {
-            var tz = TimeZoneInfo.FindSystemTimeZoneById(timeZoneId);
-            var unspecified = DateTime.SpecifyKind(executionTime, DateTimeKind.Unspecified);
-            var utc = TimeZoneInfo.ConvertTimeToUtc(unspecified, tz);
-            chainRoot.ExecutionTime = DateTime.SpecifyKind(utc, DateTimeKind.Utc);
+            _ConvertChainTimesToUtc(chainRoot, TimeZoneInfo.FindSystemTimeZoneById(timeZoneId));
         }
 
         // AddAsync returns the persisted entity and throws on failure; the dashboard reports it as success/failure data.
@@ -398,6 +395,30 @@ internal static class DashboardEndpoints
                 },
                 dashboardOptions.DashboardJsonOptions
             );
+        }
+    }
+
+    // A dashboard time without an offset is a wall-clock time in the caller's zone, for the root and every step of a
+    // chain alike. A time that already carries Z or an offset is an instant and is kept as sent.
+    private static void _ConvertChainTimesToUtc<TTimeJob>(TTimeJob job, TimeZoneInfo timeZone)
+        where TTimeJob : TimeJobEntity<TTimeJob>, new()
+    {
+        if (job.ExecutionTime is { } executionTime)
+        {
+            job.ExecutionTime = executionTime.Kind switch
+            {
+                DateTimeKind.Unspecified => DateTime.SpecifyKind(
+                    TimeZoneInfo.ConvertTimeToUtc(executionTime, timeZone),
+                    DateTimeKind.Utc
+                ),
+                DateTimeKind.Local => executionTime.ToUniversalTime(),
+                _ => executionTime,
+            };
+        }
+
+        foreach (var child in job.Children)
+        {
+            _ConvertChainTimesToUtc(child, timeZone);
         }
     }
 

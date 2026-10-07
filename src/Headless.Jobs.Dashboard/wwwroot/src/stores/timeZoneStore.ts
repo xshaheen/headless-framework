@@ -46,6 +46,10 @@ export const useTimeZoneStore = defineStore('timeZone', () => {
     return selectedTimeZone.value || schedulerTimeZone.value || 'UTC'
   })
 
+  // Times entered when scheduling a job are read in the scheduler's zone, not the display zone the viewer picked, so
+  // a job lands at the same instant whoever schedules it.
+  const schedulingTimeZone = computed(() => schedulerTimeZone.value || effectiveTimeZone.value)
+
   // Initialize from localStorage (if available)
   if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
     const stored = window.localStorage.getItem(STORAGE_KEY)
@@ -84,6 +88,7 @@ export const useTimeZoneStore = defineStore('timeZone', () => {
     selectedTimeZone,
     availableTimeZones,
     effectiveTimeZone,
+    schedulingTimeZone,
     setSchedulerTimeZone,
     setSelectedTimeZone
   }

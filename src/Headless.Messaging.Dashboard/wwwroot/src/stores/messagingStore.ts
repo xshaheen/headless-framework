@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, reactive } from 'vue'
 import { httpService } from '@/services/http'
 import { useAlertStore } from '@/stores/alertStore'
+import { getStatsPollingInterval } from '@/utilities/pathResolver'
 
 // --- Types ---
 
@@ -43,8 +44,6 @@ export interface MetricsHistory {
 
 // CircularBuffer<int?>[4]: [timestamps[], publishedPerSec[], subscribedPerSec[], latencyMs[]]
 export type RealtimeMetrics = Array<Array<number | null>>
-
-const POLLING_INTERVAL_MS = 2000
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -188,6 +187,13 @@ export const useMessagingStore = defineStore('messaging', () => {
     }
   }
 
+  // Every page's footer shows provider capabilities, so whichever of the layout or the overview's polling asks first
+  // issues the one request and the other leaves it alone.
+  async function ensureMetaLoaded(): Promise<void> {
+    if (isMetaLoaded.value || isMetaLoading.value) return
+    await fetchMeta()
+  }
+
   async function fetchRealtimeMetrics(): Promise<void> {
     try {
       const data = await httpService.get<RealtimeMetrics>('/metrics-realtime')
@@ -227,11 +233,11 @@ export const useMessagingStore = defineStore('messaging', () => {
     try {
       isLoading.value = true
       try {
-        const initialFetches: Promise<void>[] = [fetchStats(), fetchRealtimeMetrics()]
-
-        if (!isMetaLoaded.value) {
-          initialFetches.push(fetchMeta())
-        }
+        const initialFetches: Promise<void>[] = [
+          fetchStats(),
+          fetchRealtimeMetrics(),
+          ensureMetaLoaded(),
+        ]
 
         if (!isHistoryLoaded.value) {
           initialFetches.push(fetchMetricsHistory())
@@ -252,7 +258,7 @@ export const useMessagingStore = defineStore('messaging', () => {
         } finally {
           isPollRunning = false
         }
-      }, POLLING_INTERVAL_MS)
+      }, getStatsPollingInterval())
     } finally {
       isStarting = false
     }
@@ -280,6 +286,7 @@ export const useMessagingStore = defineStore('messaging', () => {
     // Actions
     fetchStats,
     fetchMeta,
+    ensureMetaLoaded,
     fetchRealtimeMetrics,
     fetchMetricsHistory,
     startPolling,

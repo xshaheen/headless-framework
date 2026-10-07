@@ -437,6 +437,7 @@ const setRowProp = (propContext: { item: GetCronJobOccurrenceResponse }) => {
                   variant="text"
                   size="small"
                   class="action-btn requeue-btn"
+                  aria-label="Requeue occurrence"
                 >
                   <v-icon size="18">mdi-restart</v-icon>
                   <v-tooltip activator="parent" location="top">Requeue Occurrence</v-tooltip>
@@ -448,6 +449,7 @@ const setRowProp = (propContext: { item: GetCronJobOccurrenceResponse }) => {
                   variant="text"
                   size="small"
                   class="action-btn delete-btn"
+                  aria-label="Delete occurrence"
                 >
                   <v-icon size="18">mdi-delete</v-icon>
                   <v-tooltip activator="parent" location="top">Delete Occurrence</v-tooltip>

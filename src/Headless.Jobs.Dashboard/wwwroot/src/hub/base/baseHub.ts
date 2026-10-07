@@ -39,6 +39,17 @@ class BaseHub {
                     }
                 }
                 
+                // The custom validator receives this value verbatim, as it does the API's Authorization header.
+                if (config?.auth?.mode === 'custom') {
+                    const customCredential = localStorage.getItem('jobs_custom_credential');
+                    if (customCredential) {
+                        return {
+                            type: 'Custom',
+                            token: customCredential
+                        };
+                    }
+                }
+                
                 // No auth configured or no token available
                 return null;
             } catch {
@@ -73,7 +84,10 @@ class BaseHub {
             let finalHubUrl = hubUrl;
             
             if (authInfo) {
-                const authQuery = authInfo.type === 'Basic' ? authInfo.token : `Bearer:${authInfo.token}`;
+                const authQuery =
+                    authInfo.type === 'Basic' || authInfo.type === 'Custom'
+                        ? authInfo.token
+                        : `Bearer:${authInfo.token}`;
                 finalHubUrl = `${hubUrl}?access_token=${encodeURIComponent(authQuery)}`;
             }
             
@@ -99,7 +113,8 @@ class BaseHub {
             
             if (authInfo) {
                 connectionOptions.headers = {
-                    'Authorization': `${authInfo.type} ${authInfo.token}`
+                    'Authorization':
+                        authInfo.type === 'Custom' ? authInfo.token : `${authInfo.type} ${authInfo.token}`
                 };
             }
             

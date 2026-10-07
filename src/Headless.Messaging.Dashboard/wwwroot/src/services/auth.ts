@@ -19,7 +19,22 @@ export interface LoginCredentials {
   password?: string
   apiKey?: string
   hostAccessKey?: string
+  customCredential?: string
 }
+
+export const SESSION_EXPIRED_MESSAGE = 'Session expired. Please log in again.'
+
+/** Dispatched on window when an API request finds the stored sign-in older than the configured session timeout. */
+export const SESSION_EXPIRED_EVENT = 'auth:session-expired'
+
+const CREDENTIAL_KEYS = [
+  'messaging_basic_auth',
+  'messaging_api_key',
+  'messaging_host_access_key',
+  'messaging_custom_auth',
+] as const
+
+const SIGNED_IN_AT_KEY = 'messaging_signed_in_at'
 
 class AuthService {
   private config: AuthConfig | null = null
@@ -110,6 +125,48 @@ class AuthService {
   }
 
   /**
+   * Clears the stored credentials when the sign-in is older than the configured session timeout, so the next request
+   * or navigation has to sign in again. Returns true when it expired the session.
+   */
+  expireSessionIfStale(now: number = Date.now()): boolean {
+    if (!this.isSessionExpired(now)) {
+      return false
+    }
+
+    this.clearCredentials()
+    this.status = { authenticated: false, message: SESSION_EXPIRED_MESSAGE }
+    return true
+  }
+
+  /**
+   * Reads the configuration the server injected rather than the initialized copy, because a request can run before
+   * initialize() does. Mode none and a non-positive timeout never expire.
+   */
+  private isSessionExpired(now: number): boolean {
+    const auth = window.MessagingConfig?.auth
+    if (!auth?.enabled || auth.mode === 'none') {
+      return false
+    }
+
+    const timeoutMinutes = auth.sessionTimeout
+    if (!Number.isFinite(timeoutMinutes) || timeoutMinutes <= 0) {
+      return false
+    }
+
+    if (!this.hasStoredCredentials()) {
+      return false
+    }
+
+    // Credentials without a sign-in time have no provable age, so they are treated as expired.
+    const signedInAt = Number(localStorage.getItem(SIGNED_IN_AT_KEY))
+    if (!Number.isFinite(signedInAt) || signedInAt <= 0) {
+      return true
+    }
+
+    return now - signedInAt >= timeoutMinutes * 60_000
+  }
+
+  /**
    * Get current authentication status
    */
   getStatus(): AuthStatus {
@@ -152,6 +209,12 @@ class AuthService {
       case 'host': {
         const hostAccessKey = localStorage.getItem('messaging_host_access_key')
         return hostAccessKey || null
+      }
+
+      // The server's custom validator receives the raw Authorization value, so the credential goes out verbatim.
+      case 'custom': {
+        const customCredential = localStorage.getItem('messaging_custom_auth')
+        return customCredential || null
       }
 
       default:
@@ -209,11 +272,7 @@ class AuthService {
   }
 
   private hasStoredCredentials(): boolean {
-    return !!(
-      localStorage.getItem('messaging_basic_auth') ||
-      localStorage.getItem('messaging_api_key') ||
-      localStorage.getItem('messaging_host_access_key')
-    )
+    return CREDENTIAL_KEYS.some((key) => !!localStorage.getItem(key))
   }
 
   private getStoredUsername(): string | null {
@@ -251,13 +310,24 @@ class AuthService {
           localStorage.setItem('messaging_host_access_key', credentials.hostAccessKey)
         }
         break
+
+      case 'custom':
+        if (credentials.customCredential) {
+          localStorage.setItem('messaging_custom_auth', credentials.customCredential)
+        }
+        break
+    }
+
+    if (this.hasStoredCredentials()) {
+      localStorage.setItem(SIGNED_IN_AT_KEY, Date.now().toString())
     }
   }
 
   private clearCredentials(): void {
-    localStorage.removeItem('messaging_basic_auth')
-    localStorage.removeItem('messaging_api_key')
-    localStorage.removeItem('messaging_host_access_key')
+    for (const key of CREDENTIAL_KEYS) {
+      localStorage.removeItem(key)
+    }
+    localStorage.removeItem(SIGNED_IN_AT_KEY)
   }
 }
 

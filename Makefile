@@ -506,6 +506,25 @@ dashboard-jobs: _node-check ## Rebuild the Jobs dashboard SPA (npm ci + vite bui
 dashboard-messaging: _node-check ## Rebuild the Messaging dashboard SPA (npm ci + vite build into wwwroot/dist).
 	cd "$(MESSAGING_DASHBOARD_DIR)" && $(NPM) ci --no-audit --no-fund && $(NPM) run $(DASHBOARD_BUILD_SCRIPT)
 
+# The gates CI's Dashboard jobs run for each SPA, in CI's order: npm ci, build (vue-tsc + vite), Vitest, ESLint.
+DASHBOARD_GATES = cd "$$dir" && $(NPM) ci --no-audit --no-fund && $(NPM) run build && $(NPM) run test:unit && $(NPM) run lint:check
+
+.PHONY: dashboards-test
+dashboards-test: _node-check ## Run both dashboard SPAs' CI gates locally: npm ci, build (type-check + bundle), Vitest, ESLint.
+	@for dir in "$(JOBS_DASHBOARD_DIR)" "$(MESSAGING_DASHBOARD_DIR)"; do echo "[dashboards] $$dir"; ( $(DASHBOARD_GATES) ) || exit 1; done
+
+# make check's dashboard stage. It runs a SPA's gates only when this side changed files under it, committed
+# or not, so a backend-only change pays nothing; it diffs the merge base for the same reason FORMAT_CHANGED does.
+.PHONY: dashboards-test-affected
+dashboards-test-affected: ## Run the CI gates of each dashboard SPA changed vs AFFECTED_BASE (committed or not); skips unchanged SPAs.
+	@base="$$(git merge-base "$(AFFECTED_BASE)" HEAD 2>/dev/null || true)"; \
+	for dir in "$(JOBS_DASHBOARD_DIR)" "$(MESSAGING_DASHBOARD_DIR)"; do \
+	  if [ -n "$$base" ] && [ -z "$$( { git diff --name-only "$$base" -- "$$dir"; git ls-files --others --exclude-standard -- "$$dir"; } | head -n 1)" ]; then \
+	    echo "[dashboards] $$dir unchanged; skipped"; continue; fi; \
+	  command -v $(NPM) >/dev/null 2>&1 || { echo "ERROR: '$(NPM)' not found on PATH. Node 22+ runs the dashboard gates. Install from https://nodejs.org (LTS)."; exit 4; }; \
+	  echo "[dashboards] $$dir"; ( $(DASHBOARD_GATES) ) || exit 1; \
+	done
+
 # ---- Dashboard sandbox ---------------------------------------------------------------------------------------------
 # The repository ships no app, but the Jobs and Messaging dashboards are UI that has to be driven to be tested.
 # sandboxes/Headless.Dashboards.Sandbox hosts both on loopback with named scenario fixtures, and these targets own
@@ -768,12 +787,12 @@ verify-affected: ## Build, unit-test (with coverage), and analyze the affected s
 # Formatting follows the same scope: format-check-changed checks the changed files (~0.3-2 s against
 # ~6 s for the whole repository), and CI's format-check job keeps the whole-repository check.
 # The gates run one after another through a sub-make so a failed gate does not hide the next, and a dry
-# run still only prints because the sub-make inherits -n. The dashboard SPAs keep their own CI jobs
-# (npm ci, build, lint:check, test:unit per SPA) and stay out of the local gate.
-CHECK_GATES ?= check-layering format-check-changed verify-affected
+# run still only prints because the sub-make inherits -n. The dashboard SPAs keep their own CI jobs; the local
+# gate runs the same steps for a SPA only when the change touches it (dashboards-test-affected).
+CHECK_GATES ?= check-layering format-check-changed dashboards-test-affected verify-affected
 
 .PHONY: check
-check: ## CI gate over the affected scope: check-layering, format-check-changed, verify-affected; every gate runs, every failure is reported.
+check: ## CI gate over the affected scope: check-layering, format-check-changed, dashboards-test-affected, verify-affected; every gate runs, every failure is reported.
 	@failed=""; for gate in $(CHECK_GATES); do $(MAKE) $$gate || failed="$$failed $$gate"; done; \
 	if [ -n "$$failed" ]; then printf '[check] failed:%s\n' "$$failed" >&2; exit 1; fi; \
 	printf '[check] passed: %s\n' "$(CHECK_GATES)"

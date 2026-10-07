@@ -44,6 +44,12 @@ public sealed class SqlServerProgressTests(SqlServerJobsCoordinationFixture fixt
     }
 
     [Fact]
+    public override Task frequent_reports_from_a_running_job_cost_at_most_two_progress_writes()
+    {
+        return base.frequent_reports_from_a_running_job_cost_at_most_two_progress_writes();
+    }
+
+    [Fact]
     public override Task a_requeued_cron_occurrence_clears_its_progress()
     {
         return base.a_requeued_cron_occurrence_clears_its_progress();

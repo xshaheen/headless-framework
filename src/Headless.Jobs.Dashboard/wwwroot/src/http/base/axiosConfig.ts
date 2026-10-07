@@ -1,6 +1,6 @@
 import { useAuthStore } from '@/stores/authStore';
 import { useAlertStore } from '@/stores/alertStore';
-import axios, { AxiosError, type AxiosInstance, type AxiosResponse, type InternalAxiosRequestConfig } from 'axios';
+import axios, { AxiosError, CanceledError, type AxiosInstance, type AxiosResponse, type InternalAxiosRequestConfig } from 'axios';
 import { getApiBaseUrl } from '@/utilities/pathResolver';
 
 const axiosInstance: AxiosInstance = axios.create({
@@ -9,11 +9,23 @@ const axiosInstance: AxiosInstance = axios.create({
 
 // Request Interceptor: Set Authorization header
 axiosInstance.interceptors.request.use(
-  (config: InternalAxiosRequestConfig) => {
+  async (config: InternalAxiosRequestConfig) => {
+    // An expired session must not reach the server with its stale credential.
+    if (useAuthStore().enforceSessionTimeout()) {
+      // Imported lazily: the router module imports the auth store, and this module loads before the app is wired.
+      const { default: router } = await import('@/router');
+      const current = router.currentRoute.value;
+      if (current.name !== 'Login') {
+        await router.push({ name: 'Login', query: { redirect: current.fullPath } });
+      }
+      throw new CanceledError('Session expired; request canceled', undefined, config);
+    }
+
     // Get auth headers from localStorage (using correct keys)
     const apiKey = localStorage.getItem('jobs_api_key');
     const basicAuth = localStorage.getItem('jobs_basic_auth');
     const hostAccessKey = localStorage.getItem('jobs_host_access_key');
+    const customCredential = localStorage.getItem('jobs_custom_credential');
     
     if (apiKey) {
       config.headers = config.headers || {};
@@ -35,6 +47,14 @@ axiosInstance.interceptors.request.use(
         config.headers.set('Authorization', hostAccessKey);
       } else {
         config.headers['Authorization'] = hostAccessKey;
+      }
+    } else if (customCredential) {
+      // Custom mode sends the credential verbatim; the host's validator receives exactly this header value.
+      config.headers = config.headers || {};
+      if (typeof config.headers.set === 'function') {
+        config.headers.set('Authorization', customCredential);
+      } else {
+        config.headers['Authorization'] = customCredential;
       }
     }
 
@@ -63,7 +83,7 @@ axiosInstance.interceptors.response.use(
       }
 
       // Show error alert for other HTTP errors
-      if (!error.message?.includes('canceled')) {
+      if (!axios.isCancel(error) && !error.message?.includes('canceled')) {
         const alertStore = useAlertStore();
         alertStore.showHttpError(error);
       }

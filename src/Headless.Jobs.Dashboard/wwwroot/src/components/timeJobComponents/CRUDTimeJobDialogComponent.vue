@@ -5,7 +5,7 @@ import { useFunctionNameStore } from '@/stores/functionNames'
 import { useForm } from '@/composables/useCustomForm'
 import { jobsService } from '@/http/services/jobsService'
 import { timeJobService } from '@/http/services/timeJobService'
-import { formatTime } from '@/utilities/dateTimeParser'
+import { formatLocalDateTimeWithoutZ, formatTime } from '@/utilities/dateTimeParser'
 import { formatJsonForDisplay } from '@/utilities/json-format'
 import { useTimeZoneStore } from '@/stores/timeZoneStore'
 import { vMaska } from 'maska/vue'
@@ -94,18 +94,6 @@ const parseUtcToDisplayDateTime = (utcString: string) => {
     // If timeZone is invalid in this environment, fall back to UTC date-only
     return { date: new Date(utcDate.getFullYear(), utcDate.getMonth(), utcDate.getDate()), time: '' }
   }
-}
-
-const formatLocalDateTimeWithoutZ = (date: Date): string => {
-  const yyyy = date.getFullYear()
-  const MM = String(date.getMonth() + 1).padStart(2, '0')
-  const dd = String(date.getDate()).padStart(2, '0')
-  const hh = String(date.getHours()).padStart(2, '0')
-  const mm = String(date.getMinutes()).padStart(2, '0')
-  const ss = String(date.getSeconds()).padStart(2, '0')
-
-  // Return ISO-like string without timezone suffix so the server treats it as "unspecified"
-  return `${yyyy}-${MM}-${dd}T${hh}:${mm}:${ss}`
 }
 
 const { resetForm, handleSubmit, bindField, setFieldValue, getFieldValue, values } = useForm({
@@ -249,9 +237,7 @@ const { resetForm, handleSubmit, bindField, setFieldValue, getFieldValue, values
         ? formatLocalDateTimeWithoutZ(localDate)
         : undefined
 
-      // Use the scheduler timezone for scheduling semantics (fallback to effective/display timezone)
-      const schedulingTimeZone =
-        timeZoneStore.schedulerTimeZone || timeZoneStore.effectiveTimeZone
+      const schedulingTimeZone = timeZoneStore.schedulingTimeZone
 
       if (props.dialogProps.isFromDuplicate) {
         addTimeJob

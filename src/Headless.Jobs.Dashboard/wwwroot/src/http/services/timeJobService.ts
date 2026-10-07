@@ -178,7 +178,14 @@ const addChainJobs = () => {
     contractVersion: functionNamesStore.getContractVersion(job.function),
     children: job.children?.map(versionTree),
   });
-  const requestAsync = async (data: AddChainJobsRequest) => (await baseHttp.sendAsync("POST", "time-job/add", { bodyData: versionTree(data) }));
+  // Same contract as addTimeJob: the root's wall-clock execution time is read in timeZoneId.
+  const requestAsync = async (data: AddChainJobsRequest, timeZoneId?: string | null) => {
+    const paramData: Record<string, string> = {};
+    if (timeZoneId) {
+      paramData.timeZoneId = timeZoneId;
+    }
+    return await baseHttp.sendAsync("POST", "time-job/add", { bodyData: versionTree(data), paramData });
+  };
 
   return {
     ...baseHttp,
