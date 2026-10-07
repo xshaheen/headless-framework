@@ -55,7 +55,8 @@ public static class SetupAuditLogPostgreSql
         /// are written via batched <c>INSERT … VALUES</c> statements (up to 500 rows per command).
         /// When an <see cref="IAmbientDbTransactionAccessor"/> is registered and the calling
         /// <c>DbContext</c> has an open <c>NpgsqlTransaction</c>, writes enroll atomically in
-        /// that transaction; otherwise they commit on a separate connection.
+        /// that transaction; otherwise <see cref="AuditLogOptions.MissingTransactionStrategy"/> decides whether
+        /// they commit on a separate connection or throw.
         /// </remarks>
         /// <exception cref="ArgumentNullException"><paramref name="configuration"/> is <see langword="null"/>.</exception>
         public HeadlessAuditLogSetupBuilder UsePostgreSql(IConfiguration configuration)
@@ -79,7 +80,8 @@ public static class SetupAuditLogPostgreSql
         /// are written via batched <c>INSERT … VALUES</c> statements (up to 500 rows per command).
         /// When an <see cref="IAmbientDbTransactionAccessor"/> is registered and the calling
         /// <c>DbContext</c> has an open <c>NpgsqlTransaction</c>, writes enroll atomically in
-        /// that transaction; otherwise they commit on a separate connection.
+        /// that transaction; otherwise <see cref="AuditLogOptions.MissingTransactionStrategy"/> decides whether
+        /// they commit on a separate connection or throw.
         /// </remarks>
         /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
         public HeadlessAuditLogSetupBuilder UsePostgreSql(Action<PostgreSqlAuditLogOptions> configure)
@@ -104,7 +106,8 @@ public static class SetupAuditLogPostgreSql
         /// are written via batched <c>INSERT … VALUES</c> statements (up to 500 rows per command).
         /// When an <see cref="IAmbientDbTransactionAccessor"/> is registered and the calling
         /// <c>DbContext</c> has an open <c>NpgsqlTransaction</c>, writes enroll atomically in
-        /// that transaction; otherwise they commit on a separate connection.
+        /// that transaction; otherwise <see cref="AuditLogOptions.MissingTransactionStrategy"/> decides whether
+        /// they commit on a separate connection or throw.
         /// </remarks>
         /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
         public HeadlessAuditLogSetupBuilder UsePostgreSql(Action<PostgreSqlAuditLogOptions, IServiceProvider> configure)

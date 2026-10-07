@@ -39,8 +39,9 @@ Code against `IAuditLog<TContext>`, `IAuditLogWriter<TContext>`, and `IReadAudit
 - `IpAddress` and `UserAgent` are not auto-populated by EF change capture — set them explicitly through `IAuditLog<TContext>.LogAsync` when relevant.
 - On SQLite, override the default composite primary key `(CreatedAt, Id)` with a single-column key on `Id` — SQLite cannot autoincrement composite keys.
 - When reading `OldValues` / `NewValues` after a provider round-trip, expect `JsonElement` values; use `GetDecimal()`, `GetBoolean()`, etc. for typed access.
-- Raw providers (PostgreSql, SqlServer) attempt to enroll writes in the consumer's ambient EF transaction when the database drivers match. If there is no ambient transaction, audit rows commit on a separate connection before `SaveChanges` — an entity-save failure then leaves orphan audit rows. Use an explicit transaction on the EF side to guarantee atomicity.
+- Raw providers (PostgreSql, SqlServer) write automatic entries in the saving context's transaction when its connection uses the provider's driver. A `HeadlessDbContext` save that produces audit entries begins its own transaction when the caller has none, so those entries commit or roll back with the entity changes. `IAuditLog<TContext>.LogAsync` joins the transaction of the scope's `TContext` and has no transaction of its own to fall back on. See [Transaction enrollment on raw storage](#transaction-enrollment-on-raw-storage).
 - `CaptureErrorStrategy` defaults to `Continue`: a capture failure logs an error and lets `SaveChanges` proceed — a per-entity failure skips only that entity's audit entry, a whole-capture failure skips the batch. Set to `Throw` to abort the save when capture fails.
+- `MissingTransactionStrategy` defaults to `Continue`: when a raw store cannot join the caller's transaction, it writes on a separate connection and logs a warning once per context type or driver. Set to `Throw` when the audit trail is evidence and must never hold rows for work that rolled back; the write then throws before any row is written. EF storage ignores the setting because it always writes in the saving context's transaction.
 
 ## Core Concepts
 
@@ -76,7 +77,34 @@ A strategy passed to `IsAuditSensitive(SensitiveDataStrategy.Exclude)` overrides
 
 For EF storage, audit entries are added to the **same `DbContext` instance** and commit in the **same database transaction** as the entity changes — no separate round-trip and no data loss on rollback. The `IAuditLogStore` receives the `savingContext` parameter on every `Save`/`SaveAsync` call to enforce this in multi-context applications.
 
-For raw ADO.NET providers, atomicity is available but conditional: the store attempts to enroll in the consumer's ambient `DbConnection` / `DbTransaction` via `IAmbientDbTransactionAccessor`. If no ambient transaction exists or the drivers differ, audit rows commit on a separate connection and are not atomic with `SaveChanges`.
+For raw ADO.NET providers, atomicity is conditional: the store enrolls in the caller's `DbConnection` / `DbTransaction` through `IAmbientDbTransactionAccessor`, and `AuditLogOptions.MissingTransactionStrategy` decides what happens when it cannot. See [Transaction enrollment on raw storage](#transaction-enrollment-on-raw-storage).
+
+### Transaction enrollment on raw storage
+
+PostgreSQL and SQL Server storage write audit rows with their own SQL. To commit them with the caller's changes, they look up the caller's connection and transaction through `IAmbientDbTransactionAccessor`. `Headless.EntityFramework` registers the accessor; it returns the `DbContext`'s current transaction.
+
+| Write | Transaction it joins | When there is none |
+|---|---|---|
+| Automatic entries from a `HeadlessDbContext` save | The saving context's transaction. The save begins one when the caller has none, so a plain `SaveChangesAsync()` is atomic. | Only when no accessor is registered or the context's connection uses another driver, such as a different database engine or a connection wrapped by a profiler. |
+| `IAuditLog<TContext>.LogAsync` | The transaction of the `TContext` resolved from the current scope, the same instance whose `SaveChanges` the caller runs. The entry is written immediately, inside that transaction. | Whenever the caller has not begun a transaction or unit of work on that context, or `TContext` is not registered in the container. |
+| `IAuditLogWriter<TContext>.WriteAsync` | None. It always commits on its own connection, by design. | Not applicable; `MissingTransactionStrategy` does not apply. |
+
+`AuditLogOptions.MissingTransactionStrategy` decides what happens when there is no transaction to join:
+
+| Strategy | Behavior |
+|---|---|
+| `Continue` (default) | Write on a separate connection and commit immediately. Logs `AuditLogProviderMissingAmbientTransaction` once per context type, or `AuditLogProviderMismatch` once per connection type. A later failure in the caller's work leaves the audit rows in place. |
+| `Throw` | Throw `InvalidOperationException` before any audit row is written. A `SaveChanges` fails and commits nothing; a `LogAsync` call fails and the caller decides. |
+
+- With `Throw`, startup fails when no `IAmbientDbTransactionAccessor` is registered, because every write would throw. A driver mismatch can only be detected per save, so it throws on the first write.
+- With `Throw`, call `LogAsync` inside a transaction or unit of work on the context, for example inside `IUnitOfWorkFactory.RunAsync(db, …)` or after `db.Database.BeginTransactionAsync()`.
+- An entry written by `LogAsync` inside a transaction is not visible to other connections until the caller commits, and it is gone after a rollback, whatever the strategy.
+
+Choose by what the audit trail must guarantee:
+
+- **Audit rows exist only for work that committed.** Use EF storage, or raw storage with `MissingTransactionStrategy.Throw`.
+- **An event must be recorded even when the caller's work fails or never saves** (a denied request, a failed attempt). Use `IAuditLogWriter<TContext>`. Some frameworks save every audit record this way, in a separate unit of work, which trades atomicity for never losing the record.
+- **History of row changes only.** Database-level history, such as SQL Server temporal tables or PostgreSQL triggers, is always atomic with the change. It cannot record events that change no row, such as reads or denied requests.
 
 ### Paging audit history
 
@@ -116,7 +144,7 @@ do
 `IAuditLogWriter<TContext>` records an explicit event and commits it before `WriteAsync` returns, in a transaction of its own. Use it when the request ends without a `SaveChanges` that would carry an `IAuditLog<TContext>` entry, for example an authorization denial or a read-only request that must leave a trail. A standalone entry survives a later rollback of the caller's work.
 
 - EF storage writes through a new context from `IDbContextFactory<TContext>`, so the caller's scoped context and its pending changes are untouched.
-- PostgreSQL and SQL Server storage write through their own connection, exactly like their `IAuditLog<TContext>`.
+- PostgreSQL and SQL Server storage write through their own connection. Their `IAuditLog<TContext>`, by contrast, joins the caller's transaction; see [Transaction enrollment on raw storage](#transaction-enrollment-on-raw-storage).
 - `WriteAsync` does nothing when `AuditLogOptions.IsEnabled` is `false`.
 
 ### Authorization denial entries
@@ -148,7 +176,7 @@ Raw providers (`PostgreSql`, `SqlServer`) contribute the audit table (step `Audi
 |---|---|---|---|
 | **Use when** | Already using EF Core; want atomic commit with entity changes; migrations managed by EF. | Pure PostgreSQL shop; no EF dependency desired; want `jsonb` native columns. | SQL Server shop; no EF dependency desired. |
 | **Avoid when** | Not using EF Core; or need to avoid EF dependency in the audit service layer. | Not on PostgreSQL; or need EF-managed migrations. | Not on SQL Server; or need EF-managed migrations. |
-| **Atomicity** | Always — same `DbContext`, same transaction. | When consumer opens an explicit transaction that matches the Npgsql driver; otherwise separate connection. | When consumer opens an explicit transaction that matches the SqlClient driver; otherwise separate connection. |
+| **Atomicity** | Always — same `DbContext`, same transaction. | When the saving context uses Npgsql; `IAuditLog` only inside a caller transaction. Otherwise a separate connection, or an exception with `MissingTransactionStrategy.Throw`. | When the saving context uses SqlClient; `IAuditLog` only inside a caller transaction. Otherwise a separate connection, or an exception with `MissingTransactionStrategy.Throw`. |
 | **Schema management** | EF migrations. | Schema runner steps at startup, or the exported deploy script. | Schema runner steps at startup, or the exported deploy script. |
 | **JSON columns** | String columns by default; opt into native `jsonb`/`json` via `AuditLogJsonColumnType`. | `jsonb` by default (native JSONB type; `Json` or `NvarcharMax` also accepted). | `nvarchar(max)` only. |
 | **Extra dependencies** | `Microsoft.EntityFrameworkCore` | `Npgsql` | `Microsoft.Data.SqlClient` |
@@ -165,7 +193,8 @@ Defines the property-level audit log contracts for tracking entity mutations and
 - `SensitiveDataStrategy` — `Redact` (replace with `"***"`), `Exclude` (omit entirely), or `Transform` (custom function).
 - `SensitiveValueContext` — passed to `SensitiveValueTransformer`; provides `EntityType`, `PropertyName`, `PropertyClrType`, `Value`.
 - `AuditChangeType` — `Created`, `Updated`, `Deleted`.
-- `AuditLogOptions` — master enable/disable, `AuditByDefault` mode, per-entity/property filters, `CaptureErrorStrategy`, configurable default exclusions, sensitive-value transformer.
+- `AuditLogOptions` — master enable/disable, `AuditByDefault` mode, per-entity/property filters, `CaptureErrorStrategy`, `MissingTransactionStrategy`, configurable default exclusions, sensitive-value transformer.
+- `MissingTransactionStrategy` — `Continue` (default; write on a separate connection and warn) or `Throw` (fail before writing) when a raw store cannot join the caller's transaction; see [Transaction enrollment on raw storage](#transaction-enrollment-on-raw-storage).
 - `IAuditLog<TContext>` — explicit logging of non-mutation events; `TContext` binds the logger to a specific persistence context for multi-context applications.
 - `AuditLogWriteRequest` — explicit event data with a required `Action` initializer and optional entity, payload, success, and error metadata.
 - `IAuditLogWriter<TContext>` — explicit logging that commits each entry immediately in its own transaction; see [Standalone writes](#standalone-writes).
@@ -458,8 +487,9 @@ Raw PostgreSQL storage provider for audit rows. No Entity Framework dependency �
 ### API and behavior
 
 - No EF Core dependency — depends only on `Npgsql`, `Headless.AuditLog.Abstractions`, and `Headless.AuditLog`.
-- `IAuditLogStore` — enrolls in the consumer's ambient Npgsql transaction when available; falls back to its own connection otherwise.
-- `IAuditLog<TContext>` and `IAuditLogWriter<TContext>` — explicit event logging; both write over the provider's own connection.
+- `IAuditLogStore` — enrolls in the saving context's Npgsql transaction; otherwise follows `AuditLogOptions.MissingTransactionStrategy`.
+- `IAuditLog<TContext>` (scoped) — writes in the transaction of the scope's `TContext`; otherwise follows `MissingTransactionStrategy`.
+- `IAuditLogWriter<TContext>` (singleton) — always commits on the provider's own connection.
 - `IReadAuditLog<TContext>` — parameterized keyset queries over `(created_at, id)`.
 - The audit table and indexes are two schema steps (`AuditLog/1`, `AuditLog/2`) applied by the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts).
 - Batched INSERT: up to 100 rows per command, the size SQL Server's parameter limit allows, so both providers share one writer (statement text cached per row count).
@@ -470,7 +500,7 @@ Raw PostgreSQL storage provider for audit rows. No Entity Framework dependency �
 
 ### Design constraints
 
-Transaction enrollment is conditional: the store attempts to resolve a `NpgsqlConnection` and `NpgsqlTransaction` from the registered `IAmbientDbTransactionAccessor`. If no ambient transaction exists — or if the connection is a different driver type — it falls back to opening its own connection. In the fallback path, audit rows commit before `SaveChanges` completes; an entity-save failure leaves orphan audit rows. A deduplicated warning is logged once per distinct saving-context type (and once per distinct driver mismatch type) to flag this.
+Transaction enrollment is conditional: the store and `IAuditLog<TContext>` resolve a `NpgsqlConnection` and `NpgsqlTransaction` from the registered `IAmbientDbTransactionAccessor`. When there is no transaction, or the connection uses another driver, `MissingTransactionStrategy.Continue` writes on a separate connection and logs a deduplicated warning, and `Throw` fails before writing. [Transaction enrollment on raw storage](#transaction-enrollment-on-raw-storage) covers both.
 
 The table and the indexes are separate steps, so each commits and is recorded on its own.
 
@@ -557,8 +587,9 @@ Raw SQL Server storage provider for audit rows. No Entity Framework dependency �
 ### API and behavior
 
 - No EF Core dependency — depends only on `Microsoft.Data.SqlClient`, `Headless.AuditLog.Abstractions`, and `Headless.AuditLog`.
-- `IAuditLogStore` — enrolls in the consumer's ambient `SqlTransaction` when available; falls back to its own connection otherwise.
-- `IAuditLog<TContext>` and `IAuditLogWriter<TContext>` — explicit event logging; both write over the provider's own connection.
+- `IAuditLogStore` — enrolls in the saving context's `SqlTransaction`; otherwise follows `AuditLogOptions.MissingTransactionStrategy`.
+- `IAuditLog<TContext>` (scoped) — writes in the transaction of the scope's `TContext`; otherwise follows `MissingTransactionStrategy`.
+- `IAuditLogWriter<TContext>` (singleton) — always commits on the provider's own connection.
 - `IReadAuditLog<TContext>` — parameterized keyset queries over `(CreatedAt, Id)`, limited with `OFFSET 0 ROWS FETCH NEXT @Limit ROWS ONLY`. The writer and reader bind timestamps typed like the `CreatedAt` column (`datetimeoffset` by default, `datetime2` when `CreatedAtColumnType` says so), so stored values, range bounds, and continuation positions keep full precision and the column is never converted in a comparison.
 - The audit table and indexes are two schema steps (`AuditLog/1`, `AuditLog/2`) applied by the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts).
 - Batched INSERT: up to 100 rows per command, within SQL Server's 2,100-parameter limit.
@@ -569,7 +600,7 @@ Raw SQL Server storage provider for audit rows. No Entity Framework dependency �
 
 ### Design constraints
 
-Transaction enrollment mirrors the PostgreSQL provider: the store resolves the ambient `SqlConnection`/`SqlTransaction` via `IAmbientDbTransactionAccessor`. If no ambient transaction exists or the driver is not `SqlClient`, it falls back to its own connection. In the fallback path, audit rows commit before `SaveChanges` — an entity-save failure leaves orphan rows. A deduplicated warning is logged once per distinct saving-context type and once per driver mismatch.
+Transaction enrollment mirrors the PostgreSQL provider: the store and `IAuditLog<TContext>` resolve the `SqlConnection`/`SqlTransaction` via `IAmbientDbTransactionAccessor`. When there is no transaction, or the driver is not `SqlClient`, `MissingTransactionStrategy` decides between a separate connection with a deduplicated warning (`Continue`) and an exception before writing (`Throw`). [Transaction enrollment on raw storage](#transaction-enrollment-on-raw-storage) covers both.
 
 The table and the indexes are separate steps, so each commits and is recorded on its own. Replicas serialize on the runner's one `sp_getapplock` per database.
 

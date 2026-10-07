@@ -55,7 +55,8 @@ public static class SetupAuditLogSqlServer
         /// are written via batched <c>INSERT … VALUES</c> statements (up to 100 rows per command).
         /// When an <see cref="IAmbientDbTransactionAccessor"/> is registered and the calling
         /// <c>DbContext</c> has an open <c>SqlTransaction</c>, writes enroll atomically in
-        /// that transaction; otherwise they commit on a separate connection.
+        /// that transaction; otherwise <see cref="AuditLogOptions.MissingTransactionStrategy"/> decides whether
+        /// they commit on a separate connection or throw.
         /// </remarks>
         /// <exception cref="ArgumentNullException"><paramref name="configuration"/> is <see langword="null"/>.</exception>
         public HeadlessAuditLogSetupBuilder UseSqlServer(IConfiguration configuration)
@@ -79,7 +80,8 @@ public static class SetupAuditLogSqlServer
         /// are written via batched <c>INSERT … VALUES</c> statements (up to 100 rows per command).
         /// When an <see cref="IAmbientDbTransactionAccessor"/> is registered and the calling
         /// <c>DbContext</c> has an open <c>SqlTransaction</c>, writes enroll atomically in
-        /// that transaction; otherwise they commit on a separate connection.
+        /// that transaction; otherwise <see cref="AuditLogOptions.MissingTransactionStrategy"/> decides whether
+        /// they commit on a separate connection or throw.
         /// </remarks>
         /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
         public HeadlessAuditLogSetupBuilder UseSqlServer(Action<SqlServerAuditLogOptions> configure)
@@ -104,7 +106,8 @@ public static class SetupAuditLogSqlServer
         /// are written via batched <c>INSERT … VALUES</c> statements (up to 100 rows per command).
         /// When an <see cref="IAmbientDbTransactionAccessor"/> is registered and the calling
         /// <c>DbContext</c> has an open <c>SqlTransaction</c>, writes enroll atomically in
-        /// that transaction; otherwise they commit on a separate connection.
+        /// that transaction; otherwise <see cref="AuditLogOptions.MissingTransactionStrategy"/> decides whether
+        /// they commit on a separate connection or throw.
         /// </remarks>
         /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
         public HeadlessAuditLogSetupBuilder UseSqlServer(Action<SqlServerAuditLogOptions, IServiceProvider> configure)

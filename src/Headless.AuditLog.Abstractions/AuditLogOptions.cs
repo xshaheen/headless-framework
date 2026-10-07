@@ -74,6 +74,18 @@ public sealed class AuditLogOptions
     /// Set to <see cref="CaptureErrorStrategy.Throw"/> to abort the save when audit capture fails.
     /// </summary>
     public CaptureErrorStrategy CaptureErrorStrategy { get; set; } = CaptureErrorStrategy.Continue;
+
+    /// <summary>
+    /// Strategy applied when a PostgreSQL or SQL Server audit store cannot enroll in the caller's transaction:
+    /// no <see cref="IAmbientDbTransactionAccessor"/> is registered, the saving context has no active transaction, or
+    /// its connection uses another database driver. Applies to the automatic <c>SaveChanges</c> entries and to
+    /// <c>IAuditLog&lt;TContext&gt;.LogAsync</c>; <c>IAuditLogWriter&lt;TContext&gt;</c> always commits on its own
+    /// connection, and Entity Framework storage always writes in the saving context's transaction.
+    /// Default: <see cref="MissingTransactionStrategy.Continue"/> — write the rows on a separate connection and log a
+    /// warning once per context type or driver.
+    /// Set to <see cref="MissingTransactionStrategy.Throw"/> to fail before any audit row is written.
+    /// </summary>
+    public MissingTransactionStrategy MissingTransactionStrategy { get; set; } = MissingTransactionStrategy.Continue;
 }
 
 /// <summary>Strategy applied when audit capture throws.</summary>
@@ -87,5 +99,21 @@ public enum CaptureErrorStrategy
     Continue = 0,
 
     /// <summary>Log the failure and rethrow so the entity save is aborted.</summary>
+    Throw = 1,
+}
+
+/// <summary>Strategy applied when an audit store cannot enroll in the caller's transaction.</summary>
+public enum MissingTransactionStrategy
+{
+    /// <summary>
+    /// Write the audit rows on a separate connection and log a warning. The rows commit before the caller's
+    /// transaction does, so a failed save leaves audit rows for changes that never happened.
+    /// </summary>
+    Continue = 0,
+
+    /// <summary>
+    /// Throw <see cref="InvalidOperationException"/> before any audit row is written, so the caller's save fails and
+    /// nothing commits.
+    /// </summary>
     Throw = 1,
 }
