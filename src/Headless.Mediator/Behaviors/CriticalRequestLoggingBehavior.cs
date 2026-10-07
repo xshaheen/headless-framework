@@ -41,7 +41,7 @@ internal sealed class CriticalRequestLoggingBehavior<TMessage, TResponse>(
     )
     {
         var timestamp = Stopwatch.GetTimestamp();
-        var response = await next.Invoke(message, cancellationToken);
+        var response = await next.Invoke(message, cancellationToken).ConfigureAwait(false);
         var elapsed = Stopwatch.GetElapsedTime(timestamp);
 
         if (elapsed >= _CriticalThreshold)

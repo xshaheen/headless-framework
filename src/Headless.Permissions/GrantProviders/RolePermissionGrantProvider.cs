@@ -43,6 +43,10 @@ public sealed class RolePermissionGrantProvider(IPermissionGrantStore grantStore
         // Assume all are undefined by default
         var result = new MultiplePermissionGrantStatusResult(permissionNames, roles, PermissionGrantStatus.Undefined);
 
+        // Tracks the still-undefined names across roles; a HashSet makes each resolved removal O(1) instead
+        // of a RemoveAll scan over the whole list per resolved permission.
+        var pendingNames = permissionNames.ToHashSet(StringComparer.Ordinal);
+
         foreach (var role in roles)
         {
             var roleGrantStatusResults = await _grantStore
@@ -69,10 +73,11 @@ public sealed class RolePermissionGrantProvider(IPermissionGrantStore grantStore
                     _ => PermissionGrantResult.Undefined(roles),
                 };
 
-                permissionNames.RemoveAll(name => string.Equals(name, permissionName, StringComparison.Ordinal));
+                // Set removal instead of RemoveAll's full-list scan per resolved permission.
+                _ = pendingNames.Remove(permissionName);
             }
 
-            if (result.AllGranted || result.AllProhibited || permissionNames.Count == 0)
+            if (result.AllGranted || result.AllProhibited || pendingNames.Count == 0)
             {
                 break;
             }

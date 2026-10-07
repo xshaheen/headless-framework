@@ -31,6 +31,18 @@ internal sealed class AwsSesEmailSender(IAmazonSimpleEmailServiceV2 ses, ILogger
 {
     private const string _Charset = "UTF-8";
 
+    // Clone once: the hidden-Bcc format options are identical for every send, but the clone (plus its
+    // collections) used to be rebuilt per attachment-bearing message.
+    private static readonly FormatOptions _RawFormatOptions = _CreateRawFormatOptions();
+
+    private static FormatOptions _CreateRawFormatOptions()
+    {
+        var formatOptions = FormatOptions.Default.Clone();
+        formatOptions.HiddenHeaders.Add(HeaderId.Bcc);
+
+        return formatOptions;
+    }
+
     /// <summary>
     /// Sends a single email via Amazon SES v2.
     /// </summary>
@@ -65,8 +77,7 @@ internal sealed class AwsSesEmailSender(IAmazonSimpleEmailServiceV2 ses, ILogger
         // SES delivers a raw message to the envelope recipients in Destination. Set them explicitly
         // (To/Cc/Bcc) and hide the Bcc header from the serialized MIME so BCC recipients are never
         // disclosed to the other recipients regardless of how SES treats raw Bcc headers.
-        var formatOptions = FormatOptions.Default.Clone();
-        formatOptions.HiddenHeaders.Add(HeaderId.Bcc);
+        var formatOptions = _RawFormatOptions;
 
         await using var memoryStream = new MemoryStream();
         await mimeMessage.WriteToAsync(formatOptions, memoryStream, cancellationToken).ConfigureAwait(false);

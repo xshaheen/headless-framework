@@ -50,9 +50,12 @@ public sealed class MessagingCapabilityModel : IMessageCapabilityGate
     public bool IsFrozen => true;
 
     /// <inheritdoc />
-    public InboxGuarantee? StorageInboxGuarantee =>
+    public InboxGuarantee? StorageInboxGuarantee => StorageProvider?.InboxGuarantee;
+
+    /// <inheritdoc />
+    public MessagingProviderCapabilities? StorageProvider =>
         _providersByRole.TryGetValue(MessagingProviderRole.Storage, out var storageProviders)
-            ? storageProviders.Single().InboxGuarantee
+            ? storageProviders.Single()
             : null;
 
     /// <summary>Composes and freezes a deterministic capability model.</summary>
@@ -454,6 +457,9 @@ public interface IMessagingCapabilityModel
 
     /// <summary>The inbox guarantee declared by the configured storage provider, when one is present.</summary>
     InboxGuarantee? StorageInboxGuarantee { get; }
+
+    /// <summary>The configured storage provider's capabilities, when one is present.</summary>
+    MessagingProviderCapabilities? StorageProvider { get; }
 
     /// <summary>Returns whether a role supports a semantic lane.</summary>
     bool Supports(MessageLane lane, MessagingProviderRole role);

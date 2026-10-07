@@ -54,6 +54,16 @@ public sealed class PhcString
         ReadOnlySpan<byte> salt,
         ReadOnlySpan<byte> hash
     )
+        : this(id, version, parameters, salt, hash, encoded: null) { }
+
+    private PhcString(
+        string id,
+        int? version,
+        IReadOnlyList<PhcParameter> parameters,
+        ReadOnlySpan<byte> salt,
+        ReadOnlySpan<byte> hash,
+        string? encoded
+    )
     {
         Argument.IsNotNull(id);
         Argument.IsNotNull(parameters);
@@ -89,7 +99,9 @@ public sealed class PhcString
         Parameters = [.. parameters];
         _salt = salt.ToArray();
         _hash = hash.ToArray();
-        _encoded = _Format();
+        // Parsing accepts only the canonical form, so the parsed text IS the canonical encoding; reusing it
+        // skips the StringBuilder round-trip on every credential verify.
+        _encoded = encoded ?? _Format();
 
         if (_encoded.Length > MaxLength)
         {
@@ -188,7 +200,9 @@ public sealed class PhcString
             return false;
         }
 
-        result = new PhcString(id, version, parameters, salt, hash);
+        // The canonical-form guarantee (re-encode comparison in _TryDecodeBase64) makes the input identical
+        // to what _Format would rebuild, so pass it through instead of re-serializing on every parse.
+        result = new PhcString(id, version, parameters, salt, hash, encoded: value);
 
         return true;
     }

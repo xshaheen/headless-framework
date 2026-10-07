@@ -470,8 +470,22 @@ internal sealed class RelationalMembershipStore : IMembershipStore
 
     private TimeSpan RetentionThreshold => _options.DeadThreshold + _options.DeadRetentionWindow;
 
+    // The prune removes rows older than the retention threshold, so running it more often than a fraction of
+    // that window cannot remove anything new; it ran as two DELETE transactions before EVERY liveness read
+    // (every heartbeat of every node). The Redis provider moved its prune to a background service for the
+    // same reason; here a time-based throttle keeps it on the read path without per-tick transactions.
+    private long _lastPruneTicks;
+    private static readonly TimeSpan _MinPruneInterval = TimeSpan.FromMinutes(1);
+
     private async ValueTask _PruneAsync()
     {
+        var now = DateTimeOffset.UtcNow;
+
+        if (now.UtcTicks - Volatile.Read(ref _lastPruneTicks) < _MinPruneInterval.Ticks)
+        {
+            return;
+        }
+
         // Best-effort cleanup the next read retries: not cancelled with the caller's read, and a failure that outlives
         // the deadlock retries is logged instead of failing the read it precedes.
         try
@@ -492,6 +506,8 @@ internal sealed class RelationalMembershipStore : IMembershipStore
                     CancellationToken.None
                 )
                 .ConfigureAwait(false);
+
+            Volatile.Write(ref _lastPruneTicks, now.UtcTicks);
         }
         catch (DbException ex)
         {

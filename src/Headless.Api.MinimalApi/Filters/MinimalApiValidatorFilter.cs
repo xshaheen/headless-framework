@@ -86,10 +86,17 @@ public sealed class MinimalApiValidatorFilter<TRequest> : IEndpointFilter
 
         if (validatorList.Count == 1)
         {
-            // Fast path for single validator - avoids Task.WhenAll overhead
+            // Fast path for single validator - avoids Task.WhenAll overhead, and the common IsValid case
+            // returns without allocating the results array at all.
             var result = await validatorList[0]
                 .ValidateAsync(validationContext, context.HttpContext.RequestAborted)
                 .ConfigureAwait(false);
+
+            if (result.IsValid)
+            {
+                return await next(context).ConfigureAwait(false);
+            }
+
             validationResults = [result];
         }
         else
@@ -101,7 +108,7 @@ public sealed class MinimalApiValidatorFilter<TRequest> : IEndpointFilter
                 .ConfigureAwait(false);
         }
 
-        // Early exit if all valid - avoid LINQ chain and dictionary allocation
+        // Early exit if all valid - avoids the failure-projection LINQ chain below
         if (validationResults.All(x => x.IsValid))
         {
             return await next(context).ConfigureAwait(false);

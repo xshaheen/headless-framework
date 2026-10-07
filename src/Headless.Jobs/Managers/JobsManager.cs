@@ -204,7 +204,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             _StampTimeJobTree(entity, now, assignIds: false);
             _ResolveChainTenants(entity);
 
-            if (_functionRegistry.Functions.All(x => !string.Equals(x.Key, entity.Function, StringComparison.Ordinal)))
+            if (!_functionRegistry.Functions.ContainsKey(entity.Function))
             {
                 throw new JobValidatorException($"Cannot find a registered job with identity {entity.Function}");
             }
@@ -363,7 +363,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         await _RunSchedulePipelineAsync(entity, cancellationToken).ConfigureAwait(false);
         _StampJob(entity, now, assignId: false);
 
-        if (_functionRegistry.Functions.All(x => !string.Equals(x.Key, entity.Function, StringComparison.Ordinal)))
+        if (!_functionRegistry.Functions.ContainsKey(entity.Function))
         {
             throw new JobValidatorException($"Cannot find a registered job with identity {entity.Function}");
         }
@@ -517,7 +517,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
             return new JobResult<TCronJob>(new ArgumentNullException(nameof(cronJob), "Cron job must not be null!"));
         }
 
-        if (_functionRegistry.Functions.All(x => !string.Equals(x.Key, cronJob.Function, StringComparison.Ordinal)))
+        if (!_functionRegistry.Functions.ContainsKey(cronJob.Function))
         {
             return new JobResult<TCronJob>(
                 new JobValidatorException($"Cannot find a registered job with identity {cronJob.Function}")
@@ -1107,7 +1107,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
         {
             _StampJob(entity, now, assignId: true);
 
-            if (_functionRegistry.Functions.All(x => !string.Equals(x.Key, entity.Function, StringComparison.Ordinal)))
+            if (!_functionRegistry.Functions.ContainsKey(entity.Function))
             {
                 (errors ??= []).Add($"Cannot find a registered job with identity {entity.Function}");
                 continue;
@@ -1479,7 +1479,7 @@ internal partial class JobsManager<TTimeJob, TCronJob>(
                 continue;
             }
 
-            if (_functionRegistry.Functions.All(x => !string.Equals(x.Key, cronJob.Function, StringComparison.Ordinal)))
+            if (!_functionRegistry.Functions.ContainsKey(cronJob.Function))
             {
                 errors.Add(new JobValidatorException($"Cannot find a registered job with identity {cronJob.Function}"));
                 continue;

@@ -55,7 +55,9 @@ public sealed class ScopedCache<T> : ICache<T>
 
     private string _ScopeKey(string key)
     {
-        return $"{_Prefix()}{key}";
+        // One allocation instead of two: the old shape built "{scope}:" in _Prefix() and then concatenated,
+        // paying an intermediate string on every scoped operation.
+        return $"{_scopeProvider()}:{key}";
     }
 
     /// <inheritdoc />

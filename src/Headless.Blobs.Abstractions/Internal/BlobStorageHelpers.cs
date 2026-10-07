@@ -30,12 +30,22 @@ public static class BlobStorageHelpers
     /// <summary>Returns <see langword="true"/> when any <c>/</c>-delimited segment is reserved for sidecar metadata.</summary>
     public static bool HasSidecarSegment(string key)
     {
-        foreach (var segment in key.Split('/'))
+        // Span scan: Split('/') allocated a substring per segment on every blob operation in every
+        // provider (this runs from key validation on upload/download/delete/exists/info alike).
+        var path = key.AsSpan();
+
+        while (!path.IsEmpty)
         {
-            if (segment.Length > 0 && IsSidecarKey(segment))
+            var separator = path.IndexOf('/');
+
+            var segment = separator < 0 ? path : path[..separator];
+
+            if (!segment.IsEmpty && segment.EndsWith(SidecarSuffix, StringComparison.OrdinalIgnoreCase))
             {
                 return true;
             }
+
+            path = separator < 0 ? [] : path[(separator + 1)..];
         }
 
         return false;

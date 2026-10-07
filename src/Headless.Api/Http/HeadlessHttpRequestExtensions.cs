@@ -135,40 +135,54 @@ public static class HeadlessHttpRequestExtensions
         return _CanAccept(parsed, candidate);
     }
 
-    internal static bool HasAcceptRejection(this HttpRequest request, string contentType)
+    private static bool _CanAccept(IList<MediaTypeHeaderValue> acceptHeader, MediaTypeHeaderValue candidate)
+    {
+        var (found, quality) = _GetBestAcceptMatch(acceptHeader, candidate);
+
+        return found && quality > 0;
+    }
+
+    // Combined acceptance check for callers that test "not rejected AND accepts one of these": parses the Accept
+    // header once (each public helper re-parses it) and takes pre-parsed constant candidates, so the exception
+    // handler pays one ParseList per request instead of two plus constant re-TryParses.
+    internal static bool AcceptsAnyWithoutRejection(
+        this HttpRequest request,
+        MediaTypeHeaderValue rejected,
+        params ReadOnlySpan<MediaTypeHeaderValue> accepted
+    )
     {
         Argument.IsNotNull(request);
-        Argument.IsNotNull(contentType);
 
         var acceptHeader = request.Headers[HeaderNames.Accept];
 
         if (acceptHeader.Count == 0)
         {
-            return false;
-        }
-
-        if (!MediaTypeHeaderValue.TryParse(contentType, out var candidate))
-        {
-            return false;
+            return true;
         }
 
         var parsed = MediaTypeHeaderValue.ParseList(acceptHeader);
 
         if (parsed is null or { Count: 0 })
         {
+            return true;
+        }
+
+        var (rejectedFound, rejectedQuality) = _GetBestAcceptMatch(parsed, rejected);
+
+        if (rejectedFound && rejectedQuality <= 0)
+        {
             return false;
         }
 
-        var (found, quality) = _GetBestAcceptMatch(parsed, candidate);
+        foreach (var candidate in accepted)
+        {
+            if (_CanAccept(parsed, candidate))
+            {
+                return true;
+            }
+        }
 
-        return found && quality <= 0;
-    }
-
-    private static bool _CanAccept(IList<MediaTypeHeaderValue> acceptHeader, MediaTypeHeaderValue candidate)
-    {
-        var (found, quality) = _GetBestAcceptMatch(acceptHeader, candidate);
-
-        return found && quality > 0;
+        return false;
     }
 
     private static (bool Found, double Quality) _GetBestAcceptMatch(

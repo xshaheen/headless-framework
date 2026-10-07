@@ -262,9 +262,29 @@ internal sealed class RelationalAuditLogWriter(RelationalAuditLogTable table, IJ
         return builder.Append(';').ToString();
     }
 
+    // Parameter names repeat for a given (column, rowIndex) on every batch; memoized per column so the hot
+    // per-row binding path reuses one array instead of formatting a new string per parameter.
+    private static readonly ConcurrentDictionary<string, string[]> _ParameterNamesByColumn = new(
+        StringComparer.Ordinal
+    );
+
     private static string _Name(string column, int rowIndex)
     {
-        return string.Create(CultureInfo.InvariantCulture, $"{column}_{rowIndex}");
+        if (_ParameterNamesByColumn.TryGetValue(column, out var names) && rowIndex < names.Length)
+        {
+            return names[rowIndex];
+        }
+
+        names = new string[_MaxRowsPerCommand];
+
+        for (var row = 0; row < names.Length; row++)
+        {
+            names[row] = string.Create(CultureInfo.InvariantCulture, $"{column}_{row}");
+        }
+
+        _ParameterNamesByColumn[column] = names;
+
+        return names[rowIndex];
     }
 }
 #pragma warning restore CA2100

@@ -1088,6 +1088,63 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
         );
     }
 
+    public Task<IList<(JobStatus Status, int Count)>> GetTimeJobStatusCountsAsync(
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // Root-only, matching GetTimeJobsAsync; counts roots of every function, matching a null predicate there.
+        var counts = _timeJobs
+            .Values.Where(x => x.ParentId == null)
+            .GroupBy(x => x.Status)
+            .Select(group => (Status: group.Key, Count: group.Count(), LastSeen: group.Max(x => x.ExecutionTime)))
+            .OrderByDescending(x => x.LastSeen ?? DateTime.MinValue)
+            .Select(x => (x.Status, x.Count))
+            .ToList();
+
+        return Task.FromResult<IList<(JobStatus Status, int Count)>>(counts);
+    }
+
+    public Task<IList<(DateTime Date, JobStatus Status, int Count)>> GetTimeJobDailyStatusCountsAsync(
+        DateTime startDate,
+        DateTime endDate,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var counts = _timeJobs
+            .Values.Where(x =>
+                x.ParentId == null
+                && x.ExecutionTime != null
+                && x.ExecutionTime.Value.Date >= startDate
+                && x.ExecutionTime.Value.Date <= endDate
+            )
+            .GroupBy(x => new { x.ExecutionTime!.Value.Date, x.Status })
+            .Select(group => (group.Key.Date, group.Key.Status, group.Count()))
+            .ToList();
+
+        return Task.FromResult<IList<(DateTime Date, JobStatus Status, int Count)>>(counts);
+    }
+
+    public Task<IList<(string OwnerId, int Count)>> GetTimeJobLockedOwnerCountsAsync(
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var counts = _timeJobs
+            .Values.Where(x => x.ParentId == null && x.LockedUntil != null && x.OwnerId != null)
+            .GroupBy(x => x.OwnerId!)
+            .Select(group => (OwnerId: group.Key, Count: group.Count(), LastSeen: group.Max(x => x.ExecutionTime)))
+            .OrderByDescending(x => x.LastSeen ?? DateTime.MinValue)
+            .Select(x => (x.OwnerId, x.Count))
+            .ToList();
+
+        return Task.FromResult<IList<(string OwnerId, int Count)>>(counts);
+    }
+
     public Task<int> AddTimeJobsAsync(TTimeJob[] jobs, CancellationToken cancellationToken = default)
     {
         lock (_keyedOperations)
@@ -3337,6 +3394,56 @@ internal sealed partial class JobsInMemoryPersistenceProvider<TTimeJob, TCronJob
             });
 
         return Task.FromResult(CronOccurrenceGraphRangeSelector.AddRangeBoundaries(counts, range));
+    }
+
+    public Task<IList<(JobStatus Status, int Count)>> GetCronOccurrenceStatusCountsAsync(
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var counts = _cronOccurrences
+            .Values.GroupBy(x => x.Status)
+            .Select(group => (Status: group.Key, Count: group.Count(), LastSeen: group.Max(x => x.ExecutionTime)))
+            .OrderByDescending(x => x.LastSeen)
+            .Select(x => (x.Status, x.Count))
+            .ToList();
+
+        return Task.FromResult<IList<(JobStatus Status, int Count)>>(counts);
+    }
+
+    public Task<IList<(DateTime Date, JobStatus Status, int Count)>> GetCronOccurrenceDailyStatusCountsAsync(
+        DateTime startDate,
+        DateTime endDate,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var counts = _cronOccurrences
+            .Values.Where(x => x.ExecutionTime.Date >= startDate && x.ExecutionTime.Date <= endDate)
+            .GroupBy(x => new { x.ExecutionTime.Date, x.Status })
+            .Select(group => (group.Key.Date, group.Key.Status, group.Count()))
+            .ToList();
+
+        return Task.FromResult<IList<(DateTime Date, JobStatus Status, int Count)>>(counts);
+    }
+
+    public Task<IList<(string OwnerId, int Count)>> GetCronOccurrenceLockedOwnerCountsAsync(
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var counts = _cronOccurrences
+            .Values.Where(x => x.LockedUntil != null && x.OwnerId != null)
+            .GroupBy(x => x.OwnerId!)
+            .Select(group => (OwnerId: group.Key, Count: group.Count(), LastSeen: group.Max(x => x.ExecutionTime)))
+            .OrderByDescending(x => x.LastSeen)
+            .Select(x => (x.OwnerId, x.Count))
+            .ToList();
+
+        return Task.FromResult<IList<(string OwnerId, int Count)>>(counts);
     }
 
     public Task<PaginationResult<CronJobOccurrenceEntity<TCronJob>>> GetAllCronJobOccurrencesPaginatedAsync(

@@ -103,9 +103,12 @@ public static class MobilePhoneNumberValidator
             return false;
         }
 
-        FormattableString normalized = $"+{maybePhoneNumber.CountryCode}{maybePhoneNumber.NationalNumber}";
-
-        normalizedNumber = normalized.ToString(CultureInfo.InvariantCulture);
+        // Direct invariant interpolation: a FormattableString wrapper (boxing the two ints) plus
+        // ToString(CultureInfo) used to allocate twice where string.Create writes the same bytes once.
+        normalizedNumber = string.Create(
+            CultureInfo.InvariantCulture,
+            $"+{maybePhoneNumber.CountryCode}{maybePhoneNumber.NationalNumber}"
+        );
 
         return true;
     }

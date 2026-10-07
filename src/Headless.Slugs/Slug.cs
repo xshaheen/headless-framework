@@ -5,6 +5,10 @@ namespace Headless.Slugs;
 /// <summary>Entry point for URL-slug generation.</summary>
 public static class Slug
 {
+    // The parameterless overload used to construct default options per call; the default is immutable by
+    // shape, so one shared instance serves every caller that does not customize.
+    private static readonly SlugOptions _DefaultOptions = new();
+
     /// <summary>
     /// Converts <paramref name="text"/> to a URL-friendly slug using the supplied options.
     /// </summary>
@@ -33,7 +37,7 @@ public static class Slug
             return null;
         }
 
-        options ??= new();
+        options ??= _DefaultOptions;
 
         // Normalizing to NFD lets diacritic marks be stripped as non-spacing marks below. Skip the allocation
         // when the input is already NFD (the common ASCII case) — IsNormalized is much cheaper than Normalize.

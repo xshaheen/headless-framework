@@ -219,10 +219,21 @@ internal sealed class SqlServerConnectionScopedLockStorage(
         CancellationToken cancellationToken = default
     )
     {
-        var local = _heldByLeaseId.Values.Any(x =>
-            string.Equals(x.Resource, resource, StringComparison.Ordinal)
-            && (!isShared.HasValue || x.IsShared == isShared.Value)
-        );
+        // Direct enumeration: .Values.Any snapshots the whole dictionary into a List per call.
+        bool local = false;
+
+        foreach (var held in _heldByLeaseId)
+        {
+            if (
+                string.Equals(held.Value.Resource, resource, StringComparison.Ordinal)
+                && (!isShared.HasValue || held.Value.IsShared == isShared.Value)
+            )
+            {
+                local = true;
+
+                break;
+            }
+        }
 
         return local || await _IsLockedInDatabaseAsync(resource, isShared, cancellationToken).ConfigureAwait(false);
     }
@@ -240,11 +251,18 @@ internal sealed class SqlServerConnectionScopedLockStorage(
         CancellationToken cancellationToken = default
     )
     {
-        var localCount = (long)
-            _heldByLeaseId.Values.Count(x =>
-                string.Equals(x.Resource, resource, StringComparison.Ordinal)
-                && (!isShared.HasValue || x.IsShared == isShared.Value)
-            );
+        var localCount = 0L;
+
+        foreach (var held in _heldByLeaseId)
+        {
+            if (
+                string.Equals(held.Value.Resource, resource, StringComparison.Ordinal)
+                && (!isShared.HasValue || held.Value.IsShared == isShared.Value)
+            )
+            {
+                localCount++;
+            }
+        }
 
         if (localCount > 0)
         {
@@ -261,11 +279,16 @@ internal sealed class SqlServerConnectionScopedLockStorage(
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        return ValueTask.FromResult(
-            _heldByLeaseId
-                .Values.FirstOrDefault(x => string.Equals(x.Resource, resource, StringComparison.Ordinal))
-                ?.LeaseId
-        );
+        // Direct enumeration instead of .Values.FirstOrDefault's dictionary snapshot per call.
+        foreach (var held in _heldByLeaseId)
+        {
+            if (string.Equals(held.Value.Resource, resource, StringComparison.Ordinal))
+            {
+                return ValueTask.FromResult<string?>(held.Key);
+            }
+        }
+
+        return ValueTask.FromResult<string?>(null);
     }
 
     /// <inheritdoc/>

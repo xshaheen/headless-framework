@@ -1035,6 +1035,112 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
     /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
     Task<int> RemoveTimeJobsAsync(Guid[] jobIds, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Returns per-status counts of ROOT time jobs, aggregated in storage — the dashboard's overall-status read.
+    /// </summary>
+    /// <param name="cancellationToken">Token that aborts the query.</param>
+    /// <returns>
+    /// One entry per observed status; statuses with no rows are omitted, so callers that need a full status axis
+    /// zero-fill client-side. Entries are ordered by the most recent execution time carrying that status, most
+    /// recent first, so a caller merging several sources' counts keeps a stable first-appearance order.
+    /// </returns>
+    /// <remarks>
+    /// Counts ROOT jobs only, matching <see cref="GetTimeJobsAsync"/> — child rows are never counted. Default
+    /// interface method for additive evolution (see the interface remarks): the default projects through
+    /// <see cref="GetTimeJobsAsync"/> and aggregates client-side, so existing implementers keep compiling;
+    /// providers that can express a <c>GROUP BY</c> should override it.
+    /// </remarks>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    async Task<IList<(JobStatus Status, int Count)>> GetTimeJobStatusCountsAsync(
+        CancellationToken cancellationToken = default
+    )
+    {
+        var timeJobs = await GetTimeJobsAsync(predicate: null, cancellationToken).ConfigureAwait(false);
+
+        return
+        [
+            .. timeJobs
+                .GroupBy(x => x.Status)
+                .Select(group => (Status: group.Key, Count: group.Count(), LastSeen: group.Max(x => x.ExecutionTime)))
+                .OrderByDescending(x => x.LastSeen ?? DateTime.MinValue)
+                .Select(x => (x.Status, x.Count)),
+        ];
+    }
+
+    /// <summary>
+    /// Returns per-(day, status) counts of ROOT time jobs whose execution time falls inside the inclusive UTC date
+    /// window, aggregated in storage — the dashboard's time-job graph read.
+    /// </summary>
+    /// <param name="startDate">First UTC calendar day included.</param>
+    /// <param name="endDate">Last UTC calendar day included (inclusive).</param>
+    /// <param name="cancellationToken">Token that aborts the query.</param>
+    /// <returns>
+    /// One entry per observed (date, status) pair; days and statuses with no rows are omitted, so callers zero-fill
+    /// their own date axis. Counts are per calendar day in UTC.
+    /// </returns>
+    /// <remarks>
+    /// Counts ROOT jobs only and excludes rows with a <see langword="null"/> execution time (non-timed chain
+    /// descendants), matching the window the dashboard previously passed to <see cref="GetTimeJobsAsync"/>.
+    /// Default interface method: the default projects through <see cref="GetTimeJobsAsync"/> and groups
+    /// client-side; providers that can express a <c>GROUP BY</c> should override it.
+    /// </remarks>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    async Task<IList<(DateTime Date, JobStatus Status, int Count)>> GetTimeJobDailyStatusCountsAsync(
+        DateTime startDate,
+        DateTime endDate,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var timeJobs = await GetTimeJobsAsync(
+                x =>
+                    (x.ExecutionTime != null)
+                    && x.ExecutionTime.Value.Date >= startDate
+                    && x.ExecutionTime.Value.Date <= endDate,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return timeJobs
+            .GroupBy(x => new { x.ExecutionTime!.Value.Date, x.Status })
+            .Select(group => (group.Key.Date, group.Key.Status, group.Count()))
+            .ToList();
+    }
+
+    /// <summary>
+    /// Returns per-owner counts of ROOT time jobs that currently hold a lease (<c>LockedUntil != null</c>),
+    /// aggregated in storage — the dashboard's machines panel read.
+    /// </summary>
+    /// <param name="cancellationToken">Token that aborts the query.</param>
+    /// <returns>
+    /// One entry per distinct non-null owner id, ordered by the most recent execution time among that owner's
+    /// counted rows, most recent first. Rows with no owner id are omitted.
+    /// </returns>
+    /// <remarks>
+    /// Groups by the owner id's exact string; owner identity is case-insensitive, so a caller that merges several
+    /// sources' counts folds case-insensitively client-side (first source's casing wins, matching this member's
+    /// recency ordering). Counts ROOT jobs only, matching the read the dashboard previously made through
+    /// <see cref="GetTimeJobsAsync"/> with a <c>LockedUntil != null</c> predicate. Default interface method: the
+    /// default projects through <see cref="GetTimeJobsAsync"/> and aggregates client-side; providers that can
+    /// express a <c>GROUP BY</c> should override it.
+    /// </remarks>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    async Task<IList<(string OwnerId, int Count)>> GetTimeJobLockedOwnerCountsAsync(
+        CancellationToken cancellationToken = default
+    )
+    {
+        var timeJobs = await GetTimeJobsAsync(x => x.LockedUntil != null, cancellationToken).ConfigureAwait(false);
+
+        return
+        [
+            .. timeJobs
+                .Where(x => x.OwnerId != null)
+                .GroupBy(x => x.OwnerId!)
+                .Select(group => (OwnerId: group.Key, Count: group.Count(), LastSeen: group.Max(x => x.ExecutionTime)))
+                .OrderByDescending(x => x.LastSeen ?? DateTime.MinValue)
+                .Select(x => (x.OwnerId, x.Count)),
+        ];
+    }
+
     #endregion
 
     #region Cron_Ticker_Shared_Methods
@@ -1349,6 +1455,107 @@ public interface IJobPersistenceProvider<TTimeJob, TCronJob>
         Guid[] occurrenceIds,
         CancellationToken cancellationToken = default
     );
+
+    /// <summary>
+    /// Returns per-status counts of every cron occurrence, aggregated in storage — the dashboard's overall-status
+    /// read. The cron counterpart of <see cref="GetTimeJobStatusCountsAsync"/>.
+    /// </summary>
+    /// <param name="cancellationToken">Token that aborts the query.</param>
+    /// <returns>
+    /// One entry per observed status; statuses with no rows are omitted. Entries are ordered by the most recent
+    /// execution time carrying that status, most recent first, so a caller merging several sources' counts keeps a
+    /// stable first-appearance order.
+    /// </returns>
+    /// <remarks>
+    /// Default interface method for additive evolution (see the interface remarks): the default projects through
+    /// <see cref="GetAllCronJobOccurrencesAsync"/> and aggregates client-side, so existing implementers keep
+    /// compiling; providers that can express a <c>GROUP BY</c> should override it.
+    /// </remarks>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    async Task<IList<(JobStatus Status, int Count)>> GetCronOccurrenceStatusCountsAsync(
+        CancellationToken cancellationToken = default
+    )
+    {
+        var occurrences = await GetAllCronJobOccurrencesAsync(predicate: null, cancellationToken).ConfigureAwait(false);
+
+        return
+        [
+            .. occurrences
+                .GroupBy(x => x.Status)
+                .Select(group => (Status: group.Key, Count: group.Count(), LastSeen: group.Max(x => x.ExecutionTime)))
+                .OrderByDescending(x => x.LastSeen)
+                .Select(x => (x.Status, x.Count)),
+        ];
+    }
+
+    /// <summary>
+    /// Returns per-(day, status) counts of cron occurrences whose execution time falls inside the inclusive UTC
+    /// date window, aggregated in storage — the dashboard's cron-occurrence graph read.
+    /// </summary>
+    /// <param name="startDate">First UTC calendar day included.</param>
+    /// <param name="endDate">Last UTC calendar day included (inclusive).</param>
+    /// <param name="cancellationToken">Token that aborts the query.</param>
+    /// <returns>
+    /// One entry per observed (date, status) pair; days and statuses with no rows are omitted, so callers zero-fill
+    /// their own date axis. Counts are per calendar day in UTC.
+    /// </returns>
+    /// <remarks>
+    /// Default interface method: the default projects through <see cref="GetAllCronJobOccurrencesAsync"/> and
+    /// groups client-side; providers that can express a <c>GROUP BY</c> should override it.
+    /// </remarks>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    async Task<IList<(DateTime Date, JobStatus Status, int Count)>> GetCronOccurrenceDailyStatusCountsAsync(
+        DateTime startDate,
+        DateTime endDate,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var occurrences = await GetAllCronJobOccurrencesAsync(
+                x => x.ExecutionTime.Date >= startDate && x.ExecutionTime.Date <= endDate,
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        return occurrences
+            .GroupBy(x => new { x.ExecutionTime.Date, x.Status })
+            .Select(group => (group.Key.Date, group.Key.Status, group.Count()))
+            .ToList();
+    }
+
+    /// <summary>
+    /// Returns per-owner counts of cron occurrences that currently hold a lease (<c>LockedUntil != null</c>),
+    /// aggregated in storage — the dashboard's machines panel read. The cron counterpart of
+    /// <see cref="GetTimeJobLockedOwnerCountsAsync"/>.
+    /// </summary>
+    /// <param name="cancellationToken">Token that aborts the query.</param>
+    /// <returns>
+    /// One entry per distinct non-null owner id, ordered by the most recent execution time among that owner's
+    /// counted rows, most recent first. Rows with no owner id are omitted. Grouping is by the owner id's exact
+    /// string; owner identity is case-insensitive, so a caller merging several sources folds case-insensitively
+    /// client-side (first source's casing wins).
+    /// </returns>
+    /// <remarks>
+    /// Default interface method: the default projects through <see cref="GetAllCronJobOccurrencesAsync"/> and
+    /// aggregates client-side; providers that can express a <c>GROUP BY</c> should override it.
+    /// </remarks>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was signalled.</exception>
+    async Task<IList<(string OwnerId, int Count)>> GetCronOccurrenceLockedOwnerCountsAsync(
+        CancellationToken cancellationToken = default
+    )
+    {
+        var occurrences = await GetAllCronJobOccurrencesAsync(x => x.LockedUntil != null, cancellationToken)
+            .ConfigureAwait(false);
+
+        return
+        [
+            .. occurrences
+                .Where(x => x.OwnerId != null)
+                .GroupBy(x => x.OwnerId!)
+                .Select(group => (OwnerId: group.Key, Count: group.Count(), LastSeen: group.Max(x => x.ExecutionTime)))
+                .OrderByDescending(x => x.LastSeen)
+                .Select(x => (x.OwnerId, x.Count)),
+        ];
+    }
 
     #endregion
 }

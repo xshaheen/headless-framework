@@ -19,6 +19,11 @@ namespace Headless.Dashboard.Authentication;
 [PublicAPI]
 public sealed class AuthService(AuthConfig config, ILogger<AuthService> logger) : IAuthService
 {
+    // Config is immutable for the service lifetime, so the expected credential bytes are encoded once instead
+    // of per authenticated request (FixedTimeEquals needs byte[] on both sides).
+    private readonly byte[] _basicCredentialsBytes = Encoding.UTF8.GetBytes(config.BasicCredentials ?? string.Empty);
+    private readonly byte[] _apiKeyBytes = Encoding.UTF8.GetBytes(config.ApiKey ?? string.Empty);
+
     /// <inheritdoc/>
     public async Task<AuthResult> AuthenticateAsync(HttpContext context, CancellationToken cancellationToken = default)
     {
@@ -109,12 +114,7 @@ public sealed class AuthService(AuthConfig config, ILogger<AuthService> logger) 
                 ? authHeader[6..]
                 : authHeader;
 
-            if (
-                CryptographicOperations.FixedTimeEquals(
-                    Encoding.UTF8.GetBytes(credentials),
-                    Encoding.UTF8.GetBytes(config.BasicCredentials ?? string.Empty)
-                )
-            )
+            if (CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(credentials), _basicCredentialsBytes))
             {
                 // Decode to get username for display
                 var decoded = credentials.DecodeBase64();
@@ -144,12 +144,7 @@ public sealed class AuthService(AuthConfig config, ILogger<AuthService> logger) 
                 _ => authHeader,
             };
 
-            if (
-                CryptographicOperations.FixedTimeEquals(
-                    Encoding.UTF8.GetBytes(token),
-                    Encoding.UTF8.GetBytes(config.ApiKey ?? string.Empty)
-                )
-            )
+            if (CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(token), _apiKeyBytes))
             {
                 return Task.FromResult(AuthResult.Success("api-user"));
             }

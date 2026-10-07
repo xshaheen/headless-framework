@@ -13,6 +13,7 @@ using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using Microsoft.Net.Http.Headers;
 using JsonOptions = Microsoft.AspNetCore.Http.Json.JsonOptions;
 
 namespace Headless.Api;
@@ -401,10 +402,14 @@ internal sealed partial class HeadlessApiExceptionHandler(
         return false;
     }
 
+    // Parsed once: the media types are compile-time constants, and each handled exception used to re-TryParse
+    // all three strings and ParseList the Accept header twice through the two public helper calls.
+    private static readonly MediaTypeHeaderValue _ProblemJsonMediaType = new(ContentTypes.Applications.ProblemJson);
+    private static readonly MediaTypeHeaderValue _JsonMediaType = new(ContentTypes.Applications.Json);
+
     private static bool _AcceptsJsonProblemDetails(HttpRequest request)
     {
-        return !request.HasAcceptRejection(ContentTypes.Applications.ProblemJson)
-            && request.CanAccept(ContentTypes.Applications.Json, ContentTypes.Applications.ProblemJson);
+        return request.AcceptsAnyWithoutRejection(_ProblemJsonMediaType, _JsonMediaType, _ProblemJsonMediaType);
     }
 
     [LoggerMessage(

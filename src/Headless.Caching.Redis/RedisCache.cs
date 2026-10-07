@@ -1336,15 +1336,33 @@ public sealed class RedisCache(
                 if (frame.SlidingExpiration.HasValue)
                 {
                     // Sliding: logical expiry is maintained by TTL re-arms; the frame's LogicalExpiresAt is a
-                    // lower bound. Re-arm and fetch the live TTL with a single extra round-trip (unavoidable for
-                    // sliding — the live TTL IS the expiration). Rearm is best-effort (fires-and-ignores errors).
-                    await _TryRearmSlidingEntryAsync(redisKey, frame, now).ConfigureAwait(false);
+                    // lower bound. The re-arm script replies with the key's resulting TTL, so the expiration comes
+                    // from that same round trip (previously a follow-up KeyTimeToLiveAsync). Rearm is best-effort:
+                    // a null reply means the script did not run or failed (errors logged and swallowed), so the
+                    // live-TTL probe remains as the fallback.
+                    var rearmTtlMs = await _TryRearmSlidingEntryAsync(redisKey, frame, now, needResultingTtl: true)
+                        .ConfigureAwait(false);
 
-                    var ttl = await _database.KeyTimeToLiveAsync(redisKey).ConfigureAwait(false);
+                    TimeSpan? ttl;
 
-                    if (ttl is { Ticks: <= 0 })
+                    if (rearmTtlMs is > 0)
                     {
-                        return new CacheValueWithExpiration<T>(CacheValue<T>.NoValue, expiration: null);
+                        ttl = TimeSpan.FromMilliseconds(rearmTtlMs.Value);
+                    }
+                    else if (rearmTtlMs is -1 or -2)
+                    {
+                        // -1 persistent, -2 missing: KeyTimeToLiveAsync reports both as null (no expiry), and this
+                        // path already served that as a hit with no expiration.
+                        ttl = null;
+                    }
+                    else
+                    {
+                        ttl = await _database.KeyTimeToLiveAsync(redisKey).ConfigureAwait(false);
+
+                        if (ttl is { Ticks: <= 0 })
+                        {
+                            return new CacheValueWithExpiration<T>(CacheValue<T>.NoValue, expiration: null);
+                        }
                     }
 
                     var slidingValue = frame.IsNull
@@ -1977,17 +1995,119 @@ public sealed class RedisCache(
 
     /// <summary>
     /// Resolves the newest invalidation marker applicable to an entry — the max of the global clear-generation
-    /// marker and every per-tag marker the entry carries — using the process-local marker cache and refreshing
-    /// stale/missing markers from Redis in a single pipelined MGET. Untagged entries resolve only the clear
-    /// marker. Returns <see langword="null"/> when no marker applies (entry is never invalidated).
+    /// marker, the remove-generation marker, and every per-tag marker the entry carries — using the process-local
+    /// marker cache and refreshing every stale/missing marker from Redis in ONE bulk read (a single MGET, or one
+    /// per hash slot on cluster). Untagged entries resolve only the clear/remove markers. Returns
+    /// <see langword="null"/> when no marker applies (entry is never invalidated).
     /// </summary>
     private async ValueTask<DateTime?> _ResolveNewestMarkerAsync(IReadOnlyCollection<string>? tags)
     {
-        // Direct reads: the remove-generation marker (logical FlushAsync) also makes an entry a miss, alongside the
-        // clear- and per-tag markers (all compared on every read, tagged or not).
-        var newestMs = await _ResolveClearAndTagMarkerMsAsync(tags).ConfigureAwait(false);
+        // Direct reads: the remove-generation marker (logical FlushAsync) also makes an entry a miss, alongside
+        // the clear- and per-tag markers (all compared on every read, tagged or not). Every marker key is known
+        // up front, so all stale ones are fetched in one bulk read below instead of sequential clear GET, tag
+        // MGET, then remove GET round trips.
+        var clearIsFresh = _MarkerIsFresh(Interlocked.Read(ref _clearMarkerFetchedTicks));
+        var removeIsFresh = _MarkerIsFresh(Interlocked.Read(ref _removeMarkerFetchedTicks));
+        var newestMs = clearIsFresh ? Interlocked.Read(ref _clearMarkerMs) : _MarkerAbsent;
+        var removeMs = removeIsFresh ? Interlocked.Read(ref _removeMarkerMs) : _MarkerAbsent;
 
-        var removeMs = await _ResolveRemoveMarkerAsync().ConfigureAwait(false);
+        // Collect tags whose cached marker is stale/missing; they join the same bulk read.
+        List<string>? stale = null;
+
+        if (tags is { Count: > 0 })
+        {
+            foreach (var tag in tags)
+            {
+                if (_markerCache.TryGetValue(tag, out var cached) && _MarkerIsFresh(cached.FetchedTicks))
+                {
+                    if (cached.MarkerMs > newestMs)
+                    {
+                        newestMs = cached.MarkerMs;
+                    }
+                }
+                else
+                {
+                    (stale ??= []).Add(tag);
+                }
+            }
+        }
+
+        if (!clearIsFresh || !removeIsFresh || stale is not null)
+        {
+            var markerKeys = new RedisKey[(!clearIsFresh ? 1 : 0) + (!removeIsFresh ? 1 : 0) + (stale?.Count ?? 0)];
+            var index = 0;
+
+            if (!clearIsFresh)
+            {
+                markerKeys[index++] = _GetClearMarkerKey();
+            }
+
+            if (!removeIsFresh)
+            {
+                markerKeys[index++] = _GetRemoveMarkerKey();
+            }
+
+            if (stale is not null)
+            {
+                for (var i = 0; i < stale.Count; i++)
+                {
+                    markerKeys[index++] = _GetTagMarkerKey(stale[i]);
+                }
+            }
+
+            var values = await _BulkStringGetOrderedAsync(markerKeys).ConfigureAwait(false);
+            var fetchedTicks = _StopwatchTicks();
+            index = 0;
+
+            if (!clearIsFresh)
+            {
+                // Raise-only (mirrors SeedClearMarker): a stale durable read — e.g. a lagging replica — must not
+                // lower a newer clear generation a backplane push already seeded. Surface the raised max so this
+                // read does not under-invalidate either.
+                _clearMarkerMs.InterlockedRaiseTo(_ParseMarkerMs(values[index]));
+                Interlocked.Exchange(ref _clearMarkerFetchedTicks, fetchedTicks);
+
+                var clearMs = Interlocked.Read(ref _clearMarkerMs);
+
+                if (clearMs > newestMs)
+                {
+                    newestMs = clearMs;
+                }
+
+                index++;
+            }
+
+            if (!removeIsFresh)
+            {
+                // Raise-only (mirrors SeedRemoveMarker): same stale-replica rationale as the clear marker above.
+                _removeMarkerMs.InterlockedRaiseTo(_ParseMarkerMs(values[index]));
+                Interlocked.Exchange(ref _removeMarkerFetchedTicks, fetchedTicks);
+                removeMs = Interlocked.Read(ref _removeMarkerMs);
+                index++;
+            }
+
+            if (stale is not null)
+            {
+                for (var i = 0; i < stale.Count; i++)
+                {
+                    // Raise-only (mirrors SeedTagMarker): a stale durable read must not lower a newer per-tag
+                    // marker a backplane push already seeded. FetchedTicks is still refreshed so the freshness
+                    // window holds.
+                    var (markerMs, _) = _RaiseTagMarker(stale[i], _ParseMarkerMs(values[index + i]), fetchedTicks);
+
+                    if (markerMs > newestMs)
+                    {
+                        newestMs = markerMs;
+                    }
+                }
+
+                // Prune only when a fetch actually happened (mirrors _PrefetchTagMarkersAsync's gating): an
+                // all-fresh resolve has nothing new to prune, and fetches recur at least once per refresh
+                // window — the same cadence the prune throttle enforces — so gating here skips the per-read
+                // throttle check without delaying eviction beyond a window.
+                _PruneMarkerCacheIfDue();
+            }
+        }
 
         if (removeMs > newestMs)
         {
@@ -3309,10 +3429,11 @@ public sealed class RedisCache(
         }
     }
 
-    private ValueTask _TryRearmSlidingEntryAsync(
+    private ValueTask<long?> _TryRearmSlidingEntryAsync(
         RedisKey redisKey,
         RedisCacheEntryFrame.DecodedFrame frame,
-        DateTime now
+        DateTime now,
+        bool needResultingTtl = false
     )
     {
         if (
@@ -3320,16 +3441,29 @@ public sealed class RedisCache(
             || frame.PhysicalExpiresAt is not { } physicalExpiresAt
         )
         {
-            return ValueTask.CompletedTask;
+            return ValueTask.FromResult<long?>(null);
         }
 
         // The frame's embedded logical is a lower bound on the live key TTL (a metadata-only re-arm only ever
         // pushes the TTL out, never the frame), so the shared helper can use it to skip the KeyTimeToLive probe
-        // when at least half the window still remains.
-        return _RearmSlidingTtlAsync(redisKey, slidingExpiration, physicalExpiresAt, now, frame.LogicalExpiresAt);
+        // when at least half the window still remains. A caller consuming the script's TTL reply passes
+        // needResultingTtl, which disables that skip: no script run means no TTL to report.
+        return _RearmSlidingTtlAsync(
+            redisKey,
+            slidingExpiration,
+            physicalExpiresAt,
+            now,
+            needResultingTtl ? null : frame.LogicalExpiresAt
+        );
     }
 
-    private async ValueTask _RearmSlidingTtlAsync(
+    /// <summary>
+    /// Conditionally re-arms a sliding entry's TTL via the SlidingRearm script. Returns the script's reply —
+    /// the key's resulting TTL in milliseconds (new TTL after a re-arm, live PTTL when skipped, -1 persistent,
+    /// -2 missing) — or <see langword="null"/> when the script did not run (physical cap reached, fast-path
+    /// skip) or failed (best-effort: errors are logged and swallowed).
+    /// </summary>
+    private async ValueTask<long?> _RearmSlidingTtlAsync(
         RedisKey redisKey,
         TimeSpan slidingExpiration,
         DateTime physicalExpiresAt,
@@ -3341,7 +3475,7 @@ public sealed class RedisCache(
 
         if (remainingToCap <= TimeSpan.Zero)
         {
-            return;
+            return null;
         }
 
         // Re-arm once roughly half the idle window has elapsed. Exact integer halving (no lossy double cast).
@@ -3351,18 +3485,20 @@ public sealed class RedisCache(
         // the live TTL — which can only be larger — does too, so skip both the re-arm and its round trip.
         if (embeddedLogicalExpiresAt is { } embeddedLogical && embeddedLogical - now > rearmThreshold)
         {
-            return;
+            return null;
         }
 
         try
         {
             // #9: single-RTT atomic TTL-check-and-conditional-PEXPIRE via the loaded SlidingRearm script (EVALSHA
             // with NOSCRIPT recovery). Previously issued KeyTimeToLiveAsync then (conditionally) KeyExpireAsync.
+            // The script replies with the key's resulting TTL, so GetWithExpirationAsync reads the expiration
+            // from this same round trip instead of a follow-up KeyTimeToLiveAsync probe.
             var expiresIn = _Min(slidingExpiration, remainingToCap);
             var rearmThresholdMs = (long)rearmThreshold.TotalMilliseconds;
             var newTtlMs = (long)expiresIn.TotalMilliseconds;
 
-            await scriptsLoader
+            var result = await scriptsLoader
                 .EvaluateAsync(
                     _database,
                     SlidingRearmScriptDefinition.Instance,
@@ -3374,6 +3510,8 @@ public sealed class RedisCache(
                     }
                 )
                 .ConfigureAwait(false);
+
+            return (long)result;
         }
         catch (Exception exception)
         {
@@ -3381,6 +3519,8 @@ public sealed class RedisCache(
             {
                 _logger.LogSlidingExpirationRearmFailed(exception, redisKey.ToString());
             }
+
+            return null;
         }
     }
 

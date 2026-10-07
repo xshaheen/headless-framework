@@ -1300,10 +1300,13 @@ Read [dashboards.md](dashboards.md) for the shared authentication modes and prod
 The dashboard exposes operational endpoints that can create, update, delete, run, cancel, requeue, start, stop, and restart jobs. Authentication must be chosen explicitly — if no auth method (including `WithNoAuth()`) is called, the host fails to start, so the dashboard never ships publicly by omission. Treat `WithNoAuth()` as development-only unless the dashboard is isolated behind trusted network controls; production deployments should use `WithHostAuthentication(...)`, `WithBasicAuth(...)`, or `WithApiKey(...)`. No CORS policy is applied by default (same-origin only); use `SetCorsOrigins(...)` when the SPA is served cross-origin.
 
 Cron-occurrence graph selection remains history-derived: it first chooses the same inclusive UTC date window from
-distinct occurrence dates, then zero-fills gaps. `IJobPersistenceProvider.GetCronOccurrenceGraphStatusCountsAsync`
-is additive and has a compatibility implementation for third-party providers. A custom durable provider should
-override it so distinct-date selection and date/status aggregation happen in storage; otherwise the default
-implementation preserves behavior by projecting through the existing occurrence-list API.
+distinct occurrence dates, then zero-fills gaps. `IJobPersistenceProvider.GetCronOccurrenceGraphStatusCountsAsync`,
+`GetTimeJobStatusCountsAsync`, `GetTimeJobDailyStatusCountsAsync`, `GetTimeJobLockedOwnerCountsAsync`,
+`GetCronOccurrenceStatusCountsAsync`, `GetCronOccurrenceDailyStatusCountsAsync`, and
+`GetCronOccurrenceLockedOwnerCountsAsync` are additive and have default interface implementations for third-party
+providers. A custom durable provider should override them so status counts, owner counts, and date/status
+aggregations happen in storage; otherwise the default implementations preserve behavior by projecting through the
+existing list APIs.
 
 Dashboard API inputs are bounded: paginated queries accept page sizes from 1 through 100, JSON request bodies are limited to 1 MiB, and batch deletion accepts at most 500 IDs. Collection endpoints use the paginated routes.
 

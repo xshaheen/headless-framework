@@ -41,10 +41,11 @@ public sealed class UserPermissionGrantProvider(IPermissionGrantStore grantStore
             .IsGrantedAsync(permissionNames, Name, userId, cancellationToken)
             .ConfigureAwait(false);
 
+        // Identical for every iteration; hoisted so one array serves all results.
+        string[] providerKeys = [userId];
+
         foreach (var permission in permissions)
         {
-            string[] providerKeys = [userId];
-
             if (!statusMap.TryGetValue(permission.Name, out var status))
             {
                 result.Add(permission.Name, PermissionGrantResult.Undefined(providerKeys));

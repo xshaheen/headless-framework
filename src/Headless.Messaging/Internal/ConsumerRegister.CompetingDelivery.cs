@@ -501,9 +501,7 @@ internal sealed partial class ConsumerRegister
 
                 admission.Message.Origin = message;
 
-                var storageCapability = _capabilityModel.Providers.FirstOrDefault(capability =>
-                    capability.Role is MessagingProviderRole.Storage
-                );
+                var storageCapability = _capabilityModel.StorageProvider;
                 if (storageCapability?.InboxGuarantee is { } inboxGuarantee)
                 {
                     MessagingMetrics.RecordInbox(

@@ -144,8 +144,9 @@ internal sealed class VodafoneSmsSender(
 
     private string _ComputeHash(string input)
     {
-        using var hmac = new HMACSHA256(_secureHash);
-        var hashBytes = hmac.ComputeHash(Encoding.UTF8.GetBytes(input));
+        // One-shot static hash: a keyed HMAC instance re-derives the key schedule per send for a key that is
+        // fixed at construction.
+        var hashBytes = HMACSHA256.HashData(_secureHash, Encoding.UTF8.GetBytes(input));
 
         return Convert.ToHexString(hashBytes);
     }

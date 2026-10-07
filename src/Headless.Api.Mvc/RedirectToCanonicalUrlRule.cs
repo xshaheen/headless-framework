@@ -126,10 +126,9 @@ public sealed partial class RedirectToCanonicalUrlRule : IRule
             return true;
         }
 
-        // Cache attribute lookups to avoid O(n) metadata scans on each check
-        var hasNoTrailingSlash = endpoint.Metadata.GetMetadata<NoTrailingSlashAttribute>() is not null;
-        var hasNoLowercaseQueryString = endpoint.Metadata.GetMetadata<NoLowercaseQueryStringAttribute>() is not null;
-
+        // Attribute metadata scans are O(n) over endpoint metadata; each is read only inside its own
+        // normalization branch, so the common configuration (both options off, or already-canonical URL)
+        // skips both scans entirely.
         var isCanonical = true;
 
         var request = context.HttpContext.Request;
@@ -144,7 +143,7 @@ public sealed partial class RedirectToCanonicalUrlRule : IRule
             if (AppendTrailingSlash)
             {
                 // Append a trailing slash to the end of the URL.
-                if (!hasTrailingSlash && !hasNoTrailingSlash)
+                if (!hasTrailingSlash && endpoint.Metadata.GetMetadata<NoTrailingSlashAttribute>() is null)
                 {
                     request.Path = new PathString(request.Path.Value + _SlashCharacter);
                     isCanonical = false;
@@ -182,7 +181,10 @@ public sealed partial class RedirectToCanonicalUrlRule : IRule
                     }
                 }
 
-                if (request.QueryString.HasValue && !hasNoLowercaseQueryString)
+                if (
+                    request.QueryString.HasValue
+                    && endpoint.Metadata.GetMetadata<NoLowercaseQueryStringAttribute>() is null
+                )
                 {
                     foreach (var character in request.QueryString.Value!)
                     {

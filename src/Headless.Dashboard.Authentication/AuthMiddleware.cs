@@ -36,7 +36,8 @@ public sealed class AuthMiddleware(RequestDelegate next, ILogger<AuthMiddleware>
     /// <returns>A task that completes when the request has been handled.</returns>
     public async Task InvokeAsync(HttpContext context)
     {
-        var path = context.Request.Path.Value?.ToLowerInvariant() ?? "";
+        // All comparisons below are case-insensitive, so the request path needs no lowercased copy per request.
+        var path = context.Request.Path.Value ?? "";
 
         // Skip authentication for:
         // 1. Static files (handled by static files middleware)
@@ -49,7 +50,7 @@ public sealed class AuthMiddleware(RequestDelegate next, ILogger<AuthMiddleware>
         }
 
         // Only protect API endpoints
-        if (!path.StartsWith("/api/", StringComparison.Ordinal))
+        if (!path.StartsWith("/api/", StringComparison.OrdinalIgnoreCase))
         {
             await next(context);
             return;
@@ -102,16 +103,16 @@ public sealed class AuthMiddleware(RequestDelegate next, ILogger<AuthMiddleware>
 
     private static bool _IsExcludedPath(string path)
     {
-        return path.Contains("/assets/", StringComparison.Ordinal)
-            || path.EndsWith(".js", StringComparison.Ordinal)
-            || path.EndsWith(".css", StringComparison.Ordinal)
-            || path.EndsWith(".ico", StringComparison.Ordinal)
-            || path.EndsWith(".png", StringComparison.Ordinal)
-            || path.EndsWith(".jpg", StringComparison.Ordinal)
-            || path.EndsWith(".svg", StringComparison.Ordinal)
-            || path.EndsWith("/negotiate", StringComparison.Ordinal)
-            || string.Equals(path, "/api/auth/validate", StringComparison.Ordinal)
-            || string.Equals(path, "/api/auth/info", StringComparison.Ordinal);
+        return path.Contains("/assets/", StringComparison.OrdinalIgnoreCase)
+            || path.EndsWith(".js", StringComparison.OrdinalIgnoreCase)
+            || path.EndsWith(".css", StringComparison.OrdinalIgnoreCase)
+            || path.EndsWith(".ico", StringComparison.OrdinalIgnoreCase)
+            || path.EndsWith(".png", StringComparison.OrdinalIgnoreCase)
+            || path.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase)
+            || path.EndsWith(".svg", StringComparison.OrdinalIgnoreCase)
+            || path.EndsWith("/negotiate", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(path, "/api/auth/validate", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(path, "/api/auth/info", StringComparison.OrdinalIgnoreCase);
     }
 }
 
