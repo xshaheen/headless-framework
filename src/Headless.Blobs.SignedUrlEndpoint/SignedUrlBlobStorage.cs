@@ -82,12 +82,12 @@ internal sealed class SignedUrlBlobStorage(IBlobStorage inner, string? store, Bl
     public ValueTask UploadAsync(
         BlobLocation location,
         Stream content,
-        IReadOnlyDictionary<string, string>? metadata = null,
         string? contentType = null,
+        IReadOnlyDictionary<string, string>? metadata = null,
         CancellationToken cancellationToken = default
     )
     {
-        return inner.UploadAsync(location, content, metadata, contentType, cancellationToken);
+        return inner.UploadAsync(location, content, contentType, metadata, cancellationToken);
     }
 
     public ValueTask<IReadOnlyList<BlobBulkResult>> BulkUploadAsync(

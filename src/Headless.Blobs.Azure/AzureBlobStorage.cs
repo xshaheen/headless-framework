@@ -53,8 +53,8 @@ internal sealed class AzureBlobStorage(
     public async ValueTask UploadAsync(
         BlobLocation location,
         Stream content,
-        IReadOnlyDictionary<string, string>? metadata = null,
         string? contentType = null,
+        IReadOnlyDictionary<string, string>? metadata = null,
         CancellationToken cancellationToken = default
     )
     {
@@ -112,7 +112,7 @@ internal sealed class AzureBlobStorage(
                 static blob => blob.Path,
                 async (location, blob, ct) =>
                 {
-                    await UploadAsync(location, blob.Stream, blob.Metadata, blob.ContentType, ct).ConfigureAwait(false);
+                    await UploadAsync(location, blob.Stream, blob.ContentType, blob.Metadata, ct).ConfigureAwait(false);
                     return true;
                 },
                 cancellationToken

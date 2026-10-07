@@ -151,7 +151,7 @@ public sealed class ContractTypesTests : TestBase
         var metadata = new Dictionary<string, string>(StringComparer.Ordinal) { ["author"] = "test" };
 
         // Act
-        var request = new BlobUploadRequest("file.txt", stream, metadata);
+        var request = new BlobUploadRequest("file.txt", stream, Metadata: metadata);
 
         // Assert
         request.Metadata.Should().NotBeNull();

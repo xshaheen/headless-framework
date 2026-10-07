@@ -161,7 +161,7 @@ public static class BlobStorageExtensions
             memoryStream.ResetPosition();
 
             await storage
-                .UploadAsync(location, memoryStream, metadata, cancellationToken: cancellationToken)
+                .UploadAsync(location, memoryStream, metadata: metadata, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
         }
 

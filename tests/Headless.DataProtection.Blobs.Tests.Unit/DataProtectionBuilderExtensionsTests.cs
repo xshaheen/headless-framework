@@ -180,8 +180,8 @@ public sealed class DataProtectionBuilderExtensionsTests : TestBase
             .UploadAsync(
                 new BlobLocation("DataProtection", "friendly.xml"),
                 Arg.Any<Stream>(),
-                metadata: null,
                 contentType: null,
+                metadata: null,
                 Arg.Any<CancellationToken>()
             );
     }

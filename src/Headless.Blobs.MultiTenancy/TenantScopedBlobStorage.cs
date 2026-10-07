@@ -34,12 +34,12 @@ internal class TenantScopedBlobStorage(IBlobStorage inner, TenantBlobScope scope
     public ValueTask UploadAsync(
         BlobLocation location,
         Stream content,
-        IReadOnlyDictionary<string, string>? metadata = null,
         string? contentType = null,
+        IReadOnlyDictionary<string, string>? metadata = null,
         CancellationToken cancellationToken = default
     )
     {
-        return Inner.UploadAsync(Scope.Apply(location), content, metadata, contentType, cancellationToken);
+        return Inner.UploadAsync(Scope.Apply(location), content, contentType, metadata, cancellationToken);
     }
 
     public async ValueTask<IReadOnlyList<BlobBulkResult>> BulkUploadAsync(

@@ -446,8 +446,8 @@ public sealed class SignedUrlEndpointTests : TestBase
             .UploadAsync(
                 Arg.Any<BlobLocation>(),
                 Arg.Any<Stream>(),
-                Arg.Any<IReadOnlyDictionary<string, string>?>(),
                 Arg.Any<string?>(),
+                Arg.Any<IReadOnlyDictionary<string, string>?>(),
                 Arg.Any<CancellationToken>()
             )
             .Returns(ValueTask.FromException(new IOException("connection reset")));
