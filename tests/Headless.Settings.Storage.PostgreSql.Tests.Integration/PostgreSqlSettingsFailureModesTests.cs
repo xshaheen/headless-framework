@@ -69,7 +69,7 @@ public sealed class PostgreSqlSettingsFailureModesTests(PostgreSqlSettingsFixtur
                 .AllSatisfy(initialized => initialized.Should().BeTrue());
             (await _CountTablesAsync("settings_pg_concurrent", "setting_values")).Should().Be(1);
             (await _CountTablesAsync("settings_pg_concurrent", "setting_definitions")).Should().Be(1);
-            (await _CountIndexesAsync("settings_pg_concurrent")).Should().Be(3);
+            (await _CountIndexesAsync("settings_pg_concurrent")).Should().Be(4);
         }
         finally
         {

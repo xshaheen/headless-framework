@@ -84,6 +84,7 @@ public sealed class PermissionGrantRecordConfigurationTests
             .BeEquivalentTo([
                 ("ix_permission_grants_tenant_id_name_provider_name_provider_key", "\"tenant_id\" IS NOT NULL"),
                 ("ix_permission_grants_name_provider_name_provider_key_no_tenant", "\"tenant_id\" IS NULL"),
+                ("ix_permission_grants_provider_name_provider_key", (string?)null),
             ]);
     }
 

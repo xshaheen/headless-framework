@@ -80,6 +80,9 @@ internal static class SqlServerPermissionsSchemaContribution
                     CONSTRAINT [PK_{grantsName}] PRIMARY KEY CLUSTERED ([Id] ASC)
                 );
 
+            IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{grantsName}_ProviderName_ProviderKey' AND object_id = OBJECT_ID(N'{grantsObject}'))
+                CREATE NONCLUSTERED INDEX [IX_{grantsName}_ProviderName_ProviderKey] ON {grantsTable} ([ProviderName] ASC, [ProviderKey] ASC);
+
             IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_{grantsName}_TenantId_Name_ProviderName_ProviderKey' AND object_id = OBJECT_ID(N'{grantsObject}'))
                 CREATE UNIQUE NONCLUSTERED INDEX [IX_{grantsName}_TenantId_Name_ProviderName_ProviderKey] ON {grantsTable} ([TenantId] ASC, [Name] ASC, [ProviderName] ASC, [ProviderKey] ASC) WHERE [TenantId] IS NOT NULL;
 

@@ -12,9 +12,16 @@ internal static class SettingsStorageNames
 
     public static readonly string[] ValuesByNameNullProviderKey = ["Name", "ProviderName", "NullProviderKey"];
 
+    public static readonly string[] ValuesByProvider = ["ProviderName", "ProviderKey"];
+
     public static readonly string[] DefinitionsByName = ["Name"];
 
-    public static readonly string[][] ValuesIndexes = [ValuesByNameProviderKey, ValuesByNameNullProviderKey];
+    public static readonly string[][] ValuesIndexes =
+    [
+        ValuesByNameProviderKey,
+        ValuesByNameNullProviderKey,
+        ValuesByProvider,
+    ];
 
     public static readonly string[][] DefinitionsIndexes = [DefinitionsByName];
 }

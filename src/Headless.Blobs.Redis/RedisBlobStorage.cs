@@ -587,12 +587,19 @@ internal sealed class RedisBlobStorage : IBlobStorage
 
         _logger.LogGettingFileStream(key);
 
-        var fileContent = await _retryPipeline
+        // Fetch file content and metadata concurrently to halve download latency (two independent Redis hashes).
+        var fileContentTask = _retryPipeline
             .ExecuteAsync(
                 async _ => await Database.HashGetAsync(blobsHash, key).ConfigureAwait(false),
                 cancellationToken
             )
-            .ConfigureAwait(false);
+            .AsTask();
+
+        var blobInfoTask = _GetBlobInfoResolvedAsync(infoHash, key, cancellationToken);
+
+        await Task.WhenAll(fileContentTask, blobInfoTask).ConfigureAwait(false);
+
+        var fileContent = await fileContentTask.ConfigureAwait(false);
 
         if (fileContent.IsNull)
         {
@@ -602,7 +609,7 @@ internal sealed class RedisBlobStorage : IBlobStorage
         }
 
         // M4 fold: read the stored BlobInfo from the info hash and surface its metadata on the download result.
-        var blobInfo = await _GetBlobInfoResolvedAsync(infoHash, key, cancellationToken).ConfigureAwait(false);
+        var blobInfo = await blobInfoTask.ConfigureAwait(false);
 
         var stream = new MemoryStream(fileContent!);
 

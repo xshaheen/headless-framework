@@ -50,12 +50,17 @@ public sealed class DynamicSettingDefinitionStore(
             return null;
         }
 
+        // Fast path: lock-free read if cache is fresh
+        if (!_IsUpdateMemoryCacheRequired())
+        {
+            return _memoryCache.GetOrDefault(name);
+        }
+
         using (await _syncSemaphore.LockAsync(cancellationToken).ConfigureAwait(false))
         {
             await _EnsureMemoryCacheIsUptoDateAsync(cancellationToken).ConfigureAwait(false);
 
-            var cache = _memoryCache; // Capture local reference
-            return cache.GetOrDefault(name);
+            return _memoryCache.GetOrDefault(name);
         }
     }
 
@@ -67,12 +72,17 @@ public sealed class DynamicSettingDefinitionStore(
             return [];
         }
 
+        // Fast path: lock-free read if cache is fresh
+        if (!_IsUpdateMemoryCacheRequired())
+        {
+            return _settingListCache;
+        }
+
         using (await _syncSemaphore.LockAsync(cancellationToken).ConfigureAwait(false))
         {
             await _EnsureMemoryCacheIsUptoDateAsync(cancellationToken).ConfigureAwait(false);
 
-            var cache = _memoryCache; // Capture local reference
-            return cache.Values.ToImmutableList();
+            return _settingListCache;
         }
     }
 
@@ -84,6 +94,7 @@ public sealed class DynamicSettingDefinitionStore(
     private DateTimeOffset? _lastCheckTime;
     private readonly SemaphoreSlim _syncSemaphore = new(1, 1);
     private volatile Dictionary<string, SettingDefinition> _memoryCache = new(StringComparer.Ordinal);
+    private volatile IReadOnlyList<SettingDefinition> _settingListCache = [];
 
     private async Task _EnsureMemoryCacheIsUptoDateAsync(CancellationToken cancellationToken)
     {
@@ -158,6 +169,7 @@ public sealed class DynamicSettingDefinitionStore(
         }
 
         _memoryCache = newCache; // Atomic swap via volatile
+        _settingListCache = [.. newCache.Values];
     }
 
     private bool _IsUpdateMemoryCacheRequired()

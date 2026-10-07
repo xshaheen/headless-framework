@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Buffers;
 using Azure;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
@@ -76,6 +77,11 @@ public sealed partial class TusAzureStore
     private readonly ILogger<TusAzureStore> _logger;
     private readonly BlobContainerClient _containerClient;
 
+    // Dedicated buffer pool for staging chunks up to BlobMaxChunkSize. ArrayPool.Shared only pools
+    // arrays up to 1 MB, so renting 4-16 MB chunks against it forces continuous LOH allocations that
+    // are never reused.
+    private readonly ArrayPool<byte> _chunkPool;
+
     /// <summary>
     /// Initializes a new <c>TusAzureStore</c> and, when
     /// <see cref="TusAzureStoreOptions.CreateContainerIfNotExists"/> is <see langword="true"/>,
@@ -116,6 +122,7 @@ public sealed partial class TusAzureStore
         _timeProvider = timeProvider ?? TimeProvider.System;
         _fileIdProvider = fileIdProvider ?? _DefaultFileIdProvider;
         _logger = _loggerFactory.CreateLogger<TusAzureStore>();
+        _chunkPool = ArrayPool<byte>.Create(_options.BlobMaxChunkSize, maxArraysPerBucket: 8);
 
         _containerClient = blobServiceClient.GetBlobContainerClient(_options.ContainerName);
 

@@ -92,7 +92,7 @@ public sealed partial class TusAzureStore : ITusPipelineStore
         // replay bytes we left unconsumed — none — and data we have read must be in our hands to
         // satisfy "store as much of the received data as possible". With splitting disabled the
         // buffer grows to hold the entire PATCH body.
-        var accumulationBuffer = ArrayPool<byte>.Shared.Rent(optimalChunkSize);
+        var accumulationBuffer = _chunkPool.Rent(optimalChunkSize);
         var accumulatedCount = 0;
 
         try
@@ -227,7 +227,7 @@ public sealed partial class TusAzureStore : ITusPipelineStore
         finally
         {
             // clearArray: sensitive upload data must not leak to other pool users
-            ArrayPool<byte>.Shared.Return(accumulationBuffer, clearArray: true);
+            _chunkPool.Return(accumulationBuffer, clearArray: true);
         }
 
         return bytesWrittenThisRequest;
@@ -254,7 +254,7 @@ public sealed partial class TusAzureStore : ITusPipelineStore
         // Doubles the owned buffer (no-split mode only), clamped to MaxNoSplitBufferSize so a single
         // PATCH body cannot exhaust memory — the only in-flight bound when the upload length is deferred
         // (null), where _AssertNotToMuchData is a no-op.
-        static byte[] growAccumulationBuffer(byte[] buffer, int count, int maxBufferSize)
+        byte[] growAccumulationBuffer(byte[] buffer, int count, int maxBufferSize)
         {
             if (buffer.Length >= maxBufferSize)
             {
@@ -265,10 +265,10 @@ public sealed partial class TusAzureStore : ITusPipelineStore
             }
 
             var newSize = (int)Math.Min((long)buffer.Length * 2, maxBufferSize);
-            var larger = ArrayPool<byte>.Shared.Rent(newSize);
+            var larger = _chunkPool.Rent(newSize);
             buffer.AsSpan(0, count).CopyTo(larger);
             // clearArray: the discarded buffer held upload data that must not leak to other pool users.
-            ArrayPool<byte>.Shared.Return(buffer, clearArray: true);
+            _chunkPool.Return(buffer, clearArray: true);
             return larger;
         }
     }

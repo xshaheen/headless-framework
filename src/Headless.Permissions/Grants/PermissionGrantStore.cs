@@ -382,15 +382,21 @@ public sealed class PermissionGrantStore(
         CancellationToken cancellationToken
     )
     {
-        var cacheKeys = names
-            .Select(x => PermissionGrantCacheItem.CalculateCacheKey(x, providerName, providerKey))
-            .ToList();
+        var keyToName = new Dictionary<string, string>(names.Count, StringComparer.Ordinal);
+        var cacheKeys = new List<string>(names.Count);
+
+        foreach (var name in names)
+        {
+            var key = PermissionGrantCacheItem.CalculateCacheKey(name, providerName, providerKey);
+            cacheKeys.Add(key);
+            keyToName[key] = name;
+        }
 
         var cacheItemsMap = await cache.GetAllAsync(cacheKeys, cancellationToken).ConfigureAwait(false);
 
         var notCachedNames = cacheItemsMap
             .Where(x => !x.Value.HasValue)
-            .Select(x => _GetPermissionNameFormCacheKey(x.Key))
+            .Select(x => keyToName.TryGetValue(x.Key, out var n) ? n : _GetPermissionNameFormCacheKey(x.Key))
             .ToArray();
 
         logger.LogGetCachedItems(cacheKeys);
@@ -400,7 +406,7 @@ public sealed class PermissionGrantStore(
             logger.LogFoundInCache(cacheKeys);
 
             return cacheItemsMap.ToDictionary(
-                x => _GetPermissionNameFormCacheKey(x.Key),
+                x => keyToName.TryGetValue(x.Key, out var n) ? n : _GetPermissionNameFormCacheKey(x.Key),
                 x => PermissionGrantStatus.From(x.Value.Value?.IsGranted),
                 StringComparer.Ordinal
             );
@@ -417,7 +423,9 @@ public sealed class PermissionGrantStore(
         {
             var cachedItem = cacheItemsMap.GetOrDefault(cacheKey);
             var item = newCacheItems.GetOrDefault(cacheKey) ?? (cachedItem.HasValue ? cachedItem.Value : null);
-            var permissionName = _GetPermissionNameFormCacheKey(cacheKey);
+            var permissionName = keyToName.TryGetValue(cacheKey, out var n)
+                ? n
+                : _GetPermissionNameFormCacheKey(cacheKey);
 
             result[permissionName] = PermissionGrantStatus.From(item?.IsGranted);
         }

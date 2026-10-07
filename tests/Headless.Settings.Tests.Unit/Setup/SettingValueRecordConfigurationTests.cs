@@ -74,6 +74,7 @@ public sealed class SettingValueRecordConfigurationTests
             .BeEquivalentTo([
                 ("ix_setting_values_name_provider_name_provider_key", "\"provider_key\" IS NOT NULL"),
                 ("ix_setting_values_name_provider_name_null_provider_key", "\"provider_key\" IS NULL"),
+                ("ix_setting_values_provider_name_provider_key", (string?)null),
             ]);
     }
 
