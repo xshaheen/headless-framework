@@ -31,6 +31,9 @@ internal sealed class StatusCodesRewriterMiddleware(IProblemDetailsCreator probl
             return;
         }
 
+        // The response is written after request localization has unwound, so its culture has to be re-applied.
+        using var cultureScope = RequestCultureScope.Enter(context);
+
         // Evaluated before the status-code gate below: a rejection may need to override a status that is not
         // an error at all (a cookie-style scheme forbids with a 302), and the rejection's owner, not this
         // middleware, decides whether it applies.

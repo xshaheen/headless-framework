@@ -1,8 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using System.Net;
+using FluentValidation.Results;
 using Headless;
 using Headless.Api;
+using Headless.Api.Resources;
 using Headless.Api.ServiceDefaults;
 using Headless.Http;
 using Headless.Testing.Tests;
@@ -333,6 +335,47 @@ public sealed class HeadlessApiDefaultsTests : TestBase
         // then
         response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
         response.Content.Headers.ContentType!.MediaType.Should().Be(ContentTypes.Applications.ProblemJson);
+    }
+
+    [Theory]
+    [InlineData("/validation", HttpStatusCode.UnprocessableEntity, "problem:unprocessable_entity")]
+    [InlineData("/unknown-error", HttpStatusCode.InternalServerError, "problem:internal_error")]
+    [InlineData("/unauthorized", HttpStatusCode.Unauthorized, "problem:unauthorized")]
+    public async Task should_write_problem_details_in_the_request_culture_after_localization_has_unwound(
+        string path,
+        HttpStatusCode expectedStatus,
+        string detailKey
+    )
+    {
+        // given - localization is added after UseHeadless, so the exception or bare status reaches the
+        // exception handler and the status-code rewriter after the request culture has been restored
+        await using var app = await _CreateAppAsync(application =>
+        {
+            application.UseRequestLocalization(options =>
+                options.SetDefaultCulture("en").AddSupportedCultures("en", "ar").AddSupportedUICultures("en", "ar")
+            );
+            application.MapGet(
+                "/validation",
+                IResult () =>
+                    throw new FluentValidation.ValidationException([new ValidationFailure("Name", "Name is required.")])
+            );
+            application.MapGet("/unknown-error", IResult () => throw new InvalidOperationException("app"));
+            application.MapGet("/unauthorized", () => Results.Unauthorized());
+        });
+        using var client = _CreateClient(app);
+        using var request = new HttpRequestMessage(HttpMethod.Get, path);
+        request.Headers.AcceptLanguage.ParseAdd("ar");
+
+        // when
+        using var response = await client.SendAsync(request, AbortToken);
+
+        // then
+        response.StatusCode.Should().Be(expectedStatus);
+        using var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync(AbortToken));
+        body.RootElement.GetProperty("detail")
+            .GetString()
+            .Should()
+            .Be(Messages.ResourceManager.GetString(detailKey, CultureInfo.GetCultureInfo("ar")));
     }
 
     private async Task<WebApplication> _CreateAppAsync(

@@ -87,6 +87,10 @@ internal sealed partial class HeadlessApiExceptionHandler(
         CancellationToken cancellationToken
     )
     {
+        // The exception has unwound past any request localization, so the descriptors and the default detail
+        // below would otherwise resolve under the server culture.
+        using var cultureScope = RequestCultureScope.Enter(httpContext);
+
         ProblemDetails? problemDetails;
         int statusCode;
         int? retryAfterSeconds = null;

@@ -242,10 +242,10 @@ Resulting response shape (same for both surfaces):
   "type": "https://tools.ietf.org/html/rfc9110#section-15.5.4",
   "title": "forbidden",
   "status": 403,
-  "detail": "An operation required an ambient tenant context but none was set.",
+  "detail": "This operation requires a tenant, but none was set.",
   "error": {
     "code": "g:tenant_required",
-    "description": "An operation required an ambient tenant context but none was set."
+    "description": "This operation requires a tenant, but none was set."
   },
   "traceId": "...",
   "buildNumber": "...",

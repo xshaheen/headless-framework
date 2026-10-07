@@ -2,6 +2,7 @@
 
 using Headless.MultiTenancy;
 using Headless.MultiTenancy.Resources;
+using Headless.Primitives;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
@@ -70,7 +71,7 @@ internal static class TenantCatalogRejectionWriter
             // of the diagnostics option.
             TenantResolutionKind.Invalid => (
                 StatusCodes.Status400BadRequest,
-                problemDetailsCreator.BadRequest(error: TenancyMessageDescriber.IdentifierInvalid())
+                _BadRequest(problemDetailsCreator, TenancyMessageDescriber.IdentifierInvalid())
             ),
             TenantResolutionKind.Unknown when detailed => (
                 StatusCodes.Status404NotFound,
@@ -136,5 +137,12 @@ internal static class TenantCatalogRejectionWriter
         }
 
         await Results.Problem(problemDetails).ExecuteAsync(context).ConfigureAwait(false);
+    }
+
+    // The tenant identifier is malformed, not the request body, so the generic bad-request detail would
+    // contradict the error.
+    private static ProblemDetails _BadRequest(IProblemDetailsCreator problemDetailsCreator, ErrorDescriptor error)
+    {
+        return problemDetailsCreator.BadRequest(detail: error.Description, error: error);
     }
 }

@@ -20,7 +20,7 @@
     </value>
   </resheader>
   <data name="g:concurrency_failure" xml:space="preserve">
-    <value>Optimistic concurrency failure, object has been modified. Can not perform two operations at the same time.</value>
+    <value>Another operation changed this resource at the same time.</value>
   </data>
   <data name="g:unique_violation" xml:space="preserve">
     <value>A record with the same unique value already exists.</value>
@@ -32,37 +32,37 @@
     <value>If-Match must contain exactly one strong entity tag.</value>
   </data>
   <data name="g:feature_currently_unavailable" xml:space="preserve">
-    <value>This feature currently unavailable.</value>
+    <value>This feature is currently unavailable.</value>
   </data>
   <data name="g:unknown_error" xml:space="preserve">
-    <value>An unknown failure  has occurred.</value>
+    <value>An unknown error occurred.</value>
   </data>
   <data name="g:obsolete_api" xml:space="preserve">
-    <value>Obsolete API. This request is not available for this account.</value>
+    <value>This API is obsolete and is not available for this account.</value>
   </data>
   <data name="g:user_not_found" xml:space="preserve">
-    <value>Something went wrong. Try to log in again.</value>
+    <value>Something went wrong. Log in again.</value>
   </data>
   <data name="g:invalid_recaptcha" xml:space="preserve">
-    <value>Recaptcha host, and request host do not match.</value>
+    <value>The reCAPTCHA check failed or expired. Try again.</value>
   </data>
   <data name="g:not_authorized" xml:space="preserve">
-    <value>You are not authenticated to execute request.</value>
+    <value>You must be authenticated to make this request.</value>
   </data>
   <data name="g:rate_limit_exceeded" xml:space="preserve">
     <value>Too many requests. Try again later.</value>
   </data>
   <data name="g:duplicated_request" xml:space="preserve">
-    <value>Duplicated request detected.</value>
+    <value>This request is a duplicate.</value>
   </data>
   <data name="g:tenant_required" xml:space="preserve">
-    <value>An operation required an ambient tenant context but none was set.</value>
+    <value>This operation requires a tenant, but none was set.</value>
   </data>
   <data name="g:cross_tenant_write" xml:space="preserve">
-    <value>Tenant-owned write does not match the current tenant context.</value>
+    <value>This write does not match the current tenant.</value>
   </data>
   <data name="g:invalid_request_type" xml:space="preserve">
-    <value>Invalid request type configured for this endpoint.</value>
+    <value>The request type configured for this endpoint is invalid.</value>
   </data>
   <data name="problem:endpoint_not_found" xml:space="preserve">
     <value>The requested endpoint '{0}' was not found.</value>
@@ -71,16 +71,16 @@
     <value>The requested resource was not found.</value>
   </data>
   <data name="problem:bad_request" xml:space="preserve">
-    <value>Failed to parse. The request body is empty or could not be understood by the server due to malformed syntax.</value>
+    <value>The request could not be read. Its body is empty or malformed.</value>
   </data>
   <data name="problem:unauthorized" xml:space="preserve">
-    <value>You are unauthenticated to access this resource.</value>
+    <value>You must be authenticated to access this resource.</value>
   </data>
   <data name="problem:forbidden" xml:space="preserve">
-    <value>You are forbidden from accessing this resource.</value>
+    <value>You do not have permission to access this resource.</value>
   </data>
   <data name="problem:conflict" xml:space="preserve">
-    <value>Conflict - one or more business rules violated.</value>
+    <value>The request violates one or more business rules.</value>
   </data>
   <data name="problem:unprocessable_entity" xml:space="preserve">
     <value>One or more validation errors occurred.</value>
@@ -89,7 +89,7 @@
     <value>An error occurred while processing your request.</value>
   </data>
   <data name="problem:too_many_requests" xml:space="preserve">
-    <value>Too many requests - please try again later.</value>
+    <value>Too many requests. Try again later.</value>
   </data>
   <data name="problem:request_timeout" xml:space="preserve">
     <value>The request timed out.</value>
@@ -101,9 +101,9 @@
     <value>The request payload is too large to process.</value>
   </data>
   <data name="problem:service_unavailable" xml:space="preserve">
-    <value>The service is temporarily unavailable - please try again later.</value>
+    <value>The service is temporarily unavailable. Try again later.</value>
   </data>
   <data name="problem:if_match_unsupported" xml:space="preserve">
-    <value>If-Match contains an entity tag that is not supported by this API.</value>
+    <value>If-Match contains an entity tag that this API does not support.</value>
   </data>
 </root>
