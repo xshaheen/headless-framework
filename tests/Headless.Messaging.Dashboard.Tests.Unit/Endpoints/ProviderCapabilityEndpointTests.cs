@@ -7,6 +7,7 @@ using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Tests.Endpoints;
 
@@ -105,8 +106,10 @@ public sealed class ProviderCapabilityEndpointTests : TestBase
         var builder = WebApplication.CreateSlimBuilder();
         builder.WebHost.UseTestServer();
         builder.Services.AddSingleton(config);
-        builder.Services.AddSingleton(config.Auth);
-        builder.Services.AddScoped<IAuthService, AuthService>();
+        builder.Services.AddKeyedScoped<IAuthService>(
+            MessagingDashboardOptionsBuilder.AuthenticationName,
+            (sp, _) => new AuthService(config.Auth, sp.GetRequiredService<ILogger<AuthService>>())
+        );
         builder.Services.AddSingleton(Substitute.For<IRequestMapper>());
         builder.Services.AddSingleton(Substitute.For<IHttpClientFactory>());
         builder.Services.AddSingleton<MessagingDashboardCache>();

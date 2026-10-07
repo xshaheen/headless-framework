@@ -1366,6 +1366,7 @@ Auth detection is automatic: explicit `WithNoAuth()` → public; basic auth → 
 ### Runtime behavior
 
 - Mounts dashboard HTTP API and SignalR hub under `SetBasePath` path via `IStartupFilter` (no explicit `app.Use…` call needed).
+- Authenticates with its own configuration, registered under `DashboardOptionsBuilder.AuthenticationName`, so a Messaging dashboard in the same host can use another mode. The live-update hub authenticates the same credential in every mode; see [Jobs live-update hub](dashboards.md#jobs-live-update-hub).
 - Subscribes to `Headless.Coordination` membership events for live-node push updates.
 - A committed time-job or cron-job delete, single or batch, pushes `RemoveTimeJobNotification` or `RemoveCronJobNotification` for each requested id, so every open dashboard drops the rows; the dashboard that issued the delete also reloads its list itself. A failed notification is logged (event 3239) and never fails the delete.
 - Serves embedded frontend SPA assets; requires Node 22 on `PATH` when building from source (build target `make dashboards`).

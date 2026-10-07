@@ -1,7 +1,10 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using System.Security.Claims;
 using Headless.Dashboard.Authentication;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging;
 
 namespace Tests;
@@ -163,16 +166,22 @@ public sealed class AuthServiceTests : TestBase
         result.ErrorMessage.Should().Be("No authorization provided");
     }
 
-    [Fact]
-    public async Task reads_access_token_from_query_parameter_on_signalr_paths()
+    [Theory]
+    [InlineData(AuthMode.ApiKey, "Bearer:my-key")]
+    [InlineData(AuthMode.ApiKey, "my-key")]
+    [InlineData(AuthMode.Custom, "Token raw value")]
+    public async Task reads_access_token_on_a_hub_endpoint_whatever_its_path(AuthMode mode, string accessToken)
     {
-        // The access_token query parameter is intentionally only honored on SignalR
-        // negotiate/hub paths (query strings leak to logs/history/Referer).
-        var config = new AuthConfig { Mode = AuthMode.ApiKey, ApiKey = "my-key" };
+        // The Jobs hub is mapped at /job-notification-hub: no "/hub" segment, so routing metadata, not the path,
+        // decides whether the query credential counts.
+        var config = new AuthConfig
+        {
+            Mode = mode,
+            ApiKey = "my-key",
+            CustomValidator = (credential, _) => string.Equals(credential, "Token raw value", StringComparison.Ordinal),
+        };
         var service = new AuthService(config, _logger);
-        var context = new DefaultHttpContext();
-        context.Request.Path = "/dashboard/hub";
-        context.Request.QueryString = new QueryString("?access_token=my-key");
+        var context = _HubContext("/job-notification-hub", accessToken);
 
         var result = await service.AuthenticateAsync(context, AbortToken);
 
@@ -180,18 +189,60 @@ public sealed class AuthServiceTests : TestBase
     }
 
     [Fact]
-    public async Task ignores_access_token_query_parameter_on_non_signalr_paths()
+    public async Task reads_the_basic_credential_from_access_token_on_a_hub_endpoint()
+    {
+        var credentials = "admin:pass".ToBase64();
+        var config = new AuthConfig { Mode = AuthMode.Basic, BasicCredentials = credentials };
+        var service = new AuthService(config, _logger);
+        var context = _HubContext("/job-notification-hub", credentials);
+
+        var result = await service.AuthenticateAsync(context, AbortToken);
+
+        result.IsAuthenticated.Should().BeTrue();
+        result.Username.Should().Be("admin");
+    }
+
+    [Theory]
+    [InlineData("/api/data")]
+    [InlineData("/dashboard/hub")]
+    [InlineData("/dashboard/hub/negotiate")]
+    public async Task ignores_access_token_query_parameter_off_hub_endpoints(string path)
     {
         var config = new AuthConfig { Mode = AuthMode.ApiKey, ApiKey = "my-key" };
         var service = new AuthService(config, _logger);
         var context = new DefaultHttpContext();
-        context.Request.Path = "/api/data";
+        context.Request.Path = path;
         context.Request.QueryString = new QueryString("?access_token=my-key");
 
         var result = await service.AuthenticateAsync(context, AbortToken);
 
         result.IsAuthenticated.Should().BeFalse();
         result.ErrorMessage.Should().Be("No authorization provided");
+    }
+
+    [Fact]
+    public async Task prefers_the_authorization_header_over_the_hub_access_token()
+    {
+        var config = new AuthConfig { Mode = AuthMode.ApiKey, ApiKey = "my-key" };
+        var service = new AuthService(config, _logger);
+        var context = _HubContext("/job-notification-hub", "my-key");
+        context.Request.Headers.Authorization = "Bearer wrong-key";
+
+        var result = await service.AuthenticateAsync(context, AbortToken);
+
+        result.IsAuthenticated.Should().BeFalse();
+    }
+
+    private static DefaultHttpContext _HubContext(string path, string accessToken)
+    {
+        var context = new DefaultHttpContext();
+        context.Request.Path = path;
+        context.Request.QueryString = QueryString.Create("access_token", accessToken);
+        context.SetEndpoint(
+            new Endpoint(_ => Task.CompletedTask, new EndpointMetadataCollection(new HubMetadata(typeof(Hub))), "hub")
+        );
+
+        return context;
     }
 
     [Fact]

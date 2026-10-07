@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Headless.Jobs.Endpoints;
 
@@ -227,13 +228,32 @@ internal static class DashboardEndpoints
             .WithName("GetLiveNodes")
             .WithSummary("Get live cluster nodes from the coordination membership substrate");
 
-        // SignalR Hub - authentication handled in hub OnConnectedAsync
-        endpoints.MapHub<JobsNotificationHub>("/job-notification-hub").AllowAnonymous();
+        // SignalR hub: the hub authenticates in OnConnectedAsync. Under host auth it also carries the API's
+        // authorization policy, so a host user the policy refuses gets no live job updates either.
+        var hub = endpoints.MapHub<JobsNotificationHub>(JobsNotificationHub.Path);
+        if (config.Auth.Mode == AuthMode.Host)
+        {
+            if (!string.IsNullOrEmpty(config.Auth.HostAuthorizationPolicy))
+            {
+                hub.RequireAuthorization(config.Auth.HostAuthorizationPolicy);
+            }
+            else
+            {
+                hub.RequireAuthorization();
+            }
+        }
+        else
+        {
+            hub.AllowAnonymous();
+        }
     }
 
     #region Endpoint Handlers
 
-    private static IResult _GetAuthInfo(IAuthService authService, DashboardOptionsBuilder dashboardOptions)
+    private static IResult _GetAuthInfo(
+        [FromKeyedServices(DashboardOptionsBuilder.AuthenticationName)] IAuthService authService,
+        DashboardOptionsBuilder dashboardOptions
+    )
     {
         var authInfo = authService.GetAuthInfo();
 
@@ -250,7 +270,7 @@ internal static class DashboardEndpoints
 
     private static async Task<IResult> _ValidateAuth(
         HttpContext context,
-        IAuthService authService,
+        [FromKeyedServices(DashboardOptionsBuilder.AuthenticationName)] IAuthService authService,
         DashboardOptionsBuilder dashboardOptions
     )
     {

@@ -1,3 +1,5 @@
+// Copyright (c) Mahmoud Shaheen. All rights reserved.
+
 using System.Security.Claims;
 using Headless.Dashboard.Authentication;
 using Headless.Testing.Tests;
@@ -9,6 +11,9 @@ namespace Tests;
 
 public sealed class AuthMiddlewareTests : TestBase
 {
+    private const string _Name = "dashboard-a";
+    private const string _OtherName = "dashboard-b";
+
     private readonly ILogger<AuthMiddleware> _logger = Substitute.For<ILogger<AuthMiddleware>>();
 
     [Theory]
@@ -30,6 +35,7 @@ public sealed class AuthMiddlewareTests : TestBase
                 nextCalled = true;
                 return Task.CompletedTask;
             },
+            _Name,
             _logger
         );
         var context = new DefaultHttpContext();
@@ -50,6 +56,7 @@ public sealed class AuthMiddlewareTests : TestBase
                 nextCalled = true;
                 return Task.CompletedTask;
             },
+            _Name,
             _logger
         );
         var context = new DefaultHttpContext();
@@ -63,15 +70,19 @@ public sealed class AuthMiddlewareTests : TestBase
     [Fact]
     public async Task returns_401_for_unauthenticated_api_request()
     {
-        var config = new AuthConfig { Mode = AuthMode.ApiKey, ApiKey = "secret" };
-
         var services = new ServiceCollection();
-        services.AddSingleton(config);
         services.AddLogging();
-        services.AddScoped<IAuthService, AuthService>();
+        services.AddDashboardAuthentication(
+            _Name,
+            config =>
+            {
+                config.Mode = AuthMode.ApiKey;
+                config.ApiKey = "secret";
+            }
+        );
         var sp = services.BuildServiceProvider();
 
-        var middleware = new AuthMiddleware(_ => Task.CompletedTask, _logger);
+        var middleware = new AuthMiddleware(_ => Task.CompletedTask, _Name, _logger);
         var context = new DefaultHttpContext { RequestServices = sp };
         context.Request.Path = "/api/data";
 
@@ -83,12 +94,16 @@ public sealed class AuthMiddlewareTests : TestBase
     [Fact]
     public async Task passes_through_for_authenticated_api_request()
     {
-        var config = new AuthConfig { Mode = AuthMode.ApiKey, ApiKey = "secret" };
-
         var services = new ServiceCollection();
-        services.AddSingleton(config);
         services.AddLogging();
-        services.AddScoped<IAuthService, AuthService>();
+        services.AddDashboardAuthentication(
+            _Name,
+            config =>
+            {
+                config.Mode = AuthMode.ApiKey;
+                config.ApiKey = "secret";
+            }
+        );
         var sp = services.BuildServiceProvider();
 
         var nextCalled = false;
@@ -98,6 +113,7 @@ public sealed class AuthMiddlewareTests : TestBase
                 nextCalled = true;
                 return Task.CompletedTask;
             },
+            _Name,
             _logger
         );
         var context = new DefaultHttpContext { RequestServices = sp };
@@ -125,7 +141,7 @@ public sealed class AuthMiddlewareTests : TestBase
             .AuthenticateAsync(Arg.Any<HttpContext>(), Arg.Any<CancellationToken>())
             .Returns(AuthResult.Success("host-operator"));
         var services = new ServiceCollection();
-        services.AddSingleton(authService);
+        services.AddKeyedSingleton(_Name, authService);
         var context = new DefaultHttpContext
         {
             RequestServices = services.BuildServiceProvider(),
@@ -133,9 +149,51 @@ public sealed class AuthMiddlewareTests : TestBase
         };
         context.Request.Path = "/api/data";
 
-        var middleware = new AuthMiddleware(_ => Task.CompletedTask, _logger);
+        var middleware = new AuthMiddleware(_ => Task.CompletedTask, _Name, _logger);
         await middleware.InvokeAsync(context);
 
         context.User.Should().BeSameAs(hostPrincipal);
+    }
+
+    [Fact]
+    public async Task authenticates_with_the_named_dashboard_config_when_another_dashboard_registers_its_own()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddDashboardAuthentication(
+            _Name,
+            config =>
+            {
+                config.Mode = AuthMode.ApiKey;
+                config.ApiKey = "key-a";
+            }
+        );
+        services.AddDashboardAuthentication(
+            _OtherName,
+            config =>
+            {
+                config.Mode = AuthMode.ApiKey;
+                config.ApiKey = "key-b";
+            }
+        );
+        await using var sp = services.BuildServiceProvider();
+
+        var own = await _InvokeAsync(sp, _Name, "Bearer key-a");
+        var other = await _InvokeAsync(sp, _Name, "Bearer key-b");
+
+        own.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        other.Response.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
+    }
+
+    private async Task<HttpContext> _InvokeAsync(IServiceProvider sp, string name, string authorization)
+    {
+        await using var scope = sp.CreateAsyncScope();
+        var context = new DefaultHttpContext { RequestServices = scope.ServiceProvider };
+        context.Request.Path = "/api/data";
+        context.Request.Headers.Authorization = authorization;
+
+        await new AuthMiddleware(_ => Task.CompletedTask, name, _logger).InvokeAsync(context);
+
+        return context;
     }
 }

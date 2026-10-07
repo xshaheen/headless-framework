@@ -121,7 +121,7 @@ internal static class JobsDashboardServiceCollectionExtensions
                 // Add authentication + authorization middleware
                 if (config.Auth.IsEnabled)
                 {
-                    dashboardApp.UseMiddleware<AuthMiddleware>();
+                    dashboardApp.UseMiddleware<AuthMiddleware>(DashboardOptionsBuilder.AuthenticationName);
                 }
 
                 dashboardApp.UseAuthorization();

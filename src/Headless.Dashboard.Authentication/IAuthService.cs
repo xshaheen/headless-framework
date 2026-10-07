@@ -9,7 +9,8 @@ namespace Headless.Dashboard.Authentication;
 /// </summary>
 /// <remarks>
 /// Consumed by <see cref="AuthMiddleware"/> on protected API requests. Implementations
-/// are resolved from the request service scope so they can use scoped dependencies.
+/// are keyed by the dashboard's authentication name and resolved from the request service scope, so they
+/// can use scoped dependencies.
 /// </remarks>
 [PublicAPI]
 public interface IAuthService

@@ -189,8 +189,10 @@ public sealed class PingServicesSecurityTests : TestBase
         var builder = WebApplication.CreateSlimBuilder();
         builder.WebHost.UseTestServer();
         builder.Services.AddSingleton(config);
-        builder.Services.AddSingleton(config.Auth);
-        builder.Services.AddSingleton(Substitute.For<IAuthService>());
+        builder.Services.AddKeyedSingleton(
+            MessagingDashboardOptionsBuilder.AuthenticationName,
+            Substitute.For<IAuthService>()
+        );
         builder.Services.AddSingleton(discoveryProvider);
         builder.Services.AddSingleton(httpClientFactory);
         builder.Services.AddSingleton(Substitute.For<IRequestMapper>());

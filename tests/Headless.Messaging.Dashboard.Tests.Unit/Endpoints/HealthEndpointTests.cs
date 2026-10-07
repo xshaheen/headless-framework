@@ -6,6 +6,7 @@ using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Tests.Endpoints;
 
@@ -53,8 +54,10 @@ public sealed class HealthEndpointTests : TestBase
         builder.WebHost.UseTestServer();
 
         builder.Services.AddSingleton(config);
-        builder.Services.AddSingleton(config.Auth);
-        builder.Services.AddScoped<IAuthService, AuthService>();
+        builder.Services.AddKeyedScoped<IAuthService>(
+            MessagingDashboardOptionsBuilder.AuthenticationName,
+            (sp, _) => new AuthService(config.Auth, sp.GetRequiredService<ILogger<AuthService>>())
+        );
         // Gateway proxy deps for ActivatorUtilities resolution
         builder.Services.AddSingleton(Substitute.For<IRequestMapper>());
         builder.Services.AddSingleton(Substitute.For<IHttpClientFactory>());
