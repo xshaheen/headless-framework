@@ -39,7 +39,7 @@ The solution has ~430 projects. A full build takes a long time, and the integrat
 2. The projects whose behavior depends on the code you changed. For example, a change to `Headless.Caching.Abstractions` affects every `Headless.Caching.*` provider.
 3. The unit and integration test projects of the projects in 1 and 2.
 
-`make affected` prints that set, computed from the `ProjectReference` graph (`scripts/project-graph.py`) against `@{upstream}` (else `origin/main`), uncommitted and untracked files included. A change to a build-wide file (`global.json`, `Directory.*.props`, `.editorconfig`, `eng/DashboardSpa.targets`) selects every project below it.
+`make affected` prints that set, computed from the `ProjectReference` graph (`scripts/project-graph.py`) against `@{upstream}` (else `origin/main`), uncommitted and untracked files included. A change to a build-wide file (`global.json`, `Directory.*.props`, `.editorconfig`, `eng/DashboardSpa.targets`) selects every project below it. It adds only the direct dependents of a changed project. A pull request's CI run adds every transitive dependent (`scripts/project-graph.py affected --transitive`), so CI can build and test a dependent of a dependent that the local run skipped.
 
 Use the affected and project-scoped targets: `test-class` with `TEST_PROJECT`, `test-project`, `build-project`, `build-affected`, `test-affected`, `test-failed`, `verify-affected`, `test-affected-integration`, and `quality-analyzers-affected`. Run a solution-wide target (`build`, `rebuild`, `test`, `test-unit`, `test-integration`, `coverage`, `quality-analyzers`) only when the user asks for it, or when the change touches shared build files such as `Directory.Build.props`, `Directory.Packages.props`, or `eng/`.
 
@@ -79,6 +79,9 @@ Use the affected and project-scoped targets: `test-class` with `TEST_PROJECT`, `
 ### CI
 
 - **CI compiles twice, then runs the unit suite.** The `build` job uses `-p:RunAnalyzers=false`, and the `analyzers` job runs the full analyzer set. Both use `--no-incremental` and treat warnings as errors.
+- **A pull request builds and tests only what it can affect.** `make ci-scope` selects the changed projects, every transitive dependent, and their test projects, and writes solution filters that both .NET jobs build. Pushes to `main`, releases, and dispatches build and test the whole solution. So does a pull request that changes anything outside a project, such as a workflow, a script, the `Makefile`, a build-wide props file, or package versions. A pull request that changes no project and only documentation skips the .NET jobs. A break that the project graph cannot see, such as a reflection-only or runtime-discovered dependency, surfaces only on the full run after merge.
+- **Coverage runs outside the required check.** `coverage.yml` builds and runs the unit suite with coverage on each push to `main`, and uploads the `coverage-results` artifact. Nothing gates on it.
+- **CodeQL does not compile.** It uses build-mode none, so it does not analyze code that source generators emit.
 - **`main` requires only the `CI status` job in `ci.yml`.** A skipped job passes. Add every new CI job to the `needs` list of `CI status`. When you change a trigger on a required workflow, change branch protection in the same change.
 - **CI runs no integration suite.** See [Work in the affected scope](#work-in-the-affected-scope).
 - **Every CI run checks layering.** The `changes` job runs `make check-layering` (an Abstractions package references only Abstractions or foundation packages; a family's root package never references that family's providers; no public namespace or source folder is named after a kind of type).

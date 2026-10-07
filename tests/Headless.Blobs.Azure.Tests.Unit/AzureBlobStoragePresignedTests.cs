@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Azure.Core;
 using Azure.Storage.Blobs;
 using Headless.Blobs;
 using Headless.Blobs.Azure;
@@ -14,8 +15,21 @@ public sealed class AzureBlobStoragePresignedTests : TestBase
 {
     private static AzureBlobStorage _CreateStorageWithoutSigningCredentials()
     {
-        // An anonymous client (no account key / user delegation key) cannot generate a SAS.
-        var blobServiceClient = new BlobServiceClient(new Uri("https://account.blob.core.windows.net"));
+        // An anonymous client (no account key / user delegation key) cannot generate a SAS, so the presigned
+        // path falls through to GetUserDelegationKeyAsync. The endpoint points at a local port nothing listens
+        // on, with retries disabled: the key request fails at once instead of a DNS lookup and retry backoff
+        // against a real account host, keeping the unit test off the network and deterministic.
+        var options = new BlobClientOptions
+        {
+            Retry =
+            {
+                MaxRetries = 0,
+                Mode = RetryMode.Fixed,
+                Delay = TimeSpan.Zero,
+                NetworkTimeout = TimeSpan.FromSeconds(5),
+            },
+        };
+        var blobServiceClient = new BlobServiceClient(new Uri("http://127.0.0.1:9/"), options);
 
         return new AzureBlobStorage(
             blobServiceClient,

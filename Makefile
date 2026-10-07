@@ -182,6 +182,11 @@ CI_REPORT_ARGS ?= $(if $(GITHUB_ACTIONS),--report-gh,)
 CI_TEST_ARGS ?= --report-trx
 # Coverage from a second run of the same binaries (e.g. the non-UTC time-zone leg) only duplicates the first.
 CI_COVERAGE ?= true
+# A pull request builds and tests only what it can affect. ci-scope writes the solution filters here, and
+# ci-test runs the unit-test filter instead of every built module when CI_TEST_SOLUTION names one.
+CI_SCOPE_DIR ?= $(ARTIFACTS_DIR)/ci-scope
+CI_TEST_SOLUTION ?=
+CI_TEST_SELECTION = $(if $(CI_TEST_SOLUTION),--solution "$(CI_TEST_SOLUTION)" --configuration "$(CONFIGURATION)" --no-build --no-restore,--test-modules "$(UNIT_TEST_MODULES)" --root-directory "$(CURDIR)")
 
 .PHONY: help
 help: ## Show available commands.
@@ -776,7 +781,7 @@ test-fast: ## Run all tests without restore/build. Requires existing $(CONFIGURA
 	$(DOTNET) test --solution "$(SOLUTION)" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$(TEST_RESULTS_DIR)" --max-parallel-test-modules $(TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER)
 
 .PHONY: ci-test
-ci-test: ## Run prebuilt unit tests with TRX and Cobertura coverage (CI_COVERAGE=false skips coverage). Requires existing $(CONFIGURATION) build outputs.
+ci-test: ## Run prebuilt unit tests with TRX and Cobertura coverage (CI_COVERAGE=false skips coverage; CI_TEST_SOLUTION=<slnf> limits the modules). Requires existing $(CONFIGURATION) build outputs.
 	@mkdir -p "$(TEST_RESULTS_DIR)"
 	@coverage_args=(); \
 	if [[ "$(CI_COVERAGE)" == "true" ]]; then \
@@ -787,7 +792,16 @@ ci-test: ## Run prebuilt unit tests with TRX and Cobertura coverage (CI_COVERAGE
 		fi; \
 		coverage_args=(--coverage --coverage-output-format cobertura --coverage-settings "$$coverage_settings"); \
 	fi; \
-	$(DOTNET) test --test-modules "$(UNIT_TEST_MODULES)" --root-directory "$(CURDIR)" --results-directory "$(TEST_RESULTS_DIR)" --max-parallel-test-modules $(TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER) $(CI_REPORT_ARGS) $(CI_TEST_ARGS) $${coverage_args[@]+"$${coverage_args[@]}"}
+	$(DOTNET) test $(CI_TEST_SELECTION) --results-directory "$(TEST_RESULTS_DIR)" --max-parallel-test-modules $(TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER) $(CI_REPORT_ARGS) $(CI_TEST_ARGS) $${coverage_args[@]+"$${coverage_args[@]}"}
+
+# Only a pull request narrows the scope, to the changed projects and every transitive dependent plus their
+# tests; pushes, releases, dispatches, and any change the project graph cannot attribute to a project (a
+# workflow, a script, this Makefile, a build-wide props file, package versions) build everything. The
+# key=value lines are written for $$GITHUB_OUTPUT: scope (full, affected or empty), solution (what to
+# rebuild), unit_solution (the CI_TEST_SOLUTION for ci-test), and spa (whether a dashboard SPA is built).
+.PHONY: ci-scope
+ci-scope: ## CI: choose the build and test scope for GITHUB_EVENT_NAME, BASE_SHA and HEAD_SHA; prints key=value lines.
+	@$(GRAPH) ci-scope --event "$${GITHUB_EVENT_NAME:-}" --base "$${BASE_SHA:-}" --head "$${HEAD_SHA:-HEAD}" --out-dir "$(CI_SCOPE_DIR)" --solution "$(SOLUTION)"
 
 .PHONY: ci-messaging-conformance-evidence
 ci-messaging-conformance-evidence: ## Execute every supported local-broker messaging conformance scenario (Azure uses its protected workflow).
