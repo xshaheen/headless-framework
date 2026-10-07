@@ -20,7 +20,7 @@ namespace Headless.Messaging;
 /// created once; the cache is flushed on failure to allow recovery on the next publish attempt.
 /// </remarks>
 [PublicAPI]
-public static class SetupPulsarMessaging
+public static class SetupMessagingPulsar
 {
     extension(MessagingSetupBuilder setup)
     {

@@ -793,7 +793,7 @@
           "Headless.Checks": "[1.0.0, )"
         }
       },
-      "headless.coordination.database": {
+      "headless.coordination.sql": {
         "type": "Project",
         "dependencies": {
           "Headless.Coordination": "[1.0.0, )",
@@ -805,7 +805,7 @@
       "headless.coordination.sqlserver": {
         "type": "Project",
         "dependencies": {
-          "Headless.Coordination.Database": "[1.0.0, )",
+          "Headless.Coordination.Sql": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
           "Headless.Hosting": "[1.0.0, )",
           "Headless.Sql.SqlServer": "[1.0.0, )"
@@ -1111,6 +1111,7 @@
           "Headless.Hosting": "[1.0.0, )",
           "Headless.Sql": "[1.0.0, )",
           "Headless.Sql.Abstractions": "[1.0.0, )",
+          "Headless.UnitOfWork": "[1.0.0, )",
           "Microsoft.Data.SqlClient": "[7.1.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.12, )"
@@ -1174,15 +1175,6 @@
           "Headless.Checks": "[1.0.0, )",
           "Headless.UnitOfWork": "[1.0.0, )",
           "Microsoft.EntityFrameworkCore.Relational": "[10.0.12, )",
-          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )"
-        }
-      },
-      "headless.unitofwork.sqlserver": {
-        "type": "Project",
-        "dependencies": {
-          "Headless.Checks": "[1.0.0, )",
-          "Headless.UnitOfWork": "[1.0.0, )",
-          "Microsoft.Data.SqlClient": "[7.1.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )"
         }
       },

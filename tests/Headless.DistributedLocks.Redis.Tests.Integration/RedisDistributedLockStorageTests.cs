@@ -2,7 +2,6 @@
 
 using Headless.DistributedLocks;
 using Headless.DistributedLocks.Redis;
-using Headless.Redis.Testing;
 using Headless.Testing.Tests;
 using StackExchange.Redis;
 
@@ -18,7 +17,7 @@ public sealed class RedisDistributedLockStorageTests(RedisTestFixture fixture) :
     public override async ValueTask InitializeAsync()
     {
         await base.InitializeAsync();
-        await fixture.ConnectionMultiplexer.FlushAllAsync();
+        await fixture.FlushAllAsync(AbortToken);
     }
 
     #region InsertAsync (SET NX behavior)

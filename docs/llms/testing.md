@@ -440,6 +440,7 @@ Testcontainers fixtures for integration testing.
   - `HeadlessLocalStackFixture`
   - `HeadlessMinioFixture`
   - `HeadlessSqlServerFixture` (architecture-aware: SQL Server 2022 on x86_64, Azure SQL Edge on ARM64; set `HEADLESS_SQLSERVER_IMAGE` to override, see below)
+- `HeadlessRedisFixture.FlushAllAsync(ct)` and the `RedisContainer.FlushAllAsync(ct)` extension (`HeadlessRedisContainerExtensions`, namespace `Testcontainers.Redis`) — delete every key in every database by running `redis-cli FLUSHALL` inside the container, so a reused container starts clean without a client connection or `allowAdmin`
 - `TestContextMessageSink` — xUnit v3 diagnostic-message forwarder
 - Automatic container lifecycle management via `Testcontainers.Xunit`
 - Every fixture has the same subclassing surface: xUnit calls `IAsyncLifetime` explicitly, and a subclass overrides `protected virtual ValueTask InitializeAsync()` (call `base.InitializeAsync()` first, then create its database or clear what a reused container left) and `protected virtual ValueTask DisposeAsyncCore()`. The `ContainerFixture`-based fixtures also take `protected override TBuilder Configure()` for the database name, credentials, or labels; `HeadlessSqlServerFixture` builds its own architecture-aware container, so a subclass creates its database in `InitializeAsync` instead.

@@ -19,7 +19,7 @@ namespace Headless.DistributedLocks;
 /// PostgreSQL advisory-lock distributed-lock provider.
 /// </summary>
 [PublicAPI]
-public static class SetupPostgreSqlDistributedLocks
+public static class SetupDistributedLocksPostgreSql
 {
     extension(HeadlessDistributedLocksSetupBuilder setup)
     {

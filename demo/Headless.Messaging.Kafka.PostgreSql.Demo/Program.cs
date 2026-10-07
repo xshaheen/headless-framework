@@ -49,7 +49,7 @@ builder.Services.ConfigureMessaging(messaging => messaging.Message<KafkaMessage>
 // and the EF Core helpers (RunAsync(db, …)) for the EF capability. Both are idempotent thin wrappers over the
 // scoped IUnitOfWorkFactory that AddHeadlessMessaging already registers — no interceptor or hosted service needed;
 // RunAsync/BeginAsync own the transaction's begin and commit directly.
-builder.Services.AddPostgreSqlUnitOfWork();
+builder.Services.AddUnitOfWork();
 builder.Services.AddEntityFrameworkUnitOfWork();
 
 builder.Services.AddControllers();

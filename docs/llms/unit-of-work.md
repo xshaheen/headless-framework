@@ -1,6 +1,6 @@
 ---
 domain: Unit of Work
-packages: UnitOfWork.Abstractions, UnitOfWork, UnitOfWork.EntityFramework, UnitOfWork.PostgreSql, UnitOfWork.SqlServer, UnitOfWork.Sqlite, UnitOfWork.Analyzers
+packages: UnitOfWork.Abstractions, UnitOfWork, UnitOfWork.EntityFramework, UnitOfWork.Analyzers
 ---
 
 # Unit of Work
@@ -16,8 +16,9 @@ An application developer opens a unit of work on the line they choose, does busi
 Pick a provider by what owns the transaction:
 
 - EF Core owns it (`DbContext`) → `Headless.UnitOfWork.EntityFramework`.
-- Raw ADO on PostgreSQL → `Headless.UnitOfWork.PostgreSql`.
-- Raw ADO on SQL Server → `Headless.UnitOfWork.SqlServer`.
+- Raw ADO on PostgreSQL → `Headless.Sql.PostgreSql`, which ships the `NpgsqlConnection` overloads.
+- Raw ADO on SQL Server → `Headless.Sql.SqlServer`, which ships the `SqlConnection` overloads.
+- Raw ADO on SQLite → `Headless.Sql.Sqlite`, which ships the `SqliteConnection` overloads.
 - No relational resource at all (a script spanning several independent saves, a test harness) → the resource-less core member on `Headless.UnitOfWork` itself.
 
 Both participant domains enlist through the unit, and the difference between an enlisted and an autonomous write is the receiver at the call site:
@@ -200,9 +201,9 @@ Every illegal transition throws with a message naming the remedy — never a bar
 | Provider | Use when | Avoid when | Trade-off |
 |---|---|---|---|
 | `Headless.UnitOfWork.EntityFramework` | EF Core owns the transaction (`DbContext`). | The unit of work is raw ADO. | `BeginAsync(db)` cannot run under a retrying execution strategy — use `RunAsync(db, …)` there. Never references `Headless.EntityFramework` (the dependency flows the other way), so it stays usable by any EF consumer. |
-| `Headless.UnitOfWork.PostgreSql` | Raw `NpgsqlConnection` transactions. | EF owns the transaction (use the EF provider). | No commit edge to observe: observed mode is fully explicit — the caller must call `CompleteAsync`/`RollbackAsync` itself, or a forgotten completion is logged. Replay only through `RunAsync(NpgsqlDataSource, …)`, which opens a connection per attempt; the connection overloads never replay. |
-| `Headless.UnitOfWork.SqlServer` | Raw `SqlConnection` transactions. | EF owns the transaction (use the EF provider). | Same explicit-completion contract as PostgreSQL. Replay only through `RunAsync(connectionFactory, …)`, because SqlClient ships no `DbDataSource`. |
-| `Headless.UnitOfWork.Sqlite` | Raw `SqliteConnection` transactions, for the Headless stores that have a SQLite provider. | Many concurrent writers: SQLite admits one writer per file. | Same explicit-completion contract as PostgreSQL. Every unit begins `IMMEDIATE`, holding the database write lock until it ends. Replay only through `RunAsync(connectionFactory, …)`, as on SQL Server. |
+| `Headless.Sql.PostgreSql` | Raw `NpgsqlConnection` transactions. | EF owns the transaction (use the EF provider). | No commit edge to observe: observed mode is fully explicit — the caller must call `CompleteAsync`/`RollbackAsync` itself, or a forgotten completion is logged. Replay only through `RunAsync(NpgsqlDataSource, …)`, which opens a connection per attempt; the connection overloads never replay. |
+| `Headless.Sql.SqlServer` | Raw `SqlConnection` transactions. | EF owns the transaction (use the EF provider). | Same explicit-completion contract as PostgreSQL. Replay only through `RunAsync(connectionFactory, …)`, because SqlClient ships no `DbDataSource`. |
+| `Headless.Sql.Sqlite` | Raw `SqliteConnection` transactions, for the Headless stores that have a SQLite provider. | Many concurrent writers: SQLite admits one writer per file. | Same explicit-completion contract as PostgreSQL. Every unit begins `IMMEDIATE`, holding the database write lock until it ends. Replay only through `RunAsync(connectionFactory, …)`, as on SQL Server. |
 | The resource-less core (`Headless.UnitOfWork`, no provider) | A coordination window with no transaction of its own — a test harness, or a script whose post-commit work should drain once at the end. | Any case that needs a joinable relational resource — a relational write cannot enlist in a resource-less unit, and a resource-bearing begin underneath it is an independent unit, not a participant. | No relational write enlists on it; each resource-bearing operation underneath opens and commits its own transaction. Messaging's in-memory storage is the one participant that can join it, through its buffer — which is what the test harness relies on. |
 
 ---
@@ -423,7 +424,10 @@ None.
 
 ---
 
-## Headless.UnitOfWork.PostgreSql
+## Raw ADO on PostgreSQL
+
+The raw-ADO unit-of-work overloads ship in [`Headless.Sql.PostgreSql`](sql.md#headlesssqlpostgresql), beside its connection factory, and register through the core `AddUnitOfWork()`.
+
 
 Runs raw-ADO `NpgsqlConnection` work as a unit of work, so outbox rows and job rows written inside the transaction commit with it, dispatch after it commits, and are discarded when it rolls back.
 
@@ -433,7 +437,7 @@ Runs raw-ADO `NpgsqlConnection` work as a unit of work, so outbox rows and job r
 - `IUnitOfWorkFactory.Enlist(connection, transaction)` — observed mode for a transaction you commit yourself; call `CompleteAsync` after your commit or `RollbackAsync` after your rollback. Binds and refuses like `BeginAsync`.
 - `IUnitOfWorkFactory.RunAsync(connection, operation, isolation, ct)` — on a connection that already carries a live unit (begun by this provider or by EF over the same connection), **joins** it: the operation receives the owner's handle at the owner's isolation level (`isolation` is ignored), commit stays with the owner, and an operation that ends the unit itself is refused once it returns. Otherwise begin → operation → complete in one call; a throwing operation rolls back and rethrows its own exception. Never replays.
 - `IUnitOfWorkFactory.RunAsync(dataSource, operation, isolation, retry, ct)` (and the `TResult` overload) — each attempt opens a connection from the `NpgsqlDataSource`, begins an owned unit on it, and hands the block both: `(unit, connection, ct)`. A fault before the commit that the replay policy classifies as transient replays the block on a fresh connection, transaction, and unit; the attempt's connection is disposed once its unit is committed or rolled back. The policy is `retry`, else the host's `UnitOfWorkRetryOptions.RetryStrategy`; with neither, the block runs once. See [Replay per `RunAsync` overload](#replay-per-runasync-overload).
-- `AddPostgreSqlUnitOfWork()` — registers the singleton factory (idempotent; there are no provider options).
+- `AddUnitOfWork()` (from `Headless.UnitOfWork`) — registers the singleton factory (idempotent). There is no provider-specific registration and no provider options.
 
 ### Design constraints
 
@@ -442,7 +446,7 @@ Npgsql exposes no commit edge, so observed mode is explicit: nothing completes t
 ### Install
 
 ```bash
-dotnet add package Headless.UnitOfWork.PostgreSql
+dotnet add package Headless.Sql.PostgreSql
 ```
 
 ### Setup and use
@@ -451,7 +455,7 @@ dotnet add package Headless.UnitOfWork.PostgreSql
 using Headless.UnitOfWork;
 using Npgsql;
 
-services.AddPostgreSqlUnitOfWork();
+services.AddUnitOfWork();
 
 // factory is the singleton IUnitOfWorkFactory.
 await using var unit = await factory.BeginAsync(connection, ct);
@@ -503,7 +507,10 @@ Registers the singleton `IUnitOfWorkFactory` only.
 
 ---
 
-## Headless.UnitOfWork.SqlServer
+## Raw ADO on SQL Server
+
+The raw-ADO unit-of-work overloads ship in [`Headless.Sql.SqlServer`](sql.md#headlesssqlsqlserver), beside its connection factory, and register through the core `AddUnitOfWork()`.
+
 
 Runs raw-ADO `SqlConnection` work as a unit of work, so outbox rows and job rows written inside the transaction commit with it, dispatch after it commits, and are discarded when it rolls back.
 
@@ -513,7 +520,7 @@ Runs raw-ADO `SqlConnection` work as a unit of work, so outbox rows and job rows
 - `IUnitOfWorkFactory.Enlist(connection, transaction)` — observed mode for a transaction you commit yourself; call `CompleteAsync` after your commit or `RollbackAsync` after your rollback. Binds and refuses like `BeginAsync`.
 - `IUnitOfWorkFactory.RunAsync(connection, operation, isolation, ct)` — on a connection that already carries a live unit (begun by this provider or by EF over the same connection), **joins** it: the operation receives the owner's handle at the owner's isolation level (`isolation` is ignored), commit stays with the owner, and an operation that ends the unit itself is refused once it returns. Otherwise begin → operation → complete in one call; a throwing operation rolls back and rethrows its own exception. Never replays.
 - `IUnitOfWorkFactory.RunAsync(connectionFactory, operation, isolation, retry, ct)` (and the `TResult` overload) — `connectionFactory` is a `Func<CancellationToken, ValueTask<SqlConnection>>` that returns a NEW connection per attempt (a closed one is opened); each attempt begins an owned unit on it and hands the block `(unit, connection, ct)`. Replay, policy, and disposal behave as in the PostgreSQL data-source overload. SqlClient ships no `DbDataSource`, hence the delegate.
-- `AddSqlServerUnitOfWork()` — registers the singleton factory (idempotent; there are no provider options).
+- `AddUnitOfWork()` (from `Headless.UnitOfWork`) — registers the singleton factory (idempotent). There is no provider-specific registration and no provider options.
 
 ### Design constraints
 
@@ -522,7 +529,7 @@ SqlClient exposes no commit edge, so observed mode is explicit: nothing complete
 ### Install
 
 ```bash
-dotnet add package Headless.UnitOfWork.SqlServer
+dotnet add package Headless.Sql.SqlServer
 ```
 
 ### Setup and use
@@ -531,7 +538,7 @@ dotnet add package Headless.UnitOfWork.SqlServer
 using Headless.UnitOfWork;
 using Microsoft.Data.SqlClient;
 
-services.AddSqlServerUnitOfWork();
+services.AddUnitOfWork();
 
 // factory is the singleton IUnitOfWorkFactory; BeginAsync opens a closed connection.
 await using var connection = new SqlConnection(connectionString);
@@ -588,7 +595,10 @@ Registers the singleton `IUnitOfWorkFactory` only.
 
 ---
 
-## Headless.UnitOfWork.Sqlite
+## Raw ADO on SQLite
+
+The raw-ADO unit-of-work overloads ship in [`Headless.Sql.Sqlite`](sql.md#headlesssqlsqlite), beside its connection factory, and register through the core `AddUnitOfWork()`.
+
 
 Runs raw-ADO `SqliteConnection` work as a unit of work, so rows that Headless stores write inside the transaction, such as a gap-free sequence value or a fenced lease, commit and roll back with it.
 
@@ -598,7 +608,7 @@ Runs raw-ADO `SqliteConnection` work as a unit of work, so rows that Headless st
 - `IUnitOfWorkFactory.Enlist(connection, transaction)` — observed mode for a transaction you commit yourself. Begin it with `BeginTransaction()` (immediate); a `deferred: true` transaction that reads before it writes can fail with `SQLITE_BUSY` when another writer got there first.
 - `IUnitOfWorkFactory.RunAsync(connection, operation, isolation, ct)` (and the `TResult` overload) — joins a live unit on the connection, else begin → operation → complete. Never replays.
 - `IUnitOfWorkFactory.RunAsync(connectionFactory, operation, isolation, retry, ct)` (and the `TResult` overload) — each attempt takes a new `SqliteConnection` from the factory, as on SQL Server. `SQLITE_BUSY` and `SQLITE_LOCKED` before the commit are transient under `UnitOfWorkRetryOptions.DefaultShouldHandle`.
-- `AddSqliteUnitOfWork()` — registers the singleton factory (idempotent; there are no provider options).
+- `AddUnitOfWork()` (from `Headless.UnitOfWork`) — registers the singleton factory (idempotent). There is no provider-specific registration and no provider options.
 
 ### Design constraints
 
@@ -607,7 +617,7 @@ Observed mode is explicit, as on PostgreSQL. The replaying overload takes a conn
 ### Install
 
 ```bash
-dotnet add package Headless.UnitOfWork.Sqlite
+dotnet add package Headless.Sql.Sqlite
 ```
 
 ### Configuration

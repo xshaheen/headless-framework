@@ -14,7 +14,7 @@
 
 [اللغة: العربية](README.ar.md)
 
-204 packages &bull; One setup grammar &bull; Swap any provider in one line
+201 packages &bull; One setup grammar &bull; Swap any provider in one line
 
 [Why Headless](#why-headless) &bull; [60-second start](#60-second-start) &bull; [One grammar, every domain](#one-grammar-every-domain) &bull; [What is in the box](#what-is-in-the-box) &bull; [Package catalog](#package-catalog)
 
@@ -44,7 +44,7 @@ builder.Services.AddHeadlessCaching(setup => setup.UseRedis(...)); // production
 
 Every service, repository, and handler that injects `ICache` is untouched by that edit. The same holds for `IBlobStorage` across S3, Azure, Cloudflare R2, the file system, Redis, and SFTP; for `IEmailSender` across SES, Azure Communication Services, and SMTP; and for messaging across eight transports.
 
-**You install three packages, not 203.** The catalog is large because the provider matrix is large. A service that needs caching installs `Headless.Caching.Abstractions`, `Headless.Caching`, and one provider. Domain and application libraries reference the abstraction package alone. `Headless.Caching.Abstractions` pulls in two packages with no third-party dependencies: `Headless.Checks` and `Headless.Primitives`.
+**You install three packages, not 201.** The catalog is large because the provider matrix is large. A service that needs caching installs `Headless.Caching.Abstractions`, `Headless.Caching`, and one provider. Domain and application libraries reference the abstraction package alone. `Headless.Caching.Abstractions` pulls in two packages with no third-party dependencies: `Headless.Checks` and `Headless.Primitives`.
 
 **Tests do not need Docker to be fast.** Caching, distributed locks, and messaging ship in-memory providers; email, SMS, and push notifications ship dev providers that send nothing; blob storage runs against the local file system. Unit tests exercise the real contract with no containers. When you want the real backend, `Headless.Testing.Testcontainers` supplies the fixtures. The repository itself runs 122 unit-test projects and 63 integration-test projects on that split.
 
@@ -252,7 +252,7 @@ Provider packages are ordinary NuGet packages. To add a custom backend, implemen
 ## Package catalog
 
 <details>
-<summary><strong>All 204 packages, grouped by domain</strong> — expand to browse</summary>
+<summary><strong>All 201 packages, grouped by domain</strong> — expand to browse</summary>
 
 ### API & Web
 
@@ -554,7 +554,7 @@ Cluster membership and liveness tracking. Know which nodes are alive across a di
 |---------|-------------|
 | [Headless.Coordination.Abstractions](src/Headless.Coordination.Abstractions/README.md) | Membership, liveness, and lifecycle contracts |
 | [Headless.Coordination](src/Headless.Coordination/README.md) | Provider-agnostic membership engine |
-| [Headless.Coordination.Database](src/Headless.Coordination.Database/README.md) | Shared relational substrate for SQL coordination providers |
+| [Headless.Coordination.Sql](src/Headless.Coordination.Sql/README.md) | Shared relational substrate for SQL coordination providers |
 | [Headless.Coordination.PostgreSql](src/Headless.Coordination.PostgreSql/README.md) | PostgreSQL membership with server-clock liveness |
 | [Headless.Coordination.Redis](src/Headless.Coordination.Redis/README.md) | Redis membership via Lua scripts and server time |
 | [Headless.Coordination.SqlServer](src/Headless.Coordination.SqlServer/README.md) | SQL Server membership with guarded writes |
@@ -608,10 +608,9 @@ Explicit unit of work: begin it on the line you choose from a singleton factory,
 | [Headless.UnitOfWork.Abstractions](src/Headless.UnitOfWork.Abstractions/README.md) | Unit-of-work contracts: `IUnitOfWorkFactory`, `IUnitOfWork`, `IUnitOfWorkResource`, `IUnitOfWorkFeature` (zero dependencies) |
 | [Headless.UnitOfWork](src/Headless.UnitOfWork/README.md) | The singleton factory, engine, and `AddUnitOfWork()` registration |
 | [Headless.UnitOfWork.EntityFramework](src/Headless.UnitOfWork.EntityFramework/README.md) | EF Core provider: `BeginAsync(db)` / `Enlist(db, tx)` / `RunAsync(db, ...)` |
-| [Headless.UnitOfWork.PostgreSql](src/Headless.UnitOfWork.PostgreSql/README.md) | Raw-ADO `NpgsqlConnection` provider with the same shape |
-| [Headless.UnitOfWork.SqlServer](src/Headless.UnitOfWork.SqlServer/README.md) | Raw-ADO `SqlConnection` provider with the same shape |
-| [Headless.UnitOfWork.Sqlite](src/Headless.UnitOfWork.Sqlite/README.md) | Raw-ADO `SqliteConnection` provider with the same shape |
 | [Headless.UnitOfWork.Analyzers](src/Headless.UnitOfWork.Analyzers/README.md) | Roslyn analyzers and code fixes that flag an autonomous write made while a unit of work is in scope and name the enlisted receiver (`unit.Outbox`, `unit.Jobs`) |
+
+The raw-ADO providers (`NpgsqlConnection`, `SqlConnection`, `SqliteConnection`) ship in the matching `Headless.Sql.*` package; see [SQL](#sql).
 
 ### Serialization
 
@@ -661,9 +660,9 @@ Connection factories for raw SQL access when you need to drop below the ORM.
 |---------|-------------|
 | [Headless.Sql.Abstractions](src/Headless.Sql.Abstractions/README.md) | SQL connection interfaces |
 | [Headless.Sql](src/Headless.Sql/README.md) | Default scoped ambient current-connection implementation |
-| [Headless.Sql.PostgreSql](src/Headless.Sql.PostgreSql/README.md) | PostgreSQL connection factory |
-| [Headless.Sql.SqlServer](src/Headless.Sql.SqlServer/README.md) | SQL Server connection factory |
-| [Headless.Sql.Sqlite](src/Headless.Sql.Sqlite/README.md) | SQLite connection factory |
+| [Headless.Sql.PostgreSql](src/Headless.Sql.PostgreSql/README.md) | PostgreSQL connection factory and raw-ADO `NpgsqlConnection` unit-of-work helpers |
+| [Headless.Sql.SqlServer](src/Headless.Sql.SqlServer/README.md) | SQL Server connection factory and raw-ADO `SqlConnection` unit-of-work helpers |
+| [Headless.Sql.Sqlite](src/Headless.Sql.Sqlite/README.md) | SQLite connection factory and raw-ADO `SqliteConnection` unit-of-work helpers |
 
 ### Testing
 

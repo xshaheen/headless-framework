@@ -15,7 +15,7 @@ namespace Headless.DistributedLocks;
 /// release notifications use push wake-ups. Otherwise, waiters fall back to polling backoff.
 /// </remarks>
 [PublicAPI]
-public static class SetupInMemoryDistributedLocks
+public static class SetupDistributedLocksInMemory
 {
     extension(HeadlessDistributedLocksSetupBuilder setup)
     {

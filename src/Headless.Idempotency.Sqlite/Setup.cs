@@ -123,7 +123,7 @@ public static class SetupIdempotencySqlite
         "Headless.Idempotency.Sqlite",
         static (factory, connection, cancellationToken) =>
             factory.BeginAsync((SqliteConnection)connection, cancellationToken),
-        static services => services.AddSqliteUnitOfWork(),
+        static services => services.AddUnitOfWork(),
         SqliteIdempotencySchemaContribution.Create,
         // Deferred: a peek takes no write lock, so it reads the last committed record while a unit holds the database.
 #pragma warning disable CA1849 // False positive: no async overload begins a deferred transaction, and the driver's async begin is synchronous anyway.

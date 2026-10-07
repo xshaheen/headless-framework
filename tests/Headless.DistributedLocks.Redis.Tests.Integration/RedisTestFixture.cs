@@ -2,7 +2,6 @@
 
 using Headless.DistributedLocks.Redis;
 using Headless.Redis;
-using Headless.Redis.Testing;
 using Headless.Testing.Testcontainers;
 using StackExchange.Redis;
 
@@ -29,14 +28,14 @@ public sealed class RedisTestFixture : HeadlessRedisFixture, ICollectionFixture<
         var connectionString = Container.GetConnectionString() + ",allowAdmin=true";
 
         ConnectionMultiplexer = await ConnectionMultiplexer.ConnectAsync(connectionString);
-        await ConnectionMultiplexer.FlushAllAsync();
+        await FlushAllAsync();
 
         _scriptLoader = new HeadlessRedisScriptsLoader(ConnectionMultiplexer);
 
         LockStorage = new(ConnectionMultiplexer, _scriptLoader);
         ReaderWriterLockStorage = new(ConnectionMultiplexer, _scriptLoader);
         SemaphoreStorage = new(ConnectionMultiplexer, _scriptLoader);
-        await ConnectionMultiplexer.FlushAllAsync();
+        await FlushAllAsync();
     }
 
     protected override async ValueTask DisposeAsyncCore()

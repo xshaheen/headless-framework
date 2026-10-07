@@ -2,7 +2,6 @@
 
 using Headless;
 using Headless.DistributedLocks;
-using Headless.Redis.Testing;
 using Microsoft.Extensions.Logging;
 
 namespace Tests;
@@ -13,7 +12,7 @@ public sealed class RedisDistributedLockConformanceTests(RedisTestFixture fixtur
     public override async ValueTask InitializeAsync()
     {
         await base.InitializeAsync();
-        await fixture.ConnectionMultiplexer.FlushAllAsync();
+        await fixture.FlushAllAsync(AbortToken);
     }
 
     protected override IDistributedLock GetLockProvider()

@@ -24,7 +24,7 @@ namespace Headless.Messaging;
     "CA1708:Identifiers should differ by more than case",
     Justification = "C# 14 extension member blocks emit compiler-generated marker members differing only by case."
 )]
-public static class SetupSqlServerEntityFrameworkMessaging
+public static class SetupMessagingSqlServerEntityFramework
 {
     extension(MessagingSetupBuilder setup)
     {
@@ -67,7 +67,7 @@ public static class SetupSqlServerEntityFrameworkMessaging
         public MessagingSetupBuilder UseEntityFramework<TContext>()
             where TContext : DbContext
         {
-            var setup = SetupSqlServerMessaging.AddSqlServerOutboxCore(
+            var setup = SetupMessagingSqlServer.AddSqlServerOutboxCore(
                 outbox,
                 $"AddOutbox().UseEntityFramework<{typeof(TContext).Name}>()",
                 options =>
@@ -92,7 +92,7 @@ public static class SetupSqlServerEntityFrameworkMessaging
     {
         public void AddServices(IServiceCollection services)
         {
-            new SetupSqlServerMessaging.SqlServerMessagesOptionsExtension(storageServices =>
+            new SetupMessagingSqlServer.SqlServerMessagesOptionsExtension(storageServices =>
                 storageServices.Configure<SqlServerOptions, SqlServerOptionsValidator>(storageOptions =>
                 {
                     storageOptions.OwnerColumnMaxLength = options.OwnerColumnMaxLength;

@@ -124,7 +124,7 @@ public static class SetupIdempotencyPostgreSql
         "Headless.Idempotency.PostgreSql",
         static (factory, connection, cancellationToken) =>
             factory.BeginAsync((NpgsqlConnection)connection, cancellationToken),
-        static services => services.AddPostgreSqlUnitOfWork(),
+        static services => services.AddUnitOfWork(),
         PostgreSqlIdempotencySchemaContribution.Create
     );
 }

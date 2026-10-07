@@ -25,7 +25,7 @@ namespace Headless.DistributedLocks;
 /// through the registered multiplexer.
 /// </remarks>
 [PublicAPI]
-public static class SetupRedisDistributedLocks
+public static class SetupDistributedLocksRedis
 {
     extension(HeadlessDistributedLocksSetupBuilder setup)
     {

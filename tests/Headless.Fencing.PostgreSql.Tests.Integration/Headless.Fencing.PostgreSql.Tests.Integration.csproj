@@ -15,7 +15,6 @@
     <ProjectReference Include="..\..\src\Headless.Fencing.PostgreSql\Headless.Fencing.PostgreSql.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing.Testcontainers\Headless.Testing.Testcontainers.csproj" />
     <ProjectReference Include="..\..\src\Headless.UnitOfWork.EntityFramework\Headless.UnitOfWork.EntityFramework.csproj" />
-    <ProjectReference Include="..\..\src\Headless.UnitOfWork.PostgreSql\Headless.UnitOfWork.PostgreSql.csproj" />
     <ProjectReference Include="..\Headless.Fencing.Tests.Harness\Headless.Fencing.Tests.Harness.csproj" />
   </ItemGroup>
 </Project>

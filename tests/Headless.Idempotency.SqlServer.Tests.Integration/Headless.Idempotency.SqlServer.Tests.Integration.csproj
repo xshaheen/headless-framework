@@ -11,7 +11,6 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Headless.Idempotency.SqlServer\Headless.Idempotency.SqlServer.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing.Testcontainers\Headless.Testing.Testcontainers.csproj" />
-    <ProjectReference Include="..\..\src\Headless.UnitOfWork.SqlServer\Headless.UnitOfWork.SqlServer.csproj" />
     <ProjectReference Include="..\Headless.Idempotency.Tests.Harness\Headless.Idempotency.Tests.Harness.csproj" />
   </ItemGroup>
 </Project>

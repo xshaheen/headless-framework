@@ -17,8 +17,8 @@ public sealed class SetupTests : TestBase
     [Fact]
     public void should_preserve_sqlserver_entity_framework_adapter_name_and_root()
     {
-        typeof(SetupSqlServerEntityFrameworkMessaging).Name.Should().Be("SetupSqlServerEntityFrameworkMessaging");
-        typeof(SetupSqlServerEntityFrameworkMessaging)
+        typeof(SetupMessagingSqlServerEntityFramework).Name.Should().Be("SetupMessagingSqlServerEntityFramework");
+        typeof(SetupMessagingSqlServerEntityFramework)
             .GetMethods(BindingFlags.Public | BindingFlags.Static)
             .Should()
             .Contain(method => method.Name == "UseEntityFramework" && method.IsGenericMethodDefinition);

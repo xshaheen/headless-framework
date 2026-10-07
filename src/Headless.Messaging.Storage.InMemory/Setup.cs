@@ -12,7 +12,7 @@ namespace Headless.Messaging;
 /// Intended for local development, unit tests, and scenarios where message durability is not required.
 /// All state is lost when the process exits.
 /// </summary>
-public static class SetupInMemoryStorage
+public static class SetupMessagingInMemoryStorage
 {
     extension(MessagingSetupBuilder setup)
     {

@@ -20,7 +20,7 @@ namespace Headless.DistributedLocks;
 /// <see cref="IDistributedReadWriteLock"/> backed by SQL Server session-scoped application locks.
 /// </summary>
 [PublicAPI]
-public static class SetupSqlServerDistributedLocks
+public static class SetupDistributedLocksSqlServer
 {
     extension(HeadlessDistributedLocksSetupBuilder setup)
     {

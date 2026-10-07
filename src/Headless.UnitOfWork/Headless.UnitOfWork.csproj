@@ -8,9 +8,9 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Headless.Jobs.EntityFramework" />
     <InternalsVisibleTo Include="Headless.UnitOfWork.EntityFramework" />
-    <InternalsVisibleTo Include="Headless.UnitOfWork.PostgreSql" />
-    <InternalsVisibleTo Include="Headless.UnitOfWork.SqlServer" />
-    <InternalsVisibleTo Include="Headless.UnitOfWork.Sqlite" />
+    <InternalsVisibleTo Include="Headless.Sql.PostgreSql" />
+    <InternalsVisibleTo Include="Headless.Sql.SqlServer" />
+    <InternalsVisibleTo Include="Headless.Sql.Sqlite" />
     <InternalsVisibleTo Include="Headless.UnitOfWork.Tests.Harness" />
     <InternalsVisibleTo Include="Headless.UnitOfWork.Tests.Unit" />
   </ItemGroup>

@@ -570,7 +570,7 @@ Shared connection-scoped engine contracts for database-backed distributed locks.
 - Internal `ConnectionScopedReadWriteLock` engine implements `IDistributedReadWriteLock` over shared/exclusive storage.
 - Internal `IFencingTokenSource` seam lets database providers stamp mutex handles with durable sequence-backed fencing tokens.
 - Internal `IReleaseSignal` seam provides the wake-up hook for provider push notifications plus polling fallback.
-- The engine and seams are internal implementation shared with the first-party PostgreSQL and SQL Server providers via `InternalsVisibleTo` (mirroring `Headless.Coordination.Database`); a custom backend implements the public `IDistributedLock` / `IDistributedReadWriteLock` abstractions directly.
+- The engine and seams are internal implementation shared with the first-party PostgreSQL and SQL Server providers via `InternalsVisibleTo` (mirroring `Headless.Coordination.Sql`); a custom backend implements the public `IDistributedLock` / `IDistributedReadWriteLock` abstractions directly.
 
 ### Design constraints
 

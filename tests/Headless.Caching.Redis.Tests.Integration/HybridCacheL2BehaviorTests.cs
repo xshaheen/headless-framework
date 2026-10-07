@@ -3,7 +3,6 @@
 using System.Reflection;
 using Headless.Caching;
 using Headless.Messaging;
-using Headless.Redis.Testing;
 using Headless.Serializer;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
@@ -168,7 +167,7 @@ public sealed class HybridCacheL2BehaviorTests(RedisCacheFixture fixture) : Test
 
     private async Task _FlushAsync()
     {
-        await fixture.ConnectionMultiplexer.FlushAllAsync();
+        await fixture.FlushAllAsync(AbortToken);
     }
 
     /// <inheritdoc />

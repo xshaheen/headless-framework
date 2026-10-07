@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Redis;
-using Headless.Redis.Testing;
 using Headless.Testing.Tests;
 using StackExchange.Redis;
 
@@ -14,39 +13,27 @@ public sealed class HeadlessConnectionMultiplexerExtensionsTests(RedisTestFixtur
     private IDatabase Db => Multiplexer.GetDatabase();
 
     [Fact]
-    public async Task should_remove_all_keys_when_flush_all_async()
+    public async Task should_remove_all_keys_when_fixture_flushes_all()
     {
-        // given - ensure clean state
-        await Multiplexer.FlushAllAsync();
-
-        await Db.StringSetAsync("key1", "value1");
-        await Db.StringSetAsync("key2", "value2");
-        await Db.StringSetAsync("key3", "value3");
+        // given
+        await Db.StringSetAsync("flush-key1", "value1");
+        await Multiplexer.GetDatabase(1).StringSetAsync("flush-key2", "value2");
 
         // when
-        await Multiplexer.FlushAllAsync();
+        await fixture.FlushAllAsync(AbortToken);
 
-        // then
-        var count = await Multiplexer.CountAllKeysAsync(AbortToken);
-        count.Should().Be(0);
-    }
-
-    [Fact]
-    public async Task should_handle_empty_database_when_flush_all_async()
-    {
-        // given - ensure clean state
-        await Multiplexer.FlushAllAsync();
-
-        // when / then - no exception
-        var act = async () => await Multiplexer.FlushAllAsync();
-        await act.Should().NotThrowAsync();
+        // then - every database is flushed, not only the default one
+        (await Multiplexer.CountAllKeysAsync(AbortToken))
+            .Should()
+            .Be(0);
+        (await Multiplexer.GetDatabase(1).KeyExistsAsync("flush-key2")).Should().BeFalse();
     }
 
     [Fact]
     public async Task should_return_total_key_count_when_count_all_keys_async()
     {
         // given - ensure clean state
-        await Multiplexer.FlushAllAsync();
+        await fixture.FlushAllAsync(AbortToken);
 
         await Db.StringSetAsync("count-key1", "value1");
         await Db.StringSetAsync("count-key2", "value2");
@@ -65,7 +52,7 @@ public sealed class HeadlessConnectionMultiplexerExtensionsTests(RedisTestFixtur
     public async Task should_return_zero_for_empty_database_when_count_all_keys_async()
     {
         // given - ensure clean state
-        await Multiplexer.FlushAllAsync();
+        await fixture.FlushAllAsync(AbortToken);
 
         // when
         var count = await Multiplexer.CountAllKeysAsync(AbortToken);

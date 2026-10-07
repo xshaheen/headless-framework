@@ -120,7 +120,7 @@ public static class SetupFencingSqlite
         "Headless.Fencing.Sqlite",
         static (factory, connection, cancellationToken) =>
             factory.BeginAsync((SqliteConnection)connection, cancellationToken),
-        static services => services.AddSqliteUnitOfWork(),
+        static services => services.AddUnitOfWork(),
         SqliteFencingSchemaContribution.Create,
         EnlistedGrantRefusal
     );

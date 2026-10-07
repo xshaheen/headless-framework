@@ -501,6 +501,7 @@
           "Headless.Hosting": "[1.0.0, )",
           "Headless.Sql": "[1.0.0, )",
           "Headless.Sql.Abstractions": "[1.0.0, )",
+          "Headless.UnitOfWork": "[1.0.0, )",
           "Microsoft.Data.SqlClient": "[7.1.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.12, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.12, )"

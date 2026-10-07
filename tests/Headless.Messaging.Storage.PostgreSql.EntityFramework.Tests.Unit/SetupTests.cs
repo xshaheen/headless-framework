@@ -17,8 +17,8 @@ public sealed class SetupTests : TestBase
     [Fact]
     public void should_preserve_postgresql_entity_framework_adapter_name_and_root()
     {
-        typeof(SetupPostgreSqlEntityFrameworkMessaging).Name.Should().Be("SetupPostgreSqlEntityFrameworkMessaging");
-        typeof(SetupPostgreSqlEntityFrameworkMessaging)
+        typeof(SetupMessagingPostgreSqlEntityFramework).Name.Should().Be("SetupMessagingPostgreSqlEntityFramework");
+        typeof(SetupMessagingPostgreSqlEntityFramework)
             .GetMethods(BindingFlags.Public | BindingFlags.Static)
             .Should()
             .Contain(method => method.Name == "UseEntityFramework" && method.IsGenericMethodDefinition);

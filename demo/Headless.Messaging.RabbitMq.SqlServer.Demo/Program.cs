@@ -65,7 +65,7 @@ builder.Services.AddHeadlessMessaging(setup =>
 // providers this demo enlists through: the EF Core helpers (RunAsync(db, …)) and the SqlServer ADO helpers
 // (BeginAsync(connection), Enlist(connection, transaction), RunAsync(connection, …)) used by /coordinated/adonet.
 builder.Services.AddEntityFrameworkUnitOfWork();
-builder.Services.AddSqlServerUnitOfWork();
+builder.Services.AddUnitOfWork();
 
 builder.Services.AddControllers();
 

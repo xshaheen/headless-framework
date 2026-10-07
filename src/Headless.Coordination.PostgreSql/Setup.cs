@@ -18,7 +18,7 @@ namespace Headless.Coordination;
 /// coordination backing store.
 /// </summary>
 [PublicAPI]
-public static class SetupPostgreSqlCoordination
+public static class SetupCoordinationPostgreSql
 {
     extension(HeadlessCoordinationSetupBuilder setup)
     {

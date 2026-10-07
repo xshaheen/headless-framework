@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Redis.Testing;
 using Headless.Testing.Testcontainers;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Npgsql;
@@ -74,7 +73,8 @@ public sealed class PermissionsTestFixture : ICollectionFixture<PermissionsTestF
 
     public async Task ResetAsync()
     {
-        await Task.WhenAll(Respawner.ResetAsync(SqlConnection), Multiplexer.FlushAllAsync()).WithAggregatedExceptions();
+        await Task.WhenAll(Respawner.ResetAsync(SqlConnection), _redisContainer.FlushAllAsync())
+            .WithAggregatedExceptions();
     }
 
     private async Task _RunMigrationAsync()

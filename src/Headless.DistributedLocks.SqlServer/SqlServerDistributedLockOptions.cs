@@ -8,7 +8,7 @@ namespace Headless.DistributedLocks.SqlServer;
 /// <summary>
 /// Configuration options for the SQL Server distributed-lock provider. Bound via the options pattern;
 /// validated on application startup by <c>SqlServerDistributedLockOptionsValidator</c> when registered
-/// through the <see cref="SetupSqlServerDistributedLocks"/> extension members.
+/// through the <see cref="SetupDistributedLocksSqlServer"/> extension members.
 /// </summary>
 [PublicAPI]
 public sealed class SqlServerDistributedLockOptions

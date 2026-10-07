@@ -121,7 +121,7 @@ public sealed class PostgreSqlSharedSchemaTests(PostgreSqlSharedSchemaFixture fi
 
     protected override void AddRawFamilies(IServiceCollection services)
     {
-        services.AddPostgreSqlUnitOfWork();
+        services.AddUnitOfWork();
         services.AddHeadlessCoordination(setup => setup.UsePostgreSql());
         services.AddHeadlessDistributedLocks(setup => setup.UsePostgreSql());
         services.AddHeadlessAuditLog(setup => setup.UsePostgreSql());

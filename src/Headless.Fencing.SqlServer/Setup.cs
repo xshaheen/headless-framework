@@ -120,7 +120,7 @@ public static class SetupFencingSqlServer
         "Headless.Fencing.SqlServer",
         static (factory, connection, cancellationToken) =>
             factory.BeginAsync((SqlConnection)connection, cancellationToken),
-        static services => services.AddSqlServerUnitOfWork(),
+        static services => services.AddUnitOfWork(),
         SqlServerFencingSchemaContribution.Create
     );
 }

@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Caching;
-using Headless.Redis.Testing;
 using Headless.Serializer;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
@@ -32,6 +31,6 @@ public abstract class RedisCacheTestBase(RedisCacheFixture fixture) : TestBase
 
     protected async Task FlushAsync()
     {
-        await Fixture.ConnectionMultiplexer.FlushAllAsync();
+        await Fixture.FlushAllAsync(AbortToken);
     }
 }

@@ -65,7 +65,7 @@ public sealed class PostgreSqlSequencesFixture
 
     public void ConfigureUnitOfWork(IServiceCollection services)
     {
-        services.AddPostgreSqlUnitOfWork();
+        services.AddUnitOfWork();
     }
 
     public void ConfigureProvider(HeadlessSequencesSetupBuilder setup)

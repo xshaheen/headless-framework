@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Headless.Redis;
-using Headless.Redis.Testing;
 using Headless.Testing.Testcontainers;
 using StackExchange.Redis;
 
@@ -20,7 +19,7 @@ public sealed class RedisTestFixture : HeadlessRedisFixture, ICollectionFixture<
         var connectionString = Container.GetConnectionString() + ",allowAdmin=true";
 
         ConnectionMultiplexer = await ConnectionMultiplexer.ConnectAsync(connectionString);
-        await ConnectionMultiplexer.FlushAllAsync();
+        await FlushAllAsync();
 
         ScriptsLoader = new HeadlessRedisScriptsLoader(ConnectionMultiplexer);
     }
