@@ -1,0 +1,1 @@
+P:Polly.ResiliencePipelineBuilderBase.TimeProvider;A retry back-off waits out a failure in real time: leave Polly on its default TimeProvider.System. The registered TimeProvider is for times the app records and schedules tests drive; see "Clocks" in docs/llms/index.md.

@@ -881,9 +881,7 @@ public sealed class DistributedLock(
 
     private static ResiliencePipeline _BuildQueryPipeline(ILogger<DistributedLock> logger)
     {
-        // A storage-transient back-off waits real time: on the app clock, a host that fakes it (a test) never advances
-        // past the first delay, so one transient failure would stall the query until the caller gave up.
-        return new ResiliencePipelineBuilder { TimeProvider = TimeProvider.System }
+        return new ResiliencePipelineBuilder()
             .AddRetry(
                 new RetryStrategyOptions
                 {

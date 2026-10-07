@@ -161,7 +161,7 @@ public sealed class CouchbaseManager : ICouchbaseManager
             ),
         };
 
-        _retryPipeline = new ResiliencePipelineBuilder { TimeProvider = TimeProvider.System }
+        _retryPipeline = new ResiliencePipelineBuilder()
             .AddRetry(retryStrategyOptions)
             .AddTimeout(resilienceOptions.Timeout)
             .Build();

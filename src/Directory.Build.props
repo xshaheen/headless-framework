@@ -28,6 +28,11 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
   </ItemGroup>
+  <ItemGroup Label="Banned APIs">
+    <!-- Framework-only bans on top of the SDK's list. A wait that rides out a failure must not follow the registered
+         TimeProvider, which a test host fakes and never advances; see "Clocks" in docs/llms/index.md. -->
+    <AdditionalFiles Include="$(MSBuildThisFileDirectory)..\eng\BannedSymbols.Clocks.txt" />
+  </ItemGroup>
   <ItemGroup Label="README Files">
     <None Condition="!Exists('README.md')" Include="..\..\README.md" Pack="true" PackagePath="\" />
   </ItemGroup>

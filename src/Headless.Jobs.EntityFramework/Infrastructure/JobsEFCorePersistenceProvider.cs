@@ -509,9 +509,7 @@ internal sealed partial class JobsEfCorePersistenceProvider<TDbContext, TTimeJob
 
     private ResiliencePipeline _BuildTreeDeleteRetryPipeline(ILogger logger)
     {
-        // The back-off waits out a concurrent writer's lock in real time. On the app clock, a host that fakes it (a test)
-        // never advances past the first delay, so one conflict would stall the delete until the caller gave up.
-        return new ResiliencePipelineBuilder { TimeProvider = TimeProvider.System }
+        return new ResiliencePipelineBuilder()
             .AddRetry(
                 new RetryStrategyOptions
                 {

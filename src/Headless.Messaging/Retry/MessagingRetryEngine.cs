@@ -47,7 +47,9 @@ internal sealed class MessagingRetryEngine<TContext>
         strategy.ShouldHandle = _ShouldHandleAsync;
         strategy.OnRetry = _OnRetryAsync;
 
+#pragma warning disable RS0030 // Fix makes code worse: the burst paces the user's configured retry policy and hands off to the persisted retry processor on the app clock; a system-clock wait would put one step of that schedule on a second clock.
         _pipeline = new ResiliencePipelineBuilder<MessagingRetryAttempt> { TimeProvider = timeProvider }
+#pragma warning restore RS0030
             .AddRetry(strategy)
             .Build();
     }
