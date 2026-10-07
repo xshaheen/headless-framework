@@ -154,6 +154,7 @@ internal sealed class HubAccessTokenStartupFilter(string basePath) : IStartupFil
                         string.IsNullOrEmpty(context.Request.Headers.Authorization)
                         && _IsHubPath(context.Request.Path.Value)
                         && context.Request.Query["access_token"].FirstOrDefault() is { Length: > 0 } accessToken
+                        && !_HasControlCharacter(accessToken)
                     )
                     {
                         context.Request.Headers.Authorization = accessToken;
@@ -165,6 +166,14 @@ internal sealed class HubAccessTokenStartupFilter(string basePath) : IStartupFil
 
             next(app);
         };
+    }
+
+    // A header value never carries control characters, so a token with any (such as an encoded CR/LF) is left out
+    // rather than handed to the host's handlers and anything that logs or forwards request headers.
+    private static bool _HasControlCharacter(string value)
+    {
+        return value.AsSpan().ContainsAnyInRange('\u0000', '\u001f')
+            || value.Contains('\u007f', StringComparison.Ordinal);
     }
 
     // The host may add a path base later in its pipeline, so match the end of the path, not its start.

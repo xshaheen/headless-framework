@@ -102,7 +102,41 @@ public sealed class CrossDashboardAuthenticationTests : TestBase
     [Fact]
     public async Task jobs_hub_under_host_auth_signs_in_the_access_token_and_enforces_the_host_policy()
     {
-        await using var app = await _StartAsync(
+        await using var app = await _StartHostAuthAsync();
+
+        (await _HubStatusAsync(app, "Token operator")).Should().Be(HubOutcome.Authenticated);
+        (await _HubStatusAsync(app, "Token viewer")).Should().Be(HubOutcome.Refused);
+        (await _HubStatusAsync(app, accessToken: null)).Should().Be(HubOutcome.Refused);
+    }
+
+    [Fact]
+    public async Task jobs_host_auth_copies_access_token_only_onto_hub_requests_without_an_authorization_header()
+    {
+        await using var app = await _StartHostAuthAsync();
+        using var client = app.GetTestClient();
+        const string negotiate = "/jobs/dashboard/job-notification-hub/negotiate?negotiateVersion=1";
+
+        // The SPA negotiates before it opens the WebSocket, so the negotiate endpoint takes the token too.
+        (await _PostAsync(client, $"{negotiate}&access_token=Token%20operator", authorization: null))
+            .Should()
+            .Be(HttpStatusCode.OK);
+        // A header the client sent wins over the query token.
+        (await _PostAsync(client, $"{negotiate}&access_token=Token%20operator", "Token viewer"))
+            .Should()
+            .Be(HttpStatusCode.Forbidden);
+        // The dashboard API never accepts a query credential.
+        (await _GetAsync(client, "/jobs/dashboard/api/options?access_token=Token%20operator", authorization: null))
+            .Should()
+            .Be(HttpStatusCode.Unauthorized);
+        // A token with a control character is not copied into a header.
+        (await _PostAsync(client, $"{negotiate}&access_token=Token%20operator%0d%0aX-Injected:%201", null))
+            .Should()
+            .Be(HttpStatusCode.Unauthorized);
+    }
+
+    private static Task<WebApplication> _StartHostAuthAsync()
+    {
+        return _StartAsync(
             jobs => jobs.WithHostAuthentication(TokenAuthenticationHandler.Policy),
             configureHost: services =>
             {
@@ -117,10 +151,6 @@ public sealed class CrossDashboardAuthenticationTests : TestBase
                     .AddPolicy(TokenAuthenticationHandler.Policy, policy => policy.RequireRole("operator"));
             }
         );
-
-        (await _HubStatusAsync(app, "Token operator")).Should().Be(HubOutcome.Authenticated);
-        (await _HubStatusAsync(app, "Token viewer")).Should().Be(HubOutcome.Refused);
-        (await _HubStatusAsync(app, accessToken: null)).Should().Be(HubOutcome.Refused);
     }
 
     private static async Task<WebApplication> _StartAsync(
@@ -249,7 +279,7 @@ public sealed class CrossDashboardAuthenticationTests : TestBase
     private static async Task<string[]?> _ReceiveRecordsAsync(WebSocket socket, CancellationToken cancellationToken)
     {
         var buffer = new byte[4096];
-        using var payload = new MemoryStream();
+        await using var payload = new MemoryStream();
         WebSocketReceiveResult result;
         do
         {
