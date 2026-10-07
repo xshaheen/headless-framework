@@ -9,6 +9,7 @@ using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -147,6 +148,117 @@ public sealed class HeadlessApiDefaultsTests : TestBase
         // then
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         body.Should().Be("https://api.example.test");
+    }
+
+    [Fact]
+    public async Task should_ignore_forwarded_headers_when_app_configured_known_proxies_exclude_the_caller()
+    {
+        // given - the test client connects from loopback, which a fresh ForwardedHeadersOptions would trust
+        await using var app = await _CreateAppAsync(
+            application => application.MapGet("/origin", (HttpRequest request) => $"{request.Scheme}://{request.Host}"),
+            configureAppServices: services =>
+                services.Configure<ForwardedHeadersOptions>(options =>
+                {
+                    options.KnownIPNetworks.Clear();
+                    options.KnownProxies.Clear();
+                    options.KnownProxies.Add(IPAddress.Parse("10.0.0.1"));
+                })
+        );
+        using var client = _CreateClient(app);
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/origin");
+        request.Headers.Add("X-Forwarded-Proto", "https");
+        request.Headers.Add("X-Forwarded-Host", "api.example.test");
+
+        // when
+        using var response = await client.SendAsync(request, AbortToken);
+        var body = await response.Content.ReadAsStringAsync(AbortToken);
+
+        // then
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        body.Should().Be(app.Urls.Single());
+    }
+
+    [Fact]
+    public async Task should_apply_app_configured_forward_limit()
+    {
+        // given
+        await using var app = await _CreateAppAsync(
+            application =>
+                application.MapGet(
+                    "/client-ip",
+                    (HttpContext context) => context.Connection.RemoteIpAddress?.ToString()
+                ),
+            configureAppServices: services =>
+                services.Configure<ForwardedHeadersOptions>(options =>
+                {
+                    options.KnownIPNetworks.Clear();
+                    options.KnownProxies.Clear();
+                    options.ForwardLimit = 2;
+                })
+        );
+        using var client = _CreateClient(app);
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/client-ip");
+        request.Headers.Add("X-Forwarded-For", "203.0.113.7, 198.51.100.9");
+
+        // when
+        using var response = await client.SendAsync(request, AbortToken);
+        var body = await response.Content.ReadAsStringAsync(AbortToken);
+
+        // then - the default limit of 1 would stop at the last hop, 198.51.100.9
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        body.Should().Be("203.0.113.7");
+    }
+
+    [Fact]
+    public async Task should_let_app_configured_forwarded_headers_override_the_framework_default()
+    {
+        // given - the framework default also processes X-Forwarded-Proto and X-Forwarded-Host
+        await using var app = await _CreateAppAsync(
+            application => application.MapGet("/origin", (HttpRequest request) => $"{request.Scheme}://{request.Host}"),
+            options => options.TrustForwardedHeadersFromAnyProxy = true,
+            configureAppServices: services =>
+                services.Configure<ForwardedHeadersOptions>(options =>
+                    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor
+                )
+        );
+        using var client = _CreateClient(app);
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/origin");
+        request.Headers.Add("X-Forwarded-Proto", "https");
+        request.Headers.Add("X-Forwarded-Host", "api.example.test");
+
+        // when
+        using var response = await client.SendAsync(request, AbortToken);
+        var body = await response.Content.ReadAsStringAsync(AbortToken);
+
+        // then
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        body.Should().Be(app.Urls.Single());
+    }
+
+    [Fact]
+    public async Task should_let_app_configured_forwarded_headers_override_the_framework_default_when_configured_before_add_headless()
+    {
+        // given - the app configures its options before AddHeadless registers anything
+        await using var app = await _CreateAppAsync(
+            application => application.MapGet("/origin", (HttpRequest request) => $"{request.Scheme}://{request.Host}"),
+            options => options.TrustForwardedHeadersFromAnyProxy = true,
+            configureAppServicesBeforeHeadless: services =>
+                services.Configure<ForwardedHeadersOptions>(options =>
+                    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor
+                )
+        );
+        using var client = _CreateClient(app);
+        using var request = new HttpRequestMessage(HttpMethod.Get, "/origin");
+        request.Headers.Add("X-Forwarded-Proto", "https");
+        request.Headers.Add("X-Forwarded-Host", "api.example.test");
+
+        // when
+        using var response = await client.SendAsync(request, AbortToken);
+        var body = await response.Content.ReadAsStringAsync(AbortToken);
+
+        // then
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        body.Should().Be(app.Urls.Single());
     }
 
     [Fact]
@@ -338,13 +450,16 @@ public sealed class HeadlessApiDefaultsTests : TestBase
     private async Task<WebApplication> _CreateAppAsync(
         Action<WebApplication> map,
         Action<HeadlessApiDefaultsOptions>? configure = null,
-        Action<HeadlessServiceDefaultsOptions>? configureServices = null
+        Action<HeadlessServiceDefaultsOptions>? configureServices = null,
+        Action<IServiceCollection>? configureAppServices = null,
+        Action<IServiceCollection>? configureAppServicesBeforeHeadless = null
     )
     {
         var builder = WebApplication.CreateBuilder(
             new WebApplicationOptions { EnvironmentName = EnvironmentNames.Test }
         );
         builder.WebHost.UseUrls("http://127.0.0.1:0");
+        configureAppServicesBeforeHeadless?.Invoke(builder.Services);
         builder.AddHeadless(configureServices: options =>
         {
             options.Validation.ValidateServiceProviderOnStartup = false;
@@ -352,6 +467,7 @@ public sealed class HeadlessApiDefaultsTests : TestBase
             configureServices?.Invoke(options);
         });
         builder.Services.AddAuthentication();
+        configureAppServices?.Invoke(builder.Services);
 
         var app = builder.Build();
         app.UseHeadless(options =>

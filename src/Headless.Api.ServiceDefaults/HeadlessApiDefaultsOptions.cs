@@ -12,21 +12,24 @@ public sealed class HeadlessApiDefaultsOptions
 {
     internal const string AppliedKey = "Headless.Api.Defaults.Applied";
 
-    /// <summary>Whether to run ASP.NET Core forwarded-headers middleware.</summary>
+    /// <summary>
+    /// Whether to run ASP.NET Core forwarded-headers middleware. It reads the app's
+    /// <see cref="ForwardedHeadersOptions"/> from DI, so configure proxies there
+    /// (<c>builder.Services.Configure&lt;ForwardedHeadersOptions&gt;(...)</c>) and do not call
+    /// <c>UseForwardedHeaders()</c> a second time.
+    /// </summary>
     public bool UseForwardedHeaders { get; set; } = true;
 
     /// <summary>
-    /// Trusts forwarded headers from any proxy. Keep disabled unless the app is only reachable through trusted infrastructure.
+    /// Trusts forwarded headers from any proxy by clearing the known proxies and networks of the app's
+    /// <see cref="ForwardedHeadersOptions"/>. Keep disabled unless the app is only reachable through trusted infrastructure.
     /// </summary>
     public bool TrustForwardedHeadersFromAnyProxy { get; set; }
 
-    /// <summary>The forwarded headers to process.</summary>
-    public ForwardedHeaders ForwardedHeaders { get; set; } =
-        ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto | ForwardedHeaders.XForwardedHost;
-
     /// <summary>
-    /// Optional callback applied to <see cref="ForwardedHeadersOptions"/> before the forwarded-headers middleware
-    /// is registered. Only invoked when <see cref="UseForwardedHeaders"/> is <see langword="true"/>.
+    /// Optional callback applied to the app's <see cref="ForwardedHeadersOptions"/> (resolved from DI) before the
+    /// forwarded-headers middleware is registered. Only invoked when <see cref="UseForwardedHeaders"/> is
+    /// <see langword="true"/>.
     /// </summary>
     public Action<ForwardedHeadersOptions>? ConfigureForwardedHeaders { get; set; }
 

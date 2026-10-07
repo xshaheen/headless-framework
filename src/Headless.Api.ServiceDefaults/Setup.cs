@@ -21,6 +21,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.Extensions.Configuration;
@@ -419,7 +420,19 @@ public static class SetupApi
 
     private static void _UseForwardedHeaders(IApplicationBuilder app, HeadlessApiDefaultsOptions options)
     {
-        var forwardedHeadersOptions = new ForwardedHeadersOptions { ForwardedHeaders = options.ForwardedHeaders };
+        // Start from the app's configured options so its KnownProxies, KnownIPNetworks, and ForwardLimit apply here;
+        // a fresh instance would silently drop them and push the app into adding a second forwarded-headers pass.
+        var forwardedHeadersOptions = app
+            .ApplicationServices.GetRequiredService<IOptions<ForwardedHeadersOptions>>()
+            .Value;
+
+        // Applied here rather than as options configuration, so an app's Configure<ForwardedHeadersOptions> wins
+        // whether it runs before or after AddHeadless. An app that wants no forwarded headers turns the step off.
+        if (forwardedHeadersOptions.ForwardedHeaders == ForwardedHeaders.None)
+        {
+            forwardedHeadersOptions.ForwardedHeaders =
+                ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto | ForwardedHeaders.XForwardedHost;
+        }
 
         if (options.TrustForwardedHeadersFromAnyProxy)
         {
