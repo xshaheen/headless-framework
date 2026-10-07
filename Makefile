@@ -150,6 +150,12 @@ AFFECTED_UNIT_STAGE = if [ $$status -ne 0 ]; then $(PROOF) skip --dir "$$run" --
 			$(PROOF) run --dir "$$run" --name coverage-merge -- $(DOTNET) dotnet-coverage merge --nologo --output "$$run/coverage/merged.cobertura.xml" --output-format cobertura "$$run/unit-tests/**/*.cobertura.xml" || status=1; \
 		fi; \
 	else printf '\033[33m[affected]\033[0m no unit-test project covers the affected set; nothing ran.\n'; fi;
+# The pre-commit hook rewrites staged C# with CSharpier, so a proof that skipped formatting proved bytes the commit
+# then changed. The format stage checks the same changed files format-check-changed does, and fails the bundle
+# without blocking the build or the tests. bash -c gets the function through `declare -f` because proof.py runs a
+# command, not shell text.
+AFFECTED_FORMAT_STAGE = $(FORMAT_CHANGED_FN); \
+	$(PROOF) run --dir "$$run" --name format -- bash -c "$$(declare -f format_changed); format_changed worktree" || true;
 # A change under a dashboard's wwwroot/ is a change to its Dashboard project, so the build stage already runs
 # `npm run build` through eng/DashboardSpa.targets, but nothing else lints or unit-tests the SPA. This stage runs
 # dashboard-<name>-test for each SPA changed_dashboards selects.
@@ -176,8 +182,8 @@ help: ## Show available commands.
 	@printf "  make build\n"
 	@printf "  make test-project TEST_PROJECT=tests/Headless.Api.Composition.Tests.Unit/Headless.Api.Composition.Tests.Unit.csproj\n"
 	@printf "  make test-class CLASS='*CultureHelperTests' TEST_PROJECT=tests/Headless.Extensions.Tests.Unit/Headless.Extensions.Tests.Unit.csproj\n"
-	@printf "  make verify-affected            # build + unit tests + analyzers + changed dashboards, with a proof bundle\n"
-	@printf "  make check                      # the CI gate over the affected scope: check-layering, format-check-changed, verify-affected\n"
+	@printf "  make verify-affected            # format + build + unit tests + analyzers + changed dashboards, with a proof bundle\n"
+	@printf "  make check                      # the CI gate over the affected scope: check-layering, verify-affected\n"
 	@printf "  make test-affected\n"
 	@printf "  make quality-analyzers-affected\n"
 	@printf "  make bench-compare BENCH_AREA=Caching BENCH_FILTER='*Memory*' BASE=origin/main\n"
@@ -303,15 +309,27 @@ hooks: ## Wire the committed hooks in .githooks: through global hooks that dispa
 		echo "[hooks] core.hooksPath set to .githooks for this worktree"; \
 	fi
 
+# CSharpier's "Formatted N files" is the count it processed, not the count it changed, and an agent once read
+# "Formatted 30 files" as 30 rewrites and re-ran a build to re-prove them. A file is formatted only when its
+# working tree matched the index, so any diff left afterwards is CSharpier's: those files are re-staged and
+# listed, and a commit that needed no formatting prints nothing.
 .PHONY: hook-pre-commit
-hook-pre-commit: ## Git hook: format staged C# files before commit.
-	@staged=(); safe=(); skipped=(); \
+hook-pre-commit: ## Git hook: format staged C# files before commit; lists only the files it changed.
+	@staged=(); safe=(); skipped=(); changed=(); \
 	while IFS= read -r file; do staged+=("$$file"); done < <(git diff --cached --name-only --diff-filter=ACMR -- '*.cs'); \
 	if [ "$${#staged[@]}" -eq 0 ]; then exit 0; fi; \
 	for file in "$${staged[@]}"; do \
 		if git diff --quiet -- "$$file"; then safe+=("$$file"); else skipped+=("$$file"); fi; \
 	done; \
-	if [ "$${#safe[@]}" -gt 0 ]; then $(DOTNET) csharpier format "$${safe[@]}"; git add -- "$${safe[@]}"; fi; \
+	if [ "$${#safe[@]}" -gt 0 ]; then \
+		out="$$($(DOTNET) csharpier format "$${safe[@]}" 2>&1)" || { printf '%s\n' "$$out" >&2; echo "[pre-commit] CSharpier failed; nothing was committed" >&2; exit 1; }; \
+		while IFS= read -r -d '' file; do changed+=("$$file"); done < <(git -c core.quotePath=false diff -z --name-only -- "$${safe[@]}"); \
+		if [ "$${#changed[@]}" -gt 0 ]; then \
+			git add -- "$${changed[@]}"; \
+			printf '[pre-commit] CSharpier reformatted %d staged file(s) and re-staged them:\n' "$${#changed[@]}"; \
+			printf '  %s\n' "$${changed[@]}"; \
+		fi; \
+	fi; \
 	if [ "$${#skipped[@]}" -gt 0 ]; then \
 		printf '\033[33m[pre-commit]\033[0m skipped auto-format for %d partially-staged file(s) (formatting the whole file would commit unstaged hunks):\n' "$${#skipped[@]}"; \
 		printf '  %s\n' "$${skipped[@]}"; \
@@ -345,7 +363,7 @@ hook-format-check: ## Git hook: CSharpier-check the C# files committed since AFF
 # staged, unstaged, and untracked files, for the local gate. With no merge base the whole tree is checked.
 # Past ~100 folders one repository scan is cheaper (2087 files in 345 folders: 14.6 s against 5.8 s).
 FORMAT_CHANGED_MAX_DIRS ?= 100
-FORMAT_CHANGED = format_changed() { \
+FORMAT_CHANGED_FN = format_changed() { \
 	local mode="$$1" base file dir out rc=0 arc=0; local -a files=() dirs=(); \
 	base="$$(git merge-base "$(AFFECTED_BASE)" HEAD 2>/dev/null || true)"; \
 	if [ -z "$$base" ]; then echo "[format] no merge base with $(AFFECTED_BASE); checking every C\# file"; $(DOTNET) csharpier check .; return; fi; \
@@ -368,7 +386,8 @@ FORMAT_CHANGED = format_changed() { \
 			if (named == 0 && rc != 0) exit 1 }' rc="$$rc" <(printf '%s\n' "$${files[@]}") <(printf '%s\n' "$$out") || arc=$$?; \
 	if [ $$arc -eq 1 ]; then printf '%s\n' "$$out" >&2; echo "[format] csharpier exited $$rc without naming a file" >&2; return $$rc; fi; \
 	if [ $$arc -ne 0 ]; then return $$arc; fi; \
-	printf '[format] %d changed C\# file(s) formatted (%d folder(s) scanned)\n' "$${\#files[@]}" "$${\#dirs[@]}"; }; format_changed
+	printf '[format] %d changed C\# file(s) formatted (%d folder(s) scanned)\n' "$${\#files[@]}" "$${\#dirs[@]}"; }
+FORMAT_CHANGED = $(FORMAT_CHANGED_FN); format_changed
 
 .PHONY: format-check-changed
 format-check-changed: ## Check C# formatting of the files changed vs AFFECTED_BASE, committed or not; the local gate's format stage.
@@ -816,9 +835,10 @@ test-affected-integration: ## Build the affected set, then run its *.Tests.Integ
 	$(PROOF_REPORT) "$$run"; exit $$status
 
 .PHONY: verify-affected
-verify-affected: ## Build, unit-test (with coverage), and analyze the affected set, plus dashboard-<name>-test for a changed SPA; one proof bundle for the PR body.
+verify-affected: ## Format-check the changed files, then build, unit-test (with coverage), and analyze the affected set, plus dashboard-<name>-test for a changed SPA; one proof bundle for the PR body.
 	@$(AFFECTED_PREPARE) "$(PROOF_RUN)-verify"; \
 	run="$(PROOF_RUN)-verify"; status=0; coverage="$(VERIFY_COVERAGE)"; \
+	$(AFFECTED_FORMAT_STAGE) \
 	$(AFFECTED_BUILD_STAGES) \
 	$(AFFECTED_UNIT_STAGE) \
 	$(AFFECTED_ANALYZER_STAGE) \
@@ -830,16 +850,16 @@ verify-affected: ## Build, unit-test (with coverage), and analyze the affected s
 # clean rebuild with analyzers, quality-analyzers-affected, and the unit suite; verify-affected is the
 # build, analyzer, and unit stages of that for the projects this branch changed, which is what a local run
 # finishes in minutes (the whole-solution version is ci-build, far past ten minutes on ~430 projects).
-# Formatting follows the same scope: format-check-changed checks the changed files (~0.3-2 s against
-# ~6 s for the whole repository), and CI's format-check job keeps the whole-repository check. A changed
-# dashboard SPA gets its lint, type-check, unit, and build stage in verify-affected, the same
+# Formatting follows the same scope: verify-affected's format stage checks the changed files (~0.3-2 s
+# against ~6 s for the whole repository), and CI's format-check job keeps the whole-repository check. A
+# changed dashboard SPA gets its lint, type-check, unit, and build stage in verify-affected too, the same
 # dashboard-<name>-test CI's dashboard job runs.
 # The gates run one after another through a sub-make so a failed gate does not hide the next, and a dry
 # run still only prints because the sub-make inherits -n.
-CHECK_GATES ?= check-layering format-check-changed verify-affected
+CHECK_GATES ?= check-layering verify-affected
 
 .PHONY: check
-check: ## CI gate over the affected scope: check-layering, format-check-changed, verify-affected (with changed dashboards); every gate runs, every failure is reported.
+check: ## CI gate over the affected scope: check-layering, then verify-affected (format, build, tests, analyzers, changed dashboards); every failure is reported.
 	@failed=""; for gate in $(CHECK_GATES); do $(MAKE) $$gate || failed="$$failed $$gate"; done; \
 	if [ -n "$$failed" ]; then printf '[check] failed:%s\n' "$$failed" >&2; exit 1; fi; \
 	printf '[check] passed: %s\n' "$(CHECK_GATES)"
