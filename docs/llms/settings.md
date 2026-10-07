@@ -1,6 +1,6 @@
 ---
 domain: Settings
-packages: Settings.Abstractions, Settings, Settings.Storage.EntityFramework, Settings.Storage.PostgreSql, Settings.Storage.SqlServer
+packages: Settings.Abstractions, Settings, Settings.Storage.EntityFramework, Settings.Storage.PostgreSql, Settings.Storage.SqlServer, Settings.Testing
 ---
 
 # Settings
@@ -151,6 +151,7 @@ public sealed class RateLimitPartitioner(ISettingsSnapshot<RateLimitPolicy> poli
 - **Transport.** `AddSettingsSnapshot` contributes that consumer, and only when the host uses messaging. It is an [every-instance consumer](messaging.md#every-instance-bus-delivery), so a host on a transport without every-instance delivery (AWS SNS/SQS, or Azure Service Bus without `AutoProvision`) fails at startup once it registers a snapshot. Such a host runs the snapshot without messaging. A host that never calls `AddSettingsSnapshot` is unaffected.
 - **Backstop.** Each process re-reads every snapshot on its backstop interval, one minute by default and at most 30 days (`SettingsSnapshotBuilder<T>.MaxBackstop`), jittered by ±10%. This is the only refresh without messaging, and it catches announcements that were lost or never sent, such as configuration changes. The re-read goes through the setting cache: a write that evicts the cache is seen at the next tick, and a write that bypasses eviction (raw SQL, or a write through the PostgreSQL or SQL Server value repository directly) is seen only after `SettingManagementOptions.ValueCacheExpiration`.
 - **Several replicas.** Convergence across processes needs a shared (Redis) or hybrid setting cache. With a process-local cache (`UseInMemory`), each process's cache learns only its own writes, so another replica reads its cached value until it expires, through announcement, re-read, and backstop alike.
+- **Tests.** Code that reads a snapshot takes a `TestSettingsSnapshot<T>` from [Headless.Settings.Testing](#headlesssettingstesting) in its tests, so the test sets the value instead of loading it from a store.
 
 ### Startup Initialization
 
@@ -696,3 +697,42 @@ Configure schema and table names through `SettingsStorageOptions` via `setup.Con
 
 - Registers the settings schema contribution; the one schema runner applies it at startup
 - Registers the shared relational repositories from `Headless.Settings`, over the SQL Server dialect, as `ISettingValueRecordRepository` and `ISettingDefinitionRecordRepository` (singletons)
+
+---
+
+## Headless.Settings.Testing
+
+Test-only doubles for settings.
+
+### API and behavior
+
+- `TestSettingsSnapshot<T>` — an in-memory `ISettingsSnapshot<T>` whose value the test sets. `new TestSettingsSnapshot<T>()` starts unloaded (`TryGetCurrent` returns `false`, `Revision` is `0`); `new TestSettingsSnapshot<T>(value)` starts loaded at revision `1`.
+- `Set(value)` publishes the value, advances `Revision` by one, then calls each `OnChange` listener with the new value and revision, and returns the new revision. Every call counts as a change, including one that passes an equal value.
+
+### Install
+
+```bash
+dotnet add package Headless.Settings.Testing
+```
+
+### Setup and use
+
+```csharp
+var snapshot = new TestSettingsSnapshot<RateLimitPolicy>(new RateLimitPolicy(PermitLimit: 10));
+
+// Replace the snapshot the application registered with AddSettingsSnapshot<RateLimitPolicy>.
+builder.Services.RemoveAll<ISettingsSnapshot<RateLimitPolicy>>();
+builder.Services.AddSingleton<ISettingsSnapshot<RateLimitPolicy>>(snapshot);
+
+// Simulate an operator changing the setting.
+snapshot.Set(new RateLimitPolicy(PermitLimit: 20));
+```
+
+### Configuration
+
+None.
+
+### Runtime behavior
+
+- `GetAsync` throws `InvalidOperationException` before a value is set, where the real snapshot waits for its first load: a test that forgot to set a value fails at once instead of hanging.
+- A listener exception propagates from `Set` as an `AggregateException` after every listener ran, where the real snapshot logs it, so the test sees the failure.

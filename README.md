@@ -14,7 +14,7 @@
 
 [اللغة: العربية](README.ar.md)
 
-203 packages &bull; One setup grammar &bull; Swap any provider in one line
+204 packages &bull; One setup grammar &bull; Swap any provider in one line
 
 [Why Headless](#why-headless) &bull; [60-second start](#60-second-start) &bull; [One grammar, every domain](#one-grammar-every-domain) &bull; [What is in the box](#what-is-in-the-box) &bull; [Package catalog](#package-catalog)
 
@@ -252,7 +252,7 @@ Provider packages are ordinary NuGet packages. To add a custom backend, implemen
 ## Package catalog
 
 <details>
-<summary><strong>All 203 packages, grouped by domain</strong> — expand to browse</summary>
+<summary><strong>All 204 packages, grouped by domain</strong> — expand to browse</summary>
 
 ### API & Web
 
@@ -634,6 +634,7 @@ Dynamic application settings stored in a database. Change configuration at runti
 | [Headless.Settings.Storage.EntityFramework](src/Headless.Settings.Storage.EntityFramework/README.md) | EF Core settings storage |
 | [Headless.Settings.Storage.PostgreSql](src/Headless.Settings.Storage.PostgreSql/README.md) | PostgreSQL raw-DDL settings storage |
 | [Headless.Settings.Storage.SqlServer](src/Headless.Settings.Storage.SqlServer/README.md) | SQL Server raw-DDL settings storage |
+| [Headless.Settings.Testing](src/Headless.Settings.Testing/README.md) | Test-only in-memory settings snapshot |
 
 ### SMS
 

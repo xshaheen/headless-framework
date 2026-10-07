@@ -566,6 +566,7 @@
         <Project Path="src\Headless.Settings.Storage.EntityFramework\Headless.Settings.Storage.EntityFramework.csproj" />
         <Project Path="src\Headless.Settings.Storage.PostgreSql\Headless.Settings.Storage.PostgreSql.csproj" />
         <Project Path="src\Headless.Settings.Storage.SqlServer\Headless.Settings.Storage.SqlServer.csproj" />
+        <Project Path="src\Headless.Settings.Testing\Headless.Settings.Testing.csproj" />
     </Folder>
     <Folder Name="/Settings/Tests/">
         <Project Path="tests\Headless.Settings.Storage.PostgreSql.Tests.Integration\Headless.Settings.Storage.PostgreSql.Tests.Integration.csproj" />

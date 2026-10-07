@@ -918,7 +918,6 @@
       "headless.settings.abstractions": {
         "type": "Project",
         "dependencies": {
-          "Headless.Context.Abstractions": "[1.0.0, )",
           "Headless.Extensions": "[1.0.0, )",
           "Headless.Serializer.Json": "[1.0.0, )"
         }
@@ -928,6 +927,12 @@
         "dependencies": {
           "Headless.EntityFramework": "[1.0.0, )",
           "Headless.Settings": "[1.0.0, )"
+        }
+      },
+      "headless.settings.testing": {
+        "type": "Project",
+        "dependencies": {
+          "Headless.Settings.Abstractions": "[1.0.0, )"
         }
       },
       "headless.sql": {
