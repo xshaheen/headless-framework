@@ -5,6 +5,7 @@ using Headless.Api.Idempotency;
 using Headless.Http;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
 
 #pragma warning disable CA2025 // False positive: _Post awaits SendAsync before its request disposes; tests only hold the outer task.
 
@@ -177,6 +178,75 @@ public sealed class IdempotencyEndToEndTests(ApiIdempotencyPostgreSqlFixture fix
     }
 
     /// <summary>A fresh key per test so tests sharing the fixture's database never collide on the same admission.</summary>
+    // ── required keys and reconciliation ───────────────────────────────────────
+
+    [Fact]
+    public async Task should_refuse_a_keyless_request_to_an_endpoint_that_requires_a_key()
+    {
+        await using var app = await IdempotencyTestApp.CreateAsync(
+            fixture.ConfigureStore,
+            mapAdditionalEndpoints: static app =>
+                app.MapPost("/payments", static () => Results.Created("/payments/1", null)).RequireIdempotencyKey()
+        );
+        using var client = IdempotencyTestApp.CreateClient(app);
+
+        using var body = new StringContent("{}");
+        using var keyless = await client.PostAsync("/payments", body, AbortToken);
+        using var keyed = await _Post(client, "/payments", key: _UniqueKey(), body: "{}");
+
+        keyless.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await keyless.Content.ReadAsStringAsync(AbortToken)).Should().Contain(IdempotencyErrorCodes.KeyRequired);
+        keyed.StatusCode.Should().Be(HttpStatusCode.Created);
+    }
+
+    [Fact]
+    public async Task should_reconcile_an_earlier_request_through_the_lookup_from_another_endpoint()
+    {
+        var key = _UniqueKey();
+        await using var app = await IdempotencyTestApp.CreateAsync(
+            fixture.ConfigureStore,
+            mapAdditionalEndpoints: static app =>
+            {
+                app.MapGet(
+                    "/echo/{key}",
+                    static async (string key, HttpContext http, IIdempotencyLookup lookup) =>
+                        await lookup.TryReplayAsync(http, new IdempotentRequestTarget("POST", "/echo", key))
+                            ? Results.Empty
+                            : Results.NotFound()
+                );
+                app.MapGet(
+                    "/echo/{key}/status",
+                    static async (string key, HttpContext http, IIdempotencyLookup lookup) =>
+                        Results.Text(
+                            (
+                                await lookup.GetStatusAsync(http, new IdempotentRequestTarget("POST", "/echo", key))
+                            ).ToString()
+                        )
+                );
+            }
+        );
+        using var client = IdempotencyTestApp.CreateClient(app);
+
+        using var missing = await client.GetAsync($"/echo/{key}", AbortToken);
+        (await client.GetStringAsync($"/echo/{key}/status", AbortToken)).Should().Be("Absent");
+
+        using var original = await _Post(client, "/echo", key: key, body: "hello");
+        using var reconciled = await client.GetAsync($"/echo/{key}", AbortToken);
+
+        missing.StatusCode.Should().Be(HttpStatusCode.NotFound, "reading never admits an attempt");
+        (await client.GetStringAsync($"/echo/{key}/status", AbortToken)).Should().Be("Completed");
+        reconciled.StatusCode.Should().Be(HttpStatusCode.Created);
+        (await reconciled.Content.ReadAsStringAsync(AbortToken))
+            .Should()
+            .Be(await original.Content.ReadAsStringAsync(AbortToken));
+        reconciled
+            .Headers.GetValues(HttpHeaderNames.IdempotentReplayed)
+            .Should()
+            .ContainSingle()
+            .Which.Should()
+            .Be("true");
+    }
+
     private static string _UniqueKey()
     {
         return $"k-{Guid.NewGuid():N}";

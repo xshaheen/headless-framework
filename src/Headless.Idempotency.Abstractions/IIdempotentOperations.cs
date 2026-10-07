@@ -143,4 +143,22 @@ public interface IIdempotentOperations
     /// </returns>
     /// <exception cref="ArgumentException">The key or current tenant id is invalid.</exception>
     ValueTask<IdempotencyPeekStatus> PeekAsync(string key, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Reads the stored result of <paramref name="key" />'s completed operation for the current tenant, without taking
+    /// a row lock, touching its lease, or admitting a new attempt.
+    /// </summary>
+    /// <remarks>
+    /// Use it to answer "what happened to my earlier request?" after a client lost the original response, for example
+    /// a reconciliation endpoint a payment terminal polls after a timeout. Unlike <see cref="AdmitAsync" />, a key with
+    /// no record stays absent: reading never starts an operation.
+    /// </remarks>
+    /// <param name="key">The idempotency key.</param>
+    /// <param name="cancellationToken">Token used to cancel the database call.</param>
+    /// <returns>
+    /// The stored result while the record is completed and within its retention; <see langword="null" /> when no
+    /// record exists, its operation is still pending, or its retention already elapsed.
+    /// </returns>
+    /// <exception cref="ArgumentException">The key or current tenant id is invalid.</exception>
+    ValueTask<IdempotentResult?> GetResultAsync(string key, CancellationToken cancellationToken = default);
 }

@@ -75,6 +75,12 @@ public sealed class CacheIdempotencyConformanceTests(CacheIdempotencyFixture fix
     }
 
     [Fact]
+    public override Task should_read_the_stored_result_only_of_a_completed_record_within_retention_and_tenant_scope()
+    {
+        return base.should_read_the_stored_result_only_of_a_completed_record_within_retention_and_tenant_scope();
+    }
+
+    [Fact]
     public override Task should_keep_the_recovery_point_through_a_release_until_retention_resets_the_record()
     {
         return base.should_keep_the_recovery_point_through_a_release_until_retention_resets_the_record();

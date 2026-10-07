@@ -31,6 +31,19 @@ public sealed class IdempotencyOptions
     /// </summary>
     public string HeaderName { get; set; } = HttpHeaderNames.IdempotencyKey;
 
+    /// <summary>
+    /// Whether a request without an idempotency key is refused with <c>400</c>
+    /// (<see cref="IdempotencyErrorCodes.KeyRequired" />) instead of running without idempotency. Defaults to
+    /// <see langword="false" />.
+    /// </summary>
+    /// <remarks>
+    /// Turn it on per endpoint (<c>RequireIdempotencyKey()</c>, or <c>WithIdempotency(o =&gt; o.KeyRequired = true)</c>)
+    /// for operations a duplicate must never repeat, such as payments and transfers. It applies only to requests the
+    /// middleware would handle: a method outside <see cref="Methods" />, or a request <see cref="ShouldApply" />
+    /// declines, still passes through.
+    /// </remarks>
+    public bool KeyRequired { get; set; }
+
     /// <summary>HTTP methods for which idempotency is enforced. GET is never valid.</summary>
     /// <remarks>
     /// Exposed as <see cref="ISet{T}"/> so per-endpoint <see cref="IdempotencyMetadata.Configure"/>
@@ -198,6 +211,7 @@ public sealed class IdempotencyOptions
         {
             Retention = Retention,
             HeaderName = HeaderName,
+            KeyRequired = KeyRequired,
             Methods = new HashSet<string>(Methods, StringComparer.OrdinalIgnoreCase),
             InFlightStrategy = InFlightStrategy,
             InFlightLockTimeout = InFlightLockTimeout,

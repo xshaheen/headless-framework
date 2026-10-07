@@ -218,6 +218,36 @@ public sealed class IdempotentOperationsTests : TestBase
         await context.Store.DidNotReceiveWithAnyArgs().PeekAsync(default, AbortToken);
     }
 
+    [Fact]
+    public async Task should_read_the_stored_result_through_the_resolved_record_key_without_a_unit()
+    {
+        // given
+        var context = new IdempotencyTestContext();
+        var stored = new IdempotentResult([1, 2], "test-result.v1");
+        context.Store.GetResultAsync(RecordKey, AbortToken).Returns(stored);
+
+        // when
+        var result = await context.Operations.GetResultAsync(Key, AbortToken);
+
+        // then
+        result.Should().BeSameAs(stored);
+        await context.Store.DidNotReceiveWithAnyArgs().BeginOwnedUnitAsync(AbortToken);
+    }
+
+    [Fact]
+    public async Task should_refuse_to_read_the_result_of_an_invalid_key()
+    {
+        // given
+        var context = new IdempotencyTestContext();
+
+        // when
+        var act = async () => await context.Operations.GetResultAsync(" bad", AbortToken);
+
+        // then
+        await act.Should().ThrowAsync<ArgumentException>();
+        await context.Store.DidNotReceiveWithAnyArgs().GetResultAsync(default, AbortToken);
+    }
+
     private IUnitOfWork _GivenOwnedUnit(IdempotencyTestContext context)
     {
         var (unit, _) = ActiveUnit(isOwned: true);

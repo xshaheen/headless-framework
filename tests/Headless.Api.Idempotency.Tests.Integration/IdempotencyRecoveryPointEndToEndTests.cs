@@ -303,6 +303,11 @@ internal sealed class LosingCompletionSwitch
         {
             return inner.PeekAsync(key, cancellationToken);
         }
+
+        public ValueTask<IdempotentResult?> GetResultAsync(string key, CancellationToken cancellationToken = default)
+        {
+            return inner.GetResultAsync(key, cancellationToken);
+        }
     }
 }
 
