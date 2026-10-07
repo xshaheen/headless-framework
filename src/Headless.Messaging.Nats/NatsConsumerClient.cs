@@ -6,6 +6,7 @@ using System.Threading.Channels;
 using Headless.Checks;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Transport;
+using Headless.Threading;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using NATS.Client.Core;
