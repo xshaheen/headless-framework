@@ -18,17 +18,35 @@ public sealed class RetryBehaviorTests : TestBase
     private static readonly JobFunctionRegistry _EmptyRegistry = JobFunctionRegistryBuilder.Build([], [], []);
 
     // End-to-end unit tests that call the public ExecuteTaskAsync with a CronJobOccurrence
-    // so RunContextFunctionAsync + retry logic is exercised. Tests use short intervals (1..3s).
+    // so RunContextFunctionAsync + retry logic is exercised. Tests that count attempts pass a
+    // zero stored interval so retries run back-to-back: an empty interval array leaves pacing to
+    // the failure policy, whose fallback delay is 30 seconds per retry.
 
     [Fact()]
     public async Task execute_task_async_cron_job_occurrence_applies_retry_intervals_and_updates_retry_count()
     {
-        // given: cron occurrence -> RunContextFunctionAsync path
-        // Use three distinct short intervals so we can verify mapping without overly long waits
-        var (handler, context, _, attempts) = _SetupRetryTestFixture([1, 2, 3], retries: 3);
+        // given: cron occurrence -> RunContextFunctionAsync path. The fake clock drives the retry delays, so
+        // the 1..3s intervals pass by advancing time instead of waiting them out.
+        var timeProvider = new FakeTimeProvider();
+        var (handler, context, _, attempts) = _SetupRetryTestFixture([1, 2, 3], retries: 3, timeProvider: timeProvider);
+        context.CachedDelegate = (_, jobContext, _) =>
+        {
+            attempts.Add(new Attempt(timeProvider.GetUtcNow().UtcDateTime, jobContext.RetryCount));
+            throw new InvalidOperationException("Fail for retry test");
+        };
 
-        // when
-        await handler.ExecuteTaskAsync(context, isDue: true, cancellationToken: AbortToken);
+        var execution = handler.ExecuteTaskAsync(context, isDue: true, cancellationToken: AbortToken);
+
+        // Pump the clock until the run finishes: whenever the retry pipeline parks on a stored interval, the
+        // next advance fires it. The iteration bound only stops a run parked somewhere the fake clock cannot
+        // reach; the WaitAsync then turns that into a clear failure instead of a hang.
+        for (var i = 0; !execution.IsCompleted && i < 1_000; i++)
+        {
+            timeProvider.Advance(TimeSpan.FromMilliseconds(50));
+            await Task.Yield();
+        }
+
+        await execution.WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
 
         // then - initial + 3 retries = 4 attempts
         attempts.Should().HaveCount(4);
@@ -37,7 +55,8 @@ public sealed class RetryBehaviorTests : TestBase
             attempts[i].RetryCount.Should().Be(i);
         }
 
-        // Verify mapped retry intervals produced the expected spacing between attempts
+        // Verify mapped retry intervals produced the expected spacing between attempts. The pump advances in
+        // 50ms steps, so each spacing is the stored interval rounded up to one step.
         var timeDiffs = new[]
         {
             (attempts[1].Timestamp - attempts[0].Timestamp).TotalSeconds,
@@ -45,10 +64,12 @@ public sealed class RetryBehaviorTests : TestBase
             (attempts[3].Timestamp - attempts[2].Timestamp).TotalSeconds,
         };
 
-        // Lower bound ensures the delay fired; upper bound is generous to tolerate CI/load jitter
-        timeDiffs[0].Should().BeInRange(0.8, 2.5); // first retry uses ~1s
-        timeDiffs[1].Should().BeInRange(1.5, 4.5); // second retry uses ~2s
-        timeDiffs[2].Should().BeInRange(2.5, 6.5); // third retry uses ~3s
+        // A fake-clock timer never fires early, so the lower bound is exact; the upper bound only tolerates pump
+        // steps that ran while a continuation had not parked on its timer yet, and stays far under the 30s
+        // fallback delay a regression would park on instead.
+        timeDiffs[0].Should().BeInRange(1.0, 2.0); // first retry uses ~1s
+        timeDiffs[1].Should().BeInRange(2.0, 3.0); // second retry uses ~2s
+        timeDiffs[2].Should().BeInRange(3.0, 4.0); // third retry uses ~3s
     }
 
     [Fact]
@@ -89,7 +110,7 @@ public sealed class RetryBehaviorTests : TestBase
     )
     {
         var options = new JobsRetryOptions();
-        var (handler, context, manager, attempts) = _SetupRetryTestFixture([], retries, retryOptions: options);
+        var (handler, context, manager, attempts) = _SetupRetryTestFixture([0], retries, retryOptions: options);
 
         await handler.ExecuteTaskAsync(context, isDue: true, cancellationToken: AbortToken);
 
@@ -292,7 +313,7 @@ public sealed class RetryBehaviorTests : TestBase
     public async Task execute_task_async_persists_retry_count_before_the_next_attempt()
     {
         var options = new JobsRetryOptions();
-        var (handler, context, manager, attempts) = _SetupRetryTestFixture([], retries: 1, retryOptions: options);
+        var (handler, context, manager, attempts) = _SetupRetryTestFixture([0], retries: 1, retryOptions: options);
         var persistedBeforeSecondAttempt = false;
         manager
             .UpdateTickerAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>())
@@ -349,7 +370,7 @@ public sealed class RetryBehaviorTests : TestBase
     public async Task execute_task_async_resumes_from_the_durable_retry_count_without_resetting_the_budget()
     {
         var options = new JobsRetryOptions();
-        var (handler, context, _, attempts) = _SetupRetryTestFixture([], retries: 2, retryOptions: options);
+        var (handler, context, _, attempts) = _SetupRetryTestFixture([0], retries: 2, retryOptions: options);
         context.RetryCount = 1;
 
         await handler.ExecuteTaskAsync(context, isDue: true, cancellationToken: AbortToken);
@@ -364,7 +385,7 @@ public sealed class RetryBehaviorTests : TestBase
         var exceptionHandler = Substitute.For<Headless.Jobs.IJobExceptionHandler>();
         var options = new JobsRetryOptions();
         var (handler, context, _, attempts) = _SetupRetryTestFixture(
-            [],
+            [0],
             retries: 1,
             retryOptions: options,
             configureServices: services =>
@@ -463,7 +484,7 @@ public sealed class RetryBehaviorTests : TestBase
 
             var options = new JobsRetryOptions();
             var (handler, context, manager, _) = _SetupRetryTestFixture(
-                [],
+                [0],
                 retries: 1,
                 retryOptions: options,
                 configureServices: static services => services.AddScoped<RetryScopeMarker>(),
@@ -500,7 +521,7 @@ public sealed class RetryBehaviorTests : TestBase
                 return Task.CompletedTask;
             },
         };
-        var (handler, context, manager, _) = _SetupRetryTestFixture([], retries: 1, retryOptions: options);
+        var (handler, context, manager, _) = _SetupRetryTestFixture([0], retries: 1, retryOptions: options);
         manager
             .UpdateTickerAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>())
             .Returns(call =>
@@ -531,7 +552,7 @@ public sealed class RetryBehaviorTests : TestBase
                 return Task.CompletedTask;
             },
         };
-        var (handler, context, manager, _) = _SetupRetryTestFixture([], retries: 1, retryOptions: options);
+        var (handler, context, manager, _) = _SetupRetryTestFixture([0], retries: 1, retryOptions: options);
         manager
             .UpdateTickerAsync(Arg.Any<JobExecutionState>(), Arg.Any<CancellationToken>())
             .Returns(call => Task.FromResult(call.Arg<JobExecutionState>().Status == JobStatus.Failed ? 0 : 1));
@@ -591,7 +612,7 @@ public sealed class RetryBehaviorTests : TestBase
 
         var options = new JobsRetryOptions { OnExhaustedTimeout = TimeSpan.FromMilliseconds(20) };
         var (handler, context, _, attempts) = _SetupRetryTestFixture(
-            [],
+            [0],
             retries: 1,
             retryOptions: options,
             configureServices: services => services.AddSingleton(exceptionHandler)

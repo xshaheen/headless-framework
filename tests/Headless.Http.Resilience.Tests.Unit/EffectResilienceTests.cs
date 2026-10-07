@@ -48,7 +48,9 @@ public sealed class EffectResilienceTests : TestBase, IDisposable
     {
         // given - unsafe disables retry only for RFC-unsafe methods; reads stay retryable.
         _StubTransient("/unsafe-read");
-        await using var provider = _BuildProvider(o => o.AddEffectResilienceHandler(OutboundEffect.Unsafe));
+        await using var provider = _BuildProvider(o =>
+            o.AddEffectResilienceHandler(OutboundEffect.Unsafe, configureResilience: _MakeRetryFast)
+        );
 
         // when
         using var client = provider.GetRequiredService<IHttpClientFactory>().CreateClient("test");
@@ -64,7 +66,9 @@ public sealed class EffectResilienceTests : TestBase, IDisposable
     {
         // given
         _StubTransient("/safe");
-        await using var provider = _BuildProvider(o => o.AddEffectResilienceHandler(OutboundEffect.Safe));
+        await using var provider = _BuildProvider(o =>
+            o.AddEffectResilienceHandler(OutboundEffect.Safe, configureResilience: _MakeRetryFast)
+        );
 
         // when
         using var client = provider.GetRequiredService<IHttpClientFactory>().CreateClient("test");
@@ -81,7 +85,11 @@ public sealed class EffectResilienceTests : TestBase, IDisposable
         // given
         _StubTransient("/idempotent");
         await using var provider = _BuildProvider(o =>
-            o.AddEffectResilienceHandler(OutboundEffect.Idempotent, idempotencyHeader: "Idempotency-Key")
+            o.AddEffectResilienceHandler(
+                OutboundEffect.Idempotent,
+                idempotencyHeader: "Idempotency-Key",
+                configureResilience: _MakeRetryFast
+            )
         );
 
         // when
@@ -112,7 +120,11 @@ public sealed class EffectResilienceTests : TestBase, IDisposable
         await using var provider = _BuildProvider(o =>
             o.AddEffectResilienceHandler(
                 OutboundEffect.Unsafe,
-                configureResilience: options => options.Retry.ShouldHandle = static _ => PredicateResult.True()
+                configureResilience: options =>
+                {
+                    _MakeRetryFast(options);
+                    options.Retry.ShouldHandle = static _ => PredicateResult.True();
+                }
             )
         );
 
@@ -133,10 +145,14 @@ public sealed class EffectResilienceTests : TestBase, IDisposable
         // This is the shape of every hand-written opt-out (SMS, Captcha, the first Paymob fix) under ServiceDefaults.
         _StubTransient("/stacked-opt-out");
         var services = new ServiceCollection();
-        services.ConfigureHttpClientDefaults(http => http.AddStandardResilienceHandler());
+        services.ConfigureHttpClientDefaults(http => http.AddStandardResilienceHandler(_MakeRetryFast));
         services
             .AddHttpClient("test")
-            .AddStandardResilienceHandler(options => options.Retry.DisableForUnsafeHttpMethods());
+            .AddStandardResilienceHandler(options =>
+            {
+                _MakeRetryFast(options);
+                options.Retry.DisableForUnsafeHttpMethods();
+            });
         await using var provider = services.BuildServiceProvider();
 
         using var client = provider.GetRequiredService<IHttpClientFactory>().CreateClient("test");
@@ -151,7 +167,7 @@ public sealed class EffectResilienceTests : TestBase, IDisposable
     {
         _StubTransient("/stacked-effect");
         var services = new ServiceCollection();
-        services.ConfigureHttpClientDefaults(http => http.AddStandardResilienceHandler());
+        services.ConfigureHttpClientDefaults(http => http.AddStandardResilienceHandler(_MakeRetryFast));
         services.AddHttpClient("test").AddEffectResilienceHandler(OutboundEffect.Unsafe);
         await using var provider = services.BuildServiceProvider();
 
@@ -167,6 +183,17 @@ public sealed class EffectResilienceTests : TestBase, IDisposable
         _server
             .Given(Request.Create().WithPath(path))
             .RespondWith(Response.Create().WithStatusCode(HttpStatusCode.ServiceUnavailable).WithBody("transient"));
+    }
+
+    // The assertions count attempts, not delay pacing, so every retrying pipeline here waits a fixed 5ms between
+    // attempts instead of the stock exponential backoff (1s base plus jitter), which the slowest test would
+    // otherwise wait out on every run.
+    private static void _MakeRetryFast(HttpStandardResilienceOptions options)
+    {
+        options.Retry.MaxRetryAttempts = 3;
+        options.Retry.BackoffType = DelayBackoffType.Constant;
+        options.Retry.UseJitter = false;
+        options.Retry.Delay = TimeSpan.FromMilliseconds(5);
     }
 
     private int _CountRequests(string path)

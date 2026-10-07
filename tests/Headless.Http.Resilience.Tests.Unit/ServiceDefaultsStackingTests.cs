@@ -8,6 +8,8 @@ using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Http.Resilience;
+using Polly;
 
 namespace Tests;
 
@@ -86,10 +88,13 @@ public sealed class ServiceDefaultsStackingTests : TestBase
     [Fact]
     public async Task should_still_retry_paymob_budget_read_under_service_defaults()
     {
-        // given - the Unsafe declaration covers mutating methods only; reads stay retryable.
+        // given - the Unsafe declaration covers mutating methods only; reads stay retryable. The retry delay is
+        // a fixed 5ms because the assertion counts attempts, not delay pacing; the stock exponential backoff
+        // would otherwise be waited out on every run. The provider's own pipeline owns the pacing here: it
+        // removes the host-wide handler, so the tuning must reach it through AddPaymobCashOut.
         using var counter = new AttemptCountingHandler();
         var builder = _CreateBuilder(counter);
-        _Register(builder, serviceDefaultsFirst: true, _AddPaymobCashOut);
+        _Register(builder, serviceDefaultsFirst: true, services => _AddPaymobCashOut(services, _MakeRetryFast));
 
         await using var provider = builder.Services.BuildServiceProvider();
         await using var scope = provider.CreateAsyncScope();
@@ -105,6 +110,14 @@ public sealed class ServiceDefaultsStackingTests : TestBase
 
     private static void _AddPaymobCashOut(IServiceCollection services)
     {
+        _AddPaymobCashOut(services, configureResilience: null);
+    }
+
+    private static void _AddPaymobCashOut(
+        IServiceCollection services,
+        Action<HttpStandardResilienceOptions>? configureResilience
+    )
+    {
         // The options are init-only, so configuration binding is the overload a consumer uses.
         services.AddPaymobCashOut(
             new ConfigurationBuilder()
@@ -118,13 +131,24 @@ public sealed class ServiceDefaultsStackingTests : TestBase
                         ["ClientSecret"] = "secret",
                     }
                 )
-                .Build()
+                .Build(),
+            configureResilience: configureResilience
         );
 
         // Registered after AddPaymobCashOut so the last registration wins and no real token call is made.
         var authenticator = Substitute.For<IPaymobCashOutAuthenticator>();
         authenticator.GetAccessTokenAsync(Arg.Any<CancellationToken>()).Returns("token");
         services.AddSingleton(authenticator);
+    }
+
+    // The assertions count attempts, not delay pacing, so a retrying pipeline waits a fixed 5ms between
+    // attempts instead of the stock exponential backoff (1s base plus jitter).
+    private static void _MakeRetryFast(HttpStandardResilienceOptions options)
+    {
+        options.Retry.MaxRetryAttempts = 3;
+        options.Retry.BackoffType = DelayBackoffType.Constant;
+        options.Retry.UseJitter = false;
+        options.Retry.Delay = TimeSpan.FromMilliseconds(5);
     }
 
     private static WebApplicationBuilder _CreateBuilder(AttemptCountingHandler counter)
