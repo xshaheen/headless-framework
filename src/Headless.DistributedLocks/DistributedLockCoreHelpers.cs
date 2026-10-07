@@ -164,9 +164,13 @@ internal static class DistributedLockCoreHelpers
     /// <see cref="DistributedReadWriteLock"/>'s release path so both flows get the
     /// same retry budget and jitter.
     /// </summary>
-    public static ResiliencePipeline BuildReleasePipeline(TimeProvider timeProvider, ILogger logger)
+    /// <remarks>
+    /// The back-off runs on <see cref="TimeProvider.System"/>, not the app clock: it waits out a transient storage
+    /// failure, and on a faked app clock that a test never advances a single failure would strand the release.
+    /// </remarks>
+    public static ResiliencePipeline BuildReleasePipeline(ILogger logger)
     {
-        return new ResiliencePipelineBuilder { TimeProvider = timeProvider }
+        return new ResiliencePipelineBuilder { TimeProvider = TimeProvider.System }
             .AddRetry(
                 new RetryStrategyOptions
                 {

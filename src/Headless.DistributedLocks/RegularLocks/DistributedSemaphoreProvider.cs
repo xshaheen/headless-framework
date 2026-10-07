@@ -46,10 +46,7 @@ internal sealed class DistributedSemaphoreProvider(
     private static readonly TimeSpan _OrphanSlotCleanupTimeout = TimeSpan.FromSeconds(5);
     private readonly IBus? _bus = DistributedLockCoreHelpers.ConfigureBus(bus, logger);
 
-    private readonly ResiliencePipeline _releasePipeline = DistributedLockCoreHelpers.BuildReleasePipeline(
-        timeProvider,
-        logger
-    );
+    private readonly ResiliencePipeline _releasePipeline = DistributedLockCoreHelpers.BuildReleasePipeline(logger);
 
     private readonly ConcurrentDictionary<string, ResetEventWithRefCount> _autoResetEvents = new(
         StringComparer.Ordinal

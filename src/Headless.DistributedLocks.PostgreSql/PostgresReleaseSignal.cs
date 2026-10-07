@@ -34,7 +34,6 @@ internal sealed class PostgresReleaseSignal : IReleaseSignal, IAsyncDisposable
     private const string _Channel = "headless_distributed_locks_release";
     private static readonly TimeSpan _MaxReconnectBackoff = TimeSpan.FromSeconds(30);
     private readonly PollingReleaseSignal _local;
-    private readonly TimeProvider _timeProvider;
     private readonly ILogger<PostgresReleaseSignal> _logger;
     private readonly NpgsqlDataSource _dataSource;
     private readonly CancellationTokenSource _disposeTokenSource = new();
@@ -50,7 +49,11 @@ internal sealed class PostgresReleaseSignal : IReleaseSignal, IAsyncDisposable
     /// <param name="dataSource">
     /// The shared <see cref="NpgsqlDataSource"/> injected by the DI registration. Not disposed here.
     /// </param>
-    /// <param name="timeProvider">Time source used for reconnect backoff delays.</param>
+    /// <param name="timeProvider">
+    /// The app clock, which paces the local polling fallback alongside the waiter's acquire timeout. The reconnect
+    /// back-off does not use it: it waits for the database to come back in real time, and on a faked app clock that a
+    /// test host never advances, a lost listener would never reconnect.
+    /// </param>
     /// <param name="logger">Logger for listener reconnect and fanout-failure warnings.</param>
     public PostgresReleaseSignal(
         IOptions<PostgreSqlDistributedLockOptions> options,
@@ -60,7 +63,6 @@ internal sealed class PostgresReleaseSignal : IReleaseSignal, IAsyncDisposable
     )
     {
         Options = options.Value;
-        _timeProvider = timeProvider;
         _logger = logger;
         _local = new PollingReleaseSignal(timeProvider);
         _commandTimeoutSeconds = (int)Options.CommandTimeout.TotalSeconds;
@@ -185,7 +187,7 @@ internal sealed class PostgresReleaseSignal : IReleaseSignal, IAsyncDisposable
                 var jitter = 0.8 + (Random.Shared.NextDouble() * 0.4);
 #pragma warning restore CA5394
                 var delay = TimeSpan.FromMilliseconds(exponential.TotalMilliseconds * jitter);
-                await _timeProvider.Delay(delay, cancellationToken).ConfigureAwait(false);
+                await TimeProvider.System.Delay(delay, cancellationToken).ConfigureAwait(false);
             }
         }
 

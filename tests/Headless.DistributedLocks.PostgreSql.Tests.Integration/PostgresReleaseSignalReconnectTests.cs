@@ -4,6 +4,7 @@ using Headless.DistributedLocks;
 using Headless.DistributedLocks.PostgreSql;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Time.Testing;
 using Npgsql;
 
 namespace Tests;
@@ -62,6 +63,27 @@ public sealed class PostgresReleaseSignalReconnectTests(PostgreSqlDistributedLoc
         await using var _ = second;
         second.Should().NotBeNull();
         second.Resource.Should().Be(resource);
+    }
+
+    [Fact]
+    public async Task should_reconnect_the_listener_when_the_app_clock_is_faked_and_never_advanced()
+    {
+        // given — the host's app clock is a FakeTimeProvider nothing advances; the reconnect back-off must not wait on it
+        var keyPrefix = $"reconnect-fake:{Faker.Random.AlphaNumeric(6)}:";
+        await using var provider = _CreateProvider(
+            keyPrefix,
+            pollingFallback: TimeSpan.FromSeconds(30),
+            appClock: new FakeTimeProvider(DateTimeOffset.UtcNow)
+        );
+        _ = provider.GetRequiredService<IDistributedLock>();
+        await _WaitForListenerCountAtLeastAsync(1);
+        var listenerPidBeforeKill = await _GetFirstListenerPidAsync();
+
+        // when
+        await _TerminateListenerBackendsAsync();
+
+        // then — a fresh listener backend appears within the real-time budget
+        await _WaitForReconnectAsync(listenerPidBeforeKill);
     }
 
     private async Task _WaitForListenerCountAtLeastAsync(int minimum)
@@ -185,11 +207,18 @@ public sealed class PostgresReleaseSignalReconnectTests(PostgreSqlDistributedLoc
         }
     }
 
-    private ServiceProvider _CreateProvider(string keyPrefix, TimeSpan pollingFallback)
+    private ServiceProvider _CreateProvider(string keyPrefix, TimeSpan pollingFallback, TimeProvider? appClock = null)
     {
         var services = new ServiceCollection();
 
         services.AddLogging();
+
+        if (appClock is not null)
+        {
+            // Registered first so the provider's TryAdd of the system clock leaves it in place.
+            services.AddSingleton(appClock);
+        }
+
         services.AddHeadlessDistributedLocks(setup =>
             setup.UsePostgreSql(options =>
             {

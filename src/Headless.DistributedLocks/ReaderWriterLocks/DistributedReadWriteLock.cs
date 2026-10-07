@@ -45,10 +45,7 @@ internal sealed class DistributedReadWriteLock(
     // Long-running release pipeline shared with the mutex provider. Release is a terminal state
     // write — if the caller's CT fires mid-retry we still want to clean up, so the release path
     // passes CancellationToken.None when executing the pipeline.
-    private readonly ResiliencePipeline _releasePipeline = DistributedLockCoreHelpers.BuildReleasePipeline(
-        timeProvider,
-        logger
-    );
+    private readonly ResiliencePipeline _releasePipeline = DistributedLockCoreHelpers.BuildReleasePipeline(logger);
 
     /// <inheritdoc/>
     public TimeProvider TimeProvider => timeProvider;

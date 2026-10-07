@@ -62,13 +62,10 @@ public sealed class DistributedLock(
     // Long-running pipeline for ReleaseAsync (critical path: failure to release strands waiters
     // until TTL expiry). 15 total attempts matches the prior `_MaxReleaseRetryAttempts`. Shared
     // helper so the reader-writer provider uses the same retry shape.
-    private readonly ResiliencePipeline _releasePipeline = DistributedLockCoreHelpers.BuildReleasePipeline(
-        timeProvider,
-        logger
-    );
+    private readonly ResiliencePipeline _releasePipeline = DistributedLockCoreHelpers.BuildReleasePipeline(logger);
 
     // Short pipeline for query/renew operations where 5 attempts mirror the prior default.
-    private readonly ResiliencePipeline _queryPipeline = _BuildQueryPipeline(timeProvider, logger);
+    private readonly ResiliencePipeline _queryPipeline = _BuildQueryPipeline(logger);
 
     private readonly ConcurrentDictionary<string, ResetEventWithRefCount> _autoResetEvents = new(
         StringComparer.Ordinal
@@ -882,9 +879,11 @@ public sealed class DistributedLock(
         return activity;
     }
 
-    private static ResiliencePipeline _BuildQueryPipeline(TimeProvider timeProvider, ILogger<DistributedLock> logger)
+    private static ResiliencePipeline _BuildQueryPipeline(ILogger<DistributedLock> logger)
     {
-        return new ResiliencePipelineBuilder { TimeProvider = timeProvider }
+        // A storage-transient back-off waits real time: on the app clock, a host that fakes it (a test) never advances
+        // past the first delay, so one transient failure would stall the query until the caller gave up.
+        return new ResiliencePipelineBuilder { TimeProvider = TimeProvider.System }
             .AddRetry(
                 new RetryStrategyOptions
                 {

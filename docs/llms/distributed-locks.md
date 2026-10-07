@@ -641,7 +641,7 @@ builder.Services.AddHeadlessDistributedLocks(setup =>
 
 No InMemory-specific options. Configure `DistributedLockOptions`.
 
-Reader-writer and semaphore TTL checks use the registered `TimeProvider`, so tests can register a fake clock and advance leases deterministically. `LostToken` is `CancellationToken.None` unless monitoring is enabled through `DistributedLockAcquireOptions`.
+Reader-writer and semaphore TTL checks use the registered `TimeProvider`, so tests can register a fake clock and advance leases deterministically. The back-off between retries of a transient storage failure, on release and on a query, runs on the system clock instead, so a fake clock the test never advances does not stall a release behind one failed attempt. `LostToken` is `CancellationToken.None` unless monitoring is enabled through `DistributedLockAcquireOptions`.
 
 ### Runtime behavior
 
@@ -812,6 +812,7 @@ The default is `"headless"`. The provider contributes the `headless_distributed_
 - Registers `IDistributedLock` as singleton.
 - Registers `IDistributedReadWriteLock` as singleton.
 - Registers Postgres storage, release signal, fencing-token source, `TimeProvider.System`, and `IGuidGenerator` when absent.
+- The release signal's LISTEN connection reconnects after a lost backend with a jittered back-off from 1 second up to 30 seconds. That back-off runs on the system clock, so a host whose registered `TimeProvider` is faked still reconnects; the polling fallback stays on the registered clock with the acquire timeout it serves.
 
 ---
 
