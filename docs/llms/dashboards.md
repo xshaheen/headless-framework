@@ -104,7 +104,7 @@ The dashboard builders expose `WithNoAuth()`, `WithBasicAuth(...)`, `WithApiKey(
 
 ### Jobs live-update hub
 
-The Jobs dashboard pushes job status, progress, and node changes over a SignalR hub at `{base path}/job-notification-hub`. The SPA connects over WebSockets only, and a browser cannot set headers on a WebSocket, so it sends the signed-in credential as the `access_token` query parameter. The hub authenticates with the Jobs dashboard's own auth service and closes a connection that fails; the dashboard then shows changes only after a reload.
+The Jobs dashboard pushes job status, progress, and node changes over a SignalR hub at `{base path}/job-notification-hub`. The SPA connects over WebSockets only, and a browser cannot set headers on a WebSocket, so it sends the signed-in credential as the `access_token` query parameter. The hub authenticates with the Jobs dashboard's own auth service and closes a connection that fails; the dashboard then shows changes only after a reload. When auth is on, the SPA opens the hub only after sign-in, with the credential just stored, and closes it on sign-out or session timeout.
 
 | Mode | `access_token` the SPA sends | How the server checks it |
 | --- | --- | --- |

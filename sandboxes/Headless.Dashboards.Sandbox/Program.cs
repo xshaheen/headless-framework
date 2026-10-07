@@ -26,6 +26,11 @@ if (postgres is not null)
     builder.Services.AddHeadlessCoordination(setup => setup.UsePostgreSql(postgres));
 }
 
+if (sandbox.JobsDashboardAuth == SandboxJobsAuth.Host)
+{
+    SandboxHostAuthentication.Add(builder.Services, SandboxJobsDashboardAuth.Secret(sandbox));
+}
+
 builder.Services.AddHeadlessJobs(options =>
 {
     options.AddModule<Headless.Dashboards.Sandbox.JobsModule>();

@@ -26,6 +26,12 @@ public enum SandboxJobsAuth
 
     /// <summary>Custom auth: the validator accepts <see cref="SandboxSettings.JobsDashboardSecret"/> as the credential.</summary>
     Custom = 3,
+
+    /// <summary>
+    /// Host auth through a fake sandbox scheme: <c>Bearer &lt;secret&gt;</c> signs in an operator the dashboard policy
+    /// admits, and <c>Bearer viewer-&lt;secret&gt;</c> a viewer it refuses.
+    /// </summary>
+    Host = 4,
 }
 
 /// <summary>
