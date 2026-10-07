@@ -1,5 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using Microsoft.Extensions.Options;
+
 namespace Headless.Messaging.Internal;
 
 /// <summary>
@@ -21,9 +23,16 @@ internal interface ISubscribeInvoker
     );
 }
 
-internal sealed class SubscribeInvoker(IMessageSerializer serializer, IConsumeMiddlewarePipeline executionPipeline)
-    : ISubscribeInvoker
+internal sealed class SubscribeInvoker(
+    IMessageSerializer serializer,
+    IConsumeMiddlewarePipeline executionPipeline,
+    IOptions<MessagingOptions> messagingOptionsAccessor
+) : ISubscribeInvoker
 {
+    // A string payload is decoded here rather than by the serializer, so it must use the host's JSON options;
+    // otherwise a configured naming policy or converter silently stops applying to that one path.
+    private readonly JsonSerializerOptions _jsonOptions = messagingOptionsAccessor.Value.JsonSerializerOptions;
+
     public Task<ConsumerExecutedResult> InvokeAsync(
         ConsumerContext context,
         CancellationToken cancellationToken = default
@@ -68,7 +77,7 @@ internal sealed class SubscribeInvoker(IMessageSerializer serializer, IConsumeMi
                 else if (originValue is string jsonString)
                 {
                     // Value is a JSON string - deserialize it
-                    messageInstance = JsonSerializer.Deserialize(jsonString, messageType);
+                    messageInstance = JsonSerializer.Deserialize(jsonString, messageType, _jsonOptions);
                 }
                 else if (messageType.IsInstanceOfType(originValue))
                 {

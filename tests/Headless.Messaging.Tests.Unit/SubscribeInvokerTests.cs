@@ -111,6 +111,49 @@ public sealed class SubscribeInvokerTests : TestBase
     }
 
     [Fact]
+    public async Task should_deserialize_string_payload_with_configured_json_options()
+    {
+        // given - a host that speaks camelCase on the wire, and a stored payload in that dialect
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.ConfigureMessaging(messaging => messaging.Message<InvokerTestMessage>("test.messageName"));
+        services.AddHeadlessMessaging(setup =>
+        {
+            setup.AddConsumer<InvokerTestConsumer>();
+            setup.Options.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
+        });
+
+        await using var provider = services.BuildServiceProvider();
+        var invoker = provider.GetRequiredService<ISubscribeInvoker>();
+
+        var mediumMessage = new MediumMessage
+        {
+            StorageId = Guid.NewGuid(),
+            Origin = new Message(
+                new Dictionary<string, string?>(StringComparer.Ordinal)
+                {
+                    [Headers.MessageId] = Guid.NewGuid().ToString(),
+                    [Headers.MessageName] = "test.messageName",
+                },
+                """{"id":"camel-case-payload"}"""
+            ),
+            Content = string.Empty,
+            Lane = MessageLane.Bus,
+            Added = DateTimeOffset.UtcNow,
+        };
+
+        var descriptor = _SelectDescriptor(provider);
+        var context = new ConsumerContext(descriptor, mediumMessage);
+
+        // when
+        await invoker.InvokeAsync(context, AbortToken);
+
+        // then
+        InvokerTestConsumer.LastConsumed.Should().NotBeNull();
+        InvokerTestConsumer.LastConsumed!.Message.Id.Should().Be("camel-case-payload");
+    }
+
+    [Fact]
     public async Task should_throw_when_message_cannot_be_deserialized()
     {
         // given
