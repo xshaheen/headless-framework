@@ -70,7 +70,9 @@ public record ConsumeContext
     /// weaker than <c>Transactional</c> (for EF Core storage, <c>EnableTransactionalInbox</c> is off), or the consumer is
     /// an every-instance consumer, which has no durable inbox row.
     /// </exception>
+#pragma warning disable CA1024 // False positive: it throws when the unit is absent, and a throwing getter would also throw whenever a debugger shows the context.
     public IUnitOfWork GetRequiredUnitOfWork()
+#pragma warning restore CA1024
     {
         return UnitOfWork
             ?? throw new InvalidOperationException(
