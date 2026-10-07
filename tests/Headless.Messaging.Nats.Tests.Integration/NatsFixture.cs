@@ -338,7 +338,12 @@ public sealed class NatsFixture : HeadlessNatsFixture
             NullLogger<Headless.Messaging.Nats.NatsConnectionPool>.Instance,
             options
         );
-        var producer = new NatsTransport(NullLogger<NatsTransport>.Instance, pool, lane);
+        var producer = new NatsTransport(
+            NullLogger<NatsTransport>.Instance,
+            pool,
+            new Headless.Messaging.Nats.NatsStreamProvisioner(options),
+            lane
+        );
 #pragma warning restore CA2000
         IConsumerClient? consumer = null;
 

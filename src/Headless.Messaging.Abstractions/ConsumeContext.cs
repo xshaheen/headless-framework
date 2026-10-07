@@ -347,6 +347,22 @@ public record ConsumeContext
     /// <summary>Gets the identifier of the message that directly caused this message, when available.</summary>
     public string? CausationId { get; init; }
 
+    /// <summary>
+    /// Gets the native address the delivery arrived on, or <see langword="null"/> when the transport does not report one, as
+    /// on the in-memory transport.
+    /// </summary>
+    /// <value>
+    /// The NATS subject, the Kafka or Pulsar topic, the RabbitMQ routing key, the Azure Service Bus entity path, the
+    /// Amazon SQS queue URL, or the Redis stream key. On NATS this includes any shard token, so a handler can read routing
+    /// tokens such as a tenant or a run identifier from the subject instead of the payload.
+    /// </value>
+    /// <remarks>
+    /// The consumer client sets the <c>headless-transport-address</c> header on receipt and overwrites any wire value, so
+    /// the address is as trustworthy as the broker's publish permissions on it, not as a producer's claim. A retry from
+    /// storage keeps the address of the original delivery.
+    /// </remarks>
+    public string? TransportAddress { get; init; }
+
     /// <summary>Gets the schema version of the logical message contract.</summary>
     public string ContractVersion { get; init; } = MessageOptions.InitialContractVersion;
 

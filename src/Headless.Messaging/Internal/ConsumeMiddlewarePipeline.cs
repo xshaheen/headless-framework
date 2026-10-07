@@ -416,6 +416,7 @@ internal sealed class ConsumeMiddlewarePipeline(
         var causationIdProperty = consumeContextType.GetProperty(nameof(ConsumeContext<>.CausationId))!;
         var contractVersionProperty = consumeContextType.GetProperty(nameof(ConsumeContext<>.ContractVersion))!;
         var tenantIdProperty = consumeContextType.GetProperty(nameof(ConsumeContext<>.TenantId))!;
+        var transportAddressProperty = consumeContextType.GetProperty(nameof(ConsumeContext<>.TransportAddress))!;
         var headersCtxProperty = consumeContextType.GetProperty(nameof(ConsumeContext<>.Headers))!;
         var timestampProperty = consumeContextType.GetProperty(nameof(ConsumeContext<>.Timestamp))!;
         var topicProperty = consumeContextType.GetProperty(nameof(ConsumeContext<>.MessageName))!;
@@ -477,6 +478,16 @@ internal sealed class ConsumeMiddlewarePipeline(
                 headersProperty
             )
         );
+        var transportAddressBinding = Expression.Bind(
+            transportAddressProperty,
+            Expression.Call(
+                typeof(ConsumeMiddlewarePipeline),
+                nameof(_ResolveOptionalHeader),
+                typeArguments: null,
+                headersProperty,
+                Expression.Constant(Headers.TransportAddress)
+            )
+        );
         var tenantIdBinding = Expression.Bind(tenantIdProperty, tenantIdParam);
         var laneBinding = Expression.Bind(laneProperty, laneParam);
         var headersBinding = Expression.Bind(headersCtxProperty, consumeHeadersParam);
@@ -506,6 +517,7 @@ internal sealed class ConsumeMiddlewarePipeline(
             correlationIdBinding,
             causationIdBinding,
             contractVersionBinding,
+            transportAddressBinding,
             tenantIdBinding,
             laneBinding,
             headersBinding,

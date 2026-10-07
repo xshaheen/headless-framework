@@ -11,6 +11,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Time.Testing;
 using NATS.Client.Core;
 using NATS.Client.JetStream;
+using INatsConnectionPool = Headless.Messaging.Nats.INatsConnectionPool;
 using MsOptions = Microsoft.Extensions.Options;
 
 namespace Tests;
@@ -40,6 +41,41 @@ public sealed class NatsConsumerClientTests : TestBase
         await using var client = new NatsConsumerClient("test-group", 1, options, _serviceProvider);
 
         client.BrokerAddress.Endpoint.Should().Be("nats://localhost:4222");
+    }
+
+    [Fact]
+    public async Task should_open_its_own_connection_from_the_supplied_connection_options_when_use_connection()
+    {
+        // given - the app supplied its connection; the consumer must copy its servers onto a socket of its own
+        var appConnection = Substitute.For<INatsConnection>();
+        var pool = Substitute.For<INatsConnectionPool>();
+        pool.ConnectionOpts.Returns(NatsOpts.Default with { Url = "nats://app-host:4222" });
+        pool.ServersAddress.Returns("nats://app-host:4222");
+        pool.GetConnection().Returns(appConnection);
+        var serviceProvider = new ServiceCollection().AddSingleton(pool).BuildServiceProvider();
+        var options = MsOptions.Options.Create(new NatsMessagingOptions().UseConnection(_ => appConnection));
+        NatsOpts? connectedOpts = null;
+
+        await using var client = new NatsConsumerClient(
+            "test-group",
+            1,
+            options,
+            serviceProvider,
+            connect: connection =>
+            {
+                connectedOpts = connection.Opts;
+                return Task.CompletedTask;
+            }
+        );
+
+        // when
+        await client.ConnectAsync(AbortToken);
+
+        // then
+        connectedOpts.Should().NotBeNull();
+        connectedOpts!.Url.Should().Be("nats://app-host:4222");
+        connectedOpts.MaxReconnectRetry.Should().Be(0);
+        client.BrokerAddress.Endpoint.Should().Be("nats://app-host:4222");
     }
 
     [Fact]
@@ -88,57 +124,6 @@ public sealed class NatsConsumerClientTests : TestBase
 
         var result = await client.FetchMessageNamesAsync(messageNames, AbortToken);
         result.Should().BeEquivalentTo(messageNames);
-    }
-
-    [Fact]
-    public void should_use_exact_subject_for_unsharded_topic_when_build_stream_subjects()
-    {
-        NatsConsumerClient
-            .BuildStreamSubjects(["orders"], new HashSet<string>(StringComparer.Ordinal))
-            .Should()
-            .BeEquivalentTo(["orders"]);
-    }
-
-    [Fact]
-    public void should_add_wildcard_only_for_sharded_message_names_when_build_stream_subjects()
-    {
-        NatsConsumerClient
-            .BuildStreamSubjects(["orders.created"], new HashSet<string>(StringComparer.Ordinal) { "orders.created" })
-            .Should()
-            .BeEquivalentTo(["orders.created", "orders.created.>"]);
-    }
-
-    [Fact]
-    public void should_mix_sharded_and_unsharded_subjects_precisely_when_build_stream_subjects()
-    {
-        NatsConsumerClient
-            .BuildStreamSubjects(
-                ["orders", "orders.created"],
-                new HashSet<string>(StringComparer.Ordinal) { "orders.created" }
-            )
-            .Should()
-            .BeEquivalentTo(["orders", "orders.created", "orders.created.>"]);
-    }
-
-    [Fact]
-    public void should_deduplicate_topics_when_build_stream_subjects()
-    {
-        NatsConsumerClient
-            .BuildStreamSubjects(
-                ["orders.created", "orders.created"],
-                new HashSet<string>(StringComparer.Ordinal) { "orders.created" }
-            )
-            .Should()
-            .BeEquivalentTo(["orders.created", "orders.created.>"]);
-    }
-
-    [Fact]
-    public void should_preserve_non_prefix_topics_without_wildcard_when_build_stream_subjects_unsharded()
-    {
-        NatsConsumerClient
-            .BuildStreamSubjects(["orders.created"], new HashSet<string>(StringComparer.Ordinal))
-            .Should()
-            .BeEquivalentTo(["orders.created"]);
     }
 
     [Fact]
@@ -673,6 +658,83 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
+    public async Task should_stamp_the_arrival_subject_as_transport_address_over_a_wire_value()
+    {
+        // given - a producer that tries to plant its own address
+        var options = MsOptions.Options.Create(new NatsMessagingOptions { Servers = "nats://localhost:4222" });
+
+        var headers = _CreateHeaders();
+        headers[Headers.TransportAddress] = "forged.subject";
+        var msg = Substitute.For<INatsJSMsg<ReadOnlyMemory<byte>>>();
+        msg.Subject.Returns("headless.bus.orders.created.tenant-a");
+        msg.Data.Returns(new ReadOnlyMemory<byte>("test"u8.ToArray()));
+        msg.Headers.Returns(headers);
+
+        var consumer = Substitute.For<INatsJSConsumer>();
+        var callCount = 0;
+        consumer
+            .NextAsync(
+                Arg.Any<INatsDeserialize<ReadOnlyMemory<byte>>>(),
+                Arg.Any<NatsJSNextOpts?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(call =>
+            {
+                var token = call.Arg<CancellationToken>();
+                if (Interlocked.Increment(ref callCount) == 1)
+                {
+                    return new ValueTask<INatsJSMsg<ReadOnlyMemory<byte>>?>(msg);
+                }
+
+                return new ValueTask<INatsJSMsg<ReadOnlyMemory<byte>>?>(
+                    Task.Delay(Timeout.InfiniteTimeSpan, token)
+                        .ContinueWith<INatsJSMsg<ReadOnlyMemory<byte>>?>(
+                            static (task, _) =>
+                            {
+                                task.GetAwaiter().GetResult();
+                                return null;
+                            },
+                            null,
+                            CancellationToken.None,
+                            TaskContinuationOptions.ExecuteSynchronously,
+                            TaskScheduler.Default
+                        )
+                );
+            });
+
+        await using var client = new NatsConsumerClient(
+            "test-group",
+            0,
+            options,
+            _serviceProvider,
+            (_, _, _) => Task.FromResult(consumer)
+        );
+        var received = new TaskCompletionSource<TransportMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
+        client.OnMessageCallback = (message, _) =>
+        {
+            received.TrySetResult(message);
+            return Task.CompletedTask;
+        };
+        client.OnLogCallback = _ => { };
+        await client.SubscribeAsync(["orders.created"], AbortToken);
+
+        using var cts = new CancellationTokenSource();
+        var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(50), cts.Token).AsTask();
+        try
+        {
+            // when
+            var message = await received.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+            // then
+            message.Headers[Headers.TransportAddress].Should().Be("headless.bus.orders.created.tenant-a");
+        }
+        finally
+        {
+            await _StopListeningAsync(listeningTask, cts);
+        }
+    }
+
+    [Fact]
     public async Task should_terminally_ack_when_required_header_is_missing()
     {
         // given
@@ -1199,22 +1261,6 @@ public sealed class NatsConsumerClientTests : TestBase
         {
             await _StopListeningAsync(listeningTask, cts);
         }
-    }
-
-    [Fact]
-    public void build_stream_subjects_and_build_consumer_subjects_agree_for_duplicate_sharded_names()
-    {
-        // A sharded message name appearing more than once (e.g. two consumers of the same type) must
-        // yield the same {base, base.>} set from both builders: the JetStream stream config and the
-        // consumer FilterSubjects have to cover identical subjects or sharded messages are dropped.
-        var sharded = new HashSet<string>(StringComparer.Ordinal) { "orders" };
-        string[] names = ["orders", "orders"];
-
-        var streamSubjects = NatsConsumerClient.BuildStreamSubjects(names, sharded);
-        var consumerSubjects = NatsConsumerClient.BuildConsumerSubjects(names, sharded);
-
-        streamSubjects.Should().Equal("orders", "orders.>");
-        consumerSubjects.Should().Equal("orders", "orders.>");
     }
 
     [Fact]

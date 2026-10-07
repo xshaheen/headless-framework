@@ -458,7 +458,7 @@ internal sealed class AzureServiceBusConsumerClient(
         TransportMessage context;
         try
         {
-            context = _CreateTransportMessage(arg.Message, headers);
+            context = _CreateTransportMessage(arg.Message, arg.EntityPath, headers);
         }
         catch (Exception exception)
         {
@@ -504,7 +504,7 @@ internal sealed class AzureServiceBusConsumerClient(
         TransportMessage context;
         try
         {
-            context = _CreateTransportMessage(arg.Message, headers);
+            context = _CreateTransportMessage(arg.Message, arg.EntityPath, headers);
         }
         catch (Exception exception)
         {
@@ -738,9 +738,12 @@ internal sealed class AzureServiceBusConsumerClient(
 
     private static TransportMessage _CreateTransportMessage(
         ServiceBusReceivedMessage message,
+        string entityPath,
         Dictionary<string, string?> headers
     )
     {
+        // Stamped after the custom headers builder so neither the wire nor the builder can choose the address.
+        headers[Headers.TransportAddress] = entityPath;
         _ValidateRequiredHeaders(headers);
         return new TransportMessage(headers, message.Body);
     }

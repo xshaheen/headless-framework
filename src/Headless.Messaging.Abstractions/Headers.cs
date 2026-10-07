@@ -95,6 +95,17 @@ public static class Headers
     public const string TenantId = "headless-tenant-id";
 
     /// <summary>
+    /// The native address the delivery arrived on, such as the NATS subject or the Kafka topic. The consumer client
+    /// sets it on receipt and overwrites any value that came over the wire, so a producer cannot choose it.
+    /// </summary>
+    /// <remarks>
+    /// Read it through <c>ConsumeContext.TransportAddress</c>. It is stored with the received message, so a retry from
+    /// storage sees the address of the original delivery. Publishing rejects it as a reserved header.
+    /// <para>Value: "headless-transport-address".</para>
+    /// </remarks>
+    public const string TransportAddress = "headless-transport-address";
+
+    /// <summary>
     /// Identifier of the application instance that executed or is executing the message.
     /// Useful in distributed systems to track which instance processed a message.
     /// Value: "headless-exec-instance-id"

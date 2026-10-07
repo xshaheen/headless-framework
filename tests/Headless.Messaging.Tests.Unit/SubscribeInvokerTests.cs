@@ -91,7 +91,8 @@ public sealed class SubscribeInvokerTests : TestBase
             messageId,
             correlationId,
             causationId: "parent-message",
-            contractVersion: "2"
+            contractVersion: "2",
+            transportAddress: "headless.bus.test.messageName"
         );
         var descriptor = _SelectDescriptor(provider);
         var context = new ConsumerContext(descriptor, mediumMessage);
@@ -106,6 +107,7 @@ public sealed class SubscribeInvokerTests : TestBase
         consumed.CorrelationId.Should().Be(correlationId.ToString());
         consumed.CausationId.Should().Be("parent-message");
         consumed.ContractVersion.Should().Be("2");
+        consumed.TransportAddress.Should().Be("headless.bus.test.messageName");
         consumed.MessageName.Should().Be("test.messageName");
         consumed.Headers.Should().NotBeNull();
     }
@@ -790,7 +792,8 @@ public sealed class SubscribeInvokerTests : TestBase
         DateTimeOffset? sentTime = null,
         string? tenantId = null,
         string? causationId = null,
-        string? contractVersion = null
+        string? contractVersion = null,
+        string? transportAddress = null
     )
     {
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
@@ -812,6 +815,11 @@ public sealed class SubscribeInvokerTests : TestBase
         if (contractVersion is not null)
         {
             headers[Headers.ContractVersion] = contractVersion;
+        }
+
+        if (transportAddress is not null)
+        {
+            headers[Headers.TransportAddress] = transportAddress;
         }
 
         if (!string.IsNullOrWhiteSpace(callbackName))

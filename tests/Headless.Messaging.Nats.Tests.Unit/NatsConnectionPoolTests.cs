@@ -5,7 +5,9 @@ using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute.Core;
+using INatsConnection = NATS.Client.Core.INatsConnection;
 using MsOptions = Microsoft.Extensions.Options;
+using NatsOpts = NATS.Client.Core.NatsOpts;
 
 namespace Tests;
 
@@ -83,6 +85,57 @@ public sealed class NatsConnectionPoolTests : TestBase
 
         var act = () => pool.GetConnection();
         act.Should().Throw<ObjectDisposedException>();
+    }
+
+    [Fact]
+    public async Task should_serve_the_supplied_connection_when_use_connection()
+    {
+        // given
+        var supplied = _CreateSuppliedConnection("nats://app:secret@app-host:4222");
+        var options = MsOptions.Options.Create(new NatsMessagingOptions().UseConnection(_ => supplied));
+
+        // when
+        await using var pool = new NatsConnectionPool(_logger, options, Substitute.For<IServiceProvider>());
+
+        // then
+        pool.GetConnection().Should().BeSameAs(supplied);
+        pool.GetConnection().Should().BeSameAs(supplied);
+        pool.ConnectionOpts.Should().BeSameAs(supplied.Opts);
+        pool.ServersAddress.Should().Be("nats://app-host:4222");
+    }
+
+    [Fact]
+    public async Task should_not_dispose_the_supplied_connection_when_disposed()
+    {
+        // given
+        var supplied = _CreateSuppliedConnection("nats://app-host:4222");
+        var options = MsOptions.Options.Create(new NatsMessagingOptions().UseConnection(_ => supplied));
+        var pool = new NatsConnectionPool(_logger, options, Substitute.For<IServiceProvider>());
+
+        // when
+        await pool.DisposeAsync();
+
+        // then
+        await supplied.DidNotReceive().DisposeAsync();
+        var act = () => pool.GetConnection();
+        act.Should().Throw<ObjectDisposedException>();
+    }
+
+    [Fact]
+    public async Task should_expose_its_own_options_when_no_connection_is_supplied()
+    {
+        // when
+        await using var pool = new NatsConnectionPool(_logger, _options);
+
+        // then
+        pool.ConnectionOpts.Url.Should().Be("nats://localhost:4222");
+    }
+
+    private static INatsConnection _CreateSuppliedConnection(string url)
+    {
+        var connection = Substitute.For<INatsConnection>();
+        connection.Opts.Returns(NatsOpts.Default with { Url = url });
+        return connection;
     }
 
     private static bool _IsDebugLog(ICall call)

@@ -9,6 +9,7 @@ namespace Headless.Messaging.Nats;
 internal sealed class NatsTransport(
     ILogger<NatsTransport> logger,
     INatsConnectionPool connectionPool,
+    NatsStreamProvisioner streamProvisioner,
     MessageLane lane = MessageLane.Bus
 ) : IBusTransport, IQueueTransport
 {
@@ -35,6 +36,11 @@ internal sealed class NatsTransport(
 
             var subject = ResolveSubject(message, lane, logger);
 
+            // A publish-only host creates the stream itself rather than waiting for a consumer host to have started.
+            await streamProvisioner
+                .EnsureForPublishAsync(js, lane, message.Name, _IsSharded(message), cancellationToken)
+                .ConfigureAwait(false);
+
             var ack = await js.PublishAsync(
                     subject: subject,
                     data: message.Body,
@@ -59,10 +65,17 @@ internal sealed class NatsTransport(
 
             if (ack.Seq == 0)
             {
+                // The stream was deleted or changed after this process ensured it; ensure it again on the next publish.
+                streamProvisioner.ForgetPublished(lane, message.Name);
+
                 return OperateResult.Failed(
                     new PublisherSentFailedException(
                         $"NATS JetStream publish to subject '{subject}' was not acknowledged by any stream (seq=0); "
-                            + "ensure a JetStream stream is configured to capture this subject."
+                            + (
+                                streamProvisioner.IsEnabled
+                                    ? "the stream provisioned for it no longer captures the subject; the next publish provisions it again."
+                                    : "StreamProvisioning is Disabled, so a JetStream stream must be configured outside the application to capture this subject."
+                            )
                     )
                 );
             }
@@ -128,6 +141,10 @@ internal sealed class NatsTransport(
     {
         return new NatsJSPubOpts { MsgId = message.Id };
     }
+
+    private static bool _IsSharded(TransportMessage message) =>
+        message.Headers.TryGetValue(NatsMessagingHeaders.SubjectShard, out var shard)
+        && !string.IsNullOrWhiteSpace(shard);
 
     internal static string ResolveSubject(
         TransportMessage message,

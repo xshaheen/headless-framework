@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NATS.Client.JetStream;
 using MessagingHeaders = Headless.Messaging.Headers;
+using MsOptions = Microsoft.Extensions.Options;
 
 namespace Tests;
 
@@ -14,6 +15,10 @@ public sealed class NatsTransportTests : TestBase
 {
     private readonly ILogger<NatsTransport> _logger;
     private readonly INatsConnectionPool _pool;
+
+    private readonly NatsStreamProvisioner _provisioner = new(
+        MsOptions.Options.Create(new NatsMessagingOptions { StreamProvisioning = NatsStreamProvisioning.Disabled })
+    );
 
     public NatsTransportTests()
     {
@@ -25,7 +30,7 @@ public sealed class NatsTransportTests : TestBase
     [Fact]
     public async Task should_return_failed_result_without_sending_when_sending_after_dispose()
     {
-        var transport = new NatsTransport(_logger, _pool);
+        var transport = new NatsTransport(_logger, _pool, _provisioner);
         await transport.DisposeAsync();
 
         var result = await transport.SendAsync(_CreateTransportMessage("msg-123", "TestMessage"), AbortToken);
@@ -38,7 +43,7 @@ public sealed class NatsTransportTests : TestBase
     [Fact]
     public async Task should_have_correct_broker_address()
     {
-        await using var transport = new NatsTransport(_logger, _pool);
+        await using var transport = new NatsTransport(_logger, _pool, _provisioner);
 
         transport.BrokerAddress.Name.Should().Be("nats");
         transport.BrokerAddress.Endpoint.Should().Be("nats://localhost:4222");
@@ -47,7 +52,7 @@ public sealed class NatsTransportTests : TestBase
     [Fact]
     public async Task should_propagate_cancellation()
     {
-        await using var transport = new NatsTransport(_logger, _pool);
+        await using var transport = new NatsTransport(_logger, _pool, _provisioner);
 
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
@@ -60,7 +65,7 @@ public sealed class NatsTransportTests : TestBase
     [Fact]
     public async Task should_dispose_without_error()
     {
-        await using var transport = new NatsTransport(_logger, _pool);
+        await using var transport = new NatsTransport(_logger, _pool, _provisioner);
 
         // ReSharper disable once DisposeOnUsingVariable
         var act = async () => await transport.DisposeAsync();

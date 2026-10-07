@@ -241,6 +241,9 @@ internal sealed class PulsarConsumerClient(
                             headers.Add(header.Key, header.Value);
                         }
 
+                        // Overwrites any wire value so a producer cannot choose the address.
+                        headers[Headers.TransportAddress] = currentMessage.MessageId.TopicName;
+
                         message = transportMessageFactory is null
                             ? new TransportMessage(headers, currentMessage.Data)
                             : transportMessageFactory(headers, currentMessage.Data);

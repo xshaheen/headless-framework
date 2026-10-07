@@ -108,6 +108,7 @@ public sealed class ReceiveContextTests
     [InlineData(Headers.MessageName)]
     [InlineData(Headers.ConsumerIdentity)]
     [InlineData(Headers.Exception)]
+    [InlineData(Headers.TransportAddress)]
     public void should_throw_when_writing_an_identity_header_before_completion(string key)
     {
         // given
@@ -127,6 +128,7 @@ public sealed class ReceiveContextTests
     [InlineData(Headers.MessageName)]
     [InlineData(Headers.ConsumerIdentity)]
     [InlineData(Headers.Exception)]
+    [InlineData(Headers.TransportAddress)]
     public void should_throw_when_writing_an_identity_header_after_completion(string key)
     {
         // given

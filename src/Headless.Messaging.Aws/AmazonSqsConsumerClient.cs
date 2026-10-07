@@ -227,6 +227,9 @@ internal sealed class AmazonSqsConsumerClient(
                 return;
             }
 
+            // Overwrites any wire value so a producer cannot choose the address.
+            header[Headers.TransportAddress] = queueUrl;
+
             if (!_HasRequiredHeaders(header))
             {
                 _logger.SqsMessageMissingRequiredHeaders();

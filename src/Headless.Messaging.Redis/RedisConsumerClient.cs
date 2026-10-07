@@ -257,6 +257,9 @@ internal sealed class RedisConsumerClient(
                 try
                 {
                     message = RedisMessage.Create(entry);
+
+                    // Overwrites any wire value so a producer cannot choose the address.
+                    message.Headers[Headers.TransportAddress] = stream.Key.ToString();
                 }
                 catch (Exception ex)
                 {

@@ -129,7 +129,8 @@ public sealed class ReceiveContext
     /// <exception cref="ArgumentException">Thrown when <paramref name="key"/> is null or whitespace.</exception>
     /// <exception cref="InvalidOperationException">
     /// Thrown when <paramref name="key"/> is one of the identity headers (<see cref="Messaging.Headers.MessageId"/>,
-    /// <see cref="Messaging.Headers.MessageName"/>, <see cref="Messaging.Headers.ConsumerIdentity"/>, <see cref="Messaging.Headers.Exception"/>),
+    /// <see cref="Messaging.Headers.MessageName"/>, <see cref="Messaging.Headers.ConsumerIdentity"/>, <see cref="Messaging.Headers.Exception"/>,
+    /// <see cref="Messaging.Headers.TransportAddress"/>),
     /// or when called after the receive pipeline has completed.
     /// </exception>
     public void SetHeader(string key, string? value)
@@ -139,7 +140,7 @@ public sealed class ReceiveContext
 
         if (_IsIdentityHeader(key))
         {
-            throw new InvalidOperationException($"Header `{key}` carries the message identity and cannot be modified.");
+            throw new InvalidOperationException($"Header `{key}` is set by the framework and cannot be modified.");
         }
 
         WritableHeaders[key] = value;
@@ -153,7 +154,8 @@ public sealed class ReceiveContext
     /// <exception cref="ArgumentException">Thrown when <paramref name="key"/> is null or whitespace.</exception>
     /// <exception cref="InvalidOperationException">
     /// Thrown when <paramref name="key"/> is one of the identity headers (<see cref="Messaging.Headers.MessageId"/>,
-    /// <see cref="Messaging.Headers.MessageName"/>, <see cref="Messaging.Headers.ConsumerIdentity"/>, <see cref="Messaging.Headers.Exception"/>),
+    /// <see cref="Messaging.Headers.MessageName"/>, <see cref="Messaging.Headers.ConsumerIdentity"/>, <see cref="Messaging.Headers.Exception"/>,
+    /// <see cref="Messaging.Headers.TransportAddress"/>),
     /// or when called after the receive pipeline has completed.
     /// </exception>
     public void RemoveHeader(string key)
@@ -163,7 +165,7 @@ public sealed class ReceiveContext
 
         if (_IsIdentityHeader(key))
         {
-            throw new InvalidOperationException($"Header `{key}` carries the message identity and cannot be modified.");
+            throw new InvalidOperationException($"Header `{key}` is set by the framework and cannot be modified.");
         }
 
         WritableHeaders.Remove(key);
@@ -259,7 +261,8 @@ public sealed class ReceiveContext
             is Messaging.Headers.MessageId
                 or Messaging.Headers.MessageName
                 or Messaging.Headers.ConsumerIdentity
-                or Messaging.Headers.Exception;
+                or Messaging.Headers.Exception
+                or Messaging.Headers.TransportAddress;
     }
 }
 

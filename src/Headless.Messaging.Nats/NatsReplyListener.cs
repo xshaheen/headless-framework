@@ -36,7 +36,7 @@ internal sealed class NatsReplyListener : IReplyListener
     // Long enough for a healthy JetStream API to answer, short enough that a stalled one is forgotten quickly.
     private static readonly TimeSpan _StreamCheckBound = TimeSpan.FromSeconds(5);
 
-    private readonly NatsConnection _connection;
+    private readonly INatsConnection _connection;
     private readonly string _subject;
     private readonly Func<TransportMessage, CancellationToken, ValueTask> _onReply;
     private readonly ILogger _logger;
@@ -46,7 +46,7 @@ internal sealed class NatsReplyListener : IReplyListener
     private INatsSub<ReadOnlyMemory<byte>>? _subscription;
 
     public NatsReplyListener(
-        NatsConnection connection,
+        INatsConnection connection,
         Func<TransportMessage, CancellationToken, ValueTask> onReply,
         ILogger logger
     )

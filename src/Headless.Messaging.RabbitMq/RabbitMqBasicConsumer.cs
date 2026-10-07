@@ -134,6 +134,9 @@ internal sealed class RabbitMqBasicConsumer(
             }
         }
 
+        // Stamped after the custom headers builder so neither the wire nor the builder can choose the address.
+        headers[Headers.TransportAddress] = routingKey;
+
         TransportMessage message;
         try
         {

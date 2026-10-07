@@ -195,6 +195,63 @@ public sealed class AzureServiceBusConsumerClientTests : TestBase
     }
 
     [Fact]
+    public async Task should_stamp_entity_path_as_transport_address_when_wire_and_builder_spoof_it()
+    {
+        // given
+        var options = Options.Create(
+            new AzureServiceBusMessagingOptions
+            {
+                ConnectionString =
+                    "Endpoint=sb://mynamespace.servicebus.windows.net/;SharedAccessKeyName=myPolicy;SharedAccessKey=myKey",
+                CustomHeadersBuilder = (_, _) => [new(Headers.TransportAddress, "builder-spoofed")],
+            }
+        );
+        await using var client = new AzureServiceBusConsumerClient(
+            _logger,
+            "test-sub",
+            0,
+            options,
+            _serviceProvider,
+            _clientPool
+        );
+
+        TransportMessage? receivedMessage = null;
+        client.OnMessageCallback = (message, _) =>
+        {
+            receivedMessage = message;
+            return Task.CompletedTask;
+        };
+
+        var message = ServiceBusModelFactory.ServiceBusReceivedMessage(
+            body: new BinaryData("test"u8.ToArray()),
+            properties: new Dictionary<string, object>(StringComparer.Ordinal)
+            {
+                [Headers.MessageId] = "message-1",
+                [Headers.MessageName] = "TestEvent",
+                [Headers.TransportAddress] = "wire-spoofed",
+            }
+        );
+        var receiver = Substitute.For<ServiceBusReceiver>();
+        receiver.EntityPath.Returns("orders-topic/Subscriptions/test-sub");
+        var args = new ProcessMessageEventArgs(message, receiver, AbortToken);
+
+        var processMethod = typeof(AzureServiceBusConsumerClient).GetMethod(
+            "_ServiceBusProcessor_ProcessMessageAsync",
+            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly,
+            null,
+            [typeof(ProcessMessageEventArgs)],
+            null
+        )!;
+
+        // when
+        await (Task)processMethod.Invoke(client, [args])!;
+
+        // then
+        receivedMessage.Should().NotBeNull();
+        receivedMessage!.Value.Headers[Headers.TransportAddress].Should().Be("orders-topic/Subscriptions/test-sub");
+    }
+
+    [Fact]
     public async Task should_throw_when_subscribing_with_null_topics()
     {
         // given
