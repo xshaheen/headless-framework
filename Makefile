@@ -83,6 +83,14 @@ AFFECTED_BASE := $(shell git rev-parse --abbrev-ref --symbolic-full-name '@{upst
 endif
 # Filter targets scope to one project when TEST_PROJECT is set and fall back to the whole solution.
 TEST_SCOPE_TARGET = $(if $(TEST_PROJECT),test-project,test)
+# repeated <cmd...>: run the command REPEAT times (a flake loop) and report how many runs failed; with REPEAT=1 it
+# runs once and keeps the command's own exit status. Every run builds incrementally, a no-op after the first.
+REPEAT ?= 1
+REPEATED = repeated() { \
+	local i=0 failed=""; if [ "$(REPEAT)" -eq 1 ]; then "$$@"; return; fi; \
+	while [ $$i -lt $(REPEAT) ]; do i=$$((i + 1)); echo "[repeat] run $$i of $(REPEAT)"; "$$@" || failed="$$failed $$i"; done; \
+	if [ -n "$$failed" ]; then echo "[repeat] failed run(s):$$failed of $(REPEAT)" >&2; return 3; fi; \
+	echo "[repeat] all $(REPEAT) runs passed"; }; repeated
 # Restore is the largest fixed cost in the scoped test loop and almost never has work to do: the
 # package graph moves only when Directory.Packages.props, the project file, or its lock file moves.
 # Assert the project is restored and current instead of restoring, and name the command that fixes
@@ -150,6 +158,20 @@ AFFECTED_UNIT_STAGE = if [ $$status -ne 0 ]; then $(PROOF) skip --dir "$$run" --
 			$(PROOF) run --dir "$$run" --name coverage-merge -- $(DOTNET) dotnet-coverage merge --nologo --output "$$run/coverage/merged.cobertura.xml" --output-format cobertura "$$run/unit-tests/**/*.cobertura.xml" || status=1; \
 		fi; \
 	else printf '\033[33m[affected]\033[0m no unit-test project covers the affected set; nothing ran.\n'; fi;
+# The pre-commit hook rewrites staged C# with CSharpier, so a proof that skipped formatting proved bytes the commit
+# then changed. The format stage checks the same changed files format-check-changed does, and fails the bundle
+# without blocking the build or the tests. bash -c gets the function through `declare -f` because proof.py runs a
+# command, not shell text.
+AFFECTED_FORMAT_STAGE = $(FORMAT_CHANGED_FN); \
+	$(PROOF) run --dir "$$run" --name format -- bash -c "$$(declare -f format_changed); format_changed worktree" || true;
+# A change under a dashboard's wwwroot/ is a change to its Dashboard project, so the build stage already runs
+# `npm run build` through eng/DashboardSpa.targets, but nothing else lints or unit-tests the SPA. This stage runs
+# dashboard-<name>-test for each SPA changed_dashboards selects.
+AFFECTED_DASHBOARD_STAGE = $(DASHBOARD_CHECK_FN); $(CHANGED_DASHBOARDS_FN); \
+	while read -r name dir; do \
+		[ -n "$$name" ] || continue; \
+		$(PROOF) run --dir "$$run" --name "dashboard-$$name" -- bash -c "$$(declare -f dashboard_check); dashboard_check \"\$$@\"" bash "$$name" "$$dir" < /dev/null || true; \
+	done <<< "$$(changed_dashboards)";
 PROOF_REPORT = report() { cat "$$1/summary.md"; printf '\033[36mProof bundle:\033[0m %s (summary.md for the PR body, summary.json for tools)\n' "$$1"; }; report
 DOTNET_OUTDATED_AUDIT_ARGS ?= --no-restore --idle-timeout $(DEPENDENCY_AUDIT_IDLE_TIMEOUT) --output "$(DEPENDENCY_AUDIT_DIR)/outdated.json" --output-format json
 DEPENDENCY_SECURITY_AUDIT_ARGS ?= --timeout-seconds "$(DEPENDENCY_SECURITY_AUDIT_TIMEOUT)" --output-dir "$(DEPENDENCY_AUDIT_DIR)/security" --project "$(PROJECT)" --scan vulnerable --include-transitive --scan deprecated
@@ -164,13 +186,15 @@ CI_COVERAGE ?= true
 .PHONY: help
 help: ## Show available commands.
 	@awk 'BEGIN {FS = ":.*##"; printf "\nCommands:\n"} /^[a-zA-Z0-9_.-]+:.*##/ { printf "  %-28s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
-	@printf "\nExamples:\n"
-	@printf "  make build\n"
+	@printf "\nExamples (inner loop first):\n"
+	@printf "  make test-class CLASS='*CultureHelperTests' TEST_PROJECT=tests/Headless.Extensions.Tests.Unit/Headless.Extensions.Tests.Unit.csproj   # seconds; add REPEAT=5 for a flake\n"
 	@printf "  make test-project TEST_PROJECT=tests/Headless.Api.Composition.Tests.Unit/Headless.Api.Composition.Tests.Unit.csproj\n"
-	@printf "  make test-class CLASS='*CultureHelperTests' TEST_PROJECT=tests/Headless.Extensions.Tests.Unit/Headless.Extensions.Tests.Unit.csproj\n"
-	@printf "  make verify-affected            # build + unit tests + analyzers for the change, with a proof bundle\n"
-	@printf "  make check                      # the CI gate over the affected scope: check-layering, format-check-changed, verify-affected\n"
-	@printf "  make test-affected\n"
+	@printf "  make dashboard-jobs-test       # lint, type-check, unit-test, and build one dashboard SPA\n"
+	@printf "  make build-affected             # compile the change; the proof names each compiler error\n"
+	@printf "  make test-affected              # before the gate: every affected unit-test project, minutes when Jobs is in it\n"
+	@printf "  make verify-affected            # the pre-PR proof: format, build, unit tests, analyzers, changed dashboards\n"
+	@printf "  make test-failed                # after a narrow fix: only the modules the last proof failed; then verify-affected once\n"
+	@printf "  make check                      # the CI gate over the affected scope: check-layering, verify-affected\n"
 	@printf "  make quality-analyzers-affected\n"
 	@printf "  make bench-compare BENCH_AREA=Caching BENCH_FILTER='*Memory*' BASE=origin/main\n"
 	@printf "  make coverage-json\n"
@@ -250,6 +274,51 @@ doctor: ## Check prerequisites per capability group with a fix for each; JSON=1 
 	  echo "observe|sandbox|logs|ok|make logs reads $(SANDBOX_LOG)|"; \
 	} | $(doctor_report)
 
+# The five filter targets below select which tests RUN; on their own they do not narrow what gets
+# BUILT. Without TEST_PROJECT they delegate to `test`, which builds all ~430 projects and hands the
+# whole solution to the runner (integration modules included, so Docker is required) just to execute
+# the handful of matching tests. Add TEST_PROJECT=<csproj> and the same filter runs inside that one
+# project instead, which is what a scoped inner loop wants.
+.PHONY: test-class
+test-class: ## The inner loop: run tests matching CLASS (MTP --filter-class) inside TEST_PROJECT, else solution-wide; REPEAT=N runs it N times and counts the failed runs.
+	@test -n "$(CLASS)" || (echo "CLASS is required. Example: make test-class CLASS='*CultureHelperTests' TEST_PROJECT=tests/Headless.Extensions.Tests.Unit/Headless.Extensions.Tests.Unit.csproj" && exit 2)
+	@case "$(REPEAT)" in ''|*[!0-9]*|0) echo "REPEAT must be a positive whole number. Example: make test-class CLASS='*CultureHelperTests' TEST_PROJECT=<csproj> REPEAT=5" >&2; exit 2;; esac
+	@$(REPEATED) $(MAKE) --no-print-directory $(TEST_SCOPE_TARGET) TEST_FILTER='--filter-class "$(CLASS)"'
+
+.PHONY: test-method
+test-method: ## Run tests matching METHOD (MTP --filter-method). Solution-wide unless TEST_PROJECT is set.
+	@test -n "$(METHOD)" || (echo "METHOD is required. Example: make test-method METHOD='*utc_now_should_return_correct_utc_time'" && exit 2)
+	$(MAKE) $(TEST_SCOPE_TARGET) TEST_FILTER='--filter-method "$(METHOD)"'
+
+.PHONY: test-namespace
+test-namespace: ## Run tests matching NAMESPACE (MTP --filter-namespace). Solution-wide unless TEST_PROJECT is set.
+	@test -n "$(NAMESPACE)" || (echo "NAMESPACE is required. Example: make test-namespace NAMESPACE=Headless.Api.Tests" && exit 2)
+	$(MAKE) $(TEST_SCOPE_TARGET) TEST_FILTER='--filter-namespace "$(NAMESPACE)"'
+
+.PHONY: test-trait
+test-trait: ## Run tests matching TRAIT (MTP --filter-trait). Solution-wide unless TEST_PROJECT is set.
+	@test -n "$(TRAIT)" || (echo "TRAIT is required. Example: make test-trait TRAIT='Category=Unit'" && exit 2)
+	$(MAKE) $(TEST_SCOPE_TARGET) TEST_FILTER='--filter-trait "$(TRAIT)"'
+
+.PHONY: test-query
+test-query: ## Run tests matching QUERY (MTP --filter-query). Solution-wide unless TEST_PROJECT is set.
+	@test -n "$(QUERY)" || (echo "QUERY is required. Example: make test-query QUERY='/Headless.Extensions.Tests.Unit/Tests.Core/CultureHelperTests/*'" && exit 2)
+	$(MAKE) $(TEST_SCOPE_TARGET) TEST_FILTER='--filter-query "$(QUERY)"'
+
+# A narrow fix after a failed verify-affected proves itself on the modules that failed, in seconds to a minute,
+# instead of the whole gate again (one Jobs module alone takes ~4 min). It reads the latest -verify or -test
+# bundle's summary.json; the other failed stages are named with the target that repeats them. The final proof
+# is still one full verify-affected.
+.PHONY: test-failed
+test-failed: ## Re-run only the unit-test projects whose modules failed in the last verify-affected or test-affected proof (PROOF_BUNDLE=<dir> picks another).
+	@projects="$$($(PROOF) failed --root "$(ARTIFACTS_DIR)/proof" $(if $(PROOF_BUNDLE),--dir "$(PROOF_BUNDLE)",))"; \
+	if [ -z "$$projects" ]; then exit 0; fi; failed=""; \
+	for project in $$projects; do \
+		$(MAKE) --no-print-directory test-project TEST_PROJECT="$$project" || failed="$$failed $$project"; \
+	done; \
+	if [ -n "$$failed" ]; then printf '[test-failed] still failing:%s\n' "$$failed" >&2; exit 3; fi; \
+	echo "[test-failed] every previously failed module passes. Finish with: make verify-affected"
+
 .PHONY: bootstrap
 bootstrap: tools restore hooks ## Initialize a clone/worktree: restore tools, packages, and git hooks.
 
@@ -295,15 +364,27 @@ hooks: ## Wire the committed hooks in .githooks: through global hooks that dispa
 		echo "[hooks] core.hooksPath set to .githooks for this worktree"; \
 	fi
 
+# CSharpier's "Formatted N files" is the count it processed, not the count it changed, and an agent once read
+# "Formatted 30 files" as 30 rewrites and re-ran a build to re-prove them. A file is formatted only when its
+# working tree matched the index, so any diff left afterwards is CSharpier's: those files are re-staged and
+# listed, and a commit that needed no formatting prints nothing.
 .PHONY: hook-pre-commit
-hook-pre-commit: ## Git hook: format staged C# files before commit.
-	@staged=(); safe=(); skipped=(); \
+hook-pre-commit: ## Git hook: format staged C# files before commit; lists only the files it changed.
+	@staged=(); safe=(); skipped=(); changed=(); \
 	while IFS= read -r file; do staged+=("$$file"); done < <(git diff --cached --name-only --diff-filter=ACMR -- '*.cs'); \
 	if [ "$${#staged[@]}" -eq 0 ]; then exit 0; fi; \
 	for file in "$${staged[@]}"; do \
 		if git diff --quiet -- "$$file"; then safe+=("$$file"); else skipped+=("$$file"); fi; \
 	done; \
-	if [ "$${#safe[@]}" -gt 0 ]; then $(DOTNET) csharpier format "$${safe[@]}"; git add -- "$${safe[@]}"; fi; \
+	if [ "$${#safe[@]}" -gt 0 ]; then \
+		out="$$($(DOTNET) csharpier format "$${safe[@]}" 2>&1)" || { printf '%s\n' "$$out" >&2; echo "[pre-commit] CSharpier failed; nothing was committed" >&2; exit 1; }; \
+		while IFS= read -r -d '' file; do changed+=("$$file"); done < <(git -c core.quotePath=false diff -z --name-only -- "$${safe[@]}"); \
+		if [ "$${#changed[@]}" -gt 0 ]; then \
+			git add -- "$${changed[@]}"; \
+			printf '[pre-commit] CSharpier reformatted %d staged file(s) and re-staged them:\n' "$${#changed[@]}"; \
+			printf '  %s\n' "$${changed[@]}"; \
+		fi; \
+	fi; \
 	if [ "$${#skipped[@]}" -gt 0 ]; then \
 		printf '\033[33m[pre-commit]\033[0m skipped auto-format for %d partially-staged file(s) (formatting the whole file would commit unstaged hunks):\n' "$${#skipped[@]}"; \
 		printf '  %s\n' "$${skipped[@]}"; \
@@ -337,7 +418,7 @@ hook-format-check: ## Git hook: CSharpier-check the C# files committed since AFF
 # staged, unstaged, and untracked files, for the local gate. With no merge base the whole tree is checked.
 # Past ~100 folders one repository scan is cheaper (2087 files in 345 folders: 14.6 s against 5.8 s).
 FORMAT_CHANGED_MAX_DIRS ?= 100
-FORMAT_CHANGED = format_changed() { \
+FORMAT_CHANGED_FN = format_changed() { \
 	local mode="$$1" base file dir out rc=0 arc=0; local -a files=() dirs=(); \
 	base="$$(git merge-base "$(AFFECTED_BASE)" HEAD 2>/dev/null || true)"; \
 	if [ -z "$$base" ]; then echo "[format] no merge base with $(AFFECTED_BASE); checking every C\# file"; $(DOTNET) csharpier check .; return; fi; \
@@ -360,7 +441,8 @@ FORMAT_CHANGED = format_changed() { \
 			if (named == 0 && rc != 0) exit 1 }' rc="$$rc" <(printf '%s\n' "$${files[@]}") <(printf '%s\n' "$$out") || arc=$$?; \
 	if [ $$arc -eq 1 ]; then printf '%s\n' "$$out" >&2; echo "[format] csharpier exited $$rc without naming a file" >&2; return $$rc; fi; \
 	if [ $$arc -ne 0 ]; then return $$arc; fi; \
-	printf '[format] %d changed C\# file(s) formatted (%d folder(s) scanned)\n' "$${\#files[@]}" "$${\#dirs[@]}"; }; format_changed
+	printf '[format] %d changed C\# file(s) formatted (%d folder(s) scanned)\n' "$${\#files[@]}" "$${\#dirs[@]}"; }
+FORMAT_CHANGED = $(FORMAT_CHANGED_FN); format_changed
 
 .PHONY: format-check-changed
 format-check-changed: ## Check C# formatting of the files changed vs AFFECTED_BASE, committed or not; the local gate's format stage.
@@ -506,24 +588,61 @@ dashboard-jobs: _node-check ## Rebuild the Jobs dashboard SPA (npm ci + vite bui
 dashboard-messaging: _node-check ## Rebuild the Messaging dashboard SPA (npm ci + vite build into wwwroot/dist).
 	cd "$(MESSAGING_DASHBOARD_DIR)" && $(NPM) ci --no-audit --no-fund && $(NPM) run $(DASHBOARD_BUILD_SCRIPT)
 
-# The gates CI's Dashboard jobs run for each SPA, in CI's order: npm ci, build (vue-tsc + vite), Vitest, ESLint.
-DASHBOARD_GATES = cd "$$dir" && $(NPM) ci --no-audit --no-fund && $(NPM) run build && $(NPM) run test:unit && $(NPM) run lint:check
+# The SPA gates CI's dashboard job runs, through each SPA's own package scripts. `type-check` plus `build-only` is
+# what `npm run build` runs in parallel; they run apart here so a failure names its stage. The other scripts stay
+# out of the CLI on purpose:
+# cli-exclude: script:headless-*-dashboard/dev -- a Vite dev server for hands-on SPA work; make up serves the built dashboards
+# cli-exclude: script:headless-*-dashboard/preview -- serves a finished bundle; make up drives the dashboards end to end
+# cli-exclude: script:headless-*-dashboard/test:unit:watch -- an interactive watcher; dashboard-<name>-test runs the suite once
+# cli-exclude: script:headless-*-dashboard/lint -- eslint --fix writes files; the gate runs lint:check
+# cli-exclude: script:headless-*-dashboard/format -- prettier --write over src/, which no gate checks
+# dashboard_check <name> <dir>: install from the lockfile only when node_modules is missing or older than it (the
+# rule eng/DashboardSpa.targets uses), then run every gate script so one failure does not hide the next. Scripts
+# run through `npm run`, never npx: a wrapper such as Socket's prints a banner over npx output and once hid an
+# eslint result. Exits 3 when a script failed, 4 when npm is missing, 1 when the install failed.
+DASHBOARD_CHECK_FN = dashboard_check() { \
+	local name="$$1" dir="$$2" script failed=""; \
+	command -v $(NPM) >/dev/null 2>&1 || { echo "ERROR: $(NPM) is not on PATH; the dashboard SPAs need Node 22+. Install from https://nodejs.org" >&2; return 4; }; \
+	if [ ! -f "$$dir/node_modules/.package-lock.json" ] || [ "$$dir/package-lock.json" -nt "$$dir/node_modules/.package-lock.json" ]; then \
+		(cd "$$dir" && $(NPM) ci --no-audit --no-fund) || { echo "[dashboard-$$name] npm ci failed" >&2; return 1; }; \
+	fi; \
+	(cd "$$dir" && $(NPM) run lint:check) || failed="$$failed lint:check"; \
+	(cd "$$dir" && $(NPM) run type-check) || failed="$$failed type-check"; \
+	(cd "$$dir" && $(NPM) run test:unit) || failed="$$failed test:unit"; \
+	(cd "$$dir" && $(NPM) run build-only) || failed="$$failed build-only"; \
+	if [ -n "$$failed" ]; then echo "[dashboard-$$name] failed:$$failed" >&2; return 3; fi; \
+	echo "[dashboard-$$name] passed: lint:check type-check test:unit build-only"; }
+
+.PHONY: dashboard-jobs-test
+dashboard-jobs-test: ## Lint, type-check, unit-test, and build the Jobs dashboard SPA (CI's Jobs dashboard job).
+	@$(DASHBOARD_CHECK_FN); dashboard_check jobs "$(JOBS_DASHBOARD_DIR)"
+
+.PHONY: dashboard-messaging-test
+dashboard-messaging-test: ## Lint, type-check, unit-test, and build the Messaging dashboard SPA (CI's Messaging dashboard job).
+	@$(DASHBOARD_CHECK_FN); dashboard_check messaging "$(MESSAGING_DASHBOARD_DIR)"
 
 .PHONY: dashboards-test
-dashboards-test: _node-check ## Run both dashboard SPAs' CI gates locally: npm ci, build (type-check + bundle), Vitest, ESLint.
-	@for dir in "$(JOBS_DASHBOARD_DIR)" "$(MESSAGING_DASHBOARD_DIR)"; do echo "[dashboards] $$dir"; ( $(DASHBOARD_GATES) ) || exit 1; done
+dashboards-test: ## Run both dashboard SPAs' CI gates (dashboard-jobs-test, dashboard-messaging-test); both run, every failure is reported.
+	@$(DASHBOARD_CHECK_FN); rc=0; \
+	dashboard_check jobs "$(JOBS_DASHBOARD_DIR)" || rc=$$?; \
+	dashboard_check messaging "$(MESSAGING_DASHBOARD_DIR)" || { code=$$?; [ $$code -le $$rc ] || rc=$$code; }; \
+	exit $$rc
 
-# make check's dashboard stage. It runs a SPA's gates only when this side changed files under it, committed
-# or not, so a backend-only change pays nothing; it diffs the merge base for the same reason FORMAT_CHANGED does.
+# changed_dashboards prints "<name> <dir>" for each dashboard SPA this side changed vs the merge base with
+# AFFECTED_BASE, committed or not, so a backend-only change pays nothing; with no merge base it prints both. It
+# diffs the merge base for the same reason FORMAT_CHANGED does.
+CHANGED_DASHBOARDS_FN = changed_dashboards() { \
+	local base spa dir; base="$$(git merge-base "$(AFFECTED_BASE)" HEAD 2>/dev/null || true)"; \
+	for spa in "jobs $(JOBS_DASHBOARD_DIR)" "messaging $(MESSAGING_DASHBOARD_DIR)"; do dir="$${spa\#* }"; \
+		if [ -z "$$base" ] || [ -n "$$(git diff --name-only "$$base" -- "$$dir"; git ls-files --others --exclude-standard -- "$$dir")" ]; then echo "$$spa"; fi; \
+	done; }
+
 .PHONY: dashboards-test-affected
-dashboards-test-affected: ## Run the CI gates of each dashboard SPA changed vs AFFECTED_BASE (committed or not); skips unchanged SPAs.
-	@base="$$(git merge-base "$(AFFECTED_BASE)" HEAD 2>/dev/null || true)"; \
-	for dir in "$(JOBS_DASHBOARD_DIR)" "$(MESSAGING_DASHBOARD_DIR)"; do \
-	  if [ -n "$$base" ] && [ -z "$$( { git diff --name-only "$$base" -- "$$dir"; git ls-files --others --exclude-standard -- "$$dir"; } | head -n 1)" ]; then \
-	    echo "[dashboards] $$dir unchanged; skipped"; continue; fi; \
-	  command -v $(NPM) >/dev/null 2>&1 || { echo "ERROR: '$(NPM)' not found on PATH. Node 22+ runs the dashboard gates. Install from https://nodejs.org (LTS)."; exit 4; }; \
-	  echo "[dashboards] $$dir"; ( $(DASHBOARD_GATES) ) || exit 1; \
-	done
+dashboards-test-affected: ## Run dashboard-<name>-test for each SPA changed vs AFFECTED_BASE (committed or not); skips unchanged SPAs.
+	@$(DASHBOARD_CHECK_FN); $(CHANGED_DASHBOARDS_FN); rc=0; spas="$$(changed_dashboards)"; \
+	if [ -z "$$spas" ]; then echo "[dashboards] no dashboard SPA changed vs $(AFFECTED_BASE); nothing ran"; exit 0; fi; \
+	while read -r name dir; do dashboard_check "$$name" "$$dir" < /dev/null || { code=$$?; [ $$code -le $$rc ] || rc=$$code; }; done <<< "$$spas"; \
+	exit $$rc
 
 # ---- Dashboard sandbox ---------------------------------------------------------------------------------------------
 # The repository ships no app, but the Jobs and Messaging dashboards are UI that has to be driven to be tested.
@@ -701,36 +820,6 @@ test-project-fast: ## Run one prebuilt test project without restore/build.
 	@mkdir -p "$(TEST_RESULTS_DIR)"
 	$(DOTNET) test --project "$(TEST_PROJECT)" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$(TEST_RESULTS_DIR)" $(TEST_ARGS) $(TEST_FILTER)
 
-# The five filter targets below select which tests RUN; on their own they do not narrow what gets
-# BUILT. Without TEST_PROJECT they delegate to `test`, which builds all ~430 projects and hands the
-# whole solution to the runner (integration modules included, so Docker is required) just to execute
-# the handful of matching tests. Add TEST_PROJECT=<csproj> and the same filter runs inside that one
-# project instead, which is what a scoped inner loop wants.
-.PHONY: test-class
-test-class: ## Run tests matching CLASS (MTP --filter-class). Solution-wide unless TEST_PROJECT is set.
-	@test -n "$(CLASS)" || (echo "CLASS is required. Example: make test-class CLASS='*CultureHelperTests' TEST_PROJECT=tests/Headless.Extensions.Tests.Unit/Headless.Extensions.Tests.Unit.csproj" && exit 2)
-	$(MAKE) $(TEST_SCOPE_TARGET) TEST_FILTER='--filter-class "$(CLASS)"'
-
-.PHONY: test-method
-test-method: ## Run tests matching METHOD (MTP --filter-method). Solution-wide unless TEST_PROJECT is set.
-	@test -n "$(METHOD)" || (echo "METHOD is required. Example: make test-method METHOD='*utc_now_should_return_correct_utc_time'" && exit 2)
-	$(MAKE) $(TEST_SCOPE_TARGET) TEST_FILTER='--filter-method "$(METHOD)"'
-
-.PHONY: test-namespace
-test-namespace: ## Run tests matching NAMESPACE (MTP --filter-namespace). Solution-wide unless TEST_PROJECT is set.
-	@test -n "$(NAMESPACE)" || (echo "NAMESPACE is required. Example: make test-namespace NAMESPACE=Headless.Api.Tests" && exit 2)
-	$(MAKE) $(TEST_SCOPE_TARGET) TEST_FILTER='--filter-namespace "$(NAMESPACE)"'
-
-.PHONY: test-trait
-test-trait: ## Run tests matching TRAIT (MTP --filter-trait). Solution-wide unless TEST_PROJECT is set.
-	@test -n "$(TRAIT)" || (echo "TRAIT is required. Example: make test-trait TRAIT='Category=Unit'" && exit 2)
-	$(MAKE) $(TEST_SCOPE_TARGET) TEST_FILTER='--filter-trait "$(TRAIT)"'
-
-.PHONY: test-query
-test-query: ## Run tests matching QUERY (MTP --filter-query). Solution-wide unless TEST_PROJECT is set.
-	@test -n "$(QUERY)" || (echo "QUERY is required. Example: make test-query QUERY='/Headless.Extensions.Tests.Unit/Tests.Core/CultureHelperTests/*'" && exit 2)
-	$(MAKE) $(TEST_SCOPE_TARGET) TEST_FILTER='--filter-query "$(QUERY)"'
-
 # The affected set comes from the ProjectReference graph (scripts/project-graph.py), not from
 # directory names: changed projects plus their direct dependents, and every unit- or integration-test
 # project that is in that set or references a member of it directly. A change to a build-wide file
@@ -771,12 +860,14 @@ test-affected-integration: ## Build the affected set, then run its *.Tests.Integ
 	$(PROOF_REPORT) "$$run"; exit $$status
 
 .PHONY: verify-affected
-verify-affected: ## Build, unit-test (with coverage), and analyze the affected set; one proof bundle for the PR body.
+verify-affected: ## Format-check the changed files, then build, unit-test (with coverage), and analyze the affected set, plus dashboard-<name>-test for a changed SPA; one proof bundle for the PR body.
 	@$(AFFECTED_PREPARE) "$(PROOF_RUN)-verify"; \
 	run="$(PROOF_RUN)-verify"; status=0; coverage="$(VERIFY_COVERAGE)"; \
+	$(AFFECTED_FORMAT_STAGE) \
 	$(AFFECTED_BUILD_STAGES) \
 	$(AFFECTED_UNIT_STAGE) \
 	$(AFFECTED_ANALYZER_STAGE) \
+	$(AFFECTED_DASHBOARD_STAGE) \
 	$(PROOF) summarize --dir "$$run" > /dev/null || status=1; \
 	$(PROOF_REPORT) "$$run"; exit $$status
 
@@ -784,15 +875,16 @@ verify-affected: ## Build, unit-test (with coverage), and analyze the affected s
 # clean rebuild with analyzers, quality-analyzers-affected, and the unit suite; verify-affected is the
 # build, analyzer, and unit stages of that for the projects this branch changed, which is what a local run
 # finishes in minutes (the whole-solution version is ci-build, far past ten minutes on ~430 projects).
-# Formatting follows the same scope: format-check-changed checks the changed files (~0.3-2 s against
-# ~6 s for the whole repository), and CI's format-check job keeps the whole-repository check.
+# Formatting follows the same scope: verify-affected's format stage checks the changed files (~0.3-2 s
+# against ~6 s for the whole repository), and CI's format-check job keeps the whole-repository check. A
+# changed dashboard SPA gets its lint, type-check, unit, and build stage in verify-affected too, the same
+# dashboard-<name>-test CI's dashboard job runs.
 # The gates run one after another through a sub-make so a failed gate does not hide the next, and a dry
-# run still only prints because the sub-make inherits -n. The dashboard SPAs keep their own CI jobs; the local
-# gate runs the same steps for a SPA only when the change touches it (dashboards-test-affected).
-CHECK_GATES ?= check-layering format-check-changed dashboards-test-affected verify-affected
+# run still only prints because the sub-make inherits -n.
+CHECK_GATES ?= check-layering verify-affected
 
 .PHONY: check
-check: ## CI gate over the affected scope: check-layering, format-check-changed, dashboards-test-affected, verify-affected; every gate runs, every failure is reported.
+check: ## CI gate over the affected scope: check-layering, then verify-affected (format, build, tests, analyzers, changed dashboards); every failure is reported.
 	@failed=""; for gate in $(CHECK_GATES); do $(MAKE) $$gate || failed="$$failed $$gate"; done; \
 	if [ -n "$$failed" ]; then printf '[check] failed:%s\n' "$$failed" >&2; exit 1; fi; \
 	printf '[check] passed: %s\n' "$(CHECK_GATES)"

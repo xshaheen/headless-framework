@@ -172,12 +172,11 @@ jobs:
       matrix:
         include:
           - name: Jobs
+            target: dashboard-jobs-test
             path: src/Headless.Jobs.Dashboard/wwwroot
           - name: Messaging
+            target: dashboard-messaging-test
             path: src/Headless.Messaging.Dashboard/wwwroot
-    defaults:
-      run:
-        working-directory: ${{ matrix.path }}
     steps:
       - name: "Check out repository"
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -192,17 +191,10 @@ jobs:
           cache: npm
           cache-dependency-path: ${{ matrix.path }}/package-lock.json
 
-      - name: "Install dependencies"
-        run: npm ci --no-audit --no-fund
-
-      - name: "Type-check and build"
-        run: npm run build
-
-      - name: "Run unit tests (Vitest)"
-        run: npm run test:unit
-
-      - name: "Lint (ESLint)"
-        run: npm run lint:check
+      # The same target a local run uses: npm ci from the lockfile, then lint, type-check, unit tests, and the
+      # Vite build, each run even when an earlier one fails.
+      - name: "Lint, type-check, test, and build"
+        run: make ${{ matrix.target }}
 
   tus-demo:
     name: "Frontend · Tus demo"
