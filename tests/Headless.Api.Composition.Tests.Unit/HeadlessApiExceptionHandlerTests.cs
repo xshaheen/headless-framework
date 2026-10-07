@@ -11,6 +11,7 @@ using Headless.Primitives;
 using Headless.Testing.Tests;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.AspNetCore.Localization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -112,6 +113,40 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
             .Which.Description.Should()
             .Be(arabicDescription);
         written[1].Detail.Should().NotBe(written[0].Detail);
+    }
+
+    [Fact]
+    public async Task should_describe_exception_in_request_culture_after_localization_has_unwound()
+    {
+        // given - request localization chose Arabic, but the exception has unwound past it, so the flow is
+        // back on the server's English culture when the handler runs
+        var written = new List<ProblemDetails>();
+        var problemDetailsService = Substitute.For<IProblemDetailsService>();
+        problemDetailsService
+            .TryWriteAsync(Arg.Do<ProblemDetailsContext>(c => written.Add(c.ProblemDetails)))
+            .Returns(true);
+        var handler = _CreateHandler(problemDetailsService, _CreateRealCreator());
+        var arabic = CultureInfo.GetCultureInfo("ar");
+        var english = CultureInfo.GetCultureInfo("en");
+        var httpContext = new DefaultHttpContext();
+        httpContext.Features.Set<IRequestCultureFeature>(
+            new RequestCultureFeature(new RequestCulture(arabic), provider: null)
+        );
+        using var serverCulture = CultureHelper.Use(english);
+
+        // when
+        await handler.TryHandleAsync(httpContext, new MissingTenantContextException(), AbortToken);
+
+        // then
+        var arabicDescription = Messages.ResourceManager.GetString(GeneralErrorCodes.TenantRequired, arabic);
+        written.Should().ContainSingle().Which.Detail.Should().Be(arabicDescription);
+        written[0]
+            .Extensions["error"]
+            .Should()
+            .BeOfType<ErrorDescriptor>()
+            .Which.Description.Should()
+            .Be(arabicDescription);
+        CultureInfo.CurrentUICulture.Should().Be(english, "the request culture applies only while the handler runs");
     }
 
     [Fact]

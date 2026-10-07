@@ -77,7 +77,10 @@ public sealed class MinimalApiValidatorFilter<TRequest> : IEndpointFilter
         {
             var creator = context.HttpContext.RequestServices.GetRequiredService<IProblemDetailsCreator>();
 
-            return TypedResults.Problem(creator.BadRequest(error: GeneralMessageDescriber.InvalidRequestType()));
+            var error = GeneralMessageDescriber.InvalidRequestType();
+
+            // The body is not at fault here, so the generic bad-request detail would contradict the error.
+            return TypedResults.Problem(creator.BadRequest(detail: error.Description, error: error));
         }
 
         var validationContext = new ValidationContext<TRequest>(request);

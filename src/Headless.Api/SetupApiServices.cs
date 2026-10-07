@@ -99,6 +99,9 @@ public static class SetupApiServices
             {
                 options.CustomizeProblemDetails += context =>
                 {
+                    // Status-code pages and the exception handler's fallback write here after request
+                    // localization has unwound, so the default detail needs the request culture re-applied.
+                    using var cultureScope = RequestCultureScope.Enter(context.HttpContext);
                     var creator = context.HttpContext.RequestServices.GetRequiredService<IProblemDetailsCreator>();
                     creator.Normalize(context.ProblemDetails);
                 };

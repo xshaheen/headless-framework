@@ -238,7 +238,12 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
 
         // then
         result.Should().BeAssignableTo<IResult>();
-        creator.Received(1).BadRequest(error: Arg.Is<ErrorDescriptor>(e => e.Code == "g:invalid_request_type"));
+        creator
+            .Received(1)
+            .BadRequest(
+                detail: Arg.Is<string?>(d => !string.IsNullOrEmpty(d)),
+                error: Arg.Is<ErrorDescriptor>(e => e.Code == "g:invalid_request_type")
+            );
     }
 
     #endregion
@@ -260,7 +265,12 @@ public sealed class MinimalApiValidatorFilterTests : TestBase
 
         // then
         result.Should().BeAssignableTo<IResult>();
-        creator.Received(1).BadRequest(error: Arg.Is<ErrorDescriptor>(e => e.Code == "g:invalid_request_type"));
+        creator
+            .Received(1)
+            .BadRequest(
+                detail: Arg.Is<string?>(d => !string.IsNullOrEmpty(d)),
+                error: Arg.Is<ErrorDescriptor>(e => e.Code == "g:invalid_request_type")
+            );
     }
 
     [Fact]

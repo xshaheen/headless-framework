@@ -75,7 +75,7 @@ public sealed class ProblemDetailsTests : TestBase
      *   "type" : "https://tools.ietf.org/html/rfc9110#section-15.5.1",
      *   "title" : "bad-request",
      *   "status" : 400,
-     *   "detail" : "Failed to parse. The request body is empty or could not be understood by the server due to malformed syntax.",
+     *   "detail" : "The request could not be read. Its body is empty or malformed.",
      *   "instance" : "/minimal/malformed-syntax",
      *   "traceId" : "00-1402a1325f82be1e9277e334c617d122-5a8c02fbde4b5d93-00",
      *   "buildNumber" : "2.16.1.109",

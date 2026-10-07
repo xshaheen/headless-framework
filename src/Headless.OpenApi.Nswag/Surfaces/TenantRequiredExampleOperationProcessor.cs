@@ -78,8 +78,7 @@ public sealed class TenantRequiredExampleOperationProcessor : IOperationProcesso
 
     // English on purpose: NSwag caches the generated document, so text resolved under the culture of
     // whichever request generated it first would be served to every reader.
-    private const string _TenantRequiredDescription =
-        "An operation required an ambient tenant context but none was set.";
+    private const string _TenantRequiredDescription = "This operation requires a tenant, but none was set.";
 
     private static Dictionary<string, object?> _CreateTenantRequiredExample()
     {
