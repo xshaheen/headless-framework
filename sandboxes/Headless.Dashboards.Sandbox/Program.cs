@@ -42,8 +42,9 @@ builder.Services.AddHeadlessJobs(options =>
         options.UseEntityFramework(ef => ef.UseJobsDbContext<JobsDbContext>(db => db.UseNpgsql(postgres)));
     }
 
-    // No auth: live SignalR updates, progress included, are what the sandbox exists to show.
-    options.AddDashboard(dashboard => dashboard.WithNoAuth());
+    // No auth by default; Sandbox__JobsDashboardAuth picks another mode so its sign-in and live-update journeys
+    // can be walked next to the Messaging dashboard's own mode.
+    options.AddDashboard(dashboard => SandboxJobsDashboardAuth.Configure(dashboard, sandbox));
 });
 
 builder.Services.AddHeadlessMessaging(setup =>
@@ -103,6 +104,7 @@ app.MapGet(
                 store = sandbox.Store.ToString(),
                 jobsDashboard = "/jobs/dashboard",
                 messagingDashboard = "/messaging",
+                jobsAuth = sandbox.JobsDashboardAuth.ToString().ToLowerInvariant(),
                 messagingAuth = string.IsNullOrEmpty(sandbox.MessagingDashboardPassword) ? "none" : "basic",
                 scenarios = SandboxScenarios.Descriptions,
             }
