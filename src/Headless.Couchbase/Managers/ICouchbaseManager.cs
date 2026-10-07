@@ -114,7 +114,6 @@ public sealed class CouchbaseManager : ICouchbaseManager
     private readonly ResiliencePipeline _retryPipeline;
     private readonly ICouchbaseClustersProvider _clustersProvider;
     private readonly ILogger<CouchbaseManager> _logger;
-    private readonly TimeProvider _timeProvider;
 
     /// <summary>
     /// Initializes a new instance of <see cref="CouchbaseManager"/> with a Polly retry pipeline
@@ -126,21 +125,22 @@ public sealed class CouchbaseManager : ICouchbaseManager
     /// 3 retries, 500 ms base delay, 10-second timeout.
     /// </param>
     /// <param name="logger">Logger for operation lifecycle events.</param>
-    /// <param name="timeProvider">
-    /// Optional time provider used by the Polly pipeline; defaults to <see cref="TimeProvider.System"/>.
-    /// </param>
+    /// <remarks>
+    /// The retry back-off, the overall timeout, and the pause between creating a collection and its index all wait real
+    /// time on <see cref="TimeProvider.System"/>. None of them records when something happened, so none takes the app
+    /// clock: a host that fakes it (a test) never advances past the first delay, and one transient cluster failure
+    /// would stall the operation.
+    /// </remarks>
     public CouchbaseManager(
         ICouchbaseClustersProvider clustersProvider,
         IOptions<CouchbaseManagerOptions> options,
-        ILogger<CouchbaseManager> logger,
-        TimeProvider? timeProvider = null
+        ILogger<CouchbaseManager> logger
     )
     {
         Argument.IsNotNull(options);
 
         _clustersProvider = clustersProvider;
         _logger = logger;
-        _timeProvider = timeProvider ?? TimeProvider.System;
 
         var resilienceOptions = options.Value;
 
@@ -161,7 +161,7 @@ public sealed class CouchbaseManager : ICouchbaseManager
             ),
         };
 
-        _retryPipeline = new ResiliencePipelineBuilder { TimeProvider = _timeProvider }
+        _retryPipeline = new ResiliencePipelineBuilder { TimeProvider = TimeProvider.System }
             .AddRetry(retryStrategyOptions)
             .AddTimeout(resilienceOptions.Timeout)
             .Build();
@@ -316,7 +316,7 @@ public sealed class CouchbaseManager : ICouchbaseManager
 
                     await _CreateCollectionAsync(clusterKey, bucket, scope, collectionName, token)
                         .ConfigureAwait(false);
-                    await _timeProvider.Delay(TimeSpan.FromMilliseconds(50), token).ConfigureAwait(false);
+                    await TimeProvider.System.Delay(TimeSpan.FromMilliseconds(50), token).ConfigureAwait(false);
                     await _CreatePrimaryIndexOnCollectionAsync(
                             clusterKey,
                             await scope.CollectionAsync(collectionName).ConfigureAwait(false)

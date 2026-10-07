@@ -7,8 +7,11 @@ using Couchbase.Management.Query;
 using Headless.Couchbase.Clusters;
 using Headless.Couchbase.Managers;
 using Headless.Testing.Tests;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Time.Testing;
 
 namespace Tests;
 
@@ -67,6 +70,42 @@ public sealed class CouchbaseManagerScopeCacheTests : TestBase
         var result = await fixture.Manager.CreateScopeAsync("primary", "app", "orders", AbortToken);
 
         result.Should().Be(CreateScopeStatus.Failed);
+        await fixture.Collections.Received(2).CreateScopeAsync("orders", Arg.Any<CreateScopeOptions?>());
+    }
+
+    [Fact]
+    public async Task should_retry_a_transient_failure_without_advancing_a_faked_app_clock()
+    {
+        // given — the container's app clock is a FakeTimeProvider this test never advances, and the manager is built
+        // the way DI builds it, so an app-clock dependency would receive the fake
+        var fixture = _CreateFixture([]);
+        fixture
+            .Collections.CreateScopeAsync("orders", Arg.Any<CreateScopeOptions?>())
+            .Returns(_ => throw new InvalidOperationException("transient"), _ => Task.CompletedTask);
+        await using var services = new ServiceCollection()
+            .AddSingleton<TimeProvider>(new FakeTimeProvider())
+            .AddSingleton(fixture.Clusters)
+            .AddSingleton(
+                Options.Create(
+                    new CouchbaseManagerOptions
+                    {
+                        MaxRetries = 1,
+                        RetryDelay = TimeSpan.FromMilliseconds(50),
+                        Timeout = TimeSpan.FromSeconds(5),
+                    }
+                )
+            )
+            .AddSingleton<ILogger<CouchbaseManager>>(NullLogger<CouchbaseManager>.Instance)
+            .BuildServiceProvider();
+        var manager = ActivatorUtilities.CreateInstance<CouchbaseManager>(services);
+
+        // when — the back-off and timeout wait real time, so the retry runs on its own
+        var result = await manager
+            .CreateScopeAsync("primary", "app", "orders", AbortToken)
+            .WaitAsync(TimeSpan.FromSeconds(30), AbortToken);
+
+        // then
+        result.Should().Be(CreateScopeStatus.Success);
         await fixture.Collections.Received(2).CreateScopeAsync("orders", Arg.Any<CreateScopeOptions?>());
     }
 
@@ -216,7 +255,7 @@ public sealed class CouchbaseManagerScopeCacheTests : TestBase
             NullLogger<CouchbaseManager>.Instance
         );
 
-        return new(manager, cluster, bucket, collections);
+        return new(manager, clusters, cluster, bucket, collections);
     }
 
     private static ScopeSpec _Scope(string scope, params string[] collections)
@@ -226,6 +265,7 @@ public sealed class CouchbaseManagerScopeCacheTests : TestBase
 
     private sealed record ManagerFixture(
         CouchbaseManager Manager,
+        ICouchbaseClustersProvider Clusters,
         ICluster Cluster,
         IBucket Bucket,
         ICouchbaseCollectionManager Collections
