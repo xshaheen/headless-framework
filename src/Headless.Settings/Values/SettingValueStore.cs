@@ -310,9 +310,15 @@ public sealed class SettingValueStore(
         CancellationToken cancellationToken
     )
     {
-        var cacheKeys = names
-            .Select(x => SettingValueCacheItem.CalculateCacheKey(x, providerName, providerKey))
-            .ToList();
+        var keyToName = new Dictionary<string, string>(names.Count, StringComparer.Ordinal);
+        var cacheKeys = new List<string>(names.Count);
+
+        foreach (var name in names)
+        {
+            var key = SettingValueCacheItem.CalculateCacheKey(name, providerName, providerKey);
+            cacheKeys.Add(key);
+            keyToName[key] = name;
+        }
 
         var existCacheItemsMap = await cache.GetAllAsync(cacheKeys, cancellationToken).ConfigureAwait(false);
         var existCacheItems = existCacheItemsMap.ToList();
@@ -320,7 +326,7 @@ public sealed class SettingValueStore(
         if (existCacheItems.TrueForAll(x => x.Value.HasValue))
         {
             return existCacheItems.ConvertAll(item => new SettingValue(
-                _GetSettingNameFromCacheKey(item.Key),
+                keyToName.TryGetValue(item.Key, out var n) ? n : _GetSettingNameFromCacheKey(item.Key),
                 item.Value.Value?.Value
             ));
         }
@@ -328,7 +334,7 @@ public sealed class SettingValueStore(
         // Some cache items aren't found in the cache, get them from the database
         var notCacheNames = existCacheItems
             .Where(x => !x.Value.HasValue)
-            .Select(x => _GetSettingNameFromCacheKey(x.Key))
+            .Select(x => keyToName.TryGetValue(x.Key, out var n) ? n : _GetSettingNameFromCacheKey(x.Key))
             .ToHashSet(StringComparer.Ordinal);
 
         var newCacheItemsMap = await _CacheSomeAsync(notCacheNames, providerName, providerKey, cancellationToken)
@@ -338,7 +344,7 @@ public sealed class SettingValueStore(
 
         foreach (var cacheKey in cacheKeys)
         {
-            var settingName = _GetSettingNameFromCacheKey(cacheKey);
+            var settingName = keyToName.TryGetValue(cacheKey, out var n) ? n : _GetSettingNameFromCacheKey(cacheKey);
 
             if (newCacheItemsMap.TryGetValue(cacheKey, out var newCachedValue))
             {

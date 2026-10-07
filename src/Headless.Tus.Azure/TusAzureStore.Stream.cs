@@ -358,7 +358,7 @@ public sealed partial class TusAzureStore
     /// data corruption. Monitor Azure SDK updates and consider per-chunk buffer allocation if needed.
     /// </para>
     /// </remarks>
-    private static IAsyncEnumerable<ArraySegment<byte>> _SplitStreamAsync(
+    private IAsyncEnumerable<ArraySegment<byte>> _SplitStreamAsync(
         Stream sourceStream,
         int chunkSize,
         CancellationToken cancellationToken = default
@@ -372,14 +372,14 @@ public sealed partial class TusAzureStore
 
         return enumerable(sourceStream, chunkSize, cancellationToken);
 
-        static async IAsyncEnumerable<ArraySegment<byte>> enumerable(
+        async IAsyncEnumerable<ArraySegment<byte>> enumerable(
             Stream sourceStream,
             int chunkSize,
             [EnumeratorCancellation] CancellationToken cancellationToken
         )
         {
-            // Rent buffer from shared pool (reused for all chunks to minimize memory consumption)
-            var buffer = ArrayPool<byte>.Shared.Rent(chunkSize);
+            // Rent buffer from dedicated chunk pool (reused across requests up to BlobMaxChunkSize)
+            var buffer = _chunkPool.Rent(chunkSize);
 
             try
             {
@@ -416,7 +416,7 @@ public sealed partial class TusAzureStore
             {
                 // Return buffer to pool for reuse
                 // clearArray: true ensures sensitive file data doesn't leak to other uploads
-                ArrayPool<byte>.Shared.Return(buffer, clearArray: true);
+                _chunkPool.Return(buffer, clearArray: true);
             }
         }
     }

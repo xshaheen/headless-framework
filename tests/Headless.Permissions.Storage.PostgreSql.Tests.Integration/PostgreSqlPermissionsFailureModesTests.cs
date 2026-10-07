@@ -75,7 +75,7 @@ public sealed class PostgreSqlPermissionsFailureModesTests(PostgreSqlPermissions
             (await _CountTablesAsync("permissions_pg_concurrent", "permission_grants")).Should().Be(1);
             (await _CountTablesAsync("permissions_pg_concurrent", "permission_definitions")).Should().Be(1);
             (await _CountTablesAsync("permissions_pg_concurrent", "permission_group_definitions")).Should().Be(1);
-            (await _CountIndexesAsync("permissions_pg_concurrent")).Should().Be(5);
+            (await _CountIndexesAsync("permissions_pg_concurrent")).Should().Be(6);
         }
         finally
         {

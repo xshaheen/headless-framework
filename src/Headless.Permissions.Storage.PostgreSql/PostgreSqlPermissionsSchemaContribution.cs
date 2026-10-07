@@ -70,6 +70,7 @@ internal static class PostgreSqlPermissionsSchemaContribution
             CREATE UNIQUE INDEX IF NOT EXISTS "ix_{groupsName}_name" ON {groupsTable} ("name");
             CREATE INDEX IF NOT EXISTS "ix_{definitionsName}_group_name" ON {definitionsTable} ("group_name");
             CREATE UNIQUE INDEX IF NOT EXISTS "ix_{definitionsName}_name" ON {definitionsTable} ("name");
+            CREATE INDEX IF NOT EXISTS "ix_{grantsName}_provider_name_provider_key" ON {grantsTable} ("provider_name", "provider_key");
             CREATE UNIQUE INDEX IF NOT EXISTS "ix_{grantsName}_tenant_id_name_provider_name_provider_key" ON {grantsTable} ("tenant_id", "name", "provider_name", "provider_key") WHERE "tenant_id" IS NOT NULL;
             CREATE UNIQUE INDEX IF NOT EXISTS "ix_{grantsName}_name_provider_name_provider_key_no_tenant" ON {grantsTable} ("name", "provider_name", "provider_key") WHERE "tenant_id" IS NULL;
             """;

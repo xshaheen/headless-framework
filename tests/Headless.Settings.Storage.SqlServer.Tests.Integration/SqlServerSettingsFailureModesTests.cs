@@ -69,7 +69,7 @@ public sealed class SqlServerSettingsFailureModesTests(SqlServerSettingsFixture 
                 .AllSatisfy(initialized => initialized.Should().BeTrue());
             (await _CountTablesAsync("settings_sql_concurrent", "SettingValues")).Should().Be(1);
             (await _CountTablesAsync("settings_sql_concurrent", "SettingDefinitions")).Should().Be(1);
-            (await _CountIndexesAsync("settings_sql_concurrent")).Should().Be(3);
+            (await _CountIndexesAsync("settings_sql_concurrent")).Should().Be(4);
         }
         finally
         {

@@ -57,6 +57,12 @@ public sealed class DynamicPermissionDefinitionStore(
             return null;
         }
 
+        // Fast path: lock-free read if cache is fresh
+        if (!_IsUpdateMemoryCacheRequired())
+        {
+            return _permissionMemoryCache.GetOrDefault(name);
+        }
+
         using (await _syncSemaphore.LockAsync(cancellationToken).ConfigureAwait(false))
         {
             await _EnsureMemoryCacheIsUptoDateAsync(cancellationToken).ConfigureAwait(false);
@@ -73,10 +79,16 @@ public sealed class DynamicPermissionDefinitionStore(
             return [];
         }
 
+        // Fast path: lock-free read if cache is fresh
+        if (!_IsUpdateMemoryCacheRequired())
+        {
+            return _permissionListCache;
+        }
+
         using (await _syncSemaphore.LockAsync(cancellationToken).ConfigureAwait(false))
         {
             await _EnsureMemoryCacheIsUptoDateAsync(cancellationToken).ConfigureAwait(false);
-            return _permissionMemoryCache.Values.ToImmutableList();
+            return _permissionListCache;
         }
     }
 
@@ -89,10 +101,16 @@ public sealed class DynamicPermissionDefinitionStore(
             return [];
         }
 
+        // Fast path: lock-free read if cache is fresh
+        if (!_IsUpdateMemoryCacheRequired())
+        {
+            return _groupListCache;
+        }
+
         using (await _syncSemaphore.LockAsync(cancellationToken).ConfigureAwait(false))
         {
             await _EnsureMemoryCacheIsUptoDateAsync(cancellationToken).ConfigureAwait(false);
-            return _groupMemoryCache.Values.ToImmutableList();
+            return _groupListCache;
         }
     }
 
@@ -103,8 +121,10 @@ public sealed class DynamicPermissionDefinitionStore(
     private string? _cacheStamp;
     private DateTimeOffset? _lastCheckTime;
     private readonly SemaphoreSlim _syncSemaphore = new(1, 1);
-    private readonly Dictionary<string, PermissionGroupDefinition> _groupMemoryCache = new(StringComparer.Ordinal);
-    private readonly Dictionary<string, PermissionDefinition> _permissionMemoryCache = new(StringComparer.Ordinal);
+    private volatile Dictionary<string, PermissionGroupDefinition> _groupMemoryCache = new(StringComparer.Ordinal);
+    private volatile Dictionary<string, PermissionDefinition> _permissionMemoryCache = new(StringComparer.Ordinal);
+    private volatile IReadOnlyList<PermissionGroupDefinition> _groupListCache = [];
+    private volatile IReadOnlyList<PermissionDefinition> _permissionListCache = [];
 
     private async Task _EnsureMemoryCacheIsUptoDateAsync(CancellationToken cancellationToken)
     {
@@ -170,8 +190,8 @@ public sealed class DynamicPermissionDefinitionStore(
         var permissionGroupRecords = await repository.GetGroupsListAsync(cancellationToken).ConfigureAwait(false);
         var permissionRecords = await repository.GetPermissionsListAsync(cancellationToken).ConfigureAwait(false);
 
-        _groupMemoryCache.Clear();
-        _permissionMemoryCache.Clear();
+        var newGroupCache = new Dictionary<string, PermissionGroupDefinition>(StringComparer.Ordinal);
+        var newPermissionCache = new Dictionary<string, PermissionDefinition>(StringComparer.Ordinal);
 
         var context = new PermissionDefinitionContext();
 
@@ -186,7 +206,7 @@ public sealed class DynamicPermissionDefinitionStore(
         {
             var permissionGroup = context.AddGroup(permissionGroupRecord.Name, permissionGroupRecord.DisplayName);
 
-            _groupMemoryCache[permissionGroup.Name] = permissionGroup;
+            newGroupCache[permissionGroup.Name] = permissionGroup;
 
             foreach (var property in permissionGroupRecord.ExtraProperties)
             {
@@ -200,17 +220,24 @@ public sealed class DynamicPermissionDefinitionStore(
                     _UpdateInMemoryStoreCacheAddFeatureRecursively(
                         permissionGroup,
                         permissionRecord,
-                        permissionsByParent
+                        permissionsByParent,
+                        newPermissionCache
                     );
                 }
             }
         }
+
+        _groupMemoryCache = newGroupCache;
+        _permissionMemoryCache = newPermissionCache;
+        _groupListCache = [.. newGroupCache.Values];
+        _permissionListCache = [.. newPermissionCache.Values];
     }
 
-    private void _UpdateInMemoryStoreCacheAddFeatureRecursively(
+    private static void _UpdateInMemoryStoreCacheAddFeatureRecursively(
         ICanAddChildPermission permissionContainer,
         PermissionDefinitionRecord permissionRecord,
-        ILookup<string, PermissionDefinitionRecord> permissionsByParent
+        ILookup<string, PermissionDefinitionRecord> permissionsByParent,
+        Dictionary<string, PermissionDefinition> permissionCache
     )
     {
         var permission = permissionContainer.AddChild(
@@ -219,7 +246,7 @@ public sealed class DynamicPermissionDefinitionStore(
             permissionRecord.IsEnabled
         );
 
-        _permissionMemoryCache[permission.Name] = permission;
+        permissionCache[permission.Name] = permission;
 
         if (!permissionRecord.Providers.IsNullOrWhiteSpace())
         {
@@ -233,7 +260,12 @@ public sealed class DynamicPermissionDefinitionStore(
 
         foreach (var subPermission in permissionsByParent[permissionRecord.Name])
         {
-            _UpdateInMemoryStoreCacheAddFeatureRecursively(permission, subPermission, permissionsByParent);
+            _UpdateInMemoryStoreCacheAddFeatureRecursively(
+                permission,
+                subPermission,
+                permissionsByParent,
+                permissionCache
+            );
         }
     }
 

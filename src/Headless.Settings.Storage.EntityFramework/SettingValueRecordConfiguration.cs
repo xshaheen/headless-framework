@@ -56,6 +56,9 @@ internal sealed class SettingValueRecordConfiguration(SettingsStorageOptions opt
                 HeadlessStorageNaming.IndexName(style, table, SettingsStorageNames.ValuesByNameNullProviderKey)
             );
 
+        b.HasIndex(x => new { x.ProviderName, x.ProviderKey })
+            .HasDatabaseName(HeadlessStorageNaming.IndexName(style, table, SettingsStorageNames.ValuesByProvider));
+
         b.ApplyColumnNaming(style);
     }
 }

@@ -51,6 +51,9 @@ internal sealed class PermissionGrantRecordConfiguration(PermissionsStorageOptio
             .HasFilter($"\"{tenantId}\" IS NULL")
             .HasDatabaseName(HeadlessStorageNaming.IndexName(style, table, PermissionsStorageNames.GrantsByNoTenant));
 
+        b.HasIndex(x => new { x.ProviderName, x.ProviderKey })
+            .HasDatabaseName(HeadlessStorageNaming.IndexName(style, table, PermissionsStorageNames.GrantsByProvider));
+
         b.ApplyColumnNaming(style);
     }
 }

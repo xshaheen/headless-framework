@@ -489,19 +489,16 @@ internal sealed class AzureBlobStorage(
 
         try
         {
-            // Fetch metadata (and confirm existence) first so the download surfaces the caller's metadata like the
-            // other providers; the framework uploadDate/extension keys are stripped. A missing blob/container 404s
-            // here and maps to null below, before any stream is opened, so there is nothing to leak. Then stream
-            // lazily from the network instead of buffering the whole blob into a MemoryStream (which OOMs on large
-            // blobs). The caller owns the returned result and disposes the stream (see IBlobStorage.OpenReadStreamAsync).
-            var properties = await blobClient
-                .GetPropertiesAsync(cancellationToken: cancellationToken)
+            // Stream content and metadata together in a single network round trip (DownloadStreamingAsync
+            // returns BlobDownloadStreamingResult carrying Content and Details.Metadata), avoiding
+            // sequential GetPropertiesAsync + OpenReadAsync round trips. A missing blob/container 404s
+            // here and maps to null below.
+            var download = await blobClient
+                .DownloadStreamingAsync(cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
-            var metadata = BlobStorageHelpers.ToUserMetadata(_ToMetadata(properties.Value.Metadata));
+            var metadata = BlobStorageHelpers.ToUserMetadata(_ToMetadata(download.Value.Details.Metadata));
 
-            var stream = await blobClient.OpenReadAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
-
-            return new(stream, location.Path, metadata);
+            return new(download.Value.Content, location.Path, metadata);
         }
         catch (RequestFailedException e)
             when (e.ErrorCode == BlobErrorCode.BlobNotFound || e.ErrorCode == BlobErrorCode.ContainerNotFound)

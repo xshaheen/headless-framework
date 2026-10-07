@@ -21,6 +21,14 @@ internal sealed class InfobipSmsSender(
     // would bleed configuration across keyed instances.
     private readonly InfobipSmsOptions _options = optionsMonitor.Get(optionsName);
 
+    // Initialized once per sender instance to avoid re-constructing the generated client Configuration
+    // on every send operation.
+    private readonly Configuration _configuration = new()
+    {
+        BasePath = optionsMonitor.Get(optionsName).BasePath,
+        ApiKey = optionsMonitor.Get(optionsName).ApiKey,
+    };
+
     public async ValueTask<SendSingleSmsResponse> SendAsync(
         SendSingleSmsRequest request,
         CancellationToken cancellationToken = default
@@ -147,10 +155,7 @@ internal sealed class InfobipSmsSender(
         var smsRequest = new SmsRequest([smsMessage]);
 
         using var httpClient = httpClientFactory.CreateClient(httpClientName);
-        using var smsApi = new SmsApi(
-            httpClient,
-            new Configuration { BasePath = _options.BasePath, ApiKey = _options.ApiKey }
-        );
+        using var smsApi = new SmsApi(httpClient, _configuration);
 
         return await smsApi.SendSmsMessagesAsync(smsRequest, cancellationToken).ConfigureAwait(false);
     }

@@ -75,7 +75,7 @@ public sealed class SqlServerPermissionsFailureModesTests(SqlServerPermissionsFi
             (await _CountTablesAsync("permissions_sql_concurrent", "PermissionGrants")).Should().Be(1);
             (await _CountTablesAsync("permissions_sql_concurrent", "PermissionDefinitions")).Should().Be(1);
             (await _CountTablesAsync("permissions_sql_concurrent", "PermissionGroupDefinitions")).Should().Be(1);
-            (await _CountIndexesAsync("permissions_sql_concurrent")).Should().Be(5);
+            (await _CountIndexesAsync("permissions_sql_concurrent")).Should().Be(6);
         }
         finally
         {

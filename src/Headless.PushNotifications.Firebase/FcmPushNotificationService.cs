@@ -259,6 +259,12 @@ internal sealed class FcmPushNotificationService(IFcmMessageSender sender, TimeP
         CancellationToken cancellationToken
     )
     {
+        // Single batch fast path: avoids Chunk enumerator and results list allocation
+        if (fids.Count <= _MaxFidsPerBatch)
+        {
+            return await sender.SendBatchAsync(message, fids, cancellationToken).ConfigureAwait(false);
+        }
+
         var results = new List<FcmSendResult>(fids.Count);
 
         foreach (var batch in fids.Chunk(_MaxFidsPerBatch))

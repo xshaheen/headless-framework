@@ -61,6 +61,7 @@ internal static class PostgreSqlSettingsSchemaContribution
         // distinct, so duplicate (name, provider_name) host-scope rows would slip past it.
         var indexesSql = $"""
             CREATE UNIQUE INDEX IF NOT EXISTS "ix_{definitionsName}_name" ON {definitionsTable} ("name");
+            CREATE INDEX IF NOT EXISTS "ix_{valuesName}_provider_name_provider_key" ON {valuesTable} ("provider_name", "provider_key");
             CREATE UNIQUE INDEX IF NOT EXISTS "ix_{valuesName}_name_provider_name_provider_key" ON {valuesTable} ("name", "provider_name", "provider_key") WHERE "provider_key" IS NOT NULL;
             CREATE UNIQUE INDEX IF NOT EXISTS "ix_{valuesName}_name_provider_name_null_provider_key" ON {valuesTable} ("name", "provider_name") WHERE "provider_key" IS NULL;
             """;
