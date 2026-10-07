@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - main
+  # The autolabeler runs only on pull request events. `edited` relabels after a title change.
+  pull_request:
+    types: [ opened, reopened, synchronize, edited ]
   workflow_dispatch:
 
 concurrency:
@@ -13,7 +16,18 @@ concurrency:
 permissions: {}
 
 jobs:
+  auto_label:
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      - name: "Label from title"
+        uses: release-drafter/release-drafter/autolabeler@34d80673e067bdc0c24568d3af899c216adcfaa9 # v7.7.0
+
   update_release_draft:
+    if: github.event_name != 'pull_request'
     permissions:
       contents: write
       pull-requests: write

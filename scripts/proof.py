@@ -233,8 +233,14 @@ def summarize(directory: Path) -> int:
 
 def render_markdown(summary: dict) -> str:
     tests = summary["tests"]
+    # The PR template's Verification section holds this bundle. The summary line keeps the verdict and
+    # totals visible while the tables fold away; a failing bundle stays open so the failure is seen.
+    verdict = summary["verdict"].upper()
     lines = [
-        f"## Verification: {summary['verdict'].upper()}",
+        f"<details{' open' if verdict == 'FAIL' else ''}><summary><strong>make verify-affected: {verdict}</strong>. "
+        f"Tests: {tests['passed']} passed, {tests['failed']} failed, {tests['skipped']} skipped. "
+        f"Compiler diagnostics: {len(summary['compiler_diagnostics'])}. "
+        f"Analyzer findings: {len(summary['analyzer_findings'])}.</summary>",
         "",
         f"Commit `{summary['commit'][:12]}`{' with uncommitted changes' if summary['dirty'] else ''}, base `{summary['base']}`.",
         "",
@@ -281,6 +287,7 @@ def render_markdown(summary: dict) -> str:
     if summary["coverage"]:
         lines += ["", "### Coverage of changed assemblies", "", "| Assembly | Line % | Branch % |", "| --- | --- | --- |"]
         lines += [f"| {row['assembly']} | {row['line']} | {row['branch']} |" for row in summary["coverage"]]
+    lines += ["", "</details>"]
     return "\n".join(lines) + "\n"
 
 

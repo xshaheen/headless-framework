@@ -87,6 +87,7 @@ Use the affected and project-scoped targets: `test-class` with `TEST_PROJECT`, `
 - **Every CI run checks layering.** The `changes` job runs `make check-layering` (an Abstractions package references only Abstractions or foundation packages; a family's root package never references that family's providers; no public namespace or source folder is named after a kind of type).
 - **Some legs run only on a release.** Pack and SBOM, the Africa/Cairo test leg, and the messaging and R2 conformance legs run only for a published release or a `workflow_dispatch` with `release_checks`. Before you tag a change to packaging or time handling, rehearse that path.
 - **Packages publish only from a published GitHub Release.** Release Drafter never publishes. A release pushes to GitHub Packages, then to nuget.org. To stop at GitHub Packages, set the repository variable `PUBLISH_NUGET_ORG` to `false` before you publish the release (`gh variable set PUBLISH_NUGET_ORG --body false`); delete it to publish to nuget.org again. Before 1.0, Release Drafter resolves the `major` label to a minor bump.
+- **A pull request's title sets its release labels.** The autolabeler maps the Conventional Commit type to a release-note category, and a `!` before the colon adds `major`. Mark every breaking change with `!`: without it, the release drafts as a patch.
 
 The solution file is [headless-framework.slnx](headless-framework.slnx). [dotnet-tools.json](dotnet-tools.json) pins the CLI tools. Run `dotnet tool restore`, then `dotnet <tool>`.
 

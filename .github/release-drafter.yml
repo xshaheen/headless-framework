@@ -32,25 +32,23 @@ template: |
   ## Contributors
 
   $CONTRIBUTORS
+# Labels come from the Conventional Commit title, not changed paths: a PR lands in every category it has a
+# label for, so path rules put a `fix` that touches src/ under Features too. The `!` marker sets `major`,
+# which drives the version bump. The autolabeler only adds labels, so a label for a title type that was
+# later edited away stays until it is removed by hand.
 autolabeler:
-  - label: documentation
-    files:
-      - "README.md"
-      - "docs/**/*"
-      - "llms*.txt"
-      - ".github/**/*.md"
+  - label: major
+    title:
+      - '/^\w+(\([^)]*\))?!:/'
   - label: enhancement
-    files:
-      - "src/**/*"
-      - "demo/**/*"
+    title:
+      - '/^(feat|perf)(\([^)]*\))?!?:/'
+  - label: bug
+    title:
+      - '/^fix(\([^)]*\))?!?:/'
+  - label: documentation
+    title:
+      - '/^docs(\([^)]*\))?!?:/'
   - label: maintenance
-    files:
-      - ".github/**/*.yml"
-      - ".github/workflows/**/*"
-      - "build/**/*"
-      - "build.ps1"
-      - "build.sh"
-      - "tests/**/*"
-      - "Directory.*"
-      - "global.json"
-      - "nuget.config"
+    title:
+      - '/^(refactor|build|ci|chore|style|test)(\([^)]*\))?!?:/'
