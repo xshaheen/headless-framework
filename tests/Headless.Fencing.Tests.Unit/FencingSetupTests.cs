@@ -90,7 +90,14 @@ public sealed class FencingSetupTests : TestBase
         }
 
         // then
-        await store.Received(1).GrantAsync(new LeaseKey("t1", "job", "order-1"), TimeSpan.FromSeconds(5), AbortToken);
+        await store
+            .Received(1)
+            .GrantAsync(
+                new LeaseKey("t1", "job", "order-1"),
+                TimeSpan.FromSeconds(5),
+                LeaseTakeover.Allowed,
+                AbortToken
+            );
     }
 
     [Fact]

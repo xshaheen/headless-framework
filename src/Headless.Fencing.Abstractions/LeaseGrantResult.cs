@@ -5,7 +5,7 @@ using Headless.Checks;
 
 namespace Headless.Fencing;
 
-/// <summary>The result of a grant: the acquired lease, or the live holder that kept it.</summary>
+/// <summary>The result of a grant: the acquired lease, or the attempt that kept it.</summary>
 [PublicAPI]
 public sealed class LeaseGrantResult
 {
@@ -38,14 +38,15 @@ public sealed class LeaseGrantResult
     public FencedLease? Lease { get; }
 
     /// <summary>
-    /// Gets the acquired lease's expiry, or the live holder's expiry when <see cref="Status" /> is
-    /// <see cref="LeaseGrantStatus.Held" />. Decided by the database clock.
+    /// Gets the acquired lease's expiry, or the holder's expiry when <see cref="Status" /> is
+    /// <see cref="LeaseGrantStatus.Held" /> or <see cref="LeaseGrantStatus.Expired" /> (already past for an expired
+    /// holder). Decided by the database clock.
     /// </summary>
     public DateTimeOffset ExpiresAt { get; }
 
     /// <summary>
-    /// Gets the live holder's generation when <see cref="Status" /> is <see cref="LeaseGrantStatus.Held" />;
-    /// otherwise <see langword="null" />.
+    /// Gets the holder's generation when <see cref="Status" /> is <see cref="LeaseGrantStatus.Held" /> or
+    /// <see cref="LeaseGrantStatus.Expired" />; otherwise <see langword="null" />.
     /// </summary>
     public long? HolderGeneration { get; }
 
@@ -58,7 +59,7 @@ public sealed class LeaseGrantResult
     /// <summary>
     /// Gets how many times the lease's work was taken from an expired holder since it last settled or was released:
     /// each <see cref="LeaseGrantStatus.Takeover" /> grant and each sweep that abandoned an expired attempt adds one.
-    /// For <see cref="LeaseGrantStatus.Held" /> it is the live holder's count.
+    /// For <see cref="LeaseGrantStatus.Held" /> and <see cref="LeaseGrantStatus.Expired" /> it is the holder's count.
     /// </summary>
     /// <remarks>
     /// A count that keeps rising means executors keep losing the lease before they finish: a crash loop, a renewal
@@ -70,7 +71,7 @@ public sealed class LeaseGrantResult
     /// Gets the last progress an expired attempt recorded when this grant resumes its work: a
     /// <see cref="LeaseGrantStatus.Takeover" />, or a <see cref="LeaseGrantStatus.Granted" /> over an attempt a sweep
     /// abandoned. <see langword="null" /> when no attempt recorded progress, after a settlement or release, and for
-    /// <see cref="LeaseGrantStatus.Held" />.
+    /// <see cref="LeaseGrantStatus.Held" /> and <see cref="LeaseGrantStatus.Expired" />.
     /// </summary>
     public LeaseProgress? Progress { get; }
 
@@ -160,6 +161,33 @@ public sealed class LeaseGrantResult
 
         return new(
             LeaseGrantStatus.Held,
+            lease: null,
+            holderExpiresAt,
+            holderGeneration,
+            previousGeneration: null,
+            takeoverCount,
+            progress: null
+        );
+    }
+
+    /// <summary>
+    /// Creates the result of a grant that asked for <see cref="LeaseTakeover.AfterSweep" /> and found the last attempt
+    /// expired but not yet abandoned, settled, or released.
+    /// </summary>
+    /// <param name="holderGeneration">The expired attempt's generation.</param>
+    /// <param name="holderExpiresAt">When the expired attempt's lease ran out.</param>
+    /// <param name="takeoverCount">The expired attempt's takeover count.</param>
+    /// <returns>The result.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="holderGeneration" /> is not positive, or <paramref name="takeoverCount" /> is negative.
+    /// </exception>
+    public static LeaseGrantResult Expired(long holderGeneration, DateTimeOffset holderExpiresAt, int takeoverCount = 0)
+    {
+        Argument.IsPositive(holderGeneration);
+        Argument.IsPositiveOrZero(takeoverCount);
+
+        return new(
+            LeaseGrantStatus.Expired,
             lease: null,
             holderExpiresAt,
             holderGeneration,

@@ -49,15 +49,22 @@ public sealed class UnitOfWorkLeasesAccessorTests : TestBase
         await first.SettleAsync(lease, AbortToken);
         await first.ReleaseAsync(lease, AbortToken);
         await first.FenceAsync(lease, AbortToken);
+        await first.GrantAsync("job", "order-2", duration, LeaseTakeover.AfterSweep, AbortToken);
+        var expired = new ExpiredLease(null, "job", "order-3", 4, DateTimeOffset.UnixEpoch);
+        await first.ClaimExpiredAsync("job", cancellationToken: AbortToken);
+        await first.ClaimExpiredAsync("job", expired, AbortToken);
 
         // then
         second.Should().BeSameAs(first);
-        await feature.Received(1).GrantAsync(unit, "job", "order-1", duration, AbortToken);
+        await feature.Received(1).GrantAsync(unit, "job", "order-1", duration, LeaseTakeover.Allowed, AbortToken);
         await feature.Received(1).RenewAsync(unit, lease, duration, null, AbortToken);
         await feature.Received(1).RenewAsync(unit, lease, duration, progress, AbortToken);
         await feature.Received(1).SettleAsync(unit, lease, AbortToken);
         await feature.Received(1).ReleaseAsync(unit, lease, AbortToken);
         await feature.Received(1).FenceAsync(unit, lease, AbortToken);
+        await feature.Received(1).GrantAsync(unit, "job", "order-2", duration, LeaseTakeover.AfterSweep, AbortToken);
+        await feature.Received(1).ClaimExpiredAsync(unit, "job", null, AbortToken);
+        await feature.Received(1).ClaimExpiredAsync(unit, "job", expired, AbortToken);
     }
 
     // Mimics the unit's GetOrAdd contract: the factory runs once and later reads return the stored state.

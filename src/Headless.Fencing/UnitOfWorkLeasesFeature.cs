@@ -24,16 +24,20 @@ internal sealed class UnitOfWorkLeasesFeature(
         string kind,
         string resource,
         TimeSpan duration,
+        LeaseTakeover takeover,
         CancellationToken cancellationToken = default
     )
     {
         Argument.IsNotNull(unitOfWork);
         var key = resolver.Resolve(kind, resource);
         duration = resolver.ValidateDuration(duration);
+        Argument.IsInEnum(takeover);
 
         _Enlist(unitOfWork, isWrite: true, drawsGeneration: true);
 
-        var result = await store.GrantEnlistedAsync(unitOfWork, key, duration, cancellationToken).ConfigureAwait(false);
+        var result = await store
+            .GrantEnlistedAsync(unitOfWork, key, duration, takeover, cancellationToken)
+            .ConfigureAwait(false);
         alerts.OnGranted(result);
 
         return result;
@@ -110,6 +114,36 @@ internal sealed class UnitOfWorkLeasesFeature(
         {
             throw new StaleLeaseException(lease, status);
         }
+    }
+
+    public async ValueTask<ExpiredLease?> ClaimExpiredAsync(
+        IUnitOfWork unitOfWork,
+        string kind,
+        ExpiredLease? after,
+        CancellationToken cancellationToken = default
+    )
+    {
+        Argument.IsNotNull(unitOfWork);
+        var storedKind = LeaseRequestResolver.ResolveKind(kind);
+
+        _Enlist(unitOfWork, isWrite: true);
+
+        var lease = await store
+            .ClaimExpiredEnlistedAsync(unitOfWork, storedKind, after, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (lease is not null)
+        {
+            // Reported only once the abandonment commits, like the sweep: a claim the caller rolls back never counted.
+            unitOfWork.OnCompleted(() =>
+            {
+                alerts.OnAbandoned(lease);
+
+                return ValueTask.CompletedTask;
+            });
+        }
+
+        return lease;
     }
 
     private void _Enlist(IUnitOfWork unitOfWork, bool isWrite, bool drawsGeneration = false)
