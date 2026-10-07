@@ -150,6 +150,14 @@ AFFECTED_UNIT_STAGE = if [ $$status -ne 0 ]; then $(PROOF) skip --dir "$$run" --
 			$(PROOF) run --dir "$$run" --name coverage-merge -- $(DOTNET) dotnet-coverage merge --nologo --output "$$run/coverage/merged.cobertura.xml" --output-format cobertura "$$run/unit-tests/**/*.cobertura.xml" || status=1; \
 		fi; \
 	else printf '\033[33m[affected]\033[0m no unit-test project covers the affected set; nothing ran.\n'; fi;
+# A change under a dashboard's wwwroot/ is a change to its Dashboard project, so the build stage already runs
+# `npm run build` through eng/DashboardSpa.targets, but nothing else lints or unit-tests the SPA. This stage runs
+# dashboard-<name>-test for each SPA changed_dashboards selects.
+AFFECTED_DASHBOARD_STAGE = $(DASHBOARD_CHECK_FN); $(CHANGED_DASHBOARDS_FN); \
+	while read -r name dir; do \
+		[ -n "$$name" ] || continue; \
+		$(PROOF) run --dir "$$run" --name "dashboard-$$name" -- bash -c "$$(declare -f dashboard_check); dashboard_check \"\$$@\"" bash "$$name" "$$dir" < /dev/null || true; \
+	done <<< "$$(changed_dashboards)";
 PROOF_REPORT = report() { cat "$$1/summary.md"; printf '\033[36mProof bundle:\033[0m %s (summary.md for the PR body, summary.json for tools)\n' "$$1"; }; report
 DOTNET_OUTDATED_AUDIT_ARGS ?= --no-restore --idle-timeout $(DEPENDENCY_AUDIT_IDLE_TIMEOUT) --output "$(DEPENDENCY_AUDIT_DIR)/outdated.json" --output-format json
 DEPENDENCY_SECURITY_AUDIT_ARGS ?= --timeout-seconds "$(DEPENDENCY_SECURITY_AUDIT_TIMEOUT)" --output-dir "$(DEPENDENCY_AUDIT_DIR)/security" --project "$(PROJECT)" --scan vulnerable --include-transitive --scan deprecated
@@ -168,7 +176,7 @@ help: ## Show available commands.
 	@printf "  make build\n"
 	@printf "  make test-project TEST_PROJECT=tests/Headless.Api.Composition.Tests.Unit/Headless.Api.Composition.Tests.Unit.csproj\n"
 	@printf "  make test-class CLASS='*CultureHelperTests' TEST_PROJECT=tests/Headless.Extensions.Tests.Unit/Headless.Extensions.Tests.Unit.csproj\n"
-	@printf "  make verify-affected            # build + unit tests + analyzers for the change, with a proof bundle\n"
+	@printf "  make verify-affected            # build + unit tests + analyzers + changed dashboards, with a proof bundle\n"
 	@printf "  make check                      # the CI gate over the affected scope: check-layering, format-check-changed, verify-affected\n"
 	@printf "  make test-affected\n"
 	@printf "  make quality-analyzers-affected\n"
@@ -506,24 +514,61 @@ dashboard-jobs: _node-check ## Rebuild the Jobs dashboard SPA (npm ci + vite bui
 dashboard-messaging: _node-check ## Rebuild the Messaging dashboard SPA (npm ci + vite build into wwwroot/dist).
 	cd "$(MESSAGING_DASHBOARD_DIR)" && $(NPM) ci --no-audit --no-fund && $(NPM) run $(DASHBOARD_BUILD_SCRIPT)
 
-# The gates CI's Dashboard jobs run for each SPA, in CI's order: npm ci, build (vue-tsc + vite), Vitest, ESLint.
-DASHBOARD_GATES = cd "$$dir" && $(NPM) ci --no-audit --no-fund && $(NPM) run build && $(NPM) run test:unit && $(NPM) run lint:check
+# The SPA gates CI's dashboard job runs, through each SPA's own package scripts. `type-check` plus `build-only` is
+# what `npm run build` runs in parallel; they run apart here so a failure names its stage. The other scripts stay
+# out of the CLI on purpose:
+# cli-exclude: script:headless-*-dashboard/dev -- a Vite dev server for hands-on SPA work; make up serves the built dashboards
+# cli-exclude: script:headless-*-dashboard/preview -- serves a finished bundle; make up drives the dashboards end to end
+# cli-exclude: script:headless-*-dashboard/test:unit:watch -- an interactive watcher; dashboard-<name>-test runs the suite once
+# cli-exclude: script:headless-*-dashboard/lint -- eslint --fix writes files; the gate runs lint:check
+# cli-exclude: script:headless-*-dashboard/format -- prettier --write over src/, which no gate checks
+# dashboard_check <name> <dir>: install from the lockfile only when node_modules is missing or older than it (the
+# rule eng/DashboardSpa.targets uses), then run every gate script so one failure does not hide the next. Scripts
+# run through `npm run`, never npx: a wrapper such as Socket's prints a banner over npx output and once hid an
+# eslint result. Exits 3 when a script failed, 4 when npm is missing, 1 when the install failed.
+DASHBOARD_CHECK_FN = dashboard_check() { \
+	local name="$$1" dir="$$2" script failed=""; \
+	command -v $(NPM) >/dev/null 2>&1 || { echo "ERROR: $(NPM) is not on PATH; the dashboard SPAs need Node 22+. Install from https://nodejs.org" >&2; return 4; }; \
+	if [ ! -f "$$dir/node_modules/.package-lock.json" ] || [ "$$dir/package-lock.json" -nt "$$dir/node_modules/.package-lock.json" ]; then \
+		(cd "$$dir" && $(NPM) ci --no-audit --no-fund) || { echo "[dashboard-$$name] npm ci failed" >&2; return 1; }; \
+	fi; \
+	(cd "$$dir" && $(NPM) run lint:check) || failed="$$failed lint:check"; \
+	(cd "$$dir" && $(NPM) run type-check) || failed="$$failed type-check"; \
+	(cd "$$dir" && $(NPM) run test:unit) || failed="$$failed test:unit"; \
+	(cd "$$dir" && $(NPM) run build-only) || failed="$$failed build-only"; \
+	if [ -n "$$failed" ]; then echo "[dashboard-$$name] failed:$$failed" >&2; return 3; fi; \
+	echo "[dashboard-$$name] passed: lint:check type-check test:unit build-only"; }
+
+.PHONY: dashboard-jobs-test
+dashboard-jobs-test: ## Lint, type-check, unit-test, and build the Jobs dashboard SPA (CI's Jobs dashboard job).
+	@$(DASHBOARD_CHECK_FN); dashboard_check jobs "$(JOBS_DASHBOARD_DIR)"
+
+.PHONY: dashboard-messaging-test
+dashboard-messaging-test: ## Lint, type-check, unit-test, and build the Messaging dashboard SPA (CI's Messaging dashboard job).
+	@$(DASHBOARD_CHECK_FN); dashboard_check messaging "$(MESSAGING_DASHBOARD_DIR)"
 
 .PHONY: dashboards-test
-dashboards-test: _node-check ## Run both dashboard SPAs' CI gates locally: npm ci, build (type-check + bundle), Vitest, ESLint.
-	@for dir in "$(JOBS_DASHBOARD_DIR)" "$(MESSAGING_DASHBOARD_DIR)"; do echo "[dashboards] $$dir"; ( $(DASHBOARD_GATES) ) || exit 1; done
+dashboards-test: ## Run both dashboard SPAs' CI gates (dashboard-jobs-test, dashboard-messaging-test); both run, every failure is reported.
+	@$(DASHBOARD_CHECK_FN); rc=0; \
+	dashboard_check jobs "$(JOBS_DASHBOARD_DIR)" || rc=$$?; \
+	dashboard_check messaging "$(MESSAGING_DASHBOARD_DIR)" || { code=$$?; [ $$code -le $$rc ] || rc=$$code; }; \
+	exit $$rc
 
-# make check's dashboard stage. It runs a SPA's gates only when this side changed files under it, committed
-# or not, so a backend-only change pays nothing; it diffs the merge base for the same reason FORMAT_CHANGED does.
+# changed_dashboards prints "<name> <dir>" for each dashboard SPA this side changed vs the merge base with
+# AFFECTED_BASE, committed or not, so a backend-only change pays nothing; with no merge base it prints both. It
+# diffs the merge base for the same reason FORMAT_CHANGED does.
+CHANGED_DASHBOARDS_FN = changed_dashboards() { \
+	local base spa dir; base="$$(git merge-base "$(AFFECTED_BASE)" HEAD 2>/dev/null || true)"; \
+	for spa in "jobs $(JOBS_DASHBOARD_DIR)" "messaging $(MESSAGING_DASHBOARD_DIR)"; do dir="$${spa\#* }"; \
+		if [ -z "$$base" ] || [ -n "$$(git diff --name-only "$$base" -- "$$dir"; git ls-files --others --exclude-standard -- "$$dir")" ]; then echo "$$spa"; fi; \
+	done; }
+
 .PHONY: dashboards-test-affected
-dashboards-test-affected: ## Run the CI gates of each dashboard SPA changed vs AFFECTED_BASE (committed or not); skips unchanged SPAs.
-	@base="$$(git merge-base "$(AFFECTED_BASE)" HEAD 2>/dev/null || true)"; \
-	for dir in "$(JOBS_DASHBOARD_DIR)" "$(MESSAGING_DASHBOARD_DIR)"; do \
-	  if [ -n "$$base" ] && [ -z "$$( { git diff --name-only "$$base" -- "$$dir"; git ls-files --others --exclude-standard -- "$$dir"; } | head -n 1)" ]; then \
-	    echo "[dashboards] $$dir unchanged; skipped"; continue; fi; \
-	  command -v $(NPM) >/dev/null 2>&1 || { echo "ERROR: '$(NPM)' not found on PATH. Node 22+ runs the dashboard gates. Install from https://nodejs.org (LTS)."; exit 4; }; \
-	  echo "[dashboards] $$dir"; ( $(DASHBOARD_GATES) ) || exit 1; \
-	done
+dashboards-test-affected: ## Run dashboard-<name>-test for each SPA changed vs AFFECTED_BASE (committed or not); skips unchanged SPAs.
+	@$(DASHBOARD_CHECK_FN); $(CHANGED_DASHBOARDS_FN); rc=0; spas="$$(changed_dashboards)"; \
+	if [ -z "$$spas" ]; then echo "[dashboards] no dashboard SPA changed vs $(AFFECTED_BASE); nothing ran"; exit 0; fi; \
+	while read -r name dir; do dashboard_check "$$name" "$$dir" < /dev/null || { code=$$?; [ $$code -le $$rc ] || rc=$$code; }; done <<< "$$spas"; \
+	exit $$rc
 
 # ---- Dashboard sandbox ---------------------------------------------------------------------------------------------
 # The repository ships no app, but the Jobs and Messaging dashboards are UI that has to be driven to be tested.
@@ -771,12 +816,13 @@ test-affected-integration: ## Build the affected set, then run its *.Tests.Integ
 	$(PROOF_REPORT) "$$run"; exit $$status
 
 .PHONY: verify-affected
-verify-affected: ## Build, unit-test (with coverage), and analyze the affected set; one proof bundle for the PR body.
+verify-affected: ## Build, unit-test (with coverage), and analyze the affected set, plus dashboard-<name>-test for a changed SPA; one proof bundle for the PR body.
 	@$(AFFECTED_PREPARE) "$(PROOF_RUN)-verify"; \
 	run="$(PROOF_RUN)-verify"; status=0; coverage="$(VERIFY_COVERAGE)"; \
 	$(AFFECTED_BUILD_STAGES) \
 	$(AFFECTED_UNIT_STAGE) \
 	$(AFFECTED_ANALYZER_STAGE) \
+	$(AFFECTED_DASHBOARD_STAGE) \
 	$(PROOF) summarize --dir "$$run" > /dev/null || status=1; \
 	$(PROOF_REPORT) "$$run"; exit $$status
 
@@ -785,14 +831,15 @@ verify-affected: ## Build, unit-test (with coverage), and analyze the affected s
 # build, analyzer, and unit stages of that for the projects this branch changed, which is what a local run
 # finishes in minutes (the whole-solution version is ci-build, far past ten minutes on ~430 projects).
 # Formatting follows the same scope: format-check-changed checks the changed files (~0.3-2 s against
-# ~6 s for the whole repository), and CI's format-check job keeps the whole-repository check.
+# ~6 s for the whole repository), and CI's format-check job keeps the whole-repository check. A changed
+# dashboard SPA gets its lint, type-check, unit, and build stage in verify-affected, the same
+# dashboard-<name>-test CI's dashboard job runs.
 # The gates run one after another through a sub-make so a failed gate does not hide the next, and a dry
-# run still only prints because the sub-make inherits -n. The dashboard SPAs keep their own CI jobs; the local
-# gate runs the same steps for a SPA only when the change touches it (dashboards-test-affected).
-CHECK_GATES ?= check-layering format-check-changed dashboards-test-affected verify-affected
+# run still only prints because the sub-make inherits -n.
+CHECK_GATES ?= check-layering format-check-changed verify-affected
 
 .PHONY: check
-check: ## CI gate over the affected scope: check-layering, format-check-changed, dashboards-test-affected, verify-affected; every gate runs, every failure is reported.
+check: ## CI gate over the affected scope: check-layering, format-check-changed, verify-affected (with changed dashboards); every gate runs, every failure is reported.
 	@failed=""; for gate in $(CHECK_GATES); do $(MAKE) $$gate || failed="$$failed $$gate"; done; \
 	if [ -n "$$failed" ]; then printf '[check] failed:%s\n' "$$failed" >&2; exit 1; fi; \
 	printf '[check] passed: %s\n' "$(CHECK_GATES)"
