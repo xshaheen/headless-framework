@@ -52,6 +52,8 @@ public static class SetupSequences
             services.TryAddSingleton<ICurrentTenantAccessor>(AsyncLocalCurrentTenantAccessor.Instance);
             services.AddOrReplaceFallbackSingleton<ICurrentTenant, NullCurrentTenant, CurrentTenant>();
 
+            // Document numbers take their date, and so their reset period, from this clock.
+            services.TryAddSingleton(TimeProvider.System);
             services.TryAddSingleton<SequenceRequestResolver>();
             services.TryAddSingleton<ISequenceGenerator, SequenceGenerator>();
             services.TryAddSingleton<IUnitOfWorkSequences, UnitOfWorkSequencesFeature>();

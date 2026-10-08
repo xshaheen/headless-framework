@@ -31,6 +31,8 @@ internal sealed class RelationalSequenceStore(
     private readonly string _packageName = Argument.IsNotNullOrWhiteSpace(packageName);
     private readonly TimeProvider _timeProvider = Argument.IsNotNull(timeProvider);
     private readonly string _incrementSql = _BuildIncrementSql(dialect, options);
+    private readonly string _advanceInsertSql = _BuildAdvanceInsertSql(dialect, options);
+    private readonly string _advanceSql = _BuildAdvanceSql(dialect, options);
 
     public ValueTask<long> IncrementAsync(
         SequenceKey key,
@@ -76,18 +78,55 @@ internal sealed class RelationalSequenceStore(
             .ConfigureAwait(false);
     }
 
-    private async Task<long> _ExecuteAsync(
-        DbConnection connection,
-        DbTransaction transaction,
+    public async ValueTask<long> AdvanceEnlistedAsync(
+        IUnitOfWork unitOfWork,
         SequenceKey key,
-        long insertValue,
-        long delta,
-        CancellationToken cancellationToken
+        long value,
+        long baseline,
+        CancellationToken cancellationToken = default
     )
     {
-        await using var command = connection.CreateCommand();
+        var (connection, transaction) = _RequireLive(unitOfWork);
+
+        // First make sure the counter exists, so the locked read below always finds a row to lock: two first reports
+        // for one key then queue on that row instead of both reading "absent".
+        await using (var insert = _Command(connection, transaction, _advanceInsertSql, key))
+        {
+            _dialect.AddParameter(insert, "Baseline", SqlColumnType.Int64, baseline);
+            await using var inserted = await insert.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        await using var command = _Command(connection, transaction, _advanceSql, key);
+        _dialect.AddParameter(command, "Value", SqlColumnType.Int64, value);
+
+        var advanced = await SqlFencedCommand
+            .ExecuteAsync(
+                command,
+                lockedRead: true,
+                static (reader, _) => ValueTask.FromResult(new CounterRow(reader.GetInt64(0))),
+                static (_, _) => ValueTask.FromResult(true),
+                cancellationToken
+            )
+            .ConfigureAwait(false);
+
+        // Whether or not the fence let the value through, the locked read reports the value stored before it.
+        return advanced.Match(static (_, before) => _Previous(before), static before => _Previous(before));
+    }
+
+    private static long _Previous(CounterRow? before)
+    {
+        return before?.Value
+            ?? throw new InvalidOperationException(
+                "The reported counter's row was missing under its lock right after it was created; the table was "
+                    + "changed outside this provider."
+            );
+    }
+
+    private DbCommand _Command(DbConnection connection, DbTransaction transaction, string sql, SequenceKey key)
+    {
+        var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = _incrementSql;
+        command.CommandText = sql;
         command.CommandTimeout = _options.CommandTimeoutSeconds;
         _dialect.AddParameter(
             command,
@@ -102,6 +141,20 @@ internal sealed class RelationalSequenceStore(
             SqlColumnType.KeyText(SequenceFieldLimits.PartitionMaxLength),
             key.Partition
         );
+
+        return command;
+    }
+
+    private async Task<long> _ExecuteAsync(
+        DbConnection connection,
+        DbTransaction transaction,
+        SequenceKey key,
+        long insertValue,
+        long delta,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var command = _Command(connection, transaction, _incrementSql, key);
         _dialect.AddParameter(command, "InsertValue", SqlColumnType.Int64, insertValue);
         _dialect.AddParameter(command, "Delta", SqlColumnType.Int64, delta);
 
@@ -127,6 +180,51 @@ internal sealed class RelationalSequenceStore(
         );
     }
 
+    private static IReadOnlyList<SqlKeyColumn> _Key(ISqlDialect dialect)
+    {
+        return
+        [
+            new(SequencesColumns.TenantId(dialect), "TenantId"),
+            new(SequencesColumns.Name(dialect), "Name"),
+            new(SequencesColumns.Partition(dialect), "Partition"),
+        ];
+    }
+
+    private static string _BuildAdvanceInsertSql(ISqlDialect dialect, RelationalSequencesOptions options)
+    {
+        var value = SequencesColumns.Value(dialect);
+
+        return dialect.Render(
+            new SqlInsertIfAbsent(
+                dialect.Qualify(options.Schema, options.TableName),
+                _Key(dialect),
+                [value, SequencesColumns.CreatedAt(dialect), SequencesColumns.UpdatedAt(dialect)],
+                ["@Baseline", SqlDialectTokens.Now, SqlDialectTokens.Now],
+                [value]
+            )
+        );
+    }
+
+    private static string _BuildAdvanceSql(ISqlDialect dialect, RelationalSequencesOptions options)
+    {
+        var table = dialect.Qualify(options.Schema, options.TableName);
+        var value = SequencesColumns.Value(dialect);
+        var updatedAt = SequencesColumns.UpdatedAt(dialect);
+
+        // The locked read reports the stored value and holds the row until the caller's unit ends; the transition
+        // then moves the counter only forward, so a replayed or older report never lowers it.
+        return dialect.Render(new SqlLockedRead(table, _Key(dialect), [value]))
+            + dialect.Render(
+                new SqlFencedTransition(
+                    table,
+                    _Key(dialect),
+                    Fence: $"{value} < @Value",
+                    Set: $"{value} = @Value, {updatedAt} = {SqlDialectTokens.Now}",
+                    Returning: [value]
+                )
+            );
+    }
+
     private static string _BuildIncrementSql(ISqlDialect dialect, RelationalSequencesOptions options)
     {
         var tenantId = SequencesColumns.TenantId(dialect);
@@ -149,6 +247,8 @@ internal sealed class RelationalSequenceStore(
             )
         );
     }
+
+    private sealed record CounterRow(long Value);
 }
 #pragma warning restore CA2100
 

@@ -8,8 +8,9 @@ namespace Headless.Sequences;
 /// <remarks>
 /// A singleton that never joins the caller's transaction: every call commits its increment on its own connection
 /// before it returns. A number is therefore never issued twice, even across processes, but a caller that fails
-/// after taking one leaves a gap. Counters registered as <see cref="SequenceMode.GapFree" /> are refused here;
-/// take them through <c>unit.Sequences</c> on the unit of work that writes the number.
+/// after taking one leaves a gap. Counters registered as <see cref="SequenceMode.GapFree" /> or
+/// <see cref="SequenceMode.Reported" /> are refused here; take them through <c>unit.Sequences</c> on the unit of work
+/// that writes the number.
 /// </remarks>
 [PublicAPI]
 public interface ISequenceGenerator
@@ -50,4 +51,18 @@ public interface ISequenceGenerator
         string? partition = null,
         CancellationToken cancellationToken = default
     );
+
+    /// <summary>
+    /// Takes the counter's next value as a document number: in the partition its policy's reset chooses for today, and
+    /// formatted with its policy's template.
+    /// </summary>
+    /// <param name="name">The counter name, compared ordinally.</param>
+    /// <param name="cancellationToken">A token to cancel the operation.</param>
+    /// <returns>The document number.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="name"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="name" /> is empty, whitespace, or invalid, or the tenant identifier contains invalid characters or exceeds maximum length.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">The counter is not registered as <see cref="SequenceMode.Fast"/>.</exception>
+    ValueTask<SequenceNumber> NextNumberAsync(string name, CancellationToken cancellationToken = default);
 }

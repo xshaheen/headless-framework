@@ -5,7 +5,11 @@ using Headless.Checks;
 namespace Headless.Sequences;
 
 /// <summary>Fast-mode numbering: each call is one autonomous increment that the provider commits on its own connection.</summary>
-internal sealed class SequenceGenerator(SequenceRequestResolver resolver, ISequenceStore store) : ISequenceGenerator
+internal sealed class SequenceGenerator(
+    SequenceRequestResolver resolver,
+    ISequenceStore store,
+    TimeProvider timeProvider
+) : ISequenceGenerator
 {
     public async ValueTask<long> NextAsync(
         string name,
@@ -42,15 +46,36 @@ internal sealed class SequenceGenerator(SequenceRequestResolver resolver, ISeque
         return new SequenceRange(last - span, count, policy.Step);
     }
 
+    public async ValueTask<SequenceNumber> NextNumberAsync(string name, CancellationToken cancellationToken = default)
+    {
+        var policy = resolver.Policy(name);
+        _EnsureFast(name, policy);
+        var issuedOn = SequenceNumberFormat.IssuedOn(policy, timeProvider.GetUtcNow());
+        var partition = SequenceNumberFormat.Partition(policy, issuedOn);
+        var (key, _) = resolver.Resolve(name, partition);
+
+        var value = await store.IncrementAsync(key, policy.Start, policy.Step, cancellationToken).ConfigureAwait(false);
+
+        return SequenceNumbers.Create(policy, value, partition, issuedOn);
+    }
+
     private static void _EnsureFast(string name, SequencePolicy policy)
     {
-        if (policy.Mode != SequenceMode.Fast)
+        switch (policy.Mode)
         {
-            throw new InvalidOperationException(
-                $"Sequence '{name}' is registered as gap-free, so take it through unit.Sequences on the unit of work "
-                    + "that writes the number. The injected ISequenceGenerator never joins a transaction, and a "
-                    + "number it hands to a caller that rolls back leaves a gap."
-            );
+            case SequenceMode.Fast:
+                return;
+            case SequenceMode.Reported:
+                throw new InvalidOperationException(
+                    $"Sequence '{name}' is registered as reported: its values come from the caller through "
+                        + "unit.Sequences.AdvanceToAsync, so it never issues numbers."
+                );
+            default:
+                throw new InvalidOperationException(
+                    $"Sequence '{name}' is registered as gap-free, so take it through unit.Sequences on the unit of "
+                        + "work that writes the number. The injected ISequenceGenerator never joins a transaction, and "
+                        + "a number it hands to a caller that rolls back leaves a gap."
+                );
         }
     }
 }

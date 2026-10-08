@@ -23,4 +23,12 @@ public enum SequenceMode
     /// for the one before it to commit or roll back.
     /// </summary>
     GapFree = 1,
+
+    /// <summary>
+    /// Values come from the caller, such as the sequence number a payment terminal stamps on each transaction, and
+    /// <c>unit.Sequences.AdvanceToAsync</c> moves the counter forward to each one inside the caller's unit-of-work
+    /// transaction. The counter stores the highest value accepted, so a replayed or older value is reported as stale
+    /// and a jump past the next expected value is reported as skipped.
+    /// </summary>
+    Reported = 2,
 }

@@ -155,4 +155,28 @@ public sealed class PostgreSqlSequencesConformanceTests(PostgreSqlSequencesFixtu
     {
         return base.should_refuse_a_fast_counter_through_the_unit();
     }
+
+    [Fact]
+    public override Task should_advance_a_reported_counter_and_report_next_skipped_and_stale_values()
+    {
+        return base.should_advance_a_reported_counter_and_report_next_skipped_and_stale_values();
+    }
+
+    [Fact]
+    public override Task should_leave_a_reported_counter_where_it_was_when_the_unit_rolls_back()
+    {
+        return base.should_leave_a_reported_counter_where_it_was_when_the_unit_rolls_back();
+    }
+
+    [Fact]
+    public override Task should_take_gap_free_document_numbers_in_the_reset_period_with_the_template()
+    {
+        return base.should_take_gap_free_document_numbers_in_the_reset_period_with_the_template();
+    }
+
+    [Fact]
+    public override Task should_refuse_each_counter_through_the_entry_points_of_other_modes()
+    {
+        return base.should_refuse_each_counter_through_the_entry_points_of_other_modes();
+    }
 }
