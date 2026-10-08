@@ -127,15 +127,31 @@ internal sealed class AmazonSqsQueueTransport(
                 return queueUrl;
             }
 
-            _sqsClient ??= AwsClientFactory.CreateSqsClient(sqsOptionsAccessor.Value);
-            var response = queueName.IsAwsFifoName()
-                ? await _sqsClient
-                    .CreateQueueAsync(queueName.ToSqsCreateQueueRequest(), cancellationToken)
-                    .ConfigureAwait(false)
-                : await _sqsClient.CreateQueueAsync(queueName, cancellationToken).ConfigureAwait(false);
-            _queueUrlMaps[queueName] = response.QueueUrl;
+            var options = sqsOptionsAccessor.Value;
+            _sqsClient ??= AwsClientFactory.CreateSqsClient(options);
 
-            return response.QueueUrl;
+            if (!options.AutoProvision)
+            {
+                queueUrl = (
+                    await _sqsClient
+                        .GetQueueUrlAsync(queueName.NormalizeForSqsQueueName(), cancellationToken)
+                        .ConfigureAwait(false)
+                ).QueueUrl;
+            }
+            else
+            {
+                queueUrl = queueName.IsAwsFifoName()
+                    ? (
+                        await _sqsClient
+                            .CreateQueueAsync(queueName.ToSqsCreateQueueRequest(), cancellationToken)
+                            .ConfigureAwait(false)
+                    ).QueueUrl
+                    : (await _sqsClient.CreateQueueAsync(queueName, cancellationToken).ConfigureAwait(false)).QueueUrl;
+            }
+
+            _queueUrlMaps[queueName] = queueUrl;
+
+            return queueUrl;
         }
         finally
         {

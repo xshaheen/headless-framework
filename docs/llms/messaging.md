@@ -2058,12 +2058,14 @@ Framework span attributes: `headless.messaging.intent` (`bus`/`queue`), `tenant.
 - Every-instance consumers are not supported: startup fails naming the consumer.
 - Request/reply is not supported: AWS has no .NET temporary-queue client, so a host that sends requests or declares a responder fails startup. See [Request/reply](#requestreply).
 - Consumer startup honors host cancellation through SNS/SQS provisioning and subscription.
+- `AutoProvision = false` looks topics and queues up instead of creating them, for topology managed by Infrastructure as Code.
+- Received messages stay hidden until the core settles them: a heartbeat extends their visibility, and shutdown drains running handlers.
 
 ### Design constraints
 
 `MessageGroupId(...)` is message-side only because it is stamped while publishing. The provider maps it to native FIFO `MessageGroupId`; it is not a custom message attribute. Values longer than 128 characters are rejected.
 
-Malformed SNS transport envelopes are terminally deleted after sanitized logging. Handler rejection remains a normal visibility-timeout retry and can use an external SQS redrive policy.
+Malformed transport envelopes are terminally deleted after sanitized logging. Handler rejection makes the message visible again after 3 seconds, so it is a normal SQS retry and can use an external SQS redrive policy.
 
 ### Install
 
@@ -2099,13 +2101,25 @@ AWS declares immutable Bus and Queue capabilities with independent SNS/SQS topol
 
 `RoutingAffinityKey` maps to native `MessageGroupId` only for registered `.fifo` SNS topics or SQS queues. Keys are 1–128 printable ASCII characters (`!` through `~`), without spaces. `AwsMessagingHeaders.MessageGroupId` and `MessageGroupId(...)` remain raw adapters and must agree with a supplied typed key. Standard SQS message-group fairness is not an affinity guarantee; typed keys on standard routes are rejected. Shared groups do not imply whole-pipeline FIFO or handler exclusivity. No application headers are discarded.
 
-All SQS Queue sends encode the complete header dictionary, including null, delivery, trace, and business metadata, as one String attribute named `headless-aws-headers-v1`. The payload body and native `MessageGroupId` remain unchanged. Consumers require that exact attribute; other names with the same prefix are ordinary application headers inside the bag. Missing bags, mixed attributes, malformed JSON, duplicate or reserved header names, and invalid value types are terminally deleted from the source queue without a handler callback. Affinity is optional, so unkeyed messages use the same format. SNS Bus uses its separate SNS envelope format.
+Both lanes use one envelope. Every send encodes the complete header dictionary, including null, delivery, trace, and business metadata, as one String attribute named `headless-aws-headers-v1`: an SQS message attribute on the Queue lane, and an SNS message attribute on the Bus lane. The payload body and native `MessageGroupId` remain unchanged. Bus subscriptions use SNS raw message delivery (`RawMessageDelivery = true`), so SQS receives the published body and the bag as they were sent, not an SNS JSON wrapper. One attribute stays within the SQS limit of ten message attributes, which raw delivery would otherwise exceed. Consumers on both lanes require that exact attribute; other names with the same prefix are ordinary application headers inside the bag. Missing bags (including an SNS-wrapped body from a subscription without raw delivery), mixed attributes, malformed JSON, duplicate or reserved header names, and invalid value types are terminally deleted from the source queue without a handler callback. Affinity is optional, so unkeyed messages use the same format.
 
-Configure AWS region, service URLs, and credentials through `AmazonSqsMessagingOptions`.
+Configure AWS region, service URLs, and credentials through `AmazonSqsMessagingOptions`. Its other settings:
+
+| Option | Default | Effect |
+| --- | --- | --- |
+| `AutoProvision` | `true` | Creates SNS topics, SQS queues, the queue access policy, and raw-delivery SNS-to-SQS subscriptions on first use. With `false`, queues are looked up with `sqs:GetQueueUrl` and topics with `sns:ListTopics`, and nothing is created, subscribed, or given a policy. Every topic, queue, and subscription must then exist before the host starts, and each Bus subscription must enable raw message delivery. A missing queue fails consumer startup naming the queue lookup; a missing topic fails the send. |
+| `VisibilityTimeout` | 30 s | Sent on every receive, so the queue's own default does not apply. Whole seconds from 1 second to 12 hours. |
+| `ReceiveWaitTime` | 5 s | SQS long-poll wait per receive. Whole seconds from 0 to 20. |
+
+With `AutoProvision = false`, a consumer needs `sqs:GetQueueUrl`, `sqs:ReceiveMessage`, `sqs:DeleteMessage`, and `sqs:ChangeMessageVisibility`. A Bus publisher needs `sns:ListTopics` and `sns:Publish`, and a Queue publisher needs `sqs:GetQueueUrl` and `sqs:SendMessage`.
 
 ### Runtime behavior
 
 Registers SNS/SQS clients, bus/queue transports, and AWS consumer client services.
+
+- **Visibility heartbeat.** A receive takes up to ten messages, and every one of them stays unsettled until the core commits or rejects it. That includes messages still waiting for a free handler slot under the consumer's `Concurrency`. Every third of `VisibilityTimeout`, one loop per consumer client extends all unsettled messages by `VisibilityTimeout`, through `ChangeMessageVisibilityBatch` calls of ten. Commit and reject stop the extension first. A message SQS refuses to extend is dropped from the heartbeat with a warning, because it may be redelivered. SQS caps a message's total invisibility at 12 hours from its first receive.
+- **Deletes.** Commits to one queue share `DeleteMessageBatch` calls when they overlap: the first delete is sent at once, and the deletes that arrive while it is in flight leave together in the next call. A lone delete adds no wait. Each caller gets its own entry's outcome; a stale receipt handle is logged, not thrown.
+- **Shutdown.** `ShutdownAsync` stops receiving, then waits for the receive loop and running handlers within the shutdown budget (30 seconds for `DisposeAsync`). The heartbeat keeps running meanwhile, so slow handlers still settle. Messages still unsettled after that, because they were never handed over or because their handler outlived the budget, are made visible at once instead of after their timeout. The SQS and SNS clients are disposed last.
 
 ## Headless.Messaging.AzureServiceBus
 
