@@ -206,7 +206,7 @@ public sealed class SharedHostIsolationTests(SharedHarnessFixture fixture)
         // wait must run out of budget instead of observing an idle store.
         try
         {
-            var act = () => _harness.ResetAsync(TimeSpan.FromSeconds(1), AbortToken);
+            var act = () => _harness.ResetAsync(TimeSpan.FromMilliseconds(200), AbortToken);
             var ex = await act.Should().ThrowAsync<TimeoutException>();
 
             ex.Which.Message.Should().Contain("never settled").And.Contain("delta-messageName");
