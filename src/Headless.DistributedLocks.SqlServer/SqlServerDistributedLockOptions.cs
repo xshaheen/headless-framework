@@ -34,6 +34,15 @@ public sealed class SqlServerDistributedLockOptions
     public TimeSpan CommandTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
     /// <summary>
+    /// How often a monitored lock runs its liveness probe on the holding connection. The probe is the only signal
+    /// for a silently-dead connection (a dropped network path, or a session killed on the server), which never
+    /// raises <c>StateChange</c>, so this bounds how long such a loss goes unreported through <c>LostToken</c>.
+    /// Must be greater than <see cref="TimeSpan.Zero"/> and no greater than 10 minutes; validated on startup.
+    /// Defaults to 30 seconds.
+    /// </summary>
+    public TimeSpan ConnectionProbeInterval { get; set; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>
     /// When <see langword="true"/> (the default), the provider creates and uses a SQL Server sequence object
     /// to stamp each exclusive acquisition with a strictly-increasing fencing token. Set to
     /// <see langword="false"/> to disable sequence creation and token issuance entirely — handles will carry
@@ -54,5 +63,6 @@ internal sealed class SqlServerDistributedLockOptionsValidator : AbstractValidat
         RuleFor(x => x.ConnectionString).NotEmpty();
         RuleFor(x => x.KeyPrefix).NotEmpty();
         RuleFor(x => x.CommandTimeout).GreaterThan(TimeSpan.Zero).LessThanOrEqualTo(TimeSpan.FromMinutes(10));
+        RuleFor(x => x.ConnectionProbeInterval).GreaterThan(TimeSpan.Zero).LessThanOrEqualTo(TimeSpan.FromMinutes(10));
     }
 }

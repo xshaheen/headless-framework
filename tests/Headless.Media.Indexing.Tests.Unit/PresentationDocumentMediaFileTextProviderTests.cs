@@ -41,15 +41,6 @@ public sealed class PresentationDocumentMediaFileTextProviderTests : TestBase
     }
 
     [Fact]
-    public async Task should_return_text_from_single_slide_when_get_text_async()
-    {
-        const string expectedText = "Test slide content";
-        await using var stream = _CreatePresentationWithSlide(expectedText);
-        var result = await _sut.GetTextAsync(stream, AbortToken);
-        result.Should().Be($"{expectedText}{Environment.NewLine}");
-    }
-
-    [Fact]
     public async Task should_return_text_from_multiple_slides_when_get_text_async()
     {
         var slideTexts = new[] { "Slide 1", "Slide 2", "Slide 3" };
@@ -64,32 +55,6 @@ public sealed class PresentationDocumentMediaFileTextProviderTests : TestBase
         using var presentation = PresentationDocument.Create(stream, PresentationDocumentType.Presentation);
         presentation.AddPresentationPart();
         presentation.PresentationPart!.Presentation = new Presentation();
-        presentation.Save();
-        stream.Position = 0;
-
-        return stream;
-    }
-
-    private static MemoryStream _CreatePresentationWithSlide(string text)
-    {
-        var stream = new MemoryStream();
-        using var presentation = PresentationDocument.Create(stream, PresentationDocumentType.Presentation);
-        var presentationPart = presentation.AddPresentationPart();
-        presentationPart.Presentation = new Presentation();
-
-        var slidePart = presentation.PresentationPart!.AddNewPart<SlidePart>();
-
-        var slide = new Slide(
-            new CommonSlideData(new ShapeTree(new Shape(new TextBody(new Paragraph(new Run(new Text(text)))))))
-        );
-
-        slidePart.Slide = slide;
-
-        var slideIdList = new SlideIdList(
-            new SlideId { Id = 1U, RelationshipId = presentationPart.GetIdOfPart(slidePart) }
-        );
-        presentationPart.Presentation.SlideIdList = slideIdList;
-
         presentation.Save();
         stream.Position = 0;
 

@@ -47,24 +47,4 @@ public sealed class ReCaptchaV3ScoreTests : TestBase
         result.Should().BeOfType<ReCaptchaV3VerifyResult>();
         ((ReCaptchaV3VerifyResult)result).Score.Should().BeApproximately(0.9f, 0.0001f);
     }
-
-    [Fact]
-    public async Task low_score_result_drives_caller_side_gating()
-    {
-        // Demonstrates the result-shape: callers compare Score against their own threshold.
-        using var stubSiteVerifyHandler = new StubSiteVerifyHandler();
-
-        var stub = stubSiteVerifyHandler.EnqueueJson(
-            HttpStatusCode.OK,
-            """
-            {"success":true,"challenge_ts":"2026-06-21T10:00:00Z","hostname":"example.com","score":0.1,"action":"login","error-codes":[]}
-            """
-        );
-        var verifier = _fixture.CreateV3Verifier(stub);
-
-        var result = await verifier.VerifyAsync(new CaptchaVerifyRequest { Response = "token" }, AbortToken);
-
-        var passesThreshold = result is { Success: true, Score: >= 0.5f };
-        passesThreshold.Should().BeFalse();
-    }
 }

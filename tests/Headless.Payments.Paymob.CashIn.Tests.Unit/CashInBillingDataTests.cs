@@ -23,26 +23,6 @@ public sealed class CashInBillingDataTests
     }
 
     [Fact]
-    public void should_allow_address_values_through_init_properties()
-    {
-        var billingData = new CashInBillingData("First", "Last", "+201234567890", "private@example.com")
-        {
-            Country = "EG",
-            State = "Cairo",
-            City = "Cairo",
-            Apartment = "12",
-            Street = "Tahrir",
-            Floor = "3",
-            Building = "4",
-            ShippingMethod = "courier",
-            PostalCode = "11511",
-        };
-
-        billingData.Country.Should().Be("EG");
-        billingData.PostalCode.Should().Be("11511");
-    }
-
-    [Fact]
     public void should_not_expose_billing_pii_in_string_representation()
     {
         const string email = "private@example.com";

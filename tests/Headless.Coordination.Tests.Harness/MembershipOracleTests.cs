@@ -49,7 +49,7 @@ public static class MembershipDifferentialOracle
     {
         await using var model = new MembershipOracleModel(new MembershipOracleScope(history));
         await using var store = await MembershipOracleSession
-            .StartAsync(fixture, new MembershipOracleScope(history), cancellationToken)
+            .StartAsync(fixture, new MembershipOracleScope(history), pruneOnEverySnapshot: true, cancellationToken)
             .ConfigureAwait(false);
         var clock = Stopwatch.StartNew();
 
@@ -193,6 +193,30 @@ public abstract class MembershipOracleTests<TFixture>(TFixture fixture) : TestBa
 
         second.Nodes.Should().Equal(first.Nodes);
         second.Ops.Should().Equal(first.Ops);
+    }
+
+    public virtual async Task should_hide_retention_expired_rows_from_the_snapshot_before_they_are_pruned()
+    {
+        var scope = new MembershipOracleScope(new MembershipOracleHistory(Seed: 0, Nodes: ["node-a"], Ops: []));
+        await using var session = await MembershipOracleSession.StartAsync(
+            fixture,
+            scope,
+            pruneOnEverySnapshot: false,
+            AbortToken
+        );
+        await session.ExecuteAsync(new MembershipOracleOp.Allocate(0), AbortToken);
+        await session.ExecuteAsync(new MembershipOracleOp.Register(0, 0, 0), AbortToken);
+
+        // The first snapshot prunes, so the production throttle skips the prune on the next one.
+        var before = await session.ExecuteAsync(new MembershipOracleOp.ReadSnapshot(), AbortToken);
+        before.Should().StartWith("snapshot:[n0@");
+
+        // Past DeadThreshold + DeadRetentionWindow.
+        await session.ExecuteAsync(new MembershipOracleOp.AdvanceTime(TimeSpan.FromSeconds(300)), AbortToken);
+        var after = await session.ExecuteAsync(new MembershipOracleOp.ReadSnapshot(), AbortToken);
+
+        after.Should().StartWith("snapshot:[] |", "a row past the retention cutoff is absent from the snapshot");
+        after.Should().Contain("live[n0@", "the throttled prune has not deleted the row yet");
     }
 
     public virtual async Task should_match_the_model_at_every_step_of_generated_histories()

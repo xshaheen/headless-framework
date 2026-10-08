@@ -85,8 +85,8 @@ public sealed class PermissionsInitializationBackgroundServiceTests : TestBase
         await sut.StartAsync(AbortToken);
         await saveDone.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
-        // Allow the TCS to be set
-        await Task.Delay(50, AbortToken);
+        // Save returning does not yet mean initialization is marked complete.
+        await sut.WaitForInitializationAsync(AbortToken).WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
         // then
         sut.IsInitialized.Should().BeTrue();

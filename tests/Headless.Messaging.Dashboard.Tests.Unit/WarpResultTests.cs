@@ -53,33 +53,4 @@ public sealed class WarpResultTests : TestBase
         // when & then
         result.ChildCount.Should().Be(0);
     }
-
-    [Fact]
-    public void should_set_and_get_consumer_identity()
-    {
-        // given
-        var result = new WarpResult { ConsumerIdentity = "billing.invoice-projection", Values = [] };
-
-        // when & then
-        result.ConsumerIdentity.Should().Be("billing.invoice-projection");
-    }
-
-    [Fact]
-    public void should_set_and_get_properties_when_sub_info()
-    {
-        // given
-        var subInfo = new WarpResult.SubInfo
-        {
-            MessageName = "user.created",
-            Lane = "Bus",
-            ImplName = "UserCreatedHandler",
-            MethodEscaped = "public async Task HandleAsync(UserCreatedEvent e);",
-        };
-
-        // when & then
-        subInfo.MessageName.Should().Be("user.created");
-        subInfo.Lane.Should().Be("Bus");
-        subInfo.ImplName.Should().Be("UserCreatedHandler");
-        subInfo.MethodEscaped.Should().Contain("HandleAsync");
-    }
 }

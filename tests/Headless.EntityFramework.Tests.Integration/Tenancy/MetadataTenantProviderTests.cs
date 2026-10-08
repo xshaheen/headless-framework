@@ -9,7 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests.Tenancy;
 
-[CollectionDefinition(DisableParallelization = true)]
+[CollectionDefinition]
 public sealed class MetadataTenantCollection
     : ICollectionFixture<PostgreSqlMetadataTenantFixture>,
         ICollectionFixture<SqlServerMetadataTenantFixture>,

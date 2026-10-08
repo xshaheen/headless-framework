@@ -21,6 +21,7 @@
     <PackageReference Remove="NSubstitute" />
     <PackageReference Remove="AwesomeAssertions.Analyzers" />
     <PackageReference Remove="NSubstitute.Analyzers.CSharp" />
+    <PackageReference Remove="Microsoft.Testing.Extensions.GitHubActionsReport" />
   </ItemGroup>
   <ItemGroup>
     <Content Remove="../xunit.runner.json" />

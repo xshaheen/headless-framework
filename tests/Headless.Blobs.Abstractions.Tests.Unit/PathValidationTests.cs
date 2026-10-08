@@ -49,97 +49,6 @@ public sealed class PathValidationTests : TestBase
     }
 
     [Fact]
-    public void should_throw_for_unix_traversal_when_path_contains_parent_directory()
-    {
-        // given
-        const string path = "../secret.txt";
-
-        // when
-        var act = () => PathValidation.ThrowIfPathTraversal(path);
-
-        // then
-        act.Should().Throw<ArgumentException>().WithMessage("*traversal*");
-    }
-
-    [Fact]
-    public void should_throw_for_windows_traversal_when_path_contains_backslash_parent()
-    {
-        // given
-        const string path = "..\\secret.txt";
-
-        // when
-        var act = () => PathValidation.ThrowIfPathTraversal(path);
-
-        // then
-        act.Should().Throw<ArgumentException>().WithMessage("*traversal*");
-    }
-
-    [Fact]
-    public void should_throw_for_mid_path_unix_traversal_when_path_contains_embedded_parent()
-    {
-        // given
-        const string path = "folder/../secret.txt";
-
-        // when
-        var act = () => PathValidation.ThrowIfPathTraversal(path);
-
-        // then
-        act.Should().Throw<ArgumentException>().WithMessage("*traversal*");
-    }
-
-    [Fact]
-    public void should_throw_for_mid_path_windows_traversal_when_path_contains_embedded_backslash_parent()
-    {
-        // given
-        const string path = "folder\\..\\secret.txt";
-
-        // when
-        var act = () => PathValidation.ThrowIfPathTraversal(path);
-
-        // then
-        act.Should().Throw<ArgumentException>().WithMessage("*traversal*");
-    }
-
-    [Fact]
-    public void should_throw_for_trailing_traversal_unix_when_path_ends_with_parent()
-    {
-        // given
-        const string path = "folder/..";
-
-        // when
-        var act = () => PathValidation.ThrowIfPathTraversal(path);
-
-        // then
-        act.Should().Throw<ArgumentException>().WithMessage("*traversal*");
-    }
-
-    [Fact]
-    public void should_throw_for_trailing_traversal_windows_when_path_ends_with_backslash_parent()
-    {
-        // given
-        const string path = "folder\\..";
-
-        // when
-        var act = () => PathValidation.ThrowIfPathTraversal(path);
-
-        // then
-        act.Should().Throw<ArgumentException>().WithMessage("*traversal*");
-    }
-
-    [Fact]
-    public void should_throw_for_starts_with_double_dot_when_path_begins_with_parent()
-    {
-        // given
-        const string path = "..";
-
-        // when
-        var act = () => PathValidation.ThrowIfPathTraversal(path);
-
-        // then
-        act.Should().Throw<ArgumentException>().WithMessage("*traversal*");
-    }
-
-    [Fact]
     public void should_allow_single_dot_when_path_contains_current_directory()
     {
         // given
@@ -179,19 +88,26 @@ public sealed class PathValidationTests : TestBase
     }
 
     [Theory]
+    [InlineData("../secret.txt")]
+    [InlineData("..\\secret.txt")]
+    [InlineData("folder/../secret.txt")]
+    [InlineData("folder\\..\\secret.txt")]
+    [InlineData("folder/..")]
+    [InlineData("folder\\..")]
+    [InlineData("..")]
     [InlineData("a/../b")]
     [InlineData("a/..\\b")]
     [InlineData("a\\../b")]
     [InlineData("..\\a")]
     [InlineData("a/b/..")]
     [InlineData("a\\b\\..")]
-    public void should_throw_for_various_traversal_patterns_when_path_contains_parent_directory(string path)
+    public void should_throw_for_traversal_patterns_when_path_contains_parent_directory(string path)
     {
         // when
         var act = () => PathValidation.ThrowIfPathTraversal(path);
 
         // then
-        act.Should().Throw<ArgumentException>();
+        act.Should().Throw<ArgumentException>().WithMessage("*traversal*");
     }
 
     #endregion
@@ -333,71 +249,6 @@ public sealed class PathValidationTests : TestBase
     }
 
     [Fact]
-    public void should_throw_for_null_char_when_path_contains_null_byte()
-    {
-        // given
-        const string path = "file\0.txt";
-
-        // when
-        var act = () => PathValidation.ThrowIfControlCharacters(path);
-
-        // then
-        act.Should().Throw<ArgumentException>().WithMessage("*Control*");
-    }
-
-    [Fact]
-    public void should_throw_for_newline_when_path_contains_line_feed()
-    {
-        // given
-        const string path = "file\n.txt";
-
-        // when
-        var act = () => PathValidation.ThrowIfControlCharacters(path);
-
-        // then
-        act.Should().Throw<ArgumentException>().WithMessage("*Control*");
-    }
-
-    [Fact]
-    public void should_throw_for_carriage_return_when_path_contains_cr()
-    {
-        // given
-        const string path = "file\r.txt";
-
-        // when
-        var act = () => PathValidation.ThrowIfControlCharacters(path);
-
-        // then
-        act.Should().Throw<ArgumentException>().WithMessage("*Control*");
-    }
-
-    [Fact]
-    public void should_throw_for_tab_when_path_contains_horizontal_tab()
-    {
-        // given
-        const string path = "file\t.txt";
-
-        // when
-        var act = () => PathValidation.ThrowIfControlCharacters(path);
-
-        // then
-        act.Should().Throw<ArgumentException>().WithMessage("*Control*");
-    }
-
-    [Fact]
-    public void should_throw_for_bell_when_path_contains_bell_character()
-    {
-        // given
-        const string path = "file\a.txt";
-
-        // when
-        var act = () => PathValidation.ThrowIfControlCharacters(path);
-
-        // then
-        act.Should().Throw<ArgumentException>().WithMessage("*Control*");
-    }
-
-    [Fact]
     public void should_allow_space_when_path_contains_space_character()
     {
         // given
@@ -411,10 +262,14 @@ public sealed class PathValidationTests : TestBase
     }
 
     [Theory]
-    [InlineData("\x00")] // Null
+    [InlineData("\0")] // Null
     [InlineData("\x01")] // Start of Heading
+    [InlineData("\n")]
+    [InlineData("\r")]
+    [InlineData("\t")]
+    [InlineData("\a")]
     [InlineData("\x1F")] // Unit Separator (char 31, just below space)
-    public void should_throw_for_various_control_chars_when_path_contains_low_ascii(string controlChar)
+    public void should_throw_for_control_chars_when_path_contains_low_ascii(string controlChar)
     {
         // given
         var path = $"file{controlChar}.txt";
@@ -423,7 +278,7 @@ public sealed class PathValidationTests : TestBase
         var act = () => PathValidation.ThrowIfControlCharacters(path);
 
         // then
-        act.Should().Throw<ArgumentException>();
+        act.Should().Throw<ArgumentException>().WithMessage("*Control*");
     }
 
     #endregion

@@ -385,56 +385,6 @@ public sealed class S3CompatibleMinioBlobStorageTests(MinioFixture fixture) : Bl
 
     #region Path traversal & construction security
 
-    [Theory]
-    [InlineData("../../../etc/passwd")]
-    [InlineData("..\\..\\..\\etc\\passwd")]
-    [InlineData("subdir/../../../etc/passwd")]
-    public override Task blob_location_with_traversal_path_throws(string path)
-    {
-        return base.blob_location_with_traversal_path_throws(path);
-    }
-
-    [Fact]
-    public override Task blob_location_with_traversal_container_throws()
-    {
-        return base.blob_location_with_traversal_container_throws();
-    }
-
-    [Fact]
-    public override Task blob_location_with_control_characters_throws()
-    {
-        return base.blob_location_with_control_characters_throws();
-    }
-
-    [Theory]
-    [InlineData("/etc/passwd")]
-    [InlineData("\\windows\\system32")]
-    public override Task blob_location_with_absolute_path_throws(string path)
-    {
-        return base.blob_location_with_absolute_path_throws(path);
-    }
-
-    [Fact]
-    public override Task blob_location_with_reserved_sidecar_suffix_throws()
-    {
-        return base.blob_location_with_reserved_sidecar_suffix_throws();
-    }
-
-    [Theory]
-    [InlineData("../secret/")]
-    [InlineData("..\\secret\\")]
-    [InlineData("a/../../b")]
-    public override Task blob_query_with_traversal_prefix_throws(string prefix)
-    {
-        return base.blob_query_with_traversal_prefix_throws(prefix);
-    }
-
-    [Fact]
-    public override Task blob_query_with_empty_container_throws()
-    {
-        return base.blob_query_with_empty_container_throws();
-    }
-
     [Fact]
     public override Task bulk_delete_with_traversal_path_reports_failure()
     {

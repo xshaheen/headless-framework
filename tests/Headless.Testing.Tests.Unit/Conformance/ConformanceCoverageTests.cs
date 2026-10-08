@@ -86,10 +86,12 @@ public sealed class ConformanceCoverageTests : TestBase
         scan.CaseCountByBase["DistributedLockTestsBase"].Should().BeGreaterThan(20);
     }
 
-    private Task<ConformanceScanResult> _ScanAsync()
-    {
-        return ConformanceCoverageScanner.ScanAsync(Path.Combine(_FindRepositoryRoot(), "tests"), AbortToken);
-    }
+    // The scan Roslyn-parses every test file and the tree is read-only, so one scan serves all tests in the process.
+    private static readonly Lazy<Task<ConformanceScanResult>> _Scan = new(() =>
+        ConformanceCoverageScanner.ScanAsync(Path.Combine(_FindRepositoryRoot(), "tests"), CancellationToken.None)
+    );
+
+    private static Task<ConformanceScanResult> _ScanAsync() => _Scan.Value;
 
     private static string _FindRepositoryRoot()
     {

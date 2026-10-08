@@ -56,18 +56,4 @@ public sealed class PermissionGroupDefinitionTests : TestBase
         flatPermissions.Should().Contain(grandChild);
         flatPermissions.Should().Contain(parent2);
     }
-
-    [Fact]
-    public void should_set_display_name()
-    {
-        // given
-        var group = new PermissionGroupDefinition("TestGroup")
-        {
-            // when
-            DisplayName = "Updated Display Name",
-        };
-
-        // then
-        group.DisplayName.Should().Be("Updated Display Name");
-    }
 }

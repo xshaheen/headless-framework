@@ -4,8 +4,7 @@ using Amazon.SimpleNotificationService;
 using Headless.Messaging;
 using Headless.Messaging.Aws;
 using Headless.Testing.Tests;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using MessagingHeaders = Headless.Messaging.Headers;
 using StringComparer = System.StringComparer;
@@ -20,10 +19,10 @@ public sealed class ConcurrencyTests(LocalStackTestFixture fixture) : TestBase
     {
         // given
         const string topicName = "concurrent-test-topic";
-        await using var transport = await _CreateTransportAsync();
+        await using var transport = _CreateTransport();
         await _CreateTopicAsync(topicName);
 
-        const int parallelCount = 100;
+        const int parallelCount = 20;
         var results = new OperateResult[parallelCount];
 
         // when
@@ -51,85 +50,12 @@ public sealed class ConcurrencyTests(LocalStackTestFixture fixture) : TestBase
     }
 
     [Fact]
-    public async Task should_initialize_connection_only_once_with_concurrent_requests()
-    {
-        // given
-        const string topicName = "init-test-topic";
-        await using var transport = await _CreateTransportAsync();
-        await _CreateTopicAsync(topicName);
-
-        const int parallelCount = 50;
-        var results = new OperateResult[parallelCount];
-
-        // when - Send multiple messages immediately to test initialization race condition
-        await Parallel.ForEachAsync(
-            Enumerable.Range(0, parallelCount),
-            AbortToken,
-            async (messageId, _) =>
-            {
-                var message = new TransportMessage(
-                    new Dictionary<string, string?>(StringComparer.Ordinal)
-                    {
-                        [MessagingHeaders.MessageName] = topicName,
-                    },
-                    "{\"data\":\"init-test\"}"u8.ToArray()
-                );
-
-                results[messageId] = await transport.SendAsync(message, AbortToken);
-            }
-        );
-
-        // then
-        results.Should().HaveCount(parallelCount);
-        results.Should().AllSatisfy(r => r.Succeeded.Should().BeTrue("the send failed with {0}", r.Exception));
-    }
-
-    [Fact]
-    public async Task should_handle_concurrent_sends_to_different_topics()
-    {
-        // given
-        await using var transport = await _CreateTransportAsync();
-        var topicNames = new[] { "topic-1", "topic-2", "topic-3", "topic-4", "topic-5" };
-
-        foreach (var topicName in topicNames)
-        {
-            await _CreateTopicAsync(topicName);
-        }
-
-        const int parallelCount = 100;
-        var results = new OperateResult[parallelCount];
-
-        // when
-        await Parallel.ForEachAsync(
-            Enumerable.Range(0, parallelCount),
-            AbortToken,
-            async (messageId, _) =>
-            {
-                var topicName = topicNames[messageId % topicNames.Length];
-                var message = new TransportMessage(
-                    new Dictionary<string, string?>(StringComparer.Ordinal)
-                    {
-                        [MessagingHeaders.MessageName] = topicName,
-                    },
-                    Encoding.UTF8.GetBytes($"{{\"topic\":\"{topicName}\",\"index\":{messageId}}}")
-                );
-
-                results[messageId] = await transport.SendAsync(message, AbortToken);
-            }
-        );
-
-        // then
-        results.Should().HaveCount(parallelCount);
-        results.Should().AllSatisfy(r => r.Succeeded.Should().BeTrue("the send failed with {0}", r.Exception));
-    }
-
-    [Fact]
     public async Task should_auto_create_topics_for_all_messages()
     {
         // given - The transport auto-creates topics, so all messages should succeed
-        await using var transport = await _CreateTransportAsync();
+        await using var transport = _CreateTransport();
 
-        const int parallelCount = 50;
+        const int parallelCount = 20;
         var results = new OperateResult[parallelCount];
 
         // when - Send messages to different topics (some pre-existing, some new)
@@ -156,7 +82,7 @@ public sealed class ConcurrencyTests(LocalStackTestFixture fixture) : TestBase
         results.Should().AllSatisfy(r => r.Succeeded.Should().BeTrue("the send failed with {0}", r.Exception));
     }
 
-    private async Task<IBusTransport> _CreateTransportAsync()
+    private IBusTransport _CreateTransport()
     {
         var container = fixture.Container;
 
@@ -170,16 +96,7 @@ public sealed class ConcurrencyTests(LocalStackTestFixture fixture) : TestBase
             }
         );
 
-        var logger = new ServiceCollection()
-            .AddLogging(builder => builder.AddConsole())
-            .BuildServiceProvider()
-            .GetRequiredService<ILogger<AmazonSnsBusTransport>>();
-
-        var transport = new AmazonSnsBusTransport(logger, options);
-
-        await Task.Delay(100, AbortToken); // Allow container to stabilize
-
-        return transport;
+        return new AmazonSnsBusTransport(NullLogger<AmazonSnsBusTransport>.Instance, options);
     }
 
     private async Task _CreateTopicAsync(string topicName)

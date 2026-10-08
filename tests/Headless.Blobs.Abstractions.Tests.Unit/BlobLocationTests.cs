@@ -41,20 +41,6 @@ public sealed class BlobLocationTests : TestBase
         location.Path.Should().Be("a/b/c.txt");
     }
 
-    [Fact]
-    public void should_accept_array_when_using_segments_only_ctor()
-    {
-        // Arrange
-        string[] segments = ["bucket", "folder", "file.txt"];
-
-        // Act
-        var location = new BlobLocation(segments);
-
-        // Assert
-        location.Container.Should().Be("bucket");
-        location.Path.Should().Be("folder/file.txt");
-    }
-
     [Theory]
     [InlineData(0)]
     [InlineData(1)]
@@ -92,17 +78,6 @@ public sealed class BlobLocationTests : TestBase
         act.Should().Throw<ArgumentException>().Which.ParamName.Should().Be("path");
     }
 
-    [Fact]
-    public void should_use_value_equality()
-    {
-        // Assert
-        new BlobLocation("b", "p")
-            .Should()
-            .Be(new BlobLocation("b", "p"));
-        new BlobLocation("b", "p").Should().NotBe(new BlobLocation("b", "q"));
-        new BlobLocation("b", "p").Should().NotBe(new BlobLocation("c", "p"));
-    }
-
     [Theory]
     [InlineData(null)]
     [InlineData("")]
@@ -133,6 +108,8 @@ public sealed class BlobLocationTests : TestBase
     [InlineData("../secret.txt")]
     [InlineData("folder/../secret.txt")]
     [InlineData("a/b/..")]
+    [InlineData("..\\..\\..\\etc\\passwd")]
+    [InlineData("subdir/../../../etc/passwd")]
     public void should_throw_when_path_has_traversal(string path)
     {
         // Act
@@ -142,11 +119,13 @@ public sealed class BlobLocationTests : TestBase
         act.Should().Throw<ArgumentException>().Which.ParamName.Should().Be("path");
     }
 
-    [Fact]
-    public void should_throw_when_path_is_absolute()
+    [Theory]
+    [InlineData("/etc/passwd")]
+    [InlineData("\\windows\\system32")]
+    public void should_throw_when_path_is_absolute(string path)
     {
         // Act
-        var act = () => new BlobLocation("bucket", "/etc/passwd");
+        var act = () => new BlobLocation("bucket", path);
 
         // Assert
         act.Should().Throw<ArgumentException>().Which.ParamName.Should().Be("path");

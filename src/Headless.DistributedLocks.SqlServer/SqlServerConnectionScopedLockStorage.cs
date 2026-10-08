@@ -64,8 +64,8 @@ internal sealed class SqlServerConnectionScopedLockStorage(
     /// <remarks>
     /// Opens a dedicated <see cref="SqlConnection"/> per lock. Invokes
     /// <c>sys.sp_getapplock @LockOwner = 'Session'</c> with a zero timeout (single, non-blocking attempt).
-    /// When <paramref name="observeLoss"/> is <see langword="true"/>, starts the 30-second liveness probe
-    /// timer. Returns <see langword="null"/> without opening a connection when the storage has been
+    /// When <paramref name="observeLoss"/> is <see langword="true"/>, starts the liveness probe timer at
+    /// <see cref="SqlServerDistributedLockOptions.ConnectionProbeInterval"/>. Returns <see langword="null"/> without opening a connection when the storage has been
     /// disposed.
     /// </remarks>
     /// <exception cref="ObjectDisposedException">Thrown when this storage instance has been disposed and a lock was transiently acquired before the disposal race was detected.</exception>
@@ -96,6 +96,7 @@ internal sealed class SqlServerConnectionScopedLockStorage(
                 isShared,
                 connection,
                 _options.CommandTimeout,
+                _options.ConnectionProbeInterval,
                 timeProvider,
                 ProbeGateAcquiredAsync
             );
@@ -476,11 +477,11 @@ internal sealed class SqlServerConnectionScopedLockStorage(
     /// </summary>
     private sealed class HeldLock : IAsyncDisposable
     {
-        // Active probe cadence; bounded so a silently-dead connection is detected within roughly this window.
-        private static readonly TimeSpan _ProbeCadence = TimeSpan.FromSeconds(30);
-
         private readonly CancellationTokenSource _lostTokenSource = new();
         private readonly TimeProvider _timeProvider;
+
+        // Bounds how long a silently-dead connection goes unreported.
+        private readonly TimeSpan _probeInterval;
         private readonly int _probeCommandTimeoutSeconds;
         private readonly Func<ValueTask>? _probeGateAcquiredAsync;
 
@@ -498,6 +499,7 @@ internal sealed class SqlServerConnectionScopedLockStorage(
             bool isShared,
             SqlConnection connection,
             TimeSpan commandTimeout,
+            TimeSpan probeInterval,
             TimeProvider timeProvider,
             Func<ValueTask>? probeGateAcquiredAsync
         )
@@ -509,6 +511,7 @@ internal sealed class SqlServerConnectionScopedLockStorage(
             Connection = connection;
             ConnectionLostToken = _lostTokenSource.Token;
             _timeProvider = timeProvider;
+            _probeInterval = probeInterval;
             _probeGateAcquiredAsync = probeGateAcquiredAsync;
             _probeCommandTimeoutSeconds = SqlServerApplicationLock.GetCommandTimeoutSeconds(commandTimeout);
 
@@ -531,8 +534,8 @@ internal sealed class SqlServerConnectionScopedLockStorage(
             _probeTimer = _timeProvider.CreateTimer(
                 static state => ((HeldLock)state!)._ProbeFireAndForget(),
                 this,
-                _ProbeCadence,
-                _ProbeCadence
+                _probeInterval,
+                _probeInterval
             );
         }
 

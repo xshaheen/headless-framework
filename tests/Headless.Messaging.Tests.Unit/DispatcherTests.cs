@@ -766,7 +766,7 @@ public sealed class DispatcherTests : TestBase
 
         // when
         await dispatcher.StartAsync(cts.Token);
-        var dateTime = DateTimeOffset.UtcNow.AddSeconds(1);
+        var dateTime = DateTimeOffset.UtcNow.AddMilliseconds(50);
 
         await Parallel.ForEachAsync(
             messages,
@@ -924,7 +924,7 @@ public sealed class DispatcherTests : TestBase
         await dispatcher.StartAsync(cts.Token);
         var dateTime = DateTimeOffset.UtcNow;
 
-        await dispatcher.EnqueueToScheduler(messages[0], dateTime.AddSeconds(1), cancellationToken: AbortToken);
+        await dispatcher.EnqueueToScheduler(messages[0], dateTime.AddMilliseconds(400), cancellationToken: AbortToken);
         await dispatcher.EnqueueToScheduler(messages[1], dateTime.AddMilliseconds(200), cancellationToken: AbortToken);
         await dispatcher.EnqueueToScheduler(messages[2], dateTime.AddMilliseconds(100), cancellationToken: AbortToken);
 
@@ -1049,7 +1049,7 @@ public sealed class DispatcherTests : TestBase
         await dispatcher.StartAsync(cts.Token);
         var dateTime = DateTimeOffset.UtcNow;
 
-        await dispatcher.EnqueueToScheduler(messages[0], dateTime.AddSeconds(1), cancellationToken: AbortToken);
+        await dispatcher.EnqueueToScheduler(messages[0], dateTime.AddMilliseconds(400), cancellationToken: AbortToken);
         await dispatcher.EnqueueToScheduler(messages[1], dateTime.AddMilliseconds(200), cancellationToken: AbortToken);
         await dispatcher.EnqueueToScheduler(messages[2], dateTime.AddMilliseconds(100), cancellationToken: AbortToken);
 

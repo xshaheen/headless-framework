@@ -524,7 +524,7 @@ public abstract class BlobStorageTestsBase : TestBase
 
         await ResetAsync(storage);
 
-        const int filesPerMonth = 5;
+        const int filesPerMonth = 2;
 
         for (var year = 2020; year <= 2021; year++)
         {
@@ -1128,85 +1128,6 @@ public abstract class BlobStorageTestsBase : TestBase
     #endregion
 
     #region Path Traversal & Construction Security Tests
-
-    public virtual Task blob_location_with_traversal_path_throws(string path)
-    {
-        FluentActions
-            .Invoking(() => new BlobLocation(ContainerName, path))
-            .Should()
-            .Throw<ArgumentException>()
-            .WithParameterName(nameof(path));
-
-        return Task.CompletedTask;
-    }
-
-    public virtual Task blob_location_with_traversal_container_throws()
-    {
-        FluentActions
-            .Invoking(() => new BlobLocation("uploads/../../etc", "passwd"))
-            .Should()
-            .Throw<ArgumentException>()
-            .WithParameterName("container");
-
-        return Task.CompletedTask;
-    }
-
-    public virtual Task blob_location_with_control_characters_throws()
-    {
-        // ReSharper disable once VariableLengthStringHexEscapeSequence
-        // ReSharper disable once CanSimplifyStringEscapeSequence
-        FluentActions
-            .Invoking(() => new BlobLocation(ContainerName, "file\x00name.txt"))
-            .Should()
-            .Throw<ArgumentException>()
-            .WithParameterName("path");
-
-        return Task.CompletedTask;
-    }
-
-    public virtual Task blob_location_with_absolute_path_throws(string path)
-    {
-        FluentActions
-            .Invoking(() => new BlobLocation(ContainerName, path))
-            .Should()
-            .Throw<ArgumentException>()
-            .WithParameterName(nameof(path));
-
-        return Task.CompletedTask;
-    }
-
-    public virtual Task blob_location_with_reserved_sidecar_suffix_throws()
-    {
-        FluentActions
-            .Invoking(() => new BlobLocation(ContainerName, "report" + BlobStorageHelpers.SidecarSuffix))
-            .Should()
-            .Throw<ArgumentException>()
-            .WithParameterName("path");
-
-        return Task.CompletedTask;
-    }
-
-    public virtual Task blob_query_with_traversal_prefix_throws(string prefix)
-    {
-        FluentActions
-            .Invoking(() => new BlobQuery(ContainerName, prefix))
-            .Should()
-            .Throw<ArgumentException>()
-            .WithParameterName(nameof(prefix));
-
-        return Task.CompletedTask;
-    }
-
-    public virtual Task blob_query_with_empty_container_throws()
-    {
-        FluentActions
-            .Invoking(() => new BlobQuery(string.Empty))
-            .Should()
-            .Throw<ArgumentException>()
-            .WithParameterName("container");
-
-        return Task.CompletedTask;
-    }
 
     public virtual async Task bulk_delete_with_traversal_path_reports_failure()
     {

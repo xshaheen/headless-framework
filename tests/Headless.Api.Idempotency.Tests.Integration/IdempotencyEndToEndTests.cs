@@ -109,7 +109,7 @@ public sealed class IdempotencyEndToEndTests(ApiIdempotencyPostgreSqlFixture fix
 
         var loserTask = _Post(client, "/echo", key: key, body: "hello");
         // The loser must NOT complete while the winner is gated — it polls the store instead.
-        await Task.Delay(500, AbortToken);
+        await Task.Delay(200, AbortToken);
         loserTask.IsCompleted.Should().BeFalse("loser is waiting on the winner's admission");
 
         gate.Release();

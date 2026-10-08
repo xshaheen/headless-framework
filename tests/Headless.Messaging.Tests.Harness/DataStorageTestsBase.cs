@@ -2236,7 +2236,7 @@ public abstract partial class DataStorageTestsBase : TestBase
             .Should()
             .NotContain(m => m.StorageId == storedMessage.StorageId);
 
-        await Task.Delay(leaseWindow + TimeSpan.FromMilliseconds(250), AbortToken);
+        await _ElapseAsync(leaseWindow + TimeSpan.FromMilliseconds(250));
 
         (await storage.GetPublishedMessagesOfNeedRetryAsync(MessageLane.Bus, AbortToken))
             .Should()
@@ -2270,7 +2270,7 @@ public abstract partial class DataStorageTestsBase : TestBase
             .Should()
             .NotContain(m => m.StorageId == storedMessage.StorageId);
 
-        await Task.Delay(leaseWindow + TimeSpan.FromMilliseconds(250), AbortToken);
+        await _ElapseAsync(leaseWindow + TimeSpan.FromMilliseconds(250));
 
         (await storage.GetReceivedMessagesOfNeedRetryAsync(MessageLane.Bus, null, AbortToken))
             .Should()

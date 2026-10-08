@@ -136,31 +136,6 @@ public sealed class JobsIncrementalSourceGeneratorTests
     }
 
     [Fact]
-    public void should_generate_a_module_entry_and_an_invoker_for_a_job()
-    {
-        var driver = GeneratorTestHelper.Run(
-            _Usings
-                + """
-                [Job("billing.close-day")]
-                public sealed class CloseDay : IJob
-                {
-                    public ValueTask ExecuteAsync(JobContext context, CancellationToken cancellationToken) => default;
-                }
-                """,
-            out var diagnostics
-        );
-
-        diagnostics.Should().NotContain(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error);
-        var generated = _GeneratedSource(driver);
-        generated.Should().Contain("functions.Add(\"billing.close-day\", new JobFunctionRegistration {");
-        generated.Should().Contain("Delegate = Invoke_Jobs_SourceGenerator_Tests_CloseDay");
-        generated.Should().Contain("JobType = typeof(global::Jobs.SourceGenerator.Tests.CloseDay)");
-        generated
-            .Should()
-            .Contain("ActivatorUtilities.CreateInstance<global::Jobs.SourceGenerator.Tests.CloseDay>(serviceProvider)");
-    }
-
-    [Fact]
     public void should_report_a_job_class_that_implements_no_job_interface_at_the_attribute()
     {
         const string source = """

@@ -110,11 +110,10 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
     }
 
     /// <summary>
-    /// Base retry processor interval for tests that call <c>ProcessAsync</c>.
-    /// <c>ProcessAsync</c> blocks on <c>context.WaitAsync(interval)</c> at the end, so keeping
-    /// this at 1 second avoids long test runs while staying above the minimum validation value.
+    /// Base retry processor interval for tests that call <c>ProcessAsync</c>. <c>ProcessAsync</c> waits
+    /// real time for the interval, and none of these tests assert its magnitude, so it stays minimal.
     /// </summary>
-    private const int _TestRetryIntervalSeconds = 1;
+    private static readonly TimeSpan _TestRetryInterval = TimeSpan.FromMilliseconds(1);
 
     private static void _SetupReceivedMessages(IDataStorage dataStorage, params MediumMessage[] messages)
     {
@@ -292,9 +291,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
 
         var retryProcessor = new MessageNeedToRetryProcessor(
             Options.Create(new MessagingOptions()),
-            Options.Create(
-                new RetryProcessorOptions { BaseInterval = TimeSpan.FromSeconds(_TestRetryIntervalSeconds) }
-            ),
+            Options.Create(new RetryProcessorOptions { BaseInterval = _TestRetryInterval }),
             logger,
             dispatcher,
             lockProvider,
@@ -311,6 +308,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
             new ServiceCollection().AddSingleton(dataStorage).BuildServiceProvider()
         );
         await retryProcessor.ProcessAsync(context);
+        await retryProcessor.WaitForQuadrantIdleForTestAsync(MessageType.Subscribe, MessageLane.Bus);
 
         // then — only healthyGroup message was enqueued; openGroup messages skipped
         await dispatcher.Received(1).EnqueueToExecute(healthyMsg, null, Arg.Any<CancellationToken>());
@@ -354,9 +352,7 @@ public sealed class CircuitBreakerIntegrationTests : TestBase
 
         var retryProcessor = new MessageNeedToRetryProcessor(
             Options.Create(new MessagingOptions()),
-            Options.Create(
-                new RetryProcessorOptions { BaseInterval = TimeSpan.FromSeconds(_TestRetryIntervalSeconds) }
-            ),
+            Options.Create(new RetryProcessorOptions { BaseInterval = _TestRetryInterval }),
             logger,
             dispatcher,
             lockProvider,
