@@ -5,7 +5,7 @@ using Tests.Fixtures;
 
 namespace Tests.Fixture;
 
-[CollectionDefinition(DisableParallelization = true)]
+[CollectionDefinition]
 public sealed class HeadlessDbContextTestFixture
     : PostgreSqlDbContextTestFixture<TestHeadlessDbContext>,
         ICollectionFixture<HeadlessDbContextTestFixture>

@@ -47,18 +47,4 @@ public sealed class PermissionGrantCacheItemTests : TestBase
         // then
         permissionName.Should().BeNull();
     }
-
-    [Fact]
-    public void should_store_is_granted_value()
-    {
-        // given/when
-        var grantedItem = new PermissionGrantCacheItem(isGranted: true);
-        var deniedItem = new PermissionGrantCacheItem(isGranted: false);
-        var undefinedItem = new PermissionGrantCacheItem(isGranted: null);
-
-        // then
-        grantedItem.IsGranted.Should().BeTrue();
-        deniedItem.IsGranted.Should().BeFalse();
-        undefinedItem.IsGranted.Should().BeNull();
-    }
 }

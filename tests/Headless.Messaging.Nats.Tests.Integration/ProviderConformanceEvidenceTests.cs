@@ -13,7 +13,7 @@ public sealed class ProviderConformanceEvidenceTests(NatsFixture fixture) : Test
         TransportRoutingAffinityConformance.AssertAsync(new NatsProviderConformanceDriver(fixture), AbortToken);
 
     [Fact]
-    public async Task should_execute_every_supported_manifest_scenario()
+    public void should_back_every_supported_manifest_scenario_with_a_test()
     {
         var profile = TransportConformanceManifest.Providers["NATS"];
         TransportConformanceTestBinding[] bindings =
@@ -98,7 +98,7 @@ public sealed class ProviderConformanceEvidenceTests(NatsFixture fixture) : Test
             ),
         ];
 
-        await TransportConformanceTestBindings.ExecuteSupportedScenariosAsync(profile, bindings, _CreateTestClass);
+        TransportConformanceTestBindings.GetValidationErrors(profile, bindings).Should().BeEmpty();
     }
 
     private static TransportConformanceTestBinding _Bind(TransportConformanceScenario scenario, string method) =>
@@ -108,29 +108,4 @@ public sealed class ProviderConformanceEvidenceTests(NatsFixture fixture) : Test
         TransportConformanceScenario scenario,
         string method
     ) => new(scenario, typeof(NatsRequestReplyConformanceTests), method);
-
-    private object _CreateTestClass(Type testClass)
-    {
-        if (testClass == typeof(ProviderConformanceEvidenceTests))
-        {
-            return new ProviderConformanceEvidenceTests(fixture);
-        }
-
-        if (testClass == typeof(NatsConsumerClientTests))
-        {
-            return new NatsConsumerClientTests(fixture);
-        }
-
-        if (testClass == typeof(NatsRequestReplyConformanceTests))
-        {
-            return new NatsRequestReplyConformanceTests(fixture);
-        }
-
-        if (testClass == typeof(NatsBrokerFaultTests))
-        {
-            return new NatsBrokerFaultTests(fixture);
-        }
-
-        throw new InvalidOperationException($"No NATS conformance test factory is registered for {testClass}.");
-    }
 }

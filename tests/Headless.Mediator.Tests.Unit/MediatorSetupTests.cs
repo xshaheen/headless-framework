@@ -11,20 +11,6 @@ namespace Tests;
 public sealed class MediatorSetupTests
 {
     [Fact]
-    public void should_register_validation_request_pre_processor_once()
-    {
-        // given
-        var services = new ServiceCollection();
-
-        // when
-        services.AddMediatorValidationRequestBehavior();
-
-        // then
-        var descriptor = services.Where(_IsValidationRequestPreProcessorDescriptor).Should().ContainSingle().Subject;
-        descriptor.Lifetime.Should().Be(ServiceLifetime.Scoped);
-    }
-
-    [Fact]
     public void should_register_validation_request_pre_processor_idempotently()
     {
         // given
@@ -35,16 +21,22 @@ public sealed class MediatorSetupTests
         services.AddMediatorValidationRequestBehavior();
 
         // then
-        services.Where(_IsValidationRequestPreProcessorDescriptor).Should().ContainSingle();
+        services
+            .Where(_IsValidationRequestPreProcessorDescriptor)
+            .Should()
+            .ContainSingle()
+            .Subject.Lifetime.Should()
+            .Be(ServiceLifetime.Scoped);
     }
 
     [Fact]
-    public void should_register_mediator_logging_behaviors_once()
+    public void should_register_mediator_logging_behaviors_idempotently()
     {
         // given
         var services = new ServiceCollection();
 
         // when
+        services.AddMediatorLoggingBehaviors();
         services.AddMediatorLoggingBehaviors();
 
         // then
@@ -66,35 +58,6 @@ public sealed class MediatorSetupTests
             .ContainSingle()
             .Subject.Lifetime.Should()
             .Be(ServiceLifetime.Scoped);
-    }
-
-    [Fact]
-    public void should_register_mediator_logging_behaviors_idempotently()
-    {
-        // given
-        var services = new ServiceCollection();
-
-        // when
-        services.AddMediatorLoggingBehaviors();
-        services.AddMediatorLoggingBehaviors();
-
-        // then
-        services.Where(_IsRequestLoggingBehaviorDescriptor).Should().ContainSingle();
-        services.Where(_IsResponseLoggingBehaviorDescriptor).Should().ContainSingle();
-        services.Where(_IsCriticalRequestLoggingBehaviorDescriptor).Should().ContainSingle();
-    }
-
-    [Fact]
-    public void should_return_same_service_collection_instance()
-    {
-        // given
-        var services = new ServiceCollection();
-
-        // when
-        var result = services.AddMediatorValidationRequestBehavior().AddMediatorLoggingBehaviors();
-
-        // then
-        result.Should().BeSameAs(services);
     }
 
     [Fact]

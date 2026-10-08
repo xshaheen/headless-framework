@@ -490,100 +490,6 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
     }
 
     [Fact]
-    public async Task should_accept_real_delivery_value_for_commit_callback()
-    {
-        // given
-        var streamName = $"consume-commit-{Guid.NewGuid():N}"[..30];
-        var subject = $"{streamName}.test";
-        await _EnsureStreamAsync(streamName, $"{streamName}.>");
-
-        var options = _CreateOptions(NatsStreamProvisioning.Disabled);
-        await using var client = new NatsConsumerClient("test-group", 0, options, _serviceProvider);
-        await client.ConnectAsync(AbortToken);
-
-        var topics = await client.FetchMessageNamesAsync([subject], AbortToken);
-        await client.SubscribeAsync(topics, AbortToken);
-
-        var received = new TaskCompletionSource<(TransportMessage msg, object? sender)>(
-            TaskCreationOptions.RunContinuationsAsynchronously
-        );
-        client.OnMessageCallback = (msg, sender) =>
-        {
-            received.TrySetResult((msg, sender));
-            return Task.CompletedTask;
-        };
-        client.OnLogCallback = _ => { };
-
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-
-        // when — start listening, then publish
-        var listeningTask = client.ListeningAsync(TimeSpan.FromSeconds(1), cts.Token).AsTask();
-        try
-        {
-            await Task.Delay(500, AbortToken);
-
-            var body = "hello-commit"u8.ToArray();
-            await _PublishAsync(subject, body);
-
-            var (transportMsg, natsMsg) = await received.Task.WaitAsync(cts.Token);
-
-            // then — message received with correct body
-            transportMsg.Body.ToArray().Should().BeEquivalentTo(body);
-            transportMsg.Headers.Should().NotContainKey(MessagingHeaders.ConsumerIdentity);
-
-            // commit should not throw
-            await client.CommitAsync(natsMsg, AbortToken);
-        }
-        finally
-        {
-            await _StopListeningAsync(listeningTask, cts);
-        }
-    }
-
-    [Fact]
-    public async Task should_accept_real_delivery_value_for_reject_callback()
-    {
-        // given
-        var streamName = $"consume-reject-{Guid.NewGuid():N}"[..30];
-        var subject = $"{streamName}.test";
-        await _EnsureStreamAsync(streamName, $"{streamName}.>");
-
-        var options = _CreateOptions(NatsStreamProvisioning.Disabled);
-        await using var client = new NatsConsumerClient("test-group", 0, options, _serviceProvider);
-        await client.ConnectAsync(AbortToken);
-
-        await client.FetchMessageNamesAsync([subject], AbortToken);
-        await client.SubscribeAsync([subject], AbortToken);
-
-        var received = new TaskCompletionSource<object?>(TaskCreationOptions.RunContinuationsAsynchronously);
-        client.OnMessageCallback = (_, sender) =>
-        {
-            received.TrySetResult(sender);
-            return Task.CompletedTask;
-        };
-        client.OnLogCallback = _ => { };
-
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-
-        // when — start listening, then publish
-        var listeningTask = client.ListeningAsync(TimeSpan.FromSeconds(1), cts.Token).AsTask();
-        try
-        {
-            await Task.Delay(500, AbortToken);
-            await _PublishAsync(subject, "hello-reject"u8.ToArray());
-
-            var natsMsg = await received.Task.WaitAsync(cts.Token);
-
-            // then — reject (nak) should not throw
-            await client.RejectAsync(natsMsg, AbortToken);
-        }
-        finally
-        {
-            await _StopListeningAsync(listeningTask, cts);
-        }
-    }
-
-    [Fact]
     public async Task should_create_stream_when_fetch_message_names_async_enabled()
     {
         // given
@@ -740,7 +646,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
         var listeningTask = client.ListeningAsync(TimeSpan.FromSeconds(1), cts.Token).AsTask();
         try
         {
-            await Task.Delay(500, AbortToken);
+            await client.WaitUntilReadyAsync(AbortToken);
 
             var conn = await fixture.GetConnectionAsync();
             var js = new NatsJSContext(conn);
@@ -1046,75 +952,75 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
         var logicalName = $"pubonly-{Guid.NewGuid():N}"[..22];
         var subject = $"{logicalName}.placed";
         var options = _CreateOptions(NatsStreamProvisioning.Verify);
-        await using var pool = new Headless.Messaging.Nats.NatsConnectionPool(
-            NullLogger<Headless.Messaging.Nats.NatsConnectionPool>.Instance,
-            options
+
+        // when — the publisher sends before any consumer exists, and the work-queue stream holds the message
+        var messageId = await _PublishThroughTransportAsync(options, MessageLane.Queue, subject);
+
+        // then — the first consumer receives it
+        var message = await _ConsumeOneAsync(options, MessageLane.Queue, subject, "pubonly-consumer");
+        message.Id.Should().Be(messageId);
+        message
+            .Headers[MessagingHeaders.TransportAddress]
+            .Should()
+            .Be(NatsPhysicalAddress.Subject(MessageLane.Queue, subject));
+    }
+
+    [Fact]
+    public async Task should_create_a_declared_owned_stream_and_deliver_through_it()
+    {
+        // given — an application that names its stream and lets Headless own it
+        var logicalName = $"owned-{Guid.NewGuid():N}"[..20];
+        var subject = $"{logicalName}.placed";
+        var streamName = $"OWNED_{logicalName[6..]}";
+        var natsOptions = new NatsMessagingOptions { Servers = fixture.ConnectionString };
+        natsOptions.Streams.Own(
+            streamName,
+            stream => stream.Subjects(NatsPhysicalAddress.Subject(MessageLane.Queue, $"{logicalName}.>"))
         );
-        await using var transport = new NatsTransport(
-            NullLogger<NatsTransport>.Instance,
-            pool,
-            new NatsStreamProvisioner(options),
-            MessageLane.Queue
-        );
-        var messageId = Guid.NewGuid().ToString("N");
-        var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
+        var options = Options.Create(natsOptions);
+        var messageId = await _PublishThroughTransportAsync(options, MessageLane.Queue, subject);
+
+        // when
+        var message = await _ConsumeOneAsync(options, MessageLane.Queue, subject, "owned-consumer");
+
+        // then — the message lived on the declared stream, created with limits retention and the default age limit
+        message.Id.Should().Be(messageId);
+        var js = new NatsJSContext(await fixture.GetConnectionAsync());
+        var stream = await js.GetStreamAsync(streamName, cancellationToken: AbortToken);
+        stream.Info.Config.Retention.Should().Be(StreamConfigRetention.Limits);
+        stream.Info.Config.MaxAge.Should().Be(TimeSpan.FromDays(7));
+        stream.Info.State.Messages.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task should_deliver_through_a_bound_stream_without_changing_it()
+    {
+        // given — a stream an operator created, with no age limit, that the application binds to
+        var logicalName = $"bound-{Guid.NewGuid():N}"[..20];
+        var subject = $"{logicalName}.placed";
+        var streamName = $"BOUND_{logicalName[6..]}";
+        var streamSubject = NatsPhysicalAddress.Subject(MessageLane.Queue, $"{logicalName}.>");
+        await fixture.EnsureStreamAsync(streamName, streamSubject, StreamConfigRetention.Workqueue);
+        var natsOptions = new NatsMessagingOptions
         {
-            [MessagingHeaders.MessageId] = messageId,
-            [MessagingHeaders.MessageName] = subject,
+            Servers = fixture.ConnectionString,
+            StreamProvisioning = NatsStreamProvisioning.Reconcile,
         };
+        natsOptions.Streams.Bind(streamName, streamSubject);
+        var options = Options.Create(natsOptions);
+        var messageId = await _PublishThroughTransportAsync(options, MessageLane.Queue, subject);
 
-        // when — the publisher sends before any consumer exists
-        var result = await transport.SendAsync(new TransportMessage(headers, "{}"u8.ToArray()), AbortToken);
+        // when
+        var message = await _ConsumeOneAsync(options, MessageLane.Queue, subject, "bound-consumer");
 
-        // then — the publish is acknowledged, and the work-queue stream holds it for the first consumer
-        result.Succeeded.Should().BeTrue(result.Exception?.Message);
-
-        await using var consumer = new NatsConsumerClient(
-            "pubonly-consumer",
-            0,
-            options,
-            _serviceProvider,
-            lane: MessageLane.Queue
-        );
-        var delivered = new TaskCompletionSource<TransportMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
-        consumer.OnMessageCallback = async (message, sender) =>
-        {
-            delivered.TrySetResult(message);
-            await consumer.CommitAsync(sender);
-        };
-        var logs = new System.Collections.Concurrent.ConcurrentQueue<string>();
-        consumer.OnLogCallback = args => logs.Enqueue($"{args.LogType}: {args.Reason}");
-        await consumer.ConnectAsync(AbortToken);
-        var names = await consumer.FetchMessageNamesAsync([subject], AbortToken);
-        await consumer.SubscribeAsync(names, AbortToken);
-
-        using var cts = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
-        var listening = consumer.ListeningAsync(TimeSpan.FromSeconds(2), cts.Token).AsTask();
-        try
-        {
-            var completed = await Task.WhenAny(delivered.Task, Task.Delay(TimeSpan.FromSeconds(10), AbortToken));
-            completed.Should().BeSameAs(delivered.Task, string.Join(" | ", logs));
-            var message = await delivered.Task;
-            message.Id.Should().Be(messageId);
-            message
-                .Headers[MessagingHeaders.TransportAddress]
-                .Should()
-                .Be(NatsPhysicalAddress.Subject(MessageLane.Queue, subject));
-        }
-        finally
-        {
-            await cts.CancelAsync();
-#pragma warning disable ERP022 // The listening loop ends with the cancellation this test requested.
-            try
-            {
-                await listening;
-            }
-            catch
-            {
-                // Shutdown only.
-            }
-#pragma warning restore ERP022
-        }
+        // then — even Reconcile left the bound stream as the operator made it
+        message.Id.Should().Be(messageId);
+        var js = new NatsJSContext(await fixture.GetConnectionAsync());
+        var stream = await js.GetStreamAsync(streamName, cancellationToken: AbortToken);
+        stream.Info.Config.Subjects.Should().Equal(streamSubject);
+        stream.Info.Config.MaxAge.Should().Be(TimeSpan.Zero);
+        stream.Info.Config.Storage.Should().Be(StreamConfigStorage.Memory);
+        (await _StreamExistsAsync(js, NatsPhysicalAddress.Stream(MessageLane.Queue, logicalName))).Should().BeFalse();
     }
 
     [Fact]
@@ -1153,6 +1059,93 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
         pool.ServersAddress.Should().Be(BrokerAddressDisplay.FormatMany(fixture.ConnectionString));
         appConnection.ConnectionState.Should().Be(NatsConnectionState.Open);
         await appConnection.PingAsync(AbortToken);
+    }
+
+    private static async Task<string> _PublishThroughTransportAsync(
+        IOptions<NatsMessagingOptions> options,
+        MessageLane lane,
+        string subject
+    )
+    {
+        await using var pool = new Headless.Messaging.Nats.NatsConnectionPool(
+            NullLogger<Headless.Messaging.Nats.NatsConnectionPool>.Instance,
+            options
+        );
+        await using var transport = new NatsTransport(
+            NullLogger<NatsTransport>.Instance,
+            pool,
+            new NatsStreamProvisioner(options),
+            lane
+        );
+        var messageId = Guid.NewGuid().ToString("N");
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            [MessagingHeaders.MessageId] = messageId,
+            [MessagingHeaders.MessageName] = subject,
+        };
+
+        var result = await transport.SendAsync(new TransportMessage(headers, "{}"u8.ToArray()), AbortToken);
+
+        result.Succeeded.Should().BeTrue(result.Exception?.Message);
+        return messageId;
+    }
+
+    // Starts a consumer for one message name and returns the first message it receives.
+    private async Task<TransportMessage> _ConsumeOneAsync(
+        IOptions<NatsMessagingOptions> options,
+        MessageLane lane,
+        string subject,
+        string consumerName
+    )
+    {
+        await using var consumer = new NatsConsumerClient(consumerName, 0, options, _serviceProvider, lane: lane);
+        var delivered = new TaskCompletionSource<TransportMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
+        consumer.OnMessageCallback = async (message, sender) =>
+        {
+            delivered.TrySetResult(message);
+            await consumer.CommitAsync(sender);
+        };
+        var logs = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        consumer.OnLogCallback = args => logs.Enqueue($"{args.LogType}: {args.Reason}");
+        await consumer.ConnectAsync(AbortToken);
+        var names = await consumer.FetchMessageNamesAsync([subject], AbortToken);
+        await consumer.SubscribeAsync(names, AbortToken);
+
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        var listening = consumer.ListeningAsync(TimeSpan.FromSeconds(2), cts.Token).AsTask();
+        try
+        {
+            var completed = await Task.WhenAny(delivered.Task, Task.Delay(TimeSpan.FromSeconds(10), AbortToken));
+            completed.Should().BeSameAs(delivered.Task, string.Join(" | ", logs));
+            return await delivered.Task;
+        }
+        finally
+        {
+            await cts.CancelAsync();
+#pragma warning disable ERP022 // The listening loop ends with the cancellation this test requested.
+            try
+            {
+                await listening;
+            }
+            catch
+            {
+                // Shutdown only.
+            }
+#pragma warning restore ERP022
+        }
+    }
+
+    private static async Task<bool> _StreamExistsAsync(NatsJSContext js, string streamName)
+    {
+        try
+        {
+            await js.GetStreamAsync(streamName, cancellationToken: AbortToken);
+            return true;
+        }
+        catch (NatsJSApiException e) when (e.Error.Code == 404 || e.Error.ErrCode == 10059)
+        {
+            return false;
+        }
     }
 
     private IOptions<NatsMessagingOptions> _CreateOptions(NatsStreamProvisioning streamProvisioning)

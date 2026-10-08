@@ -31,6 +31,8 @@ internal static class NatsPhysicalAddress
             _ => throw new ArgumentOutOfRangeException(nameof(lane), lane, message: null),
         };
 
+    // Bus streams use interest retention: a Bus durable starts at DeliverPolicy.New, so a message published before a
+    // consumer exists never reaches it, and keeping it under limits retention would only cost storage.
     public static StreamConfigRetention Retention(MessageLane lane) =>
         lane switch
         {

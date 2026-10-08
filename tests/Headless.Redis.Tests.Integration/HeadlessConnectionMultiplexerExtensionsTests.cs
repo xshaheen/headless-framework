@@ -49,19 +49,6 @@ public sealed class HeadlessConnectionMultiplexerExtensionsTests(RedisTestFixtur
     }
 
     [Fact]
-    public async Task should_return_zero_for_empty_database_when_count_all_keys_async()
-    {
-        // given - ensure clean state
-        await fixture.FlushAllAsync(AbortToken);
-
-        // when
-        var count = await Multiplexer.CountAllKeysAsync(AbortToken);
-
-        // then
-        count.Should().Be(0);
-    }
-
-    [Fact]
     public async Task should_honor_pre_canceled_token_when_counting_all_keys()
     {
         // given

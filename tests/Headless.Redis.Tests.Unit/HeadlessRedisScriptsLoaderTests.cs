@@ -11,32 +11,6 @@ namespace Tests;
 public sealed class HeadlessRedisScriptsLoaderTests : TestBase
 {
     [Fact]
-    public void should_accept_null_time_provider_and_use_system()
-    {
-        // given
-        var multiplexer = Substitute.For<IConnectionMultiplexer>();
-
-        // when
-        var act = () => new HeadlessRedisScriptsLoader(multiplexer, timeProvider: null);
-
-        // then
-        act.Should().NotThrow();
-    }
-
-    [Fact]
-    public void should_accept_null_logger()
-    {
-        // given
-        var multiplexer = Substitute.For<IConnectionMultiplexer>();
-
-        // when
-        var act = () => new HeadlessRedisScriptsLoader(multiplexer, logger: null);
-
-        // then
-        act.Should().NotThrow();
-    }
-
-    [Fact]
     public async Task should_not_load_any_script_when_preload_list_is_empty()
     {
         // given

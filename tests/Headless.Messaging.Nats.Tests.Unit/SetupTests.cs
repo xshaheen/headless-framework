@@ -100,6 +100,12 @@ public sealed class SetupTests : TestBase
             .GetRequiredService<IOptions<NatsMessagingOptions>>()
             .Value.Servers.Should()
             .Be("nats://localhost:4222");
+        services
+            .Should()
+            .ContainSingle(descriptor =>
+                descriptor.ServiceType == typeof(IProcessingServer)
+                && descriptor.ImplementationType == typeof(NatsStreamWarmup)
+            );
     }
 
     [Fact]

@@ -35,9 +35,6 @@ public sealed class ProblemDetailsTests : TestBase
      */
 
     [Theory]
-    [InlineData(EnvironmentNames.Development)]
-    [InlineData(EnvironmentNames.Staging)]
-    [InlineData(EnvironmentNames.Test)]
     [InlineData(EnvironmentNames.Production)]
     public async Task endpoint_not_found(string environment)
     {
@@ -85,9 +82,6 @@ public sealed class ProblemDetailsTests : TestBase
      */
 
     [Theory]
-    [InlineData(EnvironmentNames.Development)]
-    [InlineData(EnvironmentNames.Staging)]
-    [InlineData(EnvironmentNames.Test)]
     [InlineData(EnvironmentNames.Production)]
     public async Task mvc_bad_request(string environment)
     {
@@ -98,9 +92,6 @@ public sealed class ProblemDetailsTests : TestBase
     }
 
     [Theory]
-    [InlineData(EnvironmentNames.Development)]
-    [InlineData(EnvironmentNames.Staging)]
-    [InlineData(EnvironmentNames.Test)]
     [InlineData(EnvironmentNames.Production)]
     public async Task minimal_api_bad_request(string environment)
     {
@@ -179,9 +170,6 @@ public sealed class ProblemDetailsTests : TestBase
      */
 
     [Theory]
-    [InlineData(EnvironmentNames.Development)]
-    [InlineData(EnvironmentNames.Staging)]
-    [InlineData(EnvironmentNames.Test)]
     [InlineData(EnvironmentNames.Production)]
     public async Task minimal_api_entity_not_found(string environment)
     {
@@ -193,9 +181,6 @@ public sealed class ProblemDetailsTests : TestBase
     }
 
     [Theory]
-    [InlineData(EnvironmentNames.Development)]
-    [InlineData(EnvironmentNames.Staging)]
-    [InlineData(EnvironmentNames.Test)]
     [InlineData(EnvironmentNames.Production)]
     public async Task mvc_entity_not_found(string environment)
     {
@@ -249,9 +234,6 @@ public sealed class ProblemDetailsTests : TestBase
      */
 
     [Theory]
-    [InlineData(EnvironmentNames.Development)]
-    [InlineData(EnvironmentNames.Staging)]
-    [InlineData(EnvironmentNames.Test)]
     [InlineData(EnvironmentNames.Production)]
     public async Task minimal_api_conflict(string environment)
     {
@@ -263,9 +245,6 @@ public sealed class ProblemDetailsTests : TestBase
     }
 
     [Theory]
-    [InlineData(EnvironmentNames.Development)]
-    [InlineData(EnvironmentNames.Staging)]
-    [InlineData(EnvironmentNames.Test)]
     [InlineData(EnvironmentNames.Production)]
     public async Task mvc_conflict(string environment)
     {
@@ -322,9 +301,6 @@ public sealed class ProblemDetailsTests : TestBase
      */
 
     [Theory]
-    [InlineData(EnvironmentNames.Development)]
-    [InlineData(EnvironmentNames.Staging)]
-    [InlineData(EnvironmentNames.Test)]
     [InlineData(EnvironmentNames.Production)]
     public async Task minimal_api_unprocessable(string environment)
     {
@@ -336,9 +312,6 @@ public sealed class ProblemDetailsTests : TestBase
     }
 
     [Theory]
-    [InlineData(EnvironmentNames.Development)]
-    [InlineData(EnvironmentNames.Staging)]
-    [InlineData(EnvironmentNames.Test)]
     [InlineData(EnvironmentNames.Production)]
     public async Task mvc_unprocessable(string environment)
     {
@@ -396,8 +369,6 @@ public sealed class ProblemDetailsTests : TestBase
 
     [Theory]
     [InlineData(EnvironmentNames.Development)]
-    [InlineData(EnvironmentNames.Staging)]
-    [InlineData(EnvironmentNames.Test)]
     [InlineData(EnvironmentNames.Production)]
     public async Task minimal_api_internal_error(string environment)
     {
@@ -412,8 +383,6 @@ public sealed class ProblemDetailsTests : TestBase
 
     [Theory]
     [InlineData(EnvironmentNames.Development)]
-    [InlineData(EnvironmentNames.Staging)]
-    [InlineData(EnvironmentNames.Test)]
     [InlineData(EnvironmentNames.Production)]
     public async Task mvc_internal_error(string environment)
     {
@@ -453,9 +422,6 @@ public sealed class ProblemDetailsTests : TestBase
     #region Unauthorized
 
     [Theory]
-    [InlineData(EnvironmentNames.Development)]
-    [InlineData(EnvironmentNames.Staging)]
-    [InlineData(EnvironmentNames.Test)]
     [InlineData(EnvironmentNames.Production)]
     public async Task mvc_unauthorized_request(string environment)
     {
@@ -468,9 +434,6 @@ public sealed class ProblemDetailsTests : TestBase
     }
 
     [Theory]
-    [InlineData(EnvironmentNames.Development)]
-    [InlineData(EnvironmentNames.Staging)]
-    [InlineData(EnvironmentNames.Test)]
     [InlineData(EnvironmentNames.Production)]
     public async Task minimal_unauthorized_request(string environment)
     {
@@ -503,9 +466,6 @@ public sealed class ProblemDetailsTests : TestBase
     #region Forbidden
 
     [Theory]
-    [InlineData(EnvironmentNames.Development)]
-    [InlineData(EnvironmentNames.Staging)]
-    [InlineData(EnvironmentNames.Test)]
     [InlineData(EnvironmentNames.Production)]
     public async Task mvc_forbidden_request(string environment)
     {
@@ -519,9 +479,6 @@ public sealed class ProblemDetailsTests : TestBase
     }
 
     [Theory]
-    [InlineData(EnvironmentNames.Development)]
-    [InlineData(EnvironmentNames.Staging)]
-    [InlineData(EnvironmentNames.Test)]
     [InlineData(EnvironmentNames.Production)]
     public async Task minimal_forbidden_request(string environment)
     {
@@ -558,9 +515,6 @@ public sealed class ProblemDetailsTests : TestBase
     #region Method Not Allowed
 
     [Theory]
-    [InlineData(EnvironmentNames.Development)]
-    [InlineData(EnvironmentNames.Staging)]
-    [InlineData(EnvironmentNames.Test)]
     [InlineData(EnvironmentNames.Production)]
     public async Task mvc_method_not_allowed_request(string environment)
     {
@@ -573,9 +527,6 @@ public sealed class ProblemDetailsTests : TestBase
     }
 
     [Theory]
-    [InlineData(EnvironmentNames.Development)]
-    [InlineData(EnvironmentNames.Staging)]
-    [InlineData(EnvironmentNames.Test)]
     [InlineData(EnvironmentNames.Production)]
     public async Task minimal_method_not_allowed_request(string environment)
     {

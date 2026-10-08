@@ -39,26 +39,6 @@ public sealed class DashboardOptionsTests : TestBase
     }
 
     [Fact]
-    public void should_allow_custom_base_path()
-    {
-        // given & when
-        var builder = new MessagingDashboardOptionsBuilder().SetBasePath("/custom/dashboard");
-
-        // then
-        builder.BasePath.Should().Be("/custom/dashboard");
-    }
-
-    [Fact]
-    public void should_allow_custom_stats_polling_interval()
-    {
-        // given & when
-        var builder = new MessagingDashboardOptionsBuilder().SetStatsPollingInterval(5000);
-
-        // then
-        builder.StatsPollingInterval.Should().Be(5000);
-    }
-
-    [Fact]
     public void should_set_mode_to_none_when_with_no_auth()
     {
         // given & when

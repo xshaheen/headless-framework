@@ -36,16 +36,15 @@ internal sealed class NatsProviderConformanceDriver(NatsFixture fixture, bool pr
 
             if (provisionStreams)
             {
-                // A stream of this driver's own, so scenario runs never contribute subjects to one another's streams.
-                // A responder host's consumer groups each add their own subject to it, which only Reconcile allows.
+                // Each request name gets the stream derived from its first segment; Reconcile lets later scenario runs
+                // that reuse a name add their subjects to the stream an earlier run created.
                 options.StreamProvisioning = NatsStreamProvisioning.Reconcile;
-                options.NormalizeStreamName = _ => _streamName;
                 options.StreamOptions = config => config.Storage = StreamConfigStorage.Memory;
             }
             else
             {
                 options.StreamProvisioning = NatsStreamProvisioning.Disabled;
-                options.NormalizeStreamName = _ => NatsFixture.OperatorStreamKey;
+                options.Streams.Bind(NatsFixture.OperatorStreamName, NatsFixture.OperatorStreamSubjects);
             }
         });
 

@@ -39,19 +39,6 @@ public sealed class NatsMessagingOptionsTests : TestBase
     }
 
     [Fact]
-    public void should_support_multiple_servers()
-    {
-        var options = new NatsMessagingOptions
-        {
-            Servers = "nats://server1:4222,nats://server2:4222,nats://server3:4222",
-        };
-
-        options.Servers.Should().Contain("server1");
-        options.Servers.Should().Contain("server2");
-        options.Servers.Should().Contain("server3");
-    }
-
-    [Fact]
     public void should_redact_credentials_from_single_server_display_value()
     {
         var options = new NatsMessagingOptions { Servers = "nats://user:password@localhost:4222" };
@@ -68,51 +55,6 @@ public sealed class NatsMessagingOptionsTests : TestBase
         };
 
         BrokerAddressDisplay.FormatMany(options.Servers).Should().Be("nats://localhost:4222,nats://example.com:4223");
-    }
-
-    [Fact]
-    public void should_have_default_stream_name_normalizer()
-    {
-        var options = new NatsMessagingOptions();
-        options.NormalizeStreamName("orders.created").Should().Be("orders");
-    }
-
-    [Fact]
-    public void should_support_custom_stream_name_normalizer()
-    {
-        var options = new NatsMessagingOptions { NormalizeStreamName = origin => origin.ToUpperInvariant() };
-
-        options.NormalizeStreamName("orders.created").Should().Be("ORDERS.CREATED");
-    }
-
-    [Fact]
-    public void should_handle_stream_name_without_dot()
-    {
-        var options = new NatsMessagingOptions();
-        options.NormalizeStreamName("simplestream").Should().Be("simplestream");
-    }
-
-    [Fact]
-    public void should_handle_stream_name_with_multiple_dots()
-    {
-        var options = new NatsMessagingOptions();
-        options.NormalizeStreamName("orders.us.east.created").Should().Be("orders");
-    }
-
-    [Fact]
-    public void should_support_disabling_stream_provisioning()
-    {
-        var options = new NatsMessagingOptions { StreamProvisioning = NatsStreamProvisioning.Disabled };
-
-        options.StreamProvisioning.Should().Be(NatsStreamProvisioning.Disabled);
-    }
-
-    [Fact]
-    public void should_support_selecting_reconcile_stream_provisioning()
-    {
-        var options = new NatsMessagingOptions { StreamProvisioning = NatsStreamProvisioning.Reconcile };
-
-        options.StreamProvisioning.Should().Be(NatsStreamProvisioning.Reconcile);
     }
 
     [Fact]
@@ -140,73 +82,30 @@ public sealed class NatsMessagingOptionsTests : TestBase
     }
 
     [Fact]
-    public void should_allow_null_configure_connection()
+    public void should_default_the_stream_max_age_to_seven_days_and_declare_no_streams()
     {
-        var options = new NatsMessagingOptions { ConfigureConnection = null };
-        var natsOpts = options.BuildNatsOpts();
+        var options = new NatsMessagingOptions();
 
-        natsOpts.Should().NotBeNull();
+        options.DefaultStreamMaxAge.Should().Be(TimeSpan.FromDays(7));
+        options.Streams.Streams.Should().BeEmpty();
     }
 
     [Fact]
-    public void should_support_stream_options_callback()
+    public void should_fail_for_a_negative_default_stream_max_age_when_validator()
     {
-        var invoked = false;
-        var options = new NatsMessagingOptions
-        {
-            StreamOptions = config =>
-            {
-                invoked = true;
-                config.Storage = StreamConfigStorage.File;
-            },
-        };
+        var options = new NatsMessagingOptions { DefaultStreamMaxAge = TimeSpan.FromSeconds(-1) };
 
-        var config = new StreamConfig();
-        options.StreamOptions?.Invoke(config);
+        var result = new NatsMessagingOptionsValidator().Validate(options);
 
-        invoked.Should().BeTrue();
-        config.Storage.Should().Be(StreamConfigStorage.File);
+        result.Errors.Should().ContainSingle(e => e.PropertyName == nameof(NatsMessagingOptions.DefaultStreamMaxAge));
     }
 
     [Fact]
-    public void should_support_consumer_options_callback()
+    public void should_pass_for_a_zero_default_stream_max_age_when_validator()
     {
-        var invoked = false;
-        var options = new NatsMessagingOptions
-        {
-            ConsumerOptions = config =>
-            {
-                invoked = true;
-                config.AckWait = TimeSpan.FromMinutes(1);
-            },
-        };
+        var options = new NatsMessagingOptions { DefaultStreamMaxAge = TimeSpan.Zero };
 
-        var config = new ConsumerConfig("test");
-        options.ConsumerOptions?.Invoke(config);
-
-        invoked.Should().BeTrue();
-        config.AckWait.Should().Be(TimeSpan.FromMinutes(1));
-    }
-
-    [Fact]
-    public void should_allow_null_stream_options()
-    {
-        var options = new NatsMessagingOptions { StreamOptions = null };
-        options.StreamOptions.Should().BeNull();
-    }
-
-    [Fact]
-    public void should_allow_null_consumer_options()
-    {
-        var options = new NatsMessagingOptions { ConsumerOptions = null };
-        options.ConsumerOptions.Should().BeNull();
-    }
-
-    [Fact]
-    public void should_allow_null_custom_headers_builder()
-    {
-        var options = new NatsMessagingOptions { CustomHeadersBuilder = null };
-        options.CustomHeadersBuilder.Should().BeNull();
+        new NatsMessagingOptionsValidator().Validate(options).IsValid.Should().BeTrue();
     }
 
     // Validator tests

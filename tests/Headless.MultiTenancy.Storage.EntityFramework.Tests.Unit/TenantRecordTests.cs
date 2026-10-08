@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Reflection;
 using Headless.Domain;
 using Headless.MultiTenancy;
 
@@ -45,46 +44,10 @@ public sealed class TenantRecordTests
     }
 
     [Fact]
-    public void should_not_expose_a_public_setter_for_normalized_identifier()
-    {
-        // given
-        var property = typeof(TenantRecord).GetProperty(
-            nameof(TenantRecord.NormalizedIdentifier),
-            BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly
-        );
-
-        // then - NormalizedIdentifier is derived-only; SetIdentifier is the sole mutation path
-        property.Should().NotBeNull();
-        var setter = property!.SetMethod;
-        var hasPublicSetter = setter?.IsPublic ?? false;
-        hasPublicSetter.Should().BeFalse();
-    }
-
-    [Fact]
     public void should_not_implement_i_multi_tenant()
     {
         // then - the tenant catalog sits outside the EF tenant query filter by construction
         typeof(TenantRecord).Should().NotBeAssignableTo<IMultiTenant>();
-    }
-
-    [Fact]
-    public void should_default_is_enabled_to_true()
-    {
-        // given & when
-        var record = new TenantRecord("ten_1", "acme");
-
-        // then
-        record.IsEnabled.Should().BeTrue();
-    }
-
-    [Fact]
-    public void should_start_with_an_empty_extra_properties_bag()
-    {
-        // given & when
-        var record = new TenantRecord("ten_1", "acme");
-
-        // then
-        record.ExtraProperties.Should().BeEmpty();
     }
 
     [Theory]

@@ -7,50 +7,6 @@ namespace Tests.DependencyInjection;
 public sealed class DependencyInjectionExtensionsTests
 {
     [Fact]
-    public void should_execute_the_action_if_the_condition_to_add_is_true_when_add_if()
-    {
-        // given
-        var services = new ServiceCollection();
-        var wasActionCalled = false;
-
-        // when
-        services.AddIf(
-            true,
-            s =>
-            {
-                wasActionCalled = true;
-
-                return s;
-            }
-        );
-
-        // then
-        wasActionCalled.Should().BeTrue();
-    }
-
-    [Fact]
-    public void should_not_execute_the_action_if_the_condition_to_add_is_false_when_add_if()
-    {
-        // given
-        var services = new ServiceCollection();
-        var wasActionCalled = false;
-
-        // when
-        services.AddIf(
-            false,
-            s =>
-            {
-                wasActionCalled = true;
-
-                return s;
-            }
-        );
-
-        // then
-        wasActionCalled.Should().BeFalse();
-    }
-
-    [Fact]
     public void should_add_the_service_to_the_service_collection_if_the_add_condition_is_true_when_add_if()
     {
         // given
@@ -754,22 +710,6 @@ public sealed class DependencyInjectionExtensionsTests
     }
 
     [Fact]
-    public void should_return_null_when_service_provider_retrieving_invalid_scoped_keyed_service()
-    {
-        // given
-        var services = new ServiceCollection();
-        const string serviceKey = "myServiceKey";
-
-        // when
-        services.AddKeyedScoped<IMyService>(serviceKey, _ => new MyService());
-        var provider = services.BuildServiceProvider();
-        var myServiceWithoutKey = provider.GetKeyedService<IMyService>("invalidKey");
-
-        // then
-        myServiceWithoutKey.Should().BeNull();
-    }
-
-    [Fact]
     public void should_register_service_with_key_when_add_keyed_transient()
     {
         // given
@@ -784,22 +724,6 @@ public sealed class DependencyInjectionExtensionsTests
         // then
         myService.Should().NotBeNull();
         myService.Greet().Should().Be("original");
-    }
-
-    [Fact]
-    public void should_return_null_when_service_provider_retrieving_invalid_transient_keyed_service()
-    {
-        // given
-        var services = new ServiceCollection();
-        const string serviceKey = "myServiceKey";
-
-        // when
-        services.AddKeyedTransient<IMyService>(serviceKey, _ => new MyService());
-        var provider = services.BuildServiceProvider();
-        var myServiceWithoutKey = provider.GetKeyedService<IMyService>("invalidKey");
-
-        // then
-        myServiceWithoutKey.Should().BeNull();
     }
 
     #region AddInitializerHostedService

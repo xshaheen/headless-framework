@@ -8,56 +8,6 @@ namespace Tests;
 public sealed class MessagingConventionsTests : TestBase
 {
     [Fact]
-    public void should_have_default_topic_naming_as_type_name()
-    {
-        // when
-        var conventions = new MessagingConventions();
-
-        // then
-        conventions.MessageNaming.Should().Be(MessageNamingConvention.TypeName);
-    }
-
-    [Fact]
-    public void should_have_null_default_prefix()
-    {
-        // when
-        var conventions = new MessagingConventions();
-
-        // then
-        conventions.MessageNamePrefix.Should().BeNull();
-    }
-
-    [Fact]
-    public void should_have_null_default_suffix()
-    {
-        // when
-        var conventions = new MessagingConventions();
-
-        // then
-        conventions.MessageNameSuffix.Should().BeNull();
-    }
-
-    [Fact]
-    public void should_allow_custom_prefix()
-    {
-        // given
-        var conventions = new MessagingConventions { MessageNamePrefix = "my-service." };
-
-        // then
-        conventions.MessageNamePrefix.Should().Be("my-service.");
-    }
-
-    [Fact]
-    public void should_allow_custom_suffix()
-    {
-        // given
-        var conventions = new MessagingConventions { MessageNameSuffix = ".v1" };
-
-        // then
-        conventions.MessageNameSuffix.Should().Be(".v1");
-    }
-
-    [Fact]
     public void should_generate_topic_name_using_type_name_convention()
     {
         // given
@@ -192,18 +142,6 @@ public sealed class MessagingConventionsTests : TestBase
         // Note: Due to regex bug with ExplicitCapture, the output contains literal "$1".
         // Simply verify it starts with order123 (lowercase).
         topicName.ToLowerInvariant().Should().StartWith("order123");
-    }
-
-    [Theory]
-    [InlineData(MessageNamingConvention.TypeName)]
-    [InlineData(MessageNamingConvention.KebabCase)]
-    public void should_set_topic_naming_convention(MessageNamingConvention convention)
-    {
-        // given
-        var conventions = new MessagingConventions { MessageNaming = convention };
-
-        // then
-        conventions.MessageNaming.Should().Be(convention);
     }
 }
 

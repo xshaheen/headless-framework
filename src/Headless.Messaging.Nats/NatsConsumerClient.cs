@@ -150,7 +150,8 @@ internal sealed class NatsConsumerClient(
     }
 
     // A consumer filters on each message's own subject plus, for a sharded name, the 'base.>' wildcard. The stream it
-    // reads from carries the whole stream key (NatsStreamProvisioner.BuildStreamSubjects), which covers these.
+    // reads from covers these: a derived stream carries the whole stream key (NatsStreamProvisioner.BuildStreamSubjects),
+    // and a declared stream is chosen because its subjects cover the name.
     private static List<string> _BuildSubjects(IEnumerable<string> messageNames, ISet<string> shardedMessageNames)
     {
         Argument.IsNotNull(messageNames);
@@ -230,8 +231,10 @@ internal sealed class NatsConsumerClient(
 
         using var listeningCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
+        // Group by the stream each name lives on (a declared stream, or the one derived from the name), so every
+        // durable consumer is created on the stream that carries its subject.
         var streamGroups = _subscribedMessageNames!.GroupBy(
-            x => _natsOptions.NormalizeStreamName(x),
+            x => _streamProvisioner.StreamName(lane, x),
             StringComparer.Ordinal
         );
         var tasks = new List<Task>();
@@ -239,7 +242,7 @@ internal sealed class NatsConsumerClient(
 
         foreach (var streamGroup in streamGroups)
         {
-            var streamName = NatsPhysicalAddress.Stream(lane, streamGroup.Key);
+            var streamName = streamGroup.Key;
             var subscriptionName = name;
             var shardedMessageNames = ResolveShardedMessageNames(streamGroup);
 

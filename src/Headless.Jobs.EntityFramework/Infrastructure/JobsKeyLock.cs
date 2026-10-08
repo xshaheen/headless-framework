@@ -12,12 +12,21 @@ namespace Headless.Jobs.Infrastructure;
 
 internal static class JobsKeyLock
 {
-    private const int _LockTimeoutSeconds = 30;
+    /// <summary>How long one keyed write waits, in total, for every lock it asks for.</summary>
+    internal static readonly TimeSpan DefaultLockTimeout = TimeSpan.FromSeconds(30);
 
     internal static Task AcquireAsync(
         DbContext context,
         JobKeyScope scope,
         JobKey key,
+        CancellationToken cancellationToken
+    ) => AcquireAsync(context, scope, key, DefaultLockTimeout, cancellationToken);
+
+    internal static Task AcquireAsync(
+        DbContext context,
+        JobKeyScope scope,
+        JobKey key,
+        TimeSpan lockTimeout,
         CancellationToken cancellationToken
     )
     {
@@ -26,7 +35,7 @@ internal static class JobsKeyLock
             CultureInfo.InvariantCulture,
             $"jobs:key:{scope.TenantId?.Length ?? -1}:{scope.TenantId}{scope.Function.Length}:{scope.Function}{key.Value.Length}:{key.Value}"
         );
-        return _AcquireAsync(context, [identity], cancellationToken);
+        return _AcquireAsync(context, [identity], lockTimeout, cancellationToken);
     }
 
     /// <summary>
@@ -48,7 +57,7 @@ internal static class JobsKeyLock
             $"jobs:idem:{scopeKey.Length}:{scopeKey}{function.Length}:{function}"
                 + $"{contractVersion.Length}:{contractVersion}{idempotencyKey.Length}:{idempotencyKey}"
         );
-        return _AcquireAsync(context, [identity], cancellationToken);
+        return _AcquireAsync(context, [identity], DefaultLockTimeout, cancellationToken);
     }
 
     /// <summary>
@@ -64,12 +73,19 @@ internal static class JobsKeyLock
         var identities = functions
             .Select(function => string.Create(CultureInfo.InvariantCulture, $"jobs:slots:{function.Length}:{function}"))
             .ToArray();
-        return _AcquireAsync(context, identities, cancellationToken);
+        return _AcquireAsync(context, identities, DefaultLockTimeout, cancellationToken);
     }
+
+    internal static Task AcquireRunsAsync(
+        DbContext context,
+        IEnumerable<Guid> runIds,
+        CancellationToken cancellationToken
+    ) => AcquireRunsAsync(context, runIds, DefaultLockTimeout, cancellationToken);
 
     internal static async Task AcquireRunsAsync(
         DbContext context,
         IEnumerable<Guid> runIds,
+        TimeSpan lockTimeout,
         CancellationToken cancellationToken
     )
     {
@@ -85,11 +101,16 @@ internal static class JobsKeyLock
         var identities = runIds.Distinct().Order().Select(id => "jobs:run:" + id.ToString("D")).ToArray();
         if (identities.Length != 0)
         {
-            await _AcquireAsync(context, identities, cancellationToken).ConfigureAwait(false);
+            await _AcquireAsync(context, identities, lockTimeout, cancellationToken).ConfigureAwait(false);
         }
     }
 
-    private static async Task _AcquireAsync(DbContext context, string[] identities, CancellationToken cancellationToken)
+    private static async Task _AcquireAsync(
+        DbContext context,
+        string[] identities,
+        TimeSpan lockTimeout,
+        CancellationToken cancellationToken
+    )
     {
         var digests = identities.Select(identity => SHA256.HashData(Encoding.UTF8.GetBytes(identity))).ToArray();
         await using var command = context.Database.GetDbConnection().CreateCommand();
@@ -97,13 +118,14 @@ internal static class JobsKeyLock
             context.Database.CurrentTransaction?.GetDbTransaction()
             ?? throw new InvalidOperationException("A transaction is required for a keyed Jobs write.");
         // The server bounds the whole batch; transport cancellation must not win an ordinary contention timeout.
-        command.CommandTimeout = _LockTimeoutSeconds * 2;
+        command.CommandTimeout = (int)Math.Ceiling(lockTimeout.TotalSeconds * 2);
         var parameter = command.CreateParameter();
         parameter.ParameterName = "@keys";
         var timeout = command.CreateParameter();
         timeout.ParameterName = "@timeout";
         timeout.DbType = DbType.Int32;
-        timeout.Value = _LockTimeoutSeconds;
+        // Milliseconds, so a budget below a second or with a fraction of one is honored as given.
+        timeout.Value = (int)lockTimeout.TotalMilliseconds;
         command.Parameters.Add(timeout);
         if (
             string.Equals(
@@ -128,7 +150,7 @@ internal static class JobsKeyLock
                         SELECT pg_sleep(CASE WHEN attempts.acquired THEN 0 ELSE 0.05 END)
                     ) AS pause
                     WHERE next.position <= cardinality(@keys)
-                      AND clock_timestamp() < statement_timestamp() + make_interval(secs => @timeout)
+                      AND clock_timestamp() < statement_timestamp() + make_interval(secs => @timeout / 1000.0)
                 )
                 SELECT COALESCE(max(position) FILTER (WHERE acquired), 0) FROM attempts;
                 """;
@@ -151,7 +173,7 @@ internal static class JobsKeyLock
                 SET @count = (SELECT COUNT(*) FROM @locks);
                 WHILE @position < @count
                 BEGIN
-                    SET @remaining = @timeout * 1000 - DATEDIFF(millisecond, @started, SYSUTCDATETIME());
+                    SET @remaining = @timeout - DATEDIFF(millisecond, @started, SYSUTCDATETIME());
                     IF @remaining <= 0 BREAK;
                     SELECT @resource = resource FROM @locks WHERE position = @position;
                     EXEC @result = sys.sp_getapplock @Resource=@resource, @LockMode='Exclusive',

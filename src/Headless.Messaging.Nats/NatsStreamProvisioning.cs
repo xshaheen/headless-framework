@@ -26,11 +26,10 @@ public enum NatsStreamProvisioning
 
     /// <summary>
     /// Creates the stream when it is absent, and updates it to match this application's configuration when it
-    /// already exists. Choose it when the application owns stream topology. Every host asks for the stream's whole key,
-    /// so hosts that share one stream agree on its subjects under <see cref="Verify"/> too; only a custom
-    /// <see cref="NatsMessagingOptions.NormalizeStreamName"/> that maps names the key does not prefix makes hosts
-    /// contribute different exact subjects, and then a host whose subject the stream does not yet carry fails startup
-    /// under <see cref="Verify"/>.
+    /// already exists. Choose it when the application owns stream topology. Every host asks for a derived stream's whole
+    /// key, so hosts that share one stream agree on its subjects under <see cref="Verify"/> too. The exception is a
+    /// message named exactly its key that is published first without a shard and later with one: the shard wildcard is
+    /// a subject the stream does not yet carry, which only this mode adds.
     /// </summary>
     /// <remarks>
     /// JetStream refuses some configuration changes on a live stream — storage type is the clearest case.

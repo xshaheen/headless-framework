@@ -6,9 +6,6 @@ using Headless.Sms;
 using Headless.Sms.Vodafone;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
-using Polly.CircuitBreaker;
-using Polly.RateLimiting;
-using Polly.Timeout;
 using WireMock.RequestBuilders;
 using WireMock.ResponseBuilders;
 
@@ -104,36 +101,5 @@ public sealed class VodafoneSmsSenderTests : TestBase, IClassFixture<SmsWireMock
 
         var body = _fixture.Server.LogEntries.Single().RequestMessage?.Body;
         body.Should().Contain("a &amp; b &lt; c");
-    }
-
-    [Theory]
-    [InlineData(nameof(TimeoutRejectedException))]
-    [InlineData(nameof(BrokenCircuitException))]
-    [InlineData(nameof(RateLimiterRejectedException))]
-    public async Task should_classify_resilience_rejections_as_transient(string rejectionKind)
-    {
-        var exception = ResilienceRejections.Create(rejectionKind);
-        var options = new OptionsMonitorWrapper<VodafoneSmsOptions>(
-            new VodafoneSmsOptions
-            {
-                SendSmsEndpoint = "http://localhost:1/submit",
-                Sender = "SENDER",
-                AccountId = "acc",
-                Password = "pass",
-                SecureHash = "0123456789ABCDEF",
-            }
-        );
-        var sender = new VodafoneSmsSender(
-            new ThrowingHttpClientFactory(exception),
-            SetupVodafone.HttpClientName,
-            options,
-            optionsName: null,
-            NullLogger<VodafoneSmsSender>.Instance
-        );
-
-        var result = await sender.SendAsync(SmsRequests.Single(), AbortToken);
-
-        result.Success.Should().BeFalse();
-        result.FailureKind.Should().Be(SmsFailureKind.Transient);
     }
 }

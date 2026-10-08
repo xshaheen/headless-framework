@@ -8,13 +8,6 @@ namespace Tests;
 public sealed class MessageLaneTests : TestBase
 {
     [Fact]
-    public void should_preserve_legacy_numeric_values()
-    {
-        ((short)MessageLane.Bus).Should().Be(0).And.Be((short)MessageLane.Bus);
-        ((short)MessageLane.Queue).Should().Be(1).And.Be((short)MessageLane.Queue);
-    }
-
-    [Fact]
     public void should_remain_smallint_compatible_without_an_unknown_member()
     {
         Enum.GetUnderlyingType(typeof(MessageLane)).Should().Be<short>();
