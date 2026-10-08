@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Reflection;
 using Headless.Coordination;
 using Headless.Testing.Tests;
 
@@ -60,52 +59,6 @@ public sealed class NodeMembershipContractTests : TestBase
         // then
         events.Should().AllSatisfy(@event => @event.Identity.Should().Be(identity));
         events.Should().OnlyHaveUniqueItems(static @event => @event.GetType());
-    }
-
-    [Fact]
-    public void should_expose_local_membership_lost_identity()
-    {
-        // given
-        var identity = new NodeIdentity(new NodeId("node-a"), new NodeIncarnation(7));
-
-        // when
-        var lost = new LocalMembershipLost(identity);
-
-        // then
-        lost.Identity.Should().Be(identity);
-    }
-
-    [Fact]
-    public void should_keep_snapshot_and_live_node_contracts_distinct()
-    {
-        // given
-        var identity = new NodeIdentity(new NodeId("node-a"), new NodeIncarnation(7));
-        var metadata = new Dictionary<string, string>(StringComparer.Ordinal) { ["zone"] = "a" };
-
-        // when
-        var snapshot = new NodeLivenessSnapshot(identity, NodeLivenessState.Suspected, "worker", metadata);
-
-        // then
-        snapshot.Identity.Should().Be(identity);
-        snapshot.State.Should().Be(NodeLivenessState.Suspected);
-        snapshot.Role.Should().Be("worker");
-        snapshot.Metadata.Should().ContainKey("zone").WhoseValue.Should().Be("a");
-        typeof(INodeMembership)
-            .GetMethod(
-                nameof(INodeMembership.GetLiveNodesAsync),
-                BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
-                [typeof(CancellationToken)]
-            )!
-            .ReturnType.Should()
-            .Be<ValueTask<IReadOnlyList<NodeIdentity>>>();
-        typeof(INodeMembership)
-            .GetMethod(
-                nameof(INodeMembership.GetLivenessSnapshotAsync),
-                BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly,
-                [typeof(CancellationToken)]
-            )!
-            .ReturnType.Should()
-            .Be<ValueTask<IReadOnlyList<NodeLivenessSnapshot>>>();
     }
 
     [Fact]

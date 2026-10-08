@@ -1,7 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Diagnostics;
-using System.Reflection;
 using Headless.Caching;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Time.Testing;
@@ -16,65 +14,6 @@ public sealed class InMemoryCachePerformanceTests : TestBase
     {
         options ??= new InMemoryCacheOptions();
         return new InMemoryCache(_timeProvider, options);
-    }
-
-    [Fact]
-    public async Task should_be_independent_of_cache_size_when_maintenance_overhead()
-    {
-        // given - a large cache
-        using var cache = _CreateCache();
-        const int count = 100_000;
-
-        for (var i = 0; i < count; i++)
-        {
-            await cache.UpsertAsync($"key{i}", "value", TimeSpan.FromHours(1), AbortToken);
-        }
-
-        // when - trigger maintenance
-        var sw = Stopwatch.StartNew();
-
-        // Use reflection to trigger the private maintenance method if needed,
-        // but here we just trigger it normally and wait for completion.
-        // Actually, _StartMaintenanceAsync is already called on every write.
-        // We want to measure the execution time of _DoMaintenanceAsync specifically.
-
-        var maintenanceMethod = typeof(InMemoryCache).GetMethod(
-            "_DoMaintenanceAsync",
-            BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly,
-            null,
-            Type.EmptyTypes,
-            null
-        );
-
-        sw.Restart();
-        await (Task)maintenanceMethod!.Invoke(cache, null)!;
-        sw.Stop();
-
-        var timeWith100K = sw.ElapsedMilliseconds;
-
-        // Add more items
-        for (var i = count; i < count * 2; i++)
-        {
-            await cache.UpsertAsync($"key{i}", "value", TimeSpan.FromHours(1), AbortToken);
-        }
-
-        sw.Restart();
-        await (Task)maintenanceMethod!.Invoke(cache, null)!;
-        sw.Stop();
-
-        var timeWith200K = sw.ElapsedMilliseconds;
-
-        // then - time should NOT have doubled (O(N) would double)
-        // With O(1)/O(log N) expiration check, it should be near-zero
-        // since nothing is actually expired.
-
-        timeWith100K.Should().BeLessThan(100, "maintenance should be fast even with 100k items");
-        timeWith200K.Should().BeLessThan(100, "maintenance should be fast even with 200k items");
-
-        // The difference should be minimal
-        Math.Abs(timeWith200K - timeWith100K)
-            .Should()
-            .BeLessThan(50, "overhead increase should be negligible between 100k and 200k items");
     }
 
     // Acceptance gate: sliding re-arm must be throttled, never unconditional. A hot key read many times

@@ -450,7 +450,6 @@ public abstract class DistributedLockTestsBase : TestBase
                 resource,
                 new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.FromMilliseconds(250) }
             );
-            await Task.Delay(TimeSpan.FromMilliseconds(250), TimeProvider);
             (await lock2Task).Should().BeNull();
         }
         finally
@@ -800,13 +799,13 @@ public abstract class DistributedLockTestsBase : TestBase
             resource,
             new DistributedLockAcquireOptions
             {
-                TimeUntilExpires = TimeSpan.FromSeconds(2),
+                TimeUntilExpires = TimeSpan.FromSeconds(1),
                 Monitoring = LockMonitoringMode.AutoExtend,
             }
         );
 
         handle.Should().NotBeNull();
-        await Task.Delay(TimeSpan.FromSeconds(3), AbortToken);
+        await Task.Delay(TimeSpan.FromMilliseconds(1600), AbortToken);
 
         (await locker.IsLockedAsync(resource, AbortToken)).Should().BeTrue();
         handle!.LostToken.IsCancellationRequested.Should().BeFalse();
