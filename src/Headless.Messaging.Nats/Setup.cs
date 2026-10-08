@@ -6,7 +6,9 @@ using Headless.Messaging.Nats;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace Headless.Messaging;
 
@@ -132,7 +134,11 @@ public static class SetupMessagingNats
 
             configureOptions(services);
 
-            services.AddSingleton<NatsStreamProvisioner>();
+            // Built explicitly so the back-off measures real time rather than a registered TimeProvider.
+            services.AddSingleton(sp => new NatsStreamProvisioner(
+                sp.GetRequiredService<IOptions<NatsMessagingOptions>>()
+            ));
+            services.TryAddEnumerable(ServiceDescriptor.Singleton<IProcessingServer, NatsStreamWarmup>());
             services.AddSingleton<IBusTransport>(sp => new NatsTransport(
                 sp.GetRequiredService<ILogger<NatsTransport>>(),
                 sp.GetRequiredService<INatsConnectionPool>(),

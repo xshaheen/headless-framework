@@ -197,6 +197,44 @@ internal static class NatsStreamReconciliation
     }
 
     /// <summary>
+    /// Determines whether two subject patterns can match a common subject, which is when JetStream refuses to let two
+    /// streams carry them (error 10065, subjects overlap).
+    /// </summary>
+    public static bool Overlaps(string left, string right)
+    {
+        var leftTokens = left.Split('.');
+        var rightTokens = right.Split('.');
+
+        for (var i = 0; ; i++)
+        {
+            var leftDone = i >= leftTokens.Length;
+            var rightDone = i >= rightTokens.Length;
+            if (leftDone || rightDone)
+            {
+                return leftDone && rightDone;
+            }
+
+            // '>' takes one or more trailing tokens, and the other side has at least this one left.
+            if (
+                string.Equals(leftTokens[i], ">", StringComparison.Ordinal)
+                || string.Equals(rightTokens[i], ">", StringComparison.Ordinal)
+            )
+            {
+                return true;
+            }
+
+            if (
+                !string.Equals(leftTokens[i], "*", StringComparison.Ordinal)
+                && !string.Equals(rightTokens[i], "*", StringComparison.Ordinal)
+                && !string.Equals(leftTokens[i], rightTokens[i], StringComparison.Ordinal)
+            )
+            {
+                return false;
+            }
+        }
+    }
+
+    /// <summary>
     /// Determines whether a live subject pattern covers a required subject pattern. Unlike ordinary NATS
     /// matching, wildcard tokens on the right are requirements: <c>orders.*</c> requires exactly one arbitrary
     /// token, while <c>orders.&gt;</c> requires one or more arbitrary trailing tokens and cannot be covered

@@ -71,35 +71,6 @@ public sealed class NatsMessagingOptionsTests : TestBase
     }
 
     [Fact]
-    public void should_have_default_stream_name_normalizer()
-    {
-        var options = new NatsMessagingOptions();
-        options.NormalizeStreamName("orders.created").Should().Be("orders");
-    }
-
-    [Fact]
-    public void should_support_custom_stream_name_normalizer()
-    {
-        var options = new NatsMessagingOptions { NormalizeStreamName = origin => origin.ToUpperInvariant() };
-
-        options.NormalizeStreamName("orders.created").Should().Be("ORDERS.CREATED");
-    }
-
-    [Fact]
-    public void should_handle_stream_name_without_dot()
-    {
-        var options = new NatsMessagingOptions();
-        options.NormalizeStreamName("simplestream").Should().Be("simplestream");
-    }
-
-    [Fact]
-    public void should_handle_stream_name_with_multiple_dots()
-    {
-        var options = new NatsMessagingOptions();
-        options.NormalizeStreamName("orders.us.east.created").Should().Be("orders");
-    }
-
-    [Fact]
     public void should_support_disabling_stream_provisioning()
     {
         var options = new NatsMessagingOptions { StreamProvisioning = NatsStreamProvisioning.Disabled };
@@ -207,6 +178,33 @@ public sealed class NatsMessagingOptionsTests : TestBase
     {
         var options = new NatsMessagingOptions { CustomHeadersBuilder = null };
         options.CustomHeadersBuilder.Should().BeNull();
+    }
+
+    [Fact]
+    public void should_default_the_stream_max_age_to_seven_days_and_declare_no_streams()
+    {
+        var options = new NatsMessagingOptions();
+
+        options.DefaultStreamMaxAge.Should().Be(TimeSpan.FromDays(7));
+        options.Streams.Streams.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void should_fail_for_a_negative_default_stream_max_age_when_validator()
+    {
+        var options = new NatsMessagingOptions { DefaultStreamMaxAge = TimeSpan.FromSeconds(-1) };
+
+        var result = new NatsMessagingOptionsValidator().Validate(options);
+
+        result.Errors.Should().ContainSingle(e => e.PropertyName == nameof(NatsMessagingOptions.DefaultStreamMaxAge));
+    }
+
+    [Fact]
+    public void should_pass_for_a_zero_default_stream_max_age_when_validator()
+    {
+        var options = new NatsMessagingOptions { DefaultStreamMaxAge = TimeSpan.Zero };
+
+        new NatsMessagingOptionsValidator().Validate(options).IsValid.Should().BeTrue();
     }
 
     // Validator tests
