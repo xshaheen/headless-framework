@@ -94,6 +94,61 @@ public sealed class NatsTransportTests : TestBase
         await js.Received(2).CreateStreamAsync(Arg.Any<StreamConfig>(), Arg.Any<CancellationToken>());
     }
 
+    [Theory]
+    [InlineData(StreamConfigRetention.Interest, 0, 1)]
+    [InlineData(StreamConfigRetention.Interest, 1, 0)]
+    [InlineData(StreamConfigRetention.Limits, 0, 0)]
+    public async Task should_warn_once_per_stream_when_publishing_to_an_interest_stream_without_consumers(
+        StreamConfigRetention retention,
+        long consumers,
+        int expectedWarnings
+    )
+    {
+        // given - a bound stream ensured with this retention and consumer count
+        var js = Substitute.For<INatsJSContext>();
+        js.GetStreamAsync("ORDERS", Arg.Any<StreamInfoRequest?>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                var stream = Substitute.For<INatsJSStream>();
+                stream.Info.Returns(
+                    new StreamInfo
+                    {
+                        Config = new StreamConfig
+                        {
+                            Name = "ORDERS",
+                            Subjects = ["headless.bus.orders.>"],
+                            Retention = retention,
+                        },
+                        State = new StreamState { ConsumerCount = consumers },
+                    }
+                );
+                return new ValueTask<INatsJSStream>(stream);
+            });
+        var options = new NatsMessagingOptions();
+        options.Streams.Bind("ORDERS", "headless.bus.orders.>");
+        var provisioner = new NatsStreamProvisioner(MsOptions.Options.Create(options));
+        await provisioner.EnsureForPublishAsync(js, MessageLane.Bus, "orders.placed", false, AbortToken);
+        var logger = Substitute.For<ILogger<NatsTransport>>();
+        logger.IsEnabled(Arg.Any<LogLevel>()).Returns(true);
+        var connection = _CreateConnection(_ => throw new InvalidOperationException("publish failed"));
+        _pool.GetConnection().Returns(connection);
+        await using var transport = new NatsTransport(logger, _pool, provisioner);
+
+        // when
+        await transport.SendAsync(_CreateTransportMessage("msg-1", "orders.placed"), AbortToken);
+        await transport.SendAsync(_CreateTransportMessage("msg-2", "orders.cancelled"), AbortToken);
+
+        // then
+        logger
+            .ReceivedCalls()
+            .Count(call =>
+                string.Equals(call.GetMethodInfo().Name, nameof(ILogger.Log), StringComparison.Ordinal)
+                && (LogLevel)call.GetArguments()[0]! == LogLevel.Warning
+            )
+            .Should()
+            .Be(expectedWarnings);
+    }
+
     [Fact]
     public async Task should_return_failed_result_when_a_cancellation_the_caller_did_not_request_ends_the_publish()
     {
@@ -225,7 +280,7 @@ public sealed class NatsTransportTests : TestBase
             .Returns(call =>
             {
                 var stream = Substitute.For<INatsJSStream>();
-                stream.Info.Returns(new StreamInfo { Config = call.Arg<StreamConfig>() });
+                stream.Info.Returns(new StreamInfo { Config = call.Arg<StreamConfig>(), State = new StreamState() });
                 return new ValueTask<INatsJSStream>(stream);
             });
         return js;
