@@ -34,7 +34,9 @@ Fixes #
 - Docs: <!-- docs/llms/<domain>.md, or "none: internal" -->
 
 <!-- Paste artifacts/proof/<run>/summary.md below.
-     Explain any changed assembly under 80% line coverage. -->
+     When the affected set has integration projects, paste
+     make test-affected-integration's summary.md too: it holds
+     every changed line to the coverage floors. -->
 
 ## Out of scope
 

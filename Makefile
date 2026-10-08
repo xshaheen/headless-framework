@@ -114,10 +114,24 @@ GRAPH = $(PYTHON) scripts/project-graph.py
 PROOF = $(PYTHON) scripts/proof.py
 # One timestamp per make invocation, so every stage of a target writes into the same bundle.
 PROOF_RUN := $(ARTIFACTS_DIR)/proof/$(shell date -u +%Y%m%dT%H%M%SZ)
-# Coverage is reported, never gated, and costs ~0.4 s per test module plus a merge (~20 s on a
-# whole-solution run), so the inner loop skips it and the pre-PR verify keeps it.
+# Coverage costs ~0.4 s per test module plus a merge (~20 s on a whole-solution run), so the inner loop skips
+# it and the pre-PR targets keep it. The floors follow the testing diamond: a package with no external dependency
+# is held to COVERAGE_UNIT_FLOOR from unit tests alone, and every changed line to COVERAGE_LINE_FLOOR and
+# COVERAGE_BRANCH_FLOOR. verify-affected gates the changed lines unit tests can reach; a package that owns a
+# tests/<Package>.Tests.Integration project is gated by test-affected-integration, which merges both suites.
 AFFECTED_COVERAGE ?= false
 VERIFY_COVERAGE ?= true
+INTEGRATION_COVERAGE ?= true
+COVERAGE_UNIT_FLOOR ?= 60
+COVERAGE_LINE_FLOOR ?= 80
+COVERAGE_BRANCH_FLOOR ?= 70
+COVERAGE_FLOOR_ARGS = --unit-floor $(COVERAGE_UNIT_FLOOR) --line-floor $(COVERAGE_LINE_FLOOR) --branch-floor $(COVERAGE_BRANCH_FLOOR)
+# MTP coverage arguments for a test stage whose `coverage` shell variable is true, into the `coverage_args` array.
+COVERAGE_ARGS_FN = coverage_args=(); \
+	if [ "$$coverage" = "true" ]; then \
+		settings="$$($(DOTNET) msbuild "$(COVERAGE_SETTINGS_PROJECT)" -getProperty:HeadlessCoverageSettingsPath -nologo -v:quiet)"; \
+		coverage_args=(--coverage --coverage-output-format cobertura --coverage-settings "$$settings"); \
+	fi;
 # `dotnet format` spends ~10 s loading a solution filter before it analyzes anything (measured: 16 s
 # through a one-project filter, 6 s on the project file), but one load per project does not scale.
 # Up to this many changed projects it runs per project file; above it, once over the filter.
@@ -148,16 +162,22 @@ AFFECTED_BUILD_STAGES = if [ -s "$$run/build.txt" ]; then \
 	fi;
 AFFECTED_UNIT_STAGE = if [ $$status -ne 0 ]; then $(PROOF) skip --dir "$$run" --name unit-tests --reason "an earlier stage failed; --no-build would test stale binaries"; \
 	elif [ -s "$$run/unit.txt" ]; then \
-		coverage_args=(); \
-		if [ "$$coverage" = "true" ]; then \
-			settings="$$($(DOTNET) msbuild "$(COVERAGE_SETTINGS_PROJECT)" -getProperty:HeadlessCoverageSettingsPath -nologo -v:quiet)"; \
-			coverage_args=(--coverage --coverage-output-format cobertura --coverage-settings "$$settings"); \
-		fi; \
+		$(COVERAGE_ARGS_FN) \
 		$(PROOF) run --dir "$$run" --name unit-tests -- $(DOTNET) test --solution "$$run/unit.slnf" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$$run/unit-tests" --max-parallel-test-modules $(UNIT_TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER) $${coverage_args[@]+"$${coverage_args[@]}"} || status=1; \
-		if [ -n "$$(find "$$run/unit-tests" -name '*.cobertura.xml' -print -quit 2>/dev/null)" ]; then \
-			$(PROOF) run --dir "$$run" --name coverage-merge -- $(DOTNET) dotnet-coverage merge --nologo --output "$$run/coverage/merged.cobertura.xml" --output-format cobertura "$$run/unit-tests/**/*.cobertura.xml" || status=1; \
-		fi; \
 	else printf '\033[33m[affected]\033[0m no unit-test project covers the affected set; nothing ran.\n'; fi;
+AFFECTED_INTEGRATION_STAGE = if [ $$status -ne 0 ]; then $(PROOF) skip --dir "$$run" --name integration-tests --reason "an earlier stage failed; --no-build would test stale binaries"; \
+	elif [ -s "$$run/integration.txt" ]; then \
+		$(COVERAGE_ARGS_FN) \
+		$(PROOF) run --dir "$$run" --name integration-tests -- $(DOTNET) test --solution "$$run/integration.slnf" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$$run/integration-tests" --max-parallel-test-modules $(TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER) $${coverage_args[@]+"$${coverage_args[@]}"} || status=1; \
+	else printf '\033[33m[affected]\033[0m no integration-test project covers the affected set; nothing ran.\n'; fi;
+# One merged report over whichever suites ran, so the gate reads a line as covered when any test reached it.
+AFFECTED_COVERAGE_MERGE_STAGE = reports=(); \
+	for suite in unit-tests integration-tests; do \
+		if [ -n "$$(find "$$run/$$suite" -name '*.cobertura.xml' -print -quit 2>/dev/null)" ]; then reports+=("$$run/$$suite/**/*.cobertura.xml"); fi; \
+	done; \
+	if [ $${\#reports[@]} -gt 0 ]; then \
+		$(PROOF) run --dir "$$run" --name coverage-merge -- $(DOTNET) dotnet-coverage merge --nologo --output "$$run/coverage/merged.cobertura.xml" --output-format cobertura "$${reports[@]}" || status=1; \
+	fi;
 # The pre-commit hook rewrites staged C# with CSharpier, so a proof that skipped formatting proved bytes the commit
 # then changed. The format stage checks the same changed files format-check-changed does, and fails the bundle
 # without blocking the build or the tests. bash -c gets the function through `declare -f` because proof.py runs a
@@ -198,6 +218,8 @@ help: ## Show available commands.
 	@printf "  make build-affected             # compile the change; the proof names each compiler error\n"
 	@printf "  make test-affected              # before the gate: every affected unit-test project, minutes when Jobs is in it\n"
 	@printf "  make verify-affected            # the pre-PR proof: format, build, unit tests, analyzers, changed dashboards\n"
+	@printf "  make test-affected-integration  # agent-only, needs Docker: unit + integration with coverage; gates every changed line\n"
+	@printf "  make mutation PROJECT=src/Headless.Checks/Headless.Checks.csproj   # Stryker.NET mutation score; reported, never gated\n"
 	@printf "  make test-failed                # after a narrow fix: only the modules the last proof failed; then verify-affected once\n"
 	@printf "  make check                      # the CI gate over the affected scope: check-layering, verify-affected\n"
 	@printf "  make quality-analyzers-affected\n"
@@ -861,31 +883,35 @@ test-affected: ## Build the affected set, then run its *.Tests.Unit projects; wr
 	run="$(PROOF_RUN)-test"; status=0; coverage="$(AFFECTED_COVERAGE)"; \
 	$(AFFECTED_BUILD_STAGES) \
 	$(AFFECTED_UNIT_STAGE) \
+	$(AFFECTED_COVERAGE_MERGE_STAGE) \
 	$(PROOF) summarize --dir "$$run" > /dev/null || status=1; \
 	$(PROOF_REPORT) "$$run"; exit $$status
 
 .PHONY: test-affected-integration
-test-affected-integration: ## Build the affected set, then run its *.Tests.Integration projects (needs Docker).
+# Agent-run and local only: CI runs no integration suite. It runs the affected unit and integration suites with
+# coverage, merges them, and holds every changed line, including those in packages with an integration project, to
+# the changed-line floors; its proof bundle goes in the PR beside verify-affected's.
+test-affected-integration: ## Build the affected set, run its unit and integration tests with coverage, and gate every changed line on the merged report (needs Docker; local only).
 	@$(AFFECTED_PREPARE) "$(PROOF_RUN)-integration"; \
-	run="$(PROOF_RUN)-integration"; status=0; \
+	run="$(PROOF_RUN)-integration"; status=0; coverage="$(INTEGRATION_COVERAGE)"; \
 	$(AFFECTED_BUILD_STAGES) \
-	if [ $$status -ne 0 ]; then $(PROOF) skip --dir "$$run" --name integration-tests --reason "an earlier stage failed; --no-build would test stale binaries"; \
-	elif [ -s "$$run/integration.txt" ]; then \
-		$(PROOF) run --dir "$$run" --name integration-tests -- $(DOTNET) test --solution "$$run/integration.slnf" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$$run/integration-tests" --max-parallel-test-modules $(TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER) || status=1; \
-	fi; \
-	$(PROOF) summarize --dir "$$run" > /dev/null || status=1; \
+	$(AFFECTED_UNIT_STAGE) \
+	$(AFFECTED_INTEGRATION_STAGE) \
+	$(AFFECTED_COVERAGE_MERGE_STAGE) \
+	$(PROOF) summarize --dir "$$run" $(if $(filter true,$(INTEGRATION_COVERAGE)),--coverage-gate all $(COVERAGE_FLOOR_ARGS),) > /dev/null || status=1; \
 	$(PROOF_REPORT) "$$run"; exit $$status
 
 .PHONY: verify-affected
-verify-affected: ## Format-check the changed files, then build, unit-test (with coverage), and analyze the affected set, plus dashboard-<name>-test for a changed SPA; one proof bundle for the PR body.
+verify-affected: ## Format-check the changed files, then build, unit-test (with coverage), gate unit coverage, and analyze the affected set, plus dashboard-<name>-test for a changed SPA; one proof bundle for the PR body.
 	@$(AFFECTED_PREPARE) "$(PROOF_RUN)-verify"; \
 	run="$(PROOF_RUN)-verify"; status=0; coverage="$(VERIFY_COVERAGE)"; \
 	$(AFFECTED_FORMAT_STAGE) \
 	$(AFFECTED_BUILD_STAGES) \
 	$(AFFECTED_UNIT_STAGE) \
+	$(AFFECTED_COVERAGE_MERGE_STAGE) \
 	$(AFFECTED_ANALYZER_STAGE) \
 	$(AFFECTED_DASHBOARD_STAGE) \
-	$(PROOF) summarize --dir "$$run" > /dev/null || status=1; \
+	$(PROOF) summarize --dir "$$run" $(if $(filter true,$(VERIFY_COVERAGE)),--coverage-gate unit $(COVERAGE_FLOOR_ARGS),) > /dev/null || status=1; \
 	$(PROOF_REPORT) "$$run"; exit $$status
 
 # The CI gate (project CLI contract v1), over the affected scope. CI runs check-layering, format-check, a
@@ -940,6 +966,24 @@ coverage: tools build ## Collect Cobertura coverage via MTP's in-process coverag
 .PHONY: coverage-html
 coverage-html: coverage ## Generate HTML coverage report plus Summary.json.
 	$(DOTNET) reportgenerator -reports:"$(TEST_RESULTS_DIR)/**/*.cobertura.xml" -targetdir:"$(COVERAGE_REPORT_DIR)" -reporttypes:"$(COVERAGE_REPORT_TYPES)"
+
+# Mutation testing measures whether the tests check behavior, not only whether they run the lines: Stryker.NET
+# plants small faults in the package and counts the ones the unit tests catch. It runs the tests once per mutant, so
+# it is a scheduled or on-demand check (mutation.yml runs it weekly), never a PR gate. The Microsoft Testing Platform
+# runner is the one that sees xUnit v3 results; the VSTest runner reports a false 0% there.
+MUTATION_DIR ?= $(ARTIFACTS_DIR)/mutation
+MUTATION_THRESHOLD_HIGH ?= 85
+MUTATION_THRESHOLD_LOW ?= 70
+
+.PHONY: mutation
+mutation: tools ## Mutation-test one package against its unit tests with Stryker.NET: make mutation PROJECT=src/Headless.Checks/Headless.Checks.csproj (SINCE=<ref> limits it to changed code). Reports the score; never gates.
+	@test -n "$(PROJECT)" || (echo "PROJECT is required. Example: make mutation PROJECT=src/Headless.Checks/Headless.Checks.csproj" && exit 2)
+	@name="$$(basename "$(PROJECT)" .csproj)"; tests="$(CURDIR)/tests/$$name.Tests.Unit/$$name.Tests.Unit.csproj"; \
+	test -f "$$tests" || { echo "No unit-test project at tests/$$name.Tests.Unit for $(PROJECT)." >&2; exit 2; }; \
+	cd "$(dir $(PROJECT))" && $(DOTNET) dotnet-stryker --test-runner mtp --test-project "$$tests" \
+		--reporter html --reporter json --reporter progress --output "$(CURDIR)/$(MUTATION_DIR)/$$name" \
+		--threshold-high $(MUTATION_THRESHOLD_HIGH) --threshold-low $(MUTATION_THRESHOLD_LOW) --break-at 0 \
+		$(if $(SINCE),--since:$(SINCE),)
 
 .PHONY: coverage-json
 coverage-json: coverage-html ## Generate JSON coverage summary at artifacts/coverage/report/Summary.json.
