@@ -14,6 +14,8 @@
     <ProjectReference Include="..\..\src\Headless.Api.MinimalApi\Headless.Api.MinimalApi.csproj" />
     <ProjectReference Include="..\..\src\Headless.Api.ServiceDefaults\Headless.Api.ServiceDefaults.csproj" />
     <ProjectReference Include="..\..\src\Headless.Caching.InMemory\Headless.Caching.InMemory.csproj" />
+    <!-- The handler matches LockAcquisitionTimeoutException by name; the real type makes a rename fail these tests. -->
+    <ProjectReference Include="..\..\src\Headless.DistributedLocks.Abstractions\Headless.DistributedLocks.Abstractions.csproj" />
     <ProjectReference Include="..\..\src\Headless.Testing\Headless.Testing.csproj" />
   </ItemGroup>
 </Project>
