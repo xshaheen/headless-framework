@@ -299,8 +299,12 @@ def coverage_gate(
     coverage_rows: list[dict[str, object]],
     floors: dict[str, float],
     tests_skipped: bool,
+    strict: bool = False,
 ) -> tuple[Stage | None, dict[str, object] | None]:
     """Hold the change to the coverage floors.
+
+    The floors are comply-or-explain: a miss is reported as `warn` and leaves the proof passing, so the author either
+    adds the tests or explains the miss in the PR. `strict` turns a miss into a failed proof instead.
 
     `unit` (verify-affected) checks what unit tests alone can reach: the unit floor of every changed package without an
     integration project, and the changed lines in those packages. `integration` (test-affected-integration) checks the
@@ -392,7 +396,7 @@ def coverage_gate(
 
     report: dict[str, object] = {
         "scope": scope,
-        "result": "fail" if reasons else "pass",
+        "result": ("fail" if strict else "warn") if reasons else "pass",
         "reasons": reasons,
         "floors": floors,
         "changed_lines": {"line": line_rate, "covered": lines_covered, "total": lines_total},
@@ -412,11 +416,13 @@ def coverage_gate(
         "unmeasured_files": unmeasured_files,
         "deferred_to_integration": deferred,
     }
-    stage = Stage("coverage-gate", [], 3 if reasons else 0, 0.0, "", "; ".join(reasons))
+    stage = Stage("coverage-gate", [], 3 if reasons and strict else 0, 0.0, "", "; ".join(reasons))
     return stage, report
 
 
-def summarize(directory: Path, gate_scope: str = "none", floors: dict[str, float] | None = None) -> int:
+def summarize(
+    directory: Path, gate_scope: str = "none", floors: dict[str, float] | None = None, strict: bool = False
+) -> int:
     stages = read_stages(directory)
     affected_path = directory / "affected.json"
     affected = json.loads(affected_path.read_text(encoding="utf-8")) if affected_path.exists() else {}
@@ -441,6 +447,7 @@ def summarize(directory: Path, gate_scope: str = "none", floors: dict[str, float
         coverage_rows,
         floors or DEFAULT_FLOORS,
         tests_skipped,
+        strict,
     )
     if gate_stage is not None:
         stages.append(gate_stage)
@@ -562,6 +569,11 @@ def render_gate(gate: dict | None) -> list[str]:
         lines += ["", "Held to the changed-line floor by `make test-affected-integration`, not here: " + ", ".join(f"`{name}`" for name in gate["deferred_to_integration"]) + "."]
     for reason in gate["reasons"]:
         lines.append(f"- **{reason}**")
+    if gate["result"] == "warn":
+        lines.append(
+            "- Add the tests, or explain each miss under Coverage below floor in the PR's Verification section "
+            "(AGENTS.md: glue code, integration-only behavior, an unreachable branch, or test cost above the risk)."
+        )
     for entry in gate["uncovered"][:MAX_LISTED]:
         lines.append(f"- uncovered: {entry}")
     if len(gate["uncovered"]) > MAX_LISTED:
@@ -649,6 +661,12 @@ def main() -> int:
     summary.add_argument("--unit-floor", type=float, default=DEFAULT_FLOORS["unit"], help="assembly line %% from unit tests")
     summary.add_argument("--line-floor", type=float, default=DEFAULT_FLOORS["line"], help="changed-line coverage %%")
     summary.add_argument("--branch-floor", type=float, default=DEFAULT_FLOORS["branch"], help="changed-branch coverage %%")
+    summary.add_argument(
+        "--coverage-gate-mode",
+        choices=("warn", "fail"),
+        default="warn",
+        help="warn: report a miss and keep the proof passing (comply or explain); fail: a miss fails the proof",
+    )
     failed = commands.add_parser("failed", help="print the test projects that failed in a bundle")
     failed.add_argument("--dir", type=Path, help="bundle to read (default: the latest -verify or -test bundle under --root)")
     failed.add_argument("--root", type=Path, default=REPO_ROOT / "artifacts" / "proof", help="where the bundles live")
@@ -664,7 +682,7 @@ def main() -> int:
     if args.command == "failed":
         return failed_projects(args.dir, args.root)
     floors = {"unit": args.unit_floor, "line": args.line_floor, "branch": args.branch_floor}
-    return summarize(args.dir, args.coverage_gate, floors)
+    return summarize(args.dir, args.coverage_gate, floors, args.coverage_gate_mode == "fail")
 
 
 if __name__ == "__main__":

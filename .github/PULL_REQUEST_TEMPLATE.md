@@ -78,12 +78,15 @@ Fixes #
   Delete if none. -->
 - Unrelated failures: <!-- test name and evidence it
   fails on main. Delete if none. -->
+- Coverage below floor: <!-- each warning the proof's coverage gate
+  lists, with its reason (glue code, integration-only behavior,
+  unreachable branch, cost above risk; see AGENTS.md). Delete if none. -->
 - Docs: <!-- docs/llms/<domain>.md, or "none: internal" -->
 
 <!-- Paste artifacts/proof/<run>/summary.md below.
      When the affected set has integration projects, paste
-     make test-affected-integration's summary.md too: it holds
-     every changed line to the coverage floors. -->
+     make test-affected-integration's summary.md too: it checks
+     those packages' changed lines against the coverage floors. -->
 
 ## Out of scope
 

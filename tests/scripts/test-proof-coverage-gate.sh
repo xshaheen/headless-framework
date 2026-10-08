@@ -66,10 +66,10 @@ JSON
 XML
 }
 
-# expect <label> <expected exit> <scope> [text summary.md must contain]
+# expect <label> <expected exit> <scope> [text summary.md must contain] [warn|fail]
 expect() {
-  local label="$1" expected="$2" scope="$3" needle="${4:-}" actual=0
-  python3 scripts/proof.py summarize --dir bundle --coverage-gate "$scope" > /dev/null || actual=$?
+  local label="$1" expected="$2" scope="$3" needle="${4:-}" mode="${5:-warn}" actual=0
+  python3 scripts/proof.py summarize --dir bundle --coverage-gate "$scope" --coverage-gate-mode "$mode" > /dev/null || actual=$?
   if [[ "$actual" != "$expected" ]]; then
     printf 'FAIL: %s: exit %s, expected %s\n' "$label" "$actual" "$expected" >&2
     cat bundle/summary.md >&2
@@ -88,16 +88,19 @@ write_bundle bundle 0.9 1 1 0 0
 expect "unit gate passes when unit tests cover the changed lines and the package floor" 0 unit 'Held to the changed-line floor by `make test-affected-integration`, not here: `Headless.Provider`'
 
 write_bundle bundle 0.9 1 0 1 0
-expect "unit gate fails on an uncovered changed line" 1 unit "uncovered: src/Headless.Core/Core.cs: 3"
+expect "unit gate warns, and keeps the proof passing, on an uncovered changed line" 0 unit "uncovered: src/Headless.Core/Core.cs: 3"
+
+write_bundle bundle 0.9 1 0 1 0
+expect "unit gate fails the proof on an uncovered changed line when strict" 1 unit "Coverage gate: fail" fail
 
 write_bundle bundle 0.5 1 1 1 0
-expect "unit gate fails below the unit floor" 1 unit "Headless.Core: unit line coverage 50.0% is under the 60% floor"
+expect "unit gate warns below the unit floor" 0 unit "Headless.Core: unit line coverage 50.0% is under the 60% floor"
 
 write_bundle bundle 0.9 1 1 0 0 1
-expect "unit gate fails below the changed-branch floor" 1 unit "changed-branch coverage 50.0% (1/2) is under the 70% floor"
+expect "unit gate warns below the changed-branch floor" 0 unit "changed-branch coverage 50.0% (1/2) is under the 70% floor"
 
 write_bundle bundle 0.9 1 1 0 0
-expect "integration gate holds a package with an integration project to its changed lines" 1 integration "uncovered: src/Headless.Provider/Provider.cs: 2"
+expect "integration gate holds a package with an integration project to its changed lines" 0 integration "uncovered: src/Headless.Provider/Provider.cs: 2"
 
 write_bundle bundle 0.9 1 0 1 0
 expect "integration gate passes on covered package lines and leaves the unit-gated package alone" 0 integration "Changed lines: 100.0% (1/1"
