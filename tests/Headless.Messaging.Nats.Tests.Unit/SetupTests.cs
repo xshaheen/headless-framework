@@ -6,6 +6,8 @@ using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using INatsConnection = NATS.Client.Core.INatsConnection;
+using NatsOpts = NATS.Client.Core.NatsOpts;
 
 namespace Tests;
 
@@ -98,6 +100,28 @@ public sealed class SetupTests : TestBase
             .GetRequiredService<IOptions<NatsMessagingOptions>>()
             .Value.Servers.Should()
             .Be("nats://localhost:4222");
+    }
+
+    [Fact]
+    public async Task should_publish_over_the_application_connection_when_use_connection()
+    {
+        // given - an app that registers its own NATS connection and hands it to Headless
+        var appConnection = Substitute.For<INatsConnection>();
+        appConnection.Opts.Returns(NatsOpts.Default with { Url = "nats://app-host:4222" });
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton(appConnection);
+        services.AddHeadlessMessaging(setup =>
+            setup.UseNats(options => options.UseConnection(sp => sp.GetRequiredService<INatsConnection>()))
+        );
+
+        // when
+        await using var provider = services.BuildServiceProvider();
+        var pool = provider.GetRequiredService<INatsConnectionPool>();
+
+        // then
+        pool.GetConnection().Should().BeSameAs(appConnection);
+        pool.ConnectionOpts.Url.Should().Be("nats://app-host:4222");
     }
 
     [Fact]

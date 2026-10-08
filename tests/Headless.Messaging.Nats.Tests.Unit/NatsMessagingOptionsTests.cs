@@ -3,6 +3,7 @@
 using Headless.Messaging.Nats;
 using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
+using NATS.Client.Core;
 using NATS.Client.JetStream.Models;
 
 namespace Tests;
@@ -243,6 +244,37 @@ public sealed class NatsMessagingOptionsTests : TestBase
 
         result.IsValid.Should().BeFalse();
         result.Errors.Should().ContainSingle(e => e.PropertyName == nameof(NatsMessagingOptions.ConnectionPoolSize));
+    }
+
+    [Fact]
+    public void should_fail_for_pool_size_above_one_when_validator_and_use_connection()
+    {
+        // given
+        var options = new NatsMessagingOptions { ConnectionPoolSize = 2 }.UseConnection(_ =>
+            Substitute.For<INatsConnection>()
+        );
+        var validator = new NatsMessagingOptionsValidator();
+
+        // when
+        var result = validator.Validate(options);
+
+        // then
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().ContainSingle(e => e.PropertyName == nameof(NatsMessagingOptions.ConnectionPoolSize));
+    }
+
+    [Fact]
+    public void should_pass_for_default_pool_size_when_validator_and_use_connection()
+    {
+        // given
+        var options = new NatsMessagingOptions().UseConnection(_ => Substitute.For<INatsConnection>());
+        var validator = new NatsMessagingOptionsValidator();
+
+        // when
+        var result = validator.Validate(options);
+
+        // then
+        result.IsValid.Should().BeTrue();
     }
 
     [Fact]

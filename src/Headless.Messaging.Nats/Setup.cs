@@ -132,14 +132,17 @@ public static class SetupMessagingNats
 
             configureOptions(services);
 
+            services.AddSingleton<NatsStreamProvisioner>();
             services.AddSingleton<IBusTransport>(sp => new NatsTransport(
                 sp.GetRequiredService<ILogger<NatsTransport>>(),
                 sp.GetRequiredService<INatsConnectionPool>(),
+                sp.GetRequiredService<NatsStreamProvisioner>(),
                 MessageLane.Bus
             ));
             services.AddSingleton<IQueueTransport>(sp => new NatsTransport(
                 sp.GetRequiredService<ILogger<NatsTransport>>(),
                 sp.GetRequiredService<INatsConnectionPool>(),
+                sp.GetRequiredService<NatsStreamProvisioner>(),
                 MessageLane.Queue
             ));
             services.AddSingleton<IReplyTransport, NatsReplyTransport>();

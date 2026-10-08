@@ -557,6 +557,9 @@ internal sealed class KafkaConsumerClient : IConsumerClient
             }
         }
 
+        // Stamped after the custom headers builder so neither the wire nor the builder can choose the address.
+        headers[Headers.TransportAddress] = consumerResult.Topic;
+
         TransportMessage message;
         try
         {

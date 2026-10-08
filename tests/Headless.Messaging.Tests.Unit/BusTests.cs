@@ -516,6 +516,31 @@ public sealed class BusTests : TestBase
     }
 
     [Fact]
+    public async Task should_reject_publish_when_transport_address_header_is_set()
+    {
+        // given - the consumer client owns the address, so a publisher must not be able to plant one
+        await using var testTransport = new TestTransport();
+        var publisher = _CreateBus(testTransport, new MessagingOptions());
+        var publishOptions = new PublishOptions
+        {
+            DeliveryMode = DeliveryMode.Direct,
+            Headers = new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                [Headers.TransportAddress] = "acme.tenant-a.runs.1.result",
+            },
+        };
+
+        // when
+        var act = () => publisher.PublishAsync(new TestMessage("test"), publishOptions, AbortToken);
+
+        // then
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage($"*'{Headers.TransportAddress}' is reserved*");
+        testTransport.SentMessages.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task should_reject_publish_when_typed_property_and_raw_header_disagree()
     {
         // given (case d: both set, disagree)

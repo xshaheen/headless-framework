@@ -152,6 +152,51 @@ public sealed class RedisConsumerClientTests : TestBase
             .RequeueAndAck(default!, default!, default!, default!, AbortToken);
     }
 
+    [Fact]
+    public async Task should_stamp_stream_key_as_transport_address_when_wire_header_spoofs_it()
+    {
+        // given
+        const string stream = "headless:messaging:bus:orders.created";
+        var logger = LoggerFactory.CreateLogger<RedisConsumerClient>();
+        var spoofedEntry = new StreamEntry(
+            "1-0",
+            [
+                new NameValueEntry(
+                    "headers",
+                    $$"""{"{{Headers.MessageId}}":"{{Guid.NewGuid():N}}","{{Headers.MessageName}}":"orders.created","{{Headers.TransportAddress}}":"wire-spoofed"}"""
+                ),
+                new NameValueEntry("body", "\"cGF5bG9hZA==\""),
+            ]
+        );
+        _mockStreamManager
+            .GetStreamTailPositionsAsync(Arg.Any<string[]>(), Arg.Any<CancellationToken>())
+            .Returns([new StreamPosition(stream, StreamPosition.Beginning)]);
+        _mockStreamManager
+            .PollStreamsFromAsync(Arg.Any<StreamPosition[]>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
+            .Returns(_Batches(new RedisStreamMessages(stream, [spoofedEntry])));
+        await using var client = _CreateEveryInstanceClient(logger);
+        var delivered = new TaskCompletionSource<TransportMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
+        client.AttachCallbacks(
+            (message, _) =>
+            {
+                delivered.TrySetResult(message);
+                return Task.CompletedTask;
+            },
+            onLog: null
+        );
+        await client.SubscribeAsync(["orders.created"], AbortToken);
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        var listening = client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token);
+
+        // when
+        var message = await delivered.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        await cts.CancelAsync();
+        await listening;
+
+        // then
+        message.Headers[Headers.TransportAddress].Should().Be(stream);
+    }
+
     private RedisConsumerClient _CreateEveryInstanceClient(ILogger<RedisConsumerClient> logger) =>
         new(
             "billing.cache",

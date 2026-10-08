@@ -5,6 +5,7 @@ using Headless.Messaging;
 using Headless.Messaging.Nats;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NATS.Client.Core;
 using NATS.Client.JetStream;
@@ -1000,9 +1001,9 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
     }
 
     [Fact]
-    public async Task should_fail_a_second_consumer_group_whose_subject_the_shared_stream_does_not_carry()
+    public async Task should_admit_a_second_consumer_group_under_verify_because_the_stream_carries_the_key()
     {
-        // given — group A creates the shared stream carrying only its own subject
+        // given — group A creates the shared stream knowing only its own message
         var logicalName = $"twogroup-{Guid.NewGuid():N}"[..22];
         var subjectA = $"{logicalName}.created";
         var subjectB = $"{logicalName}.shipped";
@@ -1021,40 +1022,137 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
             await groupA.FetchMessageNamesAsync([subjectA], AbortToken);
         }
 
-        // when — group B verifies against a stream that cannot deliver to it
-        await using (
-            var groupB = new NatsConsumerClient(
-                "group-b",
-                0,
-                _CreateOptions(NatsStreamProvisioning.Verify),
-                _serviceProvider
-            )
-        )
-        {
-            await groupB.ConnectAsync(AbortToken);
-            var act = async () => await groupB.FetchMessageNamesAsync([subjectB], AbortToken);
-
-            // then — the silent-loss case the old unconditional upsert hid
-            var thrown = await act.Should().ThrowAsync<InvalidOperationException>();
-            thrown.WithMessage("*no messages*");
-        }
-
-        // and — reconciling admits the second group and the stream then carries both subjects
-        await using var groupBReconciling = new NatsConsumerClient(
+        // when — group B, which consumes another message on the same key, verifies the stream
+        await using var groupB = new NatsConsumerClient(
             "group-b",
             0,
-            _CreateOptions(NatsStreamProvisioning.Reconcile),
+            _CreateOptions(NatsStreamProvisioning.Verify),
             _serviceProvider
         );
-        await groupBReconciling.ConnectAsync(AbortToken);
-        await groupBReconciling.FetchMessageNamesAsync([subjectB], AbortToken);
+        await groupB.ConnectAsync(AbortToken);
+        var act = async () => await groupB.FetchMessageNamesAsync([subjectB], AbortToken);
 
+        // then — the stream group A created already covers group B, so start order cannot fail a host
+        await act.Should().NotThrowAsync();
         var js = new NatsJSContext(await fixture.GetConnectionAsync());
         var stream = await js.GetStreamAsync(streamName, cancellationToken: AbortToken);
-        stream
-            .Info.Config.Subjects.Should()
-            .Contain(NatsPhysicalAddress.Subject(MessageLane.Bus, subjectA))
-            .And.Contain(NatsPhysicalAddress.Subject(MessageLane.Bus, subjectB));
+        stream.Info.Config.Subjects.Should().Equal(NatsPhysicalAddress.Subject(MessageLane.Bus, $"{logicalName}.>"));
+    }
+
+    [Fact]
+    public async Task should_publish_from_a_publish_only_host_and_deliver_to_a_later_consumer_on_the_queue_lane()
+    {
+        // given — no consumer host has ever started, so no stream exists yet
+        var logicalName = $"pubonly-{Guid.NewGuid():N}"[..22];
+        var subject = $"{logicalName}.placed";
+        var options = _CreateOptions(NatsStreamProvisioning.Verify);
+        await using var pool = new Headless.Messaging.Nats.NatsConnectionPool(
+            NullLogger<Headless.Messaging.Nats.NatsConnectionPool>.Instance,
+            options
+        );
+        await using var transport = new NatsTransport(
+            NullLogger<NatsTransport>.Instance,
+            pool,
+            new NatsStreamProvisioner(options),
+            MessageLane.Queue
+        );
+        var messageId = Guid.NewGuid().ToString("N");
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            [MessagingHeaders.MessageId] = messageId,
+            [MessagingHeaders.MessageName] = subject,
+        };
+
+        // when — the publisher sends before any consumer exists
+        var result = await transport.SendAsync(new TransportMessage(headers, "{}"u8.ToArray()), AbortToken);
+
+        // then — the publish is acknowledged, and the work-queue stream holds it for the first consumer
+        result.Succeeded.Should().BeTrue(result.Exception?.Message);
+
+        await using var consumer = new NatsConsumerClient(
+            "pubonly-consumer",
+            0,
+            options,
+            _serviceProvider,
+            lane: MessageLane.Queue
+        );
+        var delivered = new TaskCompletionSource<TransportMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
+        consumer.OnMessageCallback = async (message, sender) =>
+        {
+            delivered.TrySetResult(message);
+            await consumer.CommitAsync(sender);
+        };
+        var logs = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        consumer.OnLogCallback = args => logs.Enqueue($"{args.LogType}: {args.Reason}");
+        await consumer.ConnectAsync(AbortToken);
+        var names = await consumer.FetchMessageNamesAsync([subject], AbortToken);
+        await consumer.SubscribeAsync(names, AbortToken);
+
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        var listening = consumer.ListeningAsync(TimeSpan.FromSeconds(2), cts.Token).AsTask();
+        try
+        {
+            var completed = await Task.WhenAny(delivered.Task, Task.Delay(TimeSpan.FromSeconds(10), AbortToken));
+            completed.Should().BeSameAs(delivered.Task, string.Join(" | ", logs));
+            var message = await delivered.Task;
+            message.Id.Should().Be(messageId);
+            message
+                .Headers[MessagingHeaders.TransportAddress]
+                .Should()
+                .Be(NatsPhysicalAddress.Subject(MessageLane.Queue, subject));
+        }
+        finally
+        {
+            await cts.CancelAsync();
+#pragma warning disable ERP022 // The listening loop ends with the cancellation this test requested.
+            try
+            {
+                await listening;
+            }
+            catch
+            {
+                // Shutdown only.
+            }
+#pragma warning restore ERP022
+        }
+    }
+
+    [Fact]
+    public async Task should_publish_over_the_application_connection_and_leave_it_open_when_use_connection()
+    {
+        // given — an app that owns its NATS connection and hands it to Headless
+        var logicalName = $"appconn-{Guid.NewGuid():N}"[..22];
+        var subject = $"{logicalName}.placed";
+        await using var appConnection = new NatsConnection(new NatsOpts { Url = fixture.ConnectionString });
+        await appConnection.ConnectAsync();
+        var options = Options.Create(new NatsMessagingOptions().UseConnection(_ => appConnection));
+        var pool = new Headless.Messaging.Nats.NatsConnectionPool(
+            NullLogger<Headless.Messaging.Nats.NatsConnectionPool>.Instance,
+            options,
+            _serviceProvider
+        );
+        var transport = new NatsTransport(
+            NullLogger<NatsTransport>.Instance,
+            pool,
+            new NatsStreamProvisioner(options),
+            MessageLane.Queue
+        );
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            [MessagingHeaders.MessageId] = Guid.NewGuid().ToString("N"),
+            [MessagingHeaders.MessageName] = subject,
+        };
+
+        // when
+        var result = await transport.SendAsync(new TransportMessage(headers, "{}"u8.ToArray()), AbortToken);
+        await transport.DisposeAsync();
+        await pool.DisposeAsync();
+
+        // then — Headless published on the app's connection and did not close it
+        result.Succeeded.Should().BeTrue(result.Exception?.Message);
+        pool.ServersAddress.Should().Be(BrokerAddressDisplay.FormatMany(fixture.ConnectionString));
+        appConnection.ConnectionState.Should().Be(NatsConnectionState.Open);
+        await appConnection.PingAsync(AbortToken);
     }
 
     private IOptions<NatsMessagingOptions> _CreateOptions(NatsStreamProvisioning streamProvisioning)

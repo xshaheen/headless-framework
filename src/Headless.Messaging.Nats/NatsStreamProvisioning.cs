@@ -3,7 +3,7 @@
 namespace Headless.Messaging.Nats;
 
 /// <summary>
-/// How consumer clients provision the JetStream streams their subjects live on. A dedicated enum
+/// How consumer clients and publishers provision the JetStream streams their subjects live on. A dedicated enum
 /// (rather than a <see langword="bool"/> flag) so the three states stay distinguishable: a stream that is
 /// missing, a stream that exists and agrees, and a stream that exists and disagrees are three different
 /// situations, and the middle one is the common case a boolean cannot express.
@@ -26,9 +26,11 @@ public enum NatsStreamProvisioning
 
     /// <summary>
     /// Creates the stream when it is absent, and updates it to match this application's configuration when it
-    /// already exists. This is the pre-existing behavior. Choose it when the application owns stream topology,
-    /// or when several consumer groups share one stream and each contributes its own subjects — under
-    /// <see cref="Verify"/> a group whose subject the stream does not yet carry fails startup instead.
+    /// already exists. Choose it when the application owns stream topology. Every host asks for the stream's whole key,
+    /// so hosts that share one stream agree on its subjects under <see cref="Verify"/> too; only a custom
+    /// <see cref="NatsMessagingOptions.NormalizeStreamName"/> that maps names the key does not prefix makes hosts
+    /// contribute different exact subjects, and then a host whose subject the stream does not yet carry fails startup
+    /// under <see cref="Verify"/>.
     /// </summary>
     /// <remarks>
     /// JetStream refuses some configuration changes on a live stream — storage type is the clearest case.

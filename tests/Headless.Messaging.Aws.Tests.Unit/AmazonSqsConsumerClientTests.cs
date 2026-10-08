@@ -1435,6 +1435,73 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
     }
 
     [Fact]
+    public async Task should_stamp_queue_url_as_transport_address_when_wire_attribute_spoofs_it()
+    {
+        // given
+        var logger = Substitute.For<ILogger<AmazonSqsConsumerClient>>();
+        await using var client = new AmazonSqsConsumerClient("my-consumer-group", 0, _CreateOptions(), logger);
+
+        TransportMessage? capturedMessage = null;
+        client.OnMessageCallback = (msg, _) =>
+        {
+            capturedMessage = msg;
+            return Task.CompletedTask;
+        };
+
+        var sqsClient = Substitute.For<IAmazonSQS>();
+        var receiveCount = 0;
+        sqsClient
+            .ReceiveMessageAsync(Arg.Any<ReceiveMessageRequest>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                if (Interlocked.Increment(ref receiveCount) == 1)
+                {
+                    return Task.FromResult(
+                        new ReceiveMessageResponse
+                        {
+                            Messages =
+                            [
+                                new SqsMessage
+                                {
+                                    Body = """
+                                    {
+                                        "Message": "test body content",
+                                        "MessageAttributes": {
+                                            "headless-msg-id": { "Value": "msg-123" },
+                                            "headless-msg-name": { "Value": "TestEvent" },
+                                            "headless-transport-address": { "Value": "wire-spoofed" }
+                                        }
+                                    }
+                                    """,
+                                    ReceiptHandle = "receipt-address-test",
+                                },
+                            ],
+                        }
+                    );
+                }
+
+                return Task.FromResult(new ReceiveMessageResponse { Messages = [] });
+            });
+
+        _SetPrivateFields(client, sqsClient, "http://test/queue-url");
+
+        // when
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        try
+        {
+            await client.ListeningAsync(TimeSpan.FromMilliseconds(100), cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected
+        }
+
+        // then
+        capturedMessage.Should().NotBeNull();
+        capturedMessage!.Value.Headers[Headers.TransportAddress].Should().Be("http://test/queue-url");
+    }
+
+    [Fact]
     public async Task should_dispose_resources_correctly()
     {
         // given

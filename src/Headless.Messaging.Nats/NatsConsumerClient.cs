@@ -30,6 +30,7 @@ internal sealed class NatsConsumerClient(
 {
     private readonly Lock _receiveLock = new();
     private readonly NatsMessagingOptions _natsOptions = Argument.IsNotNull(options.Value);
+    private readonly NatsStreamProvisioner _streamProvisioner = new(options);
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
 
     private readonly SemaphoreSlim? _semaphore = groupConcurrent > 0 ? new SemaphoreSlim(groupConcurrent) : null;
@@ -81,7 +82,13 @@ internal sealed class NatsConsumerClient(
     /// <summary>The core's re-established callback, reported when the subscription may have missed messages.</summary>
     internal Func<CancellationToken, Task>? OnReestablished { get; private set; }
 
-    public BrokerAddress BrokerAddress => new("nats", BrokerAddressDisplay.FormatMany(_natsOptions.Servers));
+    public BrokerAddress BrokerAddress =>
+        new(
+            "nats",
+            _natsOptions.ConnectionFactory is null
+                ? BrokerAddressDisplay.FormatMany(_natsOptions.Servers)
+                : serviceProvider.GetRequiredService<INatsConnectionPool>().ServersAddress
+        );
 
     public async Task ConnectAsync(CancellationToken cancellationToken = default)
     {
@@ -91,10 +98,12 @@ internal sealed class NatsConsumerClient(
         // that keeps failing trips MaxConsecutiveConsumeFailures and surfaces for a supervised rebuild. An
         // every-instance client learns about the gap through ConnectionOpened below. The circuit breaker is
         // per-message and never observes connection-level faults.
-        var opts = _natsOptions.BuildNatsOpts() with
-        {
-            MaxReconnectRetry = 0,
-        };
+        // A connection the application supplied decides the servers and credentials; the consumer copies its options
+        // onto a socket of its own (see NatsMessagingOptions.UseConnection).
+        var baseOpts = _natsOptions.ConnectionFactory is null
+            ? _natsOptions.BuildNatsOpts()
+            : serviceProvider.GetRequiredService<INatsConnectionPool>().ConnectionOpts;
+        var opts = baseOpts with { MaxReconnectRetry = 0 };
 
         var connection = new NatsConnection(opts);
         _connection = connection;
@@ -116,170 +125,15 @@ internal sealed class NatsConsumerClient(
         CancellationToken cancellationToken = default
     )
     {
-        // Materialize once: the source is consumed by GroupBy and the return value, so a lazy
+        // Materialize once: the source is consumed by provisioning and the return value, so a lazy
         // input would otherwise be enumerated twice.
         var names = messageNames.AsIReadOnlyList();
 
-        if (_natsOptions.StreamProvisioning is NatsStreamProvisioning.Disabled)
-        {
-            return [.. names];
-        }
-
-        // Preserve wildcard coverage for hierarchical subjects, but add exact
-        // subjects for bare/non-prefix messageNames that the wildcard cannot match.
-        var streamGroups = names.GroupBy(x => _natsOptions.NormalizeStreamName(x), StringComparer.Ordinal);
-
-        foreach (var streamGroup in streamGroups)
-        {
-            var streamName = NatsPhysicalAddress.Stream(lane, streamGroup.Key);
-            var subjects = new HashSet<string>(
-                BuildStreamSubjects(streamGroup, ResolveShardedMessageNames(streamGroup))
-                    .Select(subject => NatsPhysicalAddress.Subject(lane, subject)),
-                StringComparer.Ordinal
-            );
-
-            using var cts = _natsOptions.StreamCreateTimeout.ToCancellationTokenSource(cancellationToken);
-
-            // Several consumer groups can normalize to the same stream name, and each group only knows its
-            // own subjects. An update REPLACES the subject list, so union with whatever the stream already
-            // carries (from an earlier group, or a pre-provisioned stream) to avoid clobbering them.
-            // The probe also decides create-versus-exists, so its result outlives the try block.
-            StreamConfig? liveConfig = null;
-
-            try
-            {
-                var existing = await _jsContext!
-                    .GetStreamAsync(streamName, cancellationToken: cts.Token)
-                    .ConfigureAwait(false);
-
-                liveConfig = existing.Info.Config;
-
-                if (liveConfig.Subjects is { } existingSubjects)
-                {
-                    subjects.UnionWith(existingSubjects);
-                }
-            }
-            catch (NatsJSApiException ex) when (ex.Error.Code == 404 || ex.Error.ErrCode == 10059)
-            {
-                // Stream does not exist yet; it will be created below.
-            }
-
-            var expectedSubjects = PruneOverlappingSubjects(subjects);
-
-            var config = new StreamConfig
-            {
-                Name = streamName,
-                // JetStream rejects a stream whose subject list contains overlapping entries, so drop any
-                // exact subject already covered by a '.>' wildcard in the union (e.g. a pre-provisioned
-                // 'prefix.>' catch-all subsumes the exact 'prefix.foo' subjects).
-                Subjects = [.. expectedSubjects],
-                NoAck = false,
-                // File storage is the production default. Override via StreamOptions
-                // for dev/testing: config.Storage = StreamConfigStorage.Memory;
-                Storage = StreamConfigStorage.File,
-                Retention = NatsPhysicalAddress.Retention(lane),
-            };
-
-            // Snapshot either side of the callback so the comparison below can tell a field the operator
-            // asserted from one the server will fill with its own default. Diffing an unasserted field would
-            // report drift against every stream that exists.
-            var beforeOptions = NatsStreamReconciliation.Snapshot(config);
-            _natsOptions.StreamOptions?.Invoke(config);
-            var assertedFields = NatsStreamReconciliation.AssertedFields(
-                beforeOptions,
-                NatsStreamReconciliation.Snapshot(config)
-            );
-
-            // The provider sets these itself, so they are asserted whether or not the callback touched them.
-            assertedFields.Add(nameof(StreamConfig.Storage));
-            assertedFields.Add(nameof(StreamConfig.NoAck));
-            assertedFields.Add(nameof(StreamConfig.Retention));
-
-            if (
-                !string.Equals(config.Name, streamName, StringComparison.Ordinal)
-                || config.Retention != NatsPhysicalAddress.Retention(lane)
-                || config.Subjects?.ToHashSet(StringComparer.Ordinal).SetEquals(expectedSubjects) != true
-            )
-            {
-                throw new InvalidOperationException(
-                    $"NATS {lane} stream identity, subjects, and retention are provider-owned. "
-                        + "StreamOptions may configure storage, replicas, and limits but cannot override lane topology."
-                );
-            }
-
-            if (liveConfig is null)
-            {
-                // First-run creation happens in every enabled mode; only an existing stream is contentious.
-                var created = await _jsContext!.CreateStreamAsync(config, cts.Token).ConfigureAwait(false);
-                liveConfig = created.Info.Config;
-
-                // CreateStreamAsync returns an existing same-name stream if another client won the race.
-                // Treat that topology exactly like the pre-existing branch: preserve sibling subjects and
-                // run the same verification/reconciliation decision instead of assuming this create won.
-                if (liveConfig.Subjects is { } racedSubjects)
-                {
-                    subjects.UnionWith(racedSubjects);
-                    expectedSubjects = PruneOverlappingSubjects(subjects);
-                    config.Subjects = [.. expectedSubjects];
-                }
-            }
-
-            var divergences = new List<StreamDivergence>(
-                NatsStreamReconciliation.CompareFields(config, liveConfig, assertedFields)
-            );
-
-            // A subject this client needs that the stream does not carry is not cosmetic drift: JetStream
-            // delivers nothing, and reports no error, to a consumer filter that matches no subject.
-            var uncovered = NatsStreamReconciliation.FindUncoveredSubjects(expectedSubjects, liveConfig.Subjects);
-
-            if (uncovered.Count > 0)
-            {
-                divergences.Add(
-                    new StreamDivergence(
-                        nameof(StreamConfig.Subjects),
-                        string.Join(", ", uncovered),
-                        "not carried by the stream",
-                        IsImmutable: false
-                    )
-                );
-            }
-
-            if (divergences.Count == 0)
-            {
-                continue;
-            }
-
-            var reconcilable = divergences.TrueForAll(divergence => !divergence.IsImmutable);
-
-            if (_natsOptions.StreamProvisioning is NatsStreamProvisioning.Reconcile && reconcilable)
-            {
-                await _jsContext!.UpdateStreamAsync(config, cts.Token).ConfigureAwait(false);
-
-                continue;
-            }
-
-            // Must stay an InvalidOperationException. ConsumerRegister.ExecuteAsync catches
-            // BrokerConnectionException, flips the health flag, and returns, so raising a divergence as one
-            // would hide it behind an unhealthy consumer instead of surfacing it. This also matches the
-            // lane-identity guard above, which already reports a configuration fault the same way.
-            throw new InvalidOperationException(
-                NatsStreamReconciliation.ComposeDivergenceMessage(
-                    streamName,
-                    divergences,
-                    _natsOptions.StreamProvisioning
-                )
-            );
-        }
+        await _streamProvisioner
+            .EnsureAsync(_jsContext!, lane, names, ResolveShardedMessageNames(names), cancellationToken)
+            .ConfigureAwait(false);
 
         return [.. names];
-    }
-
-    internal static IReadOnlyList<string> BuildStreamSubjects(
-        IEnumerable<string> messageNames,
-        ISet<string> shardedMessageNames
-    )
-    {
-        return _BuildSubjects(messageNames, shardedMessageNames);
     }
 
     internal static string BuildDurableName(string subscriptionName, string subject, MessageLane lane)
@@ -295,9 +149,8 @@ internal sealed class NatsConsumerClient(
         return _BuildSubjects(messageNames, shardedMessageNames);
     }
 
-    // The JetStream stream config and the consumer FilterSubjects must cover exactly the same subject
-    // set, so both derive from one method: the base subject plus, for sharded names, the 'base.>'
-    // wildcard, de-duplicated. (Verified output-equivalent to the prior two near-duplicate methods.)
+    // A consumer filters on each message's own subject plus, for a sharded name, the 'base.>' wildcard. The stream it
+    // reads from carries the whole stream key (NatsStreamProvisioner.BuildStreamSubjects), which covers these.
     private static List<string> _BuildSubjects(IEnumerable<string> messageNames, ISet<string> shardedMessageNames)
     {
         Argument.IsNotNull(messageNames);
@@ -713,12 +566,13 @@ internal sealed class NatsConsumerClient(
 
     private ValueTask _DispatchMessageAsync(INatsJSMsg<ReadOnlyMemory<byte>> msg, CancellationToken cancellationToken)
     {
-        return DispatchEnvelopeAsync(msg.Headers, msg.Data, msg, msg, cancellationToken);
+        return DispatchEnvelopeAsync(msg.Subject, msg.Headers, msg.Data, msg, msg, cancellationToken);
     }
 
     // A JetStream delivery is its own settlement token. A core delivery passes the core message instead, which
     // CommitAsync and RejectAsync ignore: an every-instance subscription neither acknowledges nor redelivers.
     internal async ValueTask DispatchEnvelopeAsync(
+        string subject,
         NatsHeaders? natsHeaders,
         ReadOnlyMemory<byte> data,
         INatsJSMsg<ReadOnlyMemory<byte>>? jsMsg,
@@ -735,7 +589,8 @@ internal sealed class NatsConsumerClient(
                 {
                     try
                     {
-                        await _ProcessEnvelopeAsync(natsHeaders, data, jsMsg, settlement).ConfigureAwait(false);
+                        await _ProcessEnvelopeAsync(subject, natsHeaders, data, jsMsg, settlement)
+                            .ConfigureAwait(false);
                     }
                     finally
                     {
@@ -750,7 +605,7 @@ internal sealed class NatsConsumerClient(
         }
         else
         {
-            await _ProcessEnvelopeAsync(natsHeaders, data, jsMsg, settlement).ConfigureAwait(false);
+            await _ProcessEnvelopeAsync(subject, natsHeaders, data, jsMsg, settlement).ConfigureAwait(false);
         }
     }
 
@@ -801,6 +656,7 @@ internal sealed class NatsConsumerClient(
     }
 
     private async Task _ProcessEnvelopeAsync(
+        string subject,
         NatsHeaders? natsHeaders,
         ReadOnlyMemory<byte> data,
         INatsJSMsg<ReadOnlyMemory<byte>>? jsMsg,
@@ -845,6 +701,9 @@ internal sealed class NatsConsumerClient(
                 return;
             }
         }
+
+        // Stamped after the custom headers builder so neither the wire nor the builder can choose the address.
+        headers[Headers.TransportAddress] = subject;
 
         TransportMessage message;
         try

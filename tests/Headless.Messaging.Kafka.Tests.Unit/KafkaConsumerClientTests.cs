@@ -1110,6 +1110,81 @@ public sealed class KafkaConsumerClientTests : TestBase
         }
     }
 
+    [Fact]
+    public async Task should_stamp_topic_as_transport_address_when_wire_header_spoofs_it()
+    {
+        // given
+        var consumer = Substitute.For<IConsumer<string, byte[]>>();
+        var consumeCallCount = 0;
+        consumer
+            .Consume(Arg.Any<TimeSpan>())
+            .Returns(_ =>
+            {
+                if (Interlocked.Increment(ref consumeCallCount) == 1)
+                {
+                    var headers = _CreateHeaders();
+                    headers.Add(Headless.Messaging.Headers.TransportAddress, "spoofed.topic"u8.ToArray());
+
+                    return new ConsumeResult<string, byte[]>
+                    {
+                        TopicPartitionOffset = new TopicPartitionOffset(
+                            "orders.created",
+                            new Partition(0),
+                            new Offset(5)
+                        ),
+                        Message = new Message<string, byte[]> { Value = [1], Headers = headers },
+                    };
+                }
+
+                throw new OperationCanceledException();
+            });
+
+        await using var client = new KafkaConsumerClient(
+            "test-group",
+            1,
+            _options,
+            _serviceProvider,
+            consumerFactory: _ => consumer
+        );
+
+        var delivered = new TaskCompletionSource<TransportMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
+        client.OnMessageCallback = (message, _) =>
+        {
+            delivered.TrySetResult(message);
+            return Task.CompletedTask;
+        };
+        client.OnLogCallback = _ => { };
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask();
+        try
+        {
+            // when
+            var message = await delivered.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+
+            // then
+            message
+                .Headers.Should()
+                .ContainKey(Headless.Messaging.Headers.TransportAddress)
+                .WhoseValue.Should()
+                .Be("orders.created");
+        }
+        finally
+        {
+            await cts.CancelAsync();
+            try
+            {
+                await listeningTask.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
+            }
+#pragma warning disable ERP022 // Best-effort cleanup observes the expected mocked cancellation.
+            catch
+            {
+                // Best-effort cleanup only.
+            }
+#pragma warning restore ERP022
+        }
+    }
+
     private static ConsumeResult<string, byte[]> _CreateConsumeResult(long offset)
     {
         return new ConsumeResult<string, byte[]>

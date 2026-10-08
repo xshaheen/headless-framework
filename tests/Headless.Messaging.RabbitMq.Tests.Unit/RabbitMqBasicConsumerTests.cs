@@ -463,6 +463,52 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
     }
 
     [Fact]
+    public async Task should_stamp_routing_key_as_transport_address_when_wire_and_builder_spoof_it()
+    {
+        // given
+        TransportMessage? receivedMessage = null;
+
+        static List<KeyValuePair<string, string>> spoofingBuilder(BasicDeliverEventArgs _, IServiceProvider __) =>
+            [new(Headers.TransportAddress, "builder-spoofed")];
+
+        using var consumer = new RabbitMqBasicConsumer(
+            _channel,
+            0,
+            (msg, _) =>
+            {
+                receivedMessage = msg;
+                return Task.CompletedTask;
+            },
+            _ => { },
+            spoofingBuilder,
+            _serviceProvider
+        );
+
+        var properties = _CreateProperties(
+            new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                [Headers.TransportAddress] = "wire-spoofed"u8.ToArray(),
+            }
+        );
+
+        // when
+        await consumer.HandleBasicDeliverAsync(
+            "consumer-tag",
+            1UL,
+            false,
+            "test-exchange",
+            "orders.created",
+            properties,
+            "test-body"u8.ToArray(),
+            AbortToken
+        );
+
+        // then
+        receivedMessage.Should().NotBeNull();
+        receivedMessage!.Value.Headers[Headers.TransportAddress].Should().Be("orders.created");
+    }
+
+    [Fact]
     public async Task should_requeue_without_terminal_reject_when_custom_headers_builder_throws()
     {
         // given

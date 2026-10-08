@@ -179,7 +179,14 @@ internal sealed class NatsEveryInstanceListener
             }
 
             await _owner
-                .DispatchEnvelopeAsync(msg.Headers, msg.Data, jsMsg: null, settlement: msg, cancellationToken)
+                .DispatchEnvelopeAsync(
+                    msg.Subject,
+                    msg.Headers,
+                    msg.Data,
+                    jsMsg: null,
+                    settlement: msg,
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
         }
     }

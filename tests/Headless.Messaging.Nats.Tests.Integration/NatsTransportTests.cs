@@ -63,12 +63,18 @@ public sealed class NatsTransportTests(NatsFixture fixture) : TransportTestsBase
                 Servers = fixture.ConnectionString,
                 ConnectionPoolSize = 2,
                 ConfigureConnection = opts => opts with { ConnectTimeout = TimeSpan.FromSeconds(10) },
+                // InitializeAsync provisions these streams under its own names, as an operator would.
+                StreamProvisioning = NatsStreamProvisioning.Disabled,
             }
         );
 
         _connectionPool = new NatsConnectionPool(NullLogger<NatsConnectionPool>.Instance, natsOptions);
 
-        return new NatsTransport(NullLogger<NatsTransport>.Instance, _connectionPool);
+        return new NatsTransport(
+            NullLogger<NatsTransport>.Instance,
+            _connectionPool,
+            new NatsStreamProvisioner(natsOptions)
+        );
     }
 
     protected override IQueueTransport GetQueueTransport()
@@ -79,11 +85,18 @@ public sealed class NatsTransportTests(NatsFixture fixture) : TransportTestsBase
                 Servers = fixture.ConnectionString,
                 ConnectionPoolSize = 2,
                 ConfigureConnection = opts => opts with { ConnectTimeout = TimeSpan.FromSeconds(10) },
+                // InitializeAsync provisions these streams under its own names, as an operator would.
+                StreamProvisioning = NatsStreamProvisioning.Disabled,
             }
         );
 
         _connectionPool = new NatsConnectionPool(NullLogger<NatsConnectionPool>.Instance, natsOptions);
-        return new NatsTransport(NullLogger<NatsTransport>.Instance, _connectionPool, MessageLane.Queue);
+        return new NatsTransport(
+            NullLogger<NatsTransport>.Instance,
+            _connectionPool,
+            new NatsStreamProvisioner(natsOptions),
+            MessageLane.Queue
+        );
     }
 
     protected override async ValueTask DisposeAsyncCore()

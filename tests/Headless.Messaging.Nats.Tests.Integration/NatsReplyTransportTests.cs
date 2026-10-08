@@ -137,12 +137,19 @@ public sealed class NatsReplyTransportTests(NatsFixture fixture) : TestBase
         services.AddLogging();
         services.ConfigureMessaging(messaging =>
         {
-            messaging.Message<UncapturedRequest>($"uncaptured.{run}.request");
-            messaging.Message<UncapturedResponse>($"uncaptured.{run}.response");
+            // A stream key of its own per run: a reused container keeps streams earlier runs provisioned.
+            messaging.Message<UncapturedRequest>($"uncaptured-{run}.request");
+            messaging.Message<UncapturedResponse>($"uncaptured-{run}.response");
         });
         services.AddHeadlessMessaging(setup =>
         {
-            setup.UseNats(options => options.Servers = fixture.ConnectionString);
+            // Only a host that provisions no streams can publish to a subject nothing captures: any other host creates
+            // the stream before the first publish.
+            setup.UseNats(options =>
+            {
+                options.Servers = fixture.ConnectionString;
+                options.StreamProvisioning = NatsStreamProvisioning.Disabled;
+            });
             setup.UseInMemoryStorage();
             setup.Options.MinimumInboxGuarantee = InboxGuarantee.ProcessLocal;
             setup.AddRequestReply();

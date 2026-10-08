@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using FluentValidation;
+using Headless.Checks;
 using NATS.Client.Core;
 using NATS.Client.JetStream;
 using NATS.Client.JetStream.Models;
@@ -39,16 +40,17 @@ public sealed class NatsMessagingOptions
     public int MaxConsecutiveConsumeFailures { get; set; } = 10;
 
     /// <summary>
-    /// How consumer clients provision the JetStream streams their subjects live on, deriving the stream name
-    /// from <see cref="NormalizeStreamName"/> and declaring the subjects their consumers listen on. Individual
-    /// consumers then use a <c>FilterSubject</c> for precise matching. Defaults to
-    /// <see cref="NatsStreamProvisioning.Verify"/>, which creates a missing stream but never rewrites one that
-    /// already exists.
+    /// How consumer clients, at startup, and publishers, before the first publish of each message, provision the
+    /// JetStream streams their subjects live on. The stream name comes from <see cref="NormalizeStreamName"/>, and the
+    /// stream carries the key's wildcard, <c>headless.{lane}.{key}.&gt;</c> (plus the bare <c>headless.{lane}.{key}</c>
+    /// when a message is named exactly the key), so any host that creates it covers every message on that key. Individual consumers then use a <c>FilterSubject</c> for
+    /// precise matching. Defaults to <see cref="NatsStreamProvisioning.Verify"/>, which creates a missing stream but
+    /// never rewrites one that already exists.
     /// </summary>
     /// <remarks>
     /// Subject handling is asymmetric in every mode. Subjects the live stream already carries — contributed by
-    /// a sibling consumer group or an earlier deployment — are left alone rather than replaced. Subjects this
-    /// client requires that the stream does not cover are written under
+    /// another host or an earlier deployment — are left alone rather than replaced. Subjects this
+    /// host requires that the stream does not cover are written under
     /// <see cref="NatsStreamProvisioning.Reconcile"/> and reported as divergence under
     /// <see cref="NatsStreamProvisioning.Verify"/>, because JetStream delivers nothing, and reports no error,
     /// to a filter that matches no subject on the stream.
@@ -91,17 +93,62 @@ public sealed class NatsMessagingOptions
     >? CustomHeadersBuilder { get; set; }
 
     /// <summary>
-    /// The maximum time to wait for a JetStream stream create-or-update during consumer startup
-    /// (in <c>FetchMessageNamesAsync</c>). Defaults to <c>30 seconds</c>.
+    /// The maximum time to wait for a JetStream stream create-or-update during consumer startup or before the first
+    /// publish of a message. Defaults to <c>30 seconds</c>.
     /// </summary>
     public TimeSpan StreamCreateTimeout { get; set; } = TimeSpan.FromSeconds(30);
 
     /// <summary>
-    /// A function that derives the JetStream stream name from a NATS subject. The default
+    /// A function that derives the JetStream stream key from a message name. The default
     /// implementation takes the first dot-separated segment (for example <c>"orders"</c> from
-    /// <c>"orders.created"</c>). Override this when your stream naming convention differs.
+    /// <c>"orders.created"</c>). Override this when your stream naming convention differs. A name the key does not
+    /// prefix gets its own exact subject on the stream instead of the key's wildcard.
     /// </summary>
+    /// <remarks>
+    /// A normalizer that maps several names the key does not prefix onto one stream (for example
+    /// <c>_ =&gt; "app"</c>) needs <see cref="StreamProvisioning"/> set to
+    /// <see cref="NatsStreamProvisioning.Reconcile"/>. Each of those names adds its own subject to the shared stream,
+    /// and under <see cref="NatsStreamProvisioning.Verify"/> the first host or first publish fixes the stream's
+    /// subjects, so every later name fails as divergent. The same holds for a name equal to its key that is published
+    /// first without a shard and later with one.
+    /// </remarks>
     public Func<string, string> NormalizeStreamName { get; set; } = origin => origin.Split('.')[0];
+
+    /// <summary>
+    /// Gets the factory that supplies the application's own NATS connection, or <see langword="null"/> when Headless
+    /// opens its own. Set it through <see cref="UseConnection"/>.
+    /// </summary>
+    internal Func<IServiceProvider, INatsConnection>? ConnectionFactory { get; private set; }
+
+    /// <summary>
+    /// Publishes, answers requests, and provisions streams over a NATS connection the application owns, so an
+    /// application that also uses NATS directly (key-value or object store, its own subjects) keeps one connection.
+    /// </summary>
+    /// <param name="factory">
+    /// Returns the application's connection, for example
+    /// <c>sp =&gt; sp.GetRequiredService&lt;INatsConnection&gt;()</c> after <c>services.AddNatsClient(...)</c>. It runs once,
+    /// when the connection pool is first resolved.
+    /// </param>
+    /// <returns>The same options instance for chaining.</returns>
+    /// <remarks>
+    /// <para>
+    /// Headless never disposes the supplied connection; the application owns its lifetime. <see cref="Servers"/>,
+    /// <see cref="ConfigureConnection"/>, and <see cref="ConnectionPoolSize"/> do not apply to it, and a pool size other
+    /// than <c>1</c> fails validation.
+    /// </para>
+    /// <para>
+    /// Each consumer client still opens a connection of its own, built from the supplied connection's options. A stuck
+    /// consumer is recovered by discarding its connection and opening a new one, which Headless cannot do to a connection
+    /// it does not own, and NATS disconnects a slow consumer's whole connection, which would also cut the application's
+    /// own traffic on a shared socket.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="ArgumentNullException"><paramref name="factory"/> is <see langword="null"/>.</exception>
+    public NatsMessagingOptions UseConnection(Func<IServiceProvider, INatsConnection> factory)
+    {
+        ConnectionFactory = Argument.IsNotNull(factory);
+        return this;
+    }
 
     internal NatsOpts BuildNatsOpts()
     {
@@ -116,6 +163,10 @@ internal sealed class NatsMessagingOptionsValidator : AbstractValidator<NatsMess
     {
         RuleFor(x => x.Servers).NotEmpty();
         RuleFor(x => x.ConnectionPoolSize).GreaterThan(0);
+        RuleFor(x => x.ConnectionPoolSize)
+            .Equal(1)
+            .When(x => x.ConnectionFactory is not null)
+            .WithMessage("ConnectionPoolSize must be 1 when UseConnection supplies the application's connection.");
         RuleFor(x => x.MaxConsecutiveConsumeFailures).GreaterThan(0);
         RuleFor(x => x.StreamCreateTimeout).GreaterThan(TimeSpan.Zero);
         RuleFor(x => x.StreamProvisioning).IsInEnum();
