@@ -157,35 +157,36 @@ public sealed class FeatureAuthorizationHttpTests : TestBase
         await _AssertFeatureForbiddenAsync(response);
     }
 
-    [Theory]
-    [InlineData("/group/gated")]
-    [InlineData("/metadata-group/gated")]
-    public async Task should_gate_every_endpoint_of_a_route_group(string path)
+    [Fact]
+    public async Task should_gate_every_endpoint_of_a_route_group()
     {
         // given
         await using var app = await _StartAsync(new HostOptions());
 
-        // when
-        using var response = await _GetAsync(app, path, authenticated: true);
+        foreach (var path in new[] { "/group/gated", "/metadata-group/gated" })
+        {
+            // when
+            using var response = await _GetAsync(app, path, authenticated: true);
 
-        // then
-        await _AssertFeatureForbiddenAsync(response);
+            // then
+            await _AssertFeatureForbiddenAsync(response);
+        }
     }
 
-    [Theory]
-    [InlineData("/group/open-attribute")]
-    [InlineData("/group/open-metadata")]
-    [InlineData("/metadata-group/open")]
-    public async Task should_let_a_group_endpoint_opt_out_of_the_feature_check(string path)
+    [Fact]
+    public async Task should_let_a_group_endpoint_opt_out_of_the_feature_check()
     {
         // given
         await using var app = await _StartAsync(new HostOptions());
 
-        // when
-        using var response = await _GetAsync(app, path, authenticated: true);
+        foreach (var path in new[] { "/group/open-attribute", "/group/open-metadata", "/metadata-group/open" })
+        {
+            // when
+            using var response = await _GetAsync(app, path, authenticated: true);
 
-        // then
-        await _AssertOkAsync(response, "open");
+            // then
+            await _AssertOkAsync(response, "open");
+        }
     }
 
     [Fact]
@@ -205,36 +206,43 @@ public sealed class FeatureAuthorizationHttpTests : TestBase
 
     #region Anonymous callers
 
-    [Theory]
-    [InlineData("/minimal")]
-    [InlineData("/minimal/metadata")]
-    [InlineData("/minimal/attribute")]
-    public async Task should_challenge_an_anonymous_caller_on_a_disabled_feature(string path)
+    [Fact]
+    public async Task should_challenge_an_anonymous_caller_on_a_disabled_feature()
     {
         // given - like any failed authorization, an anonymous caller is challenged: signing in is its next step
         await using var app = await _StartAsync(new HostOptions());
 
-        // when
-        using var response = await _GetAsync(app, path, authenticated: false);
+        foreach (var path in new[] { "/minimal", "/minimal/metadata", "/minimal/attribute" })
+        {
+            // when
+            using var response = await _GetAsync(app, path, authenticated: false);
 
-        // then
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+            // then
+            response.StatusCode.Should().Be(HttpStatusCode.Unauthorized, path);
+        }
     }
 
-    [Theory]
-    [InlineData("/minimal", "minimal")]
-    [InlineData("/minimal/metadata", "metadata")]
-    [InlineData("/minimal/attribute", "attribute")]
-    public async Task should_let_an_anonymous_caller_through_an_enabled_feature_gate(string path, string body)
+    [Fact]
+    public async Task should_let_an_anonymous_caller_through_an_enabled_feature_gate()
     {
         // given - a feature gate is about the tenant's state, so it adds no authenticated-user requirement
         await using var app = await _StartAsync(new HostOptions { EnabledFeatures = [_Reports] });
 
-        // when
-        using var response = await _GetAsync(app, path, authenticated: false);
+        foreach (
+            var (path, body) in new[]
+            {
+                ("/minimal", "minimal"),
+                ("/minimal/metadata", "metadata"),
+                ("/minimal/attribute", "attribute"),
+            }
+        )
+        {
+            // when
+            using var response = await _GetAsync(app, path, authenticated: false);
 
-        // then
-        await _AssertOkAsync(response, body);
+            // then
+            await _AssertOkAsync(response, body);
+        }
     }
 
     [Theory]
