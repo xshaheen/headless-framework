@@ -26,15 +26,14 @@ public sealed class KafkaFixture : HeadlessKafkaFixture
             new KafkaMessagingOptions
             {
                 Servers = ConnectionString,
-                ConnectionPoolSize = 1,
                 TopicOptions = { NumPartitions = 1, ReplicationFactor = 1 },
             }
         );
         options.Value.MainConfig["allow.auto.create.topics"] = "true";
 
 #pragma warning disable CA2000 // Ownership transfers to the returned conformance session or the catch cleanup path.
-        var pool = new KafkaConnectionPool(NullLogger<KafkaConnectionPool>.Instance, options);
-        var producer = new KafkaTransport(NullLogger<KafkaTransport>.Instance, pool);
+        var producers = new KafkaProducerProvider(NullLogger<KafkaProducerProvider>.Instance, options);
+        var producer = new KafkaTransport(NullLogger<KafkaTransport>.Instance, producers);
         var consumer = new KafkaConsumerClient(group, 2, options, services);
 #pragma warning restore CA2000
 
@@ -50,7 +49,7 @@ public sealed class KafkaFixture : HeadlessKafkaFixture
                 TimeSpan.FromSeconds(3),
                 async () =>
                 {
-                    pool.Dispose();
+                    producers.Dispose();
                     await services.DisposeAsync();
                 },
                 listeningTimeout: TimeSpan.FromSeconds(1),
@@ -63,7 +62,7 @@ public sealed class KafkaFixture : HeadlessKafkaFixture
         catch
         {
             await consumer.DisposeAsync();
-            pool.Dispose();
+            producers.Dispose();
             await services.DisposeAsync();
             throw;
         }

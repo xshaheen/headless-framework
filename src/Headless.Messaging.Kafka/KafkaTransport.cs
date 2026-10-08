@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Headless.Messaging.Kafka;
 
-internal sealed class KafkaTransport(ILogger<KafkaTransport> logger, IKafkaConnectionPool connectionPool)
+internal sealed class KafkaTransport(ILogger<KafkaTransport> logger, IKafkaProducerProvider producerProvider)
     : IQueueTransport
 {
     private readonly ILogger _logger = logger;
@@ -14,7 +14,7 @@ internal sealed class KafkaTransport(ILogger<KafkaTransport> logger, IKafkaConne
     // Set once DisposeAsync runs: a later send fails instead of reaching the broker.
     private int _disposed;
 
-    public BrokerAddress BrokerAddress => new("kafka", connectionPool.ServersAddress);
+    public BrokerAddress BrokerAddress => new("kafka", producerProvider.ServersAddress);
 
     public async Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default)
     {
@@ -24,11 +24,13 @@ internal sealed class KafkaTransport(ILogger<KafkaTransport> logger, IKafkaConne
         }
 
         var affinityKey = KafkaRoutingAffinity.Mapping.ResolveKey(message);
-        var producer = connectionPool.RentProducer();
+        IProducer<string, byte[]>? producer = null;
 
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
+
+            producer = producerProvider.GetProducer();
 
             var headers = new Confluent.Kafka.Headers();
 
@@ -72,11 +74,14 @@ internal sealed class KafkaTransport(ILogger<KafkaTransport> logger, IKafkaConne
         }
         catch (Exception e)
         {
+            // An idempotent producer that hits a fatal error (such as a sequence gap after unclean leader election)
+            // fails every later produce, so the shared instance is replaced instead of failing until restart.
+            if (producer is not null && e is KafkaException { Error.IsFatal: true })
+            {
+                producerProvider.DiscardFailedProducer(producer);
+            }
+
             return OperateResult.Failed(new PublisherSentFailedException(e.Message, e));
-        }
-        finally
-        {
-            connectionPool.Return(producer);
         }
     }
 

@@ -290,7 +290,7 @@ public sealed class KafkaConsumerClientTests : TestBase
         await client.CommitAsync(consumeResult, AbortToken);
 
         // then
-        consumer.DidNotReceive().Commit(Arg.Any<ConsumeResult<string, byte[]>>());
+        consumer.DidNotReceive().StoreOffset(Arg.Any<TopicPartitionOffset>());
     }
 
     [Fact]
@@ -509,13 +509,10 @@ public sealed class KafkaConsumerClientTests : TestBase
 
         var committedOffsets = new ConcurrentQueue<long>();
         consumer
-            .When(c => c.Commit(Arg.Any<IEnumerable<TopicPartitionOffset>>()))
+            .When(c => c.StoreOffset(Arg.Any<TopicPartitionOffset>()))
             .Do(call =>
             {
-                foreach (var offset in call.Arg<IEnumerable<TopicPartitionOffset>>())
-                {
-                    committedOffsets.Enqueue(offset.Offset.Value);
-                }
+                committedOffsets.Enqueue(call.Arg<TopicPartitionOffset>().Offset.Value);
             });
 
         await using var client = new KafkaConsumerClient(
@@ -616,13 +613,10 @@ public sealed class KafkaConsumerClientTests : TestBase
 
         var committedOffsets = new ConcurrentQueue<long>();
         consumer
-            .When(c => c.Commit(Arg.Any<IEnumerable<TopicPartitionOffset>>()))
+            .When(c => c.StoreOffset(Arg.Any<TopicPartitionOffset>()))
             .Do(call =>
             {
-                foreach (var offset in call.Arg<IEnumerable<TopicPartitionOffset>>())
-                {
-                    committedOffsets.Enqueue(offset.Offset.Value);
-                }
+                committedOffsets.Enqueue(call.Arg<TopicPartitionOffset>().Offset.Value);
             });
 
         await using var client = new KafkaConsumerClient(
@@ -686,13 +680,10 @@ public sealed class KafkaConsumerClientTests : TestBase
         var committedOffsets = new ConcurrentQueue<long>();
         var commitObserved = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         consumer
-            .When(c => c.Commit(Arg.Any<IEnumerable<TopicPartitionOffset>>()))
+            .When(c => c.StoreOffset(Arg.Any<TopicPartitionOffset>()))
             .Do(call =>
             {
-                foreach (var offset in call.Arg<IEnumerable<TopicPartitionOffset>>())
-                {
-                    committedOffsets.Enqueue(offset.Offset.Value);
-                }
+                committedOffsets.Enqueue(call.Arg<TopicPartitionOffset>().Offset.Value);
 
                 commitObserved.TrySetResult();
             });
@@ -786,7 +777,7 @@ public sealed class KafkaConsumerClientTests : TestBase
             await client.CommitAsync(sender, AbortToken);
 
             // then
-            consumer.DidNotReceive().Commit(Arg.Any<IEnumerable<TopicPartitionOffset>>());
+            consumer.DidNotReceive().StoreOffset(Arg.Any<TopicPartitionOffset>());
         }
         finally
         {
@@ -987,7 +978,7 @@ public sealed class KafkaConsumerClientTests : TestBase
 
             // then
             consumer.Received(1).Seek(Arg.Is<TopicPartitionOffset>(offset => offset.Offset == 5));
-            consumer.DidNotReceive().Commit(Arg.Any<ConsumeResult<string, byte[]>>());
+            consumer.DidNotReceive().StoreOffset(Arg.Any<TopicPartitionOffset>());
         }
         finally
         {
@@ -1042,7 +1033,7 @@ public sealed class KafkaConsumerClientTests : TestBase
                 throw new OperationCanceledException();
             });
 
-        consumer.When(c => c.Commit(Arg.Any<ConsumeResult<string, byte[]>>())).Do(_ => commitCalled.TrySetResult());
+        consumer.When(c => c.StoreOffset(Arg.Any<TopicPartitionOffset>())).Do(_ => commitCalled.TrySetResult());
 
         await using var client = new KafkaConsumerClient(
             "test-group",
@@ -1089,7 +1080,7 @@ public sealed class KafkaConsumerClientTests : TestBase
 
             // then — callback should not be invoked and the poison offset must not be sought for redelivery
             callbackInvoked.Should().BeFalse();
-            consumer.Received(1).Commit(Arg.Is<ConsumeResult<string, byte[]>>(result => result.Offset == 5));
+            consumer.Received(1).StoreOffset(Arg.Is<TopicPartitionOffset>(offset => offset.Offset == 6));
             consumer.DidNotReceive().Seek(Arg.Any<TopicPartitionOffset>());
             loggedError.Should().NotBeNull();
             loggedError!.Reason.Should().Contain("terminally committed").And.NotContain("Messaging header");

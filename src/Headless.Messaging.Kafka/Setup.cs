@@ -16,8 +16,7 @@ namespace Headless.Messaging;
 /// <remarks>
 /// Kafka supports only point-to-point (queue) messaging in this transport. Bus (fan-out / pub-sub)
 /// delivery is not available — use a different transport for fan-out scenarios.
-/// A shared producer pool sized by <see cref="KafkaMessagingOptions.ConnectionPoolSize"/> is registered
-/// as a singleton.
+/// One idempotent producer, shared by every publish in the process, is registered as a singleton.
 /// </remarks>
 public static class SetupMessagingKafka
 {
@@ -141,7 +140,7 @@ public static class SetupMessagingKafka
 
             services.AddSingleton<IQueueTransport, KafkaTransport>();
             services.AddSingleton<IConsumerClientFactory, KafkaConsumerClientFactory>();
-            services.AddSingleton<IKafkaConnectionPool, KafkaConnectionPool>();
+            services.AddSingleton<IKafkaProducerProvider, KafkaProducerProvider>();
         }
     }
 }
