@@ -22,21 +22,6 @@ public sealed class OptionsSnapshotWrapperTests
     }
 
     [Fact]
-    public void should_return_same_options_from_get()
-    {
-        // given
-        var options = new TestOptions { Name = "test-value" };
-        var wrapper = new OptionsSnapshotWrapper<TestOptions>(options);
-
-        // when
-        var result = wrapper.Get("some-name");
-
-        // then
-        result.Should().BeSameAs(options);
-        result.Should().BeSameAs(wrapper.Value);
-    }
-
-    [Fact]
     public void should_return_options_regardless_of_name()
     {
         // given
