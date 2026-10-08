@@ -37,5 +37,16 @@ public static class IdempotencyEndpointConventionBuilderExtensions
         {
             return builder.WithMetadata(new IdempotencyMetadata(configure));
         }
+
+        /// <summary>
+        /// Refuses a request to this endpoint that carries no idempotency key with <c>400</c>
+        /// (<see cref="IdempotencyErrorCodes.KeyRequired" />), so a client can never run the operation without the
+        /// protection against duplicates. Combines with <c>WithIdempotency</c> in either order.
+        /// </summary>
+        /// <returns>The builder.</returns>
+        public TBuilder RequireIdempotencyKey()
+        {
+            return builder.WithMetadata(new IdempotencyMetadata(static options => options.KeyRequired = true));
+        }
     }
 }

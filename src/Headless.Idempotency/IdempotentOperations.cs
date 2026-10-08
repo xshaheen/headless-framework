@@ -271,4 +271,11 @@ internal sealed class IdempotentOperations(
         // autonomous purge call.
         return store.PeekAsync(recordKey, cancellationToken);
     }
+
+    public ValueTask<IdempotentResult?> GetResultAsync(string key, CancellationToken cancellationToken = default)
+    {
+        var recordKey = resolver.ResolvePeek(key);
+
+        return store.GetResultAsync(recordKey, cancellationToken);
+    }
 }

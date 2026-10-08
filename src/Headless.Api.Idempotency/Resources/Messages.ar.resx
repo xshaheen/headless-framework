@@ -34,4 +34,7 @@
   <data name="g:idempotency_key_malformed" xml:space="preserve">
     <value>قيمة ترويسة Idempotency-Key غير صالحة (يتجاوز طولها 255 أو تحتوي على رموز تحكم أو متعددة القيم).</value>
   </data>
+  <data name="g:idempotency_key_required" xml:space="preserve">
+    <value>تتطلب نقطة النهاية هذه ترويسة Idempotency-Key.</value>
+  </data>
 </root>

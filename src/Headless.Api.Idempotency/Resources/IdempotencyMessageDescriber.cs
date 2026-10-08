@@ -21,6 +21,11 @@ internal static class IdempotencyMessageDescriber
         return new(code: IdempotencyErrorCodes.InFlightTimeout, description: Messages.g_idempotency_in_flight_timeout);
     }
 
+    public static ErrorDescriptor KeyRequired()
+    {
+        return new(code: IdempotencyErrorCodes.KeyRequired, description: Messages.g_idempotency_key_required);
+    }
+
     public static ErrorDescriptor BodyTooLarge()
     {
         return new(code: IdempotencyErrorCodes.BodyTooLarge, description: Messages.g_idempotency_body_too_large);

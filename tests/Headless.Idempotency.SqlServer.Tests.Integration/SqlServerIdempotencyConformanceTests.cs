@@ -91,6 +91,12 @@ public sealed class SqlServerIdempotencyConformanceTests(SqlServerIdempotencyFix
     }
 
     [Fact]
+    public override Task should_read_the_stored_result_only_of_a_completed_record_within_retention_and_tenant_scope()
+    {
+        return base.should_read_the_stored_result_only_of_a_completed_record_within_retention_and_tenant_scope();
+    }
+
+    [Fact]
     public override Task should_purge_only_records_past_retention_whose_lease_is_not_live()
     {
         return base.should_purge_only_records_past_retention_whose_lease_is_not_live();

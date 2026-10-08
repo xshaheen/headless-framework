@@ -95,6 +95,7 @@ public static class SetupIdempotency
         private IServiceCollection _AddIdempotencyCore()
         {
             services.TryAddScoped<IdempotencyMiddleware>();
+            services.TryAddScoped<IIdempotencyLookup, IdempotencyLookup>();
             services.TryAddSingleton(TimeProvider.System);
 
             // The middleware admits, completes, and releases through the durable store, and this package references
