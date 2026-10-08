@@ -12,7 +12,6 @@ namespace Tests.Infrastructure;
 /// How the two <c>ConfigureStorage</c> overloads compose once the EF store is registered: both register in the Core
 /// layer in call order so the pair is last call wins, and the resolved value is validated by the provider's rule.
 /// </summary>
-[Collection<JobsHelperCollection>]
 public sealed class JobsStorageOptionsRegistrationTests
 {
     [Fact]

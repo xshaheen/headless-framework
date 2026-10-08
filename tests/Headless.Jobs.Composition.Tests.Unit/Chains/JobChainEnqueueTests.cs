@@ -11,11 +11,8 @@ namespace Tests.Chains;
 /// <summary>
 /// Pins the scheduler's chain enqueue contract (issue #311): per-node descriptor resolution, the
 /// configured <c>MaxChainDepth</c> guard, mapping onto the <see cref="TimeJobEntity"/> tree shape (per-node options,
-/// serialized request, <c>RunCondition</c> edges) and the single atomic add into the existing manager path. Joins the
-/// serialized <see cref="JobsHelperCollection"/> because the depth-guard tests drive <c>AddHeadlessJobs</c>, which
-/// completes the process-global job-function discovery.
+/// serialized request, <c>RunCondition</c> edges) and the single atomic add into the existing manager path.
 /// </summary>
-[Collection<JobsHelperCollection>]
 public sealed class JobChainEnqueueTests : TestBase
 {
     private static readonly JobFunctionDescriptor _Order = new(

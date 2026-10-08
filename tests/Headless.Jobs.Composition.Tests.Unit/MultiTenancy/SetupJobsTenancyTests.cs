@@ -14,7 +14,6 @@ namespace Tests.MultiTenancy;
 /// <c>AddHeadlessTenancy</c> surface: posture recording, idempotent DI, and the three Tier-1 startup
 /// validators (isolated strict-mode warning, propagation-null-current-tenant error, options-clobber error).
 /// </summary>
-[Collection<JobsHelperCollection>]
 public sealed class SetupJobsTenancyTests : TestBase
 {
     [Theory]

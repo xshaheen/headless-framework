@@ -80,6 +80,7 @@ public sealed class FluentOptionsConsumerCompilationTests : TestBase
             (_Join(prefix, "configure, ct"), "configure"),
             (_Join(namedPrefix, "configure: p => p.WithCorrelationId(\"order\"), cancellationToken: ct"), "configure"),
             (_Join(prefix, "default(CancellationToken)"), "cancellationToken"),
+            (_Join(prefix, "default"), "cancellationToken"),
             (_Join(prefix, "cancellationToken: default"), "cancellationToken"),
             (_Join(prefix, "configure: null!"), "configure"),
             (_Join(prefix, $"(Action<{options}Builder>)null!"), "configure"),
@@ -126,44 +127,6 @@ public sealed class FluentOptionsConsumerCompilationTests : TestBase
                 .Be(forms[index].Parameter is "options");
             method.Parameters.Any(parameter => parameter.Name is "configure").Should().Be(callback);
         }
-    }
-
-    [Theory]
-    [InlineData("bus", "PublishAsync", false)]
-    [InlineData("queue", "EnqueueAsync", false)]
-    [InlineData("scheduler", "EnqueueAsync", false)]
-    [InlineData("scheduler", "EnqueueAsync", true)]
-    [InlineData("scheduler", "ScheduleAsync", false)]
-    [InlineData("scheduler", "ScheduleAsync", true)]
-    [InlineData("scheduler", "ScheduleAfterAsync", false)]
-    [InlineData("scheduler", "ScheduleAfterAsync", true)]
-    public void positional_runtime_default_selects_the_existing_token_overload(
-        string receiver,
-        string verb,
-        bool requestless
-    )
-    {
-        var compilation = _Compile(
-            _RuntimeSource(
-                $"_ = {receiver}.{verb}{_TypeArguments(receiver, requestless)}({_Join(_Arguments(receiver, verb, requestless), "default")});",
-                "JobOptions"
-            )
-        );
-        _Errors(compilation).Should().BeEmpty();
-        var model = compilation.GetSemanticModel(compilation.SyntaxTrees.Single());
-        var method = _BoundMethod(model, _AssignedInvocations(compilation).Single());
-        var holder = receiver switch
-        {
-            "bus" => "IBus",
-            "queue" => "IQueue",
-            _ => "IJobScheduler",
-        };
-        _AssertMember(method, holder, _Assembly(receiver), verb, generic: receiver is "scheduler" || !requestless);
-        _AssertJobTyped(method, receiver is "scheduler" && requestless);
-        method.Parameters[^1].Type.ToDisplayString().Should().Be("System.Threading.CancellationToken");
-        method
-            .Parameters.Should()
-            .NotContain(parameter => parameter.Name == "options" || parameter.Name == "configure");
     }
 
     [Theory]

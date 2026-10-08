@@ -9,7 +9,6 @@ using Microsoft.Extensions.Time.Testing;
 
 namespace Tests;
 
-[Collection<JobsHelperCollection>]
 public sealed class JobSchedulingDefaultsTests : TestBase
 {
     private static readonly JobFunctionDescriptor _Typed = new(

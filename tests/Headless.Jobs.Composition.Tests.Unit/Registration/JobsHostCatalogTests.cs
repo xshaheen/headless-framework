@@ -13,7 +13,6 @@ namespace Tests.Registration;
 /// Each host builds and freezes its own job catalog from the modules it adds, so generated registrations never reach
 /// process-wide state.
 /// </summary>
-[Collection<JobsHelperCollection>]
 public sealed class JobsHostCatalogTests : TestBase
 {
     [Fact]
