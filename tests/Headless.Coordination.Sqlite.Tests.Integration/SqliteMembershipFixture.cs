@@ -60,6 +60,11 @@ public sealed class SqliteMembershipFixture
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    public void PruneOnEverySnapshot(IMembershipStore store)
+    {
+        ((RelationalMembershipStore)store).MinPruneInterval = TimeSpan.Zero;
+    }
+
     public async Task<StoredMembership> ReadRowsAsync(string clusterName, CancellationToken cancellationToken)
     {
         static string table(string name) => _Dialect.Qualify(HeadlessStorageDefaults.Schema, name);

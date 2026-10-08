@@ -40,23 +40,6 @@ public sealed class WordDocumentMediaFileTextProviderTests : TestBase
     }
 
     [Fact]
-    public async Task should_return_paragraph_text_when_get_text_async_document_has_single_paragraph()
-    {
-        // given
-        const string expectedText = "Test paragraph";
-        await using var stream = _CreateWordDocumentWithText(expectedText);
-        Argument.CanSeek(stream);
-        Argument.CanRead(stream);
-        Argument.CanWrite(stream);
-
-        // when
-        var result = await _sut.GetTextAsync(stream, AbortToken);
-
-        // then
-        result.Should().Be($"{expectedText}{Environment.NewLine}");
-    }
-
-    [Fact]
     public async Task should_return_all_paragraphs_when_get_text_async_document_has_multiple_paragraphs()
     {
         // given
@@ -80,18 +63,6 @@ public sealed class WordDocumentMediaFileTextProviderTests : TestBase
         using var document = WordprocessingDocument.Create(stream, WordprocessingDocumentType.Document);
         document.AddMainDocumentPart();
         document.MainDocumentPart?.Document = new Document(new Body());
-        document.Save();
-        stream.Position = 0;
-
-        return stream;
-    }
-
-    private static MemoryStream _CreateWordDocumentWithText(string text)
-    {
-        var stream = new MemoryStream();
-        using var document = WordprocessingDocument.Create(stream, WordprocessingDocumentType.Document);
-        var mainPart = document.AddMainDocumentPart();
-        mainPart.Document = new Document(new Body(new Paragraph(new Run(new Text(text)))));
         document.Save();
         stream.Position = 0;
 

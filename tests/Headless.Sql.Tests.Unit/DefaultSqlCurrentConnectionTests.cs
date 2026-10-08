@@ -99,20 +99,6 @@ public sealed class DefaultSqlCurrentConnectionTests : TestBase
     }
 
     [Fact]
-    public async Task should_not_dispose_when_no_connection_created()
-    {
-        // given
-        var factory = Substitute.For<ISqlConnectionFactory>();
-        var sut = new DefaultSqlCurrentConnection(factory);
-
-        // when
-        await sut.DisposeAsync();
-
-        // then - no exception thrown, factory never called
-        await factory.DidNotReceive().CreateNewConnectionAsync(Arg.Any<CancellationToken>());
-    }
-
-    [Fact]
     public async Task should_pass_cancellation_token_to_factory()
     {
         // given

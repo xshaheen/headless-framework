@@ -6,7 +6,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests;
 
-[Collection<JobsHelperCollection>]
 public sealed class KeyedJobPolicyTests : TestBase
 {
     [Theory]

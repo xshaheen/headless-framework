@@ -21,36 +21,6 @@ public sealed class LockAcquisitionTimeoutExceptionTests : TestBase
         exception.Message.Should().Contain(resource);
     }
 
-    [Fact]
-    public void should_store_resource_and_custom_message()
-    {
-        // given
-        var resource = Faker.Random.AlphaNumeric(10);
-        var message = Faker.Lorem.Sentence();
-
-        // when
-        var exception = new LockAcquisitionTimeoutException(resource, message);
-
-        // then
-        exception.Resource.Should().Be(resource);
-        exception.Message.Should().Be(message);
-    }
-
-    [Fact]
-    public void should_store_inner_exception()
-    {
-        // given
-        var resource = Faker.Random.AlphaNumeric(10);
-        var inner = new InvalidOperationException(Faker.Lorem.Sentence());
-
-        // when
-        var exception = new LockAcquisitionTimeoutException(resource, "timeout", inner);
-
-        // then
-        exception.Resource.Should().Be(resource);
-        exception.InnerException.Should().BeSameAs(inner);
-    }
-
     [Theory]
     [InlineData(null)]
     [InlineData("")]

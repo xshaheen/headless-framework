@@ -1,9 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Sql;
 using Headless.Sql.SqlServer;
 using Headless.Testing.Tests;
-using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
 
 namespace Tests.SqlServer;
@@ -15,72 +13,7 @@ namespace Tests.SqlServer;
 public sealed class SqlServerConnectionStringCheckerTests : TestBase
 {
     [Fact]
-    public void should_implement_i_connection_string_checker()
-    {
-        // given
-        var logger = Substitute.For<ILogger<SqlServerConnectionStringChecker>>();
-
-        // when
-        var sut = new SqlServerConnectionStringChecker(logger);
-
-        // then
-        sut.Should().BeAssignableTo<IConnectionStringChecker>();
-    }
-
-    [Fact]
-    public async Task should_return_false_for_invalid_connection_string()
-    {
-        // given
-        var logger = Substitute.For<ILogger<SqlServerConnectionStringChecker>>();
-        var sut = new SqlServerConnectionStringChecker(logger);
-
-        // when
-        var (connected, databaseExists) = await sut.CheckAsync(
-            "Server=invalid-host-that-does-not-exist;Database=test;Connect Timeout=1;TrustServerCertificate=True",
-            AbortToken
-        );
-
-        // then
-        connected.Should().BeFalse();
-        databaseExists.Should().BeFalse();
-    }
-
-    [Fact]
-    public void should_connect_to_master_database_first()
-    {
-        // given - verify implementation modifies InitialCatalog to 'master'
-        const string connectionString = "Server=localhost;Database=MyAppDb;TrustServerCertificate=True";
-        var builder = new SqlConnectionStringBuilder(connectionString) { ConnectTimeout = 1 };
-
-        // when - simulate what CheckAsync does internally
-        var oldDatabaseName = builder.InitialCatalog;
-        builder.InitialCatalog = "master";
-
-        // then
-        oldDatabaseName.Should().Be("MyAppDb");
-        builder.InitialCatalog.Should().Be("master");
-        builder.ConnectionString.Should().Contain("Initial Catalog=master");
-    }
-
-    [Fact]
-    public void should_set_connect_timeout_to_1_second()
-    {
-        // given - verify implementation sets ConnectTimeout = 1
-        const string connectionString = "Server=localhost;Database=test;Connect Timeout=30";
-
-        var builder = new SqlConnectionStringBuilder(connectionString)
-        {
-            // when - simulate what CheckAsync does
-            ConnectTimeout = 1,
-        };
-
-        // then
-        builder.ConnectTimeout.Should().Be(1);
-        builder.ConnectionString.Should().Contain("Connect Timeout=1");
-    }
-
-    [Fact]
-    public async Task should_log_warning_on_exception()
+    public async Task should_return_false_and_log_warning_for_invalid_connection_string()
     {
         // given
         var logger = Substitute.For<ILogger<SqlServerConnectionStringChecker>>();
@@ -89,12 +22,14 @@ public sealed class SqlServerConnectionStringCheckerTests : TestBase
         var sut = new SqlServerConnectionStringChecker(logger);
 
         // when - use invalid connection that will fail
-        await sut.CheckAsync(
-            "Server=invalid-server-12345;Database=test;Connect Timeout=1;TrustServerCertificate=True",
+        var (connected, databaseExists) = await sut.CheckAsync(
+            "Server=invalid-host-that-does-not-exist;Database=test;Connect Timeout=1;TrustServerCertificate=True",
             AbortToken
         );
 
-        // then - verify a warning-level Log call was issued.
+        // then - the check reports failure and a warning-level Log call was issued.
+        connected.Should().BeFalse();
+        databaseExists.Should().BeFalse();
         // Source-generated LoggerMessage uses a private state struct, so we can't match Log<object>
         // directly via NSubstitute's generic specialization. Inspect raw calls instead.
         logger

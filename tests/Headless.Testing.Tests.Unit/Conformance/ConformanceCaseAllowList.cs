@@ -249,7 +249,7 @@ internal static class ConformanceCaseAllowList
         new(
             "SqliteLeasesConformanceTests",
             "should_skip_a_lease_another_unit_claimed_when_claiming_inside_a_unit",
-            "The case keeps two claiming units open at once, and SQLite admits one write transaction per database file, so the second unit's begin waits for the first to end and never sees the first unit's claim in flight."
+            "The case keeps two claiming units open at once, and SQLite admits one write transaction per database file, so the second unit's begin waits for the first to end."
         ),
     ];
 }

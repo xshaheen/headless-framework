@@ -8,29 +8,6 @@ namespace Tests.Models;
 public sealed class GrantedPermissionResultTests : TestBase
 {
     [Fact]
-    public void should_create_with_granted_status()
-    {
-        // when
-        var result = new GrantedPermissionResult("TestPermission", isGranted: true);
-
-        // then
-        result.Name.Should().Be("TestPermission");
-        result.IsGranted.Should().BeTrue();
-        result.Providers.Should().BeEmpty();
-    }
-
-    [Fact]
-    public void should_create_with_denied_status()
-    {
-        // when
-        var result = new GrantedPermissionResult("TestPermission", isGranted: false);
-
-        // then
-        result.Name.Should().Be("TestPermission");
-        result.IsGranted.Should().BeFalse();
-    }
-
-    [Fact]
     public void should_add_provider_to_result()
     {
         // given
@@ -46,16 +23,5 @@ public sealed class GrantedPermissionResultTests : TestBase
         provider.Name.Should().Be("Role");
         provider.Keys.Should().Contain("admin");
         provider.Keys.Should().Contain("manager");
-    }
-
-    [Fact]
-    public void should_allow_is_granted_to_be_mutable()
-    {
-        // given
-        var result = new GrantedPermissionResult("TestPermission", isGranted: false);
-
-        // when - internal setter used (simulating internal modification)
-        // Note: IsGranted has internal setter, so testing initial value behavior
-        result.IsGranted.Should().BeFalse();
     }
 }

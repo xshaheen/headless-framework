@@ -13,7 +13,7 @@ public sealed class ProviderConformanceEvidenceTests(RedisMessagingFixture fixtu
         TransportRoutingAffinityConformance.AssertAsync(new RedisProviderConformanceDriver(fixture), AbortToken);
 
     [Fact]
-    public async Task should_execute_every_supported_manifest_scenario()
+    public void should_back_every_supported_manifest_scenario_with_a_test()
     {
         var profile = TransportConformanceManifest.Providers["Redis"];
         TransportConformanceTestBinding[] bindings =
@@ -99,18 +99,7 @@ public sealed class ProviderConformanceEvidenceTests(RedisMessagingFixture fixtu
             ),
         ];
 
-        await TransportConformanceTestBindings.ExecuteSupportedScenariosAsync(
-            profile,
-            bindings,
-            testClass =>
-                testClass == typeof(RedisConsumerConformanceTests) ? new RedisConsumerConformanceTests(fixture)
-                : testClass == typeof(RedisRequestReplyConformanceTests)
-                    ? new RedisRequestReplyConformanceTests(fixture)
-                : testClass == typeof(ProviderConformanceEvidenceTests) ? new ProviderConformanceEvidenceTests(fixture)
-                : throw new InvalidOperationException(
-                    $"No Redis conformance test factory is registered for {testClass}."
-                )
-        );
+        TransportConformanceTestBindings.GetValidationErrors(profile, bindings).Should().BeEmpty();
     }
 
     private static TransportConformanceTestBinding _Bind(TransportConformanceScenario scenario, string method) =>

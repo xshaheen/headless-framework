@@ -88,7 +88,8 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
 
         // when
         await processor.ProcessAsync(context);
-        await Task.Delay(200, AbortToken);
+        await processor.WaitForQuadrantIdleForTestAsync(MessageType.Publish, MessageLane.Bus);
+        await processor.WaitForQuadrantIdleForTestAsync(MessageType.Subscribe, MessageLane.Bus);
 
         // then — published path must not be reached because the lock was already held
         await storage
@@ -125,7 +126,8 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
 
         // when
         await processor.ProcessAsync(context);
-        await Task.Delay(200, AbortToken);
+        await processor.WaitForQuadrantIdleForTestAsync(MessageType.Publish, MessageLane.Bus);
+        await processor.WaitForQuadrantIdleForTestAsync(MessageType.Subscribe, MessageLane.Bus);
 
         // then — received path must not be reached because the lock was already held
         await storage
@@ -438,7 +440,8 @@ public sealed class RetryProcessorDistributedLockTests : IDisposable
 
         // when
         await processor.ProcessAsync(context);
-        await Task.Delay(200, AbortToken);
+        await processor.WaitForQuadrantIdleForTestAsync(MessageType.Publish, MessageLane.Bus);
+        await processor.WaitForQuadrantIdleForTestAsync(MessageType.Subscribe, MessageLane.Bus);
 
         // then — both pickup paths must be exercised when locks are always granted
         await storage

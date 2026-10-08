@@ -9,22 +9,6 @@ public sealed class PaginationTests
     #region IndexPage - Construction & Properties
 
     [Fact]
-    public void should_store_items_and_pagination_info_when_index_page()
-    {
-        // given
-        var items = new[] { "a", "b", "c" };
-
-        // when
-        var page = new IndexPage<string>(items, index: 0, size: 10, totalItems: 100);
-
-        // then
-        page.Items.Should().BeEquivalentTo(items);
-        page.Index.Should().Be(0);
-        page.Size.Should().Be(10);
-        page.TotalItems.Should().Be(100);
-    }
-
-    [Fact]
     public void should_calculate_total_pages_when_index_page()
     {
         // when
@@ -153,49 +137,6 @@ public sealed class PaginationTests
         filtered.Index.Should().Be(0);
         filtered.Size.Should().Be(10);
         filtered.TotalItems.Should().Be(100);
-    }
-
-    #endregion
-
-    #region ContinuationPage - Construction & Properties
-
-    [Fact]
-    public void should_store_items_and_token_when_continuation_page()
-    {
-        // given
-        var items = new[] { "a", "b", "c" };
-        const string token = "next-page-token";
-
-        // when
-        var page = new ContinuationPage<string>(items, size: 10, continuationToken: token);
-
-        // then
-        page.Items.Should().BeEquivalentTo(items);
-        page.Size.Should().Be(10);
-        page.ContinuationToken.Should().Be(token);
-    }
-
-    [Fact]
-    public void should_expose_continuation_token_when_continuation_page()
-    {
-        // given
-        const string token = "abc123";
-
-        // when
-        var page = new ContinuationPage<int>([1, 2], size: 10, continuationToken: token);
-
-        // then
-        page.ContinuationToken.Should().Be(token);
-    }
-
-    [Fact]
-    public void should_allow_null_token_when_continuation_page()
-    {
-        // when
-        var page = new ContinuationPage<int>([1, 2], size: 10, continuationToken: null);
-
-        // then
-        page.ContinuationToken.Should().BeNull();
     }
 
     #endregion

@@ -22,7 +22,6 @@ namespace Tests.Transactions;
 /// (rows committing / discarding with the caller's transaction) is integration-only — see the EF harness conformance
 /// suite; the worker's own bounds are covered by <see cref="JobsPostCommitSignalServiceTests" />.
 /// </summary>
-[Collection<JobsHelperCollection>]
 public sealed partial class JobsManagerCoordinatedRoutingTests : TestBase
 {
     private const string _FunctionName = "routing-test-fn";

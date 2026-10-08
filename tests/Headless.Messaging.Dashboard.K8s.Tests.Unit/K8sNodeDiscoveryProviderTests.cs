@@ -480,17 +480,6 @@ public sealed class K8sNodeDiscoveryProviderTests : TestBase
 
     #endregion
 
-    #region Provider Interface Tests
-
-    [Fact]
-    public void should_implement_i_node_discovery_provider()
-    {
-        // given & when & then
-        _provider.Should().BeAssignableTo<INodeDiscoveryProvider>();
-    }
-
-    #endregion
-
     #region Helper Methods
 
     private sealed record TagFilterResult(bool HideNode, int FilteredPortIndex, string FilteredPortName);

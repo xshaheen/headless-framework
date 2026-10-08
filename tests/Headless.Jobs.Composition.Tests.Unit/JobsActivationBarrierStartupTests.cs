@@ -20,7 +20,6 @@ namespace Tests;
 /// the activation drain is still running — dispatching a uninitialized or stale-fingerprint definition under an
 /// unverified schedule interpretation, which is exactly what the gate exists to prevent.
 /// </summary>
-[Collection<JobsHelperCollection>]
 public sealed class JobsActivationBarrierStartupTests : TestBase
 {
     [Fact]

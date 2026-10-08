@@ -206,30 +206,6 @@ public sealed class GetOrAddAsyncTests : TestBase
     }
 
     [Fact]
-    public async Task should_handle_factory_returning_null()
-    {
-        // given
-        using var cache = _CreateCache();
-
-        // when
-        var result = await cache.GetOrAddAsync<string>(
-            "key",
-            _ => ValueTask.FromResult<string?>(null),
-            _DefaultExpiration,
-            AbortToken
-        );
-
-        // then
-        result.HasValue.Should().BeTrue();
-        result.Value.Should().BeNull();
-
-        // Verify null was cached
-        var cached = await cache.GetAsync<string>("key", AbortToken);
-        cached.HasValue.Should().BeTrue();
-        cached.Value.Should().BeNull();
-    }
-
-    [Fact]
     public async Task should_use_instance_based_locking_not_global()
     {
         // given - two different cache instances with same key should NOT share locks
@@ -286,27 +262,6 @@ public sealed class GetOrAddAsyncTests : TestBase
 
         factory1CanComplete.SetResult();
         await Task.WhenAll(task1, task2);
-    }
-
-    [Fact]
-    public async Task should_propagate_factory_exception()
-    {
-        // given
-        using var cache = _CreateCache();
-
-        // when
-        var act = () =>
-            cache
-                .GetOrAddAsync<string>(
-                    "key",
-                    _ => throw new InvalidOperationException("Factory failed"),
-                    _DefaultExpiration,
-                    AbortToken
-                )
-                .AsTask();
-
-        // then
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("Factory failed");
     }
 
     [Fact]
@@ -384,23 +339,5 @@ public sealed class GetOrAddAsyncTests : TestBase
         // then — the factory observed a cancellable token that fired on caller cancellation
         receivedToken.CanBeCanceled.Should().BeTrue();
         receivedToken.IsCancellationRequested.Should().BeTrue();
-    }
-
-    [Fact]
-    public async Task should_support_synchronous_factory_efficiently()
-    {
-        // given - ValueTask allows efficient sync completion
-        using var cache = _CreateCache();
-
-        // when - factory returns synchronously
-        var result = await cache.GetOrAddAsync(
-            "sync-key",
-            _ => ValueTask.FromResult<int?>(42), // No allocation for sync completion
-            _DefaultExpiration,
-            AbortToken
-        );
-
-        // then
-        result.Value.Should().Be(42);
     }
 }

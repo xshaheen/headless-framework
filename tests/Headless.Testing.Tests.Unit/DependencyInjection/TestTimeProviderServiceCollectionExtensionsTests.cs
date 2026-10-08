@@ -9,19 +9,6 @@ namespace Tests.DependencyInjection;
 public sealed class TestTimeProviderServiceCollectionExtensionsTests
 {
     [Fact]
-    public void should_resolve_fake_time_provider_as_time_provider()
-    {
-        var services = new ServiceCollection();
-
-        services.AddTestTimeProvider();
-
-        using var sp = services.BuildServiceProvider();
-        var resolved = sp.GetRequiredService<TimeProvider>();
-
-        resolved.Should().BeOfType<FakeTimeProvider>();
-    }
-
-    [Fact]
     public void should_return_same_instance_as_resolved_from_di()
     {
         var services = new ServiceCollection();
@@ -64,17 +51,5 @@ public sealed class TestTimeProviderServiceCollectionExtensionsTests
         using var sp = services.BuildServiceProvider();
 
         sp.GetRequiredService<TimeProvider>().Should().BeOfType<FakeTimeProvider>();
-    }
-
-    [Fact]
-    public void should_work_without_prior_registrations()
-    {
-        var services = new ServiceCollection();
-
-        var fakeTimeProvider = services.AddTestTimeProvider();
-
-        using var sp = services.BuildServiceProvider();
-
-        sp.GetRequiredService<TimeProvider>().Should().BeSameAs(fakeTimeProvider);
     }
 }

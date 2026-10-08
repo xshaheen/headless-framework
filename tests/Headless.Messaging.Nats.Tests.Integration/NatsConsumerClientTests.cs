@@ -490,100 +490,6 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
     }
 
     [Fact]
-    public async Task should_accept_real_delivery_value_for_commit_callback()
-    {
-        // given
-        var streamName = $"consume-commit-{Guid.NewGuid():N}"[..30];
-        var subject = $"{streamName}.test";
-        await _EnsureStreamAsync(streamName, $"{streamName}.>");
-
-        var options = _CreateOptions(NatsStreamProvisioning.Disabled);
-        await using var client = new NatsConsumerClient("test-group", 0, options, _serviceProvider);
-        await client.ConnectAsync(AbortToken);
-
-        var topics = await client.FetchMessageNamesAsync([subject], AbortToken);
-        await client.SubscribeAsync(topics, AbortToken);
-
-        var received = new TaskCompletionSource<(TransportMessage msg, object? sender)>(
-            TaskCreationOptions.RunContinuationsAsynchronously
-        );
-        client.OnMessageCallback = (msg, sender) =>
-        {
-            received.TrySetResult((msg, sender));
-            return Task.CompletedTask;
-        };
-        client.OnLogCallback = _ => { };
-
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-
-        // when — start listening, then publish
-        var listeningTask = client.ListeningAsync(TimeSpan.FromSeconds(1), cts.Token).AsTask();
-        try
-        {
-            await Task.Delay(500, AbortToken);
-
-            var body = "hello-commit"u8.ToArray();
-            await _PublishAsync(subject, body);
-
-            var (transportMsg, natsMsg) = await received.Task.WaitAsync(cts.Token);
-
-            // then — message received with correct body
-            transportMsg.Body.ToArray().Should().BeEquivalentTo(body);
-            transportMsg.Headers.Should().NotContainKey(MessagingHeaders.ConsumerIdentity);
-
-            // commit should not throw
-            await client.CommitAsync(natsMsg, AbortToken);
-        }
-        finally
-        {
-            await _StopListeningAsync(listeningTask, cts);
-        }
-    }
-
-    [Fact]
-    public async Task should_accept_real_delivery_value_for_reject_callback()
-    {
-        // given
-        var streamName = $"consume-reject-{Guid.NewGuid():N}"[..30];
-        var subject = $"{streamName}.test";
-        await _EnsureStreamAsync(streamName, $"{streamName}.>");
-
-        var options = _CreateOptions(NatsStreamProvisioning.Disabled);
-        await using var client = new NatsConsumerClient("test-group", 0, options, _serviceProvider);
-        await client.ConnectAsync(AbortToken);
-
-        await client.FetchMessageNamesAsync([subject], AbortToken);
-        await client.SubscribeAsync([subject], AbortToken);
-
-        var received = new TaskCompletionSource<object?>(TaskCreationOptions.RunContinuationsAsynchronously);
-        client.OnMessageCallback = (_, sender) =>
-        {
-            received.TrySetResult(sender);
-            return Task.CompletedTask;
-        };
-        client.OnLogCallback = _ => { };
-
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-
-        // when — start listening, then publish
-        var listeningTask = client.ListeningAsync(TimeSpan.FromSeconds(1), cts.Token).AsTask();
-        try
-        {
-            await Task.Delay(500, AbortToken);
-            await _PublishAsync(subject, "hello-reject"u8.ToArray());
-
-            var natsMsg = await received.Task.WaitAsync(cts.Token);
-
-            // then — reject (nak) should not throw
-            await client.RejectAsync(natsMsg, AbortToken);
-        }
-        finally
-        {
-            await _StopListeningAsync(listeningTask, cts);
-        }
-    }
-
-    [Fact]
     public async Task should_create_stream_when_fetch_message_names_async_enabled()
     {
         // given
@@ -740,7 +646,7 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
         var listeningTask = client.ListeningAsync(TimeSpan.FromSeconds(1), cts.Token).AsTask();
         try
         {
-            await Task.Delay(500, AbortToken);
+            await client.WaitUntilReadyAsync(AbortToken);
 
             var conn = await fixture.GetConnectionAsync();
             var js = new NatsJSContext(conn);

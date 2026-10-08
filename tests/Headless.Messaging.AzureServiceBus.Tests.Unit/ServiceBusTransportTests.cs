@@ -1,7 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Azure.Messaging.ServiceBus;
-using Demo.Contracts.DomainEvents;
 using Headless.Messaging;
 using Headless.Messaging.AzureServiceBus;
 using Headless.Testing.Tests;
@@ -352,3 +351,7 @@ public sealed class ServiceBusTransportTests : TestBase
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
 }
+
+internal sealed record EntityCreated(Guid Id);
+
+internal sealed record EntityDeleted(Guid Id);

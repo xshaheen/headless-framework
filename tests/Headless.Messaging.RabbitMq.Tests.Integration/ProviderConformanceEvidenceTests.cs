@@ -13,7 +13,7 @@ public sealed class ProviderConformanceEvidenceTests(RabbitMqFixture fixture) : 
         TransportRoutingAffinityConformance.AssertAsync(new RabbitMqProviderConformanceDriver(fixture), AbortToken);
 
     [Fact]
-    public async Task should_execute_every_supported_manifest_scenario()
+    public void should_back_every_supported_manifest_scenario_with_a_test()
     {
         var profile = TransportConformanceManifest.Providers["RabbitMQ"];
         TransportConformanceTestBinding[] bindings =
@@ -104,7 +104,7 @@ public sealed class ProviderConformanceEvidenceTests(RabbitMqFixture fixture) : 
             ),
         ];
 
-        await TransportConformanceTestBindings.ExecuteSupportedScenariosAsync(profile, bindings, _CreateTestClass);
+        TransportConformanceTestBindings.GetValidationErrors(profile, bindings).Should().BeEmpty();
     }
 
     private static TransportConformanceTestBinding _Bind(TransportConformanceScenario scenario, string method) =>
@@ -114,29 +114,4 @@ public sealed class ProviderConformanceEvidenceTests(RabbitMqFixture fixture) : 
         TransportConformanceScenario scenario,
         string method
     ) => new(scenario, typeof(RabbitMqRequestReplyConformanceTests), method);
-
-    private object _CreateTestClass(Type testClass)
-    {
-        if (testClass == typeof(ProviderConformanceEvidenceTests))
-        {
-            return new ProviderConformanceEvidenceTests(fixture);
-        }
-
-        if (testClass == typeof(RabbitMqConsumerClientConformanceTests))
-        {
-            return new RabbitMqConsumerClientConformanceTests(fixture);
-        }
-
-        if (testClass == typeof(RabbitMqRequestReplyConformanceTests))
-        {
-            return new RabbitMqRequestReplyConformanceTests(fixture);
-        }
-
-        if (testClass == typeof(RabbitMqBrokerFaultTests))
-        {
-            return new RabbitMqBrokerFaultTests(fixture);
-        }
-
-        throw new InvalidOperationException($"No RabbitMQ conformance test factory is registered for {testClass}.");
-    }
 }

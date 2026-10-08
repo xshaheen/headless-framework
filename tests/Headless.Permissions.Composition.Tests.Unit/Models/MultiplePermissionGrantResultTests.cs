@@ -8,22 +8,6 @@ namespace Tests.Models;
 public sealed class MultiplePermissionGrantResultTests : TestBase
 {
     [Fact]
-    public void should_track_multiple_results()
-    {
-        // given
-        var permissions = new List<string> { "Read", "Write", "Delete" };
-
-        // when
-        var result = new MultiplePermissionGrantResult(permissions, isGranted: true);
-
-        // then
-        result.Grants.Should().HaveCount(3);
-        result["Read"].Should().BeTrue();
-        result["Write"].Should().BeTrue();
-        result["Delete"].Should().BeTrue();
-    }
-
-    [Fact]
     public void should_return_all_granted_true_when_all_permissions_granted()
     {
         // given

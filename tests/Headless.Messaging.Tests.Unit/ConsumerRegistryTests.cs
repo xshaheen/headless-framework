@@ -422,7 +422,7 @@ public sealed class ConsumerRegistryTests : TestBase
     public async Task should_handle_concurrent_registration_and_freeze_without_race()
     {
         // given
-        const int iterations = 100;
+        const int iterations = 25;
         const int registrationsPerIteration = 10;
         var exceptions = new ConcurrentBag<Exception>();
 

@@ -627,7 +627,7 @@ public abstract class IdempotencyConformanceTests<TFixture>(TFixture fixture) : 
     {
         var key = CreateKey();
         await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
-        var lease = TimeSpan.FromSeconds(2);
+        var lease = TimeSpan.FromSeconds(1);
 
         var admitted = await host.Operations.AdmitAsync(
             key,
@@ -639,7 +639,7 @@ public abstract class IdempotencyConformanceTests<TFixture>(TFixture fixture) : 
 
         await using var unit = await Fixture.BeginUnitAsync(host, AbortToken);
         await Fixture.TouchAsync(unit.Unit, AbortToken);
-        await Task.Delay(lease + TimeSpan.FromSeconds(1), AbortToken);
+        await Task.Delay(lease + TimeSpan.FromMilliseconds(500), AbortToken);
 
         var fence = async () => await unit.Unit.Idempotency.FenceAsync(admitted, AbortToken);
 

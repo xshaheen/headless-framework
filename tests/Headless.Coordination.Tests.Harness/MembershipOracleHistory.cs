@@ -2,6 +2,7 @@
 
 using System.Globalization;
 using System.Text;
+using Headless.Coordination;
 
 namespace Tests;
 
@@ -16,6 +17,12 @@ public interface ICoordinationOracleFixture : ICoordinationFixture
 
     /// <summary>Reads the cluster's rows directly from the tables, bypassing the store.</summary>
     Task<StoredMembership> ReadRowsAsync(string clusterName, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Makes <paramref name="store" /> delete retention-expired rows on every snapshot read instead of at its
+    /// production cadence, so the stored rows can be compared with the model after each step.
+    /// </summary>
+    void PruneOnEverySnapshot(IMembershipStore store);
 }
 
 /// <summary>The rows one cluster holds, read raw.</summary>

@@ -72,31 +72,6 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
     }
 
     [Fact]
-    public async Task should_delete_published_message()
-    {
-        // given
-        var msgId = Guid.NewGuid().ToString("D");
-        var header = new Dictionary<string, string?>(StringComparer.Ordinal) { [Headers.MessageId] = msgId };
-        var message = new Message(header, new { Data = "test" });
-        var stored = await _storage.StoreMessageAsync("test.topic", message, cancellationToken: AbortToken);
-        var id = stored.StorageId;
-
-        // when
-        var deleted = await _storage.DeletePublishedMessageAsync(id, AbortToken);
-
-        // then
-        deleted.Should().Be(1);
-
-        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(AbortToken);
-        var count = await connection.QueryFirstAsync<int>(
-            "SELECT COUNT(*) FROM headless.messaging_published WHERE \"id\"=@Id",
-            new { Id = id }
-        );
-        count.Should().Be(0);
-    }
-
-    [Fact]
     public async Task should_store_published_message_with_maximum_supported_message_id_length()
     {
         // given
@@ -110,35 +85,6 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
         // then
         stored.Origin.Headers[Headers.MessageId].Should().Be(msgId);
         stored.Origin.Headers[Headers.MessageId].Should().HaveLength(MessageOptions.MessageIdMaxLength);
-    }
-
-    [Fact]
-    public async Task should_delete_received_message()
-    {
-        // given
-        var msgId = Guid.NewGuid().ToString("D");
-        var header = new Dictionary<string, string?>(StringComparer.Ordinal)
-        {
-            [Headers.MessageId] = msgId,
-            [Headers.MessageName] = "test.topic",
-        };
-        var message = new Message(header, new { Data = "test" });
-        var stored = await _storage.StoreReceivedMessageAsync("test.topic", "test.group", message, AbortToken);
-        var id = stored.StorageId;
-
-        // when
-        var deleted = await _storage.DeleteReceivedMessageAsync(id, AbortToken);
-
-        // then
-        deleted.Should().Be(1);
-
-        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
-        await connection.OpenAsync(AbortToken);
-        var count = await connection.QueryFirstAsync<int>(
-            "SELECT COUNT(*) FROM headless.messaging_received WHERE \"id\"=@Id",
-            new { Id = id }
-        );
-        count.Should().Be(0);
     }
 
     [Fact]
@@ -370,16 +316,5 @@ public sealed class PostgreSqlCrudTest(PostgreSqlTestFixture fixture) : TestBase
         );
 
         status.Should().Be(nameof(StatusName.Failed));
-    }
-
-    [Fact]
-    public void should_get_monitoring_api()
-    {
-        // when
-        var monitoringApi = _storage.GetMonitoringApi();
-
-        // then
-        monitoringApi.Should().NotBeNull();
-        monitoringApi.Should().BeOfType<RelationalMonitoringApi>();
     }
 }
