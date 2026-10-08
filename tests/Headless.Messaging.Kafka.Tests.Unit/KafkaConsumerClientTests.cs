@@ -346,7 +346,11 @@ public sealed class KafkaConsumerClientTests : TestBase
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
 
         // when
-        var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask();
+        // Consume blocks, so run the loop off the test thread the way the consumer register does.
+        var listeningTask = Task.Run(
+            () => client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask(),
+            AbortToken
+        );
 
         try
         {
@@ -442,7 +446,11 @@ public sealed class KafkaConsumerClientTests : TestBase
         client.OnLogCallback = _ => { };
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask();
+        // Consume blocks, so run the loop off the test thread the way the consumer register does.
+        var listeningTask = Task.Run(
+            () => client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask(),
+            AbortToken
+        );
 
         try
         {
@@ -523,7 +531,11 @@ public sealed class KafkaConsumerClientTests : TestBase
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
 
         // when
-        var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask();
+        // Consume blocks, so run the loop off the test thread the way the consumer register does.
+        var listeningTask = Task.Run(
+            () => client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask(),
+            AbortToken
+        );
 
         try
         {
@@ -658,7 +670,11 @@ public sealed class KafkaConsumerClientTests : TestBase
         client.OnLogCallback = _ => { };
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask();
+        // Consume blocks, so run the loop off the test thread the way the consumer register does.
+        var listeningTask = Task.Run(
+            () => client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask(),
+            AbortToken
+        );
 
         try
         {
@@ -716,7 +732,11 @@ public sealed class KafkaConsumerClientTests : TestBase
         client.OnLogCallback = _ => { };
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask();
+        // Consume blocks, so run the loop off the test thread the way the consumer register does.
+        var listeningTask = Task.Run(
+            () => client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask(),
+            AbortToken
+        );
 
         try
         {
@@ -863,7 +883,11 @@ public sealed class KafkaConsumerClientTests : TestBase
         client.OnLogCallback = _ => { };
 
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask();
+        // Consume blocks, so run the loop off the test thread the way the consumer register does.
+        var listeningTask = Task.Run(
+            () => client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask(),
+            AbortToken
+        );
         try
         {
             // when
@@ -954,7 +978,11 @@ public sealed class KafkaConsumerClientTests : TestBase
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
 
         // when — ListeningAsync will fault after the terminal commit; we only need to observe the commit signal
-        var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask();
+        // Consume blocks, so run the loop off the test thread the way the consumer register does.
+        var listeningTask = Task.Run(
+            () => client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask(),
+            AbortToken
+        );
         try
         {
             await commitCalled.Task.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
