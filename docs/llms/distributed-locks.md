@@ -20,6 +20,7 @@ Use `IDistributedReadWriteLock` when concurrent readers are safe and writers nee
 - The PostgreSQL and SQL Server fence sequences are created at host startup by the [schema runner](sql.md#schema-runner-apply-verify-and-deploy-time-scripts), never on first acquire. Code that builds a service provider without starting a host (a console tool, a test) must call `await provider.GetRequiredService<SchemaRunner>().ApplyAsync()` before its first fenced acquire.
 - Use `TryAcquireAsync(...)` when timeout is an expected branch; use `AcquireAsync(...)` when timeout should fail the workflow.
 - Use `TryAcquireAllAsync(...)` or `AcquireAllAsync(...)` when one operation must hold several resources. All three primitives have them: `IDistributedLock` takes `IEnumerable<string>`, `IDistributedReadWriteLock` takes `IEnumerable<DistributedReadWriteLockRequest>`, `IDistributedSemaphoreProvider` takes `IEnumerable<DistributedSemaphoreRequest>`. Pass the complete set in one call so the framework can sort it ordinally, deduplicate it, enforce one timeout budget, and compensate partial acquisition in reverse order.
+- Inside a unit of work on PostgreSQL or SQL Server, take every row lock the operation needs in one `unit.TransactionLocks.AcquireAllAsync(...)` or `TryAcquireAllAsync(...)` call. It sorts and deduplicates the set ordinally, waits under one budget, and holds nothing new when it fails. Never sort keys by hand or hand-write `FOR UPDATE` with a timeout for this. Build each name with `LockKey.For<T>(id)` (for example `LockKey.For<Wallet>(walletId)`) rather than inventing a string family per call site. See [Locks inside a unit of work](#locks-inside-a-unit-of-work).
 - When a caller needs both read and write locks, pass one mixed `DistributedReadWriteLockRequest` set through a single `AcquireAllAsync(...)`. Never nest `AcquireAllReadAsync(...)` inside `AcquireAllWriteAsync(...)` (or vice versa): neither call sees the complete set, so neither can order it, and two such callers can deadlock. Use the read-only / write-only sugar overloads only when the whole set is genuinely one mode. The same rule bans nesting a composite inside another composite, or acquiring one while already holding an unrelated lock.
 - Never pass a composite lease's `Resource` or `LeaseId` to a by-resource API (`IsLockedAsync`, `GetLeaseIdAsync`, `GetLockInfoAsync`, `GetHolderCountAsync`, `RenewAsync(resource, leaseId, ...)`). The joined name and synthetic id exist in no backend, so those calls report a genuinely held set as unlocked instead of failing. Inspect the individual resource names, and renew or release the composite through its handle.
 - A `DistributedSemaphoreRequest`'s `MaxCount` is the semaphore's capacity, not a permit count: a composite takes exactly one slot of each named semaphore, and naming one resource twice with different `MaxCount` values throws before any provider call. There is no all-or-nothing way to take N permits of a *single* semaphore today — repeated `AcquireAsync(...)` calls can split permits between two contending callers, and a composite cannot fix it (see [Composite Acquisition](#composite-acquisition)).
@@ -349,6 +350,8 @@ Defines public distributed-lock contracts.
 - `DistributedSemaphoreRequest(string Resource, int MaxCount)` names one semaphore in a composite and the capacity it is created with; it carries no permit count.
 - `IDistributedLease` handle with `LeaseId`, nullable `FencingToken` (`LockFencingToken?`), `LostToken`, `CanObserveLoss`, `IsLost`, `ThrowIfLost()`, `RenewAsync(...)`, and `ReleaseAsync(...)`.
 - `LockAcquisitionTimeoutException`, `LockHandleLostException`, and `DistributedLockException` for lock-specific failures.
+- `LockKey.For<T>(id)` builds a resource name `"{typeof(T).Name}:{id}"` from an entity type and a `string`, `Guid` (`"D"` format), or `long` id (an `int` widens; invariant culture). It returns a plain `string`, so it works with `IDistributedLock`, the composites, and `unit.TransactionLocks` alike. The short type name means two same-named types in different namespaces share names, which only adds contention. Renaming the type changes the name, so during a rolling deployment old and new nodes do not exclude each other on that entity.
+- `unit.TransactionLocks` (`UnitOfWorkTransactionLocks`) and its feature contract `IUnitOfWorkTransactionLocks`, implemented by the PostgreSQL and SQL Server providers. See [Locks inside a unit of work](#locks-inside-a-unit-of-work).
 - `GetLeaseIdAsync(resource)`, `GetLockInfoAsync(resource)`, `ListActiveLocksAsync()`, `GetActiveLocksCountAsync()`, `GetExpirationAsync(resource)` for operational inspection and monitoring. `GetLeaseIdAsync` does not renew a lease; monitored holders should use `LostToken` or `ThrowIfLost()` for lease-loss observation. Inspection `LeaseId` values may be null when the backend can observe the locked resource but not the current holder identity, and provider-wide list/count results are limited to what the backend can enumerate.
 
 ### Design constraints
@@ -746,6 +749,8 @@ PostgreSqlDistributedLock.AcquireWithTransaction(
 
 The SQL Server helper has the same four shapes with a string resource name.
 
+When the save runs inside a unit of work, use the unit instead of the static helpers: an interceptor reads it with `db.UnitOfWork()`, and the unit applies the provider's `KeyPrefix`, so the caller builds no advisory key and casts no transaction. The unit is there when the save runs inside `RunAsync(db, …)`, `BeginAsync(db)`, or `Enlist(db, tx)`, and when a `HeadlessDbContext` save opens its own transaction because it carries audit entries or domain or integration events. A plain save outside all of these runs `SavingChanges` before any transaction exists, so `db.UnitOfWork()` returns `null` and a transaction lock has nothing to live in: run that save inside `RunAsync(db, …)`. `db.UnitOfWork()` also returns `null` for a transaction no unit owns, such as one begun with `db.Database.BeginTransactionAsync(ct)` alone; the static helpers remain for that case. See [Locks inside a unit of work](#locks-inside-a-unit-of-work).
+
 Every helper on both engines treats the transaction as the lock's owner: asking again for a lock the transaction already holds succeeds, so an interceptor that runs on each `SaveChanges` of one transaction can take its lock every time. A failed or cancelled acquire leaves the caller's transaction usable and holding nothing new, as described for [the unit-of-work surface](#locks-inside-a-unit-of-work); the PostgreSQL helpers wrap each acquire in a savepoint for that.
 
 #### Locks inside a unit of work
@@ -765,8 +770,12 @@ await factory.RunAsync(
         // One attempt; null while another session holds it.
         TransactionLockHandle? mine = await unit.TransactionLocks.TryAcquireAsync("orders:124", cancellationToken: ct);
 
-        // Bounded wait on either call.
-        await unit.TransactionLocks.AcquireAsync("orders:125", TimeSpan.FromSeconds(5), ct);
+        // Several rows: one call, sorted and deduplicated, one 5 s budget, all-or-nothing.
+        IReadOnlyList<TransactionLockHandle> both = await unit.TransactionLocks.AcquireAllAsync(
+            [LockKey.For<Wallet>(toWalletId), LockKey.For<Wallet>(fromWalletId)],
+            TimeSpan.FromSeconds(5),
+            ct
+        );
 
         // mutate protected rows
     },
@@ -774,15 +783,59 @@ await factory.RunAsync(
 );
 ```
 
+The wait shape picks the outcome the API reports. A `TryAcquire` form returns `null` on contention, which suits a short wait that refuses the request. An `Acquire` form throws `LockAcquisitionTimeoutException`, which suits a longer wait whose expiry fails the operation. Map each at the call site; `Headless.Api` does not map `LockAcquisitionTimeoutException` to a status of its own.
+
+```csharp
+// 500 ms, then 409 Conflict through the Headless API exception handler.
+_ = await unit.TransactionLocks.TryAcquireAllAsync(
+        [LockKey.For<Wallet>(fromWalletId), LockKey.For<Wallet>(toWalletId)],
+        TimeSpan.FromMilliseconds(500),
+        ct
+    ) ?? throw new ConflictException("The wallet is being updated by another request.");
+
+// 5 s, then 503 with Retry-After, mapped by the application (here inside a minimal-API handler).
+try
+{
+    await unit.TransactionLocks.AcquireAsync(LockKey.For<Ledger>(ledgerId), TimeSpan.FromSeconds(5), ct);
+}
+catch (LockAcquisitionTimeoutException)
+{
+    httpContext.Response.Headers.RetryAfter = "5";
+
+    return Results.Problem(statusCode: StatusCodes.Status503ServiceUnavailable);
+}
+```
+
+A `SavingChanges` interceptor cannot await, so it uses the synchronous forms (`Acquire`, `TryAcquire`, `AcquireAll`, `TryAcquireAll`) on the unit it reads from the context. They block the calling thread for up to the wait and take no cancellation token. The context carries a unit only in the cases listed under [EF Core transaction-scoped locks](#ef-core-transaction-scoped-locks); this interceptor refuses a save that runs outside one rather than lock nothing.
+
+```csharp
+public sealed class AuditChainInterceptor : SaveChangesInterceptor
+{
+    public override InterceptionResult<int> SavingChanges(DbContextEventData eventData, InterceptionResult<int> result)
+    {
+        var unit = eventData.Context!.UnitOfWork()
+            ?? throw new InvalidOperationException("Save the audit chain inside RunAsync(db, …).");
+
+        unit.TransactionLocks.Acquire("audit:chain");
+
+        return result;
+    }
+}
+```
+
 - The resource encodes as `KeyPrefix + resource`, exactly as the provider's session locks do, so a session lock from `IDistributedLock` and a transaction lock on one logical name contend.
-- It refuses before any command runs, in the same shape as `unit.Outbox`: a unit that is no longer active, a unit with no relational resource (`IUnitOfWorkFactory.BeginAsync()` with no connection), a resource whose transaction already completed, or a transaction from another provider (a SQL Server unit under the PostgreSQL lock provider) each throw `InvalidOperationException` naming the condition. A host whose only lock provider is Redis or InMemory throws on the accessor itself.
-- `acquireTimeout` means the same on both engines. `AcquireAsync` defaults to 30 seconds and throws `LockAcquisitionTimeoutException` when the wait elapses; `TryAcquireAsync` defaults to one attempt and returns `null` instead. `Timeout.InfiniteTimeSpan` waits without bound on either call. PostgreSQL bounds the wait with a server-side `lock_timeout` and puts the unit's previous value back once the lock is held, so the setting never leaks to the rest of the unit; SQL Server passes it as `sp_getapplock`'s `@LockTimeout`.
+- It refuses before any command runs, in the same shape as `unit.Outbox`: a unit that is no longer active, a unit with no relational resource (`IUnitOfWorkFactory.BeginAsync()` with no connection), a resource whose transaction already completed, or a transaction from another provider (a SQL Server unit under the PostgreSQL lock provider) each throw `InvalidOperationException` naming the condition. A host whose only lock provider is Redis or InMemory throws on the accessor itself. A null, blank, or empty set, or a negative wait other than `Timeout.InfiniteTimeSpan`, throws an `ArgumentException` before the provider runs.
+- `acquireTimeout` means the same on both engines and on the synchronous forms. `Acquire*` defaults to 30 seconds and throws `LockAcquisitionTimeoutException` when the wait elapses; `TryAcquire*` defaults to one attempt and returns `null` instead. `Timeout.InfiniteTimeSpan` waits without bound on either call. PostgreSQL bounds the wait with a server-side `lock_timeout` and puts the unit's previous value back once the lock is held, so the setting never leaks to the rest of the unit; SQL Server passes it as `sp_getapplock`'s `@LockTimeout`.
+- `AcquireAll` and `TryAcquireAll` take the set in ordinal order after removing ordinal duplicates, the same canonical order `IDistributedLock.AcquireAllAsync` uses, so two units locking overlapping sets wait on each other instead of deadlocking, whatever order each listed them. Pass the whole set in one call: two calls are two sets, and the order between them is the caller's. The returned handles follow that order.
+- One budget covers the whole set: each resource waits only for what the earlier ones left. When a set's wait elapses, `LockAcquisitionTimeoutException.Resource` names the joined canonical set (`"a+b"`) rather than the resource that blocked; it is diagnostic only and is not a lock name. A set of one names its own resource.
+- A set is all-or-nothing. When one resource times out, is cancelled, or fails, the set's new locks are gone afterwards and the locks the unit held before the call stay held. PostgreSQL wraps the set in an outer savepoint and rolls back to it. SQL Server releases, in reverse order, only the locks the call newly granted, because rolling back to a SQL Server savepoint does not release the locks taken after it.
 - The unit's transaction owns the lock, so acquiring a resource the unit already holds succeeds at once on both engines, on every wait shape. Nothing stacks that needs a matching release: the unit's commit or rollback releases it once.
+- Besides `LockAcquisitionTimeoutException` and `OperationCanceledException`, an acquire can throw `LockCleanupFailedException` when it failed and undoing its partial work failed too: the transaction may still hold part of the set, so roll the unit back. SQL Server also throws `DistributedLockDeadlockException` when it picks the acquire as a deadlock victim. All three derive from `DistributedLockException`.
 - A failed acquire leaves the unit usable. A timeout, a cancellation (surfaced as `OperationCanceledException` on both engines), or any other failed acquire holds nothing afterwards, even when the server granted the lock just before the client gave up. PostgreSQL runs every acquire inside a savepoint and rolls back to it, which also lifts the abort a failed statement would otherwise put on the transaction. SQL Server releases what it granted; a timed-out `sp_getapplock` never dooms the transaction, but a cancel under `SET XACT_ABORT ON` makes SQL Server roll the whole transaction back.
 - The returned `TransactionLockHandle` is identity only. There is nothing to release, so it is not disposable; it carries the resource name for logging and assertions, and two handles for one resource compare equal.
 - A replayed `RunAsync` block begins a fresh transaction, so the lock is taken again inside it; the feature never calls `PreventRetry()`.
-- There is no synchronous form on the unit. A `SavingChanges` interceptor holds no unit handle; it keeps using the static helpers above.
 - TTL leases from `IDistributedLock` are a different contract and never enlist: a lease taken inside the block is released by its own TTL or `DisposeAsync`, not by the unit's outcome.
+- A custom provider implements `IUnitOfWorkTransactionLocks`: `TryAcquireAsync(unit, canonicalResources, acquireTimeout, cancellationToken)` and `TryAcquire(unit, canonicalResources, acquireTimeout)`. It receives the set already sorted and deduplicated and the wait already resolved, acquires in the given order under that one budget, returns `false` on contention, and must leave nothing of the set held when it returns `false` or throws.
 
 ### Configuration
 

@@ -34,6 +34,7 @@ namespace Headless.DistributedLocks.PostgreSql;
 public static class PostgreSqlDistributedLock
 {
     private const string _Savepoint = "headless_advisory_xact_lock";
+    private const string _SetSavepoint = "headless_advisory_xact_lock_set";
     private const string _PriorLockTimeoutSetting = "headless.lock_timeout_before_acquire";
 
     /// <summary>
@@ -156,6 +157,128 @@ public static class PostgreSqlDistributedLock
         TryAcquireWithTransaction(key, _RequireNpgsql(transaction));
 
     /// <summary>
+    /// Takes the transaction-scoped advisory lock for every key in <paramref name="keys"/>, in the order given and
+    /// under one wait budget, all-or-nothing. A set of two or more runs inside an outer savepoint around the per-key
+    /// savepoints: when any key fails, times out, or is cancelled, rolling back to it drops every lock this call took
+    /// and keeps the ones the transaction held before.
+    /// </summary>
+    /// <param name="keys">One or more advisory-lock keys in acquisition order.</param>
+    /// <param name="transaction">The caller's transaction, which owns the locks once acquired.</param>
+    /// <param name="timeout">
+    /// The budget for the whole set, with the sentinels of <see cref="AcquireInSavepointAsync"/>; each key waits only
+    /// for what the earlier keys left.
+    /// </param>
+    /// <param name="cancellationToken">Token used to cancel the acquire commands.</param>
+    /// <returns><see langword="false"/> when a key was still held by another session as the budget ran out.</returns>
+    /// <exception cref="LockCleanupFailedException">
+    /// The acquire failed and rolling back to its savepoint failed too, so the transaction may still hold some keys.
+    /// </exception>
+    internal static async ValueTask<bool> AcquireAllInSavepointAsync(
+        IReadOnlyList<PostgreSqlAdvisoryLockKey> keys,
+        NpgsqlTransaction transaction,
+        TimeSpan timeout,
+        CancellationToken cancellationToken
+    )
+    {
+        if (keys.Count == 1)
+        {
+            return await AcquireInSavepointAsync(keys[0], transaction, timeout, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        var connection = _RequireConnection(transaction);
+        await transaction.SaveAsync(_SetSavepoint, cancellationToken).ConfigureAwait(false);
+        var budget = TransactionLockBudget.Start(timeout);
+
+        try
+        {
+            foreach (var key in keys)
+            {
+                if (
+                    !budget.TryGetRemaining(out var wait)
+                    || !await AcquireInSavepointAsync(key, transaction, wait, cancellationToken).ConfigureAwait(false)
+                )
+                {
+                    await _RollBackSetAsync(transaction).ConfigureAwait(false);
+
+                    return false;
+                }
+            }
+
+            await transaction.ReleaseAsync(_SetSavepoint, cancellationToken).ConfigureAwait(false);
+
+            return true;
+        }
+        catch (Exception exception) when (connection.State == ConnectionState.Open)
+        {
+            try
+            {
+                await _RollBackSetAsync(transaction).ConfigureAwait(false);
+            }
+            catch (Exception cleanupFailure)
+            {
+                throw _SetCleanupFailed(exception, cleanupFailure);
+            }
+
+            throw;
+        }
+    }
+
+    /// <summary>Synchronous form of <see cref="AcquireAllInSavepointAsync"/>.</summary>
+    /// <param name="keys">One or more advisory-lock keys in acquisition order.</param>
+    /// <param name="transaction">The caller's transaction, which owns the locks once acquired.</param>
+    /// <param name="timeout">The budget for the whole set.</param>
+    /// <returns><see langword="false"/> when a key was still held by another session as the budget ran out.</returns>
+    /// <exception cref="LockCleanupFailedException">
+    /// The acquire failed and rolling back to its savepoint failed too, so the transaction may still hold some keys.
+    /// </exception>
+    internal static bool AcquireAllInSavepoint(
+        IReadOnlyList<PostgreSqlAdvisoryLockKey> keys,
+        NpgsqlTransaction transaction,
+        TimeSpan timeout
+    )
+    {
+        if (keys.Count == 1)
+        {
+            return _AcquireInSavepoint(keys[0], transaction, timeout);
+        }
+
+        var connection = _RequireConnection(transaction);
+        transaction.Save(_SetSavepoint);
+        var budget = TransactionLockBudget.Start(timeout);
+
+        try
+        {
+            foreach (var key in keys)
+            {
+                if (!budget.TryGetRemaining(out var wait) || !_AcquireInSavepoint(key, transaction, wait))
+                {
+                    _RollBackSet(transaction);
+
+                    return false;
+                }
+            }
+
+            transaction.Release(_SetSavepoint);
+
+            return true;
+        }
+        catch (Exception exception) when (connection.State == ConnectionState.Open)
+        {
+            try
+            {
+                _RollBackSet(transaction);
+            }
+            catch (Exception cleanupFailure)
+            {
+                throw _SetCleanupFailed(exception, cleanupFailure);
+            }
+
+            throw;
+        }
+    }
+
+    /// <summary>
     /// Takes the transaction-scoped advisory lock for <paramref name="key"/> inside a savepoint of
     /// <paramref name="transaction"/>. A failed or cancelled acquire rolls back to the savepoint, which lifts the
     /// statement's abort from the caller's transaction and releases a lock the server granted before the client gave
@@ -249,8 +372,35 @@ public static class PostgreSqlDistributedLock
                 _ThrowUnlessSavepointWasNeverSet(exception, cleanupFailure);
             }
 
+            if (_IsBoundedWaitExpiry(exception, timeout))
+            {
+                return false;
+            }
+
             throw;
         }
+    }
+
+    private static async ValueTask _RollBackSetAsync(NpgsqlTransaction transaction)
+    {
+        // Never cancelled: the rollback is what releases the set's locks, so it must run after a cancelled acquire too.
+        await transaction.RollbackAsync(_SetSavepoint, CancellationToken.None).ConfigureAwait(false);
+        await transaction.ReleaseAsync(_SetSavepoint, CancellationToken.None).ConfigureAwait(false);
+    }
+
+    private static void _RollBackSet(NpgsqlTransaction transaction)
+    {
+        transaction.Rollback(_SetSavepoint);
+        transaction.Release(_SetSavepoint);
+    }
+
+    private static LockCleanupFailedException _SetCleanupFailed(Exception acquireFailure, Exception cleanupFailure)
+    {
+        return new LockCleanupFailedException(
+            [acquireFailure, cleanupFailure],
+            "The advisory-lock set acquire failed and rolling back to its savepoint failed too; the transaction may "
+                + "hold some of the set's locks until it ends."
+        );
     }
 
     private static NpgsqlCommand _CreateAcquireCommand(
