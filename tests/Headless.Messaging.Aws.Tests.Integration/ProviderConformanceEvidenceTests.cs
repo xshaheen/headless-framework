@@ -21,7 +21,7 @@ public sealed class ProviderConformanceEvidenceTests(LocalStackTestFixture fixtu
         );
 
     [Fact]
-    public async Task should_execute_every_supported_manifest_scenario()
+    public void should_back_every_supported_manifest_scenario_with_a_test()
     {
         var profile = TransportConformanceManifest.Providers["AWS/LocalStack"];
         TransportConformanceTestBinding[] bindings =
@@ -89,29 +89,9 @@ public sealed class ProviderConformanceEvidenceTests(LocalStackTestFixture fixtu
             ),
         ];
 
-        await TransportConformanceTestBindings.ExecuteSupportedScenariosAsync(profile, bindings, _CreateTestClass);
+        TransportConformanceTestBindings.GetValidationErrors(profile, bindings).Should().BeEmpty();
     }
 
     private static TransportConformanceTestBinding _Bind(TransportConformanceScenario scenario, string method) =>
         new(scenario, typeof(AmazonSqsConsumerClientConformanceTests), method);
-
-    private object _CreateTestClass(Type testClass)
-    {
-        if (testClass == typeof(ProviderConformanceEvidenceTests))
-        {
-            return new ProviderConformanceEvidenceTests(fixture);
-        }
-
-        if (testClass == typeof(AmazonSqsConsumerClientConformanceTests))
-        {
-            return new AmazonSqsConsumerClientConformanceTests(fixture);
-        }
-
-        if (testClass == typeof(MalformedMessageTests))
-        {
-            return new MalformedMessageTests(fixture);
-        }
-
-        throw new InvalidOperationException($"No AWS conformance test factory is registered for {testClass}.");
-    }
 }

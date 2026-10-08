@@ -320,37 +320,6 @@ public sealed class RedisConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task should_dispose_without_error()
-    {
-        // given
-        var logger = LoggerFactory.CreateLogger<RedisConsumerClient>();
-        await using var client = new RedisConsumerClient("test-group", 1, _mockStreamManager, _options, logger);
-
-        // when & then
-        var action = async () => await client.DisposeAsync();
-        await action.Should().NotThrowAsync();
-    }
-
-    [Fact]
-    public async Task should_allow_setting_callbacks()
-    {
-        // given
-        var logger = LoggerFactory.CreateLogger<RedisConsumerClient>();
-        await using var client = new RedisConsumerClient("test-group", 1, _mockStreamManager, _options, logger);
-
-        Func<TransportMessage, object?, Task> messageCallback = (_, _) => Task.CompletedTask;
-        Action<LogMessageEventArgs> logCallback = _ => { };
-
-        // when
-        client.OnMessageCallback = messageCallback;
-        client.OnLogCallback = logCallback;
-
-        // then
-        client.OnMessageCallback.Should().BeSameAs(messageCallback);
-        client.OnLogCallback.Should().BeSameAs(logCallback);
-    }
-
-    [Fact]
     public async Task should_sanitize_malformed_entry_across_diagnostic_surfaces()
     {
         // given

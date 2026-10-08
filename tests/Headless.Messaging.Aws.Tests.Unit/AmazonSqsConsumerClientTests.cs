@@ -233,6 +233,18 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
 
         var logger = Substitute.For<ILogger<AmazonSqsConsumerClient>>();
         logger.IsEnabled(LogLevel.Error).Returns(true);
+        var errorLogged = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        logger
+            .When(l =>
+                l.Log(
+                    LogLevel.Error,
+                    Arg.Is<EventId>(id => id.Id == 4203),
+                    Arg.Any<Arg.AnyType>(),
+                    Arg.Any<Exception?>(),
+                    Arg.Any<Func<Arg.AnyType, Exception?, string>>()
+                )
+            )
+            .Do(_ => errorLogged.TrySetResult());
         await using var client = new AmazonSqsConsumerClient("test-group", 1, options, logger);
 
         var exceptionThrown = new InvalidOperationException("Test exception");
@@ -281,19 +293,21 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         _SetPrivateFields(client, sqsClient, "http://test");
 
         // when - Start listening in background and wait for message processing
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        using var cts = new CancellationTokenSource();
+        var listening = client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask();
+
+        // The failure is logged from a continuation that runs after the handler releases its permit.
+        await errorLogged.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+        await cts.CancelAsync();
 
         try
         {
-            await client.ListeningAsync(TimeSpan.FromMilliseconds(100), cts.Token);
+            await listening;
         }
         catch (OperationCanceledException)
         {
-            // Expected when timeout occurs
+            // Expected
         }
-
-        // Give some time for the fire-and-forget task to complete
-        await Task.Delay(500, AbortToken);
 
         // then - Verify error was logged
         _AssertLoggedEvent(logger, LogLevel.Error, 4203, exceptionThrown);
@@ -307,6 +321,18 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
 
         var logger = Substitute.For<ILogger<AmazonSqsConsumerClient>>();
         logger.IsEnabled(LogLevel.Error).Returns(true);
+        var errorLogged = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        logger
+            .When(l =>
+                l.Log(
+                    LogLevel.Error,
+                    Arg.Is<EventId>(id => id.Id == 4203),
+                    Arg.Any<Arg.AnyType>(),
+                    Arg.Any<Exception?>(),
+                    Arg.Any<Func<Arg.AnyType, Exception?, string>>()
+                )
+            )
+            .Do(_ => errorLogged.TrySetResult());
         await using var client = new AmazonSqsConsumerClient("test-group", 1, options, logger);
 
         var consumeException = new InvalidOperationException("Consume failed");
@@ -352,17 +378,21 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         _SetPrivateFields(client, sqsClient, "http://test");
 
         // when
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        using var cts = new CancellationTokenSource();
+        var listening = client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask();
+
+        // The failure is logged from a continuation that runs after the handler releases its permit.
+        await errorLogged.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+        await cts.CancelAsync();
+
         try
         {
-            await client.ListeningAsync(TimeSpan.FromMilliseconds(100), cts.Token);
+            await listening;
         }
         catch (OperationCanceledException)
         {
             // Expected
         }
-
-        await Task.Delay(500, AbortToken);
 
         // then - Verify only the callback failure was logged. Reject is owned by the framework callback wrapper.
         _AssertLoggedEvent(logger, LogLevel.Error, 4203, consumeException);
@@ -394,6 +424,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
             return Task.CompletedTask;
         };
 
+        var secondPoll = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var sqsClient = Substitute.For<IAmazonSQS>();
 
         // Return invalid message (null MessageAttributes) once, then empty
@@ -412,24 +443,28 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
                     );
                 }
 
+                secondPoll.TrySetResult();
                 return Task.FromResult(new ReceiveMessageResponse { Messages = [] });
             });
 
         _SetPrivateFields(client, sqsClient, "http://test");
 
         // when
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        using var cts = new CancellationTokenSource();
+        var listening = client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask();
+
+        // A second poll proves the loop finished dispatching the first batch.
+        await secondPoll.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+        await cts.CancelAsync();
 
         try
         {
-            await client.ListeningAsync(TimeSpan.FromMilliseconds(100), cts.Token);
+            await listening;
         }
         catch (OperationCanceledException)
         {
             // Expected
         }
-
-        await Task.Delay(100, AbortToken);
 
         // then
         messageReceived.Should().BeFalse("invalid messages should not be processed");
@@ -464,6 +499,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
             return Task.CompletedTask;
         };
 
+        var secondPoll = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var sqsClient = Substitute.For<IAmazonSQS>();
 
         // Return message only once, then empty
@@ -498,16 +534,23 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
                     );
                 }
 
+                secondPoll.TrySetResult();
                 return Task.FromResult(new ReceiveMessageResponse { Messages = [] });
             });
 
         _SetPrivateFields(client, sqsClient, "http://test");
 
         // when
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+        using var cts = new CancellationTokenSource();
+        var listening = client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask();
+
+        // A second poll proves the loop finished dispatching the first batch.
+        await secondPoll.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+        await cts.CancelAsync();
+
         try
         {
-            await client.ListeningAsync(TimeSpan.FromMilliseconds(100), cts.Token);
+            await listening;
         }
         catch (OperationCanceledException)
         {
@@ -535,6 +578,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         var exceptionThrown = new InvalidOperationException("Test exception");
         client.OnMessageCallback = (_, _) => throw exceptionThrown;
 
+        var secondPoll = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var sqsClient = Substitute.For<IAmazonSQS>();
         var receiveCallCount = 0;
         var receiveResponse = new ReceiveMessageResponse
@@ -562,64 +606,45 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
             .ReceiveMessageAsync(Arg.Any<ReceiveMessageRequest>(), Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
-                Interlocked.Increment(ref receiveCallCount);
-                return receiveCallCount <= 1
-                    ? Task.FromResult(receiveResponse)
-                    : Task.FromResult(new ReceiveMessageResponse { Messages = [] });
+                if (Interlocked.Increment(ref receiveCallCount) <= 1)
+                {
+                    return Task.FromResult(receiveResponse);
+                }
+
+                secondPoll.TrySetResult();
+                return Task.FromResult(new ReceiveMessageResponse { Messages = [] });
             });
 
         _SetPrivateFields(client, sqsClient, "http://test");
 
         // when
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        using var cts = new CancellationTokenSource();
+        var listening = client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask();
+
+        // A second poll proves the loop finished dispatching the first batch.
+        await secondPoll.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+
+        // Acquiring every permit waits for the fire-and-forget handler to release its own.
+        for (var i = 0; i < concurrencyLimit; i++)
+        {
+            await semaphore.WaitAsync(AbortToken);
+        }
+
+        semaphore.Release(concurrencyLimit);
+        await cts.CancelAsync();
+
         try
         {
-            await client.ListeningAsync(TimeSpan.FromMilliseconds(100), cts.Token);
+            await listening;
         }
         catch (OperationCanceledException)
         {
             // Expected
         }
-
-        await Task.Delay(500, AbortToken);
 
         // then - semaphore count should return to initial value
         var finalCount = semaphore.CurrentCount;
         finalCount.Should().Be(initialCount, "semaphore should be released exactly once, not twice");
-    }
-
-    [Fact]
-    public async Task should_fetch_batch_of_10_messages()
-    {
-        // given
-        var logger = Substitute.For<ILogger<AmazonSqsConsumerClient>>();
-        await using var client = new AmazonSqsConsumerClient("test-group", 1, _CreateOptions(), logger);
-
-        var sqsClient = Substitute.For<IAmazonSQS>();
-        sqsClient
-            .ReceiveMessageAsync(Arg.Any<ReceiveMessageRequest>(), Arg.Any<CancellationToken>())
-            .Returns(new ReceiveMessageResponse { Messages = [] });
-
-        _SetPrivateFields(client, sqsClient, "http://test");
-
-        // when
-        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
-        try
-        {
-            await client.ListeningAsync(TimeSpan.FromMilliseconds(100), cts.Token);
-        }
-        catch (OperationCanceledException)
-        {
-            // Expected
-        }
-
-        // then - verify the request was made with MaxNumberOfMessages = 10
-        await sqsClient
-            .Received()
-            .ReceiveMessageAsync(
-                Arg.Is<ReceiveMessageRequest>(r => r.MaxNumberOfMessages == 10),
-                Arg.Any<CancellationToken>()
-            );
     }
 
     [Fact]
@@ -694,7 +719,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
                 }
             }
 
-            await Task.Delay(200, AbortToken); // Simulate work
+            await Task.Delay(20, AbortToken); // Simulate work
 
             lock (lockObj)
             {
@@ -774,40 +799,6 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task should_use_long_polling_with_wait_time()
-    {
-        // given
-        var logger = Substitute.For<ILogger<AmazonSqsConsumerClient>>();
-        await using var client = new AmazonSqsConsumerClient("test-group", 1, _CreateOptions(), logger);
-
-        var sqsClient = Substitute.For<IAmazonSQS>();
-        sqsClient
-            .ReceiveMessageAsync(Arg.Any<ReceiveMessageRequest>(), Arg.Any<CancellationToken>())
-            .Returns(new ReceiveMessageResponse { Messages = [] });
-
-        _SetPrivateFields(client, sqsClient, "http://test");
-
-        // when
-        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
-        try
-        {
-            await client.ListeningAsync(TimeSpan.FromMilliseconds(100), cts.Token);
-        }
-        catch (OperationCanceledException)
-        {
-            // Expected
-        }
-
-        // then - verify long polling is configured with WaitTimeSeconds = 5
-        await sqsClient
-            .Received()
-            .ReceiveMessageAsync(
-                Arg.Is<ReceiveMessageRequest>(r => r.WaitTimeSeconds == 5),
-                Arg.Any<CancellationToken>()
-            );
-    }
-
-    [Fact]
     public async Task should_handle_empty_response_gracefully()
     {
         // given
@@ -821,18 +812,27 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
             return Task.CompletedTask;
         };
 
+        var firstPoll = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var sqsClient = Substitute.For<IAmazonSQS>();
         sqsClient
             .ReceiveMessageAsync(Arg.Any<ReceiveMessageRequest>(), Arg.Any<CancellationToken>())
-            .Returns(new ReceiveMessageResponse { Messages = [] });
+            .Returns(_ =>
+            {
+                firstPoll.TrySetResult();
+                return Task.FromResult(new ReceiveMessageResponse { Messages = [] });
+            });
 
         _SetPrivateFields(client, sqsClient, "http://test");
 
         // when
-        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
+        using var cts = new CancellationTokenSource();
+        var listening = client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask();
+        await firstPoll.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+        await cts.CancelAsync();
+
         try
         {
-            await client.ListeningAsync(TimeSpan.FromMilliseconds(100), cts.Token);
+            await listening;
         }
         catch (OperationCanceledException)
         {
@@ -842,6 +842,14 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         // then
         callbackInvoked.Should().BeFalse("callback should not be invoked when no messages");
         _AssertNoErrorLogs(logger);
+
+        // The request asks for a full batch and long-polls.
+        await sqsClient
+            .Received()
+            .ReceiveMessageAsync(
+                Arg.Is<ReceiveMessageRequest>(r => r.MaxNumberOfMessages == 10 && r.WaitTimeSeconds == 5),
+                Arg.Any<CancellationToken>()
+            );
     }
 
     [Fact]
@@ -851,11 +859,13 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         var logger = Substitute.For<ILogger<AmazonSqsConsumerClient>>();
         await using var client = new AmazonSqsConsumerClient("test-group", 1, _CreateOptions(), logger);
 
+        var polled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var sqsClient = Substitute.For<IAmazonSQS>();
         sqsClient
             .ReceiveMessageAsync(Arg.Any<ReceiveMessageRequest>(), Arg.Any<CancellationToken>())
             .Returns(callInfo =>
             {
+                polled.TrySetResult();
                 var ct = callInfo.ArgAt<CancellationToken>(1);
                 ct.ThrowIfCancellationRequested();
                 return Task.FromResult(new ReceiveMessageResponse { Messages = [] });
@@ -870,8 +880,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
             AbortToken
         );
 
-        // Cancel after short delay
-        await Task.Delay(200, AbortToken);
+        await polled.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
         await cts.CancelAsync();
 
         // then
@@ -977,6 +986,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
             return Task.CompletedTask;
         };
 
+        var secondPoll = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var sqsClient = Substitute.For<IAmazonSQS>();
         var receiveCount = 0;
         sqsClient
@@ -996,23 +1006,30 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
                     );
                 }
 
+                secondPoll.TrySetResult();
                 return Task.FromResult(new ReceiveMessageResponse { Messages = [] });
             });
 
         _SetPrivateFields(client, sqsClient, "http://test");
 
         // when
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        using var cts = new CancellationTokenSource();
+        var listening = client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask();
+
+        // A second poll proves the loop finished dispatching the first batch.
+        await secondPoll.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+        // The fire-and-forget handler holds the only permit until it has finished, so acquiring it waits for the handler.
+        await _GetSemaphore(client).WaitAsync(AbortToken);
+        await cts.CancelAsync();
+
         try
         {
-            await client.ListeningAsync(TimeSpan.FromMilliseconds(100), cts.Token);
+            await listening;
         }
         catch (OperationCanceledException)
         {
             // Expected
         }
-
-        await Task.Delay(500, AbortToken);
 
         // then
         callbackInvoked.Should().BeFalse("invalid JSON should not be processed");
@@ -1204,6 +1221,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
             callbackInvoked = true;
             return Task.CompletedTask;
         };
+        var secondPoll = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var sqsClient = Substitute.For<IAmazonSQS>();
         var receiveCount = 0;
         sqsClient
@@ -1234,18 +1252,27 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
                     );
                 }
 
+                secondPoll.TrySetResult();
                 return Task.FromResult(new ReceiveMessageResponse { Messages = [] });
             });
         _SetPrivateFields(client, sqsClient, "http://test");
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        using var cts = new CancellationTokenSource();
+        var listening = client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask();
+
+        // A second poll proves the loop finished dispatching the first batch.
+        await secondPoll.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+        // The fire-and-forget handler holds the only permit until it has finished, so acquiring it waits for the handler.
+        await _GetSemaphore(client).WaitAsync(AbortToken);
+        await cts.CancelAsync();
+
         try
         {
-            await client.ListeningAsync(TimeSpan.FromMilliseconds(100), cts.Token);
+            await listening;
         }
         catch (OperationCanceledException)
         {
-            // Expected once the single malformed delivery has been terminally settled.
+            // Expected
         }
 
         callbackInvoked.Should().BeFalse();
@@ -1315,11 +1342,13 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
 
         var sqsClient = Substitute.For<IAmazonSQS>();
         var receiveCount = 0;
+        var polled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         sqsClient
             .ReceiveMessageAsync(Arg.Any<ReceiveMessageRequest>(), Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
                 Interlocked.Increment(ref receiveCount);
+                polled.TrySetResult();
                 return Task.FromResult(new ReceiveMessageResponse { Messages = [] });
             });
 
@@ -1341,7 +1370,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
             AbortToken
         );
 
-        await Task.Delay(300, AbortToken);
+        await Task.Delay(100, AbortToken);
         var countWhilePaused = receiveCount;
 
         // then — no messages polled while paused
@@ -1349,7 +1378,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
 
         // cleanup
         await client.ResumeAsync(AbortToken);
-        await Task.Delay(300, AbortToken);
+        await polled.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
         await cts.CancelAsync();
         await listenTask;
 
@@ -1373,6 +1402,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
             return Task.CompletedTask;
         };
 
+        var secondPoll = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var sqsClient = Substitute.For<IAmazonSQS>();
         var receiveCount = 0;
         sqsClient
@@ -1404,16 +1434,23 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
                     );
                 }
 
+                secondPoll.TrySetResult();
                 return Task.FromResult(new ReceiveMessageResponse { Messages = [] });
             });
 
         _SetPrivateFields(client, sqsClient, "http://test");
 
         // when
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        using var cts = new CancellationTokenSource();
+        var listening = client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask();
+
+        // A second poll proves the loop finished dispatching the first batch.
+        await secondPoll.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+        await cts.CancelAsync();
+
         try
         {
-            await client.ListeningAsync(TimeSpan.FromMilliseconds(100), cts.Token);
+            await listening;
         }
         catch (OperationCanceledException)
         {

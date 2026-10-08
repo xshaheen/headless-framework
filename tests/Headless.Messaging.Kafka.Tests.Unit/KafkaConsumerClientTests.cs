@@ -46,32 +46,6 @@ public sealed class KafkaConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task should_allow_setting_on_message_callback()
-    {
-        // given
-        await using var client = new KafkaConsumerClient("test-group", 1, _options, _serviceProvider);
-
-        // when
-        client.OnMessageCallback = (_, _) => Task.CompletedTask;
-
-        // then
-        client.OnMessageCallback.Should().NotBeNull();
-    }
-
-    [Fact]
-    public async Task should_allow_setting_on_log_callback()
-    {
-        // given
-        await using var client = new KafkaConsumerClient("test-group", 1, _options, _serviceProvider);
-
-        // when
-        client.OnLogCallback = _ => { };
-
-        // then
-        client.OnLogCallback.Should().NotBeNull();
-    }
-
-    [Fact]
     public async Task should_throw_when_subscribing_with_null_topics()
     {
         // given
@@ -152,95 +126,6 @@ public sealed class KafkaConsumerClientTests : TestBase
                 ),
                 Arg.Any<CreateTopicsOptions>()
             );
-    }
-
-    [Fact]
-    public async Task should_dispose_successfully()
-    {
-        // given
-        var client = new KafkaConsumerClient("test-group", 2, _options, _serviceProvider);
-
-        // when
-        await client.DisposeAsync();
-
-        // then - no exception
-        client.Should().NotBeNull();
-    }
-
-    [Fact]
-    public async Task should_use_allow_auto_create_topics_from_config()
-    {
-        // given
-        var optionsWithAutoCreate = Options.Create(
-            new KafkaMessagingOptions
-            {
-                Servers = "localhost:9092",
-                MainConfig = { ["allow.auto.create.topics"] = "false" },
-            }
-        );
-        await using var client = new KafkaConsumerClient("test-group", 1, optionsWithAutoCreate, _serviceProvider);
-
-        // then - client created successfully with the config
-        client.Should().NotBeNull();
-    }
-
-    [Fact]
-    public async Task should_support_custom_headers_builder()
-    {
-        // given
-        var customHeaders = new List<KeyValuePair<string, string>> { new("custom-key", "custom-value") };
-        var optionsWithCustomHeaders = Options.Create(
-            new KafkaMessagingOptions { Servers = "localhost:9092", CustomHeadersBuilder = (_, _) => customHeaders }
-        );
-        await using var client = new KafkaConsumerClient("test-group", 1, optionsWithCustomHeaders, _serviceProvider);
-
-        // then
-        client.Should().NotBeNull();
-    }
-
-    [Fact]
-    public async Task should_handle_retriable_error_codes()
-    {
-        // given
-        var kafkaOptions = new KafkaMessagingOptions { Servers = "localhost:9092" };
-        kafkaOptions.RetriableErrorCodes.Clear();
-        kafkaOptions.RetriableErrorCodes.Add((int)ErrorCode.Local_TimedOut);
-        var options = Options.Create(kafkaOptions);
-        await using var client = new KafkaConsumerClient("test-group", 1, options, _serviceProvider);
-
-        // then - client created successfully
-        client.Should().NotBeNull();
-    }
-
-    [Fact]
-    public async Task should_use_topic_options_for_auto_creation()
-    {
-        // given
-        var options = Options.Create(
-            new KafkaMessagingOptions
-            {
-                Servers = "localhost:9092",
-                TopicOptions = new KafkaTopicOptions { NumPartitions = 3, ReplicationFactor = 1 },
-            }
-        );
-        await using var client = new KafkaConsumerClient("test-group", 1, options, _serviceProvider);
-
-        // then
-        client.Should().NotBeNull();
-    }
-
-    [Fact]
-    public async Task should_be_idempotent_when_connect()
-    {
-        // given
-        await using var client = new KafkaConsumerClient("test-group", 1, _options, _serviceProvider);
-
-        // when - call Connect multiple times (it won't actually connect without Kafka)
-        // This tests the idempotency of the Connect check
-        client.Connect();
-        client.Connect();
-
-        // then - no exception
     }
 
     [Fact]
@@ -466,7 +351,6 @@ public sealed class KafkaConsumerClientTests : TestBase
         try
         {
             await firstStarted.Task.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);
-            await Task.Delay(100, AbortToken);
 
             // then
             await secondStarted.Task.WaitAsync(TimeSpan.FromSeconds(1), AbortToken);

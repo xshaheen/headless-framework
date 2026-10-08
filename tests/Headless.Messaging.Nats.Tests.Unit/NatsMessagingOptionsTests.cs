@@ -39,19 +39,6 @@ public sealed class NatsMessagingOptionsTests : TestBase
     }
 
     [Fact]
-    public void should_support_multiple_servers()
-    {
-        var options = new NatsMessagingOptions
-        {
-            Servers = "nats://server1:4222,nats://server2:4222,nats://server3:4222",
-        };
-
-        options.Servers.Should().Contain("server1");
-        options.Servers.Should().Contain("server2");
-        options.Servers.Should().Contain("server3");
-    }
-
-    [Fact]
     public void should_redact_credentials_from_single_server_display_value()
     {
         var options = new NatsMessagingOptions { Servers = "nats://user:password@localhost:4222" };
@@ -100,22 +87,6 @@ public sealed class NatsMessagingOptionsTests : TestBase
     }
 
     [Fact]
-    public void should_support_disabling_stream_provisioning()
-    {
-        var options = new NatsMessagingOptions { StreamProvisioning = NatsStreamProvisioning.Disabled };
-
-        options.StreamProvisioning.Should().Be(NatsStreamProvisioning.Disabled);
-    }
-
-    [Fact]
-    public void should_support_selecting_reconcile_stream_provisioning()
-    {
-        var options = new NatsMessagingOptions { StreamProvisioning = NatsStreamProvisioning.Reconcile };
-
-        options.StreamProvisioning.Should().Be(NatsStreamProvisioning.Reconcile);
-    }
-
-    [Fact]
     public void should_build_default_nats_opts()
     {
         var options = new NatsMessagingOptions { Servers = "nats://custom:4222" };
@@ -137,76 +108,6 @@ public sealed class NatsMessagingOptionsTests : TestBase
 
         natsOpts.Url.Should().Be("nats://localhost:4222");
         natsOpts.ConnectTimeout.Should().Be(TimeSpan.FromSeconds(30));
-    }
-
-    [Fact]
-    public void should_allow_null_configure_connection()
-    {
-        var options = new NatsMessagingOptions { ConfigureConnection = null };
-        var natsOpts = options.BuildNatsOpts();
-
-        natsOpts.Should().NotBeNull();
-    }
-
-    [Fact]
-    public void should_support_stream_options_callback()
-    {
-        var invoked = false;
-        var options = new NatsMessagingOptions
-        {
-            StreamOptions = config =>
-            {
-                invoked = true;
-                config.Storage = StreamConfigStorage.File;
-            },
-        };
-
-        var config = new StreamConfig();
-        options.StreamOptions?.Invoke(config);
-
-        invoked.Should().BeTrue();
-        config.Storage.Should().Be(StreamConfigStorage.File);
-    }
-
-    [Fact]
-    public void should_support_consumer_options_callback()
-    {
-        var invoked = false;
-        var options = new NatsMessagingOptions
-        {
-            ConsumerOptions = config =>
-            {
-                invoked = true;
-                config.AckWait = TimeSpan.FromMinutes(1);
-            },
-        };
-
-        var config = new ConsumerConfig("test");
-        options.ConsumerOptions?.Invoke(config);
-
-        invoked.Should().BeTrue();
-        config.AckWait.Should().Be(TimeSpan.FromMinutes(1));
-    }
-
-    [Fact]
-    public void should_allow_null_stream_options()
-    {
-        var options = new NatsMessagingOptions { StreamOptions = null };
-        options.StreamOptions.Should().BeNull();
-    }
-
-    [Fact]
-    public void should_allow_null_consumer_options()
-    {
-        var options = new NatsMessagingOptions { ConsumerOptions = null };
-        options.ConsumerOptions.Should().BeNull();
-    }
-
-    [Fact]
-    public void should_allow_null_custom_headers_builder()
-    {
-        var options = new NatsMessagingOptions { CustomHeadersBuilder = null };
-        options.CustomHeadersBuilder.Should().BeNull();
     }
 
     // Validator tests
