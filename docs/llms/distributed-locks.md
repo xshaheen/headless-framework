@@ -757,7 +757,7 @@ Every helper on both engines treats the transaction as the lock's owner: asking 
 
 Inside a unit of work the transaction is the unit's, so the lock is taken through the unit rather than through a transaction object the caller has to dig out. `unit.TransactionLocks` is an accessor `Headless.DistributedLocks.Abstractions` adds to `IUnitOfWork`; `UsePostgreSql` and `UseSqlServer` register the feature behind it, and it needs no reference to the driver from the calling code.
 
-With `Headless.UnitOfWork.Analyzers` referenced, [HF2003](unit-of-work.md#hf2003) reports an `IDistributedLock.AcquireAsync` or `TryAcquireAsync` call made while a unit of work is in scope and names `unit.TransactionLocks`. It is a suggestion with no code fix: keep the autonomous lock when it must outlive the transaction.
+With `Headless.UnitOfWork.Analyzers` referenced, [HF2003](unit-of-work.md#hf2003) reports an `IDistributedLock.AcquireAsync`, `TryAcquireAsync`, `AcquireAllAsync`, or `TryAcquireAllAsync` call made while a unit of work is in scope and names `unit.TransactionLocks`. It is a suggestion with no code fix: keep the autonomous lock when it must outlive the transaction.
 
 ```csharp
 await factory.RunAsync(
@@ -783,7 +783,7 @@ await factory.RunAsync(
 );
 ```
 
-The wait shape picks the outcome the API reports. A `TryAcquire` form returns `null` on contention, which suits a short wait that refuses the request. An `Acquire` form throws `LockAcquisitionTimeoutException`, which suits a longer wait whose expiry fails the operation. Map each at the call site; `Headless.Api` does not map `LockAcquisitionTimeoutException` to a status of its own.
+The wait shape picks the outcome the API reports. A `TryAcquire` form returns `null` on contention, which suits a short wait that refuses the request. An `Acquire` form throws `LockAcquisitionTimeoutException`, which suits a longer wait whose expiry fails the operation. When the exception escapes to the Headless API exception handler, it answers 503 with `error.code: g:resource_busy` and no `Retry-After`, because the wait says nothing about when the holder will finish ([API surfaces](api.md#api-surfaces), exception mapping). Map at the call site when the endpoint needs another status or knows a retry delay.
 
 ```csharp
 // 500 ms, then 409 Conflict through the Headless API exception handler.
@@ -793,7 +793,10 @@ _ = await unit.TransactionLocks.TryAcquireAllAsync(
         ct
     ) ?? throw new ConflictException("The wallet is being updated by another request.");
 
-// 5 s, then 503 with Retry-After, mapped by the application (here inside a minimal-API handler).
+// 5 s, then 503 g:resource_busy from the Headless API exception handler.
+await unit.TransactionLocks.AcquireAsync(LockKey.For<Ledger>(ledgerId), TimeSpan.FromSeconds(5), ct);
+
+// The same 503 with a Retry-After the application knows, mapped at the call site (here a minimal-API handler).
 try
 {
     await unit.TransactionLocks.AcquireAsync(LockKey.For<Ledger>(ledgerId), TimeSpan.FromSeconds(5), ct);
@@ -830,7 +833,7 @@ public sealed class AuditChainInterceptor : SaveChangesInterceptor
 - One budget covers the whole set: each resource waits only for what the earlier ones left. When a set's wait elapses, `LockAcquisitionTimeoutException.Resource` names the joined canonical set (`"a+b"`) rather than the resource that blocked; it is diagnostic only and is not a lock name. A set of one names its own resource.
 - A set is all-or-nothing. When one resource times out, is cancelled, or fails, the set's new locks are gone afterwards and the locks the unit held before the call stay held. PostgreSQL wraps the set in an outer savepoint and rolls back to it. SQL Server releases, in reverse order, only the locks the call newly granted, because rolling back to a SQL Server savepoint does not release the locks taken after it.
 - The unit's transaction owns the lock, so acquiring a resource the unit already holds succeeds at once on both engines, on every wait shape. Nothing stacks that needs a matching release: the unit's commit or rollback releases it once.
-- Besides `LockAcquisitionTimeoutException` and `OperationCanceledException`, an acquire can throw `LockCleanupFailedException` when it failed and undoing its partial work failed too: the transaction may still hold part of the set, so roll the unit back. SQL Server also throws `DistributedLockDeadlockException` when it picks the acquire as a deadlock victim. All three derive from `DistributedLockException`.
+- Besides `LockAcquisitionTimeoutException` and `OperationCanceledException`, an acquire can throw `LockCleanupFailedException` when it failed and undoing its partial work failed too: the transaction may still hold part of the set, so roll the unit back. SQL Server also throws `DistributedLockDeadlockException` when it picks the acquire as a deadlock victim. `LockAcquisitionTimeoutException`, `LockCleanupFailedException`, and `DistributedLockDeadlockException` all derive from `DistributedLockException`, not from `TimeoutException`, so a generic `catch (TimeoutException)` around awaited work never mistakes lock contention for its own timeout.
 - A failed acquire leaves the unit usable. A timeout, a cancellation (surfaced as `OperationCanceledException` on both engines), or any other failed acquire holds nothing afterwards, even when the server granted the lock just before the client gave up. PostgreSQL runs every acquire inside a savepoint and rolls back to it, which also lifts the abort a failed statement would otherwise put on the transaction. SQL Server releases what it granted; a timed-out `sp_getapplock` never dooms the transaction, but a cancel under `SET XACT_ABORT ON` makes SQL Server roll the whole transaction back.
 - The returned `TransactionLockHandle` is identity only. There is nothing to release, so it is not disposable; it carries the resource name for logging and assertions, and two handles for one resource compare equal.
 - A replayed `RunAsync` block begins a fresh transaction, so the lock is taken again inside it; the feature never calls `PreventRetry()`.

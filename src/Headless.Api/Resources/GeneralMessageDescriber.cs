@@ -28,6 +28,12 @@ public static class GeneralMessageDescriber
         return new(code: GeneralErrorCodes.UniqueViolation, description: Messages.g_unique_violation);
     }
 
+    /// <summary>
+    /// Returns a descriptor for a resource another operation still held locked when the wait ran out
+    /// (<c>g:resource_busy</c>).
+    /// </summary>
+    public static ErrorDescriptor ResourceBusy() => new(GeneralErrorCodes.ResourceBusy, Messages.g_resource_busy);
+
     /// <summary>Returns a descriptor for a missing required <c>If-Match</c> header.</summary>
     public static ErrorDescriptor IfMatchRequired() =>
         new(GeneralErrorCodes.IfMatchRequired, Messages.g_if_match_required);

@@ -22,6 +22,9 @@
   <data name="g:unique_violation" xml:space="preserve">
     <value>يوجد سجل آخر بالقيمة نفسها، ويجب أن تكون هذه القيمة فريدة.</value>
   </data>
+  <data name="g:resource_busy" xml:space="preserve">
+    <value>يُحدّث طلب آخر هذا المورد الآن. حاول مرة أخرى بعد قليل.</value>
+  </data>
   <data name="g:if_match_required" xml:space="preserve">
     <value>يجب إرسال قيمة ETag الحالية باستخدام If-Match.</value>
   </data>

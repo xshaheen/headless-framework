@@ -498,6 +498,7 @@ Exception mapping from `AddHeadlessProblemDetails()`:
 | `EntityNotFoundException` | 404 |
 | EF Core `DbUpdateConcurrencyException` (matched by type name) | 409 with concurrency-failure error |
 | EF Core `DbUpdateException` (matched by type name) whose provider exception is a unique-constraint violation: PostgreSQL SQLSTATE `23505`, SQL Server error `2627` or `2601`, SQLite extended code `2067` or `1555` | 409 with `errors[].code: g:unique_violation`; the constraint name stays in the logs (event 5013) |
+| `LockAcquisitionTimeoutException` from `Headless.DistributedLocks` (matched by type name) | 503 with `error.code: g:resource_busy` and no `Retry-After`: the lock wait says nothing about when the holder finishes. The resource name stays in the logs (event 5014) |
 | `TimeoutException` | 408 |
 | `NotImplementedException` | 501 |
 | `OperationCanceledException` (or inner OCE at any depth) when `HttpContext.RequestAborted` is the source | 499 (no body) |

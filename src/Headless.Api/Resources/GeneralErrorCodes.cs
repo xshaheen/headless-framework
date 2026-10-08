@@ -41,6 +41,12 @@ public static class GeneralErrorCodes
     /// <summary>The request was already processed or is a duplicate of an in-flight request. Maps to 409.</summary>
     public const string DuplicatedRequest = "g:duplicated_request";
 
+    /// <summary>
+    /// Another operation still held a lock on the resource when the wait for it ran out, so the operation did not
+    /// run. Retrying once that operation finishes can succeed. Maps to 503.
+    /// </summary>
+    public const string ResourceBusy = "g:resource_busy";
+
     /// <summary>An unclassified server-side error occurred. Maps to 500.</summary>
     public const string UnknownError = "g:unknown_error";
 

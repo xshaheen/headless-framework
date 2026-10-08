@@ -25,6 +25,9 @@
   <data name="g:unique_violation" xml:space="preserve">
     <value>A record with the same unique value already exists.</value>
   </data>
+  <data name="g:resource_busy" xml:space="preserve">
+    <value>Another request is updating this resource. Try again shortly.</value>
+  </data>
   <data name="g:if_match_required" xml:space="preserve">
     <value>A strong If-Match entity tag is required.</value>
   </data>
