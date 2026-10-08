@@ -91,7 +91,10 @@ internal sealed class VipsFormat
         cancellationToken.ThrowIfCancellationRequested();
 
         using var output = HasAlpha || !image.HasAlpha() ? image.Copy() : image.Flatten(background: [_White(image)]);
-        using var registration = cancellationToken.Register(static state => ((Image)state!).SetKill(true), output);
+        using var registration = cancellationToken.Register(
+            callback: static state => ((Image)state!).SetKill(true),
+            state: output
+        );
 
         try
         {

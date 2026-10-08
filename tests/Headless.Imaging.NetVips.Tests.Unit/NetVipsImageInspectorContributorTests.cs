@@ -195,7 +195,7 @@ public sealed class NetVipsImageInspectorContributorTests : TestBase
     }
 
     public static TheoryData<byte[]> RefusedInputs =>
-        new() { TestImages.Bmp, TestImages.Svg, Array.Empty<byte>(), new byte[] { 1, 2, 3, 4, 5, 6, 7, 8 } };
+        [TestImages.Bmp, TestImages.Svg, Array.Empty<byte>(), new byte[] { 1, 2, 3, 4, 5, 6, 7, 8 }];
 
     [Theory]
     [MemberData(nameof(RefusedInputs))]
