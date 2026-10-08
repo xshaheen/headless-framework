@@ -63,13 +63,25 @@ internal sealed class SqsDeleteBatcher(IAmazonSQS sqsClient, string queueUrl, Ac
                 }
             }
 
-            if (batch.Length == 1)
+            try
             {
-                await _DeleteOneAsync(batch[0]).ConfigureAwait(false);
+                if (batch.Length == 1)
+                {
+                    await _DeleteOneAsync(batch[0]).ConfigureAwait(false);
+                }
+                else
+                {
+                    await _DeleteBatchAsync(batch).ConfigureAwait(false);
+                }
             }
-            else
+            catch (Exception e)
             {
-                await _DeleteBatchAsync(batch).ConfigureAwait(false);
+                // Nobody observes this flush, so a fault must reach the callers and leave the loop serving later deletes;
+                // otherwise every delete on the queue would wait forever behind a flush that stopped.
+                foreach (var pending in batch)
+                {
+                    pending.Completion.TrySetException(e);
+                }
             }
         }
     }

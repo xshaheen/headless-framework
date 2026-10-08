@@ -161,6 +161,127 @@ public sealed class AmazonSqsConsumerVisibilityTests : TestBase
     }
 
     [Fact]
+    public async Task should_send_a_reject_only_after_a_concurrent_extension_of_the_same_message_returned()
+    {
+        // given: a heartbeat call for the message is in flight when the core rejects it
+        _ReceiveOnce(_Message("receipt-1"));
+        var beatInFlight = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var finishBeat = new TaskCompletionSource<ChangeMessageVisibilityBatchResponse>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        _sqs.ChangeMessageVisibilityBatchAsync(
+                Arg.Any<string>(),
+                Arg.Any<List<ChangeMessageVisibilityBatchRequestEntry>>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(_ =>
+            {
+                beatInFlight.TrySetResult();
+                return finishBeat.Task;
+            });
+        var rejectSentAfterBeat = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        _sqs.ChangeMessageVisibilityAsync(_QueueUrl, "receipt-1", 3, Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                rejectSentAfterBeat.TrySetResult(finishBeat.Task.IsCompleted);
+                return Task.FromResult(new ChangeMessageVisibilityResponse());
+            });
+        var reject = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var client = _CreateClient(concurrency: 1);
+        client.OnMessageCallback = async (_, sender) =>
+        {
+            await reject.Task;
+            await client.RejectAsync(sender);
+        };
+        using var cts = new CancellationTokenSource();
+        var listening = client.ListeningAsync(TimeSpan.FromSeconds(1), cts.Token).AsTask();
+        await _WhenReceivedAsync();
+        _time.Advance(TimeSpan.FromSeconds(10));
+        await beatInFlight.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+
+        // when
+        reject.TrySetResult();
+        finishBeat.TrySetResult(new ChangeMessageVisibilityBatchResponse());
+
+        // then: the short reject visibility is the last word
+        (await rejectSentAfterBeat.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken))
+            .Should()
+            .BeTrue();
+        await cts.CancelAsync();
+        await _IgnoreCancellationAsync(listening);
+    }
+
+    [Fact]
+    public async Task should_keep_extending_after_a_service_fault_and_drop_a_message_sqs_refuses()
+    {
+        // given: two held messages; SQS refuses the first for a reason of the request and fails the second on its side
+        _ReceiveOnce(_Message("receipt-refused"), _Message("receipt-retried"));
+        _sqs.ChangeMessageVisibilityBatchAsync(
+                Arg.Any<string>(),
+                Arg.Any<List<ChangeMessageVisibilityBatchRequestEntry>>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(call =>
+            {
+                var entries = call.Arg<List<ChangeMessageVisibilityBatchRequestEntry>>();
+                lock (_visibilityLock)
+                {
+                    _visibilityChanges.Add([.. entries]);
+                }
+
+                _visibilityChanged.Release();
+                return Task.FromResult(
+                    new ChangeMessageVisibilityBatchResponse
+                    {
+                        Failed =
+                        [
+                            .. entries.Select(entry => new BatchResultErrorEntry
+                            {
+                                Id = entry.Id,
+                                Code =
+                                    entry.ReceiptHandle == "receipt-refused"
+                                        ? "ReceiptHandleIsInvalid"
+                                        : "InternalError",
+                                SenderFault = entry.ReceiptHandle == "receipt-refused",
+                            }),
+                        ],
+                    }
+                );
+            });
+        var held = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var started = 0;
+        var bothStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var client = _CreateClient(concurrency: 2);
+        client.OnMessageCallback = async (_, _) =>
+        {
+            if (Interlocked.Increment(ref started) == 2)
+            {
+                bothStarted.TrySetResult();
+            }
+
+            await held.Task;
+        };
+        using var cts = new CancellationTokenSource();
+        var listening = client.ListeningAsync(TimeSpan.FromSeconds(1), cts.Token).AsTask();
+        await bothStarted.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+
+        // when: two beats
+        _time.Advance(TimeSpan.FromSeconds(10));
+        await _visibilityChanged.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+        _time.Advance(TimeSpan.FromSeconds(10));
+        await _visibilityChanged.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+
+        // then
+        var beats = _VisibilityChanges();
+        beats[0].Select(entry => entry.ReceiptHandle).Should().BeEquivalentTo("receipt-refused", "receipt-retried");
+        beats[1].Select(entry => entry.ReceiptHandle).Should().Equal("receipt-retried");
+
+        held.TrySetResult();
+        await cts.CancelAsync();
+        await _IgnoreCancellationAsync(listening);
+    }
+
+    [Fact]
     public async Task should_drain_a_running_handler_before_disposing_the_sqs_client()
     {
         // given
@@ -247,15 +368,25 @@ public sealed class AmazonSqsConsumerVisibilityTests : TestBase
         return client;
     }
 
+    private readonly TaskCompletionSource _received = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    private Task _WhenReceivedAsync() => _received.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+
     private void _ReceiveOnce(params SqsMessage[] messages)
     {
         var received = 0;
         _sqs.ReceiveMessageAsync(Arg.Any<ReceiveMessageRequest>(), Arg.Any<CancellationToken>())
             .Returns(_ =>
-                Interlocked.Increment(ref received) == 1
-                    ? new ReceiveMessageResponse { Messages = [.. messages] }
-                    : new ReceiveMessageResponse { Messages = [] }
-            );
+            {
+                if (Interlocked.Increment(ref received) == 1)
+                {
+                    return new ReceiveMessageResponse { Messages = [.. messages] };
+                }
+
+                // A second poll means the first receive was handed out.
+                _received.TrySetResult();
+                return new ReceiveMessageResponse { Messages = [] };
+            });
     }
 
     // The message id doubles as the receipt handle, so a callback can tell the messages apart.

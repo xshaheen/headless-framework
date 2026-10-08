@@ -49,6 +49,10 @@ internal sealed class AmazonSqsConsumerClient(
     private readonly ConcurrentDictionary<string, SqsDeleteBatcher> _deleteBatchers = new(StringComparer.Ordinal);
     private readonly CancellationTokenSource _stopReceiving = new();
     private readonly CancellationTokenSource _stopHeartbeat = new();
+
+    // Orders every visibility change of this client: a heartbeat call that read a message as unsettled finishes before a
+    // reject or release of that message is sent, so the extension can never land after it and hide the message again.
+    private readonly SemaphoreSlim _visibilityGate = new(1, 1);
     private Task? _heartbeat;
     private int _disposed;
     private string _queueUrl = string.Empty;
@@ -414,7 +418,7 @@ internal sealed class AmazonSqsConsumerClient(
         var requiredActions =
             !_amazonSqsOptions.AutoProvision ? "sqs:GetQueueUrl, on a queue that already exists"
             : lane == MessageLane.Bus
-                ? "sns:CreateTopic, sqs:CreateQueue, sqs:GetQueueAttributes, sqs:SetQueueAttributes, sns:Subscribe"
+                ? "sns:CreateTopic, sqs:CreateQueue, sqs:GetQueueAttributes, sqs:SetQueueAttributes, sns:Subscribe, sns:SetSubscriptionAttributes"
             : "sqs:CreateQueue";
         var errorCode = string.IsNullOrWhiteSpace(exception.ErrorCode) ? "unknown" : exception.ErrorCode;
 
@@ -482,6 +486,7 @@ internal sealed class AmazonSqsConsumerClient(
         // Stop extending first, or the next heartbeat would hide the rejected message again for a full timeout.
         _unsettled.TryRemove(inflight.ReceiptHandle, out _);
 
+        await _visibilityGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             await _sqsClient!
@@ -491,6 +496,10 @@ internal sealed class AmazonSqsConsumerClient(
         catch (MessageNotInflightException ex)
         {
             _MessageNotInflightLog(ex.Message);
+        }
+        finally
+        {
+            _visibilityGate.Release();
         }
     }
 
@@ -548,25 +557,29 @@ internal sealed class AmazonSqsConsumerClient(
         // broker. The heartbeat keeps running meanwhile, so a slow handler's message stays hidden while it finishes.
         // Bounded so a stuck handler cannot hold the host: one still running past the budget has its delete fail and the
         // message is redelivered (at-least-once).
-        var inFlight = _inFlightHandlers.Keys.ToArray();
-        if (inFlight.Length > 0)
+        // Snapshots repeat until none is left: a receive that already won its handler slot when shutdown cancelled still
+        // starts that handler, after the first snapshot, and the receive loop in the snapshot ends only after it did.
+        var startedAt = _timeProvider.GetTimestamp();
+        try
         {
-            try
+            Task[] inFlight;
+            while ((inFlight = _inFlightHandlers.Keys.ToArray()).Length > 0)
             {
-                if (timeout <= TimeSpan.Zero)
+                var remaining = timeout - _timeProvider.GetElapsedTime(startedAt);
+                if (remaining <= TimeSpan.Zero)
                 {
                     throw new TimeoutException("The shared messaging shutdown deadline has expired.");
                 }
 
                 await Task.WhenAll(inFlight)
-                    .WaitAsync(timeout, _timeProvider, CancellationToken.None)
+                    .WaitAsync(remaining, _timeProvider, CancellationToken.None)
                     .ConfigureAwait(false);
             }
-            catch (Exception ex)
-            {
-                // Handler faults are already logged by _ObserveBackgroundHandler; disposal must never block or throw.
-                _logger.SqsShutdownDrainIncomplete(ex, subscriptionName, _inFlightHandlers.Count);
-            }
+        }
+        catch (Exception ex)
+        {
+            // Handler faults are already logged by _ObserveBackgroundHandler; disposal must never block or throw.
+            _logger.SqsShutdownDrainIncomplete(ex, subscriptionName, _inFlightHandlers.Count);
         }
 
         await _stopHeartbeat.CancelAsync().ConfigureAwait(false);
@@ -584,6 +597,7 @@ internal sealed class AmazonSqsConsumerClient(
         _semaphore.Dispose();
         _stopReceiving.Dispose();
         _stopHeartbeat.Dispose();
+        _visibilityGate.Dispose();
     }
 
     // One loop per client extends every unsettled message in batches of ten, instead of a timer per message. Every
@@ -603,7 +617,7 @@ internal sealed class AmazonSqsConsumerClient(
                 {
                     foreach (var chunk in queue.Chunk(SqsDeleteBatcher.MaxBatchSize))
                     {
-                        await _ChangeVisibilityAsync(queue.Key, chunk, visibilitySeconds, cancellationToken)
+                        await _ExtendAsync(queue.Key, chunk, visibilitySeconds, cancellationToken)
                             .ConfigureAwait(false);
                     }
                 }
@@ -617,6 +631,31 @@ internal sealed class AmazonSqsConsumerClient(
                 // The next beat retries; a message reappears only if every beat within its timeout fails.
                 _logger.SqsVisibilityHeartbeatFailed(ex, subscriptionName);
             }
+        }
+    }
+
+    private async Task _ExtendAsync(
+        string queueUrl,
+        InflightSqsMessage[] chunk,
+        int visibilitySeconds,
+        CancellationToken cancellationToken
+    )
+    {
+        await _visibilityGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            // Read under the gate: a message settled since the snapshot is left alone, and one settled from here on
+            // waits for this call before its own visibility change is sent.
+            var unsettled = Array.FindAll(chunk, message => _unsettled.ContainsKey(message.ReceiptHandle));
+            if (unsettled.Length > 0)
+            {
+                await _ChangeVisibilityAsync(queueUrl, unsettled, visibilitySeconds, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            _visibilityGate.Release();
         }
     }
 
@@ -650,9 +689,10 @@ internal sealed class AmazonSqsConsumerClient(
         {
             var message = messages[int.Parse(failed.Id, CultureInfo.InvariantCulture)];
 
-            // Stops extending a message SQS refused, which a retry would only refuse again; it may be redelivered. A
-            // message settled since the snapshot fails too, and is no longer tracked, so it logs nothing.
-            if (_unsettled.TryRemove(message.ReceiptHandle, out _))
+            // Stops extending a message SQS refused for a reason of the request, such as a receipt handle that is no
+            // longer current, which a retry would only refuse again; it may be redelivered. A service-side fault is
+            // retried by the next beat. A message settled meanwhile is no longer tracked, so it logs nothing.
+            if (failed.SenderFault is true && _unsettled.TryRemove(message.ReceiptHandle, out _))
             {
                 _logger.SqsVisibilityExtensionRefused(subscriptionName, failed.Code, failed.Message);
             }
@@ -679,8 +719,16 @@ internal sealed class AmazonSqsConsumerClient(
             {
                 foreach (var chunk in queue.Chunk(SqsDeleteBatcher.MaxBatchSize))
                 {
-                    await _ChangeVisibilityAsync(queue.Key, chunk, visibilitySeconds: 0, timeout.Token)
-                        .ConfigureAwait(false);
+                    await _visibilityGate.WaitAsync(timeout.Token).ConfigureAwait(false);
+                    try
+                    {
+                        await _ChangeVisibilityAsync(queue.Key, chunk, visibilitySeconds: 0, timeout.Token)
+                            .ConfigureAwait(false);
+                    }
+                    finally
+                    {
+                        _visibilityGate.Release();
+                    }
                 }
             }
         }
@@ -788,14 +836,14 @@ internal sealed class AmazonSqsConsumerClient(
     {
         var logArgs = new LogMessageEventArgs { LogType = MqLogType.InvalidIdFormat, Reason = exceptionMessage };
 
-        OnLogCallback!(logArgs);
+        OnLogCallback?.Invoke(logArgs);
     }
 
     private void _MessageNotInflightLog(string exceptionMessage)
     {
         var logArgs = new LogMessageEventArgs { LogType = MqLogType.MessageNotInflight, Reason = exceptionMessage };
 
-        OnLogCallback!(logArgs);
+        OnLogCallback?.Invoke(logArgs);
     }
 
     private async Task _GenerateSqsAccessPolicyAsync(IEnumerable<string> topicArns, CancellationToken cancellationToken)
@@ -840,19 +888,36 @@ internal sealed class AmazonSqsConsumerClient(
         var sqsQueueArn = queueAttributes["QueueArn"];
         foreach (var topicArn in topics)
         {
-            await _snsClient!
-                .SubscribeAsync(
-                    new SubscribeRequest
-                    {
-                        TopicArn = topicArn,
-                        Protocol = "sqs",
-                        Endpoint = sqsQueueArn,
-                        // The consumer reads the published body and header bag directly, not SNS's JSON wrapper.
-                        Attributes = new Dictionary<string, string>(StringComparer.Ordinal)
-                        {
-                            ["RawMessageDelivery"] = "true",
-                        },
-                    },
+            var request = new SubscribeRequest
+            {
+                TopicArn = topicArn,
+                Protocol = "sqs",
+                Endpoint = sqsQueueArn,
+                // The consumer reads the published body and header bag directly, not SNS's JSON wrapper. Asked for at
+                // creation, so no message reaches a new subscription wrapped.
+                Attributes = new Dictionary<string, string>(StringComparer.Ordinal) { ["RawMessageDelivery"] = "true" },
+            };
+
+            SubscribeResponse response;
+            try
+            {
+                response = await _snsClient!.SubscribeAsync(request, cancellationToken).ConfigureAwait(false);
+            }
+            catch (InvalidParameterException)
+            {
+                // SNS refuses to resubscribe an existing subscription with different attributes; take it as it is and
+                // switch it below.
+                request.Attributes = null;
+                response = await _snsClient!.SubscribeAsync(request, cancellationToken).ConfigureAwait(false);
+            }
+
+            // Subscribe returns an existing subscription without applying the requested attributes, and a wrapped
+            // message would be deleted as malformed, so raw delivery is set on every subscription the consumer owns.
+            await _snsClient
+                .SetSubscriptionAttributesAsync(
+                    response.SubscriptionArn,
+                    "RawMessageDelivery",
+                    "true",
                     cancellationToken
                 )
                 .ConfigureAwait(false);

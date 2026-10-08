@@ -175,5 +175,26 @@ public sealed class SqsDeleteBatcherTests : TestBase
         _invalidReceipts.Should().Equal("stale");
     }
 
+    [Fact]
+    public async Task should_keep_serving_deletes_when_the_stale_receipt_callback_throws()
+    {
+        // given
+        _sqs.DeleteMessageAsync(_QueueUrl, "receipt-stale", Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<DeleteMessageResponse>(new ReceiptHandleIsInvalidException("stale")));
+        _sqs.DeleteMessageAsync(_QueueUrl, "receipt-later", Arg.Any<CancellationToken>())
+            .Returns(new DeleteMessageResponse());
+        var failure = new InvalidOperationException("log sink failed");
+        var batcher = new SqsDeleteBatcher(_sqs, _QueueUrl, _ => throw failure);
+
+        // when
+        var stale = batcher.DeleteAsync("receipt-stale", AbortToken);
+
+        // then: the caller sees the fault instead of waiting forever, and the queue keeps deleting
+        (await stale.Awaiting(t => t).Should().ThrowAsync<InvalidOperationException>())
+            .Which.Should()
+            .BeSameAs(failure);
+        await batcher.DeleteAsync("receipt-later", AbortToken).WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+    }
+
     private SqsDeleteBatcher _CreateBatcher() => new(_sqs, _QueueUrl, _invalidReceipts.Add);
 }

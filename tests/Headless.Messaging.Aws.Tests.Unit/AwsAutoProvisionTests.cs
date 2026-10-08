@@ -80,16 +80,15 @@ public sealed class AwsAutoProvisionTests : TestBase
     public async Task should_subscribe_bus_queues_with_raw_message_delivery()
     {
         // given
-        _sqs.GetAttributesAsync("https://sqs.local/bus-orders")
-            .Returns(
-                new Dictionary<string, string>(StringComparer.Ordinal) { ["QueueArn"] = "arn:aws:sqs:::bus-orders" }
-            );
+        _GivenBusQueue();
+        _sns.SubscribeAsync(Arg.Any<SubscribeRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new SubscribeResponse { SubscriptionArn = "arn:aws:sns:::bus-orders-placed:sub" });
         await using var client = _CreateConsumer(MessageLane.Bus, autoProvision: true);
 
         // when
         await client.SubscribeAsync(["arn:aws:sns:::bus-orders-placed"], AbortToken);
 
-        // then
+        // then: asked for at creation, and set again because SNS returns an existing subscription unchanged
         await _sns.Received(1)
             .SubscribeAsync(
                 Arg.Is<SubscribeRequest>(r =>
@@ -98,6 +97,45 @@ public sealed class AwsAutoProvisionTests : TestBase
                     && r.Attributes["RawMessageDelivery"] == "true"
                 ),
                 Arg.Any<CancellationToken>()
+            );
+        await _sns.Received(1)
+            .SetSubscriptionAttributesAsync(
+                "arn:aws:sns:::bus-orders-placed:sub",
+                "RawMessageDelivery",
+                "true",
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_switch_an_existing_wrapped_subscription_to_raw_delivery()
+    {
+        // given: SNS refuses to resubscribe with different attributes
+        _GivenBusQueue();
+        _sns.SubscribeAsync(Arg.Is<SubscribeRequest>(r => r.Attributes != null), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new InvalidParameterException("Subscription already exists with different attributes"));
+        _sns.SubscribeAsync(Arg.Is<SubscribeRequest>(r => r.Attributes == null), Arg.Any<CancellationToken>())
+            .Returns(new SubscribeResponse { SubscriptionArn = "arn:aws:sns:::bus-orders-placed:old" });
+        await using var client = _CreateConsumer(MessageLane.Bus, autoProvision: true);
+
+        // when
+        await client.SubscribeAsync(["arn:aws:sns:::bus-orders-placed"], AbortToken);
+
+        // then
+        await _sns.Received(1)
+            .SetSubscriptionAttributesAsync(
+                "arn:aws:sns:::bus-orders-placed:old",
+                "RawMessageDelivery",
+                "true",
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    private void _GivenBusQueue()
+    {
+        _sqs.GetAttributesAsync("https://sqs.local/bus-orders")
+            .Returns(
+                new Dictionary<string, string>(StringComparer.Ordinal) { ["QueueArn"] = "arn:aws:sqs:::bus-orders" }
             );
     }
 
