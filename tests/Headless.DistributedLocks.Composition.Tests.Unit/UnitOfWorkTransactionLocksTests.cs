@@ -42,7 +42,7 @@ public sealed class UnitOfWorkTransactionLocksTests : TestBase
     public async Task should_forward_the_bound_unit_and_a_single_resource_set()
     {
         // given
-        _GrantAsync(true);
+        _Grant(true);
         var timeout = TimeSpan.FromSeconds(3);
 
         // when
@@ -64,7 +64,7 @@ public sealed class UnitOfWorkTransactionLocksTests : TestBase
     public async Task should_canonicalize_the_set_into_distinct_ordinal_order()
     {
         // given
-        _GrantAsync(true);
+        _Grant(true);
 
         // when
         var handles = await _unit.TransactionLocks.AcquireAllAsync(
@@ -89,7 +89,7 @@ public sealed class UnitOfWorkTransactionLocksTests : TestBase
     public async Task should_default_acquire_to_thirty_seconds_and_try_to_one_attempt()
     {
         // given
-        _GrantAsync(true);
+        _Grant(true);
         _feature.TryAcquire(_unit, Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>()).Returns(true);
         var locks = _unit.TransactionLocks;
 
@@ -115,7 +115,7 @@ public sealed class UnitOfWorkTransactionLocksTests : TestBase
     public async Task should_return_null_from_try_forms_when_the_provider_reports_contention()
     {
         // given
-        _GrantAsync(false);
+        _Grant(false);
         _feature.TryAcquire(_unit, Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>()).Returns(false);
         var locks = _unit.TransactionLocks;
 
@@ -132,7 +132,7 @@ public sealed class UnitOfWorkTransactionLocksTests : TestBase
     public async Task should_throw_a_timeout_naming_the_single_resource_or_the_joined_set()
     {
         // given
-        _GrantAsync(false);
+        _Grant(false);
         _feature.TryAcquire(_unit, Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>()).Returns(false);
         var locks = _unit.TransactionLocks;
 
@@ -173,7 +173,7 @@ public sealed class UnitOfWorkTransactionLocksTests : TestBase
     public async Task should_pass_an_infinite_wait_through_unchanged()
     {
         // given
-        _GrantAsync(true);
+        _Grant(true);
 
         // when
         await _unit.TransactionLocks.AcquireAsync("a", Timeout.InfiniteTimeSpan, AbortToken);
@@ -211,7 +211,7 @@ public sealed class UnitOfWorkTransactionLocksTests : TestBase
         new TransactionLockHandle("orders:1").Should().NotBe(new TransactionLockHandle("orders:2"));
     }
 
-    private void _GrantAsync(bool acquired)
+    private void _Grant(bool acquired)
     {
         _feature
             .TryAcquireAsync(_unit, Arg.Any<IReadOnlyList<string>>(), Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
