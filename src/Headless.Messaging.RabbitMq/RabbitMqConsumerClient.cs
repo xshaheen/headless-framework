@@ -11,6 +11,9 @@ namespace Headless.Messaging.RabbitMq;
 
 internal sealed class RabbitMqConsumerClient : IConsumerClient
 {
+    // The fallback drain budget when the client is disposed without a shutdown budget from the messaging core.
+    private static readonly TimeSpan _ShutdownDrainTimeout = TimeSpan.FromSeconds(30);
+
     private readonly SemaphoreSlim _semaphore = new(1, 1);
     private readonly string _subscriptionName;
     private readonly byte _groupConcurrent;
@@ -132,8 +135,8 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
                 _queueNames.Add(queueName);
             }
 
-            await _channel!
-                .QueueBindAsync(queueName, _exchangeName, routingKey, cancellationToken: cancellationToken)
+            await RabbitMqQueueTopology
+                .BindQueueAsync(_channel!, _rabbitMqOptions, _exchangeName, queueName, routingKey, cancellationToken)
                 .ConfigureAwait(false);
         }
     }
@@ -322,7 +325,12 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
         }
     }
 
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
+    {
+        return ShutdownAsync(_ShutdownDrainTimeout);
+    }
+
+    public async ValueTask ShutdownAsync(TimeSpan timeout, CancellationToken cancellationToken = default)
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
         {
@@ -330,7 +338,37 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
         }
 
         _pauseGate.Release();
-        _ready.TrySetCanceled();
+        _ready.TrySetCanceled(CancellationToken.None);
+
+        // Drain in-flight handlers before closing the channel, so a running handler's ack reaches the broker instead of
+        // being skipped on a closed channel and redelivered. Bounded so a stuck handler cannot block shutdown; a handler
+        // still running past the budget has its ack skipped and the message is redelivered (at-least-once). Deliveries
+        // that arrive during the drain are not dispatched and return to the queue when the channel closes.
+        if (_consumer is { } consumer)
+        {
+            try
+            {
+                if (timeout <= TimeSpan.Zero)
+                {
+                    consumer.StopDispatching();
+                    throw new TimeoutException("The shared messaging shutdown deadline has expired.");
+                }
+
+                await consumer.DrainAsync(timeout, _timeProvider).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                // Handler faults are already surfaced by the consumer; on a drain timeout, log and proceed — shutdown
+                // must never block or throw.
+                OnLogCallback?.Invoke(
+                    new LogMessageEventArgs
+                    {
+                        LogType = MqLogType.ExceptionReceived,
+                        Reason = $"Timed out draining in-flight RabbitMQ handlers during shutdown: {ex}",
+                    }
+                );
+            }
+        }
 
         _consumer?.Dispose();
         _channel?.Dispose();
@@ -390,12 +428,13 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
 
             try
             {
-                await channel
-                    .ExchangeDeclareAsync(
+                await RabbitMqQueueTopology
+                    .DeclareExchangeAsync(
+                        channel,
+                        _rabbitMqOptions,
                         _exchangeName,
                         RabbitMqPhysicalAddress.ExchangeType(_lane),
-                        durable: true,
-                        cancellationToken: cancellationToken
+                        cancellationToken
                     )
                     .ConfigureAwait(false);
 
@@ -669,33 +708,17 @@ internal sealed class RabbitMqConsumerClient : IConsumerClient
         return RabbitMqPhysicalAddress.Queue(lane, subscriptionName, messageName);
     }
 
-    private async Task _DeclareQueueAsync(string queueName, CancellationToken cancellationToken)
+    // Bindings go with SubscribeAsync, which knows the routing keys; the queue declare here only creates the queue.
+    private Task _DeclareQueueAsync(string queueName, CancellationToken cancellationToken)
     {
-        var arguments = new Dictionary<string, object?>(StringComparer.Ordinal)
-        {
-            { "x-message-ttl", _rabbitMqOptions.QueueArguments.MessageTTL },
-        };
-
-        if (!string.IsNullOrEmpty(_rabbitMqOptions.QueueArguments.QueueMode))
-        {
-            arguments.Add("x-queue-mode", _rabbitMqOptions.QueueArguments.QueueMode);
-        }
-
-        if (!string.IsNullOrEmpty(_rabbitMqOptions.QueueArguments.QueueType))
-        {
-            arguments.Add("x-queue-type", _rabbitMqOptions.QueueArguments.QueueType);
-        }
-
-        await _channel!
-            .QueueDeclareAsync(
-                queueName,
-                _rabbitMqOptions.QueueOptions.Durable,
-                _rabbitMqOptions.QueueOptions.Exclusive,
-                _rabbitMqOptions.QueueOptions.AutoDelete,
-                arguments,
-                cancellationToken: cancellationToken
-            )
-            .ConfigureAwait(false);
+        return RabbitMqQueueTopology.DeclareQueueAsync(
+            _channel!,
+            _rabbitMqOptions,
+            _exchangeName,
+            queueName,
+            routingKey: null,
+            cancellationToken
+        );
     }
 }
 

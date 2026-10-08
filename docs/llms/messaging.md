@@ -314,7 +314,7 @@ Transports declare support with `MessagingProviderCapabilities.Transport(..., su
 | Kafka | Queue-only topics; one Kafka consumer group per message | Ownership, startup rejection, and bounded poison-offset advancement | A Bus consumer fails startup; configure partitions for the workload |
 | NATS | Lane-qualified subjects, streams, retention, and durables | Identity/replica isolation and malformed terminal ACK | Grant stream and consumer provisioning permissions |
 | Pulsar | Lane-qualified topics and Bus subscriptions | Identity/replica isolation and malformed terminal ACK | Grant topic and subscription creation permissions |
-| RabbitMQ | Lane-qualified exchanges, routing keys, and owned queues | Identity/replica isolation and malformed terminal reject | Grant exchange and queue provisioning permissions |
+| RabbitMQ | Lane-qualified exchanges, routing keys, and owned queues; publishers declare the Queue-lane queue too | Identity/replica isolation, malformed terminal reject, publish before any consumer, and the shutdown drain | Grant exchange and queue provisioning permissions, or set `AutoProvision = false` and provision the topology yourself |
 | Redis | Lane-qualified Streams for both lanes | Routing, ownership, settlement, and poison handling | Configure retained stream storage; the provider creates the Redis consumer groups |
 
 #### AWS least-privilege handoff
@@ -2437,7 +2437,11 @@ Registers Pulsar connection factory, transports, and consumer client factory.
 
 ### Design constraints
 
-RabbitMQ exposes consumer-side QoS through `PrefetchCount(...)` on `Tune`; it has no message hatch. For base exchange `myapp.events`, Bus uses the `myapp.events.bus` topic exchange, `bus.{logical-name}` routing keys, and `bus.{consumer-identity}` queues; Queue uses the `myapp.events.queue` direct exchange, `queue.{logical-name}` routing keys, and `queue.{logical-name}` queues. When `PublishConfirms` is enabled, publish completion awaits the broker acknowledgement or negative acknowledgement. Malformed transport envelopes are terminally rejected without requeue while ordinary handler rejection remains retryable.
+RabbitMQ exposes consumer-side QoS through `PrefetchCount(...)` on `Tune`; it has no message hatch. For base exchange `myapp.events`, Bus uses the `myapp.events.bus` topic exchange, `bus.{logical-name}` routing keys, and `bus.{consumer-identity}` queues; Queue uses the `myapp.events.queue` direct exchange, `queue.{logical-name}` routing keys, and `queue.{logical-name}` queues. Malformed transport envelopes are terminally rejected without requeue while ordinary handler rejection remains retryable.
+
+- **A Queue-lane message is never dropped for want of a consumer.** Before its first send of a message name, each process declares and binds `queue.{logical-name}` with the same arguments its consumers use, once per process; a failed declare is forgotten, so the next publish tries again. Queue-lane publishes are `mandatory`, so a message the broker cannot route (an operator deleted the queue, or an operator-managed queue is unbound) comes back as `basic.return`; with `PublishConfirms` the publish then fails with a `PublishReturnException` inner exception, the outbox retries it, and the process declares the queue again on that retry. A Bus publish with no subscribed identity has nobody to reach and still succeeds.
+- **`PublishConfirms` defaults to `true`.** A publish completes only after the broker acknowledges it, and fails on a negative acknowledgement or an unroutable Queue-lane return. Set it to `false` to trade those guarantees for lower publish latency; a publish then succeeds once written to the socket, and the client discards a `basic.return`.
+- **Shutdown drains in-flight handlers.** `ShutdownAsync` stops dispatching, waits for the running handlers within the remaining `MessagingOptions.ShutdownTimeout` budget (30 seconds when the client is disposed directly), and only then closes the channel, so a handler that finishes in time gets its acknowledgement to the broker. A handler still running past the budget loses its acknowledgement and the message is redelivered; deliveries that arrive during the drain are not dispatched and return to the queue when the channel closes.
 
 ### Install
 
@@ -2466,6 +2470,26 @@ RabbitMQ declares independent Bus and Queue topology, so the same contract and l
 The current RabbitMQ exchange and binding topology does not provide the provider-neutral routing-affinity contract. `RequireRoutingAffinity()` fails during startup; a supplied `RoutingAffinityKey` is rejected before persistence or transport effects. Hash-exchange topology is not inferred or provisioned. Unkeyed routing remains unchanged.
 
 Configure host, credentials, exchange, queue arguments, QoS defaults, and custom headers through `RabbitMqMessagingOptions`. `UserName` and `Password` are `required` and must be set explicitly; the validator rejects the RabbitMQ default `guest`/`guest` credentials for production safety.
+
+| Option | Default | Effect |
+| --- | --- | --- |
+| `PublishConfirms` | `true` | Publish waits for the broker acknowledgement; a negative acknowledgement or an unroutable Queue-lane return fails it |
+| `AutoProvision` | `true` | `false` declares every exchange and shared queue passively (a missing one fails with `NOT_FOUND`) and creates no binding, for topology managed outside the application. An every-instance consumer's exclusive queue and the request/reply queue are per-process and are still declared and bound |
+| `QueueArguments.EnableDeadLettering` | `false` | Each shared queue dead-letters to the direct exchange `{lane exchange}.dlx` (for example `myapp.events.queue.dlx`) with the queue name as routing key, into a durable `{queue}.dlq` queue the transport declares and binds. Malformed envelopes, messages whose `MessageTTL` expires, and messages past `DeliveryLimit` land there instead of being dropped. Nothing in the framework consumes a dead-letter queue: inspect, shovel, or purge it with broker tooling |
+| `QueueArguments.DeliveryLimit` | `null` | Sets `x-delivery-limit`: how many times a quorum queue redelivers a returned message before dropping it, or dead-lettering it with `EnableDeadLettering`. Requires `QueueType = "quorum"`; must be greater than 0. RabbitMQ 4.x quorum queues apply a broker default of 20 when it is unset |
+
+RabbitMQ never changes the arguments of an existing queue: changing `EnableDeadLettering`, `DeliveryLimit`, `QueueType`, `QueueMode`, or `MessageTTL` for a queue that already exists fails its declare with `PRECONDITION_FAILED`. Delete the queue, or apply the setting by broker policy instead.
+
+```csharp
+setup.UseRabbitMq(options =>
+{
+    options.UserName = "app_user";
+    options.Password = "app_secret";
+    options.QueueArguments.QueueType = "quorum";
+    options.QueueArguments.DeliveryLimit = 10;
+    options.QueueArguments.EnableDeadLettering = true;
+});
+```
 
 ### Runtime behavior
 

@@ -319,4 +319,66 @@ public sealed class RabbitMqMessagingOptionsValidatorTests : TestBase
         result.IsValid.Should().BeFalse();
         result.Errors.Should().Contain(e => e.ErrorMessage.Contains("Password cannot be 'guest'"));
     }
+
+    [Fact]
+    public void should_confirm_publishes_and_provision_topology_by_default()
+    {
+        var options = _CreateValidOptions();
+
+        options.PublishConfirms.Should().BeTrue();
+        options.AutoProvision.Should().BeTrue();
+        options.QueueArguments.EnableDeadLettering.Should().BeFalse();
+        options.QueueArguments.DeliveryLimit.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void should_fail_validation_when_delivery_limit_is_not_positive(int deliveryLimit)
+    {
+        var options = _CreateValidOptions();
+        options.QueueArguments.QueueType = "quorum";
+        options.QueueArguments.DeliveryLimit = deliveryLimit;
+
+        var result = _validator.Validate(options);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.ErrorMessage.Contains("greater than 0", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("classic")]
+    public void should_fail_validation_when_delivery_limit_is_set_on_a_non_quorum_queue(string? queueType)
+    {
+        var options = _CreateValidOptions();
+        options.QueueArguments.QueueType = queueType;
+        options.QueueArguments.DeliveryLimit = 5;
+
+        var result = _validator.Validate(options);
+
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(e => e.ErrorMessage.Contains("quorum", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void should_pass_validation_with_delivery_limit_on_a_quorum_queue()
+    {
+        var options = _CreateValidOptions();
+        options.QueueArguments.QueueType = "quorum";
+        options.QueueArguments.DeliveryLimit = 5;
+        options.QueueArguments.EnableDeadLettering = true;
+
+        _validator.Validate(options).IsValid.Should().BeTrue();
+    }
+
+    private static RabbitMqMessagingOptions _CreateValidOptions()
+    {
+        return new RabbitMqMessagingOptions
+        {
+            HostName = "localhost",
+            UserName = "myapp_user",
+            Password = "secure_password",
+        };
+    }
 }
