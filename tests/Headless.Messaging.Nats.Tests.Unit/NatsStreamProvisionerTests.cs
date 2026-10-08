@@ -158,6 +158,57 @@ public sealed class NatsStreamProvisionerTests : TestBase
     }
 
     [Fact]
+    public async Task should_ensure_the_shard_wildcard_when_a_name_equal_to_its_key_is_later_published_with_a_shard()
+    {
+        // given - the first publish of a message named exactly its stream key carries no shard
+        var js = _CreateJetStreamWithoutStreams();
+        var provisioner = _CreateProvisioner(NatsStreamProvisioning.Verify);
+        await provisioner.EnsureForPublishAsync(js, MessageLane.Bus, "orders", false, AbortToken);
+
+        // when - a later publish of the same message carries one
+        await provisioner.EnsureForPublishAsync(js, MessageLane.Bus, "orders", true, AbortToken);
+
+        // then - the unsharded ensure did not stand in for the shard subject the sharded publish needs
+        await js.Received(1)
+            .CreateStreamAsync(
+                Arg.Is<StreamConfig>(config => config.Subjects!.Contains("headless.bus.orders.>")),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_retry_on_the_next_publish_when_ensure_for_publish_outlives_the_stream_create_timeout()
+    {
+        // given - the first stream lookup never answers, so only StreamCreateTimeout ends it
+        var js = _CreateJetStreamWithoutStreams();
+        var lookups = 0;
+        js.GetStreamAsync(Arg.Any<string>(), Arg.Any<StreamInfoRequest?>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+                Interlocked.Increment(ref lookups) == 1
+                    ? _NeverAnswerAsync(call.Arg<CancellationToken>())
+                    : throw new NatsJSApiException(new ApiError { Code = 404, ErrCode = 10059 })
+            );
+        var provisioner = new NatsStreamProvisioner(
+            MsOptions.Options.Create(
+                new NatsMessagingOptions
+                {
+                    StreamProvisioning = NatsStreamProvisioning.Verify,
+                    StreamCreateTimeout = TimeSpan.FromMilliseconds(50),
+                }
+            )
+        );
+
+        // when - the timeout surfaces as a cancellation the caller did not request, which the transport fails
+        var first = () => provisioner.EnsureForPublishAsync(js, MessageLane.Bus, "orders.placed", false, AbortToken);
+        await first.Should().ThrowAsync<OperationCanceledException>();
+        await provisioner.EnsureForPublishAsync(js, MessageLane.Bus, "orders.placed", false, AbortToken);
+
+        // then - the timed-out ensure was not remembered
+        lookups.Should().Be(2);
+        await js.Received(1).CreateStreamAsync(Arg.Any<StreamConfig>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task should_not_touch_the_broker_when_stream_provisioning_is_disabled()
     {
         // given
@@ -213,6 +264,13 @@ public sealed class NatsStreamProvisionerTests : TestBase
         js.CreateStreamAsync(Arg.Any<StreamConfig>(), Arg.Any<CancellationToken>())
             .Returns(call => new ValueTask<INatsJSStream>(_CreateStream(call.Arg<StreamConfig>())));
         return js;
+    }
+
+    private static async ValueTask<INatsJSStream> _NeverAnswerAsync(CancellationToken cancellationToken)
+    {
+        await Task.Delay(Timeout.Infinite, cancellationToken);
+
+        throw new InvalidOperationException("The delay ends only by cancellation.");
     }
 
     private static INatsJSStream _CreateStream(StreamConfig config)

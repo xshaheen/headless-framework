@@ -17,9 +17,14 @@ internal sealed class NatsStreamProvisioner(IOptions<NatsMessagingOptions> optio
 {
     private readonly NatsMessagingOptions _options = Argument.IsNotNull(options.Value);
 
-    // One ensure per message and lane per process. A Lazy keeps concurrent first publishes on one broker round trip,
-    // and a failed or abandoned ensure is evicted so the next publish retries it instead of inheriting the failure.
-    private readonly ConcurrentDictionary<(MessageLane Lane, string MessageName), Lazy<Task>> _published = new();
+    // One ensure per message, lane, and sharding per process. A Lazy keeps concurrent first publishes on one broker
+    // round trip, and a failed or abandoned ensure is evicted so the next publish retries it instead of inheriting the
+    // failure. Sharding is part of the key because a name the stream key does not prefix needs `{name}.>` only once
+    // it is published with a shard, and an unsharded first publish must not stand in for that ensure.
+    private readonly ConcurrentDictionary<
+        (MessageLane Lane, string MessageName, bool IsSharded),
+        Lazy<Task>
+    > _published = new();
 
     public bool IsEnabled => _options.StreamProvisioning is not NatsStreamProvisioning.Disabled;
 
@@ -109,8 +114,8 @@ internal sealed class NatsStreamProvisioner(IOptions<NatsMessagingOptions> optio
     }
 
     /// <summary>
-    /// Ensures the stream for one published message, once per message and lane per process. A failed ensure is retried
-    /// by the next publish.
+    /// Ensures the stream for one published message, once per message, lane, and sharding per process. A failed
+    /// ensure is retried by the next publish.
     /// </summary>
     public async Task EnsureForPublishAsync(
         INatsJSContext js,
@@ -125,7 +130,7 @@ internal sealed class NatsStreamProvisioner(IOptions<NatsMessagingOptions> optio
             return;
         }
 
-        var key = (lane, messageName);
+        var key = (lane, messageName, isSharded);
         var ensure = _published.GetOrAdd(
             key,
             static (k, state) =>
@@ -137,14 +142,14 @@ internal sealed class NatsStreamProvisioner(IOptions<NatsMessagingOptions> optio
                             state.Js,
                             k.Lane,
                             [k.MessageName],
-                            state.IsSharded
+                            k.IsSharded
                                 ? new HashSet<string>(StringComparer.Ordinal) { k.MessageName }
                                 : new HashSet<string>(StringComparer.Ordinal),
                             CancellationToken.None
                         ),
                     LazyThreadSafetyMode.ExecutionAndPublication
                 ),
-            (Provisioner: this, Js: js, IsSharded: isSharded)
+            (Provisioner: this, Js: js)
         );
 
         try
@@ -158,14 +163,21 @@ internal sealed class NatsStreamProvisioner(IOptions<NatsMessagingOptions> optio
         }
         catch
         {
-            _published.TryRemove(new KeyValuePair<(MessageLane, string), Lazy<Task>>(key, ensure));
+            _published.TryRemove(new KeyValuePair<(MessageLane, string, bool), Lazy<Task>>(key, ensure));
             throw;
         }
     }
 
+    /// <summary>Returns the name of the Headless stream that carries <paramref name="messageName"/> on <paramref name="lane"/>.</summary>
+    public string StreamName(MessageLane lane, string messageName) =>
+        NatsPhysicalAddress.Stream(lane, _options.NormalizeStreamName(messageName));
+
     /// <summary>Drops the remembered ensure for a published message, so its next publish provisions the stream again.</summary>
-    public void ForgetPublished(MessageLane lane, string messageName) =>
-        _published.TryRemove((lane, messageName), out _);
+    public void ForgetPublished(MessageLane lane, string messageName)
+    {
+        _published.TryRemove((lane, messageName, false), out _);
+        _published.TryRemove((lane, messageName, true), out _);
+    }
 
     private async Task _EnsureStreamAsync(
         INatsJSContext js,

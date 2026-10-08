@@ -104,6 +104,14 @@ public sealed class NatsMessagingOptions
     /// <c>"orders.created"</c>). Override this when your stream naming convention differs. A name the key does not
     /// prefix gets its own exact subject on the stream instead of the key's wildcard.
     /// </summary>
+    /// <remarks>
+    /// A normalizer that maps several names the key does not prefix onto one stream (for example
+    /// <c>_ =&gt; "app"</c>) needs <see cref="StreamProvisioning"/> set to
+    /// <see cref="NatsStreamProvisioning.Reconcile"/>. Each of those names adds its own subject to the shared stream,
+    /// and under <see cref="NatsStreamProvisioning.Verify"/> the first host or first publish fixes the stream's
+    /// subjects, so every later name fails as divergent. The same holds for a name equal to its key that is published
+    /// first without a shard and later with one.
+    /// </remarks>
     public Func<string, string> NormalizeStreamName { get; set; } = origin => origin.Split('.')[0];
 
     /// <summary>

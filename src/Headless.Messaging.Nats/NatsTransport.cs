@@ -26,6 +26,8 @@ internal sealed class NatsTransport(
         }
 
         MessagingRoutingAffinityMapping.RejectUnsupported(message, "Nats");
+        string? subject = null;
+
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -34,7 +36,7 @@ internal sealed class NatsTransport(
             // NatsJSContext is a stateless wrapper around the connection, so it's safe to create per call.
             var js = new NatsJSContext(connection);
 
-            var subject = ResolveSubject(message, lane, logger);
+            subject = ResolveSubject(message, lane, logger);
 
             // A publish-only host creates the stream itself rather than waiting for a consumer host to have started.
             await streamProvisioner
@@ -65,19 +67,7 @@ internal sealed class NatsTransport(
 
             if (ack.Seq == 0)
             {
-                // The stream was deleted or changed after this process ensured it; ensure it again on the next publish.
-                streamProvisioner.ForgetPublished(lane, message.Name);
-
-                return OperateResult.Failed(
-                    new PublisherSentFailedException(
-                        $"NATS JetStream publish to subject '{subject}' was not acknowledged by any stream (seq=0); "
-                            + (
-                                streamProvisioner.IsEnabled
-                                    ? "the stream provisioned for it no longer captures the subject; the next publish provisions it again."
-                                    : "StreamProvisioning is Disabled, so a JetStream stream must be configured outside the application to capture this subject."
-                            )
-                    )
-                );
+                return _FailNoStream(message.Name, subject, "was not acknowledged by any stream (seq=0)", inner: null);
             }
 
             if (logger.IsEnabled(LogLevel.Debug))
@@ -87,10 +77,21 @@ internal sealed class NatsTransport(
 
             return OperateResult.Success;
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            // Don't wrap cancellation as a publish failure.
+            // Don't wrap the caller's cancellation as a publish failure. Any other cancellation, such as the
+            // StreamCreateTimeout that bounds a publish-time stream ensure, is a failed send the outbox retries.
             throw;
+        }
+        catch (NatsJSPublishNoResponseException ex)
+        {
+            // NATS.Net retries a publish no stream answers, then throws this rather than returning a seq=0 ack.
+            return _FailNoStream(
+                message.Name,
+                subject ?? NatsPhysicalAddress.Subject(lane, message.Name),
+                "got no response from any stream",
+                ex
+            );
         }
         catch (Exception ex)
         {
@@ -140,6 +141,23 @@ internal sealed class NatsTransport(
     internal static NatsJSPubOpts CreatePublishOpts(TransportMessage message)
     {
         return new NatsJSPubOpts { MsgId = message.Id };
+    }
+
+    // The stream was deleted or changed after this process ensured it, so forget the ensure: the next publish of the
+    // message provisions the stream again instead of failing until the process restarts.
+    private OperateResult _FailNoStream(string messageName, string subject, string outcome, Exception? inner)
+    {
+        streamProvisioner.ForgetPublished(lane, messageName);
+
+        var message =
+            $"NATS JetStream publish to subject '{subject}' {outcome}; "
+            + (
+                streamProvisioner.IsEnabled
+                    ? $"stream '{streamProvisioner.StreamName(lane, messageName)}' no longer captures the subject; the next publish provisions it again."
+                    : $"StreamProvisioning is Disabled, so a JetStream stream (Headless would name it '{streamProvisioner.StreamName(lane, messageName)}') must be configured outside the application to capture this subject."
+            );
+
+        return OperateResult.Failed(new PublisherSentFailedException(message, inner));
     }
 
     private static bool _IsSharded(TransportMessage message) =>
