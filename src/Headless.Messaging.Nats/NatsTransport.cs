@@ -1,8 +1,10 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
 using NATS.Client.Core;
 using NATS.Client.JetStream;
+using NATS.Client.JetStream.Models;
 
 namespace Headless.Messaging.Nats;
 
@@ -15,6 +17,9 @@ internal sealed class NatsTransport(
 {
     // Set once DisposeAsync runs: a later send fails instead of reaching the broker.
     private int _disposed;
+
+    // Streams already warned about, so a publisher with no consumer logs once per stream rather than per message.
+    private readonly ConcurrentDictionary<string, byte> _warnedNoConsumer = new(StringComparer.Ordinal);
 
     public BrokerAddress BrokerAddress => new("nats", connectionPool.ServersAddress);
 
@@ -39,9 +44,11 @@ internal sealed class NatsTransport(
             subject = ResolveSubject(message, lane, logger);
 
             // A publish-only host creates the stream itself rather than waiting for a consumer host to have started.
-            await streamProvisioner
+            var stream = await streamProvisioner
                 .EnsureForPublishAsync(js, lane, message.Name, _IsSharded(message), cancellationToken)
                 .ConfigureAwait(false);
+
+            _WarnIfNoConsumer(stream);
 
             var ack = await js.PublishAsync(
                     subject: subject,
@@ -160,6 +167,20 @@ internal sealed class NatsTransport(
         return OperateResult.Failed(new PublisherSentFailedException(message, inner));
     }
 
+    // An interest-retention stream (every derived Bus stream) discards a message no consumer exists for when it is
+    // published, and a Bus consumer created later starts at new messages anyway, so a publisher that starts before its
+    // consumers loses those messages without an error.
+    private void _WarnIfNoConsumer(NatsStreamState? stream)
+    {
+        if (
+            stream is { Retention: StreamConfigRetention.Interest, ConsumerCount: 0 } state
+            && _warnedNoConsumer.TryAdd(state.Stream, 0)
+        )
+        {
+            logger.LogNatsInterestStreamWithoutConsumer(state.Stream);
+        }
+    }
+
     private static bool _IsSharded(TransportMessage message) =>
         message.Headers.TryGetValue(NatsMessagingHeaders.SubjectShard, out var shard)
         && !string.IsNullOrWhiteSpace(shard);
@@ -207,4 +228,15 @@ internal static partial class NatsTransportLog
         Message = "NATS SubjectShard '{Shard}' is invalid and will be ignored: {Reason}. Falling back to base subject."
     )]
     public static partial void LogInvalidSubjectShard(this ILogger logger, string shard, string reason);
+
+    [LoggerMessage(
+        EventId = 17,
+        EventName = "NatsInterestStreamWithoutConsumer",
+        Level = LogLevel.Warning,
+        Message = "NATS stream '{Stream}' had no consumer when this process first published to it. It uses interest "
+            + "retention, so a message published while no consumer exists is discarded, and a consumer created later "
+            + "starts at new messages. Start Bus consumers before publishers, or send messages that must wait for a "
+            + "consumer on the Queue lane."
+    )]
+    public static partial void LogNatsInterestStreamWithoutConsumer(this ILogger logger, string stream);
 }

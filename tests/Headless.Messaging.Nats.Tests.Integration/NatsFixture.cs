@@ -92,15 +92,14 @@ public sealed class NatsFixture : HeadlessNatsFixture
     /// </summary>
     public Task EnsureOperatorStreamAsync()
     {
-        return EnsureStreamAsync(
-            NatsPhysicalAddress.Stream(MessageLane.Queue, OperatorStreamKey),
-            NatsPhysicalAddress.Subject(MessageLane.Queue, $"{OperatorMessageNamePrefix}.>"),
-            StreamConfigRetention.Limits
-        );
+        return EnsureStreamAsync(OperatorStreamName, OperatorStreamSubjects, StreamConfigRetention.Limits);
     }
 
-    /// <summary>The logical stream name hosts without stream provisioning map every message name to.</summary>
-    public const string OperatorStreamKey = "operator-rr";
+    /// <summary>The stream an operator provisions for hosts without stream provisioning, which they bind to.</summary>
+    public const string OperatorStreamName = "OPERATOR_RR";
+
+    /// <summary>The subjects the operator stream captures: every Queue subject under the operator prefix.</summary>
+    public const string OperatorStreamSubjects = "headless.queue." + OperatorMessageNamePrefix + ".>";
 
     /// <summary>The message name prefix that puts a host's subjects under the operator stream.</summary>
     public const string OperatorMessageNamePrefix = "operator";
@@ -314,20 +313,27 @@ public sealed class NatsFixture : HeadlessNatsFixture
         group ??= $"group-{Guid.NewGuid():N}"[..30];
 
         var services = new ServiceCollection().BuildServiceProvider();
-        var options = Options.Create(
-            new NatsMessagingOptions
+        var natsOptions = new NatsMessagingOptions
+        {
+            Servers = ConnectionString,
+            StreamProvisioning = NatsStreamProvisioning.Reconcile,
+            StreamOptions = config => config.Storage = StreamConfigStorage.Memory,
+            ConsumerOptions = config =>
             {
-                Servers = ConnectionString,
-                StreamProvisioning = NatsStreamProvisioning.Reconcile,
-                NormalizeStreamName = _ => streamName,
-                StreamOptions = config => config.Storage = StreamConfigStorage.Memory,
-                ConsumerOptions = config =>
-                {
-                    config.AckWait = TimeSpan.FromSeconds(1);
-                    config.MaxDeliver = 5;
-                },
-            }
-        );
+                config.AckWait = TimeSpan.FromSeconds(1);
+                config.MaxDeliver = 5;
+            },
+        };
+
+        // A destination outside the session's stream key (an endpoint's own logical name) is declared on a stream named
+        // after the session, so the sessions of one scenario share a stream and never touch another scenario's.
+        if (!destination.StartsWith(streamName + ".", StringComparison.Ordinal))
+        {
+            var subject = NatsPhysicalAddress.Subject(lane, destination);
+            natsOptions.Streams.Own(streamName, stream => stream.Subjects(subject, subject + ".>"));
+        }
+
+        var options = Options.Create(natsOptions);
         if (failEnvelopeBuild)
         {
             options.Value.CustomHeadersBuilder = static (_, _, _) =>
