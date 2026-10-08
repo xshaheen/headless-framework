@@ -32,7 +32,13 @@ public sealed class AmazonSnsBusTransportTests : TestBase
         var request = (PublishRequest)
             snsClient
                 .ReceivedCalls()
-                .Single(call => call.GetMethodInfo().Name == nameof(IAmazonSimpleNotificationService.PublishAsync))
+                .Single(call =>
+                    string.Equals(
+                        call.GetMethodInfo().Name,
+                        nameof(IAmazonSimpleNotificationService.PublishAsync),
+                        StringComparison.Ordinal
+                    )
+                )
                 .GetArguments()[0]!;
 
         request.MessageAttributes.Should().ContainSingle().Which.Key.Should().Be(SqsHeaderCodec.AttributeName);

@@ -101,7 +101,7 @@ public sealed class AmazonSqsConsumerVisibilityTests : TestBase
         await using var client = _CreateClient(concurrency: 1);
         client.OnMessageCallback = async (message, sender) =>
         {
-            if (message.Id == "receipt-1")
+            if (string.Equals(message.Id, "receipt-1", StringComparison.Ordinal))
             {
                 handlerStarted.TrySetResult();
                 await finishHandler.Task;
@@ -238,11 +238,14 @@ public sealed class AmazonSqsConsumerVisibilityTests : TestBase
                             .. entries.Select(entry => new BatchResultErrorEntry
                             {
                                 Id = entry.Id,
-                                Code =
-                                    entry.ReceiptHandle == "receipt-refused"
-                                        ? "ReceiptHandleIsInvalid"
-                                        : "InternalError",
-                                SenderFault = entry.ReceiptHandle == "receipt-refused",
+                                Code = string.Equals(entry.ReceiptHandle, "receipt-refused", StringComparison.Ordinal)
+                                    ? "ReceiptHandleIsInvalid"
+                                    : "InternalError",
+                                SenderFault = string.Equals(
+                                    entry.ReceiptHandle,
+                                    "receipt-refused",
+                                    StringComparison.Ordinal
+                                ),
                             }),
                         ],
                     }
@@ -288,7 +291,7 @@ public sealed class AmazonSqsConsumerVisibilityTests : TestBase
         _ReceiveOnce(_Message("receipt-1"));
         var handlerStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var finishHandler = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var client = _CreateClient(concurrency: 1);
+        await using var client = _CreateClient(concurrency: 1);
         client.OnMessageCallback = async (_, sender) =>
         {
             handlerStarted.TrySetResult();
@@ -322,7 +325,7 @@ public sealed class AmazonSqsConsumerVisibilityTests : TestBase
         // given: three messages, one slot, and a handler that never finishes
         _ReceiveOnce(_Message("receipt-1"), _Message("receipt-2"), _Message("receipt-3"));
         var handlerStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var client = _CreateClient(concurrency: 1);
+        await using var client = _CreateClient(concurrency: 1);
         client.OnMessageCallback = async (_, _) =>
         {
             handlerStarted.TrySetResult();
@@ -428,7 +431,7 @@ public sealed class AmazonSqsConsumerVisibilityTests : TestBase
         for (var step = 0; step < 100 && !task.IsCompleted; step++)
         {
             _time.Advance(TimeSpan.FromSeconds(1));
-            await Task.WhenAny(task, Task.Delay(TimeSpan.FromMilliseconds(20), AbortToken));
+            _ = await Task.WhenAny(task, Task.Delay(TimeSpan.FromMilliseconds(20), AbortToken));
         }
 
         await task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);

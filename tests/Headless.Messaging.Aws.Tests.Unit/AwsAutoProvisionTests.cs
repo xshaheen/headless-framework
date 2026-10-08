@@ -37,7 +37,7 @@ public sealed class AwsAutoProvisionTests : TestBase
 
         // then
         queueUrls.Should().Equal("https://sqs.local/queue-orders");
-        await _sqs.DidNotReceiveWithAnyArgs().CreateQueueAsync(default(CreateQueueRequest)!, default);
+        await _sqs.DidNotReceiveWithAnyArgs().CreateQueueAsync(default(CreateQueueRequest)!, AbortToken);
     }
 
     [Fact]
@@ -158,8 +158,8 @@ public sealed class AwsAutoProvisionTests : TestBase
 
         // then
         result.Succeeded.Should().Be(exists);
-        await _sns.DidNotReceiveWithAnyArgs().CreateTopicAsync(default(string)!, default);
-        await _sns.DidNotReceiveWithAnyArgs().CreateTopicAsync(default(CreateTopicRequest)!, default);
+        await _sns.DidNotReceiveWithAnyArgs().CreateTopicAsync(default(string)!, AbortToken);
+        await _sns.DidNotReceiveWithAnyArgs().CreateTopicAsync(default(CreateTopicRequest)!, AbortToken);
     }
 
     [Fact]
@@ -184,8 +184,8 @@ public sealed class AwsAutoProvisionTests : TestBase
                 Arg.Is<SendMessageRequest>(r => r.QueueUrl == "https://sqs.local/queue-orders"),
                 Arg.Any<CancellationToken>()
             );
-        await _sqs.DidNotReceiveWithAnyArgs().CreateQueueAsync(default(string)!, default);
-        await _sqs.DidNotReceiveWithAnyArgs().CreateQueueAsync(default(CreateQueueRequest)!, default);
+        await _sqs.DidNotReceiveWithAnyArgs().CreateQueueAsync(default(string)!, AbortToken);
+        await _sqs.DidNotReceiveWithAnyArgs().CreateQueueAsync(default(CreateQueueRequest)!, AbortToken);
     }
 
     private AmazonSqsConsumerClient _CreateConsumer(MessageLane lane, bool autoProvision)

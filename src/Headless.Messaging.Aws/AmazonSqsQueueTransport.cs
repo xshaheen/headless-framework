@@ -130,24 +130,13 @@ internal sealed class AmazonSqsQueueTransport(
             var options = sqsOptionsAccessor.Value;
             _sqsClient ??= AwsClientFactory.CreateSqsClient(options);
 
-            if (!options.AutoProvision)
-            {
-                queueUrl = (
+            queueUrl = options.AutoProvision
+                ? await _CreateQueueAsync(queueName, cancellationToken).ConfigureAwait(false)
+                : (
                     await _sqsClient
                         .GetQueueUrlAsync(queueName.NormalizeForSqsQueueName(), cancellationToken)
                         .ConfigureAwait(false)
                 ).QueueUrl;
-            }
-            else
-            {
-                queueUrl = queueName.IsAwsFifoName()
-                    ? (
-                        await _sqsClient
-                            .CreateQueueAsync(queueName.ToSqsCreateQueueRequest(), cancellationToken)
-                            .ConfigureAwait(false)
-                    ).QueueUrl
-                    : (await _sqsClient.CreateQueueAsync(queueName, cancellationToken).ConfigureAwait(false)).QueueUrl;
-            }
 
             _queueUrlMaps[queueName] = queueUrl;
 
@@ -157,6 +146,18 @@ internal sealed class AmazonSqsQueueTransport(
         {
             _semaphore.Release();
         }
+    }
+
+    // CreateQueue is idempotent and returns the URL of an existing queue.
+    private async Task<string> _CreateQueueAsync(string queueName, CancellationToken cancellationToken)
+    {
+        var response = queueName.IsAwsFifoName()
+            ? await _sqsClient!
+                .CreateQueueAsync(queueName.ToSqsCreateQueueRequest(), cancellationToken)
+                .ConfigureAwait(false)
+            : await _sqsClient!.CreateQueueAsync(queueName, cancellationToken).ConfigureAwait(false);
+
+        return response.QueueUrl;
     }
 
     private string _GetBrokerEndpoint()

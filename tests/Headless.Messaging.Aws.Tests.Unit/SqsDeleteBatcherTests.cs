@@ -31,7 +31,7 @@ public sealed class SqsDeleteBatcherTests : TestBase
 
         // then
         await _sqs.Received(1).DeleteMessageAsync(_QueueUrl, "receipt-1", CancellationToken.None);
-        await _sqs.DidNotReceiveWithAnyArgs().DeleteMessageBatchAsync(default!, default!, default);
+        await _sqs.DidNotReceiveWithAnyArgs().DeleteMessageBatchAsync(default!, default!, AbortToken);
     }
 
     [Fact]
@@ -68,7 +68,7 @@ public sealed class SqsDeleteBatcherTests : TestBase
         // then: they leave together in one batch
         batch.Should().NotBeNull();
         batch!.Select(entry => entry.ReceiptHandle).Should().Equal("receipt-1", "receipt-2", "receipt-3");
-        await _sqs.ReceivedWithAnyArgs(1).DeleteMessageBatchAsync(default!, default!, default);
+        await _sqs.ReceivedWithAnyArgs(1).DeleteMessageBatchAsync(default!, default!, AbortToken);
     }
 
     [Fact]

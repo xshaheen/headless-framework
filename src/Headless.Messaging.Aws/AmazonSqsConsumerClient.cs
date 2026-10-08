@@ -563,7 +563,7 @@ internal sealed class AmazonSqsConsumerClient(
         try
         {
             Task[] inFlight;
-            while ((inFlight = _inFlightHandlers.Keys.ToArray()).Length > 0)
+            while ((inFlight = [.. _inFlightHandlers.Keys]).Length > 0)
             {
                 var remaining = timeout - _timeProvider.GetElapsedTime(startedAt);
                 if (remaining <= TimeSpan.Zero)
@@ -699,9 +699,9 @@ internal sealed class AmazonSqsConsumerClient(
         }
     }
 
-    private async Task _ReleaseAsync(IReadOnlyList<InflightSqsMessage> messages)
+    private async Task _ReleaseAsync(InflightSqsMessage[] messages)
     {
-        if (messages.Count == 0 || _sqsClient is null)
+        if (messages.Length == 0 || _sqsClient is null)
         {
             return;
         }
@@ -735,7 +735,7 @@ internal sealed class AmazonSqsConsumerClient(
         catch (Exception ex)
         {
             // Unreleased messages reappear once their visibility runs out.
-            _logger.SqsReleaseFailed(ex, subscriptionName, messages.Count);
+            _logger.SqsReleaseFailed(ex, subscriptionName, messages.Length);
         }
     }
 
