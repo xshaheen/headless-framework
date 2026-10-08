@@ -23,11 +23,13 @@ namespace Headless.Messaging.Nats;
 /// </param>
 internal sealed class NatsStreamProvisioner(IOptions<NatsMessagingOptions> options, TimeProvider? backoffClock = null)
 {
-    // A failed publish-side ensure is remembered this long before a publish tries again, doubling to the ceiling: every
-    // stream info, create, or update request goes through the cluster's meta leader, so a diverged stream must not turn
-    // each publish into another request.
-    private static readonly TimeSpan _InitialBackoff = TimeSpan.FromSeconds(30);
-    private static readonly TimeSpan _MaxBackoff = TimeSpan.FromMinutes(5);
+    // A failed publish-side ensure is remembered for a back-off before a publish tries again, doubling to a ceiling:
+    // every stream info, create, or update request goes through the cluster's meta leader, so a failing stream must not
+    // turn each publish into another request. A configuration fault (a diverged or missing bound stream, a refused
+    // create) cannot heal by retrying, so it backs off long; a transient fault (a timeout, a meta leader election, a
+    // lost connection) backs off briefly, so publishes recover soon after the broker does.
+    private static readonly Backoff _ConfigurationBackoff = new(TimeSpan.FromSeconds(30), TimeSpan.FromMinutes(5));
+    private static readonly Backoff _TransientBackoff = new(TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(30));
 
     private readonly NatsMessagingOptions _options = Argument.IsNotNull(options.Value);
     private readonly TimeProvider _backoffClock = backoffClock ?? TimeProvider.System;
@@ -41,18 +43,24 @@ internal sealed class NatsStreamProvisioner(IOptions<NatsMessagingOptions> optio
     /// <summary>Whether the catalog declares a stream Headless owns, so the warm-up has something to create.</summary>
     public bool HasOwnedDeclaredStreams => _options.Streams.Streams.Any(stream => stream.Owned);
 
+    /// <summary>Returns the stream key of a message name: its first dot-separated segment.</summary>
+    public static string StreamKey(string messageName)
+    {
+        var dot = messageName.IndexOf('.', StringComparison.Ordinal);
+
+        return dot < 0 ? messageName : messageName[..dot];
+    }
+
     /// <summary>
     /// Returns the logical subjects (without the lane prefix) a derived stream must carry for
-    /// <paramref name="messageNames"/>, which all normalize to <paramref name="streamKey"/>.
+    /// <paramref name="messageNames"/>, whose stream key is <paramref name="streamKey"/>.
     /// </summary>
     /// <remarks>
-    /// A name that extends the key (<c>{key}.…</c>, always true for the default first-segment normalizer) contributes
-    /// the key's wildcard, <c>{key}.&gt;</c>, rather than its own subject, which also covers its shards. Every host then
-    /// asks for the same subject whichever of those names it publishes or consumes, so the first host to create the
-    /// stream covers every later one and start order cannot fail a host under <see cref="NatsStreamProvisioning.Verify"/>.
-    /// The bare key is added only for a name equal to it, so an operator stream provisioned as <c>{key}.&gt;</c> verifies
-    /// cleanly. A name a custom normalizer maps without that prefix keeps its exact subject, plus <c>{name}.&gt;</c> when
-    /// it is sharded.
+    /// A name that extends the key (<c>{key}.…</c>) contributes the key's wildcard, <c>{key}.&gt;</c>, rather than its own
+    /// subject, which also covers its shards. Every host then asks for the same subject whichever of those names it
+    /// publishes or consumes, so the first host to create the stream covers every later one and start order cannot fail
+    /// a host under <see cref="NatsStreamProvisioning.Verify"/>. The bare key is added only for a name equal to it, plus
+    /// the wildcard when that name is sharded, so an operator stream provisioned as <c>{key}.&gt;</c> verifies cleanly.
     /// </remarks>
     public static IReadOnlyList<string> BuildStreamSubjects(
         string streamKey,
@@ -106,7 +114,7 @@ internal sealed class NatsStreamProvisioner(IOptions<NatsMessagingOptions> optio
             return declared;
         }
 
-        var key = _options.NormalizeStreamName(messageName);
+        var key = StreamKey(messageName);
         var sharded = new HashSet<string>(StringComparer.Ordinal);
         if (isSharded)
         {
@@ -221,7 +229,7 @@ internal sealed class NatsStreamProvisioner(IOptions<NatsMessagingOptions> optio
                 continue;
             }
 
-            var key = _options.NormalizeStreamName(name);
+            var key = StreamKey(name);
             if (!derivedNames.TryGetValue(key, out var names))
             {
                 derivedNames[key] = names = [];
@@ -497,6 +505,11 @@ internal sealed class NatsStreamProvisioner(IOptions<NatsMessagingOptions> optio
         );
     }
 
+    // The provisioner reports configuration faults as InvalidOperationException; JetStream reports a request it refuses
+    // (an overlapping subject, an invalid setting) as a 4xx API error. Anything else, a 503 included, may heal.
+    private static bool _IsConfigurationFault(Exception exception) =>
+        exception is InvalidOperationException or NatsJSApiException { Error.Code: >= 400 and < 500 };
+
     /// <summary>One stream's publish-side ensure: the attempt in flight or done, and the back-off after a failure.</summary>
     private sealed class EnsureEntry(TimeProvider clock)
     {
@@ -504,7 +517,8 @@ internal sealed class NatsStreamProvisioner(IOptions<NatsMessagingOptions> optio
         private Lazy<Task<NatsStreamState?>>? _ensure;
         private ExceptionDispatchInfo? _failure;
         private long _retryAfter;
-        private TimeSpan _backoff = _InitialBackoff;
+        private Backoff? _kind;
+        private TimeSpan _backoff;
 
         public Lazy<Task<NatsStreamState?>> Current(Func<Task<NatsStreamState?>> start)
         {
@@ -550,13 +564,26 @@ internal sealed class NatsStreamProvisioner(IOptions<NatsMessagingOptions> optio
                     return;
                 }
 
+                var kind = _IsConfigurationFault(exception) ? _ConfigurationBackoff : _TransientBackoff;
+
+                // A fault of a different kind starts its own sequence: a broker that recovered into a diverged stream
+                // should wait the configuration back-off from its start, not continue the transient one.
+                if (!ReferenceEquals(kind, _kind))
+                {
+                    _kind = kind;
+                    _backoff = kind.Initial;
+                }
+
                 _failure = ExceptionDispatchInfo.Capture(exception);
                 _retryAfter = clock.GetTimestamp() + (long)(_backoff.TotalSeconds * clock.TimestampFrequency);
-                _backoff = _backoff * 2 < _MaxBackoff ? _backoff * 2 : _MaxBackoff;
+                _backoff = _backoff * 2 < kind.Max ? _backoff * 2 : kind.Max;
             }
         }
     }
 }
+
+/// <summary>The first wait and the ceiling of one kind of publish-side back-off.</summary>
+internal sealed record Backoff(TimeSpan Initial, TimeSpan Max);
 
 /// <summary>A stream as an ensure found it.</summary>
 /// <param name="Stream">The stream name.</param>

@@ -45,18 +45,13 @@ public sealed class NatsStreamProvisionerTests : TestBase
         publisher.Should().Equal(consumer);
     }
 
-    [Fact]
-    public void should_keep_exact_subjects_when_build_stream_subjects_for_names_the_key_does_not_prefix()
+    [Theory]
+    [InlineData("orders.created", "orders")]
+    [InlineData("orders.us.east.created", "orders")]
+    [InlineData("orders", "orders")]
+    public void should_take_the_first_name_segment_as_the_stream_key(string messageName, string expected)
     {
-        // given - a custom normalizer that maps unrelated names onto one stream key
-        var subjects = NatsStreamProvisioner.BuildStreamSubjects(
-            "all",
-            ["orders.created", "payments.settled", "payments.settled"],
-            new HashSet<string>(StringComparer.Ordinal) { "payments.settled" }
-        );
-
-        // then
-        subjects.Should().Equal("orders.created", "payments.settled", "payments.settled.>");
+        NatsStreamProvisioner.StreamKey(messageName).Should().Be(expected);
     }
 
     [Fact]
@@ -116,7 +111,7 @@ public sealed class NatsStreamProvisionerTests : TestBase
     }
 
     [Fact]
-    public async Task should_fail_fast_until_the_back_off_ends_when_ensure_for_publish_failed()
+    public async Task should_fail_fast_for_the_configuration_back_off_when_ensure_for_publish_hits_a_configuration_fault()
     {
         // given - the first create fails, later ones succeed
         var js = _CreateJetStreamWithoutStreams();
@@ -126,7 +121,7 @@ public sealed class NatsStreamProvisionerTests : TestBase
             {
                 if (Interlocked.Increment(ref calls) == 1)
                 {
-                    throw new InvalidOperationException("broker unavailable");
+                    throw new InvalidOperationException("stream diverged");
                 }
 
                 return new ValueTask<INatsJSStream>(_CreateStream(call.Arg<StreamConfig>()));
@@ -136,15 +131,65 @@ public sealed class NatsStreamProvisionerTests : TestBase
         var publish = () => provisioner.EnsureForPublishAsync(js, MessageLane.Bus, "orders.placed", false, AbortToken);
         await publish.Should().ThrowAsync<InvalidOperationException>();
 
-        // when - a publish inside the back-off reports the cached failure without a broker request
+        // when - a publish inside the configuration back-off reports the cached failure without a broker request
         clock.Advance(TimeSpan.FromSeconds(29));
-        await publish.Should().ThrowAsync<InvalidOperationException>().WithMessage("broker unavailable");
+        await publish.Should().ThrowAsync<InvalidOperationException>().WithMessage("stream diverged");
         calls.Should().Be(1);
 
         // then - the first publish after the back-off tries again
         clock.Advance(TimeSpan.FromSeconds(2));
         await publish();
         calls.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task should_retry_after_a_short_back_off_when_ensure_for_publish_hits_a_transient_fault()
+    {
+        // given - the first create meets a JetStream that is briefly unavailable
+        var js = _CreateJetStreamWithoutStreams();
+        var calls = 0;
+        js.CreateStreamAsync(Arg.Any<StreamConfig>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+                Interlocked.Increment(ref calls) == 1
+                    ? throw new NatsJSApiException(new ApiError { Code = 503, Description = "JetStream not ready" })
+                    : new ValueTask<INatsJSStream>(_CreateStream(call.Arg<StreamConfig>()))
+            );
+        var clock = new FakeTimeProvider();
+        var provisioner = _CreateProvisioner(NatsStreamProvisioning.Verify, clock);
+        var publish = () => provisioner.EnsureForPublishAsync(js, MessageLane.Bus, "orders.placed", false, AbortToken);
+        await publish.Should().ThrowAsync<NatsJSApiException>();
+
+        // when - just over a second passes
+        clock.Advance(TimeSpan.FromMilliseconds(1100));
+        await publish();
+
+        // then
+        calls.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task should_use_the_configuration_back_off_when_jetstream_refuses_the_stream()
+    {
+        // given - JetStream refuses the create, as it does for subjects another stream already carries
+        var js = _CreateJetStreamWithoutStreams();
+        var calls = 0;
+        js.CreateStreamAsync(Arg.Any<StreamConfig>(), Arg.Any<CancellationToken>())
+            .Returns<ValueTask<INatsJSStream>>(_ =>
+            {
+                Interlocked.Increment(ref calls);
+                throw new NatsJSApiException(new ApiError { Code = 400, ErrCode = 10065 });
+            });
+        var clock = new FakeTimeProvider();
+        var provisioner = _CreateProvisioner(NatsStreamProvisioning.Verify, clock);
+        var publish = () => provisioner.EnsureForPublishAsync(js, MessageLane.Bus, "orders.placed", false, AbortToken);
+        await publish.Should().ThrowAsync<NatsJSApiException>();
+
+        // when - a transient back-off would have ended, the configuration one has not
+        clock.Advance(TimeSpan.FromSeconds(5));
+        await publish.Should().ThrowAsync<NatsJSApiException>();
+
+        // then
+        calls.Should().Be(1);
     }
 
     [Fact]
@@ -157,7 +202,7 @@ public sealed class NatsStreamProvisionerTests : TestBase
             .Returns<ValueTask<INatsJSStream>>(_ =>
             {
                 Interlocked.Increment(ref calls);
-                throw new InvalidOperationException("broker unavailable");
+                throw new InvalidOperationException("stream diverged");
             });
         var clock = new FakeTimeProvider();
         var provisioner = _CreateProvisioner(NatsStreamProvisioning.Verify, clock);

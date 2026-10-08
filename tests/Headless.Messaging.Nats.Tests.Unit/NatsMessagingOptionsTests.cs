@@ -71,35 +71,6 @@ public sealed class NatsMessagingOptionsTests : TestBase
     }
 
     [Fact]
-    public void should_have_default_stream_name_normalizer()
-    {
-        var options = new NatsMessagingOptions();
-        options.NormalizeStreamName("orders.created").Should().Be("orders");
-    }
-
-    [Fact]
-    public void should_support_custom_stream_name_normalizer()
-    {
-        var options = new NatsMessagingOptions { NormalizeStreamName = origin => origin.ToUpperInvariant() };
-
-        options.NormalizeStreamName("orders.created").Should().Be("ORDERS.CREATED");
-    }
-
-    [Fact]
-    public void should_handle_stream_name_without_dot()
-    {
-        var options = new NatsMessagingOptions();
-        options.NormalizeStreamName("simplestream").Should().Be("simplestream");
-    }
-
-    [Fact]
-    public void should_handle_stream_name_with_multiple_dots()
-    {
-        var options = new NatsMessagingOptions();
-        options.NormalizeStreamName("orders.us.east.created").Should().Be("orders");
-    }
-
-    [Fact]
     public void should_support_disabling_stream_provisioning()
     {
         var options = new NatsMessagingOptions { StreamProvisioning = NatsStreamProvisioning.Disabled };

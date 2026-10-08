@@ -168,7 +168,8 @@ internal sealed class NatsTransport(
     }
 
     // An interest-retention stream (every derived Bus stream) discards a message no consumer exists for when it is
-    // published, so a publisher that starts before its consumers loses those messages without an error.
+    // published, and a Bus consumer created later starts at new messages anyway, so a publisher that starts before its
+    // consumers loses those messages without an error.
     private void _WarnIfNoConsumer(NatsStreamState? stream)
     {
         if (
@@ -233,8 +234,9 @@ internal static partial class NatsTransportLog
         EventName = "NatsInterestStreamWithoutConsumer",
         Level = LogLevel.Warning,
         Message = "NATS stream '{Stream}' had no consumer when this process first published to it. It uses interest "
-            + "retention, so a message published while no consumer exists is discarded. Start consumers before "
-            + "publishers, or declare the stream with limits retention in NatsMessagingOptions.Streams."
+            + "retention, so a message published while no consumer exists is discarded, and a consumer created later "
+            + "starts at new messages. Start Bus consumers before publishers, or send messages that must wait for a "
+            + "consumer on the Queue lane."
     )]
     public static partial void LogNatsInterestStreamWithoutConsumer(this ILogger logger, string stream);
 }

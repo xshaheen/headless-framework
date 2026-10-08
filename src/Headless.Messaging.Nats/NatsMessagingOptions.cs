@@ -42,10 +42,10 @@ public sealed class NatsMessagingOptions
     /// <summary>
     /// How consumer clients, at startup, and publishers, before the first publish to each stream, provision the
     /// JetStream streams their subjects live on. A stream declared in <see cref="Streams"/> keeps its declared name and
-    /// subjects. Otherwise the stream name comes from <see cref="NormalizeStreamName"/>, and the
-    /// stream carries the key's wildcard, <c>headless.{lane}.{key}.&gt;</c> (plus the bare <c>headless.{lane}.{key}</c>
-    /// when a message is named exactly the key), so any host that creates it covers every message on that key. Individual consumers then use a <c>FilterSubject</c> for
-    /// precise matching. Defaults to <see cref="NatsStreamProvisioning.Verify"/>, which creates a missing stream but
+    /// subjects. Otherwise the stream is derived from the message name's first dot-separated segment, the key
+    /// (<c>headless-{lane}-{key}</c>), and carries the key's wildcard, <c>headless.{lane}.{key}.&gt;</c> (plus the bare
+    /// <c>headless.{lane}.{key}</c> when a message is named exactly the key), so any host that creates it covers every
+    /// message on that key. Individual consumers then use a <c>FilterSubject</c> for precise matching. Defaults to <see cref="NatsStreamProvisioning.Verify"/>, which creates a missing stream but
     /// never rewrites one that already exists.
     /// </summary>
     /// <remarks>
@@ -60,7 +60,8 @@ public sealed class NatsMessagingOptions
 
     /// <summary>
     /// The streams the application declares by name. A message lives on the declared stream whose subjects cover its
-    /// subject; a message no declared stream covers lives on a stream derived from <see cref="NormalizeStreamName"/>.
+    /// subject; a message no declared stream covers lives on a stream derived from its first name segment. Declare a
+    /// stream to choose its name, subjects, retention, or limits.
     /// </summary>
     /// <remarks>
     /// <see cref="NatsStreamCatalog.Own"/> declares a stream Headless creates and keeps in shape, created at host
@@ -119,22 +120,6 @@ public sealed class NatsMessagingOptions
     /// publish of a message. Defaults to <c>30 seconds</c>.
     /// </summary>
     public TimeSpan StreamCreateTimeout { get; set; } = TimeSpan.FromSeconds(30);
-
-    /// <summary>
-    /// A function that derives the JetStream stream key from a message name. The default
-    /// implementation takes the first dot-separated segment (for example <c>"orders"</c> from
-    /// <c>"orders.created"</c>). Override this when your stream naming convention differs. A name the key does not
-    /// prefix gets its own exact subject on the stream instead of the key's wildcard.
-    /// </summary>
-    /// <remarks>
-    /// A normalizer that maps several names the key does not prefix onto one stream (for example
-    /// <c>_ =&gt; "app"</c>) needs <see cref="StreamProvisioning"/> set to
-    /// <see cref="NatsStreamProvisioning.Reconcile"/>. Each of those names adds its own subject to the shared stream,
-    /// and under <see cref="NatsStreamProvisioning.Verify"/> the first host or first publish fixes the stream's
-    /// subjects, so every later name fails as divergent. The same holds for a name equal to its key that is published
-    /// first without a shard and later with one.
-    /// </remarks>
-    public Func<string, string> NormalizeStreamName { get; set; } = origin => origin.Split('.')[0];
 
     /// <summary>
     /// Gets the factory that supplies the application's own NATS connection, or <see langword="null"/> when Headless
