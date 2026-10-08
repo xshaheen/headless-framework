@@ -7,6 +7,7 @@ using Headless;
 using Headless.Api;
 using Headless.Api.Resources;
 using Headless.Context;
+using Headless.DistributedLocks;
 using Headless.MultiTenancy;
 using Headless.Primitives;
 using Headless.Testing.Tests;
@@ -105,6 +106,35 @@ public sealed class HeadlessApiExceptionHandlerEndToEndTests : TestBase
         root.GetProperty("traceId").GetString().Should().NotBeNullOrWhiteSpace();
         // The errors extension is preserved through the pipeline.
         root.TryGetProperty("errors", out _).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_map_lock_acquisition_timeout_to_normalized_503_resource_busy()
+    {
+        // given
+        const string sentinel = "LEAKED-LOCKED-RESOURCE";
+        await using var app = await _CreateAppAsync(
+            handlerSetup: _ => { },
+            endpoint: () => throw new LockAcquisitionTimeoutException("Wallet:" + sentinel)
+        );
+        using var client = _CreateClient(app);
+
+        // when
+        using var response = await client.GetAsync("/throw", AbortToken);
+
+        // then — server-side contention, with no invented Retry-After and no resource name in the body
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        response.Headers.RetryAfter.Should().BeNull();
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+
+        var json = await response.Content.ReadAsStringAsync(AbortToken);
+        json.Should().NotContain(sentinel);
+
+        using var doc = JsonDocument.Parse(json);
+        var root = doc.RootElement;
+        root.GetProperty("status").GetInt32().Should().Be(503);
+        root.TryGetProperty("retryAfter", out _).Should().BeFalse();
+        root.GetProperty("error").GetProperty("code").GetString().Should().Be(GeneralErrorCodes.ResourceBusy);
     }
 
     [Fact]

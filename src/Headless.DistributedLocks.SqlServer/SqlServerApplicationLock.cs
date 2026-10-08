@@ -121,17 +121,12 @@ internal static class SqlServerApplicationLock
 
         // Its own round trip, not a guard inside the acquire batch: a failed acquire releases whatever the
         // transaction holds afterwards, which is only safe when the transaction is known to have held nothing before.
-        await using (var isHeldCommand = _CreateIsHeldCommand(connection, transaction, resource, commandTimeout))
+        if (
+            await _IsHeldAsync(connection, transaction, resource, commandTimeout, cancellationToken)
+                .ConfigureAwait(false)
+        )
         {
-            if (
-                Convert.ToInt32(
-                    await isHeldCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false),
-                    CultureInfo.InvariantCulture
-                ) != 0
-            )
-            {
-                return true;
-            }
+            return true;
         }
 
         var result = await _ExecuteAcquireAsync(
@@ -262,6 +257,265 @@ internal static class SqlServerApplicationLock
             }
         }
 
+        var result = _ExecuteTransactionAcquire(connection, transaction, resource, acquireTimeout, commandTimeout);
+
+        return MapAcquireResult(resource, result, acquireTimeout, CancellationToken.None);
+    }
+
+    /// <summary>
+    /// Acquires a transaction-owned exclusive application lock on every resource in <paramref name="resources"/>, in
+    /// the order given and under one wait budget, all-or-nothing: when a resource is contended past the budget or its
+    /// acquire fails, the locks this call newly granted are released in reverse order, and the ones the transaction
+    /// held before the call stay held.
+    /// </summary>
+    /// <param name="transaction">The active <see cref="SqlTransaction"/> that will own the locks.</param>
+    /// <param name="resources">One or more encoded resource names in acquisition order.</param>
+    /// <param name="acquireTimeout">The budget for the whole set; each resource waits only for what is left.</param>
+    /// <param name="commandTimeout">ADO.NET command timeout for each SQL command.</param>
+    /// <param name="cancellationToken">Token that cancels the set.</param>
+    /// <returns><see langword="false"/> when a resource was held in a conflicting mode as the budget ran out.</returns>
+    /// <exception cref="LockCleanupFailedException">
+    /// Releasing the locks this call granted failed, so the transaction may still hold some of the set.
+    /// </exception>
+    public static async ValueTask<bool> TryAcquireTransactionSetAsync(
+        SqlTransaction transaction,
+        IReadOnlyList<string> resources,
+        TimeSpan acquireTimeout,
+        TimeSpan commandTimeout,
+        CancellationToken cancellationToken = default
+    )
+    {
+        if (resources.Count == 1)
+        {
+            return await TryAcquireTransactionAsync(
+                    transaction,
+                    resources[0],
+                    acquireTimeout,
+                    commandTimeout,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+        }
+
+        var connection = _RequireConnection(transaction);
+        var budget = TransactionLockBudget.Start(acquireTimeout);
+        var granted = new List<string>(resources.Count);
+
+        try
+        {
+            foreach (var resource in resources)
+            {
+                if (!budget.TryGetRemaining(out var wait))
+                {
+                    await _ReleaseGrantedAsync(connection, transaction, granted, primaryFailure: null)
+                        .ConfigureAwait(false);
+
+                    return false;
+                }
+
+                if (
+                    await _IsHeldAsync(connection, transaction, resource, commandTimeout, cancellationToken)
+                        .ConfigureAwait(false)
+                )
+                {
+                    continue;
+                }
+
+                var result = await _ExecuteAcquireAsync(
+                        connection,
+                        transaction,
+                        resource,
+                        isShared: false,
+                        _TransactionOwner,
+                        wait,
+                        commandTimeout,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+
+                if (!MapAcquireResult(resource, result, wait, cancellationToken))
+                {
+                    await _ReleaseGrantedAsync(connection, transaction, granted, primaryFailure: null)
+                        .ConfigureAwait(false);
+
+                    return false;
+                }
+
+                granted.Add(resource);
+            }
+
+            return true;
+        }
+        catch (Exception exception)
+        {
+            await _ReleaseGrantedAsync(connection, transaction, granted, exception).ConfigureAwait(false);
+
+            throw;
+        }
+    }
+
+    /// <summary>Synchronous form of <see cref="TryAcquireTransactionSetAsync"/>.</summary>
+    /// <param name="transaction">The active <see cref="SqlTransaction"/> that will own the locks.</param>
+    /// <param name="resources">One or more encoded resource names in acquisition order.</param>
+    /// <param name="acquireTimeout">The budget for the whole set.</param>
+    /// <param name="commandTimeout">ADO.NET command timeout for each SQL command.</param>
+    /// <returns><see langword="false"/> when a resource was held in a conflicting mode as the budget ran out.</returns>
+    /// <exception cref="LockCleanupFailedException">
+    /// Releasing the locks this call granted failed, so the transaction may still hold some of the set.
+    /// </exception>
+    public static bool TryAcquireTransactionSet(
+        SqlTransaction transaction,
+        IReadOnlyList<string> resources,
+        TimeSpan acquireTimeout,
+        TimeSpan commandTimeout
+    )
+    {
+        if (resources.Count == 1)
+        {
+            return TryAcquireTransaction(transaction, resources[0], acquireTimeout, commandTimeout);
+        }
+
+        var connection = _RequireConnection(transaction);
+        var budget = TransactionLockBudget.Start(acquireTimeout);
+        var granted = new List<string>(resources.Count);
+
+        try
+        {
+            foreach (var resource in resources)
+            {
+                if (!budget.TryGetRemaining(out var wait))
+                {
+                    _ReleaseGranted(connection, transaction, granted, primaryFailure: null);
+
+                    return false;
+                }
+
+                using (var isHeldCommand = _CreateIsHeldCommand(connection, transaction, resource, commandTimeout))
+                {
+                    if (Convert.ToInt32(isHeldCommand.ExecuteScalar(), CultureInfo.InvariantCulture) != 0)
+                    {
+                        continue;
+                    }
+                }
+
+                var result = _ExecuteTransactionAcquire(connection, transaction, resource, wait, commandTimeout);
+
+                if (!MapAcquireResult(resource, result, wait, CancellationToken.None))
+                {
+                    _ReleaseGranted(connection, transaction, granted, primaryFailure: null);
+
+                    return false;
+                }
+
+                granted.Add(resource);
+            }
+
+            return true;
+        }
+        catch (Exception exception)
+        {
+            _ReleaseGranted(connection, transaction, granted, exception);
+
+            throw;
+        }
+    }
+
+    private static async ValueTask _ReleaseGrantedAsync(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        List<string> granted,
+        Exception? primaryFailure
+    )
+    {
+        if (granted.Count == 0 || !_CanStillRelease(connection, transaction))
+        {
+            return;
+        }
+
+        List<Exception>? failures = null;
+
+        for (var i = granted.Count - 1; i >= 0; i--)
+        {
+            try
+            {
+                await using var release = _CreateReleaseIfHeldCommand(
+                    connection,
+                    transaction,
+                    granted[i],
+                    _TransactionOwner
+                );
+                // Never cancelled: the release is what undoes the set, so it must run after a cancelled acquire too.
+                await release.ExecuteNonQueryAsync(CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception cleanupFailure)
+            {
+                (failures ??= []).Add(cleanupFailure);
+            }
+        }
+
+        _ThrowIfSetCleanupFailed(primaryFailure, failures);
+    }
+
+    private static void _ReleaseGranted(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        List<string> granted,
+        Exception? primaryFailure
+    )
+    {
+        if (granted.Count == 0 || !_CanStillRelease(connection, transaction))
+        {
+            return;
+        }
+
+        List<Exception>? failures = null;
+
+        for (var i = granted.Count - 1; i >= 0; i--)
+        {
+            try
+            {
+                using var release = _CreateReleaseIfHeldCommand(connection, transaction, granted[i], _TransactionOwner);
+                release.ExecuteNonQuery();
+            }
+            catch (Exception cleanupFailure)
+            {
+                (failures ??= []).Add(cleanupFailure);
+            }
+        }
+
+        _ThrowIfSetCleanupFailed(primaryFailure, failures);
+    }
+
+    private static void _ThrowIfSetCleanupFailed(Exception? primaryFailure, List<Exception>? failures)
+    {
+        if (failures is null)
+        {
+            return;
+        }
+
+        if (primaryFailure is not null)
+        {
+            failures.Insert(0, primaryFailure);
+        }
+
+        throw new LockCleanupFailedException(
+            failures,
+            "Acquiring a set of transaction-owned application locks failed and releasing the locks it had granted "
+                + "failed too; some may stay held until the transaction ends."
+        );
+    }
+
+    // Sync twin of _ExecuteAcquireAsync for a transaction owner: the server can grant the lock just before the client
+    // stops listening, so a failed command releases whatever the transaction now holds for the resource. Every caller
+    // checked first that the transaction held nothing for it, so this never drops an earlier hold.
+    private static int _ExecuteTransactionAcquire(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        string resource,
+        TimeSpan acquireTimeout,
+        TimeSpan commandTimeout
+    )
+    {
         using var command = _CreateAcquireCommand(
             connection,
             transaction,
@@ -272,11 +526,9 @@ internal static class SqlServerApplicationLock
             commandTimeout
         );
 
-        int result;
-
         try
         {
-            result = Convert.ToInt32(command.ExecuteScalar(), CultureInfo.InvariantCulture);
+            return Convert.ToInt32(command.ExecuteScalar(), CultureInfo.InvariantCulture);
         }
         catch (Exception exception) when (_CanStillRelease(connection, transaction))
         {
@@ -292,8 +544,6 @@ internal static class SqlServerApplicationLock
 
             throw;
         }
-
-        return MapAcquireResult(resource, result, acquireTimeout, CancellationToken.None);
     }
 
     private static async ValueTask<int> _ExecuteAcquireAsync(
@@ -355,6 +605,35 @@ internal static class SqlServerApplicationLock
             }
 
             throw;
+        }
+    }
+
+    private static async ValueTask<bool> _IsHeldAsync(
+        SqlConnection connection,
+        SqlTransaction transaction,
+        string resource,
+        TimeSpan commandTimeout,
+        CancellationToken cancellationToken
+    )
+    {
+        await using var command = _CreateIsHeldCommand(connection, transaction, resource, commandTimeout);
+
+        try
+        {
+            return Convert.ToInt32(
+                    await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false),
+                    CultureInfo.InvariantCulture
+                ) != 0;
+        }
+        catch (Exception exception)
+            when (exception is not OperationCanceledException && cancellationToken.IsCancellationRequested)
+        {
+            // SqlClient reports a cancel that interrupts a running command as a SqlException, as in the acquire.
+            throw new OperationCanceledException(
+                $"Distributed lock acquisition for '{resource}' was cancelled.",
+                exception,
+                cancellationToken
+            );
         }
     }
 

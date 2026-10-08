@@ -54,6 +54,57 @@ public sealed class HF2003HF2004HF2005ReceiverTests : TestBase
     }
 
     [Fact]
+    public async Task should_report_multi_key_lock_acquisition_through_the_extension_members()
+    {
+        const string source =
+            _Prelude
+            + """
+                public sealed class Handler(IDistributedLock locks, IDistributedReadWriteLock readWrite, IUnitOfWorkFactory factory)
+                {
+                    public Task Handle(DbContext db, CancellationToken ct) =>
+                        factory.RunAsync(db, async (unit, token) =>
+                        {
+                            await using var both = await locks.AcquireAllAsync(["orders:1", "orders:2"], cancellationToken: token);
+                            await using var maybe = await locks.TryAcquireAllAsync(["orders:3", "orders:4"], cancellationToken: token);
+                            await using var reads = await readWrite.AcquireAllReadAsync(["catalog:1", "catalog:2"], cancellationToken: token);
+                        }, cancellationToken: ct);
+                }
+                """;
+
+        var diagnostics = await AnalyzerHarness.AnalyzeAsync(source, AbortToken);
+
+        // The reader-writer composite has no transaction-scoped counterpart, so only the two mutex calls are reported.
+        diagnostics.Should().HaveCount(2);
+        diagnostics.Should().AllSatisfy(diagnostic => diagnostic.Id.Should().Be("HF2003"));
+        diagnostics
+            .Should()
+            .AllSatisfy(diagnostic =>
+                diagnostic.GetMessage(CultureInfo.InvariantCulture).Should().Contain("'unit.TransactionLocks'")
+            );
+        (await AnalyzerHarness.GetFixesAsync(source, AbortToken)).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task should_not_report_multi_key_lock_acquisition_outside_a_unit()
+    {
+        var diagnostics = await AnalyzerHarness.AnalyzeAsync(
+            _Prelude
+                + """
+                public sealed class Handler(IDistributedLock locks)
+                {
+                    public async Task Handle(CancellationToken ct)
+                    {
+                        await using var both = await locks.AcquireAllAsync(["orders:1", "orders:2"], cancellationToken: ct);
+                    }
+                }
+                """,
+            AbortToken
+        );
+
+        diagnostics.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task should_report_fenced_lease_changes_and_fix_them_onto_the_unit_leases()
     {
         var fixedSource = await AnalyzerHarness.FixAllAsync(

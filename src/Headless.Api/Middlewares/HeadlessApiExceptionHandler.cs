@@ -49,6 +49,10 @@ internal sealed partial class HeadlessApiExceptionHandler(
 
     private const string _DbUpdateExceptionFullName = "Microsoft.EntityFrameworkCore.DbUpdateException";
 
+    // Sealed, so an exact name match is complete; matched by name so this package references no lock package.
+    private const string _LockAcquisitionTimeoutExceptionFullName =
+        "Headless.DistributedLocks.LockAcquisitionTimeoutException";
+
     // Bounds the walk from the EF exception to the provider exception; the provider error sits one or two levels down.
     private const int _MaxProviderExceptionDepth = 5;
 
@@ -199,6 +203,18 @@ internal sealed partial class HeadlessApiExceptionHandler(
                     statusCode = StatusCodes.Status409Conflict;
                     break;
 
+                // A lock wait that ran out is contention on the server, not a slow client (408): another operation
+                // still holds the resource, and the same request can succeed once it finishes. No Retry-After: the
+                // exception knows nothing about when the holder will finish, and an invented value would have clients
+                // synchronize their retries on it.
+                case not null when _IsLockAcquisitionTimeout(exception):
+                    _LogLockAcquisitionTimeout(logger, exception);
+                    problemDetails = problemDetailsCreator.ServiceUnavailable(
+                        error: GeneralMessageDescriber.ResourceBusy()
+                    );
+                    statusCode = StatusCodes.Status503ServiceUnavailable;
+                    break;
+
                 case TimeoutException:
                     _LogRequestTimeoutException(logger, exception);
                     problemDetails = problemDetailsCreator.RequestTimeout();
@@ -307,6 +323,11 @@ internal sealed partial class HeadlessApiExceptionHandler(
             _LogFallbackWriteFailed(logger, fallbackError, fallbackError.GetType().Name);
             return false;
         }
+    }
+
+    private static bool _IsLockAcquisitionTimeout(Exception ex)
+    {
+        return string.Equals(ex.GetType().FullName, _LockAcquisitionTimeoutExceptionFullName, StringComparison.Ordinal);
     }
 
     private static bool _IsDbUpdateConcurrencyException(Exception ex)
@@ -433,6 +454,15 @@ internal sealed partial class HeadlessApiExceptionHandler(
         SkipEnabledCheck = true
     )]
     private static partial void _LogDbConcurrencyException(ILogger logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 5014,
+        EventName = "LockAcquisitionTimeout",
+        Level = LogLevel.Warning,
+        Message = "A distributed lock was still held by another operation when the wait ran out",
+        SkipEnabledCheck = true
+    )]
+    private static partial void _LogLockAcquisitionTimeout(ILogger logger, Exception exception);
 
     [LoggerMessage(
         EventId = 5013,

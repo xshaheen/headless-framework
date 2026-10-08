@@ -6,6 +6,7 @@ using Headless;
 using Headless.Api;
 using Headless.Api.Resources;
 using Headless.Context;
+using Headless.DistributedLocks;
 using Headless.MultiTenancy;
 using Headless.Primitives;
 using Headless.Testing.Tests;
@@ -385,6 +386,67 @@ public sealed class HeadlessApiExceptionHandlerTests : TestBase
 
         // then
         result.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task should_map_lock_acquisition_timeout_to_503_resource_busy_without_retry_after()
+    {
+        // given
+        var problemDetailsService = Substitute.For<IProblemDetailsService>();
+        problemDetailsService.TryWriteAsync(Arg.Any<ProblemDetailsContext>()).Returns(true);
+        var logger = new CapturingLogger<HeadlessApiExceptionHandler>();
+        var handler = _CreateHandler(problemDetailsService, _CreateRealCreator(), logger);
+        var httpContext = new DefaultHttpContext();
+
+        // when
+        var result = await handler.TryHandleAsync(
+            httpContext,
+            new LockAcquisitionTimeoutException("Wallet:42"),
+            AbortToken
+        );
+
+        // then — contention on the server, not a slow client, and no invented Retry-After
+        result.Should().BeTrue();
+        httpContext.Response.StatusCode.Should().Be(StatusCodes.Status503ServiceUnavailable);
+        httpContext.Response.Headers.RetryAfter.Should().BeEmpty();
+        await problemDetailsService
+            .Received(1)
+            .TryWriteAsync(
+                Arg.Is<ProblemDetailsContext>(c =>
+                    c.ProblemDetails.Status == 503
+                    && !c.ProblemDetails.Extensions.ContainsKey("retryAfter")
+                    && c.ProblemDetails.Extensions["error"] is ErrorDescriptor
+                    && ((ErrorDescriptor)c.ProblemDetails.Extensions["error"]!).Code == GeneralErrorCodes.ResourceBusy
+                )
+            );
+        logger.Entries.Should().Contain(e => e.EventId.Id == 5014 && e.Level == LogLevel.Warning);
+    }
+
+    [Fact]
+    public async Task should_not_leak_the_locked_resource_name_into_the_response()
+    {
+        // given
+        ProblemDetails? written = null;
+        var problemDetailsService = Substitute.For<IProblemDetailsService>();
+        problemDetailsService
+            .TryWriteAsync(Arg.Do<ProblemDetailsContext>(c => written = c.ProblemDetails))
+            .Returns(true);
+        var handler = _CreateHandler(problemDetailsService, _CreateRealCreator());
+
+        // when
+        await handler.TryHandleAsync(
+            new DefaultHttpContext(),
+            new LockAcquisitionTimeoutException("Wallet:secret-42"),
+            AbortToken
+        );
+
+        // then — the resource name describes server internals, so it stays in the logs
+        written.Should().NotBeNull();
+        written!.Detail.Should().NotContain("secret-42");
+        written
+            .Extensions.Values.OfType<ErrorDescriptor>()
+            .Should()
+            .AllSatisfy(e => e.Description.Should().NotContain("secret-42"));
     }
 
     [Fact]

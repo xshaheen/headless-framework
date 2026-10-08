@@ -83,11 +83,12 @@ internal sealed record ReceiverRule(
             AccessorShape.GenericMethod,
             "Headless.Jobs.ICronJobManager`1"
         ),
-        // The transaction lock takes an acquire timeout and returns a different handle, so no fix is offered.
+        // The transaction lock takes an acquire timeout and returns a different handle, so no fix is offered. The
+        // multi-key members are extension members of IDistributedLock; unit.TransactionLocks has the same pair.
         new(
             DiagnosticDescriptors.TransactionLocksReceiver,
             "Headless.DistributedLocks.IDistributedLock",
-            ["AcquireAsync", "TryAcquireAsync"],
+            ["AcquireAsync", "TryAcquireAsync", "AcquireAllAsync", "TryAcquireAllAsync"],
             "TransactionLocks",
             AccessorShape.Property,
             EnlistedMetadataName: null
