@@ -117,15 +117,18 @@ PROOF_RUN := $(ARTIFACTS_DIR)/proof/$(shell date -u +%Y%m%dT%H%M%SZ)
 # Coverage costs ~0.4 s per test module plus a merge (~20 s on a whole-solution run), so the inner loop skips
 # it and the pre-PR targets keep it. The floors follow the testing diamond: a package with no external dependency
 # is held to COVERAGE_UNIT_FLOOR from unit tests alone, and every changed line to COVERAGE_LINE_FLOOR and
-# COVERAGE_BRANCH_FLOOR. verify-affected gates the packages without an integration project on unit coverage; a
-# package that owns a tests/<Package>.Tests.Integration project is gated by test-affected-integration instead.
+# COVERAGE_BRANCH_FLOOR. verify-affected checks the packages without an integration project on unit coverage; a
+# package that owns a tests/<Package>.Tests.Integration project is checked by test-affected-integration instead.
 AFFECTED_COVERAGE ?= false
 VERIFY_COVERAGE ?= true
 INTEGRATION_COVERAGE ?= true
 COVERAGE_UNIT_FLOOR ?= 60
 COVERAGE_LINE_FLOOR ?= 80
 COVERAGE_BRANCH_FLOOR ?= 70
-COVERAGE_FLOOR_ARGS = --unit-floor $(COVERAGE_UNIT_FLOOR) --line-floor $(COVERAGE_LINE_FLOOR) --branch-floor $(COVERAGE_BRANCH_FLOOR)
+# The floors are comply-or-explain: a miss is listed in the proof as a warning and the author either adds the tests or
+# explains it in the PR. COVERAGE_GATE=fail turns a miss into a failed proof.
+COVERAGE_GATE ?= warn
+COVERAGE_FLOOR_ARGS = --unit-floor $(COVERAGE_UNIT_FLOOR) --line-floor $(COVERAGE_LINE_FLOOR) --branch-floor $(COVERAGE_BRANCH_FLOOR) --coverage-gate-mode $(COVERAGE_GATE)
 # MTP coverage arguments for a test stage whose `coverage` shell variable is true, into the `coverage_args` array.
 COVERAGE_ARGS_FN = coverage_args=(); \
 	if [ "$$coverage" = "true" ]; then \
