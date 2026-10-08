@@ -4,7 +4,7 @@ Defines the provider-agnostic contracts for image processing operations.
 
 ## Why use this package
 
-Decouples application code from any specific image-processing library. Services that inject `IImageResizer` or `IImageCompressor` have no compile-time dependency on SixLabors.ImageSharp or any other backend.
+Decouples application code from any specific image-processing library. Services that inject `IImageResizer` or `IImageCompressor` have no compile-time dependency on libvips or any other backend.
 
 ## Install
 

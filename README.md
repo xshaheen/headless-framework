@@ -389,7 +389,7 @@ Image processing with pluggable backends: resize, crop, convert, and optimize.
 |---------|-------------|
 | [Headless.Imaging.Abstractions](src/Headless.Imaging.Abstractions/README.md) | Image processing interfaces |
 | [Headless.Imaging](src/Headless.Imaging/README.md) | Core image processing |
-| [Headless.Imaging.ImageSharp](src/Headless.Imaging.ImageSharp/README.md) | ImageSharp implementation |
+| [Headless.Imaging.NetVips](src/Headless.Imaging.NetVips/README.md) | libvips implementation through NetVips |
 
 ### Logging
 

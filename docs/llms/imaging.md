@@ -1,11 +1,11 @@
 ---
 domain: Imaging
-packages: Imaging.Abstractions, Imaging, Imaging.ImageSharp
+packages: Imaging.Abstractions, Imaging, Imaging.NetVips
 ---
 
 # Imaging
 
-> Image resizing and compression pipeline with contributor-based extensibility, powered by ImageSharp.
+> Image resizing and compression pipeline with contributor-based extensibility, powered by libvips through NetVips.
 
 ## Orientation
 
@@ -13,7 +13,7 @@ Install all three packages for a complete imaging pipeline:
 
 - `Headless.Imaging.Abstractions` — interfaces (`IImageResizer`, `IImageCompressor`) and argument/result types
 - `Headless.Imaging` — orchestration layer, `ImagingOptions`, DI registration via `AddHeadlessImaging(imaging => …)`
-- `Headless.Imaging.ImageSharp` — SixLabors.ImageSharp-backed contributors chosen with `imaging.UseImageSharp()`
+- `Headless.Imaging.NetVips` — libvips-backed contributors chosen with `imaging.UseNetVips()`; the application also adds `NetVips.Native` or installs libvips
 
 Typical registration:
 
@@ -21,32 +21,34 @@ Typical registration:
 builder.Services.AddHeadlessImaging(imaging =>
     imaging
         .Configure(options => options.DefaultResizeMode = ImageResizeMode.Max)
-        .UseImageSharp(options =>
+        .UseNetVips(options =>
         {
-            options.JpegCompressEncoder = new JpegEncoder { Quality = 80 };
-            options.WebpCompressEncoder = new WebpEncoder { Quality = 80 };
+            options.JpegQuality = 80;
+            options.WebpQuality = 80;
         })
 );
 ```
 
-Supports JPEG, PNG, WebP, and GIF formats for resize; JPEG, PNG, and WebP for compression.
+Resizes JPEG, PNG, WebP, GIF (animated included), TIFF, and AVIF; compresses JPEG, PNG, WebP, and AVIF. BMP is not supported.
 
 ## Agent Rules
 
-- Always install all three packages (Abstractions + Core + ImageSharp) for a working pipeline. Abstractions alone provides no implementation; Core alone has no image-processing backend.
+- Always install all three packages (Abstractions + Core + NetVips) for a working pipeline, plus a libvips: `NetVips.Native` for the bundled binaries, or libvips 8.15 or later on the host. Abstractions alone provides no implementation; Core alone has no image-processing backend; `Headless.Imaging.NetVips` alone has no native library, and its contributors throw `InvalidOperationException` when first resolved.
 - Inject `IImageResizer` for resizing, `IImageCompressor` for compression. Both are registered as singletons.
 - `ImageResizeArgs` is constructed via its constructors — it has no settable `Width`/`Height`/`Mode` object-initializer properties. Pick the right overload: `(ImageResizeMode, int width, int? height, string? mimeType)`, `(ImageResizeMode, int? width, int height, string? mimeType)`, or `(ImageResizeMode, int width, int height, string? mimeType)`. Negative values throw `ArgumentException` at construction time.
 - Check `result.IsDone` before accessing `result.Result`. When `IsDone` is `false`, `result.Error` is non-null and `result.Result` is null. This is enforced by `[MemberNotNullWhen]` attributes.
 - For `ImageStreamResizeResult`: access the processed image via `result.Result.Content` (a `Stream`), not `.Stream`. The result also carries `result.Result.MimeType`, `result.Result.Width`, and `result.Result.Height`.
-- `ImageCompressArgs` accepts only an optional `mimeType`. It carries no quality setting — quality is governed by `ImageSharpOptions` encoders.
+- `ImageCompressArgs` accepts only an optional `mimeType`. It carries no quality setting — quality is governed by `NetVipsOptions` (`JpegQuality`, `WebpQuality`, `AvifQuality`, `PngCompressionLevel`).
+- The `mimeType` on `ImageResizeArgs` and `ImageCompressArgs` is a hint about the input, not an output format: a contributor skips a hinted type it does not handle, and otherwise detects the format from the bytes. The output keeps the source format, and `result.Result.MimeType` is the detected one.
 - `ImageResizeMode.Default` is the zero/unset value (`default(ImageResizeMode)`) and acts as the sentinel meaning "use the pipeline default". It is resolved at runtime to `ImagingOptions.DefaultResizeMode`. If `DefaultResizeMode` is also `None` (the default), the image is returned unchanged.
 - `ImageResizeMode.None` is an explicit, distinct value that skips resizing entirely and returns the original stream. Use `Max`, `Crop`, `Pad`, `BoxPad`, `Min`, or `Stretch` for actual resizing.
 - The compressor returns `ImageProcessState.Failed` when the compressed output is larger than the original — it never bloats a file. Check `result.IsDone` to detect this case.
-- Contributors are iterated in **reverse registration order**. The last-registered contributor is tried first. A custom contributor registered after `AddHeadlessImaging(...)` takes priority over ImageSharp.
+- Contributors are iterated in **reverse registration order**. The last-registered contributor is tried first. A custom contributor registered after `AddHeadlessImaging(...)` takes priority over the NetVips contributors.
 - Non-seekable input streams are automatically buffered into a `MemoryStream` by the resize and compress pipelines (the internal `IImageResizer`/`IImageCompressor` implementations). Callers do not need to buffer first.
 - Returned `Stream` objects in results are owned by the caller. Dispose them when done.
-- GIF and BMP are supported for resize but not for compression. Passing a GIF/BMP stream to `IImageCompressor` returns `ImageProcessState.Unsupported`.
-- Register imaging once, with `services.AddHeadlessImaging(imaging => imaging.UseImageSharp())`. `AddHeadlessImaging` throws `InvalidOperationException` when no provider is chosen or when it is called a second time on the same service collection. The ImageSharp contributor implementations are internal — register them only through `UseImageSharp()`, never by type.
+- GIF and TIFF are supported for resize but not for compression. Passing a GIF or TIFF stream to `IImageCompressor` returns `ImageProcessState.Unsupported`. BMP, SVG, PDF, HEIC, and JPEG XL are not supported by either contributor and return `Unsupported`.
+- An image above `NetVipsOptions.MaxPixels`, or a resize request whose output would exceed it, returns `ImageProcessState.Failed`, not `Unsupported`, so no other contributor is offered the image.
+- Register imaging once, with `services.AddHeadlessImaging(imaging => imaging.UseNetVips())`. `AddHeadlessImaging` throws `InvalidOperationException` when no provider is chosen or when it is called a second time on the same service collection. The NetVips contributor implementations are internal — register them only through `UseNetVips()`, never by type.
 
 ---
 
@@ -74,17 +76,17 @@ All results derive from `ImageProcessResult<T>` with three states:
 
 ### Resize modes
 
-`ImageResizeMode` maps to SixLabors.ImageSharp resize modes:
+`ImageResizeMode` values. When only one side is given, the other follows the source aspect ratio before the mode applies:
 
 | Mode | Behavior |
 |---|---|
 | `Default` | Zero/unset sentinel. Resolved at runtime to `ImagingOptions.DefaultResizeMode`. |
 | `None` | No resize — original stream returned as-is. |
 | `Max` | Scale down to fit within width × height, preserving aspect ratio. Never upscales. |
-| `Crop` | Resize and crop to exact width × height. |
-| `Pad` | Resize to fit, pad remaining area. Accepts a single dimension. |
-| `BoxPad` | Pad without resizing source; downscale behaves like `Pad`. |
-| `Min` | Scale until the shortest side reaches the target. Never upscales. |
+| `Crop` | Fill and crop to exact width × height. `NetVipsOptions.CropFocus` picks the kept region. |
+| `Pad` | Resize to fit, then pad to exact width × height. The padding is transparent when the format has alpha, black for JPEG. |
+| `BoxPad` | Pad to width × height without resizing a source that fits; a larger source behaves like `Pad`. |
+| `Min` | Put the side whose target is nearest its source length exactly on the target, and scale the other side with the aspect ratio; no crop. Never upscales: a source smaller than the box on either side keeps its size. |
 | `Stretch` | Stretch to exact width × height, ignoring aspect ratio. |
 
 ---
@@ -172,7 +174,7 @@ Orchestration layer that routes image processing calls to registered contributor
 
 ### Design constraints
 
-Contributors are enumerated in reverse order of DI registration. This mirrors the last-in-wins overriding model: a contributor registered after `AddHeadlessImaging(...)` takes precedence over ImageSharp without requiring any removal. A contributor signals non-support by returning `ImageProcessState.Unsupported`; the orchestrator seeks the stream back to the start and tries the next contributor.
+Contributors are enumerated in reverse order of DI registration. This mirrors the last-in-wins overriding model: a contributor registered after `AddHeadlessImaging(...)` takes precedence over the NetVips contributors without requiring any removal. A contributor signals non-support by returning `ImageProcessState.Unsupported`; the orchestrator seeks the stream back to the start and tries the next contributor.
 
 ### Install
 
@@ -186,7 +188,7 @@ dotnet add package Headless.Imaging
 builder.Services.AddHeadlessImaging(imaging =>
     imaging
         .Configure(options => options.DefaultResizeMode = ImageResizeMode.Max)
-        .UseImageSharp() // from Headless.Imaging.ImageSharp
+        .UseNetVips() // from Headless.Imaging.NetVips
 );
 ```
 
@@ -220,85 +222,102 @@ imaging.Configure((options, sp) => options.DefaultResizeMode = ImageResizeMode.M
 
 ---
 
-## Headless.Imaging.ImageSharp
 
-SixLabors.ImageSharp-backed contributors for image resizing and compression.
+## Headless.Imaging.NetVips
+
+libvips-backed contributors for image resizing and compression, through the NetVips binding.
 
 ### API and behavior
 
-- Internal ImageSharp-backed `IImageResizerContributor` (registered by `UseImageSharp`) — resize via `SixLabors.ImageSharp`; supports JPEG, PNG, GIF, BMP, TIFF, WebP
-- Internal ImageSharp-backed `IImageCompressorContributor` (registered by `UseImageSharp`) — compression via configurable `IImageEncoder` per format; supports JPEG, PNG, WebP
-- `ImageSharpOptions` — encoder settings with per-format encoder instances
-- Compression skips output if compressed size exceeds original (returns `Failed`)
-- Format is auto-detected from stream metadata when `args.MimeType` is not provided
+- Internal libvips `IImageResizerContributor` (registered by `UseNetVips`): resizes JPEG, PNG, WebP, GIF, TIFF, and AVIF into the source format. It runs libvips `thumbnail`, which shrinks JPEG and WebP while decoding, so a large photo never decodes at full size.
+- Internal libvips `IImageCompressorContributor` (registered by `UseNetVips`): re-encodes JPEG, PNG, WebP, and AVIF in the source format at the configured quality; returns `Failed` unless the output is strictly smaller than the input.
+- `NetVipsOptions`: per-format quality, PNG compression level, metadata stripping, the pixel limit, and the crop focus.
+- `NetVipsCropFocus`: `Center`, `Attention` (skin tones, saturated colour, and edges), or `Entropy` (most detail).
+- Animated GIF and WebP keep every frame: each frame is cropped or padded on its own, and the frame delays and loop count carry over.
+- Resize output is 8-bit sRGB: libvips `thumbnail` converts 16-bit and other colour spaces. Compression keeps the source depth.
+- The EXIF orientation is applied, so resize output is stored upright and the reported width and height are the displayed ones. `ImageResizeMode.None` returns the caller's stream with its stored width and height.
 
 ### Design constraints
 
-`ImageSharpOptions` exposes full `IImageEncoder` instances (`JpegCompressEncoder`, `PngCompressEncoder`, `WebpCompressEncoder`) rather than simple quality integers. This gives callers full control over encoder-specific settings (chroma subsampling, interlacing, filter type, etc.). The `DefaultCompressQuality` property initializes the default JPEG and WebP encoders in the constructor; changing it after construction has no effect unless the encoder instances are also replaced.
+**The package references only the MIT-licensed `NetVips` wrapper, not the native binaries.** `NetVips.Native` bundles libvips and its codecs under LGPL-3.0-or-later. A web app that runs on its own servers carries no LGPL obligation, but an app that distributes its binaries, for example in a public container image, an on-premises installer, or a device, must offer the LGPL source and allow relinking, and some company policies ban the GPL-3 family outright. Bundling the natives would make that decision for every consumer, so the application makes it:
+
+- **`NetVips.Native`** (`dotnet add package NetVips.Native`): zero setup, about 8 MB per platform; linux x64/arm64/arm, linux-musl x64/arm64, win x64/arm64, osx x64/arm64. This is the tested configuration.
+- **A system libvips 8.15 or later** (`apt-get install libvips42t64` on Ubuntu 24.04 or Debian 13, `apk add vips`, `brew install vips`): the operating system's security updates patch it, and its licence is the distribution's build (libvips itself is LGPL-2.1-or-later). Its codec set is whatever the distribution compiled in. Debian 12 ships libvips 8.14, which is too old.
+
+Without either, the contributors throw `InvalidOperationException` naming both options when the container first resolves them, which is the first `IImageResizer` or `IImageCompressor` resolution.
+
+**Untrusted input is fenced by an allowlist, not by libvips' global switch.** libvips sniffs the format from the magic bytes, and only the JPEG, PNG, WebP, GIF, TIFF, and HEIF loaders may run; HEIF passes only when its header names AV1 (AVIF). Everything else is refused before its parser sees the bytes: SVG (librsvg), PDF, ImageMagick formats, CSV, matrix, and the native `.v` format. This per-call check replaces `NetVips.BlockUntrusted`, which is process-wide and blocks only some of those loaders.
+
+**Formats depend on the libvips build.** The `NetVips.Native` 8.18 bundle has no BMP loader (libvips reads BMP only through ImageMagick, which the bundle omits and the allowlist refuses), no HEVC encoder (so HEIC is refused), and no JPEG XL. A system libvips with more codecs does not widen the allowlist.
+
+**Decoding is strict.** Loaders run with `fail_on=error`, so a truncated or corrupt file returns `Unsupported` with "The encoded image contains invalid content." instead of a half-grey image.
+
+**Process-wide libvips settings stay with the application.** libvips keeps an operation cache (100 operations, 100 MB, 100 open files by default) and a worker pool per operation (one thread per core). Both are process globals, so the package does not own them. The cache does not hold the input buffers; a host that resizes many distinct images can still turn it off at startup, where the `global::` prefix avoids a clash with the `Headless.Imaging` namespace:
+
+```csharp
+global::NetVips.Cache.Max = 0;               // no operation cache
+global::NetVips.NetVips.Concurrency = 2;     // threads per libvips operation
+```
+
+**Libvips work is synchronous.** The contributors read the input stream asynchronously, then decode and encode on the calling thread. The cancellation token is checked before the work starts; a running libvips operation is not interrupted.
 
 ### Install
 
 ```bash
-dotnet add package Headless.Imaging.ImageSharp
+dotnet add package Headless.Imaging.NetVips
+dotnet add package NetVips.Native   # or install libvips 8.15+ on the host
 ```
 
 ### Setup and use
 
 ```csharp
 builder.Services.AddHeadlessImaging(imaging =>
-    imaging.UseImageSharp(options =>
+    imaging.UseNetVips(options =>
     {
-        // DefaultCompressQuality only seeds the default encoders when the options object is constructed,
-        // so set quality on the encoder instances.
-        options.JpegCompressEncoder = new JpegEncoder { Quality = 80 };
-        options.WebpCompressEncoder = new WebpEncoder { Quality = 80 };
+        options.JpegQuality = 80;
+        options.AvifQuality = 45;
+        options.CropFocus = NetVipsCropFocus.Attention;
+        options.MaxPixels = 50_000_000;
     })
 );
 ```
 
-To override a specific encoder:
-
-```csharp
-builder.Services.AddHeadlessImaging(imaging =>
-    imaging.UseImageSharp(options =>
-    {
-        options.JpegCompressEncoder = new JpegEncoder { Quality = 90 };
-        options.PngCompressEncoder  = new PngEncoder  { CompressionLevel = PngCompressionLevel.BestCompression, SkipMetadata = true };
-    })
-);
-```
-
-`UseImageSharp` has four overloads:
+`UseNetVips` has four overloads:
 
 ```csharp
 // Default options
-imaging.UseImageSharp();
+imaging.UseNetVips();
 
 // Bind from IConfiguration section
-imaging.UseImageSharp(config.GetSection("Headless:ImageSharp"));
+imaging.UseNetVips(config.GetSection("Headless:Imaging:NetVips"));
 
 // Configure with action
-imaging.UseImageSharp(options => options.JpegCompressEncoder = new JpegEncoder { Quality = 85 });
+imaging.UseNetVips(options => options.WebpQuality = 85);
 
 // Configure with action + IServiceProvider
-imaging.UseImageSharp((options, sp) => options.JpegCompressEncoder = new JpegEncoder { Quality = 85 });
+imaging.UseNetVips((options, sp) => options.WebpQuality = 85);
 ```
 
 ### Configuration
 
-`ImageSharpOptions`:
+`NetVipsOptions`:
 
 | Property | Type | Default | Description |
 |---|---|---|---|
-| `DefaultCompressQuality` | `int` (1–100) | `75` | Quality used to initialize the default JPEG and WebP encoders. Must be 1–100. |
-| `JpegCompressEncoder` | `IImageEncoder` | `JpegEncoder { Quality = 75 }` | Encoder used for JPEG compression. Replace to control quality and chroma subsampling. |
-| `PngCompressEncoder` | `IImageEncoder` | `PngEncoder { CompressionLevel = BestCompression, SkipMetadata = true }` | Encoder used for PNG compression. |
-| `WebpCompressEncoder` | `IImageEncoder` | `WebpEncoder { Quality = 75 }` | Encoder used for WebP compression. |
+| `JpegQuality` | `int` (1–100) | `75` | JPEG quality for resize output and compression. Huffman tables are always optimized. |
+| `WebpQuality` | `int` (1–100) | `75` | Lossy WebP quality. |
+| `AvifQuality` | `int` (1–100) | `50` | AVIF (AV1) quality; 50 is libvips' own default. |
+| `PngCompressionLevel` | `int` (0–9) | `9` | zlib effort for PNG output; PNG stays lossless at every level. |
+| `StripMetadata` | `bool` | `true` | Drops EXIF, XMP, IPTC, and other metadata, keeping only the ICC profile. When on, the compressor first turns the pixels upright, because the orientation tag goes with the EXIF block. |
+| `MaxPixels` | `long` (> 0) | `268402689` (16383²) | Largest width × height × frames of an input, checked from the header before decoding, and of a resize output. Exceeding it returns `Failed`. |
+| `CropFocus` | `NetVipsCropFocus` | `Center` | The region `ImageResizeMode.Crop` keeps. Animations always crop at the center, because a content-aware window would move from frame to frame. |
 
-Validation (applied at startup): `DefaultCompressQuality` must be between 1 and 100; all three encoder properties must be non-null.
+Validation (applied at startup): qualities between 1 and 100, `PngCompressionLevel` between 0 and 9, `MaxPixels` positive, `CropFocus` a defined value.
 
 ### Runtime behavior
 
-- Registers `IImageResizerContributor` as singleton (internal ImageSharp resize contributor)
-- Registers `IImageCompressorContributor` as singleton (internal ImageSharp compress contributor)
-- Registers each contributor once, however many times `UseImageSharp` is called
+- Registers `IImageResizerContributor` as singleton (internal NetVips resize contributor)
+- Registers `IImageCompressorContributor` as singleton (internal NetVips compress contributor)
+- Registers each contributor once, however many times `UseNetVips` is called
+- Checks on first resolution that libvips 8.15 or later loaded
+- Logs refused formats, oversized images, and invalid content at `Information`

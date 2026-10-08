@@ -146,6 +146,24 @@
         "resolved": "18.7.23",
         "contentHash": "dyj6z8m+LFjpeH69hdnciCcRCmD0YgMlvuQEywiEshjqj/blgQ+PuWX8Vd5gkWQFoBN4e+TFxx6DvGNSv/gIKg=="
       },
+      "NetVips.Native": {
+        "type": "Direct",
+        "requested": "[8.18.7, )",
+        "resolved": "8.18.7",
+        "contentHash": "xkFI43xJczlO09+2vWbS3+Zy9jZpRv96fjNd0g5wqwsLqcERdi0FPAc4fHcgiw0k716CjUZnUdbf1/bx+KhcVQ==",
+        "dependencies": {
+          "NetVips.Native.linux-arm": "8.18.7",
+          "NetVips.Native.linux-arm64": "8.18.7",
+          "NetVips.Native.linux-musl-arm64": "8.18.7",
+          "NetVips.Native.linux-musl-x64": "8.18.7",
+          "NetVips.Native.linux-x64": "8.18.7",
+          "NetVips.Native.osx-arm64": "8.18.7",
+          "NetVips.Native.osx-x64": "8.18.7",
+          "NetVips.Native.win-arm64": "8.18.7",
+          "NetVips.Native.win-x64": "8.18.7",
+          "NetVips.Native.win-x86": "8.18.7"
+        }
+      },
       "NSubstitute": {
         "type": "Direct",
         "requested": "[6.2.0, )",
@@ -318,6 +336,56 @@
         "resolved": "5.0.0",
         "contentHash": "dDoKi0PnDz31yAyETfRntsLArTlVAVzUzCIvvEDsDsucrl33Dl8pIJG06ePTJTI3tGpeyHS9Cq7Foc/s4EeKcg=="
       },
+      "NetVips.Native.linux-arm": {
+        "type": "Transitive",
+        "resolved": "8.18.7",
+        "contentHash": "yiRfPK0I5scNE4p/XpBy3U9tbG2+fgcbrCjXhmCeY1hs0hZVhIWOW3AzBpPEcPqwzrD7ScLK7XNoIQBBG04JdA=="
+      },
+      "NetVips.Native.linux-arm64": {
+        "type": "Transitive",
+        "resolved": "8.18.7",
+        "contentHash": "nCKwMXFz+uyjouDskMxlF1XkgxGeGjyTTLcEcp+CeF8leqxrtylT8Thot7SUtiffEqeaVLOLH6YY6iknbiq/TA=="
+      },
+      "NetVips.Native.linux-musl-arm64": {
+        "type": "Transitive",
+        "resolved": "8.18.7",
+        "contentHash": "BsGWSChhQGSmMygaTe3mXEuT8FxKxCwYi32LckfgwnPyOla+Aph2wIXbNSlW/CX7n5Lx40h6KeEp0NB3S2/H7A=="
+      },
+      "NetVips.Native.linux-musl-x64": {
+        "type": "Transitive",
+        "resolved": "8.18.7",
+        "contentHash": "oX6jGZKGtc+VdhH5AF26DJgGVGiM1XDKqfJQ/bwn2xZ7I72SYKWWT4JtGlpUb02dwQ7/xKUXGZOGWoJX3QdOLw=="
+      },
+      "NetVips.Native.linux-x64": {
+        "type": "Transitive",
+        "resolved": "8.18.7",
+        "contentHash": "Ao/eWVNRZRM8/j8Dhp62XARwPzrTGMl4nheNQlQvp8P2Ybpdzj1+SeXRBlUCaH8phlCrEUSabz/5lpmnw3Wmig=="
+      },
+      "NetVips.Native.osx-arm64": {
+        "type": "Transitive",
+        "resolved": "8.18.7",
+        "contentHash": "DMMjnEXeEpOQ8zvM47ZkvnGlDAK7oBZ8vH2zhYeuusrsqiameQ0GFmQginThqcFR4k8G7eMUARkrPbclcuKqIw=="
+      },
+      "NetVips.Native.osx-x64": {
+        "type": "Transitive",
+        "resolved": "8.18.7",
+        "contentHash": "oiyOLIFSfmsHUEsuCsQ5At2fCTkgguQkYOFti4K1SKgIIgdoCPbEZ1GgAzZpIh0GdLOsCks9knA36rL0mS2ABg=="
+      },
+      "NetVips.Native.win-arm64": {
+        "type": "Transitive",
+        "resolved": "8.18.7",
+        "contentHash": "xZGa709UzaMRL6TUKXvNboEeP6rVqgPjP+5u1pXkwq1tXFcauNwXWIMy5ozsrCOf7xvxvcmWf+Y+rtCRpwmGBA=="
+      },
+      "NetVips.Native.win-x64": {
+        "type": "Transitive",
+        "resolved": "8.18.7",
+        "contentHash": "xmJCf4GoVHOSB7nED+/JxP6nxx+a/JZTqv3VQ8ni1LdZb3dewcMwSJPjEItdzNMpKLJL/40HZG42/dP05ifEJA=="
+      },
+      "NetVips.Native.win-x86": {
+        "type": "Transitive",
+        "resolved": "8.18.7",
+        "contentHash": "+IApKYlxKMJCM3dUCJmhdXCd5PtYyl61Dm2/Mir+PAsdxCtrG03XD2Rc51dlpU2JpRIjLMiPJZEGaItU4bQ9IQ=="
+      },
       "Nito.AsyncEx.Context": {
         "type": "Transitive",
         "resolved": "5.1.2",
@@ -486,11 +554,11 @@
           "Headless.Checks": "[1.0.0, )"
         }
       },
-      "headless.imaging.imagesharp": {
+      "headless.imaging.netvips": {
         "type": "Project",
         "dependencies": {
           "Headless.Imaging": "[1.0.0, )",
-          "SixLabors.ImageSharp": "[3.1.12, 4.0.0)"
+          "NetVips": "[3.2.0, )"
         }
       },
       "headless.multitenancy.abstractions": {
@@ -655,6 +723,12 @@
         "resolved": "10.10.0",
         "contentHash": "8duZdxuO3Oo8tlyQXVq1drXee6GJC9DjUU97Pq3YaIqf92jrAHsWxbbRKwvjQI48Mer3IANwUKF0elqvHeY4Rw=="
       },
+      "NetVips": {
+        "type": "CentralTransitive",
+        "requested": "[3.2.0, )",
+        "resolved": "3.2.0",
+        "contentHash": "ixVatHjsFBBvtKXYwH8jz8nF6OQIhl2e/P0N8ByGaZrlPu9VvcVQxX9zBQ13L8fUpMzKv1WXUybqW8wXZdFsCg=="
+      },
       "Newtonsoft.Json": {
         "type": "CentralTransitive",
         "requested": "[13.0.4, )",
@@ -686,12 +760,6 @@
         "requested": "[1.19.1, )",
         "resolved": "1.19.1",
         "contentHash": "9JKIH+xrV0HNTFjQC8zrx9gZpDOMEljN5Htg/U0VE2IvO3N+7bKALCCsGy5tp09marX5dd8UkrgQFoLaulIBRw=="
-      },
-      "SixLabors.ImageSharp": {
-        "type": "CentralTransitive",
-        "requested": "[3.1.12, 4.0.0)",
-        "resolved": "3.1.12",
-        "contentHash": "iAg6zifihXEFS/t7fiHhZBGAdCp3FavsF4i2ZIDp0JfeYeDVzvmlbY1CNhhIKimaIzrzSi5M/NBFcWvZT2rB/A=="
       },
       "xunit.v3.assert": {
         "type": "CentralTransitive",

@@ -109,6 +109,7 @@
     <PackageVersion Include="NCrontab.Signed" Version="3.4.0" />
     <PackageVersion Include="NetTopologySuite" Version="2.6.0" />
     <PackageVersion Include="NetTopologySuite.IO.GeoJSON4STJ" Version="4.0.0" />
+    <PackageVersion Include="NetVips" Version="3.2.0" />
     <!-- Transitive-only pin: never referenced directly (the SDK bans it in our code); Consul, NSwag, and test packages pull it. Pinned to clear GHSA-5crp-9r3c-p9vr (Newtonsoft.Json < 13.0.1). -->
     <PackageVersion Include="Newtonsoft.Json" Version="13.0.4" />
     <PackageVersion Include="Nito.Disposables" Version="2.5.0" />
@@ -158,9 +159,6 @@
     <PackageVersion Include="Serilog.Sinks.Console" Version="6.1.1" />
     <PackageVersion Include="Serilog.Sinks.Debug" Version="3.0.0" />
     <PackageVersion Include="Serilog.Sinks.File" Version="7.0.0" />
-    <!-- Capped below 4.0.0: it requires a Six Labors license key at build time. The open lower
-         bound (vs an exact pin) lets package consumers take 3.1.x patches without a re-release. -->
-    <PackageVersion Include="SixLabors.ImageSharp" Version="[3.1.12, 4.0.0)" />
     <PackageVersion Include="SSH.NET" Version="2026.0.0" />
     <PackageVersion Include="StackExchange.Redis" Version="3.3.1" />
     <PackageVersion Include="System.Buffers" Version="4.6.1" />
@@ -213,6 +211,9 @@
     <PackageVersion Include="Microsoft.Extensions.Logging.Console" Version="10.0.12" />
     <PackageVersion Include="Microsoft.Testing.Extensions.GitHubActionsReport" Version="2.4.1" />
     <PackageVersion Include="NameGenerator" Version="2.0.4" />
+    <!-- Test-only: the bundled libvips binaries (LGPL-3.0-or-later). Headless.Imaging.NetVips references only the MIT
+         NetVips wrapper, so each application chooses between this bundle and a system libvips. -->
+    <PackageVersion Include="NetVips.Native" Version="8.18.7" />
     <PackageVersion Include="NSubstitute" Version="6.2.0" />
     <PackageVersion Include="NSubstitute.Analyzers.CSharp" Version="1.0.17" />
     <PackageVersion Include="OpenTelemetry" Version="1.19.1" />

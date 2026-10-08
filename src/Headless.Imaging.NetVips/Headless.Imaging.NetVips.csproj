@@ -1,0 +1,21 @@
+﻿<Project Sdk="Headless.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Description>libvips (NetVips) integration for Headless image processing.</Description>
+    <PackageTags>headless;imaging;libvips;netvips;dotnet</PackageTags>
+    <!-- The family root, not Headless.Imaging.NetVips: a namespace ending in NetVips would shadow the NetVips
+         library namespace in every consumer file that imports Headless.Imaging. -->
+    <RootNamespace>Headless.Imaging</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Headless.Imaging.NetVips.Tests.Unit" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Headless.Imaging\Headless.Imaging.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The MIT managed wrapper only. The native libvips bundle (NetVips.Native) is LGPL-3.0-or-later, so the
+         application chooses it, or a system libvips, instead of inheriting it from this package. -->
+    <PackageReference Include="NetVips" />
+  </ItemGroup>
+</Project>

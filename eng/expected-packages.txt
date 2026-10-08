@@ -96,7 +96,7 @@ Headless.Idempotency.Sqlite
 Headless.Identity.Storage.EntityFramework
 Headless.Imaging
 Headless.Imaging.Abstractions
-Headless.Imaging.ImageSharp
+Headless.Imaging.NetVips
 Headless.Jobs
 Headless.Jobs.Abstractions
 Headless.Jobs.Dashboard
