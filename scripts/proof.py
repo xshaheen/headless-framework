@@ -168,12 +168,17 @@ def test_modules(directory: Path) -> list[TestModule]:
     return modules
 
 
-def coverage(directory: Path, assemblies: set[str]) -> list[dict[str, object]]:
+def merged_coverage(directory: Path) -> ET.Element | None:
+    # Parsed once per summary: on a whole-solution integration run the merged report is tens of megabytes.
     merged = directory / "coverage" / "merged.cobertura.xml"
-    if not merged.exists():
+    return ET.parse(merged).getroot() if merged.exists() else None
+
+
+def coverage(report: ET.Element | None, assemblies: set[str]) -> list[dict[str, object]]:
+    if report is None:
         return []
     rows: list[dict[str, object]] = []
-    for package in ET.parse(merged).getroot().iterfind(".//package"):
+    for package in report.iterfind(".//package"):
         name = package.get("name", "")
         if assemblies and name not in assemblies:
             continue
@@ -233,7 +238,7 @@ def changed_source_lines(base: str | None) -> dict[str, set[int]]:
     return {path: lines for path, lines in changed.items() if lines}
 
 
-def line_hits(cobertura: Path) -> tuple[dict[str, dict[int, LineHit]], dict[str, str]]:
+def line_hits(report: ET.Element | None) -> tuple[dict[str, dict[int, LineHit]], dict[str, str]]:
     """Per-file line hits from a merged Cobertura report, plus each file's assembly.
 
     A file can appear in several classes (partial and nested types), so hits merge across them: a line is covered when
@@ -241,9 +246,9 @@ def line_hits(cobertura: Path) -> tuple[dict[str, dict[int, LineHit]], dict[str,
     """
     hits: dict[str, dict[int, LineHit]] = {}
     assemblies: dict[str, str] = {}
-    if not cobertura.exists():
+    if report is None:
         return hits, assemblies
-    for package in ET.parse(cobertura).getroot().iterfind(".//package"):
+    for package in report.iterfind(".//package"):
         assembly = package.get("name", "")
         for cls in package.iterfind("classes/class"):
             file = relative(cls.get("filename", "").replace("\\", "/"))
@@ -287,7 +292,7 @@ def compress(lines: list[int]) -> str:
 
 
 def coverage_gate(
-    directory: Path,
+    report: ET.Element | None,
     scope: str,
     base: str | None,
     changed_assemblies: set[str],
@@ -298,9 +303,10 @@ def coverage_gate(
     """Hold the change to the coverage floors.
 
     `unit` (verify-affected) checks what unit tests alone can reach: the unit floor of every changed package without an
-    integration project, and the changed lines in those packages. `all` (test-affected-integration) checks every changed
-    line against the merged unit and integration coverage. A package with an integration project is never held to a
-    unit-only figure: its real behavior sits behind the broker or database its integration suite starts.
+    integration project, and the changed lines in those packages. `integration` (test-affected-integration) checks the
+    changed lines of packages that own an integration project against merged unit and integration coverage. A package
+    with an integration project is never held to a unit-only figure: its real behavior sits behind the broker or
+    database its integration suite starts.
     """
     if scope == "none":
         return None, None
@@ -308,7 +314,7 @@ def coverage_gate(
         stage = Stage("coverage-gate", [], -1, 0.0, "", "a test stage did not run, so coverage is incomplete")
         return stage, {"scope": scope, "result": "skipped", "reasons": [stage.note]}
 
-    hits, file_assembly = line_hits(directory / "coverage" / "merged.cobertura.xml")
+    hits, file_assembly = line_hits(report)
     measured = {str(row["assembly"]): float(row["line"]) for row in coverage_rows}
     reasons: list[str] = []
     deferred: list[str] = []
@@ -344,8 +350,10 @@ def coverage_gate(
         assembly = assembly_of(path)
         if UNMEASURED_ASSEMBLY.search(assembly):
             continue
-        if scope == "unit" and has_integration_project(assembly):
-            if assembly not in deferred:
+        if has_integration_project(assembly) != (scope == "integration"):
+            # Each gate judges its own half: verify-affected the packages unit tests can reach, the integration gate
+            # the packages that own an integration project.
+            if scope == "unit" and assembly not in deferred:
                 deferred.append(assembly)
             continue
         file_hits = hits.get(path)
@@ -417,7 +425,8 @@ def summarize(directory: Path, gate_scope: str = "none", floors: dict[str, float
     diagnostics = compiler_diagnostics(directory)
     findings = analyzer_findings(directory, [str(Path(p).parent) + "/" for p in affected.get("changed_projects", [])])
     modules = test_modules(directory)
-    coverage_rows = coverage(directory, changed_assemblies)
+    report = merged_coverage(directory)
+    coverage_rows = coverage(report, changed_assemblies)
     # `dotnet format --verify-no-changes` exits 2 for hidden-severity findings too, which the gate
     # ignores, so the analyzers stage passes or fails on its visible findings instead.
     for stage in stages:
@@ -425,7 +434,7 @@ def summarize(directory: Path, gate_scope: str = "none", floors: dict[str, float
             stage.exit_code = 2 if findings else 0
     tests_skipped = any(stage.name in ("unit-tests", "integration-tests") and stage.exit_code < 0 for stage in stages)
     gate_stage, gate = coverage_gate(
-        directory,
+        report,
         gate_scope,
         affected.get("base"),
         changed_assemblies,
@@ -529,7 +538,11 @@ def render_markdown(summary: dict) -> str:
 def render_gate(gate: dict | None) -> list[str]:
     if not gate:
         return []
-    scope = "changed lines in packages without an integration project, unit tests only" if gate["scope"] == "unit" else "every changed line, unit and integration tests merged"
+    scope = (
+        "packages without an integration project, unit tests"
+        if gate["scope"] == "unit"
+        else "packages with an integration project, unit and integration tests merged"
+    )
     lines = ["", f"### Coverage gate: {gate['result']} ({scope})", ""]
     if gate["result"] == "skipped":
         return lines + [f"- {reason}" for reason in gate["reasons"]]
@@ -629,9 +642,9 @@ def main() -> int:
     summary.add_argument("--dir", required=True, type=Path)
     summary.add_argument(
         "--coverage-gate",
-        choices=("none", "unit", "all"),
+        choices=("none", "unit", "integration"),
         default="none",
-        help="hold the change to the coverage floors: unit tests only (unit) or unit and integration merged (all)",
+        help="hold the change to the coverage floors: packages without an integration project on unit tests (unit), or packages with one on merged unit and integration coverage (integration)",
     )
     summary.add_argument("--unit-floor", type=float, default=DEFAULT_FLOORS["unit"], help="assembly line %% from unit tests")
     summary.add_argument("--line-floor", type=float, default=DEFAULT_FLOORS["line"], help="changed-line coverage %%")

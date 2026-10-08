@@ -97,10 +97,10 @@ write_bundle bundle 0.9 1 1 0 0 1
 expect "unit gate fails below the changed-branch floor" 1 unit "changed-branch coverage 50.0% (1/2) is under the 70% floor"
 
 write_bundle bundle 0.9 1 1 0 0
-expect "all gate holds a package with an integration project to its changed lines" 1 all "uncovered: src/Headless.Provider/Provider.cs: 2"
+expect "integration gate holds a package with an integration project to its changed lines" 1 integration "uncovered: src/Headless.Provider/Provider.cs: 2"
 
-write_bundle bundle 0.9 1 1 1 0
-expect "all gate passes when every changed line is covered" 0 all "Changed lines: 100.0% (3/3"
+write_bundle bundle 0.9 1 0 1 0
+expect "integration gate passes on covered package lines and leaves the unit-gated package alone" 0 integration "Changed lines: 100.0% (1/1"
 
 write_bundle bundle 0.9 0 0 0 -1
 expect "gate is skipped, not failed, when a test stage did not run" 0 unit "Coverage gate: skipped"

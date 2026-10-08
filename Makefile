@@ -117,8 +117,8 @@ PROOF_RUN := $(ARTIFACTS_DIR)/proof/$(shell date -u +%Y%m%dT%H%M%SZ)
 # Coverage costs ~0.4 s per test module plus a merge (~20 s on a whole-solution run), so the inner loop skips
 # it and the pre-PR targets keep it. The floors follow the testing diamond: a package with no external dependency
 # is held to COVERAGE_UNIT_FLOOR from unit tests alone, and every changed line to COVERAGE_LINE_FLOOR and
-# COVERAGE_BRANCH_FLOOR. verify-affected gates the changed lines unit tests can reach; a package that owns a
-# tests/<Package>.Tests.Integration project is gated by test-affected-integration, which merges both suites.
+# COVERAGE_BRANCH_FLOOR. verify-affected gates the packages without an integration project on unit coverage; a
+# package that owns a tests/<Package>.Tests.Integration project is gated by test-affected-integration instead.
 AFFECTED_COVERAGE ?= false
 VERIFY_COVERAGE ?= true
 INTEGRATION_COVERAGE ?= true
@@ -160,11 +160,13 @@ AFFECTED_BUILD_STAGES = if [ -s "$$run/build.txt" ]; then \
 		fi; \
 		$(PROOF) run --dir "$$run" --name build -- $(DOTNET) build "$$run/build.slnf" --configuration "$(CONFIGURATION)" --no-restore -v:q -nologo $(MSBUILD_ARGS) || status=1; \
 	fi;
-AFFECTED_UNIT_STAGE = if [ $$status -ne 0 ]; then $(PROOF) skip --dir "$$run" --name unit-tests --reason "an earlier stage failed; --no-build would test stale binaries"; \
-	elif [ -s "$$run/unit.txt" ]; then \
+# The unit stage runs the list the target names in `units` (unit by default; test-affected-integration narrows it).
+AFFECTED_UNIT_STAGE = units="$${units:-unit}"; \
+	if [ $$status -ne 0 ]; then $(PROOF) skip --dir "$$run" --name unit-tests --reason "an earlier stage failed; --no-build would test stale binaries"; \
+	elif [ -s "$$run/$$units.txt" ]; then \
 		$(COVERAGE_ARGS_FN) \
-		$(PROOF) run --dir "$$run" --name unit-tests -- $(DOTNET) test --solution "$$run/unit.slnf" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$$run/unit-tests" --max-parallel-test-modules $(UNIT_TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER) $${coverage_args[@]+"$${coverage_args[@]}"} || status=1; \
-	else printf '\033[33m[affected]\033[0m no unit-test project covers the affected set; nothing ran.\n'; fi;
+		$(PROOF) run --dir "$$run" --name unit-tests -- $(DOTNET) test --solution "$$run/$$units.slnf" --configuration "$(CONFIGURATION)" --no-build --no-restore --results-directory "$$run/unit-tests" --max-parallel-test-modules $(UNIT_TEST_MAX_PARALLEL) $(TEST_ARGS) $(TEST_FILTER) $${coverage_args[@]+"$${coverage_args[@]}"} || status=1; \
+	else printf '\033[33m[affected]\033[0m %s.txt selects no unit-test project; no unit tests ran.\n' "$$units"; fi;
 AFFECTED_INTEGRATION_STAGE = if [ $$status -ne 0 ]; then $(PROOF) skip --dir "$$run" --name integration-tests --reason "an earlier stage failed; --no-build would test stale binaries"; \
 	elif [ -s "$$run/integration.txt" ]; then \
 		$(COVERAGE_ARGS_FN) \
@@ -218,7 +220,7 @@ help: ## Show available commands.
 	@printf "  make build-affected             # compile the change; the proof names each compiler error\n"
 	@printf "  make test-affected              # before the gate: every affected unit-test project, minutes when Jobs is in it\n"
 	@printf "  make verify-affected            # the pre-PR proof: format, build, unit tests, analyzers, changed dashboards\n"
-	@printf "  make test-affected-integration  # agent-only, needs Docker: unit + integration with coverage; gates every changed line\n"
+	@printf "  make test-affected-integration  # agent-only, needs Docker: integration suites; gates changed lines of packages with an integration project\n"
 	@printf "  make mutation PROJECT=src/Headless.Checks/Headless.Checks.csproj   # Stryker.NET mutation score; reported, never gated\n"
 	@printf "  make test-failed                # after a narrow fix: only the modules the last proof failed; then verify-affected once\n"
 	@printf "  make check                      # the CI gate over the affected scope: check-layering, verify-affected\n"
@@ -888,17 +890,19 @@ test-affected: ## Build the affected set, then run its *.Tests.Unit projects; wr
 	$(PROOF_REPORT) "$$run"; exit $$status
 
 .PHONY: test-affected-integration
-# Agent-run and local only: CI runs no integration suite. It runs the affected unit and integration suites with
-# coverage, merges them, and holds every changed line, including those in packages with an integration project, to
-# the changed-line floors; its proof bundle goes in the PR beside verify-affected's.
-test-affected-integration: ## Build the affected set, run its unit and integration tests with coverage, and gate every changed line on the merged report (needs Docker; local only).
+# Agent-run and local only: CI runs no integration suite. verify-affected already gates the packages without an
+# integration project, so this target judges only the edited packages that own one: it runs their unit suites beside
+# the affected integration suites, both with coverage, and holds those packages' changed lines to the floors. With no
+# such package edited (a build-wide change, say) it runs the integration suites without coverage, which costs less.
+test-affected-integration: ## Build the affected set, run its integration tests, and gate the changed lines of edited packages that own an integration project on merged unit + integration coverage (needs Docker; local only).
 	@$(AFFECTED_PREPARE) "$(PROOF_RUN)-integration"; \
-	run="$(PROOF_RUN)-integration"; status=0; coverage="$(INTEGRATION_COVERAGE)"; \
+	run="$(PROOF_RUN)-integration"; status=0; units=integration-unit; coverage="$(INTEGRATION_COVERAGE)"; \
+	if [ ! -s "$$run/integration-packages.txt" ]; then coverage=false; fi; \
 	$(AFFECTED_BUILD_STAGES) \
 	$(AFFECTED_UNIT_STAGE) \
 	$(AFFECTED_INTEGRATION_STAGE) \
 	$(AFFECTED_COVERAGE_MERGE_STAGE) \
-	$(PROOF) summarize --dir "$$run" $(if $(filter true,$(INTEGRATION_COVERAGE)),--coverage-gate all $(COVERAGE_FLOOR_ARGS),) > /dev/null || status=1; \
+	$(PROOF) summarize --dir "$$run" $(if $(filter true,$(INTEGRATION_COVERAGE)),--coverage-gate integration $(COVERAGE_FLOOR_ARGS),) > /dev/null || status=1; \
 	$(PROOF_REPORT) "$$run"; exit $$status
 
 .PHONY: verify-affected

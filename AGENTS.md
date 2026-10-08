@@ -13,7 +13,7 @@ Coverage follows the testing diamond: integration tests carry most of the weight
 
 | Measure | Floor | Tests counted | Enforced by |
 | --- | --- | --- | --- |
-| Changed lines | 80% line, 70% branch | every suite that ran | `make verify-affected` for packages without an integration project; `make test-affected-integration` for every changed line |
+| Changed lines | 80% line, 70% branch | unit tests; unit + integration for a package with an integration project | `make verify-affected` for packages without an integration project; `make test-affected-integration` for packages with one |
 | Unit coverage of a package without an integration project | 60% line, whole assembly | unit tests | `make verify-affected` |
 | Mutation score | target 70%, goal 85% | unit tests | `make mutation` and the weekly `mutation.yml`; reported, never gated |
 
@@ -55,7 +55,7 @@ Use the affected and project-scoped targets: `test-class` with `TEST_PROJECT`, `
 
   To scope a build, use `make build-project PROJECT=…` or `make build-affected`.
 - **Run `make test-affected` before the gate, not in the loop.** It builds the affected set in one solution-filter build, then runs every affected `*.Tests.Unit` project to completion: one failing project does not hide the rest. If the build fails, it skips the tests rather than run them against stale binaries. One module can dominate it: `Headless.Jobs.Composition.Tests.Unit` alone takes about four minutes.
-- **Run `make test-affected-integration` before the PR whenever the affected set has integration projects.** It runs the affected unit and integration suites with coverage, merges the reports, and fails below the changed-line floors on any changed line, so it is the coverage gate for packages with an integration project. It needs Docker, and CI does not run it: the agent runs it locally and pastes its `summary.md` into the PR beside `verify-affected`'s.
+- **Run `make test-affected-integration` before the PR whenever the affected set has integration projects.** It runs the affected integration suites, plus the unit suites of the edited packages that own an integration project, with coverage; it merges the reports and fails when those packages' changed lines fall below the changed-line floors, so it is the coverage gate for them. With no such package edited it skips coverage. It needs Docker, and CI does not run it: the agent runs it locally and pastes its `summary.md` into the PR beside `verify-affected`'s.
 - **After a narrow fix, run `make test-failed`, not the whole gate.** It reads the latest `verify-affected` or `test-affected` proof bundle and re-runs only the test projects whose modules failed. It names any other failed stage with the target that repeats it. Finish with one full `make verify-affected`.
 - **Check a dashboard SPA with `make dashboard-jobs-test` or `make dashboard-messaging-test`.** They run the SPA's `lint:check`, `type-check`, `test:unit`, and `build-only` scripts through `npm run`, after `npm ci` when `node_modules` is missing or older than the lockfile. Do not call `npx`: a wrapper on `PATH` can hide the tool's output. CI's dashboard jobs run the same targets.
 
