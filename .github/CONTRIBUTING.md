@@ -74,6 +74,7 @@ When multiple providers share a behavior contract, prefer a shared `*.Tests.Harn
 - Open the description with a minimal, clear explanation of the problem, followed by how the change solves it.
 - Link the related issue when one exists.
 - Call out consumer impact and migration steps when the change is breaking.
+- When the change adds, changes, or removes public API, show it in the template's **Public API** section: the declarations as C# (before and after for a changed member), a short consumer snippet for the main scenario, and the contract a signature can't show. A reviewer should understand the API from the PR without reading the diff.
 - Keep PRs reviewable. Separate refactors from behavior changes when possible.
 - Let CI report routine automated checks. Mention manual verification or known validation gaps only when they help the reviewer.
 
