@@ -100,27 +100,27 @@ public sealed class AzureServiceBusMessagingOptions
         new Dictionary<string, string>(StringComparer.Ordinal);
 
     /// <summary>
-    /// Gets the maximum number of concurrent calls to the ProcessMessageAsync message handler the processor should initiate.
+    /// The number of messages each processor eagerly fetches ahead of its handlers. Defaults to 0 (no prefetch).
     /// </summary>
-    /// <remarks>Default values is 1.</remarks>
-    public int MaxConcurrentCalls { get; set; } = 1;
+    /// <remarks>
+    /// Prefetched messages are locked from the moment they arrive, and the processor does not renew their locks until
+    /// they reach a handler, so a prefetch far above the consumer's <c>Concurrency</c> lets locks expire while messages
+    /// wait, which redelivers them and counts against <see cref="SubscriptionMaxDeliveryCount"/>. Keep it near the
+    /// consumer's concurrency. How many handlers run at once is the consumer's <c>Concurrency</c>, not a transport option.
+    /// </remarks>
+    public int PrefetchCount { get; set; }
 
     /// <summary>
     /// The maximum amount of time to wait for a message to be received for the
     ///  currently active session. After this time has elapsed, the processor will close the session
     ///  and attempt to process another session.
     /// </summary>
-    /// <remarks>Not applicable when <see cref="EnableSessions"/> is false.</remarks>
-    public TimeSpan? SessionIdleTimeout { get; set; }
-
-    /// <summary>
-    /// The maximum number of sessions that can be processed concurrently by the processor.
-    /// </summary>
     /// <remarks>
-    /// Not applicable when <see cref="EnableSessions"/> is false.
-    /// The default value is 8.
+    /// Not applicable when <see cref="EnableSessions"/> is false. A session processor holds as many sessions as the
+    /// consumer's <c>Concurrency</c>, so with few slots a long idle timeout keeps other sessions waiting behind a quiet
+    /// one. <see langword="null"/> keeps the SDK default, the client's try timeout.
     /// </remarks>
-    public int MaxConcurrentSessions { get; set; } = 8;
+    public TimeSpan? SessionIdleTimeout { get; set; }
 
     /// <summary>
     /// The maximum duration within which the lock will be renewed automatically.
@@ -131,6 +131,19 @@ public sealed class AzureServiceBusMessagingOptions
     /// The default value is 5 minutes.
     /// </remarks>
     public TimeSpan MaxAutoLockRenewalDuration { get; set; } = TimeSpan.FromMinutes(5);
+
+    /// <summary>
+    /// Configures the <see cref="ServiceBusClientOptions"/> of the shared <see cref="ServiceBusClient"/>, such as
+    /// <see cref="ServiceBusClientOptions.RetryOptions"/>, <see cref="ServiceBusClientOptions.TransportType"/>
+    /// (<see cref="ServiceBusTransportType.AmqpWebSockets"/> where port 5671 is blocked),
+    /// <see cref="ServiceBusClientOptions.WebProxy"/>, or <see cref="ServiceBusClientOptions.Identifier"/>.
+    /// Defaults to <see langword="null"/>, which keeps the SDK defaults.
+    /// </summary>
+    /// <remarks>
+    /// Runs once, when the first publisher or consumer creates the client, and applies to every publisher and consumer
+    /// of the namespace, because they share that one client.
+    /// </remarks>
+    public Action<ServiceBusClientOptions>? ClientOptions { get; set; }
 
     /// <summary>
     /// Represents the Azure Active Directory token provider for Azure Managed Service Identity integration.
@@ -188,7 +201,7 @@ internal sealed class AzureServiceBusMessagingOptionsValidator : AbstractValidat
             .WithMessage("Azure Service Bus requires either a ConnectionString or both Namespace and TokenCredential.");
 
         RuleFor(x => x.TopicPath).NotEmpty();
-        RuleFor(x => x.MaxConcurrentCalls).GreaterThanOrEqualTo(1);
+        RuleFor(x => x.PrefetchCount).GreaterThanOrEqualTo(0);
         RuleFor(x => x.SubscriptionMaxDeliveryCount).GreaterThanOrEqualTo(1);
     }
 }
