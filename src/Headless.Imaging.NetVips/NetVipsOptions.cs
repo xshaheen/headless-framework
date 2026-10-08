@@ -6,8 +6,8 @@ namespace Headless.Imaging;
 
 /// <summary>Options that control how the libvips contributors decode, resize, and encode images.</summary>
 /// <remarks>
-/// The encoder settings apply to every image the contributors write: a resize re-encodes in the source format, and a
-/// compression re-encodes in the source format with these settings.
+/// The encoder settings apply to every image the contributors write, in the source format or in the requested
+/// <c>OutputMimeType</c>, whether it comes from a resize or a compression.
 /// </remarks>
 [PublicAPI]
 public sealed class NetVipsOptions
@@ -32,6 +32,18 @@ public sealed class NetVipsOptions
     /// lossless at every level. Defaults to <c>9</c>.
     /// </summary>
     public int PngCompressionLevel { get; set; } = 9;
+
+    /// <summary>
+    /// Gets or sets a value indicating whether JPEG output is progressive, so a browser draws a coarse full image first
+    /// and refines it. Defaults to <see langword="false" />, baseline JPEG.
+    /// </summary>
+    public bool JpegProgressive { get; set; }
+
+    /// <summary>
+    /// Gets or sets whether JPEG and AVIF output store colour at half resolution. Defaults to
+    /// <see cref="NetVipsChromaSubsampling.Auto" />.
+    /// </summary>
+    public NetVipsChromaSubsampling ChromaSubsampling { get; set; } = NetVipsChromaSubsampling.Auto;
 
     /// <summary>
     /// Gets or sets a value indicating whether output images drop EXIF, XMP, IPTC, and other metadata. Defaults to
@@ -77,5 +89,6 @@ internal sealed class NetVipsOptionsValidator : AbstractValidator<NetVipsOptions
         RuleFor(x => x.PngCompressionLevel).InclusiveBetween(0, 9);
         RuleFor(x => x.MaxPixels).GreaterThan(0);
         RuleFor(x => x.CropFocus).IsInEnum();
+        RuleFor(x => x.ChromaSubsampling).IsInEnum();
     }
 }

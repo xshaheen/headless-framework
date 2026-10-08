@@ -8,18 +8,19 @@ using NetVips;
 namespace Headless.Imaging;
 
 /// <summary>
-/// An <see cref="IImageResizerContributor" /> that resizes JPEG, PNG, WebP, GIF, TIFF, and AVIF images with libvips.
+/// An <see cref="IImageResizerContributor" /> that resizes JPEG, PNG, WebP, GIF, TIFF, and AVIF images with libvips,
+/// and converts between those formats.
 /// </summary>
 /// <remarks>
 /// <para>
-/// The output keeps the source format, and its MIME type is the one detected from the bytes: the
-/// <see cref="ImageResizeArgs.MimeType" /> hint only lets the contributor skip a type it does not handle. The resize
-/// runs through libvips <c>thumbnail</c>, which shrinks JPEG and WebP while decoding and applies the EXIF orientation,
-/// so the output is upright and its width and height are the displayed ones.
+/// The output takes <see cref="ImageResizeArgs.OutputMimeType" /> when set, and otherwise the format detected from the
+/// bytes: the <see cref="ImageResizeArgs.MimeType" /> hint only lets the contributor skip a type it does not handle. The
+/// resize runs through libvips <c>thumbnail</c>, which shrinks JPEG and WebP while decoding and applies the EXIF
+/// orientation, so the output is upright and its width and height are the displayed ones.
 /// </para>
 /// <para>
-/// When <see cref="ImageResizeArgs.Mode" /> resolves to <see cref="ImageResizeMode.None" />, the caller's stream comes
-/// back unchanged, rewound to its start, with the stored width and height read from the header.
+/// When <see cref="ImageResizeArgs.Mode" /> resolves to <see cref="ImageResizeMode.None" /> and no other output format
+/// is requested, the caller's stream comes back unchanged, rewound to its start, with the displayed width and height.
 /// </para>
 /// </remarks>
 internal sealed class NetVipsImageResizerContributor : IImageResizerContributor
@@ -50,6 +51,15 @@ internal sealed class NetVipsImageResizerContributor : IImageResizerContributor
             return ImageStreamResizeResult.NotSupportedMimeType(args.MimeType);
         }
 
+        var requestedFormat = string.IsNullOrWhiteSpace(args.OutputMimeType)
+            ? null
+            : VipsFormat.FromMimeType(args.OutputMimeType);
+
+        if (requestedFormat is null && !string.IsNullOrWhiteSpace(args.OutputMimeType))
+        {
+            return ImageStreamResizeResult.NotSupportedMimeType(args.OutputMimeType);
+        }
+
         var bytes = await stream.GetAllBytesAsync(cancellationToken).ConfigureAwait(false);
 
         try
@@ -65,25 +75,39 @@ internal sealed class NetVipsImageResizerContributor : IImageResizerContributor
 
             using (source)
             {
-                if (args.Mode is ImageResizeMode.None or ImageResizeMode.Default)
+                var format = requestedFormat ?? source.Format;
+                var resizes = args.Mode is not (ImageResizeMode.None or ImageResizeMode.Default);
+
+                if (!resizes && format == source.Format)
                 {
                     // A stream the contributor cannot rewind has been read to its end, so hand back the bytes instead.
                     var content = stream.CanSeek ? stream : new MemoryStream(bytes);
                     content.Position = 0;
 
-                    return ImageStreamResizeResult.Done(content, source.Format.MimeType, source.Width, source.Height);
+                    return ImageStreamResizeResult.Done(
+                        content,
+                        format.MimeType,
+                        source.UprightWidth,
+                        source.UprightHeight
+                    );
                 }
 
-                var plan = VipsResizePlan.Create(
-                    args.Mode,
-                    args.Width,
-                    args.Height,
-                    source.UprightWidth,
-                    source.UprightHeight,
-                    _options.CropFocus
-                );
+                // A conversion without a resize re-encodes at the source size; thumbnail still turns it upright.
+                var plan = resizes
+                    ? VipsResizePlan.Create(
+                        args.Mode,
+                        args.Width,
+                        args.Height,
+                        source.UprightWidth,
+                        source.UprightHeight,
+                        _options.CropFocus
+                    )
+                    : VipsResizePlan.Unscaled(source.UprightWidth, source.UprightHeight);
 
-                var outputPixels = plan.MaxOutputPixels * source.Frames;
+                // An animation keeps its frames only in a format that can hold them; otherwise the first frame stands
+                // for the whole image.
+                var keepsFrames = source.IsAnimation && format.IsAnimated;
+                var outputPixels = plan.MaxOutputPixels * (keepsFrames ? source.Frames : 1);
 
                 if (outputPixels > _options.MaxPixels)
                 {
@@ -94,24 +118,28 @@ internal sealed class NetVipsImageResizerContributor : IImageResizerContributor
                     );
                 }
 
-                cancellationToken.ThrowIfCancellationRequested();
-
-                using var resized = source.IsAnimation ? _ResizeFrames(source, plan) : _ResizeSingle(source, plan);
-                var encoded = source.Format.Save(resized, _options);
+                using var resized = keepsFrames ? _ResizeFrames(source, plan) : _ResizeSingle(source, plan);
+                var encoded = format.Save(resized, _options, cancellationToken);
 
                 return ImageStreamResizeResult.Done(
                     new MemoryStream(encoded),
-                    source.Format.MimeType,
+                    format.MimeType,
                     resized.Width,
                     resized.PageHeight
                 );
             }
         }
-        catch (VipsException e)
+        catch (VipsException e) when (!cancellationToken.IsCancellationRequested)
         {
             _logger.LogEncodedImageInvalidContent(e);
 
             return ImageStreamResizeResult.NotSupported(VipsImageSource.InvalidContentError);
+        }
+        catch (VipsException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Cancelled while libvips was reading the header or decoding: the error is a symptom of the abort, so
+            // report the cancellation rather than invalid content.
+            throw new OperationCanceledException(cancellationToken);
         }
     }
 
@@ -128,7 +156,7 @@ internal sealed class NetVipsImageResizerContributor : IImageResizerContributor
             crop: plan.Crop
         );
 
-        return _Pad(thumbnail, plan, source.Format);
+        return _Pad(thumbnail, plan);
     }
 
     /// <summary>
@@ -137,7 +165,7 @@ internal sealed class NetVipsImageResizerContributor : IImageResizerContributor
     /// </summary>
     private static Image _ResizeFrames(VipsImageSource source, VipsResizePlan plan)
     {
-        using var strip = source.Decode();
+        using var strip = source.Decode(allFrames: true);
         var frameHeight = strip.PageHeight;
         var frames = new Image[strip.Height / frameHeight];
 
@@ -155,7 +183,7 @@ internal sealed class NetVipsImageResizerContributor : IImageResizerContributor
                     crop: plan.Crop is null ? null : Enums.Interesting.Centre
                 );
 
-                frames[i] = _Pad(thumbnail, plan, source.Format);
+                frames[i] = _Pad(thumbnail, plan);
             }
 
             // The joined strip takes its metadata (frame delays, loop count) from the first frame, so only the
@@ -175,11 +203,11 @@ internal sealed class NetVipsImageResizerContributor : IImageResizerContributor
     }
 
     /// <summary>
-    /// Centers <paramref name="image" /> on the plan's canvas. The padding is transparent when the format stores
-    /// alpha, and black otherwise.
+    /// Centers <paramref name="image" /> on the plan's transparent canvas. Saving to a format without alpha flattens the
+    /// padding onto white, the same as any other transparent area.
     /// </summary>
     /// <returns>A new image the caller owns; <paramref name="image" /> stays owned by the caller.</returns>
-    private static Image _Pad(Image image, VipsResizePlan plan, VipsFormat format)
+    private static Image _Pad(Image image, VipsResizePlan plan)
     {
         if (!plan.Pads)
         {
@@ -187,18 +215,15 @@ internal sealed class NetVipsImageResizerContributor : IImageResizerContributor
         }
 
         // thumbnail always hands back 8-bit sRGB, even from a 16-bit source, so 255 is the opaque alpha.
-        var withAlpha = format.HasAlpha && !image.HasAlpha() ? image.Bandjoin(255) : image.Copy();
+        using var withAlpha = image.HasAlpha() ? image.Copy() : image.Bandjoin(255);
 
-        using (withAlpha)
-        {
-            return withAlpha.Embed(
-                (plan.CanvasWidth - withAlpha.Width) / 2,
-                (plan.CanvasHeight - withAlpha.Height) / 2,
-                plan.CanvasWidth,
-                plan.CanvasHeight,
-                extend: Enums.Extend.Background,
-                background: [0]
-            );
-        }
+        return withAlpha.Embed(
+            (plan.CanvasWidth - withAlpha.Width) / 2,
+            (plan.CanvasHeight - withAlpha.Height) / 2,
+            plan.CanvasWidth,
+            plan.CanvasHeight,
+            extend: Enums.Extend.Background,
+            background: [0]
+        );
     }
 }

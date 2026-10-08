@@ -31,6 +31,13 @@ public sealed class ImageResizeArgs
     /// </summary>
     public string? MimeType { get; private init; }
 
+    /// <summary>
+    /// Gets the MIME type to encode the output in (for example <c>image/avif</c>), or <see langword="null"/> to keep
+    /// the input format. A contributor that cannot write the requested type returns
+    /// <see cref="ImageProcessState.Unsupported"/>.
+    /// </summary>
+    public string? OutputMimeType { get; init; }
+
     /// <summary>Gets or sets the resize mode applied to this operation.</summary>
     /// <remarks>
     /// Defaults to <see cref="ImageResizeMode.Default"/>. Call

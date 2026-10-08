@@ -13,7 +13,8 @@ public static class SetupImaging
     extension(IServiceCollection services)
     {
         /// <summary>
-        /// Registers <see cref="IImageResizer" />, <see cref="IImageCompressor" />, and the providers chosen in
+        /// Registers <see cref="IImageResizer" />, <see cref="IImageCompressor" />, <see cref="IImageInspector" />, and the
+        /// providers chosen in
         /// <paramref name="configure" />. At least one <c>Use…</c> call, such as <c>UseNetVips</c> from
         /// <c>Headless.Imaging.NetVips</c>, is required.
         /// </summary>
@@ -57,6 +58,7 @@ public static class SetupImaging
         services.AddOptions<ImagingOptions, ImagingOptionsValidator>();
         services.TryAddSingleton<IImageResizer, ImageResizer>();
         services.TryAddSingleton<IImageCompressor, ImageCompressor>();
+        services.TryAddSingleton<IImageInspector, ImageInspector>();
 
         foreach (var extension in setup.Extensions)
         {

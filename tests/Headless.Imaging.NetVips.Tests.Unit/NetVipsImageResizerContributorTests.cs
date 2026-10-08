@@ -121,7 +121,7 @@ public sealed class NetVipsImageResizerContributorTests : TestBase
     }
 
     [Fact]
-    public async Task should_pad_with_black_when_the_format_has_no_alpha()
+    public async Task should_pad_with_white_when_the_format_has_no_alpha()
     {
         // given
         await using var input = new MemoryStream(TestImages.Encode(".jpg", 400, 200));
@@ -133,7 +133,7 @@ public sealed class NetVipsImageResizerContributorTests : TestBase
         // then
         using var output = TestImages.Decode(result.Result!.Content);
         output.Bands.Should().Be(3);
-        output.Getpoint(5, 5).Should().AllSatisfy(channel => channel.Should().BeLessThan(16));
+        output.Getpoint(5, 5).Should().AllSatisfy(channel => channel.Should().BeGreaterThan(240));
     }
 
     [Theory]
@@ -327,9 +327,246 @@ public sealed class NetVipsImageResizerContributorTests : TestBase
         output.Height.Should().Be(40);
     }
 
+    [Fact]
+    public async Task should_report_the_displayed_size_when_passing_a_sideways_photo_through()
+    {
+        // given: stored 80 x 40 with EXIF orientation 6, displayed 40 x 80
+        await using var input = new MemoryStream(TestImages.SidewaysJpeg(80, 40));
+        var args = new ImageResizeArgs(ImageResizeMode.Max, 10, 10) { Mode = ImageResizeMode.None };
+
+        // when
+        var result = await _CreateResizer().TryResizeAsync(input, args, AbortToken);
+
+        // then
+        result.Result!.Content.Should().BeSameAs(input);
+        result.Result.Width.Should().Be(40);
+        result.Result.Height.Should().Be(80);
+    }
+
+    #endregion
+
+    #region Output format
+
+    [Theory]
+    [InlineData(".jpg", ContentTypes.Images.Webp, "VipsForeignLoadWebpBuffer")]
+    [InlineData(".png", ContentTypes.Images.Avif, "VipsForeignLoadHeifBuffer")]
+    [InlineData(".webp", ContentTypes.Images.Jpeg, "VipsForeignLoadJpegBuffer")]
+    [InlineData(".tif", ContentTypes.Images.Png, "VipsForeignLoadPngBuffer")]
+    [InlineData(".avif", ContentTypes.Images.Gif, "VipsForeignLoadNsgifBuffer")]
+    public async Task should_encode_the_requested_output_format(string suffix, string outputMimeType, string loader)
+    {
+        // given
+        await using var input = new MemoryStream(TestImages.Encode(suffix, 120, 80));
+        var args = new ImageResizeArgs(ImageResizeMode.Max, 60, 60) { OutputMimeType = outputMimeType };
+
+        // when
+        var result = await _CreateResizer().TryResizeAsync(input, args, AbortToken);
+
+        // then
+        result.State.Should().Be(ImageProcessState.Done);
+        result.Result!.MimeType.Should().Be(outputMimeType);
+        result.Result.Width.Should().Be(60);
+        result.Result.Height.Should().Be(40);
+        TestImages.LoaderOf(result.Result.Content).Should().Be(loader);
+    }
+
+    [Fact]
+    public async Task should_convert_without_resizing_when_the_mode_does_not_resize()
+    {
+        // given
+        await using var input = new MemoryStream(TestImages.Encode(".png", 120, 80));
+        var args = new ImageResizeArgs(ContentTypes.Images.Png) { OutputMimeType = ContentTypes.Images.Webp };
+
+        // when
+        var result = await _CreateResizer().TryResizeAsync(input, args, AbortToken);
+
+        // then
+        result.Result!.Content.Should().NotBeSameAs(input);
+        result.Result.MimeType.Should().Be(ContentTypes.Images.Webp);
+        result.Result.Width.Should().Be(120);
+        result.Result.Height.Should().Be(80);
+        TestImages.LoaderOf(result.Result.Content).Should().Be("VipsForeignLoadWebpBuffer");
+    }
+
+    [Fact]
+    public async Task should_flatten_transparency_onto_white_when_converting_to_jpeg()
+    {
+        // given: a fully transparent PNG
+        using var transparent = NetVips.Image.Black(40, 40, bands: 4).Copy(interpretation: Enums.Interpretation.Srgb);
+        using var bytes = transparent.Cast(Enums.BandFormat.Uchar);
+        await using var input = new MemoryStream(bytes.PngsaveBuffer());
+        var args = new ImageResizeArgs(ImageResizeMode.Max, 40, 40) { OutputMimeType = ContentTypes.Images.Jpeg };
+
+        // when
+        var result = await _CreateResizer().TryResizeAsync(input, args, AbortToken);
+
+        // then
+        using var output = TestImages.Decode(result.Result!.Content);
+        output.Bands.Should().Be(3);
+        output.Getpoint(20, 20).Should().AllSatisfy(channel => channel.Should().BeGreaterThan(240));
+    }
+
+    [Fact]
+    public async Task should_keep_every_frame_when_converting_an_animation_to_webp()
+    {
+        // given
+        await using var input = new MemoryStream(TestImages.AnimatedGif(40, 20));
+        var args = new ImageResizeArgs(ImageResizeMode.Max, 20, 20) { OutputMimeType = ContentTypes.Images.Webp };
+
+        // when
+        var result = await _CreateResizer().TryResizeAsync(input, args, AbortToken);
+
+        // then
+        using var output = TestImages.Decode(result.Result!.Content, allFrames: true);
+        output.PageHeight.Should().Be(10);
+        output.Height.Should().Be(30);
+    }
+
+    [Fact]
+    public async Task should_keep_every_frame_when_converting_an_animated_webp_to_gif()
+    {
+        // given
+        await using var input = new MemoryStream(TestImages.AnimatedWebp(40, 20));
+        var args = new ImageResizeArgs(ImageResizeMode.Max, 20, 20) { OutputMimeType = ContentTypes.Images.Gif };
+
+        // when
+        var result = await _CreateResizer().TryResizeAsync(input, args, AbortToken);
+
+        // then
+        using var output = TestImages.Decode(result.Result!.Content, allFrames: true);
+        output.PageHeight.Should().Be(10);
+        output.Height.Should().Be(30);
+    }
+
+    [Fact]
+    public async Task should_keep_the_first_frame_when_converting_an_animation_to_a_still_format()
+    {
+        // given: red, green, then blue frames
+        await using var input = new MemoryStream(TestImages.AnimatedGif(40, 20));
+        var args = new ImageResizeArgs(ImageResizeMode.Max, 40, 20) { OutputMimeType = ContentTypes.Images.Png };
+
+        // when
+        var result = await _CreateResizer().TryResizeAsync(input, args, AbortToken);
+
+        // then
+        result.Result!.Height.Should().Be(20);
+
+        using var output = TestImages.Decode(result.Result.Content);
+        output.Height.Should().Be(20);
+        output.Getpoint(20, 10)[0].Should().BeGreaterThan(200);
+    }
+
+    [Fact]
+    public async Task should_skip_an_output_format_it_cannot_write()
+    {
+        // given
+        await using var input = new MemoryStream(TestImages.Encode(".png", 20, 20));
+        var args = new ImageResizeArgs(ImageResizeMode.Max, 10, 10) { OutputMimeType = ContentTypes.Images.Bmp };
+
+        // when
+        var result = await _CreateResizer().TryResizeAsync(input, args, AbortToken);
+
+        // then
+        result.State.Should().Be(ImageProcessState.Unsupported);
+        result.Error.Should().Contain(ContentTypes.Images.Bmp);
+    }
+
+    #endregion
+
+    #region Encoder options
+
+    [Fact]
+    public async Task should_write_progressive_jpeg_when_configured()
+    {
+        // given
+        await using var input = new MemoryStream(TestImages.Encode(".jpg", 120, 80));
+        var resizer = _CreateResizer(new NetVipsOptions { JpegProgressive = true });
+
+        // when
+        var result = await resizer.TryResizeAsync(input, new ImageResizeArgs(ImageResizeMode.Max, 60, 60), AbortToken);
+
+        // then
+        using var output = TestImages.Decode(result.Result!.Content);
+        ((int)output.Get("interlaced")).Should().Be(1);
+    }
+
+    [Theory]
+    [InlineData(NetVipsChromaSubsampling.On, "4:2:0")]
+    [InlineData(NetVipsChromaSubsampling.Off, "4:4:4")]
+    public async Task should_apply_the_configured_chroma_subsampling(NetVipsChromaSubsampling mode, string expected)
+    {
+        // given: quality 95, where Auto would keep full colour
+        await using var input = new MemoryStream(TestImages.Encode(".jpg", 120, 80));
+        var resizer = _CreateResizer(new NetVipsOptions { JpegQuality = 95, ChromaSubsampling = mode });
+
+        // when
+        var result = await resizer.TryResizeAsync(input, new ImageResizeArgs(ImageResizeMode.Max, 60, 60), AbortToken);
+
+        // then
+        using var output = TestImages.Decode(result.Result!.Content);
+        ((string)output.Get("jpeg-chroma-subsample")).Should().Be(expected);
+    }
+
+    #endregion
+
+    #region Cancellation
+
+    [Fact]
+    public async Task should_stop_a_running_encode_when_cancelled()
+    {
+        // given: a 10 000 x 10 000 PNG at the slowest deflate level takes seconds to encode
+        await using var input = new MemoryStream(TestImages.Encode(".png", 100, 100));
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+
+        // when
+        var act = async () =>
+            await _CreateResizer()
+                .TryResizeAsync(
+                    input,
+                    new ImageResizeArgs(ImageResizeMode.Stretch, 10_000, 10_000),
+                    cancellation.Token
+                );
+
+        // then
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        stopwatch.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task should_throw_before_reading_when_already_cancelled()
+    {
+        // given
+        await using var input = new MemoryStream(TestImages.Encode(".png", 20, 20));
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
+
+        // when
+        var act = async () =>
+            await _CreateResizer()
+                .TryResizeAsync(input, new ImageResizeArgs(ImageResizeMode.Max, 10, 10), cancellation.Token);
+
+        // then
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
     #endregion
 
     #region Invalid input
+
+    [Fact]
+    public async Task should_refuse_heic_because_the_bundled_libvips_cannot_decode_hevc()
+    {
+        // given
+        await using var input = File.OpenRead(TestImages.AssetPath("hevc-64.heic"));
+
+        // when
+        var result = await _CreateResizer()
+            .TryResizeAsync(input, new ImageResizeArgs(ImageResizeMode.Max, 10, 10), AbortToken);
+
+        // then
+        result.State.Should().Be(ImageProcessState.Unsupported);
+    }
 
     [Fact]
     public async Task should_refuse_bmp_because_the_bundled_libvips_has_no_bmp_loader()

@@ -36,12 +36,20 @@ internal sealed class VipsFormat
     /// <summary>Gets a value indicating whether the format can hold several frames that must be processed one by one.</summary>
     public bool IsAnimated { get; }
 
-    /// <summary>Gets a value indicating whether the format stores an alpha channel, so padding can be transparent.</summary>
+    /// <summary>Gets a value indicating whether the format stores an alpha channel; JPEG is the only one that does not.</summary>
     public bool HasAlpha => this != Jpeg;
 
     public static VipsFormat? FromMimeType(string mimeType)
     {
         return Array.Find(_All, format => string.Equals(format.MimeType, mimeType, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// Whether <paramref name="bytes" /> start with a classic or BigTIFF byte-order mark and version number.
+    /// </summary>
+    public static bool HasTiffSignature(ReadOnlySpan<byte> bytes)
+    {
+        return bytes is [0x49, 0x49, 0x2A or 0x2B, 0x00, ..] or [0x4D, 0x4D, 0x00, 0x2A or 0x2B, ..];
     }
 
     /// <summary>
@@ -67,15 +75,60 @@ internal sealed class VipsFormat
         };
     }
 
-    /// <summary>Encodes <paramref name="image" /> in this format with the configured quality and metadata policy.</summary>
-    public byte[] Save(Image image, NetVipsOptions options)
+    /// <summary>
+    /// Encodes <paramref name="image" /> in this format with the configured quality and metadata policy. A format
+    /// without alpha gets the transparent areas flattened onto white.
+    /// </summary>
+    /// <remarks>
+    /// libvips evaluates the whole pipeline (decode, resize, encode) inside the save call, so cancellation sets the
+    /// kill flag on a private copy of the image, which stops the worker threads within a tile or two. The copy keeps
+    /// the flag away from the caller's image and any operation-cache entry that shares it.
+    /// </remarks>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken" /> was cancelled.</exception>
+    /// <exception cref="VipsException">The image could not be decoded or encoded.</exception>
+    public byte[] Save(Image image, NetVipsOptions options, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        using var output = HasAlpha || !image.HasAlpha() ? image.Copy() : image.Flatten(background: [_White(image)]);
+        using var registration = cancellationToken.Register(static state => ((Image)state!).SetKill(true), output);
+
+        try
+        {
+            return _Encode(output, options);
+        }
+        catch (VipsException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw new OperationCanceledException(cancellationToken);
+        }
+    }
+
+    /// <summary>White in the image's own numeric range: <c>flatten</c> takes the background unscaled.</summary>
+    private static double _White(Image image)
+    {
+        return image.Interpretation is Enums.Interpretation.Rgb16 or Enums.Interpretation.Grey16 ? 65535 : 255;
+    }
+
+    private byte[] _Encode(Image image, NetVipsOptions options)
     {
         var keep = options.StripMetadata ? Enums.ForeignKeep.Icc : Enums.ForeignKeep.All;
+        var subsample = options.ChromaSubsampling switch
+        {
+            NetVipsChromaSubsampling.On => Enums.ForeignSubsample.On,
+            NetVipsChromaSubsampling.Off => Enums.ForeignSubsample.Off,
+            _ => Enums.ForeignSubsample.Auto,
+        };
 
         if (this == Jpeg)
         {
             // Optimized Huffman tables cost a little CPU and save a few percent on every file, losslessly.
-            return image.JpegsaveBuffer(q: options.JpegQuality, optimizeCoding: true, keep: keep);
+            return image.JpegsaveBuffer(
+                q: options.JpegQuality,
+                optimizeCoding: true,
+                interlace: options.JpegProgressive,
+                subsampleMode: subsample,
+                keep: keep
+            );
         }
 
         if (this == Png)
@@ -98,6 +151,11 @@ internal sealed class VipsFormat
             return image.TiffsaveBuffer(keep: keep);
         }
 
-        return image.HeifsaveBuffer(q: options.AvifQuality, compression: Enums.ForeignHeifCompression.Av1, keep: keep);
+        return image.HeifsaveBuffer(
+            q: options.AvifQuality,
+            compression: Enums.ForeignHeifCompression.Av1,
+            subsampleMode: subsample,
+            keep: keep
+        );
     }
 }

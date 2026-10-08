@@ -38,6 +38,13 @@ public sealed class ImagingSetupTests : TestBase
             .ContainSingle()
             .Which.Should()
             .BeOfType<NetVipsImageCompressorContributor>();
+        provider.GetRequiredService<IImageInspector>().Should().NotBeNull();
+        provider
+            .GetServices<IImageInspectorContributor>()
+            .Should()
+            .ContainSingle()
+            .Which.Should()
+            .BeOfType<NetVipsImageInspectorContributor>();
     }
 
     [Fact]
@@ -53,6 +60,7 @@ public sealed class ImagingSetupTests : TestBase
         // then
         provider.GetServices<IImageResizerContributor>().Should().ContainSingle();
         provider.GetServices<IImageCompressorContributor>().Should().ContainSingle();
+        provider.GetServices<IImageInspectorContributor>().Should().ContainSingle();
     }
 
     [Fact]
@@ -169,6 +177,63 @@ public sealed class ImagingSetupTests : TestBase
         result.Result!.MimeType.Should().Be(ContentTypes.Images.Webp);
         result.Result.Width.Should().Be(50);
         result.Result.Height.Should().Be(25);
+    }
+
+    [Fact]
+    public async Task should_inspect_through_the_pipeline_and_fall_through_an_unsupported_contributor()
+    {
+        // given: a custom contributor registered after NetVips is tried first and declines
+        var services = _CreateServices();
+        services.AddHeadlessImaging(imaging => imaging.UseNetVips());
+        var declining = Substitute.For<IImageInspectorContributor>();
+        declining
+            .TryInspectAsync(Arg.Any<Stream>(), Arg.Any<CancellationToken>())
+            .Returns(ImageInspectResult.NotSupported());
+        services.AddSingleton(declining);
+        await using var provider = services.BuildServiceProvider();
+        await using var input = new NonSeekableStream(TestImages.Encode(".png", 30, 20));
+
+        // when
+        var result = await provider.GetRequiredService<IImageInspector>().InspectAsync(input, AbortToken);
+
+        // then
+        await declining.Received(1).TryInspectAsync(Arg.Any<Stream>(), Arg.Any<CancellationToken>());
+        result.Result!.MimeType.Should().Be(ContentTypes.Images.Png);
+        result.Result.Width.Should().Be(30);
+    }
+
+    [Fact]
+    public async Task should_report_unsupported_when_no_contributor_handles_the_image()
+    {
+        // given
+        var services = _CreateServices();
+        services.AddHeadlessImaging(imaging => imaging.UseNetVips());
+        await using var provider = services.BuildServiceProvider();
+        await using var input = new MemoryStream(TestImages.Svg);
+
+        // when
+        var result = await provider.GetRequiredService<IImageInspector>().InspectAsync(input, AbortToken);
+
+        // then
+        result.State.Should().Be(ImageProcessState.Unsupported);
+    }
+
+    [Fact]
+    public async Task should_report_an_unreadable_stream()
+    {
+        // given
+        var services = _CreateServices();
+        services.AddHeadlessImaging(imaging => imaging.UseNetVips());
+        await using var provider = services.BuildServiceProvider();
+        var input = new MemoryStream([1, 2, 3]);
+        await input.DisposeAsync();
+
+        // when
+        var result = await provider.GetRequiredService<IImageInspector>().InspectAsync(input, AbortToken);
+
+        // then
+        result.State.Should().Be(ImageProcessState.Unsupported);
+        result.Error.Should().Be("Cannot read the image.");
     }
 
     private static ServiceCollection _CreateServices()

@@ -60,6 +60,95 @@ public sealed class NetVipsImageCompressorContributorTests : TestBase
     }
 
     [Fact]
+    public async Task should_compress_into_the_requested_format()
+    {
+        // given
+        var original = TestImages.Encode(".jpg", 128, 128, options: "Q=100");
+        await using var input = new MemoryStream(original);
+        var args = new ImageCompressArgs { OutputMimeType = ContentTypes.Images.Webp };
+
+        // when
+        var result = await _CreateCompressor().TryCompressAsync(input, args, AbortToken);
+
+        // then
+        result.State.Should().Be(ImageProcessState.Done);
+        result.Result!.Length.Should().BeLessThan(original.Length);
+        TestImages.LoaderOf(result.Result).Should().Be("VipsForeignLoadWebpBuffer");
+    }
+
+    [Fact]
+    public async Task should_compress_an_animated_gif_into_an_animated_webp()
+    {
+        // given: GIF has no quality setting of its own, so it compresses only into another format
+        var original = TestImages.AnimatedNoiseGif(64, 32);
+        await using var input = new MemoryStream(original);
+        var args = new ImageCompressArgs(ContentTypes.Images.Gif) { OutputMimeType = ContentTypes.Images.Webp };
+
+        // when
+        var result = await _CreateCompressor().TryCompressAsync(input, args, AbortToken);
+
+        // then
+        result.State.Should().Be(ImageProcessState.Done);
+
+        using var output = TestImages.Decode(result.Result!, allFrames: true);
+        output.PageHeight.Should().Be(32);
+        output.Height.Should().Be(96);
+    }
+
+    [Theory]
+    [InlineData(ContentTypes.Images.Gif)]
+    [InlineData(ContentTypes.Images.Tiff)]
+    [InlineData(ContentTypes.Images.Bmp)]
+    public async Task should_skip_an_output_format_without_a_quality_setting(string outputMimeType)
+    {
+        // given
+        await using var input = new MemoryStream(TestImages.Encode(".jpg", 32, 32));
+        var args = new ImageCompressArgs { OutputMimeType = outputMimeType };
+
+        // when
+        var result = await _CreateCompressor().TryCompressAsync(input, args, AbortToken);
+
+        // then
+        result.State.Should().Be(ImageProcessState.Unsupported);
+        result.Error.Should().Contain(outputMimeType);
+    }
+
+    [Fact]
+    public async Task should_flatten_a_16_bit_image_onto_white_when_converting_to_jpeg()
+    {
+        // given: a fully transparent 16-bit RGBA PNG; compression keeps the source depth until the JPEG encoder
+        using var black = NetVips.Image.Black(40, 40, bands: 4);
+        using var wide = black
+            .Cast(NetVips.Enums.BandFormat.Ushort)
+            .Copy(interpretation: NetVips.Enums.Interpretation.Rgb16);
+        await using var input = new MemoryStream(wide.PngsaveBuffer(bitdepth: 16));
+        var args = new ImageCompressArgs { OutputMimeType = ContentTypes.Images.Jpeg };
+
+        // when
+        var result = await _CreateCompressor().TryCompressAsync(input, args, AbortToken);
+
+        // then
+        using var output = TestImages.Decode(result.Result!);
+        output.Getpoint(20, 20).Should().AllSatisfy(channel => channel.Should().BeGreaterThan(240));
+    }
+
+    [Fact]
+    public async Task should_throw_when_cancelled()
+    {
+        // given
+        await using var input = new MemoryStream(TestImages.Encode(".jpg", 32, 32, options: "Q=100"));
+        using var cancellation = new CancellationTokenSource();
+        await cancellation.CancelAsync();
+
+        // when
+        var act = async () =>
+            await _CreateCompressor().TryCompressAsync(input, new ImageCompressArgs(), cancellation.Token);
+
+        // then
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
     public async Task should_compress_a_real_photo()
     {
         // given: a 7 MB camera JPEG

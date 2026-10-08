@@ -19,7 +19,7 @@ public static class SetupNetVips
     extension(HeadlessImagingSetupBuilder setup)
     {
         /// <summary>
-        /// Adds the libvips resize and compress contributors with the default <see cref="NetVipsOptions" />.
+        /// Adds the libvips resize, compress, and inspect contributors with the default <see cref="NetVipsOptions" />.
         /// </summary>
         /// <returns>The same builder so calls can be chained.</returns>
         public HeadlessImagingSetupBuilder UseNetVips()
@@ -30,7 +30,7 @@ public static class SetupNetVips
         }
 
         /// <summary>
-        /// Adds the libvips resize and compress contributors, binding <see cref="NetVipsOptions" /> from
+        /// Adds the libvips resize, compress, and inspect contributors, binding <see cref="NetVipsOptions" /> from
         /// <paramref name="configuration" />.
         /// </summary>
         /// <param name="configuration">The configuration section that binds <see cref="NetVipsOptions" />.</param>
@@ -48,7 +48,7 @@ public static class SetupNetVips
         }
 
         /// <summary>
-        /// Adds the libvips resize and compress contributors, configuring <see cref="NetVipsOptions" /> with a delegate.
+        /// Adds the libvips resize, compress, and inspect contributors, configuring <see cref="NetVipsOptions" /> with a delegate.
         /// </summary>
         /// <param name="configure">Configures <see cref="NetVipsOptions" />.</param>
         /// <returns>The same builder so calls can be chained.</returns>
@@ -63,7 +63,7 @@ public static class SetupNetVips
         }
 
         /// <summary>
-        /// Adds the libvips resize and compress contributors, configuring <see cref="NetVipsOptions" /> with a delegate
+        /// Adds the libvips resize, compress, and inspect contributors, configuring <see cref="NetVipsOptions" /> with a delegate
         /// that can resolve services.
         /// </summary>
         /// <param name="configure">Configures <see cref="NetVipsOptions" /> using resolved services.</param>
@@ -88,12 +88,15 @@ public static class SetupNetVips
             configure(services);
 
             // Enumerable registrations keyed on the implementation type, so a repeated UseNetVips call adds no second
-            // copy of either contributor to the chain.
+            // copy of any contributor to the chain.
             services.TryAddEnumerable(
                 ServiceDescriptor.Singleton<IImageResizerContributor, NetVipsImageResizerContributor>()
             );
             services.TryAddEnumerable(
                 ServiceDescriptor.Singleton<IImageCompressorContributor, NetVipsImageCompressorContributor>()
+            );
+            services.TryAddEnumerable(
+                ServiceDescriptor.Singleton<IImageInspectorContributor, NetVipsImageInspectorContributor>()
             );
         }
     }

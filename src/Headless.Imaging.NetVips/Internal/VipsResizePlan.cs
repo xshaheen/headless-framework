@@ -63,7 +63,7 @@ internal sealed record VipsResizePlan(
             ImageResizeMode.Crop => new(width, height, Enums.Size.Both, _ToInteresting(focus), 0, 0),
             ImageResizeMode.Pad => _Pad(width, height),
             ImageResizeMode.BoxPad => sourceWidth <= width && sourceHeight <= height
-                ? _Unscaled(sourceWidth, sourceHeight) with
+                ? Unscaled(sourceWidth, sourceHeight) with
                 {
                     CanvasWidth = width,
                     CanvasHeight = height,
@@ -87,7 +87,7 @@ internal sealed record VipsResizePlan(
     {
         if (sourceWidth <= width && sourceHeight <= height)
         {
-            return _Unscaled(sourceWidth, sourceHeight);
+            return Unscaled(sourceWidth, sourceHeight);
         }
 
         var scale = Math.Min((double)width / sourceWidth, (double)height / sourceHeight);
@@ -104,7 +104,7 @@ internal sealed record VipsResizePlan(
     {
         if (width > sourceWidth || height > sourceHeight)
         {
-            return _Unscaled(sourceWidth, sourceHeight);
+            return Unscaled(sourceWidth, sourceHeight);
         }
 
         var widthGap = sourceWidth - width;
@@ -117,7 +117,7 @@ internal sealed record VipsResizePlan(
     }
 
     /// <summary>Re-encodes at the source size; <c>thumbnail</c> still applies the EXIF orientation.</summary>
-    private static VipsResizePlan _Unscaled(int sourceWidth, int sourceHeight)
+    public static VipsResizePlan Unscaled(int sourceWidth, int sourceHeight)
     {
         return new(sourceWidth, sourceHeight, Enums.Size.Force, Crop: null, 0, 0);
     }

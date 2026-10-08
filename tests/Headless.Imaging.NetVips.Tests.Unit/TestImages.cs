@@ -94,7 +94,8 @@ internal static class TestImages
         using var green = Image.Gaussnoise(width, height, sigma: 40, mean: 140);
         using var blue = Image.Gaussnoise(width, height, sigma: 40, mean: 160);
         using var rgb = red.Bandjoin(green, blue);
-        using var withAlpha = alpha ? rgb.Bandjoin(255) : rgb.Copy();
+        // A half-transparent alpha: an encoder may drop an alpha channel that is opaque everywhere.
+        using var withAlpha = alpha ? rgb.Bandjoin(128) : rgb.Copy();
         using var bytes = withAlpha.Cast(Enums.BandFormat.Uchar);
 
         return bytes.Copy(interpretation: Enums.Interpretation.Srgb);
@@ -112,6 +113,22 @@ internal static class TestImages
     public static byte[] AnimatedGif(int width, int height)
     {
         using var animated = _AnimatedStrip(width, height);
+
+        return animated.GifsaveBuffer();
+    }
+
+    /// <summary>Creates a three-frame GIF of noise, which LZW compresses poorly and lossy WebP well.</summary>
+    public static byte[] AnimatedNoiseGif(int width, int height)
+    {
+        using var first = Noise(width, height);
+        using var second = Noise(width, height);
+        using var third = Noise(width, height);
+        using var strip = Image.Arrayjoin([first, second, third], across: 1);
+        using var animated = strip.Mutate(image =>
+        {
+            image.Set(GValue.GIntType, "page-height", height);
+            image.Set(GValue.ArrayIntType, "delay", new[] { 100, 100, 100 });
+        });
 
         return animated.GifsaveBuffer();
     }
