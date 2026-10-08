@@ -2,6 +2,11 @@
   <Import Project="../Directory.Build.props" />
   <PropertyGroup Condition="$([System.Text.RegularExpressions.Regex]::IsMatch('$(MSBuildProjectName)', '\.Tests\.Harness$'))">
     <IsTestHarnessProject>true</IsTestHarnessProject>
+    <!--
+      xunit.v3's MTP props mark any project that references it a test application unless this is already set, and that
+      runs before the SDK's harness check, so a solution-wide `dotnet test` would try to run a harness library.
+    -->
+    <IsTestingPlatformApplication>false</IsTestingPlatformApplication>
   </PropertyGroup>
   <PropertyGroup>
     <!--
