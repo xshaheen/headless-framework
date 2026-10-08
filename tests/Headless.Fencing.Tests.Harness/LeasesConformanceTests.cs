@@ -1003,6 +1003,200 @@ public abstract class LeasesConformanceTests<TFixture>(TFixture fixture) : TestB
 
     #endregion
 
+    #region Takeover after sweep, status, enlisted claims
+
+    public virtual async Task should_report_an_expired_attempt_and_change_nothing_when_the_grant_waits_for_the_sweep()
+    {
+        var (kind, resource) = (CreateKind(), CreateResource());
+        var key = HostKey(kind, resource);
+        await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
+
+        var first = await host.Leases.GrantAsync(kind, resource, LongDuration, LeaseTakeover.AfterSweep, AbortToken);
+        var held = await host.Leases.GrantAsync(kind, resource, LongDuration, LeaseTakeover.AfterSweep, AbortToken);
+
+        first.Status.Should().Be(LeaseGrantStatus.Granted);
+        held.Status.Should().Be(LeaseGrantStatus.Held, "a live attempt is held whatever the takeover choice");
+
+        await ExpireAsync(key);
+        var before = await Fixture.ReadLeaseAsync(key, AbortToken);
+        var expired = await host.Leases.GrantAsync(kind, resource, LongDuration, LeaseTakeover.AfterSweep, AbortToken);
+
+        expired.Status.Should().Be(LeaseGrantStatus.Expired);
+        expired.IsAcquired.Should().BeFalse();
+        expired.Lease.Should().BeNull();
+        expired.HolderGeneration.Should().Be(first.Lease!.Generation);
+        expired.ExpiresAt.Should().BeCloseTo(before!.ExpiresAt, TimeSpan.FromMicroseconds(1));
+        expired.Progress.Should().BeNull();
+        (await Fixture.ReadLeaseAsync(key, AbortToken)).Should().Be(before, "a refused grant writes nothing");
+
+        var swept = await host.Leases.SweepExpiredAsync(kind, (_, _, _) => ValueTask.CompletedTask, 10, AbortToken);
+        swept.Handled.Should().ContainSingle().Which.Generation.Should().Be(first.Lease.Generation);
+
+        var granted = await host.Leases.GrantAsync(kind, resource, LongDuration, LeaseTakeover.AfterSweep, AbortToken);
+
+        granted.Status.Should().Be(LeaseGrantStatus.Granted, "the sweep ended the expired attempt");
+        granted.Lease!.Generation.Should().BeGreaterThan(first.Lease.Generation);
+        (await host.Leases.GetStatusAsync(first.Lease, AbortToken)).Should().Be(LeaseFenceStatus.Stale);
+    }
+
+    public virtual async Task should_refuse_an_enlisted_grant_over_an_expired_attempt_when_it_waits_for_the_sweep()
+    {
+        _SkipUnlessEnlistedGrant();
+        var (kind, resource) = (CreateKind(), CreateResource());
+        var key = HostKey(kind, resource);
+        await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
+
+        var first = await host.Leases.GrantAsync(kind, resource, LongDuration, AbortToken);
+        await ExpireAsync(key);
+        var before = await Fixture.ReadLeaseAsync(key, AbortToken);
+
+        await using var unit = await Fixture.BeginUnitAsync(host, AbortToken);
+        var expired = await unit.Unit.Leases.GrantAsync(
+            kind,
+            resource,
+            LongDuration,
+            LeaseTakeover.AfterSweep,
+            AbortToken
+        );
+        await unit.CommitAsync(AbortToken);
+
+        expired.Status.Should().Be(LeaseGrantStatus.Expired);
+        expired.HolderGeneration.Should().Be(first.Lease!.Generation);
+        (await Fixture.ReadLeaseAsync(key, AbortToken)).Should().Be(before);
+    }
+
+    public virtual async Task should_grant_at_once_when_waiting_for_the_sweep_and_no_attempt_is_active()
+    {
+        var (kind, resource) = (CreateKind(), CreateResource());
+        await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
+
+        var first = await host.Leases.GrantAsync(kind, resource, LongDuration, LeaseTakeover.AfterSweep, AbortToken);
+        (await host.Leases.SettleAsync(first.Lease!, AbortToken)).Should().Be(LeaseSettlementStatus.Settled);
+        var second = await host.Leases.GrantAsync(kind, resource, LongDuration, LeaseTakeover.AfterSweep, AbortToken);
+        (await host.Leases.ReleaseAsync(second.Lease!, AbortToken)).Should().Be(LeaseSettlementStatus.Released);
+        var third = await host.Leases.GrantAsync(kind, resource, LongDuration, LeaseTakeover.AfterSweep, AbortToken);
+
+        first.Status.Should().Be(LeaseGrantStatus.Granted);
+        second.Status.Should().Be(LeaseGrantStatus.Granted);
+        third.Status.Should().Be(LeaseGrantStatus.Granted);
+        second.Lease!.Generation.Should().BeGreaterThan(first.Lease!.Generation);
+        third.Lease!.Generation.Should().BeGreaterThan(second.Lease.Generation);
+    }
+
+    public virtual async Task should_report_each_lease_state_by_the_database_clock_without_changing_it()
+    {
+        var kind = CreateKind();
+        await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
+
+        var (live, settled, released, abandoned) = (
+            CreateResource(),
+            CreateResource(),
+            CreateResource(),
+            CreateResource()
+        );
+        var liveLease = (await host.Leases.GrantAsync(kind, live, LongDuration, AbortToken)).Lease!;
+        var settledLease = (await host.Leases.GrantAsync(kind, settled, LongDuration, AbortToken)).Lease!;
+        var releasedLease = (await host.Leases.GrantAsync(kind, released, LongDuration, AbortToken)).Lease!;
+        var abandonedLease = (await host.Leases.GrantAsync(kind, abandoned, LongDuration, AbortToken)).Lease!;
+
+        await host.Leases.SettleAsync(settledLease, AbortToken);
+        await host.Leases.ReleaseAsync(releasedLease, AbortToken);
+        await ExpireAsync(HostKey(kind, abandoned));
+        await host.Leases.SweepExpiredAsync(kind, (_, _, _) => ValueTask.CompletedTask, 10, AbortToken);
+
+        var before = await Fixture.ReadLeaseAsync(HostKey(kind, live), AbortToken);
+        (await host.Leases.GetStatusAsync(liveLease, AbortToken)).Should().Be(LeaseFenceStatus.Current);
+        (await Fixture.ReadLeaseAsync(HostKey(kind, live), AbortToken))
+            .Should()
+            .Be(before, "a status read writes nothing");
+
+        (await host.Leases.GetStatusAsync(settledLease, AbortToken)).Should().Be(LeaseFenceStatus.Settled);
+        (await host.Leases.GetStatusAsync(releasedLease, AbortToken)).Should().Be(LeaseFenceStatus.Released);
+        (await host.Leases.GetStatusAsync(abandonedLease, AbortToken)).Should().Be(LeaseFenceStatus.Abandoned);
+        (await host.Leases.GetStatusAsync(liveLease with { Resource = CreateResource() }, AbortToken))
+            .Should()
+            .Be(LeaseFenceStatus.Stale, "a lease with no row was purged or never granted");
+
+        await ExpireAsync(HostKey(kind, live));
+        (await host.Leases.GetStatusAsync(liveLease, AbortToken)).Should().Be(LeaseFenceStatus.Expired);
+
+        var takeover = await host.Leases.GrantAsync(kind, live, LongDuration, AbortToken);
+        (await host.Leases.GetStatusAsync(liveLease, AbortToken)).Should().Be(LeaseFenceStatus.Stale);
+        (await host.Leases.GetStatusAsync(takeover.Lease!, AbortToken)).Should().Be(LeaseFenceStatus.Current);
+    }
+
+    public virtual async Task should_claim_expired_leases_inside_the_callers_unit_and_keep_them_on_a_rollback()
+    {
+        var kind = CreateKind();
+        await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
+        var generations = await SeedExpiredAsync(host, kind, 2);
+        var live = CreateResource();
+        await host.Leases.GrantAsync(kind, live, LongDuration, AbortToken);
+
+        await using (var unit = await Fixture.BeginUnitAsync(host, AbortToken))
+        {
+            var first = await unit.Unit.Leases.ClaimExpiredAsync(kind, cancellationToken: AbortToken);
+            var second = await unit.Unit.Leases.ClaimExpiredAsync(kind, first, AbortToken);
+            var none = await unit.Unit.Leases.ClaimExpiredAsync(kind, second, AbortToken);
+
+            new[] { first!.Resource, second!.Resource }.Should().BeEquivalentTo(generations.Keys);
+            first.Generation.Should().Be(generations[first.Resource]);
+            first.TakeoverCount.Should().Be(1, "claiming abandons the attempt and counts it once");
+            none.Should().BeNull("a live lease is never claimed");
+
+            await unit.RollbackAsync();
+        }
+
+        foreach (var resource in generations.Keys)
+        {
+            (await Fixture.ReadLeaseAsync(HostKey(kind, resource), AbortToken))!
+                .State.Should()
+                .Be(StoredLeaseState.Active, "a rolled-back claim leaves the lease expired and active");
+        }
+
+        await using (var unit = await Fixture.BeginUnitAsync(host, AbortToken))
+        {
+            var claimed = await unit.Unit.Leases.ClaimExpiredAsync(kind, cancellationToken: AbortToken);
+            await Fixture.WriteHandoffAsync(unit.Unit, claimed!, AbortToken);
+            await unit.CommitAsync(AbortToken);
+
+            (await Fixture.ReadLeaseAsync(HostKey(kind, claimed!.Resource), AbortToken))!
+                .State.Should()
+                .Be(StoredLeaseState.Abandoned);
+            (await Fixture.ReadHandoffsAsync(kind, AbortToken))
+                .Should()
+                .ContainSingle()
+                .Which.Should()
+                .Be(new LeaseHandoff("", claimed.Resource, claimed.Generation));
+        }
+    }
+
+    public virtual async Task should_skip_a_lease_another_unit_claimed_when_claiming_inside_a_unit()
+    {
+        var kind = CreateKind();
+        await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
+        var generations = await SeedExpiredAsync(host, kind, 2);
+
+        await using var first = await Fixture.BeginUnitAsync(host, AbortToken);
+        var claimedFirst = await first.Unit.Leases.ClaimExpiredAsync(kind, cancellationToken: AbortToken);
+
+        await using var second = await Fixture.BeginUnitAsync(host, AbortToken);
+        var claimedSecond = await second
+            .Unit.Leases.ClaimExpiredAsync(kind, cancellationToken: AbortToken)
+            .AsTask()
+            .WaitAsync(LeasesFixtureExtensions.ReleaseTimeout, AbortToken);
+        var nothingLeft = await second.Unit.Leases.ClaimExpiredAsync(kind, claimedSecond, AbortToken);
+
+        claimedSecond!.Resource.Should().NotBe(claimedFirst!.Resource, "a claimed lease is skipped, not waited on");
+        new[] { claimedFirst.Resource, claimedSecond.Resource }.Should().BeEquivalentTo(generations.Keys);
+        nothingLeft.Should().BeNull();
+
+        await second.CommitAsync(AbortToken);
+        await first.CommitAsync(AbortToken);
+    }
+
+    #endregion
+
     /// <summary>Returns a progress record over <paramref name="payload" />.</summary>
     protected static LeaseProgress Progress(string contract, params byte[] payload)
     {

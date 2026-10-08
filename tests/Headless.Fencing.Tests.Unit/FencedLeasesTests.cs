@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.ComponentModel;
 using Headless.Fencing;
 using Headless.Testing.Tests;
 using Headless.UnitOfWork;
@@ -20,7 +21,12 @@ public sealed class FencedLeasesTests : TestBase
         context.Tenant.Id = "t1";
         var expected = LeaseGrantResult.Held(3, DateTimeOffset.UnixEpoch);
         context
-            .Store.GrantAsync(new LeaseKey("t1", "job", "order-1"), FencingTestContext.Duration, AbortToken)
+            .Store.GrantAsync(
+                new LeaseKey("t1", "job", "order-1"),
+                FencingTestContext.Duration,
+                LeaseTakeover.Allowed,
+                AbortToken
+            )
             .Returns(expected);
 
         // when
@@ -37,7 +43,7 @@ public sealed class FencedLeasesTests : TestBase
         var context = new FencingTestContext();
         var requested = FencingTestContext.Duration + TimeSpan.FromTicks(7);
         context
-            .Store.GrantAsync(_Key, FencingTestContext.Duration, AbortToken)
+            .Store.GrantAsync(_Key, FencingTestContext.Duration, LeaseTakeover.Allowed, AbortToken)
             .Returns(LeaseGrantResult.Held(3, DateTimeOffset.UnixEpoch));
         context
             .Store.RenewAsync(_Key, 7, FencingTestContext.Duration, null, AbortToken)
@@ -48,7 +54,9 @@ public sealed class FencedLeasesTests : TestBase
         await context.Leases.RenewAsync(_Lease, requested, AbortToken);
 
         // then
-        await context.Store.Received(1).GrantAsync(_Key, FencingTestContext.Duration, AbortToken);
+        await context
+            .Store.Received(1)
+            .GrantAsync(_Key, FencingTestContext.Duration, LeaseTakeover.Allowed, AbortToken);
         await context.Store.Received(1).RenewAsync(_Key, 7, FencingTestContext.Duration, null, AbortToken);
     }
 
@@ -347,5 +355,72 @@ public sealed class FencedLeasesTests : TestBase
                 Arg.Any<CancellationToken>()
             )
             .Returns(_ => ValueTask.FromResult(queue.Dequeue()));
+    }
+
+    [Fact]
+    public async Task should_hand_the_store_the_takeover_choice()
+    {
+        // given
+        var context = new FencingTestContext();
+        context.Tenant.Id = "t1";
+        var expected = LeaseGrantResult.Expired(3, DateTimeOffset.UnixEpoch);
+        context
+            .Store.GrantAsync(
+                new LeaseKey("t1", "job", "order-1"),
+                FencingTestContext.Duration,
+                LeaseTakeover.AfterSweep,
+                AbortToken
+            )
+            .Returns(expected);
+
+        // when
+        var result = await context.Leases.GrantAsync(
+            "job",
+            "order-1",
+            FencingTestContext.Duration,
+            LeaseTakeover.AfterSweep,
+            AbortToken
+        );
+
+        // then
+        result.Should().BeSameAs(expected);
+    }
+
+    [Fact]
+    public async Task should_reject_an_undefined_takeover_choice_before_the_store()
+    {
+        // given
+        var context = new FencingTestContext();
+
+        // when
+        var grant = async () =>
+            await context.Leases.GrantAsync(
+                "job",
+                "order-1",
+                FencingTestContext.Duration,
+                (LeaseTakeover)7,
+                AbortToken
+            );
+
+        // then
+        await grant.Should().ThrowAsync<InvalidEnumArgumentException>();
+        await context.Store.DidNotReceiveWithAnyArgs().GrantAsync(default, default, default, AbortToken);
+    }
+
+    [Fact]
+    public async Task should_read_the_status_with_the_lease_key_and_generation()
+    {
+        // given
+        var context = new FencingTestContext();
+        var lease = new FencedLease("t1", "job", "order-1", 7);
+        context
+            .Store.GetStatusAsync(new LeaseKey("t1", "job", "order-1"), 7, AbortToken)
+            .Returns(LeaseFenceStatus.Expired);
+
+        // when
+        var status = await context.Leases.GetStatusAsync(lease, AbortToken);
+
+        // then
+        status.Should().Be(LeaseFenceStatus.Expired);
     }
 }

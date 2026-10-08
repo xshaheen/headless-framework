@@ -24,16 +24,21 @@ public interface IUnitOfWorkLeases : IUnitOfWorkFeature
     /// <param name="kind">The lease kind.</param>
     /// <param name="resource">The leased resource within the kind.</param>
     /// <param name="duration">How long the lease lives unless renewed; bounded by the configured limits.</param>
+    /// <param name="takeover">Whether an expired attempt is taken over at once, or kept until a sweep abandons it.</param>
     /// <param name="cancellationToken">Token used to cancel the database command.</param>
     /// <returns>The grant's result.</returns>
     /// <exception cref="ArgumentException">The kind, resource, or current tenant id is invalid.</exception>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="duration" /> is outside the configured bounds.</exception>
+    /// <exception cref="System.ComponentModel.InvalidEnumArgumentException">
+    /// <paramref name="takeover" /> is not a defined value.
+    /// </exception>
     /// <exception cref="InvalidOperationException">The unit cannot host the write.</exception>
     ValueTask<LeaseGrantResult> GrantAsync(
         IUnitOfWork unitOfWork,
         string kind,
         string resource,
         TimeSpan duration,
+        LeaseTakeover takeover,
         CancellationToken cancellationToken = default
     );
 
@@ -98,4 +103,22 @@ public interface IUnitOfWorkLeases : IUnitOfWorkFeature
     /// <exception cref="InvalidOperationException">The unit cannot host the read.</exception>
     /// <exception cref="StaleLeaseException">The attempt no longer owns the lease.</exception>
     ValueTask FenceAsync(IUnitOfWork unitOfWork, FencedLease lease, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Claims the next expired, still-active lease of <paramref name="kind" /> inside <paramref name="unitOfWork" />'s
+    /// transaction and marks it abandoned.
+    /// </summary>
+    /// <param name="unitOfWork">The unit whose transaction holds the claim and the caller's handoff.</param>
+    /// <param name="kind">The lease kind.</param>
+    /// <param name="after">The lease the previous call returned, to continue after it; <see langword="null" /> to start.</param>
+    /// <param name="cancellationToken">Token used to cancel the database command.</param>
+    /// <returns>The claimed lease, or <see langword="null" /> when no expired lease is left to claim.</returns>
+    /// <exception cref="ArgumentException"><paramref name="kind" /> is invalid.</exception>
+    /// <exception cref="InvalidOperationException">The unit cannot host the write.</exception>
+    ValueTask<ExpiredLease?> ClaimExpiredAsync(
+        IUnitOfWork unitOfWork,
+        string kind,
+        ExpiredLease? after,
+        CancellationToken cancellationToken = default
+    );
 }
