@@ -34,11 +34,55 @@ public sealed class RedisMessagingOptions
             : string.Empty;
 
     /// <summary>
-    /// The maximum number of stream entries read per poll iteration per stream. Higher values
-    /// increase throughput at the cost of latency for the first entry in a batch.
-    /// Must be greater than <c>0</c>. Defaults to <c>10</c>.
+    /// The maximum number of stream entries one read takes from each stream. A read that returns a full batch is
+    /// followed at once by the next read, so a backlog drains without waiting a poll interval per batch.
+    /// Must be greater than <c>0</c>. Defaults to <c>100</c>.
     /// </summary>
-    public int StreamEntriesCount { get; set; } = 10;
+    /// <remarks>
+    /// Every entry a consumer-group read returns stays pending until the core admits it, so keep the time the core
+    /// takes to admit one batch well below <see cref="PendingClaimMinIdleTime"/>; otherwise another consumer claims
+    /// entries still waiting their turn and the inbox discards the duplicates.
+    /// </remarks>
+    public int StreamEntriesCount { get; set; } = 100;
+
+    /// <summary>
+    /// How long a stream entry must stay pending, delivered to a consumer and not acknowledged, before another consumer
+    /// of the group claims it with <c>XAUTOCLAIM</c>. This is how entries held by a crashed consumer, or left pending
+    /// by a rejected delivery, are delivered again. Must be greater than <see cref="TimeSpan.Zero"/>. Defaults to
+    /// <c>60 seconds</c>.
+    /// </summary>
+    /// <remarks>
+    /// A durable consumer acknowledges an entry once the core admits it into the inbox, before the handler runs, so
+    /// the pending window covers admission only and does not grow with handler duration. A runtime subscription,
+    /// which has no consumer identity, acknowledges after an inline handler returns: set this above that handler's
+    /// longest run, or its entries are delivered twice.
+    /// </remarks>
+    public TimeSpan PendingClaimMinIdleTime { get; set; } = TimeSpan.FromSeconds(60);
+
+    /// <summary>
+    /// How long a consumer of a group must stay idle, with no pending entries, before the transport deletes it from
+    /// the group. A restarted process reads under new consumer names when its machine name changes, so this removes
+    /// the names it left behind. <see cref="TimeSpan.Zero"/> keeps every consumer. Defaults to <c>1 hour</c>.
+    /// </summary>
+    /// <remarks>
+    /// The check and the delete run as one script on the server, so a consumer that holds a pending entry is never
+    /// deleted, and a live consumer that is deleted while idle is created again by its next read.
+    /// </remarks>
+    public TimeSpan IdleConsumerDeleteAfter { get; set; } = TimeSpan.FromHours(1);
+
+    /// <summary>
+    /// How long a stream keeps an entry. Each publish trims, approximately, the entries older than this from the
+    /// stream it appends to, so no stream grows without limit by default. <see cref="TimeSpan.Zero"/> keeps entries
+    /// without an age limit. Must be <see cref="TimeSpan.Zero"/> or greater than
+    /// <see cref="PendingClaimMinIdleTime"/>. Defaults to <c>7 days</c>.
+    /// </summary>
+    /// <remarks>
+    /// Trimming removes an entry whether or not a consumer group has read or acknowledged it, so a group that stays
+    /// offline longer than this misses the entries trimmed meanwhile, and an entry that keeps failing admission is
+    /// dropped once it is older than this. The age is measured from the entry's id, which the Redis server stamps,
+    /// against the publishing process's clock.
+    /// </remarks>
+    public TimeSpan StreamMaxAge { get; set; } = TimeSpan.FromDays(7);
 
     /// <summary>
     /// The number of <c>IConnectionMultiplexer</c> instances in the shared connection pool.
@@ -69,5 +113,12 @@ internal sealed class RedisMessagingOptionsValidator : AbstractValidator<RedisMe
     {
         RuleFor(x => x.StreamEntriesCount).GreaterThan(0);
         RuleFor(x => x.ConnectionPoolSize).GreaterThan(0);
+        RuleFor(x => x.PendingClaimMinIdleTime).GreaterThan(TimeSpan.Zero);
+        RuleFor(x => x.IdleConsumerDeleteAfter).GreaterThanOrEqualTo(TimeSpan.Zero);
+
+        // A shorter age would trim an entry before any consumer could claim it from a crashed one.
+        RuleFor(x => x.StreamMaxAge)
+            .Must((options, maxAge) => maxAge == TimeSpan.Zero || maxAge > options.PendingClaimMinIdleTime)
+            .WithMessage("StreamMaxAge must be zero, for no age limit, or greater than PendingClaimMinIdleTime.");
     }
 }

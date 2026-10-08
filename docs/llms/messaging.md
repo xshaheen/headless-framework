@@ -191,7 +191,7 @@ Two unit-of-work behaviors are documented, not defects. `IUnitOfWork.OnCompleted
 | AWS SNS/SQS | AWS-native pub-sub and queue workloads | Non-AWS deployments | FIFO entities use MessageGroupId and deduplication ids |
 | NATS | Subject-based routing, lightweight broker, JetStream | Complex per-consumer storage-specific routing | Subject shards must be a single safe token |
 | Pulsar | Pulsar-native durable transport with shared subscriptions | Projects not already on Pulsar | Requires Pulsar topic and subscription provisioning |
-| Redis | Redis Streams transport | Workloads requiring a broker-native dead-letter queue | Durable streams, pending-entry reclaim, and application-owned retention |
+| Redis | Redis Streams transport | Workloads requiring a broker-native dead-letter queue | Durable streams, pending-entry reclaim after 60 s, and age-bounded streams (7 days by default) |
 
 ## Provider Capabilities
 
@@ -315,7 +315,7 @@ Transports declare support with `MessagingProviderCapabilities.Transport(..., su
 | NATS | Lane-qualified subjects, streams, retention, and durables | Identity/replica isolation and malformed terminal ACK | Grant stream and consumer provisioning permissions |
 | Pulsar | Lane-qualified topics and Bus subscriptions | Identity/replica isolation and malformed terminal ACK | Grant topic and subscription creation permissions |
 | RabbitMQ | Lane-qualified exchanges, routing keys, and owned queues | Identity/replica isolation and malformed terminal reject | Grant exchange and queue provisioning permissions |
-| Redis | Lane-qualified Streams for both lanes | Routing, ownership, settlement, and poison handling | Configure retained stream storage; the provider creates the Redis consumer groups |
+| Redis | Lane-qualified Streams for both lanes | Routing, ownership, settlement, and poison handling | Size Redis memory for `StreamMaxAge` of traffic; the provider creates the Redis consumer groups and trims the streams |
 
 #### AWS least-privilege handoff
 
@@ -2479,6 +2479,9 @@ Registers RabbitMQ connection/channel pool, bus/queue transport, consumer client
 - One Bus copy per consumer identity: the Redis consumer group on each Bus stream is named after the identity, and replicas that register the identity compete inside it.
 - One Queue copy per message: the Redis consumer group on the Queue stream is named after the message, and replicas compete inside it.
 - Lane-qualified stream keys, acknowledgements, pending-entry claim, and terminal poison handling.
+- A pending entry, read and not acknowledged, is claimed by another consumer of the group once it has been idle for `PendingClaimMinIdleTime` (60 s by default), so a crashed consumer's entries move on within a minute.
+- A rejected delivery stays pending in its place in the stream and is delivered again by that claim; the stream does not grow and the entry keeps its position.
+- Each publish trims, approximately, the entries older than `StreamMaxAge` (7 days by default) from its stream.
 - Streams consumer startup honors host cancellation through connection, provisioning, and subscription.
 - Request/reply over pub/sub on the literal channel `headless.reply.{32 hex}`; replies write no key, and every host that exchanges requests must use the same `ChannelPrefix`. See [Request/reply](#requestreply).
 
@@ -2502,11 +2505,30 @@ Redis physical keys are `headless:messaging:bus:{logical-name}` and `headless:me
 
 The current Redis Streams topology does not provide the provider-neutral routing-affinity contract. `RequireRoutingAffinity()` fails during startup; a supplied `RoutingAffinityKey` is rejected before persistence or transport effects. A stream name identifies a route, not a per-message affinity partition. No transparent stream sharding is added.
 
-Configure Redis connection and Stream behavior through `RedisMessagingOptions`.
+Configure Redis connection and Stream behavior through `RedisMessagingOptions`:
+
+| Option | Default | Effect |
+| --- | --- | --- |
+| `StreamEntriesCount` | `100` | Entries one read takes from each stream. A read that returns a full batch is followed at once by the next read, so a backlog drains without waiting the poll interval per batch. |
+| `PendingClaimMinIdleTime` | 60 s | How long an entry stays pending before another consumer claims it with `XAUTOCLAIM`. Must be positive. |
+| `IdleConsumerDeleteAfter` | 1 hour | How long a consumer with no pending entries stays idle before it is deleted from its group. `TimeSpan.Zero` keeps every consumer. |
+| `StreamMaxAge` | 7 days | Age past which each publish trims entries from its stream with `XADD MINID ~`. `TimeSpan.Zero` keeps entries without an age limit; otherwise it must exceed `PendingClaimMinIdleTime`. |
+| `ConnectionPoolSize` | `10` | Multiplexers in the shared connection pool. |
+
+Trade-offs and limits:
+
+- **Pending window.** A durable consumer acknowledges an entry once the core admits it into the inbox, before its handler runs, so `PendingClaimMinIdleTime` bounds admission, not handler duration. A runtime subscription, which has no consumer identity, acknowledges after an inline handler returns; set the option above that handler's longest run. Keep the time the core takes to admit one batch of `StreamEntriesCount` entries well below it, or another consumer claims entries still waiting their turn and the inbox discards the duplicates.
+- **Retention is not acknowledgement-aware.** Trimming removes an entry whether or not a group read or acknowledged it, so a group offline longer than `StreamMaxAge` misses the trimmed entries, and an entry that keeps failing admission is dropped once it is older than `StreamMaxAge`. The age is measured against the publishing process's clock. Approximate trimming removes whole internal nodes only, so entries can outlive the limit slightly; it never removes them early. No length cap (`MAXLEN`) is applied.
+- **Every-instance reads.** A group-less every-instance reader that falls further behind than `StreamMaxAge` skips the trimmed entries.
 
 ### Runtime behavior
 
 Registers Redis transports, consumers, and Redis connection services.
+
+- **Consumer names.** A process reads each group as `{group}:{machine name}:{slot}`, where the slot is the lowest one no other live client of that group in the process holds. A process restarted on the same machine, such as a StatefulSet pod, reads under the names it used before, and its startup pass delivers the entries it left pending at once. A process whose machine name changes, such as a Deployment pod, leaves its pending entries to the claim after `PendingClaimMinIdleTime`. Two processes that share a machine name share consumer names: each one's startup pass then also redelivers the other's pending entries, and the inbox discards the duplicates.
+- **Idle-consumer sweep.** Every `PendingClaimMinIdleTime`, each consumer client runs one Lua script per stream that deletes the group's consumers idle longer than `IdleConsumerDeleteAfter` with no pending entries. The check and the delete are atomic, because deleting a consumer discards its pending entries; a live consumer deleted while idle is created again by its next read. The sweep needs `EVAL`; where an ACL denies it, set `IdleConsumerDeleteAfter` to `TimeSpan.Zero`.
+- **Wire format.** A stream entry has two fields: `headers`, the headers as a JSON object, and `body`, the message body as raw bytes.
+- **Shutdown.** Shutdown waits, within the shutdown budget, for in-flight handlers to settle their entries before the client is disposed; an entry a handler never settles stays pending for the claim.
 
 ## Headless.Messaging.SourceGenerator
 

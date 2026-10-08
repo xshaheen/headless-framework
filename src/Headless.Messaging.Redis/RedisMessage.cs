@@ -15,7 +15,8 @@ internal static class RedisMessage
         return
         [
             new NameValueEntry(_Headers, _ToJson(message.Headers)),
-            new NameValueEntry(_Body, _ToJson(message.Body.ToArray())),
+            // Raw bytes: a stream field is binary-safe, so base64 inside JSON only cost a third more space and a decode.
+            new NameValueEntry(_Body, message.Body),
         ];
     }
 
@@ -53,7 +54,6 @@ internal static class RedisMessage
     public static TransportMessage Create(StreamEntry streamEntry)
     {
         Dictionary<string, string?> headers;
-        byte[]? body;
 
         // The entry always carries exactly the two fields written by AsStreamEntries; a per-entry
         // ToDictionary allocated a Dictionary (plus boxing) just to look them up by name.
@@ -93,24 +93,8 @@ internal static class RedisMessage
             throw new RedisConsumeInvalidHeadersException(entryId, ex);
         }
 
-        if (!bodyRaw.IsNullOrEmpty)
-        {
-            try
-            {
-                body = JsonSerializer.Deserialize<byte[]>(json: bodyRaw!, _JsonOptions);
-            }
-            catch (Exception ex)
-            {
-                throw new RedisConsumeInvalidBodyException(entryId, ex);
-            }
-        }
-        else
-        {
-            body = null;
-        }
-
         _ValidateRequiredHeaders(headers, entryId);
-        return new TransportMessage(headers, body);
+        return new TransportMessage(headers, (ReadOnlyMemory<byte>)bodyRaw);
     }
 
     private static void _ValidateRequiredHeaders(Dictionary<string, string?> headers, string entryId)

@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using Headless.Checks;
 using Headless.Messaging.Transport;
 using Microsoft.Extensions.Logging;
@@ -15,20 +16,26 @@ internal sealed class RedisConsumerClient(
     IOptions<RedisMessagingOptions> options,
     ILogger<RedisConsumerClient> logger,
     MessageLane lane = MessageLane.Queue,
-    TimeSpan? stalePendingClaimMinIdleTime = null,
     TimeProvider? timeProvider = null,
-    ConsumerSubscriptionKind kind = ConsumerSubscriptionKind.Competing
+    ConsumerSubscriptionKind kind = ConsumerSubscriptionKind.Competing,
+    RedisConsumerNameLease? consumerName = null
 ) : IConsumerClient
 {
+    // Bounds the drain when the client is disposed without a shutdown budget. A handler still running past it keeps
+    // its entry pending, so another consumer claims it after PendingClaimMinIdleTime (at-least-once).
+    private static readonly TimeSpan _ShutdownDrainTimeout = TimeSpan.FromSeconds(30);
+
     private readonly string _groupName = RedisPhysicalAddress.ConsumerGroup(lane, subscriptionName);
     private readonly SemaphoreSlim _semaphore = new(concurrency);
     private readonly ConsumerPauseGate _pauseGate = new();
     private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
-    private readonly TimeSpan _stalePendingClaimMinIdleTime = stalePendingClaimMinIdleTime ?? TimeSpan.FromMinutes(5);
 
-    private readonly string _consumerName =
-        $"{RedisPhysicalAddress.ConsumerGroup(lane, subscriptionName)}:{Environment.MachineName}:{Guid.NewGuid():N}";
+    // Tracks the handler tasks of the concurrent path so shutdown can drain them before disposing the semaphore.
+    private readonly ConcurrentDictionary<Task, byte> _inFlightHandlers = new();
+
+    private readonly RedisConsumerNameLease _consumerName =
+        consumerName ?? new RedisConsumerNames().Acquire(RedisPhysicalAddress.ConsumerGroup(lane, subscriptionName));
 
     private int _disposed;
     private string[] _messageNames = null!;
@@ -118,16 +125,12 @@ internal sealed class RedisConsumerClient(
         await redis.Ack(delivery.Stream, delivery.Group, delivery.Id, cancellationToken).ConfigureAwait(false);
     }
 
-    public async ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default)
+    public ValueTask RejectAsync(object? sender, CancellationToken cancellationToken = default)
     {
-        if (sender is not RedisConsumerDelivery delivery)
-        {
-            return;
-        }
-
-        await redis
-            .RequeueAndAck(delivery.Stream, delivery.Group, delivery.Id, delivery.Entries, cancellationToken)
-            .ConfigureAwait(false);
+        // A rejected entry stays pending, unacknowledged, in its place in the stream: the claim pass delivers it again
+        // once it has been idle for PendingClaimMinIdleTime. Copying it to the tail would grow the stream and lose its
+        // order, and the delay gives an open circuit or a failing store time to recover.
+        return ValueTask.CompletedTask;
     }
 
     public async ValueTask PauseAsync(CancellationToken cancellationToken = default)
@@ -142,15 +145,48 @@ internal sealed class RedisConsumerClient(
 
     public ValueTask DisposeAsync()
     {
+        return ShutdownAsync(_ShutdownDrainTimeout);
+    }
+
+    public async ValueTask ShutdownAsync(TimeSpan timeout, CancellationToken cancellationToken = default)
+    {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
         {
-            return ValueTask.CompletedTask;
+            return;
         }
 
         _pauseGate.Release();
-        _ready.TrySetCanceled();
+        _ready.TrySetCanceled(CancellationToken.None);
+
+        // Drain in-flight concurrent handlers before disposing the semaphore, so a running handler settles its entry
+        // and releases its slot. Bounded so a stuck handler cannot block shutdown; an entry it never settles stays
+        // pending and is claimed by another consumer (at-least-once).
+        var inFlight = _inFlightHandlers.Keys.ToArray();
+        if (inFlight.Length > 0)
+        {
+            try
+            {
+                if (timeout <= TimeSpan.Zero)
+                {
+                    throw new TimeoutException("The shared messaging shutdown deadline has expired.");
+                }
+
+                await Task.WhenAll(inFlight)
+                    .WaitAsync(timeout, _timeProvider, CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                // Handler faults are already logged by _ObserveBackgroundHandler; on a drain timeout or fault, log and
+                // proceed, because shutdown must never block or throw.
+                logger.RedisShutdownDrainIncomplete(ex, _groupName);
+            }
+        }
+
         _semaphore.Dispose();
-        return ValueTask.CompletedTask;
+
+        // Released last, so a client created while this one drains cannot read under the same name.
+        _consumerName.Release();
     }
 
     private void _ReleaseSemaphore()
@@ -165,6 +201,10 @@ internal sealed class RedisConsumerClient(
             {
                 // Defensive: ignore over-release
             }
+            catch (ObjectDisposedException)
+            {
+                // A handler that outlived the shutdown drain finishes after the semaphore is gone.
+            }
         }
     }
 
@@ -174,7 +214,7 @@ internal sealed class RedisConsumerClient(
         var pendingMsgs = redis.PollStreamsPendingMessagesAsync(
             _messageNames,
             _groupName,
-            _consumerName,
+            _consumerName.Name,
             timeout,
             cancellationToken
         );
@@ -184,8 +224,8 @@ internal sealed class RedisConsumerClient(
         var stalePendingMsgs = redis.PollStreamsStalePendingMessagesAsync(
             _messageNames,
             _groupName,
-            _consumerName,
-            _stalePendingClaimMinIdleTime,
+            _consumerName.Name,
+            options.Value.PendingClaimMinIdleTime,
             timeout,
             cancellationToken
         );
@@ -195,7 +235,7 @@ internal sealed class RedisConsumerClient(
         var newMsgs = redis.PollStreamsLatestMessagesAsync(
             _messageNames,
             _groupName,
-            _consumerName,
+            _consumerName.Name,
             timeout,
             cancellationToken
         );
@@ -224,22 +264,23 @@ internal sealed class RedisConsumerClient(
                     if (concurrency > 0)
                     {
                         await _semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
-                        _ObserveBackgroundHandler(
-                            Task.Run(
-                                async () =>
+                        var handlerTask = Task.Run(
+                            async () =>
+                            {
+                                try
                                 {
-                                    try
-                                    {
-                                        await consumeAsync(position, stream, entry).ConfigureAwait(false);
-                                    }
-                                    finally
-                                    {
-                                        _ReleaseSemaphore();
-                                    }
-                                },
-                                CancellationToken.None // Ensure semaphore release even if cancellation is requested during handler execution
-                            )
+                                    await consumeAsync(position, stream, entry).ConfigureAwait(false);
+                                }
+                                finally
+                                {
+                                    _ReleaseSemaphore();
+                                }
+                            },
+                            CancellationToken.None // Ensure semaphore release even if cancellation is requested during handler execution
                         );
+
+                        _TrackBackgroundHandler(handlerTask);
+                        _ObserveBackgroundHandler(handlerTask);
                     }
                     else
                     {
@@ -301,12 +342,7 @@ internal sealed class RedisConsumerClient(
                 object delivery =
                     kind is ConsumerSubscriptionKind.EveryInstance
                         ? new RedisEveryInstanceDelivery(stream.Key.ToString(), entry.Id.ToString())
-                        : new RedisConsumerDelivery(
-                            stream.Key.ToString(),
-                            _groupName,
-                            entry.Id.ToString(),
-                            [.. entry.Values]
-                        );
+                        : new RedisConsumerDelivery(stream.Key.ToString(), _groupName, entry.Id.ToString());
 
                 await OnMessageCallback!(message, delivery).ConfigureAwait(false);
             }
@@ -335,14 +371,22 @@ internal sealed class RedisConsumerClient(
                 entryId,
                 new InvalidDataException("The Redis message headers could not be parsed.")
             ),
-            RedisConsumeInvalidBodyException => new RedisConsumeInvalidBodyException(
-                entryId,
-                new InvalidDataException("The Redis message body could not be parsed.")
-            ),
             _ => new InvalidDataException($"Redis entry [{entryId}] contains a malformed Messaging envelope."),
         };
 
         return new RedisMessagingOptions.ConsumeErrorContext(safeException, new StreamEntry(entry.Id, []));
+    }
+
+    private void _TrackBackgroundHandler(Task task)
+    {
+        _inFlightHandlers[task] = 0;
+        _ = task.ContinueWith(
+            static (completed, state) => ((ConcurrentDictionary<Task, byte>)state!).TryRemove(completed, out _),
+            _inFlightHandlers,
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default
+        );
     }
 
     private void _ObserveBackgroundHandler(Task task)
@@ -371,7 +415,7 @@ internal sealed class RedisConsumerClient(
                 return true;
 
             case (string stream, string group, string id):
-                delivery = new RedisConsumerDelivery(stream, group, id, []);
+                delivery = new RedisConsumerDelivery(stream, group, id);
                 return true;
 
             default:
@@ -381,7 +425,7 @@ internal sealed class RedisConsumerClient(
     }
 }
 
-internal readonly record struct RedisConsumerDelivery(string Stream, string Group, string Id, NameValueEntry[] Entries);
+internal readonly record struct RedisConsumerDelivery(string Stream, string Group, string Id);
 
 /// <summary>
 /// The settlement token of a group-less read. CommitAsync and RejectAsync ignore it: the read left no pending entry to
@@ -425,4 +469,11 @@ internal static partial class RedisConsumerClientLog
         Message = "Unhandled exception in Redis background message handler for group {GroupId}"
     )]
     public static partial void RedisBackgroundHandlerFailed(this ILogger logger, Exception exception, string groupId);
+
+    [LoggerMessage(
+        EventId = 3008,
+        Level = LogLevel.Warning,
+        Message = "Redis consumer of group {GroupId} shut down before its in-flight handlers finished; their unsettled entries stay pending for another consumer to claim"
+    )]
+    public static partial void RedisShutdownDrainIncomplete(this ILogger logger, Exception exception, string groupId);
 }
