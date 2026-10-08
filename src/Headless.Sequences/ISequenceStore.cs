@@ -60,4 +60,24 @@ public interface ISequenceStore
         long delta,
         CancellationToken cancellationToken = default
     );
+
+    /// <summary>
+    /// Moves the counter at <paramref name="key" /> forward to <paramref name="value" /> inside
+    /// <paramref name="unitOfWork" />'s transaction when the stored value is lower, creating the counter at
+    /// <paramref name="baseline" /> first when it does not exist. The counter's row stays locked until the
+    /// transaction ends.
+    /// </summary>
+    /// <param name="unitOfWork">The unit of work, already accepted by <see cref="ValidateEnlistment" />.</param>
+    /// <param name="key">The counter key.</param>
+    /// <param name="value">The reported value.</param>
+    /// <param name="baseline">The value a new counter starts at: one step below the first value expected.</param>
+    /// <param name="cancellationToken">Token used to cancel the database commands.</param>
+    /// <returns>The value stored before this call, read under the row lock.</returns>
+    ValueTask<long> AdvanceEnlistedAsync(
+        IUnitOfWork unitOfWork,
+        SequenceKey key,
+        long value,
+        long baseline,
+        CancellationToken cancellationToken = default
+    );
 }

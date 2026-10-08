@@ -59,6 +59,7 @@ internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
     private readonly string _setRecoveryPointSql;
     private readonly string _renewSql;
     private readonly string _peekSql;
+    private readonly string _resultSql;
     private readonly string _purgeSql;
 
     // The units this store began for its autonomous calls, tracked only when enlisted admissions are refused.
@@ -199,6 +200,13 @@ internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
         _peekSql = _dialect.Render(
             new SqlClockedStatement(
                 $"SELECT {t.Status}, {t.RetentionUntil}, {now} FROM {t.Table} WHERE {t.TenantId} = @TenantId AND {t.Key} = @IdempotencyKey;"
+            )
+        );
+
+        // The same lock-free read as the peek, returning the stored result with the status it belongs to.
+        _resultSql = _dialect.Render(
+            new SqlClockedStatement(
+                $"SELECT {t.Status}, {t.RetentionUntil}, {now}, {t.Result}, {t.ResultContract} FROM {t.Table} WHERE {t.TenantId} = @TenantId AND {t.Key} = @IdempotencyKey;"
             )
         );
 
@@ -606,6 +614,41 @@ internal sealed class RelationalIdempotencyRecordStore : IIdempotencyRecordStore
                 return status == IdempotencyRecordStatus.Completed
                     ? IdempotencyPeekStatus.Completed
                     : IdempotencyPeekStatus.Pending;
+            },
+            cancellationToken
+        );
+    }
+
+    public ValueTask<IdempotentResult?> GetResultAsync(
+        IdempotencyRecordKey key,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return _RunReadOnlyAsync<IdempotentResult?>(
+            "idempotency.result",
+            async (connection, transaction, ct) =>
+            {
+                await using var command = _Command(_resultSql, connection, transaction, key);
+                await using var reader = await _ReaderAsync(command, ct).ConfigureAwait(false);
+
+                if (!await reader.ReadAsync(ct).ConfigureAwait(false))
+                {
+                    return null;
+                }
+
+                var status = (IdempotencyRecordStatus)reader.GetInt16(0);
+                var retentionUntil = await reader.GetFieldValueAsync<DateTimeOffset>(1, ct).ConfigureAwait(false);
+                var now = await reader.GetFieldValueAsync<DateTimeOffset>(2, ct).ConfigureAwait(false);
+
+                if (status != IdempotencyRecordStatus.Completed || retentionUntil <= now)
+                {
+                    return null;
+                }
+
+                // A completed record always carries its result and contract (a check constraint enforces it).
+                var result = await reader.GetFieldValueAsync<byte[]>(3, ct).ConfigureAwait(false);
+
+                return new IdempotentResult(result, reader.GetString(4));
             },
             cancellationToken
         );

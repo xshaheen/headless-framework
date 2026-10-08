@@ -800,6 +800,42 @@ public abstract class IdempotencyConformanceTests<TFixture>(TFixture fixture) : 
         (await host.Operations.PeekAsync(key, AbortToken)).Should().Be(IdempotencyPeekStatus.Completed);
     }
 
+    public virtual async Task should_read_the_stored_result_only_of_a_completed_record_within_retention_and_tenant_scope()
+    {
+        var key = CreateKey();
+        await using var host = await Fixture.CreateHostAsync(cancellationToken: AbortToken);
+
+        (await host.Operations.GetResultAsync(key, AbortToken)).Should().BeNull("no record exists");
+        (await host.Operations.PeekAsync(key, AbortToken))
+            .Should()
+            .Be(IdempotencyPeekStatus.Absent, "reading a result never starts an operation");
+
+        var admitted = await AdmitAsync(host, key);
+
+        (await host.Operations.GetResultAsync(key, AbortToken)).Should().BeNull("the operation is still pending");
+
+        var stored = Payload("done");
+        await host.Operations.CompleteAsync(admitted, stored, Contract, cancellationToken: AbortToken);
+        var result = await host.Operations.GetResultAsync(key, AbortToken);
+
+        result.Should().NotBeNull();
+        result!.Contract.Should().Be(Contract);
+        result.Payload.ToArray().Should().Equal(stored.ToArray());
+
+        using (host.CurrentTenant.Change("tenant-a"))
+        {
+            (await host.Operations.GetResultAsync(key, AbortToken))
+                .Should()
+                .BeNull("a result read is scoped to the current tenant");
+        }
+
+        await Fixture.ShiftRecordIntoPastAsync(HostKey(key), Retention + TimeSpan.FromHours(1), AbortToken);
+
+        (await host.Operations.GetResultAsync(key, AbortToken))
+            .Should()
+            .BeNull("a record past its retention no longer replays");
+    }
+
     #endregion
 
     #region Purge

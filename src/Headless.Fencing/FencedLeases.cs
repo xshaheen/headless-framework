@@ -12,20 +12,42 @@ namespace Headless.Fencing;
 internal sealed class FencedLeases(LeaseRequestResolver resolver, ILeaseStore store, LeaseTakeoverAlerts alerts)
     : IFencedLeases
 {
-    public async ValueTask<LeaseGrantResult> GrantAsync(
+    public ValueTask<LeaseGrantResult> GrantAsync(
         string kind,
         string resource,
         TimeSpan duration,
         CancellationToken cancellationToken = default
     )
     {
+        return GrantAsync(kind, resource, duration, LeaseTakeover.Allowed, cancellationToken);
+    }
+
+    public async ValueTask<LeaseGrantResult> GrantAsync(
+        string kind,
+        string resource,
+        TimeSpan duration,
+        LeaseTakeover takeover,
+        CancellationToken cancellationToken = default
+    )
+    {
         var key = resolver.Resolve(kind, resource);
         duration = resolver.ValidateDuration(duration);
+        Argument.IsInEnum(takeover);
 
-        var result = await store.GrantAsync(key, duration, cancellationToken).ConfigureAwait(false);
+        var result = await store.GrantAsync(key, duration, takeover, cancellationToken).ConfigureAwait(false);
         alerts.OnGranted(result);
 
         return result;
+    }
+
+    public async ValueTask<LeaseFenceStatus> GetStatusAsync(
+        FencedLease lease,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var key = LeaseRequestResolver.ResolveLease(lease);
+
+        return await store.GetStatusAsync(key, lease.Generation, cancellationToken).ConfigureAwait(false);
     }
 
     public ValueTask<LeaseRenewalResult> RenewAsync(

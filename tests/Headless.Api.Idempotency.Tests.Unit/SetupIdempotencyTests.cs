@@ -28,6 +28,20 @@ public sealed class SetupIdempotencyTests : TestBase
     }
 
     [Fact]
+    public void should_register_the_scoped_lookup_for_reconciliation_endpoints()
+    {
+        var services = new ServiceCollection();
+
+        services.AddHeadlessHttpIdempotency(_ => { });
+
+        services
+            .Should()
+            .ContainSingle(s => s.ServiceType == typeof(IIdempotencyLookup))
+            .Which.Lifetime.Should()
+            .Be(ServiceLifetime.Scoped);
+    }
+
+    [Fact]
     public async Task should_fail_host_start_when_durable_store_is_not_registered()
     {
         // given

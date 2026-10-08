@@ -26,6 +26,13 @@ internal sealed class SequenceRequestResolver(ICurrentTenant currentTenant, IOpt
         return (new SequenceKey(tenantId, name, storedPartition), options.CurrentValue.GetPolicy(name));
     }
 
+    public SequencePolicy Policy(string name)
+    {
+        Argument.IsNotNullOrWhiteSpace(name);
+
+        return options.CurrentValue.GetPolicy(name);
+    }
+
     private static string _NormalizePartition(string? partition)
     {
         if (string.IsNullOrEmpty(partition))

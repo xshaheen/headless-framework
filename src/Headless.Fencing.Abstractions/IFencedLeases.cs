@@ -43,6 +43,56 @@ public interface IFencedLeases
         CancellationToken cancellationToken = default
     );
 
+    /// <summary>
+    /// Grants the lease on <paramref name="resource" /> for <paramref name="duration" />, choosing what happens when
+    /// the last attempt expired without ending.
+    /// </summary>
+    /// <param name="kind">The lease kind.</param>
+    /// <param name="resource">The leased resource within the kind.</param>
+    /// <param name="duration">How long the lease lives unless renewed; bounded by the configured limits.</param>
+    /// <param name="takeover">
+    /// Whether an expired attempt is taken over at once, or kept until a sweep abandons it. Pass
+    /// <see cref="LeaseTakeover.AfterSweep" /> for work that may already have had an external effect.
+    /// </param>
+    /// <param name="cancellationToken">Token used to cancel the database call.</param>
+    /// <returns>
+    /// The same results as <see cref="GrantAsync(string, string, TimeSpan, CancellationToken)" />, except that with
+    /// <see cref="LeaseTakeover.AfterSweep" /> an expired attempt yields <see cref="LeaseGrantStatus.Expired" /> with
+    /// its generation and expiry instead of a takeover.
+    /// </returns>
+    /// <exception cref="ArgumentException">The kind, resource, or current tenant id is invalid.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="duration" /> is outside the configured bounds.</exception>
+    /// <exception cref="System.ComponentModel.InvalidEnumArgumentException">
+    /// <paramref name="takeover" /> is not a defined value.
+    /// </exception>
+    ValueTask<LeaseGrantResult> GrantAsync(
+        string kind,
+        string resource,
+        TimeSpan duration,
+        LeaseTakeover takeover,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
+    /// Reads whether <paramref name="lease" /> is still the current, live attempt, by the database clock, without
+    /// locking or changing anything.
+    /// </summary>
+    /// <remarks>
+    /// The answer can change as soon as it is returned, so use it to drop late work early (a result or event from an
+    /// attempt that was already replaced), never to guard a write. A write that must only land while the attempt
+    /// still holds the lease runs <c>unit.Leases.FenceAsync</c> in the writing unit of work instead.
+    /// </remarks>
+    /// <param name="lease">The lease to check.</param>
+    /// <param name="cancellationToken">Token used to cancel the database call.</param>
+    /// <returns>
+    /// <see cref="LeaseFenceStatus.Current" /> while the attempt holds a live lease, otherwise why it no longer does:
+    /// <see cref="LeaseFenceStatus.Expired" />, <see cref="LeaseFenceStatus.Stale" /> (a later generation exists or the
+    /// row was purged), <see cref="LeaseFenceStatus.Settled" />, <see cref="LeaseFenceStatus.Released" />, or
+    /// <see cref="LeaseFenceStatus.Abandoned" />.
+    /// </returns>
+    /// <exception cref="ArgumentException">The lease's identity or generation is invalid.</exception>
+    ValueTask<LeaseFenceStatus> GetStatusAsync(FencedLease lease, CancellationToken cancellationToken = default);
+
     /// <summary>Moves a live lease's expiry to <paramref name="duration" /> from now, by the database clock.</summary>
     /// <remarks>Any progress recorded by an earlier renewal is kept.</remarks>
     /// <param name="lease">The lease to renew.</param>
@@ -112,7 +162,8 @@ public interface IFencedLeases
     /// (<c>unit.Outbox</c>, <c>unit.Jobs</c>, or raw ADO.NET or Dapper on its connection); an EF Core context cannot
     /// join a unit that owns a raw connection. A handler that throws rolls back only its own lease, which stays
     /// expired and is offered again by a later call, never again by this one. The sweep never re-runs the work
-    /// itself, and concurrent sweepers hand each lease to exactly one committed handler.
+    /// itself, and concurrent sweepers hand each lease to exactly one committed handler. To claim inside a unit of
+    /// work you begin, such as one over an EF Core context, call <c>unit.Leases.ClaimExpiredAsync</c> instead.
     /// </remarks>
     /// <param name="kind">The lease kind to sweep.</param>
     /// <param name="handler">Routes one abandoned attempt, writing through the unit it is given.</param>

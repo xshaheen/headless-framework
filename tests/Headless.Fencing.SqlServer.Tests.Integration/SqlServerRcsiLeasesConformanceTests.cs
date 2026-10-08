@@ -197,4 +197,40 @@ public sealed class SqlServerRcsiLeasesConformanceTests(SqlServerRcsiFencingFixt
     {
         return base.should_count_consecutive_takeovers_and_reset_on_settle_or_release();
     }
+
+    [Fact]
+    public override Task should_report_an_expired_attempt_and_change_nothing_when_the_grant_waits_for_the_sweep()
+    {
+        return base.should_report_an_expired_attempt_and_change_nothing_when_the_grant_waits_for_the_sweep();
+    }
+
+    [Fact]
+    public override Task should_refuse_an_enlisted_grant_over_an_expired_attempt_when_it_waits_for_the_sweep()
+    {
+        return base.should_refuse_an_enlisted_grant_over_an_expired_attempt_when_it_waits_for_the_sweep();
+    }
+
+    [Fact]
+    public override Task should_grant_at_once_when_waiting_for_the_sweep_and_no_attempt_is_active()
+    {
+        return base.should_grant_at_once_when_waiting_for_the_sweep_and_no_attempt_is_active();
+    }
+
+    [Fact]
+    public override Task should_report_each_lease_state_by_the_database_clock_without_changing_it()
+    {
+        return base.should_report_each_lease_state_by_the_database_clock_without_changing_it();
+    }
+
+    [Fact]
+    public override Task should_claim_expired_leases_inside_the_callers_unit_and_keep_them_on_a_rollback()
+    {
+        return base.should_claim_expired_leases_inside_the_callers_unit_and_keep_them_on_a_rollback();
+    }
+
+    [Fact]
+    public override Task should_skip_a_lease_another_unit_claimed_when_claiming_inside_a_unit()
+    {
+        return base.should_skip_a_lease_another_unit_claimed_when_claiming_inside_a_unit();
+    }
 }

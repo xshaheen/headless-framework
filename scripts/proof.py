@@ -10,7 +10,8 @@ machines and summary.md for a pull request body. Standard library only.
 Commands:
   run        Run one stage command, tee its output to <dir>/<name>.log, record its result, and
              exit with the command's status.
-  summarize  Write <dir>/summary.json and <dir>/summary.md from what the stages left in <dir>.
+  summarize  Write <dir>/summary.json and <dir>/summary.md from what the stages left in <dir>. With
+             --coverage-gate, also hold the change to the coverage floors and fail the bundle below them.
   failed     Print the test projects whose modules failed in a bundle (the latest verify or test
              bundle by default), one per line, and name the other failed stages on stderr.
 """
@@ -167,12 +168,17 @@ def test_modules(directory: Path) -> list[TestModule]:
     return modules
 
 
-def coverage(directory: Path, assemblies: set[str]) -> list[dict[str, object]]:
+def merged_coverage(directory: Path) -> ET.Element | None:
+    # Parsed once per summary: on a whole-solution integration run the merged report is tens of megabytes.
     merged = directory / "coverage" / "merged.cobertura.xml"
-    if not merged.exists():
+    return ET.parse(merged).getroot() if merged.exists() else None
+
+
+def coverage(report: ET.Element | None, assemblies: set[str]) -> list[dict[str, object]]:
+    if report is None:
         return []
     rows: list[dict[str, object]] = []
-    for package in ET.parse(merged).getroot().iterfind(".//package"):
+    for package in report.iterfind(".//package"):
         name = package.get("name", "")
         if assemblies and name not in assemblies:
             continue
@@ -190,7 +196,233 @@ def git(*args: str) -> str:
     return subprocess.run(["git", *args], cwd=REPO_ROOT, capture_output=True, text=True, check=False).stdout.strip()
 
 
-def summarize(directory: Path) -> int:
+DEFAULT_FLOORS = {"unit": 60.0, "line": 80.0, "branch": 70.0}
+TARGET_BY_SUFFIX = {"verify": "make verify-affected", "test": "make test-affected", "integration": "make test-affected-integration", "build": "make build-affected"}
+HUNK = re.compile(r"^@@ -\d+(?:,\d+)? \+(?P<start>\d+)(?:,(?P<count>\d+))? @@")
+CONDITION = re.compile(r"\((?P<covered>\d+)/(?P<total>\d+)\)")
+# The coverage settings exclude these assemblies (test helpers shipped as packages), so no run ever measures them.
+UNMEASURED_ASSEMBLY = re.compile(r"\.Testing(\.[^.]+)?$")
+
+
+@dataclass
+class LineHit:
+    covered: bool = False
+    branches_covered: int = 0
+    branches: int = 0
+
+
+def changed_source_lines(base: str | None) -> dict[str, set[int]]:
+    """Lines this side adds or changes in src/ C# files, including uncommitted and untracked work.
+
+    Diffing the merge base rather than BASE itself keeps commits upstream has, and this branch does not, out of the set.
+    """
+    if not base:
+        return {}
+    merge_base = git("merge-base", "HEAD", base)
+    if not merge_base:
+        return {}
+    changed: dict[str, set[int]] = {}
+    current: str | None = None
+    for line in git("diff", "--unified=0", "--no-color", "--no-ext-diff", "--diff-filter=AMR", merge_base, "--", "src/*.cs").splitlines():
+        if line.startswith("+++ "):
+            target = line[4:]
+            current = target[2:] if target.startswith("b/") else None
+            continue
+        match = HUNK.match(line)
+        if match and current:
+            start, count = int(match["start"]), int(match["count"] or 1)
+            changed.setdefault(current, set()).update(range(start, start + count))
+    for path in git("ls-files", "--others", "--exclude-standard", "--", "src/*.cs").splitlines():
+        line_count = len((REPO_ROOT / path).read_text(encoding="utf-8", errors="replace").splitlines())
+        changed[path] = set(range(1, line_count + 1))
+    return {path: lines for path, lines in changed.items() if lines}
+
+
+def line_hits(report: ET.Element | None) -> tuple[dict[str, dict[int, LineHit]], dict[str, str]]:
+    """Per-file line hits from a merged Cobertura report, plus each file's assembly.
+
+    A file can appear in several classes (partial and nested types), so hits merge across them: a line is covered when
+    any class covered it, and its branch count is the best any class reported.
+    """
+    hits: dict[str, dict[int, LineHit]] = {}
+    assemblies: dict[str, str] = {}
+    if report is None:
+        return hits, assemblies
+    for package in report.iterfind(".//package"):
+        assembly = package.get("name", "")
+        for cls in package.iterfind("classes/class"):
+            file = relative(cls.get("filename", "").replace("\\", "/"))
+            if file.startswith("/"):
+                # A checkout reached through a symlink (macOS /var is /private/var) reports one form of the path and
+                # resolves to the other.
+                file = relative(Path(file).resolve().as_posix())
+            assemblies.setdefault(file, assembly)
+            by_line = hits.setdefault(file, {})
+            for element in cls.iterfind("lines/line"):
+                hit = by_line.setdefault(int(element.get("number", "0")), LineHit())
+                hit.covered = hit.covered or int(element.get("hits", "0")) > 0
+                condition = CONDITION.search(element.get("condition-coverage", ""))
+                if element.get("branch", "").lower() == "true" and condition:
+                    hit.branches_covered = max(hit.branches_covered, int(condition["covered"]))
+                    hit.branches = max(hit.branches, int(condition["total"]))
+    return hits, assemblies
+
+
+def has_integration_project(assembly: str) -> bool:
+    # A package that talks to a broker, a database, or an HTTP host owns a tests/<Package>.Tests.Integration project;
+    # that is the repository's marker for "needs an external dependency", so its coverage counts integration runs.
+    return (REPO_ROOT / "tests" / f"{assembly}.Tests.Integration").is_dir()
+
+
+def percent(covered: int, total: int) -> float:
+    return round(covered * 100 / total, 1) if total else 100.0
+
+
+def compress(lines: list[int]) -> str:
+    """Render sorted line numbers as ranges, e.g. 3-5, 9."""
+    ranges: list[str] = []
+    start = previous = lines[0]
+    for number in lines[1:] + [-1]:
+        if number == previous + 1:
+            previous = number
+            continue
+        ranges.append(f"{start}-{previous}" if previous != start else str(start))
+        start = previous = number
+    return ", ".join(ranges)
+
+
+def coverage_gate(
+    report: ET.Element | None,
+    scope: str,
+    base: str | None,
+    changed_assemblies: set[str],
+    coverage_rows: list[dict[str, object]],
+    floors: dict[str, float],
+    tests_skipped: bool,
+    strict: bool = False,
+) -> tuple[Stage | None, dict[str, object] | None]:
+    """Hold the change to the coverage floors.
+
+    The floors are comply-or-explain: a miss is reported as `warn` and leaves the proof passing, so the author either
+    adds the tests or explains the miss in the PR. `strict` turns a miss into a failed proof instead.
+
+    `unit` (verify-affected) checks what unit tests alone can reach: the unit floor of every changed package without an
+    integration project, and the changed lines in those packages. `integration` (test-affected-integration) checks the
+    changed lines of packages that own an integration project against merged unit and integration coverage. A package
+    with an integration project is never held to a unit-only figure: its real behavior sits behind the broker or
+    database its integration suite starts.
+    """
+    if scope == "none":
+        return None, None
+    if tests_skipped:
+        stage = Stage("coverage-gate", [], -1, 0.0, "", "a test stage did not run, so coverage is incomplete")
+        return stage, {"scope": scope, "result": "skipped", "reasons": [stage.note]}
+
+    hits, file_assembly = line_hits(report)
+    measured = {str(row["assembly"]): float(row["line"]) for row in coverage_rows}
+    reasons: list[str] = []
+    deferred: list[str] = []
+    changed_lines = changed_source_lines(base)
+
+    def assembly_of(path: str) -> str:
+        parts = Path(path).parts
+        return file_assembly.get(path) or (parts[1] if len(parts) > 2 else "")
+
+    # The unit floor binds the packages whose source this branch edits. A project selected only because a build-wide
+    # file changed answers for nothing it did, so it is not held to a floor here.
+    edited = {assembly_of(path) for path in changed_lines} & changed_assemblies
+
+    unit_floor: list[dict[str, object]] = []
+    if scope == "unit":
+        for assembly in sorted(edited):
+            if has_integration_project(assembly) or UNMEASURED_ASSEMBLY.search(assembly):
+                continue
+            line = measured.get(assembly)
+            ok = line is not None and line >= floors["unit"]
+            unit_floor.append({"assembly": assembly, "line": line, "floor": floors["unit"], "pass": ok})
+            if not ok:
+                reasons.append(
+                    f"{assembly}: unit line coverage {line}% is under the {floors['unit']:g}% floor"
+                    if line is not None
+                    else f"{assembly}: no unit test loads it, so its unit coverage is 0%"
+                )
+
+    by_assembly: dict[str, dict[str, int]] = {}
+    uncovered: list[str] = []
+    unmeasured_files: list[str] = []
+    for path, lines in sorted(changed_lines.items()):
+        assembly = assembly_of(path)
+        if UNMEASURED_ASSEMBLY.search(assembly):
+            continue
+        if has_integration_project(assembly) != (scope == "integration"):
+            # Each gate judges its own half: verify-affected the packages unit tests can reach, the integration gate
+            # the packages that own an integration project.
+            if scope == "unit" and assembly not in deferred:
+                deferred.append(assembly)
+            continue
+        file_hits = hits.get(path)
+        if file_hits is None:
+            # Coverage lists only executable lines; a file it never saw has none measured, such as an interface or a
+            # file in a package no test loads (the unit floor reports the latter).
+            unmeasured_files.append(path)
+            continue
+        totals = by_assembly.setdefault(assembly, {"lines": 0, "covered": 0, "branches": 0, "branches_covered": 0})
+        missed: list[int] = []
+        for number in sorted(lines):
+            hit = file_hits.get(number)
+            if hit is None:
+                continue
+            totals["lines"] += 1
+            totals["covered"] += int(hit.covered)
+            totals["branches"] += hit.branches
+            totals["branches_covered"] += hit.branches_covered
+            if not hit.covered:
+                missed.append(number)
+        if missed:
+            uncovered.append(f"{path}: {compress(missed)}")
+
+    lines_total = sum(t["lines"] for t in by_assembly.values())
+    lines_covered = sum(t["covered"] for t in by_assembly.values())
+    branches_total = sum(t["branches"] for t in by_assembly.values())
+    branches_covered = sum(t["branches_covered"] for t in by_assembly.values())
+    line_rate = percent(lines_covered, lines_total)
+    branch_rate = percent(branches_covered, branches_total)
+    if line_rate < floors["line"]:
+        reasons.append(f"changed-line coverage {line_rate}% ({lines_covered}/{lines_total}) is under the {floors['line']:g}% floor")
+    if branch_rate < floors["branch"]:
+        reasons.append(
+            f"changed-branch coverage {branch_rate}% ({branches_covered}/{branches_total}) is under the {floors['branch']:g}% floor"
+        )
+
+    report: dict[str, object] = {
+        "scope": scope,
+        "result": ("fail" if strict else "warn") if reasons else "pass",
+        "reasons": reasons,
+        "floors": floors,
+        "changed_lines": {"line": line_rate, "covered": lines_covered, "total": lines_total},
+        "changed_branches": {"branch": branch_rate, "covered": branches_covered, "total": branches_total},
+        "by_assembly": [
+            {
+                "assembly": name,
+                "line": percent(t["covered"], t["lines"]),
+                "branch": percent(t["branches_covered"], t["branches"]),
+                "lines": t["lines"],
+            }
+            for name, t in sorted(by_assembly.items())
+            if t["lines"]
+        ],
+        "unit_floor": unit_floor,
+        "uncovered": uncovered,
+        "unmeasured_files": unmeasured_files,
+        "deferred_to_integration": deferred,
+    }
+    stage = Stage("coverage-gate", [], 3 if reasons and strict else 0, 0.0, "", "; ".join(reasons))
+    return stage, report
+
+
+def summarize(
+    directory: Path, gate_scope: str = "none", floors: dict[str, float] | None = None, strict: bool = False
+) -> int:
     stages = read_stages(directory)
     affected_path = directory / "affected.json"
     affected = json.loads(affected_path.read_text(encoding="utf-8")) if affected_path.exists() else {}
@@ -199,12 +431,26 @@ def summarize(directory: Path) -> int:
     diagnostics = compiler_diagnostics(directory)
     findings = analyzer_findings(directory, [str(Path(p).parent) + "/" for p in affected.get("changed_projects", [])])
     modules = test_modules(directory)
-    coverage_rows = coverage(directory, changed_assemblies)
+    report = merged_coverage(directory)
+    coverage_rows = coverage(report, changed_assemblies)
     # `dotnet format --verify-no-changes` exits 2 for hidden-severity findings too, which the gate
     # ignores, so the analyzers stage passes or fails on its visible findings instead.
     for stage in stages:
         if stage.name == "analyzers" and stage.exit_code in (0, 2):
             stage.exit_code = 2 if findings else 0
+    tests_skipped = any(stage.name in ("unit-tests", "integration-tests") and stage.exit_code < 0 for stage in stages)
+    gate_stage, gate = coverage_gate(
+        report,
+        gate_scope,
+        affected.get("base"),
+        changed_assemblies,
+        coverage_rows,
+        floors or DEFAULT_FLOORS,
+        tests_skipped,
+        strict,
+    )
+    if gate_stage is not None:
+        stages.append(gate_stage)
     failed_stages = [stage.name for stage in stages if stage.exit_code > 0]
 
     summary = {
@@ -224,6 +470,9 @@ def summarize(directory: Path) -> int:
         "compiler_diagnostics": diagnostics,
         "analyzer_findings": findings,
         "coverage": coverage_rows,
+        "coverage_gate": gate,
+        "target": TARGET_BY_SUFFIX.get(directory.name.rsplit("-", 1)[-1], "make verify-affected"),
+        "integration_ran": any(stage.name == "integration-tests" and stage.exit_code >= 0 for stage in stages),
     }
     (directory / "summary.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
     (directory / "summary.md").write_text(render_markdown(summary), encoding="utf-8")
@@ -237,7 +486,7 @@ def render_markdown(summary: dict) -> str:
     # totals visible while the tables fold away; a failing bundle stays open so the failure is seen.
     verdict = summary["verdict"].upper()
     lines = [
-        f"<details{' open' if verdict == 'FAIL' else ''}><summary><strong>make verify-affected: {verdict}</strong>. "
+        f"<details{' open' if verdict == 'FAIL' else ''}><summary><strong>{summary.get('target', 'make verify-affected')}: {verdict}</strong>. "
         f"Tests: {tests['passed']} passed, {tests['failed']} failed, {tests['skipped']} skipped. "
         f"Compiler diagnostics: {len(summary['compiler_diagnostics'])}. "
         f"Analyzer findings: {len(summary['analyzer_findings'])}.</summary>",
@@ -257,7 +506,7 @@ def render_markdown(summary: dict) -> str:
         "",
         f"Changed projects: {len(affected['changed_projects'])}. "
         f"Unit-test projects: {len(affected['unit_tests'])}. "
-        f"Integration-test projects (not run here): {len(affected['integration_tests'])}.",
+        f"Integration-test projects{'' if summary.get('integration_ran') else ' (not run here)'}: {len(affected['integration_tests'])}.",
     ]
     if affected["global_triggers"]:
         lines.append(f"Build-wide files changed: {', '.join(f'`{f}`' for f in affected['global_triggers'])}.")
@@ -285,10 +534,51 @@ def render_markdown(summary: dict) -> str:
             lines.append(f"- ... {len(items) - MAX_LISTED} more in summary.json")
 
     if summary["coverage"]:
-        lines += ["", "### Coverage of changed assemblies", "", "| Assembly | Line % | Branch % |", "| --- | --- | --- |"]
+        source = "unit and integration tests" if summary.get("integration_ran") else "unit tests"
+        lines += ["", f"### Coverage of changed assemblies ({source})", "", "| Assembly | Line % | Branch % |", "| --- | --- | --- |"]
         lines += [f"| {row['assembly']} | {row['line']} | {row['branch']} |" for row in summary["coverage"]]
+    lines += render_gate(summary.get("coverage_gate"))
     lines += ["", "</details>"]
     return "\n".join(lines) + "\n"
+
+
+def render_gate(gate: dict | None) -> list[str]:
+    if not gate:
+        return []
+    scope = (
+        "packages without an integration project, unit tests"
+        if gate["scope"] == "unit"
+        else "packages with an integration project, unit and integration tests merged"
+    )
+    lines = ["", f"### Coverage gate: {gate['result']} ({scope})", ""]
+    if gate["result"] == "skipped":
+        return lines + [f"- {reason}" for reason in gate["reasons"]]
+    floors = gate["floors"]
+    changed, branches = gate["changed_lines"], gate["changed_branches"]
+    lines.append(
+        f"Changed lines: {changed['line']}% ({changed['covered']}/{changed['total']}, floor {floors['line']:g}%). "
+        f"Changed branches: {branches['branch']}% ({branches['covered']}/{branches['total']}, floor {floors['branch']:g}%)."
+    )
+    if gate["by_assembly"]:
+        lines += ["", "| Assembly | Changed lines | Line % | Branch % |", "| --- | --- | --- | --- |"]
+        lines += [f"| {row['assembly']} | {row['lines']} | {row['line']} | {row['branch']} |" for row in gate["by_assembly"]]
+    if gate["unit_floor"]:
+        lines += ["", f"Unit floor ({floors['unit']:g}% line, packages without an integration project):"]
+        lines += [f"- {row['assembly']}: {row['line'] if row['line'] is not None else 'not loaded'}% {'pass' if row['pass'] else 'FAIL'}" for row in gate["unit_floor"]]
+    if gate["deferred_to_integration"]:
+        lines += ["", "Held to the changed-line floor by `make test-affected-integration`, not here: " + ", ".join(f"`{name}`" for name in gate["deferred_to_integration"]) + "."]
+    for reason in gate["reasons"]:
+        lines.append(f"- **{reason}**")
+    if gate["result"] == "warn":
+        lines.append(
+            "- Add the tests, or explain each miss under Coverage below floor in the PR's Verification section "
+            "(AGENTS.md: glue code, integration-only behavior, an unreachable branch, or test cost above the risk)."
+        )
+    for entry in gate["uncovered"][:MAX_LISTED]:
+        lines.append(f"- uncovered: {entry}")
+    if len(gate["uncovered"]) > MAX_LISTED:
+        lines.append(f"- ... {len(gate['uncovered']) - MAX_LISTED} more files in summary.json")
+    return lines
 
 
 # What to run to repeat a failed non-test stage on its own; the module rerun covers only unit-tests.
@@ -298,6 +588,7 @@ STAGE_RERUN = {
     "build": "make build-affected",
     "analyzers": "make quality-analyzers-affected",
     "coverage-merge": "make verify-affected",
+    "coverage-gate": "add tests for the uncovered changed lines summary.md lists, then make verify-affected (or make test-affected-integration for a package with an integration project)",
 }
 
 
@@ -361,6 +652,21 @@ def main() -> int:
     skip.add_argument("--reason", required=True)
     summary = commands.add_parser("summarize", help="write summary.json and summary.md")
     summary.add_argument("--dir", required=True, type=Path)
+    summary.add_argument(
+        "--coverage-gate",
+        choices=("none", "unit", "integration"),
+        default="none",
+        help="hold the change to the coverage floors: packages without an integration project on unit tests (unit), or packages with one on merged unit and integration coverage (integration)",
+    )
+    summary.add_argument("--unit-floor", type=float, default=DEFAULT_FLOORS["unit"], help="assembly line %% from unit tests")
+    summary.add_argument("--line-floor", type=float, default=DEFAULT_FLOORS["line"], help="changed-line coverage %%")
+    summary.add_argument("--branch-floor", type=float, default=DEFAULT_FLOORS["branch"], help="changed-branch coverage %%")
+    summary.add_argument(
+        "--coverage-gate-mode",
+        choices=("warn", "fail"),
+        default="warn",
+        help="warn: report a miss and keep the proof passing (comply or explain); fail: a miss fails the proof",
+    )
     failed = commands.add_parser("failed", help="print the test projects that failed in a bundle")
     failed.add_argument("--dir", type=Path, help="bundle to read (default: the latest -verify or -test bundle under --root)")
     failed.add_argument("--root", type=Path, default=REPO_ROOT / "artifacts" / "proof", help="where the bundles live")
@@ -375,7 +681,8 @@ def main() -> int:
         return skip_stage(args.dir, args.name, args.reason)
     if args.command == "failed":
         return failed_projects(args.dir, args.root)
-    return summarize(args.dir)
+    floors = {"unit": args.unit_floor, "line": args.line_floor, "branch": args.branch_floor}
+    return summarize(args.dir, args.coverage_gate, floors, args.coverage_gate_mode == "fail")
 
 
 if __name__ == "__main__":

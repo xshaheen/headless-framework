@@ -55,11 +55,13 @@ public interface ILeaseStore
     /// <summary>Grants the lease on the provider's own connection and commits before returning.</summary>
     /// <param name="key">The lease key.</param>
     /// <param name="duration">The lease's time to live from the database's clock.</param>
+    /// <param name="takeover">Whether an expired active lease is taken over or reported as expired.</param>
     /// <param name="cancellationToken">Token used to cancel the database call.</param>
-    /// <returns>The grant's result; an expired active lease is taken over.</returns>
+    /// <returns>The grant's result.</returns>
     ValueTask<LeaseGrantResult> GrantAsync(
         LeaseKey key,
         TimeSpan duration,
+        LeaseTakeover takeover,
         CancellationToken cancellationToken = default
     );
 
@@ -70,12 +72,14 @@ public interface ILeaseStore
     /// <param name="unitOfWork">The unit of work, already accepted by <see cref="ValidateEnlistment" />.</param>
     /// <param name="key">The lease key.</param>
     /// <param name="duration">The lease's time to live from the database's clock.</param>
+    /// <param name="takeover">Whether an expired active lease is taken over or reported as expired.</param>
     /// <param name="cancellationToken">Token used to cancel the database command.</param>
-    /// <returns>The grant's result; an expired active lease is taken over.</returns>
+    /// <returns>The grant's result.</returns>
     ValueTask<LeaseGrantResult> GrantEnlistedAsync(
         IUnitOfWork unitOfWork,
         LeaseKey key,
         TimeSpan duration,
+        LeaseTakeover takeover,
         CancellationToken cancellationToken = default
     );
 
@@ -187,11 +191,28 @@ public interface ILeaseStore
     );
 
     /// <summary>
+    /// Reads, on the provider's own connection and without a row lock, whether <paramref name="generation" /> is
+    /// current, active, and unexpired by the database clock.
+    /// </summary>
+    /// <param name="key">The lease key.</param>
+    /// <param name="generation">The caller's generation.</param>
+    /// <param name="cancellationToken">Token used to cancel the database call.</param>
+    /// <returns>What the read found; an absent row is <see cref="LeaseFenceStatus.Stale" />.</returns>
+    ValueTask<LeaseFenceStatus> GetStatusAsync(
+        LeaseKey key,
+        long generation,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
     /// Claims one expired, active lease of <paramref name="kind" /> inside <paramref name="unitOfWork" />,
     /// skipping rows another transaction has locked, and marks it abandoned in the same statement. Leases are visited
     /// in <c>(expires_at, tenant_id, resource)</c> order, strictly after <paramref name="after" />.
     /// </summary>
-    /// <param name="unitOfWork">An owned unit from <see cref="BeginOwnedUnitAsync" />.</param>
+    /// <param name="unitOfWork">
+    /// An owned unit from <see cref="BeginOwnedUnitAsync" />, or a caller's unit already accepted by
+    /// <see cref="ValidateEnlistment" />.
+    /// </param>
     /// <param name="kind">The lease kind to sweep.</param>
     /// <param name="after">
     /// The last lease this sweep call visited, or <see langword="null" /> to start from the earliest expiry. Its

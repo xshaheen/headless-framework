@@ -282,6 +282,23 @@ internal sealed class InMemoryIdempotencyRecordStore(
         );
     }
 
+    public ValueTask<IdempotentResult?> GetResultAsync(
+        IdempotencyRecordKey key,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // The same lock-free committed snapshot PeekAsync reads.
+        var result =
+            Table.Read(key) is { Status: IdempotencyRecordStatus.Completed } record
+            && record.RetentionUntil > timeProvider.GetUtcNow()
+                ? record.Result
+                : null;
+
+        return ValueTask.FromResult(result);
+    }
+
     #endregion
 
     #region Purge

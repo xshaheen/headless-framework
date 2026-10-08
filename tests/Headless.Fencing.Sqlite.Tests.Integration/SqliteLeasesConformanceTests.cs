@@ -4,6 +4,9 @@ using System.Collections.Concurrent;
 
 namespace Tests;
 
+// Omitted scenario: should_skip_a_lease_another_unit_claimed_when_claiming_inside_a_unit keeps two claiming units
+// open at once, which SQLite's single write transaction per database file cannot do; the second unit's begin waits for
+// the first unit to end.
 [Collection<SqliteFencingFixture>]
 public sealed class SqliteLeasesConformanceTests(SqliteFencingFixture fixture)
     : LeasesConformanceTests<SqliteFencingFixture>(fixture)
@@ -226,5 +229,35 @@ public sealed class SqliteLeasesConformanceTests(SqliteFencingFixture fixture)
     public override Task should_hand_the_sweep_the_progress_and_count_an_abandoned_lease_once()
     {
         return base.should_hand_the_sweep_the_progress_and_count_an_abandoned_lease_once();
+    }
+
+    [Fact]
+    public override Task should_report_an_expired_attempt_and_change_nothing_when_the_grant_waits_for_the_sweep()
+    {
+        return base.should_report_an_expired_attempt_and_change_nothing_when_the_grant_waits_for_the_sweep();
+    }
+
+    [Fact]
+    public override Task should_refuse_an_enlisted_grant_over_an_expired_attempt_when_it_waits_for_the_sweep()
+    {
+        return base.should_refuse_an_enlisted_grant_over_an_expired_attempt_when_it_waits_for_the_sweep();
+    }
+
+    [Fact]
+    public override Task should_grant_at_once_when_waiting_for_the_sweep_and_no_attempt_is_active()
+    {
+        return base.should_grant_at_once_when_waiting_for_the_sweep_and_no_attempt_is_active();
+    }
+
+    [Fact]
+    public override Task should_report_each_lease_state_by_the_database_clock_without_changing_it()
+    {
+        return base.should_report_each_lease_state_by_the_database_clock_without_changing_it();
+    }
+
+    [Fact]
+    public override Task should_claim_expired_leases_inside_the_callers_unit_and_keep_them_on_a_rollback()
+    {
+        return base.should_claim_expired_leases_inside_the_callers_unit_and_keep_them_on_a_rollback();
     }
 }

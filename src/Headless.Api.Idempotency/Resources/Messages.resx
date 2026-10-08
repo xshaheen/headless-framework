@@ -34,4 +34,7 @@
   <data name="g:idempotency_key_malformed" xml:space="preserve">
     <value>Idempotency-Key header is malformed (length over 255, contains control characters, or multi-valued).</value>
   </data>
+  <data name="g:idempotency_key_required" xml:space="preserve">
+    <value>This endpoint requires an Idempotency-Key header.</value>
+  </data>
 </root>

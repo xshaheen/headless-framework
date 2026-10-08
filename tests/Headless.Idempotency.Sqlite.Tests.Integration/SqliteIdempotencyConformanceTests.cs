@@ -91,6 +91,12 @@ public sealed class SqliteIdempotencyConformanceTests(SqliteIdempotencyFixture f
     }
 
     [Fact]
+    public override Task should_read_the_stored_result_only_of_a_completed_record_within_retention_and_tenant_scope()
+    {
+        return base.should_read_the_stored_result_only_of_a_completed_record_within_retention_and_tenant_scope();
+    }
+
+    [Fact]
     public override Task should_peek_without_waiting_on_an_uncommitted_write_to_the_record()
     {
         return base.should_peek_without_waiting_on_an_uncommitted_write_to_the_record();

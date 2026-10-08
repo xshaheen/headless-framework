@@ -843,15 +843,17 @@ Stripe-style HTTP idempotency middleware for ASP.NET Core. Admits each request t
 ### API and behavior
 
 - Byte-equivalent replay of captured responses.
-- Two in-flight strategies: `InFlightStrategy.Reject` (default: 409 `g:idempotency_in_flight`) and `InFlightStrategy.WaitAndReplay` (polls the durable store with a doubling backoff, capped at 1 second per poll, until `InFlightLockTimeout` elapses: 409 `g:idempotency_in_flight_timeout`).
+- Two in-flight strategies: `InFlightStrategy.Reject` (default: 409 `g:idempotency_in_flight`) and `InFlightStrategy.WaitAndReplay` (polls the durable store with a doubling backoff, capped at 1 second per poll, until `InFlightLockTimeout` elapses: 409 `g:idempotency_in_flight_timeout`). Both 409s carry `Retry-After`: the seconds, rounded up, until the holding attempt's lease runs out, which is when a retry can be admitted as a takeover.
+- Required keys per endpoint: `.RequireIdempotencyKey()` (or `KeyRequired = true`) refuses a request the middleware would handle that carries no key with 400 `g:idempotency_key_required`, so a money-moving endpoint never runs without duplicate protection. Off by default.
+- Reconciliation reads through `IIdempotencyLookup` (scoped): `GetStatusAsync(context, target)` → `IdempotencyPeekStatus`, and `TryReplayAsync(context, target)` writes an earlier request's stored response to the current one. `target` is an `IdempotentRequestTarget(Method, Path, Key)` with an optional `Query`.
 - Independent request-body memory threshold and fingerprinting cap, with `OversizeBehavior.Reject` (413) or `OversizeBehavior.PassThrough` behaviors.
 - Header allowlist filters `Set-Cookie`, `traceparent`, and other sensitive or per-request headers from the captured response.
 - Store key: the lowercase SHA-256 hex of a scope string (`idem:{userId}:{METHOD}:{path}{?query}:{key}` by default, query string included so endpoints branching on query params don't cross-replay); the durable store additionally scopes every key by the current tenant, so the scope itself carries no tenant segment.
-- Per-endpoint overrides via `.WithIdempotency(o => ...)`; `HeaderName` is excluded (see Design constraints).
+- Per-endpoint overrides via `.WithIdempotency(o => ...)` and `.RequireIdempotencyKey()`; every attachment applies, in the order the endpoint declares it. `HeaderName` is excluded (see Design constraints).
 - Custom hooks: `KeyDeriver`, `RequestFingerprint`, `ShouldApply`, `ShouldCacheResponse`.
 - Default cache predicate: 2xx + selected 4xx; never 5xx, 1xx, 3xx, or transient 4xx (408/425/429).
 - A handler reached through the middleware reads its admission with `HttpContext.GetIdempotencyContext()` (`IIdempotencyContext`: `HeaderKey`, `Scope`, `Key`, `Admission`, `Generation`, `IsTakeover`, `RecoveryPoint`), fences its own writes with `unit.Idempotency.FenceAsync(context.Admission)`, and records progress with `unit.Idempotency.SetRecoveryPointAsync(context.Admission, ...)`.
-- `IdempotencyErrorCodes` static class: `KeyReused`, `InFlight`, `InFlightTimeout`, `BodyTooLarge`, `KeyMalformed` as `public const string`.
+- `IdempotencyErrorCodes` static class: `KeyReused`, `InFlight`, `InFlightTimeout`, `BodyTooLarge`, `KeyMalformed`, `KeyRequired` as `public const string`.
 
 ### Design constraints
 
@@ -911,6 +913,26 @@ app.MapPost("/webhooks", HandleWebhook)
     });
 ```
 
+Requiring a key on an endpoint that moves money, and a reconciliation endpoint a client polls after a timeout:
+
+```csharp
+app.MapPost("/transactions", PostTransaction).RequireIdempotencyKey();
+
+app.MapGet("/transactions/{key}", async (string key, HttpContext http, IIdempotencyLookup lookup, CancellationToken ct) =>
+{
+    // Replays the stored response of POST /transactions with this key for the same user and tenant claim.
+    return await lookup.TryReplayAsync(http, new IdempotentRequestTarget("POST", "/transactions", key), ct)
+        ? Results.Empty
+        : Results.NotFound();
+});
+
+app.MapGet("/transactions/{key}/status", async (string key, HttpContext http, IIdempotencyLookup lookup, CancellationToken ct) =>
+    Results.Ok(new { status = await lookup.GetStatusAsync(http, new IdempotentRequestTarget("POST", "/transactions", key), ct) })
+);
+```
+
+The lookup addresses the record the middleware stored: the earlier request's method, path, query, and key, plus the current user and tenant claim, so a lookup by another caller finds nothing. It reads the application-level options; a `KeyDeriver` runs against the lookup request's `HttpContext`, so an application whose deriver depends on the request path reads through `IIdempotentOperations.GetResultAsync` with its own store key instead. Reading never admits an attempt.
+
 A handler fencing its own writes against the admission:
 
 ```csharp
@@ -937,6 +959,7 @@ app.MapPost("/disbursements", async (HttpContext http, IUnitOfWorkFactory factor
 |----------|---------|---------|
 | `Retention` | 24 hours | How long a completed response replays, and how long a released key's record is kept, in the durable store. |
 | `HeaderName` | `Idempotency-Key` | Request header carrying the key (per IETF `draft-ietf-httpapi-idempotency-key-header`). |
+| `KeyRequired` | `false` | When `true`, a request the middleware would handle (its method is in `Methods` and `ShouldApply` accepts it) that carries no key gets 400 `g:idempotency_key_required` instead of running without idempotency. Set it per endpoint with `.RequireIdempotencyKey()`. |
 | `Methods` | POST, PUT, PATCH, DELETE | HTTP methods that participate in idempotency. GET is never valid. |
 | `InFlightStrategy` | `Reject` | `Reject` returns 409 on concurrent same-key requests. `WaitAndReplay` polls the durable store and replays the winner, or admits as a takeover once the winner's lease is lost. |
 | `InFlightLockTimeout` | 30s | How long `WaitAndReplay` polls before giving up with 409 `g:idempotency_in_flight_timeout`. Validator-capped at 1 minute. |

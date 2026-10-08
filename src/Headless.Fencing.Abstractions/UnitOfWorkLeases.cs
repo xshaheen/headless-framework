@@ -46,7 +46,41 @@ public sealed class UnitOfWorkLeases
         CancellationToken cancellationToken = default
     )
     {
-        return _leases.GrantAsync(_unitOfWork, kind, resource, duration, cancellationToken);
+        return _leases.GrantAsync(_unitOfWork, kind, resource, duration, LeaseTakeover.Allowed, cancellationToken);
+    }
+
+    /// <summary>
+    /// Grants the lease inside the bound unit's transaction, choosing what happens when the last attempt expired
+    /// without ending.
+    /// </summary>
+    /// <remarks>
+    /// The lease row stays locked until the unit ends, and every other grant, renewal, settlement, or sweep of the
+    /// lease waits for it; a grant the unit rolls back never happened.
+    /// </remarks>
+    /// <param name="kind">The lease kind.</param>
+    /// <param name="resource">The leased resource within the kind.</param>
+    /// <param name="duration">How long the lease lives unless renewed; bounded by the configured limits.</param>
+    /// <param name="takeover">
+    /// Whether an expired attempt is taken over at once, or kept until a sweep abandons it
+    /// (<see cref="LeaseGrantStatus.Expired" />).
+    /// </param>
+    /// <param name="cancellationToken">Token used to cancel the database command.</param>
+    /// <returns>The grant's result.</returns>
+    /// <exception cref="ArgumentException">The kind, resource, or current tenant id is invalid.</exception>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="duration" /> is outside the configured bounds.</exception>
+    /// <exception cref="System.ComponentModel.InvalidEnumArgumentException">
+    /// <paramref name="takeover" /> is not a defined value.
+    /// </exception>
+    /// <exception cref="InvalidOperationException">The bound unit is no longer active or cannot host the write.</exception>
+    public ValueTask<LeaseGrantResult> GrantAsync(
+        string kind,
+        string resource,
+        TimeSpan duration,
+        LeaseTakeover takeover,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return _leases.GrantAsync(_unitOfWork, kind, resource, duration, takeover, cancellationToken);
     }
 
     /// <summary>Renews the lease inside the bound unit's transaction, keeping any progress recorded before.</summary>
@@ -143,5 +177,36 @@ public sealed class UnitOfWorkLeases
     public ValueTask FenceAsync(FencedLease lease, CancellationToken cancellationToken = default)
     {
         return _leases.FenceAsync(_unitOfWork, lease, cancellationToken);
+    }
+
+    /// <summary>
+    /// Claims the next expired, still-active lease of <paramref name="kind" /> across every tenant inside the bound
+    /// unit's transaction and marks it abandoned, so the caller can hand the attempt off in the same transaction.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The building block of <see cref="IFencedLeases.SweepExpiredAsync" /> for a sweep that owns its unit of work, such
+    /// as a job that begins one over an EF Core context and updates its own rows next to the claim. The claim and the
+    /// handoff commit together; a rollback leaves the lease expired and active, to be claimed again.
+    /// </para>
+    /// <para>
+    /// Claims skip a lease another transaction holds, so concurrent sweepers never claim the same lease and never wait
+    /// on each other. Pass the previous result as <paramref name="after" /> to walk past a lease this unit already
+    /// claimed; claims are ordered by expiry, tenant id, and resource.
+    /// </para>
+    /// </remarks>
+    /// <param name="kind">The lease kind.</param>
+    /// <param name="after">The lease the previous call returned, to continue after it; <see langword="null" /> to start.</param>
+    /// <param name="cancellationToken">Token used to cancel the database command.</param>
+    /// <returns>The claimed lease, or <see langword="null" /> when no expired lease is left to claim.</returns>
+    /// <exception cref="ArgumentException"><paramref name="kind" /> is invalid.</exception>
+    /// <exception cref="InvalidOperationException">The bound unit is no longer active or cannot host the write.</exception>
+    public ValueTask<ExpiredLease?> ClaimExpiredAsync(
+        string kind,
+        ExpiredLease? after = null,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return _leases.ClaimExpiredAsync(_unitOfWork, kind, after, cancellationToken);
     }
 }

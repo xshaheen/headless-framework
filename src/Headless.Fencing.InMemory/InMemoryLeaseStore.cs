@@ -60,12 +60,13 @@ internal sealed class InMemoryLeaseStore(
     public async ValueTask<LeaseGrantResult> GrantAsync(
         LeaseKey key,
         TimeSpan duration,
+        LeaseTakeover takeover,
         CancellationToken cancellationToken = default
     )
     {
         using var held = await Table.LockAsync(key, cancellationToken).ConfigureAwait(false);
 
-        var (result, row) = _Grant(Table.Read(key), key, duration);
+        var (result, row) = _Grant(Table.Read(key), key, duration, takeover);
 
         if (row is not null)
         {
@@ -79,12 +80,13 @@ internal sealed class InMemoryLeaseStore(
         IUnitOfWork unitOfWork,
         LeaseKey key,
         TimeSpan duration,
+        LeaseTakeover takeover,
         CancellationToken cancellationToken = default
     )
     {
         var transaction = await _LockAsync(unitOfWork, key, cancellationToken).ConfigureAwait(false);
 
-        var (result, row) = _Grant(transaction.Read(key), key, duration);
+        var (result, row) = _Grant(transaction.Read(key), key, duration, takeover);
 
         if (row is not null)
         {
@@ -97,7 +99,8 @@ internal sealed class InMemoryLeaseStore(
     private (LeaseGrantResult Result, InMemoryLease? Row) _Grant(
         InMemoryLease? existing,
         LeaseKey key,
-        TimeSpan duration
+        TimeSpan duration,
+        LeaseTakeover takeover
     )
     {
         var now = timeProvider.GetUtcNow();
@@ -105,6 +108,11 @@ internal sealed class InMemoryLeaseStore(
         if (existing is { State: InMemoryLeaseState.Active } live && live.ExpiresAt > now)
         {
             return (LeaseGrantResult.Held(live.Generation, live.ExpiresAt, live.TakeoverCount), null);
+        }
+
+        if (existing is { State: InMemoryLeaseState.Active } expired && takeover == LeaseTakeover.AfterSweep)
+        {
+            return (LeaseGrantResult.Expired(expired.Generation, expired.ExpiresAt, expired.TakeoverCount), null);
         }
 
         // Drawn only now, under the key's lock: a generation drawn before the lock could be lower than one a
@@ -327,6 +335,22 @@ internal sealed class InMemoryLeaseStore(
         var transaction = await _LockAsync(unitOfWork, key, cancellationToken).ConfigureAwait(false);
 
         return _Classify(transaction.Read(key), generation, timeProvider.GetUtcNow());
+    }
+
+    #endregion
+
+    #region Status
+
+    public ValueTask<LeaseFenceStatus> GetStatusAsync(
+        LeaseKey key,
+        long generation,
+        CancellationToken cancellationToken = default
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // The committed row, read without the key's lock, like the relational providers' lockless status read.
+        return ValueTask.FromResult(_Classify(Table.Read(key), generation, timeProvider.GetUtcNow()));
     }
 
     #endregion

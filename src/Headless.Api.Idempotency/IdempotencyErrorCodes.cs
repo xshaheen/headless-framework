@@ -27,4 +27,10 @@ public static class IdempotencyErrorCodes
     /// or multi-valued). Maps to 400.
     /// </summary>
     public const string KeyMalformed = "g:idempotency_key_malformed";
+
+    /// <summary>
+    /// The endpoint requires an idempotency key (<see cref="IdempotencyOptions.KeyRequired" />) and the request carried
+    /// none. Maps to 400.
+    /// </summary>
+    public const string KeyRequired = "g:idempotency_key_required";
 }

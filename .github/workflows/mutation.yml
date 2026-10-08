@@ -1,0 +1,94 @@
+name: "Mutation"
+
+# Mutation testing checks that the unit tests catch faults, not only that they run the lines. Stryker.NET runs the
+# tests once per planted fault, which is too slow for a pull request, so it runs weekly on the foundation packages and
+# reports the score against the AGENTS.md target. Nothing gates on it, and it stays outside the required "CI status".
+on:
+  schedule:
+    - cron: "0 3 * * 1"
+  workflow_dispatch:
+    inputs:
+      project:
+        description: "One src project to mutation-test instead of the weekly set, e.g. src/Headless.Checks/Headless.Checks.csproj"
+        required: false
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  CONFIGURATION: Release
+
+jobs:
+  mutation:
+    name: ".NET · Mutation (${{ matrix.project }})"
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        # Packages with no external dependency and a unit suite of their own; widen the set as scores settle.
+        project: ${{ fromJSON(inputs.project && format('["{0}"]', inputs.project) || '["src/Headless.Checks/Headless.Checks.csproj","src/Headless.Extensions/Headless.Extensions.csproj"]') }}
+    steps:
+      - name: "Check out repository"
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          lfs: false
+          # MinVer derives the version from tags and commit height.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: "Set up .NET SDK"
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: "./global.json"
+
+      # CI's primary build leg owns the cache writes; this workflow only reads.
+      - name: "Restore NuGet cache"
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v5
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/packages.lock.json', 'global.json', 'dotnet-tools.json') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: "Restore the unit-test project"
+        env:
+          GITHUB_PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PROJECT: ${{ matrix.project }}
+        run: |
+          set -euo pipefail
+          name="$(basename "$PROJECT" .csproj)"
+          make restore-project PROJECT="tests/${name}.Tests.Unit/${name}.Tests.Unit.csproj"
+
+      - name: "Run Stryker.NET"
+        env:
+          PROJECT: ${{ matrix.project }}
+        run: |
+          set -euo pipefail
+          make mutation PROJECT="$PROJECT" | tee mutation.log
+          score="$(sed -n 's/.*The final mutation score is \(.*\)$/\1/p' mutation.log | tail -n 1)"
+          echo "### Mutation score: \`${PROJECT}\` ${score:-unknown} (target 70%, goal 85%)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: "Upload mutation report"
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mutation-${{ strategy.job-index }}
+          path: artifacts/mutation/**
+          if-no-files-found: warn
+          retention-days: 30

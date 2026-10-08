@@ -5,6 +5,7 @@ using Headless.MultiTenancy;
 using Headless.Sequences;
 using Headless.UnitOfWork;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Time.Testing;
 
 namespace Tests;
 
@@ -17,8 +18,8 @@ internal sealed class SequenceTestContext
         monitor.CurrentValue.Returns(_ => Options);
 
         Resolver = new SequenceRequestResolver(Tenant, monitor);
-        Generator = new SequenceGenerator(Resolver, Store);
-        Feature = new UnitOfWorkSequencesFeature(Resolver, Store);
+        Generator = new SequenceGenerator(Resolver, Store, Clock);
+        Feature = new UnitOfWorkSequencesFeature(Resolver, Store, Clock);
 
         Store
             .IncrementAsync(Arg.Any<SequenceKey>(), Arg.Any<long>(), Arg.Any<long>(), Arg.Any<CancellationToken>())
@@ -35,6 +36,8 @@ internal sealed class SequenceTestContext
     }
 
     public SequencesOptions Options { get; } = new();
+
+    public FakeTimeProvider Clock { get; } = new(new DateTimeOffset(2026, 10, 8, 9, 0, 0, TimeSpan.Zero));
 
     public MutableCurrentTenant Tenant { get; } = new();
 

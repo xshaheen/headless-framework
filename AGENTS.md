@@ -9,13 +9,24 @@ Two facts decide most judgment calls:
 - **It is a framework, not an application.** Downstream consumers and future providers call abstractions, extension points, and helpers that nothing in this repository calls. Keep a public member that has no local caller.
 - **It is greenfield.** Prefer the simpler, cleaner API, even when it breaks consumers. A breaking change that improves correctness or performance beats a compatibility shim, unless the request says otherwise. The same applies to the database: no deployed schema or data exists. Change a schema in place and reset or rewrite its migrations. Write no migration, backfill, or compatibility shim for a schema nobody runs.
 
-Coverage targets:
+Coverage follows the testing diamond: integration tests carry most of the weight, so no floor asks unit tests alone to cover code whose real behavior sits behind a broker, a database, or an HTTP host. A package has such an external dependency when it owns a `tests/<Package>.Tests.Integration` project.
 
-| Metric | Target | Floor or goal |
-| --- | --- | --- |
-| Line | ≥85% | floor 80% |
-| Branch | ≥80% | floor 70% |
-| Mutation score | ≥70% | goal 85% |
+| Measure | Floor | Tests counted | Measured by |
+| --- | --- | --- | --- |
+| Changed lines | 80% line, 70% branch | unit tests; unit + integration for a package with an integration project | `make verify-affected` for packages without an integration project; `make test-affected-integration` for packages with one |
+| Unit coverage of a package without an integration project | 60% line, whole assembly | unit tests | `make verify-affected` |
+| Mutation score | target 70%, goal 85% | unit tests | `make mutation` and the weekly `mutation.yml`; reported, never gated |
+
+Changed lines are the executable `src/` lines the branch adds or changes against the merge base, uncommitted work included, so a PR answers for its own code and not for older code in the same assembly. A package with an integration project is never held to a unit-only figure.
+
+The floors are comply-or-explain, not a hard gate. The proof marks a miss as a warning and lists every uncovered changed line; the proof still passes. Meet the floor, or explain each miss under "Coverage below floor" in the PR's Verification section with one of these reasons:
+
+- **Glue code**: registration, options wiring, or a one-line delegation whose failure every other test would expose.
+- **Integration-only behavior**: code whose real behavior only a broker, database, or host shows, covered by an integration test that `make test-affected-integration` did not run here (name it).
+- **Unreachable branch**: a defensive branch no test can reach without faking the runtime.
+- **Cost above risk**: a test that would need more fake machinery than the code it checks; say what would break and why that is acceptable.
+
+"Not done yet" is not a reason: add the tests. `COVERAGE_GATE=fail` turns a miss into a failed proof for anyone who wants the strict gate.
 
 ## Architecture
 
@@ -53,7 +64,7 @@ Use the affected and project-scoped targets: `test-class` with `TEST_PROJECT`, `
 
   To scope a build, use `make build-project PROJECT=…` or `make build-affected`.
 - **Run `make test-affected` before the gate, not in the loop.** It builds the affected set in one solution-filter build, then runs every affected `*.Tests.Unit` project to completion: one failing project does not hide the rest. If the build fails, it skips the tests rather than run them against stale binaries. One module can dominate it: `Headless.Jobs.Composition.Tests.Unit` alone takes about four minutes.
-- **Run `make test-affected-integration` when you change provider behavior.** It runs the affected `*.Tests.Integration` projects and needs Docker. CI does not run them, so a local run is the only check.
+- **Run `make test-affected-integration` before the PR whenever the affected set has integration projects.** It runs the affected integration suites, plus the unit suites of the edited packages that own an integration project, with coverage; it merges the reports and warns when those packages' changed lines fall below the changed-line floors, so it is the coverage check for them. With no such package edited it skips coverage. It needs Docker, and CI does not run it: the agent runs it locally and pastes its `summary.md` into the PR beside `verify-affected`'s.
 - **After a narrow fix, run `make test-failed`, not the whole gate.** It reads the latest `verify-affected` or `test-affected` proof bundle and re-runs only the test projects whose modules failed. It names any other failed stage with the target that repeats it. Finish with one full `make verify-affected`.
 - **Check a dashboard SPA with `make dashboard-jobs-test` or `make dashboard-messaging-test`.** They run the SPA's `lint:check`, `type-check`, `test:unit`, and `build-only` scripts through `npm run`, after `npm ci` when `node_modules` is missing or older than the lockfile. Do not call `npx`: a wrapper on `PATH` can hide the tool's output. CI's dashboard jobs run the same targets.
 
@@ -68,7 +79,7 @@ Use the affected and project-scoped targets: `test-class` with `TEST_PROJECT`, `
 - **A green test run is not a clean build.** The test SDK's `DisableAnalyzersWhenRunningTests` target turns analyzers off for the test project itself during `dotnet test`, so analyzer findings in test code pass a test run. Referenced `src` projects still build with analyzers. `make verify-affected` and `make quality-analyzers-affected` re-check both.
 - **Your builds already treat warnings as errors.** The SDK does this whenever it detects an agent CLI: `SupportDetectLlmContext.props` reads `CLAUDECODE`, `CODEX_CLI`, and similar variables. To see the human posture, pass `HeadlessIsLlmContext=false`.
 - **The hooks gate formatting, not code.** Pre-commit formats staged C# files and lists only the files it changed; silence means nothing changed. Pre-push runs a CSharpier check on changed files. Neither compiles, runs analyzers, or runs tests. To compile the solution by hand, run `make hook-build`.
-- **Finish with `make verify-affected` and put its proof in the PR.** When all work is done, it checks the formatting of the changed C# files (the check the pre-commit hook would otherwise apply after the proof), builds the affected set, runs the affected unit tests with coverage, runs the analyzers on the changed projects, and runs the dashboard check of a SPA whose `wwwroot/` changed. It writes `artifacts/proof/<run>/summary.md` (paste it into the PR description) and `summary.json`: stage results, failed tests with their first message line, compiler and analyzer findings grouped by rule, and line and branch coverage of the changed assemblies. Coverage is reported, not gated. The analyzer stage fails on info-level suggestions as well as warnings and errors. Resolve every finding:
+- **Finish with `make verify-affected` and put its proof in the PR.** When all work is done, it checks the formatting of the changed C# files (the check the pre-commit hook would otherwise apply after the proof), builds the affected set, runs the affected unit tests with coverage, runs the analyzers on the changed projects, and runs the dashboard check of a SPA whose `wwwroot/` changed. It writes `artifacts/proof/<run>/summary.md` (paste it into the PR description) and `summary.json`: stage results, failed tests with their first message line, compiler and analyzer findings grouped by rule, line and branch coverage of the changed assemblies, and the coverage gate. The gate warns below the unit floor or the changed-line floors for packages without an integration project, and lists every uncovered changed line; packages with one are named as deferred to `make test-affected-integration`. A warning leaves the proof passing: meet the floor or explain the miss, as the coverage section above says. The analyzer stage fails on info-level suggestions as well as warnings and errors. Resolve every finding:
   - Fix each valid finding.
   - Suppress each invalid finding with an inline reason, as the analyzer-suppression convention in [Conventions](#conventions) describes.
 
@@ -80,7 +91,8 @@ Use the affected and project-scoped targets: `test-class` with `TEST_PROJECT`, `
 
 - **CI compiles twice, then runs the unit suite.** The `build` job uses `-p:RunAnalyzers=false`, and the `analyzers` job runs the full analyzer set. Both use `--no-incremental` and treat warnings as errors.
 - **A pull request builds and tests only what it can affect.** `make ci-scope` selects the changed projects, every transitive dependent, and their test projects, and writes solution filters that both .NET jobs build. Pushes to `main`, releases, and dispatches build and test the whole solution. So does a pull request that changes anything outside a project, such as a workflow, a script, the `Makefile`, a build-wide props file, or package versions. A pull request that changes no project and only documentation skips the .NET jobs. A break that the project graph cannot see, such as a reflection-only or runtime-discovered dependency, surfaces only on the full run after merge.
-- **Coverage runs outside the required check.** `coverage.yml` builds and runs the unit suite with coverage on each push to `main`, and uploads the `coverage-results` artifact. Nothing gates on it.
+- **Coverage runs outside the required check.** `coverage.yml` builds and runs the unit suite with coverage on each push to `main`, and uploads the `coverage-results` artifact. Nothing gates on it; the coverage floors are enforced by the local proof targets above.
+- **Mutation testing runs weekly.** `mutation.yml` runs Stryker.NET (`make mutation`) on the foundation packages every Monday and reports each score in the run summary. It never gates. Stryker.NET's Microsoft Testing Platform runner is in preview, so check the report before you act on a score.
 - **CodeQL does not compile.** It uses build-mode none, so it does not analyze code that source generators emit.
 - **`main` requires only the `CI status` job in `ci.yml`.** A skipped job passes. Add every new CI job to the `needs` list of `CI status`. When you change a trigger on a required workflow, change branch protection in the same change.
 - **CI runs no integration suite.** See [Work in the affected scope](#work-in-the-affected-scope).

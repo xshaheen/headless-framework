@@ -29,7 +29,12 @@ public sealed class PostgreSqlLeaseDeadlockRetryTests(PostgreSqlFencingFixture f
 
         // when
         var grant = store
-            .GrantAsync(new LeaseKey("", "deadlock", Guid.NewGuid().ToString("N")), TimeSpan.FromMinutes(1), AbortToken)
+            .GrantAsync(
+                new LeaseKey("", "deadlock", Guid.NewGuid().ToString("N")),
+                TimeSpan.FromMinutes(1),
+                LeaseTakeover.Allowed,
+                AbortToken
+            )
             .AsTask();
         await injector.WaitForCountAsync(1, AbortToken);
 
@@ -55,7 +60,12 @@ public sealed class PostgreSqlLeaseDeadlockRetryTests(PostgreSqlFencingFixture f
 
         // when
         var grant = store
-            .GrantAsync(new LeaseKey("", "deadlock", Guid.NewGuid().ToString("N")), TimeSpan.FromMinutes(1), AbortToken)
+            .GrantAsync(
+                new LeaseKey("", "deadlock", Guid.NewGuid().ToString("N")),
+                TimeSpan.FromMinutes(1),
+                LeaseTakeover.Allowed,
+                AbortToken
+            )
             .AsTask();
         await PostgreSqlDeadlockInjector.AdvanceUntilAsync(clock, () => Task.FromResult(grant.IsCompleted), AbortToken);
 

@@ -333,6 +333,20 @@ internal sealed class CacheIdempotencyRecordStore(
             : IdempotencyPeekStatus.Pending;
     }
 
+    public async ValueTask<IdempotentResult?> GetResultAsync(
+        IdempotencyRecordKey key,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var (_, record) = await _ReadAsync(key, cancellationToken).ConfigureAwait(false);
+
+        return
+            record is { Status: IdempotencyRecordStatus.Completed, Result: { } result, ResultContract: { } contract }
+            && record.RetentionUntil > timeProvider.GetUtcNow()
+            ? new IdempotentResult(result, contract)
+            : null;
+    }
+
     public ValueTask<int> PurgeAsync(TimeSpan olderThan, int limit, CancellationToken cancellationToken = default)
     {
         Argument.IsPositiveOrZero(olderThan);

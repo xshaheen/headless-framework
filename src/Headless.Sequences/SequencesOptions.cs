@@ -55,6 +55,24 @@ internal sealed class SequencesOptionsValidator : AbstractValidator<SequencesOpt
         {
             RuleFor(x => x.Step).GreaterThan(0);
             RuleFor(x => x.Mode).IsInEnum();
+            RuleFor(x => x.Reset).IsInEnum();
+            RuleFor(x => x.FiscalYearStartMonth).InclusiveBetween(1, 12);
+            RuleFor(x => x.TimeZone).NotNull();
+            RuleFor(x => x.Format)
+                .Must(
+                    static (_, format, context) =>
+                    {
+                        if (format is null || SequenceNumberFormat.TryValidate(format, out var error))
+                        {
+                            return true;
+                        }
+
+                        context.MessageFormatter.AppendArgument("FormatError", error);
+
+                        return false;
+                    }
+                )
+                .WithMessage("{FormatError}");
         }
     }
 }

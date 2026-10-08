@@ -215,6 +215,21 @@ public interface IIdempotencyRecordStore
     ValueTask<IdempotencyPeekStatus> PeekAsync(IdempotencyRecordKey key, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Reads <paramref name="key" />'s stored result on the provider's own connection, with the same lock-free read
+    /// <see cref="PeekAsync" /> takes.
+    /// </summary>
+    /// <param name="key">The record key.</param>
+    /// <param name="cancellationToken">Token used to cancel the database call.</param>
+    /// <returns>
+    /// The result of a completed record whose <c>retention_until</c> is after the database clock; otherwise
+    /// <see langword="null" />.
+    /// </returns>
+    ValueTask<IdempotentResult?> GetResultAsync(
+        IdempotencyRecordKey key,
+        CancellationToken cancellationToken = default
+    );
+
+    /// <summary>
     /// Deletes, on the provider's own connection and committed before returning, at most <paramref name="limit" />
     /// records whose <c>retention_until</c> is at least <paramref name="olderThan" /> before the database clock and
     /// whose lease, if any, is no longer live. A record another transaction holds is skipped for a later purge rather
