@@ -55,14 +55,18 @@ public sealed class SqlServerDistributedLockSetupTests : TestBase
     }
 
     [Theory]
-    [InlineData("", "prefix:", 30)] // empty connection string
-    [InlineData("Server=localhost;", "", 30)] // empty prefix
-    [InlineData("Server=localhost;", "prefix:", 0)] // zero timeout
-    [InlineData("Server=localhost;", "prefix:", -5)] // negative timeout
+    [InlineData("", "prefix:", 30, 30)] // empty connection string
+    [InlineData("Server=localhost;", "", 30, 30)] // empty prefix
+    [InlineData("Server=localhost;", "prefix:", 0, 30)] // zero timeout
+    [InlineData("Server=localhost;", "prefix:", -5, 30)] // negative timeout
+    [InlineData("Server=localhost;", "prefix:", 30, 0)] // zero probe interval
+    [InlineData("Server=localhost;", "prefix:", 30, -1)] // negative probe interval
+    [InlineData("Server=localhost;", "prefix:", 30, 601)] // probe interval above ten minutes
     public void should_fail_validation_when_options_are_invalid(
         string connectionString,
         string keyPrefix,
-        int commandTimeoutSeconds
+        int commandTimeoutSeconds,
+        int probeIntervalSeconds
     )
     {
         // given
@@ -74,6 +78,7 @@ public sealed class SqlServerDistributedLockSetupTests : TestBase
                 options.ConnectionString = connectionString;
                 options.KeyPrefix = keyPrefix;
                 options.CommandTimeout = TimeSpan.FromSeconds(commandTimeoutSeconds);
+                options.ConnectionProbeInterval = TimeSpan.FromSeconds(probeIntervalSeconds);
             })
         );
 
