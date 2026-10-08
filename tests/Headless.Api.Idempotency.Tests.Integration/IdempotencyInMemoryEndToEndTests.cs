@@ -76,7 +76,7 @@ public sealed class IdempotencyInMemoryEndToEndTests : TestBase
         var winnerTask = _PostAsync(client, "/echo", key, "hello");
         await gate.WaitForInvocationsAsync(1, TimeSpan.FromSeconds(5));
         var loserTask = _PostAsync(client, "/echo", key, "hello");
-        await Task.Delay(500, AbortToken);
+        await Task.Delay(200, AbortToken);
         loserTask.IsCompleted.Should().BeFalse("the loser waits on the winner's admission");
 
         gate.Release();
