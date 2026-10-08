@@ -80,32 +80,6 @@ public sealed class LoggingBehaviorsTests
     }
 
     [Fact]
-    public async Task should_log_slow_response_from_critical_request_logging_behavior()
-    {
-        // given
-        var response = new TestResponse();
-        var behavior = new CriticalRequestLoggingBehavior<TestRequest, TestResponse>(
-            new NullCurrentUser(),
-            NullLogger<CriticalRequestLoggingBehavior<TestRequest, TestResponse>>.Instance
-        );
-
-        // when
-        var result = await behavior.Handle(
-            new TestRequest(),
-            async (_, cancellationToken) =>
-            {
-                await Task.Delay(TimeSpan.FromSeconds(1.1), cancellationToken);
-
-                return response;
-            },
-            CancellationToken.None
-        );
-
-        // then
-        result.Should().BeSameAs(response);
-    }
-
-    [Fact]
     public void should_throw_argument_null_exception_when_logging_behavior_dependencies_are_null()
     {
         // given
@@ -137,7 +111,7 @@ public sealed class LoggingBehaviorsTests
         var response = new TestResponse();
 
         // when
-        await behavior.Handle(
+        var result = await behavior.Handle(
             new SensitiveRequest(Password: "hunter2"),
             async (_, cancellationToken) =>
             {
@@ -149,6 +123,7 @@ public sealed class LoggingBehaviorsTests
         );
 
         // then: the Warning alert carries type names only; payloads are Debug-only
+        result.Should().BeSameAs(response);
         var warning = logger.Entries.Should().ContainSingle(e => e.Level == LogLevel.Warning).Subject;
         warning.Message.Should().Contain(nameof(SensitiveRequest));
         warning.Message.Should().NotContain("hunter2");
