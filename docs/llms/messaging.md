@@ -2390,12 +2390,14 @@ Registers NATS connection pool, transports, consumer factory, stream provisionin
 - Pulsar bus and queue transport support.
 - TLS-related options through provider configuration.
 - Configurable negative-ack redelivery with a one-minute default and a validated 100-millisecond minimum.
+- Producer settings through `PulsarMessagingOptions.Producer`: compression, batching and its publish delay, and send timeout.
+- Shutdown lets in-flight handlers settle within the shutdown budget (30 seconds on a plain dispose) before it closes the consumer.
 - Consumer startup honors host cancellation while acquiring the client and subscribing, while preserving configured timeouts.
 - Request/reply is not supported yet: a host that sends requests or declares a responder fails startup until the provider's reply channel ships. See [Request/reply](#requestreply).
 
 ### Design constraints
 
-Bus topics insert `headless-bus-` before the local topic name and use one lane-qualified `headless-bus-{consumer-identity}` subscription per consumer identity. Queue topics insert `headless-queue-` and use one owned `headless-queue` subscription per physical topic. Replicas within a subscription compete; distinct Bus consumer identities each receive one copy. Malformed transport envelopes are terminally acknowledged so they cannot create negative-ack redelivery storms.
+Bus topics insert `headless-bus-` before the local topic name and use one lane-qualified `headless-bus-{consumer-identity}` subscription per consumer identity. Queue topics insert `headless-queue-` and use one owned `headless-queue` subscription per physical topic. Replicas within a subscription compete; distinct Bus consumer identities each receive one copy. Malformed transport envelopes are terminally acknowledged so they cannot create negative-ack redelivery storms. A handler still running when the shutdown budget runs out never acknowledges its message, so the broker redelivers it after the consumer closes (at-least-once). Negative-ack redelivery uses one fixed delay: Pulsar.Client 3.19 has no redelivery backoff. The package has no consumer hatch yet, so `Key_Shared` subscriptions, dead-letter policies, and ack timeouts are not configurable. Message chunking is not offered: with Pulsar.Client 3.19.4 a chunked message read through a `Shared` subscription, which every competing and Bus consumer uses, arrives truncated to its first chunk. Keep payloads under the broker's `maxMessageSize` (5 MB by default).
 
 ### Install
 
@@ -2419,7 +2421,7 @@ A `[BusConsumer("orders.projection")]` consumer of `OrderPlaced` subscribes as `
 
 `RoutingAffinityKey` on publish/enqueue options maps to the native Pulsar message key on registered Bus and Queue routes. The optional `PulsarMessagingHeaders.PulsarKey` adapter must agree. The configured client uses its built-in key hashing; Headless adds no key-length limit beyond broker message limits. Keep routing configuration and partition topology fixed while relying on placement. This does not select a `Key_Shared` subscription, guarantee FIFO, or prevent concurrent handling.
 
-Configure service URL, authentication, TLS, and negative-ack redelivery through `PulsarMessagingOptions`. `NegativeAckRedeliveryDelay` defaults to one minute and must be at least 100 milliseconds; smaller values fail startup validation instead of being silently clamped by Pulsar.Client.
+Configure service URL, authentication, TLS, negative-ack redelivery, and producer settings through `PulsarMessagingOptions`. `Producer` applies to every producer the transport creates, and each default matches Pulsar.Client: `CompressionType` (`None`; also `LZ4`, `ZLib`, `ZStd`, `Snappy`, decompressed transparently by consumers), `EnableBatching` (`true`), `BatchingMaxPublishDelay` (1 ms; each publish waits for its own send, so a longer delay adds up to that much latency per publish in exchange for larger batches), and `SendTimeout` (30 seconds; `TimeSpan.Zero` waits indefinitely, and a send that times out fails the publish). `NegativeAckRedeliveryDelay` defaults to one minute and must be at least 100 milliseconds; smaller values fail startup validation instead of being silently clamped by Pulsar.Client.
 
 ### Runtime behavior
 

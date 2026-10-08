@@ -90,6 +90,49 @@ public sealed class PulsarTransportTests(PulsarFixture fixture) : TestBase
         await winnerSession.Consumer.CommitAsync(delivery.SettlementValue, AbortToken);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task should_round_trip_a_compressed_payload_with_producer_settings(bool batching)
+    {
+        var destination = $"persistent://public/default/conf-{Guid.NewGuid():N}";
+        await using var session = await PulsarFixture.CreateSessionAsync(
+            fixture.ConnectionString,
+            MessageLane.Queue,
+            AbortToken,
+            destination,
+            createReplacement: false,
+            configureOptions: options =>
+            {
+                options.Producer.EnableBatching = batching;
+                options.Producer.BatchingMaxPublishDelay = TimeSpan.FromMilliseconds(5);
+                options.Producer.CompressionType = Pulsar.Client.Common.CompressionType.LZ4;
+                options.Producer.SendTimeout = TimeSpan.FromSeconds(10);
+            }
+        );
+        await session.StartAsync(cancellationToken: AbortToken);
+
+        var body = new byte[1024 * 1024];
+        Random.Shared.NextBytes(body);
+        var messageId = Guid.NewGuid().ToString("N");
+        var message = new TransportMessage(
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                [MessagingHeaders.MessageId] = messageId,
+                [MessagingHeaders.MessageName] = destination,
+            },
+            body
+        );
+
+        var result = await session.PublishAsync(message, AbortToken);
+
+        result.Succeeded.Should().BeTrue(result.Exception?.ToString());
+        var delivery = await session.ReceiveAsync(TimeSpan.FromSeconds(30), AbortToken);
+        delivery.Message.Id.Should().Be(messageId);
+        delivery.Message.Body.ToArray().Should().Equal(body);
+        await session.Consumer.CommitAsync(delivery.SettlementValue, AbortToken);
+    }
+
     private static async Task<TransportConformanceDelivery?> _ObserveCanceledLoserAsync(
         Task<TransportConformanceDelivery> loser
     )

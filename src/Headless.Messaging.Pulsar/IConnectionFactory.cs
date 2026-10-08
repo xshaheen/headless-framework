@@ -228,7 +228,17 @@ internal sealed class ConnectionFactory : IConnectionFactory, IAsyncDisposable
             return _producerFactoryOverride(topic);
         }
 
-        return _client!.NewProducer().Topic(topic).CreateAsync();
+        return Configure(_client!.NewProducer().Topic(topic), _options.Producer).CreateAsync();
+    }
+
+    /// <summary>Applies the transport's producer settings to <paramref name="builder"/>.</summary>
+    internal static ProducerBuilder<byte[]> Configure(ProducerBuilder<byte[]> builder, PulsarProducerOptions options)
+    {
+        return builder
+            .CompressionType(options.CompressionType)
+            .EnableBatching(options.EnableBatching)
+            .BatchingMaxPublishDelay(options.BatchingMaxPublishDelay)
+            .SendTimeout(options.SendTimeout);
     }
 }
 

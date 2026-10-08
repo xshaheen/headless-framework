@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using System.Reflection;
 using Headless.Checks;
 using Headless.Messaging.Transport;
@@ -17,6 +18,10 @@ internal sealed class PulsarConsumerClient(
     Func<IReadOnlyDictionary<string, string?>, byte[], TransportMessage>? transportMessageFactory = null
 ) : IConsumerClient
 {
+    // Bounded drain budget on shutdown, matching the other transports. A handler still running past it never
+    // acknowledges, so the broker redelivers its message once this consumer disconnects (at-least-once).
+    private static readonly TimeSpan _ShutdownDrainTimeout = TimeSpan.FromSeconds(30);
+
     private readonly ConsumerClientRequest _request = Argument.IsNotNull(request);
     private readonly byte _groupConcurrent = request.Concurrency;
     private readonly bool _everyInstance = request.Kind is ConsumerSubscriptionKind.EveryInstance;
@@ -28,6 +33,9 @@ internal sealed class PulsarConsumerClient(
     private readonly Lock _receiveLock = new();
     private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
+
+    // Tracks in-flight handler tasks so shutdown can let them settle before it closes the consumer.
+    private readonly ConcurrentDictionary<Task, byte> _inFlightHandlers = new();
     private int _disposed;
     private CancellationTokenSource? _receiveCts = new();
     private readonly PulsarMessagingOptions _pulsarOptions = options.Value;
@@ -205,26 +213,29 @@ internal sealed class PulsarConsumerClient(
                         break;
                     }
 
-                    _ObserveBackgroundHandler(
-                        Task.Run(
-                            async () =>
+                    var handlerTask = Task.Run(
+                        async () =>
+                        {
+                            try
                             {
-                                try
-                                {
-                                    await consumeAsync(consumerResult).ConfigureAwait(false);
-                                }
-                                finally
-                                {
-                                    _ReleaseSemaphore();
-                                }
-                            },
-                            CancellationToken.None // Ensure semaphore release even if cancellation is requested during handler execution
-                        )
+                                await consumeAsync(consumerResult).ConfigureAwait(false);
+                            }
+                            finally
+                            {
+                                _ReleaseSemaphore();
+                            }
+                        },
+                        CancellationToken.None // Ensure semaphore release even if cancellation is requested during handler execution
                     );
+
+                    _TrackHandler(handlerTask);
+                    _ObserveBackgroundHandler(handlerTask);
                 }
                 else
                 {
-                    await consumeAsync(consumerResult).ConfigureAwait(false);
+                    var inlineTask = consumeAsync(consumerResult);
+                    _TrackHandler(inlineTask);
+                    await inlineTask.ConfigureAwait(false);
                 }
 
                 async Task consumeAsync(Message<byte[]> currentMessage)
@@ -378,6 +389,18 @@ internal sealed class PulsarConsumerClient(
         }
     }
 
+    private void _TrackHandler(Task task)
+    {
+        _inFlightHandlers[task] = 0;
+        _ = task.ContinueWith(
+            static (completed, state) => ((ConcurrentDictionary<Task, byte>)state!).TryRemove(completed, out _),
+            _inFlightHandlers,
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default
+        );
+    }
+
     private void _ObserveBackgroundHandler(Task task)
     {
         _ = task.ContinueWith(
@@ -456,7 +479,12 @@ internal sealed class PulsarConsumerClient(
         }
     }
 
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
+    {
+        return ShutdownAsync(_ShutdownDrainTimeout);
+    }
+
+    public async ValueTask ShutdownAsync(TimeSpan timeout, CancellationToken cancellationToken = default)
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
         {
@@ -464,7 +492,7 @@ internal sealed class PulsarConsumerClient(
         }
 
         _pauseGate.Release();
-        _ready.TrySetCanceled();
+        _ready.TrySetCanceled(CancellationToken.None);
         CancellationTokenSource? receiveCts;
         lock (_receiveLock)
         {
@@ -476,6 +504,38 @@ internal sealed class PulsarConsumerClient(
         }
 
         receiveCts?.Dispose();
+
+        // Drain in-flight handlers while the consumer is still open, so each one can acknowledge or negatively
+        // acknowledge its message. Bounded so a stuck handler cannot block shutdown; a message whose handler is still
+        // running past the budget stays unacknowledged, and the broker redelivers it (at-least-once).
+        var inFlight = _inFlightHandlers.Keys.ToArray();
+        if (inFlight.Length > 0)
+        {
+            try
+            {
+                if (timeout <= TimeSpan.Zero)
+                {
+                    throw new System.TimeoutException("The shared messaging shutdown deadline has expired.");
+                }
+
+                await Task.WhenAll(inFlight)
+                    .WaitAsync(timeout, _timeProvider, CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                // Handler faults are already surfaced by _ObserveBackgroundHandler; on a drain timeout or fault,
+                // log and proceed, because disposal must never block or throw.
+                OnLogCallback?.Invoke(
+                    new LogMessageEventArgs
+                    {
+                        LogType = MqLogType.ConsumeError,
+                        Reason = $"Timed out or faulted draining in-flight Pulsar handlers during shutdown: {ex}",
+                    }
+                );
+            }
+        }
+
         _semaphore.Dispose();
         if (_consumerClient is not null)
         {
