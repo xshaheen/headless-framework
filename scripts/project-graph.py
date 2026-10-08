@@ -170,6 +170,8 @@ def select_affected(
     if files is None:
         files = changed_files(base)
     changed: set[str] = set()
+    # Projects whose own files changed, as opposed to projects a build-wide file selected wholesale.
+    edited: set[str] = set()
     unmapped: list[str] = []
     global_triggers: list[str] = []
     by_directory = projects_by_directory(projects)
@@ -193,6 +195,7 @@ def select_affected(
         owners = owning_projects(file, by_directory) | by_linked_input.get(file, set())
         if owners:
             changed.update(owners)
+            edited.update(owners)
         else:
             unmapped.append(file)
 
@@ -220,6 +223,16 @@ def select_affected(
     def of_kind(keys: set[str], *kinds: str) -> list[str]:
         return sorted(key for key in keys if projects[key].kind in kinds)
 
+    # An edited package that owns a <Package>.Tests.Integration project is one whose coverage only the integration
+    # gate can judge, so that gate needs just these packages' own unit suites beside the integration run.
+    by_name = {project.name: key for key, project in projects.items()}
+    integration_packages = sorted(
+        key for key in edited if projects[key].kind == "src" and f"{projects[key].name}.Tests.Integration" in by_name
+    )
+    integration_unit_tests = sorted(
+        by_name[f"{projects[key].name}.Tests.Unit"] for key in integration_packages if f"{projects[key].name}.Tests.Unit" in by_name
+    )
+
     return {
         "base": base,
         "transitive": transitive,
@@ -231,6 +244,8 @@ def select_affected(
         "build_projects": of_kind(affected | covering, "src", "unit", "integration", "harness", "test-other", "demo", "benchmark"),
         "unit_tests": of_kind(covering, "unit"),
         "integration_tests": of_kind(covering, "integration"),
+        "integration_packages": integration_packages,
+        "integration_unit_tests": integration_unit_tests,
     }
 
 
@@ -491,6 +506,8 @@ CATEGORIES = {
     "build": "build_projects",
     "unit": "unit_tests",
     "integration": "integration_tests",
+    "integration-packages": "integration_packages",
+    "integration-unit": "integration_unit_tests",
 }
 
 
