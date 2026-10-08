@@ -115,6 +115,40 @@ public sealed class NetVipsImageInspectorContributorTests : TestBase
     }
 
     [Fact]
+    public async Task should_read_a_large_animation_whole_to_count_its_frames()
+    {
+        // given: three 200 x 200 noise frames, far past the first 64 KB window
+        var gif = TestImages.AnimatedNoiseGif(200, 200);
+        await using var input = new CountingStream(new MemoryStream(gif));
+
+        // when
+        var result = await _CreateInspector().TryInspectAsync(input, AbortToken);
+
+        // then
+        result.Result!.FrameCount.Should().Be(3);
+        input.BytesRead.Should().BeGreaterThanOrEqualTo(gif.Length);
+    }
+
+    [Fact]
+    public async Task should_grow_to_the_whole_file_before_refusing_a_corrupt_header()
+    {
+        // given: a JPEG start-of-image marker followed by 200 KB of noise, so no window ever parses
+        var bytes = new byte[200 * 1024];
+        new Random(42).NextBytes(bytes);
+        bytes[0] = 0xFF;
+        bytes[1] = 0xD8;
+        bytes[2] = 0xFF;
+        await using var input = new CountingStream(new MemoryStream(bytes));
+
+        // when
+        var result = await _CreateInspector().TryInspectAsync(input, AbortToken);
+
+        // then
+        result.State.Should().Be(ImageProcessState.Unsupported);
+        input.BytesRead.Should().BeGreaterThan(64 * 1024);
+    }
+
+    [Fact]
     public async Task should_refuse_an_unknown_format_from_the_first_window()
     {
         // given: 1 MB of bytes no allowed format starts with
