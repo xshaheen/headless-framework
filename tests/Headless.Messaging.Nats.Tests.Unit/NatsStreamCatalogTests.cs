@@ -120,6 +120,32 @@ public sealed class NatsStreamCatalogTests : TestBase
         ((Action)(() => builder.MaxBytes(0))).Should().Throw<ArgumentOutOfRangeException>();
     }
 
+    [Fact]
+    public void should_reject_a_non_positive_duplicate_window()
+    {
+        var builder = new NatsStreamBuilder();
+
+        ((Action)(() => builder.DuplicateWindow(TimeSpan.Zero))).Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public void should_reject_a_declared_duplicate_window_longer_than_the_declared_max_age()
+    {
+        var catalog = new NatsStreamCatalog();
+
+        var act = () =>
+            catalog.Own(
+                "ORDERS",
+                stream =>
+                    stream
+                        .Subjects("headless.queue.orders.>")
+                        .MaxAge(TimeSpan.FromMinutes(1))
+                        .DuplicateWindow(TimeSpan.FromMinutes(5))
+            );
+
+        act.Should().Throw<ArgumentException>().WithMessage("*duplicate window*MaxAge*");
+    }
+
     [Theory]
     [InlineData("a.b", "a.b", true)]
     [InlineData("a.b", "a.c", false)]

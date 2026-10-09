@@ -2,6 +2,7 @@
 
 using Headless.Checks;
 using Headless.Messaging.Nats;
+using NATS.Client.JetStream.Models;
 
 namespace Headless.Messaging;
 
@@ -139,10 +140,18 @@ internal sealed class NatsMessageConfig<TMessage>(Func<TMessage, string?>? subje
 }
 
 /// <summary>Fluent builder for NATS JetStream consumer options applied to a consumer registration.</summary>
+/// <remarks>
+/// Each <c>UseNats(...)</c> call replaces the NATS settings of an earlier one for the same consumer, so set every NATS
+/// option of a consumer in one call. The durable name, filter subject, and delivery policy stay provider-owned.
+/// </remarks>
 [PublicAPI]
 public sealed class NatsConsumerConfigBuilder
 {
     private bool _isSharded;
+    private TimeSpan? _ackWait;
+    private int? _maxAckPending;
+    private int? _maxDeliver;
+    private TimeSpan? _inactiveThreshold;
 
     /// <summary>
     /// Declares that this consumer subscribes to sharded subjects (i.e. the producer uses
@@ -161,10 +170,113 @@ public sealed class NatsConsumerConfigBuilder
         return this;
     }
 
+    /// <summary>
+    /// Sets how long JetStream waits for a delivery's acknowledgement before it redelivers the message. Defaults to
+    /// <c>30 seconds</c>.
+    /// </summary>
+    /// <remarks>
+    /// The consumer reports a delivery in progress every half <c>AckWait</c> until it settles, so a slow receive stage
+    /// does not cause a redelivery; a shorter value detects a crashed consumer sooner at the cost of more progress
+    /// signals.
+    /// </remarks>
+    /// <param name="ackWait">The acknowledgement wait.</param>
+    /// <returns>The same builder for chaining.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="ackWait"/> is not positive.</exception>
+    public NatsConsumerConfigBuilder AckWait(TimeSpan ackWait)
+    {
+        _ackWait = Argument.IsPositive(ackWait);
+        return this;
+    }
+
+    /// <summary>
+    /// Sets how many deliveries may wait for acknowledgement at once across every instance of this consumer; JetStream
+    /// stops delivering until one settles. Defaults to the server's limit (<c>1000</c>).
+    /// </summary>
+    /// <param name="maxAckPending">The most unacknowledged deliveries.</param>
+    /// <returns>The same builder for chaining.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="maxAckPending"/> is not positive.</exception>
+    public NatsConsumerConfigBuilder MaxAckPending(int maxAckPending)
+    {
+        _maxAckPending = Argument.IsPositive(maxAckPending);
+        return this;
+    }
+
+    /// <summary>
+    /// Sets how many times JetStream delivers a message before it stops redelivering it. Defaults to no limit.
+    /// </summary>
+    /// <remarks>
+    /// The transport rejects a delivery only before the inbox stores it: while the consumer's circuit breaker is open,
+    /// or when the receive stage fails. Those rejections count toward the limit, and a message that reaches it is
+    /// dropped without Headless ever storing it; JetStream publishes a <c>MAX_DELIVERIES</c> advisory for it. A stored
+    /// message retries from storage and is not redelivered by JetStream. A rejected delivery is redelivered after a
+    /// delay that doubles from about one second to 30 seconds, so a limit of 10 survives roughly three minutes of an
+    /// open circuit.
+    /// </remarks>
+    /// <param name="maxDeliver">The most deliveries of one message.</param>
+    /// <returns>The same builder for chaining.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="maxDeliver"/> is not positive.</exception>
+    public NatsConsumerConfigBuilder MaxDeliver(int maxDeliver)
+    {
+        _maxDeliver = Argument.IsPositive(maxDeliver);
+        return this;
+    }
+
+    /// <summary>
+    /// Lets JetStream delete this consumer's durables after they have had no pulling client for
+    /// <paramref name="inactiveThreshold"/>, so the durables of a retired consumer identity do not pile up. Off by
+    /// default: a durable lives until it is deleted.
+    /// </summary>
+    /// <remarks>
+    /// A Bus durable starts at the messages published after it is created (<c>DeliverPolicy.New</c>). Once JetStream
+    /// deletes it during a downtime longer than the threshold, the next start creates a new durable, and every Bus
+    /// message published while the consumer was down is lost to it. Set the threshold well above any outage or deploy
+    /// the consumer must survive. A Queue durable starts at the first stored message, so a deleted one loses nothing
+    /// the stream still holds.
+    /// </remarks>
+    /// <param name="inactiveThreshold">How long a durable may have no pulling client.</param>
+    /// <returns>The same builder for chaining.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="inactiveThreshold"/> is not positive.</exception>
+    public NatsConsumerConfigBuilder InactiveThreshold(TimeSpan inactiveThreshold)
+    {
+        _inactiveThreshold = Argument.IsPositive(inactiveThreshold);
+        return this;
+    }
+
     internal NatsConsumerConfig Build()
     {
-        return new(_isSharded);
+        return new(_isSharded, _ackWait, _maxAckPending, _maxDeliver, _inactiveThreshold);
     }
 }
 
-internal sealed record NatsConsumerConfig(bool IsSharded);
+internal sealed record NatsConsumerConfig(
+    bool IsSharded,
+    TimeSpan? AckWait = null,
+    int? MaxAckPending = null,
+    int? MaxDeliver = null,
+    TimeSpan? InactiveThreshold = null
+)
+{
+    /// <summary>Writes the limits this consumer sets onto <paramref name="config"/>, leaving the rest as they are.</summary>
+    public void ApplyTo(ConsumerConfig config)
+    {
+        if (AckWait is { } ackWait)
+        {
+            config.AckWait = ackWait;
+        }
+
+        if (MaxAckPending is { } maxAckPending)
+        {
+            config.MaxAckPending = maxAckPending;
+        }
+
+        if (MaxDeliver is { } maxDeliver)
+        {
+            config.MaxDeliver = maxDeliver;
+        }
+
+        if (InactiveThreshold is { } inactiveThreshold)
+        {
+            config.InactiveThreshold = inactiveThreshold;
+        }
+    }
+}

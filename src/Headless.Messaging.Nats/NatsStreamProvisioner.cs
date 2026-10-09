@@ -406,6 +406,8 @@ internal sealed class NatsStreamProvisioner(IOptions<NatsMessagingOptions> optio
             config.MaxBytes = maxBytes;
         }
 
+        config.DuplicateWindow = _DuplicateWindow(spec, maxAge);
+
         // Snapshot either side of the callbacks so the comparison below can tell a field the operator
         // asserted from one the server will fill with its own default. Diffing an unasserted field would
         // report drift against every stream that exists.
@@ -421,6 +423,7 @@ internal sealed class NatsStreamProvisioner(IOptions<NatsMessagingOptions> optio
         assertedFields.Add(nameof(StreamConfig.Storage));
         assertedFields.Add(nameof(StreamConfig.NoAck));
         assertedFields.Add(nameof(StreamConfig.Retention));
+        assertedFields.Add(nameof(StreamConfig.DuplicateWindow));
 
         if (maxAge > TimeSpan.Zero)
         {
@@ -503,6 +506,27 @@ internal sealed class NatsStreamProvisioner(IOptions<NatsMessagingOptions> optio
         throw new InvalidOperationException(
             NatsStreamReconciliation.ComposeDivergenceMessage(spec.Name, divergences, _options.StreamProvisioning)
         );
+    }
+
+    // JetStream refuses a duplicate window longer than the stream's age limit. A declared window is the application's
+    // explicit choice, so it fails loudly; the default window only shrinks to fit a short-lived stream.
+    private TimeSpan _DuplicateWindow(NatsStreamSpec spec, TimeSpan maxAge)
+    {
+        if (spec.DuplicateWindow is { } declared)
+        {
+            if (maxAge > TimeSpan.Zero && declared > maxAge)
+            {
+                throw new InvalidOperationException(
+                    $"NATS stream '{spec.Name}' duplicate window ({declared}) exceeds its MaxAge ({maxAge}); JetStream refuses it."
+                );
+            }
+
+            return declared;
+        }
+
+        var window = _options.DefaultDuplicateWindow;
+
+        return maxAge > TimeSpan.Zero && window > maxAge ? maxAge : window;
     }
 
     // The provisioner reports configuration faults as InvalidOperationException; JetStream reports a request it refuses

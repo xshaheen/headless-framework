@@ -48,6 +48,18 @@ public sealed class NatsStreamCatalog
         configure(builder);
         _ValidateSubjects(name, builder.StreamSubjects);
 
+        if (
+            builder is { StreamDuplicateWindow: { } window, StreamMaxAge: { } maxAge }
+            && maxAge > TimeSpan.Zero
+            && window > maxAge
+        )
+        {
+            throw new ArgumentException(
+                $"NATS stream '{name}' duplicate window ({window}) exceeds its MaxAge ({maxAge}); JetStream refuses it.",
+                nameof(configure)
+            );
+        }
+
         _streams.Add(
             new NatsStreamSpec(
                 name,
@@ -56,7 +68,8 @@ public sealed class NatsStreamCatalog
                 builder.StreamRetention ?? StreamConfigRetention.Limits,
                 builder.StreamMaxAge,
                 builder.StreamMaxBytes,
-                builder.ConfigureStream
+                builder.ConfigureStream,
+                builder.StreamDuplicateWindow
             )
         );
         return this;
@@ -173,6 +186,8 @@ public sealed class NatsStreamBuilder
 
     internal long? StreamMaxBytes { get; private set; }
 
+    internal TimeSpan? StreamDuplicateWindow { get; private set; }
+
     internal Action<StreamConfig>? ConfigureStream { get; private set; }
 
     /// <summary>Adds subjects the stream carries; NATS wildcards (<c>*</c>, <c>&gt;</c>) are allowed.</summary>
@@ -219,6 +234,19 @@ public sealed class NatsStreamBuilder
     }
 
     /// <summary>
+    /// Sets how long the stream remembers a published message ID to drop a repeated publish of it. Defaults to
+    /// <see cref="NatsMessagingOptions.DefaultDuplicateWindow"/>.
+    /// </summary>
+    /// <param name="duplicateWindow">The window; it may not exceed the stream's <c>MaxAge</c>.</param>
+    /// <returns>The same builder for chaining.</returns>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="duplicateWindow"/> is not positive.</exception>
+    public NatsStreamBuilder DuplicateWindow(TimeSpan duplicateWindow)
+    {
+        StreamDuplicateWindow = Argument.IsPositive(duplicateWindow);
+        return this;
+    }
+
+    /// <summary>
     /// Adjusts any other stream setting (storage, replicas, discard policy). The name, subjects, and retention stay as
     /// declared.
     /// </summary>
@@ -239,5 +267,6 @@ internal sealed record NatsStreamSpec(
     StreamConfigRetention? Retention,
     TimeSpan? MaxAge,
     long? MaxBytes,
-    Action<StreamConfig>? Configure
+    Action<StreamConfig>? Configure,
+    TimeSpan? DuplicateWindow = null
 );
