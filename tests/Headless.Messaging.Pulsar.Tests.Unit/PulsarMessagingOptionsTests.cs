@@ -2,6 +2,8 @@
 
 using Headless.Messaging.Pulsar;
 using Headless.Testing.Tests;
+using Pulsar.Client.Api;
+using Pulsar.Client.Common;
 
 namespace Tests;
 
@@ -60,5 +62,62 @@ public sealed class PulsarMessagingOptionsTests : TestBase
         var result = new PulsarMessagingOptionsValidator().Validate(options);
 
         result.IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void should_default_producer_settings_to_pulsar_client_defaults()
+    {
+        var producer = new PulsarMessagingOptions { ServiceUrl = "pulsar://localhost:6650" }.Producer;
+        var clientDefault = ProducerConfiguration.Default;
+
+        producer.CompressionType.Should().Be(CompressionType.None).And.Be(clientDefault.CompressionType);
+        producer.EnableBatching.Should().BeTrue().And.Be(clientDefault.BatchingEnabled);
+        producer.BatchingMaxPublishDelay.Should().Be(TimeSpan.FromMilliseconds(1));
+        producer.SendTimeout.Should().Be(TimeSpan.FromSeconds(30));
+    }
+
+    [Fact]
+    public void should_accept_custom_producer_settings()
+    {
+        var options = new PulsarMessagingOptions
+        {
+            ServiceUrl = "pulsar://localhost:6650",
+            Producer =
+            {
+                EnableBatching = false,
+                BatchingMaxPublishDelay = TimeSpan.FromMilliseconds(10),
+                CompressionType = CompressionType.LZ4,
+                SendTimeout = TimeSpan.Zero,
+            },
+        };
+
+        new PulsarMessagingOptionsValidator().Validate(options).IsValid.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(0, 1000)]
+    [InlineData(-1, 1000)]
+    [InlineData(1, -1)]
+    public void should_reject_non_positive_batching_delay_or_negative_send_timeout(int delayMs, int sendTimeoutMs)
+    {
+        var options = new PulsarMessagingOptions
+        {
+            ServiceUrl = "pulsar://localhost:6650",
+            Producer =
+            {
+                BatchingMaxPublishDelay = TimeSpan.FromMilliseconds(delayMs),
+                SendTimeout = TimeSpan.FromMilliseconds(sendTimeoutMs),
+            },
+        };
+
+        new PulsarMessagingOptionsValidator().Validate(options).IsValid.Should().BeFalse();
+    }
+
+    [Fact]
+    public void should_reject_missing_producer_settings()
+    {
+        var options = new PulsarMessagingOptions { ServiceUrl = "pulsar://localhost:6650", Producer = null! };
+
+        new PulsarMessagingOptionsValidator().Validate(options).IsValid.Should().BeFalse();
     }
 }

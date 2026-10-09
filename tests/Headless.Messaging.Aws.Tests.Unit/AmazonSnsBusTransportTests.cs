@@ -27,6 +27,27 @@ public sealed class AmazonSnsBusTransportTests : TestBase
         );
     }
 
+    private static Dictionary<string, string?> _PublishedHeaders(IAmazonSimpleNotificationService snsClient)
+    {
+        var request = (PublishRequest)
+            snsClient
+                .ReceivedCalls()
+                .Single(call =>
+                    string.Equals(
+                        call.GetMethodInfo().Name,
+                        nameof(IAmazonSimpleNotificationService.PublishAsync),
+                        StringComparison.Ordinal
+                    )
+                )
+                .GetArguments()[0]!;
+
+        request.MessageAttributes.Should().ContainSingle().Which.Key.Should().Be(SqsHeaderCodec.AttributeName);
+        var bag = request.MessageAttributes[SqsHeaderCodec.AttributeName];
+        bag.DataType.Should().Be("String");
+
+        return JsonSerializer.Deserialize<Dictionary<string, string?>>(bag.StringValue)!;
+    }
+
     [Fact]
     public async Task should_return_failed_result_without_sending_when_sending_after_dispose()
     {
@@ -190,7 +211,7 @@ public sealed class AmazonSnsBusTransportTests : TestBase
     }
 
     [Fact]
-    public async Task should_include_message_attributes_in_request()
+    public async Task should_publish_the_headers_as_one_bag_attribute()
     {
         // given
         var logger = Substitute.For<ILogger<AmazonSnsBusTransport>>();
@@ -225,19 +246,11 @@ public sealed class AmazonSnsBusTransportTests : TestBase
 
         // then
         result.Succeeded.Should().BeTrue();
-        await snsClient
-            .Received(1)
-            .PublishAsync(
-                Arg.Is<PublishRequest>(r =>
-                    r.MessageAttributes.ContainsKey(Headers.MessageName)
-                    && r.MessageAttributes[Headers.MessageName].StringValue == "TestEvent"
-                    && r.MessageAttributes.ContainsKey(Headers.MessageId)
-                    && r.MessageAttributes[Headers.MessageId].StringValue == "test-id-123"
-                    && r.MessageAttributes.ContainsKey("custom-header")
-                    && r.MessageAttributes["custom-header"].StringValue == "custom-value"
-                ),
-                Arg.Any<CancellationToken>()
-            );
+        // One bag attribute, not one per header: raw delivery hands SNS attributes to SQS, which takes at most ten.
+        var headers = _PublishedHeaders(snsClient);
+        headers[Headers.MessageName].Should().Be("TestEvent");
+        headers[Headers.MessageId].Should().Be("test-id-123");
+        headers["custom-header"].Should().Be("custom-value");
     }
 
     [Fact]
@@ -672,7 +685,7 @@ public sealed class AmazonSnsBusTransportTests : TestBase
     }
 
     [Fact]
-    public async Task should_skip_null_header_values()
+    public async Task should_keep_null_header_values_in_the_bag()
     {
         // given
         var logger = Substitute.For<ILogger<AmazonSnsBusTransport>>();
@@ -696,7 +709,7 @@ public sealed class AmazonSnsBusTransportTests : TestBase
             headers: new Dictionary<string, string?>(StringComparer.Ordinal)
             {
                 [Headers.MessageName] = "TestEvent",
-                ["null-header"] = null, // This should be skipped
+                ["null-header"] = null, // Kept: the bag is lossless
                 ["valid-header"] = "value",
             },
             body: "test"u8.ToArray()
@@ -707,14 +720,9 @@ public sealed class AmazonSnsBusTransportTests : TestBase
 
         // then
         result.Succeeded.Should().BeTrue();
-        await snsClient
-            .Received(1)
-            .PublishAsync(
-                Arg.Is<PublishRequest>(r =>
-                    !r.MessageAttributes.ContainsKey("null-header") && r.MessageAttributes.ContainsKey("valid-header")
-                ),
-                Arg.Any<CancellationToken>()
-            );
+        var headers = _PublishedHeaders(snsClient);
+        headers.Should().ContainKey("null-header").WhoseValue.Should().BeNull();
+        headers["valid-header"].Should().Be("value");
     }
 
     [Fact]

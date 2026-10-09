@@ -62,11 +62,25 @@ public sealed class RabbitMqMessagingOptions
     public string ExchangeName { get; set; } = DefaultExchangeName;
 
     /// <summary>
-    /// When <see langword="true"/>, enables publisher confirms on the AMQP channel so that
-    /// publish operations wait for the broker to acknowledge receipt. Adds latency in exchange
-    /// for at-least-once delivery guarantees at the broker level. Defaults to <see langword="false"/>.
+    /// When <see langword="true"/> (default), enables publisher confirms on the AMQP channel so that a publish
+    /// completes only after the broker acknowledges it, and fails when the broker negatively acknowledges it or returns
+    /// an unroutable Queue-lane message. Turning it off trades those guarantees for lower publish latency: a publish
+    /// then succeeds once the client has written it to the socket, even when the broker drops it.
     /// </summary>
-    public bool PublishConfirms { get; set; }
+    public bool PublishConfirms { get; set; } = true;
+
+    /// <summary>
+    /// When <see langword="true"/> (default), the transport declares the exchanges, the shared queues, their bindings,
+    /// and the dead-letter topology it uses. Set it to <see langword="false"/> when the topology is managed outside the
+    /// application (for example by infrastructure as code) and the application's user lacks <c>configure</c>
+    /// permission: every exchange and shared queue is then declared passively, which fails with <c>NOT_FOUND</c> when it
+    /// is missing, and no binding is created.
+    /// </summary>
+    /// <remarks>
+    /// Per-process queues stay the application's own either way: an every-instance consumer's exclusive queue and the
+    /// request/reply queue are still declared and bound.
+    /// </remarks>
+    public bool AutoProvision { get; set; } = true;
 
     /// <summary>
     /// The TCP port to connect on. Use <c>-1</c> (default) to let the client choose the default
@@ -134,6 +148,27 @@ public sealed class RabbitMqMessagingOptions
         /// Defaults to <see langword="null"/> (the broker default <c>"classic"</c> is used).
         /// </summary>
         public string? QueueType { get; set; }
+
+        /// <summary>
+        /// When <see langword="true"/>, every shared queue dead-letters to a direct exchange named
+        /// <c>{lane exchange}.dlx</c>, and the transport declares a <c>{queue}.dlq</c> queue that keeps what it receives.
+        /// A malformed envelope the consumer rejects without requeue, a message whose
+        /// <see cref="MessageTTL"/> expires, and a message past <see cref="DeliveryLimit"/> then land there instead of
+        /// being dropped. Defaults to <see langword="false"/>. Nothing in the framework consumes a dead-letter queue.
+        /// </summary>
+        /// <remarks>
+        /// Changing it on a queue that already exists fails the declare with <c>PRECONDITION_FAILED</c>, because the
+        /// broker never changes a queue's arguments: delete the queue, or apply the dead-letter settings by policy.
+        /// </remarks>
+        public bool EnableDeadLettering { get; set; }
+
+        /// <summary>
+        /// Sets the <c>x-delivery-limit</c> declaration argument: how many times a quorum queue redelivers a message
+        /// that is returned to it before it drops the message, or dead-letters it when
+        /// <see cref="EnableDeadLettering"/> is on. Only quorum queues honor it, so it requires
+        /// <see cref="QueueType"/> <c>"quorum"</c>. Defaults to <see langword="null"/> (the broker default is used).
+        /// </summary>
+        public int? DeliveryLimit { get; set; }
     }
 
     /// <summary>
@@ -229,5 +264,16 @@ internal sealed class RabbitMqMessagingOptionsValidator : AbstractValidator<Rabb
             })
             .When(x => !string.IsNullOrWhiteSpace(x.ExchangeName))
             .WithMessage("Invalid ExchangeName format");
+
+        RuleFor(x => x.QueueArguments.DeliveryLimit)
+            .GreaterThan(0)
+            .When(x => x.QueueArguments.DeliveryLimit is not null)
+            .WithMessage("QueueArguments.DeliveryLimit must be greater than 0");
+        RuleFor(x => x.QueueArguments.QueueType)
+            .Equal("quorum", StringComparer.Ordinal)
+            .When(x => x.QueueArguments.DeliveryLimit is not null)
+            .WithMessage(
+                "QueueArguments.DeliveryLimit requires QueueArguments.QueueType \"quorum\": only quorum queues honor it"
+            );
     }
 }

@@ -30,6 +30,24 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         );
     }
 
+    // The envelope both lanes receive: the body as published, and the headers in one bag attribute (raw delivery on
+    // the Bus lane).
+    private static Dictionary<string, Amazon.SQS.Model.MessageAttributeValue> _HeaderBag(
+        params (string Name, string? Value)[] headers
+    )
+    {
+        return new(StringComparer.Ordinal)
+        {
+            [SqsHeaderCodec.AttributeName] = new()
+            {
+                DataType = "String",
+                StringValue = JsonSerializer.Serialize(
+                    headers.ToDictionary(h => h.Name, h => h.Value, StringComparer.Ordinal)
+                ),
+            },
+        };
+    }
+
     private static void _SetPrivateFields(AmazonSqsConsumerClient client, IAmazonSQS sqsClient, string queueUrl)
     {
         var sqsClientField = typeof(AmazonSqsConsumerClient).GetField(
@@ -270,16 +288,12 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
                             [
                                 new SqsMessage
                                 {
-                                    Body = """
-                                    {
-                                        "Message": "test message",
-                                        "MessageAttributes": {
-                                            "headless-msg-id": { "Value": "msg-1" },
-                                            "headless-msg-name": { "Value": "TestEvent" },
-                                            "test-key": { "Value": "test-value" }
-                                        }
-                                    }
-                                    """,
+                                    Body = "test message",
+                                    MessageAttributes = _HeaderBag(
+                                        ("headless-msg-id", "msg-1"),
+                                        ("headless-msg-name", "TestEvent"),
+                                        ("test-key", "test-value")
+                                    ),
                                     ReceiptHandle = "test-receipt-handle",
                                 },
                             ],
@@ -355,16 +369,12 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
                             [
                                 new SqsMessage
                                 {
-                                    Body = """
-                                    {
-                                        "Message": "test message",
-                                        "MessageAttributes": {
-                                            "headless-msg-id": { "Value": "msg-1" },
-                                            "headless-msg-name": { "Value": "TestEvent" },
-                                            "test-key": { "Value": "test-value" }
-                                        }
-                                    }
-                                    """,
+                                    Body = "test message",
+                                    MessageAttributes = _HeaderBag(
+                                        ("headless-msg-id", "msg-1"),
+                                        ("headless-msg-name", "TestEvent"),
+                                        ("test-key", "test-value")
+                                    ),
                                     ReceiptHandle = "test-receipt-handle",
                                 },
                             ],
@@ -427,7 +437,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         var secondPoll = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var sqsClient = Substitute.For<IAmazonSQS>();
 
-        // Return invalid message (null MessageAttributes) once, then empty
+        // Return a message without the header bag once, then empty
         var receiveCallCount = 0;
         sqsClient
             .ReceiveMessageAsync(Arg.Any<ReceiveMessageRequest>(), Arg.Any<CancellationToken>())
@@ -470,7 +480,7 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
         messageReceived.Should().BeFalse("invalid messages should not be processed");
 
         // Verify error was logged
-        _AssertLoggedEvent(logger, LogLevel.Error, 4201, messageContains: "terminally deleted");
+        _AssertLoggedEvent(logger, LogLevel.Error, 4200, messageContains: "terminally deleted");
 
         await sqsClient.Received(1).DeleteMessageAsync(Arg.Any<string>(), "test-receipt", Arg.Any<CancellationToken>());
         await sqsClient
@@ -517,16 +527,12 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
                             [
                                 new SqsMessage
                                 {
-                                    Body = """
-                                    {
-                                        "Message": "test",
-                                        "MessageAttributes": {
-                                            "headless-msg-id": { "Value": "msg-1" },
-                                            "headless-msg-name": { "Value": "TestEvent" },
-                                            "key": { "Value": "value" }
-                                        }
-                                    }
-                                    """,
+                                    Body = "test",
+                                    MessageAttributes = _HeaderBag(
+                                        ("headless-msg-id", "msg-1"),
+                                        ("headless-msg-name", "TestEvent"),
+                                        ("key", "value")
+                                    ),
                                     ReceiptHandle = "receipt",
                                 },
                             ],
@@ -587,16 +593,12 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
             [
                 new SqsMessage
                 {
-                    Body = """
-                        {
-                            "Message": "test",
-                            "MessageAttributes": {
-                                "headless-msg-id": { "Value": "msg-1" },
-                                "headless-msg-name": { "Value": "TestEvent" },
-                                "key": { "Value": "value" }
-                            }
-                        }
-                        """,
+                    Body = "test",
+                    MessageAttributes = _HeaderBag(
+                        ("headless-msg-id", "msg-1"),
+                        ("headless-msg-name", "TestEvent"),
+                        ("key", "value")
+                    ),
                     ReceiptHandle = "receipt-1",
                 },
             ],
@@ -750,16 +752,12 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
                             [
                                 new SqsMessage
                                 {
-                                    Body = """
-                                    {
-                                        "Message": "test",
-                                        "MessageAttributes": {
-                                            "headless-msg-id": { "Value": "msg-1" },
-                                            "headless-msg-name": { "Value": "TestEvent" },
-                                            "key": { "Value": "value" }
-                                        }
-                                    }
-                                    """,
+                                    Body = "test",
+                                    MessageAttributes = _HeaderBag(
+                                        ("headless-msg-id", "msg-1"),
+                                        ("headless-msg-name", "TestEvent"),
+                                        ("key", "value")
+                                    ),
                                     ReceiptHandle = $"receipt-{count}",
                                 },
                             ],
@@ -1237,14 +1235,8 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
                             [
                                 new SqsMessage
                                 {
-                                    Body = """
-                                    {
-                                        "Message": "valid body",
-                                        "MessageAttributes": {
-                                            "headless-msg-name": { "Value": "TestEvent" }
-                                        }
-                                    }
-                                    """,
+                                    Body = "valid body",
+                                    MessageAttributes = _HeaderBag(("headless-msg-name", "TestEvent")),
                                     ReceiptHandle = "receipt-missing-header",
                                 },
                             ],
@@ -1418,15 +1410,11 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
                             [
                                 new SqsMessage
                                 {
-                                    Body = """
-                                    {
-                                        "Message": "test body content",
-                                        "MessageAttributes": {
-                                            "headless-msg-id": { "Value": "msg-123" },
-                                            "headless-msg-name": { "Value": "TestEvent" }
-                                        }
-                                    }
-                                    """,
+                                    Body = "test body content",
+                                    MessageAttributes = _HeaderBag(
+                                        ("headless-msg-id", "msg-123"),
+                                        ("headless-msg-name", "TestEvent")
+                                    ),
                                     ReceiptHandle = "receipt-header-test",
                                 },
                             ],
@@ -1500,16 +1488,12 @@ public sealed class AmazonSqsConsumerClientTests : TestBase
                             [
                                 new SqsMessage
                                 {
-                                    Body = """
-                                    {
-                                        "Message": "test body content",
-                                        "MessageAttributes": {
-                                            "headless-msg-id": { "Value": "msg-123" },
-                                            "headless-msg-name": { "Value": "TestEvent" },
-                                            "headless-transport-address": { "Value": "wire-spoofed" }
-                                        }
-                                    }
-                                    """,
+                                    Body = "test body content",
+                                    MessageAttributes = _HeaderBag(
+                                        ("headless-msg-id", "msg-123"),
+                                        ("headless-msg-name", "TestEvent"),
+                                        ("headless-transport-address", "wire-spoofed")
+                                    ),
                                     ReceiptHandle = "receipt-address-test",
                                 },
                             ],

@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Azure.Core;
+using Azure.Messaging.ServiceBus;
 using Headless.Messaging.AzureServiceBus;
 using Headless.Messaging.AzureServiceBus.Helpers;
 
@@ -23,6 +24,47 @@ public sealed class ServiceBusHelpersTests
 
         // then
         client.FullyQualifiedNamespace.Should().Be("mynamespace.servicebus.windows.net");
+    }
+
+    [Fact]
+    public async Task should_apply_the_configured_client_options()
+    {
+        // given
+        var options = new AzureServiceBusMessagingOptions
+        {
+            ConnectionString =
+                "Endpoint=sb://mynamespace.servicebus.windows.net/;SharedAccessKeyName=myPolicy;SharedAccessKey=myKey",
+            ClientOptions = clientOptions =>
+            {
+                clientOptions.TransportType = ServiceBusTransportType.AmqpWebSockets;
+                clientOptions.Identifier = "orders-api";
+            },
+        };
+
+        // when
+        await using var client = ServiceBusHelpers.CreateClient(options);
+
+        // then
+        client.TransportType.Should().Be(ServiceBusTransportType.AmqpWebSockets);
+        client.Identifier.Should().Be("orders-api");
+    }
+
+    [Fact]
+    public async Task should_apply_the_configured_client_options_with_a_token_credential()
+    {
+        // given
+        var options = new AzureServiceBusMessagingOptions
+        {
+            Namespace = "othernamespace.servicebus.windows.net",
+            TokenCredential = Substitute.For<TokenCredential>(),
+            ClientOptions = clientOptions => clientOptions.TransportType = ServiceBusTransportType.AmqpWebSockets,
+        };
+
+        // when
+        await using var client = ServiceBusHelpers.CreateClient(options);
+
+        // then
+        client.TransportType.Should().Be(ServiceBusTransportType.AmqpWebSockets);
     }
 
     [Fact]

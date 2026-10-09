@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Diagnostics.CodeAnalysis;
 using Headless.Messaging.Transport;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
@@ -14,7 +15,8 @@ namespace Headless.Messaging.RabbitMq;
 /// When <paramref name="concurrent"/> is greater than zero, each delivery is dispatched on a
 /// <c>Task.Run</c> thread pool task and a semaphore limits the number of in-flight handlers.
 /// When <paramref name="concurrent"/> is zero, deliveries are handled sequentially on the calling
-/// thread. On header or body parsing failure the malformed delivery is terminally rejected.
+/// thread. On header or body parsing failure the malformed delivery is terminally rejected. Every dispatched handler is
+/// tracked in both modes, so shutdown can stop dispatching and wait for the running ones before the channel closes.
 /// </remarks>
 internal sealed class RabbitMqBasicConsumer(
     IChannel channel,
@@ -28,6 +30,12 @@ internal sealed class RabbitMqBasicConsumer(
 {
     private readonly SemaphoreSlim _semaphore = new(concurrent);
     private readonly bool _usingTaskRun = concurrent > 0;
+
+    // Guards _dispatching and _inFlightHandlers together, so a delivery either registers before the drain takes its
+    // snapshot or sees dispatching stopped; none slips between the two.
+    private readonly Lock _inFlightLock = new();
+    private readonly HashSet<Task> _inFlightHandlers = [];
+    private bool _dispatching = true;
 
     public override async Task HandleBasicDeliverAsync(
         string consumerTag,
@@ -43,6 +51,13 @@ internal sealed class RabbitMqBasicConsumer(
         if (_usingTaskRun)
         {
             await _semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+
+            if (!_TryBeginHandler(out var handlerDone))
+            {
+                _ReleaseSemaphore();
+                return;
+            }
+
             // Copy of the body safe to use outside the RabbitMQ thread context
             ReadOnlyMemory<byte> safeBody = body.ToArray();
             _ObserveBackgroundHandler(
@@ -64,6 +79,7 @@ internal sealed class RabbitMqBasicConsumer(
                         }
                         finally
                         {
+                            _EndHandler(handlerDone);
                             _ReleaseSemaphore();
                         }
                     },
@@ -73,9 +89,91 @@ internal sealed class RabbitMqBasicConsumer(
         }
         else
         {
-            await _Consume(consumerTag, deliveryTag, redelivered, exchange, routingKey, properties, body)
-                .ConfigureAwait(false);
+            if (!_TryBeginHandler(out var handlerDone))
+            {
+                return;
+            }
+
+            try
+            {
+                await _Consume(consumerTag, deliveryTag, redelivered, exchange, routingKey, properties, body)
+                    .ConfigureAwait(false);
+            }
+            finally
+            {
+                _EndHandler(handlerDone);
+            }
         }
+    }
+
+    /// <summary>
+    /// Stops dispatching deliveries to the handler. A delivery that arrives afterwards is left unacknowledged, and the
+    /// broker returns it to the queue when the channel closes.
+    /// </summary>
+    public void StopDispatching()
+    {
+        lock (_inFlightLock)
+        {
+            _dispatching = false;
+        }
+    }
+
+    /// <summary>
+    /// Stops dispatching, then waits up to <paramref name="timeout"/> for the handlers already running to finish.
+    /// </summary>
+    /// <exception cref="TimeoutException">A handler was still running when <paramref name="timeout"/> elapsed.</exception>
+    public Task DrainAsync(TimeSpan timeout, TimeProvider timeProvider)
+    {
+        Task[] inFlight;
+        lock (_inFlightLock)
+        {
+            _dispatching = false;
+            inFlight = [.. _inFlightHandlers];
+        }
+
+        return inFlight.Length == 0
+            ? Task.CompletedTask
+            : Task.WhenAll(inFlight).WaitAsync(timeout, timeProvider, CancellationToken.None);
+    }
+
+    /// <summary>The number of handlers dispatched and not yet finished.</summary>
+    internal int InFlightCount
+    {
+        get
+        {
+            lock (_inFlightLock)
+            {
+                return _inFlightHandlers.Count;
+            }
+        }
+    }
+
+    // A completion source stands in for the handler, so registration happens under the lock without running any of the
+    // handler there; it always completes successfully, and the handler's own faults are logged where they occur.
+    private bool _TryBeginHandler([NotNullWhen(true)] out TaskCompletionSource? handlerDone)
+    {
+        lock (_inFlightLock)
+        {
+            if (!_dispatching)
+            {
+                handlerDone = null;
+                return false;
+            }
+
+            handlerDone = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            _inFlightHandlers.Add(handlerDone.Task);
+            return true;
+        }
+    }
+
+    private void _EndHandler(TaskCompletionSource handlerDone)
+    {
+        lock (_inFlightLock)
+        {
+            _inFlightHandlers.Remove(handlerDone.Task);
+        }
+
+        handlerDone.TrySetResult();
     }
 
     private async Task _Consume(

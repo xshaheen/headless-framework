@@ -262,7 +262,6 @@ public sealed class AzureServiceBusFixture : IAsyncLifetime
                         [new("conformance-native-session", message.SessionId)];
                 }
 
-                options.MaxConcurrentCalls = 2;
                 options.MaxAutoLockRenewalDuration = TimeSpan.Zero;
             })
         );

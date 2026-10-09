@@ -191,7 +191,7 @@ Two unit-of-work behaviors are documented, not defects. `IUnitOfWork.OnCompleted
 | AWS SNS/SQS | AWS-native pub-sub and queue workloads | Non-AWS deployments | FIFO entities use MessageGroupId and deduplication ids |
 | NATS | Subject-based routing, lightweight broker, JetStream | Complex per-consumer storage-specific routing | Subject shards must be a single safe token |
 | Pulsar | Pulsar-native durable transport with shared subscriptions | Projects not already on Pulsar | Requires Pulsar topic and subscription provisioning |
-| Redis | Redis Streams transport | Workloads requiring a broker-native dead-letter queue | Durable streams, pending-entry reclaim, and application-owned retention |
+| Redis | Redis Streams transport | Workloads requiring a broker-native dead-letter queue | Durable streams, pending-entry reclaim after 60 s, and age-bounded streams (7 days by default) |
 
 ## Provider Capabilities
 
@@ -314,8 +314,8 @@ Transports declare support with `MessagingProviderCapabilities.Transport(..., su
 | Kafka | Queue-only topics; one Kafka consumer group per message | Ownership, startup rejection, and bounded poison-offset advancement | A Bus consumer fails startup; configure partitions for the workload |
 | NATS | Lane-qualified subjects, streams, retention, and durables | Identity/replica isolation and malformed terminal ACK | Grant stream and consumer provisioning permissions |
 | Pulsar | Lane-qualified topics and Bus subscriptions | Identity/replica isolation and malformed terminal ACK | Grant topic and subscription creation permissions |
-| RabbitMQ | Lane-qualified exchanges, routing keys, and owned queues | Identity/replica isolation and malformed terminal reject | Grant exchange and queue provisioning permissions |
-| Redis | Lane-qualified Streams for both lanes | Routing, ownership, settlement, and poison handling | Configure retained stream storage; the provider creates the Redis consumer groups |
+| RabbitMQ | Lane-qualified exchanges, routing keys, and owned queues; publishers declare the Queue-lane queue too | Identity/replica isolation, malformed terminal reject, publish before any consumer, and the shutdown drain | Grant exchange and queue provisioning permissions, or set `AutoProvision = false` and provision the topology yourself |
+| Redis | Lane-qualified Streams for both lanes | Routing, ownership, settlement, and poison handling | Size Redis memory for `StreamMaxAge` of traffic; the provider creates the Redis consumer groups and trims the streams |
 
 #### AWS least-privilege handoff
 
@@ -2058,12 +2058,14 @@ Framework span attributes: `headless.messaging.intent` (`bus`/`queue`), `tenant.
 - Every-instance consumers are not supported: startup fails naming the consumer.
 - Request/reply is not supported: AWS has no .NET temporary-queue client, so a host that sends requests or declares a responder fails startup. See [Request/reply](#requestreply).
 - Consumer startup honors host cancellation through SNS/SQS provisioning and subscription.
+- `AutoProvision = false` looks topics and queues up instead of creating them, for topology managed by Infrastructure as Code.
+- Received messages stay hidden until the core settles them: a heartbeat extends their visibility, and shutdown drains running handlers.
 
 ### Design constraints
 
 `MessageGroupId(...)` is message-side only because it is stamped while publishing. The provider maps it to native FIFO `MessageGroupId`; it is not a custom message attribute. Values longer than 128 characters are rejected.
 
-Malformed SNS transport envelopes are terminally deleted after sanitized logging. Handler rejection remains a normal visibility-timeout retry and can use an external SQS redrive policy.
+Malformed transport envelopes are terminally deleted after sanitized logging. Handler rejection makes the message visible again after 3 seconds, so it is a normal SQS retry and can use an external SQS redrive policy.
 
 ### Install
 
@@ -2099,13 +2101,25 @@ AWS declares immutable Bus and Queue capabilities with independent SNS/SQS topol
 
 `RoutingAffinityKey` maps to native `MessageGroupId` only for registered `.fifo` SNS topics or SQS queues. Keys are 1–128 printable ASCII characters (`!` through `~`), without spaces. `AwsMessagingHeaders.MessageGroupId` and `MessageGroupId(...)` remain raw adapters and must agree with a supplied typed key. Standard SQS message-group fairness is not an affinity guarantee; typed keys on standard routes are rejected. Shared groups do not imply whole-pipeline FIFO or handler exclusivity. No application headers are discarded.
 
-All SQS Queue sends encode the complete header dictionary, including null, delivery, trace, and business metadata, as one String attribute named `headless-aws-headers-v1`. The payload body and native `MessageGroupId` remain unchanged. Consumers require that exact attribute; other names with the same prefix are ordinary application headers inside the bag. Missing bags, mixed attributes, malformed JSON, duplicate or reserved header names, and invalid value types are terminally deleted from the source queue without a handler callback. Affinity is optional, so unkeyed messages use the same format. SNS Bus uses its separate SNS envelope format.
+Both lanes use one envelope. Every send encodes the complete header dictionary, including null, delivery, trace, and business metadata, as one String attribute named `headless-aws-headers-v1`: an SQS message attribute on the Queue lane, and an SNS message attribute on the Bus lane. The payload body and native `MessageGroupId` remain unchanged. Bus subscriptions use SNS raw message delivery (`RawMessageDelivery = true`), so SQS receives the published body and the bag as they were sent, not an SNS JSON wrapper. With `AutoProvision`, the consumer asks for raw delivery when it creates a subscription and sets it on one that already exists (`sns:SetSubscriptionAttributes`). One attribute stays within the SQS limit of ten message attributes, which raw delivery would otherwise exceed. Consumers on both lanes require that exact attribute; other names with the same prefix are ordinary application headers inside the bag. Missing bags (including an SNS-wrapped body from a subscription without raw delivery), mixed attributes, malformed JSON, duplicate or reserved header names, and invalid value types are terminally deleted from the source queue without a handler callback. Affinity is optional, so unkeyed messages use the same format.
 
-Configure AWS region, service URLs, and credentials through `AmazonSqsMessagingOptions`.
+Configure AWS region, service URLs, and credentials through `AmazonSqsMessagingOptions`. Its other settings:
+
+| Option | Default | Effect |
+| --- | --- | --- |
+| `AutoProvision` | `true` | Creates SNS topics, SQS queues, the queue access policy, and raw-delivery SNS-to-SQS subscriptions on first use. With `false`, queues are looked up with `sqs:GetQueueUrl` and topics with `sns:ListTopics`, and nothing is created, subscribed, or given a policy. Every topic, queue, and subscription must then exist before the host starts, and each Bus subscription must enable raw message delivery. A missing queue fails consumer startup naming the queue lookup; a missing topic fails the send. |
+| `VisibilityTimeout` | 30 s | Sent on every receive, so the queue's own default does not apply. Whole seconds from 1 second to 12 hours. |
+| `ReceiveWaitTime` | 5 s | SQS long-poll wait per receive. Whole seconds from 0 to 20. |
+
+With `AutoProvision = false`, a consumer needs `sqs:GetQueueUrl`, `sqs:ReceiveMessage`, `sqs:DeleteMessage`, and `sqs:ChangeMessageVisibility`. A Bus publisher needs `sns:ListTopics` and `sns:Publish`, and a Queue publisher needs `sqs:GetQueueUrl` and `sqs:SendMessage`.
 
 ### Runtime behavior
 
 Registers SNS/SQS clients, bus/queue transports, and AWS consumer client services.
+
+- **Visibility heartbeat.** A receive takes up to ten messages, and every one of them stays unsettled until the core commits or rejects it. That includes messages still waiting for a free handler slot under the consumer's `Concurrency`. Every third of `VisibilityTimeout`, one loop per consumer client extends all unsettled messages by `VisibilityTimeout`, through `ChangeMessageVisibilityBatch` calls of ten. Commit and reject stop the extension first. A message SQS refuses to extend for a reason of the request, such as a receipt handle that is no longer current, is dropped from the heartbeat with a warning, because it may be redelivered; a service-side failure is retried on the next beat. A reject or shutdown release waits for an extension of the same client already in flight, so the extension never overrides it. SQS caps a message's total invisibility at 12 hours from its first receive.
+- **Deletes.** Commits to one queue share `DeleteMessageBatch` calls when they overlap: the first delete is sent at once, and the deletes that arrive while it is in flight leave together in the next call. A lone delete adds no wait. Each caller gets its own entry's outcome; a stale receipt handle is logged, not thrown.
+- **Shutdown.** `ShutdownAsync` stops receiving, then waits for the receive loop and running handlers within the shutdown budget (30 seconds for `DisposeAsync`). The heartbeat keeps running meanwhile, so slow handlers still settle. Messages still unsettled after that, because they were never handed over or because their handler outlived the budget, are made visible at once instead of after their timeout. The SQS and SNS clients are disposed last.
 
 ## Headless.Messaging.AzureServiceBus
 
@@ -2151,7 +2165,9 @@ A `[BusConsumer("orders.projection")]` consumer of `OrderPlaced` gets the subscr
 
 `RoutingAffinityKey` maps to native `SessionId` on registered session-enabled routes, with a 128 UTF-16-code-unit maximum. Queue routes require `EnableSessions`; Bus routes may use global sessions or a matching custom producer with sessions. Raw `SessionId` and `PartitionKey` must both agree with a supplied typed key. A non-session partition key alone is insufficient configuration evidence. Local startup validation does not query the broker: the actual queue/subscription must also require sessions. Affinity does not promise application-handler exclusivity or whole-pipeline FIFO.
 
-Configure connection string or namespace, retry/client settings, queue/topic behavior, session support, and SQL filters through `AzureServiceBusMessagingOptions`. Authentication is an either/or contract: supply either `ConnectionString` or both `Namespace` and `TokenCredential` — both are nullable (`string?`) and the validator enforces that exactly one mode is configured at start. Processor settlement is not configurable; Headless disables Azure SDK auto-complete and completes or abandons messages explicitly.
+Configure connection string or namespace, client settings, queue/topic behavior, session support, and SQL filters through `AzureServiceBusMessagingOptions`. `ClientOptions` (`Action<ServiceBusClientOptions>`) configures the one shared `ServiceBusClient` when it is first created: retry (`RetryOptions`), `TransportType` (`AmqpWebSockets` where port 5671 is blocked), `WebProxy`, and `Identifier`. It applies to every publisher and consumer of the namespace. Authentication is an either/or contract: supply either `ConnectionString` or both `Namespace` and `TokenCredential` — both are nullable (`string?`) and the validator enforces that exactly one mode is configured at start. Processor settlement is not configurable; Headless disables Azure SDK auto-complete and completes or abandons messages explicitly.
+
+Concurrency comes from the consumer, not the transport: a consumer's `Concurrency` sets the processor's `MaxConcurrentCalls`. With `EnableSessions`, it sets `MaxConcurrentSessions` instead, and each session runs one message at a time so that session stays in order. `PrefetchCount` (default 0) sets how many messages each processor fetches ahead of its handlers. The processor does not renew the lock of a prefetched message until a handler takes it, so keep `PrefetchCount` near the consumer's concurrency: a prefetched message whose lock expires is redelivered and counts toward `SubscriptionMaxDeliveryCount`. `SessionIdleTimeout` is how long a session slot waits on a quiet session before moving on, which matters when `Concurrency` leaves few slots.
 
 ### Runtime behavior
 
@@ -2236,10 +2252,15 @@ Registers in-memory storage and monitoring services. State is lost when the proc
 - A Queue consumer's Kafka `group.id` is its message name, so every host consuming that message joins one Kafka consumer group.
 - Request/reply is not supported: Kafka has no per-process address short of a partition per instance, so a host that sends requests or declares a responder fails startup. See [Request/reply](#requestreply).
 - Consumer startup honors host cancellation while creating topics and subscriptions.
+- One idempotent producer, built on first publish, serves every publish in the process; disposal flushes it for up to `message.timeout.ms`. A fatal producer error discards it, and the next publish builds a new one.
+- Consumers use `cooperative-sticky` partition assignment by default, so a rebalance moves only the partitions that change owner.
+- A handler's settlement stores its offset; the background auto-commit sends stored offsets to the broker. A partition revoke waits up to 30 seconds for in-flight handlers on the revoked partitions, then commits synchronously. Shutdown drains in-flight handlers within the shutdown budget, then closes the consumer, which commits the stored offsets synchronously.
 
 ### Design constraints
 
 Kafka supports only the Queue lane in this package. A `[BusConsumer]` fails startup capability validation before provider creation, provisioning, or storage side effects, and an `IBus` publish fails when attempted. Message contracts are accepted: startup validates contract routes only on the Queue lane. `PartitionBy(...)` maps to the Kafka key. The framework does not impose a Kafka key length cap; broker/client configuration owns practical limits. Delivery remains at-least-once; consumers must dedupe by business key or message id. A publish succeeds only when Kafka reports `Persisted`; `PossiblyPersisted` is retried and can therefore produce duplicates. When consumer concurrency is greater than one, successful handlers can finish out of order, but Kafka commits advance only to the lowest offset still in flight for that partition; a completed high offset does not commit past lower in-flight offsets. Offsets the broker never hands to the application — transaction control records, aborted batches under `read_committed`, compaction holes, and tombstones — do not hold that watermark back, because ordered per-partition delivery proves they can never arrive later. Rebalances invalidate tracked offsets for revoked or lost partitions so late handlers cannot commit or seek partitions now owned by another consumer. Malformed transport envelopes are terminally logged and their offsets join the same per-partition completion watermark, bounding poison replay without skipping lower in-flight messages.
+
+The producer enables idempotence, so a retried produce request cannot write a second copy of a record. That covers broker retries inside one producer session only: an application retry after a failed publish still produces a new record. A process crash between storing an offset and the next auto-commit redelivers the records handled since the last commit; at-least-once delivery already requires handlers to dedupe. A handler that outlives the revoke wait or the shutdown budget never stores its offset, and the next owner of the partition redelivers that record. Switching an existing consumer group from an eager strategy (`range`, `roundrobin`) to `cooperative-sticky` needs a two-step rolling upgrade, because a group cannot mix eager and cooperative members: first deploy with `MainConfig["partition.assignment.strategy"] = "cooperative-sticky,range"`, then remove `range`.
 
 ### Install
 
@@ -2281,11 +2302,11 @@ public sealed class PlaceOrderWorker : IConsume<PlaceOrder>
 
 `QueueOptions.RoutingAffinityKey` maps to the native UTF-8 string key on registered Queue routes. The optional `KafkaMessagingHeaders.KafkaKey` adapter must match it. `RequireRoutingAffinity()` rejects configurations with a random or unrecognized `MainConfig["partitioner"]`; accepted partitioners are `consistent`, `consistent_random` (default), `murmur2`, `murmur2_random`, `fnv1a`, and `fnv1a_random`, all deterministic for a nonempty key. Headless adds no key-length limit beyond broker message limits. Keep partition count, encoding, and partitioner fixed while relying on placement. Different keys may share partitions; affinity promises neither FIFO nor exclusive handling.
 
-Configure bootstrap servers, main Kafka config, topic options, custom headers, and retriable error codes through `KafkaMessagingOptions`. `RetriableErrorCodes` / `DefaultRetriableErrorCodes` are `int` values of Confluent's `ErrorCode` enum (not the native enum type), so configuring retries needs no compile-time `Confluent.Kafka` reference; the framework casts back to `ErrorCode` internally.
+Configure bootstrap servers, main Kafka config, topic options, custom headers, and retriable error codes through `KafkaMessagingOptions`. `MainConfig` applies to both the producer and the consumers. The producer turns on `enable.idempotence` unless `MainConfig` sets it, or sets `acks` other than `all`, more than five in-flight requests, zero retries, or a non-FIFO `queuing.strategy`, which librdkafka cannot combine with idempotence; each setting is recognized under every name librdkafka accepts (for example `request.required.acks` for `acks`). It keeps librdkafka's own `queue.buffering.max.messages` and defaults `message.timeout.ms` to 5000 and `request.timeout.ms` to 3000. Consumers default `partition.assignment.strategy` to `cooperative-sticky`. The transport owns offset commits, so it always overrides `enable.auto.commit` and `enable.auto.offset.store`; `auto.commit.interval.ms` (librdkafka default 5000) still sets how often stored offsets reach the broker. `RetriableErrorCodes` / `DefaultRetriableErrorCodes` are `int` values of Confluent's `ErrorCode` enum (not the native enum type), so configuring retries needs no compile-time `Confluent.Kafka` reference; the framework casts back to `ErrorCode` internally.
 
 ### Runtime behavior
 
-Registers Kafka transports, connection pool, consumer factory, and provider-specific message/consumer config support.
+Registers the Kafka transport, the shared producer, the consumer factory, and provider-specific message/consumer config support.
 
 ## Headless.Messaging.Nats
 
@@ -2390,12 +2411,14 @@ Registers NATS connection pool, transports, consumer factory, stream provisionin
 - Pulsar bus and queue transport support.
 - TLS-related options through provider configuration.
 - Configurable negative-ack redelivery with a one-minute default and a validated 100-millisecond minimum.
+- Producer settings through `PulsarMessagingOptions.Producer`: compression, batching and its publish delay, and send timeout.
+- Shutdown lets in-flight handlers settle within the shutdown budget (30 seconds on a plain dispose) before it closes the consumer.
 - Consumer startup honors host cancellation while acquiring the client and subscribing, while preserving configured timeouts.
 - Request/reply is not supported yet: a host that sends requests or declares a responder fails startup until the provider's reply channel ships. See [Request/reply](#requestreply).
 
 ### Design constraints
 
-Bus topics insert `headless-bus-` before the local topic name and use one lane-qualified `headless-bus-{consumer-identity}` subscription per consumer identity. Queue topics insert `headless-queue-` and use one owned `headless-queue` subscription per physical topic. Replicas within a subscription compete; distinct Bus consumer identities each receive one copy. Malformed transport envelopes are terminally acknowledged so they cannot create negative-ack redelivery storms.
+Bus topics insert `headless-bus-` before the local topic name and use one lane-qualified `headless-bus-{consumer-identity}` subscription per consumer identity. Queue topics insert `headless-queue-` and use one owned `headless-queue` subscription per physical topic. Replicas within a subscription compete; distinct Bus consumer identities each receive one copy. Malformed transport envelopes are terminally acknowledged so they cannot create negative-ack redelivery storms. A handler still running when the shutdown budget runs out never acknowledges its message, so the broker redelivers it after the consumer closes (at-least-once). Negative-ack redelivery uses one fixed delay: Pulsar.Client 3.19 has no redelivery backoff. The package has no consumer hatch yet, so `Key_Shared` subscriptions, dead-letter policies, and ack timeouts are not configurable. Message chunking is not offered: with Pulsar.Client 3.19.4 a chunked message read through a `Shared` subscription, which every competing and Bus consumer uses, arrives truncated to its first chunk. Keep payloads under the broker's `maxMessageSize` (5 MB by default).
 
 ### Install
 
@@ -2419,7 +2442,7 @@ A `[BusConsumer("orders.projection")]` consumer of `OrderPlaced` subscribes as `
 
 `RoutingAffinityKey` on publish/enqueue options maps to the native Pulsar message key on registered Bus and Queue routes. The optional `PulsarMessagingHeaders.PulsarKey` adapter must agree. The configured client uses its built-in key hashing; Headless adds no key-length limit beyond broker message limits. Keep routing configuration and partition topology fixed while relying on placement. This does not select a `Key_Shared` subscription, guarantee FIFO, or prevent concurrent handling.
 
-Configure service URL, authentication, TLS, and negative-ack redelivery through `PulsarMessagingOptions`. `NegativeAckRedeliveryDelay` defaults to one minute and must be at least 100 milliseconds; smaller values fail startup validation instead of being silently clamped by Pulsar.Client.
+Configure service URL, authentication, TLS, negative-ack redelivery, and producer settings through `PulsarMessagingOptions`. `Producer` applies to every producer the transport creates, and each default matches Pulsar.Client: `CompressionType` (`None`; also `LZ4`, `ZLib`, `ZStd`, `Snappy`, decompressed transparently by consumers), `EnableBatching` (`true`), `BatchingMaxPublishDelay` (1 ms; each publish waits for its own send, so a longer delay adds up to that much latency per publish in exchange for larger batches), and `SendTimeout` (30 seconds; `TimeSpan.Zero` waits indefinitely, and a send that times out fails the publish). `NegativeAckRedeliveryDelay` defaults to one minute and must be at least 100 milliseconds; smaller values fail startup validation instead of being silently clamped by Pulsar.Client.
 
 ### Runtime behavior
 
@@ -2437,7 +2460,11 @@ Registers Pulsar connection factory, transports, and consumer client factory.
 
 ### Design constraints
 
-RabbitMQ exposes consumer-side QoS through `PrefetchCount(...)` on `Tune`; it has no message hatch. For base exchange `myapp.events`, Bus uses the `myapp.events.bus` topic exchange, `bus.{logical-name}` routing keys, and `bus.{consumer-identity}` queues; Queue uses the `myapp.events.queue` direct exchange, `queue.{logical-name}` routing keys, and `queue.{logical-name}` queues. When `PublishConfirms` is enabled, publish completion awaits the broker acknowledgement or negative acknowledgement. Malformed transport envelopes are terminally rejected without requeue while ordinary handler rejection remains retryable.
+RabbitMQ exposes consumer-side QoS through `PrefetchCount(...)` on `Tune`; it has no message hatch. For base exchange `myapp.events`, Bus uses the `myapp.events.bus` topic exchange, `bus.{logical-name}` routing keys, and `bus.{consumer-identity}` queues; Queue uses the `myapp.events.queue` direct exchange, `queue.{logical-name}` routing keys, and `queue.{logical-name}` queues. Malformed transport envelopes are terminally rejected without requeue while ordinary handler rejection remains retryable.
+
+- **A Queue-lane message is never dropped for want of a consumer.** Before its first send of a message name, each process declares and binds `queue.{logical-name}` with the same arguments its consumers use, once per process; a failed declare is forgotten, so the next publish tries again. Queue-lane publishes are `mandatory`, so a message the broker cannot route (an operator deleted the queue, or an operator-managed queue is unbound) comes back as `basic.return`; with `PublishConfirms` the publish then fails with a `PublishReturnException` inner exception, the outbox retries it, and the process declares the queue again on that retry. A Bus publish with no subscribed identity has nobody to reach and still succeeds.
+- **`PublishConfirms` defaults to `true`.** A publish completes only after the broker acknowledges it, and fails on a negative acknowledgement or an unroutable Queue-lane return. Set it to `false` to trade those guarantees for lower publish latency; a publish then succeeds once written to the socket, and the client discards a `basic.return`.
+- **Shutdown drains in-flight handlers.** `ShutdownAsync` stops dispatching, waits for the running handlers within the remaining `MessagingOptions.ShutdownTimeout` budget (30 seconds when the client is disposed directly), and only then closes the channel, so a handler that finishes in time gets its acknowledgement to the broker. A handler still running past the budget loses its acknowledgement and the message is redelivered; deliveries that arrive during the drain are not dispatched and return to the queue when the channel closes.
 
 ### Install
 
@@ -2467,6 +2494,26 @@ The current RabbitMQ exchange and binding topology does not provide the provider
 
 Configure host, credentials, exchange, queue arguments, QoS defaults, and custom headers through `RabbitMqMessagingOptions`. `UserName` and `Password` are `required` and must be set explicitly; the validator rejects the RabbitMQ default `guest`/`guest` credentials for production safety.
 
+| Option | Default | Effect |
+| --- | --- | --- |
+| `PublishConfirms` | `true` | Publish waits for the broker acknowledgement; a negative acknowledgement or an unroutable Queue-lane return fails it |
+| `AutoProvision` | `true` | `false` declares every exchange and shared queue passively (a missing one fails with `NOT_FOUND`) and creates no binding, for topology managed outside the application. An every-instance consumer's exclusive queue and the request/reply queue are per-process and are still declared and bound |
+| `QueueArguments.EnableDeadLettering` | `false` | Each shared queue dead-letters to the direct exchange `{lane exchange}.dlx` (for example `myapp.events.queue.dlx`) with the queue name as routing key, into a durable `{queue}.dlq` queue the transport declares and binds. Malformed envelopes, messages whose `MessageTTL` expires, and messages past `DeliveryLimit` land there instead of being dropped. Nothing in the framework consumes a dead-letter queue: inspect, shovel, or purge it with broker tooling |
+| `QueueArguments.DeliveryLimit` | `null` | Sets `x-delivery-limit`: how many times a quorum queue redelivers a returned message before dropping it, or dead-lettering it with `EnableDeadLettering`. Requires `QueueType = "quorum"`; must be greater than 0. RabbitMQ 4.x quorum queues apply a broker default of 20 when it is unset |
+
+RabbitMQ never changes the arguments of an existing queue: changing `EnableDeadLettering`, `DeliveryLimit`, `QueueType`, `QueueMode`, or `MessageTTL` for a queue that already exists fails its declare with `PRECONDITION_FAILED`. Delete the queue, or apply the setting by broker policy instead.
+
+```csharp
+setup.UseRabbitMq(options =>
+{
+    options.UserName = "app_user";
+    options.Password = "app_secret";
+    options.QueueArguments.QueueType = "quorum";
+    options.QueueArguments.DeliveryLimit = 10;
+    options.QueueArguments.EnableDeadLettering = true;
+});
+```
+
 ### Runtime behavior
 
 Registers RabbitMQ connection/channel pool, bus/queue transport, consumer client factory, and provider-specific config support.
@@ -2479,6 +2526,9 @@ Registers RabbitMQ connection/channel pool, bus/queue transport, consumer client
 - One Bus copy per consumer identity: the Redis consumer group on each Bus stream is named after the identity, and replicas that register the identity compete inside it.
 - One Queue copy per message: the Redis consumer group on the Queue stream is named after the message, and replicas compete inside it.
 - Lane-qualified stream keys, acknowledgements, pending-entry claim, and terminal poison handling.
+- A pending entry, read and not acknowledged, is claimed by another consumer of the group once it has been idle for `PendingClaimMinIdleTime` (60 s by default), so a crashed consumer's entries move on within a minute.
+- A rejected delivery stays pending in its place in the stream and is delivered again by that claim; the stream does not grow and the entry keeps its position.
+- Each publish trims, approximately, the entries older than `StreamMaxAge` (7 days by default) from its stream.
 - Streams consumer startup honors host cancellation through connection, provisioning, and subscription.
 - Request/reply over pub/sub on the literal channel `headless.reply.{32 hex}`; replies write no key, and every host that exchanges requests must use the same `ChannelPrefix`. See [Request/reply](#requestreply).
 
@@ -2502,11 +2552,30 @@ Redis physical keys are `headless:messaging:bus:{logical-name}` and `headless:me
 
 The current Redis Streams topology does not provide the provider-neutral routing-affinity contract. `RequireRoutingAffinity()` fails during startup; a supplied `RoutingAffinityKey` is rejected before persistence or transport effects. A stream name identifies a route, not a per-message affinity partition. No transparent stream sharding is added.
 
-Configure Redis connection and Stream behavior through `RedisMessagingOptions`.
+Configure Redis connection and Stream behavior through `RedisMessagingOptions`:
+
+| Option | Default | Effect |
+| --- | --- | --- |
+| `StreamEntriesCount` | `100` | Entries one read takes from each stream. A read that returns a full batch is followed at once by the next read, so a backlog drains without waiting the poll interval per batch. |
+| `PendingClaimMinIdleTime` | 60 s | How long an entry stays pending before another consumer claims it with `XAUTOCLAIM`. Must be positive. |
+| `IdleConsumerDeleteAfter` | 1 hour | How long a consumer with no pending entries stays idle before it is deleted from its group. `TimeSpan.Zero` keeps every consumer. |
+| `StreamMaxAge` | 7 days | Age past which each publish trims entries from its stream with `XADD MINID ~`. `TimeSpan.Zero` keeps entries without an age limit; otherwise it must exceed `PendingClaimMinIdleTime`. |
+| `ConnectionPoolSize` | `10` | Multiplexers in the shared connection pool. |
+
+Trade-offs and limits:
+
+- **Pending window.** A durable consumer acknowledges an entry once the core admits it into the inbox, before its handler runs, so `PendingClaimMinIdleTime` bounds admission, not handler duration. A runtime subscription, which has no consumer identity, acknowledges after an inline handler returns; set the option above that handler's longest run. Keep the time the core takes to admit one batch of `StreamEntriesCount` entries well below it, or another consumer claims entries still waiting their turn and the inbox discards the duplicates.
+- **Retention is not acknowledgement-aware.** Trimming removes an entry whether or not a group read or acknowledged it, so a group offline longer than `StreamMaxAge` misses the trimmed entries, and an entry that keeps failing admission is dropped once it is older than `StreamMaxAge`. The age is measured against the publishing process's clock. Approximate trimming removes whole internal nodes only, so entries can outlive the limit slightly; it never removes them early. No length cap (`MAXLEN`) is applied.
+- **Every-instance reads.** A group-less every-instance reader that falls further behind than `StreamMaxAge` skips the trimmed entries.
 
 ### Runtime behavior
 
 Registers Redis transports, consumers, and Redis connection services.
+
+- **Consumer names.** A process reads each group as `{group}:{machine name}:{slot}`, where the slot is the lowest one no other live client of that group in the process holds. A process restarted on the same machine, such as a StatefulSet pod, reads under the names it used before, and its startup pass delivers the entries it left pending at once. A process whose machine name changes, such as a Deployment pod, leaves its pending entries to the claim after `PendingClaimMinIdleTime`. Two processes that share a machine name share consumer names: each one's startup pass then also redelivers the other's pending entries, and the inbox discards the duplicates.
+- **Idle-consumer sweep.** Every `PendingClaimMinIdleTime`, each consumer client runs one Lua script per stream that deletes the group's consumers idle longer than `IdleConsumerDeleteAfter` with no pending entries. The check and the delete are atomic, because deleting a consumer discards its pending entries; a live consumer deleted while idle is created again by its next read. The sweep needs `EVAL`; where an ACL denies it, set `IdleConsumerDeleteAfter` to `TimeSpan.Zero`.
+- **Wire format.** A stream entry has two fields: `headers`, the headers as a JSON object, and `body`, the message body as raw bytes.
+- **Shutdown.** Shutdown waits, within the shutdown budget, for in-flight handlers to settle their entries before the client is disposed; an entry a handler never settles stays pending for the claim.
 
 ## Headless.Messaging.SourceGenerator
 

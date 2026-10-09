@@ -98,4 +98,38 @@ public sealed class ConnectionFactoryTests : TestBase
         recoveredProducer.Should().BeSameAs(producer);
         callCount.Should().Be(2);
     }
+
+    [Fact]
+    public async Task should_apply_producer_settings_to_every_producer_it_builds()
+    {
+        // given
+        var settings = new PulsarProducerOptions
+        {
+            CompressionType = Pulsar.Client.Common.CompressionType.ZStd,
+            EnableBatching = false,
+            BatchingMaxPublishDelay = TimeSpan.FromMilliseconds(20),
+            SendTimeout = TimeSpan.FromSeconds(5),
+        };
+
+        // Building the client opens no connection; only creating a producer would.
+        var client = await new PulsarClientBuilder().ServiceUrl("pulsar://localhost:6650").BuildAsync();
+
+        try
+        {
+            // when
+            var configuration = ConnectionFactory
+                .Configure(client.NewProducer().Topic("orders"), settings)
+                .Configuration;
+
+            // then
+            configuration.CompressionType.Should().Be(Pulsar.Client.Common.CompressionType.ZStd);
+            configuration.BatchingEnabled.Should().BeFalse();
+            configuration.BatchingMaxPublishDelay.Should().Be(TimeSpan.FromMilliseconds(20));
+            configuration.SendTimeout.Should().Be(TimeSpan.FromSeconds(5));
+        }
+        finally
+        {
+            await client.CloseAsync();
+        }
+    }
 }

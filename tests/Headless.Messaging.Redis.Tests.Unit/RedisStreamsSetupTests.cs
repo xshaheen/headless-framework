@@ -86,7 +86,7 @@ public sealed class RedisStreamsSetupTests : TestBase
         var options = provider.GetRequiredService<IOptions<RedisMessagingOptions>>().Value;
 
         // then - defaults should be applied
-        options.StreamEntriesCount.Should().Be(10);
+        options.StreamEntriesCount.Should().Be(100);
         options.ConnectionPoolSize.Should().Be(10);
         options.Configuration.Should().NotBeNull();
         options.Configuration!.EndPoints.Should().NotBeEmpty();

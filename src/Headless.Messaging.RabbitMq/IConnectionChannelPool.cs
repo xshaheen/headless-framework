@@ -68,6 +68,24 @@ internal interface IConnectionChannelPool
     /// <see langword="false"/> if it was disposed because the pool was full or the channel was closed.
     /// </returns>
     bool Return(IChannel context);
+
+    /// <summary>
+    /// Declares and binds the Queue-lane queue of <paramref name="messageName"/>, with the arguments its consumers
+    /// declare it with, once per process; with <see cref="RabbitMqMessagingOptions.AutoProvision"/> off it proves the
+    /// queue exists. A failed attempt is forgotten, so the next call tries again.
+    /// </summary>
+    /// <remarks>
+    /// A Queue-lane message goes to a direct exchange, which drops a message no queue is bound for. Consumers declare
+    /// the queue too, but a message sent before the first consumer ever started would be lost without this.
+    /// </remarks>
+    /// <exception cref="OperationCanceledException"><paramref name="cancellationToken"/> was cancelled.</exception>
+    Task EnsureQueueForPublishAsync(string messageName, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Forgets that the Queue-lane queue of <paramref name="messageName"/> was ensured, so the next publish declares it
+    /// again; used after the broker returned a message as unroutable, as it does once an operator deletes the queue.
+    /// </summary>
+    void ForgetQueueForPublish(string messageName);
 }
 
 /// <summary>Default implementation of <see cref="IConnectionChannelPool"/>.</summary>
@@ -79,6 +97,11 @@ internal sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposabl
     private readonly Func<CancellationToken, Task<IConnection>> _connectionActivator;
     private readonly Func<CancellationToken, Task<IConnection>> _nonRecoveringConnectionActivator;
     private readonly bool _isPublishConfirms;
+    private readonly RabbitMqMessagingOptions _options;
+
+    // One ensure per Queue-lane queue per process. The Lazy keeps concurrent first publishes on one declare; a failed
+    // declare is removed, so the next publish tries again.
+    private readonly ConcurrentDictionary<string, Lazy<Task>> _publishQueues = new(StringComparer.Ordinal);
     private readonly ILogger<ConnectionChannelPool> _logger;
     private readonly ConcurrentQueue<IChannel> _pool;
     private readonly SemaphoreSlim _poolSemaphore;
@@ -112,6 +135,7 @@ internal sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposabl
         _connectionActivator = connectionActivator ?? _CreateConnection(options, automaticRecovery: true);
         _nonRecoveringConnectionActivator = connectionActivator ?? _CreateConnection(options, automaticRecovery: false);
         _isPublishConfirms = options.PublishConfirms;
+        _options = options;
 
         HostAddress = string.Create(CultureInfo.InvariantCulture, $"{options.HostName}:{options.Port}");
         Exchange = string.Equals("v1", messagingOptions.Version, StringComparison.Ordinal)
@@ -197,6 +221,78 @@ internal sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposabl
     public Task<IConnection> CreateNonRecoveringConnectionAsync(CancellationToken cancellationToken = default)
     {
         return _nonRecoveringConnectionActivator(cancellationToken);
+    }
+
+    public Task EnsureQueueForPublishAsync(string messageName, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var queueName = RabbitMqPhysicalAddress.Queue(MessageLane.Queue, messageName, messageName);
+        var entry = _publishQueues.GetOrAdd(
+            queueName,
+            static (queue, state) =>
+                new Lazy<Task>(() => state.Pool._DeclarePublishQueueAsync(queue, state.MessageName)),
+            (Pool: this, MessageName: messageName)
+        );
+
+        return entry.Value.IsCompletedSuccessfully
+            ? Task.CompletedTask
+            : _AwaitPublishQueueAsync(queueName, entry, cancellationToken);
+    }
+
+    public void ForgetQueueForPublish(string messageName)
+    {
+        _publishQueues.TryRemove(RabbitMqPhysicalAddress.Queue(MessageLane.Queue, messageName, messageName), out _);
+    }
+
+    private async Task _AwaitPublishQueueAsync(string queueName, Lazy<Task> entry, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await entry.Value.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch when (entry.Value.IsFaulted || entry.Value.IsCanceled)
+        {
+            // Only this entry: a concurrent caller may already have replaced it with a fresh attempt.
+            _publishQueues.TryRemove(KeyValuePair.Create(queueName, entry));
+            throw;
+        }
+    }
+
+    // The declare is shared by every publish waiting on it, so no single caller's token cancels it; the client's own
+    // continuation timeout bounds each broker call. It runs on a channel of its own because a refused declare closes
+    // the channel, and a pooled publish channel must not be the one that dies.
+    private async Task _DeclarePublishQueueAsync(string queueName, string messageName)
+    {
+        var connection = await GetConnectionAsync(CancellationToken.None).ConfigureAwait(false);
+        var channel = await connection
+            .CreateChannelAsync(cancellationToken: CancellationToken.None)
+            .ConfigureAwait(false);
+        await using (channel.ConfigureAwait(false))
+        {
+            var laneExchange = RabbitMqPhysicalAddress.Exchange(Exchange, MessageLane.Queue);
+
+            await RabbitMqQueueTopology
+                .DeclareExchangeAsync(
+                    channel,
+                    _options,
+                    laneExchange,
+                    RabbitMqPhysicalAddress.ExchangeType(MessageLane.Queue),
+                    CancellationToken.None
+                )
+                .ConfigureAwait(false);
+
+            await RabbitMqQueueTopology
+                .DeclareQueueAsync(
+                    channel,
+                    _options,
+                    laneExchange,
+                    queueName,
+                    RabbitMqPhysicalAddress.RoutingKey(MessageLane.Queue, messageName),
+                    CancellationToken.None
+                )
+                .ConfigureAwait(false);
+        }
     }
 
     public void Dispose()
@@ -309,16 +405,13 @@ internal sealed class ConnectionChannelPool : IConnectionChannelPool, IDisposabl
     {
         foreach (var lane in new[] { MessageLane.Bus, MessageLane.Queue })
         {
-            await channel
-                .ExchangeDeclareAsync(
+            await RabbitMqQueueTopology
+                .DeclareExchangeAsync(
+                    channel,
+                    _options,
                     RabbitMqPhysicalAddress.Exchange(Exchange, lane),
                     RabbitMqPhysicalAddress.ExchangeType(lane),
-                    durable: true,
-                    autoDelete: false,
-                    arguments: null,
-                    passive: false,
-                    noWait: false,
-                    cancellationToken: cancellationToken
+                    cancellationToken
                 )
                 .ConfigureAwait(false);
         }

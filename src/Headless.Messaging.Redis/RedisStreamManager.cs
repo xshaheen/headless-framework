@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Globalization;
 using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -14,6 +15,36 @@ internal sealed class RedisStreamManager(
     TimeProvider? timeProvider = null
 ) : IRedisStreamManager
 {
+    // Checks and deletes in one atomic step: XGROUP DELCONSUMER discards the consumer's pending entries, so a
+    // consumer that read between a separate check and the delete would lose what it read. RESP2 returns each
+    // XINFO CONSUMERS row as a flat name/value list. pcall turns a missing stream or group into "nothing deleted".
+    private const string _DeleteIdleConsumersScript = """
+        local consumers = redis.pcall('XINFO', 'CONSUMERS', KEYS[1], ARGV[1])
+        if type(consumers) ~= 'table' or consumers.err then
+            return 0
+        end
+        local minIdle = tonumber(ARGV[2])
+        local deleted = 0
+        for _, consumer in ipairs(consumers) do
+            local name, pending, idle
+            for i = 1, #consumer, 2 do
+                local field = consumer[i]
+                if field == 'name' then
+                    name = consumer[i + 1]
+                elseif field == 'pending' then
+                    pending = consumer[i + 1]
+                elseif field == 'idle' then
+                    idle = consumer[i + 1]
+                end
+            end
+            if name and pending == 0 and idle and idle >= minIdle then
+                redis.call('XGROUP', 'DELCONSUMER', KEYS[1], ARGV[1], name)
+                deleted = deleted + 1
+            end
+        end
+        return deleted
+        """;
+
     private readonly RedisMessagingOptions _options = options.Value;
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private IConnectionMultiplexer? _redis;
@@ -44,7 +75,7 @@ internal sealed class RedisStreamManager(
         await _ConnectAsync(cancellationToken).ConfigureAwait(false);
 
         //The object returned from GetDatabase is a cheap pass - thru object, and does not need to be stored
-        await _redis!.GetDatabase().StreamAddAsync(stream, message).ConfigureAwait(false);
+        await _redis!.GetDatabase().StreamAddAsync(stream, message, _CreateAddOptions()).ConfigureAwait(false);
     }
 
     public async IAsyncEnumerable<IEnumerable<RedisStreamMessages>> PollStreamsLatestMessagesAsync(
@@ -63,15 +94,28 @@ internal sealed class RedisStreamManager(
 
         while (true)
         {
-            var (succeeded, result) = await _TryReadConsumerGroupAsync(consumerGroup, consumerName, positions, token)
+            var (succeeded, streamsRead) = await _TryReadConsumerGroupAsync(
+                    consumerGroup,
+                    consumerName,
+                    positions,
+                    token
+                )
                 .ConfigureAwait(false);
+
+            // Materialized once: it is yielded and then inspected for a full batch.
+            var result = streamsRead.ToArray();
 
             yield return result;
 
             if (succeeded)
             {
                 errorDelay = pollDelay;
-                await _timeProvider.Delay(pollDelay, token).ConfigureAwait(false);
+
+                // A full batch means a backlog: read on at once instead of waiting a poll interval per batch.
+                if (!_HasFullBatch(result))
+                {
+                    await _timeProvider.Delay(pollDelay, token).ConfigureAwait(false);
+                }
             }
             else
             {
@@ -131,8 +175,21 @@ internal sealed class RedisStreamManager(
         var nextStartIds = streams.ToDictionary(stream => (RedisKey)stream, _ => StreamPosition.Beginning);
         var errorDelay = pollDelay;
 
+        // The sweep runs on the first pass and then once per claim interval: dead consumers only need to go
+        // eventually, and the script reads every consumer of the group.
+        long? lastSweep = null;
+
         while (true)
         {
+            if (
+                _options.IdleConsumerDeleteAfter > TimeSpan.Zero
+                && (lastSweep is null || _timeProvider.GetElapsedTime(lastSweep.Value) >= claimMinIdleTime)
+            )
+            {
+                lastSweep = _timeProvider.GetTimestamp();
+                await _TryDeleteIdleConsumersAsync(streams, consumerGroup, token).ConfigureAwait(false);
+            }
+
             var (succeeded, result) = await _TryAutoClaimStalePendingAsync(
                     consumerGroup,
                     consumerName,
@@ -149,7 +206,12 @@ internal sealed class RedisStreamManager(
             if (succeeded)
             {
                 errorDelay = pollDelay;
-                await _timeProvider.Delay(pollDelay, token).ConfigureAwait(false);
+
+                // A full batch of stale entries, such as a crashed consumer's backlog, is claimed on at once.
+                if (!_HasFullBatch(result))
+                {
+                    await _timeProvider.Delay(pollDelay, token).ConfigureAwait(false);
+                }
             }
             else
             {
@@ -214,7 +276,7 @@ internal sealed class RedisStreamManager(
             errorDelay = pollDelay;
 
             // A full batch means a backlog: read on at once instead of waiting a poll interval per batch.
-            if (!result.Any(stream => stream.Entries.Length >= _options.StreamEntriesCount))
+            if (!_HasFullBatch(result))
             {
                 await _timeProvider.Delay(pollDelay, token).ConfigureAwait(false);
             }
@@ -233,24 +295,6 @@ internal sealed class RedisStreamManager(
         await _ConnectAsync(cancellationToken).ConfigureAwait(false);
 
         await _redis!.GetDatabase().StreamAcknowledgeAsync(stream, consumerGroup, messageId).ConfigureAwait(false);
-    }
-
-    public async Task RequeueAndAck(
-        string stream,
-        string consumerGroup,
-        string messageId,
-        NameValueEntry[] entries,
-        CancellationToken cancellationToken = default
-    )
-    {
-        await _ConnectAsync(cancellationToken).ConfigureAwait(false);
-
-        var database = _redis!.GetDatabase();
-
-        // Preserve at-least-once semantics: if requeue succeeds and ack fails, Redis may redeliver
-        // both entries; if requeue fails, the original entry remains pending for stale-claim recovery.
-        await database.StreamAddAsync(stream, entries).ConfigureAwait(false);
-        await database.StreamAcknowledgeAsync(stream, consumerGroup, messageId).ConfigureAwait(false);
     }
 
     private async Task<(bool Succeeded, IEnumerable<RedisStreamMessages> Streams)> _TryReadConsumerGroupAsync(
@@ -379,7 +423,7 @@ internal sealed class RedisStreamManager(
         return (Succeeded: false, Streams: []);
     }
 
-    private async Task<(bool Succeeded, IEnumerable<RedisStreamMessages> Streams)> _TryAutoClaimStalePendingAsync(
+    private async Task<(bool Succeeded, RedisStreamMessages[] Streams)> _TryAutoClaimStalePendingAsync(
         string consumerGroup,
         string consumerName,
         StreamPosition[] positions,
@@ -436,7 +480,7 @@ internal sealed class RedisStreamManager(
                 }
             }
 
-            return (Succeeded: true, Streams: streams);
+            return (Succeeded: true, Streams: [.. streams]);
         }
         catch (OperationCanceledException)
         {
@@ -448,6 +492,66 @@ internal sealed class RedisStreamManager(
         }
 
         return (Succeeded: false, Streams: []);
+    }
+
+    private async Task _TryDeleteIdleConsumersAsync(string[] streams, string consumerGroup, CancellationToken token)
+    {
+        try
+        {
+            await _ConnectAsync(token).ConfigureAwait(false);
+
+            var database = _redis!.GetDatabase();
+            RedisValue[] args = [consumerGroup, _ToRedisMilliseconds(_options.IdleConsumerDeleteAfter)];
+
+            foreach (var stream in streams)
+            {
+                var deleted = (long)
+                    await database
+                        .ScriptEvaluateAsync(_DeleteIdleConsumersScript, [stream], args)
+                        .WaitAsync(token)
+                        .ConfigureAwait(false);
+
+                if (deleted > 0)
+                {
+                    logger.LogIdleConsumersDeleted(deleted, consumerGroup, stream);
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Shutdown: the claim loop's next Delay(token) ends it.
+        }
+        catch (Exception ex)
+        {
+            // A failed sweep only leaves dead consumer names listed until the next one.
+            logger.LogDeleteIdleConsumersFailed(ex, consumerGroup);
+        }
+    }
+
+    private StreamAddOptions _CreateAddOptions()
+    {
+        if (_options.StreamMaxAge <= TimeSpan.Zero)
+        {
+            return default;
+        }
+
+        // Entry ids lead with the server's millisecond clock, so the smallest id to keep encodes the age limit.
+        // "~" lets Redis trim whole internal nodes only, which keeps the trim cheap and only ever keeps entries longer.
+        var minIdMilliseconds = Math.Max(
+            0,
+            _timeProvider.GetUtcNow().ToUnixTimeMilliseconds() - _ToRedisMilliseconds(_options.StreamMaxAge)
+        );
+
+        return new StreamAddOptions
+        {
+            MinId = string.Create(CultureInfo.InvariantCulture, $"{minIdMilliseconds}-0"),
+            Approximate = true,
+        };
+    }
+
+    private bool _HasFullBatch(RedisStreamMessages[] streams)
+    {
+        return Array.Exists(streams, stream => stream.Entries.Length >= _options.StreamEntriesCount);
     }
 
     private static long _ToRedisMilliseconds(TimeSpan value)
@@ -502,6 +606,31 @@ internal static partial class RedisStreamManagerLog
         Message = "Redis error when trying to auto-claim pending messages for consumer group {ConsumerGroup}"
     )]
     public static partial void LogAutoClaimConsumerGroupFailed(
+        this ILogger logger,
+        Exception exception,
+        string consumerGroup
+    );
+
+    [LoggerMessage(
+        EventId = 4,
+        EventName = "IdleConsumersDeleted",
+        Level = LogLevel.Information,
+        Message = "Deleted {Count} idle Redis consumers with no pending entries from group {ConsumerGroup} of stream {Stream}"
+    )]
+    public static partial void LogIdleConsumersDeleted(
+        this ILogger logger,
+        long count,
+        string consumerGroup,
+        string stream
+    );
+
+    [LoggerMessage(
+        EventId = 5,
+        EventName = "DeleteIdleConsumersFailed",
+        Level = LogLevel.Warning,
+        Message = "Redis error when trying to delete idle consumers of consumer group {ConsumerGroup}"
+    )]
+    public static partial void LogDeleteIdleConsumersFailed(
         this ILogger logger,
         Exception exception,
         string consumerGroup
