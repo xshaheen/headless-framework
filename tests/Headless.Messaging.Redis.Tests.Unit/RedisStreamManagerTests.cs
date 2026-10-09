@@ -50,9 +50,7 @@ public sealed class RedisStreamManagerTests : TestBase
             .StreamAddAsync(
                 Arg.Any<RedisKey>(),
                 Arg.Any<NameValueEntry[]>(),
-                Arg.Any<RedisValue?>(),
-                Arg.Any<int?>(),
-                Arg.Any<bool>(),
+                Arg.Any<StreamAddOptions>(),
                 Arg.Any<CommandFlags>()
             )
             .Returns(new RedisValue("1234567-0"));
@@ -74,9 +72,7 @@ public sealed class RedisStreamManagerTests : TestBase
             .StreamAddAsync(
                 Arg.Any<RedisKey>(),
                 Arg.Any<NameValueEntry[]>(),
-                Arg.Any<RedisValue?>(),
-                Arg.Any<int?>(),
-                Arg.Any<bool>(),
+                Arg.Any<StreamAddOptions>(),
                 Arg.Any<CommandFlags>()
             )
             .Returns(new RedisValue("1234567-0"));
@@ -131,47 +127,166 @@ public sealed class RedisStreamManagerTests : TestBase
     }
 
     [Fact]
-    public async Task should_requeue_before_acknowledging_rejected_message()
+    public async Task should_trim_entries_older_than_the_max_age_when_publishing()
     {
         // given
-        var entries = new NameValueEntry[] { new("headers", "{}"), new("body", "[]") };
-        List<string> calls = [];
-
+        var now = new DateTimeOffset(2026, 10, 9, 12, 0, 0, TimeSpan.Zero);
+        var sut = _CreateSut(new FakeTimeProvider(now), options => options.StreamMaxAge = TimeSpan.FromHours(1));
+        StreamAddOptions? sent = null;
         _mockDatabase
             .StreamAddAsync(
                 Arg.Any<RedisKey>(),
                 Arg.Any<NameValueEntry[]>(),
-                Arg.Any<RedisValue?>(),
-                Arg.Any<long?>(),
-                Arg.Any<bool>(),
-                Arg.Any<long?>(),
-                Arg.Any<StreamTrimMode>(),
+                Arg.Do<StreamAddOptions>(options => sent = options),
                 Arg.Any<CommandFlags>()
             )
-            .Returns(_ =>
-            {
-                calls.Add("add");
-                return new RedisValue("7654321-0");
-            });
+            .Returns(new RedisValue("1-0"));
 
+        // when
+        await sut.PublishAsync("orders-stream", [new("headers", "{}")], AbortToken);
+
+        // then
+        var expectedMinId = now.AddHours(-1).ToUnixTimeMilliseconds();
+        sent.Should().NotBeNull();
+        sent!.Value.MinId.Should().Be((RedisValue)$"{expectedMinId}-0");
+        sent.Value.Approximate.Should().BeTrue();
+        sent.Value.MaxLength.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_not_trim_when_the_max_age_is_zero()
+    {
+        // given
+        var sut = _CreateSut(new FakeTimeProvider(), options => options.StreamMaxAge = TimeSpan.Zero);
+        StreamAddOptions? sent = null;
         _mockDatabase
-            .StreamAcknowledgeAsync(
+            .StreamAddAsync(
+                Arg.Any<RedisKey>(),
+                Arg.Any<NameValueEntry[]>(),
+                Arg.Do<StreamAddOptions>(options => sent = options),
+                Arg.Any<CommandFlags>()
+            )
+            .Returns(new RedisValue("1-0"));
+
+        // when
+        await sut.PublishAsync("orders-stream", [new("headers", "{}")], AbortToken);
+
+        // then
+        sent.Should().NotBeNull();
+        sent!.Value.MinId.IsNull.Should().BeTrue();
+        sent.Value.MaxLength.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task should_sweep_idle_consumers_on_the_first_claim_pass_and_then_once_per_claim_interval()
+    {
+        // given
+        var timeProvider = new FakeTimeProvider();
+        var sut = _CreateSut(timeProvider, options => options.IdleConsumerDeleteAfter = TimeSpan.FromMinutes(30));
+        var claimMinIdleTime = TimeSpan.FromSeconds(60);
+        var pollDelay = TimeSpan.FromSeconds(1);
+        _mockDatabase
+            .ScriptEvaluateAsync(
+                Arg.Any<string>(),
+                Arg.Any<RedisKey[]?>(),
+                Arg.Any<RedisValue[]?>(),
+                Arg.Any<CommandFlags>()
+            )
+            .Returns(RedisResult.Create(1));
+        _mockDatabase
+            .StreamAutoClaimAsync(
                 Arg.Any<RedisKey>(),
                 Arg.Any<RedisValue>(),
                 Arg.Any<RedisValue>(),
+                Arg.Any<long>(),
+                Arg.Any<RedisValue>(),
+                Arg.Any<int?>(),
                 Arg.Any<CommandFlags>()
             )
-            .Returns(_ =>
-            {
-                calls.Add("ack");
-                return 1L;
-            });
+            .Returns(StreamAutoClaimResult.Null);
+
+        await using var enumerator = sut.PollStreamsStalePendingMessagesAsync(
+                ["orders-stream"],
+                "group",
+                "consumer",
+                claimMinIdleTime,
+                pollDelay,
+                AbortToken
+            )
+            .GetAsyncEnumerator(AbortToken);
 
         // when
-        await _sut.RequeueAndAck("test-stream", "my-group", "1234567-0", entries, AbortToken);
+        await enumerator.MoveNextAsync();
+        var secondPass = enumerator.MoveNextAsync().AsTask();
+        timeProvider.Advance(pollDelay);
+        await secondPass.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        var sweepsBeforeInterval = _SweepCalls();
+        var thirdPass = enumerator.MoveNextAsync().AsTask();
+        timeProvider.Advance(claimMinIdleTime);
+        await thirdPass.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
         // then
-        calls.Should().Equal("add", "ack");
+        sweepsBeforeInterval.Should().Be(1);
+        _SweepCalls().Should().Be(2);
+        await _mockDatabase
+            .Received()
+            .ScriptEvaluateAsync(
+                Arg.Is<string>(script => script.Contains("DELCONSUMER", StringComparison.Ordinal)),
+                Arg.Is<RedisKey[]?>(keys => keys!.Single() == "orders-stream"),
+                Arg.Is<RedisValue[]?>(values =>
+                    values!.Length == 2
+                    && values[0] == "group"
+                    && values[1] == (long)TimeSpan.FromMinutes(30).TotalMilliseconds
+                ),
+                Arg.Any<CommandFlags>()
+            );
+    }
+
+    [Fact]
+    public async Task should_not_sweep_idle_consumers_when_disabled()
+    {
+        // given
+        var sut = _CreateSut(new FakeTimeProvider(), options => options.IdleConsumerDeleteAfter = TimeSpan.Zero);
+        _mockDatabase
+            .StreamAutoClaimAsync(
+                Arg.Any<RedisKey>(),
+                Arg.Any<RedisValue>(),
+                Arg.Any<RedisValue>(),
+                Arg.Any<long>(),
+                Arg.Any<RedisValue>(),
+                Arg.Any<int?>(),
+                Arg.Any<CommandFlags>()
+            )
+            .Returns(StreamAutoClaimResult.Null);
+
+        await using var enumerator = sut.PollStreamsStalePendingMessagesAsync(
+                ["orders-stream"],
+                "group",
+                "consumer",
+                TimeSpan.FromSeconds(60),
+                TimeSpan.FromSeconds(1),
+                AbortToken
+            )
+            .GetAsyncEnumerator(AbortToken);
+
+        // when
+        await enumerator.MoveNextAsync();
+
+        // then
+        _SweepCalls().Should().Be(0);
+    }
+
+    private int _SweepCalls()
+    {
+        return _mockDatabase
+            .ReceivedCalls()
+            .Count(call =>
+                string.Equals(
+                    call.GetMethodInfo().Name,
+                    nameof(IDatabaseAsync.ScriptEvaluateAsync),
+                    StringComparison.Ordinal
+                )
+            );
     }
 
     [Fact]
@@ -245,15 +360,15 @@ public sealed class RedisStreamManagerTests : TestBase
             );
     }
 
-    private RedisStreamManager _CreateSut(TimeProvider timeProvider)
+    private RedisStreamManager _CreateSut(TimeProvider timeProvider, Action<RedisMessagingOptions>? configure = null)
     {
-        var options = Options.Create(
-            new RedisMessagingOptions
-            {
-                Configuration = ConfigurationOptions.Parse("localhost:6379"),
-                StreamEntriesCount = 10,
-            }
-        );
+        var redisOptions = new RedisMessagingOptions
+        {
+            Configuration = ConfigurationOptions.Parse("localhost:6379"),
+            StreamEntriesCount = 10,
+        };
+        configure?.Invoke(redisOptions);
+        var options = Options.Create(redisOptions);
 
         var logger = LoggerFactory.CreateLogger<RedisStreamManager>();
         return new RedisStreamManager(_mockConnectionPool, options, logger, timeProvider);

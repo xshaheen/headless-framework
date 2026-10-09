@@ -23,13 +23,16 @@ public sealed class RedisMessagingOptionsTests : TestBase
     }
 
     [Fact]
-    public void should_have_default_stream_entries_count_of_ten()
+    public void should_have_recovery_retention_and_batch_defaults()
     {
         // when
         var options = new RedisMessagingOptions();
 
         // then
-        options.StreamEntriesCount.Should().Be(10);
+        options.StreamEntriesCount.Should().Be(100);
+        options.PendingClaimMinIdleTime.Should().Be(TimeSpan.FromSeconds(60));
+        options.IdleConsumerDeleteAfter.Should().Be(TimeSpan.FromHours(1));
+        options.StreamMaxAge.Should().Be(TimeSpan.FromDays(7));
     }
 
     [Fact]
@@ -173,6 +176,67 @@ public sealed class RedisMessagingOptionsTests : TestBase
         var result = validator.Validate(options);
 
         result.IsValid.Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void should_fail_for_non_positive_pending_claim_min_idle_time_when_validator(int seconds)
+    {
+        var options = new RedisMessagingOptions { PendingClaimMinIdleTime = TimeSpan.FromSeconds(seconds) };
+
+        var result = new RedisMessagingOptionsValidator().Validate(options);
+
+        result.Errors.Should().Contain(e => e.PropertyName == nameof(RedisMessagingOptions.PendingClaimMinIdleTime));
+    }
+
+    [Fact]
+    public void should_fail_for_negative_idle_consumer_delete_after_when_validator()
+    {
+        var options = new RedisMessagingOptions { IdleConsumerDeleteAfter = TimeSpan.FromSeconds(-1) };
+
+        var result = new RedisMessagingOptionsValidator().Validate(options);
+
+        result
+            .Errors.Should()
+            .ContainSingle(e => e.PropertyName == nameof(RedisMessagingOptions.IdleConsumerDeleteAfter));
+    }
+
+    [Theory]
+    [InlineData(60, 60)]
+    [InlineData(60, 30)]
+    [InlineData(60, -1)]
+    public void should_fail_when_stream_max_age_does_not_exceed_the_claim_min_idle_time(
+        int claimSeconds,
+        int maxAgeSeconds
+    )
+    {
+        var options = new RedisMessagingOptions
+        {
+            PendingClaimMinIdleTime = TimeSpan.FromSeconds(claimSeconds),
+            StreamMaxAge = TimeSpan.FromSeconds(maxAgeSeconds),
+        };
+
+        var result = new RedisMessagingOptionsValidator().Validate(options);
+
+        result.Errors.Should().ContainSingle(e => e.PropertyName == nameof(RedisMessagingOptions.StreamMaxAge));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(61)]
+    public void should_pass_when_stream_max_age_is_unlimited_or_exceeds_the_claim_min_idle_time(int maxAgeSeconds)
+    {
+        var options = new RedisMessagingOptions
+        {
+            PendingClaimMinIdleTime = TimeSpan.FromSeconds(60),
+            StreamMaxAge = TimeSpan.FromSeconds(maxAgeSeconds),
+            IdleConsumerDeleteAfter = TimeSpan.Zero,
+        };
+
+        var result = new RedisMessagingOptionsValidator().Validate(options);
+
+        result.IsValid.Should().BeTrue();
     }
 
     private static string _GetEndpoint(RedisMessagingOptions options)

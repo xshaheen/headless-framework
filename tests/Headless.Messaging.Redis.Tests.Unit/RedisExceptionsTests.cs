@@ -54,21 +54,4 @@ public sealed class RedisExceptionsTests : TestBase
         exception.Message.Should().Contain("formatted properly");
         exception.InnerException.Should().BeSameAs(innerException);
     }
-
-    [Fact]
-    public void should_include_entry_id_and_inner_exception_when_redis_consume_invalid_body_exception()
-    {
-        // given
-        const string entryId = "3333333-0";
-        var innerException = new FormatException("Invalid base64");
-
-        // when
-        var exception = new RedisConsumeInvalidBodyException(entryId, innerException);
-
-        // then
-        exception.Message.Should().Contain("3333333-0");
-        exception.Message.Should().Contain("body");
-        exception.Message.Should().Contain("formatted properly");
-        exception.InnerException.Should().BeSameAs(innerException);
-    }
 }

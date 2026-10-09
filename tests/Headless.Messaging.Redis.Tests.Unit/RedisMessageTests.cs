@@ -58,7 +58,7 @@ public sealed class RedisMessageTests : TestBase
     }
 
     [Fact]
-    public void should_serialize_body_as_json()
+    public void should_store_body_as_raw_bytes()
     {
         // given
         var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
@@ -74,7 +74,28 @@ public sealed class RedisMessageTests : TestBase
         var bodyEntry = entries.First(e => e.Name == "body");
 
         // then
-        bodyEntry.Value.HasValue.Should().BeTrue();
+        ((byte[])bodyEntry.Value!)
+            .Should()
+            .Equal(1, 2, 3, 4, 5);
+    }
+
+    [Fact]
+    public void should_round_trip_a_binary_body_through_stream_entries()
+    {
+        // given
+        var headers = new Dictionary<string, string?>(StringComparer.Ordinal)
+        {
+            [Headers.MessageId] = "id",
+            [Headers.MessageName] = "name",
+        };
+        byte[] body = [0, 255, 34, 92, 0, 128];
+        var entries = new TransportMessage(headers, body).AsStreamEntries();
+
+        // when
+        var message = RedisMessage.Create(new StreamEntry("1-0", entries));
+
+        // then
+        message.Body.ToArray().Should().Equal(body);
     }
 
     [Fact]
@@ -88,9 +109,7 @@ public sealed class RedisMessageTests : TestBase
                 [Headers.MessageName] = "users.updated",
             }
         );
-        var bodyJson = JsonSerializer.Serialize(new byte[] { 10, 20, 30 });
-
-        var values = new NameValueEntry[] { new("headers", headersJson), new("body", bodyJson) };
+        var values = new NameValueEntry[] { new("headers", headersJson), new("body", new byte[] { 10, 20, 30 }) };
         var streamEntry = new StreamEntry("1234567-0", values);
 
         // when
@@ -113,9 +132,7 @@ public sealed class RedisMessageTests : TestBase
                 [Headers.MessageName] = "name",
             }
         );
-        var bodyJson = JsonSerializer.Serialize(Array.Empty<byte>());
-
-        var values = new NameValueEntry[] { new("headers", headersJson), new("body", bodyJson) };
+        var values = new NameValueEntry[] { new("headers", headersJson), new("body", RedisValue.EmptyString) };
         var streamEntry = new StreamEntry("1234567-0", values);
 
         // when
@@ -178,25 +195,6 @@ public sealed class RedisMessageTests : TestBase
         // when & then
         var action = () => RedisMessage.Create(streamEntry);
         action.Should().ThrowExactly<RedisConsumeInvalidHeadersException>();
-    }
-
-    [Fact]
-    public void should_throw_when_body_invalid_json()
-    {
-        // given
-        var headersJson = JsonSerializer.Serialize(
-            new Dictionary<string, string?>(StringComparer.Ordinal)
-            {
-                [Headers.MessageId] = "id",
-                [Headers.MessageName] = "name",
-            }
-        );
-        var values = new NameValueEntry[] { new("headers", headersJson), new("body", "not-valid-json") };
-        var streamEntry = new StreamEntry("1234567-0", values);
-
-        // when & then
-        var action = () => RedisMessage.Create(streamEntry);
-        action.Should().ThrowExactly<RedisConsumeInvalidBodyException>();
     }
 
     [Fact]
