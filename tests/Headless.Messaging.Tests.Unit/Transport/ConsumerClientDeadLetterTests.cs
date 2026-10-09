@@ -12,18 +12,15 @@ public sealed class ConsumerClientDeadLetterTests : TestBase
     public async Task should_commit_the_message_when_the_transport_does_not_dead_letter()
     {
         // given — a transport written before dead-lettering existed
-        IConsumerClient client = new CommitOnlyConsumerClient();
+        await using var commitOnly = new CommitOnlyConsumerClient();
+        IConsumerClient client = commitOnly;
         var sender = new object();
 
         // when
         await client.DeadLetterAsync(sender, "SubscriberNotFound", "no consumer", AbortToken);
 
         // then
-        ((CommitOnlyConsumerClient)client)
-            .CommittedSenders.Should()
-            .ContainSingle()
-            .Which.Should()
-            .BeSameAs(sender);
+        commitOnly.CommittedSenders.Should().ContainSingle().Which.Should().BeSameAs(sender);
     }
 
     private sealed class CommitOnlyConsumerClient : IConsumerClient

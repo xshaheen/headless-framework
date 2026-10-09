@@ -1168,10 +1168,15 @@ public sealed class ConsumerRegisterTests : TestBase
         Action<IServiceCollection>? configureServices = null,
         MessageLane lane = MessageLane.Bus,
         bool queueResponder = false,
-        bool nativeDeadLetter = false
+        bool nativeDeadLetter = false,
+        bool deadLetterThrows = false
     )
     {
-        await using var client = new InboxConsumerClient { NativeDeadLetter = nativeDeadLetter };
+        await using var client = new InboxConsumerClient
+        {
+            NativeDeadLetter = nativeDeadLetter,
+            DeadLetterThrows = deadLetterThrows,
+        };
         var dispatcher = Substitute.For<IDispatcher>();
         List<Message> dispatchedOrigins = [];
         dispatcher
@@ -2056,7 +2061,7 @@ public sealed class ConsumerRegisterTests : TestBase
         {
             Behavior = (context, _) =>
             {
-                context.Reject("envelope-defect", new InvalidOperationException("bad envelope"));
+                context.Reject("envelope-defect", new MessageDeserializationException("bad envelope"));
                 return ValueTask.CompletedTask;
             },
         };
@@ -2069,10 +2074,53 @@ public sealed class ConsumerRegisterTests : TestBase
             nativeDeadLetter: true
         );
 
-        // then
+        // then — an explicit reject keeps its reason whatever cause the middleware attached
         var (reason, description) = run.Client.DeadLetters.Should().ContainSingle().Subject;
         reason.Should().Be("ReceiveRejected");
         description.Should().Be("bad envelope");
+    }
+
+    [Fact]
+    public async Task receive_dead_letter_description_is_capped_because_brokers_keep_it_as_a_property()
+    {
+        // given
+        var middleware = new RecordingReceiveMiddleware
+        {
+            Behavior = (context, _) =>
+            {
+                context.Reject("envelope-defect", new InvalidOperationException(new string('x', 5000)));
+                return ValueTask.CompletedTask;
+            },
+        };
+
+        // when
+        await using var run = await _RunReceiveDeliveryAsync(
+            middleware,
+            "receive-dead-letter-cap",
+            "{}"u8.ToArray(),
+            nativeDeadLetter: true
+        );
+
+        // then
+        run.Client.DeadLetters.Should().ContainSingle().Which.Description.Should().HaveLength(1024);
+    }
+
+    [Fact]
+    public async Task receive_poison_is_rejected_for_redelivery_when_dead_lettering_fails()
+    {
+        // given / when
+        await using var run = await _RunReceiveDeliveryAsync(
+            null,
+            "receive-dead-letter-throws",
+            "{invalid"u8.ToArray(),
+            nativeDeadLetter: true,
+            deadLetterThrows: true
+        );
+
+        // then — the poison row is stored, so the redelivery commits instead of dead-lettering twice
+        run.Storage.ReceivedExceptionRows.Should().ContainSingle();
+        run.Client.RejectCount.Should().Be(1);
+        run.Client.CommitCount.Should().Be(0);
     }
 
     [Fact]
@@ -2081,7 +2129,7 @@ public sealed class ConsumerRegisterTests : TestBase
         // given
         var middleware = new RecordingReceiveMiddleware
         {
-            Behavior = (_, _) => throw new InvalidOperationException(new string('x', 5000)),
+            Behavior = (_, _) => throw new InvalidOperationException("signature=secret-value"),
         };
 
         // when
@@ -2092,10 +2140,10 @@ public sealed class ConsumerRegisterTests : TestBase
             nativeDeadLetter: true
         );
 
-        // then — the description is capped, because brokers keep it as a message property
+        // then — only the exception type leaves the process, since a middleware message can echo header values
         var (reason, description) = run.Client.DeadLetters.Should().ContainSingle().Subject;
         reason.Should().Be("ReceiveFailed");
-        description.Should().HaveLength(1024);
+        description.Should().Be(nameof(InvalidOperationException));
     }
 
     [Fact]
@@ -2621,6 +2669,8 @@ public sealed class ConsumerRegisterTests : TestBase
         // Off, the client behaves like a transport without a dead-letter destination: dead-lettering commits.
         public bool NativeDeadLetter { get; init; }
 
+        public bool DeadLetterThrows { get; init; }
+
         public List<(string Reason, string? Description)> DeadLetters { get; } = [];
 
         public BrokerAddress BrokerAddress => new("test", "inbox");
@@ -2673,6 +2723,11 @@ public sealed class ConsumerRegisterTests : TestBase
             if (!NativeDeadLetter)
             {
                 return CommitAsync(sender, cancellationToken);
+            }
+
+            if (DeadLetterThrows)
+            {
+                throw new InvalidOperationException("broker unavailable");
             }
 
             lock (DeadLetters)

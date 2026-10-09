@@ -591,24 +591,28 @@ internal sealed partial class ConsumerRegister
 
     /// <summary>
     /// The reason code and description a poisoned-on-arrival delivery is dead-lettered with. The codes are stable so an
-    /// operator can filter a broker's dead-letter destination by them; the description is the exception message, kept
-    /// short because brokers store it as a message property.
+    /// operator can filter a broker's dead-letter destination by them. An explicit middleware reject is
+    /// <c>ReceiveRejected</c> whatever cause it carries, because the middleware made that decision.
     /// </summary>
+    /// <remarks>
+    /// The description leaves the process as a broker message property. A framework exception's message, or the cause a
+    /// middleware chose to reject with, is sanitized and kept; any other receive fault contributes only its exception type,
+    /// because a middleware's own exception message can echo header values such as a signature or token. The full
+    /// exception stays in the poison record.
+    /// </remarks>
     private static (string Reason, string? Description) _DescribeDeadLetter(Exception? cause, bool isPolicyReject)
     {
         var reason = cause switch
         {
-            SubscriberNotFoundException => DeadLetterReasons.SubscriberNotFound,
             _ when isPolicyReject => DeadLetterReasons.ReceiveRejected,
+            SubscriberNotFoundException => DeadLetterReasons.SubscriberNotFound,
             MessageDeserializationException => DeadLetterReasons.DeserializationFailed,
             _ => DeadLetterReasons.ReceiveFailed,
         };
 
-        var description = cause?.Message;
-        if (description is { Length: > DeadLetterReasons.MaxDescriptionLength })
-        {
-            description = description[..DeadLetterReasons.MaxDescriptionLength];
-        }
+        var description = string.Equals(reason, DeadLetterReasons.ReceiveFailed, StringComparison.Ordinal)
+            ? cause?.GetType().Name
+            : LogSanitizer.Sanitize(cause?.Message, DeadLetterReasons.MaxDescriptionLength);
 
         return (reason, description);
     }
