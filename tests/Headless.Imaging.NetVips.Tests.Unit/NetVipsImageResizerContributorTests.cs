@@ -560,6 +560,39 @@ public sealed class NetVipsImageResizerContributorTests : TestBase
     }
 
     [Fact]
+    public async Task should_copy_a_large_unknown_stream_asynchronously_before_libvips_reads_it()
+    {
+        // given: a 7 MB upload in a stream that throws on synchronous reads, larger than the first header window, so
+        // the pixels must come through the asynchronous copy rather than the header read
+        var bytes = await File.ReadAllBytesAsync(TestImages.AssetPath("happy-young-man-with-q-letter.jpg"), AbortToken);
+        await using var input = new AsyncOnlyStream(bytes);
+
+        // when
+        var result = await _CreateResizer()
+            .TryResizeAsync(input, new ImageResizeArgs(ImageResizeMode.Max, 300, 300), AbortToken);
+
+        // then
+        result.State.Should().Be(ImageProcessState.Done);
+        result.Result!.Width.Should().Be(300);
+    }
+
+    [Fact]
+    public async Task should_pass_a_non_seekable_stream_through_as_a_copy_of_its_bytes()
+    {
+        // given: a non-seekable stream is read to its end, so the original cannot be handed back
+        var original = TestImages.Encode(".png", 40, 20);
+        await using var input = new NonSeekableStream(original);
+        var args = new ImageResizeArgs(ImageResizeMode.Max, 10, 10) { Mode = ImageResizeMode.None };
+
+        // when
+        var result = await _CreateResizer().TryResizeAsync(input, args, AbortToken);
+
+        // then
+        result.Result!.Content.Should().NotBeSameAs(input);
+        result.Result.Content.GetAllBytes().Should().Equal(original);
+    }
+
+    [Fact]
     public async Task should_not_keep_the_caller_streams_alive_after_resizing()
     {
         // given: libvips' operation cache is on (the default) and keeps some operations, with the source each read
