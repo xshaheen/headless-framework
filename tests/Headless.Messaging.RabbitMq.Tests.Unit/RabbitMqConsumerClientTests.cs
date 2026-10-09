@@ -1210,4 +1210,109 @@ public sealed class RabbitMqConsumerClientTests : TestBase
                 string.Equals(c.GetMethodInfo().Name, nameof(IChannel.BasicConsumeAsync), StringComparison.Ordinal)
             );
     }
+
+    [Fact]
+    public async Task should_ack_running_handler_before_closing_channel_on_shutdown()
+    {
+        // given
+        _channel.IsOpen.Returns(true);
+        _channel.IsClosed.Returns(false);
+        await using var client = new RabbitMqConsumerClient("test-group", 2, _pool, _options, _serviceProvider);
+        var handlerStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseHandler = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        client.AttachCallbacks(
+            async (_, sender) =>
+            {
+                handlerStarted.TrySetResult();
+                await releaseHandler.Task;
+                await client.CommitAsync(sender, CancellationToken.None);
+            },
+            _ => { }
+        );
+        using var cts = new CancellationTokenSource();
+        var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token).AsTask();
+        await client.WaitUntilReadyAsync(AbortToken).AsTask().WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        var consumer = _channel
+            .ReceivedCalls()
+            .Where(call =>
+                string.Equals(call.GetMethodInfo().Name, nameof(IChannel.BasicConsumeAsync), StringComparison.Ordinal)
+            )
+            .SelectMany(call => call.GetArguments())
+            .OfType<RabbitMqBasicConsumer>()
+            .First();
+
+        await consumer.HandleBasicDeliverAsync(
+            "consumerTag",
+            42ul,
+            false,
+            "exchange",
+            "bus.orders",
+            _CreateDeliveryProperties(),
+            "body"u8.ToArray(),
+            CancellationToken.None
+        );
+        await handlerStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        await cts.CancelAsync();
+        await listeningTask;
+
+        // when
+        var shutdown = client.ShutdownAsync(TimeSpan.FromSeconds(5), AbortToken).AsTask();
+
+        // then — the channel stays open while the handler runs, and its ack lands before the channel closes
+        shutdown.IsCompleted.Should().BeFalse();
+        _channel.DidNotReceive().Dispose();
+
+        releaseHandler.TrySetResult();
+        await shutdown.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        Received.InOrder(() =>
+        {
+            _ = _channel.BasicAckAsync(42ul, false, Arg.Any<CancellationToken>());
+            _channel.Dispose();
+        });
+    }
+
+    [Fact]
+    public async Task should_declare_queue_passively_and_skip_binding_when_auto_provision_is_off()
+    {
+        // given
+        _options.Value.AutoProvision = false;
+        await using var client = new RabbitMqConsumerClient(
+            "test-group",
+            1,
+            _pool,
+            _options,
+            _serviceProvider,
+            lane: MessageLane.Queue
+        );
+
+        // when
+        await client.SubscribeAsync(["orders.created"], AbortToken);
+
+        // then
+        await _channel.Received(1).ExchangeDeclarePassiveAsync("test.exchange.queue", AbortToken);
+        await _channel.Received(1).QueueDeclarePassiveAsync("queue.orders.created", AbortToken);
+        _channel
+            .ReceivedCalls()
+            .Select(call => call.GetMethodInfo().Name)
+            .Should()
+            .NotContain([
+                nameof(IChannel.ExchangeDeclareAsync),
+                nameof(IChannel.QueueDeclareAsync),
+                nameof(IChannel.QueueBindAsync),
+            ]);
+    }
+
+    private static IReadOnlyBasicProperties _CreateDeliveryProperties()
+    {
+        var properties = Substitute.For<IReadOnlyBasicProperties>();
+        properties.Headers.Returns(
+            new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                [Headless.Messaging.Headers.MessageId] = "msg-1"u8.ToArray(),
+                [Headless.Messaging.Headers.MessageName] = "orders"u8.ToArray(),
+            }
+        );
+        return properties;
+    }
 }

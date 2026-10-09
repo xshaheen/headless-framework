@@ -439,4 +439,111 @@ public sealed class RabbitMqTransportTests : TestBase
         result.Exception.Should().NotBeNull();
         result.Exception!.InnerException.Should().BeSameAs(expectedException);
     }
+
+    [Fact]
+    public async Task should_ensure_queue_before_publishing_mandatory_queue_lane_message()
+    {
+        // given
+        await using var transport = new RabbitMqTransport(_logger, _pool, MessageLane.Queue);
+
+        // when
+        var result = await transport.SendAsync(_CreateMessage("orders"), AbortToken);
+
+        // then
+        result.Succeeded.Should().BeTrue();
+        Received.InOrder(() =>
+        {
+            _ = _pool.EnsureQueueForPublishAsync("orders", AbortToken);
+            _ = _pool.Rent(AbortToken);
+            _ = _channel.BasicPublishAsync(
+                "test.exchange.queue",
+                "queue.orders",
+                true,
+                Arg.Any<BasicProperties>(),
+                Arg.Any<ReadOnlyMemory<byte>>(),
+                AbortToken
+            );
+        });
+    }
+
+    [Fact]
+    public async Task should_not_ensure_any_queue_for_bus_lane_message()
+    {
+        // given
+        await using var transport = new RabbitMqTransport(_logger, _pool, MessageLane.Bus);
+
+        // when
+        await transport.SendAsync(_CreateMessage("orders"), AbortToken);
+
+        // then
+        await _pool.DidNotReceive().EnsureQueueForPublishAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_fail_without_publishing_when_queue_cannot_be_ensured()
+    {
+        // given
+        _pool
+            .EnsureQueueForPublishAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromException(new InvalidOperationException("NOT_FOUND - no queue 'queue.orders'")));
+        await using var transport = new RabbitMqTransport(_logger, _pool, MessageLane.Queue);
+
+        // when
+        var result = await transport.SendAsync(_CreateMessage("orders"), AbortToken);
+
+        // then
+        result.Succeeded.Should().BeFalse();
+        result.Exception.Should().BeOfType<PublisherSentFailedException>();
+        await _pool.DidNotReceive().Rent(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_fail_and_forget_ensured_queue_when_broker_returns_message()
+    {
+        // given
+        _channel
+            .When(x =>
+                _ = x.BasicPublishAsync(
+                        Arg.Any<string>(),
+                        Arg.Any<string>(),
+                        Arg.Any<bool>(),
+                        Arg.Any<BasicProperties>(),
+                        Arg.Any<ReadOnlyMemory<byte>>(),
+                        Arg.Any<CancellationToken>()
+                    )
+                    .AsTask()
+            )
+            .Do(_ =>
+                throw new PublishReturnException(
+                    1,
+                    "unroutable",
+                    "test.exchange.queue",
+                    "queue.orders",
+                    312,
+                    "NO_ROUTE"
+                )
+            );
+        await using var transport = new RabbitMqTransport(_logger, _pool, MessageLane.Queue);
+
+        // when
+        var result = await transport.SendAsync(_CreateMessage("orders"), AbortToken);
+
+        // then
+        result.Succeeded.Should().BeFalse();
+        result.Exception!.InnerException.Should().BeOfType<PublishReturnException>();
+        _pool.Received(1).ForgetQueueForPublish("orders");
+        _pool.Received(1).Return(_channel);
+    }
+
+    private static TransportMessage _CreateMessage(string name)
+    {
+        return new TransportMessage(
+            new Dictionary<string, string?>(StringComparer.Ordinal)
+            {
+                [MessagingHeaders.MessageId] = "msg-123",
+                [MessagingHeaders.MessageName] = name,
+            },
+            "payload"u8.ToArray()
+        );
+    }
 }

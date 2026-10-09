@@ -45,6 +45,13 @@ internal sealed class RabbitMqTransport : IBusTransport, IQueueTransport
         IChannel? channel = null;
         try
         {
+            if (_lane == MessageLane.Queue)
+            {
+                await _connectionChannelPool
+                    .EnsureQueueForPublishAsync(message.Name, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
             channel = await _connectionChannelPool.Rent(cancellationToken).ConfigureAwait(false);
 
             var props = new BasicProperties
@@ -54,8 +61,18 @@ internal sealed class RabbitMqTransport : IBusTransport, IQueueTransport
                 Headers = message.Headers.ToDictionary(x => x.Key, object? (x) => x.Value, StringComparer.Ordinal),
             };
 
+            // A Queue-lane message must reach its queue, so the broker returns one it cannot route instead of dropping
+            // it, and with publisher confirms the client fails the publish. A Bus message with no subscribed identity
+            // has nobody to reach, which is not a failure.
             await channel
-                .BasicPublishAsync(_exchange, routingKey, mandatory: false, props, message.Body, cancellationToken)
+                .BasicPublishAsync(
+                    _exchange,
+                    routingKey,
+                    mandatory: _lane == MessageLane.Queue,
+                    props,
+                    message.Body,
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
 
             var messageName = message.Name;
@@ -70,6 +87,12 @@ internal sealed class RabbitMqTransport : IBusTransport, IQueueTransport
         }
         catch (Exception ex)
         {
+            if (ex is PublishReturnException)
+            {
+                // The queue this process declared is gone (an operator deleted it); declare it again on the next try.
+                _connectionChannelPool.ForgetQueueForPublish(message.Name);
+            }
+
             if (ex is AlreadyClosedException && channel?.IsOpen == true)
             {
                 // There are cases when channel's property IsOpen returns true, but the connection is actually closed, e.g. https://github.com/rabbitmq/rabbitmq-dotnet-client/issues/1871

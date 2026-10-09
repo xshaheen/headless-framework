@@ -961,4 +961,133 @@ public sealed class RabbitMqBasicConsumerTests : TestBase
         // then - should complete without deadlock
         await _channel.Received(3).BasicRejectAsync(Arg.Any<ulong>(), true, Arg.Any<CancellationToken>());
     }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(2)]
+    public async Task should_wait_for_running_handler_when_draining(byte concurrent)
+    {
+        // given
+        var handlerStarted = _CreateSignal();
+        var releaseHandler = _CreateSignal();
+        using var consumer = new RabbitMqBasicConsumer(
+            _channel,
+            concurrent,
+            async (_, _) =>
+            {
+                handlerStarted.TrySetResult();
+                await releaseHandler.Task;
+            },
+            args => _loggedEvents.Add(args),
+            null,
+            _serviceProvider
+        );
+
+        // The sequential path runs the handler on the delivering call, so that call stays pending until release.
+        var delivery = consumer.HandleBasicDeliverAsync(
+            "consumerTag",
+            1ul,
+            false,
+            "exchange",
+            "routingKey",
+            _CreateProperties(),
+            "body"u8.ToArray(),
+            CancellationToken.None
+        );
+        await _WaitForSignalAsync(handlerStarted.Task);
+
+        // when
+        var drain = consumer.DrainAsync(TimeSpan.FromSeconds(5), TimeProvider.System);
+
+        // then
+        drain.IsCompleted.Should().BeFalse();
+        consumer.InFlightCount.Should().Be(1);
+
+        releaseHandler.TrySetResult();
+        await drain.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        await delivery.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        consumer.InFlightCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task should_time_out_draining_when_handler_outlives_the_budget()
+    {
+        // given
+        var handlerStarted = _CreateSignal();
+        var releaseHandler = _CreateSignal();
+        using var consumer = new RabbitMqBasicConsumer(
+            _channel,
+            1,
+            async (_, _) =>
+            {
+                handlerStarted.TrySetResult();
+                await releaseHandler.Task;
+            },
+            args => _loggedEvents.Add(args),
+            null,
+            _serviceProvider
+        );
+
+        await consumer.HandleBasicDeliverAsync(
+            "consumerTag",
+            1ul,
+            false,
+            "exchange",
+            "routingKey",
+            _CreateProperties(),
+            "body"u8.ToArray(),
+            CancellationToken.None
+        );
+        await _WaitForSignalAsync(handlerStarted.Task);
+
+        // when
+        var drain = async () => await consumer.DrainAsync(TimeSpan.FromMilliseconds(50), TimeProvider.System);
+
+        // then
+        await drain.Should().ThrowAsync<TimeoutException>();
+        releaseHandler.TrySetResult();
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(2)]
+    public async Task should_not_dispatch_deliveries_after_dispatching_stops(byte concurrent)
+    {
+        // given
+        var callbackInvoked = false;
+        using var consumer = new RabbitMqBasicConsumer(
+            _channel,
+            concurrent,
+            (_, _) =>
+            {
+                callbackInvoked = true;
+                return Task.CompletedTask;
+            },
+            args => _loggedEvents.Add(args),
+            null,
+            _serviceProvider
+        );
+        await consumer.DrainAsync(TimeSpan.FromSeconds(5), TimeProvider.System);
+
+        // when
+        await consumer.HandleBasicDeliverAsync(
+            "consumerTag",
+            7ul,
+            false,
+            "exchange",
+            "routingKey",
+            _CreateProperties(),
+            "body"u8.ToArray(),
+            CancellationToken.None
+        );
+
+        // then — left unacknowledged, so the broker requeues it when the channel closes
+        callbackInvoked.Should().BeFalse();
+        consumer.InFlightCount.Should().Be(0);
+        _channel
+            .ReceivedCalls()
+            .Select(call => call.GetMethodInfo().Name)
+            .Should()
+            .NotContain([nameof(IChannel.BasicAckAsync), nameof(IChannel.BasicRejectAsync)]);
+    }
 }
