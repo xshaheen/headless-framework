@@ -30,6 +30,8 @@ public sealed class SqlServerDistributedLockConformanceTests : DistributedLockTe
                 options.ConnectionString = fixture.ConnectionString;
                 options.EnableFencing = false;
                 options.KeyPrefix = $"conformance:{Faker.Random.AlphaNumeric(6)}:";
+                // A killed session raises no StateChange, so the connection-death cases wait for the probe.
+                options.ConnectionProbeInterval = TimeSpan.FromSeconds(1);
             })
         );
 

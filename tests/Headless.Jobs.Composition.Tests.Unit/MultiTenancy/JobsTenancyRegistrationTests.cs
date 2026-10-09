@@ -7,7 +7,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Tests.MultiTenancy;
 
-[Collection<JobsHelperCollection>]
 public sealed class JobsTenancyRegistrationTests : TestBase
 {
     private static readonly JobFunctionDescriptor _Descriptor = new("any-fn", null, "", JobPriority.Normal, 0);

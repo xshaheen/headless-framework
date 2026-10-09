@@ -147,9 +147,6 @@ public sealed class RedisConsumerClientTests : TestBase
         // then
         sender.Should().Be(new RedisEveryInstanceDelivery(stream, "1-0"));
         await _mockStreamManager.DidNotReceiveWithAnyArgs().Ack(default!, default!, default!, AbortToken);
-        await _mockStreamManager
-            .DidNotReceiveWithAnyArgs()
-            .RequeueAndAck(default!, default!, default!, default!, AbortToken);
     }
 
     [Fact]
@@ -165,7 +162,7 @@ public sealed class RedisConsumerClientTests : TestBase
                     "headers",
                     $$"""{"{{Headers.MessageId}}":"{{Guid.NewGuid():N}}","{{Headers.MessageName}}":"orders.created","{{Headers.TransportAddress}}":"wire-spoofed"}"""
                 ),
-                new NameValueEntry("body", "\"cGF5bG9hZA==\""),
+                new NameValueEntry("body", "payload"u8.ToArray()),
             ]
         );
         _mockStreamManager
@@ -216,7 +213,7 @@ public sealed class RedisConsumerClientTests : TestBase
                     "headers",
                     $$"""{"{{Headers.MessageId}}":"{{Guid.NewGuid():N}}","{{Headers.MessageName}}":"orders.created"}"""
                 ),
-                new NameValueEntry("body", "\"cGF5bG9hZA==\""),
+                new NameValueEntry("body", "payload"u8.ToArray()),
             ]
         );
 
@@ -302,52 +299,218 @@ public sealed class RedisConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task should_requeue_and_ack_message_on_reject()
+    public async Task should_leave_rejected_entry_pending_for_the_claim_pass()
     {
         // given
         var logger = LoggerFactory.CreateLogger<RedisConsumerClient>();
         await using var client = new RedisConsumerClient("test-group", 1, _mockStreamManager, _options, logger);
-        var entries = new NameValueEntry[] { new("headers", "{}"), new("body", "[]") };
-        var sender = new RedisConsumerDelivery("test-stream", "test-group", "1234567-0", entries);
+        var sender = new RedisConsumerDelivery("test-stream", "test-group", "1234567-0");
 
         // when
         await client.RejectAsync(sender, AbortToken);
 
         // then
-        await _mockStreamManager
-            .Received(1)
-            .RequeueAndAck("test-stream", "test-group", "1234567-0", entries, Arg.Any<CancellationToken>());
+        _mockStreamManager.ReceivedCalls().Should().BeEmpty();
     }
 
     [Fact]
-    public async Task should_dispose_without_error()
+    public async Task should_read_under_the_leased_name_and_claim_after_the_configured_min_idle_time()
     {
         // given
-        var logger = LoggerFactory.CreateLogger<RedisConsumerClient>();
-        await using var client = new RedisConsumerClient("test-group", 1, _mockStreamManager, _options, logger);
-
-        // when & then
-        var action = async () => await client.DisposeAsync();
-        await action.Should().NotThrowAsync();
-    }
-
-    [Fact]
-    public async Task should_allow_setting_callbacks()
-    {
-        // given
-        var logger = LoggerFactory.CreateLogger<RedisConsumerClient>();
-        await using var client = new RedisConsumerClient("test-group", 1, _mockStreamManager, _options, logger);
-
-        Func<TransportMessage, object?, Task> messageCallback = (_, _) => Task.CompletedTask;
-        Action<LogMessageEventArgs> logCallback = _ => { };
+        var options = Options.Create(
+            new RedisMessagingOptions
+            {
+                Configuration = ConfigurationOptions.Parse("localhost:6379"),
+                PendingClaimMinIdleTime = TimeSpan.FromSeconds(42),
+            }
+        );
+        var names = new RedisConsumerNames("host-a");
+        var lease = names.Acquire("orders");
+        _SetupGroupReads();
+        await using var client = new RedisConsumerClient(
+            "orders",
+            1,
+            _mockStreamManager,
+            options,
+            LoggerFactory.CreateLogger<RedisConsumerClient>(),
+            consumerName: lease
+        );
+        await client.SubscribeAsync(["orders.created"], AbortToken);
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
 
         // when
-        client.OnMessageCallback = messageCallback;
-        client.OnLogCallback = logCallback;
+        var listening = client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token);
+        await cts.CancelAsync();
+        await listening;
 
         // then
-        client.OnMessageCallback.Should().BeSameAs(messageCallback);
-        client.OnLogCallback.Should().BeSameAs(logCallback);
+        _mockStreamManager
+            .Received(1)
+            .PollStreamsPendingMessagesAsync(
+                Arg.Any<string[]>(),
+                "orders",
+                "orders:host-a:0",
+                Arg.Any<TimeSpan>(),
+                Arg.Any<CancellationToken>()
+            );
+        _mockStreamManager
+            .Received(1)
+            .PollStreamsStalePendingMessagesAsync(
+                Arg.Any<string[]>(),
+                "orders",
+                "orders:host-a:0",
+                TimeSpan.FromSeconds(42),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<CancellationToken>()
+            );
+        _mockStreamManager
+            .Received(1)
+            .PollStreamsLatestMessagesAsync(
+                Arg.Any<string[]>(),
+                "orders",
+                "orders:host-a:0",
+                Arg.Any<TimeSpan>(),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Fact]
+    public async Task should_release_the_consumer_name_once_shut_down()
+    {
+        // given
+        var names = new RedisConsumerNames("host-a");
+        await using var client = new RedisConsumerClient(
+            "orders",
+            1,
+            _mockStreamManager,
+            _options,
+            LoggerFactory.CreateLogger<RedisConsumerClient>(),
+            consumerName: names.Acquire("orders")
+        );
+
+        // when
+        var whileLive = names.Acquire("orders");
+        await client.ShutdownAsync(TimeSpan.FromSeconds(1), AbortToken);
+        var afterShutdown = names.Acquire("orders");
+
+        // then
+        whileLive.Name.Should().Be("orders:host-a:1");
+        afterShutdown.Name.Should().Be("orders:host-a:0");
+    }
+
+    [Fact]
+    public async Task should_drain_an_in_flight_handler_before_shutdown_completes()
+    {
+        // given
+        var handlerStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseHandler = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var handlerFinished = false;
+        _SetupGroupReads(new RedisStreamMessages("headless:messaging:queue:orders.created", [_ValidEntry("1-0")]));
+        await using var client = new RedisConsumerClient(
+            "orders",
+            1,
+            _mockStreamManager,
+            _options,
+            LoggerFactory.CreateLogger<RedisConsumerClient>()
+        );
+        client.AttachCallbacks(
+            async (_, _) =>
+            {
+                handlerStarted.TrySetResult();
+                await releaseHandler.Task;
+                handlerFinished = true;
+            },
+            onLog: null
+        );
+        await client.SubscribeAsync(["orders.created"], AbortToken);
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        var listening = client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token);
+        await handlerStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        await cts.CancelAsync();
+        await listening;
+
+        // when
+        var shutdown = client.ShutdownAsync(TimeSpan.FromSeconds(5), AbortToken).AsTask();
+        var completedBeforeRelease = shutdown.IsCompleted;
+        releaseHandler.SetResult();
+        await shutdown.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+        // then
+        completedBeforeRelease.Should().BeFalse();
+        handlerFinished.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_bound_shutdown_when_a_handler_never_finishes()
+    {
+        // given
+        var handlerStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var neverReleased = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _SetupGroupReads(new RedisStreamMessages("headless:messaging:queue:orders.created", [_ValidEntry("1-0")]));
+        var logger = new CapturingLogger<RedisConsumerClient>();
+        await using var client = new RedisConsumerClient("orders", 1, _mockStreamManager, _options, logger);
+        client.AttachCallbacks(
+            async (_, _) =>
+            {
+                handlerStarted.TrySetResult();
+                await neverReleased.Task;
+            },
+            onLog: null
+        );
+        await client.SubscribeAsync(["orders.created"], AbortToken);
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        var listening = client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token);
+        await handlerStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+        await cts.CancelAsync();
+        await listening;
+
+        try
+        {
+            // when
+            await client
+                .ShutdownAsync(TimeSpan.FromMilliseconds(100), AbortToken)
+                .AsTask()
+                .WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+            // then
+            logger.Entries.Should().Contain(log => log.EventId == 3008);
+        }
+        finally
+        {
+            neverReleased.SetResult();
+        }
+    }
+
+    private void _SetupGroupReads(RedisStreamMessages? pending = null)
+    {
+        _mockStreamManager
+            .PollStreamsPendingMessagesAsync(
+                Arg.Any<string[]>(),
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(_Messages(pending));
+        _mockStreamManager
+            .PollStreamsStalePendingMessagesAsync(
+                Arg.Any<string[]>(),
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(_Messages());
+        _mockStreamManager
+            .PollStreamsLatestMessagesAsync(
+                Arg.Any<string[]>(),
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<TimeSpan>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(_Messages());
     }
 
     [Fact]

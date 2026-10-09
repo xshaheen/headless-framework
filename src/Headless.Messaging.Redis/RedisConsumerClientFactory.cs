@@ -9,11 +9,13 @@ namespace Headless.Messaging.Redis;
 
 internal sealed class RedisConsumerClientFactory(
     IOptions<RedisMessagingOptions> redisOptions,
-    IOptions<MessagingOptions> messagingOptions,
     IRedisStreamManager redis,
     ILogger<RedisConsumerClient> logger
 ) : IConsumerClientFactory
 {
+    // One per factory, which the container holds as a singleton, so the clients of one process never share a name.
+    private readonly RedisConsumerNames _consumerNames = new();
+
     public Task<IConsumerClient> CreateAsync(
         ConsumerClientRequest request,
         CancellationToken cancellationToken = default
@@ -21,21 +23,23 @@ internal sealed class RedisConsumerClientFactory(
     {
         Argument.IsNotNull(request);
 
-        var subscriptionName = request.SubscriptionName;
-        var concurrency = request.Concurrency;
-        var lane = request.Lane;
-
         cancellationToken.ThrowIfCancellationRequested();
 
+        // An every-instance client reads without a consumer group, so it needs no consumer name.
+        var consumerName =
+            request.Kind is ConsumerSubscriptionKind.Competing
+                ? _consumerNames.Acquire(RedisPhysicalAddress.ConsumerGroup(request.Lane, request.SubscriptionName))
+                : null;
+
         var client = new RedisConsumerClient(
-            subscriptionName,
-            concurrency,
+            request.SubscriptionName,
+            request.Concurrency,
             redis,
             redisOptions,
             logger,
-            lane,
-            messagingOptions.Value.RetryPolicy.DispatchTimeout,
-            kind: request.Kind
+            request.Lane,
+            kind: request.Kind,
+            consumerName: consumerName
         );
         return Task.FromResult<IConsumerClient>(client);
     }

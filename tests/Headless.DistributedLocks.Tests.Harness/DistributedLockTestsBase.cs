@@ -450,7 +450,6 @@ public abstract class DistributedLockTestsBase : TestBase
                 resource,
                 new DistributedLockAcquireOptions { AcquireTimeout = TimeSpan.FromMilliseconds(250) }
             );
-            await Task.Delay(TimeSpan.FromMilliseconds(250), TimeProvider);
             (await lock2Task).Should().BeNull();
         }
         finally
@@ -800,13 +799,13 @@ public abstract class DistributedLockTestsBase : TestBase
             resource,
             new DistributedLockAcquireOptions
             {
-                TimeUntilExpires = TimeSpan.FromSeconds(2),
+                TimeUntilExpires = TimeSpan.FromSeconds(1),
                 Monitoring = LockMonitoringMode.AutoExtend,
             }
         );
 
         handle.Should().NotBeNull();
-        await Task.Delay(TimeSpan.FromSeconds(3), AbortToken);
+        await Task.Delay(TimeSpan.FromMilliseconds(1600), AbortToken);
 
         (await locker.IsLockedAsync(resource, AbortToken)).Should().BeTrue();
         handle!.LostToken.IsCancellationRequested.Should().BeFalse();
@@ -836,7 +835,8 @@ public abstract class DistributedLockTestsBase : TestBase
         // Kill the lock-holding session out-of-band; the provider's probe should observe the dead connection.
         await KillLockHoldingConnectionAsync(handle, AbortToken);
 
-        // Probe cadence is ~30s; poll generously (independent of AbortToken so we observe the lost token itself).
+        // Probe cadence is provider configuration (up to 30s by default); poll generously, independent of AbortToken so
+        // we observe the lost token itself.
         var lostToken = handle.LostToken;
         var deadline = DateTimeOffset.UtcNow.AddSeconds(40);
 
@@ -870,7 +870,8 @@ public abstract class DistributedLockTestsBase : TestBase
 
         await KillLockHoldingConnectionAsync(handle, AbortToken);
 
-        // Probe cadence is ~30s; poll generously for the loss to be observed before asserting on renewal.
+        // Probe cadence is provider configuration (up to 30s by default); poll generously for the loss to be observed
+        // before asserting on renewal.
         var deadline = DateTimeOffset.UtcNow.AddSeconds(40);
 
         while (!handle.LostToken.IsCancellationRequested && DateTimeOffset.UtcNow < deadline)

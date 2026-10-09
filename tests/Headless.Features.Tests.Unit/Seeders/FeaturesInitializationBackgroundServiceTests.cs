@@ -76,9 +76,7 @@ public sealed class FeaturesInitializationBackgroundServiceTests : TestBase
         using var sut = _CreateSut(options);
         await sut.StartAsync(AbortToken);
         await saveDone.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
-
-        // Allow the TCS to be set
-        await Task.Delay(50, AbortToken);
+        await sut.WaitForInitializationAsync(AbortToken).WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
         // then
         sut.IsInitialized.Should().BeTrue();
@@ -185,9 +183,6 @@ public sealed class FeaturesInitializationBackgroundServiceTests : TestBase
 
         // when
         await sut.StartAsync(AbortToken);
-
-        // Allow brief time since no background task should start
-        await Task.Delay(50, AbortToken);
 
         // then - store should never be touched
         await _store.DidNotReceive().SaveAsync(Arg.Any<CancellationToken>());
@@ -445,7 +440,6 @@ public sealed class FeaturesInitializationBackgroundServiceTests : TestBase
         using var cts = new CancellationTokenSource();
         var saveStarted = new TaskCompletionSource();
         var saveCancelled = new TaskCompletionSource();
-        var taskCompleted = new TaskCompletionSource();
 
         _store
             .SaveAsync(Arg.Any<CancellationToken>())
@@ -461,7 +455,6 @@ public sealed class FeaturesInitializationBackgroundServiceTests : TestBase
                 catch (OperationCanceledException)
                 {
                     saveCancelled.TrySetResult();
-                    taskCompleted.TrySetResult();
 
                     throw;
                 }
@@ -479,8 +472,6 @@ public sealed class FeaturesInitializationBackgroundServiceTests : TestBase
 
         // then
         cancelledTask.Should().Be(saveCancelled.Task, "cancellation token should cancel the background task");
-
-        _ = await Task.WhenAny(taskCompleted.Task, Task.Delay(TimeSpan.FromSeconds(1), AbortToken));
     }
 
     #endregion

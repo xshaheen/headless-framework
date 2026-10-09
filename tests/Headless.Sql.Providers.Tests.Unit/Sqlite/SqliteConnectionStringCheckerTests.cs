@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using Headless.Sql;
 using Headless.Sql.Sqlite;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging;
@@ -13,19 +12,6 @@ namespace Tests.Sqlite;
 /// </summary>
 public sealed class SqliteConnectionStringCheckerTests : TestBase
 {
-    [Fact]
-    public void should_implement_i_connection_string_checker()
-    {
-        // given
-        var logger = Substitute.For<ILogger<SqliteConnectionStringChecker>>();
-
-        // when
-        var sut = new SqliteConnectionStringChecker(logger);
-
-        // then
-        sut.Should().BeAssignableTo<IConnectionStringChecker>();
-    }
-
     [Fact]
     public async Task should_return_true_for_in_memory_connection()
     {

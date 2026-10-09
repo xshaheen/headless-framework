@@ -1,6 +1,7 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
 using Amazon.SQS.Model;
+using SnsMessageAttributeValue = Amazon.SimpleNotificationService.Model.MessageAttributeValue;
 
 namespace Headless.Messaging.Aws;
 
@@ -11,6 +12,26 @@ internal static class SqsHeaderCodec
 
     internal static Dictionary<string, MessageAttributeValue> Encode(TransportMessage message)
     {
+        return new(StringComparer.Ordinal)
+        {
+            [AttributeName] = new() { DataType = "String", StringValue = _EncodeBag(message) },
+        };
+    }
+
+    /// <summary>
+    /// Encodes the header bag as the one SNS attribute that raw message delivery hands to SQS unchanged, so a Bus
+    /// message reaches its queue in the same envelope a Queue message is sent in.
+    /// </summary>
+    internal static Dictionary<string, SnsMessageAttributeValue> EncodeSns(TransportMessage message)
+    {
+        return new(StringComparer.Ordinal)
+        {
+            [AttributeName] = new() { DataType = "String", StringValue = _EncodeBag(message) },
+        };
+    }
+
+    private static string _EncodeBag(TransportMessage message)
+    {
         if (message.Headers.ContainsKey(AttributeName))
         {
             throw new InvalidOperationException(
@@ -18,10 +39,7 @@ internal static class SqsHeaderCodec
             );
         }
 
-        return new(StringComparer.Ordinal)
-        {
-            [AttributeName] = new() { DataType = "String", StringValue = JsonSerializer.Serialize(message.Headers) },
-        };
+        return JsonSerializer.Serialize(message.Headers);
     }
 
     internal static Dictionary<string, string?> Decode(IDictionary<string, MessageAttributeValue>? attributes)

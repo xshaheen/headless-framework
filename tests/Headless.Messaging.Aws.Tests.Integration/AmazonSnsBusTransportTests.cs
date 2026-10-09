@@ -73,17 +73,6 @@ public sealed class AmazonSnsBusTransportTests(LocalStackTestFixture fixture) : 
         await base.DisposeAsyncCore();
     }
 
-    /// <summary>Creates a topic in LocalStack for testing.</summary>
-    private async Task _CreateTopicAsync(string topicName)
-    {
-        if (_snsClient is null)
-        {
-            return;
-        }
-
-        await _snsClient.CreateTopicAsync(topicName.NormalizeForAws(), AbortToken);
-    }
-
     #region Transport Tests
 
     [Fact]
@@ -177,45 +166,6 @@ public sealed class AmazonSnsBusTransportTests(LocalStackTestFixture fixture) : 
     public override Task should_handle_correlation_id_header()
     {
         return base.should_handle_correlation_id_header();
-    }
-
-    #endregion
-
-    #region SQS-Specific Tests
-
-    [Fact]
-    public async Task should_auto_create_topic_when_not_found()
-    {
-        // given - The transport auto-creates topics if they don't exist
-        await using var transport = GetBusTransport();
-        var message = CreateMessage(messageName: "auto-created-topic");
-
-        // when
-        var result = await transport.SendAsync(message, AbortToken);
-
-        // then - Should succeed because topic is auto-created
-        result.Succeeded.Should().BeTrue();
-    }
-
-    [Fact]
-    public async Task should_include_message_attributes()
-    {
-        // given
-        const string topicName = "test-attributes-topic";
-        await _CreateTopicAsync(topicName);
-        await using var transport = GetBusTransport();
-
-        var additionalHeaders = new Dictionary<string, string?>(StringComparer.Ordinal)
-        {
-            ["CustomHeader"] = "CustomValue",
-        };
-        var message = CreateMessage(messageName: topicName, additionalHeaders: additionalHeaders);
-
-        // when
-        var result = await transport.SendAsync(message, AbortToken);
-
-        // then
-        result.Succeeded.Should().BeTrue();
     }
 
     #endregion

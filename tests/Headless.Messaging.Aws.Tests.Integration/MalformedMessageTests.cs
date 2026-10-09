@@ -165,7 +165,7 @@ public sealed class MalformedMessageTests(LocalStackTestFixture fixture) : TestB
             onLog: null
         );
 
-        // Send message with missing MessageAttributes field
+        // Send an SNS-wrapped envelope, which raw delivery never produces: it carries no header bag
         await sqsClient.SendMessageAsync(
             new SendMessageRequest { QueueUrl = queueUrl, MessageBody = "{\"Message\":\"test\"}" },
             AbortToken
@@ -208,20 +208,23 @@ public sealed class MalformedMessageTests(LocalStackTestFixture fixture) : TestB
             onLog: null
         );
 
-        // Send well-formed message
-        const string validMessage = """
-            {
-                "Message": "test content",
-                "MessageAttributes": {
-                    "headless-msg-id": {"Type": "String", "Value": "msg-1"},
-                    "headless-msg-name": {"Type": "String", "Value": "TestEvent"},
-                    "TestHeader": {"Type": "String", "Value": "TestValue"}
-                }
-            }
-            """;
-
+        // Send a well-formed message in the envelope SNS raw delivery produces: the body and one header bag
         await sqsClient.SendMessageAsync(
-            new SendMessageRequest { QueueUrl = queueUrl, MessageBody = validMessage },
+            new SendMessageRequest
+            {
+                QueueUrl = queueUrl,
+                MessageBody = "test content",
+                MessageAttributes = new Dictionary<string, MessageAttributeValue>(StringComparer.Ordinal)
+                {
+                    ["headless-aws-headers-v1"] = new()
+                    {
+                        DataType = "String",
+                        StringValue = """
+                        {"headless-msg-id":"msg-1","headless-msg-name":"TestEvent","TestHeader":"TestValue"}
+                        """,
+                    },
+                },
+            },
             AbortToken
         );
 
@@ -241,6 +244,7 @@ public sealed class MalformedMessageTests(LocalStackTestFixture fixture) : TestB
         receivedMessageCount.Should().Be(1);
         receivedMessage.Should().NotBeNull();
         receivedMessage.Value.Headers["TestHeader"].Should().Be("TestValue");
+        Encoding.UTF8.GetString(receivedMessage.Value.Body.Span).Should().Be("test content");
     }
 
     private async Task<string> _CreateQueueAsync(string queueName)

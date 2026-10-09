@@ -91,7 +91,9 @@ public sealed class RedisMessagingFixture : HeadlessRedisFixture, ICollectionFix
         CancellationToken cancellationToken,
         bool ownsStream = true,
         Func<RedisMessagingOptions.ConsumeErrorContext, Task>? onConsumeError = null,
-        ConsumerClientRequest? request = null
+        ConsumerClientRequest? request = null,
+        Action<RedisMessagingOptions>? configure = null,
+        TimeSpan? listeningTimeout = null
     )
     {
         var services = new ServiceCollection();
@@ -101,6 +103,11 @@ public sealed class RedisMessagingFixture : HeadlessRedisFixture, ICollectionFix
             {
                 options.Configuration = ConfigurationOptions.Parse(ConnectionString);
                 options.OnConsumeError = onConsumeError;
+
+                // A rejected entry stays pending until the claim pass takes it, so the conformance suite's reject
+                // redelivery has to fit inside its receive timeout.
+                options.PendingClaimMinIdleTime = TimeSpan.FromSeconds(1);
+                configure?.Invoke(options);
             })
         );
         var provider = services.BuildServiceProvider();
@@ -139,8 +146,19 @@ public sealed class RedisMessagingFixture : HeadlessRedisFixture, ICollectionFix
                         }
                     }
                 },
+                listeningTimeout: listeningTimeout,
                 createReplacementSession: replacementToken =>
-                    CreateSessionAsync(lane, destination, group, replacementToken, ownsStream: false, onConsumeError)
+                    CreateSessionAsync(
+                        lane,
+                        destination,
+                        group,
+                        replacementToken,
+                        ownsStream: false,
+                        onConsumeError,
+                        request,
+                        configure,
+                        listeningTimeout
+                    )
             );
         }
         catch

@@ -20,7 +20,6 @@ public sealed class RedisConsumerClientFactoryTests : TestBase
     {
         var factory = new RedisConsumerClientFactory(
             Options.Create(new RedisMessagingOptions { Configuration = ConfigurationOptions.Parse("localhost:6379") }),
-            Options.Create(new MessagingOptions()),
             Substitute.For<IRedisStreamManager>(),
             LoggerFactory.CreateLogger<RedisConsumerClient>()
         );
@@ -41,10 +40,9 @@ public sealed class RedisConsumerClientFactoryTests : TestBase
         var options = Options.Create(
             new RedisMessagingOptions { Configuration = ConfigurationOptions.Parse("localhost:6379") }
         );
-        var messagingOptions = Options.Create(new MessagingOptions());
         var logger = LoggerFactory.CreateLogger<RedisConsumerClient>();
 
-        var factory = new RedisConsumerClientFactory(options, messagingOptions, mockStreamManager, logger);
+        var factory = new RedisConsumerClientFactory(options, mockStreamManager, logger);
 
         // when
         var client = await factory.CreateAsync(
@@ -66,10 +64,9 @@ public sealed class RedisConsumerClientFactoryTests : TestBase
         var options = Options.Create(
             new RedisMessagingOptions { Configuration = ConfigurationOptions.Parse("localhost:6379") }
         );
-        var messagingOptions = Options.Create(new MessagingOptions());
         var logger = LoggerFactory.CreateLogger<RedisConsumerClient>();
 
-        var factory = new RedisConsumerClientFactory(options, messagingOptions, mockStreamManager, logger);
+        var factory = new RedisConsumerClientFactory(options, mockStreamManager, logger);
 
         // when
         var client = await factory.CreateAsync(
@@ -89,10 +86,9 @@ public sealed class RedisConsumerClientFactoryTests : TestBase
         var options = Options.Create(
             new RedisMessagingOptions { Configuration = ConfigurationOptions.Parse("localhost:6379") }
         );
-        var messagingOptions = Options.Create(new MessagingOptions());
         var logger = LoggerFactory.CreateLogger<RedisConsumerClient>();
 
-        var factory = new RedisConsumerClientFactory(options, messagingOptions, mockStreamManager, logger);
+        var factory = new RedisConsumerClientFactory(options, mockStreamManager, logger);
 
         // when
         var client1 = await factory.CreateAsync(new ConsumerClientRequest("group-1", 1, MessageLane.Queue), AbortToken);
@@ -110,10 +106,9 @@ public sealed class RedisConsumerClientFactoryTests : TestBase
         var options = Options.Create(
             new RedisMessagingOptions { Configuration = ConfigurationOptions.Parse("localhost:6379") }
         );
-        var messagingOptions = Options.Create(new MessagingOptions());
         var logger = LoggerFactory.CreateLogger<RedisConsumerClient>();
 
-        var factory = new RedisConsumerClientFactory(options, messagingOptions, mockStreamManager, logger);
+        var factory = new RedisConsumerClientFactory(options, mockStreamManager, logger);
 
         // when
         var client = await factory.CreateAsync(new ConsumerClientRequest("group-name", 1, MessageLane.Bus), AbortToken);
@@ -121,5 +116,57 @@ public sealed class RedisConsumerClientFactoryTests : TestBase
         // then
         client.Should().BeOfType<RedisConsumerClient>();
         await client.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task should_give_each_live_client_of_one_group_its_own_stable_consumer_name()
+    {
+        // given
+        var mockStreamManager = Substitute.For<IRedisStreamManager>();
+        var options = Options.Create(
+            new RedisMessagingOptions { Configuration = ConfigurationOptions.Parse("localhost:6379") }
+        );
+        var factory = new RedisConsumerClientFactory(
+            options,
+            mockStreamManager,
+            LoggerFactory.CreateLogger<RedisConsumerClient>()
+        );
+        var request = new ConsumerClientRequest("orders", 1, MessageLane.Queue);
+
+        // when
+        var first = await factory.CreateAsync(request, AbortToken);
+        var second = await factory.CreateAsync(request, AbortToken);
+        await _ListenOnceAsync(first);
+        await _ListenOnceAsync(second);
+        await first.DisposeAsync();
+        var replacement = await factory.CreateAsync(request, AbortToken);
+        await _ListenOnceAsync(replacement);
+
+        // then
+        var names = mockStreamManager
+            .ReceivedCalls()
+            .Where(call =>
+                string.Equals(
+                    call.GetMethodInfo().Name,
+                    nameof(IRedisStreamManager.PollStreamsPendingMessagesAsync),
+                    StringComparison.Ordinal
+                )
+            )
+            .Select(call => (string)call.GetArguments()[2]!)
+            .ToList();
+        var prefix = $"orders:{Environment.MachineName}";
+        names.Should().Equal($"{prefix}:0", $"{prefix}:1", $"{prefix}:0");
+
+        await second.DisposeAsync();
+        await replacement.DisposeAsync();
+    }
+
+    private async Task _ListenOnceAsync(IConsumerClient client)
+    {
+        await client.SubscribeAsync(["orders"], AbortToken);
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        var listening = client.ListeningAsync(TimeSpan.FromMilliseconds(10), cts.Token);
+        await cts.CancelAsync();
+        await listening;
     }
 }

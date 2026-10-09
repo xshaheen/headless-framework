@@ -11,7 +11,6 @@ namespace Tests;
 /// Drives jobs compiled by the real source generator: scheduling finds a job from its argument type or its class, and
 /// the generated invoker builds the class from the run's scope, passes the stored argument, and disposes the instance.
 /// </summary>
-[Collection<JobsHelperCollection>]
 public sealed class GeneratedJobInvocationTests : TestBase
 {
     [Fact]

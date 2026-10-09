@@ -67,6 +67,11 @@ public sealed class PostgreSqlMembershipFixture
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    public void PruneOnEverySnapshot(IMembershipStore store)
+    {
+        ((RelationalMembershipStore)store).MinPruneInterval = TimeSpan.Zero;
+    }
+
     public async Task<StoredMembership> ReadRowsAsync(string clusterName, CancellationToken cancellationToken)
     {
         await using var connection = new NpgsqlConnection(ConnectionString);

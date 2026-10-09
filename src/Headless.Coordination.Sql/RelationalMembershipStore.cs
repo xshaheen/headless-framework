@@ -25,9 +25,10 @@ namespace Headless.Coordination;
 /// </para>
 /// <para>
 /// Every call runs on its own connection and READ COMMITTED transaction, and retries a transient fault raised
-/// before the commit (see <see cref="SqlAutonomousTransaction" />). The snapshot read prunes
-/// retention-expired rows first, in a transaction of its own whose failure is logged and left to the next
-/// read, so a lost prune never costs the read.
+/// before the commit (see <see cref="SqlAutonomousTransaction" />). Every read treats a row at or past the
+/// retention cutoff as absent, so what a read returns never depends on when rows were last deleted. The snapshot
+/// read also prunes those rows, at most once a minute, in a transaction of its own whose failure is logged and
+/// left to a later read.
 /// </para>
 /// </remarks>
 #pragma warning disable CA2100 // SQL text is rendered once from validated identifiers and dialect statements; values are parameters.
@@ -210,12 +211,13 @@ internal sealed class RelationalMembershipStore : IMembershipStore
                  AND d.{t.NodeId} = l.{t.NodeId}
                  AND d.{t.Incarnation} = l.{t.Incarnation}
                 WHERE l.{t.ClusterName} = @ClusterName
+                  AND l.{t.LastBeat} > {retentionCutoff}
                 """
             )
         );
 
-        // Read-only: a row at or past the retention cutoff reads as absent, exactly as the snapshot's prune would
-        // remove it, without pruning it here.
+        // Read-only: a row at or past the retention cutoff reads as absent, as it does in the snapshot, without
+        // pruning it here.
         _readNodeLivenessSql = dialect.Render(
             new SqlClockedStatement(
                 $"""
@@ -390,6 +392,8 @@ internal sealed class RelationalMembershipStore : IMembershipStore
                 {
                     await using var command = _Command(_readLivenessSql, connection, transaction);
                     _AddThresholds(command);
+                    // The prune is throttled, so this cutoff, not the prune, keeps expired rows out of the snapshot.
+                    _dialect.AddDuration(command, "Retention", RetentionThreshold);
 
                     var rows = new List<NodeLivenessSnapshot>();
                     await using var reader = await _ExecuteAsync(() => command.ExecuteReaderAsync(ct), ct)
@@ -475,13 +479,16 @@ internal sealed class RelationalMembershipStore : IMembershipStore
     // (every heartbeat of every node). The Redis provider moved its prune to a background service for the
     // same reason; here a time-based throttle keeps it on the read path without per-tick transactions.
     private long _lastPruneTicks;
-    private static readonly TimeSpan _MinPruneInterval = TimeSpan.FromMinutes(1);
+
+    // Deterministic seam for the membership oracle, which compares the stored rows after every step and so needs
+    // each snapshot read to prune. Production keeps the one-minute throttle.
+    internal TimeSpan MinPruneInterval { get; set; } = TimeSpan.FromMinutes(1);
 
     private async ValueTask _PruneAsync()
     {
         var now = DateTimeOffset.UtcNow;
 
-        if (now.UtcTicks - Volatile.Read(ref _lastPruneTicks) < _MinPruneInterval.Ticks)
+        if (now.UtcTicks - Volatile.Read(ref _lastPruneTicks) < MinPruneInterval.Ticks)
         {
             return;
         }

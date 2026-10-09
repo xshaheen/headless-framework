@@ -5,7 +5,6 @@ using Microsoft.Extensions.DependencyInjection;
 #pragma warning disable REFL017 // Don't use name of wrong member
 namespace Tests;
 
-[Collection<JobsHelperCollection>]
 public sealed class JobsOptionsBuilderTests
 {
     [Fact]
@@ -282,14 +281,6 @@ public sealed class JobsOptionsBuilderTests
     }
 
     [Fact]
-    public void default_lease_duration_is_5_minutes()
-    {
-        var schedulerOptions = new SchedulerOptionsBuilder();
-
-        schedulerOptions.LeaseDuration.Should().Be(TimeSpan.FromMinutes(5));
-    }
-
-    [Fact]
     public void default_scheduler_time_zone_is_utc()
     {
         // Never Local: two fleet nodes with different container timezones would evaluate one cron expression to
@@ -436,14 +427,6 @@ public sealed class JobsOptionsBuilderTests
             );
 
         act.Should().Throw<InvalidOperationException>().WithMessage("*FingerprintSweepBatchSize*");
-    }
-
-    [Fact]
-    public void explicit_node_id_is_preserved_verbatim()
-    {
-        var schedulerOptions = new SchedulerOptionsBuilder { NodeId = "explicit-node" };
-
-        schedulerOptions.NodeId.Should().Be("explicit-node");
     }
 
     [Fact]

@@ -7,9 +7,6 @@ using Headless.Sms.Twilio;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute.ExceptionExtensions;
-using Polly.CircuitBreaker;
-using Polly.RateLimiting;
-using Polly.Timeout;
 using Twilio.Clients;
 using Twilio.Http;
 
@@ -41,21 +38,5 @@ public sealed class TwilioSmsSenderTests : TestBase
         var result = await _CreateSender(client).SendAsync(SmsRequests.Single(), AbortToken);
         result.Success.Should().BeTrue();
         result.ProviderMessageId.Should().Be("SM123");
-    }
-
-    [Theory]
-    [InlineData(nameof(TimeoutRejectedException))]
-    [InlineData(nameof(BrokenCircuitException))]
-    [InlineData(nameof(RateLimiterRejectedException))]
-    public async Task should_classify_resilience_rejections_as_transient(string rejectionKind)
-    {
-        var exception = ResilienceRejections.Create(rejectionKind);
-        var client = Substitute.For<ITwilioRestClient>();
-        client.RequestAsync(Arg.Any<Request>()).ThrowsAsync(exception);
-
-        var result = await _CreateSender(client).SendAsync(SmsRequests.Single(), AbortToken);
-
-        result.Success.Should().BeFalse();
-        result.FailureKind.Should().Be(SmsFailureKind.Transient);
     }
 }

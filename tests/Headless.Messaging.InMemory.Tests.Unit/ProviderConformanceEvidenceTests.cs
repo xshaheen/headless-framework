@@ -8,7 +8,7 @@ namespace Tests;
 public sealed class ProviderConformanceEvidenceTests : TestBase
 {
     [Fact]
-    public async Task should_execute_every_supported_manifest_scenario()
+    public void should_bind_every_supported_manifest_scenario_to_an_existing_test()
     {
         var profile = TransportConformanceManifest.Providers["InMemory"];
         TransportConformanceTestBinding[] bindings =
@@ -95,15 +95,9 @@ public sealed class ProviderConformanceEvidenceTests : TestBase
             ),
         ];
 
-        await TransportConformanceTestBindings.ExecuteSupportedScenariosAsync(
-            profile,
-            bindings,
-            testClass =>
-                Activator.CreateInstance(testClass)
-                ?? throw new InvalidOperationException(
-                    $"No InMemory conformance test factory is registered for {testClass}."
-                )
-        );
+        // Every bound method is itself an xUnit test in this assembly, so it already runs on its own;
+        // this test only proves the manifest and the bindings still line up.
+        TransportConformanceTestBindings.GetValidationErrors(profile, bindings).Should().BeEmpty();
     }
 
     private static TransportConformanceTestBinding _Bind(TransportConformanceScenario scenario, string method) =>

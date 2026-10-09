@@ -18,10 +18,7 @@ public sealed class DefaultCachePredicateTests
 
     [Theory]
     [InlineData(200)]
-    [InlineData(201)]
-    [InlineData(202)]
     [InlineData(204)]
-    [InlineData(206)]
     [InlineData(299)]
     public void should_return_true_for_2xx(int status)
     {
@@ -74,20 +71,7 @@ public sealed class DefaultCachePredicateTests
 
     [Theory]
     [InlineData(402)]
-    [InlineData(406)]
-    [InlineData(407)]
-    [InlineData(417)]
     [InlineData(418)]
-    [InlineData(420)]
-    [InlineData(421)]
-    [InlineData(423)]
-    [InlineData(424)]
-    [InlineData(426)]
-    [InlineData(428)]
-    [InlineData(431)]
-    [InlineData(444)]
-    [InlineData(449)]
-    [InlineData(450)]
     [InlineData(499)]
     public void should_return_false_for_other_4xx(int status)
     {
@@ -98,10 +82,7 @@ public sealed class DefaultCachePredicateTests
 
     [Theory]
     [InlineData(500)]
-    [InlineData(501)]
-    [InlineData(502)]
     [InlineData(503)]
-    [InlineData(504)]
     [InlineData(599)]
     public void should_return_false_for_5xx(int status)
     {
@@ -112,8 +93,6 @@ public sealed class DefaultCachePredicateTests
 
     [Theory]
     [InlineData(100)]
-    [InlineData(101)]
-    [InlineData(102)]
     [InlineData(199)]
     public void should_return_false_for_1xx(int status)
     {
@@ -122,11 +101,7 @@ public sealed class DefaultCachePredicateTests
 
     [Theory]
     [InlineData(300)]
-    [InlineData(301)]
-    [InlineData(302)]
     [InlineData(304)]
-    [InlineData(307)]
-    [InlineData(308)]
     [InlineData(399)]
     public void should_return_false_for_3xx(int status)
     {

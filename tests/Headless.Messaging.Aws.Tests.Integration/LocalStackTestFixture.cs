@@ -71,6 +71,9 @@ public sealed class LocalStackTestFixture : HeadlessLocalStackFixture, ICollecti
                 SnsServiceUrl = ConnectionString,
                 SqsServiceUrl = ConnectionString,
                 Credentials = new BasicAWSCredentials("test", "test"),
+                // Every receive sets the visibility, so it overrides the queue attribute below; both keep redelivery
+                // conformance fast.
+                VisibilityTimeout = TimeSpan.FromSeconds(2),
             }
         );
 

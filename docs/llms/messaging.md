@@ -191,7 +191,7 @@ Two unit-of-work behaviors are documented, not defects. `IUnitOfWork.OnCompleted
 | AWS SNS/SQS | AWS-native pub-sub and queue workloads | Non-AWS deployments | FIFO entities use MessageGroupId and deduplication ids |
 | NATS | Subject-based routing, lightweight broker, JetStream | Complex per-consumer storage-specific routing | Subject shards must be a single safe token |
 | Pulsar | Pulsar-native durable transport with shared subscriptions | Projects not already on Pulsar | Requires Pulsar topic and subscription provisioning |
-| Redis | Redis Streams transport | Workloads requiring a broker-native dead-letter queue | Durable streams, pending-entry reclaim, and application-owned retention |
+| Redis | Redis Streams transport | Workloads requiring a broker-native dead-letter queue | Durable streams, pending-entry reclaim after 60 s, and age-bounded streams (7 days by default) |
 
 ## Provider Capabilities
 
@@ -315,7 +315,7 @@ Transports declare support with `MessagingProviderCapabilities.Transport(..., su
 | NATS | Lane-qualified subjects, streams, retention, and durables | Identity/replica isolation and malformed terminal ACK | Grant stream and consumer provisioning permissions |
 | Pulsar | Lane-qualified topics and Bus subscriptions | Identity/replica isolation and malformed terminal ACK | Grant topic and subscription creation permissions |
 | RabbitMQ | Lane-qualified exchanges, routing keys, and owned queues; publishers declare the Queue-lane queue too | Identity/replica isolation, malformed terminal reject, publish before any consumer, and the shutdown drain | Grant exchange and queue provisioning permissions, or set `AutoProvision = false` and provision the topology yourself |
-| Redis | Lane-qualified Streams for both lanes | Routing, ownership, settlement, and poison handling | Configure retained stream storage; the provider creates the Redis consumer groups |
+| Redis | Lane-qualified Streams for both lanes | Routing, ownership, settlement, and poison handling | Size Redis memory for `StreamMaxAge` of traffic; the provider creates the Redis consumer groups and trims the streams |
 
 #### AWS least-privilege handoff
 
@@ -2058,12 +2058,14 @@ Framework span attributes: `headless.messaging.intent` (`bus`/`queue`), `tenant.
 - Every-instance consumers are not supported: startup fails naming the consumer.
 - Request/reply is not supported: AWS has no .NET temporary-queue client, so a host that sends requests or declares a responder fails startup. See [Request/reply](#requestreply).
 - Consumer startup honors host cancellation through SNS/SQS provisioning and subscription.
+- `AutoProvision = false` looks topics and queues up instead of creating them, for topology managed by Infrastructure as Code.
+- Received messages stay hidden until the core settles them: a heartbeat extends their visibility, and shutdown drains running handlers.
 
 ### Design constraints
 
 `MessageGroupId(...)` is message-side only because it is stamped while publishing. The provider maps it to native FIFO `MessageGroupId`; it is not a custom message attribute. Values longer than 128 characters are rejected.
 
-Malformed SNS transport envelopes are terminally deleted after sanitized logging. Handler rejection remains a normal visibility-timeout retry and can use an external SQS redrive policy.
+Malformed transport envelopes are terminally deleted after sanitized logging. Handler rejection makes the message visible again after 3 seconds, so it is a normal SQS retry and can use an external SQS redrive policy.
 
 ### Install
 
@@ -2099,13 +2101,25 @@ AWS declares immutable Bus and Queue capabilities with independent SNS/SQS topol
 
 `RoutingAffinityKey` maps to native `MessageGroupId` only for registered `.fifo` SNS topics or SQS queues. Keys are 1–128 printable ASCII characters (`!` through `~`), without spaces. `AwsMessagingHeaders.MessageGroupId` and `MessageGroupId(...)` remain raw adapters and must agree with a supplied typed key. Standard SQS message-group fairness is not an affinity guarantee; typed keys on standard routes are rejected. Shared groups do not imply whole-pipeline FIFO or handler exclusivity. No application headers are discarded.
 
-All SQS Queue sends encode the complete header dictionary, including null, delivery, trace, and business metadata, as one String attribute named `headless-aws-headers-v1`. The payload body and native `MessageGroupId` remain unchanged. Consumers require that exact attribute; other names with the same prefix are ordinary application headers inside the bag. Missing bags, mixed attributes, malformed JSON, duplicate or reserved header names, and invalid value types are terminally deleted from the source queue without a handler callback. Affinity is optional, so unkeyed messages use the same format. SNS Bus uses its separate SNS envelope format.
+Both lanes use one envelope. Every send encodes the complete header dictionary, including null, delivery, trace, and business metadata, as one String attribute named `headless-aws-headers-v1`: an SQS message attribute on the Queue lane, and an SNS message attribute on the Bus lane. The payload body and native `MessageGroupId` remain unchanged. Bus subscriptions use SNS raw message delivery (`RawMessageDelivery = true`), so SQS receives the published body and the bag as they were sent, not an SNS JSON wrapper. With `AutoProvision`, the consumer asks for raw delivery when it creates a subscription and sets it on one that already exists (`sns:SetSubscriptionAttributes`). One attribute stays within the SQS limit of ten message attributes, which raw delivery would otherwise exceed. Consumers on both lanes require that exact attribute; other names with the same prefix are ordinary application headers inside the bag. Missing bags (including an SNS-wrapped body from a subscription without raw delivery), mixed attributes, malformed JSON, duplicate or reserved header names, and invalid value types are terminally deleted from the source queue without a handler callback. Affinity is optional, so unkeyed messages use the same format.
 
-Configure AWS region, service URLs, and credentials through `AmazonSqsMessagingOptions`.
+Configure AWS region, service URLs, and credentials through `AmazonSqsMessagingOptions`. Its other settings:
+
+| Option | Default | Effect |
+| --- | --- | --- |
+| `AutoProvision` | `true` | Creates SNS topics, SQS queues, the queue access policy, and raw-delivery SNS-to-SQS subscriptions on first use. With `false`, queues are looked up with `sqs:GetQueueUrl` and topics with `sns:ListTopics`, and nothing is created, subscribed, or given a policy. Every topic, queue, and subscription must then exist before the host starts, and each Bus subscription must enable raw message delivery. A missing queue fails consumer startup naming the queue lookup; a missing topic fails the send. |
+| `VisibilityTimeout` | 30 s | Sent on every receive, so the queue's own default does not apply. Whole seconds from 1 second to 12 hours. |
+| `ReceiveWaitTime` | 5 s | SQS long-poll wait per receive. Whole seconds from 0 to 20. |
+
+With `AutoProvision = false`, a consumer needs `sqs:GetQueueUrl`, `sqs:ReceiveMessage`, `sqs:DeleteMessage`, and `sqs:ChangeMessageVisibility`. A Bus publisher needs `sns:ListTopics` and `sns:Publish`, and a Queue publisher needs `sqs:GetQueueUrl` and `sqs:SendMessage`.
 
 ### Runtime behavior
 
 Registers SNS/SQS clients, bus/queue transports, and AWS consumer client services.
+
+- **Visibility heartbeat.** A receive takes up to ten messages, and every one of them stays unsettled until the core commits or rejects it. That includes messages still waiting for a free handler slot under the consumer's `Concurrency`. Every third of `VisibilityTimeout`, one loop per consumer client extends all unsettled messages by `VisibilityTimeout`, through `ChangeMessageVisibilityBatch` calls of ten. Commit and reject stop the extension first. A message SQS refuses to extend for a reason of the request, such as a receipt handle that is no longer current, is dropped from the heartbeat with a warning, because it may be redelivered; a service-side failure is retried on the next beat. A reject or shutdown release waits for an extension of the same client already in flight, so the extension never overrides it. SQS caps a message's total invisibility at 12 hours from its first receive.
+- **Deletes.** Commits to one queue share `DeleteMessageBatch` calls when they overlap: the first delete is sent at once, and the deletes that arrive while it is in flight leave together in the next call. A lone delete adds no wait. Each caller gets its own entry's outcome; a stale receipt handle is logged, not thrown.
+- **Shutdown.** `ShutdownAsync` stops receiving, then waits for the receive loop and running handlers within the shutdown budget (30 seconds for `DisposeAsync`). The heartbeat keeps running meanwhile, so slow handlers still settle. Messages still unsettled after that, because they were never handed over or because their handler outlived the budget, are made visible at once instead of after their timeout. The SQS and SNS clients are disposed last.
 
 ## Headless.Messaging.AzureServiceBus
 
@@ -2503,6 +2517,9 @@ Registers RabbitMQ connection/channel pool, bus/queue transport, consumer client
 - One Bus copy per consumer identity: the Redis consumer group on each Bus stream is named after the identity, and replicas that register the identity compete inside it.
 - One Queue copy per message: the Redis consumer group on the Queue stream is named after the message, and replicas compete inside it.
 - Lane-qualified stream keys, acknowledgements, pending-entry claim, and terminal poison handling.
+- A pending entry, read and not acknowledged, is claimed by another consumer of the group once it has been idle for `PendingClaimMinIdleTime` (60 s by default), so a crashed consumer's entries move on within a minute.
+- A rejected delivery stays pending in its place in the stream and is delivered again by that claim; the stream does not grow and the entry keeps its position.
+- Each publish trims, approximately, the entries older than `StreamMaxAge` (7 days by default) from its stream.
 - Streams consumer startup honors host cancellation through connection, provisioning, and subscription.
 - Request/reply over pub/sub on the literal channel `headless.reply.{32 hex}`; replies write no key, and every host that exchanges requests must use the same `ChannelPrefix`. See [Request/reply](#requestreply).
 
@@ -2526,11 +2543,30 @@ Redis physical keys are `headless:messaging:bus:{logical-name}` and `headless:me
 
 The current Redis Streams topology does not provide the provider-neutral routing-affinity contract. `RequireRoutingAffinity()` fails during startup; a supplied `RoutingAffinityKey` is rejected before persistence or transport effects. A stream name identifies a route, not a per-message affinity partition. No transparent stream sharding is added.
 
-Configure Redis connection and Stream behavior through `RedisMessagingOptions`.
+Configure Redis connection and Stream behavior through `RedisMessagingOptions`:
+
+| Option | Default | Effect |
+| --- | --- | --- |
+| `StreamEntriesCount` | `100` | Entries one read takes from each stream. A read that returns a full batch is followed at once by the next read, so a backlog drains without waiting the poll interval per batch. |
+| `PendingClaimMinIdleTime` | 60 s | How long an entry stays pending before another consumer claims it with `XAUTOCLAIM`. Must be positive. |
+| `IdleConsumerDeleteAfter` | 1 hour | How long a consumer with no pending entries stays idle before it is deleted from its group. `TimeSpan.Zero` keeps every consumer. |
+| `StreamMaxAge` | 7 days | Age past which each publish trims entries from its stream with `XADD MINID ~`. `TimeSpan.Zero` keeps entries without an age limit; otherwise it must exceed `PendingClaimMinIdleTime`. |
+| `ConnectionPoolSize` | `10` | Multiplexers in the shared connection pool. |
+
+Trade-offs and limits:
+
+- **Pending window.** A durable consumer acknowledges an entry once the core admits it into the inbox, before its handler runs, so `PendingClaimMinIdleTime` bounds admission, not handler duration. A runtime subscription, which has no consumer identity, acknowledges after an inline handler returns; set the option above that handler's longest run. Keep the time the core takes to admit one batch of `StreamEntriesCount` entries well below it, or another consumer claims entries still waiting their turn and the inbox discards the duplicates.
+- **Retention is not acknowledgement-aware.** Trimming removes an entry whether or not a group read or acknowledged it, so a group offline longer than `StreamMaxAge` misses the trimmed entries, and an entry that keeps failing admission is dropped once it is older than `StreamMaxAge`. The age is measured against the publishing process's clock. Approximate trimming removes whole internal nodes only, so entries can outlive the limit slightly; it never removes them early. No length cap (`MAXLEN`) is applied.
+- **Every-instance reads.** A group-less every-instance reader that falls further behind than `StreamMaxAge` skips the trimmed entries.
 
 ### Runtime behavior
 
 Registers Redis transports, consumers, and Redis connection services.
+
+- **Consumer names.** A process reads each group as `{group}:{machine name}:{slot}`, where the slot is the lowest one no other live client of that group in the process holds. A process restarted on the same machine, such as a StatefulSet pod, reads under the names it used before, and its startup pass delivers the entries it left pending at once. A process whose machine name changes, such as a Deployment pod, leaves its pending entries to the claim after `PendingClaimMinIdleTime`. Two processes that share a machine name share consumer names: each one's startup pass then also redelivers the other's pending entries, and the inbox discards the duplicates.
+- **Idle-consumer sweep.** Every `PendingClaimMinIdleTime`, each consumer client runs one Lua script per stream that deletes the group's consumers idle longer than `IdleConsumerDeleteAfter` with no pending entries. The check and the delete are atomic, because deleting a consumer discards its pending entries; a live consumer deleted while idle is created again by its next read. The sweep needs `EVAL`; where an ACL denies it, set `IdleConsumerDeleteAfter` to `TimeSpan.Zero`.
+- **Wire format.** A stream entry has two fields: `headers`, the headers as a JSON object, and `body`, the message body as raw bytes.
+- **Shutdown.** Shutdown waits, within the shutdown budget, for in-flight handlers to settle their entries before the client is disposed; an entry a handler never settles stays pending for the claim.
 
 ## Headless.Messaging.SourceGenerator
 

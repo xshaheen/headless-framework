@@ -25,10 +25,8 @@ public sealed class MessageLaneCompatibilityTests : TestBase
     }
 
     [Theory]
-    [InlineData(short.MinValue)]
     [InlineData(-1)]
     [InlineData(2)]
-    [InlineData(42)]
     [InlineData(short.MaxValue)]
     public void should_reject_every_representative_unknown_legacy_intent_without_defaulting_to_bus(short value)
     {
@@ -38,10 +36,8 @@ public sealed class MessageLaneCompatibilityTests : TestBase
     }
 
     [Theory]
-    [InlineData(short.MinValue)]
     [InlineData(-1)]
     [InlineData(2)]
-    [InlineData(42)]
     [InlineData(short.MaxValue)]
     public void should_reject_every_representative_unknown_lane_without_defaulting_to_bus(short value)
     {

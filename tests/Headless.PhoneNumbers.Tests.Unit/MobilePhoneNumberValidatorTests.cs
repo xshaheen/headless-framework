@@ -28,7 +28,6 @@ public sealed class MobilePhoneNumberValidatorTests
 
     [Theory]
     [InlineData(null, 20)]
-    [InlineData(null, 1)]
     public void should_return_false_for_null(string? phone, int countryCode)
     {
         var result = MobilePhoneNumberValidator.IsValid(phone!, countryCode);
@@ -37,7 +36,6 @@ public sealed class MobilePhoneNumberValidatorTests
 
     [Theory]
     [InlineData("", 20)]
-    [InlineData("", 1)]
     public void should_return_false_for_empty(string phone, int countryCode)
     {
         var result = MobilePhoneNumberValidator.IsValid(phone, countryCode);

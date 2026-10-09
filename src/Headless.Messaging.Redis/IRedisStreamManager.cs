@@ -30,6 +30,11 @@ internal interface IRedisStreamManager
         CancellationToken token
     );
 
+    /// <summary>
+    /// Polls the groups' pending entries with XAUTOCLAIM, claiming for <paramref name="consumerName"/> each entry pending
+    /// longer than <paramref name="claimMinIdleTime"/>, and periodically deletes the group's idle consumers that hold no
+    /// pending entry.
+    /// </summary>
     IAsyncEnumerable<IEnumerable<RedisStreamMessages>> PollStreamsStalePendingMessagesAsync(
         string[] streams,
         string consumerGroup,
@@ -56,14 +61,6 @@ internal interface IRedisStreamManager
     );
 
     Task Ack(string stream, string consumerGroup, string messageId, CancellationToken cancellationToken = default);
-
-    Task RequeueAndAck(
-        string stream,
-        string consumerGroup,
-        string messageId,
-        NameValueEntry[] entries,
-        CancellationToken cancellationToken = default
-    );
 }
 
 internal readonly record struct RedisStreamMessages(RedisKey Key, StreamEntry[] Entries);

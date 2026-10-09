@@ -53,18 +53,9 @@ internal sealed class AmazonSnsBusTransport(
                 // SNS requires a non-null message body; use empty string for empty bodies
                 var bodyJson = message.Body.Length > 0 ? Encoding.UTF8.GetString(message.Body.Span) : string.Empty;
 
-                var attributes = new Dictionary<string, MessageAttributeValue>(
-                    message.Headers.Count,
-                    StringComparer.Ordinal
-                );
-
-                foreach (var (key, value) in message.Headers)
-                {
-                    if (value is not null)
-                    {
-                        attributes[key] = new MessageAttributeValue { StringValue = value, DataType = "String" };
-                    }
-                }
+                // One header bag instead of an attribute per header: raw message delivery hands SNS attributes to SQS
+                // as message attributes, and SQS takes at most ten of them.
+                var attributes = SqsHeaderCodec.EncodeSns(message);
 
                 var request = new PublishRequest(arn, bodyJson) { MessageAttributes = attributes };
 
@@ -184,7 +175,7 @@ internal sealed class AmazonSnsBusTransport(
 
         var creation = _topicCreations.GetOrAdd(
             topicName,
-            static (name, state) => new Lazy<Task<string?>>(() => state._CreateTopicAsync(name)),
+            static (name, state) => new Lazy<Task<string?>>(() => state._ResolveTopicAsync(name)),
             this
         );
 
@@ -210,22 +201,35 @@ internal sealed class AmazonSnsBusTransport(
         return (true, topicArn);
     }
 
-    private async Task<string?> _CreateTopicAsync(string topicName)
+    // Creates the topic, or with AutoProvision off looks it up again, so a topic created after the listing is found
+    // without a restart. CreateTopic is idempotent and returns the ARN of an existing topic.
+    private async Task<string?> _ResolveTopicAsync(string topicName)
     {
-        var response = topicName.IsAwsFifoName()
-            ? await _snsClient!
-                .CreateTopicAsync(topicName.ToSnsCreateTopicRequest(), CancellationToken.None)
-                .ConfigureAwait(false)
-            : await _snsClient!.CreateTopicAsync(topicName, CancellationToken.None).ConfigureAwait(false);
+        string? topicArn;
 
-        if (string.IsNullOrEmpty(response.TopicArn))
+        if (!sqsOptionsAccessor.Value.AutoProvision)
+        {
+            var topic = await _snsClient!.FindTopicAsync(topicName).ConfigureAwait(false);
+            topicArn = topic?.TopicArn;
+        }
+        else
+        {
+            var response = topicName.IsAwsFifoName()
+                ? await _snsClient!
+                    .CreateTopicAsync(topicName.ToSnsCreateTopicRequest(), CancellationToken.None)
+                    .ConfigureAwait(false)
+                : await _snsClient!.CreateTopicAsync(topicName, CancellationToken.None).ConfigureAwait(false);
+            topicArn = response.TopicArn;
+        }
+
+        if (string.IsNullOrEmpty(topicArn))
         {
             return null;
         }
 
-        _topicArnMaps?.TryAdd(topicName, response.TopicArn);
+        _topicArnMaps?.TryAdd(topicName, topicArn);
 
-        return response.TopicArn;
+        return topicArn;
     }
 
     public async ValueTask DisposeAsync()

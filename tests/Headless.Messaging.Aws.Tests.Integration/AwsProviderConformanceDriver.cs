@@ -129,20 +129,18 @@ internal sealed class AwsProviderConformanceDriver(LocalStackTestFixture fixture
                             WaitTimeSeconds = 10,
                             MaxNumberOfMessages = 1,
                             MessageSystemAttributeNames = ["MessageGroupId"],
+                            MessageAttributeNames = ["All"],
                         },
                         token
                     );
                     var native = response.Messages.Should().ContainSingle().Subject;
                     native.Attributes["MessageGroupId"].Should().Be("order-42");
-                    using var envelope = JsonDocument.Parse(native.Body);
-                    var attributes = envelope.RootElement.GetProperty("MessageAttributes");
-                    attributes.GetProperty(Headers.MessageId).GetProperty("Value").GetString().Should().Be(expectedId);
-                    attributes
-                        .GetProperty(Headers.RoutingAffinityKey)
-                        .GetProperty("Value")
-                        .GetString()
-                        .Should()
-                        .Be("order-42");
+
+                    // Raw delivery hands SQS the published header bag, the same envelope the Queue lane sends.
+                    native.MessageAttributes.Should().ContainSingle();
+                    using var bag = JsonDocument.Parse(native.MessageAttributes["headless-aws-headers-v1"].StringValue);
+                    bag.RootElement.GetProperty(Headers.MessageId).GetString().Should().Be(expectedId);
+                    bag.RootElement.GetProperty(Headers.RoutingAffinityKey).GetString().Should().Be("order-42");
                     await client.DeleteMessageAsync(queueUrl, native.ReceiptHandle, token);
                 },
                 cancellationToken,

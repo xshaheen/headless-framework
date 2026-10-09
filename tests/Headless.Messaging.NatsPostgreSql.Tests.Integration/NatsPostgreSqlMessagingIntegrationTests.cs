@@ -218,14 +218,15 @@ public sealed class NatsPostgreSqlMessagingIntegrationTests(NatsPostgreSqlFixtur
     private static async Task<bool> _WaitForRecordAsync(
         IMonitoringApi monitoringApi,
         MessageType messageType,
-        string messageId
+        string messageId,
+        StatusName? statusName = null
     )
     {
         var deadline = DateTimeOffset.UtcNow.AddSeconds(10);
 
         while (DateTimeOffset.UtcNow < deadline)
         {
-            if ((await _GetRecordsAsync(monitoringApi, messageType, messageId)).Count > 0)
+            if ((await _GetRecordsAsync(monitoringApi, messageType, messageId, statusName)).Count > 0)
             {
                 return true;
             }
@@ -239,13 +240,15 @@ public sealed class NatsPostgreSqlMessagingIntegrationTests(NatsPostgreSqlFixtur
     private static async Task<IReadOnlyList<MessageView>> _GetRecordsAsync(
         IMonitoringApi monitoringApi,
         MessageType messageType,
-        string messageId
+        string messageId,
+        StatusName? statusName = null
     )
     {
         var page = await monitoringApi.GetMessagesAsync(
             new MessageQuery
             {
                 MessageType = messageType,
+                StatusName = statusName,
                 CurrentPage = 0,
                 PageSize = 200,
             },
@@ -329,33 +332,30 @@ public sealed class NatsPostgreSqlMessagingIntegrationTests(NatsPostgreSqlFixtur
         var received = await subscriber.WaitForMessageAsync(TimeSpan.FromSeconds(10), AbortToken);
         received.Should().BeTrue();
 
-        await Task.Delay(TimeSpan.FromSeconds(2), AbortToken);
-
+        // The status flips to Succeeded after delivery, so poll for the final state instead of reading once.
         var monitoringApi = DataStorage.GetMonitoringApi();
-        var publishedPage = await monitoringApi.GetMessagesAsync(
-            new MessageQuery
-            {
-                MessageType = MessageType.Publish,
-                StatusName = StatusName.Succeeded,
-                CurrentPage = 0,
-                PageSize = 50,
-            },
-            AbortToken
+        (await _WaitForRecordAsync(monitoringApi, MessageType.Publish, publishMessageId, StatusName.Succeeded))
+            .Should()
+            .BeTrue();
+        (await _WaitForRecordAsync(monitoringApi, MessageType.Subscribe, publishMessageId, StatusName.Succeeded))
+            .Should()
+            .BeTrue();
+
+        var publishedRecords = await _GetRecordsAsync(
+            monitoringApi,
+            MessageType.Publish,
+            publishMessageId,
+            StatusName.Succeeded
+        );
+        var receivedRecords = await _GetRecordsAsync(
+            monitoringApi,
+            MessageType.Subscribe,
+            publishMessageId,
+            StatusName.Succeeded
         );
 
-        var receivedPage = await monitoringApi.GetMessagesAsync(
-            new MessageQuery
-            {
-                MessageType = MessageType.Subscribe,
-                StatusName = StatusName.Succeeded,
-                CurrentPage = 0,
-                PageSize = 50,
-            },
-            AbortToken
-        );
-
-        publishedPage.Items.Should().Contain(item => item.MessageId == publishMessageId && item.Name == messageName);
-        receivedPage.Items.Should().Contain(item => item.MessageId == publishMessageId && item.Name == messageName);
+        publishedRecords.Should().Contain(item => item.Name == messageName);
+        receivedRecords.Should().Contain(item => item.Name == messageName);
     }
 
     protected override void ConfigureServices(IServiceCollection services)

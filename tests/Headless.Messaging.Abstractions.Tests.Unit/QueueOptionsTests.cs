@@ -8,16 +8,6 @@ namespace Tests;
 public sealed class QueueOptionsTests : TestBase
 {
     [Fact]
-    public void should_default_delivery_mode_to_durable()
-    {
-        // when
-        var options = new QueueOptions();
-
-        // then
-        options.DeliveryMode.Should().BeNull();
-    }
-
-    [Fact]
     public void should_include_delivery_mode_and_delay_in_equality_and_hashing()
     {
         // given

@@ -183,7 +183,7 @@ Registers `TimeProvider.System`, framework GUID generator defaults, `IHostIdenti
 - `LeaveAsync` stamps the leave once; leaving an incarnation that already left is a no-op.
 - Every comparison runs on the database clock with exact durations; the application clock never classifies a node.
 - Every call runs on its own READ COMMITTED transaction and retries a transient fault raised before its commit (a deadlock, a serialization conflict, a lock timeout, a dropped connection), at most 3 attempts. A fault from the commit is never retried. See the kit's [retry rule](sql.md#store-statement-kit-for-provider-authors).
-- `ReadLivenessAsync` prunes retention-expired liveness rows, then orphaned descriptors, in a transaction of its own first. A prune that still fails after its retries is logged as a warning and retried by the next read; the read itself still returns.
+- `ReadLivenessAsync` never returns a row at or past the retention cutoff (`DeadThreshold + DeadRetentionWindow`), whether or not that row has been deleted yet. Deleting them is a separate prune of retention-expired liveness rows, then orphaned descriptors, which the read runs in a transaction of its own at most once a minute per store. A prune that still fails after its retries is logged as a warning and retried by a later read; the read itself still returns.
 
 ### Design constraints
 

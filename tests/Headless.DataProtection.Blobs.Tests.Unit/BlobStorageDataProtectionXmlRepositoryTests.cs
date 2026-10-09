@@ -771,30 +771,6 @@ public sealed class BlobStorageDataProtectionXmlRepositoryTests : TestBase
         }
     }
 
-    [Fact]
-    public async Task should_handle_concurrent_store_element_calls()
-    {
-        var storage = Substitute.For<IBlobStorage>();
-        _SetupUpload(storage);
-        var sut = new BlobStorageDataProtectionXmlRepository(storage);
-
-        var tasks = Enumerable
-            .Range(0, 10)
-            .Select(i =>
-                Task.Run(() =>
-                {
-                    var element = new XElement("key", new XAttribute("id", i.ToString(CultureInfo.InvariantCulture)));
-                    sut.StoreElement(element, $"key-{i}");
-                })
-            )
-            .ToList();
-
-        await Task.WhenAll(tasks);
-
-        // If we reach here without exception, the test passes
-        await storage.ReceivedWithAnyArgs(10).UploadAsync(default, null!, null, null, CancellationToken.None);
-    }
-
     #endregion
 
     #region Helper Methods

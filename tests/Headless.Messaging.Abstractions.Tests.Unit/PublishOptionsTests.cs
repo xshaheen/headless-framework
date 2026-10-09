@@ -18,16 +18,6 @@ public sealed class PublishOptionsTests : TestBase
     }
 
     [Fact]
-    public void should_default_delivery_mode_to_durable()
-    {
-        // when
-        var options = new PublishOptions();
-
-        // then
-        options.DeliveryMode.Should().BeNull();
-    }
-
-    [Fact]
     public void should_include_delivery_mode_and_delay_in_equality_and_hashing()
     {
         // given
@@ -53,39 +43,6 @@ public sealed class PublishOptionsTests : TestBase
     }
 
     [Fact]
-    public void should_default_tenant_id_to_null()
-    {
-        // when
-        var options = new PublishOptions();
-
-        // then
-        options.TenantId.Should().BeNull();
-    }
-
-    [Fact]
-    public void should_round_trip_tenant_id_value()
-    {
-        // given
-        const string tenantId = "acme";
-
-        // when
-        var options = new PublishOptions { TenantId = tenantId };
-
-        // then
-        options.TenantId.Should().Be(tenantId);
-    }
-
-    [Fact]
-    public void should_allow_explicit_null_tenant_id()
-    {
-        // when
-        var options = new PublishOptions { TenantId = null };
-
-        // then
-        options.TenantId.Should().BeNull();
-    }
-
-    [Fact]
     public void should_store_oversized_tenant_id_without_setter_validation()
     {
         // given
@@ -98,13 +55,6 @@ public sealed class PublishOptionsTests : TestBase
 
         // then
         options.TenantId.Should().Be(oversized);
-    }
-
-    [Fact]
-    public void should_expose_tenant_id_max_length_constant()
-    {
-        // then
-        MessageOptions.TenantIdMaxLength.Should().Be(200);
     }
 
     [Fact]

@@ -84,6 +84,12 @@ public abstract class JobsKeyLockConformanceTests(Action<DbContextOptionsBuilder
         }
     }
 
+    // A short budget keeps these cases fast; the default only changes how long production writers wait.
+    private static readonly TimeSpan _ShortLockTimeout = TimeSpan.FromMilliseconds(2500);
+
+    // The server measures the budget on its own clock, so allow for a coarse server timer.
+    private static readonly TimeSpan _ClockTolerance = TimeSpan.FromMilliseconds(100);
+
     public virtual async Task contention_timeout_preserves_caller_work_and_timeout_policy(bool keyed)
     {
         var id = Guid.NewGuid();
@@ -107,8 +113,8 @@ public abstract class JobsKeyLockConformanceTests(Action<DbContextOptionsBuilder
         var elapsed = Stopwatch.StartNew();
         var acquire = async () => await _AcquireAsync(waiter);
         await acquire.Should().ThrowExactlyAsync<TimeoutException>();
-        elapsed.Elapsed.Should().BeGreaterThanOrEqualTo(TimeSpan.FromSeconds(29));
-        elapsed.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(40));
+        elapsed.Elapsed.Should().BeGreaterThanOrEqualTo(_ShortLockTimeout - _ClockTolerance);
+        elapsed.Elapsed.Should().BeLessThan(_ShortLockTimeout * 3);
         waiter.Database.CurrentTransaction.Should().BeSameAs(waitingTransaction);
         (await _ScalarAsync(waiter, ReadLockTimeoutSql)).Should().Be(policy);
         (await _CanAcquireRunAsync(previousId)).Should().BeFalse();
@@ -122,8 +128,8 @@ public abstract class JobsKeyLockConformanceTests(Action<DbContextOptionsBuilder
 
         Task _AcquireAsync(DbContext context) =>
             keyed
-                ? JobsKeyLock.AcquireAsync(context, scope, key, AbortToken)
-                : JobsKeyLock.AcquireRunsAsync(context, [id], AbortToken);
+                ? JobsKeyLock.AcquireAsync(context, scope, key, _ShortLockTimeout, AbortToken)
+                : JobsKeyLock.AcquireRunsAsync(context, [id], _ShortLockTimeout, AbortToken);
     }
 
     public virtual async Task batch_shares_one_timeout_budget_across_contended_runs()
@@ -138,21 +144,25 @@ public abstract class JobsKeyLockConformanceTests(Action<DbContextOptionsBuilder
         await using var waiter = _CreateContext();
         await using var waitingTransaction = await waiter.Database.BeginTransactionAsync(AbortToken);
 
+        // The first lock frees halfway through the budget. A shared budget ends at one budget; a fresh budget per
+        // lock would end half a budget later, past the upper bound.
+        var budget = _ShortLockTimeout * 2;
         var elapsed = Stopwatch.StartNew();
         await Task.WhenAll(assertTimeoutAsync(), releaseFirstAsync());
-        elapsed.Elapsed.Should().BeGreaterThanOrEqualTo(TimeSpan.FromSeconds(29));
-        elapsed.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(37));
+        elapsed.Elapsed.Should().BeGreaterThanOrEqualTo(budget - _ClockTolerance);
+        elapsed.Elapsed.Should().BeLessThan(budget * 1.3);
         (await _ScalarAsync(waiter, CountLocksSql)).Should().Be(1);
 
         async Task assertTimeoutAsync()
         {
-            var acquire = async () => await JobsKeyLock.AcquireRunsAsync(waiter, Enumerable.Reverse(ids), AbortToken);
+            var acquire = async () =>
+                await JobsKeyLock.AcquireRunsAsync(waiter, Enumerable.Reverse(ids), budget, AbortToken);
             await acquire.Should().ThrowExactlyAsync<TimeoutException>();
         }
 
         async Task releaseFirstAsync()
         {
-            await Task.Delay(TimeSpan.FromSeconds(10), AbortToken);
+            await Task.Delay(budget / 2, AbortToken);
             await firstTransaction.RollbackAsync(AbortToken);
         }
     }

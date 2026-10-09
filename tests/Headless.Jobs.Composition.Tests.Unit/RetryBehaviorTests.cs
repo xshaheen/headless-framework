@@ -12,7 +12,6 @@ using Microsoft.Extensions.Time.Testing;
 
 namespace Tests;
 
-[Collection<JobsHelperCollection>]
 public sealed class RetryBehaviorTests : TestBase
 {
     private static readonly JobFunctionRegistry _EmptyRegistry = JobFunctionRegistryBuilder.Build([], [], []);

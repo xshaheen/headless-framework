@@ -69,11 +69,17 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         };
     }
 
+    // ProcessAsync waits real time (context uses TimeProvider.System), so tests that assert the interval
+    // arithmetic rather than its magnitude use a millisecond base to keep each call cheap.
+    private static readonly TimeSpan _FastInterval = TimeSpan.FromMilliseconds(1);
+
     private static (MessageNeedToRetryProcessor Sut, IDispatcher Dispatcher, ICircuitBreakerMonitor Cb) _Create(
         int baseIntervalSeconds = 1,
         bool adaptivePolling = true,
         int maxPollingIntervalSeconds = 900,
-        double circuitOpenRateThreshold = 0.8
+        double circuitOpenRateThreshold = 0.8,
+        TimeSpan? baseInterval = null,
+        TimeSpan? maxPollingInterval = null
     )
     {
         var dispatcher = Substitute.For<IDispatcher>();
@@ -86,8 +92,8 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         var retryProcessorOptions = new RetryProcessorOptions
         {
             AdaptivePolling = adaptivePolling,
-            BaseInterval = TimeSpan.FromSeconds(baseIntervalSeconds),
-            MaxPollingInterval = TimeSpan.FromSeconds(maxPollingIntervalSeconds),
+            BaseInterval = baseInterval ?? TimeSpan.FromSeconds(baseIntervalSeconds),
+            MaxPollingInterval = maxPollingInterval ?? TimeSpan.FromSeconds(maxPollingIntervalSeconds),
             CircuitOpenRateThreshold = circuitOpenRateThreshold,
         };
 
@@ -101,6 +107,14 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         );
 
         return (sut, dispatcher, cb);
+    }
+
+    // ProcessAsync returns once its wait elapses, which with a millisecond interval can be before the
+    // background received-retry cycle it started has finished, so wait for it before asserting.
+    private static async Task _ProcessAndSettleAsync(MessageNeedToRetryProcessor sut, ProcessingContext context)
+    {
+        await sut.ProcessAsync(context);
+        await sut.WaitForQuadrantIdleForTestAsync(MessageType.Subscribe, MessageLane.Bus);
     }
 
     private static ProcessingContext _CreateContext(
@@ -375,7 +389,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     public async Task process_async_skips_messages_when_circuit_is_open_for_consumer()
     {
         // given
-        var (sut, dispatcher, cb) = _Create();
+        var (sut, dispatcher, cb) = _Create(baseInterval: _FastInterval);
         var msg1 = _CreateMessage("consumer-a");
         var msg2 = _CreateMessage("consumer-b");
         var msg3 = _CreateMessage("consumer-a");
@@ -392,7 +406,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         );
 
         // when
-        await sut.ProcessAsync(context);
+        await _ProcessAndSettleAsync(sut, context);
 
         // then — only consumer-b message enqueued
         await dispatcher.Received(1).EnqueueToExecute(msg2, null, Arg.Any<CancellationToken>());
@@ -1226,7 +1240,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         var logger = NullLoggerFactory.Instance.CreateLogger<MessageNeedToRetryProcessor>();
 
         var options = new MessagingOptions();
-        var retryProcessorOptions = new RetryProcessorOptions { BaseInterval = TimeSpan.FromSeconds(1) };
+        var retryProcessorOptions = new RetryProcessorOptions { BaseInterval = _FastInterval };
 
         var sut = new MessageNeedToRetryProcessor(
             Options.Create(options),
@@ -1245,7 +1259,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         );
 
         // when
-        await sut.ProcessAsync(context);
+        await _ProcessAndSettleAsync(sut, context);
 
         // then — all enqueued
         await dispatcher.Received(1).EnqueueToExecute(msg1, null, Arg.Any<CancellationToken>());
@@ -1256,7 +1270,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     public async Task process_async_enqueues_message_when_consumer_identity_is_null()
     {
         // given
-        var (sut, dispatcher, cb) = _Create();
+        var (sut, dispatcher, cb) = _Create(baseInterval: _FastInterval);
         var msg = _CreateMessage(consumerIdentity: null);
 
         cb.IsOpen(Arg.Any<string>()).Returns(true); // every circuit "open"
@@ -1269,7 +1283,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         );
 
         // when
-        await sut.ProcessAsync(context);
+        await _ProcessAndSettleAsync(sut, context);
 
         // then — null group messages always enqueued (can't check circuit without group name)
         await dispatcher.Received(1).EnqueueToExecute(msg, null, Arg.Any<CancellationToken>());
@@ -1283,9 +1297,9 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     public async Task process_async_doubles_interval_when_transient_rate_exceeds_threshold()
     {
         // given — 5 messages, 4 skipped (circuit open) = 80% > threshold
-        var (sut, dispatcher, cb) = _Create(baseIntervalSeconds: 1, circuitOpenRateThreshold: 0.7);
+        var (sut, dispatcher, cb) = _Create(circuitOpenRateThreshold: 0.7, baseInterval: _FastInterval);
 
-        var baseInterval = TimeSpan.FromSeconds(1);
+        var baseInterval = _FastInterval;
 
         cb.IsOpen(_CircuitKey("open-consumer")).Returns(true);
         cb.IsOpen(_CircuitKey("healthy-consumer")).Returns(false);
@@ -1307,7 +1321,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         );
 
         // when — first cycle
-        await sut.ProcessAsync(context);
+        await _ProcessAndSettleAsync(sut, context);
 
         // then — interval should have doubled from 10s to 20s
         var currentInterval = _GetCurrentInterval(sut);
@@ -1326,9 +1340,9 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     public async Task process_async_resets_interval_after3_clean_cycles()
     {
         // given
-        var (sut, dispatcher, cb) = _Create(baseIntervalSeconds: 1);
+        var (sut, dispatcher, cb) = _Create(baseInterval: _FastInterval);
 
-        var baseInterval = TimeSpan.FromSeconds(1);
+        var baseInterval = _FastInterval;
 
         cb.IsOpen(Arg.Any<string>()).Returns(false);
 
@@ -1342,9 +1356,9 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         );
 
         // when — 3 clean cycles
-        await sut.ProcessAsync(context);
-        await sut.ProcessAsync(context);
-        await sut.ProcessAsync(context);
+        await _ProcessAndSettleAsync(sut, context);
+        await _ProcessAndSettleAsync(sut, context);
+        await _ProcessAndSettleAsync(sut, context);
 
         // then — no crashes, processor handles empty batches
         // The interval should have been reset to base after 3 clean cycles
@@ -1364,7 +1378,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     public async Task process_async_does_not_adjust_interval_when_adaptive_polling_disabled()
     {
         // given
-        var (sut, dispatcher, cb) = _Create(baseIntervalSeconds: 1, adaptivePolling: false);
+        var (sut, dispatcher, cb) = _Create(adaptivePolling: false, baseInterval: _FastInterval);
 
         cb.IsOpen(_CircuitKey("open-consumer")).Returns(true);
 
@@ -1378,8 +1392,8 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         );
 
         // when — all skipped, but adaptive polling is off
-        await sut.ProcessAsync(context);
-        await sut.ProcessAsync(context);
+        await _ProcessAndSettleAsync(sut, context);
+        await _ProcessAndSettleAsync(sut, context);
 
         // then — no crashes, messages still skipped due to circuit breaker
         await dispatcher
@@ -1394,12 +1408,12 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     [Fact]
     public async Task process_async_interval_capped_at_max_after_many_doublings()
     {
-        // given — maxPollingInterval=2s, base=1s, all messages skipped → high transient rate
-        var maxPollingInterval = TimeSpan.FromSeconds(2);
+        // given — maxPollingInterval=2ms, base=1ms, all messages skipped → high transient rate
+        var maxPollingInterval = TimeSpan.FromMilliseconds(2);
         var (sut, dispatcher, cb) = _Create(
-            baseIntervalSeconds: 1,
-            maxPollingIntervalSeconds: 2,
-            circuitOpenRateThreshold: 0.5
+            circuitOpenRateThreshold: 0.5,
+            baseInterval: _FastInterval,
+            maxPollingInterval: maxPollingInterval
         );
         cb.IsOpen(_CircuitKey("open-consumer")).Returns(true);
 
@@ -1410,14 +1424,14 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             cancellationToken: AbortToken
         );
 
-        // when — 10 cycles, each doubles interval, should cap at maxPollingInterval (2s)
+        // when — 10 cycles, each doubles interval, should cap at maxPollingInterval (2ms)
         for (var i = 0; i < 10; i++)
         {
-            await sut.ProcessAsync(context);
+            await _ProcessAndSettleAsync(sut, context);
         }
 
         // then — no crash, no overflow. Messages consistently skipped.
-        // Interval should be capped at maxPollingInterval (2s)
+        // Interval should be capped at maxPollingInterval (2ms)
         var currentInterval = _GetCurrentInterval(sut);
         currentInterval.Should().Be(maxPollingInterval);
 
@@ -1429,9 +1443,9 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     {
         // given — first elevate interval via high transient rate, then 2 healthy cycles
         var (sut, dispatcher, cb) = _Create(
-            baseIntervalSeconds: 1,
-            maxPollingIntervalSeconds: 60,
-            circuitOpenRateThreshold: 0.5
+            circuitOpenRateThreshold: 0.5,
+            baseInterval: _FastInterval,
+            maxPollingInterval: TimeSpan.FromMilliseconds(60)
         );
 
         var dataStorage = Substitute.For<IDataStorage>();
@@ -1450,13 +1464,13 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             _CreateMessage("open-consumer"),
             _CreateMessage("healthy-consumer")
         );
-        await sut.ProcessAsync(context);
+        await _ProcessAndSettleAsync(sut, context);
 
         // Cycle 2-3: All healthy (no open circuits) → 2 consecutive healthy cycles
         cb.IsOpen(_CircuitKey("open-consumer")).Returns(false);
         _SetupReceivedMessages(dataStorage, _CreateMessage("healthy-consumer"), _CreateMessage("healthy-consumer"));
-        await sut.ProcessAsync(context);
-        await sut.ProcessAsync(context);
+        await _ProcessAndSettleAsync(sut, context);
+        await _ProcessAndSettleAsync(sut, context);
 
         // then — processor functions without crashes through full escalate/recover cycle
         await dispatcher.Received().EnqueueToExecute(Arg.Any<MediumMessage>(), null, Arg.Any<CancellationToken>());
@@ -1540,7 +1554,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     public async Task process_async_mid_range_rate_resets_counters_without_changing_interval()
     {
         // given — rate between 0.5 and threshold (0.8): e.g., 6 skipped out of 10 = 60%
-        var (sut, dispatcher, cb) = _Create(baseIntervalSeconds: 1, circuitOpenRateThreshold: 0.8);
+        var (sut, dispatcher, cb) = _Create(circuitOpenRateThreshold: 0.8, baseInterval: _FastInterval);
         cb.IsOpen(_CircuitKey("open-consumer")).Returns(true);
         cb.IsOpen(_CircuitKey("healthy-consumer")).Returns(false);
 
@@ -1558,7 +1572,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         );
 
         // when — mid-range cycle
-        await sut.ProcessAsync(context);
+        await _ProcessAndSettleAsync(sut, context);
 
         // then — healthy messages still enqueued, processor doesn't crash
         await dispatcher
@@ -1577,9 +1591,9 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     [Fact]
     public async Task process_async_applies_jitter_on_first_poll_only()
     {
-        // given — generous base interval so jitter is measurable but bounded
-        var baseInterval = TimeSpan.FromMilliseconds(500);
-        var (sut, _, cb) = _Create(baseIntervalSeconds: 1);
+        // given
+        var baseInterval = TimeSpan.FromMilliseconds(5);
+        var (sut, _, cb) = _Create(baseInterval: baseInterval);
         _SetCurrentInterval(sut, baseInterval);
 
         cb.IsOpen(Arg.Any<string>()).Returns(false);
@@ -1594,49 +1608,10 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         // Pre-condition: jitter flag has not been observed yet.
         sut.StartupJitterApplied.Should().BeFalse();
 
-        // when — first ProcessAsync should apply jitter once
-        var firstStopwatch = System.Diagnostics.Stopwatch.StartNew();
+        // when — first ProcessAsync applies the one-shot jitter
         await sut.ProcessAsync(context);
-        firstStopwatch.Stop();
 
-        // Post-condition: jitter is now consumed.
-        sut.StartupJitterApplied.Should().BeTrue();
-
-        // First call's total elapsed time includes (jitter < baseInterval) + (final WaitAsync ~= 1s currentInterval).
-        // The jitter component alone must be < baseInterval (500 ms). We can't isolate it, but we can
-        // bound the total via the fact that jitter <= baseInterval.
-        // Stronger and stable assertion: jitter is a one-shot — second call's startup overhead is 0.
-        var secondStopwatch = System.Diagnostics.Stopwatch.StartNew();
-        // Spin off a quick second invocation but cancel the post-work WaitAsync so we only measure the jitter slot.
-        // Explicit try/finally Dispose (not `using var`) so the analyzer can verify the task completes
-        // before the CancellationTokenSource is disposed
-        var cts = new CancellationTokenSource();
-        try
-        {
-            await using var cancellableContext = new ProcessingContext(
-                context.Provider,
-                TimeProvider.System,
-                cts.Token
-            );
-            var secondTask = sut.ProcessAsync(cancellableContext);
-            // Give the storage call a moment to be invoked, then cancel.
-            await Task.Delay(50, AbortToken);
-            await cts.CancelAsync();
-            try
-            {
-                await secondTask;
-            }
-            catch (TaskCanceledException) { }
-            catch (OperationCanceledException) { }
-
-            secondStopwatch.Stop();
-        }
-        finally
-        {
-            cts.Dispose();
-        }
-
-        // then — jitter is one-shot: flag stays true.
+        // then — jitter is now consumed.
         sut.StartupJitterApplied.Should().BeTrue();
     }
 
@@ -1746,7 +1721,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         var dispatcher = Substitute.For<IDispatcher>();
         var sut = new MessageNeedToRetryProcessor(
             Options.Create(new MessagingOptions()),
-            Options.Create(new RetryProcessorOptions { BaseInterval = TimeSpan.FromSeconds(1) }),
+            Options.Create(new RetryProcessorOptions { BaseInterval = _FastInterval }),
             new CapturingLogger(captured),
             dispatcher,
             Substitute.For<IDistributedLock>()
@@ -1761,7 +1736,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             await _RunQuadrantCycleAsync(sut, context, MessageType.Subscribe, MessageLane.Bus);
             await dispatcher.Received(cycle).EnqueueToExecute(message, null, Arg.Any<CancellationToken>());
             sut.GetPickupFailureCountForTest(MessageType.Subscribe, MessageLane.Bus).Should().Be(cycle);
-            sut.CurrentPollingInterval.Should().BeGreaterThan(TimeSpan.FromSeconds(1));
+            sut.CurrentPollingInterval.Should().BeGreaterThan(_FastInterval);
         }
 
         captured.Count(e => e.Id == 3110).Should().Be(2);
@@ -1826,7 +1801,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
 
         var sut = new MessageNeedToRetryProcessor(
             Options.Create(new MessagingOptions()),
-            Options.Create(new RetryProcessorOptions { BaseInterval = TimeSpan.FromSeconds(1) }),
+            Options.Create(new RetryProcessorOptions { BaseInterval = _FastInterval }),
             logger,
             dispatcher,
             lockProvider
@@ -1886,7 +1861,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     [Fact]
     public async Task process_async_does_not_treat_storage_pickup_failure_as_clean_cycle()
     {
-        var (sut, _, _) = _Create(baseIntervalSeconds: 1);
+        var (sut, _, _) = _Create(baseInterval: _FastInterval);
         var dataStorage = Substitute.For<IDataStorage>();
         dataStorage
             .GetReceivedInboxOrphansOfNeedRetryAsync(
@@ -1917,13 +1892,13 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
             cancellationToken: AbortToken
         );
 
-        await sut.ProcessAsync(context);
-        sut.CurrentPollingInterval.Should().Be(TimeSpan.FromSeconds(2));
+        await _ProcessAndSettleAsync(sut, context);
+        sut.CurrentPollingInterval.Should().Be(_FastInterval * 2);
 
-        await sut.ProcessAsync(context);
+        await _ProcessAndSettleAsync(sut, context);
         sut.CurrentPollingInterval.Should()
             .Be(
-                TimeSpan.FromSeconds(2),
+                _FastInterval * 2,
                 "the successful empty poll after a storage failure should not count as a clean cycle"
             );
     }

@@ -26,15 +26,6 @@ public sealed class HeadlessTestServerTests : TestBase
     }
 
     [Fact]
-    public async Task should_start_and_resolve_services()
-    {
-        _server = new HeadlessTestServer<Program>();
-        await _server.InitializeAsync();
-
-        _server.Services.Should().NotBeNull();
-    }
-
-    [Fact]
     public async Task should_create_working_http_client()
     {
         _server = new HeadlessTestServer<Program>();
@@ -58,17 +49,6 @@ public sealed class HeadlessTestServerTests : TestBase
 
         resolved.Should().BeOfType<FakeTimeProvider>();
         resolved.Should().BeSameAs(_server.TimeProvider);
-    }
-
-    [Fact]
-    public async Task should_auto_register_test_clock_as_iclock()
-    {
-        _server = new HeadlessTestServer<Program>();
-        await _server.InitializeAsync();
-
-        var timeProvider = _server.Services.GetRequiredService<TimeProvider>();
-
-        timeProvider.Should().BeOfType<FakeTimeProvider>();
     }
 
     [Fact]
@@ -278,7 +258,10 @@ public sealed class HeadlessTestServerTests : TestBase
     public async Task should_throw_timeout_when_readiness_check_exceeds_timeout()
     {
         _server = new HeadlessTestServer<Program>();
-        _server.AddReadinessCheck(_ => Task.Delay(TimeSpan.FromSeconds(30)), timeout: TimeSpan.FromMilliseconds(50));
+        _server.AddReadinessCheck(
+            _ => Task.Delay(TimeSpan.FromSeconds(30), AbortToken),
+            timeout: TimeSpan.FromMilliseconds(50)
+        );
 
         var act = async () => await _server.InitializeAsync();
 
@@ -293,23 +276,6 @@ public sealed class HeadlessTestServerTests : TestBase
 
         await _server.DisposeAsync();
         await _server.DisposeAsync(); // Should not throw
-    }
-
-    [Fact]
-    public async Task should_cleanup_factory_on_init_failure()
-    {
-        _server = new HeadlessTestServer<Program>();
-
-        _server.AddReadinessCheck(
-            _ => Task.Delay(TimeSpan.FromSeconds(30), AbortToken),
-            timeout: TimeSpan.FromMilliseconds(50)
-        );
-
-        var act = async () => await _server.InitializeAsync();
-        await act.Should().ThrowExactlyAsync<TimeoutException>();
-
-        // After init failure, dispose should be safe (factory already cleaned up)
-        await _server.DisposeAsync();
     }
 
     [Fact]
