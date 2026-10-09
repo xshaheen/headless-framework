@@ -74,6 +74,7 @@ internal sealed class SubscribeExecutor(
         provider.GetService<InboxMetricPolicy>() ?? new InboxMetricPolicy(TenantTagName: null);
 
     private readonly IMessagingCapabilityModel? _capabilityModel = provider.GetService<IMessagingCapabilityModel>();
+    private readonly ConsumerRateLimiters? _rateLimiters = provider.GetService<ConsumerRateLimiters>();
     private readonly RetryPolicyOptions _retryPolicy = options.Value.RetryPolicy;
 
     // Singleton cache resolved once instead of per descriptor-less dispatch (the common retry-pickup shape):
@@ -308,6 +309,14 @@ internal sealed class SubscribeExecutor(
             }
 
             return recoveryAttempt;
+        }
+
+        // A rate-limited consumer waits for its permit before the attempt leases the row or opens the inbox transaction,
+        // so a throttled delivery holds neither a database connection nor lease time while it waits. Each attempt, a
+        // retry included, runs the handler again, so each one takes a permit.
+        if (_rateLimiters is not null)
+        {
+            await _rateLimiters.WaitAsync(descriptor, cancellationToken).ConfigureAwait(false);
         }
 
         if (needsLease)

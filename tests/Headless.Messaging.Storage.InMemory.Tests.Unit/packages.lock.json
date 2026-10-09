@@ -787,7 +787,8 @@
           "Microsoft.Extensions.Diagnostics": "[10.0.12, )",
           "Microsoft.Extensions.Options": "[10.0.12, )",
           "OpenTelemetry.Api": "[1.19.1, )",
-          "Polly.Core": "[8.8.0, )"
+          "Polly.Core": "[8.8.0, )",
+          "System.Threading.RateLimiting": "[10.0.12, )"
         }
       },
       "headless.messaging.abstractions": {
@@ -1240,6 +1241,12 @@
           "BouncyCastle.Cryptography": "2.7.0",
           "Microsoft.Extensions.Logging.Abstractions": "8.0.3"
         }
+      },
+      "System.Threading.RateLimiting": {
+        "type": "CentralTransitive",
+        "requested": "[10.0.12, )",
+        "resolved": "10.0.12",
+        "contentHash": "Y3f2aLAgynO44Q9xYHR35NC1KuSTcZwo49xjHuq0gQWyOWw8fvipIdoc+1e8FS+9neYZuQ1K4iwl5frNJXekgw=="
       },
       "Testcontainers": {
         "type": "CentralTransitive",

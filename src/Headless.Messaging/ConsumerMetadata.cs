@@ -92,4 +92,10 @@ public sealed record ConsumerMetadata(
     /// every-instance consumer, which never retries.
     /// </summary>
     internal FailurePolicyDefinition? FailurePolicy { get; init; }
+
+    /// <summary>
+    /// The rate <c>Tune</c> or <c>Headless:Messaging:Consumers:{identity}:RateLimit</c> configuration gave this consumer,
+    /// or <see langword="null"/> when its deliveries are not throttled.
+    /// </summary>
+    internal ConsumerRateLimit? RateLimit { get; init; }
 }

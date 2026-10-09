@@ -26,6 +26,7 @@ public sealed class ConsumerTuningBuilder : IConsumerProviderConfigBuilder
     private TimeSpan? _inboxRetention;
     private ConsumerCircuitBreakerOptions? _circuitBreaker;
     private FailurePolicyDefinition? _failurePolicy;
+    private ConsumerRateLimit? _rateLimit;
 
     internal ConsumerTuningBuilder(string identity)
     {
@@ -104,6 +105,23 @@ public sealed class ConsumerTuningBuilder : IConsumerProviderConfigBuilder
     }
 
     /// <summary>
+    /// Limits how fast this consumer starts handling deliveries on this host. A delivery over the rate waits for a permit
+    /// before its consume middleware and handler run, and before it takes its inbox lease or transaction, so it is never
+    /// dropped or rejected. The wait honors host shutdown. Every message and lane of the consumer share one limiter, and
+    /// each host enforces the rate on its own.
+    /// </summary>
+    /// <param name="limit">
+    /// The rate, from <see cref="ConsumerRateLimit.FixedWindow"/> or <see cref="ConsumerRateLimit.TokenBucket"/>.
+    /// </param>
+    /// <returns>This builder, for chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="limit"/> is <see langword="null"/>.</exception>
+    public ConsumerTuningBuilder RateLimit(ConsumerRateLimit limit)
+    {
+        _rateLimit = Argument.IsNotNull(limit);
+        return this;
+    }
+
+    /// <summary>
     /// Runs <typeparamref name="TMiddleware"/> around every delivery to this consumer on this host, inside the global and
     /// per-message consume middleware. The middleware is resolved from the delivery's service scope; when it is not
     /// registered yet, it is registered as scoped.
@@ -138,7 +156,8 @@ public sealed class ConsumerTuningBuilder : IConsumerProviderConfigBuilder
             _providerConfigs.Build(),
             _inboxRetention,
             _circuitBreaker,
-            _failurePolicy
+            _failurePolicy,
+            _rateLimit
         );
 
     internal static TimeSpan ValidateInboxRetention(TimeSpan retention)
@@ -161,7 +180,8 @@ internal sealed record ConsumerTuning(
     IReadOnlyDictionary<Type, object> ProviderConfigs,
     TimeSpan? InboxRetention,
     ConsumerCircuitBreakerOptions? CircuitBreaker,
-    FailurePolicyDefinition? FailurePolicy = null
+    FailurePolicyDefinition? FailurePolicy = null,
+    ConsumerRateLimit? RateLimit = null
 );
 
 /// <summary>One <c>Tune</c> call recorded in the service collection.</summary>
