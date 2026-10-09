@@ -2577,6 +2577,7 @@ Registers RabbitMQ connection/channel pool, bus/queue transport, consumer client
 - A pending entry, read and not acknowledged, is claimed by another consumer of the group once it has been idle for `PendingClaimMinIdleTime` (60 s by default), so a crashed consumer's entries move on within a minute.
 - A rejected delivery stays pending in its place in the stream and is delivered again by that claim; the stream does not grow and the entry keeps its position.
 - Each publish trims, approximately, the entries older than `StreamMaxAge` (7 days by default) from its stream.
+- A message published to an idle stream is read within a round trip, not at the consumer's next poll: each publish announces its entry on the stream's pub/sub wake channel, and consumers subscribed to it read at once (`WakeConsumersOnPublish`, on by default).
 - Streams consumer startup honors host cancellation through connection, provisioning, and subscription.
 - Request/reply over pub/sub on the literal channel `headless.reply.{32 hex}`; replies write no key, and every host that exchanges requests must use the same `ChannelPrefix`. See [Request/reply](#requestreply).
 
@@ -2608,6 +2609,7 @@ Configure Redis connection and Stream behavior through `RedisMessagingOptions`:
 | `PendingClaimMinIdleTime` | 60 s | How long an entry stays pending before another consumer claims it with `XAUTOCLAIM`. Must be positive. |
 | `IdleConsumerDeleteAfter` | 1 hour | How long a consumer with no pending entries stays idle before it is deleted from its group. `TimeSpan.Zero` keeps every consumer. |
 | `StreamMaxAge` | 7 days | Age past which each publish trims entries from its stream with `XADD MINID ~`. `TimeSpan.Zero` keeps entries without an age limit; otherwise it must exceed `PendingClaimMinIdleTime`. |
+| `WakeConsumersOnPublish` | `true` | Each publish follows its `XADD` with a fire-and-forget `PUBLISH` on `{stream}:wake`, and consumers subscribed to that channel read the stream at once instead of at their next poll. `false` stops this process from publishing and subscribing to wake-ups. |
 | `ConnectionPoolSize` | `10` | Multiplexers in the shared connection pool. |
 
 Trade-offs and limits:
@@ -2615,6 +2617,7 @@ Trade-offs and limits:
 - **Pending window.** A durable consumer acknowledges an entry once the core admits it into the inbox, before its handler runs, so `PendingClaimMinIdleTime` bounds admission, not handler duration. A runtime subscription, which has no consumer identity, acknowledges after an inline handler returns; set the option above that handler's longest run. Keep the time the core takes to admit one batch of `StreamEntriesCount` entries well below it, or another consumer claims entries still waiting their turn and the inbox discards the duplicates.
 - **Retention is not acknowledgement-aware.** Trimming removes an entry whether or not a group read or acknowledged it, so a group offline longer than `StreamMaxAge` misses the trimmed entries, and an entry that keeps failing admission is dropped once it is older than `StreamMaxAge`. The age is measured against the publishing process's clock. Approximate trimming removes whole internal nodes only, so entries can outlive the limit slightly; it never removes them early. No length cap (`MAXLEN`) is applied.
 - **Every-instance reads.** A group-less every-instance reader that falls further behind than `StreamMaxAge` skips the trimmed entries.
+- **Reads of new entries poll, woken by publishes.** StackExchange.Redis never sends a blocking `XREADGROUP BLOCK` over its shared multiplexer, so each consumer polls its streams at the core's consumer poll interval and reads on at once while a read returns a full batch. With `WakeConsumersOnPublish`, a publish ends that wait early. An idle stream costs no extra commands. Each publish costs one `PUBLISH`, which a Redis Cluster forwards to every node, and wakes every poll loop subscribed to the stream (one per consumer group per process, plus each every-instance consumer) for one read; under steady traffic a loop reads at most once every 50 milliseconds, so a busy stream adds at most 20 reads a second per loop. Pub/sub delivers at most once, so a wake-up lost during a disconnect only delays an entry to the next poll. The wake-up needs `PUBLISH` and `SUBSCRIBE` on the `{stream}:wake` channels; where an ACL denies them, set `WakeConsumersOnPublish` to `false`, or consumers log one warning and keep polling. Set the same value on every process: a publisher with wake-ups off leaves consumers to their poll.
 
 ### Runtime behavior
 

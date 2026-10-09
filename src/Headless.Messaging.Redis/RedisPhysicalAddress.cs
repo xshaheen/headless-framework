@@ -42,6 +42,12 @@ internal static class RedisPhysicalAddress
         };
     }
 
+    /// <summary>
+    /// Returns the pub/sub channel a publisher announces new entries of <paramref name="stream"/> on. Channels and keys
+    /// are separate namespaces, and distinct streams map to distinct channels.
+    /// </summary>
+    public static string WakeChannel(string stream) => $"{Argument.IsNotNullOrWhiteSpace(stream)}:wake";
+
     private static string _Qualify(string lane, string logicalName)
     {
         Argument.IsNotNullOrWhiteSpace(logicalName);
