@@ -179,14 +179,15 @@ public sealed class MessagingTelemetryTests : TestBase
             invokeMessage,
             _Method,
             broker.Name,
-            new SubscriberExecutionFailedException("failed", new ArgumentException("bad")),
+            new SubscriberExecutionFailedException("failed", new ArgumentException("bad", "message")),
             elapsedMs: 20
         );
 
         var ours = measurements.Where(m => _HasTag(m.Tags, "messaging.system", broker.Name)).ToArray();
 
         // Publish: one counted send per attempt, success and failure, with the duration in seconds on both.
-        var sent = ours.Where(m => m.Name == "messaging.client.sent.messages").ToArray();
+        var sent = ours.Where(m => string.Equals(m.Name, "messaging.client.sent.messages", StringComparison.Ordinal))
+            .ToArray();
         sent.Should().HaveCount(2);
         sent.Should().OnlyContain(m => _HasPublishTags(m.Tags));
         sent.Should().ContainSingle(m => _HasTag(m.Tags, "error.type", typeof(TimeoutException).FullName));
@@ -204,7 +205,8 @@ public sealed class MessagingTelemetryTests : TestBase
             .Be("direct");
 
         var sendDurations = ours.Where(m =>
-                m.Name == "messaging.client.operation.duration" && _HasTag(m.Tags, "messaging.operation.type", "send")
+                string.Equals(m.Name, "messaging.client.operation.duration", StringComparison.Ordinal)
+                && _HasTag(m.Tags, "messaging.operation.type", "send")
             )
             .ToArray();
         sendDurations.Select(m => (double)m.Value).Should().BeEquivalentTo([0.06, 1.5]);
@@ -215,7 +217,10 @@ public sealed class MessagingTelemetryTests : TestBase
             .Be(1.5);
 
         // Receive: each delivery counted once, failed or not, with the consumer group.
-        var consumed = ours.Where(m => m.Name == "messaging.client.consumed.messages").ToArray();
+        var consumed = ours.Where(m =>
+                string.Equals(m.Name, "messaging.client.consumed.messages", StringComparison.Ordinal)
+            )
+            .ToArray();
         consumed.Should().HaveCount(2);
         consumed
             .Should()
@@ -228,7 +233,7 @@ public sealed class MessagingTelemetryTests : TestBase
             );
         consumed.Should().ContainSingle(m => _HasTag(m.Tags, "error.type", typeof(InvalidOperationException).FullName));
         ours.Where(m =>
-                m.Name == "messaging.client.operation.duration"
+                string.Equals(m.Name, "messaging.client.operation.duration", StringComparison.Ordinal)
                 && _HasTag(m.Tags, "messaging.operation.type", "receive")
             )
             .Select(m => (double)m.Value)
@@ -236,7 +241,8 @@ public sealed class MessagingTelemetryTests : TestBase
             .BeEquivalentTo([0.03, 0.01]);
 
         // Process: the histogram's count is the invocation count; the wrapper exception is not the error type.
-        var processed = ours.Where(m => m.Name == "messaging.process.duration").ToArray();
+        var processed = ours.Where(m => string.Equals(m.Name, "messaging.process.duration", StringComparison.Ordinal))
+            .ToArray();
         processed.Should().HaveCount(2);
         processed
             .Should()
@@ -255,7 +261,7 @@ public sealed class MessagingTelemetryTests : TestBase
 
         ours.Should()
             .Contain(m =>
-                m.Name == "headless.messaging.message.body.size"
+                string.Equals(m.Name, "headless.messaging.message.body.size", StringComparison.Ordinal)
                 && _HasTag(m.Tags, "messaging.destination.name", "orders.placed")
                 && Equals(m.Value, 4L)
             );
@@ -375,7 +381,7 @@ public sealed class MessagingTelemetryTests : TestBase
             invokeMessage,
             _Method,
             messagingSystem: null,
-            new SubscriberExecutionFailedException("failed", new ArgumentException("bad")),
+            new SubscriberExecutionFailedException("failed", new ArgumentException("bad", "message")),
             elapsedMs: 5
         );
 

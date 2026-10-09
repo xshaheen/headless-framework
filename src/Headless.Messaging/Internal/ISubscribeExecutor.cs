@@ -67,6 +67,7 @@ internal sealed class SubscribeExecutor(
     private readonly Lazy<string?> _queueMessagingSystem = new(() =>
         provider.GetService<IQueueTransport>()?.BrokerAddress.Name
     );
+
     private readonly MessagingOptions _options = options.Value;
 
     private readonly InboxMetricPolicy _inboxMetricPolicy =

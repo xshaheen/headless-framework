@@ -47,7 +47,7 @@ internal readonly record struct MessagingServerEndpoint(string? Address, int? Po
 
         if (separatorIndex < 0)
         {
-            return new MessagingServerEndpoint(first, null);
+            return new MessagingServerEndpoint(first, Port: null);
         }
 
         var portSpan = first.AsSpan(separatorIndex + 1);
