@@ -438,6 +438,46 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
+    public async Task should_terminate_without_a_reason_when_the_server_version_is_unknown()
+    {
+        // given — no connection yet, so the server cannot be shown to parse "+TERM reason"
+        await using var client = _CreateClient("test-group");
+        var msg = Substitute.For<INatsJSMsg<ReadOnlyMemory<byte>>>();
+
+        // when
+        await client.DeadLetterAsync(msg, "SubscriberNotFound", "no consumer", AbortToken);
+
+        // then — a terminate, so JetStream stops redelivering and publishes a MSG_TERMINATED advisory
+        await msg.Received(1)
+            .AckTerminateAsync(
+                Arg.Is<AckOpts?>(options =>
+                    options.HasValue && options.Value.DoubleAck == true && options.Value.TerminateReason == null
+                ),
+                Arg.Any<CancellationToken>()
+            );
+        await msg.DidNotReceive().AckAsync(Arg.Any<AckOpts?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_log_and_not_throw_when_dead_letter_terminate_fails()
+    {
+        // given
+        await using var client = _CreateClient("test-group");
+        var logs = new List<LogMessageEventArgs>();
+        client.AttachCallbacks(null, logs.Add);
+        var msg = Substitute.For<INatsJSMsg<ReadOnlyMemory<byte>>>();
+        msg.AckTerminateAsync(Arg.Any<AckOpts?>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromException(new NatsException("terminate failed")));
+
+        // when
+        var act = async () => await client.DeadLetterAsync(msg, "ReceiveFailed", null, AbortToken);
+
+        // then
+        await act.Should().NotThrowAsync();
+        logs.Should().ContainSingle(log => log.Reason!.Contains("terminate failed", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task should_nak_with_a_redelivery_delay_when_reject_async()
     {
         await using var client = _CreateClient("test-group");
@@ -1117,15 +1157,14 @@ public sealed class NatsConsumerClientTests : TestBase
             _serviceProvider,
             timeProvider: timeProvider
         );
-        var inFlightHandlers =
-            (ConcurrentDictionary<Task, byte>)
-                typeof(NatsConsumerClient)
-                    .GetField(
-                        "_inFlightHandlers",
-                        BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
-                    )!
-                    .GetValue(client)!;
-        inFlightHandlers.TryAdd(stuckHandler.Task, 0).Should().BeTrue();
+        var inFlightHandlers = (InFlightHandlerTracker)
+            typeof(NatsConsumerClient)
+                .GetField(
+                    "_inFlightHandlers",
+                    BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly
+                )!
+                .GetValue(client)!;
+        inFlightHandlers.Track(stuckHandler.Task);
 
         var shutdown = client.ShutdownAsync(TimeSpan.FromSeconds(2), AbortToken).AsTask();
         shutdown.IsCompleted.Should().BeFalse();
@@ -1630,7 +1669,10 @@ public sealed class NatsConsumerClientTests : TestBase
     [InlineData("not-a-version", false)]
     public void should_send_a_terminate_reason_only_to_a_server_that_parses_it(string? serverVersion, bool sent)
     {
-        var reason = NatsConsumerClient.TerminateReason(serverVersion, new InvalidDataException());
+        var reason = NatsConsumerClient.TerminateReason(
+            serverVersion,
+            "malformed headless envelope: InvalidDataException"
+        );
 
         if (sent)
         {

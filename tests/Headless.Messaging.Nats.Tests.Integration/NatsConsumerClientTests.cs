@@ -1229,6 +1229,44 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
     }
 
     [Fact]
+    public async Task should_terminate_a_dead_lettered_message_with_the_core_reason_the_advisory_carries()
+    {
+        // given — a well-formed message the core dead-letters on arrival
+        var streamName = $"deadletter-{Guid.NewGuid():N}"[..29];
+        var subject = $"{streamName}.events";
+        var options = _CreateMemoryOptions(configureConsumer: null);
+        await using var client = new NatsConsumerClient("deadletter-group", 0, options, _serviceProvider);
+        client.OnMessageCallback = async (_, sender) =>
+            await client.DeadLetterAsync(sender, "SubscriberNotFound", "no consumer", CancellationToken.None);
+        client.OnLogCallback = _ => { };
+        var connection = await fixture.GetConnectionAsync();
+        await using var advisories = await connection.SubscribeCoreAsync<string>(
+            $"$JS.EVENT.ADVISORY.CONSUMER.MSG_TERMINATED.{NatsPhysicalAddress.Stream(MessageLane.Bus, streamName)}.>",
+            cancellationToken: AbortToken
+        );
+        await connection.PingAsync(AbortToken);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        await _PrepareListeningAsync(client, subject);
+        var listening = client.ListeningAsync(TimeSpan.FromSeconds(1), cts.Token).AsTask();
+        await client.WaitUntilReadyAsync(AbortToken);
+
+        try
+        {
+            // when
+            await _PublishAsync(subject, "{}"u8.ToArray());
+            using var timeout = TimeSpan.FromSeconds(10).ToCancellationTokenSource(AbortToken);
+            var advisory = await advisories.Msgs.ReadAsync(timeout.Token);
+
+            // then — JetStream has no dead-letter queue, so the advisory is where the message and its reason surface
+            advisory.Data.Should().Contain("SubscriberNotFound: no consumer");
+        }
+        finally
+        {
+            await _StopListeningAsync(listening, cts);
+        }
+    }
+
+    [Fact]
     public async Task should_create_streams_with_their_duplicate_window_and_drop_a_repeated_message_id_within_it()
     {
         // given — a declared stream with its own window, and a derived one on the default

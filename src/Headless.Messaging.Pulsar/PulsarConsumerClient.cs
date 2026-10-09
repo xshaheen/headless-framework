@@ -13,6 +13,7 @@ internal sealed class PulsarConsumerClient(
     IOptions<PulsarMessagingOptions> options,
     PulsarClient client,
     ConsumerClientRequest request,
+    PulsarConsumerConfig? config = null,
     TimeProvider? timeProvider = null,
     Func<IReadOnlyDictionary<string, string?>, byte[], TransportMessage>? transportMessageFactory = null
 ) : IConsumerClient
@@ -68,22 +69,16 @@ internal sealed class PulsarConsumerClient(
         // timeout guard. Plan to migrate to DotPulsar (apache/pulsar-dotnet) when producer
         // batching ships: https://github.com/apache/pulsar-dotpulsar/issues/7
         var cts = TimeSpan.FromSeconds(30).ToCancellationTokenSource(cancellationToken);
-        var builder = client
-            .NewConsumer()
-            .Topics(topics.Select(topic => PulsarPhysicalAddress.Topic(_request.Lane, topic)))
-            .SubscriptionName(PulsarPhysicalAddress.Subscription(_request))
-            .ConsumerName(serviceName)
-            .NegativeAckRedeliveryDelay(_pulsarOptions.NegativeAckRedeliveryDelay);
-
-        // An every-instance subscription belongs to this process alone: exclusive, so no other consumer can attach to
-        // it, and non-durable, so the broker keeps no cursor for it once the consumer disconnects or the process dies.
-        // With no backlog to replay, it starts at the latest message.
-        builder = _everyInstance
-            ? builder
-                .SubscriptionType(SubscriptionType.Exclusive)
-                .SubscriptionMode(SubscriptionMode.NonDurable)
-                .SubscriptionInitialPosition(SubscriptionInitialPosition.Latest)
-            : builder.SubscriptionType(SubscriptionType.Shared);
+        var builder = ConfigureSubscription(
+            client
+                .NewConsumer()
+                .Topics(topics.Select(topic => PulsarPhysicalAddress.Topic(_request.Lane, topic)))
+                .SubscriptionName(PulsarPhysicalAddress.Subscription(_request))
+                .ConsumerName(serviceName)
+                .NegativeAckRedeliveryDelay(_pulsarOptions.NegativeAckRedeliveryDelay),
+            _everyInstance,
+            config
+        );
 
         var subscribeTask = builder.SubscribeAsync();
 
@@ -101,6 +96,26 @@ internal sealed class PulsarConsumerClient(
         }
 
         _ready.TrySetResult();
+    }
+
+    /// <summary>Applies the subscription type and the tuned consumer options to <paramref name="builder"/>.</summary>
+    internal static ConsumerBuilder<byte[]> ConfigureSubscription(
+        ConsumerBuilder<byte[]> builder,
+        bool everyInstance,
+        PulsarConsumerConfig? config
+    )
+    {
+        // An every-instance subscription belongs to this process alone: exclusive, so no other consumer can attach to
+        // it, and non-durable, so the broker keeps no cursor for it once the consumer disconnects or the process dies.
+        // With no backlog to replay, it starts at the latest message.
+        builder = everyInstance
+            ? builder
+                .SubscriptionType(SubscriptionType.Exclusive)
+                .SubscriptionMode(SubscriptionMode.NonDurable)
+                .SubscriptionInitialPosition(SubscriptionInitialPosition.Latest)
+            : builder.SubscriptionType(SubscriptionType.Shared);
+
+        return config?.ApplyTo(builder) ?? builder;
     }
 
     private static async Task _DisposeWhenCompletedAsync(

@@ -350,8 +350,21 @@ internal sealed partial class ConsumerRegister
                     )
                     .ConfigureAwait(false);
 
-                // Settlement is must-complete: never abandon a commit on host shutdown.
-                await client.CommitAsync(sender, CancellationToken.None).ConfigureAwait(false);
+                // Settlement is must-complete: never abandon it on host shutdown. Only the delivery that stored the
+                // poison row dead-letters; a redelivery of a message already recorded terminal is committed, so the
+                // broker's dead-letter destination holds one copy per poisoned message.
+                if (stored)
+                {
+                    var (reason, description) = _DescribeDeadLetter(dispatchBypassException, receiveRejectIsPolicy);
+                    await client
+                        .DeadLetterAsync(sender, reason, description, CancellationToken.None)
+                        .ConfigureAwait(false);
+                }
+                else
+                {
+                    await client.CommitAsync(sender, CancellationToken.None).ConfigureAwait(false);
+                }
+
                 transportSettled = true;
 
                 // A request rejected on arrival never reaches a consumer; its caller learns so at once. Only the delivery
@@ -574,6 +587,34 @@ internal sealed partial class ConsumerRegister
                 _circuitBreakerStateManager?.ReleaseHalfOpenProbe(circuitKey, admissionEpoch);
             }
         }
+    }
+
+    /// <summary>
+    /// The reason code and description a poisoned-on-arrival delivery is dead-lettered with. The codes are stable so an
+    /// operator can filter a broker's dead-letter destination by them. An explicit middleware reject is
+    /// <c>ReceiveRejected</c> whatever cause it carries, because the middleware made that decision.
+    /// </summary>
+    /// <remarks>
+    /// The description leaves the process as a broker message property. A framework exception's message, or the cause a
+    /// middleware chose to reject with, is sanitized and kept; any other receive fault contributes only its exception type,
+    /// because a middleware's own exception message can echo header values such as a signature or token. The full
+    /// exception stays in the poison record.
+    /// </remarks>
+    private static (string Reason, string? Description) _DescribeDeadLetter(Exception? cause, bool isPolicyReject)
+    {
+        var reason = cause switch
+        {
+            _ when isPolicyReject => DeadLetterReasons.ReceiveRejected,
+            SubscriberNotFoundException => DeadLetterReasons.SubscriberNotFound,
+            MessageDeserializationException => DeadLetterReasons.DeserializationFailed,
+            _ => DeadLetterReasons.ReceiveFailed,
+        };
+
+        var description = string.Equals(reason, DeadLetterReasons.ReceiveFailed, StringComparison.Ordinal)
+            ? cause?.GetType().Name
+            : LogSanitizer.Sanitize(cause?.Message, DeadLetterReasons.MaxDescriptionLength);
+
+        return (reason, description);
     }
 
     /// <summary>
