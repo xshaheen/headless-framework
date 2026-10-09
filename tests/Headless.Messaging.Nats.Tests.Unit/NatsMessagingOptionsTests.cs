@@ -207,6 +207,24 @@ public sealed class NatsMessagingOptionsTests : TestBase
         new NatsMessagingOptionsValidator().Validate(options).IsValid.Should().BeTrue();
     }
 
+    [Fact]
+    public void should_default_the_duplicate_window_to_the_nats_server_default()
+    {
+        new NatsMessagingOptions().DefaultDuplicateWindow.Should().Be(TimeSpan.FromMinutes(2));
+    }
+
+    [Fact]
+    public void should_fail_for_a_non_positive_default_duplicate_window_when_validator()
+    {
+        var options = new NatsMessagingOptions { DefaultDuplicateWindow = TimeSpan.Zero };
+
+        var result = new NatsMessagingOptionsValidator().Validate(options);
+
+        result
+            .Errors.Should()
+            .ContainSingle(e => e.PropertyName == nameof(NatsMessagingOptions.DefaultDuplicateWindow));
+    }
+
     // Validator tests
 
     [Fact]

@@ -1184,6 +1184,223 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
         return messageId;
     }
 
+    [Fact]
+    public async Task should_keep_a_delivery_whose_handler_outlasts_ack_wait_from_being_redelivered()
+    {
+        // given — a 1 s AckWait and a concurrent handler that runs four of them
+        var streamName = $"progress-{Guid.NewGuid():N}"[..29];
+        var subject = $"{streamName}.events";
+        var options = _CreateMemoryOptions(config => config.AckWait = TimeSpan.FromSeconds(1));
+        await using var client = new NatsConsumerClient("progress-group", 2, options, _serviceProvider);
+        var deliveries = 0;
+        var settled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        client.OnMessageCallback = async (_, sender) =>
+        {
+            if (Interlocked.Increment(ref deliveries) == 1)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(4), AbortToken);
+                await client.CommitAsync(sender, AbortToken);
+                settled.TrySetResult();
+            }
+        };
+        client.OnLogCallback = _ => { };
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        await _PrepareListeningAsync(client, subject);
+        var listening = client.ListeningAsync(TimeSpan.FromSeconds(1), cts.Token).AsTask();
+        await client.WaitUntilReadyAsync(AbortToken);
+
+        try
+        {
+            // when
+            await _PublishAsync(subject, "slow"u8.ToArray());
+            await settled.Task.WaitAsync(TimeSpan.FromSeconds(15), AbortToken);
+            await Task.Delay(TimeSpan.FromSeconds(2), AbortToken);
+
+            // then — in-progress signals held the delivery, so JetStream never redelivered it
+            Volatile.Read(ref deliveries).Should().Be(1);
+            var js = new NatsJSContext(await fixture.GetConnectionAsync());
+            var consumer = await js.GetConsumerAsync(
+                NatsPhysicalAddress.Stream(MessageLane.Bus, streamName),
+                NatsConsumerClient.BuildDurableName("progress-group", subject, MessageLane.Bus),
+                AbortToken
+            );
+            consumer.Info.NumRedelivered.Should().Be(0);
+            consumer.Info.NumAckPending.Should().Be(0);
+        }
+        finally
+        {
+            await _StopListeningAsync(listening, cts);
+        }
+    }
+
+    [Fact]
+    public async Task should_delay_the_redelivery_of_a_rejected_delivery()
+    {
+        // given
+        var streamName = $"nakdelay-{Guid.NewGuid():N}"[..29];
+        var subject = $"{streamName}.events";
+        var options = _CreateMemoryOptions(configureConsumer: null);
+        await using var client = new NatsConsumerClient("nak-group", 0, options, _serviceProvider);
+        var rejectedAt = System.Diagnostics.Stopwatch.StartNew();
+        var redelivered = new TaskCompletionSource<TimeSpan>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var deliveries = 0;
+        client.OnMessageCallback = async (_, sender) =>
+        {
+            if (Interlocked.Increment(ref deliveries) == 1)
+            {
+                await client.RejectAsync(sender, AbortToken);
+                rejectedAt.Restart();
+                return;
+            }
+
+            redelivered.TrySetResult(rejectedAt.Elapsed);
+            await client.CommitAsync(sender, AbortToken);
+        };
+        client.OnLogCallback = _ => { };
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        await _PrepareListeningAsync(client, subject);
+        var listening = client.ListeningAsync(TimeSpan.FromSeconds(1), cts.Token).AsTask();
+        await client.WaitUntilReadyAsync(AbortToken);
+
+        try
+        {
+            // when
+            await _PublishAsync(subject, "rejected"u8.ToArray());
+            var delay = await redelivered.Task.WaitAsync(TimeSpan.FromSeconds(10), AbortToken);
+
+            // then — the first rejection waits about a second (jittered down by at most a quarter), not one pull
+            delay.Should().BeGreaterThan(TimeSpan.FromMilliseconds(700));
+        }
+        finally
+        {
+            await _StopListeningAsync(listening, cts);
+        }
+    }
+
+    [Fact]
+    public async Task should_terminate_a_malformed_envelope_with_a_reason_the_advisory_carries()
+    {
+        // given
+        var streamName = $"terminate-{Guid.NewGuid():N}"[..29];
+        var subject = $"{streamName}.events";
+        var options = _CreateMemoryOptions(configureConsumer: null);
+        options.Value.CustomHeadersBuilder = static (_, _, _) =>
+            [new KeyValuePair<string, string>(MessagingHeaders.MessageId, string.Empty)];
+        await using var client = new NatsConsumerClient("terminate-group", 0, options, _serviceProvider);
+        client.OnMessageCallback = (_, _) => Task.CompletedTask;
+        client.OnLogCallback = _ => { };
+        var connection = await fixture.GetConnectionAsync();
+        await using var advisories = await connection.SubscribeCoreAsync<string>(
+            $"$JS.EVENT.ADVISORY.CONSUMER.MSG_TERMINATED.{NatsPhysicalAddress.Stream(MessageLane.Bus, streamName)}.>",
+            cancellationToken: AbortToken
+        );
+        await connection.PingAsync(AbortToken);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        await _PrepareListeningAsync(client, subject);
+        var listening = client.ListeningAsync(TimeSpan.FromSeconds(1), cts.Token).AsTask();
+        await client.WaitUntilReadyAsync(AbortToken);
+
+        try
+        {
+            // when
+            await _PublishAsync(subject, "malformed"u8.ToArray());
+            using var timeout = TimeSpan.FromSeconds(10).ToCancellationTokenSource(AbortToken);
+            var advisory = await advisories.Msgs.ReadAsync(timeout.Token);
+
+            // then — operators see the poison message and why in the advisory and the consumer's stats
+            advisory.Data.Should().Contain("malformed headless envelope: InvalidDataException");
+        }
+        finally
+        {
+            await _StopListeningAsync(listening, cts);
+        }
+    }
+
+    [Fact]
+    public async Task should_create_streams_with_their_duplicate_window_and_drop_a_repeated_message_id_within_it()
+    {
+        // given — a declared stream with its own window, and a derived one on the default
+        var logicalName = $"dedup-{Guid.NewGuid():N}"[..20];
+        var declaredStream = $"DEDUP_{logicalName[6..]}";
+        var natsOptions = new NatsMessagingOptions
+        {
+            Servers = fixture.ConnectionString,
+            StreamOptions = config => config.Storage = StreamConfigStorage.Memory,
+        };
+        natsOptions.Streams.Own(
+            declaredStream,
+            stream =>
+                stream
+                    .Subjects(NatsPhysicalAddress.Subject(MessageLane.Queue, $"{logicalName}.>"))
+                    .DuplicateWindow(TimeSpan.FromMinutes(10))
+        );
+        var options = Options.Create(natsOptions);
+        var derivedName = $"derived-{Guid.NewGuid():N}"[..24];
+
+        // when — the same message is published twice, as an outbox retry would
+        var message = _Message($"{logicalName}.placed", MessageLane.Queue);
+        await _PublishTransportMessageAsync(options, MessageLane.Queue, message);
+        await _PublishTransportMessageAsync(options, MessageLane.Queue, message);
+        await _PublishTransportMessageAsync(
+            options,
+            MessageLane.Queue,
+            _Message($"{derivedName}.placed", MessageLane.Queue)
+        );
+
+        // then
+        var js = new NatsJSContext(await fixture.GetConnectionAsync());
+        var declared = await js.GetStreamAsync(declaredStream, cancellationToken: AbortToken);
+        declared.Info.Config.DuplicateWindow.Should().Be(TimeSpan.FromMinutes(10));
+        declared.Info.State.Messages.Should().Be(1, "the stream dropped the repeated Nats-Msg-Id inside its window");
+        var derived = await js.GetStreamAsync(
+            NatsPhysicalAddress.Stream(MessageLane.Queue, derivedName),
+            cancellationToken: AbortToken
+        );
+        derived.Info.Config.DuplicateWindow.Should().Be(TimeSpan.FromMinutes(2));
+    }
+
+    private static async Task _PublishTransportMessageAsync(
+        IOptions<NatsMessagingOptions> options,
+        MessageLane lane,
+        TransportMessage message
+    )
+    {
+        await using var pool = new Headless.Messaging.Nats.NatsConnectionPool(
+            NullLogger<Headless.Messaging.Nats.NatsConnectionPool>.Instance,
+            options
+        );
+        await using var transport = new NatsTransport(
+            NullLogger<NatsTransport>.Instance,
+            pool,
+            new NatsStreamProvisioner(options),
+            lane
+        );
+        var result = await transport.SendAsync(message, AbortToken);
+        result.Succeeded.Should().BeTrue(result.Exception?.ToString());
+    }
+
+    // Creates the subject's derived stream and subscribes the client; the caller then listens and waits until the durable
+    // is bound, so a Bus publish after that has a consumer to land on.
+    private static async Task _PrepareListeningAsync(NatsConsumerClient client, string subject)
+    {
+        await client.ConnectAsync(AbortToken);
+        var names = await client.FetchMessageNamesAsync([subject], AbortToken);
+        await client.SubscribeAsync(names, AbortToken);
+    }
+
+    private IOptions<NatsMessagingOptions> _CreateMemoryOptions(Action<ConsumerConfig>? configureConsumer)
+    {
+        return Options.Create(
+            new NatsMessagingOptions
+            {
+                Servers = fixture.ConnectionString,
+                StreamProvisioning = NatsStreamProvisioning.Reconcile,
+                StreamOptions = config => config.Storage = StreamConfigStorage.Memory,
+                ConsumerOptions = configureConsumer,
+            }
+        );
+    }
+
     // Starts a consumer for one message name and returns the first message it receives.
     private async Task<TransportMessage> _ConsumeOneAsync(
         IOptions<NatsMessagingOptions> options,

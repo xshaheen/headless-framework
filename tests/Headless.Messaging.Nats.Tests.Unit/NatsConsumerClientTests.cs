@@ -2,6 +2,7 @@
 
 using System.Collections.Concurrent;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using Headless.Messaging;
 using Headless.Messaging.Internal;
 using Headless.Messaging.Nats;
@@ -491,14 +492,43 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task should_nak_valid_nats_message_when_reject_async()
+    public async Task should_nak_with_a_redelivery_delay_when_reject_async()
     {
         await using var client = _CreateClient("test-group");
         var msg = Substitute.For<INatsJSMsg<ReadOnlyMemory<byte>>>();
 
         await client.RejectAsync(msg, AbortToken);
 
-        await msg.Received(1).NakAsync(cancellationToken: Arg.Any<CancellationToken>());
+        // A plain NAK redelivers on the next pull, so an open circuit would spin on the same message.
+        await msg.Received(1)
+            .NakAsync(
+                Arg.Is<AckOpts?>(options => options.HasValue && options.Value.NakDelay > TimeSpan.Zero),
+                Arg.Any<CancellationToken>()
+            );
+    }
+
+    [Theory]
+    [InlineData(0UL, 1)]
+    [InlineData(1UL, 1)]
+    [InlineData(2UL, 2)]
+    [InlineData(3UL, 4)]
+    [InlineData(5UL, 16)]
+    [InlineData(6UL, 30)]
+    [InlineData(ulong.MaxValue, 30)]
+    public void should_grow_the_nak_delay_with_the_delivery_count_up_to_30_seconds(
+        ulong numDelivered,
+        int nominalSeconds
+    )
+    {
+        var nominal = TimeSpan.FromSeconds(nominalSeconds);
+
+        var delays = Enumerable
+            .Range(0, 200)
+            .Select(seed => NatsConsumerClient.NakDelay(numDelivered, new Random(seed)));
+
+        // Jittered down by at most a quarter, so rejections of one open circuit do not return together.
+        delays.Should().OnlyContain(delay => delay <= nominal && delay >= nominal * 0.75);
+        delays.Distinct().Should().HaveCountGreaterThan(1);
     }
 
     [Fact]
@@ -563,7 +593,7 @@ public sealed class NatsConsumerClientTests : TestBase
         client.OnLogCallback = args => loggedArgs = args;
 
         var msg = Substitute.For<INatsJSMsg<ReadOnlyMemory<byte>>>();
-        msg.NakAsync(cancellationToken: Arg.Any<CancellationToken>())
+        msg.NakAsync(Arg.Any<AckOpts?>(), Arg.Any<CancellationToken>())
             .Returns(x => throw new InvalidOperationException("nak failed"));
 
         await client.RejectAsync(msg, AbortToken);
@@ -590,7 +620,7 @@ public sealed class NatsConsumerClientTests : TestBase
         msg.Headers.Returns(_CreateHeaders());
 
         var nakCalled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        msg.NakAsync(cancellationToken: Arg.Any<CancellationToken>())
+        msg.NakAsync(Arg.Any<AckOpts?>(), Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
                 nakCalled.TrySetResult();
@@ -598,36 +628,7 @@ public sealed class NatsConsumerClientTests : TestBase
             });
 
         var consumer = Substitute.For<INatsJSConsumer>();
-        var callCount = 0;
-        consumer
-            .NextAsync(
-                Arg.Any<INatsDeserialize<ReadOnlyMemory<byte>>>(),
-                Arg.Any<NatsJSNextOpts?>(),
-                Arg.Any<CancellationToken>()
-            )
-            .Returns(call =>
-            {
-                var token = call.Arg<CancellationToken>();
-                if (Interlocked.Increment(ref callCount) == 1)
-                {
-                    return new ValueTask<INatsJSMsg<ReadOnlyMemory<byte>>?>(msg);
-                }
-
-                return new ValueTask<INatsJSMsg<ReadOnlyMemory<byte>>?>(
-                    Task.Delay(Timeout.InfiniteTimeSpan, token)
-                        .ContinueWith<INatsJSMsg<ReadOnlyMemory<byte>>?>(
-                            static (task, _) =>
-                            {
-                                task.GetAwaiter().GetResult();
-                                return null;
-                            },
-                            null,
-                            CancellationToken.None,
-                            TaskContinuationOptions.ExecuteSynchronously,
-                            TaskScheduler.Default
-                        )
-                );
-            });
+        _OnConsume(consumer, (_, token) => _Deliver(token, messages: msg));
 
         await using var client = new NatsConsumerClient(
             "test-group",
@@ -648,7 +649,11 @@ public sealed class NatsConsumerClientTests : TestBase
             await nakCalled.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
             // then
-            await msg.Received(1).NakAsync(cancellationToken: Arg.Any<CancellationToken>());
+            await msg.Received(1)
+                .NakAsync(
+                    Arg.Is<AckOpts?>(options => options.HasValue && options.Value.NakDelay > TimeSpan.Zero),
+                    Arg.Any<CancellationToken>()
+                );
             await msg.DidNotReceive().AckAsync(Arg.Any<AckOpts?>(), Arg.Any<CancellationToken>());
         }
         finally
@@ -671,36 +676,7 @@ public sealed class NatsConsumerClientTests : TestBase
         msg.Headers.Returns(headers);
 
         var consumer = Substitute.For<INatsJSConsumer>();
-        var callCount = 0;
-        consumer
-            .NextAsync(
-                Arg.Any<INatsDeserialize<ReadOnlyMemory<byte>>>(),
-                Arg.Any<NatsJSNextOpts?>(),
-                Arg.Any<CancellationToken>()
-            )
-            .Returns(call =>
-            {
-                var token = call.Arg<CancellationToken>();
-                if (Interlocked.Increment(ref callCount) == 1)
-                {
-                    return new ValueTask<INatsJSMsg<ReadOnlyMemory<byte>>?>(msg);
-                }
-
-                return new ValueTask<INatsJSMsg<ReadOnlyMemory<byte>>?>(
-                    Task.Delay(Timeout.InfiniteTimeSpan, token)
-                        .ContinueWith<INatsJSMsg<ReadOnlyMemory<byte>>?>(
-                            static (task, _) =>
-                            {
-                                task.GetAwaiter().GetResult();
-                                return null;
-                            },
-                            null,
-                            CancellationToken.None,
-                            TaskContinuationOptions.ExecuteSynchronously,
-                            TaskScheduler.Default
-                        )
-                );
-            });
+        _OnConsume(consumer, (_, token) => _Deliver(token, messages: msg));
 
         await using var client = new NatsConsumerClient(
             "test-group",
@@ -735,7 +711,7 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task should_terminally_ack_when_required_header_is_missing()
+    public async Task should_terminate_without_ack_when_required_header_is_missing()
     {
         // given
         var options = MsOptions.Options.Create(
@@ -753,39 +729,9 @@ public sealed class NatsConsumerClientTests : TestBase
         var callbackInvoked = false;
         var ackCalled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var consumer = Substitute.For<INatsJSConsumer>();
-        var callCount = 0;
-        consumer
-            .NextAsync(
-                Arg.Any<INatsDeserialize<ReadOnlyMemory<byte>>>(),
-                Arg.Any<NatsJSNextOpts?>(),
-                Arg.Any<CancellationToken>()
-            )
-            .Returns(call =>
-            {
-                var token = call.Arg<CancellationToken>();
-                if (Interlocked.Increment(ref callCount) == 1)
-                {
-                    return new ValueTask<INatsJSMsg<ReadOnlyMemory<byte>>?>(msg);
-                }
+        _OnConsume(consumer, (_, token) => _Deliver(token, messages: msg));
 
-                // Block until cancellation — throws OCE which the consumer loop handles
-                return new ValueTask<INatsJSMsg<ReadOnlyMemory<byte>>?>(
-                    Task.Delay(Timeout.InfiniteTimeSpan, token)
-                        .ContinueWith<INatsJSMsg<ReadOnlyMemory<byte>>?>(
-                            static (t, _) =>
-                            {
-                                t.GetAwaiter().GetResult(); // propagate OCE
-                                return null;
-                            },
-                            null,
-                            CancellationToken.None,
-                            TaskContinuationOptions.ExecuteSynchronously,
-                            TaskScheduler.Default
-                        )
-                );
-            });
-
-        msg.AckAsync(Arg.Any<AckOpts?>(), Arg.Any<CancellationToken>())
+        msg.AckTerminateAsync(Arg.Any<AckOpts?>(), Arg.Any<CancellationToken>())
             .Returns(_ =>
             {
                 ackCalled.TrySetResult();
@@ -824,13 +770,14 @@ public sealed class NatsConsumerClientTests : TestBase
         {
             await ackCalled.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
-            // then — malformed input is terminally acknowledged and never reaches user code
+            // then — malformed input is terminated, so consumer stats and advisories show it, and never reaches user code
             callbackInvoked.Should().BeFalse();
             await msg.Received(1)
-                .AckAsync(
+                .AckTerminateAsync(
                     Arg.Is<AckOpts?>(options => options.HasValue && options.Value.DoubleAck == true),
                     CancellationToken.None
                 );
+            await msg.DidNotReceive().AckAsync(Arg.Any<AckOpts?>(), Arg.Any<CancellationToken>());
             loggedArgs.Should().NotBeNull();
             loggedArgs!.Reason.Should().Contain("terminally acknowledged").And.NotContain("Messaging header");
         }
@@ -846,17 +793,14 @@ public sealed class NatsConsumerClientTests : TestBase
         // given
         var nextCallCount = 0;
         var consumer = Substitute.For<INatsJSConsumer>();
-        consumer
-            .NextAsync(
-                Arg.Any<INatsDeserialize<ReadOnlyMemory<byte>>>(),
-                Arg.Any<NatsJSNextOpts?>(),
-                Arg.Any<CancellationToken>()
-            )
-            .Returns(_ =>
+        _OnConsume(
+            consumer,
+            (_, token) =>
             {
                 Interlocked.Increment(ref nextCallCount);
-                return new ValueTask<INatsJSMsg<ReadOnlyMemory<byte>>?>((INatsJSMsg<ReadOnlyMemory<byte>>?)null);
-            });
+                return _Deliver(token);
+            }
+        );
 
         await using var client = new NatsConsumerClient(
             "test-group",
@@ -889,34 +833,13 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task should_cancel_inflight_fetch_when_pause_async()
+    public async Task should_stop_the_consume_when_pause_async()
     {
         // given
         var nextStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var fetchCanceled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var consumer = Substitute.For<INatsJSConsumer>();
-        consumer
-            .NextAsync(
-                Arg.Any<INatsDeserialize<ReadOnlyMemory<byte>>>(),
-                Arg.Any<NatsJSNextOpts?>(),
-                Arg.Any<CancellationToken>()
-            )
-            .Returns(async call =>
-            {
-                var token = call.Arg<CancellationToken>();
-                nextStarted.TrySetResult();
-
-                try
-                {
-                    await Task.Delay(Timeout.InfiniteTimeSpan, token);
-                    return null;
-                }
-                catch (OperationCanceledException)
-                {
-                    fetchCanceled.TrySetResult();
-                    throw;
-                }
-            });
+        _OnConsume(consumer, (_, token) => _Deliver(token, idled: nextStarted, drained: fetchCanceled));
 
         await using var client = new NatsConsumerClient(
             "test-group",
@@ -951,36 +874,10 @@ public sealed class NatsConsumerClientTests : TestBase
         // given
         var connectionFailure = new NatsConnectionFailedException("connection failed after startup");
         var failedConsumer = Substitute.For<INatsJSConsumer>();
-        failedConsumer
-            .NextAsync(
-                Arg.Any<INatsDeserialize<ReadOnlyMemory<byte>>>(),
-                Arg.Any<NatsJSNextOpts?>(),
-                Arg.Any<CancellationToken>()
-            )
-            .Returns(_ => new ValueTask<INatsJSMsg<ReadOnlyMemory<byte>>?>(
-                Task.FromException<INatsJSMsg<ReadOnlyMemory<byte>>?>(connectionFailure)
-            ));
+        _OnConsume(failedConsumer, (_, _) => _Fail(connectionFailure));
         var siblingCanceled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var siblingConsumer = Substitute.For<INatsJSConsumer>();
-        siblingConsumer
-            .NextAsync(
-                Arg.Any<INatsDeserialize<ReadOnlyMemory<byte>>>(),
-                Arg.Any<NatsJSNextOpts?>(),
-                Arg.Any<CancellationToken>()
-            )
-            .Returns(async call =>
-            {
-                try
-                {
-                    await Task.Delay(Timeout.InfiniteTimeSpan, call.Arg<CancellationToken>());
-                    return null;
-                }
-                catch (OperationCanceledException)
-                {
-                    siblingCanceled.TrySetResult();
-                    throw;
-                }
-            });
+        _OnConsume(siblingConsumer, (_, token) => _Deliver(token, drained: siblingCanceled));
 
         await using var client = new NatsConsumerClient(
             "test-group",
@@ -1020,11 +917,11 @@ public sealed class NatsConsumerClientTests : TestBase
         logged.Reason.Should().Contain("orders");
         logged.Reason.Should().Contain("connection failed after startup");
         await siblingCanceled.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
-        await failedConsumer
+        failedConsumer
             .Received(1)
-            .NextAsync(
+            .ConsumeAsync(
                 Arg.Any<INatsDeserialize<ReadOnlyMemory<byte>>>(),
-                Arg.Any<NatsJSNextOpts?>(),
+                Arg.Any<NatsJSConsumeOpts?>(),
                 Arg.Any<CancellationToken>()
             );
     }
@@ -1037,35 +934,10 @@ public sealed class NatsConsumerClientTests : TestBase
         var transientLogged = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var secondAttempt = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var consumer = Substitute.For<INatsJSConsumer>();
-        var callCount = 0;
-        consumer
-            .NextAsync(
-                Arg.Any<INatsDeserialize<ReadOnlyMemory<byte>>>(),
-                Arg.Any<NatsJSNextOpts?>(),
-                Arg.Any<CancellationToken>()
-            )
-            .Returns(call =>
-            {
-                if (Interlocked.Increment(ref callCount) == 1)
-                {
-                    return ValueTask.FromException<INatsJSMsg<ReadOnlyMemory<byte>>?>(protocolFailure);
-                }
-
-                secondAttempt.TrySetResult();
-                return new ValueTask<INatsJSMsg<ReadOnlyMemory<byte>>?>(
-                    Task.Delay(Timeout.InfiniteTimeSpan, call.Arg<CancellationToken>())
-                        .ContinueWith<INatsJSMsg<ReadOnlyMemory<byte>>?>(
-                            static task =>
-                            {
-                                task.GetAwaiter().GetResult();
-                                return null;
-                            },
-                            CancellationToken.None,
-                            TaskContinuationOptions.ExecuteSynchronously,
-                            TaskScheduler.Default
-                        )
-                );
-            });
+        _OnConsume(
+            consumer,
+            (index, token) => index == 0 ? _Fail(protocolFailure) : _Deliver(token, idled: secondAttempt)
+        );
         await using var client = new NatsConsumerClient(
             "test-group",
             1,
@@ -1106,7 +978,7 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task should_restart_fetch_with_a_fresh_receive_token_when_pause_async_and_resume_async()
+    public async Task should_restart_the_consume_with_a_fresh_receive_token_when_pause_async_and_resume_async()
     {
         // given
         var startedSignals = new[]
@@ -1120,44 +992,21 @@ public sealed class NatsConsumerClientTests : TestBase
             new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously),
         };
         var seenTokens = new List<CancellationToken>();
-        var nextCallCount = 0;
         var consumer = Substitute.For<INatsJSConsumer>();
-        consumer
-            .NextAsync(
-                Arg.Any<INatsDeserialize<ReadOnlyMemory<byte>>>(),
-                Arg.Any<NatsJSNextOpts?>(),
-                Arg.Any<CancellationToken>()
-            )
-            .Returns(async call =>
+        _OnConsume(
+            consumer,
+            (callIndex, token) =>
             {
-                var callIndex = Interlocked.Increment(ref nextCallCount) - 1;
-                var token = call.Arg<CancellationToken>();
-
                 lock (seenTokens)
                 {
                     seenTokens.Add(token);
                 }
 
-                if (callIndex < startedSignals.Length)
-                {
-                    startedSignals[callIndex].TrySetResult();
-                }
-
-                try
-                {
-                    await Task.Delay(Timeout.InfiniteTimeSpan, token);
-                    return null;
-                }
-                catch (OperationCanceledException)
-                {
-                    if (callIndex < canceledSignals.Length)
-                    {
-                        canceledSignals[callIndex].TrySetResult();
-                    }
-
-                    throw;
-                }
-            });
+                return callIndex < startedSignals.Length
+                    ? _Deliver(token, idled: startedSignals[callIndex], drained: canceledSignals[callIndex])
+                    : _Deliver(token);
+            }
+        );
 
         await using var client = new NatsConsumerClient(
             "test-group",
@@ -1214,17 +1063,7 @@ public sealed class NatsConsumerClientTests : TestBase
         await using var services = new ServiceCollection().AddSingleton(metadata).BuildServiceProvider();
 
         var consumer = Substitute.For<INatsJSConsumer>();
-        consumer
-            .NextAsync(
-                Arg.Any<INatsDeserialize<ReadOnlyMemory<byte>>>(),
-                Arg.Any<NatsJSNextOpts?>(),
-                Arg.Any<CancellationToken>()
-            )
-            .Returns(async call =>
-            {
-                await Task.Delay(Timeout.InfiniteTimeSpan, call.Arg<CancellationToken>());
-                return null;
-            });
+        _OnConsume(consumer, (_, token) => _Deliver(token));
         var filters = new ConcurrentQueue<string>();
 
         await using var client = new NatsConsumerClient(
@@ -1266,42 +1105,10 @@ public sealed class NatsConsumerClientTests : TestBase
     [Fact]
     public async Task dispose_async_drains_in_flight_concurrent_handler_before_completing()
     {
-        // given — one message delivered, then NextAsync blocks until cancellation
-        var msg = Substitute.For<INatsJSMsg<ReadOnlyMemory<byte>>>();
-        msg.Data.Returns(new ReadOnlyMemory<byte>("test"u8.ToArray()));
-        msg.Headers.Returns(_CreateHeaders());
-
-        var delivered = 0;
+        // given — one message delivered, then the consume idles until cancellation
+        var msg = _Message();
         var consumer = Substitute.For<INatsJSConsumer>();
-        consumer
-            .NextAsync(
-                Arg.Any<INatsDeserialize<ReadOnlyMemory<byte>>>(),
-                Arg.Any<NatsJSNextOpts?>(),
-                Arg.Any<CancellationToken>()
-            )
-            .Returns(call =>
-            {
-                var token = call.Arg<CancellationToken>();
-                if (Interlocked.Increment(ref delivered) == 1)
-                {
-                    return new ValueTask<INatsJSMsg<ReadOnlyMemory<byte>>?>(msg);
-                }
-
-                return new ValueTask<INatsJSMsg<ReadOnlyMemory<byte>>?>(
-                    Task.Delay(Timeout.InfiniteTimeSpan, token)
-                        .ContinueWith<INatsJSMsg<ReadOnlyMemory<byte>>?>(
-                            static (t, _) =>
-                            {
-                                t.GetAwaiter().GetResult();
-                                return null;
-                            },
-                            null,
-                            CancellationToken.None,
-                            TaskContinuationOptions.ExecuteSynchronously,
-                            TaskScheduler.Default
-                        )
-                );
-            });
+        _OnConsume(consumer, (_, token) => _Deliver(token, messages: msg));
 
         var handlerStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var releaseHandler = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -1386,8 +1193,8 @@ public sealed class NatsConsumerClientTests : TestBase
     [Fact]
     public async Task should_terminate_after_max_consecutive_consume_failures_when_listening_async()
     {
-        // given — every fetch throws an unclassified (non-connection) error, so only the consecutive-failure
-        // cap can stop the loop spinning in place on a non-reconnecting connection.
+        // given — every consume throws an unclassified (non-connection) error, and every rebind of the durable succeeds,
+        // so only the consecutive-failure cap can stop the loop spinning in place on a non-reconnecting connection.
         var timeProvider = new FakeTimeProvider();
         var options = MsOptions.Options.Create(
             new NatsMessagingOptions { Servers = "nats://localhost:4222", MaxConsecutiveConsumeFailures = 2 }
@@ -1397,15 +1204,7 @@ public sealed class NatsConsumerClientTests : TestBase
         var terminationLogged = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
         var consumer = Substitute.For<INatsJSConsumer>();
-        consumer
-            .NextAsync(
-                Arg.Any<INatsDeserialize<ReadOnlyMemory<byte>>>(),
-                Arg.Any<NatsJSNextOpts?>(),
-                Arg.Any<CancellationToken>()
-            )
-            .Returns(_ =>
-                ValueTask.FromException<INatsJSMsg<ReadOnlyMemory<byte>>?>(new InvalidOperationException("boom"))
-            );
+        _OnConsume(consumer, (_, _) => _Fail(new InvalidOperationException("boom")));
 
         await using var client = new NatsConsumerClient(
             "test-group",
@@ -1443,7 +1242,7 @@ public sealed class NatsConsumerClientTests : TestBase
         {
             // when
             await firstFailureLogged.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
-            timeProvider.Advance(TimeSpan.FromSeconds(5)); // release the backoff so the second fetch runs
+            timeProvider.Advance(TimeSpan.FromSeconds(5)); // release the backoff so the second consume runs
             await terminationLogged.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
 
             // then — the second consecutive failure escalates to a supervised-restart termination
@@ -1459,10 +1258,10 @@ public sealed class NatsConsumerClientTests : TestBase
     }
 
     [Fact]
-    public async Task should_reset_failure_count_and_backoff_after_a_successful_fetch_when_listening_async()
+    public async Task should_reset_failure_count_and_backoff_after_a_delivered_message_when_listening_async()
     {
-        // given — fail, succeed, fail: with a reset on the successful heartbeat the streak never reaches the
-        // cap of 2, so the listener must keep running instead of terminating.
+        // given — fail, deliver a message then fail: with a reset on the delivered message the streak never reaches
+        // the cap of 2, so the listener must keep running instead of terminating.
         var timeProvider = new FakeTimeProvider();
         var options = MsOptions.Options.Create(
             new NatsMessagingOptions { Servers = "nats://localhost:4222", MaxConsecutiveConsumeFailures = 2 }
@@ -1473,28 +1272,17 @@ public sealed class NatsConsumerClientTests : TestBase
         var idled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var prematureTermination = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        var callCount = 0;
         var consumer = Substitute.For<INatsJSConsumer>();
-        consumer
-            .NextAsync(
-                Arg.Any<INatsDeserialize<ReadOnlyMemory<byte>>>(),
-                Arg.Any<NatsJSNextOpts?>(),
-                Arg.Any<CancellationToken>()
-            )
-            .Returns(call =>
-                Interlocked.Increment(ref callCount) switch
+        _OnConsume(
+            consumer,
+            (index, token) =>
+                index switch
                 {
-                    1 => ValueTask.FromException<INatsJSMsg<ReadOnlyMemory<byte>>?>(
-                        new InvalidOperationException("boom-1")
-                    ),
-                    // a returned heartbeat (null) is a successful fetch that resets the streak
-                    2 => new ValueTask<INatsJSMsg<ReadOnlyMemory<byte>>?>((INatsJSMsg<ReadOnlyMemory<byte>>?)null),
-                    3 => ValueTask.FromException<INatsJSMsg<ReadOnlyMemory<byte>>?>(
-                        new InvalidOperationException("boom-2")
-                    ),
-                    _ => _Idle(idled, call.Arg<CancellationToken>()),
+                    0 => _Fail(new InvalidOperationException("boom-1")),
+                    1 => _Fail(new InvalidOperationException("boom-2"), _Message()),
+                    _ => _Deliver(token, idled: idled),
                 }
-            );
+        );
 
         await using var client = new NatsConsumerClient(
             "test-group",
@@ -1505,6 +1293,7 @@ public sealed class NatsConsumerClientTests : TestBase
             timeProvider: timeProvider
         )
         {
+            OnMessageCallback = (_, _) => Task.CompletedTask,
             OnLogCallback = args =>
             {
                 if (args.LogType == MqLogType.ExceptionReceived)
@@ -1534,16 +1323,16 @@ public sealed class NatsConsumerClientTests : TestBase
         var listening = client.ListeningAsync(TimeSpan.FromMilliseconds(50), cts.Token).AsTask();
         try
         {
-            // when — first failure, then release its backoff so the heartbeat and second failure run
+            // when — first failure, then release its backoff so the delivered message and second failure run
             await firstFailureLogged.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
             timeProvider.Advance(TimeSpan.FromSeconds(5));
             await secondFailureLogged.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
             timeProvider.Advance(TimeSpan.FromSeconds(2));
 
-            // then — the loop reached the idle 4th fetch after only the initial backoff, proving both the
-            // failure streak and the retry delay reset on the heartbeat
+            // then — the loop reached the idle third consume after only the initial backoff, proving both the
+            // failure streak and the retry delay reset on the delivered message
             await idled.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
-            prematureTermination.Task.IsCompleted.Should().BeFalse("the streak reset on the heartbeat fetch");
+            prematureTermination.Task.IsCompleted.Should().BeFalse("the streak reset on the delivered message");
             listening.IsCompleted.Should().BeFalse();
         }
         finally
@@ -1613,25 +1402,412 @@ public sealed class NatsConsumerClientTests : TestBase
         }
     }
 
-    private static ValueTask<INatsJSMsg<ReadOnlyMemory<byte>>?> _Idle(
-        TaskCompletionSource idled,
-        CancellationToken cancellationToken
+    [Fact]
+    public async Task should_apply_tuned_consumer_limits_over_consumer_options_and_keep_the_provider_identity()
+    {
+        // given — a host-wide ConsumerOptions callback and a consumer tuned with its own limits
+        var options = MsOptions.Options.Create(
+            new NatsMessagingOptions
+            {
+                Servers = "nats://localhost:4222",
+                ConsumerOptions = config =>
+                {
+                    config.AckWait = TimeSpan.FromSeconds(10);
+                    config.MaxAckPending = 10;
+                    config.NumReplicas = 3;
+                },
+            }
+        );
+        var registry = Substitute.For<IConsumerRegistry>();
+        registry
+            .GetAll()
+            .Returns([
+                new ConsumerMetadata(
+                    typeof(object),
+                    typeof(object),
+                    "orders.created",
+                    1,
+                    MessageLane.Bus,
+                    "orders-projection",
+                    "v1"
+                )
+                {
+                    ProviderConfigs = new Dictionary<Type, object>
+                    {
+                        [typeof(NatsConsumerConfig)] = new NatsConsumerConfig(
+                            IsSharded: false,
+                            AckWait: TimeSpan.FromMinutes(2),
+                            MaxDeliver: 5,
+                            InactiveThreshold: TimeSpan.FromDays(1)
+                        ),
+                    },
+                },
+            ]);
+        await using var services = new ServiceCollection().AddSingleton(registry).BuildServiceProvider();
+
+        var consumer = Substitute.For<INatsJSConsumer>();
+        _OnConsume(consumer, (_, token) => _Deliver(token));
+        var bound = new TaskCompletionSource<NATS.Client.JetStream.Models.ConsumerConfig>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+
+        await using var client = new NatsConsumerClient(
+            "orders-projection",
+            1,
+            options,
+            services,
+            (_, config, _) =>
+            {
+                bound.TrySetResult(config);
+                return Task.FromResult(consumer);
+            }
+        );
+        await client.SubscribeAsync(["orders.created"], AbortToken);
+
+        using var cts = new CancellationTokenSource();
+
+        // when
+        var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(50), cts.Token).AsTask();
+        try
+        {
+            var config = await bound.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+            // then — the consumer's own limits win, the callback fills the rest, and the identity stays the provider's
+            config.AckWait.Should().Be(TimeSpan.FromMinutes(2));
+            config.MaxDeliver.Should().Be(5);
+            config.InactiveThreshold.Should().Be(TimeSpan.FromDays(1));
+            config.MaxAckPending.Should().Be(10);
+            config.NumReplicas.Should().Be(3);
+            config.FilterSubject.Should().Be("headless.bus.orders.created");
+            config.DeliverPolicy.Should().Be(NATS.Client.JetStream.Models.ConsumerConfigDeliverPolicy.New);
+        }
+        finally
+        {
+            await _StopListeningAsync(listeningTask, cts);
+        }
+    }
+
+    [Theory]
+    [InlineData(0, 1, 0)]
+    [InlineData(1, 1, 0)]
+    [InlineData(8, 8, 4)]
+    public void should_never_prefetch_more_messages_than_the_handlers_take_at_once(
+        int concurrency,
+        int maxMsgs,
+        int thresholdMsgs
     )
     {
-        idled.TrySetResult();
-        return new ValueTask<INatsJSMsg<ReadOnlyMemory<byte>>?>(
-            Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken)
-                .ContinueWith<INatsJSMsg<ReadOnlyMemory<byte>>?>(
-                    static task =>
-                    {
-                        task.GetAwaiter().GetResult();
-                        return null;
-                    },
-                    CancellationToken.None,
-                    TaskContinuationOptions.ExecuteSynchronously,
-                    TaskScheduler.Default
-                )
+        var opts = NatsConsumerClient.BuildConsumeOpts(concurrency, notificationHandler: null);
+
+        opts.MaxMsgs.Should().Be(maxMsgs);
+        opts.ThresholdMsgs.Should().Be(thresholdMsgs);
+        opts.Expires.Should().Be(TimeSpan.FromSeconds(30));
+        opts.IdleHeartbeat.Should().Be(TimeSpan.FromSeconds(5));
+        opts.DrainOnCancel.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task should_terminate_for_a_rebuild_when_pulls_keep_missing_their_heartbeats()
+    {
+        // given — NATS.Net reports missed heartbeats and keeps re-pulling, so the consume itself never fails
+        var options = MsOptions.Options.Create(
+            new NatsMessagingOptions { Servers = "nats://localhost:4222", MaxConsecutiveConsumeFailures = 2 }
         );
+        var consumer = Substitute.For<INatsJSConsumer>();
+        consumer
+            .ConsumeAsync(
+                Arg.Any<INatsDeserialize<ReadOnlyMemory<byte>>>(),
+                Arg.Any<NatsJSConsumeOpts?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(call => _MissHeartbeats(call.Arg<NatsJSConsumeOpts?>()!, call.Arg<CancellationToken>()));
+
+        await using var client = new NatsConsumerClient(
+            "test-group",
+            1,
+            options,
+            _serviceProvider,
+            (_, _, _) => Task.FromResult(consumer)
+        )
+        {
+            OnLogCallback = _ => { },
+        };
+        await client.SubscribeAsync(["orders"], AbortToken);
+        using var cts = new CancellationTokenSource();
+
+        // when
+        var listening = client.ListeningAsync(TimeSpan.FromMilliseconds(50), cts.Token).AsTask();
+        try
+        {
+            // then — the second missed heartbeat trips the cap, as a consume failure would
+            var act = async () => await listening.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+            await act.Should()
+                .ThrowAsync<BrokerConnectionException>()
+                .WithInnerException<BrokerConnectionException, TimeoutException>();
+        }
+        finally
+        {
+            await _StopListeningIgnoringOutcomeAsync(listening, cts);
+        }
+    }
+
+    [Fact]
+    public async Task should_hand_back_a_message_drained_after_pause_without_dispatching_it()
+    {
+        // given — a message NATS.Net had buffered arrives after the pause cancelled the consume
+        var msg = _Message();
+        var consumeStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var released = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        msg.NakAsync(Arg.Any<AckOpts?>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                released.TrySetResult();
+                return ValueTask.CompletedTask;
+            });
+        var consumer = Substitute.For<INatsJSConsumer>();
+        _OnConsume(
+            consumer,
+            (index, token) => index == 0 ? _DeliverAfterCancel(msg, consumeStarted, token) : _Deliver(token)
+        );
+
+        var dispatched = false;
+        await using var client = new NatsConsumerClient(
+            "test-group",
+            1,
+            _options,
+            _serviceProvider,
+            (_, _, _) => Task.FromResult(consumer)
+        )
+        {
+            OnMessageCallback = (_, _) =>
+            {
+                dispatched = true;
+                return Task.CompletedTask;
+            },
+            OnLogCallback = _ => { },
+        };
+        await client.SubscribeAsync(["orders.created"], AbortToken);
+
+        using var cts = new CancellationTokenSource();
+        var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(50), cts.Token).AsTask();
+        try
+        {
+            await consumeStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+            // when
+            await client.PauseAsync(AbortToken);
+            await released.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+            // then — released at once with a plain NAK, so it redelivers now rather than after AckWait
+            await msg.Received(1).NakAsync(null, CancellationToken.None);
+            dispatched.Should().BeFalse();
+        }
+        finally
+        {
+            await _StopListeningAsync(listeningTask, cts);
+        }
+    }
+
+    [Fact]
+    public async Task should_report_a_running_delivery_in_progress_until_it_settles()
+    {
+        // given — a handler that outlasts half the default 30 s AckWait
+        var timeProvider = new FakeTimeProvider();
+        var msg = _Message();
+        var progressCount = 0;
+        msg.AckProgressAsync(Arg.Any<AckOpts?>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                Interlocked.Increment(ref progressCount);
+                return ValueTask.CompletedTask;
+            });
+        var consumer = Substitute.For<INatsJSConsumer>();
+        _OnConsume(consumer, (_, token) => _Deliver(token, messages: msg));
+
+        var handlerStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseHandler = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var settled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        NatsConsumerClient? client = null;
+        await using var owned = new NatsConsumerClient(
+            "test-group",
+            0,
+            _options,
+            _serviceProvider,
+            (_, _, _) => Task.FromResult(consumer),
+            timeProvider: timeProvider
+        )
+        {
+            OnMessageCallback = async (_, sender) =>
+            {
+                handlerStarted.TrySetResult();
+                await releaseHandler.Task;
+                await client!.CommitAsync(sender, CancellationToken.None);
+                settled.TrySetResult();
+            },
+            OnLogCallback = _ => { },
+        };
+        client = owned;
+        await client.SubscribeAsync(["orders.created"], AbortToken);
+
+        using var cts = new CancellationTokenSource();
+        var listeningTask = client.ListeningAsync(TimeSpan.FromMilliseconds(50), cts.Token).AsTask();
+        try
+        {
+            await handlerStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+
+            // when — the clock passes half the AckWait while the handler runs
+            await _AdvanceUntilAsync(timeProvider, () => Volatile.Read(ref progressCount) > 0);
+
+            releaseHandler.TrySetResult();
+            await settled.Task.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
+            var progressAtSettlement = Volatile.Read(ref progressCount);
+            timeProvider.Advance(TimeSpan.FromMinutes(2));
+            await Task.Delay(100, AbortToken);
+
+            // then — progress stopped with the acknowledgement, which reached the delivery behind the token
+            Volatile.Read(ref progressCount).Should().Be(progressAtSettlement);
+            await msg.Received(1).AckAsync(Arg.Any<AckOpts?>(), Arg.Any<CancellationToken>());
+        }
+        finally
+        {
+            releaseHandler.TrySetResult();
+            await _StopListeningAsync(listeningTask, cts);
+        }
+    }
+
+    [Theory]
+    [InlineData(null, false)]
+    [InlineData("2.9.25", false)]
+    [InlineData("2.10.3", false)]
+    [InlineData("2.10.4", true)]
+    [InlineData("2.11.0-beta.2", true)]
+    [InlineData("not-a-version", false)]
+    public void should_send_a_terminate_reason_only_to_a_server_that_parses_it(string? serverVersion, bool sent)
+    {
+        var reason = NatsConsumerClient.TerminateReason(serverVersion, new InvalidDataException());
+
+        if (sent)
+        {
+            reason.Should().Be("malformed headless envelope: InvalidDataException");
+        }
+        else
+        {
+            reason.Should().BeNull();
+        }
+    }
+
+    // Reports a missed heartbeat on every pull, as NATS.Net does when the server goes silent, and ends with whatever the
+    // notification handler throws.
+    private static async IAsyncEnumerable<INatsJSMsg<ReadOnlyMemory<byte>>> _MissHeartbeats(
+        NatsJSConsumeOpts opts,
+        [EnumeratorCancellation] CancellationToken cancellationToken
+    )
+    {
+        // The cap under test is 2, so the handler throws long before the pulls run out.
+        for (var pull = 0; pull < 10; pull++)
+        {
+            await opts.NotificationHandler!(NatsJSTimeoutNotification.Default, cancellationToken);
+        }
+
+        yield break;
+    }
+
+    // Idles until the consume is cancelled, then yields one message it had buffered, as a draining consume does.
+    private static async IAsyncEnumerable<INatsJSMsg<ReadOnlyMemory<byte>>> _DeliverAfterCancel(
+        INatsJSMsg<ReadOnlyMemory<byte>> buffered,
+        TaskCompletionSource started,
+        [EnumeratorCancellation] CancellationToken cancellationToken
+    )
+    {
+        started.TrySetResult();
+
+        try
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            // Draining: the buffered message still comes through.
+        }
+
+        yield return buffered;
+    }
+
+    // Steps the fake clock until the condition holds, because the loop under test registers its timer asynchronously.
+    private static async Task _AdvanceUntilAsync(FakeTimeProvider timeProvider, Func<bool> condition)
+    {
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(AbortToken);
+        cts.CancelAfter(TimeSpan.FromSeconds(5));
+
+        while (!condition())
+        {
+            timeProvider.Advance(TimeSpan.FromSeconds(1));
+            await Task.Delay(10, cts.Token);
+        }
+    }
+
+    // Stands in for INatsJSConsumer.ConsumeAsync: each call is one consume, given its zero-based index and its token.
+    private static void _OnConsume(
+        INatsJSConsumer consumer,
+        Func<int, CancellationToken, IAsyncEnumerable<INatsJSMsg<ReadOnlyMemory<byte>>>> consume
+    )
+    {
+        var calls = 0;
+        consumer
+            .ConsumeAsync(
+                Arg.Any<INatsDeserialize<ReadOnlyMemory<byte>>>(),
+                Arg.Any<NatsJSConsumeOpts?>(),
+                Arg.Any<CancellationToken>()
+            )
+            .Returns(call => consume(Interlocked.Increment(ref calls) - 1, call.Arg<CancellationToken>()));
+    }
+
+    // Yields the messages, then idles like an empty pull until the token cancels, and ends quietly as a consume with
+    // DrainOnCancel does.
+    private static async IAsyncEnumerable<INatsJSMsg<ReadOnlyMemory<byte>>> _Deliver(
+        [EnumeratorCancellation] CancellationToken cancellationToken,
+        TaskCompletionSource? idled = null,
+        TaskCompletionSource? drained = null,
+        params INatsJSMsg<ReadOnlyMemory<byte>>[] messages
+    )
+    {
+        foreach (var message in messages)
+        {
+            yield return message;
+        }
+
+        idled?.TrySetResult();
+
+        try
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            drained?.TrySetResult();
+        }
+    }
+
+    // Yields the messages, then fails the consume.
+    private static async IAsyncEnumerable<INatsJSMsg<ReadOnlyMemory<byte>>> _Fail(
+        Exception failure,
+        params INatsJSMsg<ReadOnlyMemory<byte>>[] messages
+    )
+    {
+        foreach (var message in messages)
+        {
+            yield return message;
+        }
+
+        await Task.FromException(failure);
+    }
+
+    private static INatsJSMsg<ReadOnlyMemory<byte>> _Message(NatsHeaders? headers = null)
+    {
+        var msg = Substitute.For<INatsJSMsg<ReadOnlyMemory<byte>>>();
+        msg.Data.Returns(new ReadOnlyMemory<byte>("test"u8.ToArray()));
+        msg.Headers.Returns(headers ?? _CreateHeaders());
+        return msg;
     }
 
     private static NatsHeaders _CreateHeaders()
