@@ -1297,7 +1297,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     public async Task process_async_doubles_interval_when_transient_rate_exceeds_threshold()
     {
         // given — 5 messages, 4 skipped (circuit open) = 80% > threshold
-        var (sut, dispatcher, cb) = _Create(baseInterval: _FastInterval, circuitOpenRateThreshold: 0.7);
+        var (sut, dispatcher, cb) = _Create(circuitOpenRateThreshold: 0.7, baseInterval: _FastInterval);
 
         var baseInterval = _FastInterval;
 
@@ -1378,7 +1378,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     public async Task process_async_does_not_adjust_interval_when_adaptive_polling_disabled()
     {
         // given
-        var (sut, dispatcher, cb) = _Create(baseInterval: _FastInterval, adaptivePolling: false);
+        var (sut, dispatcher, cb) = _Create(adaptivePolling: false, baseInterval: _FastInterval);
 
         cb.IsOpen(_CircuitKey("open-consumer")).Returns(true);
 
@@ -1411,9 +1411,9 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
         // given — maxPollingInterval=2ms, base=1ms, all messages skipped → high transient rate
         var maxPollingInterval = TimeSpan.FromMilliseconds(2);
         var (sut, dispatcher, cb) = _Create(
+            circuitOpenRateThreshold: 0.5,
             baseInterval: _FastInterval,
-            maxPollingInterval: maxPollingInterval,
-            circuitOpenRateThreshold: 0.5
+            maxPollingInterval: maxPollingInterval
         );
         cb.IsOpen(_CircuitKey("open-consumer")).Returns(true);
 
@@ -1443,9 +1443,9 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     {
         // given — first elevate interval via high transient rate, then 2 healthy cycles
         var (sut, dispatcher, cb) = _Create(
+            circuitOpenRateThreshold: 0.5,
             baseInterval: _FastInterval,
-            maxPollingInterval: TimeSpan.FromMilliseconds(60),
-            circuitOpenRateThreshold: 0.5
+            maxPollingInterval: TimeSpan.FromMilliseconds(60)
         );
 
         var dataStorage = Substitute.For<IDataStorage>();
@@ -1554,7 +1554,7 @@ public sealed class MessageNeedToRetryProcessorTests : TestBase
     public async Task process_async_mid_range_rate_resets_counters_without_changing_interval()
     {
         // given — rate between 0.5 and threshold (0.8): e.g., 6 skipped out of 10 = 60%
-        var (sut, dispatcher, cb) = _Create(baseInterval: _FastInterval, circuitOpenRateThreshold: 0.8);
+        var (sut, dispatcher, cb) = _Create(circuitOpenRateThreshold: 0.8, baseInterval: _FastInterval);
         cb.IsOpen(_CircuitKey("open-consumer")).Returns(true);
         cb.IsOpen(_CircuitKey("healthy-consumer")).Returns(false);
 
