@@ -18,8 +18,8 @@ public sealed class AzureServiceBusMessagingOptionsTests
         options.SubscriptionMessageLockDuration.Should().Be(TimeSpan.FromSeconds(60));
         options.SubscriptionDefaultMessageTimeToLive.Should().Be(TimeSpan.MaxValue);
         options.SubscriptionMaxDeliveryCount.Should().Be(10);
-        options.MaxConcurrentCalls.Should().Be(1);
-        options.MaxConcurrentSessions.Should().Be(8);
+        options.PrefetchCount.Should().Be(0);
+        options.ClientOptions.Should().BeNull();
         options.MaxAutoLockRenewalDuration.Should().Be(TimeSpan.FromMinutes(5));
         options.EnableSessions.Should().BeFalse();
         options.TokenCredential.Should().BeNull();
@@ -73,5 +73,25 @@ public sealed class AzureServiceBusMessagingOptionsTests
         options.CustomProducers.Should().HaveCount(2);
         options.CustomProducers.Should().Contain(p => p.MessageTypeName == nameof(EntityCreated));
         options.CustomProducers.Should().Contain(p => p.MessageTypeName == nameof(EntityDeleted));
+    }
+
+    [Fact]
+    public void should_reject_a_negative_prefetch_count()
+    {
+        // given
+        var options = new AzureServiceBusMessagingOptions
+        {
+            ConnectionString = "Endpoint=sb://ns.servicebus.windows.net/;SharedAccessKeyName=k;SharedAccessKey=v",
+            PrefetchCount = -1,
+        };
+
+        // when
+        var result = new AzureServiceBusMessagingOptionsValidator().Validate(options);
+
+        // then
+        result.IsValid.Should().BeFalse();
+        result
+            .Errors.Should()
+            .ContainSingle(e => e.PropertyName == nameof(AzureServiceBusMessagingOptions.PrefetchCount));
     }
 }

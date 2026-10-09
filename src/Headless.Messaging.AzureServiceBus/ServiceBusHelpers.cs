@@ -16,9 +16,12 @@ internal static class ServiceBusHelpers
     /// <param name="options">The messaging options carrying the authentication configuration.</param>
     public static ServiceBusClient CreateClient(AzureServiceBusMessagingOptions options)
     {
+        var clientOptions = new ServiceBusClientOptions();
+        options.ClientOptions?.Invoke(clientOptions);
+
         return options.TokenCredential is null
-            ? new ServiceBusClient(options.ConnectionString)
-            : new ServiceBusClient(options.Namespace, options.TokenCredential);
+            ? new ServiceBusClient(options.ConnectionString, clientOptions)
+            : new ServiceBusClient(options.Namespace, options.TokenCredential, clientOptions);
     }
 
     /// <summary>
