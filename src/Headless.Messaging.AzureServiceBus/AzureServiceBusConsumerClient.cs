@@ -24,6 +24,10 @@ internal sealed class AzureServiceBusConsumerClient(
     // Headless must settle only after durable receive storage and handler outcome are known.
     private const bool _AutoCompleteMessages = false;
 
+    // A malformed envelope never reaches the core, so it has no poison record: the dead-letter subqueue is the only
+    // place it can still be inspected.
+    private const string _MalformedEnvelopeReason = "MalformedEnvelope";
+
     /// <summary>
     /// How long Azure keeps an every-instance subscription nobody receives from: the shortest idle period Azure allows,
     /// and so the longest a crashed process leaves its subscription behind.
@@ -283,6 +287,17 @@ internal sealed class AzureServiceBusConsumerClient(
         await commitInput.AbandonMessageAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    public async ValueTask DeadLetterAsync(
+        object? sender,
+        string reason,
+        string? description,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var commitInput = (AzureServiceBusConsumerCommitInput)sender!;
+        await commitInput.DeadLetterMessageAsync(reason, description, cancellationToken).ConfigureAwait(false);
+    }
+
     public async ValueTask PauseAsync(CancellationToken cancellationToken = default)
     {
         if (Volatile.Read(ref _disposed) != 0)
@@ -449,7 +464,13 @@ internal sealed class AzureServiceBusConsumerClient(
         catch (Exception exception)
         {
             _LogMalformedEnvelope(exception);
-            await arg.CompleteMessageAsync(arg.Message, CancellationToken.None).ConfigureAwait(false);
+            await arg.DeadLetterMessageAsync(
+                    arg.Message,
+                    _MalformedEnvelopeReason,
+                    exception.GetType().Name,
+                    CancellationToken.None
+                )
+                .ConfigureAwait(false);
             return;
         }
 
@@ -463,7 +484,13 @@ internal sealed class AzureServiceBusConsumerClient(
         catch (Exception exception)
         {
             _LogMalformedEnvelope(exception);
-            await arg.CompleteMessageAsync(arg.Message, CancellationToken.None).ConfigureAwait(false);
+            await arg.DeadLetterMessageAsync(
+                    arg.Message,
+                    _MalformedEnvelopeReason,
+                    exception.GetType().Name,
+                    CancellationToken.None
+                )
+                .ConfigureAwait(false);
             return;
         }
 
@@ -506,7 +533,13 @@ internal sealed class AzureServiceBusConsumerClient(
         catch (Exception exception)
         {
             _LogMalformedEnvelope(exception);
-            await arg.CompleteMessageAsync(arg.Message, CancellationToken.None).ConfigureAwait(false);
+            await arg.DeadLetterMessageAsync(
+                    arg.Message,
+                    _MalformedEnvelopeReason,
+                    exception.GetType().Name,
+                    CancellationToken.None
+                )
+                .ConfigureAwait(false);
             return;
         }
 
@@ -520,7 +553,13 @@ internal sealed class AzureServiceBusConsumerClient(
         catch (Exception exception)
         {
             _LogMalformedEnvelope(exception);
-            await arg.CompleteMessageAsync(arg.Message, CancellationToken.None).ConfigureAwait(false);
+            await arg.DeadLetterMessageAsync(
+                    arg.Message,
+                    _MalformedEnvelopeReason,
+                    exception.GetType().Name,
+                    CancellationToken.None
+                )
+                .ConfigureAwait(false);
             return;
         }
 
@@ -534,8 +573,7 @@ internal sealed class AzureServiceBusConsumerClient(
             new LogMessageEventArgs
             {
                 LogType = MqLogType.ConsumeError,
-                Reason =
-                    $"Malformed Azure Service Bus transport envelope terminally completed: {exception.GetType().Name}",
+                Reason = $"Malformed Azure Service Bus transport envelope dead-lettered: {exception.GetType().Name}",
             }
         );
     }

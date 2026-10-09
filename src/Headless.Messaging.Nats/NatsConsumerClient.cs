@@ -887,7 +887,10 @@ internal sealed class NatsConsumerClient(
                     new AckOpts
                     {
                         DoubleAck = true,
-                        TerminateReason = TerminateReason(_connection?.ServerInfo?.Version, exception),
+                        TerminateReason = TerminateReason(
+                            _connection?.ServerInfo?.Version,
+                            $"malformed headless envelope: {exception.GetType().Name}"
+                        ),
                     },
                     CancellationToken.None
                 )
@@ -910,7 +913,7 @@ internal sealed class NatsConsumerClient(
     /// before 2.10.4 matches the exact <c>+TERM</c> bytes and silently ignores <c>+TERM reason</c>, so sending one there
     /// would leave the poison message to redeliver forever.
     /// </summary>
-    internal static string? TerminateReason(string? serverVersion, Exception exception)
+    internal static string? TerminateReason(string? serverVersion, string reason)
     {
         if (serverVersion is null)
         {
@@ -921,9 +924,7 @@ internal sealed class NatsConsumerClient(
         var dash = serverVersion.IndexOf('-', StringComparison.Ordinal);
         var core = dash < 0 ? serverVersion : serverVersion[..dash];
 
-        return Version.TryParse(core, out var version) && version >= _TerminateReasonServerVersion
-            ? $"malformed headless envelope: {exception.GetType().Name}"
-            : null;
+        return Version.TryParse(core, out var version) && version >= _TerminateReasonServerVersion ? reason : null;
     }
 
     private static void _ValidateRequiredHeaders(Dictionary<string, string?> headers)
@@ -955,6 +956,46 @@ internal sealed class NatsConsumerClient(
                 {
                     LogType = MqLogType.AsyncErrorEvent,
                     Reason = $"NATS message ACK failed: {ex}",
+                }
+            );
+        }
+    }
+
+    // JetStream has no dead-letter destination: a terminate stops redelivery, counts the message as terminated in the
+    // consumer's stats, and publishes a MSG_TERMINATED advisory carrying the reason, which is where an operator or a
+    // stream sourced from the advisory subject finds the poisoned message.
+    public async ValueTask DeadLetterAsync(
+        object? sender,
+        string reason,
+        string? description,
+        CancellationToken cancellationToken = default
+    )
+    {
+        try
+        {
+            if (await _SettlingMessageAsync(sender).ConfigureAwait(false) is { } msg)
+            {
+                await msg.AckTerminateAsync(
+                        new AckOpts
+                        {
+                            DoubleAck = true,
+                            TerminateReason = TerminateReason(
+                                _connection?.ServerInfo?.Version,
+                                description is null ? reason : $"{reason}: {description}"
+                            ),
+                        },
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex)
+        {
+            OnLogCallback?.Invoke(
+                new LogMessageEventArgs
+                {
+                    LogType = MqLogType.AsyncErrorEvent,
+                    Reason = $"NATS message terminate failed: {ex}",
                 }
             );
         }
