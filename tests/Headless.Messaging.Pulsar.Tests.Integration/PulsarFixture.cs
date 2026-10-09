@@ -90,7 +90,8 @@ public sealed class PulsarFixture : HeadlessPulsarFixture
         string? group = null,
         bool createReplacement = true,
         bool failEnvelopeBuild = false,
-        ConsumerClientRequest? request = null
+        ConsumerClientRequest? request = null,
+        Action<PulsarMessagingOptions>? configureOptions = null
     )
     {
         destination ??= $"persistent://public/default/conf-{Guid.NewGuid():N}";
@@ -104,6 +105,7 @@ public sealed class PulsarFixture : HeadlessPulsarFixture
             {
                 options.ServiceUrl = connectionString;
                 options.NegativeAckRedeliveryDelay = TimeSpan.FromSeconds(1);
+                configureOptions?.Invoke(options);
             })
         );
         var serviceProvider = services.BuildServiceProvider();
@@ -158,7 +160,8 @@ public sealed class PulsarFixture : HeadlessPulsarFixture
                                 group,
                                 createReplacement: false,
                                 failEnvelopeBuild,
-                                request
+                                request,
+                                configureOptions
                             )
                         : null
                 );

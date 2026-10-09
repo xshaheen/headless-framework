@@ -467,21 +467,32 @@ internal sealed class AzureServiceBusConsumerClient(
             return;
         }
 
-        if (groupConcurrent > 0)
+        await _DispatchAsync(context, new AzureServiceBusConsumerCommitInput(arg), arg.CancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    // A queue-lane client runs one processor per queue, so the semaphore keeps their sum within the consumer's
+    // concurrency; with a single processor it never waits.
+    private async Task _DispatchAsync(
+        TransportMessage context,
+        AzureServiceBusConsumerCommitInput commitInput,
+        CancellationToken cancellationToken
+    )
+    {
+        if (groupConcurrent == 0)
         {
-            await _semaphore.WaitAsync(arg.CancellationToken).ConfigureAwait(false);
-            try
-            {
-                await OnMessageCallback!(context, new AzureServiceBusConsumerCommitInput(arg)).ConfigureAwait(false);
-            }
-            finally
-            {
-                _ReleaseSemaphore();
-            }
+            await OnMessageCallback!(context, commitInput).ConfigureAwait(false);
+            return;
         }
-        else
+
+        await _semaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            await OnMessageCallback!(context, new AzureServiceBusConsumerCommitInput(arg)).ConfigureAwait(false);
+            await OnMessageCallback!(context, commitInput).ConfigureAwait(false);
+        }
+        finally
+        {
+            _ReleaseSemaphore();
         }
     }
 
@@ -513,7 +524,8 @@ internal sealed class AzureServiceBusConsumerClient(
             return;
         }
 
-        await OnMessageCallback!(context, new AzureServiceBusConsumerCommitInput(arg)).ConfigureAwait(false);
+        await _DispatchAsync(context, new AzureServiceBusConsumerCommitInput(arg), arg.CancellationToken)
+            .ConfigureAwait(false);
     }
 
     private void _LogMalformedEnvelope(Exception exception)
@@ -608,33 +620,7 @@ internal sealed class AzureServiceBusConsumerClient(
                     return;
                 }
 
-                _serviceBusProcessor = !_asbOptions.EnableSessions
-                    ? new ServiceBusProcessorFacade(
-                        serviceBusProcessor: _serviceBusClient.CreateProcessor(
-                            _asbOptions.TopicPath,
-                            subscriptionName,
-                            new ServiceBusProcessorOptions
-                            {
-                                AutoCompleteMessages = _AutoCompleteMessages,
-                                MaxConcurrentCalls = _asbOptions.MaxConcurrentCalls,
-                                MaxAutoLockRenewalDuration = _asbOptions.MaxAutoLockRenewalDuration,
-                            }
-                        )
-                    )
-                    : new ServiceBusProcessorFacade(
-                        serviceBusSessionProcessor: _serviceBusClient.CreateSessionProcessor(
-                            _asbOptions.TopicPath,
-                            subscriptionName,
-                            new ServiceBusSessionProcessorOptions
-                            {
-                                AutoCompleteMessages = _AutoCompleteMessages,
-                                MaxConcurrentCallsPerSession = _asbOptions.MaxConcurrentCalls,
-                                MaxAutoLockRenewalDuration = _asbOptions.MaxAutoLockRenewalDuration,
-                                MaxConcurrentSessions = _asbOptions.MaxConcurrentSessions,
-                                SessionIdleTimeout = _asbOptions.SessionIdleTimeout,
-                            }
-                        )
-                    );
+                _serviceBusProcessor = _CreateProcessor(_asbOptions.TopicPath, subscriptionName);
             }
         }
         finally
@@ -664,33 +650,51 @@ internal sealed class AzureServiceBusConsumerClient(
             }
         }
 
-        var processor = !_asbOptions.EnableSessions
-            ? new ServiceBusProcessorFacade(
-                serviceBusProcessor: _serviceBusClient!.CreateProcessor(
-                    queueName,
-                    new ServiceBusProcessorOptions
-                    {
-                        AutoCompleteMessages = _AutoCompleteMessages,
-                        MaxConcurrentCalls = _asbOptions.MaxConcurrentCalls,
-                        MaxAutoLockRenewalDuration = _asbOptions.MaxAutoLockRenewalDuration,
-                    }
-                )
-            )
-            : new ServiceBusProcessorFacade(
-                serviceBusSessionProcessor: _serviceBusClient!.CreateSessionProcessor(
-                    queueName,
-                    new ServiceBusSessionProcessorOptions
-                    {
-                        AutoCompleteMessages = _AutoCompleteMessages,
-                        MaxConcurrentCallsPerSession = _asbOptions.MaxConcurrentCalls,
-                        MaxAutoLockRenewalDuration = _asbOptions.MaxAutoLockRenewalDuration,
-                        MaxConcurrentSessions = _asbOptions.MaxConcurrentSessions,
-                        SessionIdleTimeout = _asbOptions.SessionIdleTimeout,
-                    }
-                )
-            );
+        var processor = _CreateProcessor(queueName, topicSubscription: null);
 
         _queueProcessors.Add(processor);
+    }
+
+    // The consumer's concurrency sizes the processor itself: the semaphore in the handler only caps the sum across the
+    // processors of one queue-lane client, so a processor capped below it would leave the consumer's concurrency unused.
+    // A session processor takes one message at a time per session, which keeps each session in order, and spends the
+    // concurrency on sessions instead.
+    private ServiceBusProcessorFacade _CreateProcessor(string entityPath, string? topicSubscription)
+    {
+        var concurrency = Math.Max(1, (int)groupConcurrent);
+
+        if (!_asbOptions.EnableSessions)
+        {
+            var processorOptions = new ServiceBusProcessorOptions
+            {
+                AutoCompleteMessages = _AutoCompleteMessages,
+                MaxConcurrentCalls = concurrency,
+                PrefetchCount = _asbOptions.PrefetchCount,
+                MaxAutoLockRenewalDuration = _asbOptions.MaxAutoLockRenewalDuration,
+            };
+
+            return new ServiceBusProcessorFacade(
+                serviceBusProcessor: topicSubscription is null
+                    ? _serviceBusClient!.CreateProcessor(entityPath, processorOptions)
+                    : _serviceBusClient!.CreateProcessor(entityPath, topicSubscription, processorOptions)
+            );
+        }
+
+        var sessionOptions = new ServiceBusSessionProcessorOptions
+        {
+            AutoCompleteMessages = _AutoCompleteMessages,
+            MaxConcurrentSessions = concurrency,
+            MaxConcurrentCallsPerSession = 1,
+            PrefetchCount = _asbOptions.PrefetchCount,
+            MaxAutoLockRenewalDuration = _asbOptions.MaxAutoLockRenewalDuration,
+            SessionIdleTimeout = _asbOptions.SessionIdleTimeout,
+        };
+
+        return new ServiceBusProcessorFacade(
+            serviceBusSessionProcessor: topicSubscription is null
+                ? _serviceBusClient!.CreateSessionProcessor(entityPath, sessionOptions)
+                : _serviceBusClient!.CreateSessionProcessor(entityPath, topicSubscription, sessionOptions)
+        );
     }
 
     private IEnumerable<ServiceBusProcessorFacade> _GetProcessors()
