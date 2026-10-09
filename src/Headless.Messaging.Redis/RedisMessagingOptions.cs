@@ -85,6 +85,22 @@ public sealed class RedisMessagingOptions
     public TimeSpan StreamMaxAge { get; set; } = TimeSpan.FromDays(7);
 
     /// <summary>
+    /// When <see langword="true"/> (default), each publish follows its <c>XADD</c> with a fire-and-forget
+    /// <c>PUBLISH</c> on the stream's wake channel, <c>{stream}:wake</c>, and consumers subscribed to it read the stream
+    /// at once instead of at their next poll. A message published to an idle stream is then read within a round trip
+    /// rather than within the poll interval. When <see langword="false"/>, the process neither publishes nor subscribes
+    /// to wake-ups, and its consumers read only when they poll.
+    /// </summary>
+    /// <remarks>
+    /// An idle stream costs no extra commands. Each publish costs one <c>PUBLISH</c>, which a Redis Cluster forwards to
+    /// every node, and wakes each poll loop subscribed to the stream (one per consumer group per process, plus each
+    /// every-instance consumer) for one read; under steady traffic a loop reads at most once every 50 milliseconds.
+    /// Pub/sub delivers at most once, so polling stays the fallback and a lost wake-up only delays a message to the
+    /// next poll. Set the same value on every process: a publisher with wake-ups off leaves consumers to their poll.
+    /// </remarks>
+    public bool WakeConsumersOnPublish { get; set; } = true;
+
+    /// <summary>
     /// The number of <c>IConnectionMultiplexer</c> instances in the shared connection pool.
     /// Increase when many concurrent consumers cause connection contention.
     /// Must be greater than <c>0</c>. Defaults to <c>10</c>.
