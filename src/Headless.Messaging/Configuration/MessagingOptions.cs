@@ -259,9 +259,11 @@ public sealed class MessagingOptions
     /// Each consumer client receives this value as its listening timeout. Kafka and the in-memory transport treat it as
     /// a wait bound: one poll blocks up to this long and returns as soon as a message arrives, so it does not delay
     /// delivery, and a longer value only slows the reaction to cancellation and shutdown. Redis Streams and Amazon SQS
-    /// sleep this long after a poll that returned nothing, so it is the delivery latency of an idle consumer and sets
-    /// its idle load: Redis reads every subscribed stream once per interval (an <c>XREADGROUP</c> plus a consumer-group
-    /// check per stream), so 100 milliseconds costs ten times the idle Redis load of the 1-second default. Push-based
+    /// wait this long after a poll that returned nothing, so it sets an idle consumer's load: Redis reads every
+    /// subscribed stream once per interval (an <c>XREADGROUP</c> plus a consumer-group check per stream), so 100
+    /// milliseconds costs ten times the idle Redis load of the 1-second default. A Redis publish wakes the waiting
+    /// consumer at once unless its wake-ups are turned off; without them, and on SQS, the interval is also an idle
+    /// consumer's delivery latency. Push-based
     /// transports such as RabbitMQ, Azure Service Bus, and Pulsar ignore it. Must be greater than zero and no more
     /// than 30 seconds.
     /// </remarks>
