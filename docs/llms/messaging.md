@@ -120,8 +120,8 @@ This is the production default: `Headless.Messaging.RabbitMq` for transport and 
 - **Retry pressure is quadrant-isolated**: Published-Bus, Published-Queue, Received-Bus, and Received-Queue own independent atomic claims, workers, lock resources, counters, failure state, cadence, and adaptive interval. `IRetryProcessorMonitor` remains an aggregate compatibility projection (maximum interval, backed off when any quadrant is backed off, reset all four); that aggregate never drives runtime scheduling or lock TTL.
 - **Distributed lock**: see [Distributed Lock Integration](#distributed-lock-integration) for when to enable, when to skip, and the two-layer model (per-row `LockedUntil` lease + coarse-grained distributed lock).
 - **Never write framework metadata through provider hatches**. For publish options, use typed properties; raw `Headers.TenantId` is accepted only by the tenant-integrity path and should not be authored directly.
-- **Treat provider hatches as physical broker routing/configuration**. Message-side hatches live only on the lane builders of a contract: `.OnBus(b => b.UseNats(...) / .UseAzureServiceBus(...) / .UseAws(...))` and `.OnQueue(q => q.UseNats(...) / .UseAzureServiceBus(...) / .UseAws(...) / .UseKafka(...))`. Consumer-side hatches live only on `Tune(identity, c => ...)`: `c.UseRabbitMq(...)`, `c.UseKafka(...)`, and `c.UseNats(...)`.
-- **Kafka, RabbitMQ, and NATS expose consumer-side hatches**. AWS and Azure Service Bus expose message-side hatches only.
+- **Treat provider hatches as physical broker routing/configuration**. Message-side hatches live only on the lane builders of a contract: `.OnBus(b => b.UseNats(...) / .UseAzureServiceBus(...) / .UseAws(...))` and `.OnQueue(q => q.UseNats(...) / .UseAzureServiceBus(...) / .UseAws(...) / .UseKafka(...))`. Consumer-side hatches live only on `Tune(identity, c => ...)`: `c.UseRabbitMq(...)`, `c.UseKafka(...)`, `c.UseNats(...)`, and `c.UsePulsar(...)`.
+- **Kafka, RabbitMQ, NATS, and Pulsar expose consumer-side hatches**. AWS and Azure Service Bus expose message-side hatches only.
 - **Keep this canonical guide aligned with public messaging behavior.** Package READMEs remain small discovery pages and do not mirror this reference.
 
 ## Core Concepts
@@ -202,7 +202,7 @@ Two unit-of-work behaviors are documented, not defects. `IUnitOfWork.OnCompleted
 | InMemory | One copy per consumer identity | One owned copy | Yes | None | None | In-process reply channel |
 | Kafka | No | Topic; Kafka consumer group named after the message | Not applicable; Queue-only | `OnQueue` only: `UseKafka(k => k.PartitionBy(...))` | `UseKafka(k => k.WithIsolationLevel(...))` | No; startup fails |
 | NATS | Interest-retained lane stream, one durable per consumer identity | Work-queue-retained lane stream | Yes | `UseNats(n => n.SubjectShard(...))` | `UseNats(n => n.Sharded())` | Core NATS subject outside JetStream |
-| Pulsar | Lane topic + identity subscription | Lane topic + owned subscription | Yes | None | None | Not yet; startup fails |
+| Pulsar | Lane topic + identity subscription | Lane topic + owned subscription | Yes | None | `UsePulsar(p => p.KeyShared().DeadLetter(...).AckTimeout(...))` | Not yet; startup fails |
 | RabbitMQ | Lane topic exchange, one queue per consumer identity | Lane direct exchange | Yes | None | `UseRabbitMq(r => r.PrefetchCount(...))` | Exclusive reply queue |
 | Redis | Lane Redis Stream + Redis consumer group named after the identity | Lane Redis Stream + Redis consumer group named after the message | Yes | None | None | Pub/sub channel |
 
@@ -2461,13 +2461,14 @@ Registers NATS connection pool, transports, consumer factory, stream provisionin
 - TLS-related options through provider configuration.
 - Configurable negative-ack redelivery with a one-minute default and a validated 100-millisecond minimum.
 - Producer settings through `PulsarMessagingOptions.Producer`: compression, batching and its publish delay, and send timeout.
+- Consumer hatch: `Tune(identity, c => c.UsePulsar(pulsar => pulsar.KeyShared().DeadLetter(maxRedeliveryCount: 5).AckTimeout(TimeSpan.FromMinutes(1))))`.
 - Shutdown lets in-flight handlers settle within the shutdown budget (30 seconds on a plain dispose) before it closes the consumer.
 - Consumer startup honors host cancellation while acquiring the client and subscribing, while preserving configured timeouts.
 - Request/reply is not supported yet: a host that sends requests or declares a responder fails startup until the provider's reply channel ships. See [Request/reply](#requestreply).
 
 ### Design constraints
 
-Bus topics insert `headless-bus-` before the local topic name and use one lane-qualified `headless-bus-{consumer-identity}` subscription per consumer identity. Queue topics insert `headless-queue-` and use one owned `headless-queue` subscription per physical topic. Replicas within a subscription compete; distinct Bus consumer identities each receive one copy. Malformed transport envelopes are terminally acknowledged so they cannot create negative-ack redelivery storms. A handler still running when the shutdown budget runs out never acknowledges its message, so the broker redelivers it after the consumer closes (at-least-once). Negative-ack redelivery uses one fixed delay: Pulsar.Client 3.19 has no redelivery backoff. The package has no consumer hatch yet, so `Key_Shared` subscriptions, dead-letter policies, and ack timeouts are not configurable. Message chunking is not offered: with Pulsar.Client 3.19.4 a chunked message read through a `Shared` subscription, which every competing and Bus consumer uses, arrives truncated to its first chunk. Keep payloads under the broker's `maxMessageSize` (5 MB by default).
+Bus topics insert `headless-bus-` before the local topic name and use one lane-qualified `headless-bus-{consumer-identity}` subscription per consumer identity. Queue topics insert `headless-queue-` and use one owned `headless-queue` subscription per physical topic. Replicas within a subscription compete; distinct Bus consumer identities each receive one copy. Malformed transport envelopes are terminally acknowledged so they cannot create negative-ack redelivery storms. A handler still running when the shutdown budget runs out never acknowledges its message, so the broker redelivers it after the consumer closes (at-least-once). Negative-ack redelivery uses one fixed delay: Pulsar.Client 3.19 has no redelivery backoff. Producers batch by key (`BatchBuilder.KeyBased`): the broker dispatches a batch whole, by its first message's key, so a batch holds one key and a `Key_Shared` subscription still places every message by its own key. Message chunking is not offered: with Pulsar.Client 3.19.4 a chunked message read through a `Shared` subscription, which every competing and Bus consumer uses, arrives truncated to its first chunk. Keep payloads under the broker's `maxMessageSize` (5 MB by default).
 
 ### Install
 
@@ -2487,11 +2488,32 @@ services.ConfigureMessaging(messaging =>
 
 A `[BusConsumer("orders.projection")]` consumer of `OrderPlaced` subscribes as `headless-bus-orders.projection`.
 
+```csharp
+setup.Tune("orders.projection", consumer => consumer.UsePulsar(pulsar => pulsar
+    .KeyShared()
+    .DeadLetter(maxRedeliveryCount: 5)
+    .AckTimeout(TimeSpan.FromMinutes(1))));
+```
+
 ### Configuration
 
-`RoutingAffinityKey` on publish/enqueue options maps to the native Pulsar message key on registered Bus and Queue routes. The optional `PulsarMessagingHeaders.PulsarKey` adapter must agree. The configured client uses its built-in key hashing; Headless adds no key-length limit beyond broker message limits. Keep routing configuration and partition topology fixed while relying on placement. This does not select a `Key_Shared` subscription, guarantee FIFO, or prevent concurrent handling.
+`RoutingAffinityKey` on publish/enqueue options maps to the native Pulsar message key on registered Bus and Queue routes. The optional `PulsarMessagingHeaders.PulsarKey` adapter must agree. The configured client uses its built-in key hashing; Headless adds no key-length limit beyond broker message limits. Keep routing configuration and partition topology fixed while relying on placement. The key alone does not select a `Key_Shared` subscription, guarantee FIFO, or prevent concurrent handling; the consumer hatch below selects `Key_Shared`.
 
 Configure service URL, authentication, TLS, negative-ack redelivery, and producer settings through `PulsarMessagingOptions`. `Producer` applies to every producer the transport creates, and each default matches Pulsar.Client: `CompressionType` (`None`; also `LZ4`, `ZLib`, `ZStd`, `Snappy`, decompressed transparently by consumers), `EnableBatching` (`true`), `BatchingMaxPublishDelay` (1 ms; each publish waits for its own send, so a longer delay adds up to that much latency per publish in exchange for larger batches), and `SendTimeout` (30 seconds; `TimeSpan.Zero` waits indefinitely, and a send that times out fails the publish). `NegativeAckRedeliveryDelay` defaults to one minute and must be at least 100 milliseconds; smaller values fail startup validation instead of being silently clamped by Pulsar.Client.
+
+The consumer hatch, `Tune(identity, c => c.UsePulsar(...))`, sets three options. Each `UsePulsar` call replaces the Pulsar settings of an earlier one for the same consumer.
+
+| Option | Default | Effect |
+| --- | --- | --- |
+| `KeyShared()` | `Shared` subscription | Subscribes with `Key_Shared` and an auto-split key hash range: the broker sends every message with one key (the publish-side `RoutingAffinityKey`) to the same consumer, in publish order. An every-instance consumer subscribes exclusively, so `KeyShared()` on one fails its creation with `InvalidOperationException` |
+| `DeadLetter(maxRedeliveryCount, deadLetterTopic = null)` | No dead-letter policy; a rejected message is redelivered forever | After `maxRedeliveryCount` redeliveries the message moves to `deadLetterTopic`, by default `{topic}-{subscription}-DLQ` for each subscribed topic. `maxRedeliveryCount` must be positive |
+| `AckTimeout(TimeSpan)` | Off, or 30 seconds with `DeadLetter` | Pulsar.Client asks the broker to redeliver a message still unacknowledged after the timeout. Must be at least one second, the shortest Pulsar.Client accepts |
+
+- **`DeadLetter` without `AckTimeout` turns on a 30-second ack timeout.** Pulsar.Client 3.19.4 sets it whenever a dead-letter policy is present and the ack timeout is zero.
+- **Broker redeliveries come only from failures to admit a message.** The consumer rejects a message only when the messaging core cannot admit it, for example while storage is down or the consumer's circuit breaker is open. A handler failure retries from storage, so it never counts toward `maxRedeliveryCount`. A dead-lettered message was never stored, and nothing in the framework consumes the dead-letter topic.
+- **`AckTimeout` bounds admission, not handler time.** The consumer acknowledges a message once the core has stored or skipped it, before the handler runs.
+- **`Key_Shared` keeps per-key order only up to the consumer client.** Handlers run in key order only with `Concurrency(1)` and a single dispatcher thread.
+- **Every consumer of one subscription must set the same options.** The Queue subscription (`headless-queue`) is shared by every consumer of the queue message in every process, and the broker refuses a consumer whose subscription type differs from the one already attached. Two consumers of one subscription in the same host with different Pulsar options fail creation with `InvalidOperationException`.
 
 ### Runtime behavior
 
@@ -2578,6 +2600,7 @@ Registers RabbitMQ connection/channel pool, bus/queue transport, consumer client
 - A pending entry, read and not acknowledged, is claimed by another consumer of the group once it has been idle for `PendingClaimMinIdleTime` (60 s by default), so a crashed consumer's entries move on within a minute.
 - A rejected delivery stays pending in its place in the stream and is delivered again by that claim; the stream does not grow and the entry keeps its position.
 - Each publish trims, approximately, the entries older than `StreamMaxAge` (7 days by default) from its stream.
+- A message published to an idle stream is read within a round trip, not at the consumer's next poll: each publish announces its entry on the stream's pub/sub wake channel, and consumers subscribed to it read at once (`WakeConsumersOnPublish`, on by default).
 - Streams consumer startup honors host cancellation through connection, provisioning, and subscription.
 - Request/reply over pub/sub on the literal channel `headless.reply.{32 hex}`; replies write no key, and every host that exchanges requests must use the same `ChannelPrefix`. See [Request/reply](#requestreply).
 
@@ -2609,6 +2632,7 @@ Configure Redis connection and Stream behavior through `RedisMessagingOptions`:
 | `PendingClaimMinIdleTime` | 60 s | How long an entry stays pending before another consumer claims it with `XAUTOCLAIM`. Must be positive. |
 | `IdleConsumerDeleteAfter` | 1 hour | How long a consumer with no pending entries stays idle before it is deleted from its group. `TimeSpan.Zero` keeps every consumer. |
 | `StreamMaxAge` | 7 days | Age past which each publish trims entries from its stream with `XADD MINID ~`. `TimeSpan.Zero` keeps entries without an age limit; otherwise it must exceed `PendingClaimMinIdleTime`. |
+| `WakeConsumersOnPublish` | `true` | Each publish follows its `XADD` with a fire-and-forget `PUBLISH` on `{stream}:wake`, and consumers subscribed to that channel read the stream at once instead of at their next poll. `false` stops this process from publishing and subscribing to wake-ups. |
 | `ConnectionPoolSize` | `10` | Multiplexers in the shared connection pool. |
 
 Trade-offs and limits:
@@ -2616,6 +2640,7 @@ Trade-offs and limits:
 - **Pending window.** A durable consumer acknowledges an entry once the core admits it into the inbox, before its handler runs, so `PendingClaimMinIdleTime` bounds admission, not handler duration. A runtime subscription, which has no consumer identity, acknowledges after an inline handler returns; set the option above that handler's longest run. Keep the time the core takes to admit one batch of `StreamEntriesCount` entries well below it, or another consumer claims entries still waiting their turn and the inbox discards the duplicates.
 - **Retention is not acknowledgement-aware.** Trimming removes an entry whether or not a group read or acknowledged it, so a group offline longer than `StreamMaxAge` misses the trimmed entries, and an entry that keeps failing admission is dropped once it is older than `StreamMaxAge`. The age is measured against the publishing process's clock. Approximate trimming removes whole internal nodes only, so entries can outlive the limit slightly; it never removes them early. No length cap (`MAXLEN`) is applied.
 - **Every-instance reads.** A group-less every-instance reader that falls further behind than `StreamMaxAge` skips the trimmed entries.
+- **Reads of new entries poll, woken by publishes.** StackExchange.Redis never sends a blocking `XREADGROUP BLOCK` over its shared multiplexer, so each consumer polls its streams at the core's consumer poll interval and reads on at once while a read returns a full batch. With `WakeConsumersOnPublish`, a publish ends that wait early. An idle stream costs no extra commands. Each publish costs one `PUBLISH`, which a Redis Cluster forwards to every node, and wakes every poll loop subscribed to the stream (one per consumer group per process, plus each every-instance consumer) for one read; under steady traffic a loop reads at most once every 50 milliseconds, so a busy stream adds at most 20 reads a second per loop. Pub/sub delivers at most once, so a wake-up lost during a disconnect only delays an entry to the next poll. The wake-up needs `PUBLISH` and `SUBSCRIBE` on the `{stream}:wake` channels; where an ACL denies them, set `WakeConsumersOnPublish` to `false`, or consumers log one warning and keep polling. Set the same value on every process: a publisher with wake-ups off leaves consumers to their poll.
 
 ### Runtime behavior
 

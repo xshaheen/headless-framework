@@ -33,6 +33,7 @@ public sealed class RedisMessagingOptionsTests : TestBase
         options.PendingClaimMinIdleTime.Should().Be(TimeSpan.FromSeconds(60));
         options.IdleConsumerDeleteAfter.Should().Be(TimeSpan.FromHours(1));
         options.StreamMaxAge.Should().Be(TimeSpan.FromDays(7));
+        options.WakeConsumersOnPublish.Should().BeTrue();
     }
 
     [Fact]

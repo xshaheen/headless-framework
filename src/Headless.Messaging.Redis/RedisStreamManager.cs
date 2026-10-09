@@ -73,9 +73,35 @@ internal sealed class RedisStreamManager(
     )
     {
         await _ConnectAsync(cancellationToken).ConfigureAwait(false);
+        var redis = _redis!;
 
         //The object returned from GetDatabase is a cheap pass - thru object, and does not need to be stored
-        await _redis!.GetDatabase().StreamAddAsync(stream, message, _CreateAddOptions()).ConfigureAwait(false);
+        await redis.GetDatabase().StreamAddAsync(stream, message, _CreateAddOptions()).ConfigureAwait(false);
+
+        if (_options.WakeConsumersOnPublish)
+        {
+            _AnnounceEntry(redis, stream);
+        }
+    }
+
+    // Sent only after the XADD has completed, so a consumer it wakes always finds the entry. Fire-and-forget: a lost
+    // wake-up only delays the entry to the consumers' next poll, so it must neither fail nor slow the publish.
+    private void _AnnounceEntry(IConnectionMultiplexer redis, string stream)
+    {
+        try
+        {
+            _ = redis
+                .GetSubscriber()
+                .PublishAsync(
+                    RedisChannel.Literal(RedisPhysicalAddress.WakeChannel(stream)),
+                    RedisValue.EmptyString,
+                    CommandFlags.FireAndForget
+                );
+        }
+        catch (Exception ex)
+        {
+            logger.LogWakePublishFailed(ex, stream);
+        }
     }
 
     public async IAsyncEnumerable<IEnumerable<RedisStreamMessages>> PollStreamsLatestMessagesAsync(
@@ -91,9 +117,13 @@ internal sealed class RedisStreamManager(
         var positions = streams.Select(stream => new StreamPosition(stream, StreamPosition.NewMessages)).ToArray();
 
         var errorDelay = pollDelay;
+        await using var wake = _CreateWake(streams);
 
         while (true)
         {
+            await wake.EnsureSubscribedAsync(token).ConfigureAwait(false);
+            var readStartedAt = _timeProvider.GetTimestamp();
+
             var (succeeded, streamsRead) = await _TryReadConsumerGroupAsync(
                     consumerGroup,
                     consumerName,
@@ -114,7 +144,7 @@ internal sealed class RedisStreamManager(
                 // A full batch means a backlog: read on at once instead of waiting a poll interval per batch.
                 if (!_HasFullBatch(result))
                 {
-                    await _timeProvider.Delay(pollDelay, token).ConfigureAwait(false);
+                    await wake.WaitAsync(pollDelay, readStartedAt, token).ConfigureAwait(false);
                 }
             }
             else
@@ -255,13 +285,17 @@ internal sealed class RedisStreamManager(
     )
     {
         // StackExchange.Redis never sends blocking commands, which would stall its shared multiplexer, so XREAD
-        // polls at the same cadence as the consumer-group reads. Resuming from the last id read keeps a reconnect
-        // gap-free for as long as the stream retains the entries.
+        // polls at the same cadence as the consumer-group reads, woken early by publishes. Resuming from the last id
+        // read keeps a reconnect gap-free for as long as the stream retains the entries.
         var positions = startPositions.ToArray();
         var errorDelay = pollDelay;
+        await using var wake = _CreateWake(positions.Select(position => position.Key.ToString()));
 
         while (true)
         {
+            await wake.EnsureSubscribedAsync(token).ConfigureAwait(false);
+            var readStartedAt = _timeProvider.GetTimestamp();
+
             var (succeeded, result) = await _TryReadAsync(positions, token).ConfigureAwait(false);
 
             yield return result;
@@ -278,7 +312,7 @@ internal sealed class RedisStreamManager(
             // A full batch means a backlog: read on at once instead of waiting a poll interval per batch.
             if (!_HasFullBatch(result))
             {
-                await _timeProvider.Delay(pollDelay, token).ConfigureAwait(false);
+                await wake.WaitAsync(pollDelay, readStartedAt, token).ConfigureAwait(false);
             }
         }
 
@@ -528,6 +562,16 @@ internal sealed class RedisStreamManager(
         }
     }
 
+    private RedisStreamWake _CreateWake(IEnumerable<string> streams)
+    {
+        return new RedisStreamWake(
+            _options.WakeConsumersOnPublish ? streams : [],
+            connectionsPool,
+            _timeProvider,
+            logger
+        );
+    }
+
     private StreamAddOptions _CreateAddOptions()
     {
         if (_options.StreamMaxAge <= TimeSpan.Zero)
@@ -623,6 +667,14 @@ internal static partial class RedisStreamManagerLog
         string consumerGroup,
         string stream
     );
+
+    [LoggerMessage(
+        EventId = 7,
+        EventName = "WakePublishFailed",
+        Level = LogLevel.Warning,
+        Message = "Redis error when announcing a new entry on stream {Stream}; its consumers read it at their next poll"
+    )]
+    public static partial void LogWakePublishFailed(this ILogger logger, Exception exception, string stream);
 
     [LoggerMessage(
         EventId = 5,
