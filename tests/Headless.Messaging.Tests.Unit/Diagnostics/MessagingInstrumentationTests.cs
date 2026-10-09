@@ -171,7 +171,7 @@ public sealed class MessagingInstrumentationTests : TestBase
 
         meter!.ForceFlush();
 
-        metrics.Select(m => m.Name).Should().Contain("messaging.publish.messages");
+        metrics.Select(m => m.Name).Should().Contain(MessagingMetrics.ClientSentMessagesName);
     }
 
     // --- Helpers --------------------------------------------------------------------------------------------

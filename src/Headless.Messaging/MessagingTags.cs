@@ -20,8 +20,11 @@ public static class MessagingTags
     /// <summary>Finite delivery outcome diagnostic; currently <c>ambiguous</c> when transport acceptance is unknown.</summary>
     public const string DeliveryOutcome = "headless.messaging.delivery.outcome";
 
-    /// <summary>Messaging destination kind aligned with OpenTelemetry messaging conventions.</summary>
-    public const string DestinationKind = "messaging.destination.kind";
+    /// <summary>
+    /// Destination kind of the message's lane: <c>topic</c> for the bus lane, <c>queue</c> for the queue lane. The
+    /// OpenTelemetry messaging conventions no longer define a destination-kind attribute, so it is a framework one.
+    /// </summary>
+    public const string DestinationKind = "headless.messaging.destination.kind";
 
     /// <summary>Number of persisted retry pickups for a subscriber invocation.</summary>
     public const string RetryCount = "headless.messaging.retry_count";

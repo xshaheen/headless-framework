@@ -329,7 +329,11 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
             {
                 if (
                     string.Equals(instrument.Meter.Name, MessagingDiagnostics.SourceName, StringComparison.Ordinal)
-                    && string.Equals(instrument.Name, "messaging.every_instance.deliveries", StringComparison.Ordinal)
+                    && string.Equals(
+                        instrument.Name,
+                        "headless.messaging.every_instance.deliveries",
+                        StringComparison.Ordinal
+                    )
                 )
                 {
                     l.EnableMeasurementEvents(instrument);
@@ -347,7 +351,9 @@ public sealed class NatsConsumerClientTests(NatsFixture fixture) : TransportCons
                     {
                         matchesIdentity = string.Equals(tag.Value as string, identity, StringComparison.Ordinal);
                     }
-                    else if (string.Equals(tag.Key, "messaging.every_instance.outcome", StringComparison.Ordinal))
+                    else if (
+                        string.Equals(tag.Key, "headless.messaging.every_instance.outcome", StringComparison.Ordinal)
+                    )
                     {
                         outcome = tag.Value as string;
                     }

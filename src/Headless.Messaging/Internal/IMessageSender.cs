@@ -204,13 +204,20 @@ internal sealed class MessageSender : IMessageSender
         {
             // Timeout or shutdown can race broker acceptance. Preserve cancellation semantics while
             // recording the at-least-once duplicate window explicitly.
-            MessagingTelemetry.PublishAmbiguous(traceHandle.Activity, transportMsg, brokerAddress, ex, message.Lane);
+            MessagingTelemetry.PublishAmbiguous(
+                traceHandle.Activity,
+                transportMsg,
+                brokerAddress,
+                ex,
+                traceHandle.ElapsedMs(_NowMs()),
+                message.Lane
+            );
             throw;
         }
         catch (Exception ex)
         {
-            // A throwing send must stop the span and record messaging.publish.errors exactly like the
-            // failed-OperateResult path below; the exception then propagates unchanged.
+            // A throwing send must stop the span and record the failed send exactly like the failed-OperateResult
+            // path below; the exception then propagates unchanged.
             _TracingError(traceHandle, transportMsg, message.Lane, brokerAddress, OperateResult.Failed(ex));
             throw;
         }
@@ -230,6 +237,7 @@ internal sealed class MessageSender : IMessageSender
                     transportMsg,
                     brokerAddress,
                     ex,
+                    traceHandle.ElapsedMs(_NowMs()),
                     message.Lane
                 );
                 throw;
@@ -641,7 +649,7 @@ internal sealed class MessageSender : IMessageSender
         );
     }
 
-    private static void _TracingError(
+    private void _TracingError(
         MessagingTraceHandle traceHandle,
         TransportMessage message,
         MessageLane lane,
@@ -655,8 +663,17 @@ internal sealed class MessageSender : IMessageSender
         }
 
         var ex = new PublisherSentFailedException(result.ToString(), result.Exception);
-        MessagingTelemetry.PublishError(traceHandle.Activity, message, broker, ex, lane);
+        MessagingTelemetry.PublishError(
+            traceHandle.Activity,
+            message,
+            broker,
+            ex,
+            traceHandle.ElapsedMs(_NowMs()),
+            lane
+        );
     }
+
+    private long _NowMs() => _timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
 
     #endregion
 }

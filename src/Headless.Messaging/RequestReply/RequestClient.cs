@@ -71,7 +71,7 @@ internal sealed class RequestClient(
         }
         finally
         {
-            MessagingMetrics.RecordRequest(outcome, timeProvider.GetElapsedTime(startedAt).TotalMilliseconds);
+            MessagingMetrics.RecordRequest(outcome, timeProvider.GetElapsedTime(startedAt));
         }
     }
 

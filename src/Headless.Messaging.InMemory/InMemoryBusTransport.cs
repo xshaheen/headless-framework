@@ -17,7 +17,7 @@ internal sealed class InMemoryBusTransport(MemoryQueue queue, ILogger<InMemoryBu
     /// <summary>
     /// Gets the broker address information.
     /// </summary>
-    public BrokerAddress BrokerAddress => new("InMemory", "localhost");
+    public BrokerAddress BrokerAddress => new("in_memory", "localhost");
 
     /// <summary>
     /// Sends a transport message asynchronously.

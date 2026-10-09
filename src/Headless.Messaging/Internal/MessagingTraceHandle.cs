@@ -14,4 +14,7 @@ internal readonly record struct MessagingTraceHandle(Activity? Activity, long? S
 {
     /// <summary>Whether the operation began with a span or metric listener attached.</summary>
     public bool IsRecording => StartTimestampMs.HasValue;
+
+    /// <summary>The time since the operation began, or <see langword="null"/> when it began unobserved.</summary>
+    public long? ElapsedMs(long nowMs) => StartTimestampMs is { } start ? nowMs - start : null;
 }

@@ -66,7 +66,7 @@ internal sealed class InMemoryConsumerClient : IConsumerClient
     /// <summary>
     /// Gets the broker address information.
     /// </summary>
-    public BrokerAddress BrokerAddress => new("InMemory", "localhost");
+    public BrokerAddress BrokerAddress => new("in_memory", "localhost");
 
     /// <summary>
     /// Subscribes to the specified message names.

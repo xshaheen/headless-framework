@@ -284,8 +284,8 @@ A runtime subscription sets `RuntimeSubscriptionOptions.EveryInstance = true`.
 - **Subscription kind**: each process opens a subscription of its own, named from the identity and the host's `MessagingInstanceId` (a GUID generated once per host start, never the host name). The subscription exists only while the process holds it; the broker removes it after the process stops or crashes, within the bound in the matrix below.
 - **One client per process**: an every-instance identity gets exactly one consumer client whatever `ConsumerThreadCount` is, because a second client would be a second subscription and deliver every message twice in one process. The identity's `Concurrency` still applies inside that client.
 - **At most once, no backlog**: a process receives only what is published while it is subscribed. Nothing is stored for the delivery: no inbox row or admission, no reservation or lease, no retry pipeline, no circuit breaker, and no dashboard row. Receive middleware, the contract-version check, and deserialization still run, and the consumer runs in a fresh scope with the consume middleware, then the message is committed.
-- **Failures are logged and committed**: a consumer exception, a receive-stage reject, a message no consumer on the subscription handles, and a fault outside the consumer (in the core or the transport client) are logged, counted in `messaging.every_instance.deliveries`, and committed. None is requeued, because a per-process subscription has no one else to redeliver to and a redelivery would fault the same way; `RetryPolicy.OnExhausted` is not called. The only reject is a delivery stopped by host shutdown or a client rebuild.
-- **Delivery outcomes**: `messaging.every_instance.outcome` is one of four values. `succeeded`: the consumer returned. `failed`: the consumer threw (`error.type` = the exception type). `dropped`: the message never reached the consumer or faulted outside it (`error.type` = the exception type when there is one, or `overflow` for a NATS subscription channel that discarded the message). `skipped`: receive middleware skipped it.
+- **Failures are logged and committed**: a consumer exception, a receive-stage reject, a message no consumer on the subscription handles, and a fault outside the consumer (in the core or the transport client) are logged, counted in `headless.messaging.every_instance.deliveries`, and committed. None is requeued, because a per-process subscription has no one else to redeliver to and a redelivery would fault the same way; `RetryPolicy.OnExhausted` is not called. The only reject is a delivery stopped by host shutdown or a client rebuild.
+- **Delivery outcomes**: `headless.messaging.every_instance.outcome` is one of four values. `succeeded`: the consumer returned. `failed`: the consumer threw (`error.type` = the exception's full type name). `dropped`: the message never reached the consumer or faulted outside it (`error.type` = the exception type when there is one, or `overflow` for a NATS subscription channel that discarded the message). `skipped`: receive middleware skipped it.
 - **Reconnect signal**: a consumer that implements `IOnSubscriptionEstablished` is called once its subscription receives: at host start (`IsReconnect = false`, `Generation = 1`), after every rebuild of its subscription's clients (a broker failure rebuilds every subscription), and after the transport re-establishes the subscription on its own. Attaching or detaching a runtime subscription rebuilds only the subscription groups it changes, so an unrelated every-instance consumer keeps its clients and its hook does not run. `IsReconnect = true` means messages may have been missed; a mirror of state should flush or reload. The hook runs in its own scope on an instance built the way a delivery builds it: the container's registration of the class when there is one, otherwise a new instance that is disposed afterwards. A failing hook is logged without stopping the subscription. Hooks of one subscription run one at a time in establishment order. Host startup waits for the first hooks; a rebuild does not wait and holds no lock while they run, so a hook may attach or detach a runtime subscription. Each call is bounded by `MessagingOptions.SubscriptionEstablishedTimeout` (default 30 seconds, `> 0`, `<= 5m`): on expiry the hook's token is canceled, a warning is logged, and startup and later establishments go on without it. Runtime subscriptions have no hook.
 - **Startup rules**: an every-instance consumer on a transport without every-instance support fails startup before any consumer client or broker object is created, with a `MessagingConfigurationException` that names the consumer and the provider; a runtime subscription is checked the same way before it attaches. A `FailurePolicy` declared on an every-instance consumer is HM010 at build time, and a hand-written module that declares one fails startup. Tuning an inbox retention, a circuit breaker, or a failure policy onto an every-instance consumer, through `Tune` or configuration, fails startup, because none of them means anything for a per-process, at-most-once subscription. `EveryInstance` exists only on `[BusConsumer]`, so the Queue lane cannot express it. A host whose only consumers are every-instance does not need an inbox guarantee from storage.
 - **`ConsumeOnly` does not apply**: a host started with `ConsumeOnly` still starts every every-instance consumer, because each process must keep its own state current. A `ConsumeOnly` entry that matches only every-instance consumers fails startup, since it would have no effect. Runtime subscriptions are not filtered either.
@@ -1059,10 +1059,10 @@ Receive middleware that skips a request (`context.Skip(...)`) sends no reply, so
 
 | Instrument | Kind | Dimension and values |
 | --- | --- | --- |
-| `messaging.request_reply.requests` | Counter | `messaging.request_reply.outcome`: `replied`, `faulted`, `contract_mismatch`, `timed_out`, `canceled`, `aborted`, `not_sent`, `failed` |
-| `messaging.request_reply.duration` | Histogram (ms) | `messaging.request_reply.outcome` |
-| `messaging.request_reply.dropped_replies` | Counter | `messaging.request_reply.drop_reason`: `late` (the call already ended), `duplicate` (the call already had its reply), `unknown` (no call of this process sent it), `tenant_mismatch`, `invalid_reply_address` (counted on the responding host, which wrote nothing) |
-| `messaging.receive.outcomes` | Counter | `messaging.receive.outcome`: `expired` for a request dropped on arrival after its deadline; `no_responder` for a request that reached a plain consumer; `skipped` only for a receive-middleware skip |
+| `headless.messaging.request_reply.requests` | Counter | `headless.messaging.request_reply.outcome`: `replied`, `faulted`, `contract_mismatch`, `timed_out`, `canceled`, `aborted`, `not_sent`, `failed` |
+| `headless.messaging.request_reply.duration` | Histogram (s) | `headless.messaging.request_reply.outcome` |
+| `headless.messaging.request_reply.dropped_replies` | Counter | `headless.messaging.request_reply.drop_reason`: `late` (the call already ended), `duplicate` (the call already had its reply), `unknown` (no call of this process sent it), `tenant_mismatch`, `invalid_reply_address` (counted on the responding host, which wrote nothing) |
+| `headless.messaging.receive.outcomes` | Counter | `headless.messaging.receive.outcome`: `expired` for a request dropped on arrival after its deadline; `no_responder` for a request that reached a plain consumer; `skipped` only for a receive-middleware skip |
 
 No request id, correlation id, or instance id is a metric dimension.
 
@@ -1854,8 +1854,9 @@ Default `CircuitBreakerDefaults.IsTransient` covers: `TimeoutException`, `HttpRe
 
 ### Observability
 
-- **OTel counter**: `messaging.circuit_breaker.trips` (tagged `messaging.consumer.group.name` with the lane-qualified consumer identity)
-- **OTel histogram**: `messaging.circuit_breaker.open_duration` (same tag)
+- **OTel counter**: `headless.messaging.circuit_breaker.trips` (tagged `messaging.consumer.group.name` with the lane-qualified consumer identity)
+- **OTel histogram**: `headless.messaging.circuit_breaker.open_duration` in seconds (same tag)
+- **OTel gauge**: `headless.messaging.circuit_breaker.state` (0 = Closed, 1 = Open, 2 = HalfOpen; same tag)
 - State transitions logged at Warning level
 
 ### Programmatic Control
@@ -2028,8 +2029,10 @@ Spans and metrics for messaging publish, persist, consume, and subscriber-invoke
 
 - The Meter/ActivitySource is named `Headless.Messaging` — exposed as the `public const string MessagingDiagnostics.SourceName`.
 - Typed `AddMessagingInstrumentation()` extensions on both `TracerProviderBuilder` (namespace `OpenTelemetry.Trace`) and `MeterProviderBuilder` (namespace `OpenTelemetry.Metrics`) — thin `AddSource`/`AddMeter` wrappers over the const. Subscribing by name is equally supported.
-- Instrument names + standard dimensions follow the OpenTelemetry messaging **semconv** (`messaging.publish.messages`, `messaging.consume.duration`, dims `messaging.operation` / `messaging.system` / `messaging.consumer.group.name` (valued with the consumer identity) / `error.type` / `messaging.subscriber` / `messaging.persistence.type`); framework-specific span attributes are bespoke `headless.messaging.*`.
-- Inbox lifecycle counters are `messaging.inbox.duplicates`, `.attempts`, `.recoveries`, `.terminal`, `.replays`, `.retention`, and `.capabilities`. Their fixed labels are registered consumer identity, lane, finite outcome, tier, and provider; tenant is present only with the explicit cardinality opt-in.
+- Spans, metrics, and their standard attributes follow the [OpenTelemetry messaging semantic conventions](https://opentelemetry.io/docs/specs/semconv/messaging/): the client metrics `messaging.client.sent.messages`, `messaging.client.consumed.messages`, and `messaging.client.operation.duration`, the processing metric `messaging.process.duration`, and the attributes `messaging.operation.name`, `messaging.operation.type`, `messaging.system`, `messaging.destination.name`, `messaging.consumer.group.name` (valued with the consumer identity), `server.address`, `server.port`, and `error.type`. Instruments and attributes the conventions do not define are namespaced `headless.messaging.*`; nothing framework-specific uses `messaging.*`. The conventions are at Development stability, so a later convention release can rename them again.
+- A failure is recorded on the same instrument as a success, with `error.type` set; there are no separate error counters. `error.type` is the full type name of the exception that caused the failure (the transport's or the handler's, not the framework's `PublisherSentFailedException` or `SubscriberExecutionFailedException` wrapper), or `ambiguous_delivery` for a send whose broker acceptance is unknown.
+- Durations are in seconds. The operation, process, persistence, and request/reply duration histograms declare the conventions' bucket advice (`0.005` to `10`); the circuit breaker's open duration does not, because a circuit stays open for minutes.
+- Inbox lifecycle counters are `headless.messaging.inbox.duplicates`, `.attempts`, `.recoveries`, `.terminal`, `.replays`, `.retention`, and `.capabilities`. Their fixed labels are registered consumer identity, lane, finite outcome, tier, and provider; tenant is present only with the explicit cardinality opt-in.
 - W3C `traceparent` + baggage are injected on publish headers and extracted on consume — **always on whenever any messaging telemetry is enabled**, no toggle. A metrics-only service (meter subscribed, no trace listener) — or a sampled-out publish — **relays** the incoming/ambient parent context verbatim onto outgoing messages instead of dropping it, so trace continuity survives non-tracing hops; a consumed message's context flows to publishes made from its handler even without a span. A fully unobserved host (no listeners at all) pays nothing and forwards nothing. The framework never fabricates a root: relay happens only when a parent actually exists. The app's OpenTelemetry setup must assign `Propagators.DefaultTextMapPropagator` (the standard `AddOpenTelemetry().WithTracing()` does this).
 - `IActivityTagEnricher` extension point, invoked **synchronously at span start** (`void Enrich(Activity activity, in MessagingEnrichmentContext context)`), with per-enricher exception isolation.
 
@@ -2044,7 +2047,7 @@ Spans and metrics for messaging publish, persist, consume, and subscriber-invoke
 
 | Tag / attribute | Emitted by | Toggle |
 | --- | --- | --- |
-| `headless.messaging.intent` (`bus`/`queue`) + `messaging.destination.kind` | built-in `IntentTagEnricher` | `setup.Instrumentation.SuppressIntentTags` |
+| `headless.messaging.lane` (`bus`/`queue`) + `headless.messaging.destination.kind` (`topic`/`queue`) | built-in lane enricher | `setup.Instrumentation.SuppressLaneTags` |
 | `tenant.id` (`TenantTelemetryOptions.AttributeName`), written before any enricher runs | `MessagingTelemetry` | `TenantTelemetryOptions.EnrichTraces`, set through `AddHeadlessTenancy(t => t.Telemetry(...))`; see [multi-tenancy observability](multi-tenancy.md#observability) |
 | `headless.messaging.retry_count` | built-in `RetryCountTagEnricher` (subscriber-invoke) | `setup.Instrumentation.SuppressRetryCountTag` |
 | custom tags | your `IActivityTagEnricher` | `setup.Instrumentation.AddEnricher(...)` |
@@ -2072,26 +2075,41 @@ builder
 
 ### Instrument reference
 
-All instruments register on the `Headless.Messaging` meter. Names and standard dimensions follow the OTel messaging semantic conventions; span attributes specific to the framework are namespaced `headless.messaging.*`.
+All instruments register on the `Headless.Messaging` meter. Every duration is in seconds.
 
-| Instrument | Kind | Dimensions |
+| Instrument | Kind | Attributes |
 | --- | --- | --- |
-| `messaging.publish.messages` | Counter | `messaging.operation`, `messaging.system` |
-| `messaging.publish.errors` | Counter | `messaging.operation`, `messaging.system`, `error.type` |
-| `messaging.publish.duration` | Histogram (ms) | `messaging.operation`, `messaging.system` |
-| `messaging.consume.messages` | Counter | `messaging.operation`, `messaging.system`, `messaging.consumer.group.name` |
-| `messaging.consume.errors` | Counter | `messaging.operation`, `messaging.system`, `error.type`, `messaging.consumer.group.name` |
-| `messaging.consume.duration` | Histogram (ms) | `messaging.operation`, `messaging.system`, `messaging.consumer.group.name` |
-| `messaging.subscriber.invocations` | Counter | `messaging.subscriber`, `messaging.operation` |
-| `messaging.subscriber.errors` | Counter | `messaging.subscriber`, `messaging.operation`, `error.type` |
-| `messaging.subscriber.duration` | Histogram (ms) | `messaging.subscriber`, `messaging.operation` |
-| `messaging.persistence.duration` | Histogram (ms) | `messaging.operation`, `messaging.persistence.type` |
-| `messaging.message.size` | Histogram (bytes) | `messaging.operation`, `messaging.system` |
-| `messaging.request_reply.requests` | Counter | `messaging.request_reply.outcome` |
-| `messaging.request_reply.duration` | Histogram (ms) | `messaging.request_reply.outcome` |
-| `messaging.request_reply.dropped_replies` | Counter | `messaging.request_reply.drop_reason` |
+| `messaging.client.sent.messages` | Counter (`{message}`) | `messaging.operation.name` = `publish`, `messaging.operation.type` = `send`, `messaging.system`, `messaging.destination.name`, `server.address`, `server.port`, `headless.messaging.lane`, `headless.messaging.delivery.requested`, `headless.messaging.delivery.resolved`, `error.type` on failure |
+| `messaging.client.consumed.messages` | Counter (`{message}`) | `messaging.operation.name` = `receive`, `messaging.operation.type` = `receive`, `messaging.system`, `messaging.destination.name`, `messaging.consumer.group.name`, `server.address`, `server.port`, `error.type` on failure |
+| `messaging.client.operation.duration` | Histogram (s) | The attributes of the send or receive it times: the publish set above, or the receive set |
+| `messaging.process.duration` | Histogram (s) | `messaging.operation.name` = `process`, `messaging.operation.type` = `process`, `messaging.system`, `messaging.destination.name`, `messaging.consumer.group.name`, `headless.messaging.subscriber`, `error.type` on failure |
+| `headless.messaging.persistence.duration` | Histogram (s) | `messaging.destination.name`, `headless.messaging.persistence.type` (`publish`/`consume`), lane and delivery-mode tags on the publish side |
+| `headless.messaging.message.body.size` | Histogram (bytes) | `messaging.destination.name`, `messaging.system` |
+| `headless.messaging.receive.outcomes` | Counter | `headless.messaging.receive.outcome` |
+| `headless.messaging.every_instance.deliveries` | Counter | `messaging.consumer.group.name`, `headless.messaging.every_instance.outcome`, `error.type` |
+| `headless.messaging.inbox.*` | Counter | See the inbox lifecycle counters above |
+| `headless.messaging.operator.operations` | Counter | `headless.messaging.operator.target_kind`, `headless.messaging.operator.operation`, `headless.messaging.lane`, `headless.messaging.inbox.outcome`, `headless.messaging.inbox.provider` |
+| `headless.messaging.request_reply.requests` | Counter | `headless.messaging.request_reply.outcome` |
+| `headless.messaging.request_reply.duration` | Histogram (s) | `headless.messaging.request_reply.outcome` |
+| `headless.messaging.request_reply.dropped_replies` | Counter | `headless.messaging.request_reply.drop_reason` |
+| `headless.messaging.circuit_breaker.*` | Counter, histogram (s), gauge | `messaging.consumer.group.name` |
 
-Framework span attributes: `headless.messaging.intent` (`bus`/`queue`), `tenant.id` (named and switched by `TenantTelemetryOptions`), `headless.messaging.retry_count` (suppressible), plus per-phase duration attributes (`headless.messaging.persistence.duration_ms`, `send.duration_ms`, `receive.duration_ms`, `invoke.duration_ms`) retained verbatim from the pre-migration bridge.
+Each phase maps to one operation: the transport send is `send`, the transport delivery to the receive stage is `receive`, and the subscriber invocation from the inbox is `process`, so `messaging.client.sent.messages` counts every send attempt and `messaging.client.consumed.messages` counts every delivery once. The count of `messaging.process.duration` is the number of subscriber invocations; filter it by `error.type` for failures. An every-instance delivery runs its consumer inside the receive span, so it records no `process` measurement.
+
+`messaging.system` is the transport's `BrokerAddress.Name`: `kafka`, `pulsar`, `rabbitmq`, `servicebus`, `aws_sqs`, and `aws.sns` are the conventions' well-known values; `nats`, `redis`, and `in_memory` are the framework's values for systems the conventions do not list. A process measurement takes it from the transport registered for the message's lane. `server.address` and `server.port` come from the first broker in `BrokerAddress.Endpoint`.
+
+Spans follow the conventions too:
+
+| Span (`Activity.OperationName`) | Exported name (`DisplayName`) | Kind | `messaging.operation.name` / `.type` |
+| --- | --- | --- | --- |
+| `message.publish` | `publish {message name}` | Producer | `publish` / `send` |
+| `message.consume` | `receive {message name}` | Consumer | `receive` / `receive` |
+| `subscriber.invoke` | `process {message name}` | Consumer | `process` / `process` |
+| `message.persist` | `message.persist` | Internal | none: an outbox write is not a messaging operation |
+
+A failed span carries `error.type` and an `Error` status. The framework emits no `settle` span: broker acknowledgement happens inside each transport client.
+
+Framework span attributes: `headless.messaging.lane` and `headless.messaging.destination.kind`, `tenant.id` (named and switched by `TenantTelemetryOptions`), `headless.messaging.retry_count` (suppressible), `headless.messaging.receive.outcome`, `headless.messaging.delivery.outcome` (`ambiguous`), plus per-phase duration attributes on the success events (`headless.messaging.persistence.duration_ms`, `send.duration_ms`, `receive.duration_ms`, `invoke.duration_ms`).
 
 Provider-specific instruments also register on the `Headless.Messaging` meter: Kafka reports consumer lag as `headless.messaging.kafka.consumer.lag` (see [Consumer lag metric](#consumer-lag-metric)).
 

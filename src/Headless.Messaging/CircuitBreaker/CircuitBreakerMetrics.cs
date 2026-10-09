@@ -32,18 +32,18 @@ internal sealed class CircuitBreakerMetrics
 #pragma warning restore CA2000
 
         _circuitTrips = meter.CreateCounter<long>(
-            "messaging.circuit_breaker.trips",
+            "headless.messaging.circuit_breaker.trips",
             description: "Number of times a consumer circuit breaker transitioned to Open"
         );
 
         _openDuration = meter.CreateHistogram<double>(
-            "messaging.circuit_breaker.open_duration",
+            "headless.messaging.circuit_breaker.open_duration",
             unit: "s",
             description: "Duration in seconds that a consumer circuit was in Open state"
         );
 
         meter.CreateObservableGauge(
-            "messaging.circuit_breaker.state",
+            "headless.messaging.circuit_breaker.state",
             observeValues: _ObserveCircuitStates,
             description: "Current circuit state per consumer (0=Closed, 1=Open, 2=HalfOpen)"
         );

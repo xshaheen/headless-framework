@@ -109,7 +109,7 @@ public sealed class ConsumeTelemetryPipelineTests : TestBase
         // then — produced by the real ExecuteAsync -> _InvokeConsumerMethodAsync call site.
         result.Succeeded.Should().BeTrue();
         spans.Should().Contain(a => string.Equals(a.OperationName, "subscriber.invoke", StringComparison.Ordinal));
-        meters.Measurements.Select(m => m.Instrument).Should().Contain("messaging.subscriber.invocations");
+        meters.Measurements.Select(m => m.Instrument).Should().Contain(MessagingMetrics.ProcessDurationName);
     }
 
     private static MediumMessage _CreateMediumMessage()
