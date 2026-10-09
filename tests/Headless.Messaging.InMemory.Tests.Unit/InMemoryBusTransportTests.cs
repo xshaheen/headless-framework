@@ -37,7 +37,7 @@ public sealed class InMemoryBusTransportTests : TestBase
         var address = transport.BrokerAddress;
 
         // then
-        address.Name.Should().Be("InMemory");
+        address.Name.Should().Be("in_memory");
         address.Endpoint.Should().Be("localhost");
     }
 

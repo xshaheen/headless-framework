@@ -43,7 +43,7 @@ internal static class DirectPublisherCore
             if (!result.Succeeded)
             {
                 var ex = new PublisherSentFailedException(result.ToString(), result.Exception);
-                _TracingErrorSend(traceHandle, transportMsg, lane, brokerAddress, ex);
+                _TracingErrorSend(traceHandle, transportMsg, lane, brokerAddress, ex, nowMs);
                 throw ex;
             }
 
@@ -53,7 +53,14 @@ internal static class DirectPublisherCore
         {
             // Cancellation can race transport acceptance. Diagnose the outcome as ambiguous while
             // preserving the caller's original cancellation exception.
-            MessagingTelemetry.PublishAmbiguous(traceHandle.Activity, transportMsg, brokerAddress, ex, lane);
+            MessagingTelemetry.PublishAmbiguous(
+                traceHandle.Activity,
+                transportMsg,
+                brokerAddress,
+                ex,
+                traceHandle.ElapsedMs(nowMs()),
+                lane
+            );
 
             cancellationToken.ThrowIfCancellationRequested();
             throw;
@@ -62,7 +69,7 @@ internal static class DirectPublisherCore
         {
             try
             {
-                _TracingErrorSend(traceHandle, transportMsg, lane, brokerAddress, e);
+                _TracingErrorSend(traceHandle, transportMsg, lane, brokerAddress, e, nowMs);
             }
 #pragma warning disable ERP022 // Intentional: tracing failure should not mask the original exception
             catch
@@ -124,7 +131,8 @@ internal static class DirectPublisherCore
         TransportMessage message,
         MessageLane lane,
         BrokerAddress brokerAddress,
-        Exception exception
+        Exception exception,
+        Func<long> nowMs
     )
     {
         if (!traceHandle.IsRecording)
@@ -132,6 +140,13 @@ internal static class DirectPublisherCore
             return;
         }
 
-        MessagingTelemetry.PublishError(traceHandle.Activity, message, brokerAddress, exception, lane);
+        MessagingTelemetry.PublishError(
+            traceHandle.Activity,
+            message,
+            brokerAddress,
+            exception,
+            traceHandle.ElapsedMs(nowMs()),
+            lane
+        );
     }
 }

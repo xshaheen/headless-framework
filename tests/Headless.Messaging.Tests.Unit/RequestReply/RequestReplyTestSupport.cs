@@ -164,7 +164,7 @@ internal sealed class RequestReplyMeasurements : IDisposable
         {
             if (
                 string.Equals(instrument.Meter.Name, MessagingDiagnostics.SourceName, StringComparison.Ordinal)
-                && instrument.Name.StartsWith("messaging.request_reply.", StringComparison.Ordinal)
+                && instrument.Name.StartsWith("headless.messaging.request_reply.", StringComparison.Ordinal)
             )
             {
                 listener.EnableMeasurementEvents(instrument);
@@ -192,7 +192,7 @@ internal sealed class RequestReplyMeasurements : IDisposable
     public IEnumerable<string?> OutcomeValues =>
         Outcomes.Select(static tags =>
             tags.Single(static tag =>
-                string.Equals(tag.Key, "messaging.request_reply.outcome", StringComparison.Ordinal)
+                string.Equals(tag.Key, "headless.messaging.request_reply.outcome", StringComparison.Ordinal)
             ).Value as string
         );
 
@@ -214,16 +214,16 @@ internal sealed class RequestReplyMeasurements : IDisposable
     {
         switch (instrument)
         {
-            case "messaging.request_reply.requests":
+            case "headless.messaging.request_reply.requests":
                 Outcomes.Enqueue(tags);
                 break;
-            case "messaging.request_reply.duration":
+            case "headless.messaging.request_reply.duration":
                 Durations.Enqueue(tags);
                 break;
-            case "messaging.request_reply.dropped_replies":
+            case "headless.messaging.request_reply.dropped_replies":
                 var reason = (string)
                     tags.Single(static tag =>
-                        string.Equals(tag.Key, "messaging.request_reply.drop_reason", StringComparison.Ordinal)
+                        string.Equals(tag.Key, "headless.messaging.request_reply.drop_reason", StringComparison.Ordinal)
                     ).Value!;
 
                 // A refused reply address is the responder's drop, never the caller's, so it is kept apart.

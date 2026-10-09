@@ -8,10 +8,12 @@ namespace Headless.Messaging;
 
 /// <summary>
 /// OpenTelemetry metric instruments for messaging operations, registered against
-/// <see cref="MessagingDiagnostics.Meter"/>. Instrument names and standard dimensions follow the OpenTelemetry
-/// messaging semantic conventions verbatim (<c>messaging.publish.messages</c>, <c>messaging.consume.duration</c>,
-/// dims <c>messaging.operation</c> / <c>messaging.system</c> / <c>messaging.consumer.group.name</c> /
-/// <c>error.type</c>); framework-owned extras are namespaced <c>headless.messaging.*</c>.
+/// <see cref="MessagingDiagnostics.Meter"/>. The client and processing instruments are the OpenTelemetry messaging
+/// semantic-convention metrics (<c>messaging.client.sent.messages</c>, <c>messaging.client.consumed.messages</c>,
+/// <c>messaging.client.operation.duration</c>, <c>messaging.process.duration</c>) with their standard attributes; a
+/// failed operation is recorded on the same instrument with <c>error.type</c>. Instruments the conventions do not
+/// define are namespaced <c>headless.messaging.*</c>, so the <c>messaging.*</c> namespace only ever carries
+/// convention names.
 /// </summary>
 /// <remarks>
 /// Instruments are created directly on the <see cref="Meter"/> (rather than through a source generator) so the
@@ -22,46 +24,63 @@ internal static class MessagingMetrics
 {
     // --- Instrument names -------------------------------------------------------------------------------------
 
-    internal const string PublishMessagesName = "messaging.publish.messages";
-    internal const string ConsumeMessagesName = "messaging.consume.messages";
-    internal const string SubscriberInvocationsName = "messaging.subscriber.invocations";
-    internal const string PublishErrorsName = "messaging.publish.errors";
-    internal const string ConsumeErrorsName = "messaging.consume.errors";
-    internal const string SubscriberErrorsName = "messaging.subscriber.errors";
-    internal const string PublishDurationName = "messaging.publish.duration";
-    internal const string ConsumeDurationName = "messaging.consume.duration";
-    internal const string SubscriberDurationName = "messaging.subscriber.duration";
-    internal const string PersistenceDurationName = "messaging.persistence.duration";
-    internal const string MessageSizeName = "messaging.message.size";
-    internal const string InboxDuplicatesName = "messaging.inbox.duplicates";
-    internal const string InboxAttemptsName = "messaging.inbox.attempts";
-    internal const string InboxRecoveriesName = "messaging.inbox.recoveries";
-    internal const string InboxTerminalName = "messaging.inbox.terminal";
-    internal const string InboxReplaysName = "messaging.inbox.replays";
-    internal const string InboxRetentionName = "messaging.inbox.retention";
-    internal const string InboxCapabilitiesName = "messaging.inbox.capabilities";
-    internal const string OperatorOperationsName = "messaging.operator.operations";
-    internal const string ReceiveOutcomesName = "messaging.receive.outcomes";
-    internal const string EveryInstanceDeliveriesName = "messaging.every_instance.deliveries";
-    internal const string RequestReplyDroppedRepliesName = "messaging.request_reply.dropped_replies";
-    internal const string RequestReplyRequestsName = "messaging.request_reply.requests";
-    internal const string RequestReplyDurationName = "messaging.request_reply.duration";
+    internal const string ClientSentMessagesName = "messaging.client.sent.messages";
+    internal const string ClientConsumedMessagesName = "messaging.client.consumed.messages";
+    internal const string ClientOperationDurationName = "messaging.client.operation.duration";
+    internal const string ProcessDurationName = "messaging.process.duration";
+    internal const string PersistenceDurationName = "headless.messaging.persistence.duration";
+    internal const string MessageBodySizeName = "headless.messaging.message.body.size";
+    internal const string InboxDuplicatesName = "headless.messaging.inbox.duplicates";
+    internal const string InboxAttemptsName = "headless.messaging.inbox.attempts";
+    internal const string InboxRecoveriesName = "headless.messaging.inbox.recoveries";
+    internal const string InboxTerminalName = "headless.messaging.inbox.terminal";
+    internal const string InboxReplaysName = "headless.messaging.inbox.replays";
+    internal const string InboxRetentionName = "headless.messaging.inbox.retention";
+    internal const string InboxCapabilitiesName = "headless.messaging.inbox.capabilities";
+    internal const string OperatorOperationsName = "headless.messaging.operator.operations";
+    internal const string ReceiveOutcomesName = "headless.messaging.receive.outcomes";
+    internal const string EveryInstanceDeliveriesName = "headless.messaging.every_instance.deliveries";
+    internal const string RequestReplyDroppedRepliesName = "headless.messaging.request_reply.dropped_replies";
+    internal const string RequestReplyRequestsName = "headless.messaging.request_reply.requests";
+    internal const string RequestReplyDurationName = "headless.messaging.request_reply.duration";
 
-    // --- Dimension (tag) names --------------------------------------------------------------------------------
+    // --- Attribute (tag) names --------------------------------------------------------------------------------
 
-    internal const string TagOperation = "messaging.operation";
+    internal const string TagOperationName = "messaging.operation.name";
+    internal const string TagOperationType = "messaging.operation.type";
     internal const string TagSystem = "messaging.system";
+    internal const string TagDestinationName = "messaging.destination.name";
 
     // The semantic-convention name for the consumer group; its value is the consumer identity, which is what a broker
     // subscription is named after.
     internal const string TagConsumerGroupName = "messaging.consumer.group.name";
     internal const string TagErrorType = "error.type";
-    internal const string TagSubscriber = "messaging.subscriber";
-    internal const string TagPersistenceType = "messaging.persistence.type";
-    internal const string TagReceiveOutcome = "messaging.receive.outcome";
-    internal const string TagEveryInstanceOutcome = "messaging.every_instance.outcome";
-    internal const string TagRequestReplyDropReason = "messaging.request_reply.drop_reason";
-    internal const string TagRequestReplyOutcome = "messaging.request_reply.outcome";
+    internal const string TagServerAddress = "server.address";
+    internal const string TagServerPort = "server.port";
+    internal const string TagSubscriber = "headless.messaging.subscriber";
+    internal const string TagPersistenceType = "headless.messaging.persistence.type";
+    internal const string TagReceiveOutcome = "headless.messaging.receive.outcome";
+    internal const string TagEveryInstanceOutcome = "headless.messaging.every_instance.outcome";
+    internal const string TagRequestReplyDropReason = "headless.messaging.request_reply.drop_reason";
+    internal const string TagRequestReplyOutcome = "headless.messaging.request_reply.outcome";
+    internal const string TagOperatorOperation = "headless.messaging.operator.operation";
+    internal const string TagOperatorTargetKind = "headless.messaging.operator.target_kind";
+
+    // --- Operation names and types ----------------------------------------------------------------------------
+
+    // The framework publishes through one send call per message, receives one delivery per transport callback, and
+    // processes it in one handler invocation, so each phase maps to exactly one convention operation type. The names
+    // are the framework's own verbs: the conventions leave messaging.operation.name to the system.
+    internal const string OperationNamePublish = "publish";
+    internal const string OperationNameReceive = "receive";
+    internal const string OperationNameProcess = "process";
+    internal const string OperationTypeSend = "send";
+    internal const string OperationTypeReceive = "receive";
+    internal const string OperationTypeProcess = "process";
+
+    // A send that may or may not have reached the broker: a timeout or shutdown raced it, or the broker accepted it
+    // and recording that failed. Not an exception type, so it gets a convention-style snake_case value.
+    internal const string ErrorTypeAmbiguousDelivery = "ambiguous_delivery";
 
     // --- Receive outcomes ------------------------------------------------------------------------------------
 
@@ -111,53 +130,57 @@ internal static class MessagingMetrics
 
     // --- Instruments ------------------------------------------------------------------------------------------
 
-    private static readonly Counter<long> _MessagesPublished = MessagingDiagnostics.Meter.CreateCounter<long>(
-        PublishMessagesName
+    // The bucket boundaries the messaging conventions advise for their duration histograms, in seconds. The
+    // framework's own durations use them too, so every messaging latency shares one resolution.
+    internal static readonly IReadOnlyList<double> DurationBucketBoundaries =
+    [
+        0.005,
+        0.01,
+        0.025,
+        0.05,
+        0.075,
+        0.1,
+        0.25,
+        0.5,
+        0.75,
+        1,
+        2.5,
+        5,
+        7.5,
+        10,
+    ];
+
+    private static readonly Counter<long> _ClientSentMessages = MessagingDiagnostics.Meter.CreateCounter<long>(
+        ClientSentMessagesName,
+        unit: "{message}",
+        description: "Number of messages producers attempted to send to the broker."
     );
 
-    private static readonly Counter<long> _MessagesConsumed = MessagingDiagnostics.Meter.CreateCounter<long>(
-        ConsumeMessagesName
+    private static readonly Counter<long> _ClientConsumedMessages = MessagingDiagnostics.Meter.CreateCounter<long>(
+        ClientConsumedMessagesName,
+        unit: "{message}",
+        description: "Number of messages delivered to consumers by the broker."
     );
 
-    private static readonly Counter<long> _SubscriberInvocations = MessagingDiagnostics.Meter.CreateCounter<long>(
-        SubscriberInvocationsName
+    private static readonly Histogram<double> _ClientOperationDuration = _CreateDurationHistogram(
+        ClientOperationDurationName,
+        "Duration of messaging operations initiated by a producer or consumer client."
     );
 
-    private static readonly Counter<long> _PublishErrors = MessagingDiagnostics.Meter.CreateCounter<long>(
-        PublishErrorsName
+    private static readonly Histogram<double> _ProcessDuration = _CreateDurationHistogram(
+        ProcessDurationName,
+        "Duration of processing operations."
     );
 
-    private static readonly Counter<long> _ConsumeErrors = MessagingDiagnostics.Meter.CreateCounter<long>(
-        ConsumeErrorsName
-    );
-
-    private static readonly Counter<long> _SubscriberErrors = MessagingDiagnostics.Meter.CreateCounter<long>(
-        SubscriberErrorsName
-    );
-
-    private static readonly Histogram<double> _PublishDuration = MessagingDiagnostics.Meter.CreateHistogram<double>(
-        PublishDurationName,
-        unit: "ms"
-    );
-
-    private static readonly Histogram<double> _ConsumeDuration = MessagingDiagnostics.Meter.CreateHistogram<double>(
-        ConsumeDurationName,
-        unit: "ms"
-    );
-
-    private static readonly Histogram<double> _SubscriberDuration = MessagingDiagnostics.Meter.CreateHistogram<double>(
-        SubscriberDurationName,
-        unit: "ms"
-    );
-
-    private static readonly Histogram<double> _PersistenceDuration = MessagingDiagnostics.Meter.CreateHistogram<double>(
+    private static readonly Histogram<double> _PersistenceDuration = _CreateDurationHistogram(
         PersistenceDurationName,
-        unit: "ms"
+        "Duration of writing a message to the outbox or inbox store."
     );
 
-    private static readonly Histogram<long> _MessageSize = MessagingDiagnostics.Meter.CreateHistogram<long>(
-        MessageSizeName,
-        unit: "By"
+    private static readonly Histogram<long> _MessageBodySize = MessagingDiagnostics.Meter.CreateHistogram<long>(
+        MessageBodySizeName,
+        unit: "By",
+        description: "Size of published message bodies."
     );
 
     private static readonly Counter<long> _InboxDuplicates = MessagingDiagnostics.Meter.CreateCounter<long>(
@@ -208,22 +231,19 @@ internal static class MessagingMetrics
         RequestReplyRequestsName
     );
 
-    private static readonly Histogram<double> _RequestReplyDuration =
-        MessagingDiagnostics.Meter.CreateHistogram<double>(RequestReplyDurationName, unit: "ms");
+    private static readonly Histogram<double> _RequestReplyDuration = _CreateDurationHistogram(
+        RequestReplyDurationName,
+        "Duration of request calls, from send to reply or failure."
+    );
 
     /// <summary>Whether any messaging instrument currently has a subscribed listener.</summary>
     internal static bool AnyEnabled =>
-        _MessagesPublished.Enabled
-        || _MessagesConsumed.Enabled
-        || _SubscriberInvocations.Enabled
-        || _PublishErrors.Enabled
-        || _ConsumeErrors.Enabled
-        || _SubscriberErrors.Enabled
-        || _PublishDuration.Enabled
-        || _ConsumeDuration.Enabled
-        || _SubscriberDuration.Enabled
+        _ClientSentMessages.Enabled
+        || _ClientConsumedMessages.Enabled
+        || _ClientOperationDuration.Enabled
+        || _ProcessDuration.Enabled
         || _PersistenceDuration.Enabled
-        || _MessageSize.Enabled
+        || _MessageBodySize.Enabled
         || _InboxDuplicates.Enabled
         || _InboxAttempts.Enabled
         || _InboxRecoveries.Enabled
@@ -231,6 +251,7 @@ internal static class MessagingMetrics
         || _InboxReplays.Enabled
         || _InboxRetention.Enabled
         || _InboxCapabilities.Enabled
+        || _OperatorOperations.Enabled
         || _ReceiveOutcomes.Enabled
         || _EveryInstanceDeliveries.Enabled
         || _RequestReplyDroppedReplies.Enabled
@@ -294,8 +315,8 @@ internal static class MessagingMetrics
 
         var tags = new TagList
         {
-            { "messaging.target.kind", "ScheduledDelivery" },
-            { TagOperation, operationType.ToString("G") },
+            { TagOperatorTargetKind, "ScheduledDelivery" },
+            { TagOperatorOperation, operationType.ToString("G") },
             { MessagingTags.Lane, LaneTagEnricher.ToTagValues(lane).Lane },
             { MessagingTags.InboxOutcome, outcome.ToString("G") },
             { MessagingTags.InboxProvider, provider },
@@ -306,151 +327,129 @@ internal static class MessagingMetrics
 
     // --- Record helpers ---------------------------------------------------------------------------------------
 
+    /// <summary>
+    /// Records one send attempt on <c>messaging.client.sent.messages</c> and, when timed, its duration on
+    /// <c>messaging.client.operation.duration</c>. A failed send carries <paramref name="errorType"/>.
+    /// </summary>
     internal static void RecordPublish(
-        string operation,
-        string brokerName,
+        string destinationName,
+        BrokerAddress broker,
         MessageLane lane,
         in DeliveryMetadataValues delivery,
-        long? elapsedMs = null
+        long? elapsedMs,
+        string? errorType = null
     )
     {
-        // Guard before building tags: with no listener attached, tag construction (TagList array + DeliveryMetadata
-        // read) is pure per-publish waste. RecordPublishError/RecordConsumeError already early-return this way.
-        if (!_MessagesPublished.Enabled && (!_PublishDuration.Enabled || !elapsedMs.HasValue))
+        // Guard before building tags: with no listener attached, tag construction (TagList array, endpoint lookup,
+        // DeliveryMetadata read) is pure per-publish waste.
+        var recordDuration = elapsedMs.HasValue && _ClientOperationDuration.Enabled;
+        if (!_ClientSentMessages.Enabled && !recordDuration)
         {
             return;
         }
 
-        var tags = _CreateDeliveryTags(operation, brokerName, lane, delivery);
-
-        if (_MessagesPublished.Enabled)
-        {
-            _MessagesPublished.Add(1, tags);
-        }
-
-        if (elapsedMs.HasValue && _PublishDuration.Enabled)
-        {
-            _PublishDuration.Record(elapsedMs.Value, tags);
-        }
-    }
-
-    internal static void RecordPublishError(
-        string operation,
-        string brokerName,
-        string errorType,
-        MessageLane lane,
-        in DeliveryMetadataValues delivery
-    )
-    {
-        if (!_PublishErrors.Enabled)
-        {
-            return;
-        }
-
-        var tags = _CreateDeliveryTags(operation, brokerName, lane, delivery);
-        tags.Add(TagErrorType, errorType);
-        _PublishErrors.Add(1, tags);
-    }
-
-    internal static void RecordConsume(
-        string operation,
-        string brokerName,
-        string? consumerIdentity = null,
-        long? elapsedMs = null
-    )
-    {
-        var identity = consumerIdentity ?? "";
-
-        if (_MessagesConsumed.Enabled)
-        {
-            _MessagesConsumed.Add(
-                1,
-                new TagList
-                {
-                    { TagOperation, operation },
-                    { TagSystem, brokerName },
-                    { TagConsumerGroupName, identity },
-                }
-            );
-        }
-
-        if (elapsedMs.HasValue && _ConsumeDuration.Enabled)
-        {
-            _ConsumeDuration.Record(
-                elapsedMs.Value,
-                new TagList
-                {
-                    { TagOperation, operation },
-                    { TagSystem, brokerName },
-                    { TagConsumerGroupName, identity },
-                }
-            );
-        }
-    }
-
-    internal static void RecordConsumeError(
-        string operation,
-        string brokerName,
-        string errorType,
-        string? consumerIdentity = null
-    )
-    {
-        if (!_ConsumeErrors.Enabled)
-        {
-            return;
-        }
-
-        _ConsumeErrors.Add(
-            1,
-            new TagList
-            {
-                { TagOperation, operation },
-                { TagSystem, brokerName },
-                { TagErrorType, errorType },
-                { TagConsumerGroupName, consumerIdentity ?? "" },
-            }
+        var tags = _CreateClientTags(
+            OperationNamePublish,
+            OperationTypeSend,
+            destinationName,
+            broker,
+            consumerIdentity: null,
+            errorType
         );
-    }
+        tags.Add(MessagingTags.Lane, LaneTagEnricher.ToTagValues(lane).Lane);
+        _AddDeliveryTags(ref tags, delivery);
 
-    internal static void RecordSubscriberInvocation(string subscriberName, string operation, long? elapsedMs = null)
-    {
-        if (_SubscriberInvocations.Enabled)
+        if (_ClientSentMessages.Enabled)
         {
-            _SubscriberInvocations.Add(
-                1,
-                new TagList { { TagSubscriber, subscriberName }, { TagOperation, operation } }
-            );
+            _ClientSentMessages.Add(1, tags);
         }
 
-        if (elapsedMs.HasValue && _SubscriberDuration.Enabled)
+        if (recordDuration)
         {
-            _SubscriberDuration.Record(
-                elapsedMs.Value,
-                new TagList { { TagSubscriber, subscriberName }, { TagOperation, operation } }
-            );
+            _ClientOperationDuration.Record(_ToSeconds(elapsedMs!.Value), tags);
         }
     }
 
-    internal static void RecordSubscriberError(string subscriberName, string operation, string errorType)
+    /// <summary>
+    /// Records one transport delivery on <c>messaging.client.consumed.messages</c> and, when timed, its receive
+    /// duration on <c>messaging.client.operation.duration</c>. A failed receive carries <paramref name="errorType"/>.
+    /// </summary>
+    internal static void RecordReceive(
+        string destinationName,
+        BrokerAddress broker,
+        string? consumerIdentity,
+        long? elapsedMs,
+        string? errorType = null
+    )
     {
-        if (!_SubscriberErrors.Enabled)
+        var recordDuration = elapsedMs.HasValue && _ClientOperationDuration.Enabled;
+        if (!_ClientConsumedMessages.Enabled && !recordDuration)
         {
             return;
         }
 
-        _SubscriberErrors.Add(
-            1,
-            new TagList
-            {
-                { TagSubscriber, subscriberName },
-                { TagOperation, operation },
-                { TagErrorType, errorType },
-            }
+        var tags = _CreateClientTags(
+            OperationNameReceive,
+            OperationTypeReceive,
+            destinationName,
+            broker,
+            consumerIdentity ?? "",
+            errorType
         );
+
+        if (_ClientConsumedMessages.Enabled)
+        {
+            _ClientConsumedMessages.Add(1, tags);
+        }
+
+        if (recordDuration)
+        {
+            _ClientOperationDuration.Record(_ToSeconds(elapsedMs!.Value), tags);
+        }
+    }
+
+    /// <summary>
+    /// Records one subscriber invocation on <c>messaging.process.duration</c>. A failed invocation carries
+    /// <paramref name="errorType"/>; the histogram's count is the invocation count.
+    /// </summary>
+    internal static void RecordProcess(
+        string destinationName,
+        string? system,
+        string? consumerIdentity,
+        string subscriber,
+        long elapsedMs,
+        string? errorType = null
+    )
+    {
+        if (!_ProcessDuration.Enabled)
+        {
+            return;
+        }
+
+        var tags = new TagList
+        {
+            { TagOperationName, OperationNameProcess },
+            { TagOperationType, OperationTypeProcess },
+            { TagDestinationName, destinationName },
+            { TagConsumerGroupName, consumerIdentity ?? "" },
+            { TagSubscriber, subscriber },
+        };
+
+        if (!string.IsNullOrEmpty(system))
+        {
+            tags.Add(TagSystem, system);
+        }
+
+        if (errorType is not null)
+        {
+            tags.Add(TagErrorType, errorType);
+        }
+
+        _ProcessDuration.Record(_ToSeconds(elapsedMs), tags);
     }
 
     internal static void RecordPersistence(
-        string operation,
+        string destinationName,
         long elapsedMs,
         bool isPublish,
         MessageLane? lane = null,
@@ -464,7 +463,7 @@ internal static class MessagingMetrics
 
         var tags = new TagList
         {
-            { TagOperation, operation },
+            { TagDestinationName, destinationName },
             { TagPersistenceType, isPublish ? "publish" : "consume" },
         };
         if (lane is { } definedLane)
@@ -473,17 +472,20 @@ internal static class MessagingMetrics
         }
 
         _AddDeliveryTags(ref tags, delivery);
-        _PersistenceDuration.Record(elapsedMs, tags);
+        _PersistenceDuration.Record(_ToSeconds(elapsedMs), tags);
     }
 
-    internal static void RecordMessageSize(long sizeBytes, string operation)
+    internal static void RecordMessageBodySize(long sizeBytes, string destinationName, string system)
     {
-        if (!_MessageSize.Enabled)
+        if (!_MessageBodySize.Enabled)
         {
             return;
         }
 
-        _MessageSize.Record(sizeBytes, new TagList { { TagOperation, operation } });
+        _MessageBodySize.Record(
+            sizeBytes,
+            new TagList { { TagDestinationName, destinationName }, { TagSystem, system } }
+        );
     }
 
     /// <summary>
@@ -544,7 +546,7 @@ internal static class MessagingMetrics
     /// Records how one request call ended and how long it took, tagged only with the outcome: request, correlation, and
     /// instance identifiers are unbounded, so they never become metric tags.
     /// </summary>
-    internal static void RecordRequest(string outcome, double elapsedMs)
+    internal static void RecordRequest(string outcome, TimeSpan elapsed)
     {
         var tag = new KeyValuePair<string, object?>(TagRequestReplyOutcome, outcome);
 
@@ -555,24 +557,62 @@ internal static class MessagingMetrics
 
         if (_RequestReplyDuration.Enabled)
         {
-            _RequestReplyDuration.Record(elapsedMs, tag);
+            _RequestReplyDuration.Record(elapsed.TotalSeconds, tag);
         }
     }
 
-    private static TagList _CreateDeliveryTags(
-        string operation,
-        string brokerName,
-        MessageLane lane,
-        in DeliveryMetadataValues delivery
+    private static Histogram<double> _CreateDurationHistogram(string name, string description)
+    {
+        return MessagingDiagnostics.Meter.CreateHistogram(
+            name,
+            unit: "s",
+            description: description,
+            tags: null,
+            advice: new InstrumentAdvice<double> { HistogramBucketBoundaries = DurationBucketBoundaries }
+        );
+    }
+
+    // Emission sites time operations in whole milliseconds; the conventions measure durations in seconds.
+    private static double _ToSeconds(long elapsedMs) => elapsedMs / 1000d;
+
+    private static TagList _CreateClientTags(
+        string operationName,
+        string operationType,
+        string destinationName,
+        BrokerAddress broker,
+        string? consumerIdentity,
+        string? errorType
     )
     {
         var tags = new TagList
         {
-            { TagOperation, operation },
-            { TagSystem, brokerName },
-            { MessagingTags.Lane, LaneTagEnricher.ToTagValues(lane).Lane },
+            { TagOperationName, operationName },
+            { TagOperationType, operationType },
+            { TagSystem, broker.Name },
+            { TagDestinationName, destinationName },
         };
-        _AddDeliveryTags(ref tags, delivery);
+
+        if (consumerIdentity is not null)
+        {
+            tags.Add(TagConsumerGroupName, consumerIdentity);
+        }
+
+        var server = MessagingServerEndpoint.From(broker);
+        if (server.Address is { } address)
+        {
+            tags.Add(TagServerAddress, address);
+        }
+
+        if (server.Port is { } port)
+        {
+            tags.Add(TagServerPort, port);
+        }
+
+        if (errorType is not null)
+        {
+            tags.Add(TagErrorType, errorType);
+        }
+
         return tags;
     }
 

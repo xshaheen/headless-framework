@@ -58,7 +58,7 @@ public sealed class InMemoryConsumerClientFactoryTests : TestBase
 
         // then
         client.Should().NotBeNull();
-        client.BrokerAddress.Name.Should().Be("InMemory");
+        client.BrokerAddress.Name.Should().Be("in_memory");
         await client.DisposeAsync();
     }
 

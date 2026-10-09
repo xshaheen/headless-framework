@@ -959,7 +959,7 @@ public sealed class RequestClientTests : TestBase
             .SelectMany(static tags => tags)
             .Select(static tag => tag.Key)
             .Should()
-            .OnlyContain(static key => key == "messaging.request_reply.outcome");
+            .OnlyContain(static key => key == "headless.messaging.request_reply.outcome");
     }
 
     private ServiceProvider _BuildHost(

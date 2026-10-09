@@ -140,7 +140,7 @@ internal sealed class MessagingTelemetry(
         var extracted = _Extract(message.Headers);
 
         // Message size is a metric regardless of whether a span is sampled (subscribing to the meter is the toggle).
-        MessagingMetrics.RecordMessageSize(message.Body.Length, message.Name);
+        MessagingMetrics.RecordMessageBodySize(message.Body.Length, message.Name, broker.Name);
 
         var activity = MessagingDiagnostics.Start("message.publish", ActivityKind.Producer, extracted.ActivityContext);
         if (activity is null)
@@ -153,11 +153,16 @@ internal sealed class MessagingTelemetry(
             return null;
         }
 
-        activity.SetTag("messaging.system", broker.Name);
+        _SetOperationTags(
+            activity,
+            MessagingMetrics.OperationNamePublish,
+            MessagingMetrics.OperationTypeSend,
+            message.Name,
+            broker.Name
+        );
         activity.SetTag("messaging.message.id", message.Id);
         activity.SetTag("messaging.message.body.size", message.Body.Length);
         activity.SetTag("messaging.message.conversation_id", message.GetCorrelationId());
-        activity.SetTag("messaging.destination.name", message.Name);
         _SetServerTags(activity, broker);
         activity.AddEvent(
             new ActivityEvent("message.publish.start", DateTimeOffset.FromUnixTimeMilliseconds(startTimestampMs))
@@ -203,7 +208,7 @@ internal sealed class MessagingTelemetry(
         );
 
         var delivery = DeliveryMetadata.Read(message.Headers);
-        MessagingMetrics.RecordPublish(message.Name, broker.Name, lane, delivery, elapsedMs);
+        MessagingMetrics.RecordPublish(message.Name, broker, lane, delivery, elapsedMs);
 
         activity?.Stop();
     }
@@ -213,17 +218,20 @@ internal sealed class MessagingTelemetry(
         TransportMessage message,
         BrokerAddress broker,
         Exception exception,
+        long? elapsedMs,
         MessageLane lane = MessageLane.Bus
     )
     {
+        var errorType = ErrorTypeOf(exception);
         var delivery = DeliveryMetadata.Read(message.Headers);
-        MessagingMetrics.RecordPublishError(message.Name, broker.Name, exception.GetType().Name, lane, delivery);
+        MessagingMetrics.RecordPublish(message.Name, broker, lane, delivery, elapsedMs, errorType);
 
         if (activity is null)
         {
             return;
         }
 
+        activity.SetTag(MessagingMetrics.TagErrorType, errorType);
         activity.SetStatus(ActivityStatusCode.Error, exception.Message);
         activity.AddException(exception);
         activity.Stop();
@@ -234,11 +242,19 @@ internal sealed class MessagingTelemetry(
         TransportMessage message,
         BrokerAddress broker,
         Exception exception,
+        long? elapsedMs,
         MessageLane lane = MessageLane.Bus
     )
     {
         var delivery = DeliveryMetadata.Read(message.Headers);
-        MessagingMetrics.RecordPublishError(message.Name, broker.Name, "AmbiguousDelivery", lane, delivery);
+        MessagingMetrics.RecordPublish(
+            message.Name,
+            broker,
+            lane,
+            delivery,
+            elapsedMs,
+            MessagingMetrics.ErrorTypeAmbiguousDelivery
+        );
 
         if (activity is null)
         {
@@ -246,6 +262,7 @@ internal sealed class MessagingTelemetry(
         }
 
         activity.SetTag(MessagingTags.DeliveryOutcome, "ambiguous");
+        activity.SetTag(MessagingMetrics.TagErrorType, MessagingMetrics.ErrorTypeAmbiguousDelivery);
         activity.SetStatus(ActivityStatusCode.Error, "Transport acceptance is ambiguous.");
         activity.AddException(exception);
         activity.AddEvent(new ActivityEvent("message.publish.ambiguous"));
@@ -282,12 +299,16 @@ internal sealed class MessagingTelemetry(
             return null;
         }
 
-        activity.SetTag("messaging.system", broker.Name);
+        _SetOperationTags(
+            activity,
+            MessagingMetrics.OperationNameReceive,
+            MessagingMetrics.OperationTypeReceive,
+            message.Name,
+            broker.Name
+        );
         activity.SetTag("messaging.message.id", message.Id);
         activity.SetTag("messaging.message.body.size", message.Body.Length);
-        activity.SetTag("messaging.operation.type", "receive");
         activity.SetTag("messaging.client.id", message.GetExecutionInstanceId());
-        activity.SetTag("messaging.destination.name", message.Name);
         activity.SetTag(MessagingMetrics.TagConsumerGroupName, message.GetConsumerIdentity());
         _SetServerTags(activity, broker);
         activity.AddEvent(
@@ -330,7 +351,7 @@ internal sealed class MessagingTelemetry(
             )
         );
 
-        MessagingMetrics.RecordConsume(message.Name, broker.Name, message.GetConsumerIdentity(), elapsedMs);
+        MessagingMetrics.RecordReceive(message.Name, broker, message.GetConsumerIdentity(), elapsedMs);
         MessagingMetrics.RecordPersistence(message.Name, elapsedMs, isPublish: false);
 
         activity?.Stop();
@@ -340,21 +361,19 @@ internal sealed class MessagingTelemetry(
         Activity? activity,
         TransportMessage message,
         BrokerAddress broker,
-        Exception exception
+        Exception exception,
+        long? elapsedMs
     )
     {
-        MessagingMetrics.RecordConsumeError(
-            message.Name,
-            broker.Name,
-            exception.GetType().Name,
-            message.GetConsumerIdentity()
-        );
+        var errorType = ErrorTypeOf(exception);
+        MessagingMetrics.RecordReceive(message.Name, broker, message.GetConsumerIdentity(), elapsedMs, errorType);
 
         if (activity is null)
         {
             return;
         }
 
+        activity.SetTag(MessagingMetrics.TagErrorType, errorType);
         activity.SetStatus(ActivityStatusCode.Error, exception.Message);
         activity.AddException(exception);
         activity.Stop();
@@ -368,7 +387,8 @@ internal sealed class MessagingTelemetry(
         MessageLane lane,
         string method,
         int retryCount,
-        long startTimestampMs
+        long startTimestampMs,
+        string? messagingSystem = null
     )
     {
         var context = default(ActivityContext);
@@ -384,12 +404,22 @@ internal sealed class MessagingTelemetry(
             MessagingAmbientContext.Current = propagatedContext;
         }
 
-        var activity = MessagingDiagnostics.Start("subscriber.invoke", ActivityKind.Internal, context);
+        // A push-delivered message is processed in a consumer span, as the messaging conventions specify for the
+        // process operation; it continues the producer's trace through the context the message carried.
+        var activity = MessagingDiagnostics.Start("subscriber.invoke", ActivityKind.Consumer, context);
         if (activity is null)
         {
             return null;
         }
 
+        _SetOperationTags(
+            activity,
+            MessagingMetrics.OperationNameProcess,
+            MessagingMetrics.OperationTypeProcess,
+            operation,
+            messagingSystem
+        );
+        activity.SetTag(MessagingMetrics.TagConsumerGroupName, message.GetConsumerIdentity());
         activity.SetTag("code.function.name", method);
         activity.AddEvent(
             new ActivityEvent("subscriber.invoke.start", DateTimeOffset.FromUnixTimeMilliseconds(startTimestampMs))
@@ -415,8 +445,9 @@ internal sealed class MessagingTelemetry(
 
     public static void SubscriberInvokeStop(
         Activity? activity,
-        string operation,
+        Message message,
         string method,
+        string? messagingSystem,
         long startTimestampMs,
         long endTimestampMs
     )
@@ -431,20 +462,36 @@ internal sealed class MessagingTelemetry(
             )
         );
 
-        MessagingMetrics.RecordSubscriberInvocation(method, operation, elapsedMs);
+        MessagingMetrics.RecordProcess(message.Name, messagingSystem, message.GetConsumerIdentity(), method, elapsedMs);
 
         activity?.Stop();
     }
 
-    public static void SubscriberInvokeError(Activity? activity, string operation, string method, Exception exception)
+    public static void SubscriberInvokeError(
+        Activity? activity,
+        Message message,
+        string method,
+        string? messagingSystem,
+        Exception exception,
+        long elapsedMs
+    )
     {
-        MessagingMetrics.RecordSubscriberError(method, operation, exception.GetType().Name);
+        var errorType = ErrorTypeOf(exception);
+        MessagingMetrics.RecordProcess(
+            message.Name,
+            messagingSystem,
+            message.GetConsumerIdentity(),
+            method,
+            elapsedMs,
+            errorType
+        );
 
         if (activity is null)
         {
             return;
         }
 
+        activity.SetTag(MessagingMetrics.TagErrorType, errorType);
         activity.SetStatus(ActivityStatusCode.Error, exception.Message);
         activity.AddException(exception);
         activity.Stop();
@@ -452,37 +499,57 @@ internal sealed class MessagingTelemetry(
 
     // --- Helpers --------------------------------------------------------------------------------------------
 
+    /// <summary>
+    /// The <c>error.type</c> value for a failed operation: the fully qualified type of the exception that caused it.
+    /// The framework's own wrappers are skipped, so the value names the transport or handler failure rather than the
+    /// wrapper every failure of that phase shares.
+    /// </summary>
+    internal static string ErrorTypeOf(Exception exception)
+    {
+        var failure = exception switch
+        {
+            SubscriberExecutionFailedException { InnerException: { } inner } => inner,
+            PublisherSentFailedException { InnerException: { } inner } => inner,
+            _ => exception,
+        };
+        var type = failure.GetType();
+
+        return type.FullName ?? type.Name;
+    }
+
+    private static void _SetOperationTags(
+        Activity activity,
+        string operationName,
+        string operationType,
+        string destinationName,
+        string? system
+    )
+    {
+        // The conventions name a messaging span "{operation name} {destination}". The destination is the message
+        // name, a value fixed by the application's message contracts, so the span name stays low-cardinality.
+        activity.DisplayName = operationName + " " + destinationName;
+        activity.SetTag(MessagingMetrics.TagOperationName, operationName);
+        activity.SetTag(MessagingMetrics.TagOperationType, operationType);
+        activity.SetTag(MessagingMetrics.TagDestinationName, destinationName);
+
+        if (!string.IsNullOrEmpty(system))
+        {
+            activity.SetTag(MessagingMetrics.TagSystem, system);
+        }
+    }
+
     private static void _SetServerTags(Activity activity, BrokerAddress broker)
     {
-        if (broker.Endpoint is not { } endpoint)
+        var server = MessagingServerEndpoint.From(broker);
+
+        if (server.Address is { } address)
         {
-            return;
+            activity.SetTag(MessagingMetrics.TagServerAddress, address);
         }
 
-        // Manual first/second-colon slicing instead of Split: this runs per sampled span, and Split allocates
-        // a string[] plus a port substring for a value that is parsed straight into an int.
-        var separatorIndex = endpoint.IndexOf(':', StringComparison.Ordinal);
-
-        if (separatorIndex < 0)
+        if (server.Port is { } port)
         {
-            activity.SetTag("server.address", endpoint);
-
-            return;
-        }
-
-        activity.SetTag("server.address", endpoint[..separatorIndex]);
-
-        var portSpan = endpoint.AsSpan(separatorIndex + 1);
-        var portEnd = portSpan.IndexOf(':');
-
-        if (portEnd >= 0)
-        {
-            portSpan = portSpan[..portEnd];
-        }
-
-        if (int.TryParse(portSpan, CultureInfo.InvariantCulture, out var port))
-        {
-            activity.SetTag("server.port", port);
+            activity.SetTag(MessagingMetrics.TagServerPort, port);
         }
     }
 
