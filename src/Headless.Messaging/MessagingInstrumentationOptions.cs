@@ -25,7 +25,7 @@ public sealed class MessagingInstrumentationOptions
 
     /// <summary>
     /// When <see langword="true"/>, the built-in lane tag enricher is not registered, so
-    /// <c>headless.messaging.lane</c> and <c>messaging.destination.kind</c> are not written
+    /// <c>headless.messaging.lane</c> and <c>headless.messaging.destination.kind</c> are not written
     /// to messaging activity spans. Default: <see langword="false"/>.
     /// </summary>
     public bool SuppressLaneTags { get; set; }

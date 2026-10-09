@@ -54,6 +54,13 @@ public sealed class MessagingTelemetryTests : TestBase
         var publish = telemetry.PublishStart(publishMessage, MessageLane.Bus, _Broker, 200);
         publish.Should().NotBeNull();
         publish!.OperationName.Should().Be("message.publish");
+        publish.DisplayName.Should().Be("publish orders.placed");
+        publish.Kind.Should().Be(ActivityKind.Producer);
+        publish.GetTagItem("messaging.operation.name").Should().Be("publish");
+        publish.GetTagItem("messaging.operation.type").Should().Be("send");
+        publish.GetTagItem("messaging.system").Should().Be("TestBroker");
+        publish.GetTagItem("server.address").Should().Be("broker.local");
+        publish.GetTagItem("server.port").Should().Be(5672);
         _TagKeys(publish)
             .Should()
             .Contain([
@@ -81,9 +88,14 @@ public sealed class MessagingTelemetryTests : TestBase
         var consume = telemetry.ConsumeStart(consumeMessage, MessageLane.Queue, _Broker, 300);
         consume.Should().NotBeNull();
         consume!.OperationName.Should().Be("message.consume");
-        _TagKeys(consume)
-            .Should()
-            .Contain(["messaging.operation.type", "messaging.client.id", "messaging.consumer.group.name"]);
+        consume.DisplayName.Should().Be("receive orders.placed");
+        consume.Kind.Should().Be(ActivityKind.Consumer);
+        consume.GetTagItem("messaging.operation.name").Should().Be("receive");
+        consume.GetTagItem("messaging.operation.type").Should().Be("receive");
+        consume.GetTagItem("messaging.system").Should().Be("TestBroker");
+        consume.GetTagItem("messaging.destination.name").Should().Be("orders.placed");
+        consume.GetTagItem("messaging.consumer.group.name").Should().Be("workers");
+        _TagKeys(consume).Should().Contain(["messaging.client.id", "server.address", "server.port"]);
         consume.GetTagItem(MessagingTags.Lane).Should().Be("queue");
         MessagingTelemetry.ConsumeStop(consume, consumeMessage, _Broker, 300, 330);
 
@@ -95,23 +107,32 @@ public sealed class MessagingTelemetryTests : TestBase
             MessageLane.Bus,
             _Method,
             retryCount: 3,
-            400
+            400,
+            messagingSystem: "TestBroker"
         );
         subscriber.Should().NotBeNull();
         subscriber!.OperationName.Should().Be("subscriber.invoke");
+        subscriber.DisplayName.Should().Be("process orders.placed");
+        subscriber.Kind.Should().Be(ActivityKind.Consumer);
+        subscriber.GetTagItem("messaging.operation.name").Should().Be("process");
+        subscriber.GetTagItem("messaging.operation.type").Should().Be("process");
+        subscriber.GetTagItem("messaging.system").Should().Be("TestBroker");
+        subscriber.GetTagItem("messaging.destination.name").Should().Be("orders.placed");
+        subscriber.GetTagItem("messaging.consumer.group.name").Should().Be("workers");
         _TagKeys(subscriber).Should().Contain(["code.function.name", MessagingTags.RetryCount]);
         subscriber.GetTagItem(MessagingTags.RetryCount).Should().Be(3);
-        MessagingTelemetry.SubscriberInvokeStop(subscriber, invokeMessage.Name, _Method, 400, 480);
+        MessagingTelemetry.SubscriberInvokeStop(subscriber, invokeMessage, _Method, "TestBroker", 400, 480);
     }
 
-    // Parity: the native emitter records the same semconv instrument names + dimensions.
+    // Each phase records the semantic-convention instrument with the convention attributes; a failure lands on the
+    // same instrument with error.type instead of a separate error counter.
     [Fact]
-    public void should_record_expected_instrument_names_when_full_flow()
+    public void should_record_semantic_convention_instruments_when_full_flow()
     {
-        var measurements = new ConcurrentBag<(string Name, KeyValuePair<string, object?>[] Tags)>();
+        var measurements = new ConcurrentBag<(string Name, object Value, KeyValuePair<string, object?>[] Tags)>();
         using var listener = _StartMeterListener(measurements);
         var telemetry = MessagingTelemetry.Default;
-        var broker = new BrokerAddress(Guid.NewGuid().ToString(), "broker.local:5672");
+        var broker = new BrokerAddress(Guid.NewGuid().ToString("N"), "broker.local:5672");
 
         var publishMessage = _CreateTransportMessage(
             "orders.placed",
@@ -123,12 +144,24 @@ public sealed class MessagingTelemetryTests : TestBase
         );
         var publish = telemetry.PublishStart(publishMessage, MessageLane.Bus, broker, 200);
         MessagingTelemetry.PublishStop(publish, publishMessage, broker, 200, 260);
-        MessagingTelemetry.PublishError(publish, publishMessage, broker, new InvalidOperationException("boom"));
+        MessagingTelemetry.PublishError(
+            publish,
+            publishMessage,
+            broker,
+            new PublisherSentFailedException("send failed", new TimeoutException("broker down")),
+            elapsedMs: 1500
+        );
 
         var consumeMessage = _CreateTransportMessage("orders.placed");
-        var consume = telemetry.ConsumeStart(consumeMessage, MessageLane.Queue, _Broker, 300);
-        MessagingTelemetry.ConsumeStop(consume, consumeMessage, _Broker, 300, 330);
-        MessagingTelemetry.ConsumeError(consume, consumeMessage, _Broker, new InvalidOperationException("boom"));
+        var consume = telemetry.ConsumeStart(consumeMessage, MessageLane.Queue, broker, 300);
+        MessagingTelemetry.ConsumeStop(consume, consumeMessage, broker, 300, 330);
+        MessagingTelemetry.ConsumeError(
+            consume,
+            consumeMessage,
+            broker,
+            new InvalidOperationException("boom"),
+            elapsedMs: 10
+        );
 
         var invokeMessage = _CreateMessage("orders.placed");
         var subscriber = telemetry.SubscriberInvokeStart(
@@ -137,68 +170,240 @@ public sealed class MessagingTelemetryTests : TestBase
             MessageLane.Bus,
             _Method,
             0,
-            400
+            400,
+            broker.Name
         );
-        MessagingTelemetry.SubscriberInvokeStop(subscriber, invokeMessage.Name, _Method, 400, 480);
+        MessagingTelemetry.SubscriberInvokeStop(subscriber, invokeMessage, _Method, broker.Name, 400, 480);
         MessagingTelemetry.SubscriberInvokeError(
             subscriber,
-            invokeMessage.Name,
+            invokeMessage,
             _Method,
-            new InvalidOperationException("boom")
+            broker.Name,
+            new SubscriberExecutionFailedException("failed", new ArgumentException("bad")),
+            elapsedMs: 20
         );
 
-        var names = measurements.Select(m => m.Name).ToHashSet(StringComparer.Ordinal);
-        names
-            .Should()
-            .Contain([
-                "messaging.publish.messages",
-                "messaging.publish.duration",
-                "messaging.publish.errors",
-                "messaging.message.size",
-                "messaging.consume.messages",
-                "messaging.consume.duration",
-                "messaging.consume.errors",
-                "messaging.persistence.duration",
-                "messaging.subscriber.invocations",
-                "messaging.subscriber.duration",
-                "messaging.subscriber.errors",
-            ]);
+        var ours = measurements.Where(m => _HasTag(m.Tags, "messaging.system", broker.Name)).ToArray();
 
-        var (_, publishTags) = measurements.First(m =>
-            string.Equals(m.Name, "messaging.publish.messages", StringComparison.Ordinal)
-            && m.Tags.Any(tag =>
-                string.Equals(tag.Key, "messaging.system", StringComparison.Ordinal) && Equals(tag.Value, broker.Name)
-            )
-        );
-        publishTags
-            .Select(tag => tag.Key)
-            .Should()
-            .Contain([
-                "messaging.operation",
-                "messaging.system",
-                MessagingTags.Lane,
-                MessagingTags.RequestedDeliveryMode,
-                MessagingTags.ResolvedDeliveryMode,
-            ]);
-
-        publishTags
+        // Publish: one counted send per attempt, success and failure, with the duration in seconds on both.
+        var sent = ours.Where(m => m.Name == "messaging.client.sent.messages").ToArray();
+        sent.Should().HaveCount(2);
+        sent.Should().OnlyContain(m => _HasPublishTags(m.Tags));
+        sent.Should().ContainSingle(m => _HasTag(m.Tags, "error.type", typeof(TimeoutException).FullName));
+        var sentTags = sent.Single(m => !_HasTagKey(m.Tags, "error.type")).Tags;
+        sentTags.Should().ContainSingle(tag => tag.Key == MessagingTags.Lane).Which.Value.Should().Be("bus");
+        sentTags
             .Should()
             .ContainSingle(tag => tag.Key == MessagingTags.RequestedDeliveryMode)
             .Which.Value.Should()
             .Be("direct");
-        publishTags
+        sentTags
             .Should()
             .ContainSingle(tag => tag.Key == MessagingTags.ResolvedDeliveryMode)
             .Which.Value.Should()
             .Be("direct");
 
-        var (_, consumeErrorTags) = measurements.First(m =>
-            string.Equals(m.Name, "messaging.consume.errors", StringComparison.Ordinal)
-        );
-        consumeErrorTags
-            .Select(tag => tag.Key)
+        var sendDurations = ours.Where(m =>
+                m.Name == "messaging.client.operation.duration" && _HasTag(m.Tags, "messaging.operation.type", "send")
+            )
+            .ToArray();
+        sendDurations.Select(m => (double)m.Value).Should().BeEquivalentTo([0.06, 1.5]);
+        sendDurations
             .Should()
-            .Contain(["messaging.operation", "messaging.system", "error.type", "messaging.consumer.group.name"]);
+            .ContainSingle(m => _HasTag(m.Tags, "error.type", typeof(TimeoutException).FullName))
+            .Which.Value.Should()
+            .Be(1.5);
+
+        // Receive: each delivery counted once, failed or not, with the consumer group.
+        var consumed = ours.Where(m => m.Name == "messaging.client.consumed.messages").ToArray();
+        consumed.Should().HaveCount(2);
+        consumed
+            .Should()
+            .OnlyContain(m =>
+                _HasTag(m.Tags, "messaging.operation.name", "receive")
+                && _HasTag(m.Tags, "messaging.operation.type", "receive")
+                && _HasTag(m.Tags, "messaging.destination.name", "orders.placed")
+                && _HasTag(m.Tags, "messaging.consumer.group.name", "workers")
+                && _HasTag(m.Tags, "server.address", "broker.local")
+            );
+        consumed.Should().ContainSingle(m => _HasTag(m.Tags, "error.type", typeof(InvalidOperationException).FullName));
+        ours.Where(m =>
+                m.Name == "messaging.client.operation.duration"
+                && _HasTag(m.Tags, "messaging.operation.type", "receive")
+            )
+            .Select(m => (double)m.Value)
+            .Should()
+            .BeEquivalentTo([0.03, 0.01]);
+
+        // Process: the histogram's count is the invocation count; the wrapper exception is not the error type.
+        var processed = ours.Where(m => m.Name == "messaging.process.duration").ToArray();
+        processed.Should().HaveCount(2);
+        processed
+            .Should()
+            .OnlyContain(m =>
+                _HasTag(m.Tags, "messaging.operation.name", "process")
+                && _HasTag(m.Tags, "messaging.operation.type", "process")
+                && _HasTag(m.Tags, "messaging.destination.name", "orders.placed")
+                && _HasTag(m.Tags, "messaging.consumer.group.name", "workers")
+                && _HasTag(m.Tags, "headless.messaging.subscriber", _Method)
+            );
+        processed
+            .Should()
+            .ContainSingle(m => _HasTag(m.Tags, "error.type", typeof(ArgumentException).FullName))
+            .Which.Value.Should()
+            .Be(0.02);
+
+        ours.Should()
+            .Contain(m =>
+                m.Name == "headless.messaging.message.body.size"
+                && _HasTag(m.Tags, "messaging.destination.name", "orders.placed")
+                && Equals(m.Value, 4L)
+            );
+
+        // No retired instrument or attribute name survives.
+        measurements
+            .Select(m => m.Name)
+            .Should()
+            .NotContain(name =>
+                name.StartsWith("messaging.publish.", StringComparison.Ordinal)
+                || name.StartsWith("messaging.consume.", StringComparison.Ordinal)
+                || name.StartsWith("messaging.subscriber.", StringComparison.Ordinal)
+            );
+        ours.SelectMany(m => m.Tags).Select(tag => tag.Key).Should().NotContain("messaging.operation");
+    }
+
+    [Fact]
+    public void should_declare_semantic_convention_units_and_bucket_advice()
+    {
+        // Touch the type so its instruments exist before the listener asks for them.
+        _ = MessagingMetrics.AnyEnabled;
+        var instruments = new ConcurrentDictionary<string, Instrument>(StringComparer.Ordinal);
+        using var listener = new MeterListener
+        {
+            InstrumentPublished = (instrument, _) =>
+            {
+                if (string.Equals(instrument.Meter.Name, MessagingDiagnostics.SourceName, StringComparison.Ordinal))
+                {
+                    instruments[instrument.Name] = instrument;
+                }
+            },
+        };
+        listener.Start();
+
+        instruments["messaging.client.sent.messages"].Unit.Should().Be("{message}");
+        instruments["messaging.client.consumed.messages"].Unit.Should().Be("{message}");
+
+        double[] advisedBoundaries = [0.005, 0.01, 0.025, 0.05, 0.075, 0.1, 0.25, 0.5, 0.75, 1, 2.5, 5, 7.5, 10];
+        foreach (
+            var name in new[]
+            {
+                "messaging.client.operation.duration",
+                "messaging.process.duration",
+                "headless.messaging.persistence.duration",
+                "headless.messaging.request_reply.duration",
+            }
+        )
+        {
+            var histogram = instruments[name].Should().BeOfType<Histogram<double>>().Subject;
+            histogram.Unit.Should().Be("s", name);
+            histogram.Advice!.HistogramBucketBoundaries.Should().Equal(advisedBoundaries, name);
+        }
+
+        instruments["headless.messaging.message.body.size"].Unit.Should().Be("By");
+
+        // Only the convention instruments use the messaging.* namespace; the framework's own are headless.messaging.*.
+        string[] conventionNames =
+        [
+            "messaging.client.sent.messages",
+            "messaging.client.consumed.messages",
+            "messaging.client.operation.duration",
+            "messaging.process.duration",
+        ];
+        instruments
+            .Keys.Where(name => !conventionNames.Contains(name, StringComparer.Ordinal))
+            .Should()
+            .OnlyContain(name => name.StartsWith("headless.messaging.", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void should_tag_failed_spans_with_error_type()
+    {
+        using var listener = _StartActivityListener([]);
+        var telemetry = MessagingTelemetry.Default;
+
+        var publishMessage = _CreateTransportMessage("orders.placed");
+        var publish = telemetry.PublishStart(publishMessage, MessageLane.Bus, _Broker, 100);
+        MessagingTelemetry.PublishError(
+            publish,
+            publishMessage,
+            _Broker,
+            new PublisherSentFailedException("send failed", new TimeoutException("broker down")),
+            elapsedMs: 5
+        );
+
+        var ambiguousMessage = _CreateTransportMessage("orders.placed");
+        var ambiguous = telemetry.PublishStart(ambiguousMessage, MessageLane.Bus, _Broker, 100);
+        MessagingTelemetry.PublishAmbiguous(
+            ambiguous,
+            ambiguousMessage,
+            _Broker,
+            new OperationCanceledException(),
+            elapsedMs: 5
+        );
+
+        var consumeMessage = _CreateTransportMessage("orders.placed");
+        var consume = telemetry.ConsumeStart(consumeMessage, MessageLane.Bus, _Broker, 100);
+        MessagingTelemetry.ConsumeError(
+            consume,
+            consumeMessage,
+            _Broker,
+            new InvalidOperationException("boom"),
+            elapsedMs: 5
+        );
+
+        var invokeMessage = _CreateMessage("orders.placed");
+        var subscriber = telemetry.SubscriberInvokeStart(
+            invokeMessage,
+            invokeMessage.Name,
+            MessageLane.Bus,
+            _Method,
+            0,
+            100
+        );
+        MessagingTelemetry.SubscriberInvokeError(
+            subscriber,
+            invokeMessage,
+            _Method,
+            messagingSystem: null,
+            new SubscriberExecutionFailedException("failed", new ArgumentException("bad")),
+            elapsedMs: 5
+        );
+
+        publish!.GetTagItem("error.type").Should().Be(typeof(TimeoutException).FullName);
+        ambiguous!.GetTagItem("error.type").Should().Be("ambiguous_delivery");
+        consume!.GetTagItem("error.type").Should().Be(typeof(InvalidOperationException).FullName);
+        subscriber!.GetTagItem("error.type").Should().Be(typeof(ArgumentException).FullName);
+        subscriber.GetTagItem("messaging.system").Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("broker.local:5672", "broker.local", 5672)]
+    [InlineData("broker.local", "broker.local", null)]
+    [InlineData("kafka-1:9092,kafka-2:9092", "kafka-1", 9092)]
+    [InlineData("nats://nats-1:4222,nats://nats-2:4222", "nats-1", 4222)]
+    [InlineData("https://sqs.eu-west-1.amazonaws.com/123456789012/orders", "sqs.eu-west-1.amazonaws.com", null)]
+    [InlineData("amqp://rabbit.local:5673/vhost", "rabbit.local", 5673)]
+    [InlineData("", null, null)]
+    public void should_derive_server_address_and_port_from_broker_endpoint(
+        string endpoint,
+        string? expectedAddress,
+        int? expectedPort
+    )
+    {
+        var server = MessagingServerEndpoint.From(new BrokerAddress("kafka", endpoint));
+
+        server.Address.Should().Be(expectedAddress);
+        server.Port.Should().Be(expectedPort);
     }
 
     [Fact]
@@ -223,19 +428,19 @@ public sealed class MessagingTelemetryTests : TestBase
         }
 
         var inboxMeasurements = measurements
-            .Where(measurement => measurement.Name.StartsWith("messaging.inbox.", StringComparison.Ordinal))
+            .Where(measurement => measurement.Name.StartsWith("headless.messaging.inbox.", StringComparison.Ordinal))
             .ToArray();
         inboxMeasurements
             .Select(measurement => measurement.Name)
             .Should()
             .BeEquivalentTo([
-                "messaging.inbox.duplicates",
-                "messaging.inbox.attempts",
-                "messaging.inbox.recoveries",
-                "messaging.inbox.terminal",
-                "messaging.inbox.replays",
-                "messaging.inbox.retention",
-                "messaging.inbox.capabilities",
+                "headless.messaging.inbox.duplicates",
+                "headless.messaging.inbox.attempts",
+                "headless.messaging.inbox.recoveries",
+                "headless.messaging.inbox.terminal",
+                "headless.messaging.inbox.replays",
+                "headless.messaging.inbox.retention",
+                "headless.messaging.inbox.capabilities",
             ]);
         inboxMeasurements.Should().OnlyContain(measurement => _HasExpectedInboxTags(measurement.Tags));
     }
@@ -261,7 +466,7 @@ public sealed class MessagingTelemetryTests : TestBase
         measurements
             .Should()
             .Contain(measurement =>
-                measurement.Name == "messaging.inbox.duplicates"
+                measurement.Name == "headless.messaging.inbox.duplicates"
                 && measurement.Tags.Any(tag =>
                     string.Equals(tag.Key, TenantTelemetryOptions.DefaultAttributeName, StringComparison.Ordinal)
                 )
@@ -415,7 +620,7 @@ public sealed class MessagingTelemetryTests : TestBase
     }
 
     private static MeterListener _StartMeterListener(
-        ConcurrentBag<(string Name, KeyValuePair<string, object?>[] Tags)> captured
+        ConcurrentBag<(string Name, object Value, KeyValuePair<string, object?>[] Tags)> captured
     )
     {
         var listener = new MeterListener
@@ -430,10 +635,10 @@ public sealed class MessagingTelemetryTests : TestBase
         };
 
         listener.SetMeasurementEventCallback<long>(
-            (instrument, _, tags, _) => captured.Add((instrument.Name, tags.ToArray()))
+            (instrument, value, tags, _) => captured.Add((instrument.Name, value, tags.ToArray()))
         );
         listener.SetMeasurementEventCallback<double>(
-            (instrument, _, tags, _) => captured.Add((instrument.Name, tags.ToArray()))
+            (instrument, value, tags, _) => captured.Add((instrument.Name, value, tags.ToArray()))
         );
 
         listener.Start();
@@ -492,6 +697,25 @@ public sealed class MessagingTelemetryTests : TestBase
                 || key.Contains("payload", StringComparison.OrdinalIgnoreCase)
                 || key.Contains("header", StringComparison.OrdinalIgnoreCase)
             );
+    }
+
+    private static bool _HasPublishTags(KeyValuePair<string, object?>[] tags)
+    {
+        return _HasTag(tags, "messaging.operation.name", "publish")
+            && _HasTag(tags, "messaging.operation.type", "send")
+            && _HasTag(tags, "messaging.destination.name", "orders.placed")
+            && _HasTag(tags, "server.address", "broker.local")
+            && _HasTag(tags, "server.port", 5672);
+    }
+
+    private static bool _HasTag(KeyValuePair<string, object?>[] tags, string key, object? value)
+    {
+        return tags.Any(tag => string.Equals(tag.Key, key, StringComparison.Ordinal) && Equals(tag.Value, value));
+    }
+
+    private static bool _HasTagKey(KeyValuePair<string, object?>[] tags, string key)
+    {
+        return tags.Any(tag => string.Equals(tag.Key, key, StringComparison.Ordinal));
     }
 
     private static string[] _TagKeys(Activity activity)

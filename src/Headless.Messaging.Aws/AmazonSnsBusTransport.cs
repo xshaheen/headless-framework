@@ -25,7 +25,7 @@ internal sealed class AmazonSnsBusTransport(
     // Set once DisposeAsync runs: a later send fails instead of reaching the broker.
     private int _disposed;
 
-    public BrokerAddress BrokerAddress => new("aws_sns", _GetBrokerEndpoint());
+    public BrokerAddress BrokerAddress => new("aws.sns", _GetBrokerEndpoint());
 
     public async Task<OperateResult> SendAsync(TransportMessage message, CancellationToken cancellationToken = default)
     {

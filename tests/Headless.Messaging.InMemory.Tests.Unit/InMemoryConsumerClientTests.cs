@@ -33,7 +33,7 @@ public sealed class InMemoryConsumerClientTests : TestBase
         var address = _client.BrokerAddress;
 
         // then
-        address.Name.Should().Be("InMemory");
+        address.Name.Should().Be("in_memory");
         address.Endpoint.Should().Be("localhost");
     }
 

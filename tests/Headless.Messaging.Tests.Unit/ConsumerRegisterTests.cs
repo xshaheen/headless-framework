@@ -1770,7 +1770,7 @@ public sealed class ConsumerRegisterTests : TestBase
         {
             InstrumentPublished = (instrument, meterListener) =>
             {
-                if (string.Equals(instrument.Name, "messaging.receive.outcomes", StringComparison.Ordinal))
+                if (string.Equals(instrument.Name, MessagingMetrics.ReceiveOutcomesName, StringComparison.Ordinal))
                 {
                     meterListener.EnableMeasurementEvents(instrument);
                 }
@@ -1781,7 +1781,7 @@ public sealed class ConsumerRegisterTests : TestBase
             {
                 foreach (var tag in tags)
                 {
-                    if (string.Equals(tag.Key, "messaging.receive.outcome", StringComparison.Ordinal))
+                    if (string.Equals(tag.Key, MessagingMetrics.TagReceiveOutcome, StringComparison.Ordinal))
                     {
                         outcomes.Enqueue((string)tag.Value!);
                     }

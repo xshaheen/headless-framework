@@ -13,9 +13,10 @@ namespace Headless.Messaging;
 /// extensions on the OpenTelemetry provider builders.
 /// </summary>
 /// <remarks>
-/// Instrument and standard-dimension names follow the OpenTelemetry messaging semantic conventions
-/// (<c>messaging.publish.messages</c>, <c>messaging.consume.duration</c>, …); framework-specific span attributes
-/// use the bespoke <c>headless.messaging.*</c> namespace (see <see cref="MessagingTags"/>). Only the
+/// Spans, metrics, and their standard attributes follow the OpenTelemetry messaging semantic conventions
+/// (<c>messaging.client.sent.messages</c>, <c>messaging.client.operation.duration</c>, <c>messaging.process.duration</c>,
+/// <c>messaging.operation.name</c>, <c>messaging.operation.type</c>, …); instruments and attributes the conventions do
+/// not define use the bespoke <c>headless.messaging.*</c> namespace (see <see cref="MessagingTags"/>). Only the
 /// Meter/ActivitySource itself carries the framework name <c>Headless.Messaging</c>.
 /// </remarks>
 [PublicAPI]

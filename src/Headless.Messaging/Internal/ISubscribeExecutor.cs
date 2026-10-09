@@ -59,6 +59,14 @@ internal sealed class SubscribeExecutor(
 {
     private readonly MessagingTelemetry _telemetry = telemetry ?? MessagingTelemetry.Default;
     private readonly string? _hostName = HostIdentity.GetInstanceHostname();
+
+    private readonly Lazy<string?> _busMessagingSystem = new(() =>
+        provider.GetService<IBusTransport>()?.BrokerAddress.Name
+    );
+
+    private readonly Lazy<string?> _queueMessagingSystem = new(() =>
+        provider.GetService<IQueueTransport>()?.BrokerAddress.Name
+    );
     private readonly MessagingOptions _options = options.Value;
 
     private readonly InboxMetricPolicy _inboxMetricPolicy =
@@ -969,7 +977,15 @@ internal sealed class SubscribeExecutor(
     )
     {
         var consumerContext = new ConsumerContext(descriptor, message, unitOfWork);
-        var traceHandle = _TracingBefore(message.Origin, message.Lane, descriptor.MethodName, message.Retries);
+        // Resolved only when observed, so an unobserved host never touches the transport registrations here.
+        var messagingSystem = MessagingDiagnostics.IsEnabled ? _MessagingSystem(message.Lane) : null;
+        var traceHandle = _TracingBefore(
+            message.Origin,
+            message.Lane,
+            descriptor.MethodName,
+            message.Retries,
+            messagingSystem
+        );
         try
         {
             var ret = services is null
@@ -1057,7 +1073,7 @@ internal sealed class SubscribeExecutor(
 
             // Fire the invoke success span only after the callback response publish completes so the success
             // event also reflects a successful callback publish; still fires on the no-callback path above.
-            _TracingAfter(traceHandle, message.Origin.Name, descriptor.MethodName);
+            _TracingAfter(traceHandle, message.Origin, descriptor.MethodName, messagingSystem);
 
             return pendingReply;
         }
@@ -1074,7 +1090,7 @@ internal sealed class SubscribeExecutor(
         {
             var e = new SubscriberExecutionFailedException(LogSanitizer.Sanitize(ex.Message), ex);
 
-            _TracingError(traceHandle, message.Origin.Name, descriptor.MethodName, e);
+            _TracingError(traceHandle, message.Origin, descriptor.MethodName, messagingSystem, e);
 
             throw e.ReThrow();
         }
@@ -1082,7 +1098,13 @@ internal sealed class SubscribeExecutor(
 
     #region tracing
 
-    private MessagingTraceHandle _TracingBefore(Message message, MessageLane lane, string method, int retryCount)
+    private MessagingTraceHandle _TracingBefore(
+        Message message,
+        MessageLane lane,
+        string method,
+        int retryCount,
+        string? messagingSystem
+    )
     {
         if (!MessagingDiagnostics.IsEnabled)
         {
@@ -1090,12 +1112,37 @@ internal sealed class SubscribeExecutor(
         }
 
         var now = timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
-        var activity = _telemetry.SubscriberInvokeStart(message, message.Name, lane, method, retryCount, now);
+        var activity = _telemetry.SubscriberInvokeStart(
+            message,
+            message.Name,
+            lane,
+            method,
+            retryCount,
+            now,
+            messagingSystem
+        );
 
         return new MessagingTraceHandle(activity, now);
     }
 
-    private void _TracingAfter(MessagingTraceHandle traceHandle, string operation, string method)
+    // The process phase runs from the inbox, away from the transport that delivered the message, so its
+    // messaging.system comes from the transport registered for the message's lane.
+    private string? _MessagingSystem(MessageLane lane)
+    {
+        return lane switch
+        {
+            MessageLane.Bus => _busMessagingSystem.Value,
+            MessageLane.Queue => _queueMessagingSystem.Value,
+            _ => null,
+        };
+    }
+
+    private void _TracingAfter(
+        MessagingTraceHandle traceHandle,
+        Message message,
+        string method,
+        string? messagingSystem
+    )
     {
         MessageEventCounterSource.Log.WriteInvokeMetrics();
 
@@ -1107,21 +1154,36 @@ internal sealed class SubscribeExecutor(
         var now = timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
         MessagingTelemetry.SubscriberInvokeStop(
             traceHandle.Activity,
-            operation,
+            message,
             method,
+            messagingSystem,
             traceHandle.StartTimestampMs!.Value,
             now
         );
     }
 
-    private static void _TracingError(MessagingTraceHandle traceHandle, string operation, string method, Exception ex)
+    private void _TracingError(
+        MessagingTraceHandle traceHandle,
+        Message message,
+        string method,
+        string? messagingSystem,
+        Exception ex
+    )
     {
         if (!traceHandle.IsRecording)
         {
             return;
         }
 
-        MessagingTelemetry.SubscriberInvokeError(traceHandle.Activity, operation, method, ex);
+        var now = timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
+        MessagingTelemetry.SubscriberInvokeError(
+            traceHandle.Activity,
+            message,
+            method,
+            messagingSystem,
+            ex,
+            now - traceHandle.StartTimestampMs!.Value
+        );
     }
 
     #endregion

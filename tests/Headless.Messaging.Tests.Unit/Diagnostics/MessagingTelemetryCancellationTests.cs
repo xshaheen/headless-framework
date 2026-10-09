@@ -183,11 +183,12 @@ public sealed class MessagingTelemetryCancellationTests : TestBase
         stopped.All.Should().Contain(published);
         published!.Status.Should().Be(ActivityStatusCode.Error);
         published.GetTagItem(MessagingTags.DeliveryOutcome).Should().Be("ambiguous");
+        published.GetTagItem("error.type").Should().Be("ambiguous_delivery");
         published.Events.Should().ContainSingle(e => e.Name == "message.publish.ambiguous");
     }
 
-    // (b, companion) The sibling guard: a non-cancellation throw from transport.SendAsync must record
-    // messaging.publish.errors and mark the span Error (unlike the cancellation branch above) before
+    // (b, companion) The sibling guard: a non-cancellation throw from transport.SendAsync must record the failed
+    // send on messaging.client.sent.messages with error.type and mark the span Error (unlike the cancellation branch above) before
     // rethrowing — pinning that the two new catches in the fix are not accidentally symmetric.
     [Fact]
     public async Task should_record_publish_error_and_mark_span_error_when_message_sender_transport_throws()
@@ -225,7 +226,7 @@ public sealed class MessagingTelemetryCancellationTests : TestBase
             );
 
         using var stopped = new PublishActivityCollector();
-        var metrics = new ConcurrentBag<(string Name, long Value)>();
+        var metrics = new ConcurrentBag<(string Name, string? ErrorType)>();
         using var meters = _StartMeterListener(metrics);
         var sender = _CreateSender(storage, serializer, busTransport, new MessagingOptions());
 
@@ -238,12 +239,18 @@ public sealed class MessagingTelemetryCancellationTests : TestBase
         published.Should().NotBeNull();
         stopped.All.Should().Contain(published);
         published!.Status.Should().Be(ActivityStatusCode.Error);
-        metrics.Should().Contain(m => string.Equals(m.Name, "messaging.publish.errors", StringComparison.Ordinal));
+        published.GetTagItem("error.type").Should().Be(typeof(InvalidOperationException).FullName);
+        metrics
+            .Should()
+            .Contain(m =>
+                m.Name == MessagingMetrics.ClientSentMessagesName
+                && m.ErrorType == typeof(InvalidOperationException).FullName
+            );
     }
 
     // (b, companion) The non-throwing failure shape: transport.SendAsync RETURNING a failed OperateResult (no
     // exception) routes through _TracingError at the bottom of the send path — the span must still be stopped
-    // with Error status and messaging.publish.errors recorded, exactly like the throwing-transport case above.
+    // with Error status and the failed send recorded with error.type, exactly like the throwing-transport case above.
     [Fact]
     public async Task should_record_publish_error_and_mark_span_error_when_transport_returns_failed_result()
     {
@@ -280,7 +287,7 @@ public sealed class MessagingTelemetryCancellationTests : TestBase
             );
 
         using var stopped = new PublishActivityCollector();
-        var metrics = new ConcurrentBag<(string Name, long Value)>();
+        var metrics = new ConcurrentBag<(string Name, string? ErrorType)>();
         using var meters = _StartMeterListener(metrics);
         var sender = _CreateSender(
             storage,
@@ -299,7 +306,11 @@ public sealed class MessagingTelemetryCancellationTests : TestBase
         published.Should().NotBeNull();
         stopped.All.Should().Contain(published);
         published!.Status.Should().Be(ActivityStatusCode.Error);
-        metrics.Should().Contain(m => string.Equals(m.Name, "messaging.publish.errors", StringComparison.Ordinal));
+        metrics
+            .Should()
+            .Contain(m =>
+                m.Name == MessagingMetrics.ClientSentMessagesName && m.ErrorType == typeof(TimeoutException).FullName
+            );
     }
 
     // --- Helpers --------------------------------------------------------------------------------------------
@@ -365,7 +376,7 @@ public sealed class MessagingTelemetryCancellationTests : TestBase
         return new TransportMessage(headers, new byte[] { 1, 2, 3 });
     }
 
-    private static MeterListener _StartMeterListener(ConcurrentBag<(string Name, long Value)> captured)
+    private static MeterListener _StartMeterListener(ConcurrentBag<(string Name, string? ErrorType)> captured)
     {
         var listener = new MeterListener
         {
@@ -379,7 +390,19 @@ public sealed class MessagingTelemetryCancellationTests : TestBase
         };
 
         listener.SetMeasurementEventCallback<long>(
-            (instrument, measurement, _, _) => captured.Add((instrument.Name, measurement))
+            (instrument, _, tags, _) =>
+            {
+                string? errorType = null;
+                foreach (var tag in tags)
+                {
+                    if (string.Equals(tag.Key, "error.type", StringComparison.Ordinal))
+                    {
+                        errorType = tag.Value as string;
+                    }
+                }
+
+                captured.Add((instrument.Name, errorType));
+            }
         );
 
         listener.Start();

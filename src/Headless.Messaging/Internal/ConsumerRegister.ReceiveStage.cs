@@ -413,7 +413,7 @@ internal sealed partial class ConsumerRegister
         MessagingTelemetry.ConsumeStop(traceHandle.Activity, message, broker, traceHandle.StartTimestampMs!.Value, now);
     }
 
-    private static void _TracingError(
+    private void _TracingError(
         MessagingTraceHandle traceHandle,
         TransportMessage message,
         BrokerAddress broker,
@@ -425,7 +425,8 @@ internal sealed partial class ConsumerRegister
             return;
         }
 
-        MessagingTelemetry.ConsumeError(traceHandle.Activity, message, broker, ex);
+        var now = _timeProvider.GetUtcNow().ToUnixTimeMilliseconds();
+        MessagingTelemetry.ConsumeError(traceHandle.Activity, message, broker, ex, traceHandle.ElapsedMs(now));
     }
 
     #endregion

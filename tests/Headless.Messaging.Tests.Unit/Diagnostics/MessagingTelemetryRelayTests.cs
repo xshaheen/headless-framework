@@ -67,7 +67,7 @@ public sealed class MessagingTelemetryRelayTests : TestBase
             message.Headers["baggage"].Should().Contain("tenant=t-1");
 
             // Metrics are unaffected by tracing being off.
-            meters.Measurements.Select(m => m.Instrument).Should().Contain("messaging.message.size");
+            meters.Measurements.Select(m => m.Instrument).Should().Contain(MessagingMetrics.MessageBodySizeName);
         }
         finally
         {

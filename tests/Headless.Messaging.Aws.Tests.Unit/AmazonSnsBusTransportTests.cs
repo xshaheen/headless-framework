@@ -129,7 +129,7 @@ public sealed class AmazonSnsBusTransportTests : TestBase
         var brokerAddress = transport.BrokerAddress;
 
         // then
-        brokerAddress.Name.Should().Be("aws_sns");
+        brokerAddress.Name.Should().Be("aws.sns");
         brokerAddress.Endpoint.Should().Be("localhost:4566");
     }
 
@@ -145,7 +145,7 @@ public sealed class AmazonSnsBusTransportTests : TestBase
         var brokerAddress = transport.BrokerAddress;
 
         // then
-        brokerAddress.Name.Should().Be("aws_sns");
+        brokerAddress.Name.Should().Be("aws.sns");
         brokerAddress.Endpoint.Should().Be("sns.us-east-1.amazonaws.com");
     }
 
@@ -161,7 +161,7 @@ public sealed class AmazonSnsBusTransportTests : TestBase
         var brokerAddress = transport.BrokerAddress;
 
         // then
-        brokerAddress.Name.Should().Be("aws_sns");
+        brokerAddress.Name.Should().Be("aws.sns");
         brokerAddress.Endpoint.Should().Be("sns.cn-north-1.amazonaws.com.cn");
     }
 
