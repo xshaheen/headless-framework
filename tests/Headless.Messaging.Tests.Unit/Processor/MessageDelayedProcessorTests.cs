@@ -8,6 +8,8 @@ using Headless.Messaging.Transport;
 using Headless.Testing.Tests;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Time.Testing;
 
 namespace Tests.Processor;
 
@@ -32,7 +34,11 @@ public sealed class MessageDelayedProcessorTests : TestBase
             TimeProvider.System,
             cancellation.Token
         );
-        var sut = new MessageDelayedProcessor(Substitute.For<ILogger<MessageDelayedProcessor>>(), dispatcher);
+        var sut = new MessageDelayedProcessor(
+            Substitute.For<ILogger<MessageDelayedProcessor>>(),
+            dispatcher,
+            Options.Create(new MessagingOptions())
+        );
 
         Func<Task> act = () => sut.ProcessAsync(cancellableContext);
         await act.Should().ThrowAsync<OperationCanceledException>();
@@ -60,7 +66,11 @@ public sealed class MessageDelayedProcessorTests : TestBase
             TimeProvider.System,
             cancellation.Token
         );
-        var sut = new MessageDelayedProcessor(Substitute.For<ILogger<MessageDelayedProcessor>>(), dispatcher);
+        var sut = new MessageDelayedProcessor(
+            Substitute.For<ILogger<MessageDelayedProcessor>>(),
+            dispatcher,
+            Options.Create(new MessagingOptions())
+        );
 
         Func<Task> act = () => sut.ProcessAsync(cancellableContext);
         await act.Should().ThrowAsync<OperationCanceledException>();
@@ -94,7 +104,11 @@ public sealed class MessageDelayedProcessorTests : TestBase
             TimeProvider.System,
             cancellationToken
         );
-        var sut = new MessageDelayedProcessor(Substitute.For<ILogger<MessageDelayedProcessor>>(), dispatcher);
+        var sut = new MessageDelayedProcessor(
+            Substitute.For<ILogger<MessageDelayedProcessor>>(),
+            dispatcher,
+            Options.Create(new MessagingOptions())
+        );
 
         Func<Task> act = () => sut.ProcessAsync(cancellableContext);
         await act.Should().ThrowAsync<OperationCanceledException>();
@@ -125,7 +139,11 @@ public sealed class MessageDelayedProcessorTests : TestBase
             TimeProvider.System,
             cancellation.Token
         );
-        var sut = new MessageDelayedProcessor(Substitute.For<ILogger<MessageDelayedProcessor>>(), dispatcher);
+        var sut = new MessageDelayedProcessor(
+            Substitute.For<ILogger<MessageDelayedProcessor>>(),
+            dispatcher,
+            Options.Create(new MessagingOptions())
+        );
 
         Func<Task> act = () => sut.ProcessAsync(cancellableContext);
         await act.Should().ThrowAsync<OperationCanceledException>();
@@ -140,6 +158,31 @@ public sealed class MessageDelayedProcessorTests : TestBase
         await dispatcher
             .Received(1)
             .EnqueueToScheduler(message, message.ExpiresAt!.Value, null, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task should_wait_the_configured_poll_interval_before_the_next_poll()
+    {
+        // given
+        var storage = Substitute.For<IDataStorage>();
+        var timeProvider = new FakeTimeProvider();
+        await using var services = new ServiceCollection().AddSingleton(storage).BuildServiceProvider();
+        await using var context = new ProcessingContext(services, timeProvider, AbortToken);
+        var sut = new MessageDelayedProcessor(
+            Substitute.For<ILogger<MessageDelayedProcessor>>(),
+            Substitute.For<IDispatcher>(),
+            Options.Create(new MessagingOptions { DelayedMessagePollInterval = TimeSpan.FromSeconds(5) })
+        );
+
+        // when
+        var poll = sut.ProcessAsync(context);
+        timeProvider.Advance(TimeSpan.FromSeconds(4));
+        var waitingBeforeInterval = !poll.IsCompleted;
+        timeProvider.Advance(TimeSpan.FromSeconds(1));
+
+        // then
+        waitingBeforeInterval.Should().BeTrue();
+        await poll.WaitAsync(TimeSpan.FromSeconds(5), AbortToken);
     }
 
     private static ProcessingContext _CreateContext(IDataStorage storage)

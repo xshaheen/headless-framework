@@ -169,6 +169,7 @@
     <PackageVersion Include="System.Runtime.CompilerServices.Unsafe" Version="6.1.2" />
     <!-- Transitive override (Microsoft.AspNetCore.DataProtection 10.0.x chain): pinned to clear CVE-2026-50648 (GHSA-23rf-6693-g89p, GHSA-8q5v-6pqq-x66h, GHSA-cvvh-rhrc-wg4q, GHSA-g8r8-53c2-pm3f) in System.Security.Cryptography.Xml <= 10.0.9 (NU1903). -->
     <PackageVersion Include="System.Security.Cryptography.Xml" Version="10.0.12" />
+    <PackageVersion Include="System.Threading.RateLimiting" Version="10.0.12" />
     <PackageVersion Include="Testcontainers" Version="4.15.0" />
     <PackageVersion Include="Testcontainers.Azurite" Version="4.15.0" />
     <PackageVersion Include="Testcontainers.LocalStack" Version="4.15.0" />

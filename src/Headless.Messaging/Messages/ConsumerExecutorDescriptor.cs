@@ -119,4 +119,10 @@ public sealed class ConsumerExecutorDescriptor
     /// default of a competing consumer.
     /// </summary>
     internal FailurePolicyDefinition FailurePolicy { get; init; } = MessagingOptions.FrameworkDefaultFailurePolicy;
+
+    /// <summary>
+    /// The rate this consumer's deliveries wait for before they run, or <see langword="null"/> when they are not
+    /// throttled. Every descriptor of one consumer identity carries the same instance.
+    /// </summary>
+    internal ConsumerRateLimit? RateLimit { get; init; }
 }

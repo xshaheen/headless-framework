@@ -479,6 +479,40 @@ public sealed class ConsumerRegisterTests : TestBase
     }
 
     [Fact]
+    public async Task should_listen_with_the_configured_consumer_poll_timeout()
+    {
+        // given
+        var startupClient = new StartupControlledConsumerClient();
+        var factory = new SequencedConsumerClientFactory(new MetadataConsumerClient(), startupClient);
+        await using var provider = _CreateProvider(
+            configureMessaging: setup =>
+            {
+                setup.Options.ConsumerPollTimeout = TimeSpan.FromMilliseconds(250);
+                setup.AddConsumer<BootstrapReadyConsumer>();
+            },
+            configureServices: services =>
+            {
+                services.ConfigureMessaging(messaging => messaging.Message<BootstrapReadyMessage>("ready-messageName"));
+                services.AddSingleton<IConsumerClientFactory>(factory);
+                services.AddSingleton<BootstrapReadyConsumer>();
+            }
+        );
+        var register = (ConsumerRegister)provider.GetRequiredService<IConsumerRegister>();
+        using var hostCts = new CancellationTokenSource();
+
+        // when
+        var startTask = register.StartAsync(hostCts.Token).AsTask();
+        await startupClient.WaitUntilListeningEnteredAsync(AbortToken);
+        startupClient.SignalReady();
+        await startTask.WaitAsync(TimeSpan.FromSeconds(2), AbortToken);
+
+        // then
+        startupClient.ListeningTimeout.Should().Be(TimeSpan.FromMilliseconds(250));
+
+        await register.DisposeAsync();
+    }
+
+    [Fact]
     public async Task inbox_admission_should_settle_before_single_winner_dispatch_and_suppress_duplicate()
     {
         await using var client = new InboxConsumerClient();
@@ -2558,6 +2592,8 @@ public sealed class ConsumerRegisterTests : TestBase
 
         public BrokerAddress BrokerAddress => new("test", "startup");
 
+        public TimeSpan? ListeningTimeout { get; private set; }
+
         public Func<TransportMessage, object?, Task>? OnMessageCallback { get; set; }
 
         public Action<LogMessageEventArgs>? OnLogCallback { get; set; }
@@ -2586,6 +2622,7 @@ public sealed class ConsumerRegisterTests : TestBase
 
         public async ValueTask ListeningAsync(TimeSpan timeout, CancellationToken cancellationToken)
         {
+            ListeningTimeout = timeout;
             _listeningEntered.TrySetResult();
             await _ready.Task.WaitAsync(cancellationToken);
             await Task.Delay(Timeout.Infinite, cancellationToken);

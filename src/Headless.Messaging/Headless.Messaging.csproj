@@ -49,6 +49,7 @@
     <PackageReference Include="Microsoft.Extensions.Options" />
     <PackageReference Include="OpenTelemetry.Api" />
     <PackageReference Include="Polly.Core" />
+    <PackageReference Include="System.Threading.RateLimiting" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Headless.Coordination.Abstractions\Headless.Coordination.Abstractions.csproj" />

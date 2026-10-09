@@ -216,6 +216,9 @@ public static class SetupMessaging
         // Warning: IPublishMessageSender need to inject at extension project.
         services.TryAddSingleton<ISubscribeExecutor, SubscribeExecutor>();
 
+        // One limiter per rate-limited consumer identity, shared by its deliveries and disposed with the host.
+        services.TryAddSingleton<ConsumerRateLimiters>();
+
         services.TryAddSingleton<IDispatcher, Dispatcher>();
 
         // Circuit breaker

@@ -339,6 +339,64 @@ public sealed class MessagingOptionsValidationTests : TestBase
     }
 
     [Fact]
+    public void should_default_the_consumer_poll_timeout_and_the_delayed_message_poll_interval_to_their_previous_values()
+    {
+        // given
+        var options = new MessagingOptions();
+
+        // then
+        options.ConsumerPollTimeout.Should().Be(TimeSpan.FromSeconds(1));
+        options.DelayedMessagePollInterval.Should().Be(TimeSpan.FromSeconds(60));
+        new MessagingOptionsValidator().Validate(options).IsValid.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(0, false)]
+    [InlineData(-1_000, false)]
+    [InlineData(1, true)]
+    [InlineData(30_000, true)]
+    [InlineData(30_001, false)]
+    public void should_bound_the_consumer_poll_timeout_to_at_most_30_seconds(int milliseconds, bool valid)
+    {
+        // given
+        var options = new MessagingOptions { ConsumerPollTimeout = TimeSpan.FromMilliseconds(milliseconds) };
+
+        // when
+        var result = new MessagingOptionsValidator().Validate(options);
+
+        // then
+        result.IsValid.Should().Be(valid);
+        if (!valid)
+        {
+            result.Errors.Should().OnlyContain(x => x.PropertyName == nameof(MessagingOptions.ConsumerPollTimeout));
+        }
+    }
+
+    [Theory]
+    [InlineData(0, false)]
+    [InlineData(-1_000, false)]
+    [InlineData(1, true)]
+    [InlineData(120_000, true)]
+    [InlineData(120_001, false)]
+    public void should_bound_the_delayed_message_poll_interval_to_the_two_minute_lookahead(int milliseconds, bool valid)
+    {
+        // given
+        var options = new MessagingOptions { DelayedMessagePollInterval = TimeSpan.FromMilliseconds(milliseconds) };
+
+        // when
+        var result = new MessagingOptionsValidator().Validate(options);
+
+        // then
+        result.IsValid.Should().Be(valid);
+        if (!valid)
+        {
+            result
+                .Errors.Should()
+                .OnlyContain(x => x.PropertyName == nameof(MessagingOptions.DelayedMessagePollInterval));
+        }
+    }
+
+    [Fact]
     public void should_reject_messaging_options_with_invalid_transport_or_command_timeout()
     {
         new MessagingOptionsValidator()

@@ -2,6 +2,7 @@
 
 using FluentValidation;
 using Headless.Checks;
+using Headless.Messaging.Persistence;
 using Headless.MultiTenancy;
 using Headless.Reliability;
 using Headless.UnitOfWork;
@@ -252,6 +253,34 @@ public sealed class MessagingOptions
     public TimeSpan DeadNodeReconcileInterval { get; set; } = TimeSpan.FromMinutes(1);
 
     /// <summary>
+    /// Gets or sets how long a polling consumer client waits for messages before it polls again. Default is 1 second.
+    /// </summary>
+    /// <remarks>
+    /// Each consumer client receives this value as its listening timeout. Kafka and the in-memory transport treat it as
+    /// a wait bound: one poll blocks up to this long and returns as soon as a message arrives, so it does not delay
+    /// delivery, and a longer value only slows the reaction to cancellation and shutdown. Redis Streams and Amazon SQS
+    /// sleep this long after a poll that returned nothing, so it is the delivery latency of an idle consumer and sets
+    /// its idle load: Redis reads every subscribed stream once per interval (an <c>XREADGROUP</c> plus a consumer-group
+    /// check per stream), so 100 milliseconds costs ten times the idle Redis load of the 1-second default. Push-based
+    /// transports such as RabbitMQ, Azure Service Bus, and Pulsar ignore it. Must be greater than zero and no more
+    /// than 30 seconds.
+    /// </remarks>
+    public TimeSpan ConsumerPollTimeout { get; set; } = TimeSpan.FromSeconds(1);
+
+    /// <summary>
+    /// Gets or sets how long the delayed-message processor waits between polls of storage for delayed messages that
+    /// are about to come due. Default is 60 seconds.
+    /// </summary>
+    /// <remarks>
+    /// A delayed message published by this host is scheduled in memory at once; the poll is what schedules delayed
+    /// messages that outlived a restart or were stored by another host. Each poll claims messages due within the next
+    /// two minutes, so the interval must be no more than two minutes or a message could come due between polls
+    /// without being claimed. A shorter interval costs one storage query per poll per outbox. Must be greater than
+    /// zero.
+    /// </remarks>
+    public TimeSpan DelayedMessagePollInterval { get; set; } = TimeSpan.FromSeconds(60);
+
+    /// <summary>
     /// Gets or sets the inbox guarantee required for durable consumers. Defaults to
     /// <see cref="InboxGuarantee.Transactional"/>; selecting a weaker guarantee is an explicit opt-down.
     /// </summary>
@@ -365,6 +394,8 @@ public sealed class MessagingOptions
         target.ShutdownTimeout = ShutdownTimeout;
         target.SubscriptionEstablishedTimeout = SubscriptionEstablishedTimeout;
         target.DeadNodeReconcileInterval = DeadNodeReconcileInterval;
+        target.ConsumerPollTimeout = ConsumerPollTimeout;
+        target.DelayedMessagePollInterval = DelayedMessagePollInterval;
         target.MinimumInboxGuarantee = MinimumInboxGuarantee;
         target.DefaultDeliveryMode = DefaultDeliveryMode;
         target.MaxPoisonEnvelopeBytes = MaxPoisonEnvelopeBytes;
@@ -521,6 +552,18 @@ internal sealed class MessagingOptionsValidator : AbstractValidator<MessagingOpt
         RuleFor(x => x.DeadNodeReconcileInterval)
             .GreaterThan(TimeSpan.Zero)
             .WithMessage("DeadNodeReconcileInterval must be greater than zero.");
+        // Kafka blocks in one poll for the whole timeout without observing cancellation, so a long value would hold
+        // shutdown; the bound keeps it inside the default ShutdownTimeout.
+        RuleFor(x => x.ConsumerPollTimeout)
+            .GreaterThan(TimeSpan.Zero)
+            .WithMessage("ConsumerPollTimeout must be greater than zero.")
+            .LessThanOrEqualTo(TimeSpan.FromSeconds(30))
+            .WithMessage("ConsumerPollTimeout must not exceed 30 seconds.");
+        RuleFor(x => x.DelayedMessagePollInterval)
+            .GreaterThan(TimeSpan.Zero)
+            .WithMessage("DelayedMessagePollInterval must be greater than zero.")
+            .LessThanOrEqualTo(RelationalDataStorage.DelayedMessageLookahead)
+            .WithMessage("DelayedMessagePollInterval must not exceed 2 minutes, the window each poll claims ahead.");
         RuleFor(x => x.DefaultDeliveryMode).IsInEnum();
         RuleFor(x => x.MinimumInboxGuarantee)
             .IsInEnum()
