@@ -1,5 +1,6 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
+using System.Collections.Concurrent;
 using Confluent.Kafka;
 using Confluent.Kafka.Admin;
 using Headless.Checks;
@@ -17,8 +18,24 @@ internal sealed class KafkaConsumerClient : IConsumerClient
         isAllowed: static c => c is '.' or '_' or '-'
     );
 
+    // Bounded drain budget on shutdown, matching the other transports. A handler still running past it never stores
+    // its offset, so Kafka redelivers that record to the next owner of the partition (at-least-once).
+    private static readonly TimeSpan _ShutdownDrainTimeout = TimeSpan.FromSeconds(30);
+
+    // How long a revoke waits for in-flight handlers on the partitions it takes away. The group waits for this member
+    // up to max.poll.interval.ms (five minutes by default), so a bounded wait well under that keeps the rebalance
+    // alive; a handler still running past it loses its offset and the new owner redelivers the record.
+    private static readonly TimeSpan _RevokeDrainTimeout = TimeSpan.FromSeconds(30);
+
     private readonly string _groupId;
+
+    // Guards offset tracking, partition ownership, and the consumer reference. Never held across Consume, so a
+    // handler can store its offset while the poll thread blocks in a rebalance callback waiting for that handler.
     private readonly Lock _lock = new();
+
+    // Serializes Consume with Close and Dispose, which librdkafka does not allow to run concurrently. Rebalance
+    // callbacks run inside Consume and Close, so they always execute while this lock is held.
+    private readonly Lock _consumeLock = new();
     private readonly KafkaMessagingOptions _kafkaOptions;
     private readonly ConsumerPauseGate _pauseGate = new();
     private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -29,10 +46,12 @@ internal sealed class KafkaConsumerClient : IConsumerClient
     private readonly Func<AdminClientConfig, IAdminClient> _adminClientFactory;
     private readonly KafkaOffsetCommitTracker? _offsetCommitTracker;
     private readonly HashSet<TopicPartition> _ownedPartitions = [];
+
+    // Every dispatched delivery, keyed by its handler task, so shutdown and a revoke can wait for the ones they affect.
+    private readonly ConcurrentDictionary<Task, TopicPartition> _inFlightHandlers = new();
     private bool _hasPartitionAssignment;
 
-    // volatile is required: Connect performs double-checked locking on this field, and
-    // CommitAsync/RejectAsync read it without taking _lock. Without volatile a reader could
+    // volatile is required: Connect performs double-checked locking on this field. Without volatile a reader could
     // observe a non-null reference whose publication has not yet been flushed by the writer.
     private volatile IConsumer<string, byte[]>? _consumerClient;
     private int _disposed;
@@ -130,7 +149,7 @@ internal sealed class KafkaConsumerClient : IConsumerClient
                     .WaitAsync(cancellationToken)
                     .ConfigureAwait(false);
             }
-            catch (CreateTopicsException e) when (e.Message.Contains("already exists", StringComparison.Ordinal)) { }
+            catch (CreateTopicsException e) when (_OnlyAlreadyExists(e)) { }
             catch (Exception e) when (e is not OperationCanceledException)
             {
                 var logArgs = new LogMessageEventArgs
@@ -171,7 +190,7 @@ internal sealed class KafkaConsumerClient : IConsumerClient
 
             try
             {
-                lock (_lock)
+                lock (_consumeLock)
                 {
                     var consumerClient = _consumerClient;
                     if (consumerClient is null)
@@ -180,6 +199,13 @@ internal sealed class KafkaConsumerClient : IConsumerClient
                     }
 
                     consumerResult = consumerClient.Consume(timeout);
+                }
+
+                if (Volatile.Read(ref _disposed) != 0)
+                {
+                    // Shutdown started while Consume was blocked: leave the record unstored so the next owner of
+                    // the partition receives it.
+                    return;
                 }
 
                 if (!readyReported)
@@ -199,6 +225,15 @@ internal sealed class KafkaConsumerClient : IConsumerClient
                     // CommitAsync. The concurrent-mode watermark still has to account for it or it
                     // stops at the first one and the partition is never committed again.
                     _ObserveUndispatched(consumerResult);
+
+                    continue;
+                }
+
+                if (_pauseGate.IsPaused)
+                {
+                    // PauseAsync does not wait for a Consume already in progress, so the record it returned can
+                    // arrive after the pause. Rewind to it instead of dispatching it; the poll resumes there.
+                    _RewindUndispatched(consumerResult);
 
                     continue;
                 }
@@ -241,27 +276,30 @@ internal sealed class KafkaConsumerClient : IConsumerClient
                         return;
                     }
 
-                    _ObserveBackgroundHandler(
-                        Task.Run(
-                            async () =>
+                    var handlerTask = Task.Run(
+                        async () =>
+                        {
+                            try
                             {
-                                try
-                                {
-                                    await _ConsumeAsync(delivery).ConfigureAwait(false);
-                                }
-                                finally
-                                {
-                                    _ReleaseSemaphore();
-                                }
-                            },
-                            CancellationToken.None
-                        )
+                                await _ConsumeAsync(delivery).ConfigureAwait(false);
+                            }
+                            finally
+                            {
+                                _ReleaseSemaphore();
+                            }
+                        },
+                        CancellationToken.None
                     );
+
+                    _TrackHandler(handlerTask, consumerResult.TopicPartition);
+                    _ObserveBackgroundHandler(handlerTask);
 
                     continue;
                 }
 
-                await _ConsumeAsync(delivery).ConfigureAwait(false);
+                var inlineTask = _ConsumeAsync(delivery);
+                _TrackHandler(inlineTask, consumerResult.TopicPartition);
+                await inlineTask.ConfigureAwait(false);
             }
             catch (ConsumeException e) when (_kafkaOptions.RetriableErrorCodes.Contains((int)e.Error.Code))
             {
@@ -305,21 +343,22 @@ internal sealed class KafkaConsumerClient : IConsumerClient
                 return ValueTask.CompletedTask;
             }
 
+            // Only stores the offset: the background auto-commit sends it to the broker, and a revoke or shutdown
+            // commits it synchronously, so a handler never waits on a commit round trip.
             if (_offsetCommitTracker is null)
             {
-                consumerClient.Commit(delivery.ConsumerResult);
+                var consumerResult = delivery.ConsumerResult;
+                _StoreOffsets(
+                    consumerClient,
+                    [new TopicPartitionOffset(consumerResult.TopicPartition, consumerResult.Offset + 1)]
+                );
 
                 return ValueTask.CompletedTask;
             }
 
             if (delivery.IsTracked)
             {
-                var committableOffsets = _offsetCommitTracker.MarkCommitted(delivery);
-
-                if (committableOffsets.Count > 0)
-                {
-                    consumerClient.Commit(committableOffsets);
-                }
+                _StoreOffsets(consumerClient, _offsetCommitTracker.MarkCommitted(delivery));
             }
         }
 
@@ -400,13 +439,48 @@ internal sealed class KafkaConsumerClient : IConsumerClient
 
     public ValueTask DisposeAsync()
     {
+        return ShutdownAsync(_ShutdownDrainTimeout);
+    }
+
+    public async ValueTask ShutdownAsync(TimeSpan timeout, CancellationToken cancellationToken = default)
+    {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
         {
-            return ValueTask.CompletedTask;
+            return;
         }
 
         _pauseGate.Release();
-        _ready.TrySetCanceled();
+        _ready.TrySetCanceled(CancellationToken.None);
+
+        // Drain in-flight handlers while the consumer is still open, so each one can store its offset and the final
+        // commit below includes it. Bounded so a stuck handler cannot block shutdown; one still running past the
+        // budget never stores its offset, and Kafka redelivers the record (at-least-once).
+        var inFlight = _inFlightHandlers.Keys.ToArray();
+        if (inFlight.Length > 0)
+        {
+            try
+            {
+                if (timeout <= TimeSpan.Zero)
+                {
+                    throw new TimeoutException("The shared messaging shutdown deadline has expired.");
+                }
+
+                await Task.WhenAll(inFlight).WaitAsync(timeout, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                // Handler faults are already surfaced by _ObserveBackgroundHandler; on a drain timeout or fault,
+                // log and proceed, because disposal must never block or throw.
+                OnLogCallback?.Invoke(
+                    new LogMessageEventArgs
+                    {
+                        LogType = MqLogType.ExceptionReceived,
+                        Reason = $"Timed out or faulted draining in-flight Kafka handlers during shutdown: {ex}",
+                    }
+                );
+            }
+        }
+
         IConsumer<string, byte[]>? consumerClient;
         lock (_lock)
         {
@@ -416,23 +490,33 @@ internal sealed class KafkaConsumerClient : IConsumerClient
 
         if (consumerClient is not null)
         {
-            try
+            // Waits for the poll loop to leave Consume, which librdkafka does not allow to overlap Close.
+            lock (_consumeLock)
             {
-                consumerClient.Close();
-            }
-#pragma warning disable ERP022 // Close is best-effort during shutdown; a failure must not stop Dispose from running.
-            catch (Exception)
-            {
-                // Best-effort shutdown. Dispose still releases native resources.
-            }
-#pragma warning restore ERP022
+                try
+                {
+                    // With auto-commit on, Close commits the stored offsets synchronously before it leaves the group,
+                    // so the drained handlers' final watermark reaches the broker without a second commit round trip.
+                    consumerClient.Close();
+                }
+                catch (Exception e)
+                {
+                    // Dispose still releases native resources. Records past the last successful commit are
+                    // redelivered to the next owner (at-least-once).
+                    OnLogCallback?.Invoke(
+                        new LogMessageEventArgs
+                        {
+                            LogType = MqLogType.ConsumeError,
+                            Reason = $"Kafka consumer close failed; uncommitted records will be redelivered: {e}",
+                        }
+                    );
+                }
 
-            consumerClient.Dispose();
+                consumerClient.Dispose();
+            }
         }
 
         _semaphore?.Dispose();
-
-        return ValueTask.CompletedTask;
     }
 
     public void Connect()
@@ -445,22 +529,40 @@ internal sealed class KafkaConsumerClient : IConsumerClient
 
         lock (_lock)
         {
-            if (_consumerClient == null)
+            // A disposed client must not reopen a consumer that shutdown would never close.
+            if (_consumerClient == null && Volatile.Read(ref _disposed) == 0)
             {
-                var config = new ConsumerConfig(
-                    new Dictionary<string, string>(_kafkaOptions.MainConfig, StringComparer.Ordinal)
-                );
-                config.BootstrapServers ??= _kafkaOptions.Servers;
-                config.GroupId ??= _groupId;
-                config.AutoOffsetReset ??= AutoOffsetReset.Earliest;
-                config.IsolationLevel ??= _consumerConfig?.IsolationLevel;
-                config.AllowAutoCreateTopics ??= true;
-                config.EnableAutoCommit ??= false;
-                config.LogConnectionClose ??= false;
-
-                _consumerClient = _consumerFactory(config);
+                _consumerClient = _consumerFactory(BuildConfig(_kafkaOptions, _groupId, _consumerConfig));
             }
         }
+    }
+
+    /// <summary>Builds the consumer configuration for the consumer group <paramref name="groupId"/>.</summary>
+    internal static ConsumerConfig BuildConfig(
+        KafkaMessagingOptions options,
+        string groupId,
+        KafkaConsumerConfig? consumerConfig
+    )
+    {
+        var config = new ConsumerConfig(new Dictionary<string, string>(options.MainConfig, StringComparer.Ordinal));
+        config.BootstrapServers ??= options.Servers;
+        config.GroupId ??= groupId;
+        config.AutoOffsetReset ??= AutoOffsetReset.Earliest;
+        config.IsolationLevel ??= consumerConfig?.IsolationLevel;
+        config.AllowAutoCreateTopics ??= true;
+        config.LogConnectionClose ??= false;
+
+        // Incremental rebalancing: a member joining or leaving moves only the partitions that change owner, instead
+        // of revoking every partition from every member and stopping the whole group while it reassigns them.
+        config.PartitionAssignmentStrategy ??= PartitionAssignmentStrategy.CooperativeSticky;
+
+        // The transport owns offset commits, so MainConfig cannot override these. An offset is stored only after its
+        // handler settles (at-least-once) and the background auto-commit sends the stored offsets to the broker; a
+        // revoke and shutdown commit them synchronously.
+        config.EnableAutoOffsetStore = false;
+        config.EnableAutoCommit = true;
+
+        return config;
     }
 
     private KafkaDelivery _TrackDelivery(ConsumeResult<string, byte[]> consumerResult)
@@ -506,11 +608,69 @@ internal sealed class KafkaConsumerClient : IConsumerClient
                 committableOffsets = _offsetCommitTracker.MarkObserved(consumerResult);
             }
 
-            if (committableOffsets.Count > 0)
+            _StoreOffsets(consumerClient, committableOffsets);
+        }
+    }
+
+    private void _RewindUndispatched(ConsumeResult<string, byte[]> consumerResult)
+    {
+        lock (_lock)
+        {
+            var consumerClient = _consumerClient;
+
+            if (consumerClient is null || !_OwnsPartition(consumerResult.TopicPartition))
             {
-                consumerClient.Commit(committableOffsets);
+                return;
+            }
+
+            consumerClient.Seek(consumerResult.TopicPartitionOffset);
+        }
+    }
+
+    private static void _StoreOffsets(IConsumer<string, byte[]> consumerClient, List<TopicPartitionOffset> offsets)
+    {
+        foreach (var offset in offsets)
+        {
+            try
+            {
+                consumerClient.StoreOffset(offset);
+            }
+            catch (KafkaException e) when (e.Error.Code is ErrorCode.Local_State)
+            {
+                // librdkafka refuses to store an offset for a partition this member no longer holds. The new owner
+                // reads from the last committed offset and redelivers the record (at-least-once).
             }
         }
+    }
+
+    private void _CommitStoredOffsets(IConsumer<string, byte[]> consumerClient)
+    {
+        try
+        {
+            consumerClient.Commit();
+        }
+        catch (KafkaException e) when (e.Error.Code is ErrorCode.Local_NoOffset)
+        {
+            // Nothing stored since the last commit.
+        }
+        catch (KafkaException e)
+        {
+            // The records past the last successful commit are redelivered to the next owner (at-least-once).
+            OnLogCallback?.Invoke(
+                new LogMessageEventArgs
+                {
+                    LogType = MqLogType.ConsumeError,
+                    Reason = $"Kafka offset commit failed; uncommitted records will be redelivered: {e.Error}",
+                }
+            );
+        }
+    }
+
+    private static bool _OnlyAlreadyExists(CreateTopicsException exception)
+    {
+        return exception.Results.TrueForAll(static result =>
+            result.Error.Code is ErrorCode.NoError or ErrorCode.TopicAlreadyExists
+        );
     }
 
     private async Task _ConsumeAsync(KafkaDelivery delivery)
@@ -628,7 +788,60 @@ internal sealed class KafkaConsumerClient : IConsumerClient
 
     internal void PartitionsRevoked(IEnumerable<TopicPartitionOffset> partitions)
     {
-        _PartitionsRemoved(partitions.Select(x => x.TopicPartition));
+        var revoked = partitions.Select(x => x.TopicPartition).ToHashSet();
+
+        // A revoke during shutdown comes from Close, after the drain; Close itself commits the stored offsets.
+        if (Volatile.Read(ref _disposed) == 0)
+        {
+            _DrainRevokedHandlers(revoked);
+
+            IConsumer<string, byte[]>? consumerClient;
+            lock (_lock)
+            {
+                consumerClient = _consumerClient;
+            }
+
+            // The partitions are still assigned until this callback returns, so their final watermark, stored by
+            // the handlers that just finished, can still be committed before the next owner starts reading.
+            if (consumerClient is not null)
+            {
+                _CommitStoredOffsets(consumerClient);
+            }
+        }
+
+        _PartitionsRemoved(revoked);
+    }
+
+    private void _DrainRevokedHandlers(HashSet<TopicPartition> revoked)
+    {
+        var affected = _inFlightHandlers.Where(x => revoked.Contains(x.Value)).Select(x => x.Key).ToArray();
+
+        if (affected.Length == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            // Rebalance callbacks are synchronous and run on the poll thread, so the wait has to block. The handlers
+            // never need the poll thread: they store offsets under _lock, which this thread does not hold.
+#pragma warning disable VSTHRD002, CA1849 // A rebalance callback is synchronous; blocking the poll thread is the point.
+            if (!Task.WaitAll(affected, _RevokeDrainTimeout))
+#pragma warning restore VSTHRD002, CA1849
+            {
+                OnLogCallback?.Invoke(
+                    new LogMessageEventArgs
+                    {
+                        LogType = MqLogType.ConsumeError,
+                        Reason =
+                            $"Kafka handlers on revoked partitions were still running after {_RevokeDrainTimeout}; their records will be redelivered to the new owner.",
+                    }
+                );
+            }
+        }
+#pragma warning disable ERP022 // Handler faults are already surfaced by _ObserveBackgroundHandler.
+        catch (AggregateException) { }
+#pragma warning restore ERP022
     }
 
     internal void PartitionsLost(IEnumerable<TopicPartitionOffset> partitions)
@@ -653,6 +866,19 @@ internal sealed class KafkaConsumerClient : IConsumerClient
     private bool _OwnsPartition(TopicPartition partition)
     {
         return !_hasPartitionAssignment || _ownedPartitions.Contains(partition);
+    }
+
+    private void _TrackHandler(Task task, TopicPartition partition)
+    {
+        _inFlightHandlers[task] = partition;
+        _ = task.ContinueWith(
+            static (completed, state) =>
+                ((ConcurrentDictionary<Task, TopicPartition>)state!).TryRemove(completed, out _),
+            _inFlightHandlers,
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default
+        );
     }
 
     private void _ObserveBackgroundHandler(Task task)

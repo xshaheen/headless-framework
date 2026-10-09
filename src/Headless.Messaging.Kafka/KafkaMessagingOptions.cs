@@ -17,13 +17,15 @@ public sealed class KafkaMessagingOptions
     /// See <see href="https://github.com/edenhill/librdkafka/blob/master/CONFIGURATION.md"/> for the
     /// full parameter reference.
     /// </summary>
+    /// <remarks>
+    /// The producer enables <c>enable.idempotence</c> unless this sets it, or sets <c>acks</c> other than
+    /// <c>all</c>, more than five in-flight requests, zero retries, or a non-FIFO <c>queuing.strategy</c>, which
+    /// librdkafka cannot combine with idempotence (under either name librdkafka accepts for each setting). The
+    /// consumer uses <c>cooperative-sticky</c> assignment unless this sets <c>partition.assignment.strategy</c>.
+    /// The transport owns offset commits, so <c>enable.auto.commit</c> and <c>enable.auto.offset.store</c> are
+    /// always overridden; <c>auto.commit.interval.ms</c> still sets how often stored offsets reach the broker.
+    /// </remarks>
     public Dictionary<string, string> MainConfig { get; } = new(StringComparer.Ordinal);
-
-    /// <summary>
-    /// The number of <c>IProducer</c> instances kept in the shared producer pool.
-    /// Defaults to <c>10</c>. Increase this value when high publish concurrency causes pool contention.
-    /// </summary>
-    public int ConnectionPoolSize { get; set; } = 10;
 
     /// <summary>
     /// The <c>bootstrap.servers</c> value — a comma-separated list of broker <c>host</c> or
@@ -96,6 +98,5 @@ internal sealed class KafkaMessagingOptionsValidator : AbstractValidator<KafkaMe
     public KafkaMessagingOptionsValidator()
     {
         RuleFor(x => x.Servers).NotEmpty();
-        RuleFor(x => x.ConnectionPoolSize).GreaterThan(0);
     }
 }

@@ -19,16 +19,6 @@ public sealed class KafkaMessagingOptionsTests : TestBase
     }
 
     [Fact]
-    public void should_have_default_connection_pool_size_of_10()
-    {
-        // given, when
-        var options = new KafkaMessagingOptions { Servers = "localhost:9092" };
-
-        // then
-        options.ConnectionPoolSize.Should().Be(10);
-    }
-
-    [Fact]
     public void should_have_default_topic_options()
     {
         // given, when

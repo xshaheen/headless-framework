@@ -33,10 +33,10 @@ public sealed class SetupTests : TestBase
         services.ConfigureMessaging(messaging =>
             messaging.Message<KafkaBusContract>("orders").OnQueue(queue => queue.RequireRoutingAffinity())
         );
-        services.AddSingleton<IKafkaConnectionPool>(_ =>
+        services.AddSingleton<IKafkaProducerProvider>(_ =>
         {
             effects++;
-            return Substitute.For<IKafkaConnectionPool>();
+            return Substitute.For<IKafkaProducerProvider>();
         });
         services.AddSingleton<IQueueTransport>(_ =>
         {
@@ -142,8 +142,8 @@ public sealed class SetupTests : TestBase
         provider.GetService<IQueueTransport>().Should().BeOfType<KafkaTransport>();
         provider.GetService<IConsumerClientFactory>().Should().NotBeNull();
         provider.GetService<IConsumerClientFactory>().Should().BeOfType<KafkaConsumerClientFactory>();
-        provider.GetService<IKafkaConnectionPool>().Should().NotBeNull();
-        provider.GetService<IKafkaConnectionPool>().Should().BeOfType<KafkaConnectionPool>();
+        provider.GetService<IKafkaProducerProvider>().Should().NotBeNull();
+        provider.GetService<IKafkaProducerProvider>().Should().BeOfType<KafkaProducerProvider>();
     }
 
     [Fact]
@@ -159,7 +159,7 @@ public sealed class SetupTests : TestBase
             options.UseKafka(opt =>
             {
                 opt.Servers = "broker1:9092,broker2:9092";
-                opt.ConnectionPoolSize = 20;
+                opt.MainConfig["linger.ms"] = "20";
             });
         });
 
@@ -168,7 +168,7 @@ public sealed class SetupTests : TestBase
 
         // then
         kafkaOptions.Servers.Should().Be("broker1:9092,broker2:9092");
-        kafkaOptions.ConnectionPoolSize.Should().Be(20);
+        kafkaOptions.MainConfig.Should().ContainKey("linger.ms").WhoseValue.Should().Be("20");
     }
 
     [Fact]
@@ -215,11 +215,11 @@ public sealed class SetupTests : TestBase
         var provider = services.BuildServiceProvider();
 
         // when
-        var pool1 = provider.GetService<IKafkaConnectionPool>();
-        var pool2 = provider.GetService<IKafkaConnectionPool>();
+        var producers1 = provider.GetService<IKafkaProducerProvider>();
+        var producers2 = provider.GetService<IKafkaProducerProvider>();
 
         // then
-        pool1.Should().BeSameAs(pool2);
+        producers1.Should().BeSameAs(producers2);
     }
 
     private sealed record KafkaBusContract;
