@@ -45,7 +45,7 @@ internal sealed class AmazonSqsConsumerClient(
     // Every received message the core has not settled yet, keyed by receipt handle: the heartbeat extends their
     // visibility and shutdown releases what is left.
     private readonly ConcurrentDictionary<string, InflightSqsMessage> _unsettled = new(StringComparer.Ordinal);
-    private readonly ConcurrentDictionary<Task, byte> _inFlightHandlers = new();
+    private readonly InFlightHandlerTracker _inFlightHandlers = new();
     private readonly ConcurrentDictionary<string, SqsDeleteBatcher> _deleteBatchers = new(StringComparer.Ordinal);
     private readonly CancellationTokenSource _stopReceiving = new();
     private readonly CancellationTokenSource _stopHeartbeat = new();
@@ -196,7 +196,7 @@ internal sealed class AmazonSqsConsumerClient(
 
             receiveCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _stopReceiving.Token);
             _heartbeat ??= _RunHeartbeatAsync(_stopHeartbeat.Token);
-            _TrackInFlight(listening.Task);
+            _inFlightHandlers.Track(listening.Task);
         }
 
         try
@@ -312,13 +312,13 @@ internal sealed class AmazonSqsConsumerClient(
                         },
                         CancellationToken.None // Ensure semaphore release even if cancellation is requested during handler execution
                     );
-                    _TrackInFlight(handler);
+                    _inFlightHandlers.Track(handler);
                     _ObserveBackgroundHandler(handler);
                 }
                 else
                 {
                     var handler = _ConsumeAsync(inflight, sqsMessage);
-                    _TrackInFlight(handler);
+                    _inFlightHandlers.Track(handler);
                     await handler.ConfigureAwait(false);
                 }
             }
@@ -434,18 +434,6 @@ internal sealed class AmazonSqsConsumerClient(
         );
     }
 
-    private void _TrackInFlight(Task task)
-    {
-        _inFlightHandlers[task] = 0;
-        _ = task.ContinueWith(
-            static (completed, state) => ((ConcurrentDictionary<Task, byte>)state!).TryRemove(completed, out _),
-            _inFlightHandlers,
-            CancellationToken.None,
-            TaskContinuationOptions.ExecuteSynchronously,
-            TaskScheduler.Default
-        );
-    }
-
     private void _ObserveBackgroundHandler(Task task)
     {
         _ = task.ContinueWith(
@@ -557,24 +545,9 @@ internal sealed class AmazonSqsConsumerClient(
         // broker. The heartbeat keeps running meanwhile, so a slow handler's message stays hidden while it finishes.
         // Bounded so a stuck handler cannot hold the host: one still running past the budget has its delete fail and the
         // message is redelivered (at-least-once).
-        // Snapshots repeat until none is left: a receive that already won its handler slot when shutdown cancelled still
-        // starts that handler, after the first snapshot, and the receive loop in the snapshot ends only after it did.
-        var startedAt = _timeProvider.GetTimestamp();
         try
         {
-            Task[] inFlight;
-            while ((inFlight = [.. _inFlightHandlers.Keys]).Length > 0)
-            {
-                var remaining = timeout - _timeProvider.GetElapsedTime(startedAt);
-                if (remaining <= TimeSpan.Zero)
-                {
-                    throw new TimeoutException("The shared messaging shutdown deadline has expired.");
-                }
-
-                await Task.WhenAll(inFlight)
-                    .WaitAsync(remaining, _timeProvider, CancellationToken.None)
-                    .ConfigureAwait(false);
-            }
+            await _inFlightHandlers.DrainAsync(timeout, _timeProvider).ConfigureAwait(false);
         }
         catch (Exception ex)
         {

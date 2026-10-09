@@ -1,6 +1,5 @@
 // Copyright (c) Mahmoud Shaheen. All rights reserved.
 
-using System.Collections.Concurrent;
 using Confluent.Kafka;
 using Confluent.Kafka.Admin;
 using Headless.Checks;
@@ -48,7 +47,7 @@ internal sealed class KafkaConsumerClient : IConsumerClient
     private readonly HashSet<TopicPartition> _ownedPartitions = [];
 
     // Every dispatched delivery, keyed by its handler task, so shutdown and a revoke can wait for the ones they affect.
-    private readonly ConcurrentDictionary<Task, TopicPartition> _inFlightHandlers = new();
+    private readonly InFlightHandlerTracker _inFlightHandlers = new();
     private bool _hasPartitionAssignment;
 
     // volatile is required: Connect performs double-checked locking on this field. Without volatile a reader could
@@ -291,14 +290,14 @@ internal sealed class KafkaConsumerClient : IConsumerClient
                         CancellationToken.None
                     );
 
-                    _TrackHandler(handlerTask, consumerResult.TopicPartition);
+                    _inFlightHandlers.Track(handlerTask, consumerResult.TopicPartition);
                     _ObserveBackgroundHandler(handlerTask);
 
                     continue;
                 }
 
                 var inlineTask = _ConsumeAsync(delivery);
-                _TrackHandler(inlineTask, consumerResult.TopicPartition);
+                _inFlightHandlers.Track(inlineTask, consumerResult.TopicPartition);
                 await inlineTask.ConfigureAwait(false);
             }
             catch (ConsumeException e) when (_kafkaOptions.RetriableErrorCodes.Contains((int)e.Error.Code))
@@ -455,30 +454,21 @@ internal sealed class KafkaConsumerClient : IConsumerClient
         // Drain in-flight handlers while the consumer is still open, so each one can store its offset and the final
         // commit below includes it. Bounded so a stuck handler cannot block shutdown; one still running past the
         // budget never stores its offset, and Kafka redelivers the record (at-least-once).
-        var inFlight = _inFlightHandlers.Keys.ToArray();
-        if (inFlight.Length > 0)
+        try
         {
-            try
-            {
-                if (timeout <= TimeSpan.Zero)
+            await _inFlightHandlers.DrainAsync(timeout, TimeProvider.System).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // Handler faults are already surfaced by _ObserveBackgroundHandler; on a drain timeout or fault,
+            // log and proceed, because disposal must never block or throw.
+            OnLogCallback?.Invoke(
+                new LogMessageEventArgs
                 {
-                    throw new TimeoutException("The shared messaging shutdown deadline has expired.");
+                    LogType = MqLogType.ExceptionReceived,
+                    Reason = $"Timed out or faulted draining in-flight Kafka handlers during shutdown: {ex}",
                 }
-
-                await Task.WhenAll(inFlight).WaitAsync(timeout, CancellationToken.None).ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                // Handler faults are already surfaced by _ObserveBackgroundHandler; on a drain timeout or fault,
-                // log and proceed, because disposal must never block or throw.
-                OnLogCallback?.Invoke(
-                    new LogMessageEventArgs
-                    {
-                        LogType = MqLogType.ExceptionReceived,
-                        Reason = $"Timed out or faulted draining in-flight Kafka handlers during shutdown: {ex}",
-                    }
-                );
-            }
+            );
         }
 
         IConsumer<string, byte[]>? consumerClient;
@@ -814,7 +804,9 @@ internal sealed class KafkaConsumerClient : IConsumerClient
 
     private void _DrainRevokedHandlers(HashSet<TopicPartition> revoked)
     {
-        var affected = _inFlightHandlers.Where(x => revoked.Contains(x.Value)).Select(x => x.Key).ToArray();
+        var affected = _inFlightHandlers.Snapshot(tag =>
+            tag is TopicPartition partition && revoked.Contains(partition)
+        );
 
         if (affected.Length == 0)
         {
@@ -866,19 +858,6 @@ internal sealed class KafkaConsumerClient : IConsumerClient
     private bool _OwnsPartition(TopicPartition partition)
     {
         return !_hasPartitionAssignment || _ownedPartitions.Contains(partition);
-    }
-
-    private void _TrackHandler(Task task, TopicPartition partition)
-    {
-        _inFlightHandlers[task] = partition;
-        _ = task.ContinueWith(
-            static (completed, state) =>
-                ((ConcurrentDictionary<Task, TopicPartition>)state!).TryRemove(completed, out _),
-            _inFlightHandlers,
-            CancellationToken.None,
-            TaskContinuationOptions.ExecuteSynchronously,
-            TaskScheduler.Default
-        );
     }
 
     private void _ObserveBackgroundHandler(Task task)
